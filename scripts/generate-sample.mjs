@@ -29,10 +29,10 @@ const FPS = 4;
 const SCALE = 1.0;
 
 const STAGES = [
-  { name: 'Big Volumes', frame: 0, desc: 'Mass relationships first.', sub: 1 },
-  { name: 'Form Block-In', frame: 6, desc: 'Major planes established.', sub: 2 },
-  { name: 'Secondary Forms', frame: 12, desc: 'Brow and nose resolve.', sub: 2 },
-  { name: 'Surface Detail', frame: 18, desc: 'Final faceted surface.', sub: 3 },
+  { name: 'Big Volumes', frame: 0, desc: 'Mass relationships first.', sub: 2 },
+  { name: 'Form Block-In', frame: 6, desc: 'Major planes established.', sub: 3 },
+  { name: 'Secondary Forms', frame: 12, desc: 'Brow and nose resolve.', sub: 3 },
+  { name: 'Surface Detail', frame: 18, desc: 'Final faceted surface.', sub: 4 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -143,12 +143,21 @@ function sculptRadius(d, t) {
 // ---------------------------------------------------------------------------
 function buildFrame(frameIndex) {
   const t = frameIndex / (FRAME_COUNT - 1);
-  // Subdivision from the active stage, alternating ±1 per frame so consecutive
-  // frames differ in topology (no vertex correspondence).
+  // Subdivision increases monotonically with the stage (rough volumes -> refined
+  // surface). The triangle count never drops between frames, so the form reads as
+  // a smooth progression instead of flickering between detail levels.
   const stage = [...STAGES].reverse().find((s) => frameIndex >= s.frame);
-  const subdiv = stage.sub + (frameIndex % 2);
+  const subdiv = stage.sub;
 
-  const { dirs, faces } = icosphere(subdiv);
+  const { dirs: baseDirs, faces } = icosphere(subdiv);
+
+  // Rotate the tessellation about Y by a per-frame golden angle. Every frame gets
+  // an independent vertex layout (no correspondence between frames) while sampling
+  // the same evolving surface, so the form neither spins nor flickers.
+  const ang = frameIndex * 2.399963;
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  const dirs = baseDirs.map((d) => v(ca * d.x + sa * d.z, d.y, -sa * d.x + ca * d.z));
 
   const vertCount = dirs.length;
   const positions = new Float32Array(vertCount * 3);
@@ -379,7 +388,7 @@ const manifest = {
   id: 'demo',
   title: 'Demo bust (synthetic)',
   config: { frameCount: FRAME_COUNT, fps: FPS, ext: 'glb', tiers: ['sd'], frameStartIndex: 0 },
-  defaults: { frame: 0, playing: true, material: 'lit', lightingPreset: 'three_point' },
+  defaults: { frame: 0, playing: true, material: 'flat', lightingPreset: 'three_point' },
   camera: { autoFrame: true },
   frames: frameEntries,
   stages: STAGES.map(({ name, frame, desc }) => ({ name, frame, desc })),

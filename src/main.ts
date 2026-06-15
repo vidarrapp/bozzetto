@@ -30,6 +30,9 @@ async function main(): Promise<void> {
     const manifest = validateManifest(await res.json());
 
     const viewer = new Viewer(viewport, manifest, manifestUrl, matcapUrl);
+    // Expose for debugging from the browser console, e.g.:
+    //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
+    (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
     new Panel(viewer);
     await viewer.boot();
 

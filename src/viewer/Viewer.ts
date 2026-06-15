@@ -83,6 +83,9 @@ export class Viewer {
 
     this.lighting = new Lighting(this.scene, this.renderer);
     this.materials = new Materials(matcapUrl);
+    this.currentMode = this.materials.has(manifest.defaults.material)
+      ? manifest.defaults.material
+      : 'flat';
     this.controls = new Controls(this.camera, this.renderer.domElement);
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
@@ -126,11 +129,7 @@ export class Viewer {
 
     this.fitScene(geom);
 
-    this.setMaterial(
-      this.materials.has(this.manifest.defaults.material)
-        ? this.manifest.defaults.material
-        : 'lit',
-    );
+    this.setMaterial(this.currentMode);
     this.lighting.applyPreset(this.manifest.defaults.lightingPreset);
 
     this.streamer.setPlayhead(start);
@@ -237,7 +236,9 @@ export class Viewer {
 
   private readonly loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
-    const dt = this.clock.getDelta();
+    // Clamp dt so a backgrounded tab (which pauses rAF) can't return a huge
+    // delta and lurch the playhead across many frames on the next visible tick.
+    const dt = Math.min(this.clock.getDelta(), 0.1);
 
     this.timeline.update(dt);
     const target = this.timeline.frameIndex();
@@ -248,15 +249,19 @@ export class Viewer {
       this.onFrame?.(target);
     }
 
-    // Show the target frame if resident; otherwise hold the nearest resident
-    // frame so scrubbing/playback never stalls or blanks.
+    // Show the target frame if resident; otherwise hold the most recent decoded
+    // frame at or before it (a frame arriving out of order must never flash ahead
+    // and snap back). Fall back to the overall nearest only when nothing at or
+    // behind the target is resident, e.g. a backward scrub into an unloaded gap.
     let geom = this.streamer.get(target);
     let shownIndex = target;
     if (!geom) {
-      const nearest = this.streamer.nearestResident(target);
-      if (nearest !== null) {
-        geom = this.streamer.get(nearest);
-        shownIndex = nearest;
+      const pick =
+        this.streamer.nearestResidentAtOrBefore(target) ??
+        this.streamer.nearestResident(target);
+      if (pick !== null) {
+        geom = this.streamer.get(pick);
+        shownIndex = pick;
       }
     }
     if (geom && shownIndex !== this.displayedIndex) {
