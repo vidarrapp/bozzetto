@@ -78,19 +78,16 @@ shows the exact format a manifest and its frames must follow.
 
 ## Deployment
 
-The site deploys to [Cloudflare Pages](https://pages.cloudflare.com/) on every
-push to `main` via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml),
-which builds and pushes `dist/` with Wrangler. Production is served at
-`bozzetto.vidarrapp.se`.
+The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com/) using the
+GitHub git integration: every push to `main` triggers a build and deploy. The
+Pages project's build configuration is:
 
-One-time setup (in the dashboards, not in code):
+- **Build command:** `npm run build`
+- **Build output directory:** `dist`
 
-1. Add repository secrets under **Settings → Secrets and variables → Actions**:
-   - `CLOUDFLARE_API_TOKEN` — token with the *Account → Cloudflare Pages → Edit*
-     permission.
-   - `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare account id.
-2. Attach `bozzetto.vidarrapp.se` as a custom domain on the `bozzetto` Pages
-   project. The project itself is created automatically on the first deploy.
+The build's `prebuild` step generates the demo timelapse, so those assets ship in
+`dist/` without being committed. Production is served at `bozzetto.vidarrapp.se`,
+attached as a custom domain on the Pages project.
 
 ## Status
 
