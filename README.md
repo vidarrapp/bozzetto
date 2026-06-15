@@ -76,6 +76,19 @@ paths, counts, fps, stages, and defaults all come from the manifest. The schema
 pipeline that produces the meshes is the artist's, and `generate-sample.mjs`
 shows the exact format a manifest and its frames must follow.
 
+## Deployment
+
+The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com/) using the
+GitHub git integration: every push to `main` triggers a build and deploy. The
+Pages project's build configuration is:
+
+- **Build command:** `npm run build`
+- **Build output directory:** `dist`
+
+The build's `prebuild` step generates the demo timelapse, so those assets ship in
+`dist/` without being committed. Production is served at `bozzetto.vidarrapp.se`,
+attached as a custom domain on the Pages project.
+
 ## Status
 
 Early development. The v1 viewer is implemented: real-time three-point
