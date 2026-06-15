@@ -73,6 +73,19 @@ export class FrameStreamer {
     return job;
   }
 
+  /**
+   * Index of the most recent resident frame at or before `ordinal`, or null.
+   * Used for the playback hold so an out-of-order load never flashes a future
+   * frame and snaps back.
+   */
+  nearestResidentAtOrBefore(ordinal: number): number | null {
+    let best: number | null = null;
+    for (const idx of this.cache.keys()) {
+      if (idx <= ordinal && (best === null || idx > best)) best = idx;
+    }
+    return best;
+  }
+
   /** Index of the nearest resident frame to `ordinal`, or null if none. */
   nearestResident(ordinal: number): number | null {
     if (this.cache.has(ordinal)) return ordinal;
