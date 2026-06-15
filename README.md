@@ -76,6 +76,22 @@ paths, counts, fps, stages, and defaults all come from the manifest. The schema
 pipeline that produces the meshes is the artist's, and `generate-sample.mjs`
 shows the exact format a manifest and its frames must follow.
 
+## Deployment
+
+The site deploys to [Cloudflare Pages](https://pages.cloudflare.com/) on every
+push to `main` via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml),
+which builds and pushes `dist/` with Wrangler. Production is served at
+`bozzetto.vidarrapp.se`.
+
+One-time setup (in the dashboards, not in code):
+
+1. Add repository secrets under **Settings → Secrets and variables → Actions**:
+   - `CLOUDFLARE_API_TOKEN` — token with the *Account → Cloudflare Pages → Edit*
+     permission.
+   - `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare account id.
+2. Attach `bozzetto.vidarrapp.se` as a custom domain on the `bozzetto` Pages
+   project. The project itself is created automatically on the first deploy.
+
 ## Status
 
 Early development. The v1 viewer is implemented: real-time three-point

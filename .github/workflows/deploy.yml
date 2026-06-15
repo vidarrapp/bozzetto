@@ -1,0 +1,61 @@
+# Builds the static site and deploys it to Cloudflare Pages on every push to
+# main. Production deployments map to the custom domain (bozzetto.vidarrapp.se)
+# once it is attached to the Pages project.
+#
+# One-time setup (done in the GitHub + Cloudflare dashboards, not in code):
+#   1. Add two GitHub repository secrets (Settings → Secrets and variables →
+#      Actions):
+#        - CLOUDFLARE_API_TOKEN   API token with the "Account → Cloudflare
+#                                 Pages → Edit" permission.
+#        - CLOUDFLARE_ACCOUNT_ID  Your Cloudflare account ID.
+#   2. The "Ensure Pages project exists" step below creates the `bozzetto`
+#      project automatically on the first run, so no manual project creation is
+#      needed. (You can also pre-create it in the dashboard.)
+#   3. Attach the custom domain `bozzetto.vidarrapp.se` to the Pages project
+#      (Workers & Pages → bozzetto → Custom domains). With vidarrapp.se on
+#      Cloudflare DNS the CNAME is created for you.
+
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Avoid overlapping production deployments.
+concurrency:
+  group: cloudflare-pages-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Ensure Pages project exists
+        run: npx wrangler@3 pages project create bozzetto --production-branch=main || true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=bozzetto --branch=main
