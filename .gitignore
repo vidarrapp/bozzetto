@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# Generated demo assets (produced by `npm run gen:sample`, run automatically
+# before dev/build). Kept out of git so binaries don't live in history.
+public/timelapses/demo/
+public/assets/matcaps/clay.png
