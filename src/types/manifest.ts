@@ -112,7 +112,7 @@ export function validateManifest(data: unknown): Manifest {
   const defaults: ManifestDefaults = {
     frame: 0,
     playing: true,
-    material: 'lit',
+    material: 'flat',
     lightingPreset: 'three_point',
     ...((m.defaults as object) ?? {}),
   };
