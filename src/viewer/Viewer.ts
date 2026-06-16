@@ -55,7 +55,7 @@ export class Viewer {
     wireframe: true,
     color: 0x000000,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.5,
   });
   private wireframeOn = false;
 
