@@ -60,9 +60,6 @@ export class Panel {
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
-
-    const view = section(this.bodyEl, 'View');
-    view.appendChild(button('Reset view', () => this.viewer.resetView()));
   }
 
   /** Open/close the panel body (Tab). */

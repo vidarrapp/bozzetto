@@ -41,9 +41,6 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
       case 'f':
         viewer.focusSubject();
         return;
-      case 'r':
-        viewer.resetView();
-        return;
       case 'g':
         viewer.setGround(!viewer.isGroundEnabled());
         handlers.refresh?.();

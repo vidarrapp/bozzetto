@@ -133,10 +133,15 @@ export class Materials {
     (this.registry.get('lit') as MeshStandardMaterial).metalness = value;
   }
 
-  /** Relative luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
+  /** Perceptual luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
   albedoLuminance(): number {
-    const c = (this.registry.get('lit') as MeshStandardMaterial).color;
-    return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    // getHexString() yields sRGB regardless of the renderer's working colour
+    // space, so this matches how the albedo actually reads on screen.
+    const hex = (this.registry.get('lit') as MeshStandardMaterial).color.getHexString();
+    const r = parseInt(hex.slice(0, 2), 16) / 255;
+    const g = parseInt(hex.slice(2, 4), 16) / 255;
+    const b = parseInt(hex.slice(4, 6), 16) / 255;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
   /** Smooth (interpolated) vs flat (faceted) shading across the shaded modes. */

@@ -25,9 +25,6 @@ export class Controls {
   /** Default viewing direction (camera offset from target), normalised. */
   private readonly viewDir = new Vector3(0.9, 0.55, 1).normalize();
 
-  /** Bounding sphere of the last framed subject, for reset. */
-  private lastSphere = new Sphere(new Vector3(), 1);
-
   constructor(
     private readonly camera: PerspectiveCamera,
     domElement: HTMLElement,
@@ -45,14 +42,24 @@ export class Controls {
     this.controls = controls;
   }
 
-  /**
-   * Position the camera to frame `box` and set the orbit target to its centre.
-   * Sensible near/far and min/max distance prevent dollying inside the mesh or
-   * flying away.
-   */
+  /** Frame `box` from the default viewing direction (initial load). */
   frameSubject(box: Box3): void {
+    this.place(box, this.viewDir);
+  }
+
+  /**
+   * Frame `box` keeping the current view direction — a DCC-style "frame
+   * selected" (hotkey "f"): pan + dolly so the subject fills the viewport
+   * without changing the orbit angle.
+   */
+  focus(box: Box3): void {
+    const dir = new Vector3().subVectors(this.camera.position, this.controls.target);
+    if (dir.lengthSq() < 1e-8) dir.copy(this.viewDir);
+    this.place(box, dir.normalize());
+  }
+
+  private place(box: Box3, dir: Vector3): void {
     const sphere = box.getBoundingSphere(new Sphere());
-    this.lastSphere.copy(sphere);
 
     const r = Math.max(sphere.radius, 1e-4);
     const vFov = (this.camera.fov * Math.PI) / 180;
@@ -67,22 +74,11 @@ export class Controls {
     this.camera.updateProjectionMatrix();
 
     this.controls.target.copy(sphere.center);
-    this.camera.position
-      .copy(sphere.center)
-      .addScaledVector(this.viewDir, distance);
+    this.camera.position.copy(sphere.center).addScaledVector(dir, distance);
 
     this.controls.minDistance = r * 0.4;
     this.controls.maxDistance = r * 10;
     this.controls.update();
-  }
-
-  /** Re-frame the last subject (Reset View). */
-  reset(): void {
-    const box = new Box3().setFromCenterAndSize(
-      this.lastSphere.center,
-      new Vector3().setScalar(this.lastSphere.radius * 2),
-    );
-    this.frameSubject(box);
   }
 
   update(): void {

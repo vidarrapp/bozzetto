@@ -51,7 +51,12 @@ export class Viewer {
 
   /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
   private readonly wireframe = new Mesh();
-  private readonly wireMaterial = new MeshBasicMaterial({ wireframe: true, color: 0xffffff });
+  private readonly wireMaterial = new MeshBasicMaterial({
+    wireframe: true,
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.8,
+  });
   private wireframeOn = false;
 
   private currentMode = 'lit';
@@ -233,17 +238,13 @@ export class Viewer {
     return this.groundEnabled;
   }
 
-  resetView(): void {
-    this.controls.reset();
-  }
-
-  /** Re-frame the camera on the current model (hotkey "f"). */
+  /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
     const geom = this.display.geometry;
     geom.computeBoundingBox();
     if (geom.boundingBox) {
       this.subjectBox.copy(geom.boundingBox);
-      this.controls.frameSubject(this.subjectBox);
+      this.controls.focus(this.subjectBox);
     }
   }
 
@@ -268,7 +269,7 @@ export class Viewer {
 
   /** Dark wires on a light albedo, light wires on a dark one. */
   private updateWireColor(): void {
-    this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x1b1d21 : 0xffffff);
+    this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x000000 : 0xffffff);
   }
 
   /** Render the current frame and read it back as a JPEG thumbnail blob. */
