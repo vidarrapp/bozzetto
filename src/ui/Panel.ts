@@ -288,6 +288,22 @@ export class Panel {
       color.addEventListener('input', () => this.viewer.lighting.setColor(light.id, color.value));
       box.appendChild(labelRow('Colour', color));
 
+      if (light.canShadow) {
+        box.appendChild(
+          checkbox('Casts shadow', light.castShadow, (on) => {
+            this.viewer.lighting.setShadow(light.id, on);
+            this.rebuildLightControls();
+          }),
+        );
+        if (light.castShadow) {
+          box.appendChild(
+            compactRange('Softness', 0, 16, 0.5, light.softness, (v) =>
+              this.viewer.lighting.setSoftness(light.id, v),
+            ),
+          );
+        }
+      }
+
       this.lightControls.appendChild(box);
     }
   }

@@ -5,12 +5,13 @@ import {
   Group,
   HemisphereLight,
   MathUtils,
-  PCFSoftShadowMap,
   Scene,
   Sphere,
   Vector3,
+  VSMShadowMap,
   type WebGLRenderer,
 } from 'three';
+import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
 
 export type LightId = 'key' | 'fill' | 'rim';
 
@@ -23,6 +24,8 @@ export interface DirLightConfig {
   /** Elevation in degrees (above the horizon). */
   elevation: number;
   castShadow: boolean;
+  /** Shadow penumbra blur radius (VSM). Larger = softer. */
+  softness?: number;
 }
 
 export interface AmbientConfig {
@@ -48,6 +51,10 @@ export interface LightStateView {
   color: string;
   azimuth: number;
   elevation: number;
+  castShadow: boolean;
+  softness: number;
+  /** Whether this light can cast a shadow at the current quality tier. */
+  canShadow: boolean;
 }
 
 /** Persisted rig state (stored in a project's `data.lighting`). */
@@ -59,45 +66,54 @@ export interface LightingState {
   rigRotation: number;
 }
 
+const DEFAULT_SOFTNESS = 5;
+
 const LIGHT_LABELS: Record<LightId, string> = {
   key: 'Key',
   fill: 'Fill',
   rim: 'Rim / Back',
 };
 
+const ALL: LightId[] = ['key', 'fill', 'rim'];
+
 /** Default three-point rig and a raking-key preset for form study (§6). */
 export const PRESETS: LightingPreset[] = [
   {
     id: 'three_point',
     label: 'Three-point',
-    key: { enabled: true, intensity: 3.0, color: '#fff3e6', azimuth: 35, elevation: 38, castShadow: true },
-    fill: { enabled: true, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false },
-    rim: { enabled: true, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: false },
+    key: { enabled: true, intensity: 3.0, color: '#fff3e6', azimuth: 35, elevation: 38, castShadow: true, softness: 5 },
+    fill: { enabled: true, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: true, softness: 9 },
+    rim: { enabled: true, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: false, softness: 6 },
     ambient: { intensity: 0.35, sky: '#c4d4ff', ground: '#4a3b2f' },
   },
   {
     id: 'raking_key',
     label: 'Raking key (form study)',
-    key: { enabled: true, intensity: 4.2, color: '#ffffff', azimuth: 70, elevation: 8, castShadow: true },
-    fill: { enabled: false, intensity: 0.0, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false },
-    rim: { enabled: false, intensity: 0.0, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: false },
+    key: { enabled: true, intensity: 4.2, color: '#ffffff', azimuth: 70, elevation: 8, castShadow: true, softness: 3 },
+    fill: { enabled: false, intensity: 0.0, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false, softness: 6 },
+    rim: { enabled: false, intensity: 0.0, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: false, softness: 6 },
     ambient: { intensity: 0.12, sky: '#aab6c8', ground: '#3a342c' },
   },
 ];
 
 /**
- * Three-point lighting rig with dynamic shadows (design doc §6).
+ * Three-point lighting rig with soft (VSM) shadows (design doc §6).
  *
  * The three directional lights live in a group that can be rotated around the
- * subject for form study. Light directions are driven by azimuth/elevation
- * angles rather than raw XYZ. Only the key casts shadows by default.
+ * subject. Each can be a configurable shadow caster with an adjustable penumbra
+ * (softness); which lights cast — and at what map size — is bounded by the
+ * device quality tier so the public viewer stays performant on mobile.
  */
 export class Lighting {
   private readonly rig = new Group();
-  private readonly key: DirectionalLight;
-  private readonly fill: DirectionalLight;
-  private readonly rim: DirectionalLight;
-  private readonly hemi: HemisphereLight;
+  private readonly key = new DirectionalLight();
+  private readonly fill = new DirectionalLight();
+  private readonly rim = new DirectionalLight();
+  private readonly hemi = new HemisphereLight();
+  private readonly lights: Record<LightId, DirectionalLight>;
+
+  private readonly tier: ShadowTier;
+  private readonly sizes: Record<LightId, number>;
 
   private readonly config: Record<LightId, DirLightConfig>;
   /** Master gate: false in unlit material modes so no shadow pass runs. */
@@ -108,32 +124,26 @@ export class Lighting {
   private subjectRadius = 1;
 
   constructor(scene: Scene, renderer: WebGLRenderer) {
-    renderer.shadowMap.type = PCFSoftShadowMap;
+    this.tier = SHADOW_TIERS[detectQuality(renderer)];
+    this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
+    renderer.shadowMap.type = VSMShadowMap;
 
     const preset = PRESETS[0];
-    this.config = {
-      key: { ...preset.key },
-      fill: { ...preset.fill },
-      rim: { ...preset.rim },
-    };
+    this.config = { key: { ...preset.key }, fill: { ...preset.fill }, rim: { ...preset.rim } };
+    this.lights = { key: this.key, fill: this.fill, rim: this.rim };
 
-    this.key = new DirectionalLight();
-    this.fill = new DirectionalLight();
-    this.rim = new DirectionalLight();
-    this.hemi = new HemisphereLight();
-
-    // Key shadow setup; frustum is fitted to the subject in fitToBounds.
-    this.key.castShadow = true;
-    this.key.shadow.mapSize.set(2048, 2048);
-    this.key.shadow.bias = -0.0005;
-    this.key.shadow.normalBias = 0.02;
-
-    for (const light of [this.key, this.fill, this.rim]) {
-      this.rig.add(light);
-      this.rig.add(light.target);
+    for (const id of ALL) {
+      const light = this.lights[id];
+      const size = this.sizes[id];
+      if (size > 0) {
+        light.shadow.mapSize.set(size, size);
+        light.shadow.blurSamples = this.tier.blurSamples;
+        light.shadow.bias = -0.0005;
+        light.shadow.normalBias = 0.02;
+      }
+      this.rig.add(light, light.target);
     }
-    scene.add(this.rig);
-    scene.add(this.hemi);
+    scene.add(this.rig, this.hemi);
 
     this.applyPreset(preset.id);
   }
@@ -174,9 +184,19 @@ export class Lighting {
     this.refresh();
   }
 
+  setShadow(id: LightId, castShadow: boolean): void {
+    this.config[id].castShadow = castShadow;
+    this.refresh();
+  }
+
+  setSoftness(id: LightId, softness: number): void {
+    this.config[id].softness = softness;
+    this.refresh();
+  }
+
   /**
-   * Gate the shadow pass. Unlit modes (matcap/normals/wireframe) call this with
-   * false so the key light stops casting and no shadow map is rendered.
+   * Gate the shadow pass. Unlit modes (matcap/wireframe) call this with false so
+   * the lights stop casting and no shadow map is rendered.
    */
   setShadowsEnabled(enabled: boolean): void {
     this.shadowsAllowed = enabled;
@@ -194,7 +214,7 @@ export class Lighting {
   }
 
   state(): LightStateView[] {
-    return (['key', 'fill', 'rim'] as LightId[]).map((id) => ({
+    return ALL.map((id) => ({
       id,
       label: LIGHT_LABELS[id],
       enabled: this.config[id].enabled,
@@ -202,6 +222,9 @@ export class Lighting {
       color: this.config[id].color,
       azimuth: this.config[id].azimuth,
       elevation: this.config[id].elevation,
+      castShadow: this.config[id].castShadow,
+      softness: this.config[id].softness ?? DEFAULT_SOFTNESS,
+      canShadow: this.sizes[id] > 0,
     }));
   }
 
@@ -234,33 +257,37 @@ export class Lighting {
     this.refresh();
   }
 
-  /** Fit light distance and the key's shadow frustum to the subject bounds. */
+  /** Fit light distance and every caster's shadow frustum to the subject bounds. */
   fitToBounds(box: Box3): void {
     const sphere = box.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.distance = this.subjectRadius * 4;
 
-    const shadowCam = this.key.shadow.camera;
     const extent = this.subjectRadius * 1.5;
-    shadowCam.left = -extent;
-    shadowCam.right = extent;
-    shadowCam.top = extent;
-    shadowCam.bottom = -extent;
-    shadowCam.near = Math.max(this.distance - this.subjectRadius * 2, 0.01);
-    shadowCam.far = this.distance + this.subjectRadius * 2;
-    shadowCam.updateProjectionMatrix();
+    for (const id of ALL) {
+      if (this.sizes[id] === 0) continue;
+      const cam = this.lights[id].shadow.camera;
+      cam.left = -extent;
+      cam.right = extent;
+      cam.top = extent;
+      cam.bottom = -extent;
+      cam.near = Math.max(this.distance - this.subjectRadius * 2, 0.01);
+      cam.far = this.distance + this.subjectRadius * 2;
+      cam.updateProjectionMatrix();
+    }
 
     this.refresh(sphere.center);
   }
 
   private refresh(center?: Vector3): void {
     const target = center ?? this.rig.position; // rig sits at world origin
-    this.apply(this.key, this.config.key, target);
-    this.apply(this.fill, this.config.fill, target);
-    this.apply(this.rim, this.config.rim, target);
+    for (const id of ALL) this.apply(id, target);
   }
 
-  private apply(light: DirectionalLight, cfg: DirLightConfig, target: Vector3): void {
+  private apply(id: LightId, target: Vector3): void {
+    const light = this.lights[id];
+    const cfg = this.config[id];
+
     light.visible = cfg.enabled;
     light.intensity = cfg.intensity;
     light.color = new Color(cfg.color);
@@ -276,8 +303,10 @@ export class Lighting {
     light.target.position.copy(target);
     light.target.updateMatrixWorld();
 
-    // Only the configured shadow caster pays for a shadow pass, and only when
-    // shadows are allowed (lit modes).
-    light.castShadow = cfg.castShadow && cfg.enabled && this.shadowsAllowed;
+    // A light casts only if the tier gives it a map, it's configured to, it's
+    // on, and shadows are allowed (lit modes). Softness drives the VSM blur.
+    const canCast = this.sizes[id] > 0;
+    light.castShadow = canCast && cfg.castShadow && cfg.enabled && this.shadowsAllowed;
+    if (canCast) light.shadow.radius = cfg.softness ?? DEFAULT_SOFTNESS;
   }
 }
