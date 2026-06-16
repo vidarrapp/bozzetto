@@ -937,3 +937,20 @@ html.is-page body {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
 }
+
+/* --- dev FPS meter (hotkey "t") --- */
+.fps-meter {
+  position: fixed;
+  left: 12px;
+  bottom: 88px;
+  z-index: 30;
+  padding: 4px 9px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+}

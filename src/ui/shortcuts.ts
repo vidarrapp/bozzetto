@@ -5,6 +5,8 @@ export interface ShortcutHandlers {
   togglePanel?: () => void;
   /** Toggle the hotkey guide overlay (H). */
   toggleHelp?: () => void;
+  /** Toggle the FPS meter (secret hotkey T). */
+  toggleFps?: () => void;
   /** Called after a command that changes panel-reflected state, to re-sync it. */
   refresh?: () => void;
 }
@@ -60,6 +62,9 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
       case 'h':
       case 'H':
         handlers.toggleHelp?.();
+        return;
+      case 't':
+        handlers.toggleFps?.();
         return;
       default:
         break;

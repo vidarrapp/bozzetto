@@ -5,6 +5,7 @@ import { Panel } from './ui/Panel';
 import { Transport } from './ui/Transport';
 import { installShortcuts } from './ui/shortcuts';
 import { Help } from './ui/Help';
+import { FpsMeter } from './ui/FpsMeter';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
 
@@ -47,9 +48,11 @@ async function bootViewer(id: string): Promise<void> {
     const panel = new Panel(viewer);
     new Transport(viewer);
     const help = new Help();
+    const fps = new FpsMeter(viewer);
     installShortcuts(viewer, {
       togglePanel: () => panel.toggleCollapsed(),
       toggleHelp: () => help.toggle(),
+      toggleFps: () => fps.toggle(),
       refresh: () => panel.refreshControls(),
     });
 

@@ -85,6 +85,8 @@ export class Viewer {
   private displayedIndex = -1;
   private subjectBox = new Box3();
   private rafId = 0;
+  /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
+  private fps = 60;
 
   /** Ambient occlusion via a postprocessing composer (GTAO / SSAO by tier). */
   private composer: EffectComposer | null = null;
@@ -280,6 +282,11 @@ export class Viewer {
     return this.aoKind !== 'none';
   }
 
+  /** Smoothed frames-per-second (dev FPS meter). */
+  getFps(): number {
+    return this.fps;
+  }
+
   setAO(state: Partial<AOState>): void {
     if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled && this.aoKind !== 'none';
     if (typeof state.radius === 'number') {
@@ -444,9 +451,11 @@ export class Viewer {
 
   private readonly loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
+    const raw = this.clock.getDelta();
+    if (raw > 0) this.fps += (1 / raw - this.fps) * 0.1; // smoothed
     // Clamp dt so a backgrounded tab (which pauses rAF) can't return a huge
     // delta and lurch the playhead across many frames on the next visible tick.
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const dt = Math.min(raw, 0.1);
 
     this.timeline.update(dt);
     const target = this.timeline.frameIndex();

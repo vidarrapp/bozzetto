@@ -3,6 +3,7 @@ import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { Panel } from '../ui/Panel';
 import { installShortcuts } from '../ui/shortcuts';
+import { FpsMeter } from '../ui/FpsMeter';
 import { validateManifest } from '../types/manifest';
 
 interface Stage {
@@ -26,10 +27,13 @@ const naturalSort = (a: string, b: string): number =>
 
 let preview: Viewer | null = null;
 let panel: Panel | null = null;
+let fpsMeter: FpsMeter | null = null;
 let disposeShortcuts: (() => void) | null = null;
 function disposePreview(): void {
   disposeShortcuts?.();
   disposeShortcuts = null;
+  fpsMeter?.dispose();
+  fpsMeter = null;
   panel?.dispose();
   panel = null;
   preview?.dispose();
@@ -319,8 +323,10 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
+    fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
       togglePanel: () => panel?.toggleCollapsed(),
+      toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });
     saveLook.disabled = false;
