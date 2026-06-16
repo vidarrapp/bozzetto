@@ -596,3 +596,44 @@ html.is-page body {
 .preview__hint {
   padding: 1rem;
 }
+
+.editor__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.stage-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stage-row input {
+  padding: 6px 8px;
+  background: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.stage-row .stage-name {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.stage-row .stage-frame {
+  flex: 0 0 80px;
+}
+
+.stage-row .stage-desc {
+  flex: 2 1 220px;
+  min-width: 0;
+}
+
+.stage-row .stage-remove {
+  flex: 0 0 auto;
+}

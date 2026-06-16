@@ -15,6 +15,7 @@ import type { BufferGeometry } from 'three';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
+import type { LightingState } from './Lighting';
 import { Materials } from './Materials';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
@@ -131,6 +132,10 @@ export class Viewer {
 
     this.setMaterial(this.currentMode);
     this.lighting.applyPreset(this.manifest.defaults.lightingPreset);
+    // A saved custom rig (set in the editor) overrides the preset.
+    if (this.manifest.lighting) {
+      this.lighting.applyState(this.manifest.lighting as LightingState);
+    }
 
     this.streamer.setPlayhead(start);
     this.onFrame?.(start);

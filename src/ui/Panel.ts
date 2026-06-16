@@ -184,6 +184,13 @@ export class Panel {
     window.addEventListener('keydown', this.onKey);
   }
 
+  /** Remove the panel from the DOM and detach listeners (editor preview reuse). */
+  dispose(): void {
+    window.removeEventListener('keydown', this.onKey);
+    this.viewer.onFrame = null;
+    this.root.remove();
+  }
+
   private materialSelect!: HTMLSelectElement;
   private lightControls!: HTMLDivElement;
 

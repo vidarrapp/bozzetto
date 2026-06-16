@@ -1,7 +1,14 @@
 import { api } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
+import { Panel } from '../ui/Panel';
 import { validateManifest } from '../types/manifest';
+
+interface Stage {
+  name: string;
+  frame: number;
+  desc: string;
+}
 
 /** The manifest-shaped fields the editor reads from /api/projects/:id. */
 interface EditorProject {
@@ -10,13 +17,17 @@ interface EditorProject {
   mode: string;
   config: { fps: number; frameCount: number };
   frames: { index: number; tris: number }[];
+  stages: Stage[];
 }
 
 const naturalSort = (a: string, b: string): number =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 let preview: Viewer | null = null;
+let panel: Panel | null = null;
 function disposePreview(): void {
+  panel?.dispose();
+  panel = null;
   preview?.dispose();
   preview = null;
 }
@@ -70,8 +81,21 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       </section>
 
       <section class="editor__section">
-        <h3>Preview</h3>
+        <h3>Stages</h3>
+        <div id="stages"></div>
+        <div class="editor__row">
+          <button id="add-stage" class="btn" type="button">Add stage</button>
+          <button id="save-stages" class="btn btn--primary" type="button">Save stages</button>
+        </div>
+      </section>
+
+      <section class="editor__section">
+        <h3>Preview &amp; look</h3>
         <div id="preview" class="editor__preview"></div>
+        <div class="editor__row">
+          <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
+          <span class="muted">Dial in lighting/material in the floating panel, then save it as this project's default.</span>
+        </div>
       </section>
     </div>`;
 
@@ -171,9 +195,65 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     if (e.dataTransfer?.files) void handleFiles([...e.dataTransfer.files]);
   });
 
-  // --- preview ------------------------------------------------------------
+  // --- stages editor ------------------------------------------------------
+  const stagesHost = $('#stages');
+  const addStageRow = (stage: Stage): void => {
+    const row = document.createElement('div');
+    row.className = 'stage-row';
+    row.innerHTML = `
+      <input class="stage-name" placeholder="Stage name" />
+      <input class="stage-frame" type="number" min="0" placeholder="frame" />
+      <input class="stage-desc" placeholder="Description" />
+      <button class="btn btn--danger stage-remove" type="button" title="Remove">✕</button>`;
+    row.querySelector<HTMLInputElement>('.stage-name')!.value = stage.name;
+    row.querySelector<HTMLInputElement>('.stage-frame')!.value = String(stage.frame);
+    row.querySelector<HTMLInputElement>('.stage-desc')!.value = stage.desc;
+    row.querySelector<HTMLButtonElement>('.stage-remove')!.addEventListener('click', () => row.remove());
+    stagesHost.appendChild(row);
+  };
+  (project.stages ?? []).forEach(addStageRow);
+
+  $('#add-stage').addEventListener('click', () => addStageRow({ name: '', frame: 0, desc: '' }));
+  $<HTMLButtonElement>('#save-stages').addEventListener('click', async (e) => {
+    const stages: Stage[] = [...stagesHost.querySelectorAll<HTMLElement>('.stage-row')]
+      .map((r) => ({
+        name: r.querySelector<HTMLInputElement>('.stage-name')!.value.trim(),
+        frame: Number(r.querySelector<HTMLInputElement>('.stage-frame')!.value) || 0,
+        desc: r.querySelector<HTMLInputElement>('.stage-desc')!.value.trim(),
+      }))
+      .filter((s) => s.name)
+      .sort((a, b) => a.frame - b.frame);
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      await api.update(id, { stages });
+    } catch (err) {
+      alert(`Save stages failed: ${(err as Error).message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // --- preview + lighting -------------------------------------------------
+  const saveLook = $<HTMLButtonElement>('#save-look');
+  saveLook.addEventListener('click', async () => {
+    if (!preview) return;
+    saveLook.disabled = true;
+    try {
+      await api.update(id, {
+        lighting: preview.lighting.serialize(),
+        defaults: { material: preview.getMaterial() },
+      });
+    } catch (err) {
+      alert(`Save look failed: ${(err as Error).message}`);
+    } finally {
+      saveLook.disabled = false;
+    }
+  });
+
   async function mountPreview(): Promise<void> {
     disposePreview();
+    saveLook.disabled = true;
     const box = $('#preview');
     box.innerHTML = '';
     let raw: unknown;
@@ -192,6 +272,8 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
     preview = new Viewer(box, manifest, manifestUrl, matcapUrl);
     await preview.boot();
+    panel = new Panel(preview);
+    saveLook.disabled = false;
   }
 
   await mountPreview();

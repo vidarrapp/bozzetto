@@ -14,7 +14,7 @@ import {
 
 export type LightId = 'key' | 'fill' | 'rim';
 
-interface DirLightConfig {
+export interface DirLightConfig {
   enabled: boolean;
   intensity: number;
   color: string;
@@ -25,7 +25,7 @@ interface DirLightConfig {
   castShadow: boolean;
 }
 
-interface AmbientConfig {
+export interface AmbientConfig {
   intensity: number;
   sky: string;
   ground: string;
@@ -48,6 +48,15 @@ export interface LightStateView {
   color: string;
   azimuth: number;
   elevation: number;
+}
+
+/** Persisted rig state (stored in a project's `data.lighting`). */
+export interface LightingState {
+  key: DirLightConfig;
+  fill: DirLightConfig;
+  rim: DirLightConfig;
+  ambient: AmbientConfig;
+  rigRotation: number;
 }
 
 const LIGHT_LABELS: Record<LightId, string> = {
@@ -194,6 +203,35 @@ export class Lighting {
       azimuth: this.config[id].azimuth,
       elevation: this.config[id].elevation,
     }));
+  }
+
+  /** Full rig state for persistence into a project's `data.lighting`. */
+  serialize(): LightingState {
+    return {
+      key: { ...this.config.key },
+      fill: { ...this.config.fill },
+      rim: { ...this.config.rim },
+      ambient: {
+        intensity: this.hemi.intensity,
+        sky: `#${this.hemi.color.getHexString()}`,
+        ground: `#${this.hemi.groundColor.getHexString()}`,
+      },
+      rigRotation: this.rigRotationDeg,
+    };
+  }
+
+  /** Apply a persisted rig state, defensively (data may be partial or old). */
+  applyState(state: Partial<LightingState>): void {
+    if (state.key) this.config.key = { ...this.config.key, ...state.key };
+    if (state.fill) this.config.fill = { ...this.config.fill, ...state.fill };
+    if (state.rim) this.config.rim = { ...this.config.rim, ...state.rim };
+    if (state.ambient) {
+      if (typeof state.ambient.intensity === 'number') this.hemi.intensity = state.ambient.intensity;
+      if (state.ambient.sky) this.hemi.color = new Color(state.ambient.sky);
+      if (state.ambient.ground) this.hemi.groundColor = new Color(state.ambient.ground);
+    }
+    if (typeof state.rigRotation === 'number') this.setRigRotation(state.rigRotation);
+    this.refresh();
   }
 
   /** Fit light distance and the key's shadow frustum to the subject bounds. */
