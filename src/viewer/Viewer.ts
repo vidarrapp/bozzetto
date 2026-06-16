@@ -9,9 +9,15 @@ import {
   PlaneGeometry,
   Scene,
   ShadowMaterial,
+  Sphere,
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import type { BufferGeometry } from 'three';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -24,6 +30,16 @@ import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
+import { detectQuality, SHADOW_TIERS } from './quality';
+
+/** Ambient-occlusion state (persisted in a project's `data.ao`). */
+export interface AOState {
+  enabled: boolean;
+  /** GTAO blend strength (ignored by the SSAO fallback). */
+  intensity: number;
+  /** AO sample radius as a fraction of the subject radius. */
+  radius: number;
+}
 
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
@@ -69,6 +85,14 @@ export class Viewer {
   private displayedIndex = -1;
   private subjectBox = new Box3();
   private rafId = 0;
+
+  /** Ambient occlusion via a postprocessing composer (GTAO / SSAO by tier). */
+  private composer: EffectComposer | null = null;
+  private aoPass: GTAOPass | SSAOPass | null = null;
+  private aoKind: 'gtao' | 'ssao' | 'none' = 'none';
+  private aoEnabled = false;
+  private aoRadiusFraction = 0.5;
+  private subjectRadius = 1;
 
   /** Fired when the target frame changes (drives the scrubber + stage label). */
   onFrame: ((ordinal: number) => void) | null = null;
@@ -141,6 +165,8 @@ export class Viewer {
     this.wireframe.visible = false;
     this.scene.add(this.wireframe);
 
+    this.initAO();
+
     window.addEventListener('resize', this.onResize);
   }
 
@@ -172,6 +198,9 @@ export class Viewer {
     }
     if (this.manifest.environment) {
       void this.environment.applyState(this.manifest.environment as EnvState);
+    }
+    if (this.manifest.ao) {
+      this.setAO(this.manifest.ao as AOState);
     }
 
     this.streamer.setPlayhead(start);
@@ -247,6 +276,29 @@ export class Viewer {
     return this.groundEnabled;
   }
 
+  aoAvailable(): boolean {
+    return this.aoKind !== 'none';
+  }
+
+  setAO(state: Partial<AOState>): void {
+    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled && this.aoKind !== 'none';
+    if (typeof state.radius === 'number') {
+      this.aoRadiusFraction = state.radius;
+      this.applyAoRadius();
+    }
+    if (typeof state.intensity === 'number' && this.aoPass instanceof GTAOPass) {
+      this.aoPass.blendIntensity = state.intensity;
+    }
+  }
+
+  getAOState(): AOState {
+    return {
+      enabled: this.aoEnabled,
+      intensity: this.aoPass instanceof GTAOPass ? this.aoPass.blendIntensity : 1,
+      radius: this.aoRadiusFraction,
+    };
+  }
+
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
     const geom = this.display.geometry;
@@ -283,7 +335,7 @@ export class Viewer {
 
   /** Render the current frame and read it back as a JPEG thumbnail blob. */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
-    this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
     const gl = this.renderer.domElement;
     const scale = Math.min(1, maxWidth / gl.width);
     const w = Math.max(1, Math.round(gl.width * scale));
@@ -311,6 +363,8 @@ export class Viewer {
     this.streamer.dispose();
     this.materials.dispose();
     this.environment.dispose();
+    this.aoPass?.dispose();
+    this.composer?.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
   }
@@ -320,6 +374,11 @@ export class Viewer {
   private fitScene(geom: BufferGeometry): void {
     geom.computeBoundingBox();
     this.subjectBox.copy(geom.boundingBox ?? new Box3());
+
+    const sphere = this.subjectBox.getBoundingSphere(new Sphere());
+    this.subjectRadius = Math.max(sphere.radius, 1e-3);
+    this.applyAoRadius();
+    if (this.aoPass instanceof GTAOPass) this.aoPass.setSceneClipBox(this.subjectBox);
 
     if (this.manifest.camera.autoFrame) {
       this.controls.frameSubject(this.subjectBox);
@@ -333,6 +392,54 @@ export class Viewer {
     this.ground.geometry.dispose();
     this.ground.geometry = new PlaneGeometry(span, span);
     this.ground.position.set(center.x, this.subjectBox.min.y - size.y * 0.001, center.z);
+  }
+
+  /** Build the AO postprocessing composer per the device tier (GTAO / SSAO). */
+  private initAO(): void {
+    this.aoKind = SHADOW_TIERS[detectQuality(this.renderer)].ao;
+    if (this.aoKind === 'none') return;
+
+    try {
+      const w = this.container.clientWidth;
+      const h = this.container.clientHeight;
+      const composer = new EffectComposer(this.renderer);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+
+      if (this.aoKind === 'gtao') {
+        const gtao = new GTAOPass(this.scene, this.camera, w, h);
+        gtao.output = GTAOPass.OUTPUT.Default;
+        gtao.blendIntensity = 1;
+        this.aoPass = gtao;
+        composer.addPass(gtao);
+      } else {
+        const ssao = new SSAOPass(this.scene, this.camera, w, h);
+        ssao.output = SSAOPass.OUTPUT.Default;
+        this.aoPass = ssao;
+        composer.addPass(ssao);
+      }
+
+      composer.addPass(new OutputPass());
+      this.composer = composer;
+      this.aoEnabled = true; // on by default for capable tiers
+    } catch (err) {
+      console.error('AO composer init failed; using direct render', err);
+      this.composer = null;
+      this.aoPass = null;
+      this.aoKind = 'none';
+      this.aoEnabled = false;
+    }
+  }
+
+  private applyAoRadius(): void {
+    const radius = this.aoRadiusFraction * this.subjectRadius;
+    if (this.aoPass instanceof GTAOPass) this.aoPass.updateGtaoMaterial({ radius });
+    else if (this.aoPass instanceof SSAOPass) this.aoPass.kernelRadius = radius;
+  }
+
+  /** Composer when AO is on; otherwise the plain (proven) direct render. */
+  private renderFrame(): void {
+    if (this.aoEnabled && this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   private readonly loop = (): void => {
@@ -372,7 +479,7 @@ export class Viewer {
     }
 
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
   };
 
   private readonly onResize = (): void => {
@@ -381,6 +488,7 @@ export class Viewer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer?.setSize(w, h);
   };
 }
 

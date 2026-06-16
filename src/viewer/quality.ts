@@ -14,12 +14,14 @@ export interface ShadowTier {
   rim: number;
   /** VSM blur sample count (soft-shadow quality). */
   blurSamples: number;
+  /** Ambient-occlusion technique at this tier (GTAO on capable, SSAO on mobile). */
+  ao: 'gtao' | 'ssao' | 'none';
 }
 
 export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
-  high: { key: 4096, fill: 2048, rim: 2048, blurSamples: 16 },
-  medium: { key: 2048, fill: 1024, rim: 0, blurSamples: 8 },
-  low: { key: 1024, fill: 0, rim: 0, blurSamples: 4 },
+  high: { key: 4096, fill: 2048, rim: 2048, blurSamples: 16, ao: 'gtao' },
+  medium: { key: 2048, fill: 1024, rim: 0, blurSamples: 8, ao: 'gtao' },
+  low: { key: 1024, fill: 0, rim: 0, blurSamples: 4, ao: 'ssao' },
 };
 
 export function detectQuality(renderer: WebGLRenderer): Quality {

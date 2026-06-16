@@ -254,6 +254,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
         lighting: preview.lighting.serialize(),
         material: preview.materials.getMaterialState(),
         environment: preview.environment.getState(),
+        ao: preview.getAOState(),
         defaults: { material: preview.getMaterial() },
       });
     } catch (err) {

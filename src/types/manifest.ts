@@ -70,6 +70,8 @@ export interface Manifest {
   material: unknown;
   /** Optional HDRI environment selection (applied by the viewer when present). */
   environment: unknown;
+  /** Optional ambient-occlusion settings (applied by the viewer when present). */
+  ao: unknown;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -141,6 +143,7 @@ export function validateManifest(data: unknown): Manifest {
     lighting: m.lighting ?? null,
     material: m.material ?? null,
     environment: m.environment ?? null,
+    ao: m.ao ?? null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',

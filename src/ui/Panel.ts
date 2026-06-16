@@ -61,6 +61,7 @@ export class Panel {
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildEnvironment(this.bodyEl);
+    if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
   }
 
@@ -345,6 +346,20 @@ export class Panel {
     );
   }
 
+  private buildAO(body: HTMLElement): void {
+    if (!this.viewer.aoAvailable()) return;
+    const ao = this.viewer.getAOState();
+    const sec = section(body, 'Ambient occlusion');
+
+    sec.appendChild(checkbox('Enabled', ao.enabled, (on) => this.viewer.setAO({ enabled: on })));
+    sec.appendChild(
+      compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
+    );
+    sec.appendChild(
+      compactRange('Radius', 0.05, 1, 0.05, ao.radius, (v) => this.viewer.setAO({ radius: v })),
+    );
+  }
+
   // --- developer overlay (?dev) -----------------------------------------
 
   private buildDeveloper(body: HTMLElement): void {
@@ -375,6 +390,12 @@ export class Panel {
       location.search = params.toString();
     });
     dev.appendChild(labelRow('Quality', quality));
+
+    if (this.viewer.aoAvailable()) {
+      dev.appendChild(
+        checkbox('AO', this.viewer.getAOState().enabled, (on) => this.viewer.setAO({ enabled: on })),
+      );
+    }
   }
 }
 

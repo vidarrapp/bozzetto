@@ -35,6 +35,8 @@ export interface ProjectData {
   material?: unknown;
   /** Selected HDRI environment + intensity. */
   environment?: unknown;
+  /** Ambient-occlusion settings. */
+  ao?: unknown;
   stages: StageMeta[];
   frames: FrameMeta[];
 }
