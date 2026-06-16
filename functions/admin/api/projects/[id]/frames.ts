@@ -2,7 +2,7 @@ import type { Env } from '../../../../_shared/types';
 import { error, handle, json, requireAdmin } from '../../../../_shared/http';
 import { putFrame } from '../../../../_shared/projects';
 
-// POST /api/admin/projects/:id/frames?index=N — upload one frame's .glb bytes.
+// POST /admin/api/projects/:id/frames?index=N — upload one frame's .glb bytes.
 export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
   handle(async () => {
     const denied = requireAdmin(request, env);
