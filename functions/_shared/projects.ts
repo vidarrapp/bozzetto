@@ -15,7 +15,9 @@ const defaultData = (): ProjectData => ({
 
 export async function listProjects(env: Env): Promise<unknown[]> {
   const { results } = await env.DB.prepare(
-    'SELECT id, title, mode, fps, updated_at FROM projects ORDER BY updated_at DESC',
+    `SELECT id, title, mode, fps, updated_at,
+            COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount
+     FROM projects ORDER BY updated_at DESC`,
   ).all();
   return results;
 }

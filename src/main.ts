@@ -1,33 +1,36 @@
 import { validateManifest } from './types/manifest';
+import type { Manifest } from './types/manifest';
 import { Viewer } from './viewer/Viewer';
 import { Panel } from './ui/Panel';
+import { renderLanding } from './ui/Landing';
 
 /**
- * App entry (design doc §4). Reads `?tl=<id>`, loads the manifest, boots the
- * Viewer, and builds the control panel. Fully static — no backend.
+ * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
+ * the landing gallery. Projects load from the API (`/api/projects/:id`); the
+ * bundled static demo still works via a fallback so it never depends on the db.
  */
 async function main(): Promise<void> {
+  const app = document.getElementById('app');
+  if (!app) throw new Error('#app element not found');
+
+  const id = new URLSearchParams(window.location.search).get('tl');
+  if (!id) {
+    await renderLanding(app);
+    return;
+  }
+  await bootViewer(id);
+}
+
+async function bootViewer(id: string): Promise<void> {
   const viewport = document.getElementById('viewport');
   const overlay = document.getElementById('overlay');
   if (!viewport) throw new Error('#viewport element not found');
 
-  const params = new URLSearchParams(window.location.search);
-  const id = params.get('tl') ?? 'demo';
-
-  const base = import.meta.env.BASE_URL; // e.g. "./" or "/"
-  const manifestUrl = new URL(
-    `${base}timelapses/${id}/manifest.json`,
-    window.location.href,
-  ).href;
-  const matcapUrl = new URL(`${base}assets/matcaps/clay.png`, window.location.href)
-    .href;
+  const base = import.meta.env.BASE_URL; // "/" in production
+  const matcapUrl = new URL(`${base}assets/matcaps/clay.png`, window.location.href).href;
 
   try {
-    const res = await fetch(manifestUrl);
-    if (!res.ok) {
-      throw new Error(`Failed to load manifest (${res.status}) at ${manifestUrl}`);
-    }
-    const manifest = validateManifest(await res.json());
+    const { manifest, manifestUrl } = await loadProject(id, base);
 
     const viewer = new Viewer(viewport, manifest, manifestUrl, matcapUrl);
     // Expose for debugging from the browser console, e.g.:
@@ -37,10 +40,43 @@ async function main(): Promise<void> {
     await viewer.boot();
 
     overlay?.remove();
+    addGalleryLink();
   } catch (err) {
     console.error(err);
     showError(overlay, err);
   }
+}
+
+/**
+ * Load a project's manifest. Tries the API first; a 404 falls back to a bundled
+ * static timelapse (e.g. `?tl=demo`). Frame paths resolve against `manifestUrl`,
+ * so API manifests (absolute `/media/...`) and static ones (relative) both work.
+ */
+async function loadProject(
+  id: string,
+  base: string,
+): Promise<{ manifest: Manifest; manifestUrl: string }> {
+  const apiUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, window.location.href).href;
+  const res = await fetch(apiUrl);
+  if (res.ok) {
+    return { manifest: validateManifest(await res.json()), manifestUrl: apiUrl };
+  }
+  if (res.status !== 404) {
+    throw new Error(`Failed to load project (${res.status}) at ${apiUrl}`);
+  }
+
+  const staticUrl = new URL(`${base}timelapses/${id}/manifest.json`, window.location.href).href;
+  const sres = await fetch(staticUrl);
+  if (!sres.ok) throw new Error(`Project "${id}" not found`);
+  return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
+}
+
+function addGalleryLink(): void {
+  const a = document.createElement('a');
+  a.className = 'viewer-back';
+  a.href = window.location.pathname; // back to the gallery (no ?tl)
+  a.textContent = '← Gallery';
+  document.getElementById('app')?.appendChild(a);
 }
 
 function showError(overlay: HTMLElement | null, err: unknown): void {

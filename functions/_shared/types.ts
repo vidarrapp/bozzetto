@@ -3,6 +3,8 @@ export interface Env {
   BUCKET: R2Bucket;
   /** Optional comma-separated allowlist of admin emails (from Access). */
   ADMIN_EMAILS?: string;
+  /** Local-dev only: when "true", treats every request as an authed admin. */
+  DEV_ADMIN?: string;
 }
 
 export type ProjectMode = 'timelapse' | 'model';

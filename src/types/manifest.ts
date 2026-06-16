@@ -57,9 +57,15 @@ export interface StageEntry {
   desc: string;
 }
 
+export type ProjectMode = 'timelapse' | 'model';
+
 export interface Manifest {
   id: string;
   title: string;
+  /** Presentation mode. API projects carry it; static manifests default to timelapse. */
+  mode: ProjectMode;
+  /** Optional custom lighting rig state (applied by the viewer when present). */
+  lighting: unknown;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -127,6 +133,8 @@ export function validateManifest(data: unknown): Manifest {
   return {
     id: m.id as string,
     title: m.title as string,
+    mode: m.mode === 'model' ? 'model' : 'timelapse',
+    lighting: m.lighting ?? null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',

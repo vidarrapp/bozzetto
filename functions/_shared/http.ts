@@ -32,6 +32,10 @@ export function handle(fn: () => Promise<Response>): Promise<Response> {
  * ADMIN_EMAILS allowlist narrows it further.
  */
 export function adminEmail(request: Request, env: Env): string | null {
+  // Local-dev escape hatch. Set DEV_ADMIN="true" only in a local wrangler.toml
+  // (gitignored); production has no such var, so this never fires there.
+  if (env.DEV_ADMIN === 'true') return 'dev@localhost';
+
   const email = request.headers.get('Cf-Access-Authenticated-User-Email');
   if (!email) return null;
   const allow = env.ADMIN_EMAILS?.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);

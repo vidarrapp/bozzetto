@@ -1,11 +1,21 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 
-// Static, CDN-friendly build. `base: './'` lets the app be hosted at any path;
-// runtime asset URLs are resolved against import.meta.env.BASE_URL (see main.ts).
+// Served at the site root on Cloudflare Pages, alongside Functions at /api,
+// /admin/api and /media — so absolute asset URLs (base '/') are correct, and
+// nested entries like /admin resolve their bundles properly.
+const root = fileURLToPath(new URL('.', import.meta.url));
+
 export default defineConfig({
-  base: './',
+  base: '/',
   build: {
     target: 'es2020',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: `${root}index.html`,
+        admin: `${root}admin/index.html`,
+      },
+    },
   },
 });

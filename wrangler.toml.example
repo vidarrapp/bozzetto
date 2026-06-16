@@ -24,6 +24,9 @@ database_id = "00000000-0000-0000-0000-000000000000"
 binding = "BUCKET"
 bucket_name = "bozzetto-assets"
 
-# Optional: restrict admin writes to specific Access identities.
+# Optional vars.
 # [vars]
-# ADMIN_EMAILS = "you@example.com"
+# ADMIN_EMAILS = "you@example.com"   # restrict admin writes to these identities
+# DEV_ADMIN = "true"                 # LOCAL ONLY: bypass Access so the /admin
+#                                    # editor works in `npm run cf:dev`. Never
+#                                    # set this in the production dashboard.
