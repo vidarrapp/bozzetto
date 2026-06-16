@@ -33,6 +33,8 @@ export interface ProjectData {
   lighting?: unknown;
   /** Custom material look (albedo/roughness/metalness/flat/matcap). */
   material?: unknown;
+  /** Selected HDRI environment + intensity. */
+  environment?: unknown;
   stages: StageMeta[];
   frames: FrameMeta[];
 }

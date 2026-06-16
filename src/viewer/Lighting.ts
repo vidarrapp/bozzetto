@@ -194,6 +194,23 @@ export class Lighting {
     this.refresh();
   }
 
+  /** Developer: shadow depth bias / normal bias across all casters. */
+  setBias(bias: number): void {
+    for (const id of ALL) this.lights[id].shadow.bias = bias;
+  }
+
+  setNormalBias(normalBias: number): void {
+    for (const id of ALL) this.lights[id].shadow.normalBias = normalBias;
+  }
+
+  getBias(): number {
+    return this.key.shadow.bias;
+  }
+
+  getNormalBias(): number {
+    return this.key.shadow.normalBias;
+  }
+
   /**
    * Gate the shadow pass. Unlit modes (matcap/wireframe) call this with false so
    * the lights stop casting and no shadow map is rendered.

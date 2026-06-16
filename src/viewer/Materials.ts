@@ -133,6 +133,11 @@ export class Materials {
     (this.registry.get('lit') as MeshStandardMaterial).metalness = value;
   }
 
+  /** Strength of image-based-lighting reflections/irradiance on the Lit material. */
+  setEnvIntensity(value: number): void {
+    (this.registry.get('lit') as MeshStandardMaterial).envMapIntensity = value;
+  }
+
   /** Perceptual luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
   albedoLuminance(): number {
     // getHexString() yields sRGB regardless of the renderer's working colour

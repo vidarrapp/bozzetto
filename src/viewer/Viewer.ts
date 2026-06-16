@@ -19,6 +19,8 @@ import { Lighting } from './Lighting';
 import type { LightingState } from './Lighting';
 import { Materials } from './Materials';
 import type { MaterialState } from './Materials';
+import { Environment } from './Environment';
+import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
@@ -39,6 +41,7 @@ export class Viewer {
   readonly timeline: Timeline;
   readonly materials: Materials;
   readonly lighting: Lighting;
+  readonly environment: Environment;
 
   private readonly controls: Controls;
   private readonly streamer: FrameStreamer;
@@ -103,6 +106,9 @@ export class Viewer {
 
     this.lighting = new Lighting(this.scene, this.renderer);
     this.materials = new Materials();
+    this.environment = new Environment(this.scene, this.renderer, (v) =>
+      this.materials.setEnvIntensity(v),
+    );
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
       : 'lit';
@@ -163,6 +169,9 @@ export class Viewer {
     }
     if (this.manifest.material) {
       this.materials.applyMaterialState(this.manifest.material as MaterialState);
+    }
+    if (this.manifest.environment) {
+      void this.environment.applyState(this.manifest.environment as EnvState);
     }
 
     this.streamer.setPlayhead(start);
@@ -301,6 +310,7 @@ export class Viewer {
     this.controls.dispose();
     this.streamer.dispose();
     this.materials.dispose();
+    this.environment.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
   }

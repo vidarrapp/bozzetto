@@ -60,6 +60,8 @@ export class Panel {
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
+    if (this.editor) this.buildEnvironment(this.bodyEl);
+    if (devMode()) this.buildDeveloper(this.bodyEl);
   }
 
   /** Open/close the panel body (Tab). */
@@ -315,6 +317,69 @@ export class Panel {
     const el = which === 'el' ? value : current.elevation;
     this.viewer.lighting.setAngles(id, az, el);
   }
+
+  // --- environment (editor only) ----------------------------------------
+
+  private buildEnvironment(body: HTMLElement): void {
+    const env = this.viewer.environment;
+    const state = env.getState();
+    const sec = section(body, 'Environment');
+
+    const select = document.createElement('select');
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'None';
+    select.appendChild(none);
+    for (const e of env.list()) {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.label;
+      select.appendChild(opt);
+    }
+    select.value = state.id ?? '';
+    select.addEventListener('change', () => void env.setEnvironment(select.value || null));
+    sec.appendChild(labelRow('HDRI', select));
+
+    sec.appendChild(
+      compactRange('Intensity', 0, 3, 0.05, state.intensity, (v) => env.setIntensity(v)),
+    );
+  }
+
+  // --- developer overlay (?dev) -----------------------------------------
+
+  private buildDeveloper(body: HTMLElement): void {
+    const lighting = this.viewer.lighting;
+    const dev = section(body, 'Developer');
+
+    dev.appendChild(
+      compactRange('Bias', -0.003, 0.001, 0.0001, lighting.getBias(), (v) => lighting.setBias(v)),
+    );
+    dev.appendChild(
+      compactRange('Normal bias', 0, 0.1, 0.005, lighting.getNormalBias(), (v) =>
+        lighting.setNormalBias(v),
+      ),
+    );
+
+    const quality = document.createElement('select');
+    for (const q of ['auto', 'high', 'medium', 'low']) {
+      const opt = document.createElement('option');
+      opt.value = q;
+      opt.textContent = q;
+      quality.appendChild(opt);
+    }
+    quality.value = new URLSearchParams(location.search).get('q') ?? 'auto';
+    quality.addEventListener('change', () => {
+      const params = new URLSearchParams(location.search);
+      if (quality.value === 'auto') params.delete('q');
+      else params.set('q', quality.value);
+      location.search = params.toString();
+    });
+    dev.appendChild(labelRow('Quality', quality));
+  }
+}
+
+function devMode(): boolean {
+  return new URLSearchParams(location.search).has('dev');
 }
 
 // --- tiny DOM helpers ----------------------------------------------------

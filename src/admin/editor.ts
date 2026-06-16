@@ -253,6 +253,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       await api.update(id, {
         lighting: preview.lighting.serialize(),
         material: preview.materials.getMaterialState(),
+        environment: preview.environment.getState(),
         defaults: { material: preview.getMaterial() },
       });
     } catch (err) {

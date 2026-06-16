@@ -68,6 +68,8 @@ export interface Manifest {
   lighting: unknown;
   /** Optional custom material look (applied by the viewer when present). */
   material: unknown;
+  /** Optional HDRI environment selection (applied by the viewer when present). */
+  environment: unknown;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -138,6 +140,7 @@ export function validateManifest(data: unknown): Manifest {
     mode: m.mode === 'model' ? 'model' : 'timelapse',
     lighting: m.lighting ?? null,
     material: m.material ?? null,
+    environment: m.environment ?? null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',
