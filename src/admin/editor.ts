@@ -248,6 +248,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     try {
       await api.update(id, {
         lighting: preview.lighting.serialize(),
+        material: preview.materials.getMaterialState(),
         defaults: { material: preview.getMaterial() },
       });
     } catch (err) {
@@ -308,9 +309,8 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       return;
     }
     const manifest = validateManifest(raw);
-    const matcapUrl = new URL('/assets/matcaps/clay.png', location.href).href;
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-    preview = new Viewer(box, manifest, manifestUrl, matcapUrl, { preserveDrawingBuffer: true });
+    preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview);
     saveLook.disabled = false;

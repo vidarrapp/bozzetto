@@ -119,17 +119,30 @@ export class Panel {
 
     // --- Material -------------------------------------------------------
     const material = section(body, 'Material');
-    const select = document.createElement('select');
+    const modeSelect = document.createElement('select');
     for (const mode of viewer.materials.modes) {
       const opt = document.createElement('option');
       opt.value = mode.id;
       opt.textContent = mode.label;
-      select.appendChild(opt);
+      modeSelect.appendChild(opt);
     }
-    select.value = viewer.getMaterial();
-    select.addEventListener('change', () => this.viewer.setMaterial(select.value));
-    this.materialSelect = select;
-    material.appendChild(select);
+    modeSelect.value = viewer.getMaterial();
+    modeSelect.addEventListener('change', () => {
+      this.viewer.setMaterial(modeSelect.value);
+      this.rebuildMaterialOptions();
+    });
+    this.materialSelect = modeSelect;
+    material.appendChild(labelRow('Mode', modeSelect));
+
+    this.materialOptions = div('mat-options');
+    material.appendChild(this.materialOptions);
+    this.rebuildMaterialOptions();
+
+    material.appendChild(
+      checkbox('Flat shading', viewer.materials.getMaterialState().flatShading, (on) =>
+        this.viewer.materials.setFlatShading(on),
+      ),
+    );
 
     // --- Lighting -------------------------------------------------------
     const lighting = section(body, 'Lighting');
@@ -192,7 +205,42 @@ export class Panel {
   }
 
   private materialSelect!: HTMLSelectElement;
+  private materialOptions!: HTMLDivElement;
   private lightControls!: HTMLDivElement;
+
+  private rebuildMaterialOptions(): void {
+    this.materialOptions.replaceChildren();
+    const mats = this.viewer.materials;
+    const state = mats.getMaterialState();
+
+    if (this.viewer.getMaterial() === 'lit') {
+      const albedo = document.createElement('input');
+      albedo.type = 'color';
+      albedo.value = state.albedo;
+      albedo.addEventListener('input', () => mats.setAlbedo(albedo.value));
+      this.materialOptions.appendChild(labelRow('Albedo', albedo));
+      this.materialOptions.appendChild(
+        compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v)),
+      );
+      this.materialOptions.appendChild(
+        compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v)),
+      );
+    } else if (this.viewer.getMaterial() === 'matcap') {
+      const matcaps = mats.matcaps();
+      if (matcaps.length > 1) {
+        const select = document.createElement('select');
+        matcaps.forEach((mc, i) => {
+          const opt = document.createElement('option');
+          opt.value = String(i);
+          opt.textContent = mc.label;
+          select.appendChild(opt);
+        });
+        select.value = String(state.matcapIndex);
+        select.addEventListener('change', () => mats.setMatcapIndex(Number(select.value)));
+        this.materialOptions.appendChild(labelRow('Matcap', select));
+      }
+    }
+  }
 
   private rebuildLightControls(): void {
     this.lightControls.replaceChildren();
@@ -290,6 +338,7 @@ export class Panel {
           const mode = this.viewer.materials.modes[n - 1].id;
           this.viewer.setMaterial(mode);
           this.materialSelect.value = mode;
+          this.rebuildMaterialOptions();
         }
       }
     }

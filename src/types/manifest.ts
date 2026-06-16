@@ -66,6 +66,8 @@ export interface Manifest {
   mode: ProjectMode;
   /** Optional custom lighting rig state (applied by the viewer when present). */
   lighting: unknown;
+  /** Optional custom material look (applied by the viewer when present). */
+  material: unknown;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -118,7 +120,7 @@ export function validateManifest(data: unknown): Manifest {
   const defaults: ManifestDefaults = {
     frame: 0,
     playing: true,
-    material: 'flat',
+    material: 'lit',
     lightingPreset: 'three_point',
     ...((m.defaults as object) ?? {}),
   };
@@ -135,6 +137,7 @@ export function validateManifest(data: unknown): Manifest {
     title: m.title as string,
     mode: m.mode === 'model' ? 'model' : 'timelapse',
     lighting: m.lighting ?? null,
+    material: m.material ?? null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',

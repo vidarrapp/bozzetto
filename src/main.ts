@@ -27,12 +27,11 @@ async function bootViewer(id: string): Promise<void> {
   if (!viewport) throw new Error('#viewport element not found');
 
   const base = import.meta.env.BASE_URL; // "/" in production
-  const matcapUrl = new URL(`${base}assets/matcaps/clay.png`, window.location.href).href;
 
   try {
     const { manifest, manifestUrl } = await loadProject(id, base);
 
-    const viewer = new Viewer(viewport, manifest, manifestUrl, matcapUrl);
+    const viewer = new Viewer(viewport, manifest, manifestUrl);
     // Expose for debugging from the browser console, e.g.:
     //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
     (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;

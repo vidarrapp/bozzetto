@@ -17,6 +17,7 @@ import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
 import type { LightingState } from './Lighting';
 import { Materials } from './Materials';
+import type { MaterialState } from './Materials';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
 
@@ -62,7 +63,6 @@ export class Viewer {
     private readonly container: HTMLElement,
     readonly manifest: Manifest,
     manifestUrl: string,
-    matcapUrl: string,
     options: { preserveDrawingBuffer?: boolean } = {},
   ) {
     this.renderer = new WebGLRenderer({
@@ -88,10 +88,10 @@ export class Viewer {
     );
 
     this.lighting = new Lighting(this.scene, this.renderer);
-    this.materials = new Materials(matcapUrl);
+    this.materials = new Materials();
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
-      : 'flat';
+      : 'lit';
     this.controls = new Controls(this.camera, this.renderer.domElement);
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
@@ -140,6 +140,9 @@ export class Viewer {
     // A saved custom rig (set in the editor) overrides the preset.
     if (this.manifest.lighting) {
       this.lighting.applyState(this.manifest.lighting as LightingState);
+    }
+    if (this.manifest.material) {
+      this.materials.applyMaterialState(this.manifest.material as MaterialState);
     }
 
     this.streamer.setPlayhead(start);

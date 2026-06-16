@@ -7,7 +7,7 @@ const frameKey = (id: string, index: number) =>
   `projects/${id}/frames/sd/${String(index).padStart(4, '0')}.glb`;
 
 const defaultData = (): ProjectData => ({
-  defaults: { frame: 0, playing: true, material: 'flat', lightingPreset: 'three_point' },
+  defaults: { frame: 0, playing: true, material: 'lit', lightingPreset: 'three_point' },
   camera: { autoFrame: true },
   stages: [],
   frames: [],
@@ -38,6 +38,7 @@ export function toManifest(row: ProjectRow): unknown {
     defaults: data.defaults,
     camera: data.camera,
     lighting: data.lighting ?? null,
+    material: data.material ?? null,
     frames: frames.map((f) => ({
       index: f.index,
       // ?v busts the immutable CDN cache when the project is re-saved/re-uploaded.
@@ -81,6 +82,7 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
     defaults: { ...data.defaults, ...((patch.defaults as object) ?? {}) },
     camera: { ...data.camera, ...((patch.camera as object) ?? {}) },
     lighting: 'lighting' in patch ? patch.lighting : data.lighting,
+    material: 'material' in patch ? patch.material : data.material,
     stages: Array.isArray(patch.stages) ? (patch.stages as ProjectData['stages']) : data.stages,
     frames: Array.isArray(patch.frames) ? (patch.frames as ProjectData['frames']) : data.frames,
   };

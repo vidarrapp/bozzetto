@@ -31,6 +31,8 @@ export interface ProjectData {
   camera: { autoFrame: boolean };
   /** Custom lighting rig state (applied by the editor/viewer when present). */
   lighting?: unknown;
+  /** Custom material look (albedo/roughness/metalness/flat/matcap). */
+  material?: unknown;
   stages: StageMeta[];
   frames: FrameMeta[];
 }
