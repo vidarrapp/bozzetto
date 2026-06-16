@@ -1,18 +1,15 @@
 /**
  * App-wide light/dark theme. Sets `data-theme` on <html> (CSS variables key off
  * it) and remembers the choice. Call initTheme() before first paint.
- *
- * NOTE: the palette in style.css is a placeholder pending the design system design
- * system tokens.
  */
 export type Theme = 'dark' | 'light';
 
 const KEY = 'bozzetto-theme';
 
-/** 3D viewport background per theme (the canvas isn't CSS-styled). */
+/** 3D viewport background per theme — warm ink / warm cream. */
 export const THEME_BG: Record<Theme, string> = {
-  dark: '#1b1d21',
-  light: '#ececee',
+  dark: '#1c1814',
+  light: '#f1ebe1',
 };
 
 export function initTheme(): Theme {

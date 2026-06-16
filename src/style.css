@@ -1,27 +1,78 @@
-/* Placeholder palette — to be aligned with the design system. */
+/* ------------------------------------------------------------------
+   Design foundation: warm ink-and-cream surfaces, a single clay-rust
+   accent, editorial serif display + Manrope UI + mono spec labels,
+   and low (2px) radius.
+   ------------------------------------------------------------------ */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/assets/fonts/Manrope-Variable.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/InstrumentSerif-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/InstrumentSerif-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/assets/fonts/JetBrainsMono-Variable.ttf') format('truetype');
+}
+
 :root,
 :root[data-theme='dark'] {
-  --bg: #1b1d21;
-  --panel-bg: rgba(26, 28, 32, 0.86);
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --text: #e8e8ea;
-  --muted: #9aa0a6;
-  --accent: #6fb7ff;
-  --control-bg: rgba(255, 255, 255, 0.06);
+  --bg: #1c1814;
+  --text: #f1ebe1;
+  --muted: #b3a896;
+  --accent: #bb5b33;
+  --accent-hover: #c87049;
+  --accent-soft: rgba(187, 91, 51, 0.16);
+  --panel-bg: rgba(28, 24, 20, 0.88);
+  --panel-border: #4a3f35;
+  --control-bg: #2a2520;
+  --hover: rgba(255, 255, 255, 0.08);
+
+  --font-body: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-spec: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --radius: 2px;
+  --radius-image: 12px;
 }
 
 :root[data-theme='light'] {
-  --bg: #ececee;
-  --panel-bg: rgba(250, 250, 252, 0.9);
-  --panel-border: rgba(0, 0, 0, 0.12);
-  --text: #1b1d21;
-  --muted: #5b6168;
-  --accent: #2f6fd0;
-  --control-bg: rgba(0, 0, 0, 0.05);
+  --bg: #f1ebe1;
+  --text: #1c1814;
+  --muted: #5c574d;
+  --accent: #9a4827;
+  --accent-hover: #bb5b33;
+  --accent-soft: rgba(187, 91, 51, 0.14);
+  --panel-bg: rgba(250, 246, 238, 0.92);
+  --panel-border: #c9c1b1;
+  --control-bg: #e8e3d9;
+  --hover: rgba(0, 0, 0, 0.06);
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html,
@@ -31,7 +82,43 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Display serif for titles; mono for spec labels. */
+h1,
+.landing__title,
+.admin__head h1,
+.editor__title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.panel__title {
+  font-family: var(--font-display);
+}
+
+.badge,
+.section h3 {
+  font-family: var(--font-spec);
+  letter-spacing: 0.18em;
+}
+
+.card__meta,
+.admin-row__meta,
+.editor__id,
+.frame-label,
+.transport__frame {
+  font-family: var(--font-spec);
+}
+
+.transport__stage-name,
+.stage__name {
+  font-family: var(--font-display);
+  font-style: italic;
 }
 
 #app,
@@ -76,7 +163,7 @@ body {
   flex-direction: column;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   backdrop-filter: blur(8px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   z-index: 10;
@@ -130,14 +217,14 @@ button {
   background: var(--control-bg);
   color: var(--text);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px 10px;
   cursor: pointer;
   font: inherit;
 }
 
 button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover);
 }
 
 button:active {
@@ -149,7 +236,7 @@ select {
   background: var(--control-bg);
   color: var(--text);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px 8px;
   font: inherit;
 }
@@ -164,7 +251,7 @@ input[type='color'] {
   height: 22px;
   padding: 0;
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: none;
 }
 
@@ -264,7 +351,7 @@ input[type='color'] {
   padding: 8px;
   margin: 8px 0;
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -295,7 +382,7 @@ html.is-page body {
   left: 12px;
   z-index: 10;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   color: var(--text);
@@ -304,7 +391,7 @@ html.is-page body {
 }
 
 .viewer-back:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover);
 }
 
 .landing,
@@ -358,7 +445,7 @@ html.is-page body {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--control-bg);
   color: var(--text);
@@ -397,13 +484,13 @@ html.is-page body {
 }
 
 .badge {
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 2px 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--panel-border);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
+  color: var(--muted);
   text-transform: uppercase;
   font-size: 10px;
-  letter-spacing: 0.05em;
 }
 
 /* --- editor (admin) --- */
@@ -451,7 +538,7 @@ html.is-page body {
   gap: 12px;
   padding: 10px 14px;
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--control-bg);
 }
 
@@ -483,7 +570,7 @@ html.is-page body {
 .btn {
   display: inline-block;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--panel-border);
   background: var(--control-bg);
   color: var(--text);
@@ -493,12 +580,18 @@ html.is-page body {
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover);
 }
 
 .btn--primary {
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #f1ebe1;
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .btn--danger:hover {
@@ -552,7 +645,7 @@ html.is-page body {
 
 .dropzone {
   border: 1px dashed var(--panel-border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 22px;
   text-align: center;
   background: rgba(255, 255, 255, 0.02);
@@ -561,7 +654,7 @@ html.is-page body {
 
 .dropzone--over {
   border-color: var(--accent);
-  background: rgba(111, 183, 255, 0.08);
+  background: var(--accent-soft);
 }
 
 .dropzone p {
@@ -600,7 +693,7 @@ html.is-page body {
   position: relative;
   width: 100%;
   height: 440px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg);
   border: 1px solid var(--panel-border);
@@ -633,7 +726,7 @@ html.is-page body {
   background: var(--control-bg);
   color: var(--text);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   font: inherit;
 }
 
