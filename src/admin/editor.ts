@@ -2,6 +2,8 @@ import { api } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { Panel } from '../ui/Panel';
+import { installShortcuts } from '../ui/shortcuts';
+import { getTheme, THEME_BG } from '../ui/theme';
 import { validateManifest } from '../types/manifest';
 
 interface Stage {
@@ -25,7 +27,10 @@ const naturalSort = (a: string, b: string): number =>
 
 let preview: Viewer | null = null;
 let panel: Panel | null = null;
+let disposeShortcuts: (() => void) | null = null;
 function disposePreview(): void {
+  disposeShortcuts?.();
+  disposeShortcuts = null;
   panel?.dispose();
   panel = null;
   preview?.dispose();
@@ -311,8 +316,10 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     const manifest = validateManifest(raw);
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
     preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
+    preview.setBackground(THEME_BG[getTheme()]);
     await preview.boot();
-    panel = new Panel(preview);
+    panel = new Panel(preview, { editor: true });
+    disposeShortcuts = installShortcuts(preview);
     saveLook.disabled = false;
     saveThumb.disabled = false;
   }

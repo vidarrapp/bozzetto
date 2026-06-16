@@ -1,44 +1,81 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
+import { getTheme, setTheme, THEME_BG } from './theme';
+
+export interface PanelOptions {
+  /** Editor variant: full lighting controls + an in-panel timeline. */
+  editor?: boolean;
+}
 
 /**
- * Minimal, viewport-first control panel (design doc §12).
- *
- * A single collapsible panel: timeline transport, stage jumps, material mode,
- * the lighting rig, and a reset-view button. Keyboard shortcuts are wired here
- * too (space, arrows, number keys, r/l/g).
+ * Side control panel. The viewer variant is minimal (starts collapsed; Display
+ * theme toggle, Material, a trimmed Lighting of rotate-rig + ground, View) — the
+ * timeline lives in the bottom Transport. The editor variant adds the full
+ * lighting rig and an in-panel timeline for authoring. Keyboard shortcuts live
+ * in installShortcuts, not here.
  */
 export class Panel {
   private readonly root: HTMLDivElement;
-  private readonly scrubber: HTMLInputElement;
-  private readonly frameLabel: HTMLSpanElement;
-  private readonly stageName: HTMLSpanElement;
-  private readonly stageDesc: HTMLSpanElement;
-  private readonly playButton: HTMLButtonElement;
+  private readonly editor: boolean;
 
-  constructor(private readonly viewer: Viewer) {
+  private materialOptions!: HTMLDivElement;
+  private lightControls?: HTMLDivElement;
+
+  private scrubber?: HTMLInputElement;
+  private playButton?: HTMLButtonElement;
+  private stageName?: HTMLSpanElement;
+  private stageDesc?: HTMLSpanElement;
+  private frameLabel?: HTMLSpanElement;
+
+  constructor(
+    private readonly viewer: Viewer,
+    options: PanelOptions = {},
+  ) {
+    this.editor = options.editor ?? false;
     const m = viewer.manifest;
 
     this.root = div('panel');
     document.body.appendChild(this.root);
 
-    // Header: title + collapse toggle.
     const header = div('panel__header');
     const title = document.createElement('span');
     title.className = 'panel__title';
     title.textContent = m.title || 'Bozzetto';
-    const collapse = button('–', () => this.toggleCollapsed());
+    const collapse = button('', () => {});
     collapse.className = 'panel__collapse';
     header.append(title, collapse);
     this.root.appendChild(header);
 
     const body = div('panel__body');
     this.root.appendChild(body);
+
+    // Viewer starts collapsed for a minimal default; editor starts open.
+    body.hidden = !this.editor;
+    collapse.textContent = body.hidden ? '+' : '–';
     collapse.addEventListener('click', () => {
-      collapse.textContent = body.hidden ? '–' : '+';
+      body.hidden = !body.hidden;
+      collapse.textContent = body.hidden ? '+' : '–';
     });
 
-    // --- Timeline -------------------------------------------------------
+    if (this.editor) this.buildTimeline(body);
+    else this.buildDisplay(body);
+
+    this.buildMaterial(body);
+    this.buildLighting(body);
+
+    const view = section(body, 'View');
+    view.appendChild(button('Reset view', () => this.viewer.resetView()));
+  }
+
+  dispose(): void {
+    this.viewer.onFrame = null;
+    this.viewer.onPlayStateChange = null;
+    this.root.remove();
+  }
+
+  // --- timeline (editor only) -------------------------------------------
+
+  private buildTimeline(body: HTMLElement): void {
     const timeline = section(body, 'Timeline');
 
     this.stageName = document.createElement('span');
@@ -52,14 +89,13 @@ export class Panel {
     this.scrubber = document.createElement('input');
     this.scrubber.type = 'range';
     this.scrubber.min = '0';
-    this.scrubber.max = String(m.config.frameCount - 1);
+    this.scrubber.max = String(this.viewer.manifest.config.frameCount - 1);
     this.scrubber.step = '1';
-    this.scrubber.value = String(m.defaults.frame);
+    this.scrubber.value = String(this.viewer.manifest.defaults.frame);
     this.scrubber.className = 'scrubber';
-    this.scrubber.addEventListener('input', () => {
-      this.viewer.scrubTo(Number(this.scrubber.value));
-      this.updatePlayButton();
-    });
+    this.scrubber.addEventListener('input', () =>
+      this.viewer.scrubTo(Number(this.scrubber!.value)),
+    );
     timeline.appendChild(this.scrubber);
 
     this.frameLabel = document.createElement('span');
@@ -67,71 +103,60 @@ export class Panel {
     timeline.appendChild(this.frameLabel);
 
     const transport = div('row');
-    this.playButton = button('Pause', () => {
-      this.viewer.togglePlay();
-      this.updatePlayButton();
-    });
-    transport.append(
-      button('⏮', () => {
-        this.viewer.step(-1);
-        this.updatePlayButton();
-      }),
-      this.playButton,
-      button('⏭', () => {
-        this.viewer.step(1);
-        this.updatePlayButton();
-      }),
-    );
+    this.playButton = button('Pause', () => this.viewer.togglePlay());
+    transport.appendChild(this.playButton);
     timeline.appendChild(transport);
 
-    const fpsRow = labelled('Speed (fps)', () => {
-      const out = document.createElement('span');
-      out.className = 'readout';
-      out.textContent = m.config.fps.toFixed(1);
-      const r = range(1, 8, 0.5, m.config.fps, (v) => {
-        this.viewer.setFps(v);
-        out.textContent = v.toFixed(1);
-      });
-      const wrap = div('range-wrap');
-      wrap.append(r, out);
-      return wrap;
-    });
-    timeline.appendChild(fpsRow);
+    this.viewer.onFrame = (ordinal) => this.syncFrame(ordinal);
+    this.viewer.onPlayStateChange = (playing) => this.setPlay(playing);
+    this.syncFrame(this.viewer.manifest.defaults.frame);
+    this.setPlay(this.viewer.timeline.playing);
+  }
 
-    timeline.appendChild(
-      checkbox('Loop', true, (on) => this.viewer.setLoop(on)),
-    );
-
-    // --- Stages ---------------------------------------------------------
-    if (m.stages.length > 0) {
-      const stages = section(body, 'Stages');
-      const grid = div('btn-grid');
-      for (const stage of m.stages) {
-        grid.appendChild(
-          button(stage.name, () => {
-            this.viewer.jumpTo(stage.frame);
-            this.scrubber.value = String(stage.frame);
-          }),
-        );
-      }
-      stages.appendChild(grid);
+  private syncFrame(ordinal: number): void {
+    if (this.scrubber) this.scrubber.value = String(ordinal);
+    if (this.frameLabel) {
+      this.frameLabel.textContent = `Frame ${ordinal + 1} / ${this.viewer.manifest.config.frameCount}`;
     }
+    const stage = this.viewer.timeline.stageAt(ordinal);
+    if (this.stageName) this.stageName.textContent = stage ? stage.name : '';
+    if (this.stageDesc) this.stageDesc.textContent = stage ? stage.desc : '';
+  }
 
-    // --- Material -------------------------------------------------------
+  private setPlay(playing: boolean): void {
+    if (this.playButton) this.playButton.textContent = playing ? 'Pause' : 'Play';
+  }
+
+  // --- display (viewer only) --------------------------------------------
+
+  private buildDisplay(body: HTMLElement): void {
+    const display = section(body, 'Display');
+    display.appendChild(
+      checkbox('Light mode', getTheme() === 'light', (on) => {
+        const theme = on ? 'light' : 'dark';
+        setTheme(theme);
+        this.viewer.setBackground(THEME_BG[theme]);
+      }),
+    );
+  }
+
+  // --- material ---------------------------------------------------------
+
+  private buildMaterial(body: HTMLElement): void {
     const material = section(body, 'Material');
+
     const modeSelect = document.createElement('select');
-    for (const mode of viewer.materials.modes) {
+    for (const mode of this.viewer.materials.modes) {
       const opt = document.createElement('option');
       opt.value = mode.id;
       opt.textContent = mode.label;
       modeSelect.appendChild(opt);
     }
-    modeSelect.value = viewer.getMaterial();
+    modeSelect.value = this.viewer.getMaterial();
     modeSelect.addEventListener('change', () => {
       this.viewer.setMaterial(modeSelect.value);
       this.rebuildMaterialOptions();
     });
-    this.materialSelect = modeSelect;
     material.appendChild(labelRow('Mode', modeSelect));
 
     this.materialOptions = div('mat-options');
@@ -139,74 +164,14 @@ export class Panel {
     this.rebuildMaterialOptions();
 
     material.appendChild(
-      checkbox('Flat shading', viewer.materials.getMaterialState().flatShading, (on) =>
+      checkbox('Flat shading', this.viewer.materials.getMaterialState().flatShading, (on) =>
         this.viewer.materials.setFlatShading(on),
       ),
     );
-
-    // --- Lighting -------------------------------------------------------
-    const lighting = section(body, 'Lighting');
-
-    const presetSelect = document.createElement('select');
-    for (const preset of viewer.lighting.presets()) {
-      const opt = document.createElement('option');
-      opt.value = preset.id;
-      opt.textContent = preset.label;
-      presetSelect.appendChild(opt);
-    }
-    presetSelect.value = m.defaults.lightingPreset;
-    presetSelect.addEventListener('change', () => {
-      this.viewer.lighting.applyPreset(presetSelect.value);
-      this.rebuildLightControls();
-    });
-    lighting.appendChild(labelRow('Preset', presetSelect));
-
-    this.lightControls = div('light-controls');
-    lighting.appendChild(this.lightControls);
-    this.rebuildLightControls();
-
-    lighting.appendChild(
-      labelled('Rotate rig', () => {
-        const out = document.createElement('span');
-        out.className = 'readout';
-        out.textContent = '0°';
-        const r = range(0, 360, 1, 0, (v) => {
-          this.viewer.lighting.setRigRotation(v);
-          out.textContent = `${Math.round(v)}°`;
-        });
-        const wrap = div('range-wrap');
-        wrap.append(r, out);
-        return wrap;
-      }),
+    material.appendChild(
+      checkbox('Wireframe (w)', this.viewer.isWireframe(), (on) => this.viewer.setWireframe(on)),
     );
-
-    lighting.appendChild(
-      checkbox('Ground shadow', viewer.isGroundEnabled(), (on) =>
-        this.viewer.setGround(on),
-      ),
-    );
-
-    // --- View -----------------------------------------------------------
-    const view = section(body, 'View');
-    view.appendChild(button('Reset view', () => this.viewer.resetView()));
-
-    // Wire viewer → panel sync and keyboard shortcuts.
-    this.viewer.onFrame = (ordinal) => this.syncFrame(ordinal);
-    this.syncFrame(m.defaults.frame);
-    this.updatePlayButton();
-    window.addEventListener('keydown', this.onKey);
   }
-
-  /** Remove the panel from the DOM and detach listeners (editor preview reuse). */
-  dispose(): void {
-    window.removeEventListener('keydown', this.onKey);
-    this.viewer.onFrame = null;
-    this.root.remove();
-  }
-
-  private materialSelect!: HTMLSelectElement;
-  private materialOptions!: HTMLDivElement;
-  private lightControls!: HTMLDivElement;
 
   private rebuildMaterialOptions(): void {
     this.materialOptions.replaceChildren();
@@ -242,15 +207,60 @@ export class Panel {
     }
   }
 
+  // --- lighting ---------------------------------------------------------
+
+  private buildLighting(body: HTMLElement): void {
+    const lighting = section(body, 'Lighting');
+
+    if (this.editor) {
+      const presetSelect = document.createElement('select');
+      for (const preset of this.viewer.lighting.presets()) {
+        const opt = document.createElement('option');
+        opt.value = preset.id;
+        opt.textContent = preset.label;
+        presetSelect.appendChild(opt);
+      }
+      presetSelect.value = this.viewer.manifest.defaults.lightingPreset;
+      presetSelect.addEventListener('change', () => {
+        this.viewer.lighting.applyPreset(presetSelect.value);
+        this.rebuildLightControls();
+      });
+      lighting.appendChild(labelRow('Preset', presetSelect));
+
+      this.lightControls = div('light-controls');
+      lighting.appendChild(this.lightControls);
+      this.rebuildLightControls();
+    }
+
+    lighting.appendChild(
+      labelled('Rotate rig', () => {
+        const out = document.createElement('span');
+        out.className = 'readout';
+        const start = this.viewer.lighting.getRigRotation();
+        out.textContent = `${Math.round(start)}°`;
+        const r = range(0, 360, 1, start, (v) => {
+          this.viewer.lighting.setRigRotation(v);
+          out.textContent = `${Math.round(v)}°`;
+        });
+        const wrap = div('range-wrap');
+        wrap.append(r, out);
+        return wrap;
+      }),
+    );
+
+    lighting.appendChild(
+      checkbox('Ground shadow', this.viewer.isGroundEnabled(), (on) => this.viewer.setGround(on)),
+    );
+  }
+
   private rebuildLightControls(): void {
+    if (!this.lightControls) return;
     this.lightControls.replaceChildren();
     for (const light of this.viewer.lighting.state()) {
       const box = div('light');
       const head = div('light__head');
       head.appendChild(
-        checkbox(light.label, light.enabled, (on) =>
-          this.viewer.lighting.setEnabled(light.id, on),
-        ),
+        checkbox(light.label, light.enabled, (on) => this.viewer.lighting.setEnabled(light.id, on)),
       );
       box.appendChild(head);
 
@@ -260,9 +270,7 @@ export class Panel {
         ),
       );
       box.appendChild(
-        compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) =>
-          this.setAngle(light.id, 'az', v),
-        ),
+        compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) => this.setAngle(light.id, 'az', v)),
       );
       box.appendChild(
         compactRange('Elevation', -20, 90, 1, light.elevation, (v) =>
@@ -273,9 +281,7 @@ export class Panel {
       const color = document.createElement('input');
       color.type = 'color';
       color.value = light.color;
-      color.addEventListener('input', () =>
-        this.viewer.lighting.setColor(light.id, color.value),
-      );
+      color.addEventListener('input', () => this.viewer.lighting.setColor(light.id, color.value));
       box.appendChild(labelRow('Colour', color));
 
       this.lightControls.appendChild(box);
@@ -289,60 +295,6 @@ export class Panel {
     const el = which === 'el' ? value : current.elevation;
     this.viewer.lighting.setAngles(id, az, el);
   }
-
-  private syncFrame(ordinal: number): void {
-    this.scrubber.value = String(ordinal);
-    const count = this.viewer.manifest.config.frameCount;
-    this.frameLabel.textContent = `Frame ${ordinal + 1} / ${count}`;
-    const stage = this.viewer.timeline.stageAt(ordinal);
-    this.stageName.textContent = stage ? stage.name : '';
-    this.stageDesc.textContent = stage ? stage.desc : '';
-  }
-
-  private updatePlayButton(): void {
-    this.playButton.textContent = this.viewer.timeline.playing ? 'Pause' : 'Play';
-  }
-
-  private toggleCollapsed(): void {
-    const body = this.root.querySelector<HTMLDivElement>('.panel__body');
-    if (body) body.hidden = !body.hidden;
-  }
-
-  private readonly onKey = (e: KeyboardEvent): void => {
-    const target = e.target as HTMLElement | null;
-    if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-
-    switch (e.key) {
-      case ' ':
-        e.preventDefault();
-        this.viewer.togglePlay();
-        this.updatePlayButton();
-        break;
-      case 'ArrowRight':
-        this.viewer.step(1);
-        this.updatePlayButton();
-        break;
-      case 'ArrowLeft':
-        this.viewer.step(-1);
-        this.updatePlayButton();
-        break;
-      case 'r':
-        this.viewer.resetView();
-        break;
-      case 'g':
-        this.viewer.setGround(!this.viewer.isGroundEnabled());
-        break;
-      default: {
-        const n = Number(e.key);
-        if (Number.isInteger(n) && n >= 1 && n <= this.viewer.materials.modes.length) {
-          const mode = this.viewer.materials.modes[n - 1].id;
-          this.viewer.setMaterial(mode);
-          this.materialSelect.value = mode;
-          this.rebuildMaterialOptions();
-        }
-      }
-    }
-  };
 }
 
 // --- tiny DOM helpers ----------------------------------------------------

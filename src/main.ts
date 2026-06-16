@@ -2,7 +2,10 @@ import { validateManifest } from './types/manifest';
 import type { Manifest } from './types/manifest';
 import { Viewer } from './viewer/Viewer';
 import { Panel } from './ui/Panel';
+import { Transport } from './ui/Transport';
+import { installShortcuts } from './ui/shortcuts';
 import { renderLanding } from './ui/Landing';
+import { getTheme, initTheme, THEME_BG } from './ui/theme';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -10,6 +13,7 @@ import { renderLanding } from './ui/Landing';
  * bundled static demo still works via a fallback so it never depends on the db.
  */
 async function main(): Promise<void> {
+  initTheme();
   const app = document.getElementById('app');
   if (!app) throw new Error('#app element not found');
 
@@ -32,11 +36,16 @@ async function bootViewer(id: string): Promise<void> {
     const { manifest, manifestUrl } = await loadProject(id, base);
 
     const viewer = new Viewer(viewport, manifest, manifestUrl);
+    viewer.setBackground(THEME_BG[getTheme()]);
     // Expose for debugging from the browser console, e.g.:
     //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
     (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
-    new Panel(viewer);
     await viewer.boot();
+
+    // Build the UI after boot so controls reflect the applied look.
+    new Panel(viewer);
+    new Transport(viewer);
+    installShortcuts(viewer);
 
     overlay?.remove();
     addGalleryLink();

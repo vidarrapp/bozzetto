@@ -1,9 +1,7 @@
 import {
   Color,
   Material,
-  MeshBasicMaterial,
   MeshMatcapMaterial,
-  MeshNormalMaterial,
   MeshStandardMaterial,
   SRGBColorSpace,
   Texture,
@@ -66,24 +64,34 @@ export class Materials {
   readonly modes: MaterialModeInfo[] = [
     { id: 'lit', label: 'Lit (PBR)', lit: true },
     { id: 'matcap', label: 'Matcap', lit: false },
-    { id: 'normals', label: 'Normals (view space)', lit: false },
-    { id: 'wireframe', label: 'Wireframe', lit: false },
   ];
 
   constructor() {
     this.matcapTextures = MATCAPS.map((m) => loadMatcap(m.url, m.blender ?? false));
 
-    // Lit PBR — the default mode and the reason lighting exists.
+    // Lit PBR — the default mode and the reason lighting exists. polygonOffset
+    // pushes the surface back a touch so the wireframe overlay reads on top.
     this.registry.set(
       'lit',
-      new MeshStandardMaterial({ color: new Color(DEFAULT_ALBEDO), roughness: 0.78, metalness: 0.0 }),
+      new MeshStandardMaterial({
+        color: new Color(DEFAULT_ALBEDO),
+        roughness: 0.78,
+        metalness: 0.0,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      }),
     );
     // Matcap — reproduces a sculpt clay read, ignoring scene lights.
-    this.registry.set('matcap', new MeshMatcapMaterial({ matcap: this.matcapTextures[0] }));
-    // View-space normals — the classic shifting-rainbow visualization.
-    this.registry.set('normals', new MeshNormalMaterial());
-    // Flat wireframe.
-    this.registry.set('wireframe', new MeshBasicMaterial({ color: 0x9fd0ff, wireframe: true }));
+    this.registry.set(
+      'matcap',
+      new MeshMatcapMaterial({
+        matcap: this.matcapTextures[0],
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      }),
+    );
   }
 
   has(mode: string): boolean {
@@ -125,10 +133,16 @@ export class Materials {
     (this.registry.get('lit') as MeshStandardMaterial).metalness = value;
   }
 
+  /** Relative luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
+  albedoLuminance(): number {
+    const c = (this.registry.get('lit') as MeshStandardMaterial).color;
+    return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  }
+
   /** Smooth (interpolated) vs flat (faceted) shading across the shaded modes. */
   setFlatShading(flat: boolean): void {
     this.flatShading = flat;
-    for (const id of ['lit', 'matcap', 'normals']) {
+    for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as Material & { flatShading: boolean };
       m.flatShading = flat;
       m.needsUpdate = true; // toggling flatShading recompiles the shader

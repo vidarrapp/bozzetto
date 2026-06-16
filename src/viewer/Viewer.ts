@@ -4,6 +4,7 @@ import {
   Clock,
   Color,
   Mesh,
+  MeshBasicMaterial,
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
@@ -48,6 +49,11 @@ export class Viewer {
   private readonly ground: Mesh;
   private groundEnabled = true;
 
+  /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
+  private readonly wireframe = new Mesh();
+  private readonly wireMaterial = new MeshBasicMaterial({ wireframe: true, color: 0xffffff });
+  private wireframeOn = false;
+
   private currentMode = 'lit';
   /** Frame ordinal targeted by the timeline/scrubber. */
   private targetIndex = -1;
@@ -58,6 +64,8 @@ export class Viewer {
 
   /** Fired when the target frame changes (drives the scrubber + stage label). */
   onFrame: ((ordinal: number) => void) | null = null;
+  /** Fired when play/pause changes (drives the transport play button). */
+  onPlayStateChange: ((playing: boolean) => void) | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -116,6 +124,11 @@ export class Viewer {
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
 
+    // Wireframe overlay shares the display geometry; toggled with "w".
+    this.wireframe.material = this.wireMaterial;
+    this.wireframe.visible = false;
+    this.scene.add(this.wireframe);
+
     window.addEventListener('resize', this.onResize);
   }
 
@@ -128,6 +141,7 @@ export class Viewer {
 
     const geom = await this.streamer.ensure(start);
     this.display.geometry = geom;
+    this.wireframe.geometry = geom;
     this.scene.add(this.display);
     this.displayedIndex = start;
     this.targetIndex = start;
@@ -156,14 +170,17 @@ export class Viewer {
 
   togglePlay(): void {
     this.timeline.togglePlay();
+    this.onPlayStateChange?.(this.timeline.playing);
   }
 
   play(): void {
     this.timeline.play();
+    this.onPlayStateChange?.(true);
   }
 
   pause(): void {
     this.timeline.pause();
+    this.onPlayStateChange?.(false);
   }
 
   step(delta: number): void {
@@ -183,6 +200,7 @@ export class Viewer {
   scrubTo(ordinal: number): void {
     this.timeline.pause();
     this.timeline.setFrame(ordinal);
+    this.onPlayStateChange?.(false);
   }
 
   /** Jump to a frame ordinal without changing play state (stage jumps). */
@@ -218,6 +236,30 @@ export class Viewer {
     this.controls.reset();
   }
 
+  setBackground(hex: string): void {
+    this.scene.background = new Color(hex);
+  }
+
+  toggleWireframe(): boolean {
+    this.setWireframe(!this.wireframeOn);
+    return this.wireframeOn;
+  }
+
+  setWireframe(on: boolean): void {
+    this.wireframeOn = on;
+    this.wireframe.visible = on;
+    if (on) this.updateWireColor();
+  }
+
+  isWireframe(): boolean {
+    return this.wireframeOn;
+  }
+
+  /** Dark wires on a light albedo, light wires on a dark one. */
+  private updateWireColor(): void {
+    this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x1b1d21 : 0xffffff);
+  }
+
   /** Render the current frame and read it back as a JPEG thumbnail blob. */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
     this.renderer.render(this.scene, this.camera);
@@ -246,6 +288,7 @@ export class Viewer {
     this.controls.dispose();
     this.streamer.dispose();
     this.materials.dispose();
+    this.wireMaterial.dispose();
     this.renderer.dispose();
   }
 
@@ -301,6 +344,7 @@ export class Viewer {
     }
     if (geom && shownIndex !== this.displayedIndex) {
       this.display.geometry = geom;
+      this.wireframe.geometry = geom;
       this.displayedIndex = shownIndex;
     }
 

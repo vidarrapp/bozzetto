@@ -1,6 +1,7 @@
 import { api } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
+import { initTheme } from '../ui/theme';
 
 /**
  * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
@@ -136,6 +137,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
   }
 }
 
+initTheme();
 const projectId = new URLSearchParams(window.location.search).get('p');
 if (projectId) void renderEditor(root, projectId);
 else void renderList(root);
