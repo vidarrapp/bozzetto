@@ -1,5 +1,6 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
+import { shadowMode } from '../viewer/pcss';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -396,6 +397,22 @@ export class Panel {
         checkbox('AO', this.viewer.getAOState().enabled, (on) => this.viewer.setAO({ enabled: on })),
       );
     }
+
+    const shadows = document.createElement('select');
+    for (const s of ['vsm', 'pcss']) {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s.toUpperCase();
+      shadows.appendChild(opt);
+    }
+    shadows.value = shadowMode();
+    shadows.addEventListener('change', () => {
+      const params = new URLSearchParams(location.search);
+      if (shadows.value === 'vsm') params.delete('shadows');
+      else params.set('shadows', 'pcss');
+      location.search = params.toString();
+    });
+    dev.appendChild(labelRow('Shadows', shadows));
   }
 }
 

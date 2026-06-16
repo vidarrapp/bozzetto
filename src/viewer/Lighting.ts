@@ -5,6 +5,7 @@ import {
   Group,
   HemisphereLight,
   MathUtils,
+  PCFShadowMap,
   Scene,
   Sphere,
   Vector3,
@@ -12,6 +13,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
+import { installPCSS, shadowMode } from './pcss';
 
 export type LightId = 'key' | 'fill' | 'rim';
 
@@ -126,7 +128,13 @@ export class Lighting {
   constructor(scene: Scene, renderer: WebGLRenderer) {
     this.tier = SHADOW_TIERS[detectQuality(renderer)];
     this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
-    renderer.shadowMap.type = VSMShadowMap;
+    // VSM by default; PCSS (PCF-based, no variance bleed) via ?shadows=pcss.
+    if (shadowMode() === 'pcss') {
+      installPCSS();
+      renderer.shadowMap.type = PCFShadowMap;
+    } else {
+      renderer.shadowMap.type = VSMShadowMap;
+    }
 
     const preset = PRESETS[0];
     this.config = { key: { ...preset.key }, fill: { ...preset.fill }, rim: { ...preset.rim } };
