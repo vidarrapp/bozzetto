@@ -13,15 +13,6 @@ interface ProjectSummary {
   frameCount: number;
 }
 
-const DEMO: ProjectSummary = {
-  id: 'demo',
-  title: 'Demo — clay study',
-  mode: 'timelapse',
-  fps: 4,
-  updated_at: 0,
-  frameCount: 0,
-};
-
 export async function renderLanding(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
   app.classList.add('app--landing');
@@ -48,7 +39,12 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     /* API not reachable — fall through to demo-only. */
   }
 
-  const list = projects.some((p) => p.id === 'demo') ? projects : [DEMO, ...projects];
+  // Only projects with frames are shown publicly; empties live in the editor.
+  const list = projects.filter((p) => p.frameCount > 0);
+  if (list.length === 0) {
+    grid.innerHTML = '<p class="muted">No projects yet.</p>';
+    return;
+  }
   for (const p of list) grid.appendChild(card(p));
 }
 
@@ -61,7 +57,10 @@ function card(p: ProjectSummary): HTMLElement {
     p.frameCount > 0 ? `${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}` : 'no frames yet';
 
   a.innerHTML = `
-    <div class="card__thumb" aria-hidden="true"></div>
+    <div class="card__thumb">
+      <img class="card__img" alt="" loading="lazy"
+           src="/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}" />
+    </div>
     <div class="card__body">
       <span class="card__title"></span>
       <span class="card__meta">
@@ -71,5 +70,8 @@ function card(p: ProjectSummary): HTMLElement {
     </div>`;
   // textContent (not innerHTML) for the title — never trust stored strings.
   a.querySelector<HTMLElement>('.card__title')!.textContent = p.title || p.id;
+  // No thumbnail yet → drop the <img> so the gradient placeholder shows.
+  const img = a.querySelector<HTMLImageElement>('.card__img');
+  img?.addEventListener('error', () => img.remove());
   return a;
 }

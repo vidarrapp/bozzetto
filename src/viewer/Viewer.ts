@@ -63,8 +63,13 @@ export class Viewer {
     readonly manifest: Manifest,
     manifestUrl: string,
     matcapUrl: string,
+    options: { preserveDrawingBuffer?: boolean } = {},
   ) {
-    this.renderer = new WebGLRenderer({ antialias: true });
+    this.renderer = new WebGLRenderer({
+      antialias: true,
+      // The editor preview needs this so captureThumbnail() can read the canvas.
+      preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.outputColorSpace = 'srgb';
@@ -208,6 +213,28 @@ export class Viewer {
 
   resetView(): void {
     this.controls.reset();
+  }
+
+  /** Render the current frame and read it back as a JPEG thumbnail blob. */
+  async captureThumbnail(maxWidth = 640): Promise<Blob> {
+    this.renderer.render(this.scene, this.camera);
+    const gl = this.renderer.domElement;
+    const scale = Math.min(1, maxWidth / gl.width);
+    const w = Math.max(1, Math.round(gl.width * scale));
+    const h = Math.max(1, Math.round(gl.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2D context unavailable for capture');
+    ctx.drawImage(gl, 0, 0, w, h);
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('thumbnail capture failed'))),
+        'image/jpeg',
+        0.82,
+      );
+    });
   }
 
   dispose(): void {

@@ -17,6 +17,31 @@ function fromHTML(html: string): HTMLElement {
   return tpl.content.firstElementChild as HTMLElement;
 }
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '') // strip accents
+    .replace(/[^a-z0-9]+/g, '-') // non-alphanumeric -> hyphen
+    .replace(/^-+|-+$/g, '') // trim leading/trailing hyphens
+    .slice(0, 63)
+    .replace(/-+$/g, ''); // drop a hyphen left at the length cut
+}
+
+/** Create a project, deriving the id from the title and avoiding collisions. */
+async function createWithSlug(title: string): Promise<{ id: string }> {
+  const base = slugify(title) || 'project';
+  for (let n = 1; n <= 50; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    try {
+      return (await api.create({ id, title })) as { id: string };
+    } catch (err) {
+      if (!/already exists/i.test((err as Error).message)) throw err;
+    }
+  }
+  throw new Error('Could not find an available id for that title');
+}
+
 async function renderList(host: HTMLElement): Promise<void> {
   host.innerHTML = `
     <div class="admin">
@@ -25,16 +50,10 @@ async function renderList(host: HTMLElement): Promise<void> {
         <a class="admin__home" href="/">← Gallery</a>
       </header>
       <form class="admin-create" id="create-form">
-        <input name="id" placeholder="project-id" required
-               pattern="[a-z0-9][a-z0-9-]*" title="lowercase letters, digits, hyphens" />
-        <input name="title" placeholder="Title" />
-        <select name="mode">
-          <option value="timelapse">Timelapse</option>
-          <option value="model">Model</option>
-        </select>
-        <input name="fps" type="number" value="4" min="1" max="30" step="1" title="fps" />
+        <input name="title" placeholder="New project title" required autofocus />
         <button type="submit" class="btn btn--primary">Create</button>
       </form>
+      <p class="admin__hint muted">The project id is derived from the title; you can set the frame rate and mode on the next page.</p>
       <div class="admin-list" id="project-list"></div>
     </div>`;
 
@@ -43,18 +62,14 @@ async function renderList(host: HTMLElement): Promise<void> {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = new FormData(form);
+    const title = String(new FormData(form).get('title') ?? '').trim();
+    if (!title) return;
     const submit = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
     submit.disabled = true;
     try {
-      const created = await api.create({
-        id: String(data.get('id') ?? '').trim(),
-        title: String(data.get('title') ?? '').trim(),
-        mode: String(data.get('mode') ?? 'timelapse'),
-        fps: Number(data.get('fps') ?? 4),
-      });
+      const created = await createWithSlug(title);
       // Straight into the new project's editor to add frames.
-      window.location.search = `?p=${encodeURIComponent((created as ProjectSummary).id)}`;
+      window.location.search = `?p=${encodeURIComponent(created.id)}`;
     } catch (err) {
       alert(`Create failed: ${(err as Error).message}`);
       submit.disabled = false;

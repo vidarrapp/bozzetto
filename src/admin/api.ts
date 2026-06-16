@@ -64,4 +64,10 @@ export const api = {
       method: 'POST',
       body: glb,
     }).then((r) => unwrap<{ key: string; index: number; size: number }>(r)),
+
+  uploadThumb: (id: string, blob: Blob) =>
+    fetch(`/admin/api/projects/${encodeURIComponent(id)}/thumb`, {
+      method: 'POST',
+      body: blob,
+    }).then((r) => unwrap<{ ok: boolean }>(r)),
 };

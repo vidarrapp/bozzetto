@@ -40,7 +40,8 @@ export function toManifest(row: ProjectRow): unknown {
     lighting: data.lighting ?? null,
     frames: frames.map((f) => ({
       index: f.index,
-      sd: `/media/${row.id}/frames/sd/${String(f.index).padStart(4, '0')}.glb`,
+      // ?v busts the immutable CDN cache when the project is re-saved/re-uploaded.
+      sd: `/media/${row.id}/frames/sd/${String(f.index).padStart(4, '0')}.glb?v=${row.updated_at}`,
       hd: null,
       tris: f.tris,
     })),
@@ -87,6 +88,19 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
   const mode: ProjectMode = patch.mode === 'model' || patch.mode === 'timelapse' ? patch.mode : row.mode;
   const fps = Number(patch.fps ?? row.fps) || row.fps;
 
+  // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
+  if (Array.isArray(patch.frames)) {
+    const keep = new Set(next.frames.map((f) => f.index));
+    const orphans = data.frames.filter((f) => !keep.has(f.index)).map((f) => frameKey(id, f.index));
+    if (orphans.length > 0) {
+      try {
+        await env.BUCKET.delete(orphans);
+      } catch {
+        /* best-effort; the metadata save still proceeds */
+      }
+    }
+  }
+
   await env.DB.prepare('UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, updated_at = ? WHERE id = ?')
     .bind(title, mode, fps, JSON.stringify(next), Date.now(), id)
     .run();
@@ -116,4 +130,13 @@ export async function putFrame(env: Env, id: string, index: number, body: ArrayB
   const key = frameKey(id, index);
   await env.BUCKET.put(key, body, { httpMetadata: { contentType: 'model/gltf-binary' } });
   return key;
+}
+
+export async function putThumb(env: Env, id: string, body: ArrayBuffer): Promise<void> {
+  if (!(await getProjectRow(env, id))) throw new HttpError('Not found', 404);
+  await env.BUCKET.put(`projects/${id}/thumb.jpg`, body, {
+    httpMetadata: { contentType: 'image/jpeg' },
+  });
+  // Bump updated_at so the gallery's ?v cache-buster picks up the new thumbnail.
+  await env.DB.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
 }

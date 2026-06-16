@@ -48,7 +48,10 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   host.innerHTML = `
     <div class="admin editor">
       <header class="admin__head">
-        <h1 class="editor__title"></h1>
+        <div>
+          <h1 class="editor__title"></h1>
+          <p class="editor__id muted"></p>
+        </div>
         <a class="admin__home" href="/admin/">← Projects</a>
       </header>
 
@@ -94,7 +97,8 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
         <div id="preview" class="editor__preview"></div>
         <div class="editor__row">
           <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
-          <span class="muted">Dial in lighting/material in the floating panel, then save it as this project's default.</span>
+          <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
+          <span class="muted">Adjust lighting/material in the floating panel; save the look, or grab the current frame as the gallery thumbnail.</span>
         </div>
       </section>
     </div>`;
@@ -107,6 +111,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   const frameCountEl = $('#frame-count');
 
   titleHeading.textContent = project.title || id;
+  $('.editor__id').textContent = `id: ${id}`;
   titleInput.value = project.title || id;
   modeSelect.value = project.mode === 'model' ? 'model' : 'timelapse';
   fpsInput.value = String(project.config?.fps ?? 4);
@@ -173,6 +178,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       setFrameCount(frames.length);
       progressLabel.textContent = `Done — ${frames.length} frame${frames.length === 1 ? '' : 's'}`;
       await mountPreview();
+      await captureDefaultThumb();
     } catch (err) {
       progressLabel.textContent = `Failed: ${(err as Error).message}`;
     }
@@ -251,9 +257,43 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     }
   });
 
+  const saveThumb = $<HTMLButtonElement>('#save-thumb');
+  saveThumb.addEventListener('click', async () => {
+    if (!preview) return;
+    saveThumb.disabled = true;
+    const label = saveThumb.textContent;
+    try {
+      await api.uploadThumb(id, await preview.captureThumbnail());
+      saveThumb.textContent = 'Saved ✓';
+      setTimeout(() => {
+        saveThumb.textContent = label;
+      }, 1500);
+    } catch (err) {
+      alert(`Save thumbnail failed: ${(err as Error).message}`);
+    } finally {
+      saveThumb.disabled = false;
+    }
+  });
+
+  /** Grab frame 0 as the default gallery thumbnail (best-effort) after upload. */
+  async function captureDefaultThumb(): Promise<void> {
+    if (!preview) return;
+    preview.pause();
+    preview.jumpTo(0);
+    // Let the render loop swap to frame 0 before we read the canvas.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    try {
+      await api.uploadThumb(id, await preview.captureThumbnail());
+    } catch {
+      /* non-fatal: the user can still Save thumbnail manually */
+    }
+    preview.play();
+  }
+
   async function mountPreview(): Promise<void> {
     disposePreview();
     saveLook.disabled = true;
+    saveThumb.disabled = true;
     const box = $('#preview');
     box.innerHTML = '';
     let raw: unknown;
@@ -270,10 +310,11 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     const manifest = validateManifest(raw);
     const matcapUrl = new URL('/assets/matcaps/clay.png', location.href).href;
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-    preview = new Viewer(box, manifest, manifestUrl, matcapUrl);
+    preview = new Viewer(box, manifest, manifestUrl, matcapUrl, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview);
     saveLook.disabled = false;
+    saveThumb.disabled = false;
   }
 
   await mountPreview();
