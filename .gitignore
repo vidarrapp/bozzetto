@@ -3,6 +3,11 @@ dist/
 *.local
 .DS_Store
 
+# Cloudflare local dev (real bindings live in the dashboard; the local config
+# is copied from wrangler.toml.example)
+wrangler.toml
+.wrangler/
+
 # Generated demo assets (produced by `npm run gen:sample`, run automatically
 # before dev/build). Kept out of git so binaries don't live in history.
 public/timelapses/demo/
