@@ -3,7 +3,6 @@ import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { Panel } from '../ui/Panel';
 import { installShortcuts } from '../ui/shortcuts';
-import { getTheme, THEME_BG } from '../ui/theme';
 import { validateManifest } from '../types/manifest';
 
 interface Stage {
@@ -316,10 +315,12 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     const manifest = validateManifest(raw);
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
     preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
-    preview.setBackground(THEME_BG[getTheme()]);
     await preview.boot();
     panel = new Panel(preview, { editor: true });
-    disposeShortcuts = installShortcuts(preview);
+    disposeShortcuts = installShortcuts(preview, {
+      togglePanel: () => panel?.toggleCollapsed(),
+      refresh: () => panel?.refreshControls(),
+    });
     saveLook.disabled = false;
     saveThumb.disabled = false;
   }

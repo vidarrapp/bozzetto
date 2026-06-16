@@ -149,6 +149,15 @@ export class Materials {
     }
   }
 
+  toggleFlatShading(): boolean {
+    this.setFlatShading(!this.flatShading);
+    return this.flatShading;
+  }
+
+  isFlatShading(): boolean {
+    return this.flatShading;
+  }
+
   getMaterialState(): MaterialState {
     const lit = this.registry.get('lit') as MeshStandardMaterial;
     return {

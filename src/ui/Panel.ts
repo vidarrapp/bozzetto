@@ -1,6 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
-import { getTheme, setTheme, THEME_BG } from './theme';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -8,17 +7,23 @@ export interface PanelOptions {
 }
 
 /**
- * Side control panel. The viewer variant is minimal (starts collapsed; Display
- * theme toggle, Material, a trimmed Lighting of rotate-rig + ground, View) — the
- * timeline lives in the bottom Transport. The editor variant adds the full
- * lighting rig and an in-panel timeline for authoring. Keyboard shortcuts live
- * in installShortcuts, not here.
+ * Side control panel. The viewer variant is minimal (starts collapsed; Material,
+ * a trimmed Lighting of rotate-rig + ground, View) — the timeline lives in the
+ * bottom Transport and the theme toggle is global. The editor variant adds the
+ * full lighting rig and an in-panel timeline. Keyboard shortcuts live in
+ * installShortcuts; it calls toggleCollapsed()/refreshControls() here.
  */
 export class Panel {
   private readonly root: HTMLDivElement;
+  private readonly bodyEl: HTMLDivElement;
+  private readonly collapseBtn: HTMLButtonElement;
   private readonly editor: boolean;
 
+  private modeSelect!: HTMLSelectElement;
   private materialOptions!: HTMLDivElement;
+  private smoothCheckbox!: HTMLInputElement;
+  private wireframeCheckbox!: HTMLInputElement;
+  private groundCheckbox!: HTMLInputElement;
   private lightControls?: HTMLDivElement;
 
   private scrubber?: HTMLInputElement;
@@ -32,7 +37,6 @@ export class Panel {
     options: PanelOptions = {},
   ) {
     this.editor = options.editor ?? false;
-    const m = viewer.manifest;
 
     this.root = div('panel');
     document.body.appendChild(this.root);
@@ -40,31 +44,41 @@ export class Panel {
     const header = div('panel__header');
     const title = document.createElement('span');
     title.className = 'panel__title';
-    title.textContent = m.title || 'Bozzetto';
-    const collapse = button('', () => {});
-    collapse.className = 'panel__collapse';
-    header.append(title, collapse);
+    title.textContent = viewer.manifest.title || 'Bozzetto';
+    this.collapseBtn = button('', () => this.toggleCollapsed());
+    this.collapseBtn.className = 'panel__collapse';
+    header.append(title, this.collapseBtn);
     this.root.appendChild(header);
 
-    const body = div('panel__body');
-    this.root.appendChild(body);
+    this.bodyEl = div('panel__body');
+    this.root.appendChild(this.bodyEl);
 
     // Viewer starts collapsed for a minimal default; editor starts open.
-    body.hidden = !this.editor;
-    collapse.textContent = body.hidden ? '+' : '–';
-    collapse.addEventListener('click', () => {
-      body.hidden = !body.hidden;
-      collapse.textContent = body.hidden ? '+' : '–';
-    });
+    this.bodyEl.hidden = !this.editor;
+    this.collapseBtn.textContent = this.bodyEl.hidden ? '+' : '–';
 
-    if (this.editor) this.buildTimeline(body);
-    else this.buildDisplay(body);
+    if (this.editor) this.buildTimeline(this.bodyEl);
+    this.buildMaterial(this.bodyEl);
+    this.buildLighting(this.bodyEl);
 
-    this.buildMaterial(body);
-    this.buildLighting(body);
-
-    const view = section(body, 'View');
+    const view = section(this.bodyEl, 'View');
     view.appendChild(button('Reset view', () => this.viewer.resetView()));
+  }
+
+  /** Open/close the panel body (Tab). */
+  toggleCollapsed(): void {
+    this.bodyEl.hidden = !this.bodyEl.hidden;
+    this.collapseBtn.textContent = this.bodyEl.hidden ? '+' : '–';
+  }
+
+  /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */
+  refreshControls(): void {
+    this.modeSelect.value = this.viewer.getMaterial();
+    this.rebuildMaterialOptions();
+    const state = this.viewer.materials.getMaterialState();
+    this.smoothCheckbox.checked = !state.flatShading;
+    this.wireframeCheckbox.checked = this.viewer.isWireframe();
+    this.groundCheckbox.checked = this.viewer.isGroundEnabled();
   }
 
   dispose(): void {
@@ -127,50 +141,41 @@ export class Panel {
     if (this.playButton) this.playButton.textContent = playing ? 'Pause' : 'Play';
   }
 
-  // --- display (viewer only) --------------------------------------------
-
-  private buildDisplay(body: HTMLElement): void {
-    const display = section(body, 'Display');
-    display.appendChild(
-      checkbox('Light mode', getTheme() === 'light', (on) => {
-        const theme = on ? 'light' : 'dark';
-        setTheme(theme);
-        this.viewer.setBackground(THEME_BG[theme]);
-      }),
-    );
-  }
-
   // --- material ---------------------------------------------------------
 
   private buildMaterial(body: HTMLElement): void {
     const material = section(body, 'Material');
 
-    const modeSelect = document.createElement('select');
+    this.modeSelect = document.createElement('select');
     for (const mode of this.viewer.materials.modes) {
       const opt = document.createElement('option');
       opt.value = mode.id;
       opt.textContent = mode.label;
-      modeSelect.appendChild(opt);
+      this.modeSelect.appendChild(opt);
     }
-    modeSelect.value = this.viewer.getMaterial();
-    modeSelect.addEventListener('change', () => {
-      this.viewer.setMaterial(modeSelect.value);
+    this.modeSelect.value = this.viewer.getMaterial();
+    this.modeSelect.addEventListener('change', () => {
+      this.viewer.setMaterial(this.modeSelect.value);
       this.rebuildMaterialOptions();
     });
-    material.appendChild(labelRow('Mode', modeSelect));
+    material.appendChild(labelRow('Mode', this.modeSelect));
 
     this.materialOptions = div('mat-options');
     material.appendChild(this.materialOptions);
     this.rebuildMaterialOptions();
 
-    material.appendChild(
-      checkbox('Flat shading', this.viewer.materials.getMaterialState().flatShading, (on) =>
-        this.viewer.materials.setFlatShading(on),
-      ),
+    // Smooth shading on by default; unchecking it gives faceted/flat shading.
+    const smooth = checkbox('Smooth shading', !this.viewer.materials.isFlatShading(), (on) =>
+      this.viewer.materials.setFlatShading(!on),
     );
-    material.appendChild(
-      checkbox('Wireframe (w)', this.viewer.isWireframe(), (on) => this.viewer.setWireframe(on)),
+    this.smoothCheckbox = smooth.querySelector('input')!;
+    material.appendChild(smooth);
+
+    const wire = checkbox('Wireframe (w)', this.viewer.isWireframe(), (on) =>
+      this.viewer.setWireframe(on),
     );
+    this.wireframeCheckbox = wire.querySelector('input')!;
+    material.appendChild(wire);
   }
 
   private rebuildMaterialOptions(): void {
@@ -248,9 +253,11 @@ export class Panel {
       }),
     );
 
-    lighting.appendChild(
-      checkbox('Ground shadow', this.viewer.isGroundEnabled(), (on) => this.viewer.setGround(on)),
+    const ground = checkbox('Ground shadow', this.viewer.isGroundEnabled(), (on) =>
+      this.viewer.setGround(on),
     );
+    this.groundCheckbox = ground.querySelector('input')!;
+    lighting.appendChild(ground);
   }
 
   private rebuildLightControls(): void {

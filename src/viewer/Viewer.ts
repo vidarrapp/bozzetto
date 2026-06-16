@@ -21,8 +21,7 @@ import { Materials } from './Materials';
 import type { MaterialState } from './Materials';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
-
-const BACKGROUND = new Color('#1b1d21');
+import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
@@ -44,6 +43,7 @@ export class Viewer {
   private readonly controls: Controls;
   private readonly streamer: FrameStreamer;
   private readonly clock = new Clock();
+  private disposeTheme: () => void = () => {};
 
   private readonly display = new Mesh();
   private readonly ground: Mesh;
@@ -86,7 +86,8 @@ export class Viewer {
     this.renderer.shadowMap.enabled = true;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = BACKGROUND;
+    this.scene.background = new Color(THEME_BG[getTheme()]);
+    this.disposeTheme = onThemeChange((theme) => this.setBackground(THEME_BG[theme]));
 
     this.camera = new PerspectiveCamera(
       45,
@@ -236,6 +237,16 @@ export class Viewer {
     this.controls.reset();
   }
 
+  /** Re-frame the camera on the current model (hotkey "f"). */
+  focusSubject(): void {
+    const geom = this.display.geometry;
+    geom.computeBoundingBox();
+    if (geom.boundingBox) {
+      this.subjectBox.copy(geom.boundingBox);
+      this.controls.frameSubject(this.subjectBox);
+    }
+  }
+
   setBackground(hex: string): void {
     this.scene.background = new Color(hex);
   }
@@ -284,6 +295,7 @@ export class Viewer {
 
   dispose(): void {
     cancelAnimationFrame(this.rafId);
+    this.disposeTheme();
     window.removeEventListener('resize', this.onResize);
     this.controls.dispose();
     this.streamer.dispose();

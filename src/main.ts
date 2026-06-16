@@ -4,8 +4,9 @@ import { Viewer } from './viewer/Viewer';
 import { Panel } from './ui/Panel';
 import { Transport } from './ui/Transport';
 import { installShortcuts } from './ui/shortcuts';
+import { Help } from './ui/Help';
 import { renderLanding } from './ui/Landing';
-import { getTheme, initTheme, THEME_BG } from './ui/theme';
+import { initTheme, mountThemeToggle } from './ui/theme';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -14,6 +15,7 @@ import { getTheme, initTheme, THEME_BG } from './ui/theme';
  */
 async function main(): Promise<void> {
   initTheme();
+  mountThemeToggle();
   const app = document.getElementById('app');
   if (!app) throw new Error('#app element not found');
 
@@ -36,16 +38,20 @@ async function bootViewer(id: string): Promise<void> {
     const { manifest, manifestUrl } = await loadProject(id, base);
 
     const viewer = new Viewer(viewport, manifest, manifestUrl);
-    viewer.setBackground(THEME_BG[getTheme()]);
     // Expose for debugging from the browser console, e.g.:
     //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
     (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
     await viewer.boot();
 
     // Build the UI after boot so controls reflect the applied look.
-    new Panel(viewer);
+    const panel = new Panel(viewer);
     new Transport(viewer);
-    installShortcuts(viewer);
+    const help = new Help();
+    installShortcuts(viewer, {
+      togglePanel: () => panel.toggleCollapsed(),
+      toggleHelp: () => help.toggle(),
+      refresh: () => panel.refreshControls(),
+    });
 
     overlay?.remove();
     addGalleryLink();
