@@ -488,3 +488,111 @@ html.is-page body {
   background: rgba(255, 80, 80, 0.18);
   border-color: #ff8f8f;
 }
+
+/* --- per-project editor --- */
+.muted {
+  color: var(--muted);
+}
+
+.editor__section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.editor__section h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.editor__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.editor__settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor__settings input,
+.editor__settings select {
+  width: auto;
+  min-width: 90px;
+  padding: 7px 9px;
+}
+
+.editor__settings input#f-title {
+  min-width: 220px;
+}
+
+.dropzone {
+  border: 1px dashed var(--panel-border);
+  border-radius: 10px;
+  padding: 22px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone--over {
+  border-color: var(--accent);
+  background: rgba(111, 183, 255, 0.08);
+}
+
+.dropzone p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.dropzone__zup {
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.progress__track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+.editor__preview {
+  position: relative;
+  width: 100%;
+  height: 440px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+}
+
+.editor__preview canvas {
+  display: block;
+}
+
+.preview__hint {
+  padding: 1rem;
+}
