@@ -137,9 +137,7 @@ export class Viewer {
 
     this.lighting = new Lighting(this.scene, this.renderer);
     this.materials = new Materials(source);
-    this.environment = new Environment(this.scene, this.renderer, source, (v) =>
-      this.materials.setEnvIntensity(v),
-    );
+    this.environment = new Environment(this.scene, this.renderer, source);
     this.envLoadingEl = document.createElement('div');
     this.envLoadingEl.className = 'env-loading';
     this.envLoadingEl.textContent = 'Loading environment…';

@@ -48,8 +48,10 @@ export function envAssetUrl(id: string): string | null {
  * Image-based lighting + scene background. Loads an equirectangular .hdr,
  * prefilters it with PMREM for `scene.environment` (PBR irradiance +
  * reflections), and owns `scene.background`: the theme colour, a solid colour,
- * or the blurred HDRI. Intensity drives the lit material's envMapIntensity
- * (r160 has no scene.environmentIntensity / environmentRotation).
+ * or the blurred HDRI. Intensity drives `scene.environmentIntensity`: for a
+ * standard material lit by `scene.environment` (no own envMap), the renderer
+ * overrides `material.envMapIntensity` with it, so that is the only knob that
+ * takes effect.
  */
 export class Environment {
   private readonly pmrem: PMREMGenerator;
@@ -74,10 +76,10 @@ export class Environment {
     private readonly scene: Scene,
     renderer: WebGLRenderer,
     private readonly source: AssetSource,
-    private readonly applyIntensity: (value: number) => void,
   ) {
     this.pmrem = new PMREMGenerator(renderer);
     this.pmrem.compileEquirectangularShader();
+    this.scene.environmentIntensity = this.intensity;
     this.updateBackground();
     this.disposeTheme = onThemeChange(() => {
       if (this.bgMode === 'theme') this.updateBackground();
@@ -135,7 +137,7 @@ export class Environment {
 
   setIntensity(value: number): void {
     this.intensity = value;
-    this.applyIntensity(value);
+    this.scene.environmentIntensity = value;
   }
 
   setBackgroundMode(mode: BackgroundMode): void {
