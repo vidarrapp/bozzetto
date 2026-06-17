@@ -30,6 +30,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 - The preview is the real viewer. Set up lighting, material, environment, AO, and camera in the floating panel, then use Save look to store the exact opening state.
 - Mark stages (named frames with a short description) that appear on the scrubber, and capture any frame as the gallery thumbnail.
 - Full-window preview with floating side panels that slide out of the way (press Tab to hide them).
+- Export a finished timelapse as one self-contained `.html`, with the viewer, frames, and assets all inlined, that opens offline straight from disk.
 
 ### Platform
 
@@ -108,29 +109,63 @@ To use the editor locally without setting up Cloudflare Access, set `DEV_ADMIN =
 ```bash
 npm run build               # type-check + static production build into dist/
 npm run preview             # serve the production build
+npm run export <id>         # build first, then bundle a timelapse into <id>.html
 npm run typecheck           # app types
 npm run typecheck:functions # Pages Functions types
 npm run db:migrate          # apply D1 migrations to the remote database
 ```
 
-## Creating a timelapse
+## Tutorial
 
-### From the editor (recommended)
+A walkthrough from a blank project to a finished timelapse you can share. It assumes you have the app running locally (see Getting started) or are using the live site.
 
-1. Open `/admin/` and create a project from a title.
-2. Drag in a naturally sorted sequence of `.obj` (or `.glb`) frames. Tick **OBJ files are Z-up** if they came from a Z-up DCC tool.
-3. Set up lighting, material, environment, AO, and camera in the floating panel, then press **Save look**.
-4. Add **stages** to annotate key frames, press **Save thumbnail**, and the project is live at `/?tl=<id>`.
+### 1. Look at the viewer first
 
-### From the command line
+Before making anything, get a feel for what you are building toward. Run `npm run dev`, open the printed URL, and go to `/?tl=demo`. This is a bundled synthetic bust that roughs out from big volumes to a faceted surface. Drag to orbit, scroll to zoom, press `Space` to play, and use the bar along the bottom to scrub through the stages. Press `H` at any time for the full list of hotkeys.
 
-A dependency-free Node script writes a complete static timelapse under `public/timelapses/<id>/`:
+### 2. Prepare your frames
+
+A timelapse is just a sequence of meshes, one per stage of a sculpt. Export each stage from your sculpting tool as an `.obj` or `.glb` file, named so they sort in order (for example `sculpt_001.obj`, `sculpt_002.obj`, and so on). Lower triangle counts play back more smoothly, so a few thousand to a few hundred thousand triangles per frame is a comfortable range.
+
+### 3. Create a project
+
+Open `/admin/` and create a project from a title. The id is slugged from the title, and is what you load the viewer by later.
+
+If you are running locally, set `DEV_ADMIN = "true"` in `wrangler.toml` first so the editor opens without Cloudflare Access (see Getting started).
+
+### 4. Add your frames
+
+Drag the whole sequence onto the dropzone, or pick the files. If they came from a Z-up tool such as Blender or most DCC apps, tick **OBJ files are Z-up** so they are rotated to the viewer's Y-up. The files convert in the browser and upload while you watch the progress bar. When it finishes, the live preview appears.
+
+### 5. Set up the look
+
+The preview is the real viewer, with a floating control panel on the right (press `Tab` to hide it). Pick a lighting preset, a material, and an HDRI environment, then orbit to the camera angle you want. When it looks right, press **Save look**. That stores the exact opening state, the camera included, so anyone who opens the timelapse sees it the way you framed it.
+
+### 6. Annotate and finish
+
+Add **stages** to mark and name key frames; they appear as markers on the scrubber. Press **Save thumbnail** to grab the current frame as the gallery image. Your timelapse is now live at `/?tl=<id>`.
+
+### 7. Share it
+
+There are two ways to hand it off:
+
+- **A link.** When you deploy from your own Cloudflare project, the timelapse is already live at its `/?tl=<id>` URL. Send the link.
+- **A single file.** Press **Export .html** in the editor's Export section to download one self-contained `.html` with the viewer, frames, and assets inlined. It opens straight from disk with no internet connection, so you can email it, drop it in a shared folder, or keep it as an archive. Build the site at least once first, since the export reuses the built viewer bundle.
+
+### Doing it from the command line
+
+You can build a timelapse without the editor or a database. A dependency-free Node script converts a folder of frames into a static timelapse under `public/timelapses/<id>/`:
 
 ```bash
 node scripts/obj-to-timelapse.mjs <inputDir> <id> [--fps=4] [--title="..."] [--z-up]
 ```
 
-Static timelapses load by id the same way (`?tl=<id>`) and are served straight from `dist/`. This is useful when you want to commit a fixed timelapse with the app and skip the database.
+It loads by id the same way (`?tl=<id>`) and is served straight from `dist/`, which is handy when you want to commit a fixed timelapse alongside the app. To turn one into a shareable single file, build the site and export it by id:
+
+```bash
+npm run build
+npm run export <id>          # writes a self-contained <id>.html
+```
 
 ## Project layout
 
@@ -143,6 +178,8 @@ src/
   loaders/gltf.ts          shared GLTFLoader setup
   viewer/
     Viewer.ts              scene, renderer, camera, render loop
+    AssetSource.ts         where bytes come from: network or inlined export
+    mountViewer.ts         boots the viewer + UI, shared by both entries
     Lighting.ts            multi-light rig, presets, VSM shadows
     Materials.ts           material registry + mode switching
     Environment.ts         HDRI image-based lighting + background
@@ -151,9 +188,11 @@ src/
     Timeline.ts            playback clock, fps, stage jumps, scrub
     quality.ts, pcss.ts    device tiers + optional PCSS shadows
   ui/                      Panel, Transport, Help, FpsMeter, theme, shortcuts, Landing
+  embed/main.ts            entry for the self-contained single-file export
+  export/singleFile.js     pure bundler core shared by the editor and CLI
   admin/
     main.ts                editor router (list / per-project)
-    editor.ts              project editor: upload, preview, look, stages
+    editor.ts              project editor: upload, preview, look, stages, export
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
@@ -166,6 +205,7 @@ migrations/                D1 schema
 scripts/
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
+  export-single-file.mjs   CLI: timelapse to a self-contained .html
 ```
 
 ## Deployment
