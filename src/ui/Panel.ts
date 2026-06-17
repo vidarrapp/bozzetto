@@ -370,6 +370,9 @@ export class Panel {
     sec.appendChild(labelRow('Bg colour', bgColor));
 
     sec.appendChild(compactRange('Bg blur', 0, 1, 0.05, state.bgBlur, (v) => env.setBackgroundBlur(v)));
+    sec.appendChild(
+      compactRange('HDR rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
+    );
   }
 
   private buildAO(body: HTMLElement): void {

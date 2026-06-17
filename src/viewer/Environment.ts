@@ -18,6 +18,8 @@ export interface EnvState {
   background: BackgroundMode;
   bgColor: string;
   bgBlur: number;
+  /** HDRI rotation offset in degrees (on top of the shared rig rotation). */
+  rotation: number;
 }
 
 interface EnvConfig {
@@ -53,6 +55,8 @@ export class Environment {
   private bgMode: BackgroundMode = 'theme';
   private bgColor = '#1c1814';
   private bgBlur = 0.4;
+  private rigRotation = 0;
+  private offset = 0;
   /** Guards against an earlier load resolving after a later selection. */
   private token = 0;
   private readonly disposeTheme: () => void;
@@ -84,6 +88,7 @@ export class Environment {
       background: this.bgMode,
       bgColor: this.bgColor,
       bgBlur: this.bgBlur,
+      rotation: this.offset,
     };
   }
 
@@ -139,9 +144,20 @@ export class Environment {
     if (this.bgMode === 'hdri') this.updateBackground();
   }
 
-  /** Y-rotation of the HDRI (degrees) — kept in sync with the light-rig rotation. */
+  /** Shared rig rotation (degrees) — set by the viewer's Rotate-rig slider. */
   setRotation(deg: number): void {
-    const rad = (deg * Math.PI) / 180;
+    this.rigRotation = deg;
+    this.applyRotation();
+  }
+
+  /** Independent HDRI offset (degrees) — editor slider, on top of the rig. */
+  setOffset(deg: number): void {
+    this.offset = deg;
+    this.applyRotation();
+  }
+
+  private applyRotation(): void {
+    const rad = ((this.rigRotation + this.offset) * Math.PI) / 180;
     this.scene.environmentRotation.set(0, rad, 0);
     this.scene.backgroundRotation.set(0, rad, 0);
   }
@@ -151,6 +167,8 @@ export class Environment {
     if (state.background) this.bgMode = state.background;
     if (typeof state.bgColor === 'string') this.bgColor = state.bgColor;
     if (typeof state.bgBlur === 'number') this.bgBlur = state.bgBlur;
+    if (typeof state.rotation === 'number') this.offset = state.rotation;
+    this.applyRotation();
     if ('id' in state) await this.setEnvironment(state.id ?? null);
     else this.updateBackground();
   }

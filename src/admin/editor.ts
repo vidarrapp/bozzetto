@@ -42,6 +42,7 @@ function disposePreview(): void {
 
 export async function renderEditor(host: HTMLElement, id: string): Promise<void> {
   disposePreview();
+  document.documentElement.classList.remove('is-page'); // full-viewport editor
   host.innerHTML = '<div class="admin"><p class="muted">Loading…</p></div>';
 
   let project: EditorProject;
@@ -54,61 +55,58 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   }
 
   host.innerHTML = `
-    <div class="admin editor">
-      <header class="admin__head">
-        <div>
-          <h1 class="editor__title"></h1>
-          <p class="editor__id muted"></p>
-        </div>
-        <a class="admin__home" href="/admin/">← Projects</a>
-      </header>
+    <div class="editor">
+      <aside class="editor__sidebar">
+        <a class="editor__back" href="/admin/">← Projects</a>
+        <h1 class="editor__title"></h1>
+        <p class="editor__id muted"></p>
 
-      <section class="editor__section">
-        <h3>Settings</h3>
-        <div class="editor__settings">
-          <label>Title <input id="f-title" type="text" /></label>
-          <label>Mode
-            <select id="f-mode">
-              <option value="timelapse">Timelapse</option>
-              <option value="model">Model</option>
-            </select>
-          </label>
-          <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
-          <button id="save" class="btn btn--primary" type="button">Save settings</button>
-        </div>
-      </section>
+        <section class="editor__section">
+          <h3>Settings</h3>
+          <div class="editor__settings">
+            <label>Title <input id="f-title" type="text" /></label>
+            <label>Mode
+              <select id="f-mode">
+                <option value="timelapse">Timelapse</option>
+                <option value="model">Model</option>
+              </select>
+            </label>
+            <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
+            <button id="save" class="btn btn--primary" type="button">Save settings</button>
+          </div>
+        </section>
 
-      <section class="editor__section">
-        <h3>Frames <span id="frame-count" class="muted"></span></h3>
-        <div id="drop" class="dropzone">
-          <p>Drop a sequence of <strong>.obj</strong> or <strong>.glb</strong> files, or pick them:</p>
-          <input id="files" type="file" accept=".obj,.glb" multiple />
-          <label class="checkbox dropzone__zup"><input id="zup" type="checkbox" /> OBJ files are Z-up</label>
-        </div>
-        <div id="progress" class="progress" hidden>
-          <div class="progress__track"><div class="progress__bar" id="bar"></div></div>
-          <span id="progress-label" class="muted"></span>
-        </div>
-      </section>
+        <section class="editor__section">
+          <h3>Frames <span id="frame-count" class="muted"></span></h3>
+          <div id="drop" class="dropzone">
+            <p>Drop a sequence of <strong>.obj</strong> or <strong>.glb</strong> files, or pick them:</p>
+            <input id="files" type="file" accept=".obj,.glb" multiple />
+            <label class="checkbox dropzone__zup"><input id="zup" type="checkbox" /> OBJ files are Z-up</label>
+          </div>
+          <div id="progress" class="progress" hidden>
+            <div class="progress__track"><div class="progress__bar" id="bar"></div></div>
+            <span id="progress-label" class="muted"></span>
+          </div>
+        </section>
 
-      <section class="editor__section">
-        <h3>Stages</h3>
-        <div id="stages"></div>
-        <div class="editor__row">
-          <button id="add-stage" class="btn" type="button">Add stage</button>
-          <button id="save-stages" class="btn btn--primary" type="button">Save stages</button>
-        </div>
-      </section>
+        <section class="editor__section">
+          <h3>Stages</h3>
+          <div id="stages"></div>
+          <div class="editor__row">
+            <button id="add-stage" class="btn" type="button">Add stage</button>
+            <button id="save-stages" class="btn btn--primary" type="button">Save stages</button>
+          </div>
+        </section>
+      </aside>
 
-      <section class="editor__section">
-        <h3>Preview &amp; look</h3>
+      <main class="editor__main">
         <div id="preview" class="editor__preview"></div>
-        <div class="editor__row">
+        <div class="editor__toolbar">
           <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
           <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
-          <span class="muted">Adjust lighting/material in the floating panel; save the look, or grab the current frame as the gallery thumbnail.</span>
+          <span class="muted">Lighting/material live in the floating panel — save the look, or grab the current frame as the thumbnail.</span>
         </div>
-      </section>
+      </main>
     </div>`;
 
   const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
