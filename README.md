@@ -2,14 +2,27 @@
 
 A *bozzetto* is the small clay study a sculptor makes before starting the real piece, the place where the rough form gets worked out. Bozzetto applies that idea to sculpt timelapses: instead of a pre-rendered turntable video, every stage of a sculpt is stored as real 3D geometry you can relight, orbit, and step through.
 
-There are two parts:
+There are a few parts:
 
 - A viewer that plays a timelapse back as a sequence of meshes. You can watch a form emerge from rough volumes to a finished surface, relight it, switch shading modes, and scrub through the stages.
-- A browser-based editor for building those timelapses. You drop in a sequence of `.obj` or `.glb` files, convert them in the browser, set up the look, mark the stages, and publish.
+- A public editor (`/create`) that builds a timelapse in the browser and exports it as one self-contained file you can open offline. No sign-in, and nothing is uploaded.
+- A full editor (`/admin`) that publishes timelapses to the gallery, behind a login, with a saved look and thumbnail per project.
 
 It runs entirely on Cloudflare (Pages, Functions, D1, and R2), so there is no server to run yourself.
 
-Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>` and the editor is at `/admin/`.
+Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>`, the public editor at `/create/`, and the full editor at `/admin/`.
+
+## Make your own (no sign-in)
+
+The quickest way in is the public editor at [`/create`](https://bozzetto.vidarrapp.se/create/). It runs entirely in your browser: you build a timelapse and download it as a single self-contained `.html`. Nothing is uploaded, and there is no account to set up.
+
+1. Open [`/create`](https://bozzetto.vidarrapp.se/create/).
+2. Drop in a sequence of `.obj` or `.glb` files, one mesh per stage of your sculpt, named so they sort in order. Tick **OBJ files are Z-up** if they came from a Z-up tool such as Blender. They convert in the browser as the progress bar fills.
+3. Set up the look in the floating panel on the right: lighting, material, environment, and camera. Orbit to the angle you want.
+4. Optionally add **stages** to mark and name key frames; they become markers on the exported file's scrubber.
+5. Press **Export .html**. You get one file with the viewer, frames, and assets all inlined. It opens offline straight from disk, so you can email it, drop it in a shared folder, or keep it as an archive.
+
+A single mesh works too: drop one file and you get a shareable 3D model on one HTML page. To publish timelapses to the gallery instead of downloading a file, use the full editor at `/admin/` (see the tutorial below).
 
 ## Features
 
@@ -22,6 +35,12 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 - Screen-space ambient occlusion, using GTAO where the device can handle it and falling back to SSAO. It can be turned off.
 - A device quality tier plus adaptive quality that backs off render cost when the frame rate drops.
 - A DCC-style camera (orbit, pan, dolly) with a saved camera per project, a light/dark theme, an on-screen hotkey guide, and a bottom transport bar with a scrubber and stage markers.
+
+### Public editor (`/create/`)
+
+- No sign-in and no backend. Frames are converted and held in the browser; nothing is uploaded.
+- The preview is the real viewer, with the same floating look panel as the full editor.
+- One button exports a self-contained `.html` with the viewer, frames, and assets inlined, ready to share or archive.
 
 ### Editor (`/admin/`)
 
