@@ -42,10 +42,10 @@ const DEFAULT_ALBEDO = '#b9b1a8';
 // The project's matcaps. Blender 2-sphere PNGs are cropped to their left sphere
 // at load time (`blender: true`).
 const MATCAPS: MatcapConfig[] = [
-  { id: 'warm-clay', label: 'Warm clay', url: '/assets/matcaps/warm-clay.png', blender: true },
-  { id: 'blue-grey', label: 'Blue grey', url: '/assets/matcaps/blue-grey.png', blender: true },
-  { id: 'terracotta', label: 'Terracotta', url: '/assets/matcaps/terracotta.png', blender: true },
-  { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png', blender: true },
+  { id: 'warm-clay', label: 'Warm clay', url: '/assets/matcaps/warm-clay.png' },
+  { id: 'blue-grey', label: 'Blue grey', url: '/assets/matcaps/blue-grey.png' },
+  { id: 'terracotta', label: 'Terracotta', url: '/assets/matcaps/terracotta.png' },
+  { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png' },
 ];
 
 /**
