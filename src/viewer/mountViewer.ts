@@ -25,7 +25,11 @@ export async function mountViewer(
 
   // Build the UI after boot so controls reflect the applied look.
   const panel = new Panel(viewer);
-  new Transport(viewer);
+  // The transport (scrubber + stage markers) only makes sense for a sequence;
+  // a single-model project has nothing to scrub, so it gets no timeline.
+  if (manifest.mode === 'timelapse' && manifest.config.frameCount > 1) {
+    new Transport(viewer);
+  }
   const help = new Help();
   const fps = new FpsMeter(viewer);
   installShortcuts(viewer, {
