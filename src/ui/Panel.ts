@@ -189,6 +189,12 @@ export class Panel {
     );
     this.wireframeCheckbox = wire.querySelector('input')!;
     material.appendChild(wire);
+
+    material.appendChild(
+      compactRange('Wire opacity', 0.05, 1, 0.05, this.viewer.getWireframeOpacity(), (v) =>
+        this.viewer.setWireframeOpacity(v),
+      ),
+    );
   }
 
   private rebuildMaterialOptions(): void {

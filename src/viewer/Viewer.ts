@@ -358,6 +358,15 @@ export class Viewer {
     return this.wireframeOn;
   }
 
+  /** Overlay line opacity (0..1). Low values fight overlap saturation on dense meshes. */
+  setWireframeOpacity(value: number): void {
+    this.wireMaterial.opacity = value;
+  }
+
+  getWireframeOpacity(): number {
+    return this.wireMaterial.opacity;
+  }
+
   /** Dark wires on a light albedo, light wires on a dark one. */
   private updateWireColor(): void {
     this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x000000 : 0xffffff);
