@@ -73,6 +73,11 @@ export class Viewer {
     color: 0x000000,
     transparent: true,
     opacity: 0.2,
+    // Don't write depth: the overlay shares the surface geometry, and if its
+    // lines land in the depth buffer the AO pass (GTAO/SSAO) reads them as edges
+    // and draws a dark halo along every wire — which made the overlay look solid
+    // regardless of opacity. depthTest stays on so back-facing wires stay hidden.
+    depthWrite: false,
   });
   private wireframeOn = false;
 
