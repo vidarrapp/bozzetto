@@ -39,6 +39,8 @@ export interface ManifestCamera {
   position?: number[];
   /** Saved orbit target [x, y, z]; restored alongside `position`. */
   target?: number[];
+  /** Lens focal length in 35mm-equivalent mm (drives the perspective). */
+  focalLength?: number;
 }
 
 export interface FrameEntry {

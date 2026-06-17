@@ -67,6 +67,7 @@ export class Panel {
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
+    if (this.editor) this.buildCamera(this.bodyEl);
     if (this.editor) this.buildEnvironment(this.bodyEl);
     if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
@@ -430,6 +431,39 @@ export class Panel {
     );
   }
 
+  // --- camera (editor only) ---------------------------------------------
+
+  private buildCamera(body: HTMLElement): void {
+    const sec = section(body, 'Camera');
+
+    const current = this.viewer.getFocalLength();
+    let idx = LENS_STEPS.indexOf(current);
+    if (idx < 0) {
+      // Off-step (e.g. an older save): show the nearest available lens.
+      idx = LENS_STEPS.reduce(
+        (best, mm, i) =>
+          Math.abs(mm - current) < Math.abs(LENS_STEPS[best] - current) ? i : best,
+        0,
+      );
+    }
+
+    sec.appendChild(
+      labelled('Lens', () => {
+        const out = document.createElement('span');
+        out.className = 'readout';
+        out.textContent = `${LENS_STEPS[idx]}mm`;
+        const r = range(0, LENS_STEPS.length - 1, 1, idx, (v) => {
+          const mm = LENS_STEPS[v];
+          this.viewer.setFocalLength(mm);
+          out.textContent = `${mm}mm`;
+        });
+        const wrap = div('range-wrap');
+        wrap.append(r, out);
+        return wrap;
+      }),
+    );
+  }
+
   private buildAO(body: HTMLElement): void {
     if (!this.viewer.aoAvailable()) return;
     const ao = this.viewer.getAOState();
@@ -502,6 +536,9 @@ export class Panel {
 function devMode(): boolean {
   return new URLSearchParams(location.search).has('dev');
 }
+
+/** Lens slider stops, in 35mm-equivalent mm (wide normal through short tele). */
+const LENS_STEPS: number[] = [35, 50, 55, 80, 105, 135];
 
 // --- tiny DOM helpers ----------------------------------------------------
 

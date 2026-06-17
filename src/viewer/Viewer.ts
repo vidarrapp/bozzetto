@@ -31,6 +31,9 @@ import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
 
+/** Default lens when a project has no saved focal length (a "normal" lens). */
+const DEFAULT_FOCAL_LENGTH = 50;
+
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
   enabled: boolean;
@@ -84,6 +87,8 @@ export class Viewer {
   private wireframeOn = false;
 
   private currentMode = 'lit';
+  /** Lens focal length (35mm-equivalent mm); drives the camera FOV. */
+  private focalLength = DEFAULT_FOCAL_LENGTH;
   /** Frame ordinal targeted by the timeline/scrubber. */
   private targetIndex = -1;
   /** Frame ordinal whose geometry is currently displayed. */
@@ -134,6 +139,9 @@ export class Viewer {
       0.01,
       1000,
     );
+    // The camera is lens-driven: a 35mm-equivalent focal length sets the FOV.
+    this.focalLength = manifest.camera.focalLength ?? DEFAULT_FOCAL_LENGTH;
+    this.camera.setFocalLength(this.focalLength);
 
     this.lighting = new Lighting(this.scene, this.renderer);
     this.materials = new Materials(source);
@@ -327,10 +335,22 @@ export class Viewer {
     };
   }
 
+  /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
+  setFocalLength(mm: number): void {
+    const oldFov = this.camera.fov;
+    this.camera.setFocalLength(mm);
+    this.focalLength = mm;
+    this.controls.dollyForFov(oldFov, this.camera.fov);
+  }
+
+  getFocalLength(): number {
+    return this.focalLength;
+  }
+
   /** Current camera placement, persisted with the saved look (editor). */
-  getCameraState(): { autoFrame: boolean; position: number[]; target: number[] } {
+  getCameraState(): { autoFrame: boolean; position: number[]; target: number[]; focalLength: number } {
     const s = this.controls.getState();
-    return { autoFrame: false, position: s.position, target: s.target };
+    return { autoFrame: false, position: s.position, target: s.target, focalLength: this.focalLength };
   }
 
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
@@ -561,7 +581,9 @@ export class Viewer {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    // Re-apply the lens so the focal length stays fixed across aspect changes
+    // (setFocalLength recomputes the FOV and the projection matrix).
+    this.camera.setFocalLength(this.focalLength);
     this.renderer.setSize(w, h);
     this.composer?.setSize(w, h);
   };

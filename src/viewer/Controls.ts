@@ -85,6 +85,27 @@ export class Controls {
     this.controls.update();
   }
 
+  /**
+   * Dolly along the view ray so the subject keeps its apparent size as the
+   * vertical FOV changes: the lens-compression comparison at a fixed framing.
+   * Moving back for a longer lens (and in for a wider one) is what a photographer
+   * does to keep the subject filling the frame across focal lengths.
+   */
+  dollyForFov(oldFov: number, newFov: number): void {
+    const offset = new Vector3().subVectors(this.camera.position, this.controls.target);
+    const dist = offset.length();
+    if (dist < 1e-6) return;
+    const ratio = Math.tan((oldFov * Math.PI) / 360) / Math.tan((newFov * Math.PI) / 360);
+    const newDist = dist * ratio;
+    this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), newDist);
+    this.camera.near = Math.max(newDist / 100, 1e-3);
+    this.camera.far = newDist * 100;
+    this.camera.updateProjectionMatrix();
+    this.controls.minDistance = newDist * 0.1;
+    this.controls.maxDistance = newDist * 10;
+    this.controls.update();
+  }
+
   getState(): { position: [number, number, number]; target: [number, number, number] } {
     const p = this.camera.position;
     const t = this.controls.target;
