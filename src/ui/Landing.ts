@@ -25,7 +25,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
         </div>
         <nav class="landing__links">
           <a class="landing__editor" href="/create/">Make your own →</a>
-          <a class="landing__admin muted" href="/admin/">Editor</a>
+          <a class="landing__admin muted" href="/admin/">Admin</a>
         </nav>
       </header>
       <div class="landing__grid" id="landing-grid"></div>
