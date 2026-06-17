@@ -454,6 +454,23 @@ html.is-page body {
   text-decoration: underline;
 }
 
+.landing__links {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+.landing__admin {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.landing__admin:hover {
+  text-decoration: underline;
+}
+
 .landing__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1104,6 +1121,12 @@ html.is-page body {
 
 .editor__hint {
   margin: 0 0 10px;
+}
+
+/* memory heads-up in the /create editor */
+.editor__warn {
+  margin: 8px 0 0;
+  color: var(--accent);
 }
 
 /* list (project picker) back-link, top-left */

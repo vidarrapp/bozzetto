@@ -16,13 +16,19 @@ export interface Asset {
   bytes: Uint8Array;
 }
 
-/** A manifest-shaped object: enough for the gather and the embedded registry. */
+/**
+ * A manifest-shaped object: enough for the gather and the embedded registry.
+ * No index signature, so a concrete `Manifest` is assignable to it.
+ */
 export interface ExportManifest {
   frames: { sd: string }[];
-  environment?: unknown;
   title?: unknown;
+  environment?: unknown;
   defaults?: unknown;
-  [key: string]: unknown;
+  lighting?: unknown;
+  material?: unknown;
+  ao?: unknown;
+  camera?: unknown;
 }
 
 /** Overlay the live preview's current look onto a base manifest for export. */

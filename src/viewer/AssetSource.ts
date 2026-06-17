@@ -64,6 +64,42 @@ export function stripQuery(path: string): string {
 }
 
 /**
+ * In-memory source for the public /create editor: frame bytes are held as they
+ * are converted (never uploaded), and shared assets (matcaps, HDRIs) fall back
+ * to a cache-bypassed fetch from the site. Lets the live preview run the real
+ * viewer with no backend.
+ */
+export class MemorySource implements AssetSource {
+  private readonly frames = new Map<string, ArrayBuffer>();
+  private manifest: Manifest | null = null;
+
+  setManifest(manifest: Manifest): void {
+    this.manifest = manifest;
+  }
+
+  putFrame(path: string, bytes: ArrayBuffer): void {
+    this.frames.set(stripQuery(path), bytes);
+  }
+
+  clearFrames(): void {
+    this.frames.clear();
+  }
+
+  async getManifest(): Promise<Manifest> {
+    if (!this.manifest) throw new Error('MemorySource: manifest not set');
+    return this.manifest;
+  }
+
+  async getBytes(path: string): Promise<ArrayBuffer> {
+    const inMem = this.frames.get(stripQuery(path));
+    if (inMem) return inMem;
+    const res = await fetch(path, { cache: 'reload' });
+    if (!res.ok) throw new Error(`Failed to load ${path} (${res.status})`);
+    return res.arrayBuffer();
+  }
+}
+
+/**
  * Fetch bytes through the source and hand a loader a URL it can consume. Used
  * for assets whose three.js loader is URL-based (HDRI, matcap textures): the
  * bytes become a same-origin blob: URL, which loads even from a file:// page.

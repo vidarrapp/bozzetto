@@ -23,7 +23,10 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
           <h1 class="landing__title">Bozzetto</h1>
           <p class="landing__tagline">Sculpt timelapses &amp; 3D studies</p>
         </div>
-        <a class="landing__editor" href="/admin/">Editor →</a>
+        <nav class="landing__links">
+          <a class="landing__editor" href="/create/">Make your own →</a>
+          <a class="landing__admin muted" href="/admin/">Editor</a>
+        </nav>
       </header>
       <div class="landing__grid" id="landing-grid"></div>
     </div>`;
