@@ -27,6 +27,7 @@ export class Panel {
   private wireframeCheckbox!: HTMLInputElement;
   private groundCheckbox!: HTMLInputElement;
   private lightControls?: HTMLDivElement;
+  private lightToggles?: HTMLDivElement;
 
   private scrubber?: HTMLInputElement;
   private playButton?: HTMLButtonElement;
@@ -236,24 +237,32 @@ export class Panel {
   private buildLighting(body: HTMLElement): void {
     const lighting = section(body, 'Lighting');
 
-    if (this.editor) {
-      const presetSelect = document.createElement('select');
-      for (const preset of this.viewer.lighting.presets()) {
-        const opt = document.createElement('option');
-        opt.value = preset.id;
-        opt.textContent = preset.label;
-        presetSelect.appendChild(opt);
-      }
-      presetSelect.value = this.viewer.manifest.defaults.lightingPreset;
-      presetSelect.addEventListener('change', () => {
-        this.viewer.lighting.applyPreset(presetSelect.value);
-        this.rebuildLightControls();
-      });
-      lighting.appendChild(labelRow('Preset', presetSelect));
+    // Preset switch (viewer + editor): Three-point <-> Raking.
+    const presetSelect = document.createElement('select');
+    for (const preset of this.viewer.lighting.presets()) {
+      const opt = document.createElement('option');
+      opt.value = preset.id;
+      opt.textContent = preset.label;
+      presetSelect.appendChild(opt);
+    }
+    presetSelect.value = this.viewer.manifest.defaults.lightingPreset;
+    presetSelect.addEventListener('change', () => {
+      this.viewer.lighting.applyPreset(presetSelect.value);
+      this.rebuildLightControls(); // editor: full per-light rig
+      this.rebuildLightToggles(); // viewer: simple on/off toggles
+    });
+    lighting.appendChild(labelRow('Preset', presetSelect));
 
+    if (this.editor) {
+      // Editor keeps the full rig: intensity, angles, colour, per-light shadows.
       this.lightControls = div('light-controls');
       lighting.appendChild(this.lightControls);
       this.rebuildLightControls();
+    } else {
+      // Viewer gets just on/off toggles per light; advanced settings live in the editor.
+      this.lightToggles = div('light-toggles');
+      lighting.appendChild(this.lightToggles);
+      this.rebuildLightToggles();
     }
 
     lighting.appendChild(
@@ -277,6 +286,17 @@ export class Panel {
     );
     this.groundCheckbox = ground.querySelector('input')!;
     lighting.appendChild(ground);
+  }
+
+  /** Viewer-only: one enable checkbox per light (no advanced controls). */
+  private rebuildLightToggles(): void {
+    if (!this.lightToggles) return;
+    this.lightToggles.replaceChildren();
+    for (const light of this.viewer.lighting.state()) {
+      this.lightToggles.appendChild(
+        checkbox(light.label, light.enabled, (on) => this.viewer.lighting.setEnabled(light.id, on)),
+      );
+    }
   }
 
   private rebuildLightControls(): void {
