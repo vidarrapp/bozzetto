@@ -245,7 +245,7 @@ export class Panel {
         const start = this.viewer.lighting.getRigRotation();
         out.textContent = `${Math.round(start)}°`;
         const r = range(0, 360, 1, start, (v) => {
-          this.viewer.lighting.setRigRotation(v);
+          this.viewer.setRigRotation(v); // rotates the directional rig + HDRI
           out.textContent = `${Math.round(v)}°`;
         });
         const wrap = div('range-wrap');

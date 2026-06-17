@@ -211,6 +211,8 @@ export class Viewer {
     if (this.manifest.ao) {
       this.setAO(this.manifest.ao as AOState);
     }
+    // Keep the HDRI orientation in sync with the (possibly saved) rig rotation.
+    this.environment.setRotation(this.lighting.getRigRotation());
 
     this.streamer.setPlayhead(start);
     this.onFrame?.(start);
@@ -284,6 +286,12 @@ export class Viewer {
 
   isGroundEnabled(): boolean {
     return this.groundEnabled;
+  }
+
+  /** Rotate the whole lighting environment — directional rig + HDRI — together. */
+  setRigRotation(deg: number): void {
+    this.lighting.setRigRotation(deg);
+    this.environment.setRotation(deg);
   }
 
   aoAvailable(): boolean {

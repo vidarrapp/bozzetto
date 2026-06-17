@@ -139,6 +139,13 @@ export class Environment {
     if (this.bgMode === 'hdri') this.updateBackground();
   }
 
+  /** Y-rotation of the HDRI (degrees) — kept in sync with the light-rig rotation. */
+  setRotation(deg: number): void {
+    const rad = (deg * Math.PI) / 180;
+    this.scene.environmentRotation.set(0, rad, 0);
+    this.scene.backgroundRotation.set(0, rad, 0);
+  }
+
   async applyState(state: Partial<EnvState>): Promise<void> {
     if (typeof state.intensity === 'number') this.setIntensity(state.intensity);
     if (state.background) this.bgMode = state.background;
