@@ -19,6 +19,7 @@ export class Panel {
   private readonly bodyEl: HTMLDivElement;
   private readonly collapseBtn: HTMLButtonElement;
   private readonly editor: boolean;
+  private collapsed = false;
 
   private modeSelect!: HTMLSelectElement;
   private materialOptions!: HTMLDivElement;
@@ -42,21 +43,25 @@ export class Panel {
     this.root = div('panel');
     document.body.appendChild(this.root);
 
+    // Edge handle: always visible, doubles as the collapse/expand toggle so the
+    // panel can slide fully off the side and still be pulled back in.
+    this.collapseBtn = button('', () => this.toggleCollapsed());
+    this.collapseBtn.className = 'panel__handle';
+    this.root.appendChild(this.collapseBtn);
+
     const header = div('panel__header');
     const title = document.createElement('span');
     title.className = 'panel__title';
     title.textContent = viewer.manifest.title || 'Bozzetto';
-    this.collapseBtn = button('', () => this.toggleCollapsed());
-    this.collapseBtn.className = 'panel__collapse';
-    header.append(title, this.collapseBtn);
+    header.append(title);
     this.root.appendChild(header);
 
     this.bodyEl = div('panel__body');
     this.root.appendChild(this.bodyEl);
 
-    // Viewer starts collapsed for a minimal default; editor starts open.
-    this.bodyEl.hidden = !this.editor;
-    this.collapseBtn.textContent = this.bodyEl.hidden ? '+' : '–';
+    // Viewer starts collapsed (slid out) for a minimal default; editor open.
+    this.collapsed = !this.editor;
+    this.applyCollapsed();
 
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
@@ -66,10 +71,17 @@ export class Panel {
     if (devMode()) this.buildDeveloper(this.bodyEl);
   }
 
-  /** Open/close the panel body (Tab). */
-  toggleCollapsed(): void {
-    this.bodyEl.hidden = !this.bodyEl.hidden;
-    this.collapseBtn.textContent = this.bodyEl.hidden ? '+' : '–';
+  /** Slide the panel in/out from its docked edge (Tab). Returns the new state. */
+  toggleCollapsed(): boolean {
+    this.collapsed = !this.collapsed;
+    this.applyCollapsed();
+    return this.collapsed;
+  }
+
+  private applyCollapsed(): void {
+    this.root.classList.toggle('panel--collapsed', this.collapsed);
+    // Arrow shows travel direction: out (›) when open, in (‹) when collapsed.
+    this.collapseBtn.textContent = this.collapsed ? '‹' : '›';
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */

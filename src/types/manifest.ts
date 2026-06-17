@@ -33,8 +33,12 @@ export interface ManifestDefaults {
 }
 
 export interface ManifestCamera {
-  /** Auto-frame the subject on load. */
+  /** Auto-frame the subject on load (used when no saved camera is present). */
   autoFrame: boolean;
+  /** Saved camera position [x, y, z]; restored on load when present. */
+  position?: number[];
+  /** Saved orbit target [x, y, z]; restored alongside `position`. */
+  target?: number[];
 }
 
 export interface FrameEntry {

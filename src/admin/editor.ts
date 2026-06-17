@@ -25,6 +25,31 @@ interface EditorProject {
 const naturalSort = (a: string, b: string): number =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
+/**
+ * Run a save action with consistent button feedback: disable while in-flight,
+ * flash "Saved ✓" on success then revert, alert on failure. The idle label is
+ * captured once so repeated saves always revert to the right text.
+ */
+async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise<void> {
+  btn.dataset.idle ??= btn.textContent ?? '';
+  const idle = btn.dataset.idle;
+  btn.disabled = true;
+  try {
+    await fn();
+    btn.textContent = 'Saved ✓';
+    window.clearTimeout(Number(btn.dataset.savedTimer));
+    btn.dataset.savedTimer = String(
+      window.setTimeout(() => {
+        btn.textContent = idle;
+      }, 1500),
+    );
+  } catch (err) {
+    alert(`${idle} failed: ${(err as Error).message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 let preview: Viewer | null = null;
 let panel: Panel | null = null;
 let fpsMeter: FpsMeter | null = null;
@@ -110,6 +135,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     </div>`;
 
   const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
+  const sidebarEl = $('.editor__sidebar');
   const titleHeading = $('.editor__title');
   const titleInput = $<HTMLInputElement>('#f-title');
   const modeSelect = $<HTMLSelectElement>('#f-mode');
@@ -133,17 +159,11 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     fps: Number(fpsInput.value) || 4,
   });
 
-  $<HTMLButtonElement>('#save').addEventListener('click', async (e) => {
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    try {
+  $<HTMLButtonElement>('#save').addEventListener('click', (e) => {
+    void runSave(e.currentTarget as HTMLButtonElement, async () => {
       await api.update(id, settings());
       titleHeading.textContent = settings().title || id;
-    } catch (err) {
-      alert(`Save failed: ${(err as Error).message}`);
-    } finally {
-      btn.disabled = false;
-    }
+    });
   });
 
   // --- frame upload pipeline ---------------------------------------------
@@ -226,7 +246,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   (project.stages ?? []).forEach(addStageRow);
 
   $('#add-stage').addEventListener('click', () => addStageRow({ name: '', frame: 0, desc: '' }));
-  $<HTMLButtonElement>('#save-stages').addEventListener('click', async (e) => {
+  $<HTMLButtonElement>('#save-stages').addEventListener('click', (e) => {
     const stages: Stage[] = [...stagesHost.querySelectorAll<HTMLElement>('.stage-row')]
       .map((r) => ({
         name: r.querySelector<HTMLInputElement>('.stage-name')!.value.trim(),
@@ -235,53 +255,35 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       }))
       .filter((s) => s.name)
       .sort((a, b) => a.frame - b.frame);
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    try {
+    void runSave(e.currentTarget as HTMLButtonElement, async () => {
       await api.update(id, { stages });
-    } catch (err) {
-      alert(`Save stages failed: ${(err as Error).message}`);
-    } finally {
-      btn.disabled = false;
-    }
+    });
   });
 
   // --- preview + lighting -------------------------------------------------
   const saveLook = $<HTMLButtonElement>('#save-look');
-  saveLook.addEventListener('click', async () => {
+  saveLook.addEventListener('click', () => {
     if (!preview) return;
-    saveLook.disabled = true;
-    try {
+    const p = preview;
+    void runSave(saveLook, async () => {
       await api.update(id, {
-        lighting: preview.lighting.serialize(),
-        material: preview.materials.getMaterialState(),
-        environment: preview.environment.getState(),
-        ao: preview.getAOState(),
-        defaults: { material: preview.getMaterial() },
+        lighting: p.lighting.serialize(),
+        material: p.materials.getMaterialState(),
+        environment: p.environment.getState(),
+        ao: p.getAOState(),
+        camera: p.getCameraState(),
+        defaults: { material: p.getMaterial() },
       });
-    } catch (err) {
-      alert(`Save look failed: ${(err as Error).message}`);
-    } finally {
-      saveLook.disabled = false;
-    }
+    });
   });
 
   const saveThumb = $<HTMLButtonElement>('#save-thumb');
-  saveThumb.addEventListener('click', async () => {
+  saveThumb.addEventListener('click', () => {
     if (!preview) return;
-    saveThumb.disabled = true;
-    const label = saveThumb.textContent;
-    try {
-      await api.uploadThumb(id, await preview.captureThumbnail());
-      saveThumb.textContent = 'Saved ✓';
-      setTimeout(() => {
-        saveThumb.textContent = label;
-      }, 1500);
-    } catch (err) {
-      alert(`Save thumbnail failed: ${(err as Error).message}`);
-    } finally {
-      saveThumb.disabled = false;
-    }
+    const p = preview;
+    void runSave(saveThumb, async () => {
+      await api.uploadThumb(id, await p.captureThumbnail());
+    });
   });
 
   /** Grab frame 0 as the default gallery thumbnail (best-effort) after upload. */
@@ -321,9 +323,15 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
+    // A freshly-mounted panel starts open; keep the sidebar's slide state in sync.
+    sidebarEl.classList.remove('editor__sidebar--collapsed');
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
-      togglePanel: () => panel?.toggleCollapsed(),
+      togglePanel: () => {
+        // Tab hides both the floating control panel and the left sidebar.
+        const collapsed = panel?.toggleCollapsed() ?? false;
+        sidebarEl.classList.toggle('editor__sidebar--collapsed', collapsed);
+      },
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });

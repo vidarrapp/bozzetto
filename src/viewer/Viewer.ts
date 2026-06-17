@@ -322,6 +322,12 @@ export class Viewer {
     };
   }
 
+  /** Current camera placement, persisted with the saved look (editor). */
+  getCameraState(): { autoFrame: boolean; position: number[]; target: number[] } {
+    const s = this.controls.getState();
+    return { autoFrame: false, position: s.position, target: s.target };
+  }
+
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
     const geom = this.display.geometry;
@@ -400,7 +406,10 @@ export class Viewer {
     this.applyAoRadius();
     if (this.aoPass instanceof GTAOPass) this.aoPass.setSceneClipBox(this.subjectBox);
 
-    if (this.manifest.camera.autoFrame) {
+    const cam = this.manifest.camera;
+    if (cam.position && cam.target) {
+      this.controls.setState(cam.position, cam.target);
+    } else if (cam.autoFrame) {
       this.controls.frameSubject(this.subjectBox);
     }
     this.lighting.fitToBounds(this.subjectBox);

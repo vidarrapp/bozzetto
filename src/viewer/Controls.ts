@@ -85,6 +85,24 @@ export class Controls {
     this.controls.update();
   }
 
+  getState(): { position: [number, number, number]; target: [number, number, number] } {
+    const p = this.camera.position;
+    const t = this.controls.target;
+    return { position: [p.x, p.y, p.z], target: [t.x, t.y, t.z] };
+  }
+
+  setState(position: number[], target: number[]): void {
+    this.camera.position.set(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0);
+    this.controls.target.set(target[0] ?? 0, target[1] ?? 0, target[2] ?? 0);
+    const dist = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-3);
+    this.camera.near = Math.max(dist / 100, 1e-3);
+    this.camera.far = dist * 100;
+    this.camera.updateProjectionMatrix();
+    this.controls.minDistance = dist * 0.1;
+    this.controls.maxDistance = dist * 10;
+    this.controls.update();
+  }
+
   dispose(): void {
     this.controls.dispose();
   }
