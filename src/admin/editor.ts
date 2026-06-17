@@ -82,11 +82,11 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   host.innerHTML = `
     <div class="editor">
       <div id="preview" class="editor__preview"></div>
+      <a class="editor__home" href="/admin/">← Projects</a>
 
       <aside class="editor__sidebar">
         <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>
         <div class="editor__sidebar-body">
-          <a class="editor__back" href="/admin/">← Projects</a>
           <h1 class="editor__title"></h1>
           <p class="editor__id muted"></p>
 

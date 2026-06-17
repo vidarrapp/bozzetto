@@ -99,6 +99,9 @@ async function refresh(listEl: HTMLElement): Promise<void> {
   for (const p of projects) {
     const row = fromHTML(`
       <div class="admin-row">
+        <div class="admin-row__thumb">
+          <img class="admin-row__img" alt="" loading="lazy" />
+        </div>
         <div class="admin-row__main">
           <span class="admin-row__title"></span>
           <span class="admin-row__meta"></span>
@@ -109,6 +112,11 @@ async function refresh(listEl: HTMLElement): Promise<void> {
           <button class="btn btn--danger" type="button">Delete</button>
         </div>
       </div>`);
+
+    const img = row.querySelector<HTMLImageElement>('.admin-row__img')!;
+    img.src = `/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}`;
+    // No thumbnail yet (e.g. before any frames) → drop the <img>, show the placeholder.
+    img.addEventListener('error', () => img.remove());
 
     row.querySelector<HTMLElement>('.admin-row__title')!.textContent = p.title || p.id;
     row.querySelector<HTMLElement>('.admin-row__meta')!.textContent =

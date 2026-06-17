@@ -9,7 +9,7 @@ export type Theme = 'dark' | 'light';
 const KEY = 'bozzetto-theme';
 const EVENT = 'bozzetto:themechange';
 
-/** 3D viewport background per theme — warm ink / warm cream. */
+/** 3D viewport background per theme — warm ink / warm paper. */
 export const THEME_BG: Record<Theme, string> = {
   dark: '#1c1814',
   light: '#f1ebe1',
@@ -53,7 +53,7 @@ export function onThemeChange(cb: (theme: Theme) => void): () => void {
   return () => window.removeEventListener(EVENT, handler);
 }
 
-/** Mount the global ink/cream toggle button (top-right). Idempotent per page. */
+/** Mount the global ink/paper toggle button (top-right). Idempotent per page. */
 export function mountThemeToggle(): void {
   if (document.querySelector('.theme-toggle')) return;
   const button = document.createElement('button');
@@ -62,8 +62,8 @@ export function mountThemeToggle(): void {
 
   const sync = (): void => {
     const theme = getTheme();
-    button.textContent = theme === 'dark' ? 'Ink' : 'Cream';
-    button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'cream' : 'ink'} theme`);
+    button.textContent = theme === 'dark' ? 'Ink' : 'Paper';
+    button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'paper' : 'ink'} theme`);
   };
   sync();
 
