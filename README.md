@@ -77,27 +77,6 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 
 A few URL switches help when debugging the renderer: `?dev` reveals a developer section in the control panel, `?q=low|medium|high` forces a quality tier, and `?shadows=pcss` swaps the shadow algorithm.
 
-## How it works
-
-```
-Browser                          Cloudflare edge
-┌────────────────────┐           ┌─────────────────────────────────────────┐
-│ Viewer  /?tl=<id>  │──GET────▶ │ /api/projects/:id   → manifest (D1)      │
-│  three.js renderer │──GET────▶ │ /media/<id>/...     → frame .glb (R2)    │
-│                    │           │                                          │
-│ Editor  /admin/    │──POST───▶ │ /admin/api/...      → writes (Access)    │
-│  OBJ to GLB worker │   .glb    │   D1 (metadata)  +  R2 (meshes)          │
-└────────────────────┘           └─────────────────────────────────────────┘
-```
-
-**Manifest-driven.** Nothing about a timelapse is hardcoded in the viewer. Frame paths, counts, fps, stages, defaults, the saved look, and the camera all come from a manifest. For API projects that manifest is built from the D1 row at request time (`functions/_shared/projects.ts`); for the bundled demo it is a static JSON file. The schema and its validator are in `src/types/manifest.ts`.
-
-**Data model.** A project is one row in the D1 `projects` table (`id`, `title`, `mode`, `fps`, and timestamps) plus a JSON `data` blob holding `defaults`, `camera`, `lighting`, `material`, `environment`, `ao`, `stages`, and the `frames` list. The frame meshes are R2 objects under `projects/<id>/frames/sd/NNNN.glb`, served immutably through `/media/...` with a `?v=<updated_at>` cache-buster.
-
-**In-browser conversion.** Dropping `.obj` files runs `parseObj` then `writeGlb` (`src/admin/glb.ts`) inside a worker. Positions and indices are pulled out, normals are recomputed smooth, and Z-up sources are rotated to glTF's Y-up if you ask for it. Existing `.glb` files pass straight through. That code is a port of the CLI pipeline, so frames made in the editor and frames made on the command line come out identical.
-
-**Auth.** Write endpoints call `requireAdmin`, which only passes once Cloudflare Access has added a `Cf-Access-Authenticated-User-Email` header (optionally narrowed by an `ADMIN_EMAILS` allowlist). Reads and the viewer need no auth.
-
 ## Getting started
 
 Requires Node 18 or newer.
