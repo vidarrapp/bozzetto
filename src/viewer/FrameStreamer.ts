@@ -1,6 +1,7 @@
 import { BufferGeometry, Material, Mesh, Texture } from 'three';
 import type { Object3D } from 'three';
 import { getGLTFLoader } from '../loaders/gltf';
+import type { AssetSource } from './AssetSource';
 import type { FrameEntry, Tier } from '../types/manifest';
 
 export interface FrameStreamerOptions {
@@ -25,8 +26,8 @@ export class FrameStreamer {
   private readonly behind: number;
 
   constructor(
-    /** URL of the manifest; frame paths resolve relative to it. */
-    private readonly manifestUrl: string,
+    /** Where frame bytes come from (network or embedded). */
+    private readonly source: AssetSource,
     /** Frames in ordinal order (index 0 = first frame). */
     private readonly frames: FrameEntry[],
     private readonly tier: Tier,
@@ -150,9 +151,11 @@ export class FrameStreamer {
     if (!frame) throw new Error(`No frame at ordinal ${ordinal}`);
     const path =
       this.tier === 'hd' && frame.hd ? frame.hd : frame.sd;
-    const url = new URL(path, this.manifestUrl).href;
 
-    const gltf = await getGLTFLoader().loadAsync(url);
+    // Parse from bytes (not a URL) so the same path works whether the bytes
+    // arrive over the network or from an embedded base64 registry.
+    const bytes = await this.source.getBytes(path);
+    const gltf = await getGLTFLoader().parseAsync(bytes, '');
 
     let geometry: BufferGeometry | null = null;
     gltf.scene.traverse((obj: Object3D) => {

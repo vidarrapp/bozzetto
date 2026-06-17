@@ -5,8 +5,8 @@ import {
   MeshStandardMaterial,
   SRGBColorSpace,
   Texture,
-  TextureLoader,
 } from 'three';
+import type { AssetSource } from './AssetSource';
 
 export interface MaterialModeInfo {
   id: string;
@@ -33,20 +33,22 @@ interface MatcapConfig {
   id: string;
   label: string;
   url: string;
-  /** Blender 2-sphere preview format: crop the left sphere as the matcap. */
-  blender?: boolean;
 }
 
 const DEFAULT_ALBEDO = '#b9b1a8';
 
-// The project's matcaps. Blender 2-sphere PNGs are cropped to their left sphere
-// at load time (`blender: true`).
+// The project's matcaps: single-sphere PNGs loaded as-is.
 const MATCAPS: MatcapConfig[] = [
   { id: 'warm-clay', label: 'Warm clay', url: '/assets/matcaps/warm-clay.png' },
   { id: 'blue-grey', label: 'Blue grey', url: '/assets/matcaps/blue-grey.png' },
   { id: 'terracotta', label: 'Terracotta', url: '/assets/matcaps/terracotta.png' },
   { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png' },
 ];
+
+/** Asset paths the matcap modes need embedded in a self-contained export. */
+export function matcapAssetUrls(): string[] {
+  return MATCAPS.map((m) => m.url);
+}
 
 /**
  * Material registry (design doc §8, §9).
@@ -66,8 +68,8 @@ export class Materials {
     { id: 'matcap', label: 'Matcap', lit: false },
   ];
 
-  constructor() {
-    this.matcapTextures = MATCAPS.map((m) => loadMatcap(m.url, m.blender ?? false));
+  constructor(source: AssetSource) {
+    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, m.url));
 
     // Lit PBR — the default mode and the reason lighting exists. polygonOffset
     // pushes the surface back a touch so the wireframe overlay reads on top.
@@ -194,29 +196,27 @@ export class Materials {
   }
 }
 
-/** Load a matcap texture, cropping the left sphere out of Blender 2-sphere PNGs. */
-function loadMatcap(url: string, blender: boolean): Texture {
-  if (!blender) {
-    const tex = new TextureLoader().load(url);
-    tex.colorSpace = SRGBColorSpace;
-    return tex;
-  }
-
+/**
+ * Load a matcap texture through the asset source. Returns an empty texture
+ * immediately and fills it once the bytes arrive (decoded via a blob URL, so it
+ * works over the network and from an embedded base64 registry alike).
+ */
+function loadMatcap(source: AssetSource, path: string): Texture {
   const tex = new Texture();
   tex.colorSpace = SRGBColorSpace;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    const size = Math.min(Math.floor(img.naturalWidth / 2), img.naturalHeight);
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(img, 0, 0, size, size, 0, 0, size, size);
-    tex.image = canvas;
-    tex.needsUpdate = true;
-  };
-  img.src = url;
+  void source
+    .getBytes(path)
+    .then((bytes) => {
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      const img = new Image();
+      img.onload = () => {
+        tex.image = img;
+        tex.needsUpdate = true;
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => URL.revokeObjectURL(url);
+      img.src = url;
+    })
+    .catch((err) => console.error(`Matcap "${path}" failed to load:`, err));
   return tex;
 }

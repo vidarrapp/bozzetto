@@ -1,11 +1,7 @@
 import { validateManifest } from './types/manifest';
 import type { Manifest } from './types/manifest';
-import { Viewer } from './viewer/Viewer';
-import { Panel } from './ui/Panel';
-import { Transport } from './ui/Transport';
-import { installShortcuts } from './ui/shortcuts';
-import { Help } from './ui/Help';
-import { FpsMeter } from './ui/FpsMeter';
+import { HttpSource } from './viewer/AssetSource';
+import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
 
@@ -37,25 +33,7 @@ async function bootViewer(id: string): Promise<void> {
 
   try {
     const { manifest, manifestUrl } = await loadProject(id, base);
-
-    const viewer = new Viewer(viewport, manifest, manifestUrl);
-    // Expose for debugging from the browser console, e.g.:
-    //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
-    (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
-    await viewer.boot();
-
-    // Build the UI after boot so controls reflect the applied look.
-    const panel = new Panel(viewer);
-    new Transport(viewer);
-    const help = new Help();
-    const fps = new FpsMeter(viewer);
-    installShortcuts(viewer, {
-      togglePanel: () => panel.toggleCollapsed(),
-      toggleHelp: () => help.toggle(),
-      toggleFps: () => fps.toggle(),
-      refresh: () => panel.refreshControls(),
-    });
-
+    await mountViewer(viewport, manifest, new HttpSource(manifestUrl));
     overlay?.remove();
     addGalleryLink();
   } catch (err) {

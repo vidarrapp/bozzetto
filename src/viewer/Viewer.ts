@@ -27,6 +27,7 @@ import type { MaterialState } from './Materials';
 import { Environment } from './Environment';
 import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
+import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
 
@@ -111,7 +112,7 @@ export class Viewer {
   constructor(
     private readonly container: HTMLElement,
     readonly manifest: Manifest,
-    manifestUrl: string,
+    source: AssetSource,
     options: { preserveDrawingBuffer?: boolean } = {},
   ) {
     this.renderer = new WebGLRenderer({
@@ -135,8 +136,8 @@ export class Viewer {
     );
 
     this.lighting = new Lighting(this.scene, this.renderer);
-    this.materials = new Materials();
-    this.environment = new Environment(this.scene, this.renderer, (v) =>
+    this.materials = new Materials(source);
+    this.environment = new Environment(this.scene, this.renderer, source, (v) =>
       this.materials.setEnvIntensity(v),
     );
     this.envLoadingEl = document.createElement('div');
@@ -154,7 +155,7 @@ export class Viewer {
     this.controls = new Controls(this.camera, this.renderer.domElement);
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
-    this.streamer = new FrameStreamer(manifestUrl, manifest.frames, tier);
+    this.streamer = new FrameStreamer(source, manifest.frames, tier);
 
     this.timeline = new Timeline(
       manifest.config.frameCount,

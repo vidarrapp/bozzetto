@@ -1,10 +1,14 @@
 import { api } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
+import { HttpSource } from '../viewer/AssetSource';
+import { matcapAssetUrls } from '../viewer/Materials';
+import { envAssetUrl } from '../viewer/Environment';
 import { Panel } from '../ui/Panel';
 import { installShortcuts } from '../ui/shortcuts';
 import { FpsMeter } from '../ui/FpsMeter';
 import { validateManifest } from '../types/manifest';
+import { buildSingleFileHtml } from '../export/singleFile.js';
 
 interface Stage {
   name: string;
@@ -133,6 +137,14 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
             <div class="editor__row">
               <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
               <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
+            </div>
+          </section>
+
+          <section class="editor__section">
+            <h3>Export</h3>
+            <p class="muted editor__hint">Download one self-contained <strong>.html</strong> with the current look, frames and assets inlined. It opens offline, straight from disk.</p>
+            <div class="editor__row">
+              <button id="export-html" class="btn" type="button" disabled>Export .html</button>
             </div>
           </section>
         </div>
@@ -302,6 +314,12 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     });
   });
 
+  const exportHtml = $<HTMLButtonElement>('#export-html');
+  exportHtml.addEventListener('click', () => {
+    if (!preview) return;
+    void runSave(exportHtml, () => exportSingleFile(id, preview!));
+  });
+
   /** Grab frame 0 as the default gallery thumbnail (best-effort) after upload. */
   async function captureDefaultThumb(): Promise<void> {
     if (!preview) return;
@@ -321,6 +339,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     disposePreview();
     saveLook.disabled = true;
     saveThumb.disabled = true;
+    exportHtml.disabled = true;
     const box = $('#preview');
     box.innerHTML = '';
     let raw: unknown;
@@ -336,7 +355,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     }
     const manifest = validateManifest(raw);
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-    preview = new Viewer(box, manifest, manifestUrl, { preserveDrawingBuffer: true });
+    preview = new Viewer(box, manifest, new HttpSource(manifestUrl), { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
     // A freshly-mounted panel starts open; keep the sidebar's slide state in sync.
@@ -353,7 +372,72 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     });
     saveLook.disabled = false;
     saveThumb.disabled = false;
+    exportHtml.disabled = false;
   }
 
   await mountPreview();
+}
+
+/**
+ * Gather the live preview into a self-contained .html and download it. The
+ * exported manifest carries the current preview look (no Save needed), and the
+ * frames/HDRI/matcaps are fetched and inlined by the shared bundler core — the
+ * same one the CLI uses.
+ */
+async function exportSingleFile(id: string, p: Viewer): Promise<void> {
+  const raw = (await api.get(id)) as Record<string, unknown> & {
+    frames?: { sd: string }[];
+    title?: string;
+  };
+
+  // Overlay the live look so the export matches what's on screen.
+  const env = p.environment.getState();
+  const manifest = {
+    ...raw,
+    lighting: p.lighting.serialize(),
+    material: p.materials.getMaterialState(),
+    environment: env,
+    ao: p.getAOState(),
+    camera: p.getCameraState(),
+    defaults: { ...(raw.defaults as object), material: p.getMaterial() },
+  };
+
+  // Every path the embedded viewer will request: frames, all matcaps, and the
+  // selected HDRI (if any). Keyed exactly as the viewer asks for them.
+  const paths = new Set<string>();
+  for (const f of raw.frames ?? []) paths.add(f.sd);
+  for (const url of matcapAssetUrls()) paths.add(url);
+  const hdri = env.id ? envAssetUrl(env.id) : null;
+  if (hdri) paths.add(hdri);
+
+  const assets = await Promise.all(
+    [...paths].map(async (path) => {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`Failed to fetch ${path} (${res.status})`);
+      return { path, bytes: new Uint8Array(await res.arrayBuffer()) };
+    }),
+  );
+
+  const [viewerJs, css] = await Promise.all([
+    fetchText('/embed/viewer.js'),
+    fetchText('/embed/embed.css'),
+  ]);
+
+  const html = buildSingleFileHtml({ manifest, assets, viewerJs, css, title: raw.title });
+  downloadBlob(new Blob([html], { type: 'text/html' }), `${id}.html`);
+}
+
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url} (${res.status}) — build the site first`);
+  return res.text();
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -8,6 +8,7 @@ import {
 } from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
+import { loadViaBlob, type AssetSource } from './AssetSource';
 
 export type BackgroundMode = 'theme' | 'color' | 'hdri';
 
@@ -38,6 +39,11 @@ export const ENVIRONMENTS: EnvConfig[] = [
   { id: 'plaza', label: 'Outdoor plaza', file: '/assets/env/plaza.hdr' },
 ];
 
+/** Asset path of an HDRI by id, for embedding in a self-contained export. */
+export function envAssetUrl(id: string): string | null {
+  return ENVIRONMENTS.find((e) => e.id === id)?.file ?? null;
+}
+
 /**
  * Image-based lighting + scene background. Loads an equirectangular .hdr,
  * prefilters it with PMREM for `scene.environment` (PBR irradiance +
@@ -67,6 +73,7 @@ export class Environment {
   constructor(
     private readonly scene: Scene,
     renderer: WebGLRenderer,
+    private readonly source: AssetSource,
     private readonly applyIntensity: (value: number) => void,
   ) {
     this.pmrem = new PMREMGenerator(renderer);
@@ -106,7 +113,9 @@ export class Environment {
 
     this.onLoading?.(true);
     try {
-      const equirect = await this.loader.loadAsync(cfg.file);
+      const equirect = await loadViaBlob(this.source, cfg.file, 'image/vnd.radiance', (url) =>
+        this.loader.loadAsync(url),
+      );
       if (myToken !== this.token) {
         equirect.dispose();
         return; // superseded by a newer selection
