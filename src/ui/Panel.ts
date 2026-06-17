@@ -1,6 +1,6 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
-import { shadowMode } from '../viewer/pcss';
+import { shadowMode, type ShadowMode } from '../viewer/pcss';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -258,6 +258,23 @@ export class Panel {
       this.lightControls = div('light-controls');
       lighting.appendChild(this.lightControls);
       this.rebuildLightControls();
+
+      // Shadow filter: soft (VSM) vs contact-hardening (PCSS). Saved with the look.
+      const shadows = document.createElement('select');
+      for (const [value, label] of [
+        ['vsm', 'Soft (VSM)'],
+        ['pcss', 'Contact (PCSS)'],
+      ] as const) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        shadows.appendChild(opt);
+      }
+      shadows.value = this.viewer.lighting.getShadowMode();
+      shadows.addEventListener('change', () =>
+        this.viewer.lighting.setShadowMode(shadows.value as ShadowMode),
+      );
+      lighting.appendChild(labelRow('Shadows', shadows));
     } else {
       // Viewer gets just on/off toggles per light; advanced settings live in the editor.
       this.lightToggles = div('light-toggles');

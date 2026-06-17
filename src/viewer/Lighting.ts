@@ -4,7 +4,9 @@ import {
   DirectionalLight,
   Group,
   HemisphereLight,
+  Material,
   MathUtils,
+  Mesh,
   PCFShadowMap,
   Scene,
   Sphere,
@@ -13,7 +15,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
-import { installPCSS, shadowMode } from './pcss';
+import { installPCSS, shadowMode, type ShadowMode } from './pcss';
 
 export type LightId = 'key' | 'fill' | 'rim';
 
@@ -66,6 +68,8 @@ export interface LightingState {
   rim: DirLightConfig;
   ambient: AmbientConfig;
   rigRotation: number;
+  /** Shadow filtering algorithm. Absent in older saves (defaults to VSM). */
+  shadowMode?: ShadowMode;
 }
 
 const DEFAULT_SOFTNESS = 5;
@@ -124,17 +128,17 @@ export class Lighting {
   /** Distance of lights from the subject centre; set by fitToBounds. */
   private distance = 5;
   private subjectRadius = 1;
+  private shadowModeValue: ShadowMode = 'vsm';
 
-  constructor(scene: Scene, renderer: WebGLRenderer) {
+  constructor(
+    private readonly scene: Scene,
+    private readonly renderer: WebGLRenderer,
+  ) {
     this.tier = SHADOW_TIERS[detectQuality(renderer)];
     this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
-    // VSM by default; PCSS (PCF-based, no variance bleed) via ?shadows=pcss.
-    if (shadowMode() === 'pcss') {
-      installPCSS();
-      renderer.shadowMap.type = PCFShadowMap;
-    } else {
-      renderer.shadowMap.type = VSMShadowMap;
-    }
+    // VSM by default; ?shadows=pcss opts in at load, and the editor can switch
+    // it live (and persist the choice).
+    this.setShadowMode(shadowMode());
 
     const preset = PRESETS[0];
     this.config = { key: { ...preset.key }, fill: { ...preset.fill }, rim: { ...preset.rim } };
@@ -228,6 +232,33 @@ export class Lighting {
     this.refresh();
   }
 
+  /**
+   * Switch the shadow filter between VSM (soft, variance-based) and PCSS
+   * (contact-hardening, PCF-based). PCSS patches the shadow shader chunk on
+   * first use, then the renderer's shadow-map type selects the branch. Existing
+   * shadowed materials carry the old SHADOWMAP_TYPE_* define, so mark scene
+   * materials for recompile to pick up the new sampler live.
+   */
+  setShadowMode(mode: ShadowMode): void {
+    this.shadowModeValue = mode;
+    if (mode === 'pcss') {
+      installPCSS();
+      this.renderer.shadowMap.type = PCFShadowMap;
+    } else {
+      this.renderer.shadowMap.type = VSMShadowMap;
+    }
+    this.scene.traverse((obj) => {
+      const mat = (obj as Mesh).material as Material | Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => (m.needsUpdate = true));
+      else if (mat) mat.needsUpdate = true;
+    });
+    this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  getShadowMode(): ShadowMode {
+    return this.shadowModeValue;
+  }
+
   /** Rotate the whole rig around the subject (degrees). */
   setRigRotation(deg: number): void {
     this.rigRotationDeg = deg;
@@ -265,6 +296,7 @@ export class Lighting {
         ground: `#${this.hemi.groundColor.getHexString()}`,
       },
       rigRotation: this.rigRotationDeg,
+      shadowMode: this.shadowModeValue,
     };
   }
 
@@ -279,6 +311,7 @@ export class Lighting {
       if (state.ambient.ground) this.hemi.groundColor = new Color(state.ambient.ground);
     }
     if (typeof state.rigRotation === 'number') this.setRigRotation(state.rigRotation);
+    if (state.shadowMode) this.setShadowMode(state.shadowMode);
     this.refresh();
   }
 

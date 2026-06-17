@@ -8,7 +8,9 @@ import { ShaderChunk } from 'three';
  * scale. Patches the global shadow shader chunk; call installPCSS() before any
  * shadowed material compiles, and use PCFShadowMap (not VSM).
  */
-export function shadowMode(): 'vsm' | 'pcss' {
+export type ShadowMode = 'vsm' | 'pcss';
+
+export function shadowMode(): ShadowMode {
   return new URLSearchParams(location.search).get('shadows') === 'pcss' ? 'pcss' : 'vsm';
 }
 
