@@ -81,66 +81,82 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
   host.innerHTML = `
     <div class="editor">
+      <div id="preview" class="editor__preview"></div>
+
       <aside class="editor__sidebar">
-        <a class="editor__back" href="/admin/">← Projects</a>
-        <h1 class="editor__title"></h1>
-        <p class="editor__id muted"></p>
+        <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>
+        <div class="editor__sidebar-body">
+          <a class="editor__back" href="/admin/">← Projects</a>
+          <h1 class="editor__title"></h1>
+          <p class="editor__id muted"></p>
 
-        <section class="editor__section">
-          <h3>Settings</h3>
-          <div class="editor__settings">
-            <label>Title <input id="f-title" type="text" /></label>
-            <label>Mode
-              <select id="f-mode">
-                <option value="timelapse">Timelapse</option>
-                <option value="model">Model</option>
-              </select>
-            </label>
-            <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
-            <button id="save" class="btn btn--primary" type="button">Save settings</button>
-          </div>
-        </section>
+          <section class="editor__section">
+            <h3>Settings</h3>
+            <div class="editor__settings">
+              <label>Title <input id="f-title" type="text" /></label>
+              <label>Mode
+                <select id="f-mode">
+                  <option value="timelapse">Timelapse</option>
+                  <option value="model">Model</option>
+                </select>
+              </label>
+              <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
+              <button id="save" class="btn btn--primary" type="button">Save settings</button>
+            </div>
+          </section>
 
-        <section class="editor__section">
-          <h3>Frames <span id="frame-count" class="muted"></span></h3>
-          <div id="drop" class="dropzone">
-            <p>Drop a sequence of <strong>.obj</strong> or <strong>.glb</strong> files, or pick them:</p>
-            <input id="files" type="file" accept=".obj,.glb" multiple />
-            <label class="checkbox dropzone__zup"><input id="zup" type="checkbox" /> OBJ files are Z-up</label>
-          </div>
-          <div id="progress" class="progress" hidden>
-            <div class="progress__track"><div class="progress__bar" id="bar"></div></div>
-            <span id="progress-label" class="muted"></span>
-          </div>
-        </section>
+          <section class="editor__section">
+            <h3>Frames <span id="frame-count" class="muted"></span></h3>
+            <div id="drop" class="dropzone">
+              <p>Drop a sequence of <strong>.obj</strong> or <strong>.glb</strong> files, or pick them:</p>
+              <input id="files" type="file" accept=".obj,.glb" multiple />
+              <label class="checkbox dropzone__zup"><input id="zup" type="checkbox" /> OBJ files are Z-up</label>
+            </div>
+            <div id="progress" class="progress" hidden>
+              <div class="progress__track"><div class="progress__bar" id="bar"></div></div>
+              <span id="progress-label" class="muted"></span>
+            </div>
+          </section>
 
-        <section class="editor__section">
-          <h3>Stages</h3>
-          <div id="stages"></div>
-          <div class="editor__row">
-            <button id="add-stage" class="btn" type="button">Add stage</button>
-            <button id="save-stages" class="btn btn--primary" type="button">Save stages</button>
-          </div>
-        </section>
-      </aside>
+          <section class="editor__section">
+            <h3>Stages</h3>
+            <div id="stages"></div>
+            <div class="editor__row">
+              <button id="add-stage" class="btn" type="button">Add stage</button>
+              <button id="save-stages" class="btn btn--primary" type="button">Save stages</button>
+            </div>
+          </section>
 
-      <main class="editor__main">
-        <div id="preview" class="editor__preview"></div>
-        <div class="editor__toolbar">
-          <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
-          <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
-          <span class="muted">Lighting/material live in the floating panel — save the look, or grab the current frame as the thumbnail.</span>
+          <section class="editor__section">
+            <h3>Look</h3>
+            <p class="muted editor__hint">Lighting, material &amp; camera live in the right-hand panel. Save the current look, or grab the frame as the thumbnail.</p>
+            <div class="editor__row">
+              <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
+              <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
+            </div>
+          </section>
         </div>
-      </main>
+      </aside>
     </div>`;
 
   const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
   const sidebarEl = $('.editor__sidebar');
+  const sidebarHandle = $<HTMLButtonElement>('.editor__sidebar-handle');
   const titleHeading = $('.editor__title');
   const titleInput = $<HTMLInputElement>('#f-title');
   const modeSelect = $<HTMLSelectElement>('#f-mode');
   const fpsInput = $<HTMLInputElement>('#f-fps');
   const frameCountEl = $('#frame-count');
+
+  // The left sidebar slides out like the right control panel; its handle and
+  // Tab both drive this. (Arrow points the way it will travel: ‹ out, › in.)
+  let sidebarCollapsed = false;
+  const setSidebarCollapsed = (collapsed: boolean): void => {
+    sidebarCollapsed = collapsed;
+    sidebarEl.classList.toggle('editor__sidebar--collapsed', collapsed);
+    sidebarHandle.textContent = collapsed ? '›' : '‹';
+  };
+  sidebarHandle.addEventListener('click', () => setSidebarCollapsed(!sidebarCollapsed));
 
   titleHeading.textContent = project.title || id;
   $('.editor__id').textContent = `id: ${id}`;
@@ -324,13 +340,13 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     await preview.boot();
     panel = new Panel(preview, { editor: true });
     // A freshly-mounted panel starts open; keep the sidebar's slide state in sync.
-    sidebarEl.classList.remove('editor__sidebar--collapsed');
+    setSidebarCollapsed(false);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
       togglePanel: () => {
         // Tab hides both the floating control panel and the left sidebar.
-        const collapsed = panel?.toggleCollapsed() ?? false;
-        sidebarEl.classList.toggle('editor__sidebar--collapsed', collapsed);
+        const collapsed = panel ? panel.toggleCollapsed() : !sidebarCollapsed;
+        setSidebarCollapsed(collapsed);
       },
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),

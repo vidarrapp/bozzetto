@@ -709,13 +709,10 @@ html.is-page body {
 }
 
 .editor__preview {
-  position: relative;
-  width: 100%;
-  height: 440px;
-  border-radius: var(--radius);
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: var(--bg);
-  border: 1px solid var(--panel-border);
 }
 
 .editor__preview canvas {
@@ -991,25 +988,58 @@ html.is-page body {
   pointer-events: none;
 }
 
-/* --- editor app layout: left sidebar + large central preview --- */
+/* --- editor app layout: full-window preview + floating side panels --- */
 .editor {
-  display: flex;
-  height: 100vh;
-  overflow: hidden; /* contain the sidebar while it slides out */
+  position: fixed;
+  inset: 0;
 }
 
+/* Left floating panel — mirrors the right control panel (.panel). */
 .editor__sidebar {
-  flex: 0 0 360px;
-  width: 360px;
-  overflow-y: auto;
-  padding: 14px 18px 40px;
-  border-right: 1px solid var(--panel-border);
-  transition: margin-left 0.25s ease;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: 332px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  transition: transform 0.25s ease;
 }
 
-/* Collapsed (Tab): slide the sidebar left off-screen; the preview reclaims it. */
+/* Collapsed (Tab / handle): slide the sidebar off the left edge. */
 .editor__sidebar--collapsed {
-  margin-left: -360px;
+  transform: translateX(calc(-100% - 12px));
+}
+
+/* Scroll lives on the body so the handle can sit outside the panel's edge. */
+.editor__sidebar-body {
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+}
+
+/* Handle juts out of the sidebar's right edge (mirror of .panel__handle). */
+.editor__sidebar-handle {
+  position: absolute;
+  right: -28px;
+  top: 0;
+  width: 28px;
+  height: 34px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  backdrop-filter: blur(8px);
 }
 
 .editor__back {
@@ -1044,27 +1074,8 @@ html.is-page body {
   flex-wrap: wrap;
 }
 
-.editor__main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.editor__main .editor__preview {
-  flex: 1;
-  height: auto;
-  border: none;
-  border-radius: 0;
-}
-
-.editor__toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--panel-border);
+.editor__hint {
+  margin: 0 0 10px;
 }
 
 /* list (project picker) back-link, top-left */
