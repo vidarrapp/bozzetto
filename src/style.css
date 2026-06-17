@@ -954,3 +954,20 @@ html.is-page body {
   border-radius: var(--radius);
   backdrop-filter: blur(8px);
 }
+
+/* --- environment loading hint --- */
+.env-loading {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}

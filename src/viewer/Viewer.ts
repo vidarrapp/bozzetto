@@ -2,7 +2,6 @@ import {
   ACESFilmicToneMapping,
   Box3,
   Clock,
-  Color,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -29,7 +28,6 @@ import { Environment } from './Environment';
 import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
 import type { Manifest, Tier } from '../types/manifest';
-import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { detectQuality, SHADOW_TIERS } from './quality';
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
@@ -58,11 +56,11 @@ export class Viewer {
   readonly materials: Materials;
   readonly lighting: Lighting;
   readonly environment: Environment;
+  private readonly envLoadingEl: HTMLDivElement;
 
   private readonly controls: Controls;
   private readonly streamer: FrameStreamer;
   private readonly clock = new Clock();
-  private disposeTheme: () => void = () => {};
 
   private readonly display = new Mesh();
   private readonly ground: Mesh;
@@ -123,9 +121,6 @@ export class Viewer {
     this.renderer.shadowMap.enabled = true;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new Color(THEME_BG[getTheme()]);
-    this.disposeTheme = onThemeChange((theme) => this.setBackground(THEME_BG[theme]));
-
     this.camera = new PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
@@ -138,6 +133,15 @@ export class Viewer {
     this.environment = new Environment(this.scene, this.renderer, (v) =>
       this.materials.setEnvIntensity(v),
     );
+    this.envLoadingEl = document.createElement('div');
+    this.envLoadingEl.className = 'env-loading';
+    this.envLoadingEl.textContent = 'Loading environment…';
+    this.envLoadingEl.hidden = true;
+    container.appendChild(this.envLoadingEl);
+    this.environment.onLoading = (loading) => {
+      this.envLoadingEl.hidden = !loading;
+    };
+
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
       : 'lit';
@@ -320,10 +324,6 @@ export class Viewer {
     }
   }
 
-  setBackground(hex: string): void {
-    this.scene.background = new Color(hex);
-  }
-
   toggleWireframe(): boolean {
     this.setWireframe(!this.wireframeOn);
     return this.wireframeOn;
@@ -369,8 +369,8 @@ export class Viewer {
   dispose(): void {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.adaptTimer);
-    this.disposeTheme();
     window.removeEventListener('resize', this.onResize);
+    this.envLoadingEl.remove();
     this.controls.dispose();
     this.streamer.dispose();
     this.materials.dispose();

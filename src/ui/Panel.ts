@@ -345,6 +345,31 @@ export class Panel {
     sec.appendChild(
       compactRange('Intensity', 0, 3, 0.05, state.intensity, (v) => env.setIntensity(v)),
     );
+
+    const bg = document.createElement('select');
+    for (const [value, label] of [
+      ['theme', 'Theme'],
+      ['color', 'Solid colour'],
+      ['hdri', 'Blurred HDRI'],
+    ] as const) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      bg.appendChild(opt);
+    }
+    bg.value = state.background;
+    bg.addEventListener('change', () =>
+      env.setBackgroundMode(bg.value as 'theme' | 'color' | 'hdri'),
+    );
+    sec.appendChild(labelRow('Background', bg));
+
+    const bgColor = document.createElement('input');
+    bgColor.type = 'color';
+    bgColor.value = state.bgColor;
+    bgColor.addEventListener('input', () => env.setBackgroundColor(bgColor.value));
+    sec.appendChild(labelRow('Bg colour', bgColor));
+
+    sec.appendChild(compactRange('Bg blur', 0, 1, 0.05, state.bgBlur, (v) => env.setBackgroundBlur(v)));
   }
 
   private buildAO(body: HTMLElement): void {
