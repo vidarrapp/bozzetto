@@ -71,12 +71,13 @@ export class Viewer {
   private readonly wireMaterial = new MeshBasicMaterial({
     wireframe: true,
     color: 0x000000,
+    // Faint by default. With AO on, the overlay composites in linear HDR before
+    // tone-mapping, so a low opacity still reads clearly; the panel slider tunes it.
     transparent: true,
-    opacity: 0.2,
-    // Don't write depth: the overlay shares the surface geometry, and if its
-    // lines land in the depth buffer the AO pass (GTAO/SSAO) reads them as edges
-    // and draws a dark halo along every wire — which made the overlay look solid
-    // regardless of opacity. depthTest stays on so back-facing wires stay hidden.
+    opacity: 0.05,
+    // The overlay shares the surface geometry; keep its lines out of the depth
+    // buffer so the AO pass doesn't sample them. depthTest stays on so back-facing
+    // wires remain hidden behind the surface.
     depthWrite: false,
   });
   private wireframeOn = false;

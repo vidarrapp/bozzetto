@@ -191,7 +191,7 @@ export class Panel {
     material.appendChild(wire);
 
     material.appendChild(
-      compactRange('Wire opacity', 0.05, 1, 0.05, this.viewer.getWireframeOpacity(), (v) =>
+      compactRange('Wire opacity', 0, 1, 0.05, this.viewer.getWireframeOpacity(), (v) =>
         this.viewer.setWireframeOpacity(v),
       ),
     );
