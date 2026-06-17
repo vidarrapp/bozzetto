@@ -7,6 +7,7 @@ import {
   Texture,
 } from 'three';
 import type { AssetSource } from './AssetSource';
+import { ASSET_VERSION } from './assetVersion';
 
 export interface MaterialModeInfo {
   id: string;
@@ -45,9 +46,14 @@ const MATCAPS: MatcapConfig[] = [
   { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png' },
 ];
 
+/** A matcap's request URL, version-tagged so an updated PNG isn't served stale. */
+function matcapUrl(url: string): string {
+  return `${url}?v=${ASSET_VERSION}`;
+}
+
 /** Asset paths the matcap modes need embedded in a self-contained export. */
 export function matcapAssetUrls(): string[] {
-  return MATCAPS.map((m) => m.url);
+  return MATCAPS.map((m) => matcapUrl(m.url));
 }
 
 /**
@@ -69,7 +75,7 @@ export class Materials {
   ];
 
   constructor(source: AssetSource) {
-    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, m.url));
+    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, matcapUrl(m.url)));
 
     // Lit PBR — the default mode and the reason lighting exists. polygonOffset
     // pushes the surface back a touch so the wireframe overlay reads on top.

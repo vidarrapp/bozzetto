@@ -50,10 +50,17 @@ export class EmbeddedSource implements AssetSource {
   }
 
   async getBytes(path: string): Promise<ArrayBuffer> {
-    const b64 = this.registry.assets[path];
+    // Keys are stored without a query string, so a cache-busting `?v=` on a
+    // matcap (or a `?v=` frame version) still resolves to the embedded bytes.
+    const b64 = this.registry.assets[path] ?? this.registry.assets[stripQuery(path)];
     if (b64 === undefined) throw new Error(`Embedded asset not found: ${path}`);
     return base64ToArrayBuffer(b64);
   }
+}
+
+/** Drop a `?query` / `#hash` so asset keys are stable across cache versions. */
+export function stripQuery(path: string): string {
+  return path.replace(/[?#].*$/, '');
 }
 
 /**

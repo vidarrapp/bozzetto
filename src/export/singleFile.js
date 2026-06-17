@@ -59,7 +59,9 @@ export function buildSingleFileHtml({ manifest, assets, viewerJs, css = '', titl
   /** @type {Record<string, string>} */
   const encoded = {};
   for (const { path, bytes } of assets) {
-    encoded[path] = bytesToBase64(bytes);
+    // Key without any `?query` so a cache-busting matcap `?v=` (or a versioned
+    // frame path) still matches what the embedded viewer asks for.
+    encoded[path.replace(/[?#].*$/, '')] = bytesToBase64(bytes);
   }
 
   const registry = { manifest, assets: encoded };

@@ -2,13 +2,11 @@ import { api } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
-import { matcapAssetUrls } from '../viewer/Materials';
-import { envAssetUrl } from '../viewer/Environment';
 import { Panel } from '../ui/Panel';
 import { installShortcuts } from '../ui/shortcuts';
 import { FpsMeter } from '../ui/FpsMeter';
 import { validateManifest } from '../types/manifest';
-import { buildSingleFileHtml } from '../export/singleFile.js';
+import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
 
 interface Stage {
   name: string;
@@ -380,64 +378,13 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
 /**
  * Gather the live preview into a self-contained .html and download it. The
- * exported manifest carries the current preview look (no Save needed), and the
- * frames/HDRI/matcaps are fetched and inlined by the shared bundler core — the
- * same one the CLI uses.
+ * exported manifest carries the current preview look (no Save needed); frames,
+ * matcaps and the HDRI are inlined by the shared export client.
  */
 async function exportSingleFile(id: string, p: Viewer): Promise<void> {
-  const raw = (await api.get(id)) as Record<string, unknown> & {
-    frames?: { sd: string }[];
-    title?: string;
-  };
-
-  // Overlay the live look so the export matches what's on screen.
-  const env = p.environment.getState();
-  const manifest = {
-    ...raw,
-    lighting: p.lighting.serialize(),
-    material: p.materials.getMaterialState(),
-    environment: env,
-    ao: p.getAOState(),
-    camera: p.getCameraState(),
-    defaults: { ...(raw.defaults as object), material: p.getMaterial() },
-  };
-
-  // Every path the embedded viewer will request: frames, all matcaps, and the
-  // selected HDRI (if any). Keyed exactly as the viewer asks for them.
-  const paths = new Set<string>();
-  for (const f of raw.frames ?? []) paths.add(f.sd);
-  for (const url of matcapAssetUrls()) paths.add(url);
-  const hdri = env.id ? envAssetUrl(env.id) : null;
-  if (hdri) paths.add(hdri);
-
-  const assets = await Promise.all(
-    [...paths].map(async (path) => {
-      const res = await fetch(path);
-      if (!res.ok) throw new Error(`Failed to fetch ${path} (${res.status})`);
-      return { path, bytes: new Uint8Array(await res.arrayBuffer()) };
-    }),
-  );
-
-  const [viewerJs, css] = await Promise.all([
-    fetchText('/embed/viewer.js'),
-    fetchText('/embed/embed.css'),
-  ]);
-
-  const html = buildSingleFileHtml({ manifest, assets, viewerJs, css, title: raw.title });
+  const raw = (await api.get(id)) as Record<string, unknown> & { frames: { sd: string }[] };
+  const manifest = buildExportManifest(raw, p);
+  const apiUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
+  const html = await buildExportHtml(manifest, new HttpSource(apiUrl));
   downloadBlob(new Blob([html], { type: 'text/html' }), `${id}.html`);
-}
-
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url} (${res.status}) — build the site first`);
-  return res.text();
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
