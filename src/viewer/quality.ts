@@ -16,12 +16,17 @@ export interface ShadowTier {
   blurSamples: number;
   /** Ambient-occlusion technique at this tier (GTAO on capable, SSAO on mobile). */
   ao: 'gtao' | 'ssao' | 'none';
+  /** GTAO sample count (AO quality vs cost). */
+  aoSamples: number;
 }
 
+// A single small subject with a tight, subject-fit shadow frustum doesn't need
+// 4k maps — 2k is plenty and far cheaper. Adaptive quality trims further at
+// runtime when the measured FPS is low (mostly via pixel ratio).
 export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
-  high: { key: 4096, fill: 2048, rim: 2048, blurSamples: 16, ao: 'gtao' },
-  medium: { key: 2048, fill: 1024, rim: 0, blurSamples: 8, ao: 'gtao' },
-  low: { key: 1024, fill: 0, rim: 0, blurSamples: 4, ao: 'ssao' },
+  high: { key: 2048, fill: 1024, rim: 1024, blurSamples: 12, ao: 'gtao', aoSamples: 16 },
+  medium: { key: 2048, fill: 1024, rim: 0, blurSamples: 8, ao: 'gtao', aoSamples: 8 },
+  low: { key: 1024, fill: 0, rim: 0, blurSamples: 4, ao: 'ssao', aoSamples: 0 },
 };
 
 export function detectQuality(renderer: WebGLRenderer): Quality {

@@ -95,6 +95,9 @@ export class Viewer {
   private aoEnabled = false;
   private aoRadiusFraction = 0.5;
   private subjectRadius = 1;
+  /** Adaptive quality: trims render cost when measured FPS is low. */
+  private adaptTimer = 0;
+  private adaptStep = 0;
 
   /** Fired when the target frame changes (drives the scrubber + stage label). */
   onFrame: ((ordinal: number) => void) | null = null;
@@ -210,6 +213,7 @@ export class Viewer {
 
     this.clock.start();
     this.loop();
+    this.startAdaptive();
   }
 
   // --- transport / commands used by the UI panel -------------------------
@@ -364,6 +368,7 @@ export class Viewer {
 
   dispose(): void {
     cancelAnimationFrame(this.rafId);
+    clearTimeout(this.adaptTimer);
     this.disposeTheme();
     window.removeEventListener('resize', this.onResize);
     this.controls.dispose();
@@ -403,7 +408,8 @@ export class Viewer {
 
   /** Build the AO postprocessing composer per the device tier (GTAO / SSAO). */
   private initAO(): void {
-    this.aoKind = SHADOW_TIERS[detectQuality(this.renderer)].ao;
+    const tier = SHADOW_TIERS[detectQuality(this.renderer)];
+    this.aoKind = tier.ao;
     if (this.aoKind === 'none') return;
 
     try {
@@ -416,6 +422,7 @@ export class Viewer {
         const gtao = new GTAOPass(this.scene, this.camera, w, h);
         gtao.output = GTAOPass.OUTPUT.Default;
         gtao.blendIntensity = 1;
+        gtao.updateGtaoMaterial({ samples: tier.aoSamples });
         this.aoPass = gtao;
         composer.addPass(gtao);
       } else {
@@ -447,6 +454,34 @@ export class Viewer {
   private renderFrame(): void {
     if (this.aoEnabled && this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Adaptive quality: after a warmup, if the measured FPS is below target, shed
+   * cost in cheap-but-impactful steps (pixel ratio first, then GTAO samples).
+   * The low tier is already minimal, so it's skipped.
+   */
+  private startAdaptive(): void {
+    if (this.aoKind === 'none') return;
+    this.adaptTimer = window.setTimeout(() => this.adapt(), 2000);
+  }
+
+  private adapt(): void {
+    const TARGET = 50;
+    if (this.fps >= TARGET || this.adaptStep >= 3) return;
+    this.adaptStep += 1;
+    if (this.adaptStep === 1) this.setRenderScale(1.25);
+    else if (this.adaptStep === 2) this.setRenderScale(1.0);
+    else if (this.aoPass instanceof GTAOPass) this.aoPass.updateGtaoMaterial({ samples: 8 });
+    this.adaptTimer = window.setTimeout(() => this.adapt(), 1200);
+  }
+
+  private setRenderScale(maxRatio: number): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio));
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    this.renderer.setSize(w, h);
+    this.composer?.setSize(w, h);
   }
 
   private readonly loop = (): void => {
