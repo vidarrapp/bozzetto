@@ -443,7 +443,7 @@ export class Panel {
     for (const [value, label] of [
       ['theme', 'Theme'],
       ['color', 'Solid colour'],
-      ['hdri', 'Blurred HDRI'],
+      ['hdri', 'HDRI'],
     ] as const) {
       const opt = document.createElement('option');
       opt.value = value;
@@ -462,7 +462,6 @@ export class Panel {
     bgColor.addEventListener('input', () => env.setBackgroundColor(bgColor.value));
     sec.appendChild(labelRow('Bg colour', bgColor));
 
-    sec.appendChild(compactRange('Bg blur', 0, 1, 0.05, state.bgBlur, (v) => env.setBackgroundBlur(v)));
     sec.appendChild(
       compactRange('HDR rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
     );

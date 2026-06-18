@@ -18,7 +18,6 @@ export interface EnvState {
   intensity: number;
   background: BackgroundMode;
   bgColor: string;
-  bgBlur: number;
   /** HDRI rotation offset in degrees (on top of the shared rig rotation). */
   rotation: number;
 }
@@ -62,7 +61,6 @@ export class Environment {
   private intensity = 1;
   private bgMode: BackgroundMode = 'theme';
   private bgColor = '#1c1814';
-  private bgBlur = 0.4;
   private rigRotation = 0;
   private offset = 0;
   /** Guards against an earlier load resolving after a later selection. */
@@ -97,7 +95,6 @@ export class Environment {
       intensity: this.intensity,
       background: this.bgMode,
       bgColor: this.bgColor,
-      bgBlur: this.bgBlur,
       rotation: this.offset,
     };
   }
@@ -139,7 +136,7 @@ export class Environment {
   setIntensity(value: number): void {
     this.intensity = value;
     this.scene.environmentIntensity = value;
-    // Only affects a texture background (the blurred HDRI), so the solid/theme
+    // Only affects a texture background (the HDRI plate), so the solid/theme
     // backgrounds are untouched; this makes the HDRI plate track the slider.
     this.scene.backgroundIntensity = value;
   }
@@ -152,11 +149,6 @@ export class Environment {
   setBackgroundColor(hex: string): void {
     this.bgColor = hex;
     if (this.bgMode === 'color') this.updateBackground();
-  }
-
-  setBackgroundBlur(value: number): void {
-    this.bgBlur = value;
-    if (this.bgMode === 'hdri') this.updateBackground();
   }
 
   /** Shared rig rotation (degrees) — set by the viewer's Rotate-rig slider. */
@@ -181,7 +173,6 @@ export class Environment {
     if (typeof state.intensity === 'number') this.setIntensity(state.intensity);
     if (state.background) this.bgMode = state.background;
     if (typeof state.bgColor === 'string') this.bgColor = state.bgColor;
-    if (typeof state.bgBlur === 'number') this.bgBlur = state.bgBlur;
     if (typeof state.rotation === 'number') this.offset = state.rotation;
     this.applyRotation();
     if ('id' in state) await this.setEnvironment(state.id ?? null);
@@ -195,16 +186,17 @@ export class Environment {
   }
 
   private updateBackground(): void {
+    // The HDRI plate is shown sharp; any background softening comes from the
+    // camera's depth-of-field bokeh (the far background defocuses to its cap),
+    // so it tracks the lens rather than a separate, always-on blur.
+    this.scene.backgroundBlurriness = 0;
     if (this.bgMode === 'hdri' && this.equirect) {
       this.scene.background = this.equirect;
-      this.scene.backgroundBlurriness = this.bgBlur;
     } else if (this.bgMode === 'color') {
       this.scene.background = new Color(this.bgColor);
-      this.scene.backgroundBlurriness = 0;
     } else {
       // theme — also the fallback for "hdri" before the map has loaded.
       this.scene.background = new Color(THEME_BG[getTheme()]);
-      this.scene.backgroundBlurriness = 0;
     }
   }
 

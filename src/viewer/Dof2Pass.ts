@@ -79,6 +79,9 @@ export class Dof2Pass extends Pass {
     uniforms.pentagon.value = 0;
     uniforms.noise.value = 1; // grain masks banding across the blur gradient
     uniforms.dithering.value = 0.0001;
+    // Weight samples toward a uniform disc rather than the default bright-edged
+    // ring, which otherwise shows as concentric ringing at small (deep-DoF) radii.
+    uniforms.bias.value = 0.25;
     uniforms.fringe.value = 0.7; // faint chromatic fringing on the bokeh edges
     // maxblur is set per-frame in render() from the frame height (see MAX_BLUR_FRACTION).
     this.uniforms = uniforms;
