@@ -195,7 +195,7 @@ h1,
   left: -36px;
   top: 0;
   width: 36px;
-  min-height: 52px;
+  min-height: 68px;
   padding: 10px 0;
   line-height: 1;
   display: flex;
@@ -1091,7 +1091,7 @@ html.is-page body {
   right: -36px;
   top: 0;
   width: 36px;
-  min-height: 52px;
+  min-height: 68px;
   padding: 10px 0;
   line-height: 1;
   display: flex;
