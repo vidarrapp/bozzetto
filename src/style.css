@@ -243,18 +243,25 @@ h1,
 
 .panel__close,
 .editor__sidebar-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  /* Negative margins keep the title bar compact while the tap target stays big. */
+  margin: -8px -8px -8px 0;
+  padding: 0 8px;
   border: none;
+  border-radius: var(--radius);
   background: none;
-  margin: -6px -6px -6px 0;
-  padding: 6px 8px;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
   color: var(--muted);
 }
 
 .panel__close:hover,
 .editor__sidebar-close:hover {
-  background: none;
+  background: var(--hover);
   color: var(--text);
 }
 
