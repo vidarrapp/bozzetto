@@ -145,6 +145,9 @@ export class Viewer {
   private displayedIndex = -1;
   private subjectBox = new Box3();
   private rafId = 0;
+  /** Non-null while an offline capture holds the renderer (see beginCapture). */
+  private capturing = false;
+  private captureSaved: { pixelRatio: number; frame: number; playing: boolean } | null = null;
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
 
@@ -507,6 +510,82 @@ export class Viewer {
     return this.captureGuide.getAspect();
   }
 
+  // --- offline frame capture (reel/video export) ------------------------
+  //
+  // Capture renders the *live* framing at a higher resolution and lets the
+  // caller crop the guide rectangle, so the export is WYSIWYG with the on-screen
+  // guide. The render loop, timeline, and adaptive-quality timer are all paused
+  // for the duration so nothing resizes the renderer or advances the playhead
+  // mid-capture; endCapture restores the previous state exactly.
+
+  /** Live viewport size in CSS pixels (drives the capture resolution + crop). */
+  viewportSize(): { w: number; h: number } {
+    return { w: this.container.clientWidth, h: this.container.clientHeight };
+  }
+
+  /** The renderer canvas, read back per frame during capture. */
+  get captureCanvas(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  /**
+   * Enter capture mode: pause the loop and resize the renderer to `w`×`h` device
+   * pixels (same aspect as the live view, just denser). The camera FOV is left
+   * untouched so the framing is identical to what the guide shows.
+   */
+  beginCapture(w: number, h: number): void {
+    if (this.capturing) return;
+    this.capturing = true;
+    cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+    clearTimeout(this.adaptTimer);
+    this.captureSaved = {
+      pixelRatio: this.renderer.getPixelRatio(),
+      frame: this.timeline.frameIndex(),
+      playing: this.timeline.playing,
+    };
+    this.timeline.pause();
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
+    // Match the projection to the capture buffer (avoids any stretch from the
+    // integer rounding of w/h) while preserving the live vertical FOV.
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Load + render one frame into the capture canvas (call between begin/end). */
+  async renderCaptureFrame(ordinal: number): Promise<void> {
+    // Keep the frame inside the streamer window so ensure() caches (not disposes)
+    // the decoded geometry, then render it directly.
+    this.streamer.setPlayhead(ordinal);
+    const geom = await this.streamer.ensure(ordinal);
+    this.display.geometry = geom;
+    this.wireframe.geometry = geom;
+    this.displayedIndex = ordinal;
+    this.renderFrame();
+  }
+
+  /** Leave capture mode: restore the renderer, camera, and play state, resume. */
+  endCapture(): void {
+    if (!this.capturing) return;
+    const saved = this.captureSaved;
+    this.capturing = false;
+    this.captureSaved = null;
+    if (saved) {
+      this.renderer.setPixelRatio(saved.pixelRatio);
+      this.onResize(); // restore renderer + composer size and the live camera
+      this.timeline.setFrame(saved.frame);
+      if (saved.playing) this.timeline.play();
+    }
+    // Force the resumed loop to re-resolve the target frame (the streamer window
+    // moved during capture) and re-sync the UI via onFrame.
+    this.targetIndex = -1;
+    this.displayedIndex = -1;
+    this.clock.getDelta(); // discard time accumulated during capture
+    this.loop();
+  }
+
   /** Render the current frame and read it back as a JPEG thumbnail blob. */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
     this.renderFrame();
@@ -723,6 +802,8 @@ export class Viewer {
   };
 
   private readonly onResize = (): void => {
+    // A capture owns the renderer size; a stray window resize must not clobber it.
+    if (this.capturing) return;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.camera.aspect = w / h;

@@ -1,5 +1,8 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { AspectId } from '../viewer/CaptureGuide';
+// The capture pipeline (WebCodecs + muxers) is loaded on demand in buildReel so
+// the public viewer bundle doesn't carry encoders it never uses.
+import type { ReelFormat } from '../viewer/capture/types';
 import type { LightId } from '../viewer/Lighting';
 import { shadowMode, type ShadowMode } from '../viewer/pcss';
 
@@ -501,26 +504,112 @@ export class Panel {
 
   private buildReel(body: HTMLElement): void {
     const sec = section(body, 'Reel');
+    const hasMp4 = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 
-    // Crop guide: dims everything outside a centred frame of the chosen aspect,
-    // so the subject can be framed for a vertical/square/wide capture.
-    const guide = document.createElement('select');
-    for (const [value, label] of [
-      ['off', 'Off'],
-      ['9:16', '9:16 — vertical'],
-      ['1:1', '1:1 — square'],
-      ['16:9', '16:9 — wide'],
-    ] as const) {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      guide.appendChild(opt);
-    }
-    guide.value = this.viewer.getCaptureAspect() ?? 'off';
-    guide.addEventListener('change', () => {
-      this.viewer.setCaptureAspect(guide.value === 'off' ? null : (guide.value as AspectId));
+    // Aspect drives both the on-screen crop guide and the capture framing.
+    const aspect = selectEl(
+      [
+        ['off', 'Off'],
+        ['9:16', '9:16 — vertical'],
+        ['1:1', '1:1 — square'],
+        ['16:9', '16:9 — wide'],
+      ],
+      this.viewer.getCaptureAspect() ?? 'off',
+    );
+    sec.appendChild(labelRow('Aspect', aspect));
+
+    // MP4 (H.264) where WebCodecs exists; animated GIF everywhere.
+    const format = selectEl(
+      hasMp4 ? [['mp4', 'MP4 (H.264)'], ['gif', 'GIF']] : [['gif', 'GIF']],
+      hasMp4 ? 'mp4' : 'gif',
+    );
+    sec.appendChild(labelRow('Format', format));
+
+    const size = document.createElement('select');
+    sec.appendChild(labelRow('Size', size));
+    const fillSizes = (): void => {
+      const opts: [string, string][] =
+        format.value === 'gif'
+          ? [['480', '480p'], ['360', '360p']]
+          : [['1080', '1080p'], ['720', '720p']];
+      const keep = size.value;
+      size.replaceChildren();
+      for (const [v, l] of opts) {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = l;
+        size.appendChild(o);
+      }
+      size.value = opts.some(([v]) => v === keep) ? keep : opts[0][0];
+    };
+    fillSizes();
+    format.addEventListener('change', fillSizes);
+
+    const fps = selectEl([['12', '12 fps'], ['24', '24 fps'], ['30', '30 fps']], '24');
+    sec.appendChild(labelRow('FPS', fps));
+
+    const record = document.createElement('button');
+    record.type = 'button';
+    record.className = 'reel-record';
+    record.textContent = 'Record';
+    const bar = document.createElement('progress');
+    bar.hidden = true;
+    const status = document.createElement('span');
+    status.className = 'reel-status';
+    sec.append(record, bar, status);
+
+    record.disabled = aspect.value === 'off';
+    aspect.addEventListener('change', () => {
+      const a = aspect.value === 'off' ? null : (aspect.value as AspectId);
+      this.viewer.setCaptureAspect(a);
+      record.disabled = a === null;
     });
-    sec.appendChild(labelRow('Guide', guide));
+
+    const controls = [aspect, format, size, fps];
+    const setBusy = (busy: boolean): void => {
+      record.disabled = busy || aspect.value === 'off';
+      record.textContent = busy ? 'Recording…' : 'Record';
+      for (const c of controls) c.disabled = busy;
+      bar.hidden = !busy;
+    };
+
+    const run = async (): Promise<void> => {
+      if (aspect.value === 'off') return;
+      setBusy(true);
+      status.textContent = 'Preparing…';
+      bar.removeAttribute('value'); // indeterminate until the first frame lands
+      const a = aspect.value as AspectId;
+      const fmt = format.value as ReelFormat;
+      try {
+        const { recordReel, downloadBlob, reelFilename } = await import(
+          '../viewer/capture/recorder'
+        );
+        const blob = await recordReel(
+          this.viewer,
+          {
+            aspect: a,
+            format: fmt,
+            size: Number(size.value),
+            fps: Number(fps.value),
+            from: 0,
+            to: this.viewer.manifest.config.frameCount - 1,
+          },
+          (done, total) => {
+            bar.max = total;
+            bar.value = done;
+            status.textContent = `Rendering ${done} / ${total}`;
+          },
+        );
+        downloadBlob(blob, reelFilename(this.viewer.manifest.title, a, fmt));
+        status.textContent = `Saved · ${formatBytes(blob.size)}`;
+      } catch (err) {
+        console.error('Reel capture failed', err);
+        status.textContent = err instanceof Error ? err.message : 'Capture failed';
+      } finally {
+        setBusy(false);
+      }
+    };
+    record.addEventListener('click', () => void run());
   }
 
   private buildAO(body: HTMLElement): void {
@@ -707,6 +796,27 @@ function labelRow(label: string, control: HTMLElement): HTMLLabelElement {
 
 function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
   return labelRow(label, build());
+}
+
+function selectEl(
+  options: readonly (readonly [string, string])[],
+  value: string,
+): HTMLSelectElement {
+  const s = document.createElement('select');
+  for (const [v, l] of options) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = l;
+    s.appendChild(o);
+  }
+  s.value = value;
+  return s;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function checkbox(

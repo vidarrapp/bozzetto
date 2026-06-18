@@ -212,7 +212,8 @@ function main(): void {
     }
     const manifest = buildManifest();
     memorySource.setManifest(manifest);
-    preview = new Viewer(previewBox, manifest, memorySource);
+    // preserveDrawingBuffer lets the panel read the canvas back for reel/thumbnail capture.
+    preview = new Viewer(previewBox, manifest, memorySource, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
     layout.attach(panel);
