@@ -192,11 +192,11 @@ h1,
    panel has slid off-screen; clicking it (or Tab) slides the panel back. */
 .panel__handle {
   position: absolute;
-  left: -28px;
+  left: -36px;
   top: 0;
-  width: 28px;
-  min-height: 34px;
-  padding: 8px 0;
+  width: 36px;
+  min-height: 52px;
+  padding: 10px 0;
   line-height: 1;
   display: flex;
   flex-direction: column;
@@ -224,7 +224,7 @@ h1,
 }
 
 .handle__arrow {
-  font-size: 14px;
+  font-size: 17px;
 }
 
 .panel--collapsed .panel__handle .handle__label,
@@ -1088,11 +1088,11 @@ html.is-page body {
 /* Handle juts out of the sidebar's right edge (mirror of .panel__handle). */
 .editor__sidebar-handle {
   position: absolute;
-  right: -28px;
+  right: -36px;
   top: 0;
-  width: 28px;
-  min-height: 34px;
-  padding: 8px 0;
+  width: 36px;
+  min-height: 52px;
+  padding: 10px 0;
   line-height: 1;
   display: flex;
   flex-direction: column;
@@ -1171,9 +1171,9 @@ html.is-page body {
    overlap. */
 @media (max-width: 600px) {
   .editor__sidebar {
-    width: min(332px, calc(100vw - 56px));
+    width: min(332px, calc(100vw - 64px));
   }
   .panel {
-    width: min(268px, calc(100vw - 56px));
+    width: min(268px, calc(100vw - 64px));
   }
 }

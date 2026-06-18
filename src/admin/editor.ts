@@ -201,7 +201,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
   // The two slide-out panels (this "Project settings" sidebar + the right "Look
   // dev" panel) are coordinated here: persisted state, and no overlap on mobile.
-  layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project settings');
+  layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project');
 
   titleHeading.textContent = project.title || id;
   $('.editor__id').textContent = `id: ${id}`;

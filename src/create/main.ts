@@ -150,7 +150,7 @@ function main(): void {
   };
 
   // Coordinate the two slide-out panels (persisted state, no overlap on mobile).
-  const layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project settings');
+  const layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project');
 
   const setFrameCount = (n: number): void => {
     frameCountEl.textContent = n > 0 ? `· ${n} frame${n === 1 ? '' : 's'}` : '· none yet';
