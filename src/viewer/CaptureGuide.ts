@@ -54,22 +54,25 @@ export class CaptureGuide {
     return this.aspect;
   }
 
+  /** Centred crop rectangle of the current aspect within a `w`×`h` box, or null. */
+  rectFor(w: number, h: number): CropRect | null {
+    if (!this.aspect) return null;
+    const a = ASPECTS[this.aspect];
+    let cw: number;
+    let ch: number;
+    if (a <= w / h) {
+      ch = h;
+      cw = h * a;
+    } else {
+      cw = w;
+      ch = w / a;
+    }
+    return { x: (w - cw) / 2, y: (h - ch) / 2, w: cw, h: ch };
+  }
+
   /** Centred crop rectangle (container CSS pixels) for the current aspect. */
   rect(): CropRect | null {
-    if (!this.aspect) return null;
-    const cw = this.container.clientWidth;
-    const ch = this.container.clientHeight;
-    const a = ASPECTS[this.aspect];
-    let w: number;
-    let h: number;
-    if (a <= cw / ch) {
-      h = ch;
-      w = ch * a;
-    } else {
-      w = cw;
-      h = cw / a;
-    }
-    return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+    return this.rectFor(this.container.clientWidth, this.container.clientHeight);
   }
 
   dispose(): void {

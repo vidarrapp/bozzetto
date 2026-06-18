@@ -586,19 +586,30 @@ export class Viewer {
     this.loop();
   }
 
-  /** Render the current frame and read it back as a JPEG thumbnail blob. */
+  /**
+   * Render the current frame and read it back as a JPEG thumbnail blob. When a
+   * crop guide is active the thumbnail is cropped to it, so the saved image
+   * matches the framing used for the reel.
+   */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
     this.renderFrame();
     const gl = this.renderer.domElement;
-    const scale = Math.min(1, maxWidth / gl.width);
-    const w = Math.max(1, Math.round(gl.width * scale));
-    const h = Math.max(1, Math.round(gl.height * scale));
+    const crop = this.captureGuide.rectFor(gl.width, gl.height);
+    const sx = crop ? Math.round(crop.x) : 0;
+    const sy = crop ? Math.round(crop.y) : 0;
+    const sw = crop ? Math.round(crop.w) : gl.width;
+    const sh = crop ? Math.round(crop.h) : gl.height;
+    const scale = Math.min(1, maxWidth / sw);
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D context unavailable for capture');
-    ctx.drawImage(gl, 0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(gl, sx, sy, sw, sh, 0, 0, w, h);
     return new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error('thumbnail capture failed'))),
