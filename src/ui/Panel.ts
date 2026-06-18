@@ -1,10 +1,7 @@
 import type { Viewer } from '../viewer/Viewer';
-import type { AspectId } from '../viewer/CaptureGuide';
-// The capture pipeline (WebCodecs + muxers) is loaded on demand in buildReel so
-// the public viewer bundle doesn't carry encoders it never uses.
-import type { ReelFormat, ReelMotion, ReelOptions } from '../viewer/capture/types';
 import type { LightId } from '../viewer/Lighting';
 import { shadowMode, type ShadowMode } from '../viewer/pcss';
+import { div, labelRow } from './dom';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -99,7 +96,6 @@ export class Panel {
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildCamera(this.bodyEl);
-    if (this.editor) this.buildReel(this.bodyEl);
     if (this.editor) this.buildEnvironment(this.bodyEl);
     if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
@@ -500,138 +496,6 @@ export class Panel {
     }
   }
 
-  // --- reel / capture (editor only) -------------------------------------
-
-  private buildReel(body: HTMLElement): void {
-    // Compiled out of the single-file embed (viewer-only) so its encoders are
-    // tree-shaken; the editor app builds set this flag true.
-    if (!__REEL_CAPTURE__) return;
-    const sec = section(body, 'Reel');
-    const hasMp4 = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
-
-    // Aspect drives both the on-screen crop guide and the capture framing.
-    const aspect = selectEl(
-      [
-        ['off', 'Off'],
-        ['9:16', '9:16 — vertical'],
-        ['1:1', '1:1 — square'],
-        ['16:9', '16:9 — wide'],
-      ],
-      this.viewer.getCaptureAspect() ?? 'off',
-    );
-    sec.appendChild(labelRow('Aspect', aspect));
-
-    // Motion: step the timeline, or spin the current frame in place (turntable).
-    const motion = selectEl(
-      [['timeline', 'Timeline'], ['turntable', 'Turntable (spin)']],
-      'timeline',
-    );
-    sec.appendChild(labelRow('Motion', motion));
-
-    const spin = selectEl([['2', '2s'], ['4', '4s'], ['6', '6s'], ['8', '8s']], '4');
-    const direction = selectEl([['1', 'Counter-clockwise'], ['-1', 'Clockwise']], '1');
-    const turnBox = div('reel-turntable');
-    turnBox.append(labelRow('Spin', spin), labelRow('Direction', direction));
-    sec.appendChild(turnBox);
-    const syncMotion = (): void => {
-      turnBox.hidden = motion.value !== 'turntable';
-    };
-    syncMotion();
-    motion.addEventListener('change', syncMotion);
-
-    // MP4 (H.264) where WebCodecs exists; animated GIF everywhere.
-    const format = selectEl(
-      hasMp4 ? [['mp4', 'MP4 (H.264)'], ['gif', 'GIF']] : [['gif', 'GIF']],
-      hasMp4 ? 'mp4' : 'gif',
-    );
-    sec.appendChild(labelRow('Format', format));
-
-    const size = document.createElement('select');
-    sec.appendChild(labelRow('Size', size));
-    const fillSizes = (): void => {
-      const opts: [string, string][] =
-        format.value === 'gif'
-          ? [['480', '480p'], ['360', '360p']]
-          : [['1080', '1080p'], ['720', '720p']];
-      const keep = size.value;
-      size.replaceChildren();
-      for (const [v, l] of opts) {
-        const o = document.createElement('option');
-        o.value = v;
-        o.textContent = l;
-        size.appendChild(o);
-      }
-      size.value = opts.some(([v]) => v === keep) ? keep : opts[0][0];
-    };
-    fillSizes();
-    format.addEventListener('change', fillSizes);
-
-    const fps = selectEl([['12', '12 fps'], ['24', '24 fps'], ['30', '30 fps']], '24');
-    sec.appendChild(labelRow('FPS', fps));
-
-    const record = document.createElement('button');
-    record.type = 'button';
-    record.className = 'reel-record';
-    record.textContent = 'Record';
-    const bar = document.createElement('progress');
-    bar.hidden = true;
-    const status = document.createElement('span');
-    status.className = 'reel-status';
-    sec.append(record, bar, status);
-
-    record.disabled = aspect.value === 'off';
-    aspect.addEventListener('change', () => {
-      const a = aspect.value === 'off' ? null : (aspect.value as AspectId);
-      this.viewer.setCaptureAspect(a);
-      record.disabled = a === null;
-    });
-
-    const controls = [aspect, motion, spin, direction, format, size, fps];
-    const setBusy = (busy: boolean): void => {
-      record.disabled = busy || aspect.value === 'off';
-      record.textContent = busy ? 'Recording…' : 'Record';
-      for (const c of controls) c.disabled = busy;
-      bar.hidden = !busy;
-    };
-
-    const run = async (): Promise<void> => {
-      if (aspect.value === 'off') return;
-      setBusy(true);
-      status.textContent = 'Preparing…';
-      bar.removeAttribute('value'); // indeterminate until the first frame lands
-      const a = aspect.value as AspectId;
-      const fmt = format.value as ReelFormat;
-      const common = { aspect: a, format: fmt, size: Number(size.value), fps: Number(fps.value) };
-      const opts: ReelOptions =
-        (motion.value as ReelMotion) === 'turntable'
-          ? {
-              ...common,
-              motion: 'turntable',
-              spinSeconds: Number(spin.value),
-              direction: Number(direction.value) === -1 ? -1 : 1,
-            }
-          : { ...common, motion: 'timeline', from: 0, to: this.viewer.manifest.config.frameCount - 1 };
-      try {
-        const { recordReel, downloadBlob, reelFilename } = await import(
-          '../viewer/capture/recorder'
-        );
-        const blob = await recordReel(this.viewer, opts, (done, total) => {
-          bar.max = total;
-          bar.value = done;
-          status.textContent = `Rendering ${done} / ${total}`;
-        });
-        downloadBlob(blob, reelFilename(this.viewer.manifest.title, a, fmt));
-        status.textContent = `Saved · ${formatBytes(blob.size)}`;
-      } catch (err) {
-        console.error('Reel capture failed', err);
-        status.textContent = err instanceof Error ? err.message : 'Capture failed';
-      } finally {
-        setBusy(false);
-      }
-    };
-    record.addEventListener('click', () => void run());
-  }
-
   private buildAO(body: HTMLElement): void {
     if (!this.viewer.aoAvailable()) return;
     const ao = this.viewer.getAOState();
@@ -749,12 +613,6 @@ function steppedSlider(
 
 // --- tiny DOM helpers ----------------------------------------------------
 
-function div(className: string): HTMLDivElement {
-  const d = document.createElement('div');
-  d.className = className;
-  return d;
-}
-
 function button(label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -805,38 +663,8 @@ function compactRange(
   return wrap;
 }
 
-function labelRow(label: string, control: HTMLElement): HTMLLabelElement {
-  const wrap = document.createElement('label');
-  wrap.className = 'label-row';
-  const span = document.createElement('span');
-  span.textContent = label;
-  wrap.append(span, control);
-  return wrap;
-}
-
 function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
   return labelRow(label, build());
-}
-
-function selectEl(
-  options: readonly (readonly [string, string])[],
-  value: string,
-): HTMLSelectElement {
-  const s = document.createElement('select');
-  for (const [v, l] of options) {
-    const o = document.createElement('option');
-    o.value = v;
-    o.textContent = l;
-    s.appendChild(o);
-  }
-  s.value = value;
-  return s;
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function checkbox(

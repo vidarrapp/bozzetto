@@ -2,6 +2,7 @@ import { frameFromFile, runPool } from '../admin/convert';
 import { Viewer } from '../viewer/Viewer';
 import { MemorySource } from '../viewer/AssetSource';
 import { Panel } from '../ui/Panel';
+import { mountReelControls } from '../ui/reel';
 import { EditorLayout } from '../ui/editorLayout';
 import { FpsMeter } from '../ui/FpsMeter';
 import { installShortcuts } from '../ui/shortcuts';
@@ -110,6 +111,7 @@ function main(): void {
             <h3>Export</h3>
             <p class="muted editor__hint">Set up the look in the right-hand panel, then download a self-contained <strong>.html</strong> that opens offline, straight from disk.</p>
             <button id="export-html" class="btn btn--primary" type="button" disabled>Export .html</button>
+            <div id="reel-mount"></div>
           </section>
         </div>
       </aside>
@@ -130,6 +132,7 @@ function main(): void {
   const zup = $<HTMLInputElement>('#zup');
   const stagesHost = $('#stages');
   const exportBtn = $<HTMLButtonElement>('#export-html');
+  const reelMount = $('#reel-mount');
 
   const memorySource = new MemorySource();
   let frames: FrameMeta[] = [];
@@ -205,6 +208,7 @@ function main(): void {
   async function mountPreview(): Promise<void> {
     disposePreview();
     exportBtn.disabled = true;
+    reelMount.replaceChildren(); // drop reel controls bound to the old viewer
     previewBox.innerHTML = '';
     if (frames.length === 0) {
       previewBox.innerHTML = '<p class="muted preview__hint">Drop frames to preview.</p>';
@@ -223,6 +227,7 @@ function main(): void {
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });
+    reelMount.replaceChildren(mountReelControls(preview));
     exportBtn.disabled = false;
   }
 

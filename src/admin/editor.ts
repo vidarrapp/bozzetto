@@ -3,6 +3,7 @@ import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
 import { Panel } from '../ui/Panel';
+import { mountReelControls } from '../ui/reel';
 import { EditorLayout } from '../ui/editorLayout';
 import { installShortcuts } from '../ui/shortcuts';
 import { FpsMeter } from '../ui/FpsMeter';
@@ -185,6 +186,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
             <div class="editor__row">
               <button id="export-html" class="btn" type="button" disabled>Export .html</button>
             </div>
+            <div id="reel-mount"></div>
           </section>
         </div>
       </aside>
@@ -198,6 +200,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   const modeSelect = $<HTMLSelectElement>('#f-mode');
   const fpsInput = $<HTMLInputElement>('#f-fps');
   const frameCountEl = $('#frame-count');
+  const reelMount = $('#reel-mount');
 
   // The two slide-out panels (this "Project settings" sidebar + the right "Look
   // dev" panel) are coordinated here: persisted state, and no overlap on mobile.
@@ -348,6 +351,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   async function mountPreview(): Promise<void> {
     disposePreview();
     exportHtml.disabled = true;
+    reelMount.replaceChildren(); // drop reel controls bound to the old viewer
     const box = $('#preview');
     box.innerHTML = '';
     let raw: unknown;
@@ -373,6 +377,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });
+    reelMount.replaceChildren(mountReelControls(preview));
     exportHtml.disabled = false;
   }
 

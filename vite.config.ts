@@ -8,10 +8,6 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   base: '/',
-  define: {
-    // The app builds include the editor, so ship the reel capture pipeline.
-    __REEL_CAPTURE__: JSON.stringify(true),
-  },
   build: {
     target: 'es2020',
     sourcemap: true,

@@ -10,11 +10,6 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   base: './',
-  define: {
-    // The embed is viewer-only; exclude the editor's reel capture pipeline so
-    // its encoders (mediabunny, gifenc) don't bloat the single-file export.
-    __REEL_CAPTURE__: JSON.stringify(false),
-  },
   build: {
     outDir: 'dist/embed',
     emptyOutDir: true,

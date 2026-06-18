@@ -854,16 +854,26 @@ html.is-page body {
   background-size: 33.333% 33.333%;
 }
 
-/* Reel capture controls (editor Reel section). */
-.reel-record {
-  width: 100%;
-  margin-top: 6px;
+/* Reel capture controls (editor Export section). */
+.reel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
 }
 
-.section progress {
+.reel > .editor__hint {
+  margin-top: 0;
+}
+
+.reel-record {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.reel progress {
   width: 100%;
   height: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
   display: block;
 }
 
