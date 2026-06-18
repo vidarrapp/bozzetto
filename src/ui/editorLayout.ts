@@ -36,6 +36,26 @@ export class EditorLayout {
     this.arrow.className = 'handle__arrow';
     handle.replaceChildren(labelEl, this.arrow);
     handle.addEventListener('click', () => this.setSidebar(!this.sidebarOpen, true));
+
+    // Title bar with a close control: the open sidebar hides its edge handle, so
+    // closing happens here (and on mobile you switch by tapping the other tab).
+    const body = sidebar.querySelector('.editor__sidebar-body');
+    if (body) {
+      const header = document.createElement('div');
+      header.className = 'editor__sidebar-header';
+      const titleEl = document.createElement('span');
+      titleEl.className = 'panel__title';
+      titleEl.textContent = label;
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'editor__sidebar-close';
+      close.textContent = '‹';
+      close.setAttribute('aria-label', 'Hide panel');
+      close.addEventListener('click', () => this.setSidebar(false, true));
+      header.append(titleEl, close);
+      sidebar.insertBefore(header, body);
+    }
+
     window.addEventListener('resize', this.onResize);
   }
 

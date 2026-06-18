@@ -70,7 +70,14 @@ export class Panel {
     const title = document.createElement('span');
     title.className = 'panel__title';
     title.textContent = this.editor ? 'Look dev' : viewer.manifest.title || 'Bozzetto';
-    header.append(title);
+    // Closing lives in the title bar; the open panel hides its edge handle.
+    const closeBtn = button('›', () => {
+      this.setCollapsed(true);
+      this.onToggle?.(true);
+    });
+    closeBtn.className = 'panel__close';
+    closeBtn.setAttribute('aria-label', 'Hide panel');
+    header.append(title, closeBtn);
     this.root.appendChild(header);
 
     this.bodyEl = div('panel__body');
