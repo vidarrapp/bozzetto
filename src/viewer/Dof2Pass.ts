@@ -14,11 +14,19 @@ import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
 import { BokehShader as BokehShader2 } from 'three/examples/jsm/shaders/BokehShader2.js';
 
 export interface Dof2Quality {
-  /** Concentric sample rings — more is smoother but costlier. */
+  /** Concentric sample rings — more is smoother but costlier (keep ≥ 4). */
   rings: number;
-  /** Samples on the first ring (scaled up per ring). */
+  /** Samples on the first ring (scaled up per ring; keep ≥ 4). */
   samples: number;
 }
+
+/**
+ * Maximum bokeh radius as a fraction of frame height. Capping it (rather than
+ * letting the physical circle of confusion run free) keeps a far, fully
+ * defocused background to a pleasing disc instead of a screen-spanning smear,
+ * and keeps the look resolution-independent.
+ */
+const MAX_BLUR_FRACTION = 0.018;
 
 /**
  * Realistic depth of field via three.js' BokehShader2 (Martins Upitis' "bokeh
@@ -39,13 +47,16 @@ export class Dof2Pass extends Pass {
   private readonly fsQuad: FullScreenQuad;
   private readonly depthTarget: WebGLRenderTarget;
   private readonly depthMaterial: MeshBasicMaterial;
+  /** Ring count (also caps the max blur: total radius = rings × maxblur). */
+  private readonly rings: number;
 
   constructor(
     private readonly scene: Scene,
     private readonly camera: PerspectiveCamera,
-    quality: Dof2Quality = { rings: 3, samples: 4 },
+    quality: Dof2Quality = { rings: 4, samples: 4 },
   ) {
     super();
+    this.rings = quality.rings;
 
     this.depthTarget = new WebGLRenderTarget(1, 1, { depthTexture: new DepthTexture(1, 1) });
     this.depthTarget.texture.name = 'Dof2Pass.scratch';
@@ -69,7 +80,7 @@ export class Dof2Pass extends Pass {
     uniforms.noise.value = 1; // grain masks banding across the blur gradient
     uniforms.dithering.value = 0.0001;
     uniforms.fringe.value = 0.7; // faint chromatic fringing on the bokeh edges
-    uniforms.maxblur.value = 1; // overall blur scale; driven per-frame by the Viewer
+    // maxblur is set per-frame in render() from the frame height (see MAX_BLUR_FRACTION).
     this.uniforms = uniforms;
 
     this.material = new ShaderMaterial({
@@ -103,6 +114,9 @@ export class Dof2Pass extends Pass {
     this.uniforms.textureHeight.value = readBuffer.height;
     this.uniforms.znear.value = this.camera.near;
     this.uniforms.zfar.value = this.camera.far;
+    // The fully-defocused radius is rings × maxblur (px); cap it to a fraction
+    // of the frame so it stays a tidy disc at any resolution.
+    this.uniforms.maxblur.value = (MAX_BLUR_FRACTION * readBuffer.height) / this.rings;
 
     // 3. Composite the bokeh over the colour buffer.
     if (this.renderToScreen) {

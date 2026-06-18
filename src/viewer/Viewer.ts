@@ -44,11 +44,14 @@ const DEFAULT_FSTOP = 4;
 /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
 const DEFAULT_DOF_FOCUS = 0.35;
 /**
- * Maximum bokeh radius, in pixels, per sample ring, scaled by the subject radius
- * so the look is consistent across model scales (the physical CoC is ∝ 1/scale).
- * The f-stop sets how much of that range a given defocus actually uses.
+ * The bokeh circle of confusion is physically scale-dependent, but a look-dev
+ * subject is auto-framed to fill the view at any world scale. Feeding the shader
+ * a focal length scaled by √(subject radius) cancels that scale dependence, so
+ * the defocus gradient is consistent across models — while a longer lens or
+ * wider aperture still blurs more, as on a real camera. This constant sets the
+ * overall strength (≈ the subject-edge blur at a normal lens and f/4).
  */
-const DOF_MAX_BLUR_PER_RADIUS = 6;
+const DOF_FOCAL_SCALE = 0.6;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -403,15 +406,14 @@ export class Viewer {
     return { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
   }
 
-  /** Push the lens parameters to the bokeh shader. The maximum blur scales with
-   *  the subject radius so the look holds across model scales; the f-stop and
-   *  focal length then set the physical circle of confusion. */
+  /** Push the lens parameters to the bokeh shader. The f-stop is physical; the
+   *  focal length is scaled by √(subject radius) so the circle of confusion is
+   *  consistent across model world scales (see DOF_FOCAL_SCALE). */
   private applyDof(): void {
     if (!this.dof2) return;
     const u = this.dof2.uniforms;
     u.fstop.value = this.dofFStop;
-    u.focalLength.value = this.focalLength;
-    u.maxblur.value = DOF_MAX_BLUR_PER_RADIUS * this.subjectRadius;
+    u.focalLength.value = this.focalLength * Math.sqrt(this.subjectRadius) * DOF_FOCAL_SCALE;
   }
 
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
@@ -715,10 +717,11 @@ export class Viewer {
       if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
 
       // Depth of field, off by default. focalDepth is set per-frame from the
-      // orbit target; the lens (f-stop + focal length) sets the bokeh. Fewer
-      // sample rings on the mobile (SSAO) tier keep it affordable.
+      // orbit target; the lens (f-stop + focal length) sets the bokeh. BokehShader2
+      // needs rings/samples ≥ 4 to read as a smooth blur rather than discrete
+      // ghosts; the mobile (SSAO) tier just trims a ring to stay affordable.
       const dofQuality =
-        this.aoKind === 'gtao' ? { rings: 4, samples: 4 } : { rings: 2, samples: 3 };
+        this.aoKind === 'gtao' ? { rings: 5, samples: 4 } : { rings: 4, samples: 4 };
       const dof = new Dof2Pass(this.scene, this.camera, dofQuality);
       dof.enabled = false;
       this.dof2 = dof;
