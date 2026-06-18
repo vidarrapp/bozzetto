@@ -823,6 +823,37 @@ html.is-page body {
   display: block;
 }
 
+/* Crop-framing guide: a centred frame of the capture aspect with the area
+   outside it dimmed, plus rule-of-thirds lines. Never intercepts pointer events. */
+.capture-guide {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.capture-guide[hidden] {
+  display: none;
+}
+
+.capture-guide__frame {
+  position: relative;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+  outline: 1px solid rgba(255, 255, 255, 0.75);
+}
+
+.capture-guide__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+}
+
 .preview__hint {
   padding: 1rem;
 }

@@ -20,6 +20,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import type { BufferGeometry } from 'three';
+import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
@@ -108,6 +109,8 @@ export class Viewer {
   readonly lighting: Lighting;
   readonly environment: Environment;
   private readonly envLoadingEl: HTMLDivElement;
+  /** Crop-framing overlay for video/thumbnail capture (editor only). */
+  private readonly captureGuide: CaptureGuide;
 
   private readonly controls: Controls;
   private readonly streamer: FrameStreamer;
@@ -206,6 +209,7 @@ export class Viewer {
     this.environment.onLoading = (loading) => {
       this.envLoadingEl.hidden = !loading;
     };
+    this.captureGuide = new CaptureGuide(container);
 
     this.currentMode = this.materials.has(manifest.defaults.material)
       ? manifest.defaults.material
@@ -494,6 +498,15 @@ export class Viewer {
     this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x000000 : 0xffffff);
   }
 
+  /** Show/hide the crop-framing guide for a capture aspect (null hides it). */
+  setCaptureAspect(aspect: AspectId | null): void {
+    this.captureGuide.setAspect(aspect);
+  }
+
+  getCaptureAspect(): AspectId | null {
+    return this.captureGuide.getAspect();
+  }
+
   /** Render the current frame and read it back as a JPEG thumbnail blob. */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
     this.renderFrame();
@@ -521,6 +534,7 @@ export class Viewer {
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
     this.envLoadingEl.remove();
+    this.captureGuide.dispose();
     this.controls.dispose();
     this.streamer.dispose();
     this.materials.dispose();

@@ -1,4 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
+import type { AspectId } from '../viewer/CaptureGuide';
 import type { LightId } from '../viewer/Lighting';
 import { shadowMode, type ShadowMode } from '../viewer/pcss';
 
@@ -95,6 +96,7 @@ export class Panel {
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildCamera(this.bodyEl);
+    if (this.editor) this.buildReel(this.bodyEl);
     if (this.editor) this.buildEnvironment(this.bodyEl);
     if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
@@ -493,6 +495,32 @@ export class Panel {
         compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
       );
     }
+  }
+
+  // --- reel / capture (editor only) -------------------------------------
+
+  private buildReel(body: HTMLElement): void {
+    const sec = section(body, 'Reel');
+
+    // Crop guide: dims everything outside a centred frame of the chosen aspect,
+    // so the subject can be framed for a vertical/square/wide capture.
+    const guide = document.createElement('select');
+    for (const [value, label] of [
+      ['off', 'Off'],
+      ['9:16', '9:16 — vertical'],
+      ['1:1', '1:1 — square'],
+      ['16:9', '16:9 — wide'],
+    ] as const) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      guide.appendChild(opt);
+    }
+    guide.value = this.viewer.getCaptureAspect() ?? 'off';
+    guide.addEventListener('change', () => {
+      this.viewer.setCaptureAspect(guide.value === 'off' ? null : (guide.value as AspectId));
+    });
+    sec.appendChild(labelRow('Guide', guide));
   }
 
   private buildAO(body: HTMLElement): void {
