@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "gifenc": "^1.0.3",
-    "mp4-muxer": "^5.2.2",
+    "mediabunny": "^1.48.1",
     "three": "^0.163.0"
   },
   "devDependencies": {

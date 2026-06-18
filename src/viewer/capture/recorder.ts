@@ -1,10 +1,9 @@
 import type { Viewer } from '../Viewer';
 import { aspectRatio, type AspectId } from '../CaptureGuide';
-import { createMp4Sink, mp4Supported } from './mp4';
+import { createMp4Sink } from './mp4';
 import { createGifSink } from './gif';
 import type { ReelFormat, ReelOptions, ReelProgress, VideoSink } from './types';
 
-export { mp4Supported };
 export type { ReelFormat, ReelOptions };
 
 /** Render denser than the output, then downscale on draw, for cheap anti-aliasing. */
@@ -43,8 +42,8 @@ export async function recordReel(
 
   const sink: VideoSink =
     opts.format === 'mp4'
-      ? await createMp4Sink(outW, outH, opts.fps)
-      : createGifSink(outW, outH, opts.fps);
+      ? await createMp4Sink(out, opts.fps)
+      : createGifSink(out, opts.fps);
 
   const from = Math.max(0, Math.min(opts.from, opts.to));
   const to = Math.max(opts.from, opts.to);
@@ -55,7 +54,7 @@ export async function recordReel(
     for (let i = from, n = 0; i <= to; i++, n++) {
       await viewer.renderCaptureFrame(i);
       ctx.drawImage(viewer.captureCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
-      await sink.addFrame(out, n);
+      await sink.addFrame(n);
       onProgress?.(n + 1, total);
       await tick(); // yield so the progress bar paints and the tab stays responsive
     }

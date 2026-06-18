@@ -2,10 +2,13 @@ import type { AspectId } from '../CaptureGuide';
 
 export type ReelFormat = 'mp4' | 'gif';
 
-/** A frame consumer that encodes canvases into a downloadable clip. */
+/**
+ * A frame consumer that encodes a clip. The source canvas is bound when the
+ * sink is created; addFrame encodes its current contents for the given index.
+ */
 export interface VideoSink {
-  /** Encode one frame (the canvas is reused, so read it before returning). */
-  addFrame(canvas: HTMLCanvasElement, index: number): Promise<void>;
+  /** Encode the source canvas's current contents as frame `index`. */
+  addFrame(index: number): Promise<void>;
   /** Flush the encoder and produce the finished file. */
   finalize(): Promise<Blob>;
 }

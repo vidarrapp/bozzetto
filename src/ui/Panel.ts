@@ -503,6 +503,9 @@ export class Panel {
   // --- reel / capture (editor only) -------------------------------------
 
   private buildReel(body: HTMLElement): void {
+    // Compiled out of the single-file embed (viewer-only) so its encoders are
+    // tree-shaken; the editor app builds set this flag true.
+    if (!__REEL_CAPTURE__) return;
     const sec = section(body, 'Reel');
     const hasMp4 = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 

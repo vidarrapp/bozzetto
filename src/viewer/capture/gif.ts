@@ -3,17 +3,18 @@ import type { VideoSink } from './types';
 
 /**
  * Animated-GIF sink via gifenc. Each frame is quantised to its own 256-colour
- * palette (a local colour table) which keeps gradients clean on shaded clay
+ * palette (a local colour table), which keeps gradients clean on shaded clay
  * renders at the cost of a little size. gifenc loops forever by default.
  */
-export function createGifSink(width: number, height: number, fps: number): VideoSink {
+export function createGifSink(canvas: HTMLCanvasElement, fps: number): VideoSink {
+  const { width, height } = canvas;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D context unavailable for GIF capture.');
   const gif = GIFEncoder();
   const frameDelay = Math.max(20, Math.round(1000 / fps)); // ms; GIF granularity is 10ms
 
   return {
-    async addFrame(canvas, _index) {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('2D context unavailable for GIF capture.');
+    async addFrame(_index) {
       const { data } = ctx.getImageData(0, 0, width, height);
       const palette = quantize(data, 256, { format: 'rgb565' });
       const index = applyPalette(data, palette, 'rgb565');
