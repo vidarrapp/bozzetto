@@ -2,6 +2,7 @@ import { frameFromFile, runPool } from '../admin/convert';
 import { Viewer } from '../viewer/Viewer';
 import { MemorySource } from '../viewer/AssetSource';
 import { Panel } from '../ui/Panel';
+import { EditorLayout } from '../ui/editorLayout';
 import { FpsMeter } from '../ui/FpsMeter';
 import { installShortcuts } from '../ui/shortcuts';
 import { initTheme, mountThemeToggle } from '../ui/theme';
@@ -148,14 +149,8 @@ function main(): void {
     preview = null;
   };
 
-  // The left sidebar slides away like the right control panel (handle + Tab).
-  let sidebarCollapsed = false;
-  const setSidebarCollapsed = (collapsed: boolean): void => {
-    sidebarCollapsed = collapsed;
-    sidebarEl.classList.toggle('editor__sidebar--collapsed', collapsed);
-    sidebarHandle.textContent = collapsed ? '›' : '‹';
-  };
-  sidebarHandle.addEventListener('click', () => setSidebarCollapsed(!sidebarCollapsed));
+  // Coordinate the two slide-out panels (persisted state, no overlap on mobile).
+  const layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project settings');
 
   const setFrameCount = (n: number): void => {
     frameCountEl.textContent = n > 0 ? `· ${n} frame${n === 1 ? '' : 's'}` : '· none yet';
@@ -220,13 +215,10 @@ function main(): void {
     preview = new Viewer(previewBox, manifest, memorySource);
     await preview.boot();
     panel = new Panel(preview, { editor: true });
-    setSidebarCollapsed(false);
+    layout.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
-      togglePanel: () => {
-        const collapsed = panel ? panel.toggleCollapsed() : !sidebarCollapsed;
-        setSidebarCollapsed(collapsed);
-      },
+      togglePanel: () => layout.toggle(),
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });

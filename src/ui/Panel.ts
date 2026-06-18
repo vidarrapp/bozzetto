@@ -5,6 +5,8 @@ import { shadowMode, type ShadowMode } from '../viewer/pcss';
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
   editor?: boolean;
+  /** Editor-only content pinned at the very top of the body (e.g. Save look). */
+  actions?: HTMLElement;
 }
 
 /**
@@ -18,8 +20,12 @@ export class Panel {
   private readonly root: HTMLDivElement;
   private readonly bodyEl: HTMLDivElement;
   private readonly collapseBtn: HTMLButtonElement;
+  private readonly handleArrow: HTMLSpanElement;
   private readonly editor: boolean;
   private collapsed = false;
+
+  /** Fired when the handle is clicked (editor coordinates both panels). */
+  onToggle: ((collapsed: boolean) => void) | null = null;
 
   private modeSelect!: HTMLSelectElement;
   private materialOptions!: HTMLDivElement;
@@ -45,15 +51,29 @@ export class Panel {
     document.body.appendChild(this.root);
 
     // Edge handle: always visible, doubles as the collapse/expand toggle so the
-    // panel can slide fully off the side and still be pulled back in.
-    this.collapseBtn = button('', () => this.toggleCollapsed());
+    // panel can slide fully off the side and still be pulled back in. When
+    // collapsed it shows the panel's name (a larger, labelled touch target).
+    this.collapseBtn = button('', () => {
+      this.toggleCollapsed();
+      this.onToggle?.(this.collapsed);
+    });
     this.collapseBtn.className = 'panel__handle';
+    this.handleArrow = document.createElement('span');
+    this.handleArrow.className = 'handle__arrow';
+    if (this.editor) {
+      const handleLabel = document.createElement('span');
+      handleLabel.className = 'handle__label';
+      handleLabel.textContent = 'Look dev';
+      this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
+    } else {
+      this.collapseBtn.replaceChildren(this.handleArrow);
+    }
     this.root.appendChild(this.collapseBtn);
 
     const header = div('panel__header');
     const title = document.createElement('span');
     title.className = 'panel__title';
-    title.textContent = viewer.manifest.title || 'Bozzetto';
+    title.textContent = this.editor ? 'Look dev' : viewer.manifest.title || 'Bozzetto';
     header.append(title);
     this.root.appendChild(header);
 
@@ -64,6 +84,7 @@ export class Panel {
     this.collapsed = !this.editor;
     this.applyCollapsed();
 
+    if (options.actions) this.bodyEl.appendChild(options.actions);
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
@@ -80,10 +101,19 @@ export class Panel {
     return this.collapsed;
   }
 
+  setCollapsed(collapsed: boolean): void {
+    this.collapsed = collapsed;
+    this.applyCollapsed();
+  }
+
+  isCollapsed(): boolean {
+    return this.collapsed;
+  }
+
   private applyCollapsed(): void {
     this.root.classList.toggle('panel--collapsed', this.collapsed);
     // Arrow shows travel direction: out (›) when open, in (‹) when collapsed.
-    this.collapseBtn.textContent = this.collapsed ? '‹' : '›';
+    this.handleArrow.textContent = this.collapsed ? '‹' : '›';
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */

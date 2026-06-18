@@ -195,17 +195,46 @@ h1,
   left: -28px;
   top: 0;
   width: 28px;
-  height: 34px;
-  padding: 0;
+  min-height: 34px;
+  padding: 8px 0;
   line-height: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
   backdrop-filter: blur(8px);
+}
+
+/* Handle label: the panel's name, shown vertically only when collapsed so the
+   docked tab is a clear, larger touch target. */
+.handle__label {
+  display: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.handle__arrow {
+  font-size: 14px;
+}
+
+.panel--collapsed .panel__handle .handle__label,
+.editor__sidebar--collapsed .editor__sidebar-handle .handle__label {
+  display: block;
+}
+
+/* Save look / thumbnail row pinned at the top of the Look dev panel. */
+.panel__actions {
+  padding-top: 4px;
 }
 
 .panel__body {
@@ -1062,12 +1091,14 @@ html.is-page body {
   right: -28px;
   top: 0;
   width: 28px;
-  height: 34px;
-  padding: 0;
+  min-height: 34px;
+  padding: 8px 0;
   line-height: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-left: none;
@@ -1133,4 +1164,16 @@ html.is-page body {
 .admin__home {
   display: inline-block;
   margin-bottom: 12px;
+}
+
+/* Narrow screens (phones): keep each slide-out panel and its edge handle on
+   screen. The two are mutually exclusive here (see EditorLayout) so they don't
+   overlap. */
+@media (max-width: 600px) {
+  .editor__sidebar {
+    width: min(332px, calc(100vw - 56px));
+  }
+  .panel {
+    width: min(268px, calc(100vw - 56px));
+  }
 }

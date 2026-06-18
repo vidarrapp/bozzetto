@@ -3,6 +3,7 @@ import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
 import { Panel } from '../ui/Panel';
+import { EditorLayout } from '../ui/editorLayout';
 import { installShortcuts } from '../ui/shortcuts';
 import { FpsMeter } from '../ui/FpsMeter';
 import { validateManifest } from '../types/manifest';
@@ -52,8 +53,55 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
   }
 }
 
+/** The Save look / Save thumbnail actions, pinned to the top of the Look dev panel. */
+function buildLookActions(p: Viewer, id: string): HTMLElement {
+  const sec = document.createElement('section');
+  sec.className = 'section panel__actions';
+  const row = div('editor__row');
+
+  const saveLook = button('Save look', 'btn btn--primary');
+  saveLook.addEventListener('click', () =>
+    void runSave(saveLook, async () => {
+      await api.update(id, {
+        lighting: p.lighting.serialize(),
+        material: p.materials.getMaterialState(),
+        environment: p.environment.getState(),
+        ao: p.getAOState(),
+        camera: p.getCameraState(),
+        defaults: { material: p.getMaterial() },
+      });
+    }),
+  );
+
+  const saveThumb = button('Save thumbnail', 'btn');
+  saveThumb.addEventListener('click', () =>
+    void runSave(saveThumb, async () => {
+      await api.uploadThumb(id, await p.captureThumbnail());
+    }),
+  );
+
+  row.append(saveLook, saveThumb);
+  sec.append(row);
+  return sec;
+}
+
+function div(className: string): HTMLDivElement {
+  const d = document.createElement('div');
+  d.className = className;
+  return d;
+}
+
+function button(label: string, className: string): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = label;
+  return b;
+}
+
 let preview: Viewer | null = null;
 let panel: Panel | null = null;
+let layout: EditorLayout | null = null;
 let fpsMeter: FpsMeter | null = null;
 let disposeShortcuts: (() => void) | null = null;
 function disposePreview(): void {
@@ -69,6 +117,8 @@ function disposePreview(): void {
 
 export async function renderEditor(host: HTMLElement, id: string): Promise<void> {
   disposePreview();
+  layout?.dispose();
+  layout = null;
   document.documentElement.classList.remove('is-page'); // full-viewport editor
   host.innerHTML = '<div class="admin"><p class="muted">Loading…</p></div>';
 
@@ -130,15 +180,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
           </section>
 
           <section class="editor__section">
-            <h3>Look</h3>
-            <p class="muted editor__hint">Lighting, material &amp; camera live in the right-hand panel. Save the current look, or grab the frame as the thumbnail.</p>
-            <div class="editor__row">
-              <button id="save-look" class="btn btn--primary" type="button" disabled>Save look</button>
-              <button id="save-thumb" class="btn" type="button" disabled>Save thumbnail</button>
-            </div>
-          </section>
-
-          <section class="editor__section">
             <h3>Export</h3>
             <p class="muted editor__hint">Download one self-contained <strong>.html</strong> with the current look, frames and assets inlined. It opens offline, straight from disk.</p>
             <div class="editor__row">
@@ -158,15 +199,9 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   const fpsInput = $<HTMLInputElement>('#f-fps');
   const frameCountEl = $('#frame-count');
 
-  // The left sidebar slides out like the right control panel; its handle and
-  // Tab both drive this. (Arrow points the way it will travel: ‹ out, › in.)
-  let sidebarCollapsed = false;
-  const setSidebarCollapsed = (collapsed: boolean): void => {
-    sidebarCollapsed = collapsed;
-    sidebarEl.classList.toggle('editor__sidebar--collapsed', collapsed);
-    sidebarHandle.textContent = collapsed ? '›' : '‹';
-  };
-  sidebarHandle.addEventListener('click', () => setSidebarCollapsed(!sidebarCollapsed));
+  // The two slide-out panels (this "Project settings" sidebar + the right "Look
+  // dev" panel) are coordinated here: persisted state, and no overlap on mobile.
+  layout = new EditorLayout(sidebarEl, sidebarHandle, 'Project settings');
 
   titleHeading.textContent = project.title || id;
   $('.editor__id').textContent = `id: ${id}`;
@@ -287,31 +322,8 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   });
 
   // --- preview + lighting -------------------------------------------------
-  const saveLook = $<HTMLButtonElement>('#save-look');
-  saveLook.addEventListener('click', () => {
-    if (!preview) return;
-    const p = preview;
-    void runSave(saveLook, async () => {
-      await api.update(id, {
-        lighting: p.lighting.serialize(),
-        material: p.materials.getMaterialState(),
-        environment: p.environment.getState(),
-        ao: p.getAOState(),
-        camera: p.getCameraState(),
-        defaults: { material: p.getMaterial() },
-      });
-    });
-  });
-
-  const saveThumb = $<HTMLButtonElement>('#save-thumb');
-  saveThumb.addEventListener('click', () => {
-    if (!preview) return;
-    const p = preview;
-    void runSave(saveThumb, async () => {
-      await api.uploadThumb(id, await p.captureThumbnail());
-    });
-  });
-
+  // Save look / Save thumbnail live at the top of the right-hand Look dev panel
+  // (built in mountPreview, where the live preview exists).
   const exportHtml = $<HTMLButtonElement>('#export-html');
   exportHtml.addEventListener('click', () => {
     if (!preview) return;
@@ -335,8 +347,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
   async function mountPreview(): Promise<void> {
     disposePreview();
-    saveLook.disabled = true;
-    saveThumb.disabled = true;
     exportHtml.disabled = true;
     const box = $('#preview');
     box.innerHTML = '';
@@ -355,21 +365,14 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
     preview = new Viewer(box, manifest, new HttpSource(manifestUrl), { preserveDrawingBuffer: true });
     await preview.boot();
-    panel = new Panel(preview, { editor: true });
-    // A freshly-mounted panel starts open; keep the sidebar's slide state in sync.
-    setSidebarCollapsed(false);
+    panel = new Panel(preview, { editor: true, actions: buildLookActions(preview, id) });
+    layout?.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
-      togglePanel: () => {
-        // Tab hides both the floating control panel and the left sidebar.
-        const collapsed = panel ? panel.toggleCollapsed() : !sidebarCollapsed;
-        setSidebarCollapsed(collapsed);
-      },
+      togglePanel: () => layout?.toggle(),
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });
-    saveLook.disabled = false;
-    saveThumb.disabled = false;
     exportHtml.disabled = false;
   }
 
