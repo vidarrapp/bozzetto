@@ -11,14 +11,13 @@ import {
   Sphere,
   Vector3,
   WebGLRenderer,
-  WebGLRenderTarget,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { Dof2Pass } from './Dof2Pass';
 import type { BufferGeometry } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
@@ -40,14 +39,16 @@ const DEFAULT_FOCAL_LENGTH = 50;
 /** World-up axis the turntable capture spins the model about. */
 const TURNTABLE_UP = new Vector3(0, 1, 0);
 
-/** Depth-of-field defaults and blur tuning (see applyDofAperture). */
+/** Depth-of-field defaults (BokehShader2 — see Dof2Pass). */
 const DEFAULT_FSTOP = 4;
 /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
 const DEFAULT_DOF_FOCUS = 0.35;
-/** Subject back-edge blur is roughly DOF_APERTURE_C / fStop, scale-independent. */
-const DOF_APERTURE_C = 0.2;
-/** Cap on the (UV-space) defocus blur. Lower trims v1's highlight ringing. */
-const DOF_MAX_BLUR = 0.08;
+/**
+ * Maximum bokeh radius, in pixels, per sample ring, scaled by the subject radius
+ * so the look is consistent across model scales (the physical CoC is ∝ 1/scale).
+ * The f-stop sets how much of that range a given defocus actually uses.
+ */
+const DOF_MAX_BLUR_PER_RADIUS = 6;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -65,33 +66,6 @@ export interface DoFState {
   fStop: number;
   /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
   focus: number;
-}
-
-type BokehUniforms = {
-  focus: { value: number };
-  aperture: { value: number };
-  maxblur: { value: number };
-};
-
-/**
- * BokehPass renders the scene into a depth target to drive the blur. A textured
- * scene.background (the blurred HDRI) would be drawn into that depth target and
- * corrupt the depth, so hide it for the depth sub-render only — the colour
- * buffer being blurred still carries the background from the RenderPass.
- */
-class DofPass extends BokehPass {
-  override render(
-    renderer: WebGLRenderer,
-    writeBuffer: WebGLRenderTarget,
-    readBuffer: WebGLRenderTarget,
-    deltaTime: number,
-    maskActive: boolean,
-  ): void {
-    const background = this.scene.background;
-    this.scene.background = null;
-    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
-    this.scene.background = background;
-  }
 }
 
 /**
@@ -164,7 +138,7 @@ export class Viewer {
   private aoRadiusFraction = 0.5;
   private subjectRadius = 1;
   /** Depth-of-field (off by default; focus tracks the orbit target). */
-  private bokehPass: BokehPass | null = null;
+  private dof2: Dof2Pass | null = null;
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
   private dofFocus = DEFAULT_DOF_FOCUS;
@@ -412,29 +386,32 @@ export class Viewer {
 
   /** Whether depth of field is available (the composer built successfully). */
   dofAvailable(): boolean {
-    return this.bokehPass !== null;
+    return this.dof2 !== null;
   }
 
   setDoF(state: Partial<DoFState>): void {
     if (typeof state.enabled === 'boolean') {
-      this.dofEnabled = state.enabled && this.bokehPass !== null;
-      if (this.bokehPass) this.bokehPass.enabled = this.dofEnabled;
+      this.dofEnabled = state.enabled && this.dof2 !== null;
+      if (this.dof2) this.dof2.enabled = this.dofEnabled;
     }
     if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
     if (typeof state.focus === 'number') this.dofFocus = state.focus;
-    this.applyDofAperture();
+    this.applyDof();
   }
 
   getDoFState(): DoFState {
     return { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
   }
 
-  /** Aperture scales inversely with f-stop and subject size, so the look is
-   *  consistent across subjects of different scales. */
-  private applyDofAperture(): void {
-    if (!this.bokehPass) return;
-    const u = this.bokehPass.uniforms as BokehUniforms;
-    u.aperture.value = DOF_APERTURE_C / (this.dofFStop * this.subjectRadius);
+  /** Push the lens parameters to the bokeh shader. The maximum blur scales with
+   *  the subject radius so the look holds across model scales; the f-stop and
+   *  focal length then set the physical circle of confusion. */
+  private applyDof(): void {
+    if (!this.dof2) return;
+    const u = this.dof2.uniforms;
+    u.fstop.value = this.dofFStop;
+    u.focalLength.value = this.focalLength;
+    u.maxblur.value = DOF_MAX_BLUR_PER_RADIUS * this.subjectRadius;
   }
 
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
@@ -443,6 +420,7 @@ export class Viewer {
     this.camera.setFocalLength(mm);
     this.focalLength = mm;
     this.controls.dollyForFov(oldFov, this.camera.fov);
+    this.applyDof(); // the bokeh CoC depends on the focal length
   }
 
   getFocalLength(): number {
@@ -670,7 +648,7 @@ export class Viewer {
     this.materials.dispose();
     this.environment.dispose();
     this.aoPass?.dispose();
-    this.bokehPass?.dispose();
+    this.dof2?.dispose();
     this.composer?.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
@@ -685,7 +663,7 @@ export class Viewer {
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.applyAoRadius();
-    this.applyDofAperture();
+    this.applyDof();
     if (this.aoPass instanceof GTAOPass) this.aoPass.setSceneClipBox(this.subjectBox);
 
     const cam = this.manifest.camera;
@@ -736,16 +714,15 @@ export class Viewer {
       this.aoEnabled = this.aoKind !== 'none'; // AO on by default where available
       if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
 
-      // Depth of field, off by default. focus is set per-frame from the orbit
-      // target; aperture is derived from the f-stop + subject scale.
-      const bokeh = new DofPass(this.scene, this.camera, {
-        focus: 1,
-        aperture: 0,
-        maxblur: DOF_MAX_BLUR,
-      });
-      bokeh.enabled = false;
-      this.bokehPass = bokeh;
-      composer.addPass(bokeh);
+      // Depth of field, off by default. focalDepth is set per-frame from the
+      // orbit target; the lens (f-stop + focal length) sets the bokeh. Fewer
+      // sample rings on the mobile (SSAO) tier keep it affordable.
+      const dofQuality =
+        this.aoKind === 'gtao' ? { rings: 4, samples: 4 } : { rings: 2, samples: 3 };
+      const dof = new Dof2Pass(this.scene, this.camera, dofQuality);
+      dof.enabled = false;
+      this.dof2 = dof;
+      composer.addPass(dof);
 
       composer.addPass(new OutputPass());
       this.composer = composer;
@@ -753,7 +730,7 @@ export class Viewer {
       console.error('Composer init failed; using direct render', err);
       this.composer = null;
       this.aoPass = null;
-      this.bokehPass = null;
+      this.dof2 = null;
       this.aoKind = 'none';
       this.aoEnabled = false;
       this.dofEnabled = false;
@@ -769,12 +746,12 @@ export class Viewer {
   /** Composer when an effect is on; otherwise the plain (proven) direct render. */
   private renderFrame(): void {
     if (this.composer && (this.aoEnabled || this.dofEnabled)) {
-      if (this.dofEnabled && this.bokehPass) {
-        // Focus tracks the orbit target, biased across the subject depth so the
-        // slider can pull the focal plane to the front of the subject (the face)
-        // rather than the bounding-sphere centre.
+      if (this.dofEnabled && this.dof2) {
+        // The focal plane tracks the orbit target, biased across the subject
+        // depth so the slider can pull focus to the front of the subject (the
+        // face) rather than the bounding-sphere centre.
         const focus = this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
-        (this.bokehPass.uniforms as BokehUniforms).focus.value = Math.max(focus, 0.01);
+        this.dof2.uniforms.focalDepth.value = Math.max(focus, 0.01);
       }
       this.composer.render();
     } else {
