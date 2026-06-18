@@ -48,6 +48,9 @@ export class Panel {
     this.editor = options.editor ?? false;
 
     this.root = div('panel');
+    // Editor panel runs full-height (like the sidebar); the viewer panel stays
+    // content-sized and leaves room for the transport bar at the bottom.
+    if (this.editor) this.root.classList.add('panel--editor');
     document.body.appendChild(this.root);
 
     // Edge handle: always visible, doubles as the collapse/expand toggle so the
