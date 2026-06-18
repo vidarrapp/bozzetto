@@ -60,14 +60,10 @@ export class Panel {
     this.collapseBtn.className = 'panel__handle';
     this.handleArrow = document.createElement('span');
     this.handleArrow.className = 'handle__arrow';
-    if (this.editor) {
-      const handleLabel = document.createElement('span');
-      handleLabel.className = 'handle__label';
-      handleLabel.textContent = 'Look dev';
-      this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
-    } else {
-      this.collapseBtn.replaceChildren(this.handleArrow);
-    }
+    const handleLabel = document.createElement('span');
+    handleLabel.className = 'handle__label';
+    handleLabel.textContent = this.editor ? 'Look dev' : 'Settings';
+    this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
     this.root.appendChild(this.collapseBtn);
 
     const header = div('panel__header');
