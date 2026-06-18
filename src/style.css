@@ -195,7 +195,9 @@ h1,
   left: -36px;
   top: 0;
   width: 36px;
-  min-height: 68px;
+  /* Tall enough to match the collapsed tab's vertical label, so the open
+     (arrow-only) close target is the same comfortable height. */
+  min-height: 116px;
   padding: 10px 0;
   line-height: 1;
   display: flex;
@@ -1091,7 +1093,7 @@ html.is-page body {
   right: -36px;
   top: 0;
   width: 36px;
-  min-height: 68px;
+  min-height: 116px;
   padding: 10px 0;
   line-height: 1;
   display: flex;
