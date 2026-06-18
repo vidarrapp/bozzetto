@@ -39,9 +39,9 @@ const DEFAULT_FOCAL_LENGTH = 50;
 /** Depth-of-field defaults and blur tuning (see applyDofAperture). */
 const DEFAULT_FSTOP = 4;
 /** Subject back-edge blur is roughly DOF_APERTURE_C / fStop, scale-independent. */
-const DOF_APERTURE_C = 0.05;
+const DOF_APERTURE_C = 0.2;
 /** Cap on the (UV-space) defocus blur, so the far background stays bounded. */
-const DOF_MAX_BLUR = 0.04;
+const DOF_MAX_BLUR = 0.12;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
