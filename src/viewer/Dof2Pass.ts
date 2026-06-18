@@ -29,6 +29,29 @@ export interface Dof2Quality {
 const MAX_BLUR_FRACTION = 0.018;
 
 /**
+ * BokehShader2 gathers colour without checking each sample's depth, so a sharp
+ * foreground bleeds into the blurred background as a silhouette halo. Patch the
+ * gather so each sample is weighted by depth: samples clearly in front of the
+ * centre pixel (below 20% of its linearized depth) are rejected, which removes
+ * the halo — the excluded background sits at the far plane, ~100× the subject's
+ * distance, so it never gathers the subject — while same-plane and farther
+ * samples, and the subject's own internal blur, are left intact. Tied to the
+ * pinned three.js shader source; if those lines change, the patch no-ops.
+ */
+const DEPTH_AWARE_FRAGMENT = BokehShader2.fragmentShader
+  .replace(
+    'col += color(vUv.xy + vec2(pw*w,ph*h), blur) * mix(1.0, i/rings2, bias) * p;',
+    [
+      'vec2 sc = vUv.xy + vec2(pw*w, ph*h);',
+      'float cD = linearize(texture2D(tDepth, vUv.xy).x);',
+      'float sD = linearize(texture2D(tDepth, sc).x);',
+      'float wgt = mix(1.0, i / rings2, bias) * p * smoothstep(cD * 0.2, cD, sD);',
+      'col += color(sc, blur) * wgt;',
+    ].join('\n\t\t\t'),
+  )
+  .replace('return 1.0 * mix(1.0, i /rings2, bias) * p;', 'return wgt;');
+
+/**
  * Realistic depth of field via three.js' BokehShader2 (Martins Upitis' "bokeh
  * v2"). Unlike the simple BokehPass, the circle of confusion is derived from the
  * lens — focal length (mm), f-stop and a focal-plane distance — which fits the
@@ -90,7 +113,7 @@ export class Dof2Pass extends Pass {
       defines: { RINGS: quality.rings, SAMPLES: quality.samples },
       uniforms,
       vertexShader: BokehShader2.vertexShader,
-      fragmentShader: BokehShader2.fragmentShader,
+      fragmentShader: DEPTH_AWARE_FRAGMENT,
     });
     this.fsQuad = new FullScreenQuad(this.material);
   }
