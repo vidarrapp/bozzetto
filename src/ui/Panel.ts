@@ -470,9 +470,13 @@ export class Panel {
     const sec = section(body, 'Ambient occlusion');
 
     sec.appendChild(checkbox('Enabled', ao.enabled, (on) => this.viewer.setAO({ enabled: on })));
-    sec.appendChild(
-      compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
-    );
+    // Strength is a GTAO blend control; the SSAO fallback (mobile) ignores it,
+    // so only offer it where it does something.
+    if (this.viewer.aoIsGtao()) {
+      sec.appendChild(
+        compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
+      );
+    }
     sec.appendChild(
       compactRange('Radius', 0.05, 1, 0.05, ao.radius, (v) => this.viewer.setAO({ radius: v })),
     );

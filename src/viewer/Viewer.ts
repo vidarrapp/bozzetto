@@ -311,6 +311,11 @@ export class Viewer {
     return this.aoKind !== 'none';
   }
 
+  /** GTAO exposes a blend Strength; the SSAO mobile fallback does not. */
+  aoIsGtao(): boolean {
+    return this.aoKind === 'gtao';
+  }
+
   /** Smoothed frames-per-second (dev FPS meter). */
   getFps(): number {
     return this.fps;

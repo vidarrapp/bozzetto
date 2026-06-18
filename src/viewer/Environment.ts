@@ -80,6 +80,7 @@ export class Environment {
     this.pmrem = new PMREMGenerator(renderer);
     this.pmrem.compileEquirectangularShader();
     this.scene.environmentIntensity = this.intensity;
+    this.scene.backgroundIntensity = this.intensity;
     this.updateBackground();
     this.disposeTheme = onThemeChange(() => {
       if (this.bgMode === 'theme') this.updateBackground();
@@ -138,6 +139,9 @@ export class Environment {
   setIntensity(value: number): void {
     this.intensity = value;
     this.scene.environmentIntensity = value;
+    // Only affects a texture background (the blurred HDRI), so the solid/theme
+    // backgrounds are untouched; this makes the HDRI plate track the slider.
+    this.scene.backgroundIntensity = value;
   }
 
   setBackgroundMode(mode: BackgroundMode): void {
