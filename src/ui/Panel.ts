@@ -442,7 +442,7 @@ export class Panel {
       ),
     );
 
-    // Depth of field: focus tracks the subject; aperture sets the blur.
+    // Depth of field: focus across the subject depth; aperture sets the blur.
     if (this.viewer.dofAvailable()) {
       const dof = this.viewer.getDoFState();
       sec.appendChild(
@@ -452,6 +452,9 @@ export class Panel {
         steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
           this.viewer.setDoF({ fStop: f }),
         ),
+      );
+      sec.appendChild(
+        compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
       );
     }
   }

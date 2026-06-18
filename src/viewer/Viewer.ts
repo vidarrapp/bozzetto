@@ -38,10 +38,12 @@ const DEFAULT_FOCAL_LENGTH = 50;
 
 /** Depth-of-field defaults and blur tuning (see applyDofAperture). */
 const DEFAULT_FSTOP = 4;
+/** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
+const DEFAULT_DOF_FOCUS = 0.35;
 /** Subject back-edge blur is roughly DOF_APERTURE_C / fStop, scale-independent. */
 const DOF_APERTURE_C = 0.2;
-/** Cap on the (UV-space) defocus blur, so the far background stays bounded. */
-const DOF_MAX_BLUR = 0.12;
+/** Cap on the (UV-space) defocus blur. Lower trims v1's highlight ringing. */
+const DOF_MAX_BLUR = 0.08;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -57,6 +59,8 @@ export interface DoFState {
   enabled: boolean;
   /** Aperture as an f-stop; lower is shallower (more blur). */
   fStop: number;
+  /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
+  focus: number;
 }
 
 type BokehUniforms = {
@@ -152,6 +156,7 @@ export class Viewer {
   private bokehPass: BokehPass | null = null;
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
+  private dofFocus = DEFAULT_DOF_FOCUS;
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
@@ -404,11 +409,12 @@ export class Viewer {
       if (this.bokehPass) this.bokehPass.enabled = this.dofEnabled;
     }
     if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
+    if (typeof state.focus === 'number') this.dofFocus = state.focus;
     this.applyDofAperture();
   }
 
   getDoFState(): DoFState {
-    return { enabled: this.dofEnabled, fStop: this.dofFStop };
+    return { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
   }
 
   /** Aperture scales inversely with f-stop and subject size, so the look is
@@ -620,7 +626,11 @@ export class Viewer {
   private renderFrame(): void {
     if (this.composer && (this.aoEnabled || this.dofEnabled)) {
       if (this.dofEnabled && this.bokehPass) {
-        (this.bokehPass.uniforms as BokehUniforms).focus.value = this.controls.targetDistance();
+        // Focus tracks the orbit target, biased across the subject depth so the
+        // slider can pull the focal plane to the front of the subject (the face)
+        // rather than the bounding-sphere centre.
+        const focus = this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
+        (this.bokehPass.uniforms as BokehUniforms).focus.value = Math.max(focus, 0.01);
       }
       this.composer.render();
     } else {

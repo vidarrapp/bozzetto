@@ -41,8 +41,8 @@ export interface ManifestCamera {
   target?: number[];
   /** Lens focal length in 35mm-equivalent mm (drives the perspective). */
   focalLength?: number;
-  /** Depth-of-field: on/off and aperture as an f-stop (lower is shallower). */
-  dof?: { enabled: boolean; fStop: number };
+  /** Depth-of-field: on/off, aperture (f-stop), and focus across the subject. */
+  dof?: { enabled: boolean; fStop: number; focus?: number };
 }
 
 export interface FrameEntry {
