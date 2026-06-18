@@ -436,32 +436,24 @@ export class Panel {
   private buildCamera(body: HTMLElement): void {
     const sec = section(body, 'Camera');
 
-    const current = this.viewer.getFocalLength();
-    let idx = LENS_STEPS.indexOf(current);
-    if (idx < 0) {
-      // Off-step (e.g. an older save): show the nearest available lens.
-      idx = LENS_STEPS.reduce(
-        (best, mm, i) =>
-          Math.abs(mm - current) < Math.abs(LENS_STEPS[best] - current) ? i : best,
-        0,
+    sec.appendChild(
+      steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
+        this.viewer.setFocalLength(mm),
+      ),
+    );
+
+    // Depth of field: focus tracks the subject; aperture sets the blur.
+    if (this.viewer.dofAvailable()) {
+      const dof = this.viewer.getDoFState();
+      sec.appendChild(
+        checkbox('Depth of field', dof.enabled, (on) => this.viewer.setDoF({ enabled: on })),
+      );
+      sec.appendChild(
+        steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
+          this.viewer.setDoF({ fStop: f }),
+        ),
       );
     }
-
-    sec.appendChild(
-      labelled('Lens', () => {
-        const out = document.createElement('span');
-        out.className = 'readout';
-        out.textContent = `${LENS_STEPS[idx]}mm`;
-        const r = range(0, LENS_STEPS.length - 1, 1, idx, (v) => {
-          const mm = LENS_STEPS[v];
-          this.viewer.setFocalLength(mm);
-          out.textContent = `${mm}mm`;
-        });
-        const wrap = div('range-wrap');
-        wrap.append(r, out);
-        return wrap;
-      }),
-    );
   }
 
   private buildAO(body: HTMLElement): void {
@@ -543,6 +535,41 @@ function devMode(): boolean {
 
 /** Lens slider stops, in 35mm-equivalent mm (wide normal through short tele). */
 const LENS_STEPS: number[] = [35, 50, 55, 80, 105, 135];
+
+/** Aperture slider stops, in f-stops (whole stops; lower is shallower). */
+const F_STOPS: number[] = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16];
+
+/** Index of the entry in `steps` nearest to `value`. */
+function nearestIndex(steps: number[], value: number): number {
+  let best = 0;
+  for (let i = 1; i < steps.length; i++) {
+    if (Math.abs(steps[i] - value) < Math.abs(steps[best] - value)) best = i;
+  }
+  return best;
+}
+
+/** A slider that snaps to `steps`, with a formatted readout (lens, aperture). */
+function steppedSlider(
+  label: string,
+  steps: number[],
+  current: number,
+  format: (v: number) => string,
+  onPick: (v: number) => void,
+): HTMLElement {
+  const idx = nearestIndex(steps, current);
+  return labelled(label, () => {
+    const out = document.createElement('span');
+    out.className = 'readout';
+    out.textContent = format(steps[idx]);
+    const r = range(0, steps.length - 1, 1, idx, (i) => {
+      onPick(steps[i]);
+      out.textContent = format(steps[i]);
+    });
+    const wrap = div('range-wrap');
+    wrap.append(r, out);
+    return wrap;
+  });
+}
 
 // --- tiny DOM helpers ----------------------------------------------------
 

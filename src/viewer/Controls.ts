@@ -85,6 +85,11 @@ export class Controls {
     this.controls.update();
   }
 
+  /** Distance from the camera to the orbit target (the depth-of-field focus). */
+  targetDistance(): number {
+    return this.camera.position.distanceTo(this.controls.target);
+  }
+
   /**
    * Dolly along the view ray so the subject keeps its apparent size as the
    * vertical FOV changes: the lens-compression comparison at a fixed framing.

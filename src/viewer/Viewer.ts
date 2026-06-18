@@ -11,12 +11,14 @@ import {
   Sphere,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import type { BufferGeometry } from 'three';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -34,6 +36,13 @@ import { detectQuality, SHADOW_TIERS } from './quality';
 /** Default lens when a project has no saved focal length (a "normal" lens). */
 const DEFAULT_FOCAL_LENGTH = 50;
 
+/** Depth-of-field defaults and blur tuning (see applyDofAperture). */
+const DEFAULT_FSTOP = 4;
+/** Subject back-edge blur is roughly DOF_APERTURE_C / fStop, scale-independent. */
+const DOF_APERTURE_C = 0.05;
+/** Cap on the (UV-space) defocus blur, so the far background stays bounded. */
+const DOF_MAX_BLUR = 0.04;
+
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
   enabled: boolean;
@@ -41,6 +50,40 @@ export interface AOState {
   intensity: number;
   /** AO sample radius as a fraction of the subject radius. */
   radius: number;
+}
+
+/** Depth-of-field state (persisted in `camera.dof`). */
+export interface DoFState {
+  enabled: boolean;
+  /** Aperture as an f-stop; lower is shallower (more blur). */
+  fStop: number;
+}
+
+type BokehUniforms = {
+  focus: { value: number };
+  aperture: { value: number };
+  maxblur: { value: number };
+};
+
+/**
+ * BokehPass renders the scene into a depth target to drive the blur. A textured
+ * scene.background (the blurred HDRI) would be drawn into that depth target and
+ * corrupt the depth, so hide it for the depth sub-render only — the colour
+ * buffer being blurred still carries the background from the RenderPass.
+ */
+class DofPass extends BokehPass {
+  override render(
+    renderer: WebGLRenderer,
+    writeBuffer: WebGLRenderTarget,
+    readBuffer: WebGLRenderTarget,
+    deltaTime: number,
+    maskActive: boolean,
+  ): void {
+    const background = this.scene.background;
+    this.scene.background = null;
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    this.scene.background = background;
+  }
 }
 
 /**
@@ -98,13 +141,17 @@ export class Viewer {
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
 
-  /** Ambient occlusion via a postprocessing composer (GTAO / SSAO by tier). */
+  /** Postprocessing composer: AO (GTAO / SSAO by tier) then depth of field. */
   private composer: EffectComposer | null = null;
   private aoPass: GTAOPass | SSAOPass | null = null;
   private aoKind: 'gtao' | 'ssao' | 'none' = 'none';
   private aoEnabled = false;
   private aoRadiusFraction = 0.5;
   private subjectRadius = 1;
+  /** Depth-of-field (off by default; focus tracks the orbit target). */
+  private bokehPass: BokehPass | null = null;
+  private dofEnabled = false;
+  private dofFStop = DEFAULT_FSTOP;
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
@@ -187,7 +234,7 @@ export class Viewer {
     this.wireframe.visible = false;
     this.scene.add(this.wireframe);
 
-    this.initAO();
+    this.initComposer();
 
     window.addEventListener('resize', this.onResize);
   }
@@ -223,6 +270,9 @@ export class Viewer {
     }
     if (this.manifest.ao) {
       this.setAO(this.manifest.ao as AOState);
+    }
+    if (this.manifest.camera.dof) {
+      this.setDoF(this.manifest.camera.dof);
     }
     // Keep the HDRI orientation in sync with the (possibly saved) rig rotation.
     this.environment.setRotation(this.lighting.getRigRotation());
@@ -322,7 +372,10 @@ export class Viewer {
   }
 
   setAO(state: Partial<AOState>): void {
-    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled && this.aoKind !== 'none';
+    if (typeof state.enabled === 'boolean') {
+      this.aoEnabled = state.enabled && this.aoKind !== 'none';
+      if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
+    }
     if (typeof state.radius === 'number') {
       this.aoRadiusFraction = state.radius;
       this.applyAoRadius();
@@ -340,6 +393,32 @@ export class Viewer {
     };
   }
 
+  /** Whether depth of field is available (the composer built successfully). */
+  dofAvailable(): boolean {
+    return this.bokehPass !== null;
+  }
+
+  setDoF(state: Partial<DoFState>): void {
+    if (typeof state.enabled === 'boolean') {
+      this.dofEnabled = state.enabled && this.bokehPass !== null;
+      if (this.bokehPass) this.bokehPass.enabled = this.dofEnabled;
+    }
+    if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
+    this.applyDofAperture();
+  }
+
+  getDoFState(): DoFState {
+    return { enabled: this.dofEnabled, fStop: this.dofFStop };
+  }
+
+  /** Aperture scales inversely with f-stop and subject size, so the look is
+   *  consistent across subjects of different scales. */
+  private applyDofAperture(): void {
+    if (!this.bokehPass) return;
+    const u = this.bokehPass.uniforms as BokehUniforms;
+    u.aperture.value = DOF_APERTURE_C / (this.dofFStop * this.subjectRadius);
+  }
+
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
   setFocalLength(mm: number): void {
     const oldFov = this.camera.fov;
@@ -353,9 +432,21 @@ export class Viewer {
   }
 
   /** Current camera placement, persisted with the saved look (editor). */
-  getCameraState(): { autoFrame: boolean; position: number[]; target: number[]; focalLength: number } {
+  getCameraState(): {
+    autoFrame: boolean;
+    position: number[];
+    target: number[];
+    focalLength: number;
+    dof: DoFState;
+  } {
     const s = this.controls.getState();
-    return { autoFrame: false, position: s.position, target: s.target, focalLength: this.focalLength };
+    return {
+      autoFrame: false,
+      position: s.position,
+      target: s.target,
+      focalLength: this.focalLength,
+      dof: this.getDoFState(),
+    };
   }
 
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
@@ -429,6 +520,7 @@ export class Viewer {
     this.materials.dispose();
     this.environment.dispose();
     this.aoPass?.dispose();
+    this.bokehPass?.dispose();
     this.composer?.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
@@ -443,6 +535,7 @@ export class Viewer {
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.applyAoRadius();
+    this.applyDofAperture();
     if (this.aoPass instanceof GTAOPass) this.aoPass.setSceneClipBox(this.subjectBox);
 
     const cam = this.manifest.camera;
@@ -462,11 +555,14 @@ export class Viewer {
     this.ground.position.set(center.x, this.subjectBox.min.y - size.y * 0.001, center.z);
   }
 
-  /** Build the AO postprocessing composer per the device tier (GTAO / SSAO). */
-  private initAO(): void {
+  /**
+   * Build the postprocessing composer: an AO pass per device tier (GTAO / SSAO)
+   * followed by an optional depth-of-field pass, then tone-mapping. Each effect
+   * pass toggles via `.enabled`, so the chain is only used when one is active.
+   */
+  private initComposer(): void {
     const tier = SHADOW_TIERS[detectQuality(this.renderer)];
     this.aoKind = tier.ao;
-    if (this.aoKind === 'none') return;
 
     try {
       const w = this.container.clientWidth;
@@ -481,22 +577,36 @@ export class Viewer {
         gtao.updateGtaoMaterial({ samples: tier.aoSamples });
         this.aoPass = gtao;
         composer.addPass(gtao);
-      } else {
+      } else if (this.aoKind === 'ssao') {
         const ssao = new SSAOPass(this.scene, this.camera, w, h);
         ssao.output = SSAOPass.OUTPUT.Default;
         this.aoPass = ssao;
         composer.addPass(ssao);
       }
+      this.aoEnabled = this.aoKind !== 'none'; // AO on by default where available
+      if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
+
+      // Depth of field, off by default. focus is set per-frame from the orbit
+      // target; aperture is derived from the f-stop + subject scale.
+      const bokeh = new DofPass(this.scene, this.camera, {
+        focus: 1,
+        aperture: 0,
+        maxblur: DOF_MAX_BLUR,
+      });
+      bokeh.enabled = false;
+      this.bokehPass = bokeh;
+      composer.addPass(bokeh);
 
       composer.addPass(new OutputPass());
       this.composer = composer;
-      this.aoEnabled = true; // on by default for capable tiers
     } catch (err) {
-      console.error('AO composer init failed; using direct render', err);
+      console.error('Composer init failed; using direct render', err);
       this.composer = null;
       this.aoPass = null;
+      this.bokehPass = null;
       this.aoKind = 'none';
       this.aoEnabled = false;
+      this.dofEnabled = false;
     }
   }
 
@@ -506,10 +616,16 @@ export class Viewer {
     else if (this.aoPass instanceof SSAOPass) this.aoPass.kernelRadius = radius;
   }
 
-  /** Composer when AO is on; otherwise the plain (proven) direct render. */
+  /** Composer when an effect is on; otherwise the plain (proven) direct render. */
   private renderFrame(): void {
-    if (this.aoEnabled && this.composer) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    if (this.composer && (this.aoEnabled || this.dofEnabled)) {
+      if (this.dofEnabled && this.bokehPass) {
+        (this.bokehPass.uniforms as BokehUniforms).focus.value = this.controls.targetDistance();
+      }
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /**
