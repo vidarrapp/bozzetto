@@ -37,6 +37,9 @@ import { detectQuality, SHADOW_TIERS } from './quality';
 /** Default lens when a project has no saved focal length (a "normal" lens). */
 const DEFAULT_FOCAL_LENGTH = 50;
 
+/** World-up axis the turntable capture spins the model about. */
+const TURNTABLE_UP = new Vector3(0, 1, 0);
+
 /** Depth-of-field defaults and blur tuning (see applyDofAperture). */
 const DEFAULT_FSTOP = 4;
 /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
@@ -148,6 +151,8 @@ export class Viewer {
   /** Non-null while an offline capture holds the renderer (see beginCapture). */
   private capturing = false;
   private captureSaved: { pixelRatio: number; frame: number; playing: boolean } | null = null;
+  /** Vertical axis the turntable spins the model about (its bounding-box centre). */
+  private readonly turntableCenter = new Vector3();
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
 
@@ -554,15 +559,45 @@ export class Viewer {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Load + render one frame into the capture canvas (call between begin/end). */
-  async renderCaptureFrame(ordinal: number): Promise<void> {
+  /** Load + display one frame's geometry (no render). Used by the capture paths. */
+  private async showCaptureFrame(ordinal: number): Promise<void> {
     // Keep the frame inside the streamer window so ensure() caches (not disposes)
-    // the decoded geometry, then render it directly.
+    // the decoded geometry.
     this.streamer.setPlayhead(ordinal);
     const geom = await this.streamer.ensure(ordinal);
     this.display.geometry = geom;
     this.wireframe.geometry = geom;
     this.displayedIndex = ordinal;
+  }
+
+  /** Load + render one frame into the capture canvas (call between begin/end). */
+  async renderCaptureFrame(ordinal: number): Promise<void> {
+    await this.showCaptureFrame(ordinal);
+    this.renderFrame();
+  }
+
+  /**
+   * Prepare a turntable: ensure the current frame is displayed and snapshot the
+   * vertical axis (its bounding-box centre) the model will spin around. The
+   * camera and lighting stay fixed, so the user's framing is preserved.
+   */
+  async prepareTurntable(): Promise<void> {
+    await this.showCaptureFrame(this.timeline.frameIndex());
+    const geom = this.display.geometry;
+    geom.computeBoundingBox();
+    (geom.boundingBox ?? new Box3()).getCenter(this.turntableCenter);
+  }
+
+  /** Spin the held frame to `angle` (radians) about its vertical axis and render. */
+  renderTurntableAngle(angle: number): void {
+    const c = this.turntableCenter;
+    // Rotate the mesh about the world-up axis through `c`: world = Ry·(local − c) + c,
+    // i.e. rotation Ry(angle) with position c − Ry·c (the y term cancels).
+    const offset = c.clone().sub(c.clone().applyAxisAngle(TURNTABLE_UP, angle));
+    this.display.rotation.set(0, angle, 0);
+    this.display.position.copy(offset);
+    this.wireframe.rotation.set(0, angle, 0);
+    this.wireframe.position.copy(offset);
     this.renderFrame();
   }
 
@@ -572,6 +607,11 @@ export class Viewer {
     const saved = this.captureSaved;
     this.capturing = false;
     this.captureSaved = null;
+    // Undo any turntable spin so the resumed live view sits at identity.
+    this.display.rotation.set(0, 0, 0);
+    this.display.position.set(0, 0, 0);
+    this.wireframe.rotation.set(0, 0, 0);
+    this.wireframe.position.set(0, 0, 0);
     if (saved) {
       this.renderer.setPixelRatio(saved.pixelRatio);
       this.onResize(); // restore renderer + composer size and the live camera

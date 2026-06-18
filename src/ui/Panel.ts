@@ -2,7 +2,7 @@ import type { Viewer } from '../viewer/Viewer';
 import type { AspectId } from '../viewer/CaptureGuide';
 // The capture pipeline (WebCodecs + muxers) is loaded on demand in buildReel so
 // the public viewer bundle doesn't carry encoders it never uses.
-import type { ReelFormat } from '../viewer/capture/types';
+import type { ReelFormat, ReelMotion, ReelOptions } from '../viewer/capture/types';
 import type { LightId } from '../viewer/Lighting';
 import { shadowMode, type ShadowMode } from '../viewer/pcss';
 
@@ -521,6 +521,24 @@ export class Panel {
     );
     sec.appendChild(labelRow('Aspect', aspect));
 
+    // Motion: step the timeline, or spin the current frame in place (turntable).
+    const motion = selectEl(
+      [['timeline', 'Timeline'], ['turntable', 'Turntable (spin)']],
+      'timeline',
+    );
+    sec.appendChild(labelRow('Motion', motion));
+
+    const spin = selectEl([['2', '2s'], ['4', '4s'], ['6', '6s'], ['8', '8s']], '4');
+    const direction = selectEl([['1', 'Counter-clockwise'], ['-1', 'Clockwise']], '1');
+    const turnBox = div('reel-turntable');
+    turnBox.append(labelRow('Spin', spin), labelRow('Direction', direction));
+    sec.appendChild(turnBox);
+    const syncMotion = (): void => {
+      turnBox.hidden = motion.value !== 'turntable';
+    };
+    syncMotion();
+    motion.addEventListener('change', syncMotion);
+
     // MP4 (H.264) where WebCodecs exists; animated GIF everywhere.
     const format = selectEl(
       hasMp4 ? [['mp4', 'MP4 (H.264)'], ['gif', 'GIF']] : [['gif', 'GIF']],
@@ -568,7 +586,7 @@ export class Panel {
       record.disabled = a === null;
     });
 
-    const controls = [aspect, format, size, fps];
+    const controls = [aspect, motion, spin, direction, format, size, fps];
     const setBusy = (busy: boolean): void => {
       record.disabled = busy || aspect.value === 'off';
       record.textContent = busy ? 'Recording…' : 'Record';
@@ -583,26 +601,25 @@ export class Panel {
       bar.removeAttribute('value'); // indeterminate until the first frame lands
       const a = aspect.value as AspectId;
       const fmt = format.value as ReelFormat;
+      const common = { aspect: a, format: fmt, size: Number(size.value), fps: Number(fps.value) };
+      const opts: ReelOptions =
+        (motion.value as ReelMotion) === 'turntable'
+          ? {
+              ...common,
+              motion: 'turntable',
+              spinSeconds: Number(spin.value),
+              direction: Number(direction.value) === -1 ? -1 : 1,
+            }
+          : { ...common, motion: 'timeline', from: 0, to: this.viewer.manifest.config.frameCount - 1 };
       try {
         const { recordReel, downloadBlob, reelFilename } = await import(
           '../viewer/capture/recorder'
         );
-        const blob = await recordReel(
-          this.viewer,
-          {
-            aspect: a,
-            format: fmt,
-            size: Number(size.value),
-            fps: Number(fps.value),
-            from: 0,
-            to: this.viewer.manifest.config.frameCount - 1,
-          },
-          (done, total) => {
-            bar.max = total;
-            bar.value = done;
-            status.textContent = `Rendering ${done} / ${total}`;
-          },
-        );
+        const blob = await recordReel(this.viewer, opts, (done, total) => {
+          bar.max = total;
+          bar.value = done;
+          status.textContent = `Rendering ${done} / ${total}`;
+        });
         downloadBlob(blob, reelFilename(this.viewer.manifest.title, a, fmt));
         status.textContent = `Saved · ${formatBytes(blob.size)}`;
       } catch (err) {

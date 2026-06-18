@@ -45,14 +45,27 @@ export async function recordReel(
       ? await createMp4Sink(out, opts.fps)
       : createGifSink(out, opts.fps);
 
-  const from = Math.max(0, Math.min(opts.from, opts.to));
-  const to = Math.max(opts.from, opts.to);
-  const total = to - from + 1;
-
   viewer.beginCapture(capW, capH);
   try {
-    for (let i = from, n = 0; i <= to; i++, n++) {
-      await viewer.renderCaptureFrame(i);
+    // Resolve the frame count and a per-step render: the timeline steps source
+    // frames; the turntable holds the current frame and spins it one full turn
+    // (last step stops just short of 360° so a looping clip is seamless).
+    let total: number;
+    let renderStep: (n: number) => Promise<void> | void;
+    if (opts.motion === 'turntable') {
+      await viewer.prepareTurntable();
+      total = Math.max(2, Math.round(opts.spinSeconds * opts.fps));
+      const dir = opts.direction;
+      renderStep = (n) => viewer.renderTurntableAngle((dir * (n / total)) * Math.PI * 2);
+    } else {
+      const from = Math.max(0, Math.min(opts.from, opts.to));
+      const to = Math.max(opts.from, opts.to);
+      total = to - from + 1;
+      renderStep = (n) => viewer.renderCaptureFrame(from + n);
+    }
+
+    for (let n = 0; n < total; n++) {
+      await renderStep(n);
       ctx.drawImage(viewer.captureCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
       await sink.addFrame(n);
       onProgress?.(n + 1, total);
