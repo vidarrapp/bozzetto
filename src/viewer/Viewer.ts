@@ -132,10 +132,9 @@ export class Viewer {
   private fps = 60;
 
   /**
-   * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
-   * composited with Ground-Truth ambient occlusion, then tone-mapped on output
-   * (depth of field joins the graph in a later phase). Toggling an effect
-   * recomposes `pipeline.outputNode`; the renderer applies tone mapping + sRGB.
+   * Node postprocessing graph: a scene pass (colour + depth) composited with
+   * Ground-Truth ambient occlusion, then an optional depth-of-field gather,
+   * tone-mapped on output. Toggling an effect recomposes `pipeline.outputNode`.
    */
   private pipeline: RenderPipeline | null = null;
   private aoNode: ReturnType<typeof ao> | null = null;
@@ -148,6 +147,8 @@ export class Viewer {
   private aoIntensity = 1;
   private aoRadiusFraction = 0.5;
   private subjectRadius = 1;
+  /** `?aodebug`: render the raw GTAO buffer (untone-mapped) and log AO params. */
+  private readonly aoDebug = new URLSearchParams(location.search).has('aodebug');
   /** Depth-of-field uniforms: focus distance, focus-band range, max bokeh (px). */
   private readonly dofFocusU = uniform(1);
   private readonly dofRangeU = uniform(1);
@@ -687,6 +688,23 @@ export class Viewer {
     this.ground.geometry.dispose();
     this.ground.geometry = new PlaneGeometry(span, span);
     this.ground.position.set(center.x, this.subjectBox.min.y - size.y * 0.001, center.z);
+
+    if (this.aoDebug) {
+      // Surface the values that would explain "GTAO sees no occlusion": the
+      // subject's world scale (drives the AO radius), the resolved AO radius and
+      // samples, and the camera depth range (near/far against the subject
+      // distance — a tiny near with a huge far wrecks depth precision).
+      console.log('[AO debug]', {
+        subjectRadius: this.subjectRadius,
+        aoRadius: this.aoNode?.radius.value,
+        aoSamples: this.aoNode?.samples.value,
+        aoResolutionScale: this.aoNode?.resolutionScale,
+        cameraNear: this.camera.near,
+        cameraFar: this.camera.far,
+        targetDistance: this.controls.targetDistance(),
+        subjectSize: { x: size.x, y: size.y, z: size.z },
+      });
+    }
   }
 
   /**
@@ -732,6 +750,9 @@ export class Viewer {
     this.aoColor = aoColor;
     this.dofNode = dofNode;
     this.pipeline = new RenderPipeline(this.renderer);
+    // In AO-debug, show the raw occlusion values (1 = unoccluded ... 0 = fully
+    // occluded) without the ACES/sRGB output transform, so the buffer reads true.
+    if (this.aoDebug) this.pipeline.outputColorTransform = false;
     this.applyAoStrength();
     this.applyDof();
     this.rebuildOutput();
@@ -743,8 +764,15 @@ export class Viewer {
    * graph and costs nothing). The pipeline applies tone mapping + sRGB on output.
    */
   private rebuildOutput(): void {
-    if (!this.pipeline || !this.aoColor || !this.dofNode) return;
-    this.pipeline.outputNode = this.dofEnabled ? this.dofNode : this.aoColor;
+    if (!this.pipeline || !this.aoColor || !this.dofNode || !this.aoNode) return;
+    if (this.aoDebug) {
+      // Diagnostic view: the raw GTAO buffer as greyscale. Uniform white means
+      // GTAO computed no occlusion anywhere (the bug we're chasing); visible dark
+      // creases mean AO works and the composite/strength is the problem instead.
+      this.pipeline.outputNode = vec4(vec3(this.aoNode.getTextureNode().r), float(1));
+    } else {
+      this.pipeline.outputNode = this.dofEnabled ? this.dofNode : this.aoColor;
+    }
     this.pipeline.needsUpdate = true;
   }
 
