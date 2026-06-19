@@ -12,7 +12,7 @@ import {
   Vector3,
 } from 'three';
 import { RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform } from 'three/tsl';
+import { pass, float, vec3, vec4, mix, uniform } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry } from 'three';
@@ -698,11 +698,17 @@ export class Viewer {
   private buildPipeline(): void {
     const tier = SHADOW_TIERS[detectQuality()];
     const scenePass = pass(this.scene, this.camera);
-    scenePass.setMRT(mrt({ output, normal: normalView }));
 
+    // GTAO reconstructs view-space normals from the pass depth (normalNode = null)
+    // instead of reading a normal buffer. Storing signed normals in an MRT target
+    // clamps their negative components on the WebGL 2 fallback backend (no float
+    // render target), which silently zeroed AO on those devices — mobile, where
+    // WebGPU is often unavailable. Reconstruction is backend-portable, identical
+    // on WebGPU and WebGL 2, and drops a render target. Depth and colour come from
+    // the pass defaults ('depth' / 'output'), so no MRT is needed.
     const aoNode = ao(
       scenePass.getTextureNode('depth'),
-      scenePass.getTextureNode('normal'),
+      null as unknown as Node,
       this.camera,
     );
     aoNode.samples.value = tier.aoSamples;
