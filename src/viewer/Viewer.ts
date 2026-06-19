@@ -12,7 +12,7 @@ import {
   Vector3,
 } from 'three';
 import { RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, float, vec3, vec4, mix, uniform } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry } from 'three';
@@ -132,8 +132,8 @@ export class Viewer {
   private fps = 60;
 
   /**
-   * Node postprocessing graph: a scene pass (colour + depth) composited with
-   * Ground-Truth ambient occlusion, then an optional depth-of-field gather,
+   * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
+   * composited with Ground-Truth ambient occlusion, then an optional DoF gather,
    * tone-mapped on output. Toggling an effect recomposes `pipeline.outputNode`.
    */
   private pipeline: RenderPipeline | null = null;
@@ -716,17 +716,15 @@ export class Viewer {
   private buildPipeline(): void {
     const tier = SHADOW_TIERS[detectQuality()];
     const scenePass = pass(this.scene, this.camera);
+    // GTAO reads colour, depth and view-space normals. Normals come from an MRT
+    // target (read via .sample()): GTAONode's alternative depth-reconstruction
+    // path dereferences the pass depth texture at shader-build time, which isn't
+    // a valid texture yet, so that path fails to compile.
+    scenePass.setMRT(mrt({ output, normal: normalView }));
 
-    // GTAO reconstructs view-space normals from the pass depth (normalNode = null)
-    // instead of reading a normal buffer. Storing signed normals in an MRT target
-    // clamps their negative components on the WebGL 2 fallback backend (no float
-    // render target), which silently zeroed AO on those devices — mobile, where
-    // WebGPU is often unavailable. Reconstruction is backend-portable, identical
-    // on WebGPU and WebGL 2, and drops a render target. Depth and colour come from
-    // the pass defaults ('depth' / 'output'), so no MRT is needed.
     const aoNode = ao(
       scenePass.getTextureNode('depth'),
-      null as unknown as Node,
+      scenePass.getTextureNode('normal'),
       this.camera,
     );
     aoNode.samples.value = tier.aoSamples;
@@ -783,7 +781,14 @@ export class Viewer {
 
   /** AO sample radius scales with the subject, so the look is scale-independent. */
   private applyAoRadius(): void {
-    if (this.aoNode) this.aoNode.radius.value = this.aoRadiusFraction * this.subjectRadius;
+    if (!this.aoNode) return;
+    const radius = this.aoRadiusFraction * this.subjectRadius;
+    this.aoNode.radius.value = radius;
+    // `thickness` gates which samples count as occluders — abs(viewΔz) < thickness,
+    // in world units. Its default of 1 rejects every occluder on large models
+    // (subjects here can be ~hundreds of units), which zeroed AO entirely. Track
+    // it to the sampling radius so the depth tolerance scales with the subject.
+    this.aoNode.thickness.value = radius;
   }
 
   /**
