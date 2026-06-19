@@ -1,5 +1,3 @@
-import type { WebGLRenderer } from 'three';
-
 /**
  * Render quality tiers for the shadow system. The public viewer runs on
  * visitors' devices, so shadow-map sizes (and which lights cast at all) scale
@@ -29,12 +27,15 @@ export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
   low: { key: 1024, fill: 0, rim: 0, blurSamples: 4, ao: 'ssao', aoSamples: 0 },
 };
 
-export function detectQuality(renderer: WebGLRenderer): Quality {
+export function detectQuality(): Quality {
   const override = new URLSearchParams(location.search).get('q');
   if (override === 'high' || override === 'medium' || override === 'low') return override;
 
-  if (isMobile() || renderer.capabilities.maxTextureSize < 4096) return 'low';
-  return 'high'; // `medium` is reachable via ?q=medium
+  // WebGPU mandates a maxTextureDimension2D of at least 8192, so the old
+  // max-texture-size proxy for weak GPUs no longer discriminates; gate the low
+  // tier on mobile alone (`medium` is reachable via ?q=medium).
+  if (isMobile()) return 'low';
+  return 'high';
 }
 
 function isMobile(): boolean {

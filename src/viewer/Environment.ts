@@ -6,6 +6,7 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
+import type { WebGPURenderer } from 'three/webgpu';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { loadViaBlob, type AssetSource } from './AssetSource';
@@ -72,10 +73,12 @@ export class Environment {
 
   constructor(
     private readonly scene: Scene,
-    renderer: WebGLRenderer,
+    renderer: WebGPURenderer,
     private readonly source: AssetSource,
   ) {
-    this.pmrem = new PMREMGenerator(renderer);
+    // PMREMGenerator works with the WebGPU renderer at runtime; its @types
+    // signature still names WebGLRenderer, so cast through the shared base.
+    this.pmrem = new PMREMGenerator(renderer as unknown as WebGLRenderer);
     this.pmrem.compileEquirectangularShader();
     this.scene.environmentIntensity = this.intensity;
     this.scene.backgroundIntensity = this.intensity;

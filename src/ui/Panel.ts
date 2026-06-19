@@ -1,6 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
-import { shadowMode, type ShadowMode } from '../viewer/pcss';
 import { div, labelRow } from './dom';
 
 export interface PanelOptions {
@@ -296,23 +295,6 @@ export class Panel {
       this.lightControls = div('light-controls');
       lighting.appendChild(this.lightControls);
       this.rebuildLightControls();
-
-      // Shadow filter: soft (VSM) vs contact-hardening (PCSS). Saved with the look.
-      const shadows = document.createElement('select');
-      for (const [value, label] of [
-        ['vsm', 'Soft (VSM)'],
-        ['pcss', 'Contact (PCSS)'],
-      ] as const) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        shadows.appendChild(opt);
-      }
-      shadows.value = this.viewer.lighting.getShadowMode();
-      shadows.addEventListener('change', () =>
-        this.viewer.lighting.setShadowMode(shadows.value as ShadowMode),
-      );
-      lighting.appendChild(labelRow('Shadows', shadows));
     } else {
       // Viewer gets just on/off toggles per light; advanced settings live in the editor.
       this.lightToggles = div('light-toggles');
@@ -549,22 +531,6 @@ export class Panel {
         checkbox('AO', this.viewer.getAOState().enabled, (on) => this.viewer.setAO({ enabled: on })),
       );
     }
-
-    const shadows = document.createElement('select');
-    for (const s of ['vsm', 'pcss']) {
-      const opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = s.toUpperCase();
-      shadows.appendChild(opt);
-    }
-    shadows.value = shadowMode();
-    shadows.addEventListener('change', () => {
-      const params = new URLSearchParams(location.search);
-      if (shadows.value === 'vsm') params.delete('shadows');
-      else params.set('shadows', 'pcss');
-      location.search = params.toString();
-    });
-    dev.appendChild(labelRow('Shadows', shadows));
   }
 }
 

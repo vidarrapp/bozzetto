@@ -10,6 +10,11 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   base: './',
+  resolve: {
+    // Match the main build: route bare `three` to the WebGPU build so the
+    // self-contained embed renders with WebGPURenderer too (see vite.config.ts).
+    alias: [{ find: /^three$/, replacement: 'three/webgpu' }],
+  },
   build: {
     outDir: 'dist/embed',
     emptyOutDir: true,

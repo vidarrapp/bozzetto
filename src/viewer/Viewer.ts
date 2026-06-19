@@ -8,16 +8,9 @@ import {
   PlaneGeometry,
   Scene,
   ShadowMaterial,
-  Sphere,
   Vector3,
-  WebGLRenderer,
 } from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { Dof2Pass } from './Dof2Pass';
+import { WebGPURenderer } from 'three/webgpu';
 import type { BufferGeometry } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
@@ -31,7 +24,6 @@ import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
-import { detectQuality, SHADOW_TIERS } from './quality';
 
 /** Default lens when a project has no saved focal length (a "normal" lens). */
 const DEFAULT_FOCAL_LENGTH = 50;
@@ -39,19 +31,10 @@ const DEFAULT_FOCAL_LENGTH = 50;
 /** World-up axis the turntable capture spins the model about. */
 const TURNTABLE_UP = new Vector3(0, 1, 0);
 
-/** Depth-of-field defaults (BokehShader2 — see Dof2Pass). */
+/** Depth-of-field defaults (persisted look state; render wiring lands later). */
 const DEFAULT_FSTOP = 4;
 /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
 const DEFAULT_DOF_FOCUS = 0.35;
-/**
- * The bokeh circle of confusion is physically scale-dependent, but a look-dev
- * subject is auto-framed to fill the view at any world scale. Feeding the shader
- * a focal length scaled by √(subject radius) cancels that scale dependence, so
- * the defocus gradient is consistent across models — while a longer lens or
- * wider aperture still blurs more, as on a real camera. This constant sets the
- * overall strength (≈ the subject-edge blur at a normal lens and f/4).
- */
-const DOF_FOCAL_SCALE = 0.6;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -81,7 +64,7 @@ export interface DoFState {
  * renders at display refresh.
  */
 export class Viewer {
-  readonly renderer: WebGLRenderer;
+  readonly renderer: WebGPURenderer;
   readonly scene = new Scene();
   readonly camera: PerspectiveCamera;
   readonly timeline: Timeline;
@@ -133,15 +116,14 @@ export class Viewer {
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
 
-  /** Postprocessing composer: AO (GTAO / SSAO by tier) then depth of field. */
-  private composer: EffectComposer | null = null;
-  private aoPass: GTAOPass | SSAOPass | null = null;
-  private aoKind: 'gtao' | 'ssao' | 'none' = 'none';
+  // AO and depth of field are reintroduced as a node-based PostProcessing graph
+  // in a later migration phase. Until then these hold the persisted look state
+  // (so saved projects round-trip) but drive no render pass: aoAvailable() and
+  // dofAvailable() report false, so the panel hides the controls.
   private aoEnabled = false;
   private aoRadiusFraction = 0.5;
-  private subjectRadius = 1;
+  private aoIntensity = 1;
   /** Depth-of-field (off by default; focus tracks the orbit target). */
-  private dof2: Dof2Pass | null = null;
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
   private dofFocus = DEFAULT_DOF_FOCUS;
@@ -154,17 +136,34 @@ export class Viewer {
   /** Fired when play/pause changes (drives the transport play button). */
   onPlayStateChange: ((playing: boolean) => void) | null = null;
 
-  constructor(
+  /**
+   * Build a viewer with an initialized WebGPU renderer. WebGPU device init is
+   * async, so construction goes through this factory instead of `new`; callers
+   * then `await viewer.boot()` to load the first frame and start the loop.
+   */
+  static async create(
+    container: HTMLElement,
+    manifest: Manifest,
+    source: AssetSource,
+    options: { preserveDrawingBuffer?: boolean } = {},
+  ): Promise<Viewer> {
+    const renderer = new WebGPURenderer({ antialias: true });
+    await renderer.init();
+    return new Viewer(renderer, container, manifest, source, options);
+  }
+
+  private constructor(
+    renderer: WebGPURenderer,
     private readonly container: HTMLElement,
     readonly manifest: Manifest,
     source: AssetSource,
+    // preserveDrawingBuffer is a WebGL notion with no WebGPU equivalent: with the
+    // render loop paused for capture, the canvas retains its last frame for
+    // read-back, so the option is accepted for call-site compatibility but unused.
     options: { preserveDrawingBuffer?: boolean } = {},
   ) {
-    this.renderer = new WebGLRenderer({
-      antialias: true,
-      // The editor preview needs this so captureThumbnail() can read the canvas.
-      preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
-    });
+    void options;
+    this.renderer = renderer;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.outputColorSpace = 'srgb';
@@ -227,8 +226,6 @@ export class Viewer {
     this.wireframe.material = this.wireMaterial;
     this.wireframe.visible = false;
     this.scene.add(this.wireframe);
-
-    this.initComposer();
 
     window.addEventListener('resize', this.onResize);
   }
@@ -351,13 +348,14 @@ export class Viewer {
     this.environment.setRotation(deg);
   }
 
+  // AO and DoF report unavailable until the node PostProcessing graph is wired
+  // back in (later migration phase); the panel hides their controls meanwhile.
   aoAvailable(): boolean {
-    return this.aoKind !== 'none';
+    return false;
   }
 
-  /** GTAO exposes a blend Strength; the SSAO mobile fallback does not. */
   aoIsGtao(): boolean {
-    return this.aoKind === 'gtao';
+    return false;
   }
 
   /** Smoothed frames-per-second (dev FPS meter). */
@@ -366,54 +364,27 @@ export class Viewer {
   }
 
   setAO(state: Partial<AOState>): void {
-    if (typeof state.enabled === 'boolean') {
-      this.aoEnabled = state.enabled && this.aoKind !== 'none';
-      if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
-    }
-    if (typeof state.radius === 'number') {
-      this.aoRadiusFraction = state.radius;
-      this.applyAoRadius();
-    }
-    if (typeof state.intensity === 'number' && this.aoPass instanceof GTAOPass) {
-      this.aoPass.blendIntensity = state.intensity;
-    }
+    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled;
+    if (typeof state.radius === 'number') this.aoRadiusFraction = state.radius;
+    if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;
   }
 
   getAOState(): AOState {
-    return {
-      enabled: this.aoEnabled,
-      intensity: this.aoPass instanceof GTAOPass ? this.aoPass.blendIntensity : 1,
-      radius: this.aoRadiusFraction,
-    };
+    return { enabled: this.aoEnabled, intensity: this.aoIntensity, radius: this.aoRadiusFraction };
   }
 
-  /** Whether depth of field is available (the composer built successfully). */
   dofAvailable(): boolean {
-    return this.dof2 !== null;
+    return false;
   }
 
   setDoF(state: Partial<DoFState>): void {
-    if (typeof state.enabled === 'boolean') {
-      this.dofEnabled = state.enabled && this.dof2 !== null;
-      if (this.dof2) this.dof2.enabled = this.dofEnabled;
-    }
+    if (typeof state.enabled === 'boolean') this.dofEnabled = state.enabled;
     if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
     if (typeof state.focus === 'number') this.dofFocus = state.focus;
-    this.applyDof();
   }
 
   getDoFState(): DoFState {
     return { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
-  }
-
-  /** Push the lens parameters to the bokeh shader. The f-stop is physical; the
-   *  focal length is scaled by √(subject radius) so the circle of confusion is
-   *  consistent across model world scales (see DOF_FOCAL_SCALE). */
-  private applyDof(): void {
-    if (!this.dof2) return;
-    const u = this.dof2.uniforms;
-    u.fstop.value = this.dofFStop;
-    u.focalLength.value = this.focalLength * Math.sqrt(this.subjectRadius) * DOF_FOCAL_SCALE;
   }
 
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
@@ -422,7 +393,6 @@ export class Viewer {
     this.camera.setFocalLength(mm);
     this.focalLength = mm;
     this.controls.dollyForFov(oldFov, this.camera.fov);
-    this.applyDof(); // the bokeh CoC depends on the focal length
   }
 
   getFocalLength(): number {
@@ -532,7 +502,6 @@ export class Viewer {
     this.timeline.pause();
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(w, h, false);
-    this.composer?.setSize(w, h);
     // Match the projection to the capture buffer (avoids any stretch from the
     // integer rounding of w/h) while preserving the live vertical FOV.
     this.camera.aspect = w / h;
@@ -553,7 +522,7 @@ export class Viewer {
   /** Load + render one frame into the capture canvas (call between begin/end). */
   async renderCaptureFrame(ordinal: number): Promise<void> {
     await this.showCaptureFrame(ordinal);
-    this.renderFrame();
+    await this.renderFrame();
   }
 
   /**
@@ -569,7 +538,7 @@ export class Viewer {
   }
 
   /** Spin the held frame to `angle` (radians) about its vertical axis and render. */
-  renderTurntableAngle(angle: number): void {
+  async renderTurntableAngle(angle: number): Promise<void> {
     const c = this.turntableCenter;
     // Rotate the mesh about the world-up axis through `c`: world = Ry·(local − c) + c,
     // i.e. rotation Ry(angle) with position c − Ry·c (the y term cancels).
@@ -578,7 +547,7 @@ export class Viewer {
     this.display.position.copy(offset);
     this.wireframe.rotation.set(0, angle, 0);
     this.wireframe.position.copy(offset);
-    this.renderFrame();
+    await this.renderFrame();
   }
 
   /** Leave capture mode: restore the renderer, camera, and play state, resume. */
@@ -594,7 +563,7 @@ export class Viewer {
     this.wireframe.position.set(0, 0, 0);
     if (saved) {
       this.renderer.setPixelRatio(saved.pixelRatio);
-      this.onResize(); // restore renderer + composer size and the live camera
+      this.onResize(); // restore renderer size and the live camera
       this.timeline.setFrame(saved.frame);
       if (saved.playing) this.timeline.play();
     }
@@ -603,7 +572,7 @@ export class Viewer {
     this.targetIndex = -1;
     this.displayedIndex = -1;
     this.clock.getDelta(); // discard time accumulated during capture
-    this.loop();
+    void this.loop();
   }
 
   /**
@@ -612,13 +581,13 @@ export class Viewer {
    * matches the framing used for the reel.
    */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
-    this.renderFrame();
-    const gl = this.renderer.domElement;
-    const crop = this.captureGuide.rectFor(gl.width, gl.height);
+    await this.renderFrame();
+    const srcCanvas = this.renderer.domElement;
+    const crop = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
     const sx = crop ? Math.round(crop.x) : 0;
     const sy = crop ? Math.round(crop.y) : 0;
-    const sw = crop ? Math.round(crop.w) : gl.width;
-    const sh = crop ? Math.round(crop.h) : gl.height;
+    const sw = crop ? Math.round(crop.w) : srcCanvas.width;
+    const sh = crop ? Math.round(crop.h) : srcCanvas.height;
     const scale = Math.min(1, maxWidth / sw);
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
@@ -629,7 +598,7 @@ export class Viewer {
     if (!ctx) throw new Error('2D context unavailable for capture');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(gl, sx, sy, sw, sh, 0, 0, w, h);
+    ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, w, h);
     return new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error('thumbnail capture failed'))),
@@ -649,9 +618,6 @@ export class Viewer {
     this.streamer.dispose();
     this.materials.dispose();
     this.environment.dispose();
-    this.aoPass?.dispose();
-    this.dof2?.dispose();
-    this.composer?.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
   }
@@ -661,12 +627,6 @@ export class Viewer {
   private fitScene(geom: BufferGeometry): void {
     geom.computeBoundingBox();
     this.subjectBox.copy(geom.boundingBox ?? new Box3());
-
-    const sphere = this.subjectBox.getBoundingSphere(new Sphere());
-    this.subjectRadius = Math.max(sphere.radius, 1e-3);
-    this.applyAoRadius();
-    this.applyDof();
-    if (this.aoPass instanceof GTAOPass) this.aoPass.setSceneClipBox(this.subjectBox);
 
     const cam = this.manifest.camera;
     if (cam.position && cam.target) {
@@ -686,112 +646,41 @@ export class Viewer {
   }
 
   /**
-   * Build the postprocessing composer: an AO pass per device tier (GTAO / SSAO)
-   * followed by an optional depth-of-field pass, then tone-mapping. Each effect
-   * pass toggles via `.enabled`, so the chain is only used when one is active.
+   * Render the current scene. WebGPU submits asynchronously, so this awaits the
+   * frame; the renderer applies tone mapping and the sRGB output transform on the
+   * way to the canvas. AO/DoF rejoin here as a node PostProcessing graph later.
    */
-  private initComposer(): void {
-    const tier = SHADOW_TIERS[detectQuality(this.renderer)];
-    this.aoKind = tier.ao;
-
-    try {
-      const w = this.container.clientWidth;
-      const h = this.container.clientHeight;
-      const composer = new EffectComposer(this.renderer);
-      composer.addPass(new RenderPass(this.scene, this.camera));
-
-      if (this.aoKind === 'gtao') {
-        const gtao = new GTAOPass(this.scene, this.camera, w, h);
-        gtao.output = GTAOPass.OUTPUT.Default;
-        gtao.blendIntensity = 1;
-        gtao.updateGtaoMaterial({ samples: tier.aoSamples });
-        this.aoPass = gtao;
-        composer.addPass(gtao);
-      } else if (this.aoKind === 'ssao') {
-        const ssao = new SSAOPass(this.scene, this.camera, w, h);
-        ssao.output = SSAOPass.OUTPUT.Default;
-        this.aoPass = ssao;
-        composer.addPass(ssao);
-      }
-      this.aoEnabled = this.aoKind !== 'none'; // AO on by default where available
-      if (this.aoPass) this.aoPass.enabled = this.aoEnabled;
-
-      // Depth of field, off by default. focalDepth is set per-frame from the
-      // orbit target; the lens (f-stop + focal length) sets the bokeh. BokehShader2
-      // needs rings/samples ≥ 4 to read as a smooth blur rather than discrete
-      // ghosts; the mobile (SSAO) tier just trims a ring to stay affordable.
-      const dofQuality =
-        this.aoKind === 'gtao' ? { rings: 5, samples: 4 } : { rings: 4, samples: 4 };
-      const dof = new Dof2Pass(this.scene, this.camera, dofQuality);
-      dof.enabled = false;
-      this.dof2 = dof;
-      composer.addPass(dof);
-
-      composer.addPass(new OutputPass());
-      this.composer = composer;
-    } catch (err) {
-      console.error('Composer init failed; using direct render', err);
-      this.composer = null;
-      this.aoPass = null;
-      this.dof2 = null;
-      this.aoKind = 'none';
-      this.aoEnabled = false;
-      this.dofEnabled = false;
-    }
-  }
-
-  private applyAoRadius(): void {
-    const radius = this.aoRadiusFraction * this.subjectRadius;
-    if (this.aoPass instanceof GTAOPass) this.aoPass.updateGtaoMaterial({ radius });
-    else if (this.aoPass instanceof SSAOPass) this.aoPass.kernelRadius = radius;
-  }
-
-  /** Composer when an effect is on; otherwise the plain (proven) direct render. */
-  private renderFrame(): void {
-    if (this.composer && (this.aoEnabled || this.dofEnabled)) {
-      if (this.dofEnabled && this.dof2) {
-        // The focal plane tracks the orbit target, biased across the subject
-        // depth so the slider can pull focus to the front of the subject (the
-        // face) rather than the bounding-sphere centre.
-        const focus = this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
-        this.dof2.uniforms.focalDepth.value = Math.max(focus, 0.01);
-      }
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
+  private renderFrame(): Promise<void> {
+    return this.renderer.renderAsync(this.scene, this.camera);
   }
 
   /**
    * Adaptive quality: after a warmup, if the measured FPS is below target, shed
-   * cost in cheap-but-impactful steps (pixel ratio first, then GTAO samples).
-   * The low tier is already minimal, so it's skipped.
+   * cost by lowering the device-pixel-ratio cap in two steps.
    */
   private startAdaptive(): void {
-    if (this.aoKind === 'none') return;
     this.adaptTimer = window.setTimeout(() => this.adapt(), 2000);
   }
 
   private adapt(): void {
     const TARGET = 50;
-    if (this.fps >= TARGET || this.adaptStep >= 3) return;
+    if (this.fps >= TARGET || this.adaptStep >= 2) return;
     this.adaptStep += 1;
-    if (this.adaptStep === 1) this.setRenderScale(1.25);
-    else if (this.adaptStep === 2) this.setRenderScale(1.0);
-    else if (this.aoPass instanceof GTAOPass) this.aoPass.updateGtaoMaterial({ samples: 8 });
+    this.setRenderScale(this.adaptStep === 1 ? 1.25 : 1.0);
     this.adaptTimer = window.setTimeout(() => this.adapt(), 1200);
   }
 
   private setRenderScale(maxRatio: number): void {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio));
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    this.renderer.setSize(w, h);
-    this.composer?.setSize(w, h);
+    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   }
 
-  private readonly loop = (): void => {
-    this.rafId = requestAnimationFrame(this.loop);
+  private readonly loop = async (): Promise<void> => {
+    // The render is awaited (WebGPU submits asynchronously), so schedule the next
+    // frame only once it completes — this paces to display refresh when frames are
+    // cheap and sheds frames naturally when they aren't, with no overlapping
+    // submissions. A capture takes over the renderer, so bail without rescheduling.
+    if (this.capturing) return;
     const raw = this.clock.getDelta();
     if (raw > 0) this.fps += (1 / raw - this.fps) * 0.1; // smoothed
     // Clamp dt so a backgrounded tab (which pauses rAF) can't return a huge
@@ -829,7 +718,9 @@ export class Viewer {
     }
 
     this.controls.update();
-    this.renderFrame();
+    await this.renderFrame();
+    // Re-check: a capture may have started while the frame was in flight.
+    if (!this.capturing) this.rafId = requestAnimationFrame(this.loop);
   };
 
   private readonly onResize = (): void => {
@@ -842,7 +733,6 @@ export class Viewer {
     // (setFocalLength recomputes the FOV and the projection matrix).
     this.camera.setFocalLength(this.focalLength);
     this.renderer.setSize(w, h);
-    this.composer?.setSize(w, h);
   };
 }
 

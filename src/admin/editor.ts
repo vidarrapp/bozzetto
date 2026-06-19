@@ -367,7 +367,9 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     }
     const manifest = validateManifest(raw);
     const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-    preview = new Viewer(box, manifest, new HttpSource(manifestUrl), { preserveDrawingBuffer: true });
+    preview = await Viewer.create(box, manifest, new HttpSource(manifestUrl), {
+      preserveDrawingBuffer: true,
+    });
     await preview.boot();
     panel = new Panel(preview, { editor: true, actions: buildLookActions(preview, id) });
     layout?.attach(panel);

@@ -216,8 +216,10 @@ function main(): void {
     }
     const manifest = buildManifest();
     memorySource.setManifest(manifest);
-    // preserveDrawingBuffer lets the panel read the canvas back for reel/thumbnail capture.
-    preview = new Viewer(previewBox, manifest, memorySource, { preserveDrawingBuffer: true });
+    // The editor preview reads the canvas back for reel/thumbnail capture; with a
+    // paused loop the WebGPU canvas retains its last frame, so no extra flag is
+    // needed (the option is kept only for call-site symmetry with the viewer).
+    preview = await Viewer.create(previewBox, manifest, memorySource, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
     layout.attach(panel);

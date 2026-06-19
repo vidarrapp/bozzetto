@@ -17,7 +17,7 @@ export async function mountViewer(
   manifest: Manifest,
   source: AssetSource,
 ): Promise<Viewer> {
-  const viewer = new Viewer(viewport, manifest, source);
+  const viewer = await Viewer.create(viewport, manifest, source);
   // Expose for debugging from the browser console, e.g.:
   //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
   (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
