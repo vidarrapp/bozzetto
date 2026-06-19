@@ -391,6 +391,24 @@ export class Viewer {
     return this.fps;
   }
 
+  /** Live diagnostics for the debug overlay (hotkey "t"): [label, value] rows. */
+  debugInfo(): Array<[string, string]> {
+    const b = this.renderer.backend as { isWebGPUBackend?: boolean; isWebGLBackend?: boolean };
+    const backend = b.isWebGPUBackend ? 'WebGPU' : b.isWebGLBackend ? 'WebGL2' : '?';
+    const { w, h } = this.viewportSize();
+    return [
+      ['fps', String(Math.round(this.fps))],
+      ['backend', backend],
+      ['size', `${w}×${h} @${this.renderer.getPixelRatio()}x`],
+      ['material', this.currentMode],
+      ['AO', this.aoEnabled ? `str ${this.aoIntensity.toFixed(2)} · rad ${this.aoRadiusFraction.toFixed(2)}` : 'off'],
+      ['DoF', this.dofEnabled ? `f/${this.dofFStop} · focus ${this.dofFocus.toFixed(2)}` : 'off'],
+      ['subject r', this.subjectRadius.toFixed(1)],
+      ['clip', `${this.camera.near.toFixed(1)}–${this.camera.far.toFixed(0)}`],
+      ['env', this.scene.environment ? 'loaded' : 'none'],
+    ];
+  }
+
   setAO(state: Partial<AOState>): void {
     if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled;
     if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;

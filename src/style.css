@@ -1126,15 +1126,30 @@ html.is-page body {
   left: 12px;
   bottom: 88px;
   z-index: 30;
-  padding: 4px 9px;
+  min-width: 168px;
+  padding: 6px 9px;
   font-family: var(--font-spec);
   font-size: 11px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   backdrop-filter: blur(8px);
+}
+
+.fps-meter__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  line-height: 1.5;
+}
+
+.fps-meter__key {
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  font-size: 10px;
 }
 
 /* --- environment loading hint --- */

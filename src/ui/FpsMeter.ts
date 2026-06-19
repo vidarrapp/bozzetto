@@ -1,6 +1,10 @@
 import type { Viewer } from '../viewer/Viewer';
 
-/** Tiny FPS readout, toggled by the secret hotkey "t". Polls (no extra rAF). */
+/**
+ * Debug overlay, toggled by the hotkey "t". Shows FPS plus live renderer
+ * diagnostics (backend, size, material, AO/DoF, subject scale, clip range,
+ * environment). Polls on a timer — no extra render loop.
+ */
 export class FpsMeter {
   private readonly el: HTMLDivElement;
   private readonly timer: number;
@@ -19,7 +23,20 @@ export class FpsMeter {
   }
 
   private render(): void {
-    if (!this.el.hidden) this.el.textContent = `${Math.round(this.viewer.getFps())} fps`;
+    if (this.el.hidden) return;
+    this.el.replaceChildren(
+      ...this.viewer.debugInfo().map(([label, value]) => {
+        const row = document.createElement('div');
+        row.className = 'fps-meter__row';
+        const k = document.createElement('span');
+        k.className = 'fps-meter__key';
+        k.textContent = label;
+        const v = document.createElement('span');
+        v.textContent = value;
+        row.append(k, v);
+        return row;
+      }),
+    );
   }
 
   dispose(): void {
