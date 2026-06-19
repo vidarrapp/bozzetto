@@ -165,9 +165,11 @@ export class Viewer {
   onPlayStateChange: ((playing: boolean) => void) | null = null;
 
   /**
-   * Build a viewer with an initialized WebGPU renderer. WebGPU device init is
-   * async, so construction goes through this factory instead of `new`; callers
-   * then `await viewer.boot()` to load the first frame and start the loop.
+   * Build a viewer with an initialized renderer. The renderer targets WebGPU and
+   * falls back to a WebGL 2 backend automatically when WebGPU is unavailable, so
+   * the same node graph runs on either. Device init is async, so construction
+   * goes through this factory instead of `new`; callers then `await viewer.boot()`
+   * to load the first frame and start the loop.
    */
   static async create(
     container: HTMLElement,

@@ -29,10 +29,12 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 ### Viewer
 
 - Per-frame geometry streaming. One persistent mesh has its geometry swapped each frame, with prefetch and eviction around the playhead so playback does not stall. If the next frame is not decoded yet, it holds the nearest one that is.
-- Real-time relighting with a multi-light rig and soft (VSM) shadows. An optional PCSS mode gives contact-hardening shadows.
+- Renders on WebGPU through three.js's node-based renderer, with an automatic WebGL 2 fallback when WebGPU is unavailable; the same materials, shadows, ambient occlusion, and depth of field run on either backend.
+- Real-time relighting with a multi-light rig and soft (VSM) shadows.
 - Material modes: lit PBR (albedo, roughness, metalness), matcaps, view-space normals, and a wireframe overlay, each with smooth or flat shading.
 - HDRI image-based lighting (PMREM) with selectable environments, three background modes (theme colour, solid colour, blurred HDRI), and separate rotation for the light rig and the HDRI.
-- Screen-space ambient occlusion, using GTAO where the device can handle it and falling back to SSAO. It can be turned off.
+- Ground-truth ambient occlusion (GTAO) with adjustable strength and radius, composited in the node post-processing graph. It can be turned off.
+- Depth of field (a node-based gather): aperture and a focus plane that tracks the orbit target. Off by default.
 - A device quality tier plus adaptive quality that backs off render cost when the frame rate drops.
 - A DCC-style camera (orbit, pan, dolly) with a saved camera per project, a light/dark theme, an on-screen hotkey guide, and a bottom transport bar with a scrubber and stage markers.
 
@@ -75,7 +77,7 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 | `Tab` | Show / hide panels |
 | `H` | Hotkey guide |
 
-A few URL switches help when debugging the renderer: `?dev` reveals a developer section in the control panel, `?q=low|medium|high` forces a quality tier, and `?shadows=pcss` swaps the shadow algorithm.
+A few URL switches help when debugging the renderer: `?dev` reveals a developer section in the control panel, and `?q=low|medium|high` forces a quality tier.
 
 ## Getting started
 
