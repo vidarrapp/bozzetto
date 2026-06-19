@@ -75,6 +75,17 @@ export function installPCSS(): void {
   installed = true;
 
   let chunk = ShaderChunk.shadowmap_pars_fragment;
+  // The patch targets a specific getShadow() shape. three's shadow shader moved
+  // on (r184's PCF path uses a sampler2DShadow comparison sampler and a new
+  // shadowIntensity arg), so the anchor no longer matches. Bail rather than
+  // inject a call to an undefined PCSS(): `?shadows=pcss` then degrades to plain
+  // hardware PCF (set by setShadowMode) instead of failing to compile.
+  const anchor =
+    'float getShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowBias, float shadowRadius, vec4 shadowCoord ) {';
+  if (!chunk.includes(anchor)) {
+    console.warn('PCSS unavailable on this three.js build; using standard PCF shadows.');
+    return;
+  }
   chunk = chunk.replace(
     'float getShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowBias, float shadowRadius, vec4 shadowCoord ) {',
     `${PCSS_GLSL}\nfloat getShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowBias, float shadowRadius, vec4 shadowCoord ) {`,
