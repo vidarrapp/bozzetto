@@ -8,9 +8,12 @@ import {
   PlaneGeometry,
   Scene,
   ShadowMaterial,
+  Sphere,
   Vector3,
 } from 'three';
-import { WebGPURenderer } from 'three/webgpu';
+import { RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
+import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform } from 'three/tsl';
+import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import type { BufferGeometry } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
@@ -24,6 +27,7 @@ import type { EnvState } from './Environment';
 import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
+import { detectQuality, SHADOW_TIERS } from './quality';
 
 /** Default lens when a project has no saved focal length (a "normal" lens). */
 const DEFAULT_FOCAL_LENGTH = 50;
@@ -116,13 +120,20 @@ export class Viewer {
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
 
-  // AO and depth of field are reintroduced as a node-based PostProcessing graph
-  // in a later migration phase. Until then these hold the persisted look state
-  // (so saved projects round-trip) but drive no render pass: aoAvailable() and
-  // dofAvailable() report false, so the panel hides the controls.
-  private aoEnabled = false;
+  /**
+   * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
+   * composited with Ground-Truth ambient occlusion, then tone-mapped on output
+   * (depth of field joins the graph in a later phase). Toggling an effect
+   * recomposes `pipeline.outputNode`; the renderer applies tone mapping + sRGB.
+   */
+  private pipeline: RenderPipeline | null = null;
+  private scenePass: ReturnType<typeof pass> | null = null;
+  private aoNode: ReturnType<typeof ao> | null = null;
+  /** AO blend strength (0..1), fed into the composite as a uniform. */
+  private readonly aoIntensityU = uniform(1);
+  private aoEnabled = true; // AO on by default
   private aoRadiusFraction = 0.5;
-  private aoIntensity = 1;
+  private subjectRadius = 1;
   /** Depth-of-field (off by default; focus tracks the orbit target). */
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
@@ -226,6 +237,8 @@ export class Viewer {
     this.wireframe.material = this.wireMaterial;
     this.wireframe.visible = false;
     this.scene.add(this.wireframe);
+
+    this.buildPipeline();
 
     window.addEventListener('resize', this.onResize);
   }
@@ -348,14 +361,9 @@ export class Viewer {
     this.environment.setRotation(deg);
   }
 
-  // AO and DoF report unavailable until the node PostProcessing graph is wired
-  // back in (later migration phase); the panel hides their controls meanwhile.
+  /** AO is available once the node pipeline built (it always does on WebGPU). */
   aoAvailable(): boolean {
-    return false;
-  }
-
-  aoIsGtao(): boolean {
-    return false;
+    return this.aoNode !== null;
   }
 
   /** Smoothed frames-per-second (dev FPS meter). */
@@ -364,15 +372,27 @@ export class Viewer {
   }
 
   setAO(state: Partial<AOState>): void {
-    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled;
-    if (typeof state.radius === 'number') this.aoRadiusFraction = state.radius;
-    if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;
+    if (typeof state.enabled === 'boolean' && state.enabled !== this.aoEnabled) {
+      this.aoEnabled = state.enabled;
+      this.rebuildOutput(); // add/remove the AO term from the graph
+    }
+    if (typeof state.radius === 'number') {
+      this.aoRadiusFraction = state.radius;
+      this.applyAoRadius();
+    }
+    if (typeof state.intensity === 'number') this.aoIntensityU.value = state.intensity;
   }
 
   getAOState(): AOState {
-    return { enabled: this.aoEnabled, intensity: this.aoIntensity, radius: this.aoRadiusFraction };
+    return {
+      enabled: this.aoEnabled,
+      intensity: this.aoIntensityU.value,
+      radius: this.aoRadiusFraction,
+    };
   }
 
+  // DoF rejoins the graph in the next phase; report unavailable so the panel
+  // hides its controls for now (its look state still round-trips).
   dofAvailable(): boolean {
     return false;
   }
@@ -522,7 +542,7 @@ export class Viewer {
   /** Load + render one frame into the capture canvas (call between begin/end). */
   async renderCaptureFrame(ordinal: number): Promise<void> {
     await this.showCaptureFrame(ordinal);
-    await this.renderFrame();
+    await this.renderForReadback();
   }
 
   /**
@@ -547,7 +567,7 @@ export class Viewer {
     this.display.position.copy(offset);
     this.wireframe.rotation.set(0, angle, 0);
     this.wireframe.position.copy(offset);
-    await this.renderFrame();
+    await this.renderForReadback();
   }
 
   /** Leave capture mode: restore the renderer, camera, and play state, resume. */
@@ -572,7 +592,7 @@ export class Viewer {
     this.targetIndex = -1;
     this.displayedIndex = -1;
     this.clock.getDelta(); // discard time accumulated during capture
-    void this.loop();
+    this.loop();
   }
 
   /**
@@ -581,7 +601,7 @@ export class Viewer {
    * matches the framing used for the reel.
    */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
-    await this.renderFrame();
+    await this.renderForReadback();
     const srcCanvas = this.renderer.domElement;
     const crop = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
     const sx = crop ? Math.round(crop.x) : 0;
@@ -618,6 +638,7 @@ export class Viewer {
     this.streamer.dispose();
     this.materials.dispose();
     this.environment.dispose();
+    this.pipeline?.dispose();
     this.wireMaterial.dispose();
     this.renderer.dispose();
   }
@@ -627,6 +648,10 @@ export class Viewer {
   private fitScene(geom: BufferGeometry): void {
     geom.computeBoundingBox();
     this.subjectBox.copy(geom.boundingBox ?? new Box3());
+
+    const sphere = this.subjectBox.getBoundingSphere(new Sphere());
+    this.subjectRadius = Math.max(sphere.radius, 1e-3);
+    this.applyAoRadius();
 
     const cam = this.manifest.camera;
     if (cam.position && cam.target) {
@@ -646,12 +671,72 @@ export class Viewer {
   }
 
   /**
-   * Render the current scene. WebGPU submits asynchronously, so this awaits the
-   * frame; the renderer applies tone mapping and the sRGB output transform on the
-   * way to the canvas. AO/DoF rejoin here as a node PostProcessing graph later.
+   * Build the node postprocessing graph: a scene pass writing colour, depth and
+   * view-space normals (MRT), feeding a Ground-Truth AO node whose sample count
+   * and render scale follow the device tier. The colour/AO composite is assembled
+   * in rebuildOutput().
    */
-  private renderFrame(): Promise<void> {
-    return this.renderer.renderAsync(this.scene, this.camera);
+  private buildPipeline(): void {
+    const tier = SHADOW_TIERS[detectQuality()];
+    const scenePass = pass(this.scene, this.camera);
+    scenePass.setMRT(mrt({ output, normal: normalView }));
+
+    const aoNode = ao(
+      scenePass.getTextureNode('depth'),
+      scenePass.getTextureNode('normal'),
+      this.camera,
+    );
+    aoNode.samples.value = tier.aoSamples;
+    aoNode.resolutionScale = tier.aoResolutionScale;
+
+    this.scenePass = scenePass;
+    this.aoNode = aoNode;
+    this.pipeline = new RenderPipeline(this.renderer);
+    this.rebuildOutput();
+  }
+
+  /**
+   * (Re)compose the pipeline output from the active effects. When AO is on, scene
+   * colour is multiplied by the AO factor — blended toward 1 by the intensity
+   * uniform, so the Strength slider scales it; when off, colour passes through and
+   * the AO node drops out of the graph (so it costs nothing). The pipeline applies
+   * tone mapping + sRGB on output.
+   */
+  private rebuildOutput(): void {
+    if (!this.pipeline || !this.scenePass || !this.aoNode) return;
+    const color = this.scenePass.getTextureNode('output');
+    let out: Node = color;
+    if (this.aoEnabled) {
+      const aoFactor = mix(float(1), this.aoNode.getTextureNode().r, this.aoIntensityU);
+      out = color.mul(vec4(vec3(aoFactor), float(1)));
+    }
+    this.pipeline.outputNode = out;
+    this.pipeline.needsUpdate = true;
+  }
+
+  /** AO sample radius scales with the subject, so the look is scale-independent. */
+  private applyAoRadius(): void {
+    if (this.aoNode) this.aoNode.radius.value = this.aoRadiusFraction * this.subjectRadius;
+  }
+
+  /**
+   * Render the scene to the canvas. The renderer is initialized up front (see
+   * Viewer.create), so per-frame rendering is synchronous.
+   */
+  private renderOnce(): void {
+    if (this.pipeline) this.pipeline.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Render and wait until the frame has settled on the canvas, so an immediate
+   * read-back (drawImage during capture) sees the rendered pixels. One
+   * animation-frame yield after the synchronous render lets the WebGPU canvas
+   * present.
+   */
+  private async renderForReadback(): Promise<void> {
+    this.renderOnce();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
 
   /**
@@ -675,12 +760,8 @@ export class Viewer {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   }
 
-  private readonly loop = async (): Promise<void> => {
-    // The render is awaited (WebGPU submits asynchronously), so schedule the next
-    // frame only once it completes — this paces to display refresh when frames are
-    // cheap and sheds frames naturally when they aren't, with no overlapping
-    // submissions. A capture takes over the renderer, so bail without rescheduling.
-    if (this.capturing) return;
+  private readonly loop = (): void => {
+    this.rafId = requestAnimationFrame(this.loop);
     const raw = this.clock.getDelta();
     if (raw > 0) this.fps += (1 / raw - this.fps) * 0.1; // smoothed
     // Clamp dt so a backgrounded tab (which pauses rAF) can't return a huge
@@ -718,9 +799,7 @@ export class Viewer {
     }
 
     this.controls.update();
-    await this.renderFrame();
-    // Re-check: a capture may have started while the frame was in flight.
-    if (!this.capturing) this.rafId = requestAnimationFrame(this.loop);
+    this.renderOnce();
   };
 
   private readonly onResize = (): void => {
