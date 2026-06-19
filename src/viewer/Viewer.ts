@@ -14,6 +14,7 @@ import {
 import { RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
 import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
+import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
@@ -35,10 +36,20 @@ const DEFAULT_FOCAL_LENGTH = 50;
 /** World-up axis the turntable capture spins the model about. */
 const TURNTABLE_UP = new Vector3(0, 1, 0);
 
-/** Depth-of-field defaults (persisted look state; render wiring lands later). */
+/** Depth-of-field aperture default (f-stop). */
 const DEFAULT_FSTOP = 4;
 /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
 const DEFAULT_DOF_FOCUS = 0.35;
+/**
+ * Depth-of-field look mapping for DepthOfFieldNode. The node ramps a circle of
+ * confusion from sharp to fully blurred across a depth range, so the lens
+ * controls map to: a focus band whose half-depth widens with the f-stop (deeper
+ * focus at higher f), scaled by the subject radius so it's scale-independent;
+ * and a maximum bokeh radius (px) that grows as the aperture opens (∝ 1/f-stop).
+ * Both are look-tuning constants (subject radii, and pixels at f/1).
+ */
+const DOF_RANGE_SCALE = 0.12;
+const DOF_BLUR_PX = 18;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -127,14 +138,20 @@ export class Viewer {
    * recomposes `pipeline.outputNode`; the renderer applies tone mapping + sRGB.
    */
   private pipeline: RenderPipeline | null = null;
-  private scenePass: ReturnType<typeof pass> | null = null;
   private aoNode: ReturnType<typeof ao> | null = null;
-  /** AO blend strength (0..1), fed into the composite as a uniform. */
-  private readonly aoIntensityU = uniform(1);
+  /** Pre-built graph nodes: the AO-composited colour, and the DoF gather over it. */
+  private aoColor: Node | null = null;
+  private dofNode: ReturnType<typeof dof> | null = null;
+  /** Effective AO strength uniform (= intensity when enabled, else 0). */
+  private readonly aoStrengthU = uniform(1);
   private aoEnabled = true; // AO on by default
+  private aoIntensity = 1;
   private aoRadiusFraction = 0.5;
   private subjectRadius = 1;
-  /** Depth-of-field (off by default; focus tracks the orbit target). */
+  /** Depth-of-field uniforms: focus distance, focus-band range, max bokeh (px). */
+  private readonly dofFocusU = uniform(1);
+  private readonly dofRangeU = uniform(1);
+  private readonly dofBokehU = uniform(1);
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
   private dofFocus = DEFAULT_DOF_FOCUS;
@@ -372,35 +389,34 @@ export class Viewer {
   }
 
   setAO(state: Partial<AOState>): void {
-    if (typeof state.enabled === 'boolean' && state.enabled !== this.aoEnabled) {
-      this.aoEnabled = state.enabled;
-      this.rebuildOutput(); // add/remove the AO term from the graph
-    }
+    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled;
+    if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;
     if (typeof state.radius === 'number') {
       this.aoRadiusFraction = state.radius;
       this.applyAoRadius();
     }
-    if (typeof state.intensity === 'number') this.aoIntensityU.value = state.intensity;
+    // AO stays in the graph; enabling/strength just drive the effective-strength
+    // uniform (0 when disabled), so no recompile is needed.
+    this.applyAoStrength();
   }
 
   getAOState(): AOState {
-    return {
-      enabled: this.aoEnabled,
-      intensity: this.aoIntensityU.value,
-      radius: this.aoRadiusFraction,
-    };
+    return { enabled: this.aoEnabled, intensity: this.aoIntensity, radius: this.aoRadiusFraction };
   }
 
-  // DoF rejoins the graph in the next phase; report unavailable so the panel
-  // hides its controls for now (its look state still round-trips).
+  /** DoF is available once the node pipeline built (it always does on WebGPU). */
   dofAvailable(): boolean {
-    return false;
+    return this.dofNode !== null;
   }
 
   setDoF(state: Partial<DoFState>): void {
-    if (typeof state.enabled === 'boolean') this.dofEnabled = state.enabled;
+    if (typeof state.enabled === 'boolean' && state.enabled !== this.dofEnabled) {
+      this.dofEnabled = state.enabled;
+      this.rebuildOutput(); // include/exclude the DoF gather in the graph
+    }
     if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
     if (typeof state.focus === 'number') this.dofFocus = state.focus;
+    this.applyDof();
   }
 
   getDoFState(): DoFState {
@@ -652,6 +668,7 @@ export class Viewer {
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.applyAoRadius();
+    this.applyDof(); // focus-band range scales with the subject
 
     const cam = this.manifest.camera;
     if (cam.position && cam.target) {
@@ -689,29 +706,43 @@ export class Viewer {
     aoNode.samples.value = tier.aoSamples;
     aoNode.resolutionScale = tier.aoResolutionScale;
 
-    this.scenePass = scenePass;
+    // Scene colour modulated by AO (effective strength 0 when disabled), then a
+    // depth-of-field gather over that colour. Both nodes stay built; rebuildOutput
+    // selects whether DoF is in the output, and applyAoStrength()/applyDof() drive
+    // the look through uniforms — so toggling never rebuilds the graph nodes.
+    const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU);
+    const aoColor = scenePass.getTextureNode('output').mul(vec4(vec3(aoFactor), float(1)));
+    const dofNode = dof(
+      aoColor,
+      scenePass.getViewZNode(),
+      this.dofFocusU,
+      this.dofRangeU,
+      this.dofBokehU,
+    );
+
     this.aoNode = aoNode;
+    this.aoColor = aoColor;
+    this.dofNode = dofNode;
     this.pipeline = new RenderPipeline(this.renderer);
+    this.applyAoStrength();
+    this.applyDof();
     this.rebuildOutput();
   }
 
   /**
-   * (Re)compose the pipeline output from the active effects. When AO is on, scene
-   * colour is multiplied by the AO factor — blended toward 1 by the intensity
-   * uniform, so the Strength slider scales it; when off, colour passes through and
-   * the AO node drops out of the graph (so it costs nothing). The pipeline applies
-   * tone mapping + sRGB on output.
+   * Select the pipeline output: the depth-of-field gather when DoF is on,
+   * otherwise the AO-composited colour directly (so the DoF gather leaves the
+   * graph and costs nothing). The pipeline applies tone mapping + sRGB on output.
    */
   private rebuildOutput(): void {
-    if (!this.pipeline || !this.scenePass || !this.aoNode) return;
-    const color = this.scenePass.getTextureNode('output');
-    let out: Node = color;
-    if (this.aoEnabled) {
-      const aoFactor = mix(float(1), this.aoNode.getTextureNode().r, this.aoIntensityU);
-      out = color.mul(vec4(vec3(aoFactor), float(1)));
-    }
-    this.pipeline.outputNode = out;
+    if (!this.pipeline || !this.aoColor || !this.dofNode) return;
+    this.pipeline.outputNode = this.dofEnabled ? this.dofNode : this.aoColor;
     this.pipeline.needsUpdate = true;
+  }
+
+  /** Drive the effective AO strength: the user intensity when enabled, else 0. */
+  private applyAoStrength(): void {
+    this.aoStrengthU.value = this.aoEnabled ? this.aoIntensity : 0;
   }
 
   /** AO sample radius scales with the subject, so the look is scale-independent. */
@@ -720,10 +751,27 @@ export class Viewer {
   }
 
   /**
+   * Map the aperture (f-stop) and subject scale to the DoF node's focus-band
+   * range and maximum bokeh radius. The focus distance itself tracks the orbit
+   * target per frame (updateDofFocus).
+   */
+  private applyDof(): void {
+    this.dofRangeU.value = Math.max(this.dofFStop * this.subjectRadius * DOF_RANGE_SCALE, 1e-3);
+    this.dofBokehU.value = DOF_BLUR_PX / this.dofFStop;
+  }
+
+  /** Track the focus plane to the orbit target, biased across the subject depth. */
+  private updateDofFocus(): void {
+    const focus = this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
+    this.dofFocusU.value = Math.max(focus, 0.01);
+  }
+
+  /**
    * Render the scene to the canvas. The renderer is initialized up front (see
    * Viewer.create), so per-frame rendering is synchronous.
    */
   private renderOnce(): void {
+    if (this.dofEnabled) this.updateDofFocus(); // focus plane tracks the orbit target
     if (this.pipeline) this.pipeline.render();
     else this.renderer.render(this.scene, this.camera);
   }
