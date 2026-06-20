@@ -92,6 +92,12 @@ const GROUND_FADE_OUTER = 0.36;
 const DEFAULT_STAGE_COLOR = '#c9c4bb';
 const DEFAULT_STAGE_ROUGHNESS = 0.9;
 
+/** Pedestal proportions: square base = subject footprint × FOOTPRINT, and the
+ *  plinth height = that base × HEIGHT (a self-consistent column, independent of
+ *  how tall or flat the subject is). */
+const PEDESTAL_FOOTPRINT = 1.15;
+const PEDESTAL_HEIGHT = 1.2;
+
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
  *
@@ -496,10 +502,12 @@ export class Viewer {
     const size = this.subjectBox.getSize(new Vector3());
     const center = this.subjectBox.getCenter(new Vector3());
     const baseY = this.subjectBox.min.y;
-    const footprint = Math.max(size.x, size.z, 1e-3) * 1.3;
+    const footprint = Math.max(size.x, size.z, 1e-3) * PEDESTAL_FOOTPRINT;
 
-    // Pedestal: a plinth under the subject, its top flush with the subject base.
-    const pedH = Math.max(size.y, footprint * 0.4);
+    // Pedestal: a column under the subject, top flush with the subject base; its
+    // height tracks its own footprint, so the plinth shape is consistent for any
+    // subject rather than ballooning for tall ones.
+    const pedH = footprint * PEDESTAL_HEIGHT;
     this.pedestal.geometry.dispose();
     this.pedestal.geometry = new BoxGeometry(footprint, pedH, footprint);
     this.pedestal.position.set(center.x, baseY - pedH / 2, center.z);
