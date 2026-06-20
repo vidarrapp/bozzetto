@@ -1,7 +1,8 @@
-export type AspectId = '9:16' | '1:1' | '16:9';
+export type AspectId = '9:16' | '4:5' | '1:1' | '16:9';
 
 const ASPECTS: Record<AspectId, number> = {
   '9:16': 9 / 16,
+  '4:5': 4 / 5,
   '1:1': 1,
   '16:9': 16 / 9,
 };

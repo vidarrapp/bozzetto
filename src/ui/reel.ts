@@ -25,6 +25,7 @@ export function mountReelControls(viewer: Viewer): HTMLElement {
     [
       ['off', 'Off'],
       ['9:16', '9:16 — vertical'],
+      ['4:5', '4:5 — portrait'],
       ['1:1', '1:1 — square'],
       ['16:9', '16:9 — wide'],
     ],
