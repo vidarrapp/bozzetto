@@ -876,6 +876,7 @@ html.is-page body {
   height: 6px;
   margin-top: 8px;
   display: block;
+  accent-color: var(--accent);
 }
 
 .reel-status {
