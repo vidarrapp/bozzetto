@@ -12,7 +12,13 @@ import {
   Sphere,
   Vector3,
 } from 'three';
-import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
+import {
+  MeshBasicNodeMaterial,
+  MeshStandardNodeMaterial,
+  RenderPipeline,
+  WebGPURenderer,
+  type Node,
+} from 'three/webgpu';
 import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform, uv, smoothstep } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
@@ -92,6 +98,15 @@ const GROUND_FADE_OUTER = 0.36;
 const DEFAULT_STAGE_COLOR = '#c9c4bb';
 const DEFAULT_STAGE_ROUGHNESS = 0.9;
 
+/** Soft contact-shadow blob under the pedestal. Peak opacity and the plane scale
+ *  vs the pedestal footprint; the alpha holds dark out to the base then fades
+ *  (FADE0→FADE1 in plane-UV radius), so the darkest part rings the base rather
+ *  than hiding under the plinth. */
+const CONTACT_SHADOW_ALPHA = 0.4;
+const CONTACT_SHADOW_SCALE = 1.7;
+const CONTACT_SHADOW_FADE0 = 0.3;
+const CONTACT_SHADOW_FADE1 = 0.5;
+
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
  *
@@ -131,6 +146,10 @@ export class Viewer {
     roughness: DEFAULT_STAGE_ROUGHNESS,
     metalness: 0,
   });
+  // A box casts an ugly hard directional shadow, so the pedestal grounds itself
+  // with a soft radial contact-shadow decal at its foot instead.
+  private readonly contactShadow = new Mesh();
+  private readonly contactShadowMaterial = makeContactShadowMaterial();
   private groundMode: GroundMode = 'shadow';
   private stageColor = DEFAULT_STAGE_COLOR;
   private stageRoughness = DEFAULT_STAGE_ROUGHNESS;
@@ -291,10 +310,16 @@ export class Viewer {
     this.ground.visible = false;
     this.pedestal.geometry = new BoxGeometry(1, 1, 1);
     this.pedestal.material = this.pedestalMaterial;
-    this.pedestal.castShadow = true;
+    // No cast shadow — the box's hard directional shadow is replaced by the
+    // contact-shadow blob; the pedestal still catches the subject's shadow on top.
+    this.pedestal.castShadow = false;
     this.pedestal.receiveShadow = true;
     this.pedestal.visible = false;
-    this.scene.add(this.ground, this.pedestal);
+    this.contactShadow.geometry = new PlaneGeometry(1, 1);
+    this.contactShadow.material = this.contactShadowMaterial;
+    this.contactShadow.rotation.x = -Math.PI / 2;
+    this.contactShadow.visible = false;
+    this.scene.add(this.ground, this.pedestal, this.contactShadow);
 
     // Wireframe overlay shares the display geometry; toggled with "w".
     this.wireframe.material = this.wireMaterial;
@@ -469,23 +494,24 @@ export class Viewer {
   }
 
   /**
-   * Drive the ground's material and the ground/pedestal visibility from the
-   * mode: a visible fading floor for 'floor', a shadow-catcher for 'shadow' and
-   * 'pedestal' (which grounds the plinth with a contact shadow); all hide in
-   * unlit modes.
+   * Drive the ground material and the pedestal/contact-shadow visibility from the
+   * mode: 'floor' shows the fading floor, 'shadow' the shadow-catcher, 'pedestal'
+   * the plinth grounded by a soft contact-shadow blob (no directional catcher),
+   * and everything hides in unlit modes.
    */
   private updateStage(): void {
     const mode = this.materials.isLit(this.currentMode) ? this.groundMode : 'off';
     if (mode === 'floor') {
       this.ground.material = this.floorMaterial;
       this.ground.visible = true;
-    } else if (mode === 'shadow' || mode === 'pedestal') {
+    } else if (mode === 'shadow') {
       this.ground.material = this.shadowMaterial;
       this.ground.visible = true;
     } else {
       this.ground.visible = false;
     }
     this.pedestal.visible = mode === 'pedestal';
+    this.contactShadow.visible = mode === 'pedestal';
   }
 
   /** Size + position the ground plane and pedestal to the current subject. */
@@ -500,6 +526,12 @@ export class Viewer {
     this.pedestal.geometry.dispose();
     this.pedestal.geometry = new BoxGeometry(footprint, pedH, footprint);
     this.pedestal.position.set(center.x, baseY - pedH / 2, center.z);
+
+    // Soft contact-shadow blob at the pedestal foot, a touch wider than its base.
+    const blob = footprint * CONTACT_SHADOW_SCALE;
+    this.contactShadow.geometry.dispose();
+    this.contactShadow.geometry = new PlaneGeometry(blob, blob);
+    this.contactShadow.position.set(center.x, baseY - pedH + size.y * 0.001, center.z);
 
     // Ground sits at the foot of whatever stands on it (the pedestal, or the
     // subject directly). A large span so the shadow-catcher reaches the shadows.
@@ -815,8 +847,10 @@ export class Viewer {
     this.shadowMaterial.dispose();
     this.floorMaterial.dispose();
     this.pedestalMaterial.dispose();
+    this.contactShadowMaterial.dispose();
     this.ground.geometry.dispose();
     this.pedestal.geometry.dispose();
+    this.contactShadow.geometry.dispose();
     this.renderer.dispose();
   }
 
@@ -1071,5 +1105,21 @@ function makeFloorMaterial(color: string, roughness: number): MeshStandardNodeMa
   m.transparent = true;
   const d = uv().sub(0.5).length();
   m.opacityNode = float(1).sub(smoothstep(GROUND_FADE_INNER, GROUND_FADE_OUTER, d));
+  return m;
+}
+
+/**
+ * Soft contact-shadow decal: an unlit black plane whose alpha is a radial
+ * gradient (darkest at the centre, gone by the edge), so a plinth reads as
+ * grounded without the hard projected shadow a box would otherwise cast.
+ */
+function makeContactShadowMaterial(): MeshBasicNodeMaterial {
+  const m = new MeshBasicNodeMaterial({ color: 0x000000 });
+  m.transparent = true;
+  m.depthWrite = false; // a flat decal, not an occluder
+  const d = uv().sub(0.5).length();
+  m.opacityNode = float(CONTACT_SHADOW_ALPHA).mul(
+    float(1).sub(smoothstep(CONTACT_SHADOW_FADE0, CONTACT_SHADOW_FADE1, d)),
+  );
   return m;
 }
