@@ -59,10 +59,11 @@ function card(p: ProjectSummary): HTMLElement {
   const frames =
     p.frameCount > 0 ? `${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}` : 'no frames yet';
 
+  const thumb = `/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}`;
   a.innerHTML = `
     <div class="card__thumb">
-      <img class="card__img" alt="" loading="lazy"
-           src="/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}" />
+      <img class="card__img-blur" aria-hidden="true" alt="" loading="lazy" src="${thumb}" />
+      <img class="card__img" alt="" loading="lazy" src="${thumb}" />
     </div>
     <div class="card__body">
       <span class="card__title"></span>
@@ -73,8 +74,10 @@ function card(p: ProjectSummary): HTMLElement {
     </div>`;
   // textContent (not innerHTML) for the title — never trust stored strings.
   a.querySelector<HTMLElement>('.card__title')!.textContent = p.title || p.id;
-  // No thumbnail yet → drop the <img> so the gradient placeholder shows.
+  // No thumbnail yet → drop both image layers so the gradient placeholder shows.
   const img = a.querySelector<HTMLImageElement>('.card__img');
-  img?.addEventListener('error', () => img.remove());
+  img?.addEventListener('error', () => {
+    a.querySelectorAll('.card__img, .card__img-blur').forEach((el) => el.remove());
+  });
   return a;
 }
