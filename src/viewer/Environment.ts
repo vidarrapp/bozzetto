@@ -21,6 +21,8 @@ export interface EnvState {
   bgColor: string;
   /** HDRI rotation offset in degrees (on top of the shared rig rotation). */
   rotation: number;
+  /** Background blur (scene.backgroundBlurriness, 0..1); softens an HDRI plate. */
+  blur: number;
 }
 
 interface EnvConfig {
@@ -64,6 +66,7 @@ export class Environment {
   private bgColor = '#1c1814';
   private rigRotation = 0;
   private offset = 0;
+  private blur = 0;
   /** Guards against an earlier load resolving after a later selection. */
   private token = 0;
   private readonly disposeTheme: () => void;
@@ -99,6 +102,7 @@ export class Environment {
       background: this.bgMode,
       bgColor: this.bgColor,
       rotation: this.offset,
+      blur: this.blur,
     };
   }
 
@@ -166,6 +170,13 @@ export class Environment {
     this.applyRotation();
   }
 
+  /** Background blur (0..1). Softens a texture (HDRI) background; no effect on a
+   *  solid/theme colour, which has nothing to blur. */
+  setBackgroundBlur(value: number): void {
+    this.blur = value;
+    this.scene.backgroundBlurriness = value;
+  }
+
   private applyRotation(): void {
     const rad = ((this.rigRotation + this.offset) * Math.PI) / 180;
     this.scene.environmentRotation.set(0, rad, 0);
@@ -177,6 +188,7 @@ export class Environment {
     if (state.background) this.bgMode = state.background;
     if (typeof state.bgColor === 'string') this.bgColor = state.bgColor;
     if (typeof state.rotation === 'number') this.offset = state.rotation;
+    if (typeof state.blur === 'number') this.blur = state.blur;
     this.applyRotation();
     if ('id' in state) await this.setEnvironment(state.id ?? null);
     else this.updateBackground();
@@ -189,10 +201,9 @@ export class Environment {
   }
 
   private updateBackground(): void {
-    // The HDRI plate is shown sharp; any background softening comes from the
-    // camera's depth-of-field bokeh (the far background defocuses to its cap),
-    // so it tracks the lens rather than a separate, always-on blur.
-    this.scene.backgroundBlurriness = 0;
+    // Background softening: the editor's Bg blur slider plus the camera's
+    // depth-of-field bokeh both contribute (this is the always-on plate blur).
+    this.scene.backgroundBlurriness = this.blur;
     if (this.bgMode === 'hdri' && this.equirect) {
       this.scene.background = this.equirect;
     } else if (this.bgMode === 'color') {

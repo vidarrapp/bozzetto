@@ -37,6 +37,8 @@ export interface ProjectData {
   environment?: unknown;
   /** Ambient-occlusion settings. */
   ao?: unknown;
+  /** Presentation: ground shadow / floor / pedestal. */
+  presentation?: unknown;
   stages: StageMeta[];
   frames: FrameMeta[];
 }

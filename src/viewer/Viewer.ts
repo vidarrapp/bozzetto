@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   Box3,
+  BoxGeometry,
   Clock,
   Mesh,
   MeshBasicMaterial,
@@ -11,8 +12,8 @@ import {
   Sphere,
   Vector3,
 } from 'three';
-import { RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform } from 'three/tsl';
+import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
+import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform, uv, smoothstep } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry } from 'three';
@@ -69,6 +70,25 @@ export interface DoFState {
   focus: number;
 }
 
+/** Pedestal material option — a gallery plinth standing under the subject. */
+export type PedestalMode = 'off' | 'plaster' | 'black';
+
+/** Stage / presentation state (persisted in a project's `data.stage`). */
+export interface StageState {
+  /** Contact shadow under the subject (the shadow-catcher plane). */
+  groundShadow: boolean;
+  /** Visible studio floor that fades out in a circle toward the edges. */
+  groundPlane: boolean;
+  /** Pedestal under the subject, or 'off'. */
+  pedestal: PedestalMode;
+}
+
+/** Visible ground disc fade (plane-UV radius from the centre): opaque within
+ *  INNER, fully transparent by OUTER. The plane extends past OUTER (invisible)
+ *  so it still catches shadows across its full span. */
+const GROUND_FADE_INNER = 0.2;
+const GROUND_FADE_OUTER = 0.36;
+
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
  *
@@ -95,8 +115,19 @@ export class Viewer {
   private readonly clock = new Clock();
 
   private readonly display = new Mesh();
-  private readonly ground: Mesh;
-  private groundEnabled = true;
+  // Stage: one ground plane whose material swaps between a shadow-catcher and a
+  // radial-fade studio floor, plus a pedestal box — all sized to the subject.
+  private readonly ground = new Mesh();
+  private readonly shadowMaterial = new ShadowMaterial({ opacity: 0.32 });
+  private readonly groundFadeMaterial = makeGroundFadeMaterial();
+  private readonly pedestal = new Mesh();
+  private readonly pedestalMaterials: Record<Exclude<PedestalMode, 'off'>, MeshStandardNodeMaterial> = {
+    plaster: new MeshStandardNodeMaterial({ color: 0xe6e1d6, roughness: 0.95, metalness: 0 }),
+    black: new MeshStandardNodeMaterial({ color: 0x17171a, roughness: 0.8, metalness: 0 }),
+  };
+  private groundShadow = true;
+  private groundPlane = false;
+  private pedestalMode: PedestalMode = 'off';
 
   /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
   private readonly wireframe = new Mesh();
@@ -244,14 +275,19 @@ export class Viewer {
     this.display.castShadow = true;
     this.display.receiveShadow = true;
 
-    // Shadow-catching ground plane; sized/positioned once bounds are known.
-    this.ground = new Mesh(
-      new PlaneGeometry(1, 1),
-      new ShadowMaterial({ opacity: 0.32 }),
-    );
+    // Stage geometry is sized to the subject in layoutStage(); set up the static
+    // bits here. updateStage() drives visibility and the ground's material.
+    this.ground.geometry = new PlaneGeometry(1, 1);
+    this.ground.material = this.shadowMaterial;
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
-    this.scene.add(this.ground);
+    this.ground.visible = false;
+    this.pedestal.geometry = new BoxGeometry(1, 1, 1);
+    this.pedestal.material = this.pedestalMaterials.plaster;
+    this.pedestal.castShadow = true;
+    this.pedestal.receiveShadow = true;
+    this.pedestal.visible = false;
+    this.scene.add(this.ground, this.pedestal);
 
     // Wireframe overlay shares the display geometry; toggled with "w".
     this.wireframe.material = this.wireMaterial;
@@ -297,6 +333,9 @@ export class Viewer {
     }
     if (this.manifest.camera.dof) {
       this.setDoF(this.manifest.camera.dof);
+    }
+    if (this.manifest.presentation) {
+      this.applyStageState(this.manifest.presentation as StageState);
     }
     // Keep the HDRI orientation in sync with the (possibly saved) rig rotation.
     this.environment.setRotation(this.lighting.getRigRotation());
@@ -359,20 +398,102 @@ export class Viewer {
     const lit = this.materials.isLit(mode);
     this.lighting.setShadowsEnabled(lit);
     this.display.castShadow = lit;
-    this.ground.visible = lit && this.groundEnabled;
+    this.updateStage();
   }
 
   getMaterial(): string {
     return this.currentMode;
   }
 
-  setGround(enabled: boolean): void {
-    this.groundEnabled = enabled;
-    this.ground.visible = enabled && this.materials.isLit(this.currentMode);
+  // --- stage (ground shadow / floor / pedestal) -------------------------
+
+  setGroundShadow(on: boolean): void {
+    this.groundShadow = on;
+    this.updateStage();
   }
 
-  isGroundEnabled(): boolean {
-    return this.groundEnabled;
+  isGroundShadowEnabled(): boolean {
+    return this.groundShadow;
+  }
+
+  setGroundPlane(on: boolean): void {
+    this.groundPlane = on;
+    this.updateStage();
+  }
+
+  isGroundPlaneEnabled(): boolean {
+    return this.groundPlane;
+  }
+
+  setPedestal(mode: PedestalMode): void {
+    this.pedestalMode = mode;
+    this.layoutStage(); // pedestal presence changes the ground height
+    this.updateStage();
+  }
+
+  getPedestal(): PedestalMode {
+    return this.pedestalMode;
+  }
+
+  getStageState(): StageState {
+    return {
+      groundShadow: this.groundShadow,
+      groundPlane: this.groundPlane,
+      pedestal: this.pedestalMode,
+    };
+  }
+
+  applyStageState(state: Partial<StageState>): void {
+    if (typeof state.groundShadow === 'boolean') this.groundShadow = state.groundShadow;
+    if (typeof state.groundPlane === 'boolean') this.groundPlane = state.groundPlane;
+    if (state.pedestal) this.pedestalMode = state.pedestal;
+    this.layoutStage();
+    this.updateStage();
+  }
+
+  /**
+   * Drive the ground's material and the ground/pedestal visibility from the
+   * toggles. The single ground plane is the radial-fade floor when a floor is
+   * wanted, else the shadow-catcher; both hide in unlit modes.
+   */
+  private updateStage(): void {
+    const lit = this.materials.isLit(this.currentMode);
+    if (lit && this.groundPlane) {
+      this.ground.material = this.groundFadeMaterial;
+      this.ground.visible = true;
+    } else if (lit && this.groundShadow) {
+      this.ground.material = this.shadowMaterial;
+      this.ground.visible = true;
+    } else {
+      this.ground.visible = false;
+    }
+    const showPedestal = lit && this.pedestalMode !== 'off';
+    this.pedestal.visible = showPedestal;
+    if (showPedestal) {
+      this.pedestal.material = this.pedestalMaterials[this.pedestalMode as Exclude<PedestalMode, 'off'>];
+    }
+  }
+
+  /** Size + position the ground plane and pedestal to the current subject. */
+  private layoutStage(): void {
+    const size = this.subjectBox.getSize(new Vector3());
+    const center = this.subjectBox.getCenter(new Vector3());
+    const baseY = this.subjectBox.min.y;
+    const footprint = Math.max(size.x, size.z, 1e-3) * 1.3;
+
+    // Pedestal: a plinth under the subject, its top flush with the subject base.
+    const pedH = Math.max(size.y, footprint * 0.4);
+    this.pedestal.geometry.dispose();
+    this.pedestal.geometry = new BoxGeometry(footprint, pedH, footprint);
+    this.pedestal.position.set(center.x, baseY - pedH / 2, center.z);
+
+    // Ground sits at the foot of whatever stands on it (the pedestal, or the
+    // subject directly). A large span so the shadow-catcher reaches the shadows.
+    const standY = this.pedestalMode !== 'off' ? baseY - pedH : baseY;
+    const span = Math.max(size.x, size.z) * 12 + 1;
+    this.ground.geometry.dispose();
+    this.ground.geometry = new PlaneGeometry(span, span);
+    this.ground.position.set(center.x, standY - size.y * 0.001, center.z);
   }
 
   /** Rotate the whole lighting environment — directional rig + HDRI — together. */
@@ -677,6 +798,12 @@ export class Viewer {
     this.environment.dispose();
     this.pipeline?.dispose();
     this.wireMaterial.dispose();
+    this.shadowMaterial.dispose();
+    this.groundFadeMaterial.dispose();
+    this.pedestalMaterials.plaster.dispose();
+    this.pedestalMaterials.black.dispose();
+    this.ground.geometry.dispose();
+    this.pedestal.geometry.dispose();
     this.renderer.dispose();
   }
 
@@ -698,20 +825,14 @@ export class Viewer {
       this.controls.frameSubject(this.subjectBox);
     }
     this.lighting.fitToBounds(this.subjectBox);
-
-    // Size and drop the ground plane to the subject's base.
-    const size = this.subjectBox.getSize(new Vector3());
-    const center = this.subjectBox.getCenter(new Vector3());
-    const span = Math.max(size.x, size.z) * 12 + 1;
-    this.ground.geometry.dispose();
-    this.ground.geometry = new PlaneGeometry(span, span);
-    this.ground.position.set(center.x, this.subjectBox.min.y - size.y * 0.001, center.z);
+    this.layoutStage();
 
     if (this.aoDebug) {
       // Surface the values that would explain "GTAO sees no occlusion": the
       // subject's world scale (drives the AO radius), the resolved AO radius and
       // samples, and the camera depth range (near/far against the subject
       // distance — a tiny near with a huge far wrecks depth precision).
+      const size = this.subjectBox.getSize(new Vector3());
       console.log('[AO debug]', {
         subjectRadius: this.subjectRadius,
         aoRadius: this.aoNode?.radius.value,
@@ -925,4 +1046,17 @@ export class Viewer {
 function clampOrdinal(value: number, count: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(count - 1, Math.max(0, Math.floor(value)));
+}
+
+/**
+ * Visible studio floor: a soft neutral plane whose alpha falls off in a circle
+ * from the centre (UV-based, so the disc scales with the plane), fading into the
+ * background at the edges. Receives shadows like any lit surface.
+ */
+function makeGroundFadeMaterial(): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ color: 0xc9c4bb, roughness: 1, metalness: 0 });
+  m.transparent = true;
+  const d = uv().sub(0.5).length();
+  m.opacityNode = float(1).sub(smoothstep(GROUND_FADE_INNER, GROUND_FADE_OUTER, d));
+  return m;
 }

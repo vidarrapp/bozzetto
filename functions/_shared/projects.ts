@@ -41,6 +41,7 @@ export function toManifest(row: ProjectRow): unknown {
     material: data.material ?? null,
     environment: data.environment ?? null,
     ao: data.ao ?? null,
+    presentation: data.presentation ?? null,
     frames: frames.map((f) => ({
       index: f.index,
       // ?v busts the immutable CDN cache when the project is re-saved/re-uploaded.
@@ -87,6 +88,7 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
     material: 'material' in patch ? patch.material : data.material,
     environment: 'environment' in patch ? patch.environment : data.environment,
     ao: 'ao' in patch ? patch.ao : data.ao,
+    presentation: 'presentation' in patch ? patch.presentation : data.presentation,
     stages: Array.isArray(patch.stages) ? (patch.stages as ProjectData['stages']) : data.stages,
     frames: Array.isArray(patch.frames) ? (patch.frames as ProjectData['frames']) : data.frames,
   };

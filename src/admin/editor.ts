@@ -68,6 +68,7 @@ function buildLookActions(p: Viewer, id: string): HTMLElement {
         material: p.materials.getMaterialState(),
         environment: p.environment.getState(),
         ao: p.getAOState(),
+        presentation: p.getStageState(),
         camera: p.getCameraState(),
         defaults: { material: p.getMaterial() },
       });

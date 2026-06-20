@@ -80,6 +80,8 @@ export interface Manifest {
   environment: unknown;
   /** Optional ambient-occlusion settings (applied by the viewer when present). */
   ao: unknown;
+  /** Optional presentation (ground shadow, floor, pedestal) when present. */
+  presentation: unknown;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -152,6 +154,7 @@ export function validateManifest(data: unknown): Manifest {
     material: m.material ?? null,
     environment: m.environment ?? null,
     ao: m.ao ?? null,
+    presentation: m.presentation ?? null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',

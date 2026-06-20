@@ -1,4 +1,4 @@
-import type { Viewer } from '../viewer/Viewer';
+import type { Viewer, PedestalMode } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow } from './dom';
 
@@ -31,7 +31,8 @@ export class Panel {
   private materialOptions!: HTMLDivElement;
   private smoothCheckbox!: HTMLInputElement;
   private wireframeCheckbox!: HTMLInputElement;
-  private groundCheckbox!: HTMLInputElement;
+  /** Ground-shadow checkbox lives in the editor's Environment section (or null). */
+  private groundShadowCheckbox: HTMLInputElement | null = null;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -129,7 +130,9 @@ export class Panel {
     const state = this.viewer.materials.getMaterialState();
     this.smoothCheckbox.checked = !state.flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
-    this.groundCheckbox.checked = this.viewer.isGroundEnabled();
+    if (this.groundShadowCheckbox) {
+      this.groundShadowCheckbox.checked = this.viewer.isGroundShadowEnabled();
+    }
   }
 
   dispose(): void {
@@ -317,12 +320,6 @@ export class Panel {
         return wrap;
       }),
     );
-
-    const ground = checkbox('Ground shadow', this.viewer.isGroundEnabled(), (on) =>
-      this.viewer.setGround(on),
-    );
-    this.groundCheckbox = ground.querySelector('input')!;
-    lighting.appendChild(ground);
   }
 
   /** Viewer-only: one enable checkbox per light (no advanced controls). */
@@ -447,6 +444,39 @@ export class Panel {
     sec.appendChild(
       compactRange('HDR rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
     );
+    sec.appendChild(
+      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v)),
+    );
+
+    // Stage: contact shadow, a soft fading floor, and an optional pedestal.
+    const groundShadow = checkbox('Ground shadow', this.viewer.isGroundShadowEnabled(), (on) =>
+      this.viewer.setGroundShadow(on),
+    );
+    this.groundShadowCheckbox = groundShadow.querySelector('input');
+    sec.appendChild(groundShadow);
+
+    sec.appendChild(
+      checkbox('Ground plane', this.viewer.isGroundPlaneEnabled(), (on) =>
+        this.viewer.setGroundPlane(on),
+      ),
+    );
+
+    const pedestal = document.createElement('select');
+    for (const [value, label] of [
+      ['off', 'None'],
+      ['plaster', 'White plaster'],
+      ['black', 'Matte black'],
+    ] as const) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      pedestal.appendChild(opt);
+    }
+    pedestal.value = this.viewer.getPedestal();
+    pedestal.addEventListener('change', () =>
+      this.viewer.setPedestal(pedestal.value as PedestalMode),
+    );
+    sec.appendChild(labelRow('Pedestal', pedestal));
   }
 
   // --- camera (editor only) ---------------------------------------------
