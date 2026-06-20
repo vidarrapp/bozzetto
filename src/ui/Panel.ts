@@ -1,4 +1,4 @@
-import type { Viewer, PedestalMode } from '../viewer/Viewer';
+import type { Viewer, GroundMode } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow } from './dom';
 
@@ -31,8 +31,8 @@ export class Panel {
   private materialOptions!: HTMLDivElement;
   private smoothCheckbox!: HTMLInputElement;
   private wireframeCheckbox!: HTMLInputElement;
-  /** Ground-shadow checkbox lives in the editor's Environment section (or null). */
-  private groundShadowCheckbox: HTMLInputElement | null = null;
+  /** Ground-mode select lives in the editor's Environment section (or null). */
+  private groundSelect: HTMLSelectElement | null = null;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -130,9 +130,7 @@ export class Panel {
     const state = this.viewer.materials.getMaterialState();
     this.smoothCheckbox.checked = !state.flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
-    if (this.groundShadowCheckbox) {
-      this.groundShadowCheckbox.checked = this.viewer.isGroundShadowEnabled();
-    }
+    if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
   }
 
   dispose(): void {
@@ -397,6 +395,7 @@ export class Panel {
   private buildEnvironment(body: HTMLElement): void {
     const env = this.viewer.environment;
     const state = env.getState();
+    const stage = this.viewer.getStageState();
     const sec = section(body, 'Environment');
 
     const select = document.createElement('select');
@@ -448,35 +447,42 @@ export class Panel {
       compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v)),
     );
 
-    // Stage: contact shadow, a soft fading floor, and an optional pedestal.
-    const groundShadow = checkbox('Ground shadow', this.viewer.isGroundShadowEnabled(), (on) =>
-      this.viewer.setGroundShadow(on),
-    );
-    this.groundShadowCheckbox = groundShadow.querySelector('input');
-    sec.appendChild(groundShadow);
-
-    sec.appendChild(
-      checkbox('Ground plane', this.viewer.isGroundPlaneEnabled(), (on) =>
-        this.viewer.setGroundPlane(on),
-      ),
-    );
-
-    const pedestal = document.createElement('select');
+    // Stage: a single ground style (contact shadow, fading floor, or pedestal),
+    // each with its own albedo where relevant.
+    const ground = document.createElement('select');
     for (const [value, label] of [
       ['off', 'None'],
-      ['plaster', 'White plaster'],
-      ['black', 'Matte black'],
+      ['shadow', 'Shadow'],
+      ['floor', 'Floor'],
+      ['pedestal', 'Pedestal'],
     ] as const) {
       const opt = document.createElement('option');
       opt.value = value;
       opt.textContent = label;
-      pedestal.appendChild(opt);
+      ground.appendChild(opt);
     }
-    pedestal.value = this.viewer.getPedestal();
-    pedestal.addEventListener('change', () =>
-      this.viewer.setPedestal(pedestal.value as PedestalMode),
+    ground.value = this.viewer.getGround();
+    ground.addEventListener('change', () => this.viewer.setGround(ground.value as GroundMode));
+    this.groundSelect = ground;
+    sec.appendChild(labelRow('Ground', ground));
+
+    // Floor/pedestal share one PBR surface (they're mutually exclusive).
+    const albedo = document.createElement('input');
+    albedo.type = 'color';
+    albedo.value = stage.color;
+    albedo.addEventListener('input', () => this.viewer.setStageColor(albedo.value));
+    sec.appendChild(labelRow('Surface albedo', albedo));
+
+    sec.appendChild(
+      compactRange('Surface roughness', 0, 1, 0.01, stage.roughness, (v) =>
+        this.viewer.setStageRoughness(v),
+      ),
     );
-    sec.appendChild(labelRow('Pedestal', pedestal));
+    sec.appendChild(
+      compactRange('Surface metalness', 0, 1, 0.01, stage.metalness, (v) =>
+        this.viewer.setStageMetalness(v),
+      ),
+    );
   }
 
   // --- camera (editor only) ---------------------------------------------

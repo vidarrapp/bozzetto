@@ -70,17 +70,16 @@ export interface DoFState {
   focus: number;
 }
 
-/** Pedestal material option — a gallery plinth standing under the subject. */
-export type PedestalMode = 'off' | 'plaster' | 'black';
+/** Ground presentation: a contact shadow, a fading studio floor, or a pedestal. */
+export type GroundMode = 'off' | 'shadow' | 'floor' | 'pedestal';
 
-/** Stage / presentation state (persisted in a project's `data.stage`). */
+/** Stage / presentation state (persisted in a project's `data.presentation`). */
 export interface StageState {
-  /** Contact shadow under the subject (the shadow-catcher plane). */
-  groundShadow: boolean;
-  /** Visible studio floor that fades out in a circle toward the edges. */
-  groundPlane: boolean;
-  /** Pedestal under the subject, or 'off'. */
-  pedestal: PedestalMode;
+  ground: GroundMode;
+  /** Stage-surface PBR. Floor and pedestal are exclusive, so one set serves both. */
+  color: string;
+  roughness: number;
+  metalness: number;
 }
 
 /** Visible ground disc fade (plane-UV radius from the centre): opaque within
@@ -88,6 +87,10 @@ export interface StageState {
  *  so it still catches shadows across its full span. */
 const GROUND_FADE_INNER = 0.2;
 const GROUND_FADE_OUTER = 0.36;
+
+/** Default stage-surface PBR (the floor / pedestal share one material). */
+const DEFAULT_STAGE_COLOR = '#c9c4bb';
+const DEFAULT_STAGE_ROUGHNESS = 0.9;
 
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
@@ -119,15 +122,19 @@ export class Viewer {
   // radial-fade studio floor, plus a pedestal box — all sized to the subject.
   private readonly ground = new Mesh();
   private readonly shadowMaterial = new ShadowMaterial({ opacity: 0.32 });
-  private readonly groundFadeMaterial = makeGroundFadeMaterial();
+  // Floor (radial-fade) and pedestal (opaque) share one PBR look; they're never
+  // shown together, so the panel exposes a single material — applied to both.
+  private readonly floorMaterial = makeFloorMaterial(DEFAULT_STAGE_COLOR, DEFAULT_STAGE_ROUGHNESS);
   private readonly pedestal = new Mesh();
-  private readonly pedestalMaterials: Record<Exclude<PedestalMode, 'off'>, MeshStandardNodeMaterial> = {
-    plaster: new MeshStandardNodeMaterial({ color: 0xe6e1d6, roughness: 0.95, metalness: 0 }),
-    black: new MeshStandardNodeMaterial({ color: 0x17171a, roughness: 0.8, metalness: 0 }),
-  };
-  private groundShadow = true;
-  private groundPlane = false;
-  private pedestalMode: PedestalMode = 'off';
+  private readonly pedestalMaterial = new MeshStandardNodeMaterial({
+    color: DEFAULT_STAGE_COLOR,
+    roughness: DEFAULT_STAGE_ROUGHNESS,
+    metalness: 0,
+  });
+  private groundMode: GroundMode = 'shadow';
+  private stageColor = DEFAULT_STAGE_COLOR;
+  private stageRoughness = DEFAULT_STAGE_ROUGHNESS;
+  private stageMetalness = 0;
 
   /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
   private readonly wireframe = new Mesh();
@@ -283,7 +290,7 @@ export class Viewer {
     this.ground.receiveShadow = true;
     this.ground.visible = false;
     this.pedestal.geometry = new BoxGeometry(1, 1, 1);
-    this.pedestal.material = this.pedestalMaterials.plaster;
+    this.pedestal.material = this.pedestalMaterial;
     this.pedestal.castShadow = true;
     this.pedestal.receiveShadow = true;
     this.pedestal.visible = false;
@@ -405,73 +412,80 @@ export class Viewer {
     return this.currentMode;
   }
 
-  // --- stage (ground shadow / floor / pedestal) -------------------------
+  // --- stage (ground: off / shadow / floor / pedestal) ------------------
 
-  setGroundShadow(on: boolean): void {
-    this.groundShadow = on;
+  setGround(mode: GroundMode): void {
+    this.groundMode = mode;
+    this.layoutStage(); // the pedestal changes the ground height
     this.updateStage();
   }
 
-  isGroundShadowEnabled(): boolean {
-    return this.groundShadow;
+  getGround(): GroundMode {
+    return this.groundMode;
   }
 
-  setGroundPlane(on: boolean): void {
-    this.groundPlane = on;
-    this.updateStage();
+  /** Cycle off → shadow → floor → pedestal → off (hotkey "g"). */
+  cycleGround(): void {
+    const order: GroundMode[] = ['off', 'shadow', 'floor', 'pedestal'];
+    this.setGround(order[(order.indexOf(this.groundMode) + 1) % order.length]);
   }
 
-  isGroundPlaneEnabled(): boolean {
-    return this.groundPlane;
+  // Stage-surface PBR — applied to both the floor and pedestal materials (only
+  // one is ever shown, so they read as a single material in the panel).
+  setStageColor(hex: string): void {
+    this.stageColor = hex;
+    this.floorMaterial.color.set(hex);
+    this.pedestalMaterial.color.set(hex);
   }
 
-  setPedestal(mode: PedestalMode): void {
-    this.pedestalMode = mode;
-    this.layoutStage(); // pedestal presence changes the ground height
-    this.updateStage();
+  setStageRoughness(value: number): void {
+    this.stageRoughness = value;
+    this.floorMaterial.roughness = value;
+    this.pedestalMaterial.roughness = value;
   }
 
-  getPedestal(): PedestalMode {
-    return this.pedestalMode;
+  setStageMetalness(value: number): void {
+    this.stageMetalness = value;
+    this.floorMaterial.metalness = value;
+    this.pedestalMaterial.metalness = value;
   }
 
   getStageState(): StageState {
     return {
-      groundShadow: this.groundShadow,
-      groundPlane: this.groundPlane,
-      pedestal: this.pedestalMode,
+      ground: this.groundMode,
+      color: this.stageColor,
+      roughness: this.stageRoughness,
+      metalness: this.stageMetalness,
     };
   }
 
   applyStageState(state: Partial<StageState>): void {
-    if (typeof state.groundShadow === 'boolean') this.groundShadow = state.groundShadow;
-    if (typeof state.groundPlane === 'boolean') this.groundPlane = state.groundPlane;
-    if (state.pedestal) this.pedestalMode = state.pedestal;
+    if (typeof state.color === 'string') this.setStageColor(state.color);
+    if (typeof state.roughness === 'number') this.setStageRoughness(state.roughness);
+    if (typeof state.metalness === 'number') this.setStageMetalness(state.metalness);
+    if (state.ground) this.groundMode = state.ground;
     this.layoutStage();
     this.updateStage();
   }
 
   /**
    * Drive the ground's material and the ground/pedestal visibility from the
-   * toggles. The single ground plane is the radial-fade floor when a floor is
-   * wanted, else the shadow-catcher; both hide in unlit modes.
+   * mode: a visible fading floor for 'floor', a shadow-catcher for 'shadow' and
+   * 'pedestal' (which grounds the plinth with a contact shadow); all hide in
+   * unlit modes.
    */
   private updateStage(): void {
-    const lit = this.materials.isLit(this.currentMode);
-    if (lit && this.groundPlane) {
-      this.ground.material = this.groundFadeMaterial;
+    const mode = this.materials.isLit(this.currentMode) ? this.groundMode : 'off';
+    if (mode === 'floor') {
+      this.ground.material = this.floorMaterial;
       this.ground.visible = true;
-    } else if (lit && this.groundShadow) {
+    } else if (mode === 'shadow' || mode === 'pedestal') {
       this.ground.material = this.shadowMaterial;
       this.ground.visible = true;
     } else {
       this.ground.visible = false;
     }
-    const showPedestal = lit && this.pedestalMode !== 'off';
-    this.pedestal.visible = showPedestal;
-    if (showPedestal) {
-      this.pedestal.material = this.pedestalMaterials[this.pedestalMode as Exclude<PedestalMode, 'off'>];
-    }
+    this.pedestal.visible = mode === 'pedestal';
   }
 
   /** Size + position the ground plane and pedestal to the current subject. */
@@ -489,7 +503,7 @@ export class Viewer {
 
     // Ground sits at the foot of whatever stands on it (the pedestal, or the
     // subject directly). A large span so the shadow-catcher reaches the shadows.
-    const standY = this.pedestalMode !== 'off' ? baseY - pedH : baseY;
+    const standY = this.groundMode === 'pedestal' ? baseY - pedH : baseY;
     const span = Math.max(size.x, size.z) * 12 + 1;
     this.ground.geometry.dispose();
     this.ground.geometry = new PlaneGeometry(span, span);
@@ -799,9 +813,8 @@ export class Viewer {
     this.pipeline?.dispose();
     this.wireMaterial.dispose();
     this.shadowMaterial.dispose();
-    this.groundFadeMaterial.dispose();
-    this.pedestalMaterials.plaster.dispose();
-    this.pedestalMaterials.black.dispose();
+    this.floorMaterial.dispose();
+    this.pedestalMaterial.dispose();
     this.ground.geometry.dispose();
     this.pedestal.geometry.dispose();
     this.renderer.dispose();
@@ -1053,8 +1066,8 @@ function clampOrdinal(value: number, count: number): number {
  * from the centre (UV-based, so the disc scales with the plane), fading into the
  * background at the edges. Receives shadows like any lit surface.
  */
-function makeGroundFadeMaterial(): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ color: 0xc9c4bb, roughness: 1, metalness: 0 });
+function makeFloorMaterial(color: string, roughness: number): MeshStandardNodeMaterial {
+  const m = new MeshStandardNodeMaterial({ color, roughness, metalness: 0 });
   m.transparent = true;
   const d = uv().sub(0.5).length();
   m.opacityNode = float(1).sub(smoothstep(GROUND_FADE_INNER, GROUND_FADE_OUTER, d));
