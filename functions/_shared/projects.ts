@@ -15,9 +15,12 @@ const defaultData = (): ProjectData => ({
 
 export async function listProjects(env: Env): Promise<unknown[]> {
   const { results } = await env.DB.prepare(
+    // Sort by creation date so the gallery order is stable — editing a project
+    // (which bumps updated_at) no longer reshuffles the grid. updated_at is still
+    // selected for the thumbnail cache-buster.
     `SELECT id, title, mode, fps, updated_at,
             COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount
-     FROM projects ORDER BY updated_at DESC`,
+     FROM projects ORDER BY created_at DESC`,
   ).all();
   return results;
 }
