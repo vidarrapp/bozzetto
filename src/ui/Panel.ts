@@ -483,6 +483,11 @@ export class Panel {
         this.viewer.setStageMetalness(v),
       ),
     );
+    sec.appendChild(
+      compactRange('Pedestal width', 0.5, 2, 0.05, stage.pedestalScale, (v) =>
+        this.viewer.setPedestalScale(v),
+      ),
+    );
   }
 
   // --- camera (editor only) ---------------------------------------------

@@ -80,6 +80,8 @@ export interface StageState {
   color: string;
   roughness: number;
   metalness: number;
+  /** Pedestal base scale (width/depth only; height is unaffected). */
+  pedestalScale: number;
 }
 
 /** Visible ground disc fade (plane-UV radius from the centre): opaque within
@@ -141,6 +143,7 @@ export class Viewer {
   private stageColor = DEFAULT_STAGE_COLOR;
   private stageRoughness = DEFAULT_STAGE_ROUGHNESS;
   private stageMetalness = 0;
+  private pedestalScale = 1;
 
   /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
   private readonly wireframe = new Mesh();
@@ -459,12 +462,19 @@ export class Viewer {
     this.pedestalMaterial.metalness = value;
   }
 
+  /** Scale the pedestal's base (width/depth only); the height is unaffected. */
+  setPedestalScale(value: number): void {
+    this.pedestalScale = value;
+    this.layoutStage();
+  }
+
   getStageState(): StageState {
     return {
       ground: this.groundMode,
       color: this.stageColor,
       roughness: this.stageRoughness,
       metalness: this.stageMetalness,
+      pedestalScale: this.pedestalScale,
     };
   }
 
@@ -472,6 +482,7 @@ export class Viewer {
     if (typeof state.color === 'string') this.setStageColor(state.color);
     if (typeof state.roughness === 'number') this.setStageRoughness(state.roughness);
     if (typeof state.metalness === 'number') this.setStageMetalness(state.metalness);
+    if (typeof state.pedestalScale === 'number') this.pedestalScale = state.pedestalScale;
     if (state.ground) this.groundMode = state.ground;
     this.layoutStage();
     this.updateStage();
@@ -502,12 +513,13 @@ export class Viewer {
     const size = this.subjectBox.getSize(new Vector3());
     const center = this.subjectBox.getCenter(new Vector3());
     const baseY = this.subjectBox.min.y;
-    const footprint = Math.max(size.x, size.z, 1e-3) * PEDESTAL_FOOTPRINT;
+    const baseFootprint = Math.max(size.x, size.z, 1e-3) * PEDESTAL_FOOTPRINT;
 
-    // Pedestal: a column under the subject, top flush with the subject base; its
-    // height tracks its own footprint, so the plinth shape is consistent for any
-    // subject rather than ballooning for tall ones.
-    const pedH = footprint * PEDESTAL_HEIGHT;
+    // Pedestal: a column under the subject, top flush with the subject base. The
+    // height tracks the unscaled base (a consistent column shape); the Pedestal
+    // width slider scales the footprint (width/depth) only, leaving height alone.
+    const pedH = baseFootprint * PEDESTAL_HEIGHT;
+    const footprint = baseFootprint * this.pedestalScale;
     this.pedestal.geometry.dispose();
     this.pedestal.geometry = new BoxGeometry(footprint, pedH, footprint);
     this.pedestal.position.set(center.x, baseY - pedH / 2, center.z);
