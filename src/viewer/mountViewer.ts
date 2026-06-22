@@ -16,11 +16,13 @@ export async function mountViewer(
   viewport: HTMLElement,
   manifest: Manifest,
   source: AssetSource,
+  onStatus?: (msg: string) => void,
 ): Promise<Viewer> {
   const viewer = await Viewer.create(viewport, manifest, source);
   // Expose for debugging from the browser console, e.g.:
   //   __bozzetto.timeline.fps, __bozzetto.timeline.frameIndex()
   (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
+  viewer.onStatus = onStatus ?? null; // boot reports loading phases (env) through this
   await viewer.boot();
 
   // Build the UI after boot so controls reflect the applied look.

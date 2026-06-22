@@ -83,7 +83,7 @@ export function buildSingleFileHtml({ manifest, assets, viewerJs, css = '', titl
   <body>
     <div id="app">
       <div id="viewport"></div>
-      <div id="overlay" class="overlay"><div class="overlay__msg">Loading timelapse…</div></div>
+      <div id="overlay" class="overlay"><div class="overlay__msg">Loading…</div></div>
     </div>
     <script>window.__BOZZETTO__=${registryJson};</script>
     <script>${escapeForScript(viewerJs)}</script>
