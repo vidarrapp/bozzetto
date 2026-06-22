@@ -148,7 +148,9 @@ export class Lighting {
         light.shadow.mapSize.set(size, size);
         light.shadow.blurSamples = this.tier.blurSamples;
         light.shadow.bias = -0.0005;
-        light.shadow.normalBias = 0.02;
+        // A generous normal bias keeps the contact shadow tight to the base of
+        // the subject (matches the dev-tools max that reads best).
+        light.shadow.normalBias = 0.1;
       }
       this.rig.add(light, light.target);
     }
@@ -289,7 +291,9 @@ export class Lighting {
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.distance = this.subjectRadius * 4;
 
-    const extent = this.subjectRadius * 1.5;
+    // Roughly double the old frustum (extent was 1.5R, depth pad 2R): a long,
+    // low shadow on the floor was clipping to a hard rectangular edge.
+    const extent = this.subjectRadius * 3;
     for (const id of ALL) {
       if (this.sizes[id] === 0) continue;
       const cam = this.lights[id].shadow.camera;
@@ -297,8 +301,8 @@ export class Lighting {
       cam.right = extent;
       cam.top = extent;
       cam.bottom = -extent;
-      cam.near = Math.max(this.distance - this.subjectRadius * 2, 0.01);
-      cam.far = this.distance + this.subjectRadius * 2;
+      cam.near = Math.max(this.distance - extent, 0.01);
+      cam.far = this.distance + extent;
       cam.updateProjectionMatrix();
     }
 
