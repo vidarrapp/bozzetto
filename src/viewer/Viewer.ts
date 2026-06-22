@@ -2,7 +2,7 @@ import {
   ACESFilmicToneMapping,
   Box3,
   BoxGeometry,
-  Clock,
+  Timer,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -123,7 +123,7 @@ export class Viewer {
 
   private readonly controls: Controls;
   private readonly streamer: FrameStreamer;
-  private readonly clock = new Clock();
+  private readonly timer = new Timer();
 
   private readonly display = new Mesh();
   // Stage: one ground plane whose material swaps between a shadow-catcher and a
@@ -362,7 +362,7 @@ export class Viewer {
     this.streamer.setPlayhead(start);
     this.onFrame?.(start);
 
-    this.clock.start();
+    this.timer.update(); // establish the delta baseline before the first frame
     this.loop();
     this.startAdaptive();
   }
@@ -786,7 +786,7 @@ export class Viewer {
     // moved during capture) and re-sync the UI via onFrame.
     this.targetIndex = -1;
     this.displayedIndex = -1;
-    this.clock.getDelta(); // discard time accumulated during capture
+    this.timer.update(); // discard time accumulated during capture
     this.loop();
   }
 
@@ -1026,7 +1026,8 @@ export class Viewer {
 
   private readonly loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
-    const raw = this.clock.getDelta();
+    this.timer.update();
+    const raw = this.timer.getDelta();
     if (raw > 0) this.fps += (1 / raw - this.fps) * 0.1; // smoothed
     // Clamp dt so a backgrounded tab (which pauses rAF) can't return a huge
     // delta and lurch the playhead across many frames on the next visible tick.
