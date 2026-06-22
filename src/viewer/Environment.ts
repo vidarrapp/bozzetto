@@ -7,7 +7,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { loadViaBlob, type AssetSource } from './AssetSource';
 
@@ -57,7 +57,7 @@ export function envAssetUrl(id: string): string | null {
  */
 export class Environment {
   private readonly pmrem: PMREMGenerator;
-  private readonly loader = new RGBELoader();
+  private readonly loader = new HDRLoader();
   private envMap: Texture | null = null;
   private equirect: Texture | null = null;
   private currentId: string | null = null;
