@@ -30,10 +30,15 @@ async function bootViewer(id: string): Promise<void> {
   if (!viewport) throw new Error('#viewport element not found');
 
   const base = import.meta.env.BASE_URL; // "/" in production
+  const setStatus = (msg: string): void => {
+    const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
+    if (box) box.textContent = msg;
+  };
 
   try {
     const { manifest, manifestUrl } = await loadProject(id, base);
-    await mountViewer(viewport, manifest, new HttpSource(manifestUrl));
+    setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
+    await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus);
     overlay?.remove();
     addGalleryLink();
   } catch (err) {
@@ -81,7 +86,7 @@ function showError(overlay: HTMLElement | null, err: unknown): void {
     overlay.innerHTML = '';
     const box = document.createElement('div');
     box.className = 'overlay__msg';
-    box.textContent = `Could not load timelapse: ${message}`;
+    box.textContent = `Could not load project: ${message}`;
     overlay.appendChild(box);
   }
 }

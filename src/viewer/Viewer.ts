@@ -100,6 +100,13 @@ const DEFAULT_STAGE_ROUGHNESS = 0.9;
 const PEDESTAL_FOOTPRINT = 1.15;
 const PEDESTAL_HEIGHT = 1.2;
 
+/** Wireframe overlay: the material opacity at which each line colour reads as
+ *  fully solid. The 0–1 panel slider maps onto 0..this per colour, so both white
+ *  and black wires ramp invisible→solid across the whole slider rather than
+ *  saturating in the first third/half. */
+const WIRE_MAX_OPACITY_WHITE = 0.4;
+const WIRE_MAX_OPACITY_BLACK = 0.6;
+
 /**
  * Scene, renderer, camera, and the single render loop (design doc §4).
  *
@@ -160,6 +167,9 @@ export class Viewer {
     depthWrite: false,
   });
   private wireframeOn = false;
+  /** Wireframe panel-slider value (0..1); mapped to material opacity per colour. */
+  private wireOpacity = 0.3;
+  private wireIsWhite = true;
 
   private currentMode = 'lit';
   /** Lens focal length (35mm-equivalent mm); drives the camera FOV. */
@@ -211,6 +221,8 @@ export class Viewer {
   onFrame: ((ordinal: number) => void) | null = null;
   /** Fired when play/pause changes (drives the transport play button). */
   onPlayStateChange: ((playing: boolean) => void) | null = null;
+  /** Loading-status messages during boot (drives the entry overlay's text). */
+  onStatus: ((msg: string) => void) | null = null;
 
   /**
    * Build a viewer with an initialized renderer. The renderer targets WebGPU and
@@ -345,7 +357,11 @@ export class Viewer {
       this.materials.applyMaterialState(this.manifest.material as MaterialState);
     }
     if (this.manifest.environment) {
-      void this.environment.applyState(this.manifest.environment as EnvState);
+      const env = this.manifest.environment as EnvState;
+      // Load the HDRI before revealing the model, so it appears already lit by it
+      // rather than popping in a frame or two later.
+      if (env.id) this.onStatus?.('Loading environment…');
+      await this.environment.applyState(env);
     }
     if (this.manifest.ao) {
       this.setAO(this.manifest.ao as AOState);
@@ -413,10 +429,8 @@ export class Viewer {
     if (!this.materials.has(mode)) return;
     this.currentMode = mode;
     this.display.material = this.materials.get(mode);
-
-    const lit = this.materials.isLit(mode);
-    this.lighting.setShadowsEnabled(lit);
-    this.display.castShadow = lit;
+    // The ground/shadow/pedestal follow the chosen Ground option, not the
+    // material's shading — so matcap renders keep the stage too.
     this.updateStage();
   }
 
@@ -489,13 +503,19 @@ export class Viewer {
   }
 
   /**
-   * Drive the ground material and pedestal visibility from the mode: 'floor'
-   * shows the fading floor, 'shadow' the shadow-catcher, 'pedestal' the plinth
-   * with no ground catcher (GTAO grounds the subject↔plinth contact); everything
-   * hides in unlit modes.
+   * Drive the ground material, pedestal visibility, and shadow casting from the
+   * Ground mode: 'floor' shows the fading floor, 'shadow' the shadow-catcher,
+   * 'pedestal' the plinth with no ground catcher (GTAO grounds the subject↔plinth
+   * contact). The stage is independent of the material's shading, so it (and the
+   * subject's cast shadow) works in matcap as well as lit; 'off' hides everything.
    */
   private updateStage(): void {
-    const mode = this.materials.isLit(this.currentMode) ? this.groundMode : 'off';
+    const mode = this.groundMode;
+    // Shadows are wanted whenever the ground uses them — regardless of lit/matcap.
+    const shadows = mode !== 'off';
+    this.lighting.setShadowsEnabled(shadows);
+    this.display.castShadow = shadows;
+
     if (mode === 'floor') {
       this.ground.material = this.floorMaterial;
       this.ground.visible = true;
@@ -657,18 +677,30 @@ export class Viewer {
     return this.wireframeOn;
   }
 
-  /** Overlay line opacity (0..1). Low values fight overlap saturation on dense meshes. */
+  /** Overlay line opacity slider (0..1). Mapped per colour so white and black
+   *  wires both span invisible→solid across the whole range (see applyWireOpacity). */
   setWireframeOpacity(value: number): void {
-    this.wireMaterial.opacity = value;
+    this.wireOpacity = value;
+    this.applyWireOpacity();
   }
 
   getWireframeOpacity(): number {
-    return this.wireMaterial.opacity;
+    return this.wireOpacity;
   }
 
-  /** Dark wires on a light albedo, light wires on a dark one. */
+  /** Map the 0..1 slider onto the material opacity, capped at the value where the
+   *  current line colour reads as solid — so the ramp uses the full slider and
+   *  feels the same whether the wires are white or black. */
+  private applyWireOpacity(): void {
+    const max = this.wireIsWhite ? WIRE_MAX_OPACITY_WHITE : WIRE_MAX_OPACITY_BLACK;
+    this.wireMaterial.opacity = this.wireOpacity * max;
+  }
+
+  /** Light wires on a dark albedo, dark wires on a light one. */
   private updateWireColor(): void {
-    this.wireMaterial.color.set(this.materials.albedoLuminance() > 0.5 ? 0x000000 : 0xffffff);
+    this.wireIsWhite = this.materials.albedoLuminance() <= 0.5;
+    this.wireMaterial.color.set(this.wireIsWhite ? 0xffffff : 0x000000);
+    this.applyWireOpacity(); // re-scale: white and black saturate at different opacities
   }
 
   /** Show/hide the crop-framing guide for a capture aspect (null hides it). */
