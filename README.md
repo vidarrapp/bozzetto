@@ -12,6 +12,20 @@ It runs entirely on Cloudflare (Pages, Functions, D1, and R2), so there is no se
 
 Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>`, the public editor at `/create/`, and the full editor at `/admin/`.
 
+## Changelog
+
+### v1.0
+
+First public release.
+
+- **WebGPU renderer** built on three.js's node pipeline, with an automatic WebGL 2 fallback so it runs everywhere.
+- **Sculpt timelapses** streamed as real per-frame geometry — relight, orbit, and scrub the form as it emerges.
+- **Real-time relighting**: a three-point rig, soft (VSM) shadows, and HDRI image-based lighting with an adjustable background blur.
+- **Ground-truth ambient occlusion (GTAO)** and node-based **depth of field**.
+- **Presentation staging** — a fading studio floor or a PBR pedestal under the subject.
+- **In-browser editor** (no sign-in) that exports a self-contained single-file `.html`, plus **reel and turntable export** (MP4 / GIF) and thumbnail capture with aspect guides (9:16 / 4:5 / 1:1 / 16:9).
+- **Gallery** of full-bleed portrait thumbnails.
+
 ## Make your own (no sign-in)
 
 The quickest way in is the public editor at [`/create`](https://bozzetto.vidarrapp.se/create/). It runs entirely in your browser: you build a timelapse and download it as a single self-contained `.html`. Nothing is uploaded, and there is no account to set up.
