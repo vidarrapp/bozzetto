@@ -1,0 +1,32 @@
+# Local-dev template for Cloudflare Pages Functions bindings.
+#
+#   cp wrangler.toml.example wrangler.toml
+#
+# Then run `npm run db:migrate:local` and `npm run cf:dev` for a full-stack
+# local server (D1 + R2 are emulated locally).
+#
+# PRODUCTION bindings are configured in the Cloudflare Pages dashboard
+# (Settings -> Functions -> D1 database bindings / R2 bucket bindings), so the
+# real wrangler.toml is gitignored and never affects the git-integration deploy.
+
+name = "bozzetto"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bozzetto"
+# For local dev any placeholder works; for a real remote db use the id from
+# `wrangler d1 create bozzetto`.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "bozzetto-assets"
+
+# Optional vars.
+# [vars]
+# ADMIN_EMAILS = "you@example.com"   # restrict admin writes to these identities
+# DEV_ADMIN = "true"                 # LOCAL ONLY: bypass Access so the /admin
+#                                    # editor works in `npm run cf:dev`. Never
+#                                    # set this in the production dashboard.

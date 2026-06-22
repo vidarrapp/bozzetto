@@ -1,0 +1,1328 @@
+/* ------------------------------------------------------------------
+   Design foundation: warm ink-and-cream surfaces, a single clay-rust
+   accent, editorial serif display + Manrope UI + mono spec labels,
+   and low (2px) radius.
+   ------------------------------------------------------------------ */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/assets/fonts/Manrope-Variable.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/InstrumentSerif-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/InstrumentSerif-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/assets/fonts/JetBrainsMono-Variable.ttf') format('truetype');
+}
+
+:root,
+:root[data-theme='dark'] {
+  --bg: #1c1814;
+  --text: #f1ebe1;
+  --muted: #b3a896;
+  --accent: #bb5b33;
+  --accent-hover: #c87049;
+  --accent-soft: rgba(187, 91, 51, 0.16);
+  --panel-bg: rgba(28, 24, 20, 0.88);
+  --panel-border: #4a3f35;
+  --control-bg: #2a2520;
+  --hover: rgba(255, 255, 255, 0.08);
+
+  --font-body: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-spec: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --radius: 2px;
+  --radius-image: 12px;
+}
+
+:root[data-theme='light'] {
+  --bg: #f1ebe1;
+  --text: #1c1814;
+  --muted: #5c574d;
+  --accent: #9a4827;
+  --accent-hover: #bb5b33;
+  --accent-soft: rgba(187, 91, 51, 0.14);
+  --panel-bg: rgba(250, 246, 238, 0.92);
+  --panel-border: #c9c1b1;
+  --control-bg: #e8e3d9;
+  --hover: rgba(0, 0, 0, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Display serif for titles; mono for spec labels. */
+h1,
+.landing__title,
+.admin__head h1,
+.editor__title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.panel__title {
+  font-family: var(--font-display);
+}
+
+.badge,
+.section h3 {
+  font-family: var(--font-spec);
+  letter-spacing: 0.18em;
+}
+
+.card__meta,
+.admin-row__meta,
+.editor__id,
+.frame-label,
+.transport__frame {
+  font-family: var(--font-spec);
+}
+
+.transport__stage-name,
+.stage__name {
+  font-family: var(--font-display);
+  font-style: italic;
+}
+
+#app,
+#viewport {
+  position: fixed;
+  inset: 0;
+}
+
+#viewport canvas {
+  display: block;
+}
+
+/* --- loading / error overlay --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  z-index: 20;
+}
+
+.overlay__msg {
+  color: var(--muted);
+  max-width: 30rem;
+  padding: 1rem 1.5rem;
+  text-align: center;
+}
+
+.overlay--error .overlay__msg {
+  color: #ff8f8f;
+}
+
+/* --- control panel --- */
+.panel {
+  position: fixed;
+  top: 52px; /* clear the global theme toggle in the top-right */
+  right: 12px;
+  width: 268px;
+  max-height: calc(100vh - 150px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  user-select: none;
+  transition: transform 0.25s ease;
+}
+
+/* Editor variant: run the full height of the screen, mirroring the sidebar
+   (the editor has no transport bar to clear). */
+.panel--editor {
+  bottom: 12px;
+  max-height: none;
+}
+
+/* Collapsed: slide the whole panel off the right edge, leaving the handle. */
+.panel--collapsed {
+  transform: translateX(calc(100% + 12px));
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.panel__title {
+  font-weight: 600;
+}
+
+/* Handle juts out of the panel's left edge so it stays reachable when the
+   panel has slid off-screen; clicking it (or Tab) slides the panel back. */
+.panel__handle {
+  position: absolute;
+  left: -36px;
+  top: 0;
+  width: 36px;
+  /* Tall enough to match the collapsed tab's vertical label, so the open
+     (arrow-only) close target is the same comfortable height. */
+  min-height: 116px;
+  padding: 10px 0;
+  line-height: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  backdrop-filter: blur(8px);
+}
+
+/* Handle label: the panel's name, shown vertically only when collapsed so the
+   docked tab is a clear, larger touch target. */
+.handle__label {
+  display: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.handle__arrow {
+  font-size: 17px;
+}
+
+.panel--collapsed .panel__handle .handle__label,
+.editor__sidebar--collapsed .editor__sidebar-handle .handle__label {
+  display: block;
+}
+
+/* The open panel hides its edge handle; closing moves to the title-bar chevron.
+   The collapsed tab (with its label) stays as the open affordance. */
+.panel:not(.panel--collapsed) .panel__handle,
+.editor__sidebar:not(.editor__sidebar--collapsed) .editor__sidebar-handle {
+  display: none;
+}
+
+.panel__close,
+.editor__sidebar-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  /* Negative margins keep the title bar compact while the tap target stays big. */
+  margin: -8px -8px -8px 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.panel__close:hover,
+.editor__sidebar-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Save look / thumbnail row pinned at the top of the Look dev panel. */
+.panel__actions {
+  padding-top: 4px;
+}
+
+.panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+}
+
+.section {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.section h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* controls */
+button {
+  background: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:hover {
+  background: var(--hover);
+}
+
+button:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+select {
+  width: 100%;
+  background: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+input[type='color'] {
+  width: 32px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.row button {
+  flex: 1;
+}
+
+.scrubber {
+  margin: 6px 0 2px;
+}
+
+.frame-label {
+  display: block;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 30px;
+  margin-bottom: 4px;
+}
+
+.stage__name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.stage__desc {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.label-row,
+.compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0;
+}
+
+.label-row > span,
+.compact > span {
+  flex: 0 0 78px;
+  color: var(--muted);
+}
+
+.label-row > select,
+.label-row > input {
+  flex: 1;
+}
+
+.range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.readout {
+  flex: 0 0 34px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0;
+  cursor: pointer;
+}
+
+.checkbox input {
+  accent-color: var(--accent);
+}
+
+.btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.btn-grid button {
+  font-size: 12px;
+}
+
+.light {
+  padding: 8px;
+  margin: 8px 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.light__head {
+  margin-bottom: 4px;
+}
+
+.light .compact > span {
+  flex: 0 0 64px;
+  font-size: 12px;
+}
+
+/* --- landing + editor pages scroll; the viewer stays fixed/full-screen --- */
+html.is-page,
+html.is-page body {
+  overflow: auto;
+  height: auto;
+  min-height: 100%;
+}
+
+#app.app--landing {
+  position: static;
+}
+
+.viewer-back {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  text-decoration: none;
+  backdrop-filter: blur(8px);
+}
+
+.viewer-back:hover {
+  background: var(--hover);
+}
+
+.landing,
+.admin {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.landing__head,
+.admin__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.landing__title {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.landing__tagline {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.landing__editor,
+.admin__home {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.landing__editor:hover,
+.admin__home:hover {
+  text-decoration: underline;
+}
+
+.landing__links {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+.landing__admin {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.landing__admin:hover {
+  text-decoration: underline;
+}
+
+.landing__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--control-bg);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.card__thumb {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, #3a3d44, #1b1d21 72%);
+}
+
+.card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+}
+
+.card__title {
+  font-weight: 600;
+}
+
+.card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-border);
+  background: var(--control-bg);
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+/* --- editor (admin) --- */
+.admin__head h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.admin-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.admin__hint {
+  margin: 0 0 24px;
+  font-size: 12px;
+}
+
+.admin-create input,
+.admin-create select {
+  width: auto;
+  padding: 7px 9px;
+}
+
+.admin-create input[name='id'] {
+  flex: 1 1 180px;
+}
+
+.admin-create input[name='title'] {
+  flex: 2 1 220px;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.admin-row__thumb {
+  flex: 0 0 auto;
+  width: 64px;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, #3a3d44, #1b1d21 72%);
+}
+
+.admin-row__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.admin-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-row__title {
+  font-weight: 600;
+}
+
+.admin-row__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-row__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.admin__empty {
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-border);
+  background: var(--control-bg);
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #f1ebe1;
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn--danger:hover {
+  background: rgba(255, 80, 80, 0.18);
+  border-color: #ff8f8f;
+}
+
+/* --- per-project editor --- */
+.muted {
+  color: var(--muted);
+}
+
+.editor__section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.editor__section h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.editor__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.editor__settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor__settings input,
+.editor__settings select {
+  width: auto;
+  min-width: 90px;
+  padding: 7px 9px;
+}
+
+.editor__settings input#f-title {
+  min-width: 220px;
+}
+
+.dropzone {
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius);
+  padding: 22px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone--over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dropzone p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.dropzone__zup {
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.progress__track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+.editor__preview {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.editor__preview canvas {
+  display: block;
+}
+
+/* Crop-framing guide: a centred frame of the capture aspect with the area
+   outside it dimmed, plus rule-of-thirds lines. Never intercepts pointer events. */
+.capture-guide {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.capture-guide[hidden] {
+  display: none;
+}
+
+.capture-guide__frame {
+  position: relative;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+  outline: 1px solid rgba(255, 255, 255, 0.75);
+}
+
+.capture-guide__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+}
+
+/* Reel capture controls (editor Export section). */
+.reel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.reel > .editor__hint {
+  margin-top: 0;
+}
+
+.reel-record {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.reel progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 8px;
+  display: block;
+  accent-color: var(--accent);
+}
+
+.reel-status {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 1em;
+}
+
+.preview__hint {
+  padding: 1rem;
+}
+
+.editor__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.stage-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stage-row input {
+  padding: 6px 8px;
+  background: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.stage-row .stage-name {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.stage-row .stage-frame {
+  flex: 0 0 80px;
+}
+
+.stage-row .stage-desc {
+  flex: 2 1 220px;
+  min-width: 0;
+}
+
+.stage-row .stage-remove {
+  flex: 0 0 auto;
+}
+
+.editor__id {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.card__img,
+.card__img-blur {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Sharp layer: the whole captured thumb, never cropped, at its own aspect. */
+.card__img {
+  object-fit: contain;
+}
+
+/* Backdrop: a blurred, enlarged copy of the same thumb fills the letterbox so
+   the contained image reads as deliberately framed rather than bar-boxed.
+   Decorative (aria-hidden); the scale hides the blurred edge bleed. */
+.card__img-blur {
+  object-fit: cover;
+  filter: blur(22px) saturate(1.15) brightness(0.9);
+  transform: scale(1.18);
+}
+
+/* --- bottom transport bar (viewer) --- */
+.transport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--panel-border);
+  backdrop-filter: blur(8px);
+  user-select: none;
+}
+
+.transport__info {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 18px;
+}
+
+.transport__stage-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.transport__stage-desc {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transport__bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.transport__play {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.transport__scrubber {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.transport__frame {
+  flex: 0 0 auto;
+  min-width: 58px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- global theme toggle (top-right, all views) --- */
+.theme-toggle {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  padding: 5px 12px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: var(--hover);
+}
+
+/* --- hotkey hint + guide (viewer, left) --- */
+.help-hint {
+  position: fixed;
+  top: 52px;
+  left: 12px;
+  z-index: 15;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  transition: opacity 0.6s ease;
+}
+
+.help-hint.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.help-guide {
+  position: fixed;
+  top: 52px;
+  left: 12px;
+  z-index: 25;
+  width: 264px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.help-guide__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.help-guide__close {
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.help-guide__group {
+  margin-bottom: 12px;
+}
+
+.help-guide__title {
+  margin-bottom: 6px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0;
+  color: var(--text);
+}
+
+.help-row span:last-child {
+  margin-left: auto;
+}
+
+.help-guide kbd,
+.help-key {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 6px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+}
+
+/* --- dev FPS meter (hotkey "t") --- */
+.fps-meter {
+  position: fixed;
+  left: 12px;
+  bottom: 88px;
+  z-index: 30;
+  min-width: 168px;
+  padding: 6px 9px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+}
+
+.fps-meter__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  line-height: 1.5;
+}
+
+.fps-meter__key {
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+/* --- environment loading hint --- */
+.env-loading {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+/* --- editor app layout: full-window preview + floating side panels --- */
+.editor {
+  position: fixed;
+  inset: 0;
+}
+
+/* Left floating panel — mirrors the right control panel (.panel). */
+.editor__sidebar {
+  position: fixed;
+  top: 52px; /* clear the fixed back button in the top-left */
+  left: 12px;
+  bottom: 12px;
+  width: 332px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  transition: transform 0.25s ease;
+}
+
+/* Collapsed (Tab / handle): slide the sidebar off the left edge. */
+.editor__sidebar--collapsed {
+  transform: translateX(calc(-100% - 12px));
+}
+
+/* Title bar (mirror of .panel__header): the panel name + a close chevron. */
+.editor__sidebar-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+/* Scroll lives on the body so the handle can sit outside the panel's edge. */
+.editor__sidebar-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+}
+
+/* Handle juts out of the sidebar's right edge (mirror of .panel__handle). */
+.editor__sidebar-handle {
+  position: absolute;
+  right: -36px;
+  top: 0;
+  width: 36px;
+  min-height: 116px;
+  padding: 10px 0;
+  line-height: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  backdrop-filter: blur(8px);
+}
+
+/* Fixed back button — stays put when the panels slide away (like the theme toggle). */
+.editor__home {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+  padding: 5px 12px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+}
+
+.editor__home:hover {
+  background: var(--hover);
+}
+
+.editor__sidebar .editor__title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.editor__sidebar .editor__settings {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.editor__sidebar .editor__settings input,
+.editor__sidebar .editor__settings select {
+  width: 100%;
+  min-width: 0;
+}
+
+.editor__sidebar .stage-row {
+  flex-wrap: wrap;
+}
+
+.editor__hint {
+  margin: 0 0 10px;
+}
+
+/* memory heads-up in the /create editor */
+.editor__warn {
+  margin: 8px 0 0;
+  color: var(--accent);
+}
+
+/* list (project picker) back-link, top-left */
+.admin__home {
+  display: inline-block;
+  margin-bottom: 12px;
+}
+
+/* Narrow screens (phones): keep each slide-out panel and its edge handle on
+   screen. The two are mutually exclusive here (see EditorLayout) so they don't
+   overlap. */
+@media (max-width: 600px) {
+  .editor__sidebar {
+    width: min(332px, calc(100vw - 64px));
+  }
+  .panel {
+    width: min(268px, calc(100vw - 64px));
+  }
+}
