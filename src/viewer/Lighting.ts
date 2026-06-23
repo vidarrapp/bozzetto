@@ -121,8 +121,6 @@ export class Lighting {
   private readonly sizes: Record<LightId, number>;
 
   private readonly config: Record<LightId, DirLightConfig>;
-  /** Master gate: false in unlit material modes so no shadow pass runs. */
-  private shadowsAllowed = true;
   private rigRotationDeg = 0;
   /** Distance of lights from the subject centre; set by fitToBounds. */
   private distance = 5;
@@ -220,15 +218,6 @@ export class Lighting {
 
   getNormalBias(): number {
     return this.key.shadow.normalBias;
-  }
-
-  /**
-   * Gate the shadow pass. Unlit modes (matcap/wireframe) call this with false so
-   * the lights stop casting and no shadow map is rendered.
-   */
-  setShadowsEnabled(enabled: boolean): void {
-    this.shadowsAllowed = enabled;
-    this.refresh();
   }
 
   /** Rotate the whole rig around the subject (degrees). */
@@ -333,10 +322,12 @@ export class Lighting {
     light.target.position.copy(target);
     light.target.updateMatrixWorld();
 
-    // A light casts only if the tier gives it a map, it's configured to, it's
-    // on, and shadows are allowed (lit modes). Softness drives the VSM blur.
+    // A light casts only if the tier gives it a map, it's configured to, and
+    // it's on. Softness drives the VSM blur. Shadow-casting is never toggled at
+    // runtime: doing so rebuilds the WebGPU shadow-map targets and breaks the
+    // node pipeline, so the stage swaps the receiver instead.
     const canCast = this.sizes[id] > 0;
-    light.castShadow = canCast && cfg.castShadow && cfg.enabled && this.shadowsAllowed;
+    light.castShadow = canCast && cfg.castShadow && cfg.enabled;
     if (canCast) light.shadow.radius = cfg.softness ?? DEFAULT_SOFTNESS;
   }
 }
