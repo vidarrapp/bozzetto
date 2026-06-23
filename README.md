@@ -1,7 +1,10 @@
 # Bozzetto
 <img width="1915" height="956" alt="bozzetto_v1_screenshot_vidarrapp" src="https://github.com/user-attachments/assets/6a8b27f6-5806-422b-ac81-89909a84751d" />
 
-A *bozzetto* is the small clay study a sculptor makes before starting the real piece, the place where the rough form gets worked out. Bozzetto applies that idea to sculpt timelapses: instead of a pre-rendered turntable video, every stage of a sculpt is stored as real 3D geometry you can relight, orbit, and step through.
+A *bozzetto* is the small clay study a sculptor makes before starting the real piece, the place where the rough form gets worked out. 
+
+The Bozzetto web application applies that idea to sculpt timelapses: instead of a pre-rendered turntable video, every stage of a sculpt is stored as real 3D geometry you can relight, orbit, and step through.
+It's built as a study and teaching tool primarily, as well as a nice way to render out content and timelapses. I built this for my own use, but am sharing it with an MIT liicense for any who find it useful!
 
 There are a few parts:
 
