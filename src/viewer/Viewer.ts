@@ -503,18 +503,17 @@ export class Viewer {
   }
 
   /**
-   * Drive the ground material, pedestal visibility, and shadow casting from the
-   * Ground mode: 'floor' shows the fading floor, 'shadow' the shadow-catcher,
-   * 'pedestal' the plinth with no ground catcher (GTAO grounds the subject↔plinth
-   * contact). The stage is independent of the material's shading, so it (and the
-   * subject's cast shadow) works in matcap as well as lit; 'off' hides everything.
+   * Drive the ground material and pedestal visibility from the Ground mode:
+   * 'floor' shows the fading floor, 'shadow' the shadow-catcher, 'pedestal' the
+   * plinth with no ground catcher (GTAO grounds the subject↔plinth contact),
+   * 'off' hides everything. Shadows are always cast (constructor + Lighting): the
+   * stage only swaps the receiver, never the shadow pass. Toggling shadow-casting
+   * at runtime rebuilds the WebGPU shadow-map targets and leaves the node
+   * pipeline holding a stale (null) shadow texture, so with the ground 'off' we
+   * keep casting — there's simply no receiver, hence no visible ground shadow.
    */
   private updateStage(): void {
     const mode = this.groundMode;
-    // Shadows are wanted whenever the ground uses them — regardless of lit/matcap.
-    const shadows = mode !== 'off';
-    this.lighting.setShadowsEnabled(shadows);
-    this.display.castShadow = shadows;
 
     if (mode === 'floor') {
       this.ground.material = this.floorMaterial;
