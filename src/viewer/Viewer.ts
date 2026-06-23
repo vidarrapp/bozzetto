@@ -16,7 +16,7 @@ import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } f
 import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform, uv, smoothstep } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
-import type { BufferGeometry } from 'three';
+import type { BufferGeometry, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -305,6 +305,15 @@ export class Viewer {
 
     // Stage geometry is sized to the subject in layoutStage(); set up the static
     // bits here. updateStage() drives visibility and the ground's material.
+    // ShadowMaterial ships with `map` left undefined (not null). Under VSM the
+    // ground is a shadow receiver, so it's rendered into the shadow pass too,
+    // where three gates a map lookup on `material.map !== null` — an undefined
+    // map passes that gate and builds `texture(undefined)`, throwing in the
+    // shadow pass the moment the catcher is shown. Normalising it to null (as
+    // the node materials already are) sidesteps the lookup.
+    // (@types/three doesn't declare `map` on ShadowMaterial, but the renderer
+    // reads it; cast to set it.)
+    (this.shadowMaterial as ShadowMaterial & { map: Texture | null }).map = null;
     this.ground.geometry = new PlaneGeometry(1, 1);
     this.ground.material = this.shadowMaterial;
     this.ground.rotation.x = -Math.PI / 2;
