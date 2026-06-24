@@ -1321,6 +1321,29 @@ export class Viewer {
     if (e.pointerId === this.tapPointerId) this.tapPointerId = -1;
     this.lastTapTime = -1;
   };
+
+  /** A finger that travels past the slop is orbiting, not focus-tapping. */
+  private readonly onTouchMove = (e: PointerEvent): void => {
+    if (this.longPressTimer === 0 || e.pointerId !== this.longPressId) return;
+    const dx = e.clientX - this.longPressX;
+    const dy = e.clientY - this.longPressY;
+    if (dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP) this.cancelLongPress();
+  };
+
+  /** Lifting (or a cancelled pointer) ends the gesture before the hold fires. */
+  private readonly onTouchEnd = (e: PointerEvent): void => {
+    this.activeTouches.delete(e.pointerId);
+    if (e.pointerId === this.longPressId) this.cancelLongPress();
+  };
+
+  /** Drop any pending long-press (timer + tracked pointer). */
+  private cancelLongPress(): void {
+    if (this.longPressTimer !== 0) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = 0;
+    }
+    this.longPressId = -1;
+  }
 }
 
 function clampOrdinal(value: number, count: number): number {
