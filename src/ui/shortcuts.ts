@@ -18,7 +18,7 @@ export interface ShortcutHandlers {
  *   s          smooth ↔ flat shading   w              wireframe overlay
  *   g          ground shadow           b              depth of field
  *   1          Lit (PBR)               2..n           matcaps (interface order)
- *   alt+click  set focus point (tap-to-focus)
+ *   alt+click  set focus point (tap-to-focus; long-press on touch)
  *   tab        toggle side panel       h              hotkey guide
  * Returns a disposer that detaches the listener.
  */
