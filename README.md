@@ -23,6 +23,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 Bug fixes and UI polish.
 
 - **Context-aware loading** — the overlay now reads "Loading model…" or "Loading timelapse…" to match the project, and reports the environment as its own load phase so the HDRI is ready before the subject appears.
+- **DoF Controls and focus** — You can now set the focus using alt+left click directly on the model, rather than using the slider in the panel.
 - **Wireframe opacity** — the white and black wireframe overlays share a consistent slider that spans the full opacity range.
 - **Stage in unlit modes** — the floor, shadow-catcher, and pedestal options now show in matcap and normal shading, not just lit PBR.
 - **Fixed a black screen when cycling the ground (`g`)** — toggling shadow-casting at runtime rebuilt the WebGPU shadow-map targets and left the node pipeline with a stale (null) shadow texture; shadows are now always cast and the stage only swaps the receiver.
