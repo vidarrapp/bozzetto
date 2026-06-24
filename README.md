@@ -6,7 +6,7 @@ A *bozzetto* is the small clay study a sculptor makes before starting the real p
 The Bozzetto web application applies that idea to sculpt timelapses: instead of a pre-rendered turntable video, every stage of a sculpt is stored as real 3D geometry you can relight, orbit, and step through.
 It's built as a study and teaching tool primarily, as well as a nice way to render out content and timelapses. I built this for my own use, but am sharing it with an MIT liicense for any who find it useful!
 
-There are a few parts:
+Bozzetto has a few parts:
 
 - A viewer that plays a timelapse back as a sequence of meshes. You can watch a form emerge from rough volumes to a finished surface, relight it, switch shading modes, and scrub through the stages.
 - A public editor (`/create`) that builds a timelapse in the browser and exports it as one self-contained file you can open offline. No sign-in, and nothing is uploaded.
@@ -37,17 +37,18 @@ First public release.
 - **Ground-truth ambient occlusion (GTAO)** and node-based **depth of field**.
 - **Presentation staging** — a fading studio floor or a PBR pedestal under the subject.
 - **In-browser editor** (no sign-in) that exports a self-contained single-file `.html`, plus **reel and turntable export** (MP4 / GIF) and thumbnail capture with aspect guides (9:16 / 4:5 / 1:1 / 16:9).
-- **Gallery** of full-bleed portrait thumbnails.
+- **Gallery** of portrait thumbnails.
 
 ## Make your own (no sign-in)
 
-The quickest way in is the public editor at [`/create`](https://bozzetto.vidarrapp.se/create/). It runs entirely in your browser: you build a timelapse and download it as a single self-contained `.html`. Nothing is uploaded, and there is no account to set up.
+The quickest way to get started is the public editor at [`/create`](https://bozzetto.vidarrapp.se/create/). It runs entirely in your browser: you build a timelapse and download it as a single self-contained `.html`. Nothing is uploaded, and there is no account to set up!
 
 1. Open [`/create`](https://bozzetto.vidarrapp.se/create/).
 2. Drop in a sequence of `.obj` or `.glb` files, one mesh per stage of your sculpt, named so they sort in order. Tick **OBJ files are Z-up** if they came from a Z-up tool such as Blender. They convert in the browser as the progress bar fills.
 3. Set up the look in the floating panel on the right: lighting, material, environment, and camera. Orbit to the angle you want.
 4. Optionally add **stages** to mark and name key frames; they become markers on the exported file's scrubber.
 5. Press **Export .html**. You get one file with the viewer, frames, and assets all inlined. It opens offline straight from disk, so you can email it, drop it in a shared folder, or keep it as an archive.
+6. You can also export mp4/gif timelapse or turntable animations.
 
 A single mesh works too: drop one file and you get a shareable 3D model on one HTML page. To publish timelapses to the gallery instead of downloading a file, use the full editor at `/admin/` (see the tutorial below).
 
@@ -249,4 +250,4 @@ The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through 
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
