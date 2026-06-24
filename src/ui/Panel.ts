@@ -507,7 +507,7 @@ export class Panel {
 
   /**
    * Depth of field — shown in the viewer too, not just the editor. Aperture sets
-   * the blur; Focus scrubs the plane across the subject depth. Shift+click in the
+   * the blur; Focus scrubs the plane across the subject depth. Alt+click in the
    * viewport locks focus onto a point (tap-to-focus); the Focus slider releases
    * that lock. The `b` hotkey toggles the checkbox (kept in sync by refresh).
    */

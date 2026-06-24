@@ -71,7 +71,7 @@ export interface DoFState {
   /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
   focus: number;
   /**
-   * Tap-to-focus lock (Shift+click): a world-space point the focus plane sticks
+   * Tap-to-focus lock (Alt+click): a world-space point the focus plane sticks
    * to as the camera orbits/dollies. Absent means focus tracks the orbit target
    * with the `focus` bias above. Dragging the Focus slider clears it.
    */
@@ -223,7 +223,7 @@ export class Viewer {
   private dofFocus = DEFAULT_DOF_FOCUS;
   /** Tap-to-focus lock: world point the focus plane sticks to (null = track target). */
   private dofFocusPoint: Vector3 | null = null;
-  /** Shift+click focus picking: ray + reusable pointer NDC. */
+  /** Alt+click focus picking: ray + reusable pointer NDC. */
   private readonly picker = new Raycaster();
   private readonly pickNdc = new Vector2();
   /** Brief on-canvas confirmation flashed at a focus pick. */
@@ -356,12 +356,12 @@ export class Viewer {
 
     window.addEventListener('resize', this.onResize);
 
-    // Tap-to-focus: a brief reticle flashed in the viewport at a Shift+click pick.
+    // Tap-to-focus: a brief reticle flashed in the viewport at an Alt+click pick.
     this.reticle = document.createElement('div');
     this.reticle.className = 'focus-reticle';
     this.container.appendChild(this.reticle);
     // Capture on the container so the pick runs before OrbitControls' canvas
-    // handler — Shift is reserved for focus, so it never starts an orbit.
+    // handler — Alt is reserved for focus, so it never starts an orbit.
     this.container.addEventListener('pointerdown', this.onPickPointer, true);
   }
 
@@ -682,7 +682,7 @@ export class Viewer {
   }
 
   /**
-   * Tap-to-focus (Shift+click): raycast the pointer against the subject and lock
+   * Tap-to-focus (Alt+click): raycast the pointer against the subject and lock
    * the DoF focus plane onto the hit point, turning DoF on if it was off. The
    * lock is a world point, so focus stays glued to that spot as the camera moves
    * (see updateDofFocus). Returns false on a miss (empty space), changing nothing.
@@ -1212,11 +1212,11 @@ export class Viewer {
   };
 
   /**
-   * Shift+click → tap-to-focus. Runs in the capture phase ahead of OrbitControls
-   * and swallows the event so a shift-pick never also starts an orbit.
+   * Alt+click → tap-to-focus. Runs in the capture phase ahead of OrbitControls
+   * and swallows the event so an Alt-pick never also starts an orbit.
    */
   private readonly onPickPointer = (e: PointerEvent): void => {
-    if (!e.shiftKey || e.button !== 0) return;
+    if (!e.altKey || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     this.focusAtPointer(e.clientX, e.clientY);

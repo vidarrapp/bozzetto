@@ -97,7 +97,7 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 | `←` `A` / `→` `D` | Step frame |
 | `F` | Focus (frame the model) |
 | `B` | Depth of field on / off |
-| Shift + click | Set focus point (tap-to-focus) |
+| Alt + click | Set focus point (tap-to-focus) |
 | `1` | Lit (PBR) |
 | `2`… | Matcaps |
 | `S` | Smooth / flat shading |

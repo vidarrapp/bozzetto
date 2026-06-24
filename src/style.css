@@ -152,7 +152,7 @@ h1,
   color: #ff8f8f;
 }
 
-/* --- tap-to-focus reticle (Shift+click) --- */
+/* --- tap-to-focus reticle (Alt+click) --- */
 .focus-reticle {
   position: absolute;
   width: 42px;
