@@ -7,9 +7,11 @@ import {
   MeshBasicMaterial,
   PerspectiveCamera,
   PlaneGeometry,
+  Raycaster,
   Scene,
   ShadowMaterial,
   Sphere,
+  Vector2,
   Vector3,
 } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
@@ -68,6 +70,12 @@ export interface DoFState {
   fStop: number;
   /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
   focus: number;
+  /**
+   * Tap-to-focus lock (Shift+click): a world-space point the focus plane sticks
+   * to as the camera orbits/dollies. Absent means focus tracks the orbit target
+   * with the `focus` bias above. Dragging the Focus slider clears it.
+   */
+  focusPoint?: [number, number, number];
 }
 
 /** Ground presentation: a contact shadow, a fading studio floor, or a pedestal. */
@@ -213,6 +221,13 @@ export class Viewer {
   private dofEnabled = false;
   private dofFStop = DEFAULT_FSTOP;
   private dofFocus = DEFAULT_DOF_FOCUS;
+  /** Tap-to-focus lock: world point the focus plane sticks to (null = track target). */
+  private dofFocusPoint: Vector3 | null = null;
+  /** Shift+click focus picking: ray + reusable pointer NDC. */
+  private readonly picker = new Raycaster();
+  private readonly pickNdc = new Vector2();
+  /** Brief on-canvas confirmation flashed at a focus pick. */
+  private readonly reticle: HTMLDivElement;
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
@@ -223,6 +238,9 @@ export class Viewer {
   onPlayStateChange: ((playing: boolean) => void) | null = null;
   /** Loading-status messages during boot (drives the entry overlay's text). */
   onStatus: ((msg: string) => void) | null = null;
+  /** Fired when DoF is toggled on/off (e.g. hotkey or a tap-to-focus that turns
+   *  it on), so the panel checkbox can re-sync. */
+  onDofChange: (() => void) | null = null;
 
   /**
    * Build a viewer with an initialized renderer. The renderer targets WebGPU and
@@ -337,6 +355,14 @@ export class Viewer {
     this.buildPipeline();
 
     window.addEventListener('resize', this.onResize);
+
+    // Tap-to-focus: a brief reticle flashed in the viewport at a Shift+click pick.
+    this.reticle = document.createElement('div');
+    this.reticle.className = 'focus-reticle';
+    this.container.appendChild(this.reticle);
+    // Capture on the container so the pick runs before OrbitControls' canvas
+    // handler — Shift is reserved for focus, so it never starts an orbit.
+    this.container.addEventListener('pointerdown', this.onPickPointer, true);
   }
 
   /** Load the first frame, frame the subject, then start the render loop. */
@@ -376,7 +402,12 @@ export class Viewer {
       this.setAO(this.manifest.ao as AOState);
     }
     if (this.manifest.camera.dof) {
-      this.setDoF(this.manifest.camera.dof);
+      const d = this.manifest.camera.dof;
+      this.setDoF(d);
+      // Restore a saved tap-to-focus lock (after setDoF, which clears it).
+      if (d.focusPoint) {
+        this.dofFocusPoint = new Vector3(d.focusPoint[0], d.focusPoint[1], d.focusPoint[2]);
+      }
     }
     if (this.manifest.presentation) {
       this.applyStageState(this.manifest.presentation as StageState);
@@ -588,7 +619,12 @@ export class Viewer {
       ['size', `${w}×${h} @${this.renderer.getPixelRatio()}x`],
       ['material', this.currentMode],
       ['AO', this.aoEnabled ? `str ${this.aoIntensity.toFixed(2)} · rad ${this.aoRadiusFraction.toFixed(2)}` : 'off'],
-      ['DoF', this.dofEnabled ? `f/${this.dofFStop} · focus ${this.dofFocus.toFixed(2)}` : 'off'],
+      [
+        'DoF',
+        this.dofEnabled
+          ? `f/${this.dofFStop} · ${this.dofFocusPoint ? 'locked' : `focus ${this.dofFocus.toFixed(2)}`}`
+          : 'off',
+      ],
       ['subject r', this.subjectRadius.toFixed(1)],
       ['clip', `${this.camera.near.toFixed(1)}–${this.camera.far.toFixed(0)}`],
       ['env', this.scene.environment ? 'loaded' : 'none'],
@@ -620,14 +656,62 @@ export class Viewer {
     if (typeof state.enabled === 'boolean' && state.enabled !== this.dofEnabled) {
       this.dofEnabled = state.enabled;
       this.rebuildOutput(); // include/exclude the DoF gather in the graph
+      this.onDofChange?.(); // keep the panel checkbox in sync
     }
     if (typeof state.fStop === 'number') this.dofFStop = state.fStop;
-    if (typeof state.focus === 'number') this.dofFocus = state.focus;
+    if (typeof state.focus === 'number') {
+      this.dofFocus = state.focus;
+      // A manual focus from the slider releases any tap-to-focus lock.
+      this.dofFocusPoint = null;
+    }
     this.applyDof();
   }
 
+  /** Flip DoF on/off (hotkey "b"); returns the new state. */
+  toggleDoF(): boolean {
+    this.setDoF({ enabled: !this.dofEnabled });
+    return this.dofEnabled;
+  }
+
   getDoFState(): DoFState {
-    return { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
+    const s: DoFState = { enabled: this.dofEnabled, fStop: this.dofFStop, focus: this.dofFocus };
+    if (this.dofFocusPoint) {
+      s.focusPoint = [this.dofFocusPoint.x, this.dofFocusPoint.y, this.dofFocusPoint.z];
+    }
+    return s;
+  }
+
+  /**
+   * Tap-to-focus (Shift+click): raycast the pointer against the subject and lock
+   * the DoF focus plane onto the hit point, turning DoF on if it was off. The
+   * lock is a world point, so focus stays glued to that spot as the camera moves
+   * (see updateDofFocus). Returns false on a miss (empty space), changing nothing.
+   */
+  focusAtPointer(clientX: number, clientY: number): boolean {
+    if (!this.dofAvailable()) return false;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pickNdc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.picker.setFromCamera(this.pickNdc, this.camera);
+    const hit = this.picker.intersectObject(this.display, false)[0];
+    if (!hit) return false;
+    this.dofFocusPoint = hit.point.clone();
+    if (!this.dofEnabled) this.setDoF({ enabled: true });
+    this.updateDofFocus(); // apply this frame, not next
+    this.flashReticle(clientX - rect.left, clientY - rect.top);
+    return true;
+  }
+
+  /** Restart the reticle pulse at a viewport-local position (px). */
+  private flashReticle(x: number, y: number): void {
+    const r = this.reticle;
+    r.style.left = `${x}px`;
+    r.style.top = `${y}px`;
+    r.classList.remove('focus-reticle--show');
+    void r.offsetWidth; // reflow so the animation restarts on re-add
+    r.classList.add('focus-reticle--show');
   }
 
   /** Set the lens (35mm-equivalent mm), dollying to keep the subject framed. */
@@ -867,6 +951,8 @@ export class Viewer {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
+    this.container.removeEventListener('pointerdown', this.onPickPointer, true);
+    this.reticle.remove();
     this.envLoadingEl.remove();
     this.captureGuide.dispose();
     this.controls.dispose();
@@ -1016,9 +1102,15 @@ export class Viewer {
     this.dofBokehU.value = DOF_BLUR_PX / this.dofFStop;
   }
 
-  /** Track the focus plane to the orbit target, biased across the subject depth. */
+  /**
+   * Drive the focus distance. With a tap-to-focus lock, it's the camera→locked
+   * point distance (so focus stays on that spot through orbit/dolly); otherwise
+   * it tracks the orbit target, biased across the subject depth by the slider.
+   */
   private updateDofFocus(): void {
-    const focus = this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
+    const focus = this.dofFocusPoint
+      ? this.camera.position.distanceTo(this.dofFocusPoint)
+      : this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
     this.dofFocusU.value = Math.max(focus, 0.01);
   }
 
@@ -1117,6 +1209,17 @@ export class Viewer {
     // (setFocalLength recomputes the FOV and the projection matrix).
     this.camera.setFocalLength(this.focalLength);
     this.renderer.setSize(w, h);
+  };
+
+  /**
+   * Shift+click → tap-to-focus. Runs in the capture phase ahead of OrbitControls
+   * and swallows the event so a shift-pick never also starts an orbit.
+   */
+  private readonly onPickPointer = (e: PointerEvent): void => {
+    if (!e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.focusAtPointer(e.clientX, e.clientY);
   };
 }
 

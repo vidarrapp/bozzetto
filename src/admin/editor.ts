@@ -373,6 +373,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     });
     await preview.boot();
     panel = new Panel(preview, { editor: true, actions: buildLookActions(preview, id) });
+    preview.onDofChange = () => panel?.refreshControls();
     layout?.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {

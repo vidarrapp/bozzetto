@@ -16,6 +16,8 @@ const GUIDE_HTML = `
     <div class="help-row"><span class="help-key">Drag</span><span>Orbit</span></div>
     <div class="help-row"><span class="help-key">Scroll</span><span>Zoom</span></div>
     <div class="help-row"><kbd>F</kbd><span>Focus / frame model</span></div>
+    <div class="help-row"><kbd>B</kbd><span>Depth of field</span></div>
+    <div class="help-row"><span class="help-key">Shift+click</span><span>Set focus point</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Material</div>

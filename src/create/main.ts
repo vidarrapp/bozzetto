@@ -222,6 +222,7 @@ function main(): void {
     preview = await Viewer.create(previewBox, manifest, memorySource, { preserveDrawingBuffer: true });
     await preview.boot();
     panel = new Panel(preview, { editor: true });
+    preview.onDofChange = () => panel?.refreshControls();
     layout.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
