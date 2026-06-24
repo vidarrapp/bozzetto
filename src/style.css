@@ -127,6 +127,14 @@ h1,
   inset: 0;
 }
 
+/* The viewport is a pure 3D surface — never let a touch begin a text selection
+   or the iOS long-press callout, which would otherwise grab page text. */
+#viewport {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 #viewport canvas {
   display: block;
 }
