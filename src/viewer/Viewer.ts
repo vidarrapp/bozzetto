@@ -54,6 +54,14 @@ const DEFAULT_DOF_FOCUS = 0.35;
 const DOF_RANGE_SCALE = 0.12;
 const DOF_BLUR_PX = 18;
 
+/**
+ * Touch tap-to-focus tuning. A finger held still for LONG_PRESS_MS sets focus
+ * (the mobile counterpart to desktop Alt+click); drifting past LONG_PRESS_SLOP
+ * px first means the gesture was an orbit, not a focus tap, so it's abandoned.
+ */
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_SLOP = 12;
+
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
   enabled: boolean;
@@ -228,6 +236,16 @@ export class Viewer {
   private readonly pickNdc = new Vector2();
   /** Brief on-canvas confirmation flashed at a focus pick. */
   private readonly reticle: HTMLDivElement;
+  /**
+   * Touch long-press → tap-to-focus state. `timer` is the pending hold (0 = idle),
+   * `x`/`y` the finger's origin, `id` the tracked pointer. `activeTouches` counts
+   * fingers down so a second one (pinch/pan) can cancel a pending focus tap.
+   */
+  private longPressTimer = 0;
+  private longPressX = 0;
+  private longPressY = 0;
+  private longPressId = -1;
+  private readonly activeTouches = new Set<number>();
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
@@ -356,13 +374,19 @@ export class Viewer {
 
     window.addEventListener('resize', this.onResize);
 
-    // Tap-to-focus: a brief reticle flashed in the viewport at an Alt+click pick.
+    // Tap-to-focus: a brief reticle flashed at an Alt+click / long-press pick.
     this.reticle = document.createElement('div');
     this.reticle.className = 'focus-reticle';
     this.container.appendChild(this.reticle);
     // Capture on the container so the pick runs before OrbitControls' canvas
-    // handler — Alt is reserved for focus, so it never starts an orbit.
+    // handler — Alt is reserved for focus, so it never starts an orbit. The
+    // move/up listeners track a touch long-press (mobile tap-to-focus); they're
+    // also captured so we see the finger even while OrbitControls holds pointer
+    // capture on the canvas.
     this.container.addEventListener('pointerdown', this.onPickPointer, true);
+    this.container.addEventListener('pointermove', this.onTouchMove, true);
+    this.container.addEventListener('pointerup', this.onTouchEnd, true);
+    this.container.addEventListener('pointercancel', this.onTouchEnd, true);
   }
 
   /** Load the first frame, frame the subject, then start the render loop. */
@@ -682,10 +706,11 @@ export class Viewer {
   }
 
   /**
-   * Tap-to-focus (Alt+click): raycast the pointer against the subject and lock
-   * the DoF focus plane onto the hit point, turning DoF on if it was off. The
-   * lock is a world point, so focus stays glued to that spot as the camera moves
-   * (see updateDofFocus). Returns false on a miss (empty space), changing nothing.
+   * Tap-to-focus (Alt+click, or a touch long-press): raycast the pointer/finger
+   * against the subject and lock the DoF focus plane onto the hit point, turning
+   * DoF on if it was off. The lock is a world point, so focus stays glued to that
+   * spot as the camera moves (see updateDofFocus). Returns false on a miss
+   * (empty space), changing nothing.
    */
   focusAtPointer(clientX: number, clientY: number): boolean {
     if (!this.dofAvailable()) return false;
@@ -952,6 +977,10 @@ export class Viewer {
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
     this.container.removeEventListener('pointerdown', this.onPickPointer, true);
+    this.container.removeEventListener('pointermove', this.onTouchMove, true);
+    this.container.removeEventListener('pointerup', this.onTouchEnd, true);
+    this.container.removeEventListener('pointercancel', this.onTouchEnd, true);
+    this.cancelLongPress();
     this.reticle.remove();
     this.envLoadingEl.remove();
     this.captureGuide.dispose();
@@ -1212,15 +1241,58 @@ export class Viewer {
   };
 
   /**
-   * Alt+click → tap-to-focus. Runs in the capture phase ahead of OrbitControls
-   * and swallows the event so an Alt-pick never also starts an orbit.
+   * Pointer-down pick. Desktop Alt+click sets focus immediately and is swallowed
+   * so it never also starts an orbit. Touch instead arms a long-press: we let the
+   * event through to OrbitControls (a still finger logs no movement, so no orbit
+   * accumulates) and set focus only once the hold completes.
    */
   private readonly onPickPointer = (e: PointerEvent): void => {
-    if (!e.altKey || e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    this.focusAtPointer(e.clientX, e.clientY);
+    if (e.altKey && e.button === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.focusAtPointer(e.clientX, e.clientY);
+      return;
+    }
+    if (e.pointerType !== 'touch') return;
+    this.activeTouches.add(e.pointerId);
+    // A second finger means pinch/two-finger pan — never a focus tap.
+    if (this.activeTouches.size > 1) {
+      this.cancelLongPress();
+      return;
+    }
+    this.longPressX = e.clientX;
+    this.longPressY = e.clientY;
+    this.longPressId = e.pointerId;
+    this.longPressTimer = window.setTimeout(() => {
+      this.longPressTimer = 0;
+      if (this.focusAtPointer(this.longPressX, this.longPressY)) {
+        navigator.vibrate?.(15); // haptic confirm where supported (ignored on iOS)
+      }
+    }, LONG_PRESS_MS);
   };
+
+  /** A finger that travels past the slop is orbiting, not focus-tapping. */
+  private readonly onTouchMove = (e: PointerEvent): void => {
+    if (this.longPressTimer === 0 || e.pointerId !== this.longPressId) return;
+    const dx = e.clientX - this.longPressX;
+    const dy = e.clientY - this.longPressY;
+    if (dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP) this.cancelLongPress();
+  };
+
+  /** Lifting (or a cancelled pointer) ends the gesture before the hold fires. */
+  private readonly onTouchEnd = (e: PointerEvent): void => {
+    this.activeTouches.delete(e.pointerId);
+    if (e.pointerId === this.longPressId) this.cancelLongPress();
+  };
+
+  /** Drop any pending long-press (timer + tracked pointer). */
+  private cancelLongPress(): void {
+    if (this.longPressTimer !== 0) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = 0;
+    }
+    this.longPressId = -1;
+  }
 }
 
 function clampOrdinal(value: number, count: number): number {
