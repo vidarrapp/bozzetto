@@ -507,9 +507,9 @@ export class Panel {
 
   /**
    * Depth of field — shown in the viewer too, not just the editor. Aperture sets
-   * the blur; Focus scrubs the plane across the subject depth. Alt+click (or a
-   * double-tap on touch) in the viewport locks focus onto a point (tap-to-focus);
-   * the Focus slider releases that lock. The `b` hotkey toggles the checkbox.
+   * the blur; Focus scrubs the plane across the subject depth. A double-click or
+   * Alt+click (double-tap on touch) in the viewport locks focus onto a point
+   * (tap-to-focus); the Focus slider releases that lock. `b` toggles the checkbox.
    */
   private buildDoF(body: HTMLElement): void {
     if (!this.viewer.dofAvailable()) return;
