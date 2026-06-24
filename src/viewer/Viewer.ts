@@ -55,12 +55,15 @@ const DOF_RANGE_SCALE = 0.12;
 const DOF_BLUR_PX = 18;
 
 /**
- * Touch tap-to-focus tuning. A finger held still for LONG_PRESS_MS sets focus
- * (the mobile counterpart to desktop Alt+click); drifting past LONG_PRESS_SLOP
- * px first means the gesture was an orbit, not a focus tap, so it's abandoned.
+ * Touch tap-to-focus tuning (the mobile counterpart to desktop Alt+click). A
+ * double-tap sets focus: two taps whose pointer-downs fall within DOUBLE_TAP_MS
+ * and DOUBLE_TAP_DIST px of each other. A "tap" is a touch that lifts having
+ * drifted under TAP_SLOP px — drift past that is an orbit, not a tap. (We avoid
+ * long-press: on iOS a sustained press fires the text-selection callout.)
  */
-const LONG_PRESS_MS = 450;
-const LONG_PRESS_SLOP = 12;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST = 36;
+const TAP_SLOP = 10;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -237,14 +240,19 @@ export class Viewer {
   /** Brief on-canvas confirmation flashed at a focus pick. */
   private readonly reticle: HTMLDivElement;
   /**
-   * Touch long-press → tap-to-focus state. `timer` is the pending hold (0 = idle),
-   * `x`/`y` the finger's origin, `id` the tracked pointer. `activeTouches` counts
-   * fingers down so a second one (pinch/pan) can cancel a pending focus tap.
+   * Touch double-tap → tap-to-focus state. The in-progress tap is tracked by
+   * `tapPointerId`/`tapStart*`/`tapMoved`; `lastTap*` remember the previous clean
+   * tap so the next one can complete a double-tap (−1 time = no tap pending).
+   * `activeTouches` counts fingers down so a second one (pinch/pan) aborts it.
    */
-  private longPressTimer = 0;
-  private longPressX = 0;
-  private longPressY = 0;
-  private longPressId = -1;
+  private tapPointerId = -1;
+  private tapStartX = 0;
+  private tapStartY = 0;
+  private tapStartTime = 0;
+  private tapMoved = false;
+  private lastTapTime = -1;
+  private lastTapX = 0;
+  private lastTapY = 0;
   private readonly activeTouches = new Set<number>();
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
@@ -374,19 +382,19 @@ export class Viewer {
 
     window.addEventListener('resize', this.onResize);
 
-    // Tap-to-focus: a brief reticle flashed at an Alt+click / long-press pick.
+    // Tap-to-focus: a brief reticle flashed at an Alt+click / double-tap pick.
     this.reticle = document.createElement('div');
     this.reticle.className = 'focus-reticle';
     this.container.appendChild(this.reticle);
     // Capture on the container so the pick runs before OrbitControls' canvas
     // handler — Alt is reserved for focus, so it never starts an orbit. The
-    // move/up listeners track a touch long-press (mobile tap-to-focus); they're
-    // also captured so we see the finger even while OrbitControls holds pointer
-    // capture on the canvas.
+    // move/up/cancel listeners track a touch double-tap (mobile tap-to-focus);
+    // they're also captured so we see the finger even while OrbitControls holds
+    // pointer capture on the canvas.
     this.container.addEventListener('pointerdown', this.onPickPointer, true);
-    this.container.addEventListener('pointermove', this.onTouchMove, true);
-    this.container.addEventListener('pointerup', this.onTouchEnd, true);
-    this.container.addEventListener('pointercancel', this.onTouchEnd, true);
+    this.container.addEventListener('pointermove', this.onTapMove, true);
+    this.container.addEventListener('pointerup', this.onTapEnd, true);
+    this.container.addEventListener('pointercancel', this.onTapCancel, true);
   }
 
   /** Load the first frame, frame the subject, then start the render loop. */
@@ -706,7 +714,7 @@ export class Viewer {
   }
 
   /**
-   * Tap-to-focus (Alt+click, or a touch long-press): raycast the pointer/finger
+   * Tap-to-focus (Alt+click, or a double-tap on touch): raycast the pointer/finger
    * against the subject and lock the DoF focus plane onto the hit point, turning
    * DoF on if it was off. The lock is a world point, so focus stays glued to that
    * spot as the camera moves (see updateDofFocus). Returns false on a miss
@@ -977,10 +985,9 @@ export class Viewer {
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
     this.container.removeEventListener('pointerdown', this.onPickPointer, true);
-    this.container.removeEventListener('pointermove', this.onTouchMove, true);
-    this.container.removeEventListener('pointerup', this.onTouchEnd, true);
-    this.container.removeEventListener('pointercancel', this.onTouchEnd, true);
-    this.cancelLongPress();
+    this.container.removeEventListener('pointermove', this.onTapMove, true);
+    this.container.removeEventListener('pointerup', this.onTapEnd, true);
+    this.container.removeEventListener('pointercancel', this.onTapCancel, true);
     this.reticle.remove();
     this.envLoadingEl.remove();
     this.captureGuide.dispose();
@@ -1242,9 +1249,9 @@ export class Viewer {
 
   /**
    * Pointer-down pick. Desktop Alt+click sets focus immediately and is swallowed
-   * so it never also starts an orbit. Touch instead arms a long-press: we let the
-   * event through to OrbitControls (a still finger logs no movement, so no orbit
-   * accumulates) and set focus only once the hold completes.
+   * so it never also starts an orbit. Touch begins tracking a tap here; the
+   * double-tap is recognised on lift (see onTapEnd) so a single tap or a drag
+   * still orbits untouched.
    */
   private readonly onPickPointer = (e: PointerEvent): void => {
     if (e.altKey && e.button === 0) {
@@ -1255,20 +1262,64 @@ export class Viewer {
     }
     if (e.pointerType !== 'touch') return;
     this.activeTouches.add(e.pointerId);
-    // A second finger means pinch/two-finger pan — never a focus tap.
+    // A second finger means pinch/two-finger pan — abort the tap sequence.
     if (this.activeTouches.size > 1) {
-      this.cancelLongPress();
+      this.tapPointerId = -1;
+      this.lastTapTime = -1;
       return;
     }
-    this.longPressX = e.clientX;
-    this.longPressY = e.clientY;
-    this.longPressId = e.pointerId;
-    this.longPressTimer = window.setTimeout(() => {
-      this.longPressTimer = 0;
-      if (this.focusAtPointer(this.longPressX, this.longPressY)) {
+    this.tapPointerId = e.pointerId;
+    this.tapStartX = e.clientX;
+    this.tapStartY = e.clientY;
+    this.tapStartTime = e.timeStamp;
+    this.tapMoved = false;
+  };
+
+  /** A tracked finger that drifts past the slop is an orbit, not a tap. */
+  private readonly onTapMove = (e: PointerEvent): void => {
+    if (e.pointerId !== this.tapPointerId || this.tapMoved) return;
+    const dx = e.clientX - this.tapStartX;
+    const dy = e.clientY - this.tapStartY;
+    if (dx * dx + dy * dy > TAP_SLOP * TAP_SLOP) this.tapMoved = true;
+  };
+
+  /**
+   * Tap lift. A clean tap (no drift) that lands soon after, and near, the
+   * previous one completes a double-tap and sets focus; otherwise it's banked
+   * as the first tap. A drifted lift (an orbit) breaks any pending sequence.
+   */
+  private readonly onTapEnd = (e: PointerEvent): void => {
+    this.activeTouches.delete(e.pointerId);
+    if (e.pointerId !== this.tapPointerId) return;
+    this.tapPointerId = -1;
+    if (this.tapMoved) {
+      this.lastTapTime = -1;
+      return;
+    }
+    const dx = this.tapStartX - this.lastTapX;
+    const dy = this.tapStartY - this.lastTapY;
+    const isDouble =
+      this.lastTapTime >= 0 &&
+      this.tapStartTime - this.lastTapTime <= DOUBLE_TAP_MS &&
+      dx * dx + dy * dy <= DOUBLE_TAP_DIST * DOUBLE_TAP_DIST;
+    if (isDouble) {
+      this.lastTapTime = -1; // consume — a third tap starts fresh
+      e.preventDefault(); // suppress the synthesised click / double-tap zoom
+      if (this.focusAtPointer(this.tapStartX, this.tapStartY)) {
         navigator.vibrate?.(15); // haptic confirm where supported (ignored on iOS)
       }
-    }, LONG_PRESS_MS);
+      return;
+    }
+    this.lastTapTime = this.tapStartTime; // bank as the first tap
+    this.lastTapX = this.tapStartX;
+    this.lastTapY = this.tapStartY;
+  };
+
+  /** A cancelled pointer (gesture stolen) drops the in-progress tap sequence. */
+  private readonly onTapCancel = (e: PointerEvent): void => {
+    this.activeTouches.delete(e.pointerId);
+    if (e.pointerId === this.tapPointerId) this.tapPointerId = -1;
+    this.lastTapTime = -1;
   };
 
   /** A finger that travels past the slop is orbiting, not focus-tapping. */
