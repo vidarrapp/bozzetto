@@ -16,8 +16,9 @@ export interface ShortcutHandlers {
  *   space      play / pause            ← / a · → / d   step
  *   f          focus (frame model)     r              reset view
  *   s          smooth ↔ flat shading   w              wireframe overlay
- *   g          ground shadow           1              Lit (PBR)
- *   2..n       matcaps (interface order)
+ *   g          ground shadow           b              depth of field
+ *   1          Lit (PBR)               2..n           matcaps (interface order)
+ *   alt+click  set focus point (tap-to-focus)
  *   tab        toggle side panel       h              hotkey guide
  * Returns a disposer that detaches the listener.
  */
@@ -46,6 +47,12 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
       case 'g':
         viewer.cycleGround();
         handlers.refresh?.();
+        return;
+      case 'b':
+        if (viewer.dofAvailable()) {
+          viewer.toggleDoF();
+          handlers.refresh?.();
+        }
         return;
       case 'w':
         viewer.toggleWireframe();

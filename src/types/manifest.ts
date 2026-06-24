@@ -42,7 +42,13 @@ export interface ManifestCamera {
   /** Lens focal length in 35mm-equivalent mm (drives the perspective). */
   focalLength?: number;
   /** Depth-of-field: on/off, aperture (f-stop), and focus across the subject. */
-  dof?: { enabled: boolean; fStop: number; focus?: number };
+  dof?: {
+    enabled: boolean;
+    fStop: number;
+    focus?: number;
+    /** Tap-to-focus lock: a world-space point the focus plane sticks to. */
+    focusPoint?: [number, number, number];
+  };
 }
 
 export interface FrameEntry {

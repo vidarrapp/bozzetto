@@ -152,6 +152,39 @@ h1,
   color: #ff8f8f;
 }
 
+/* --- tap-to-focus reticle (Alt+click) --- */
+.focus-reticle {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  margin: 0;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 15;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 10px rgba(0, 0, 0, 0.25);
+}
+
+.focus-reticle--show {
+  animation: focus-reticle-pulse 0.5s ease-out;
+}
+
+@keyframes focus-reticle-pulse {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+}
+
 /* --- control panel --- */
 .panel {
   position: fixed;

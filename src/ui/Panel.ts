@@ -33,6 +33,8 @@ export class Panel {
   private wireframeCheckbox!: HTMLInputElement;
   /** Ground-mode select lives in the editor's Environment section (or null). */
   private groundSelect: HTMLSelectElement | null = null;
+  /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
+  private dofCheckbox?: HTMLInputElement;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -96,6 +98,7 @@ export class Panel {
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildCamera(this.bodyEl);
+    this.buildDoF(this.bodyEl); // viewer + editor
     if (this.editor) this.buildEnvironment(this.bodyEl);
     if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
@@ -131,6 +134,7 @@ export class Panel {
     this.smoothCheckbox.checked = !state.flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
+    if (this.dofCheckbox) this.dofCheckbox.checked = this.viewer.getDoFState().enabled;
   }
 
   dispose(): void {
@@ -490,32 +494,38 @@ export class Panel {
     );
   }
 
-  // --- camera (editor only) ---------------------------------------------
+  // --- camera (lens: editor only) ---------------------------------------
 
   private buildCamera(body: HTMLElement): void {
     const sec = section(body, 'Camera');
-
     sec.appendChild(
       steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
         this.viewer.setFocalLength(mm),
       ),
     );
+  }
 
-    // Depth of field: focus across the subject depth; aperture sets the blur.
-    if (this.viewer.dofAvailable()) {
-      const dof = this.viewer.getDoFState();
-      sec.appendChild(
-        checkbox('Depth of field', dof.enabled, (on) => this.viewer.setDoF({ enabled: on })),
-      );
-      sec.appendChild(
-        steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
-          this.viewer.setDoF({ fStop: f }),
-        ),
-      );
-      sec.appendChild(
-        compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
-      );
-    }
+  /**
+   * Depth of field — shown in the viewer too, not just the editor. Aperture sets
+   * the blur; Focus scrubs the plane across the subject depth. Alt+click in the
+   * viewport locks focus onto a point (tap-to-focus); the Focus slider releases
+   * that lock. The `b` hotkey toggles the checkbox (kept in sync by refresh).
+   */
+  private buildDoF(body: HTMLElement): void {
+    if (!this.viewer.dofAvailable()) return;
+    const sec = section(body, 'Depth of field');
+    const dof = this.viewer.getDoFState();
+    const toggle = checkbox('Enabled', dof.enabled, (on) => this.viewer.setDoF({ enabled: on }));
+    this.dofCheckbox = toggle.querySelector('input')!;
+    sec.appendChild(toggle);
+    sec.appendChild(
+      steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
+        this.viewer.setDoF({ fStop: f }),
+      ),
+    );
+    sec.appendChild(
+      compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
+    );
   }
 
   private buildAO(body: HTMLElement): void {

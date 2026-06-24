@@ -27,6 +27,7 @@ export async function mountViewer(
 
   // Build the UI after boot so controls reflect the applied look.
   const panel = new Panel(viewer);
+  viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;
   // a single-model project has nothing to scrub, so it gets no timeline.
   if (manifest.mode === 'timelapse' && manifest.config.frameCount > 1) {
