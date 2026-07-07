@@ -82,7 +82,7 @@ export interface DoFState {
   /** Focus plane across the subject depth: 0 = front (nearest), 1 = back. */
   focus: number;
   /**
-   * Tap-to-focus lock (double-click / Alt+click): a world-space point it sticks
+   * Tap-to-focus lock (double-click / double-tap): a world-space point it sticks
    * to as the camera orbits/dollies. Absent means focus tracks the orbit target
    * with the `focus` bias above. Dragging the Focus slider clears it.
    */
@@ -234,7 +234,7 @@ export class Viewer {
   private dofFocus = DEFAULT_DOF_FOCUS;
   /** Tap-to-focus lock: world point the focus plane sticks to (null = track target). */
   private dofFocusPoint: Vector3 | null = null;
-  /** Alt+click focus picking: ray + reusable pointer NDC. */
+  /** Double-press focus picking: ray + reusable pointer NDC. */
   private readonly picker = new Raycaster();
   private readonly pickNdc = new Vector2();
   /** Brief on-canvas confirmation flashed at a focus pick. */
@@ -386,11 +386,10 @@ export class Viewer {
     this.reticle = document.createElement('div');
     this.reticle.className = 'focus-reticle';
     this.container.appendChild(this.reticle);
-    // Capture on the container so the pick runs before OrbitControls' canvas
-    // handler — Alt is reserved for focus, so it never starts an orbit. The
-    // move/up/cancel listeners track a touch double-tap (mobile tap-to-focus);
-    // they're also captured so we see the finger even while OrbitControls holds
-    // pointer capture on the canvas.
+    // Capture on the container so these run ahead of OrbitControls' canvas
+    // handler and keep seeing the pointer even while it holds pointer capture.
+    // They only track presses to spot a double-click / double-tap (tap-to-focus);
+    // a single press or a drag passes straight through and orbits as normal.
     this.container.addEventListener('pointerdown', this.onPickPointer, true);
     this.container.addEventListener('pointermove', this.onTapMove, true);
     this.container.addEventListener('pointerup', this.onTapEnd, true);
@@ -714,7 +713,7 @@ export class Viewer {
   }
 
   /**
-   * Tap-to-focus (double-click or Alt+click; double-tap on touch): raycast the pointer/finger
+   * Tap-to-focus (double-click, or a double-tap on touch): raycast the pointer/finger
    * against the subject and lock the DoF focus plane onto the hit point, turning
    * DoF on if it was off. The lock is a world point, so focus stays glued to that
    * spot as the camera moves (see updateDofFocus). Returns false on a miss
@@ -1248,18 +1247,11 @@ export class Viewer {
   };
 
   /**
-   * Pointer-down pick. Desktop Alt+click sets focus immediately and is swallowed
-   * so it never also starts an orbit. Otherwise we begin tracking a press here; a
-   * double press — double-click (mouse) or double-tap (touch) — is recognised on
-   * lift (see onTapEnd), so a single press or a drag still orbits untouched.
+   * Pointer-down pick. We begin tracking a press here; a double press —
+   * double-click (mouse) or double-tap (touch) — is recognised on lift (see
+   * onTapEnd), so a single press or a drag still passes through and orbits.
    */
   private readonly onPickPointer = (e: PointerEvent): void => {
-    if (e.altKey && e.button === 0) {
-      e.preventDefault();
-      e.stopPropagation();
-      this.focusAtPointer(e.clientX, e.clientY);
-      return;
-    }
     // Only the primary button opens a focus press; middle/right stay with
     // OrbitControls (pan/dolly). Touch reports button 0 for each finger.
     if (e.button !== 0) return;
