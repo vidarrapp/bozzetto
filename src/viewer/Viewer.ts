@@ -65,6 +65,15 @@ const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_DIST = 36;
 const TAP_SLOP = 10;
 
+/**
+ * Playback buffering: when the playhead reaches a frame that isn't decoded yet,
+ * the clock stalls and resumes only once this many consecutive upcoming frames
+ * are resident (clamped to the sequence end). A run — rather than just the one
+ * missing frame — gives hysteresis, so slow sources buffer once and then play
+ * smoothly instead of stuttering frame by frame.
+ */
+const PLAYBACK_MIN_BUFFER = 4;
+
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
   enabled: boolean;
@@ -257,11 +266,17 @@ export class Viewer {
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
+  /** Playback is stalled waiting for PLAYBACK_MIN_BUFFER frames to decode. */
+  private buffering = false;
 
   /** Fired when the target frame changes (drives the scrubber + stage label). */
   onFrame: ((ordinal: number) => void) | null = null;
   /** Fired when play/pause changes (drives the transport play button). */
   onPlayStateChange: ((playing: boolean) => void) | null = null;
+  /** Fired when a playback stall starts/ends (drives the buffering pill). */
+  onBufferingChange: ((buffering: boolean) => void) | null = null;
+  /** Fired when a frame finishes decoding (drives the transport buffer bar). */
+  onBufferChange: (() => void) | null = null;
   /** Loading-status messages during boot (drives the entry overlay's text). */
   onStatus: ((msg: string) => void) | null = null;
   /** Fired when DoF is toggled on/off (e.g. hotkey or a tap-to-focus that turns
@@ -336,6 +351,7 @@ export class Viewer {
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
     this.streamer = new FrameStreamer(source, manifest.frames, tier);
+    this.streamer.onResident = () => this.onBufferChange?.();
 
     this.timeline = new Timeline(
       manifest.config.frameCount,
@@ -449,6 +465,13 @@ export class Viewer {
     this.streamer.setPlayhead(start);
     this.onFrame?.(start);
 
+    // Start playback pre-buffered: hold the clock until a short run of frames
+    // is resident, so slow sources begin smoothly instead of sticking on the
+    // first frame while the playhead silently runs ahead.
+    if (this.timeline.playing && this.manifest.config.frameCount > 1) {
+      this.setBuffering(true);
+    }
+
     this.timer.update(); // establish the delta baseline before the first frame
     this.loop();
     this.startAdaptive();
@@ -494,6 +517,52 @@ export class Viewer {
   /** Jump to a frame ordinal without changing play state (stage jumps). */
   jumpTo(ordinal: number): void {
     this.timeline.setFrame(ordinal);
+  }
+
+  // --- playback buffering ------------------------------------------------
+
+  /** True while a playing timeline is stalled waiting for frames to decode. */
+  isBuffering(): boolean {
+    return this.buffering;
+  }
+
+  /** True when the frame the playhead wants isn't decoded yet (pill state). */
+  isAwaitingFrame(): boolean {
+    return this.buffering || !this.streamer.has(this.timeline.frameIndex());
+  }
+
+  /** Resident frame runs (inclusive ordinals), for the transport buffer bar. */
+  getBufferedRanges(): Array<[number, number]> {
+    return this.streamer.bufferedRanges();
+  }
+
+  /**
+   * Per-tick stall decision. Playing into a non-resident frame starts a stall;
+   * it ends once PLAYBACK_MIN_BUFFER consecutive frames from the playhead are
+   * resident (clamped at the sequence end — the last frames need only
+   * themselves). Pausing always clears the stall.
+   */
+  private updateBuffering(): boolean {
+    if (!this.timeline.playing) {
+      this.setBuffering(false);
+      return false;
+    }
+    const target = this.timeline.frameIndex();
+    const need = Math.min(PLAYBACK_MIN_BUFFER, this.timeline.frameCount - target);
+    if (this.buffering) {
+      let run = 0;
+      while (run < need && this.streamer.has(target + run)) run++;
+      if (run >= need) this.setBuffering(false);
+    } else if (!this.streamer.has(target)) {
+      this.setBuffering(true);
+    }
+    return this.buffering;
+  }
+
+  private setBuffering(buffering: boolean): void {
+    if (this.buffering === buffering) return;
+    this.buffering = buffering;
+    this.onBufferingChange?.(buffering);
   }
 
   setMaterial(mode: string): void {
@@ -1200,7 +1269,9 @@ export class Viewer {
     // delta and lurch the playhead across many frames on the next visible tick.
     const dt = Math.min(raw, 0.1);
 
-    this.timeline.update(dt);
+    // While buffering, the clock holds (dt 0) so the playhead never runs ahead
+    // of what can be shown — playback resumes in order instead of skipping.
+    this.timeline.update(this.updateBuffering() ? 0 : dt);
     const target = this.timeline.frameIndex();
 
     if (target !== this.targetIndex) {

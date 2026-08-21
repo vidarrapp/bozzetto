@@ -23,6 +23,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 Bug fixes and UI polish.
 
 - **Context-aware loading** — the overlay now reads "Loading model…" or "Loading timelapse…" to match the project, and reports the environment as its own load phase so the HDRI is ready before the subject appears.
+- **Playback buffering** — timelapse playback now waits for a few frames to load before starting (and whenever loading falls behind) instead of silently skipping ahead. A bar under the scrubber shows which frames are loaded, and a "Buffering…" pill appears while playback catches up.
 - **DoF Controls and focus** — You can now set the focus by double-clicking directly on the model (or a double-tap on touch devices), rather than using the slider in the panel.
 - **Wireframe opacity** — the white and black wireframe overlays share a consistent slider that spans the full opacity range.
 - **Stage in unlit modes** — the floor, shadow-catcher, and pedestal options now show in matcap and normal shading, not just lit PBR.
@@ -57,7 +58,7 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 
 ### Viewer
 
-- Per-frame geometry streaming. One persistent mesh has its geometry swapped each frame, with prefetch and eviction around the playhead so playback does not stall. If the next frame is not decoded yet, it holds the nearest one that is.
+- Per-frame geometry streaming. One persistent mesh has its geometry swapped each frame, with prefetch and eviction around the playhead so playback does not stall. If loading falls behind, playback buffers — waiting for a short run of frames instead of skipping ahead — with a loaded-frames bar under the scrubber and a buffering indicator.
 - Renders on WebGPU through three.js's node-based renderer, with an automatic WebGL 2 fallback when WebGPU is unavailable; the same materials, shadows, ambient occlusion, and depth of field run on either backend.
 - Real-time relighting with a multi-light rig and soft (VSM) shadows.
 - Material modes: lit PBR (albedo, roughness, metalness), matcaps, view-space normals, and a wireframe overlay, each with smooth or flat shading.

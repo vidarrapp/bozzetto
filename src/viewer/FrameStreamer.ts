@@ -25,6 +25,9 @@ export class FrameStreamer {
   private readonly ahead: number;
   private readonly behind: number;
 
+  /** Fired whenever a frame finishes decoding into the cache (drives buffer UI). */
+  onResident: (() => void) | null = null;
+
   constructor(
     /** Where frame bytes come from (network or embedded). */
     private readonly source: AssetSource,
@@ -60,6 +63,7 @@ export class FrameStreamer {
         // Drop the result if the frame fell out of the window while loading.
         if (this.inWindowOf.has(ordinal)) {
           this.cache.set(ordinal, geom);
+          this.onResident?.();
         } else {
           geom.dispose();
         }
@@ -85,6 +89,18 @@ export class FrameStreamer {
       if (idx <= ordinal && (best === null || idx > best)) best = idx;
     }
     return best;
+  }
+
+  /** Contiguous resident runs as inclusive [start, end] ordinals, ascending. */
+  bufferedRanges(): Array<[number, number]> {
+    const resident = [...this.cache.keys()].sort((a, b) => a - b);
+    const ranges: Array<[number, number]> = [];
+    for (const idx of resident) {
+      const last = ranges[ranges.length - 1];
+      if (last && idx === last[1] + 1) last[1] = idx;
+      else ranges.push([idx, idx]);
+    }
+    return ranges;
   }
 
   /** Index of the nearest resident frame to `ordinal`, or null if none. */
