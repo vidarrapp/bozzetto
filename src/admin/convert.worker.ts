@@ -1,7 +1,9 @@
 import { objToGLB } from './glb';
 
 // Dedicated worker: convert OBJ text to a .glb off the main thread so the UI
-// stays responsive while a sequence is processed.
+// stays responsive while a sequence is processed. The finished GLB is gzipped
+// here too (quantized int16 geometry deflates well); the viewer inflates by
+// magic sniff, so the bytes stay drop-in wherever a raw .glb was accepted.
 const ctx = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
   postMessage: (message: unknown, transfer?: Transferable[]) => void;
@@ -13,11 +15,21 @@ interface Job {
   zUp: boolean;
 }
 
+async function gzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
+  // Every WebGPU-era browser has CompressionStream; raw GLB is a valid
+  // fallback anyway since the viewer sniffs before inflating.
+  if (typeof CompressionStream === 'undefined') return bytes;
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
 ctx.onmessage = (e: MessageEvent) => {
   const { id, text, zUp } = e.data as Job;
   try {
     const { glb, tris } = objToGLB(text, zUp);
-    ctx.postMessage({ id, glb, tris }, [glb]);
+    void gzip(glb).then((packed) => {
+      ctx.postMessage({ id, glb: packed, tris }, [packed]);
+    });
   } catch (err) {
     ctx.postMessage({ id, error: (err as Error).message });
   }

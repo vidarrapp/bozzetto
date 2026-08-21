@@ -1,4 +1,4 @@
-import { BufferGeometry, Material, Mesh, Texture } from 'three';
+import { BufferAttribute, BufferGeometry, Material, Matrix3, Matrix4, Mesh, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { getGLTFLoader } from '../loaders/gltf';
 import type { AssetSource } from './AssetSource';
@@ -266,23 +266,30 @@ export class FrameStreamer {
       this.tier === 'hd' && frame.hd ? frame.hd : frame.sd;
 
     // Parse from bytes (not a URL) so the same path works whether the bytes
-    // arrive over the network or from an embedded base64 registry.
+    // arrive over the network or from an embedded base64 registry. Frames from
+    // the converters arrive gzipped; sniffing (rather than trusting the
+    // extension) keeps every pre-compression file loading unchanged.
     const bytes = await this.source.getBytes(path);
-    const gltf = await getGLTFLoader().parseAsync(bytes, '');
+    const gltf = await getGLTFLoader().parseAsync(await maybeGunzip(bytes), '');
 
-    let geometry: BufferGeometry | null = null;
+    let found: Mesh | null = null;
     gltf.scene.traverse((obj: Object3D) => {
       const mesh = obj as Mesh;
-      if (!geometry && mesh.isMesh && mesh.geometry) {
-        geometry = mesh.geometry as BufferGeometry;
-      }
+      if (!found && mesh.isMesh && mesh.geometry) found = mesh;
     });
-    if (!geometry) {
+    if (!found) {
       throw new Error(`No mesh found in frame ${ordinal} (${path})`);
     }
+    const mesh = found as Mesh;
+    const geom = mesh.geometry as BufferGeometry;
 
-    // Decimated exports may omit normals; compute them so shading reads.
-    const geom = geometry as BufferGeometry;
+    // Converted frames carry quantized int16 positions with the dequantization
+    // transform on their node; bake both back into world-space float32 (also
+    // squares up pre-made GLBs whose meshes sit under a transformed node).
+    bakeWorldGeometry(mesh, geom);
+
+    // Converted frames ship no normals; compute the same smooth normals the
+    // old fat frames carried.
     if (!geom.getAttribute('normal')) geom.computeVertexNormals();
     geom.computeBoundingBox();
     geom.computeBoundingSphere();
@@ -292,6 +299,56 @@ export class FrameStreamer {
     disposeUnusedGltfResources(gltf.scene, geom);
 
     return geom;
+  }
+}
+
+/** Gzip magic sniff + native inflate; non-gzip bytes pass through untouched. */
+async function maybeGunzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
+  const head = new Uint8Array(bytes);
+  if (head.length < 2 || head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
+const IDENTITY = new Matrix4();
+
+/**
+ * Rewrite a mesh's position (and any normal) attributes as world-space
+ * float32, folding in the mesh's node transform and any KHR_mesh_quantization
+ * encoding (normalized int16 reads denormalize through fromBufferAttribute).
+ * Downstream code — bounds, normal compute, raycasts, the memory budget —
+ * then sees ordinary float geometry regardless of how the file was packed.
+ */
+function bakeWorldGeometry(mesh: Mesh, geom: BufferGeometry): void {
+  mesh.updateWorldMatrix(true, false);
+  const matrix = mesh.matrixWorld;
+  const identity = matrix.equals(IDENTITY);
+  const pos = geom.getAttribute('position');
+  if (!pos || (identity && !pos.normalized && pos.array instanceof Float32Array)) return;
+
+  const v = new Vector3();
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(matrix);
+    out[i * 3] = v.x;
+    out[i * 3 + 1] = v.y;
+    out[i * 3 + 2] = v.z;
+  }
+  geom.setAttribute('position', new BufferAttribute(out, 3));
+
+  // Our frames ship no normals (recomputed after the bake); pre-made GLBs may,
+  // and a rotated or non-uniformly scaled node would shade wrong un-fixed.
+  const nrm = geom.getAttribute('normal');
+  if (nrm && !identity) {
+    const normalMatrix = new Matrix3().getNormalMatrix(matrix);
+    const outN = new Float32Array(nrm.count * 3);
+    for (let i = 0; i < nrm.count; i++) {
+      v.fromBufferAttribute(nrm, i).applyMatrix3(normalMatrix).normalize();
+      outN[i * 3] = v.x;
+      outN[i * 3 + 1] = v.y;
+      outN[i * 3 + 2] = v.z;
+    }
+    geom.setAttribute('normal', new BufferAttribute(outN, 3));
   }
 }
 

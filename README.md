@@ -23,6 +23,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 Bug fixes and UI polish.
 
 - **Context-aware loading** — the overlay now reads "Loading model…" or "Loading timelapse…" to match the project, and reports the environment as its own load phase so the HDRI is ready before the subject appears.
+- **Compressed frames** — newly converted frames are written as gzipped GLBs with int16-quantized positions and no stored normals (the viewer recomputes them), roughly 3–4× smaller, so timelapses load and buffer much faster. Existing timelapses keep playing unchanged and get the smaller format when re-published.
 - **Playback buffering** — timelapse playback now waits for a few frames to load before starting (and whenever loading falls behind) instead of silently skipping ahead. A bar under the scrubber shows which frames are loaded, and a "Buffering…" pill appears while playback catches up. The whole timelapse is buffered in the background when it fits in memory (a device-sized budget), so the bar fills once and playback, looping, and scrubbing stay instant.
 - **DoF Controls and focus** — You can now set the focus by double-clicking directly on the model (or a double-tap on touch devices), rather than using the slider in the panel.
 - **Wireframe opacity** — the white and black wireframe overlays share a consistent slider that spans the full opacity range.
@@ -58,7 +59,7 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 
 ### Viewer
 
-- Per-frame geometry streaming. One persistent mesh has its geometry swapped each frame, with the frames near the playhead prefetched eagerly and the rest of the sequence filled in slowly in the background. A timelapse that fits the device's memory budget ends up buffered whole — scrubbing and looping never reload — while larger ones keep the budget's worth of frames around the playhead. If loading falls behind, playback buffers — waiting for a short run of frames instead of skipping ahead — with a loaded-frames bar under the scrubber and a buffering indicator.
+- Per-frame geometry streaming. Frames are stored as gzipped, position-quantized GLBs (roughly 3–4× smaller than the raw meshes) and unpacked natively on load; earlier uncompressed frames still play unchanged. One persistent mesh has its geometry swapped each frame, with the frames near the playhead prefetched eagerly and the rest of the sequence filled in slowly in the background. A timelapse that fits the device's memory budget ends up buffered whole — scrubbing and looping never reload — while larger ones keep the budget's worth of frames around the playhead. If loading falls behind, playback buffers — waiting for a short run of frames instead of skipping ahead — with a loaded-frames bar under the scrubber and a buffering indicator.
 - Renders on WebGPU through three.js's node-based renderer, with an automatic WebGL 2 fallback when WebGPU is unavailable; the same materials, shadows, ambient occlusion, and depth of field run on either backend.
 - Real-time relighting with a multi-light rig and soft (VSM) shadows.
 - Material modes: lit PBR (albedo, roughness, metalness), matcaps, view-space normals, and a wireframe overlay, each with smooth or flat shading.
@@ -87,7 +88,7 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 
 - Serverless on Cloudflare: project metadata in D1 (SQLite), binary meshes in R2, and every API route as a Pages Function.
 - Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
-- A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) produces the same frames as the in-browser converter, byte for byte, so timelapses can also be built offline.
+- A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) produces the same compact frame format as the in-browser converter (identical geometry; the gzip streams may differ byte-wise), so timelapses can also be built offline.
 
 ## Controls
 

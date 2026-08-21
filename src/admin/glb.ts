@@ -1,10 +1,14 @@
 /**
- * Pure OBJ → glTF-binary conversion, ported from scripts/obj-to-timelapse.mjs
- * so frames made in the editor are byte-identical to CLI-made ones. No DOM,
+ * Pure OBJ → glTF-binary conversion, mirrored by scripts/obj-to-timelapse.mjs
+ * so frames made in the editor are equivalent to CLI-made ones. No DOM,
  * Worker, or Node APIs here — it runs in a worker and is unit-testable.
  *
- * Indices are always emitted as UINT (Uint32), matching the CLI writer, which
- * keeps every chunk 4-byte aligned.
+ * Frames are written compact (design doc §5): positions quantized to int16
+ * (KHR_mesh_quantization) with the dequantization transform on the glTF node,
+ * uint16 indices when the mesh is small enough, and no normals — the viewer
+ * recomputes identical smooth normals on load. The caller then gzips the
+ * whole GLB (the viewer inflates by magic sniff), which the quantized data
+ * compresses far better than raw floats did.
  */
 
 export interface ParsedMesh {
@@ -49,47 +53,19 @@ export function parseObj(text: string, zUp = false): ParsedMesh {
   return { positions: new Float32Array(verts), indices: Uint32Array.from(indices) };
 }
 
-/** Smooth per-vertex normals from positions + indices (respects OBJ winding). */
-export function computeNormals(positions: Float32Array, indices: Uint32Array): Float32Array {
-  const n = new Float32Array(positions.length);
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i] * 3;
-    const b = indices[i + 1] * 3;
-    const c = indices[i + 2] * 3;
-    const e1x = positions[b] - positions[a];
-    const e1y = positions[b + 1] - positions[a + 1];
-    const e1z = positions[b + 2] - positions[a + 2];
-    const e2x = positions[c] - positions[a];
-    const e2y = positions[c + 1] - positions[a + 1];
-    const e2z = positions[c + 2] - positions[a + 2];
-    const nx = e1y * e2z - e1z * e2y;
-    const ny = e1z * e2x - e1x * e2z;
-    const nz = e1x * e2y - e1y * e2x;
-    for (const idx of [a, b, c]) {
-      n[idx] += nx;
-      n[idx + 1] += ny;
-      n[idx + 2] += nz;
-    }
-  }
-  for (let i = 0; i < n.length; i += 3) {
-    const l = Math.hypot(n[i], n[i + 1], n[i + 2]) || 1;
-    n[i] /= l;
-    n[i + 1] /= l;
-    n[i + 2] /= l;
-  }
-  return n;
-}
-
-export function meshToGLB(
-  positions: Float32Array,
-  normals: Float32Array,
-  indices: Uint32Array,
-): ArrayBuffer {
-  const idxLen = indices.byteLength;
-  const posLen = positions.byteLength;
-  const nrmLen = normals.byteLength;
-  const binLen = idxLen + posLen + nrmLen; // already a multiple of 4
-
+/**
+ * Quantize float positions to symmetric int16 around the mesh centre. The
+ * dequantization (q / 32767 * half + center, per axis) goes on the glTF node
+ * as scale + translation; the viewer bakes it back into float positions on
+ * load. Error is halfExtent / 32767 per axis — microns at bust scale.
+ */
+function quantizePositions(positions: Float32Array): {
+  quantized: Int16Array;
+  center: number[];
+  half: number[];
+  qMin: number[];
+  qMax: number[];
+} {
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < positions.length; i += 3) {
@@ -99,23 +75,62 @@ export function meshToGLB(
       if (v > max[k]) max[k] = v;
     }
   }
+  const center = [0, 1, 2].map((k) => (min[k] + max[k]) / 2);
+  // A flat axis quantizes to 0 everywhere; scale 1 keeps the node well-formed.
+  const half = [0, 1, 2].map((k) => (max[k] - min[k]) / 2 || 1);
 
+  const quantized = new Int16Array(positions.length);
+  const qMin = [32767, 32767, 32767];
+  const qMax = [-32767, -32767, -32767];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const q = Math.round(((positions[i + k] - center[k]) / half[k]) * 32767);
+      const c = Math.max(-32767, Math.min(32767, q));
+      quantized[i + k] = c;
+      if (c < qMin[k]) qMin[k] = c;
+      if (c > qMax[k]) qMax[k] = c;
+    }
+  }
+  return { quantized, center, half, qMin, qMax };
+}
+
+export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayBuffer {
   const vertCount = positions.length / 3;
+  const { quantized, center, half, qMin, qMax } = quantizePositions(positions);
+
+  // uint16 indices whenever every vertex is addressable; uint32 otherwise.
+  const smallIndex = vertCount <= 0xffff;
+  const indexArray = smallIndex ? Uint16Array.from(indices) : indices;
+  const indexType = smallIndex ? 5123 : 5125; // USHORT vs UINT
+
+  const idxLen = indexArray.byteLength;
+  const idxPadded = (idxLen + 3) & ~3;
+  const posLen = quantized.byteLength;
+  const binLen = idxPadded + posLen;
+
   const gltf = {
     asset: { version: '2.0', generator: 'bozzetto obj-to-timelapse' },
+    extensionsUsed: ['KHR_mesh_quantization'],
+    extensionsRequired: ['KHR_mesh_quantization'],
     scene: 0,
     scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 1, NORMAL: 2 }, indices: 0, mode: 4 }] }],
+    nodes: [{ mesh: 0, translation: center, scale: half }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 1 }, indices: 0, mode: 4 }] }],
     accessors: [
-      { bufferView: 0, componentType: 5125, count: indices.length, type: 'SCALAR' },
-      { bufferView: 1, componentType: 5126, count: vertCount, type: 'VEC3', min, max },
-      { bufferView: 2, componentType: 5126, count: vertCount, type: 'VEC3' },
+      { bufferView: 0, componentType: indexType, count: indices.length, type: 'SCALAR' },
+      {
+        bufferView: 1,
+        componentType: 5122, // SHORT
+        normalized: true,
+        count: vertCount,
+        type: 'VEC3',
+        min: qMin,
+        max: qMax,
+      },
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: idxLen, target: 34963 },
-      { buffer: 0, byteOffset: idxLen, byteLength: posLen, target: 34962 },
-      { buffer: 0, byteOffset: idxLen + posLen, byteLength: nrmLen, target: 34962 },
+      { buffer: 0, byteOffset: idxPadded, byteLength: posLen, target: 34962 },
     ],
     buffers: [{ byteLength: binLen }],
   };
@@ -138,10 +153,9 @@ export function meshToGLB(
   dv.setUint32(o, binPadded, true);
   dv.setUint32(o + 4, 0x004e4942, true); // "BIN\0"
   o += 8;
-  u8.set(new Uint8Array(indices.buffer, indices.byteOffset, idxLen), o);
-  u8.set(new Uint8Array(positions.buffer, positions.byteOffset, posLen), o + idxLen);
-  u8.set(new Uint8Array(normals.buffer, normals.byteOffset, nrmLen), o + idxLen + posLen);
-  // Any trailing bin-pad bytes stay 0x00, matching the CLI writer.
+  u8.set(new Uint8Array(indexArray.buffer, indexArray.byteOffset, idxLen), o);
+  u8.set(new Uint8Array(quantized.buffer, quantized.byteOffset, posLen), o + idxPadded);
+  // Alignment gaps and trailing bin pad stay 0x00, matching the CLI writer.
   return out;
 }
 
@@ -159,8 +173,7 @@ export function objToGLB(text: string, zUp = false): { glb: ArrayBuffer; tris: n
   if (positions.length === 0 || indices.length === 0) {
     throw new Error('No geometry parsed from OBJ');
   }
-  const normals = computeNormals(positions, indices);
-  return { glb: meshToGLB(positions, normals, indices), tris: indices.length / 3 };
+  return { glb: meshToGLB(positions, indices), tris: indices.length / 3 };
 }
 
 /** Best-effort triangle count for a pre-made .glb (informational). */

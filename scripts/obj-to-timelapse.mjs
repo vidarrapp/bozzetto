@@ -11,16 +11,21 @@
  *   --z-up           treat OBJ as Z-up and convert to Y-up (default: Y-up)
  *
  * Input: one .obj per frame in <inputDir>, sorted naturally by filename
- * (e.g. model_0001.obj, model_0002.obj, ...). Normals are recomputed smooth
- * from the geometry; UVs/materials are ignored (the viewer's modes don't need
- * them). Output is written to public/timelapses/<id>/ and, unlike the demo,
- * is NOT gitignored — commit it and push to deploy.
+ * (e.g. model_0001.obj, model_0002.obj, ...). UVs/materials are ignored (the
+ * viewer's modes don't need them), and normals aren't stored at all — the
+ * viewer recomputes the same smooth normals on load. Frames are written as
+ * gzipped GLBs with int16-quantized positions (KHR_mesh_quantization), the
+ * same compact format the in-browser converter produces; the viewer inflates
+ * by content sniff, so the files keep their .glb names. Output is written to
+ * public/timelapses/<id>/ and, unlike the demo, is NOT gitignored — commit it
+ * and push to deploy.
  *
  * Pure Node, no dependencies.
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -95,84 +100,86 @@ function parseObj(text) {
     }
   }
 
-  return {
-    positions: new Float32Array(verts),
-    indices:
-      verts.length / 3 > 65535
-        ? new Uint32Array(indices)
-        : Uint32Array.from(indices),
-  };
+  return { positions: new Float32Array(verts), indices: Uint32Array.from(indices) };
 }
 
-/** Smooth per-vertex normals from positions + indices (respects OBJ winding). */
-function computeNormals(positions, indices) {
-  const n = new Float32Array(positions.length);
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i] * 3;
-    const b = indices[i + 1] * 3;
-    const c = indices[i + 2] * 3;
-    const e1x = positions[b] - positions[a];
-    const e1y = positions[b + 1] - positions[a + 1];
-    const e1z = positions[b + 2] - positions[a + 2];
-    const e2x = positions[c] - positions[a];
-    const e2y = positions[c + 1] - positions[a + 1];
-    const e2z = positions[c + 2] - positions[a + 2];
-    const nx = e1y * e2z - e1z * e2y;
-    const ny = e1z * e2x - e1x * e2z;
-    const nz = e1x * e2y - e1y * e2x;
-    for (const idx of [a, b, c]) {
-      n[idx] += nx;
-      n[idx + 1] += ny;
-      n[idx + 2] += nz;
-    }
-  }
-  for (let i = 0; i < n.length; i += 3) {
-    const l = Math.hypot(n[i], n[i + 1], n[i + 2]) || 1;
-    n[i] /= l;
-    n[i + 1] /= l;
-    n[i + 2] /= l;
-  }
-  return n;
-}
-
-// --- minimal glTF-binary (.glb) writer ----------------------------------
-function meshToGLB({ positions, normals, indices }) {
-  const idxBytes = Buffer.from(indices.buffer, indices.byteOffset, indices.byteLength);
-  const posBytes = Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength);
-  const nrmBytes = Buffer.from(normals.buffer, normals.byteOffset, normals.byteLength);
-
-  const idxLen = idxBytes.length;
-  const posLen = posBytes.length;
-  const nrmLen = nrmBytes.length;
-  const bin = Buffer.concat([idxBytes, posBytes, nrmBytes]);
-
+/**
+ * Quantize float positions to symmetric int16 around the mesh centre. The
+ * dequantization (q / 32767 * half + center, per axis) goes on the glTF node
+ * as scale + translation; the viewer bakes it back into float positions on
+ * load. Mirrors src/admin/glb.ts.
+ */
+function quantizePositions(positions) {
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < positions.length; i += 3) {
     for (let k = 0; k < 3; k++) {
-      const val = positions[i + k];
-      if (val < min[k]) min[k] = val;
-      if (val > max[k]) max[k] = val;
+      const v = positions[i + k];
+      if (v < min[k]) min[k] = v;
+      if (v > max[k]) max[k] = v;
     }
   }
+  const center = [0, 1, 2].map((k) => (min[k] + max[k]) / 2);
+  // A flat axis quantizes to 0 everywhere; scale 1 keeps the node well-formed.
+  const half = [0, 1, 2].map((k) => (max[k] - min[k]) / 2 || 1);
 
-  const componentType = indices instanceof Uint32Array ? 5125 : 5123; // UINT vs USHORT
+  const quantized = new Int16Array(positions.length);
+  const qMin = [32767, 32767, 32767];
+  const qMax = [-32767, -32767, -32767];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const q = Math.round(((positions[i + k] - center[k]) / half[k]) * 32767);
+      const c = Math.max(-32767, Math.min(32767, q));
+      quantized[i + k] = c;
+      if (c < qMin[k]) qMin[k] = c;
+      if (c > qMax[k]) qMax[k] = c;
+    }
+  }
+  return { quantized, center, half, qMin, qMax };
+}
+
+// --- minimal glTF-binary (.glb) writer ----------------------------------
+// Compact frame format, mirroring src/admin/glb.ts: quantized int16 positions
+// (KHR_mesh_quantization, dequant transform on the node), uint16 indices when
+// the mesh is small enough, and no normals (the viewer recomputes them).
+function meshToGLB({ positions, indices }) {
   const vertCount = positions.length / 3;
+  const { quantized, center, half, qMin, qMax } = quantizePositions(positions);
+
+  const smallIndex = vertCount <= 0xffff;
+  const indexArray = smallIndex ? Uint16Array.from(indices) : indices;
+  const indexType = smallIndex ? 5123 : 5125; // USHORT vs UINT
+
+  const idxBytes = Buffer.from(indexArray.buffer, indexArray.byteOffset, indexArray.byteLength);
+  const posBytes = Buffer.from(quantized.buffer, quantized.byteOffset, quantized.byteLength);
+  const idxLen = idxBytes.length;
+  const idxPadded = (idxLen + 3) & ~3;
+  const posLen = posBytes.length;
+  const bin = Buffer.concat([idxBytes, Buffer.alloc(idxPadded - idxLen), posBytes]);
+
   const gltf = {
     asset: { version: '2.0', generator: 'bozzetto obj-to-timelapse' },
+    extensionsUsed: ['KHR_mesh_quantization'],
+    extensionsRequired: ['KHR_mesh_quantization'],
     scene: 0,
     scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 1, NORMAL: 2 }, indices: 0, mode: 4 }] }],
+    nodes: [{ mesh: 0, translation: center, scale: half }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 1 }, indices: 0, mode: 4 }] }],
     accessors: [
-      { bufferView: 0, componentType, count: indices.length, type: 'SCALAR' },
-      { bufferView: 1, componentType: 5126, count: vertCount, type: 'VEC3', min, max },
-      { bufferView: 2, componentType: 5126, count: vertCount, type: 'VEC3' },
+      { bufferView: 0, componentType: indexType, count: indices.length, type: 'SCALAR' },
+      {
+        bufferView: 1,
+        componentType: 5122, // SHORT
+        normalized: true,
+        count: vertCount,
+        type: 'VEC3',
+        min: qMin,
+        max: qMax,
+      },
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: idxLen, target: 34963 },
-      { buffer: 0, byteOffset: idxLen, byteLength: posLen, target: 34962 },
-      { buffer: 0, byteOffset: idxLen + posLen, byteLength: nrmLen, target: 34962 },
+      { buffer: 0, byteOffset: idxPadded, byteLength: posLen, target: 34962 },
     ],
     buffers: [{ byteLength: bin.length }],
   };
@@ -211,12 +218,17 @@ objFiles.forEach((file, i) => {
     console.error(`Skipping ${file}: no geometry parsed`);
     return;
   }
-  const normals = computeNormals(positions, indices);
-  const glb = meshToGLB({ positions, normals, indices });
+  const glb = meshToGLB({ positions, indices });
+  // Stored gzipped (the viewer inflates by magic sniff); the .glb name stays
+  // so manifests and URLs are format-agnostic.
+  const packed = gzipSync(glb);
   const name = `${String(i).padStart(4, '0')}.glb`;
-  writeFileSync(join(framesDir, name), glb);
+  writeFileSync(join(framesDir, name), packed);
   frameEntries.push({ index: i, sd: `frames/sd/${name}`, hd: null, tris: indices.length / 3 });
-  console.log(`  ${file} -> ${name} (${(indices.length / 3).toLocaleString()} tris)`);
+  console.log(
+    `  ${file} -> ${name} (${(indices.length / 3).toLocaleString()} tris, ` +
+      `${(packed.length / 1024).toFixed(0)} KB)`,
+  );
 });
 
 const manifest = {
