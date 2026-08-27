@@ -231,8 +231,8 @@ and return on exit.
 | d | step up a subdivision level | |
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
-| s | brush strength (hold + drag horizontally) | COLLISION in the source map: `s` was listed for both brush strength and shadows. Resolved: `s` = strength (pairs with `b`, most frequent); shadows moved to `shift+s`. Flag for veto. |
-| shift + s | toggle shadows on/off | see collision note above |
+| s | brush strength (hold + drag horizontally) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. |
+| shift + s | toggle shadows on/off | confirmed |
 | x | symmetry toggle | |
 | q | brush mode | reserved (returns from gizmo when Transform ships; Maya-style QWER) |
 | w / e / r | gizmo move / rotate / scale | reserved; Transform tool is deferred past v1 |
