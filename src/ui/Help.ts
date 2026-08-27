@@ -32,10 +32,49 @@ const GUIDE_HTML = `
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
   </div>`;
 
+const SCULPT_HTML = `
+  <div class="help-guide__head">Sculpt hotkeys <span class="help-guide__close">H to close</span></div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Sculpting</div>
+    <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt (off mesh: orbit)</span></div>
+    <div class="help-row"><span class="help-key">Alt + drag</span><span>Negative (carve)</span></div>
+    <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Mask (+ Alt to unmask)</span></div>
+    <div class="help-row"><kbd>B</kbd><span>Brush size (hold + drag)</span></div>
+    <div class="help-row"><kbd>S</kbd><span>Brush strength (hold + drag up/down)</span></div>
+    <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
+    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Brushes</div>
+    <div class="help-row"><kbd>1</kbd><span>Crease</span></div>
+    <div class="help-row"><kbd>2</kbd><span>Move</span></div>
+    <div class="help-row"><kbd>3</kbd><span>Standard (clay)</span></div>
+    <div class="help-row"><kbd>4</kbd><span>Inflate</span></div>
+    <div class="help-row"><kbd>5</kbd><span>Pinch</span></div>
+    <div class="help-row"><kbd>6</kbd><span>Flatten</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Detail</div>
+    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>D</kbd><span>Subdivide</span></div>
+    <div class="help-row"><kbd>D</kbd><span>Subdivision level up</span></div>
+    <div class="help-row"><kbd>Shift</kbd>+<kbd>D</kbd><span>Subdivision level down</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Scene</div>
+    <div class="help-row"><kbd>F</kbd><span>Orbit around last edit</span></div>
+    <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
+    <div class="help-row"><kbd>L</kbd><span>Rotate light (hold + drag)</span></div>
+    <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
+  </div>`;
+
 export class Help {
   private readonly hint: HTMLDivElement;
   private readonly guide: HTMLDivElement;
   private hintTimer: number | undefined;
+  private readonly onSculptMode = (e: Event): void => {
+    const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    this.guide.innerHTML = active ? SCULPT_HTML : GUIDE_HTML;
+  };
 
   constructor() {
     this.hint = document.createElement('div');
@@ -50,6 +89,8 @@ export class Help {
     this.guide.innerHTML = GUIDE_HTML;
     this.guide.addEventListener('click', () => this.toggle());
     document.body.appendChild(this.guide);
+    // Sculpt mode swaps the guide content while active (and back on exit).
+    window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
   }
 
   toggle(): void {
@@ -67,6 +108,7 @@ export class Help {
 
   dispose(): void {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
+    window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     this.hint.remove();
     this.guide.remove();
   }

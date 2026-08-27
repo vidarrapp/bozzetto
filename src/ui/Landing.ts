@@ -24,6 +24,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
           <p class="landing__tagline">Sculpt timelapses &amp; 3D studies</p>
         </div>
         <nav class="landing__links">
+          <a class="landing__editor" href="/?tl=demo&amp;sculpt=1">Sculpt!</a>
           <a class="landing__editor" href="/create/">Make your own →</a>
           <a class="landing__admin muted" href="/admin/">Admin</a>
         </nav>

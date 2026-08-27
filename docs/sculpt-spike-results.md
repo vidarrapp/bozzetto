@@ -123,3 +123,29 @@ floor; reference hardware per section 12 is iPad Air / desktop PC).
 - Sim-bench figures on this shared container vary with tool choice and
   CPU load run-to-run; treat docs numbers as floors and re-measure on the
   reference hardware once deployed.
+
+# WS1 round 2 (RTX 3060 feedback)
+
+Reference-hardware numbers (laptop RTX 3060, Firefox, WebGPU): 30-50 fps
+panning / 20-40 sculpting at 49k tris, but ~10 fps at BOTH 196k and 786k.
+Equal fps at 4x the triangles means the cost was resolution-bound
+post-processing, not geometry - GTAO. Changes landed in response, all
+verified headless (ws1b suite) plus a regression pass of the WS1 suite:
+
+- Sculpt shading path: pipeline output swaps to scene color x a 4-tap
+  screen-space cavity term (from the existing MRT normals); GTAO and the
+  DoF gather leave the graph entirely (they were only uniform-muted
+  before, still paying their passes). GTAO becomes an opt-in later.
+- No HDRI environment sampling in sculpt (scene.environment null,
+  restored on exit); hemisphere ambient + key light carry the look.
+- Flat shading by default on the sculpt subject.
+- Brush cursor: surface-aligned 3D ring (closed Line strips;
+  WebGPURenderer does not draw LineLoop) at the world brush radius with
+  center dot and normal-aligned strength line; screen-space fallback off
+  the mesh. Strength adjust (hold s) is now a vertical drag, up =
+  stronger. Fixed a real adjust bug the tests caught: stale/mixed
+  coordinate tracking made a second b/s hold jump the value.
+- Mode-aware hotkey guide (H) and a gallery "Sculpt!" entry link.
+- Note: at 786k the next ctrl+d would be 3.1M tris, above the 1.6M cap,
+  so the refusal Vidar saw was the cap working as intended. Whether the
+  cap should rise is a reference-hardware question.

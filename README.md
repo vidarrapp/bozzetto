@@ -18,6 +18,19 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 
 ## Changelog
 
+### v1.1
+
+**Sculpt mode (alpha)** — Bozzetto can now sculpt, not just play back. Built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core (MIT, by Stephane GINIER), ported onto Bozzetto's WebGPU/WebGL2 node pipeline with one canvas, one camera, and one look. Click **Sculpt!** in the gallery to try it.
+
+- **Sculpting** — drag on the mesh to sculpt, drag off it to orbit; hold `Alt` to carve (negative), `Ctrl` to mask, `Ctrl+Alt` to unmask. Six brushes on `1`–`6` (Crease, Move, Standard clay, Inflate, Pinch, Flatten), `X` toggles symmetry, `Ctrl+Z` / `Ctrl+Shift+Z` undo and redo.
+- **Brush cursor** — a ring aligned to the surface under the cursor at the true brush radius, with a center dot and a strength line along the normal. Hold `B` and drag sideways for size, `S` and drag up/down for strength; the cursor anchors in place while adjusting.
+- **Detail** — the default sphere is ~50k triangles with a multiresolution stack: `D` / `Shift+D` step levels, `Ctrl+D` subdivides (capped at 1.6M triangles). Dynamic topology runs under the hood and gets a UI later.
+- **Sculpt rendering defaults, tuned for framerate** — flat shading, a single key light, shadows off (`Shift+S` toggles), no depth of field, no HDRI sampling, and GTAO replaced by a cheap screen-space cavity term that keeps creases and ridges readable. Everything returns to the saved look when leaving sculpt mode; richer render options come later.
+- **Scene keys** — `F` orbits around the last edit point, `L` + drag rotates the light rig. The `H` hotkey guide now switches between the viewer and sculpt tables automatically.
+- **Viewer change** — the `B` depth-of-field hotkey is removed (DoF lives in the settings panel); in sculpt mode number keys select brushes instead of materials.
+
+Sculpt-to-timelapse capture (recording strokes as frames) is the next milestone.
+
 ### v1.01
 
 Bug fixes and UI polish.

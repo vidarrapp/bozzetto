@@ -231,7 +231,7 @@ and return on exit.
 | d | step up a subdivision level | |
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
-| s | brush strength (hold + drag horizontally) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. |
+| s | brush strength (hold + drag vertically, up = stronger) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. Vertical per review round 2. |
 | shift + s | toggle shadows on/off | confirmed |
 | x | symmetry toggle | |
 | q | brush mode | reserved (returns from gizmo when Transform ships; Maya-style QWER) |
@@ -255,6 +255,18 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
   (`shift+s` re-enables).
 - Depth of field: off by default in sculpt mode (and its viewer hotkey is
   gone; the settings panel still toggles it).
+- GTAO: out of the render graph entirely in sculpt mode (not merely
+  strength 0, which still pays the pass). In its place, a 4-tap
+  screen-space cavity term from the MRT normals (creases darken, ridges
+  lighten) keeps the form reading. GTAO returns as an opt-in render
+  option later (WS4 palette). Decided after the first RTX 3060 numbers:
+  ~10 fps at both 196k and 786k tris meant the cost was resolution-bound
+  post-processing, not triangles.
+- HDRI environment: not sampled in sculpt mode (scene.environment is
+  null; restored on exit). IBL cost is per-fragment in the PBR shader,
+  so the cheapest environment is none; the hemisphere ambient plus key
+  light carry the look. Also a later render option.
+- Material: flat shading by default in sculpt mode.
 - Default sphere: about 50k triangles (24,576 quads), down from ~200k, with
   the retained multiresolution levels available for `d` / `shift+d`
   stepping and `ctrl+d` subdivision beyond.
@@ -263,15 +275,21 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
 
 ### 7.6 Brush cursor (WS1 review round) `[Decision]`
 
-A screen-space dot + circle at the pointer: circle radius = the tool's
-screen radius, a small dot at the center, and a vertical line rising from
-the dot whose length shows brush strength (Mudbox-style). The line length is
-proportional to the actual surface displacement of the standard brush
-(intensity x radius x 0.1, drawn at 10x so it reads at a glance). While
-holding `b`/`s` to adjust, the cursor stays anchored at its current spot and
-the circle/line update live. Implemented as a DOM overlay outside the 3D
-pipeline, so it can never be AO-darkened or defocused (satisfies the 6.5
-acceptance by construction); the 3D symmetry-plane indicator remains WS3.
+Two representations behind one cursor (review round 2): over the mesh, a
+3D ring aligned to the picked surface normal, drawn at the intersection
+point at the tool's world radius, with a center dot and a line along the
+normal whose length shows strength (radius x intensity, i.e. 10x the
+standard brush's true displacement). Off the mesh, a screen-space DOM
+fallback ring at the pointer. While holding `b`/`s` to adjust, the cursor
+anchors in place and the ring/line update live. Aligned-vs-screen becomes
+a tools-palette option later (WS4). The ring draws depth-test-off with a
+late render order so the composite never obscures it; the 3D
+symmetry-plane indicator remains WS3.
+
+The hotkey guide (H) is mode-aware: it shows the sculpt table while
+sculpt mode is active and the viewer table otherwise. The gallery
+carries a "Sculpt!" link that opens sculpt mode directly (review
+round 2).
 
 ## 8. Manifest and viewer extensions `[Proposal]`
 

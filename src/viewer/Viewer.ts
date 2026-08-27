@@ -15,7 +15,7 @@ import {
   Vector3,
 } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform, uv, smoothstep } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry, Object3D, Texture } from 'three';
@@ -223,11 +223,16 @@ export class Viewer {
    */
   private pipeline: RenderPipeline | null = null;
   private aoNode: ReturnType<typeof ao> | null = null;
+  /** Sculpt-mode output: scene colour x screen-space cavity, no GTAO, no DoF. */
+  private sculptOut: Node | null = null;
+  private sculptShading = false;
   /** Pre-built graph nodes: the AO-composited colour, and the DoF gather over it. */
   private aoColor: Node | null = null;
   private dofNode: ReturnType<typeof dof> | null = null;
   /** Effective AO strength uniform (= intensity when enabled, else 0). */
   private readonly aoStrengthU = uniform(1);
+  /** Cavity contrast for the sculpt-mode composite (tunable later in-palette). */
+  private readonly cavityStrengthU = uniform(6);
   private aoEnabled = true; // AO on by default
   private aoIntensity = 1;
   private aoRadiusFraction = 0.5;
@@ -1128,6 +1133,17 @@ export class Viewer {
   }
 
   /**
+   * Sculpt-mode rendering: swap the pipeline output to the cavity composite
+   * (no GTAO, no DoF; both leave the graph entirely). The viewer's normal
+   * output returns when disabled. GTAO stays available as an opt-in later.
+   */
+  setSculptShading(on: boolean): void {
+    if (this.sculptShading === on) return;
+    this.sculptShading = on;
+    this.rebuildOutput();
+  }
+
+  /**
    * Move the orbit pivot to a world point, keeping the camera where it is.
    * Sculpt mode's f: orbit around the last tool position instead of the
    * whole model.
@@ -1186,6 +1202,24 @@ export class Viewer {
     // the look through uniforms — so toggling never rebuilds the graph nodes.
     const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU);
     const aoColor = scenePass.getTextureNode('output').mul(vec4(vec3(aoFactor), float(1)));
+
+    // Sculpt-mode composite: instead of GTAO, a 4-tap screen-space cavity term
+    // from the MRT normals (divergence of the view-space normal: creases darken,
+    // ridges lighten). rebuildOutput swaps to this whole-output when sculpt
+    // shading is on, so the GTAO and DoF passes leave the graph and cost
+    // nothing (same mechanism as the DoF toggle).
+    const nTex = scenePass.getTextureNode('normal');
+    const pxOff = vec2(1, 0).div(screenSize);
+    const pyOff = vec2(0, 1).div(screenSize);
+    const suv = uv();
+    const curvature = nTex
+      .sample(suv.add(pxOff)).x.sub(nTex.sample(suv.sub(pxOff)).x)
+      .add(nTex.sample(suv.add(pyOff)).y.sub(nTex.sample(suv.sub(pyOff)).y));
+    const cavity = float(1)
+      .add(curvature.mul(this.cavityStrengthU).clamp(-0.35, 0.35));
+    this.sculptOut = scenePass
+      .getTextureNode('output')
+      .mul(vec4(vec3(cavity), float(1)));
     const dofNode = dof(
       aoColor,
       scenePass.getViewZNode(),
@@ -1213,6 +1247,13 @@ export class Viewer {
    */
   private rebuildOutput(): void {
     if (!this.pipeline || !this.aoColor || !this.dofNode || !this.aoNode) return;
+    if (this.sculptShading && this.sculptOut) {
+      // Sculpt mode: scene colour x cavity only. GTAO and the DoF gather are
+      // unreferenced by this output, so neither pass executes.
+      this.pipeline.outputNode = this.sculptOut;
+      this.pipeline.needsUpdate = true;
+      return;
+    }
     if (this.aoDebug) {
       // Diagnostic view: the raw GTAO buffer as greyscale. Uniform white means
       // GTAO computed no occlusion anywhere (the bug we're chasing); visible dark

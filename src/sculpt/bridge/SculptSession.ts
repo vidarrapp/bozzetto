@@ -8,12 +8,19 @@ import SculptManager from '@sculpt-vendor/editing/SculptManager';
 import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
-import { vec3 } from 'gl-matrix';
+import { mat3, vec3 } from 'gl-matrix';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 
 /** Hard ceiling for ctrl+d subdivision (protects the iPad tier). */
 const MAX_SUBDIVISION_TRIS = 1600000;
+
+/** Surface data under the cursor, for the brush ring (world space). */
+export interface HoverSurface {
+  point: [number, number, number];
+  normal: [number, number, number];
+  worldRadius: number;
+}
 
 /**
  * The "main" object the vendored editing core talks to, ported from the
@@ -247,6 +254,51 @@ export class SculptSession {
     newMesh.init();
     Mesh.OPTIMIZE = true;
     return newMesh;
+  }
+
+  /**
+   * Surface under the current mouse position for the brush cursor: world
+   * point, world unit normal (vertex-normal average of the picked face), and
+   * the tool's world radius. `pick` false reuses the picking state a stroke
+   * is already refreshing instead of raycasting again.
+   */
+  hoverSurface(pick = true): HoverSurface | null {
+    if (!this.mesh) return null;
+    if (pick && !this.picking.intersectionMouseMesh()) return null;
+    const mesh = this.picking.getMesh();
+    if (!mesh) return null;
+
+    if (pick) this.picking.updateLocalAndWorldRadius2();
+    const worldRadius = this.picking.getWorldRadius();
+    if (!(worldRadius > 0)) return null;
+
+    const point = vec3.create();
+    vec3.transformMat4(point, this.picking.getIntersectionPoint() as unknown as vec3, mesh.getMatrix());
+
+    const fid = this.picking.getPickedFace();
+    const fAr = mesh.getFaces();
+    const nAr = mesh.getNormals();
+    const nbVertices = mesh.getNbVertices();
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let k = 0; k < 4; k++) {
+      const vi = fAr[fid * 4 + k];
+      if (!(vi >= 0) || vi >= nbVertices) continue; // quad sentinel or out of range
+      nx += nAr[vi * 3];
+      ny += nAr[vi * 3 + 1];
+      nz += nAr[vi * 3 + 2];
+    }
+    const normal = vec3.fromValues(nx, ny, nz);
+    vec3.transformMat3(normal, normal, mat3.fromMat4(mat3.create(), mesh.getMatrix()));
+    if (vec3.length(normal) < 1e-8) return null;
+    vec3.normalize(normal, normal);
+
+    return {
+      point: [point[0], point[1], point[2]],
+      normal: [normal[0], normal[1], normal[2]],
+      worldRadius,
+    };
   }
 
   /**

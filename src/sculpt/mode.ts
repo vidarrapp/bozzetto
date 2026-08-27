@@ -31,7 +31,14 @@ export function mountSculptMode(viewer: Viewer): () => void {
 
   const subject = new Mesh(
     sync.geometry,
-    new MeshStandardNodeMaterial({ color: 0xc9c4bb, roughness: 0.85, metalness: 0.0 }),
+    // Flat shading by default (plan 7.5): faceted form reading, and the
+    // fragment path skips smooth-normal interpolation work.
+    new MeshStandardNodeMaterial({
+      color: 0xc9c4bb,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
+    }),
   );
   // The vendor keeps vertices in local space with the mesh's own matrix (its
   // normalizeSize scales by matrix, not by baking); mirror that transform.
@@ -44,17 +51,22 @@ export function mountSculptMode(viewer: Viewer): () => void {
 
   viewer.enterSculpt(subject, liveWorldBox(multimesh as unknown as SculptMesh));
 
-  // Performance defaults (plan 7.5): one light, no shadows, no DoF. Saved
-  // and restored around the session.
+  // Performance defaults (plan 7.5): one light, no shadows, no DoF, no HDRI
+  // environment sampling (the hemisphere ambient carries the fill; cheapest
+  // possible IBL is none), and the cavity composite instead of GTAO. All
+  // saved and restored around the session.
   const lighting = viewer.lighting;
   const savedLights = lighting.serialize();
   const savedDof = viewer.getDoFState();
+  const savedEnv = viewer.scene.environment;
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
   let shadowsOn = false;
   lighting.setShadow('key', shadowsOn);
   if (savedDof.enabled) viewer.setDoF({ enabled: false });
   viewer.onDofChange?.();
+  viewer.scene.environment = null;
+  viewer.setSculptShading(true);
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
   session.onActiveMeshChange = () => {
@@ -64,7 +76,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
     subject.matrix.fromArray(active.getMatrix());
   };
 
-  const cursor = new BrushCursor(container);
+  const cursor = new BrushCursor(container, viewer.scene);
   const input = new InputShell(session, container, cursor, {
     frameAt: (point) => viewer.orbitAt(point),
     toggleShadows: () => {
@@ -83,13 +95,19 @@ export function mountSculptMode(viewer: Viewer): () => void {
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
   (window as unknown as { __sculpt?: object }).__sculpt = { session, sync, subject };
 
+  // The hotkey guide (H) swaps to the sculpt table while the mode is active.
+  window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
+
   return () => {
     delete (window as unknown as { __sculpt?: object }).__sculpt;
+    window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     input.dispose();
     cursor.dispose();
     session.onActiveMeshChange = null;
     lighting.applyState(savedLights);
     viewer.environment.setRotation(lighting.getRigRotation());
+    viewer.scene.environment = savedEnv;
+    viewer.setSculptShading(false);
     viewer.setDoF(savedDof);
     viewer.onDofChange?.();
     viewer.exitSculpt(subject);

@@ -186,9 +186,13 @@ declare module '@sculpt-vendor/math3d/Picking' {
   class Picking {
     constructor(main: unknown, xSym?: boolean);
     intersectionMouseMeshes(): boolean;
+    intersectionMouseMesh(mesh?: SculptMesh, mouseX?: number, mouseY?: number): boolean;
     getMesh(): SculptMesh | null;
     /** Intersection point in the picked mesh's local space. */
     getIntersectionPoint(): number[];
+    getPickedFace(): number;
+    updateLocalAndWorldRadius2(): void;
+    getWorldRadius(): number;
   }
   export default Picking;
 }

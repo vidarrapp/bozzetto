@@ -1,24 +1,53 @@
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Group,
+  Line,
+  LineBasicMaterial,
+  Quaternion,
+  Scene,
+  Vector3,
+} from 'three';
+
 /**
- * Screen-space brush cursor (plan 7.6): a dot at the pointer, a circle at the
- * tool's screen radius, and a vertical line rising from the dot whose length
- * shows brush strength (Mudbox-style; proportional to the standard brush's
- * surface displacement, drawn at 10x so it reads). A DOM/SVG overlay outside
- * the 3D pipeline, so GTAO and DoF can never touch it.
+ * Brush cursor (plan 7.6). Two representations share one API:
  *
- * While the user holds b/s to adjust size/strength the cursor is anchored:
- * position freezes at the spot where the adjust began and the circle/line
- * update in place.
+ * - On a surface hit, a 3D ring aligned to the picked normal, drawn in the
+ *   scene at the intersection point: circle at the world brush radius, a
+ *   center dot, and a line along the normal whose length shows strength
+ *   (radius x intensity, i.e. 10x the standard brush's true displacement).
+ * - Off the mesh, a screen-space SVG fallback ring at the pointer.
+ *
+ * While the user holds b/s to adjust, the cursor anchors: the surface (or
+ * screen position) freezes and the ring/line update in place. Materials draw
+ * with depthTest off and a late renderOrder, so the ring stays legible over
+ * the mesh regardless of the composite (cavity/AO never touch line color
+ * meaningfully).
  */
+
+const ACCENT = 0xbb5b33;
+const RING_SEGMENTS = 64;
+
 export class BrushCursor {
+  // Screen-space fallback (SVG).
   private readonly root: SVGSVGElement;
   private readonly circle: SVGCircleElement;
   private readonly dot: SVGCircleElement;
   private readonly line: SVGLineElement;
+
+  // Surface-aligned representation (scene objects).
+  private readonly group = new Group();
+  private readonly strengthLine: Line;
+  private readonly up = new Vector3(0, 0, 1);
+  private readonly quat = new Quaternion();
+  private readonly normal = new Vector3();
+
   private anchored = false;
   private x = 0;
   private y = 0;
+  private intensity = 0.5;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, private readonly scene: Scene) {
     const NS = 'http://www.w3.org/2000/svg';
     this.root = document.createElementNS(NS, 'svg');
     this.root.setAttribute('class', 'sculpt-cursor');
@@ -32,6 +61,48 @@ export class BrushCursor {
     this.root.append(this.circle, this.dot, this.line);
     this.root.style.display = 'none';
     container.appendChild(this.root);
+
+    const mat = new LineBasicMaterial({
+      color: ACCENT,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+    });
+
+    // Closed circles as plain Lines (first point repeated): WebGPURenderer
+    // does not draw LineLoop. Unit radius; group scale carries the world size.
+    const circlePoints = (segments: number, radius: number): Float32Array => {
+      const out = new Float32Array((segments + 1) * 3);
+      for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        out[i * 3] = Math.cos(a) * radius;
+        out[i * 3 + 1] = Math.sin(a) * radius;
+      }
+      return out;
+    };
+    const ringGeom = new BufferGeometry();
+    ringGeom.setAttribute('position', new BufferAttribute(circlePoints(RING_SEGMENTS, 1), 3));
+    const ring = new Line(ringGeom, mat);
+
+    // Center dot: a tiny fixed-fraction circle of the ring radius.
+    const dotGeom = new BufferGeometry();
+    dotGeom.setAttribute('position', new BufferAttribute(circlePoints(12, 0.03), 3));
+    const dotLoop = new Line(dotGeom, mat);
+
+    // Strength line along local +Z (the picked normal after orientation);
+    // its z-scale is the intensity, so world length = radius x intensity.
+    const lineGeom = new BufferGeometry();
+    lineGeom.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 1]), 3));
+    this.strengthLine = new Line(lineGeom, mat);
+
+    this.group.add(ring, dotLoop, this.strengthLine);
+    this.group.visible = false;
+    this.group.renderOrder = 999;
+    this.group.traverse((o) => {
+      o.frustumCulled = false;
+      o.renderOrder = 999;
+    });
+    scene.add(this.group);
   }
 
   /** Track the pointer (CSS px, container-relative), unless anchored. */
@@ -42,26 +113,68 @@ export class BrushCursor {
     this.layout();
   }
 
+  /**
+   * Surface under the cursor, in world space (point, unit normal, brush
+   * radius), or null when the pointer is off the mesh. Chooses which
+   * representation shows. Ignored while anchored.
+   */
+  setSurface(
+    point: [number, number, number] | null,
+    normal?: [number, number, number],
+    worldRadius?: number,
+  ): void {
+    if (this.anchored) return;
+    if (!point || !normal || !worldRadius) {
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
+    this.root.style.display = 'none';
+    this.group.position.set(point[0], point[1], point[2]);
+    this.normal.set(normal[0], normal[1], normal[2]).normalize();
+    this.quat.setFromUnitVectors(this.up, this.normal);
+    this.group.quaternion.copy(this.quat);
+    this.group.scale.setScalar(Math.max(worldRadius, 1e-4));
+    this.strengthLine.scale.z = this.intensity;
+  }
+
   /** Freeze (b/s adjust) or release the cursor position. */
   setAnchored(anchored: boolean): void {
     this.anchored = anchored;
   }
 
-  /** Update the ring to the tool's radius (CSS px) and strength (0..1). */
-  setBrush(radius: number, intensity: number): void {
-    const r = Math.max(2, radius);
+  /** Update to the tool's screen radius (CSS px) and strength (0..1). */
+  setBrush(radiusCss: number, intensity: number): void {
+    this.intensity = Math.min(1, Math.max(0, intensity));
+    const r = Math.max(2, radiusCss);
     this.circle.setAttribute('r', String(r));
-    this.line.setAttribute('y2', String(-r * Math.min(1, Math.max(0, intensity))));
+    this.line.setAttribute('y2', String(-r * this.intensity));
+    this.strengthLine.scale.z = this.intensity;
+    // While anchored on a surface, grow the 3D ring with the screen radius:
+    // scale proportionally so the adjustment reads at the anchored spot.
+    if (this.anchored && this.group.visible && this.lastAnchorCss > 0) {
+      this.group.scale.setScalar(this.anchorWorldRadius * (r / this.lastAnchorCss));
+    }
     this.layout();
   }
 
+  private lastAnchorCss = 0;
+  private anchorWorldRadius = 0;
+
+  /** Record the radius pair at anchor time so b-adjust can rescale the ring. */
+  beginAnchorScale(radiusCss: number): void {
+    this.lastAnchorCss = Math.max(2, radiusCss);
+    this.anchorWorldRadius = this.group.scale.x;
+  }
+
   show(): void {
-    this.root.style.display = '';
+    if (!this.group.visible) this.root.style.display = '';
   }
 
   hide(): void {
     if (this.anchored) return;
     this.root.style.display = 'none';
+    this.group.visible = false;
   }
 
   private layout(): void {
@@ -70,5 +183,11 @@ export class BrushCursor {
 
   dispose(): void {
     this.root.remove();
+    this.scene.remove(this.group);
+    this.group.traverse((o) => {
+      const mesh = o as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+      mesh.geometry?.dispose();
+      mesh.material?.dispose();
+    });
   }
 }

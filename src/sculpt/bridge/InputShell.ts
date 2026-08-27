@@ -41,10 +41,12 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   private adjust: AdjustMode = null;
-  private adjustLastX = 0;
   private lKeyHeld = false;
   private lastClientX = 0;
   private lastClientY = 0;
+  /** Last pointer position in viewport-absolute px (adjust/light drags). */
+  private lastAbsX = 0;
+  private lastAbsY = 0;
 
   constructor(
     private readonly session: SculptSession,
@@ -147,23 +149,27 @@ export class InputShell {
 
   private readonly onPointerMove = (e: PointerEvent): void => {
     const s = this.session;
+    const prevAbsX = this.lastAbsX;
+    const prevAbsY = this.lastAbsY;
+    this.lastAbsX = e.clientX;
+    this.lastAbsY = e.clientY;
 
     // Hold-l light rotation rides pointer movement, sculpt-free.
     if (this.lKeyHeld) {
-      this.hooks.rotateLightRig((e.clientX - this.adjustLastX) * 0.5);
-      this.adjustLastX = e.clientX;
+      this.hooks.rotateLightRig((e.clientX - prevAbsX) * 0.5);
       return;
     }
 
-    // Hold-b / hold-s adjust: horizontal drag tunes the anchored brush.
+    // Hold-b / hold-s adjust on the anchored brush: size is a horizontal
+    // drag, strength a vertical one (up = stronger).
     if (this.adjust) {
-      const dx = e.clientX - this.adjustLastX;
-      this.adjustLastX = e.clientX;
+      const dx = e.clientX - prevAbsX;
+      const dy = prevAbsY - e.clientY;
       const tool = this.currentTool();
       if (this.adjust === 'radius') {
         tool._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, tool._radius + dx));
       } else {
-        tool._intensity = Math.min(1, Math.max(0, tool._intensity + dx * 0.005));
+        tool._intensity = Math.min(1, Math.max(0, tool._intensity + dy * 0.005));
       }
       this.syncCursorBrush();
       return;
@@ -173,13 +179,26 @@ export class InputShell {
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
     this.cursor.show();
 
-    if (s._action !== Enums.Action.SCULPT_EDIT || e.pointerId !== this.pointerId) return;
+    if (s._action !== Enums.Action.SCULPT_EDIT || e.pointerId !== this.pointerId) {
+      // Hover: align the ring to the surface under the cursor (fresh pick).
+      const surf = s.hoverSurface(true);
+      this.cursor.setSurface(surf ? surf.point : null, surf?.normal, surf?.worldRadius);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
 
     // Upstream onDeviceMove, sculpt branch: refresh picking, then stroke.
     s.getSculptManager().preUpdate();
     s.getSculptManager().update();
+
+    // The stroke just refreshed picking; reuse it for the ring (no re-pick).
+    const strokeSurf = s.hoverSurface(false);
+    this.cursor.setSurface(
+      strokeSurf ? strokeSurf.point : null,
+      strokeSurf?.normal,
+      strokeSurf?.worldRadius,
+    );
 
     s._lastMouseX = s._mouseX;
     s._lastMouseY = s._mouseY;
@@ -268,10 +287,7 @@ export class InputShell {
         s.toggleSymmetry();
         return this.claim(e);
       case 'l':
-        if (!this.lKeyHeld) {
-          this.lKeyHeld = true;
-          this.adjustLastX = this.lastClientX;
-        }
+        this.lKeyHeld = true;
         return this.claim(e);
       case 'f': {
         const point = s.lastEditWorldPoint();
@@ -315,8 +331,8 @@ export class InputShell {
 
   private beginAdjust(mode: Exclude<AdjustMode, null>): void {
     this.adjust = mode;
-    this.adjustLastX = this.lastClientX;
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
+    this.cursor.beginAnchorScale(this.currentTool()._radius);
     this.cursor.setAnchored(true);
     this.cursor.show();
     this.syncCursorBrush();
