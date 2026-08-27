@@ -14,7 +14,12 @@ export default defineConfig({
     // An exact-match regex leaves `three/tsl`, `three/webgpu` and the
     // `three/examples/jsm/*` addons resolving normally, so there's a single
     // three instance across app code and addons (no duplicate-module bugs).
-    alias: [{ find: /^three$/, replacement: 'three/webgpu' }],
+    alias: [
+      { find: /^three$/, replacement: 'three/webgpu' },
+      // Vendored SculptGL modules import each other via this prefix (one
+      // mechanical codemod from upstream's bare-root paths).
+      { find: '@sculpt-vendor', replacement: `${root}src/sculpt/vendor` },
+    ],
   },
   build: {
     target: 'es2020',
