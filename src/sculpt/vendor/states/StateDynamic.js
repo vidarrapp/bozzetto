@@ -1,5 +1,5 @@
 import { vec3 } from 'gl-matrix';
-import Utils from 'misc/Utils';
+import Utils from '@sculpt-vendor/misc/Utils';
 
 class StateDynamic {
 

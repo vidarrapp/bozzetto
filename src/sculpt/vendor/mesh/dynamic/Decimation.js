@@ -1,4 +1,4 @@
-import Utils from 'misc/Utils';
+import Utils from '@sculpt-vendor/misc/Utils';
 
 var DecData = {
   _mesh: null,

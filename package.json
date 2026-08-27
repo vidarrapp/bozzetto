@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "gifenc": "^1.0.3",
+    "gl-matrix": "^3.4.4",
     "mediabunny": "^1.48.1",
     "three": "^0.184.0"
   },

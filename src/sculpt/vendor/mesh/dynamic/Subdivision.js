@@ -1,7 +1,7 @@
 import { vec3 } from 'gl-matrix';
-import Utils from 'misc/Utils';
-import Geometry from 'math3d/Geometry';
-import Smooth from 'editing/tools/Smooth';
+import Utils from '@sculpt-vendor/misc/Utils';
+import Geometry from '@sculpt-vendor/math3d/Geometry';
+import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 
 var SubData = {
   _mesh: null,

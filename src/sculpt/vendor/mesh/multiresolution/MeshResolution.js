@@ -1,7 +1,7 @@
-import Utils from 'misc/Utils';
-import Subdivision from 'editing/Subdivision';
-import Mesh from 'mesh/Mesh';
-import createMeshData from 'mesh/MeshData';
+import Utils from '@sculpt-vendor/misc/Utils';
+import Subdivision from '@sculpt-vendor/editing/Subdivision';
+import Mesh from '@sculpt-vendor/mesh/Mesh';
+import createMeshData from '@sculpt-vendor/mesh/MeshData';
 
 class MeshResolution extends Mesh {
 

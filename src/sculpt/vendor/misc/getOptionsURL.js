@@ -1,4 +1,4 @@
-import Enums from 'misc/Enums';
+import Enums from '@sculpt-vendor/misc/Enums';
 
 var keyAction = Enums.KeyAction;
 

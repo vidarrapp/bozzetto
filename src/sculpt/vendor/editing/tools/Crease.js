@@ -1,5 +1,5 @@
-import Tablet from 'misc/Tablet';
-import SculptBase from 'editing/tools/SculptBase';
+import Tablet from '@sculpt-vendor/misc/Tablet';
+import SculptBase from '@sculpt-vendor/editing/tools/SculptBase';
 
 class Crease extends SculptBase {
 

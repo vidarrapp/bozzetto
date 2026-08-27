@@ -1,10 +1,10 @@
-import Utils from 'misc/Utils';
-import StAddRemove from 'states/StateAddRemove';
-import StColorAndMaterial from 'states/StateColorAndMaterial';
-import StGeometry from 'states/StateGeometry';
-import StDynamic from 'states/StateDynamic';
-import StMultiresolution from 'states/StateMultiresolution';
-import StCustom from 'states/StateCustom';
+import Utils from '@sculpt-vendor/misc/Utils';
+import StAddRemove from '@sculpt-vendor/states/StateAddRemove';
+import StColorAndMaterial from '@sculpt-vendor/states/StateColorAndMaterial';
+import StGeometry from '@sculpt-vendor/states/StateGeometry';
+import StDynamic from '@sculpt-vendor/states/StateDynamic';
+import StMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
+import StCustom from '@sculpt-vendor/states/StateCustom';
 
 class StateManager {
 

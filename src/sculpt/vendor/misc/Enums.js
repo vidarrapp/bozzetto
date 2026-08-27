@@ -1,4 +1,4 @@
-import Utils from 'misc/Utils';
+import Utils from '@sculpt-vendor/misc/Utils';
 
 // enum marked with /!\ shouldn't change (serialized in sgl file)
 

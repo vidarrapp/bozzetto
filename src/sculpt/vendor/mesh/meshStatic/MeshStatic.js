@@ -1,7 +1,7 @@
-import Mesh from 'mesh/Mesh';
-import TransformData from 'mesh/TransformData';
-import MeshData from 'mesh/MeshData';
-import RenderData from 'mesh/RenderData';
+import Mesh from '@sculpt-vendor/mesh/Mesh';
+import TransformData from '@sculpt-vendor/mesh/TransformData';
+import MeshData from '@sculpt-vendor/mesh/MeshData';
+import RenderData from '@sculpt-vendor/mesh/RenderData';
 
 class MeshStatic extends Mesh {
 

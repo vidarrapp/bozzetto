@@ -1,7 +1,7 @@
 import { vec3, mat4 } from 'gl-matrix';
-import Geometry from 'math3d/Geometry';
-import Tablet from 'misc/Tablet';
-import Utils from 'misc/Utils';
+import Geometry from '@sculpt-vendor/math3d/Geometry';
+import Tablet from '@sculpt-vendor/misc/Tablet';
+import Utils from '@sculpt-vendor/misc/Utils';
 import TR from 'gui/GuiTR';
 
 var _TMP_NEAR = [0.0, 0.0, 0.0];

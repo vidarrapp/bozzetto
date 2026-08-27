@@ -1,6 +1,6 @@
 import { vec3, mat4 } from 'gl-matrix';
-import Geometry from 'math3d/Geometry';
-import SculptBase from 'editing/tools/SculptBase';
+import Geometry from '@sculpt-vendor/math3d/Geometry';
+import SculptBase from '@sculpt-vendor/editing/tools/SculptBase';
 
 class Drag extends SculptBase {
 

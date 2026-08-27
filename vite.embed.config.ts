@@ -13,7 +13,11 @@ export default defineConfig({
   resolve: {
     // Match the main build: route bare `three` to the WebGPU build so the
     // self-contained embed renders with WebGPURenderer too (see vite.config.ts).
-    alias: [{ find: /^three$/, replacement: 'three/webgpu' }],
+    alias: [
+      { find: /^three$/, replacement: 'three/webgpu' },
+      // Match the main build: vendored SculptGL module prefix.
+      { find: '@sculpt-vendor', replacement: `${root}src/sculpt/vendor` },
+    ],
   },
   build: {
     outDir: 'dist/embed',

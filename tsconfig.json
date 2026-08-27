@@ -15,7 +15,10 @@
     "moduleDetection": "force",
     "useDefineForClassFields": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@sculpt-vendor/*": ["./src/sculpt/vendor/*"]
+    }
   },
   "include": ["src"]
 }

@@ -1,6 +1,6 @@
-import Utils from 'misc/Utils';
-import MeshStatic from 'mesh/meshStatic/MeshStatic';
-import Mesh from 'mesh/Mesh';
+import Utils from '@sculpt-vendor/misc/Utils';
+import MeshStatic from '@sculpt-vendor/mesh/meshStatic/MeshStatic';
+import Mesh from '@sculpt-vendor/mesh/Mesh';
 
 var Edge = function (v1, v2) {
   this.previous = null;

@@ -1,8 +1,8 @@
-import MeshResolution from 'mesh/multiresolution/MeshResolution';
-import Mesh from 'mesh/Mesh';
+import MeshResolution from '@sculpt-vendor/mesh/multiresolution/MeshResolution';
+import Mesh from '@sculpt-vendor/mesh/Mesh';
 import Buffer from 'render/Buffer';
-import Subdivision from 'editing/Subdivision';
-import Reversion from 'editing/Reversion';
+import Subdivision from '@sculpt-vendor/editing/Subdivision';
+import Reversion from '@sculpt-vendor/editing/Reversion';
 
 class Multimesh extends Mesh {
 

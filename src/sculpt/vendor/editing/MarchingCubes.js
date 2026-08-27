@@ -1,4 +1,4 @@
-import Utils from 'misc/Utils';
+import Utils from '@sculpt-vendor/misc/Utils';
 
 var MarchingCubes = {};
 MarchingCubes.BLOCK = false;

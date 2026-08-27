@@ -1,7 +1,7 @@
 import { vec3 } from 'gl-matrix';
-import Tablet from 'misc/Tablet';
-import SculptBase from 'editing/tools/SculptBase';
-import Flatten from 'editing/tools/Flatten';
+import Tablet from '@sculpt-vendor/misc/Tablet';
+import SculptBase from '@sculpt-vendor/editing/tools/SculptBase';
+import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 
 class Brush extends SculptBase {
 

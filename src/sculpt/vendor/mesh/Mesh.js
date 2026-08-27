@@ -1,9 +1,9 @@
 import { vec3, mat3, mat4 } from 'gl-matrix';
-import Enums from 'misc/Enums';
-import Utils from 'misc/Utils';
-import OctreeCell from 'math3d/OctreeCell';
+import Enums from '@sculpt-vendor/misc/Enums';
+import Utils from '@sculpt-vendor/misc/Utils';
+import OctreeCell from '@sculpt-vendor/math3d/OctreeCell';
 import Shader from 'render/ShaderLib';
-import RenderData from 'mesh/RenderData';
+import RenderData from '@sculpt-vendor/mesh/RenderData';
 
 /*
 Basic usage:
