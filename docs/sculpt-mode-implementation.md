@@ -185,7 +185,7 @@ type ConvertRequest =
 ```
 
 The raw path calls the same quantize+gzip flow that `meshToGLB` feeds today, replying `{id, glb, tris}` with transfer. Only compressed frames stay resident on the main thread.
-- Capture settings: `mode: 'everyStroke' | 'interval'` (interval default 2000 ms `[Proposal]`), memory budget with spill-to-OPFS beyond it, max frame count, and a per-frame wall-clock timestamp recorded at capture.
+- Capture settings: `mode: 'everyStroke' | 'interval'` with `everyStroke` as the default (`[Decision]`, section 12; interval stays available, 2000 ms when chosen), memory budget with spill-to-OPFS beyond it, max frame count, and a per-frame wall-clock timestamp recorded at capture.
 - Camera track: since the camera is native, sample `Controls` directly: a keyframe on `cameraMoveEnded` plus ~10 Hz sampling while a camera action is live, storing `{t, position, target, focalLength}`. Wheel/dolly paths must also record; `[Verify-in-WS5]` which Controls paths bypass the action state machine.
 
 ## 7. GUI specification (yagui replacement)
@@ -208,6 +208,8 @@ States to specify for every control: default, hover, active, disabled, and the t
 Draft mapping mirrors SculptGL defaults where free; WS4 starts by enumerating keys already claimed by `ShortcutHandlers` (the README documents at least `g` for ground cycling) and resolving collisions in a single table committed with the code. No hotkey ships undocumented.
 
 Locked ahead of WS4: while sculpt mode is active, the `1`-`9` hotkeys select sculpting brushes (tools), overriding the viewer's material-preset bindings (`1` = Lit (PBR), `2..n` = matcaps). The viewer bindings return when sculpt mode exits. The brush-to-digit assignment itself is settled in the WS4 collision table. `[Decision]`
+
+Also locked (section 12): the mapping is Bozzetto-first overall, built from Vidar's ZBrush-style key map (to be supplied for WS4); `b` is brush size in sculpt mode, overriding the viewer's DoF toggle the same way the digits override presets. `[Decision]`
 
 ## 8. Manifest and viewer extensions `[Proposal]`
 
@@ -248,13 +250,25 @@ Ordered; each lands as its own reviewed change.
 
 `[Estimate]` WS0: 2-3 days. WS1: 3-5. WS2: 4-6. WS3: 2-4. WS4: 3-5. WS5: 3-5. WS6: 1-2. These assume single-developer focus and no upstream surprises; the WS0 spike exists precisely to invalidate them cheaply.
 
-## 12. Open questions for Vidar (answer before WS0 concludes)
+## 12. Open questions, answered at WS0 review (2026-08-27)
 
-1. Reference hardware for the go/no-go numbers (which machine, which browser)?
-2. Confirm v1 tool set: everything except Transform and Paint?
-3. Hotkeys: mirror SculptGL muscle memory where possible, or Bozzetto-first? (Partially decided: in sculpt mode `1`-`9` select brushes, not material presets; see 7.3. Remaining: the non-digit keys.)
-4. Default capture mode: every stroke, or 2 s interval?
-5. Does sculpt mode ship in `/create` only, or also `/admin`?
+All five are now locked. `[Decision]` on each.
+
+1. Reference hardware for the go/no-go numbers: iPad Air and a desktop PC.
+   The WS0 container numbers (docs/sculpt-spike-results.md) are a floor;
+   re-run the spike measurement on these two before treating any perf
+   number as final.
+2. v1 tool set confirmed: everything except Transform and Paint.
+3. Hotkeys are Bozzetto-first (no SculptGL muscle-memory constraint).
+   Vidar supplies a ZBrush-style map for the WS4 collision table; known so
+   far: `1`-`9` select brushes (7.3), `b` is brush size. Note `b` currently
+   toggles depth of field in the viewer shortcuts; in sculpt mode the
+   sculpt binding wins, same override rule as the digits.
+4. Default capture mode: every stroke (`mode: 'everyStroke'`); the
+   interval mode remains available as an option.
+5. Entry points: sculpt mode ships in both `/create` and `/admin`,
+   surfaced by sign-in state. Signed in to the admin interface -> the
+   /admin editor flow; not signed in -> the public /create flow.
 
 ## 13. Operating rules for Claude Code
 
