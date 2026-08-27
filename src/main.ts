@@ -38,9 +38,16 @@ async function bootViewer(id: string): Promise<void> {
   try {
     const { manifest, manifestUrl } = await loadProject(id, base);
     setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
-    await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus);
+    const viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus);
     overlay?.remove();
     addGalleryLink();
+    // WS0 spike entry (dev-only): ?sculpt=1 mounts sculpt mode on the default
+    // sphere over this project's stage/lighting. The real entry point ships
+    // with WS5 (see docs/sculpt-mode-implementation.md).
+    if (new URLSearchParams(window.location.search).get('sculpt') === '1') {
+      const { mountSculptMode } = await import('./sculpt/mode');
+      mountSculptMode(viewer);
+    }
   } catch (err) {
     console.error(err);
     showError(overlay, err);

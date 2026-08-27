@@ -1,6 +1,7 @@
 import MeshResolution from '@sculpt-vendor/mesh/multiresolution/MeshResolution';
 import Mesh from '@sculpt-vendor/mesh/Mesh';
-import Buffer from 'render/Buffer';
+// BOZZETTO EDIT: render/Buffer is not vendored; the low-resolution render
+// shortcut is unused (Bozzetto's pipeline always draws the active level).
 import Subdivision from '@sculpt-vendor/editing/Subdivision';
 import Reversion from '@sculpt-vendor/editing/Reversion';
 
@@ -29,9 +30,10 @@ class Multimesh extends Mesh {
     this._meshes = [new MeshResolution(mesh, true)];
     this.setSelection(0);
 
-    var gl = mesh.getGL();
-    this._indexBuffer = new Buffer(gl, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
-    this._wireframeBuffer = new Buffer(gl, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
+    // BOZZETTO EDIT: no low-render GL buffers render-less; Bozzetto's
+    // pipeline always draws the active resolution.
+    this._indexBuffer = null;
+    this._wireframeBuffer = null;
   }
 
   getCurrentMesh() {
@@ -111,6 +113,8 @@ class Multimesh extends Mesh {
     this.updateDuplicateColorsAndMaterials();
     this.updateBuffers();
 
+    // BOZZETTO EDIT: skip low-render buffer refresh without GL buffers.
+    if (!this._indexBuffer) return;
     var mesh = this._meshes[this.getLowIndexRender()];
     this._indexBuffer.update(mesh.getTriangles());
     this._wireframeBuffer.update(mesh.getWireframe());

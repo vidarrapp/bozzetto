@@ -2,8 +2,9 @@ import { vec3, mat3, mat4 } from 'gl-matrix';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Utils from '@sculpt-vendor/misc/Utils';
 import OctreeCell from '@sculpt-vendor/math3d/OctreeCell';
-import Shader from 'render/ShaderLib';
-import RenderData from '@sculpt-vendor/mesh/RenderData';
+// BOZZETTO EDIT: render/ShaderLib and mesh/RenderData are not vendored. Meshes
+// run render-less (_renderData stays null); GPU sync goes through the bridge
+// hooks installed on updateGeometryBuffers/updateBuffers below.
 
 /*
 Basic usage:
@@ -1779,7 +1780,9 @@ class Mesh {
   }
 
   setShowWireframe(showWireframe) {
-    this._renderData._showWireframe = RenderData.ONLY_DRAW_ARRAYS ? false : showWireframe;
+    // BOZZETTO EDIT: no-op without RenderData (wireframe is Bozzetto's overlay).
+    if (!this._renderData) return;
+    this._renderData._showWireframe = showWireframe;
     this.updateWireframeBuffer();
   }
 
@@ -1788,7 +1791,8 @@ class Mesh {
   }
 
   getGL() {
-    return this._renderData._gl;
+    // BOZZETTO EDIT: null without RenderData (callers pass it to new MeshStatic).
+    return this._renderData ? this._renderData._gl : null;
   }
 
   getCount() {
@@ -1871,10 +1875,13 @@ class Mesh {
   }
 
   isUsingDrawArrays() {
-    return this._renderData._useDrawArrays || RenderData.ONLY_DRAW_ARRAYS;
+    // BOZZETTO EDIT: no RenderData means the indexed path, always.
+    return this._renderData ? !!this._renderData._useDrawArrays : false;
   }
 
   isUsingTexCoords() {
+    // BOZZETTO EDIT: guard the render-less path (reached from data updates).
+    if (!this._renderData) return false;
     var shaderType = this._renderData._shaderType;
     return shaderType === Enums.Shader.UV || shaderType === Enums.Shader.PAINTUV;
   }
@@ -1904,6 +1911,8 @@ class Mesh {
   }
 
   initRender() {
+    // BOZZETTO EDIT: nothing to init render-less; bridge owns GPU state.
+    if (!this._renderData) return;
     this.setShaderType(this._renderData._shaderType);
     this.setShowWireframe(this.getShowWireframe());
   }
@@ -1911,19 +1920,14 @@ class Mesh {
   /////////
   // RENDER
   /////////
+  // BOZZETTO EDIT: the render methods are inert; Bozzetto's pipeline draws.
   render(main) {
-    if (!this.isVisible()) return;
-    Shader[this.getShaderType()].getOrCreate(this.getGL()).draw(this, main);
   }
 
   renderWireframe(main) {
-    if (!this.isVisible()) return;
-    Shader[Enums.Shader.WIREFRAME].getOrCreate(this.getGL()).draw(this, main);
   }
 
   renderFlatColor(main) {
-    if (!this.isVisible()) return;
-    Shader[Enums.Shader.FLAT].getOrCreate(this.getGL()).draw(this, main);
   }
 
   /////////////////
@@ -1974,11 +1978,21 @@ class Mesh {
   }
 
   updateGeometryBuffers() {
+    // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook.
+    if (!this._renderData) {
+      if (this._bridgeSync) this._bridgeSync.onGeometryBuffers(this);
+      return;
+    }
     this.updateVertexBuffer();
     this.updateNormalBuffer();
   }
 
   updateBuffers() {
+    // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook.
+    if (!this._renderData) {
+      if (this._bridgeSync) this._bridgeSync.onAllBuffers(this);
+      return;
+    }
     this.updateGeometryBuffers();
     this.updateColorBuffer();
     this.updateMaterialBuffer();
@@ -1988,6 +2002,8 @@ class Mesh {
   }
 
   release() {
+    // BOZZETTO EDIT: nothing to release render-less (bridge disposes its own).
+    if (!this._renderData) return;
     if (this.getTexture0())
       this.getGL().deleteTexture(this.getTexture0());
     this.getVertexBuffer().release();
@@ -1999,6 +2015,8 @@ class Mesh {
   }
 
   copyRenderConfig(mesh) {
+    // BOZZETTO EDIT: shader-mode state lives in Bozzetto materials, not here.
+    if (!this._renderData || !mesh.getRenderData()) return;
     this.setFlatShading(mesh.getFlatShading());
     this.setShowWireframe(mesh.getShowWireframe());
     this.setShaderType(mesh.getShaderType());

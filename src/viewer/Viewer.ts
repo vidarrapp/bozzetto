@@ -18,7 +18,7 @@ import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } f
 import { pass, mrt, output, normalView, float, vec3, vec4, mix, uniform, uv, smoothstep } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
-import type { BufferGeometry, Texture } from 'three';
+import type { BufferGeometry, Object3D, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -1077,22 +1077,57 @@ export class Viewer {
 
   private fitScene(geom: BufferGeometry): void {
     geom.computeBoundingBox();
-    this.subjectBox.copy(geom.boundingBox ?? new Box3());
+    const cam = this.manifest.camera;
+    if (cam.position && cam.target) {
+      this.controls.setState(cam.position, cam.target);
+      this.fitSubjectBounds(geom.boundingBox ?? new Box3(), false);
+    } else {
+      this.fitSubjectBounds(geom.boundingBox ?? new Box3(), !!cam.autoFrame);
+    }
+
+    this.logAoDebug();
+  }
+
+  /**
+   * Fit everything that keys off the subject's world bounds: AO radius, DoF
+   * focus band, lighting rig, stage layout, and (optionally) the camera
+   * framing. Shared by fitScene (streamed subjects, bounds from geometry) and
+   * enterSculpt (an external subject with its own world box).
+   */
+  private fitSubjectBounds(box: Box3, frame: boolean): void {
+    this.subjectBox.copy(box);
 
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
     this.applyAoRadius();
     this.applyDof(); // focus-band range scales with the subject
 
-    const cam = this.manifest.camera;
-    if (cam.position && cam.target) {
-      this.controls.setState(cam.position, cam.target);
-    } else if (cam.autoFrame) {
-      this.controls.frameSubject(this.subjectBox);
-    }
+    if (frame) this.controls.frameSubject(this.subjectBox);
     this.lighting.fitToBounds(this.subjectBox);
     this.layoutStage();
+  }
 
+  /**
+   * Sculpt mode (src/sculpt/mode.ts): pause playback, hide the streamed
+   * subject, adopt `object` as the scene subject, and refit framing, stage,
+   * lighting and effects to its world bounds. exitSculpt reverses it.
+   */
+  enterSculpt(object: Object3D, worldBox: Box3): void {
+    this.timeline.pause();
+    this.onPlayStateChange?.(false);
+    this.display.visible = false;
+    this.wireframe.visible = false;
+    this.scene.add(object);
+    this.fitSubjectBounds(worldBox, true);
+  }
+
+  exitSculpt(object: Object3D): void {
+    this.scene.remove(object);
+    this.display.visible = true;
+    this.fitScene(this.display.geometry);
+  }
+
+  private logAoDebug(): void {
     if (this.aoDebug) {
       // Surface the values that would explain "GTAO sees no occlusion": the
       // subject's world scale (drives the AO radius), the resolved AO radius and

@@ -1,4 +1,5 @@
-import Selection from 'drawables/Selection';
+// BOZZETTO EDIT: drawables/Selection is replaced by the bridge overlay.
+import Selection from '../../bridge/Overlays';
 import Tools from '@sculpt-vendor/editing/tools/Tools';
 import Enums from '@sculpt-vendor/misc/Enums';
 

@@ -2,7 +2,8 @@ import { vec3, mat4 } from 'gl-matrix';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import Utils from '@sculpt-vendor/misc/Utils';
-import TR from 'gui/GuiTR';
+// BOZZETTO EDIT: gui/GuiTR is replaced by a tiny string shim.
+import TR from '../../bridge/GuiTRShim';
 
 var _TMP_NEAR = [0.0, 0.0, 0.0];
 var _TMP_NEAR_1 = [0.0, 0.0, 0.0];

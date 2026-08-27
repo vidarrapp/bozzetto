@@ -11,7 +11,7 @@ import Paint from '@sculpt-vendor/editing/tools/Paint';
 import Move from '@sculpt-vendor/editing/tools/Move';
 import Masking from '@sculpt-vendor/editing/tools/Masking';
 import LocalScale from '@sculpt-vendor/editing/tools/LocalScale';
-import Transform from '@sculpt-vendor/editing/tools/Transform';
+// BOZZETTO EDIT: Transform (and its Gizmo import chain) is deferred past v1.
 
 var Tools = [];
 
@@ -27,7 +27,6 @@ Tools[Enums.Tools.PAINT] = Paint;
 Tools[Enums.Tools.MOVE] = Move;
 Tools[Enums.Tools.MASKING] = Masking;
 Tools[Enums.Tools.LOCALSCALE] = LocalScale;
-Tools[Enums.Tools.TRANSFORM] = Transform;
 
 Tools[Enums.Tools.BRUSH].uiName = 'sculptBrush';
 Tools[Enums.Tools.INFLATE].uiName = 'sculptInflate';
@@ -41,6 +40,5 @@ Tools[Enums.Tools.PAINT].uiName = 'sculptPaint';
 Tools[Enums.Tools.MOVE].uiName = 'sculptMove';
 Tools[Enums.Tools.MASKING].uiName = 'sculptMasking';
 Tools[Enums.Tools.LOCALSCALE].uiName = 'sculptLocalScale';
-Tools[Enums.Tools.TRANSFORM].uiName = 'sculptTransform';
 
 export default Tools;
