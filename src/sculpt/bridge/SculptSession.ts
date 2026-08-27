@@ -12,8 +12,8 @@ import { mat3, vec3 } from 'gl-matrix';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 
-/** Hard ceiling for ctrl+d subdivision (protects the iPad tier). */
-const MAX_SUBDIVISION_TRIS = 1600000;
+/** Hard ceiling for ctrl+d subdivision (raised to ~4M after RTX 3060 runs). */
+const MAX_SUBDIVISION_TRIS = 4000000;
 
 /** Surface data under the cursor, for the brush ring (world space). */
 export interface HoverSurface {

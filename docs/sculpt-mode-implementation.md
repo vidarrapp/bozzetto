@@ -222,12 +222,13 @@ and return on exit.
 |---|---|---|
 | left drag on mesh | sculpt stroke | miss = orbit (unchanged) |
 | alt held during stroke | negative sculpting | ZBrush parity; Alt keydown is captured/preventDefaulted so Firefox's menu bar never grabs it |
+| shift + left drag | smooth stroke | temporary Smooth tool while held (ZBrush parity; review round 3) |
 | alt + click | select model under cursor | inert until multi-mesh ships |
 | alt + q | isolate model | reserved (multi-mesh) |
 | ctrl + left drag | mask (paint) | temporary Masking tool while held |
 | ctrl + alt + left drag | unmask | Masking tool, negative |
 | ctrl + z / ctrl + shift + z | undo / redo | |
-| ctrl + d | subdivide (add a level) | top level only; capped ~1.6M tris |
+| ctrl + d | subdivide (add a level) | top level only; capped ~4M tris (raised from 1.6M after RTX 3060 runs) |
 | d | step up a subdivision level | |
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
@@ -237,7 +238,7 @@ and return on exit.
 | q | brush mode | reserved (returns from gizmo when Transform ships; Maya-style QWER) |
 | w / e / r | gizmo move / rotate / scale | reserved; Transform tool is deferred past v1 |
 | l (hold) + drag | rotate light rig | horizontal drag = rig azimuth; HDRI rotation follows |
-| f | frame at last tool position | orbit pivot moves to the last edit point, not the full model |
+| f | frame the whole current mesh | revised in review round 3. The orbit pivot separately follows the work: each stroke end moves it to the last edit point |
 | 1 | Crease brush | |
 | 2 | Move brush | (SculptGL "Move"; drag-style) |
 | 3 | Standard brush, clay mode on | default tool |
@@ -256,17 +257,27 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
 - Depth of field: off by default in sculpt mode (and its viewer hotkey is
   gone; the settings panel still toggles it).
 - GTAO: out of the render graph entirely in sculpt mode (not merely
-  strength 0, which still pays the pass). In its place, a 4-tap
-  screen-space cavity term from the MRT normals (creases darken, ridges
-  lighten) keeps the form reading. GTAO returns as an opt-in render
-  option later (WS4 palette). Decided after the first RTX 3060 numbers:
-  ~10 fps at both 196k and 786k tris meant the cost was resolution-bound
-  post-processing, not triangles.
+  strength 0, which still pays the pass). Decided after the first RTX
+  3060 numbers: ~10 fps at both 196k and 786k tris meant the cost was
+  resolution-bound post-processing, not triangles; removing it (plus the
+  HDRI sampling) took the machine to a stable 30 fps at every level. In
+  its place, an 8-tap depth-only SSAO keeps creases reading. (Round 2
+  used a normal-divergence cavity term; with flat shading every facet
+  edge is a normal discontinuity, which painted a grid at low
+  subdivision levels - depth ignores facet normals, so round 3 replaced
+  it.) GTAO returns as an opt-in render option later (WS4 palette).
 - HDRI environment: not sampled in sculpt mode (scene.environment is
   null; restored on exit). IBL cost is per-fragment in the PBR shader,
   so the cheapest environment is none; the hemisphere ambient plus key
   light carry the look. Also a later render option.
 - Material: flat shading by default in sculpt mode.
+- The settings panel drives ALL sculpt shading (review round 3): the
+  sculpt geometry is adopted by the viewer's display mesh, so material
+  mode, albedo/roughness/metalness, matcaps, smooth/flat and the
+  wireframe overlay work unchanged. The panel gains a master Shadows
+  toggle (viewer and sculpt, synced with shift+s), and the depth of
+  field section hides while sculpting (DoF is a view/render-mode
+  concern).
 - Default sphere: about 50k triangles (24,576 quads), down from ~200k, with
   the retained multiresolution levels available for `d` / `shift+d`
   stepping and `ctrl+d` subdivision beyond.

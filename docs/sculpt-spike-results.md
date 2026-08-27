@@ -149,3 +149,30 @@ verified headless (ws1b suite) plus a regression pass of the WS1 suite:
 - Note: at 786k the next ctrl+d would be 3.1M tris, above the 1.6M cap,
   so the refusal Vidar saw was the cap working as intended. Whether the
   cap should rise is a reference-hardware question.
+
+# WS1 round 3 (stable-30 feedback)
+
+RTX 3060 after round 2: a stable 30 fps at every subdivision level (the
+6-to-60 swings are gone), shadows cost only a couple of fps. Round 3
+changes, verified by the ws1b suite plus a WS1 regression pass:
+
+- The cavity term gridded on flat-shaded facets (every facet edge is a
+  normal discontinuity at low subdivision). Replaced with an 8-tap
+  depth-only SSAO: depth ignores facet normals, so only real creases
+  occlude. Tunable strength/radius uniforms remain for the palette.
+- The settings panel now drives all sculpt shading: enterSculpt adopts
+  the sculpt geometry onto the viewer's display mesh (with the vendor
+  matrix), so material mode, albedo/roughness/metalness, matcaps,
+  smooth/flat and the wireframe overlay work through the existing
+  machinery. Flat shading is applied as the sculpt default through the
+  material state and restored on exit.
+- Master Shadows toggle in the panel (viewer + editor + sculpt), backed
+  by a new Lighting.setShadowsMaster that gates every light without
+  touching the per-light config; shift+s drives the same switch. The
+  DoF panel section hides while sculpt mode is active.
+- shift + left drag = temporary Smooth stroke (ZBrush parity).
+- f now frames the whole current mesh; the orbit pivot instead follows
+  the work automatically (each stroke end re-pivots to the last edit).
+- ctrl+d cap raised 1.6M -> 4M tris per Vidar.
+- Test-only fix: the pivot-follow changed the view between scripted
+  strokes, so the WS1 suite reframes (f) before its alt stroke.

@@ -35,6 +35,16 @@ export class Panel {
   private groundSelect: HTMLSelectElement | null = null;
   /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
   private dofCheckbox?: HTMLInputElement;
+  /** DoF section wrapper: hidden while sculpt mode is active. */
+  private dofSection?: HTMLDivElement;
+  /** Master shadows checkbox (viewer + editor + sculpt). */
+  private shadowsCheckbox?: HTMLInputElement;
+  private readonly onSculptMode = (e: Event): void => {
+    const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    // DoF is reserved for the view/render mode; sculpt hides its controls.
+    if (this.dofSection) this.dofSection.hidden = active;
+    this.refreshControls();
+  };
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -93,6 +103,8 @@ export class Panel {
     this.collapsed = !this.editor;
     this.applyCollapsed();
 
+    window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+
     if (options.actions) this.bodyEl.appendChild(options.actions);
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
@@ -135,9 +147,13 @@ export class Panel {
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
     if (this.dofCheckbox) this.dofCheckbox.checked = this.viewer.getDoFState().enabled;
+    if (this.shadowsCheckbox) {
+      this.shadowsCheckbox.checked = this.viewer.lighting.getShadowsMaster();
+    }
   }
 
   dispose(): void {
+    window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();
@@ -294,6 +310,14 @@ export class Panel {
       this.rebuildLightToggles(); // viewer: simple on/off toggles
     });
     lighting.appendChild(labelRow('Preset', presetSelect));
+
+    // Master shadow switch (also shift+s in sculpt mode). Per-light shadow
+    // config lives in the editor rig; this gates all of it at once.
+    const shadows = checkbox('Shadows', this.viewer.lighting.getShadowsMaster(), (on) =>
+      this.viewer.lighting.setShadowsMaster(on),
+    );
+    this.shadowsCheckbox = shadows.querySelector('input')!;
+    lighting.appendChild(shadows);
 
     if (this.editor) {
       // Editor keeps the full rig: intensity, angles, colour, per-light shadows.
@@ -514,6 +538,7 @@ export class Panel {
   private buildDoF(body: HTMLElement): void {
     if (!this.viewer.dofAvailable()) return;
     const sec = section(body, 'Depth of field');
+    this.dofSection = sec;
     const dof = this.viewer.getDoFState();
     const toggle = checkbox('Enabled', dof.enabled, (on) => this.viewer.setDoF({ enabled: on }));
     this.dofCheckbox = toggle.querySelector('input')!;

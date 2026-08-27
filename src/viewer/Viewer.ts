@@ -15,10 +15,10 @@ import {
   Vector3,
 } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, cameraNear, cameraFar, perspectiveDepthToViewZ } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
-import type { BufferGeometry, Object3D, Texture } from 'three';
+import type { BufferGeometry, Matrix4, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -231,8 +231,9 @@ export class Viewer {
   private dofNode: ReturnType<typeof dof> | null = null;
   /** Effective AO strength uniform (= intensity when enabled, else 0). */
   private readonly aoStrengthU = uniform(1);
-  /** Cavity contrast for the sculpt-mode composite (tunable later in-palette). */
-  private readonly cavityStrengthU = uniform(6);
+  /** Sculpt SSAO strength and tap radius in px (tunable later in-palette). */
+  private readonly cavityStrengthU = uniform(0.9);
+  private readonly sculptAoRadiusU = uniform(8);
   private aoEnabled = true; // AO on by default
   private aoIntensity = 1;
   private aoRadiusFraction = 0.5;
@@ -1112,23 +1113,52 @@ export class Viewer {
     this.layoutStage();
   }
 
+  private sculptSaved: { geometry: BufferGeometry; frustumCulled: boolean } | null = null;
+
   /**
-   * Sculpt mode (src/sculpt/mode.ts): pause playback, hide the streamed
-   * subject, adopt `object` as the scene subject, and refit framing, stage,
-   * lighting and effects to its world bounds. exitSculpt reverses it.
+   * Sculpt mode (src/sculpt/mode.ts): pause playback and adopt the sculpt
+   * geometry on the DISPLAY mesh itself, carrying the vendor mesh's matrix.
+   * Because the display mesh keeps rendering, the entire material system -
+   * panel modes, albedo/roughness, matcaps, flat shading, the wireframe
+   * overlay - drives the sculpt subject with no extra wiring. exitSculpt
+   * restores the streamed frame. Framing/stage/lighting refit to worldBox.
    */
-  enterSculpt(object: Object3D, worldBox: Box3): void {
+  enterSculpt(geometry: BufferGeometry, matrix: Matrix4, worldBox: Box3): void {
     this.timeline.pause();
     this.onPlayStateChange?.(false);
-    this.display.visible = false;
-    this.wireframe.visible = false;
-    this.scene.add(object);
+    this.sculptSaved = {
+      geometry: this.display.geometry,
+      frustumCulled: this.display.frustumCulled,
+    };
+    this.display.geometry = geometry;
+    this.wireframe.geometry = geometry;
+    this.display.matrixAutoUpdate = false;
+    this.wireframe.matrixAutoUpdate = false;
+    // Sculpt backing arrays are over-allocated; their bounds are meaningless.
+    this.display.frustumCulled = false;
+    this.wireframe.frustumCulled = false;
+    this.setSculptMatrix(matrix);
     this.fitSubjectBounds(worldBox, true);
   }
 
-  exitSculpt(object: Object3D): void {
-    this.scene.remove(object);
-    this.display.visible = true;
+  /** Follow vendor mesh swaps (dyntopo, undo) that can change the transform. */
+  setSculptMatrix(matrix: Matrix4): void {
+    this.display.matrix.copy(matrix);
+    this.wireframe.matrix.copy(matrix);
+    this.display.matrixWorldNeedsUpdate = true;
+    this.wireframe.matrixWorldNeedsUpdate = true;
+  }
+
+  exitSculpt(): void {
+    const saved = this.sculptSaved;
+    if (!saved) return;
+    this.sculptSaved = null;
+    this.display.geometry = saved.geometry;
+    this.wireframe.geometry = saved.geometry;
+    this.display.matrixAutoUpdate = true;
+    this.wireframe.matrixAutoUpdate = true;
+    this.display.frustumCulled = saved.frustumCulled;
+    this.wireframe.frustumCulled = saved.frustumCulled;
     this.fitScene(this.display.geometry);
   }
 
@@ -1143,10 +1173,15 @@ export class Viewer {
     this.rebuildOutput();
   }
 
+  /** Frame arbitrary world bounds (sculpt f: frame the live sculpt mesh). */
+  frameBounds(box: Box3): void {
+    this.fitSubjectBounds(box, true);
+  }
+
   /**
    * Move the orbit pivot to a world point, keeping the camera where it is.
-   * Sculpt mode's f: orbit around the last tool position instead of the
-   * whole model.
+   * Sculpt mode: after each stroke the pivot follows the last edit, so
+   * orbiting turns around where you are working.
    */
   orbitAt(point: [number, number, number]): void {
     const s = this.controls.getState();
@@ -1203,23 +1238,46 @@ export class Viewer {
     const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU);
     const aoColor = scenePass.getTextureNode('output').mul(vec4(vec3(aoFactor), float(1)));
 
-    // Sculpt-mode composite: instead of GTAO, a 4-tap screen-space cavity term
-    // from the MRT normals (divergence of the view-space normal: creases darken,
-    // ridges lighten). rebuildOutput swaps to this whole-output when sculpt
-    // shading is on, so the GTAO and DoF passes leave the graph and cost
-    // nothing (same mechanism as the DoF toggle).
-    const nTex = scenePass.getTextureNode('normal');
-    const pxOff = vec2(1, 0).div(screenSize);
-    const pyOff = vec2(0, 1).div(screenSize);
+    // Sculpt-mode composite: instead of GTAO, a small depth-only SSAO (8 taps).
+    // Depth ignores facet normals, so flat shading shows no grid at facet
+    // edges (a normal-divergence term did); only real creases occlude.
+    // rebuildOutput swaps to this whole-output when sculpt shading is on, so
+    // the GTAO and DoF passes leave the graph and cost nothing.
+    const depthTex = scenePass.getTextureNode('depth');
     const suv = uv();
-    const curvature = nTex
-      .sample(suv.add(pxOff)).x.sub(nTex.sample(suv.sub(pxOff)).x)
-      .add(nTex.sample(suv.add(pyOff)).y.sub(nTex.sample(suv.sub(pyOff)).y));
-    const cavity = float(1)
-      .add(curvature.mul(this.cavityStrengthU).clamp(-0.35, 0.35));
+    const pixel = vec2(1, 1).div(screenSize).mul(this.sculptAoRadiusU);
+    // TSL's generated typings are narrower than the runtime accepts, so the
+    // uv/accumulator seams cast through the shared Node type.
+    const viewDist = (uvNode: unknown): Node =>
+      perspectiveDepthToViewZ(
+        depthTex.sample(uvNode as never).r,
+        cameraNear,
+        cameraFar,
+      ).negate() as unknown as Node;
+    const centerDist = viewDist(suv) as ReturnType<typeof float>;
+    const taps: Array<[number, number]> = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7],
+    ];
+    let occlusion: Node = float(0);
+    for (const [ox, oy] of taps) {
+      // Relative closeness of the neighbour: > 0 means it occludes the centre.
+      const diff = (centerDist
+        .sub(viewDist(suv.add(vec2(ox, oy).mul(pixel))) as never)
+        .div(centerDist.max(float(1e-4) as never) as never) as unknown) as ReturnType<typeof float>;
+      // Ramp in past a self-occlusion bias; ramp out so distant silhouettes
+      // (big depth gaps) do not darken as if they were creases.
+      const crease = smoothstep(float(0.002), float(0.02), diff).mul(
+        float(1).sub(smoothstep(float(0.06), float(0.2), diff)),
+      );
+      occlusion = (occlusion as ReturnType<typeof float>).add(crease) as unknown as Node;
+    }
+    const sculptAo = float(1)
+      .sub((occlusion as ReturnType<typeof float>).div(taps.length).mul(this.cavityStrengthU))
+      .clamp(0.35, 1);
     this.sculptOut = scenePass
       .getTextureNode('output')
-      .mul(vec4(vec3(cavity), float(1)));
+      .mul(vec4(vec3(sculptAo), float(1)));
     const dofNode = dof(
       aoColor,
       scenePass.getViewZNode(),

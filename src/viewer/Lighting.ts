@@ -198,6 +198,20 @@ export class Lighting {
     this.refresh();
   }
 
+  /**
+   * Master shadow switch (panel checkbox + sculpt shift+s): off suppresses
+   * every light's shadow without touching the per-light config, so turning
+   * it back on restores the configured rig. Runtime-only, never persisted.
+   */
+  setShadowsMaster(on: boolean): void {
+    this.shadowsMaster = on;
+    this.refresh();
+  }
+
+  getShadowsMaster(): boolean {
+    return this.shadowsMaster;
+  }
+
   setSoftness(id: LightId, softness: number): void {
     this.config[id].softness = softness;
     this.refresh();
@@ -298,6 +312,8 @@ export class Lighting {
     this.refresh(sphere.center);
   }
 
+  private shadowsMaster = true;
+
   private refresh(center?: Vector3): void {
     const target = center ?? this.rig.position; // rig sits at world origin
     for (const id of ALL) this.apply(id, target);
@@ -327,7 +343,7 @@ export class Lighting {
     // runtime: doing so rebuilds the WebGPU shadow-map targets and breaks the
     // node pipeline, so the stage swaps the receiver instead.
     const canCast = this.sizes[id] > 0;
-    light.castShadow = canCast && cfg.castShadow && cfg.enabled;
+    light.castShadow = canCast && cfg.castShadow && cfg.enabled && this.shadowsMaster;
     if (canCast) light.shadow.radius = cfg.softness ?? DEFAULT_SOFTNESS;
   }
 }

@@ -1,5 +1,4 @@
-import { Box3, Matrix4, Mesh, Vector3 } from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { Box3, Matrix4, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -29,27 +28,15 @@ export function mountSculptMode(viewer: Viewer): () => void {
   const sync = new GeometrySync();
   sync.bind(multimesh as unknown as SculptMesh);
 
-  const subject = new Mesh(
+  // The display mesh adopts the sculpt geometry (with the vendor mesh's
+  // matrix: its normalizeSize scales by matrix, not by baking), so the whole
+  // settings panel - material mode, albedo/roughness, matcaps, smooth/flat,
+  // wireframe - drives the sculpt subject through the existing machinery.
+  viewer.enterSculpt(
     sync.geometry,
-    // Flat shading by default (plan 7.5): faceted form reading, and the
-    // fragment path skips smooth-normal interpolation work.
-    new MeshStandardNodeMaterial({
-      color: 0xc9c4bb,
-      roughness: 0.85,
-      metalness: 0.0,
-      flatShading: true,
-    }),
+    new Matrix4().fromArray(multimesh.getMatrix()),
+    liveWorldBox(multimesh as unknown as SculptMesh),
   );
-  // The vendor keeps vertices in local space with the mesh's own matrix (its
-  // normalizeSize scales by matrix, not by baking); mirror that transform.
-  subject.matrixAutoUpdate = false;
-  subject.matrix.fromArray(multimesh.getMatrix());
-  // Bounds of the over-allocated backing arrays are meaningless; never cull.
-  subject.frustumCulled = false;
-  subject.castShadow = true;
-  subject.receiveShadow = true;
-
-  viewer.enterSculpt(subject, liveWorldBox(multimesh as unknown as SculptMesh));
 
   // Performance defaults (plan 7.5): one light, no shadows, no DoF, no HDRI
   // environment sampling (the hemisphere ambient carries the fill; cheapest
@@ -59,29 +46,35 @@ export function mountSculptMode(viewer: Viewer): () => void {
   const savedLights = lighting.serialize();
   const savedDof = viewer.getDoFState();
   const savedEnv = viewer.scene.environment;
+  const savedMaterial = viewer.materials.getMaterialState();
+  const savedShadowsMaster = lighting.getShadowsMaster();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
-  let shadowsOn = false;
-  lighting.setShadow('key', shadowsOn);
+  lighting.setShadowsMaster(false);
   if (savedDof.enabled) viewer.setDoF({ enabled: false });
   viewer.onDofChange?.();
   viewer.scene.environment = null;
   viewer.setSculptShading(true);
+  // Flat shading is the sculpt default; the panel checkbox drives it live.
+  viewer.materials.setFlatShading(true);
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
   session.onActiveMeshChange = () => {
     const active = session.getMesh();
     if (!active) return;
     sync.bind(active);
-    subject.matrix.fromArray(active.getMatrix());
+    viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
   };
 
   const cursor = new BrushCursor(container, viewer.scene);
   const input = new InputShell(session, container, cursor, {
-    frameAt: (point) => viewer.orbitAt(point),
+    frameModel: () => {
+      const active = session.getMesh();
+      if (active) viewer.frameBounds(liveWorldBox(active));
+    },
+    focusEdit: (point) => viewer.orbitAt(point),
     toggleShadows: () => {
-      shadowsOn = !shadowsOn;
-      lighting.setShadow('key', shadowsOn);
+      lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },
     rotateLightRig: (deltaDeg) => {
       const deg = lighting.getRigRotation() + deltaDeg;
@@ -93,7 +86,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
-  (window as unknown as { __sculpt?: object }).__sculpt = { session, sync, subject };
+  (window as unknown as { __sculpt?: object }).__sculpt = { session, sync };
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
@@ -105,12 +98,14 @@ export function mountSculptMode(viewer: Viewer): () => void {
     cursor.dispose();
     session.onActiveMeshChange = null;
     lighting.applyState(savedLights);
+    lighting.setShadowsMaster(savedShadowsMaster);
     viewer.environment.setRotation(lighting.getRigRotation());
     viewer.scene.environment = savedEnv;
     viewer.setSculptShading(false);
+    viewer.materials.applyMaterialState(savedMaterial);
     viewer.setDoF(savedDof);
     viewer.onDofChange?.();
-    viewer.exitSculpt(subject);
+    viewer.exitSculpt();
     sync.dispose();
   };
 }

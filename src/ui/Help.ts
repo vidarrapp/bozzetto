@@ -38,6 +38,7 @@ const SCULPT_HTML = `
     <div class="help-guide__title">Sculpting</div>
     <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt (off mesh: orbit)</span></div>
     <div class="help-row"><span class="help-key">Alt + drag</span><span>Negative (carve)</span></div>
+    <div class="help-row"><span class="help-key">Shift + drag</span><span>Smooth</span></div>
     <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Mask (+ Alt to unmask)</span></div>
     <div class="help-row"><kbd>B</kbd><span>Brush size (hold + drag)</span></div>
     <div class="help-row"><kbd>S</kbd><span>Brush strength (hold + drag up/down)</span></div>
@@ -61,7 +62,7 @@ const SCULPT_HTML = `
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Scene</div>
-    <div class="help-row"><kbd>F</kbd><span>Orbit around last edit</span></div>
+    <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
     <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
     <div class="help-row"><kbd>L</kbd><span>Rotate light (hold + drag)</span></div>
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>

@@ -20,8 +20,10 @@ import type { BrushCursor } from './BrushCursor';
 
 /** Environment hooks the shell drives outside the vendored core. */
 export interface InputShellHooks {
-  /** f: orbit the camera around a world point (last tool position). */
-  frameAt(point: [number, number, number]): void;
+  /** f: frame the whole current mesh. */
+  frameModel(): void;
+  /** Stroke end: move the orbit pivot to the last edit point. */
+  focusEdit(point: [number, number, number]): void;
   /** shift+s: toggle shadows; returns the new state (unused, for parity). */
   toggleShadows(): void;
   /** l + drag: rotate the light rig by a degree delta. */
@@ -114,11 +116,15 @@ export class InputShell {
     // where alt affects the stroke, so selection only runs on a miss-free
     // ctrl-less press and does not consume the event.
 
-    // ctrl = mask stroke: swap the Masking tool in for this stroke.
+    // Temporary tool swaps for the stroke: ctrl = mask, shift = smooth
+    // (ZBrush muscle memory). Restored on release.
     const tools = Enums.Tools;
     if (e.ctrlKey && !e.metaKey) {
       this.maskPrevTool = s.getSculptManager().getToolIndex();
       s.getSculptManager().setToolIndex(tools.MASKING);
+    } else if (e.shiftKey) {
+      this.maskPrevTool = s.getSculptManager().getToolIndex();
+      s.getSculptManager().setToolIndex(tools.SMOOTH);
     }
 
     // alt = negative for tools that support it (mask: alt = unmask).
@@ -131,7 +137,7 @@ export class InputShell {
       this.negativeOverride = { tool, prev };
     }
 
-    const canEdit = s.getSculptManager().start(e.shiftKey);
+    const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
       s._action = Enums.Action.NOTHING;
@@ -214,6 +220,9 @@ export class InputShell {
       s.getSculptManager().end();
       s.getStateManager().cleanNoop();
       e.stopPropagation();
+      // The orbit pivot follows the work: turn around the last edit point.
+      const edit = s.lastEditWorldPoint();
+      if (edit) this.hooks.focusEdit(edit);
     }
     this.restoreStrokeTool();
     s._action = Enums.Action.NOTHING;
@@ -289,11 +298,9 @@ export class InputShell {
       case 'l':
         this.lKeyHeld = true;
         return this.claim(e);
-      case 'f': {
-        const point = s.lastEditWorldPoint();
-        if (point) this.hooks.frameAt(point);
+      case 'f':
+        this.hooks.frameModel();
         return this.claim(e);
-      }
       // Reserved: q returns from the future gizmo; w/e/r are its modes.
       case 'q':
       case 'w':
