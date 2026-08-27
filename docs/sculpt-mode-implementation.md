@@ -209,7 +209,69 @@ Draft mapping mirrors SculptGL defaults where free; WS4 starts by enumerating ke
 
 Locked ahead of WS4: while sculpt mode is active, the `1`-`9` hotkeys select sculpting brushes (tools), overriding the viewer's material-preset bindings (`1` = Lit (PBR), `2..n` = matcaps). The viewer bindings return when sculpt mode exits. The brush-to-digit assignment itself is settled in the WS4 collision table. `[Decision]`
 
-Also locked (section 12): the mapping is Bozzetto-first overall, built from Vidar's ZBrush-style key map (to be supplied for WS4); `b` is brush size in sculpt mode, overriding the viewer's DoF toggle the same way the digits override presets. `[Decision]`
+Also locked (section 12): the mapping is Bozzetto-first overall. The viewer's DoF hotkey (`b`) is REMOVED entirely (viewer included; DoF stays toggleable in the settings panel), freeing `b` for brush size. `[Decision]`
+
+### 7.4 Hotkey table (Vidar's map, WS1 review round) `[Decision, collisions noted]`
+
+Active only while sculpt mode is mounted; captured ahead of the viewer's
+shortcut listener so viewer bindings (digits = material presets, `w` =
+wireframe, `s` = shading, `r` = reset view, `f` = frame model) are overridden
+and return on exit.
+
+| Key | Action | Notes |
+|---|---|---|
+| left drag on mesh | sculpt stroke | miss = orbit (unchanged) |
+| alt held during stroke | negative sculpting | ZBrush parity; Alt keydown is captured/preventDefaulted so Firefox's menu bar never grabs it |
+| alt + click | select model under cursor | inert until multi-mesh ships |
+| alt + q | isolate model | reserved (multi-mesh) |
+| ctrl + left drag | mask (paint) | temporary Masking tool while held |
+| ctrl + alt + left drag | unmask | Masking tool, negative |
+| ctrl + z / ctrl + shift + z | undo / redo | |
+| ctrl + d | subdivide (add a level) | top level only; capped ~1.6M tris |
+| d | step up a subdivision level | |
+| shift + d | step down a subdivision level | |
+| b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
+| s | brush strength (hold + drag horizontally) | COLLISION in the source map: `s` was listed for both brush strength and shadows. Resolved: `s` = strength (pairs with `b`, most frequent); shadows moved to `shift+s`. Flag for veto. |
+| shift + s | toggle shadows on/off | see collision note above |
+| x | symmetry toggle | |
+| q | brush mode | reserved (returns from gizmo when Transform ships; Maya-style QWER) |
+| w / e / r | gizmo move / rotate / scale | reserved; Transform tool is deferred past v1 |
+| l (hold) + drag | rotate light rig | horizontal drag = rig azimuth; HDRI rotation follows |
+| f | frame at last tool position | orbit pivot moves to the last edit point, not the full model |
+| 1 | Crease brush | |
+| 2 | Move brush | (SculptGL "Move"; drag-style) |
+| 3 | Standard brush, clay mode on | default tool |
+| 4 | Inflate brush | |
+| 5 | Pinch brush | |
+| 6 | Flatten brush | |
+| 7-9 | reserved for future brushes | digits stay brush-only per 7.3 |
+
+### 7.5 Sculpt-mode defaults (WS1 review round) `[Decision]`
+
+Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
+
+- Lighting: key light only (fill and rim disabled; the cheap hemisphere
+  ambient stays so the dark side reads). Shadows off by default
+  (`shift+s` re-enables).
+- Depth of field: off by default in sculpt mode (and its viewer hotkey is
+  gone; the settings panel still toggles it).
+- Default sphere: about 50k triangles (24,576 quads), down from ~200k, with
+  the retained multiresolution levels available for `d` / `shift+d`
+  stepping and `ctrl+d` subdivision beyond.
+- The look panel's settings still apply on top; these are only the mount
+  defaults, and the previous viewer state is restored on unmount.
+
+### 7.6 Brush cursor (WS1 review round) `[Decision]`
+
+A screen-space dot + circle at the pointer: circle radius = the tool's
+screen radius, a small dot at the center, and a vertical line rising from
+the dot whose length shows brush strength (Mudbox-style). The line length is
+proportional to the actual surface displacement of the standard brush
+(intensity x radius x 0.1, drawn at 10x so it reads at a glance). While
+holding `b`/`s` to adjust, the cursor stays anchored at its current spot and
+the circle/line update live. Implemented as a DOM overlay outside the 3D
+pipeline, so it can never be AO-darkened or defocused (satisfies the 6.5
+acceptance by construction); the 3D symmetry-plane indicator remains WS3.
 
 ## 8. Manifest and viewer extensions `[Proposal]`
 

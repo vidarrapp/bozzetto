@@ -1127,6 +1127,16 @@ export class Viewer {
     this.fitScene(this.display.geometry);
   }
 
+  /**
+   * Move the orbit pivot to a world point, keeping the camera where it is.
+   * Sculpt mode's f: orbit around the last tool position instead of the
+   * whole model.
+   */
+  orbitAt(point: [number, number, number]): void {
+    const s = this.controls.getState();
+    this.controls.setState(s.position, point);
+  }
+
   private logAoDebug(): void {
     if (this.aoDebug) {
       // Surface the values that would explain "GTAO sees no occlusion": the

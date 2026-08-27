@@ -52,6 +52,16 @@ declare module '@sculpt-vendor/mesh/meshStatic/MeshStatic' {
   export default MeshStatic;
 }
 
+declare module '@sculpt-vendor/mesh/dynamic/MeshDynamic' {
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  /** Dynamic-topology mesh; wraps an existing mesh's data at construction. */
+  class MeshDynamic {
+    constructor(mesh: SculptMesh);
+  }
+  interface MeshDynamic extends SculptMesh {}
+  export default MeshDynamic;
+}
+
 declare module '@sculpt-vendor/mesh/Mesh' {
   /**
    * The vendored mesh facade surface the bridge touches. Backing arrays are
@@ -61,12 +71,20 @@ declare module '@sculpt-vendor/mesh/Mesh' {
   export interface SculptMesh {
     setVertices(v: Float32Array): void;
     setFaces(f: Uint32Array): void;
+    setColors(c: Float32Array): void;
+    setMaterials(m: Float32Array): void;
+    setID(id: number): void;
+    setTransformData(t: unknown): void;
+    getTransformData(): unknown;
     init(): void;
     initRender(): void;
     getID(): number;
     getVertices(): Float32Array;
     getNormals(): Float32Array;
+    getColors(): Float32Array;
+    getMaterials(): Float32Array;
     getTriangles(): Uint32Array;
+    getFaces(): Uint32Array | Int32Array;
     getNbVertices(): number;
     getNbTriangles(): number;
     getNbFaces(): number;
@@ -77,13 +95,16 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     updateBuffers(): void;
     balanceOctree(): void;
     isVisible(): boolean;
-    /** Bridge hook installed by GeometrySync (see the Mesh.js seam edit). */
+    /** Set on dynamic-topology meshes only. */
+    isDynamic?: boolean;
+    /** Bridge hooks installed by GeometrySync (see the Mesh.js seam edits). */
     _bridgeSync?: {
       onGeometryBuffers(mesh: SculptMesh): void;
       onAllBuffers(mesh: SculptMesh): void;
+      onDirtyGeometry(mesh: SculptMesh, iVerts?: Uint32Array): void;
     } | null;
   }
-  const Mesh: { new (): SculptMesh; ID: number };
+  const Mesh: { new (): SculptMesh; ID: number; OPTIMIZE: boolean };
   export default Mesh;
 }
 
@@ -93,7 +114,9 @@ declare module '@sculpt-vendor/mesh/multiresolution/Multimesh' {
     constructor(mesh: unknown);
     _meshes: unknown[];
     _sel: number;
-    addLevel(): unknown;
+    addLevel(): SculptMesh;
+    higherLevel(): SculptMesh;
+    lowerLevel(): SculptMesh;
     getCurrentMesh(): SculptMesh;
   }
   interface Multimesh extends SculptMesh {}
@@ -106,11 +129,14 @@ declare module '@sculpt-vendor/editing/Subdivision' {
 }
 
 declare module '@sculpt-vendor/editing/SculptManager' {
+  import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
   class SculptManager {
+    _symmetry: boolean;
     constructor(main: unknown);
     setToolIndex(id: number): void;
     getToolIndex(): number;
-    getCurrentTool(): { getScreenRadius(): number };
+    getTool(id: number): SculptTool;
+    getCurrentTool(): SculptTool;
     getSymmetry(): boolean;
     start(ctrl: boolean): boolean;
     end(): void;
@@ -120,10 +146,25 @@ declare module '@sculpt-vendor/editing/SculptManager' {
   export default SculptManager;
 }
 
+declare module '@sculpt-vendor/editing/tools/SculptBase' {
+  /** The per-tool surface the bridge reads/writes (radius etc. are screen px). */
+  export interface SculptTool {
+    _radius: number;
+    _intensity: number;
+    /** Present on tools that support inverted strokes (Brush, Crease, ...). */
+    _negative?: boolean;
+    /** Brush only: clay mode (flatten-toward-plane deformation). */
+    _clay?: boolean;
+    getScreenRadius(): number;
+  }
+}
+
 declare module '@sculpt-vendor/states/StateManager' {
   class StateManager {
     constructor(main: unknown);
     pushStateAdd(mesh: unknown): void;
+    pushStateAddRemove(addMesh: unknown, remMesh: unknown, squash?: boolean): void;
+    pushStateMultiresolution(multimesh: unknown, type: number): void;
     undo(): void;
     redo(): void;
     cleanNoop(): void;
@@ -131,11 +172,23 @@ declare module '@sculpt-vendor/states/StateManager' {
   export default StateManager;
 }
 
+declare module '@sculpt-vendor/states/StateMultiresolution' {
+  const StateMultiresolution: {
+    SUBDIVISION: number;
+    REVERSION: number;
+    SELECTION: number;
+  };
+  export default StateMultiresolution;
+}
+
 declare module '@sculpt-vendor/math3d/Picking' {
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
   class Picking {
     constructor(main: unknown, xSym?: boolean);
     intersectionMouseMeshes(): boolean;
-    getMesh(): unknown;
+    getMesh(): SculptMesh | null;
+    /** Intersection point in the picked mesh's local space. */
+    getIntersectionPoint(): number[];
   }
   export default Picking;
 }

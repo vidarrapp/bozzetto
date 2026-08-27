@@ -70,3 +70,56 @@ stroke, median over the run:
   this hardware.
 - Call: GO for WS1, with the range-coalescing work treated as the first
   item rather than an optimization afterthought.
+
+# WS1 results (GeometrySync complete + review-round feedback)
+
+Recorded 2026-08-27, same headless container as WS0 (numbers remain a
+floor; reference hardware per section 12 is iPad Air / desktop PC).
+
+## What landed
+
+- Ranged GPU uploads: Mesh.updateGeometry feeds its dirty vertex ids
+  through a new tagged seam; GeometrySync coalesces them (4096-element
+  merge gap, 64-range cap, full-upload fallback) into attribute
+  updateRanges. Resolved [Verify-in-WS1]: both r184 backends apply
+  updateRanges per range and clear them after upload
+  (WebGPUAttributeUtils.js:226, WebGLAttributeUtils.js:221), so ranges
+  accumulate correctly across stroke steps between renders and the bridge
+  never clears them itself.
+- color + materialsPBR attributes now ride the same geometry (full-update
+  path; the mask tint consumes them in WS3).
+- Upload accounting on the debug handle (__sculpt.sync.stats): during a
+  20-step brush stroke on the 49k sphere, 10 ranged commits, 0 full
+  commits, last commit 72,048 elements versus a ~442k-element full
+  upload. Bounded and logged per the acceptance.
+- Dynamic topology validated on the indexed path (drawArrays stays off):
+  toggle to MeshDynamic, sculpt (topology updates run; a null-guard seam
+  was added for getShowWireframe, which MeshDynamic checks per stroke),
+  toggle back to static. Backing-array swaps rebuild attributes (6
+  rebuilds across the dyntopo session in the test).
+- Multiresolution: d / shift+d step levels, ctrl+d subdivides (top level
+  only, capped at 1.6M tris), all with proper undo states
+  (StateMultiresolution SELECTION / SUBDIVISION); verified 49,152 ->
+  12,288 -> 49,152 -> 196,608 and a ctrl+z that drops the subdivision.
+- Review-round feedback implemented (plan 7.4-7.6): the hotkey table
+  (undo/redo, symmetry, brush digits 1-6, b/s hold-drag size/strength,
+  shift+s shadows, l+drag light rig, reserved q/w/e/r), alt as the
+  negative-stroke modifier with Alt captured so Firefox's menu bar never
+  steals it (verified: an alt stroke reduces the mean radius), ctrl /
+  ctrl+alt mask strokes wired (mask semantics verified in WS3), f frames
+  at the last tool position (orbit pivot verified moving ~25 world units
+  to the stroke site), the screen-space brush cursor (dot + ring +
+  strength line), sculpt defaults (key light only, shadows off, DoF off,
+  ~49k default sphere), and the viewer's DoF hotkey removed.
+
+## Notes and deviations
+
+- The source hotkey map assigned `s` to both brush strength and the
+  shadows toggle; resolved as s = strength, shift+s = shadows (flagged in
+  plan 7.4 for veto).
+- alt+click currently both selects (stroke start selects the mesh under
+  the cursor, upstream behavior) and sculpts a negative dab; a pure
+  select-without-sculpt gesture is deferred until multi-mesh ships.
+- Sim-bench figures on this shared container vary with tool choice and
+  CPU load run-to-run; treat docs numbers as floors and re-measure on the
+  reference hardware once deployed.

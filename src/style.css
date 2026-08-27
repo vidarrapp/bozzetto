@@ -1424,3 +1424,33 @@ html.is-page body {
     width: min(268px, calc(100vw - 64px));
   }
 }
+
+/* --- sculpt mode: screen-space brush cursor (dot + ring + strength line) --- */
+.sculpt-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.sculpt-cursor__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  opacity: 0.85;
+}
+
+.sculpt-cursor__dot {
+  fill: var(--accent);
+  opacity: 0.9;
+}
+
+.sculpt-cursor__strength {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  opacity: 0.85;
+}

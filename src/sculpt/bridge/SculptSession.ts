@@ -1,12 +1,19 @@
 import Enums from '@sculpt-vendor/misc/Enums';
+import Mesh from '@sculpt-vendor/mesh/Mesh';
 import MeshStatic from '@sculpt-vendor/mesh/meshStatic/MeshStatic';
+import MeshDynamic from '@sculpt-vendor/mesh/dynamic/MeshDynamic';
 import Multimesh from '@sculpt-vendor/mesh/multiresolution/Multimesh';
 import Subdivision from '@sculpt-vendor/editing/Subdivision';
 import SculptManager from '@sculpt-vendor/editing/SculptManager';
 import StateManager from '@sculpt-vendor/states/StateManager';
+import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
+import { vec3 } from 'gl-matrix';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
+
+/** Hard ceiling for ctrl+d subdivision (protects the iPad tier). */
+const MAX_SUBDIVISION_TRIS = 1600000;
 
 /**
  * The "main" object the vendored editing core talks to, ported from the
@@ -25,6 +32,9 @@ export class SculptSession {
   _action: number = Enums.Action.NOTHING;
   /** Always null: meshes run render-less (see the vendored Mesh.js seams). */
   readonly _gl = null;
+
+  /** Fired when the active mesh instance changes (select, dyntopo, undo). */
+  onActiveMeshChange: (() => void) | null = null;
 
   private readonly meshes: SculptMesh[] = [];
   private readonly selectMeshes: SculptMesh[] = [];
@@ -116,9 +126,18 @@ export class SculptSession {
         this.selectMeshes.push(mesh);
       }
     }
+    const changed = this.mesh !== mesh;
     this.mesh = mesh;
+    if (changed) this.onActiveMeshChange?.();
     this.render();
     return mesh;
+  }
+
+  /** Swap a mesh instance in place (dyntopo conversion, subdivision convert). */
+  replaceMesh(mesh: SculptMesh, newMesh: SculptMesh): void {
+    const index = this.getIndexMesh(mesh);
+    if (index >= 0) this.meshes[index] = newMesh;
+    if (this.mesh === mesh) this.setMesh(newMesh);
   }
 
   addNewMesh(mesh: SculptMesh): SculptMesh {
@@ -148,13 +167,109 @@ export class SculptSession {
     this.requestRender();
   }
 
+  // --- sculpt commands (hotkey surface) -----------------------------------
+
+  undo(): void {
+    this.stateManager.undo();
+    this.render();
+  }
+
+  redo(): void {
+    this.stateManager.redo();
+    this.render();
+  }
+
+  /** Mirror-sculpting toggle (x). Returns the new state. */
+  toggleSymmetry(): boolean {
+    this.sculptManager._symmetry = !this.sculptManager._symmetry;
+    return this.sculptManager._symmetry;
+  }
+
+  /** The active mesh as a Multimesh, or null (e.g. while dyntopo is active). */
+  private asMultimesh(): Multimesh | null {
+    const mesh = this.mesh as unknown as Multimesh | null;
+    return mesh && mesh._meshes ? mesh : null;
+  }
+
+  /**
+   * ctrl+d: add a subdivision level (ported from GuiTopology.subdivide, minus
+   * the dialogs: requires the top level, silently refuses past the tri cap).
+   */
+  subdivide(): boolean {
+    const mul = this.asMultimesh();
+    if (!mul || mul._sel !== mul._meshes.length - 1) return false;
+    if (mul.getNbTriangles() * 4 > MAX_SUBDIVISION_TRIS) return false;
+    this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);
+    mul.addLevel();
+    this.setMesh(mul);
+    return true;
+  }
+
+  /** d / shift+d: step the multiresolution selection up or down one level. */
+  stepSubdivision(dir: 1 | -1): boolean {
+    const mul = this.asMultimesh();
+    if (!mul) return false;
+    const target = mul._sel + dir;
+    if (target < 0 || target >= mul._meshes.length) return false;
+    this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SELECTION);
+    if (dir > 0) mul.higherLevel();
+    else mul.lowerLevel();
+    this.render();
+    return true;
+  }
+
+  /**
+   * Dynamic topology on/off (ported from GuiTopology.dynamicToggleActivate +
+   * convertToStaticMesh). Off returns to a plain static mesh; the multires
+   * stack does not survive the round trip, matching upstream.
+   */
+  toggleDynamicTopology(): boolean {
+    const mesh = this.mesh;
+    if (!mesh) return false;
+    const newMesh = !mesh.isDynamic
+      ? (new MeshDynamic(mesh) as unknown as SculptMesh)
+      : this.convertToStaticMesh(mesh);
+    this.stateManager.pushStateAddRemove(newMesh, mesh);
+    this.replaceMesh(mesh, newMesh);
+    return !!newMesh.isDynamic;
+  }
+
+  private convertToStaticMesh(mesh: SculptMesh): SculptMesh {
+    if (!mesh.isDynamic) return mesh;
+    const newMesh = new MeshStatic(null) as unknown as SculptMesh;
+    newMesh.setID(mesh.getID());
+    newMesh.setTransformData(mesh.getTransformData());
+    newMesh.setVertices(mesh.getVertices().subarray(0, mesh.getNbVertices() * 3));
+    newMesh.setColors(mesh.getColors().subarray(0, mesh.getNbVertices() * 3));
+    newMesh.setMaterials(mesh.getMaterials().subarray(0, mesh.getNbVertices() * 3));
+    newMesh.setFaces(mesh.getFaces().subarray(0, mesh.getNbFaces() * 4) as Uint32Array);
+    Mesh.OPTIMIZE = false;
+    newMesh.init();
+    Mesh.OPTIMIZE = true;
+    return newMesh;
+  }
+
+  /**
+   * World-space point of the last picking intersection (the last spot the
+   * brush touched or hovered), or null before any pick. Drives f = frame at
+   * the last tool position.
+   */
+  lastEditWorldPoint(): [number, number, number] | null {
+    const mesh = this.picking.getMesh();
+    if (!mesh) return null;
+    const out = vec3.create();
+    vec3.transformMat4(out, this.picking.getIntersectionPoint() as unknown as vec3, mesh.getMatrix());
+    return [out[0], out[1], out[2]];
+  }
+
   // --- primitives (ported from Scene.js + drawables/Primitives.js) --------
 
   /**
-   * The default subject: a cube subdivided to at least 50k faces, exactly as
-   * upstream addSphere does. Vertex positions and quad indices are copied
-   * verbatim from Primitives.createCubeArray (UVs dropped: the sculpt
-   * pipeline carries none).
+   * The default subject, as upstream addSphere builds it (a subdivided cube;
+   * vertex positions and quad indices copied verbatim from
+   * Primitives.createCubeArray, UVs dropped). Bozzetto clamps lower than
+   * upstream: about 50k triangles (24,576 quads) instead of ~200k, per the
+   * WS1 review defaults; ctrl+d subdivides further on demand.
    */
   addSphere(): Multimesh {
     const v = new Float32Array(24);
@@ -183,10 +298,10 @@ export class SculptSession {
     return mesh;
   }
 
-  /** Ported from Scene.subdivideClamp: subdivide to >= 50k faces, keep 4 levels. */
+  /** Ported from Scene.subdivideClamp with a ~50k-tri clamp; keeps 4 levels. */
   private subdivideClamp(mesh: Multimesh, linear = false): void {
     Subdivision.LINEAR = !!linear;
-    while (mesh.getNbFaces() < 50000) mesh.addLevel();
+    while (mesh.getNbFaces() < 20000) mesh.addLevel();
     mesh._meshes.splice(0, Math.min(mesh._meshes.length - 4, 4));
     mesh._sel = mesh._meshes.length - 1;
     Subdivision.LINEAR = false;

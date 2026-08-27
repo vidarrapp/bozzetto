@@ -393,6 +393,9 @@ class Mesh {
       this.updateDuplicateGeometry(iVerts);
       this.updateDrawArrays(iFaces);
     }
+    // BOZZETTO EDIT: feed the dirty vertex set to the GeometrySync bridge so
+    // the next buffer commit can upload ranges instead of the full arrays.
+    if (this._bridgeSync) this._bridgeSync.onDirtyGeometry(this, iVerts);
   }
 
   allocateArrays() {
@@ -1871,7 +1874,9 @@ class Mesh {
   }
 
   getShowWireframe() {
-    return this._renderData._showWireframe;
+    // BOZZETTO EDIT: no wireframe state render-less (MeshDynamic checks this
+    // in its stroke path; Bozzetto's wireframe is a separate overlay).
+    return this._renderData ? this._renderData._showWireframe : false;
   }
 
   isUsingDrawArrays() {
