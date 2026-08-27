@@ -176,3 +176,17 @@ changes, verified by the ws1b suite plus a WS1 regression pass:
 - ctrl+d cap raised 1.6M -> 4M tris per Vidar.
 - Test-only fix: the pivot-follow changed the view between scripted
   strokes, so the WS1 suite reframes (f) before its alt stroke.
+
+# WS1 round 4 (clean entry + stage)
+
+- /?sculpt=1 is a project-less sculpt entry: a synthetic one-frame
+  "model" manifest on an in-memory source, so nothing fetches from the
+  API, no timelapse loads, and no transport bar appears; the gallery
+  Sculpt! link points there. ?tl=<id>&sculpt=1 still works for
+  sculpting over a loaded project.
+- The stage (ground/floor/pedestal) is hidden by default in sculpt mode
+  (it hid the sculpt's underside); g or the panel cycles it back, and
+  the saved mode returns on exit.
+- Verified headless: standalone page has no transport, ground off, the
+  overlay clears, strokes work; the project-based entry and the full
+  WS1 suite still pass.

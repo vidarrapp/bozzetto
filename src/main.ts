@@ -16,12 +16,46 @@ async function main(): Promise<void> {
   const app = document.getElementById('app');
   if (!app) throw new Error('#app element not found');
 
-  const id = new URLSearchParams(window.location.search).get('tl');
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('tl');
+  if (!id && params.get('sculpt') === '1') {
+    await bootSculpt();
+    return;
+  }
   if (!id) {
     await renderLanding(app);
     return;
   }
   await bootViewer(id);
+}
+
+/**
+ * Project-less sculpt entry (/?sculpt=1): boot the viewer on a synthetic
+ * one-frame manifest (no API, no timelapse, no transport bar) and mount
+ * sculpt mode over it.
+ */
+async function bootSculpt(): Promise<void> {
+  const viewport = document.getElementById('viewport');
+  const overlay = document.getElementById('overlay');
+  if (!viewport) throw new Error('#viewport element not found');
+  const setStatus = (msg: string): void => {
+    const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
+    if (box) box.textContent = msg;
+  };
+
+  try {
+    setStatus('Entering sculpt mode…');
+    const { sculptStandaloneProject } = await import('./sculpt/standalone');
+    const { manifest, source } = sculptStandaloneProject();
+    const viewer = await mountViewer(viewport, manifest, source, setStatus);
+    overlay?.remove();
+    addGalleryLink();
+    const { mountSculptMode } = await import('./sculpt/mode');
+    mountSculptMode(viewer);
+  } catch (err) {
+    console.error(err);
+    showError(overlay, err);
+  }
 }
 
 async function bootViewer(id: string): Promise<void> {

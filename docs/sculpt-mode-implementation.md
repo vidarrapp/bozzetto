@@ -271,6 +271,13 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
   so the cheapest environment is none; the hemisphere ambient plus key
   light carry the look. Also a later render option.
 - Material: flat shading by default in sculpt mode.
+- Stage: ground/floor/pedestal hidden by default in sculpt mode (review
+  round 4: the stage hid the sculpt's underside); g or the panel cycles
+  it back, and the saved mode returns on exit.
+- Entry: /?sculpt=1 boots a project-less sculpt session on a synthetic
+  one-frame manifest (no API call, no timelapse load, no transport bar,
+  no environment fetch); the gallery Sculpt! link points there. The
+  ?tl=<id>&sculpt=1 form remains for sculpting over a loaded project.
 - The settings panel drives ALL sculpt shading (review round 3): the
   sculpt geometry is adopted by the viewer's display mesh, so material
   mode, albedo/roughness/metalness, matcaps, smooth/flat and the

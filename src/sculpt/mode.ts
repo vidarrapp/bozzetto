@@ -48,6 +48,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
   const savedEnv = viewer.scene.environment;
   const savedMaterial = viewer.materials.getMaterialState();
   const savedShadowsMaster = lighting.getShadowsMaster();
+  const savedGround = viewer.getGround();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
   lighting.setShadowsMaster(false);
@@ -57,6 +58,9 @@ export function mountSculptMode(viewer: Viewer): () => void {
   viewer.setSculptShading(true);
   // Flat shading is the sculpt default; the panel checkbox drives it live.
   viewer.materials.setFlatShading(true);
+  // No stage under a work in progress: the floor/pedestal hid the sculpt's
+  // underside. g (or the panel) cycles it back on when wanted.
+  viewer.setGround('off');
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
   session.onActiveMeshChange = () => {
@@ -99,6 +103,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
     session.onActiveMeshChange = null;
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);
+    viewer.setGround(savedGround);
     viewer.environment.setRotation(lighting.getRigRotation());
     viewer.scene.environment = savedEnv;
     viewer.setSculptShading(false);
