@@ -203,6 +203,16 @@ Sections, in order: Tool (button grid with hotkey hints; active tool uses `--acc
 
 States to specify for every control: default, hover, active, disabled, and the two themes. Edge states: empty scene (Scene section prompts a primitive), recording with zero frames, memory budget reached (visible spill notice).
 
+### 7.2b Touch toolbar (WS1 review round 5) `[Decision]`
+
+Keyboards are rare on iPads, so a bottom toolbar ships ahead of the full
+WS4 panel: a Negative toggle pinned in the left corner (a sticky base the
+stroke polarity XORs with alt, so keyboards lose nothing) and the six
+digit brushes centered, labeled 1-6 to match the hotkeys (icons later).
+Buttons and hotkeys stay in sync both ways. Built from the house tokens
+with 44px touch targets; it sits above the transport bar when sculpting
+over a loaded project.
+
 ### 7.3 Hotkeys `[Proposal, resolve in WS4]`
 
 Draft mapping mirrors SculptGL defaults where free; WS4 starts by enumerating keys already claimed by `ShortcutHandlers` (the README documents at least `g` for ground cycling) and resolving collisions in a single table committed with the code. No hotkey ships undocumented.

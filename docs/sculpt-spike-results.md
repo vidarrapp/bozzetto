@@ -190,3 +190,16 @@ changes, verified by the ws1b suite plus a WS1 regression pass:
 - Verified headless: standalone page has no transport, ground off, the
   overlay clears, strokes work; the project-based entry and the full
   WS1 suite still pass.
+
+# WS1 round 5 (touch toolbar)
+
+- Bottom sculpt toolbar for keyboard-less iPads: Negative toggle in the
+  left corner (sticky base, XORed with alt per stroke) and the six digit
+  brushes centered, numbered 1-6 per Vidar. Buttons and hotkeys stay in
+  sync both ways (InputShell.selectBrush is the shared path and emits
+  onToolChange). House tokens, 44px targets, safe-area padding, raised
+  above the transport when sculpting over a loaded project.
+- Verified headless: toolbar renders 1-6, the Negative toggle makes a
+  plain Inflate stroke carve inward with no Alt involved, digit keys
+  highlight the matching button, and the full prior suite still passes.
+- Field report on round 3/4 (RTX 3060): "much snappier".

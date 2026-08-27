@@ -37,7 +37,12 @@ const RADIUS_MIN = 5;
 const RADIUS_MAX = 500;
 
 export class InputShell {
+  /** Fired when the selected brush changes (digit keys or toolbar). */
+  onToolChange: (() => void) | null = null;
+
   private pointerId = -1;
+  /** Sticky negative base (toolbar toggle); alt inverts relative to it. */
+  private negativeBase = false;
   /** Tool whose _negative was overridden for the current stroke, if any. */
   private negativeOverride: { tool: SculptTool; prev: boolean } | null = null;
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
@@ -127,13 +132,13 @@ export class InputShell {
       s.getSculptManager().setToolIndex(tools.SMOOTH);
     }
 
-    // alt = negative for tools that support it (mask: alt = unmask).
+    // Stroke polarity: the sticky toolbar base XOR alt, per tool support
+    // (mask: alt = unmask, base ignored).
     const tool = this.currentTool();
     if ('_negative' in tool) {
       const prev = !!tool._negative;
-      // Masking's convention is negative=true to paint mask, so alt flips
-      // toward unmask; for sculpt tools alt flips toward carving in.
-      tool._negative = e.ctrlKey ? !e.altKey : e.altKey ? !prev : prev;
+      const base = this.negativeBase ? !prev : prev;
+      tool._negative = e.ctrlKey ? !e.altKey : e.altKey ? !base : base;
       this.negativeOverride = { tool, prev };
     }
 
@@ -312,9 +317,7 @@ export class InputShell {
       case '2':
         return this.selectTool(Enums.Tools.MOVE, e);
       case '3':
-        return this.selectTool(Enums.Tools.BRUSH, e, (tool) => {
-          tool._clay = true; // standard brush ships with clay mode on
-        });
+        return this.selectTool(Enums.Tools.BRUSH, e);
       case '4':
         return this.selectTool(Enums.Tools.INFLATE, e);
       case '5':
@@ -351,11 +354,32 @@ export class InputShell {
   }
 
   private selectTool(index: number, e: KeyboardEvent, init?: (tool: SculptTool) => void): void {
+    this.selectBrush(index, init);
+    this.claim(e);
+  }
+
+  /** Select a brush (digit keys and the touch toolbar share this path). */
+  selectBrush(index: number, init?: (tool: SculptTool) => void): void {
     const manager = this.session.getSculptManager();
     manager.setToolIndex(index);
-    init?.(manager.getCurrentTool());
+    const tool = manager.getCurrentTool();
+    if (index === Enums.Tools.BRUSH) tool._clay = true; // standard = clay on
+    init?.(tool);
     this.syncCursorBrush();
-    this.claim(e);
+    this.onToolChange?.();
+  }
+
+  currentToolIndex(): number {
+    return this.session.getSculptManager().getToolIndex();
+  }
+
+  /** Sticky stroke inversion (the toolbar's Negative toggle). */
+  setNegativeBase(on: boolean): void {
+    this.negativeBase = on;
+  }
+
+  getNegativeBase(): boolean {
+    return this.negativeBase;
   }
 
   /** Swallow a claimed key so the viewer's shortcut bindings stay dormant. */

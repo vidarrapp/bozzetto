@@ -1454,3 +1454,69 @@ html.is-page body {
   stroke-width: 1.5;
   opacity: 0.85;
 }
+
+/* --- sculpt mode: bottom toolbar (negative toggle + brush row) --- */
+.sculpt-toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+
+/* Above the transport bar when sculpting over a loaded project. */
+.sculpt-toolbar--raised {
+  bottom: 92px;
+}
+
+.sculpt-toolbar__group {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.sculpt-toolbar__left {
+  justify-self: start;
+}
+
+.sculpt-toolbar__brushes {
+  justify-self: center;
+  max-width: calc(100vw - 140px);
+  overflow-x: auto;
+}
+
+.sculpt-toolbar__btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.sculpt-toolbar__btn:hover {
+  background: var(--hover);
+}
+
+.sculpt-toolbar__btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}

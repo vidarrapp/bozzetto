@@ -5,6 +5,7 @@ import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
 import { InputShell } from './bridge/InputShell';
 import { SculptSession } from './bridge/SculptSession';
+import { SculptToolbar } from './ui/SculptToolbar';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
 /**
@@ -87,6 +88,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
     },
   });
   input.install();
+  const toolbar = new SculptToolbar(input);
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
@@ -98,6 +100,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
   return () => {
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
+    toolbar.dispose();
     input.dispose();
     cursor.dispose();
     session.onActiveMeshChange = null;
