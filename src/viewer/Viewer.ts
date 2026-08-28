@@ -304,7 +304,9 @@ export class Viewer {
     source: AssetSource,
     options: { preserveDrawingBuffer?: boolean } = {},
   ): Promise<Viewer> {
-    const renderer = new WebGPURenderer({ antialias: true });
+    // On dual-GPU machines (discrete + integrated) the default adapter can
+    // land on the integrated chip; ask for the fast one explicitly.
+    const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
     await renderer.init();
     const viewer = new Viewer(renderer, container, manifest, source, options);
     viewer.warnIfSoftwareRendering();
