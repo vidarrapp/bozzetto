@@ -269,6 +269,8 @@ export class Viewer {
   private lastTapX = 0;
   private lastTapY = 0;
   private readonly activeTouches = new Set<number>();
+  /** Container box watcher: the resize source of truth (see the constructor). */
+  private containerObserver: ResizeObserver | null = null;
   /** Adaptive quality: trims render cost when measured FPS is low. */
   private adaptTimer = 0;
   private adaptStep = 0;
@@ -403,6 +405,13 @@ export class Viewer {
     this.buildPipeline();
 
     window.addEventListener('resize', this.onResize);
+    // iOS standalone (home-screen) apps settle their viewport AFTER load and
+    // often skip the window resize event entirely, leaving a stale canvas
+    // size (the render centre then sits at the visible bottom edge). A
+    // ResizeObserver on the container fires on the actual box change, no
+    // matter which events the platform forgot to send.
+    this.containerObserver = new ResizeObserver(() => this.onResize());
+    this.containerObserver.observe(container);
 
     // Tap-to-focus: a brief reticle flashed at a double-click / double-tap pick.
     this.reticle = document.createElement('div');
@@ -1058,6 +1067,8 @@ export class Viewer {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
+    this.containerObserver?.disconnect();
+    this.containerObserver = null;
     this.container.removeEventListener('pointerdown', this.onPickPointer, true);
     this.container.removeEventListener('pointermove', this.onTapMove, true);
     this.container.removeEventListener('pointerup', this.onTapEnd, true);

@@ -225,3 +225,20 @@ of the tiny 480x360 test viewport, and the suite's multires stroke
 coordinate landed on the brush row (the WS1 suite had not been re-run in
 round 5 to catch it). Verified via elementFromPoint; the suite strokes
 now stay clear of the toolbar and both suites pass on the shipped code.
+
+# WS1 round 7 (iOS standalone viewport)
+
+Field report: as an iOS home-screen web app in fullscreen, framing put
+the model centred on the BOTTOM edge (half offscreen). Cause: iOS
+standalone apps settle their viewport after load and often skip the
+window resize event, so the canvas kept the stale boot-time height and
+the render centre sat at the visible bottom edge. Fixes:
+
+- A ResizeObserver on the viewer container is now the resize source of
+  truth (fires on the actual box change regardless of which events the
+  platform sends); the window resize listener stays as belt and braces.
+  Verified headless by shrinking the container with no window resize:
+  the canvas buffer tracks exactly.
+- viewport-fit=cover added to all three entry pages (also required for
+  the toolbar's env(safe-area-inset-bottom) to be non-zero on notched
+  devices in standalone mode).
