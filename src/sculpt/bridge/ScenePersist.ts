@@ -41,6 +41,8 @@ export interface SavedLevel {
 export interface SavedScene {
   v: 2;
   savedAt: number;
+  /** Display name of the mesh (outliner-ready); absent in older records. */
+  name?: string;
   /** Base (lowest) level topology; higher levels re-derive by subdivision. */
   nbBaseFaces: number;
   baseFaces: Uint32Array;

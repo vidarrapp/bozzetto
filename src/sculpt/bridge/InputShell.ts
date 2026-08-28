@@ -51,6 +51,8 @@ export class InputShell {
   private adjust: AdjustMode = null;
   /** ctrl+press that missed the mesh: pending whole-mask gesture (WS2). */
   private maskGesture: { x: number; y: number; pointerId: number } | null = null;
+  /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
+  private shiftHeld = false;
   private lKeyHeld = false;
   private lastClientX = 0;
   private lastClientY = 0;
@@ -126,10 +128,12 @@ export class InputShell {
     return this.session.getSculptManager().getCurrentTool();
   }
 
-  /** Push the active tool's radius/strength into the cursor overlay. */
+  /** Push the active tool's radius/strength/color into the cursor overlay. */
   private syncCursorBrush(): void {
     const tool = this.currentTool();
     this.cursor.setBrush(tool._radius, tool._intensity);
+    const idx = this.session.getSculptManager().getToolIndex();
+    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
   }
 
   // --- pointer machine ----------------------------------------------------
@@ -155,6 +159,9 @@ export class InputShell {
       this.maskPrevTool = s.getSculptManager().getToolIndex();
       s.getSculptManager().setToolIndex(tools.SMOOTH);
     }
+    // The ring reflects the tool actually stroking (radius and the blue
+    // smoothing tint for shift strokes); restored on release.
+    if (this.maskPrevTool >= 0) this.syncCursorBrush();
 
     // Stroke polarity: the sticky toolbar base XOR alt, per tool support
     // (mask: alt = unmask, base ignored).
@@ -322,6 +329,12 @@ export class InputShell {
       return;
     }
 
+    // Holding shift means "the next stroke smooths"; preview it on the ring.
+    if (e.key === 'Shift' && !this.shiftHeld) {
+      this.shiftHeld = true;
+      this.syncCursorBrush();
+    }
+
     // ctrl chords first.
     if (e.ctrlKey || e.metaKey) {
       if (key === 'z') {
@@ -393,6 +406,10 @@ export class InputShell {
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     const key = e.key.toLowerCase();
     if (e.key === 'Alt') e.preventDefault();
+    if (e.key === 'Shift' && this.shiftHeld) {
+      this.shiftHeld = false;
+      this.syncCursorBrush();
+    }
     if (key === 'b' && this.adjust === 'radius') this.endAdjust();
     if (key === 's' && this.adjust === 'intensity') this.endAdjust();
     if (key === 'l') this.lKeyHeld = false;

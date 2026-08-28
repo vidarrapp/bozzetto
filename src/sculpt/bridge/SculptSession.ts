@@ -55,6 +55,8 @@ export class SculptSession {
   private readonly meshes: SculptMesh[] = [];
   private readonly selectMeshes: SculptMesh[] = [];
   private mesh: SculptMesh | null = null;
+  /** Display names (feeds the stats corner; scene graph/outliner later). */
+  private readonly meshNames = new WeakMap<SculptMesh, string>();
 
   private readonly stateManager = new StateManager(this);
   private readonly sculptManager: SculptManager;
@@ -187,6 +189,15 @@ export class SculptSession {
     this.requestRender();
   }
 
+  /** Name of the active mesh (outliner-ready; defaults to Sphere). */
+  activeName(): string {
+    return (this.mesh && this.meshNames.get(this.mesh)) || 'Sphere';
+  }
+
+  setMeshName(mesh: SculptMesh, name: string): void {
+    this.meshNames.set(mesh, name);
+  }
+
   // --- sculpt commands (hotkey surface) -----------------------------------
 
   undo(): void {
@@ -277,6 +288,8 @@ export class SculptSession {
     const newMesh = !mesh.isDynamic
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
       : this.convertToStaticMesh(mesh);
+    const name = this.meshNames.get(mesh);
+    if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
     this.replaceMesh(mesh, newMesh);
     return !!newMesh.isDynamic;
@@ -400,6 +413,7 @@ export class SculptSession {
     return {
       v: 2,
       savedAt: Date.now(),
+      name: this.activeName(),
       nbBaseFaces,
       baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
       levels,
@@ -468,6 +482,7 @@ export class SculptSession {
 
     mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
     this.sculptManager._symmetry = saved.symmetry;
+    this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
     this.addNewMesh(mesh);
     return mesh;
   }
@@ -504,6 +519,7 @@ export class SculptSession {
     const mesh = new Multimesh(base);
     mesh.normalizeSize();
     this.subdivideClamp(mesh);
+    this.meshNames.set(mesh, 'Sphere');
     this.addNewMesh(mesh);
     return mesh;
   }

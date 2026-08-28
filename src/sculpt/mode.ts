@@ -89,6 +89,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const levelToast = makeLevelToast();
   session.onLevelChange = (sel, levels) => levelToast.show(sel + 1, levels);
 
+  // Top-left stats: active object name + live triangle count (the name
+  // column becomes the scene graph/outliner entry point later).
+  const stats = makeStatsCorner(session);
+
   const cursor = new BrushCursor(container, viewer.scene);
   const input = new InputShell(session, container, cursor, {
     frameModel: () => {
@@ -138,6 +142,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toast?.remove();
     session.onLevelChange = null;
     levelToast.dispose();
+    stats.dispose();
     persist.dispose();
     toolbar.dispose();
     input.dispose();
@@ -154,6 +159,31 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.onDofChange?.();
     viewer.exitSculpt();
     sync.dispose();
+  };
+}
+
+/** Top-left corner stats: object name + live poly count (polled, cheap). */
+function makeStatsCorner(session: SculptSession): { dispose(): void } {
+  const el = document.createElement('div');
+  el.className = 'sculpt-stats';
+  const name = document.createElement('div');
+  name.className = 'sculpt-stats__name';
+  const tris = document.createElement('div');
+  tris.className = 'sculpt-stats__tris';
+  el.append(name, tris);
+  document.body.appendChild(el);
+  const update = (): void => {
+    const mesh = session.getMesh();
+    name.textContent = session.activeName();
+    tris.textContent = mesh ? `${mesh.getNbTriangles().toLocaleString('en-US')} tris` : '';
+  };
+  update();
+  const timer = window.setInterval(update, 500);
+  return {
+    dispose() {
+      clearInterval(timer);
+      el.remove();
+    },
   };
 }
 

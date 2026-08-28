@@ -385,6 +385,13 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
 
 ### 7.6 Brush cursor (WS1 review round) `[Decision]`
 
+WS2 review addition: the cursor (ring, dot, strength line, both the 3D
+and the SVG fallback representations) turns blue (#4d8fd1) whenever
+smoothing is effective - the Smooth tool selected, or shift held (the
+temp-smooth preview and the stroke itself). Restored with the tool on
+release.
+
+
 Two representations behind one cursor (review round 2): over the mesh, a
 3D ring aligned to the picked surface normal, drawn at the intersection
 point at the tool's world radius, with a center dot and a line along the

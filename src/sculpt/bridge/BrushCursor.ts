@@ -26,6 +26,8 @@ import {
  */
 
 const ACCENT = 0xbb5b33;
+/** Smoothing reads as water-on-clay: the cursor cools to blue. */
+const SMOOTH_BLUE = 0x4d8fd1;
 const RING_SEGMENTS = 64;
 
 export class BrushCursor {
@@ -46,6 +48,7 @@ export class BrushCursor {
   private x = 0;
   private y = 0;
   private intensity = 0.5;
+  private mat!: LineBasicMaterial;
 
   constructor(container: HTMLElement, private readonly scene: Scene) {
     const NS = 'http://www.w3.org/2000/svg';
@@ -68,6 +71,7 @@ export class BrushCursor {
       opacity: 0.85,
       depthTest: false,
     });
+    this.mat = mat;
 
     // Closed circles as plain Lines (first point repeated): WebGPURenderer
     // does not draw LineLoop. Unit radius; group scale carries the world size.
@@ -141,6 +145,12 @@ export class BrushCursor {
   /** Freeze (b/s adjust) or release the cursor position. */
   setAnchored(anchored: boolean): void {
     this.anchored = anchored;
+  }
+
+  /** Smooth active (tool 7 or held shift): the whole cursor turns blue. */
+  setSmoothing(on: boolean): void {
+    this.mat.color.setHex(on ? SMOOTH_BLUE : ACCENT);
+    this.root.classList.toggle('is-smooth', on);
   }
 
   /** Update to the tool's screen radius (CSS px) and strength (0..1). */

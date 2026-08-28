@@ -1524,6 +1524,38 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* Sculpt corner stats: object name + live poly count (top-left). */
+.sculpt-stats {
+  position: fixed;
+  top: 84px;
+  left: 12px;
+  z-index: 15;
+  pointer-events: none;
+  font-family: var(--font-spec);
+  line-height: 1.5;
+}
+
+.sculpt-stats__name {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.sculpt-stats__tris {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Smoothing turns the fallback ring blue too (3D ring via material). */
+.sculpt-cursor.is-smooth .sculpt-cursor__ring,
+.sculpt-cursor.is-smooth .sculpt-cursor__strength {
+  stroke: #4d8fd1;
+}
+
+.sculpt-cursor.is-smooth .sculpt-cursor__dot {
+  fill: #4d8fd1;
+}
+
 /* Transient subdivision-level pill (d / shift+d / ctrl+d). */
 .sculpt-leveltoast {
   position: fixed;

@@ -464,3 +464,17 @@ the render centre sat at the visible bottom edge. Fixes:
   and undo/redo that land on another level (SculptSession.onLevelChange
   fires from the step/subdivide paths plus an undo/redo level-signature
   diff). Repeated steps reuse the pill and reset its fade.
+
+# WS2e (corner stats + smooth cursor tint)
+
+- Top-left stats corner in sculpt mode: active object name plus a live
+  triangle count (500ms poll). Names live in a session-side WeakMap
+  (addSphere = "Sphere"; carried across dyntopo conversions; persisted
+  in SavedScene.name and restored) so the column is ready to become the
+  scene-graph/outliner entry point.
+- The brush cursor turns blue while smoothing: Smooth selected, or
+  shift held (preview on keydown, the temp-swapped stroke itself, both
+  the 3D ring material and the SVG fallback). The stroke-time swap now
+  also resyncs ring radius to the temp tool.
+- ws1b asserts: stats name/count, count tracking a level step, blue on
+  tool 7, blue while shift held, restored after.
