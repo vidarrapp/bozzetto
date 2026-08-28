@@ -203,15 +203,19 @@ Sections, in order: Tool (button grid with hotkey hints; active tool uses `--acc
 
 States to specify for every control: default, hover, active, disabled, and the two themes. Edge states: empty scene (Scene section prompts a primitive), recording with zero frames, memory budget reached (visible spill notice).
 
-### 7.2b Touch toolbar (WS1 review round 5) `[Decision]`
+### 7.2b Touch toolbar (WS1 review rounds 5-6) `[Decision]`
 
 Keyboards are rare on iPads, so a bottom toolbar ships ahead of the full
-WS4 panel: a Negative toggle pinned in the left corner (a sticky base the
-stroke polarity XORs with alt, so keyboards lose nothing) and the six
-digit brushes centered, labeled 1-6 to match the hotkeys (icons later).
-Buttons and hotkeys stay in sync both ways. Built from the house tokens
-with 44px touch targets; it sits above the transport bar when sculpting
-over a loaded project.
+WS4 panel: a hold-to-carve Negative button pinned in the left corner
+(strokes invert while held, exactly like holding alt; round 6 changed it
+from a toggle per testing feedback) and the six digit brushes centered,
+labeled 1-6 to match the hotkeys (icons later). Buttons and hotkeys stay
+in sync both ways. Built from the house tokens with 44px touch targets;
+it sits above the transport bar when sculpting over a loaded project.
+
+Tool-default deviation (round 6): the Crease brush defaults to the
+raised ridge (upstream ships negative, the carving valley); alt or the
+Negative button carves.
 
 ### 7.3 Hotkeys `[Proposal, resolve in WS4]`
 
@@ -248,7 +252,7 @@ and return on exit.
 | q | brush mode | reserved (returns from gizmo when Transform ships; Maya-style QWER) |
 | w / e / r | gizmo move / rotate / scale | reserved; Transform tool is deferred past v1 |
 | l (hold) + drag | rotate light rig | horizontal drag = rig azimuth; HDRI rotation follows |
-| f | frame the whole current mesh | revised in review round 3. The orbit pivot separately follows the work: each stroke end moves it to the last edit point |
+| f | frame the whole current mesh | revised in review round 3. The orbit pivot separately follows the work: each stroke end re-pivots to the last edit point, projected onto the current view ray so the view itself never moves (round 6: the naive re-target made the view jump) |
 | 1 | Crease brush | |
 | 2 | Move brush | (SculptGL "Move"; drag-style) |
 | 3 | Standard brush, clay mode on | default tool |
@@ -377,6 +381,13 @@ All five are now locked. `[Decision]` on each.
 5. Entry points: sculpt mode ships in both `/create` and `/admin`,
    surfaced by sign-in state. Signed in to the admin interface -> the
    /admin editor flow; not signed in -> the public /create flow.
+
+## 12b. Backlog (noted for later, not scheduled)
+
+- File menu: save / load sculpts (serialize the active mesh; likely the
+  OPFS spill store from 6.6 doubles as the save target).
+- Export to OBJ from sculpt mode (positions + faces; the CLI parser is
+  the round-trip test).
 
 ## 13. Operating rules for Claude Code
 

@@ -3,13 +3,14 @@ import type { InputShell } from '../bridge/InputShell';
 
 /**
  * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
- * bottom bar with the Negative toggle pinned in the left corner and the six
- * digit brushes centered, numbered 1-6 to match the hotkeys (icons later).
- * Most iPads have no keyboard, so this is the native way to invert strokes
- * and swap brushes; the buttons and the hotkeys stay in sync both ways.
+ * bottom bar with a hold-to-carve Negative button pinned in the left corner
+ * and the six digit brushes centered, numbered 1-6 to match the hotkeys
+ * (icons later). Most iPads have no keyboard, so this is the native way to
+ * invert strokes and swap brushes; buttons and hotkeys stay in sync.
  *
- * Negative is a sticky base: strokes invert while it is lit, and holding alt
- * still flips relative to it (so keyboard users lose nothing).
+ * Negative is held, not toggled (per testing feedback): strokes invert while
+ * the button is down, exactly like holding alt; alt itself still flips
+ * relative to it, so keyboard users lose nothing.
  */
 export class SculptToolbar {
   private readonly root: HTMLDivElement;
@@ -24,11 +25,28 @@ export class SculptToolbar {
 
     const left = document.createElement('div');
     left.className = 'sculpt-toolbar__group sculpt-toolbar__left';
-    this.negativeBtn = toolButton('−', 'Negative sculpting (invert strokes)');
-    this.negativeBtn.addEventListener('click', () => {
-      this.input.setNegativeBase(!this.input.getNegativeBase());
+    // Hold-to-carve: strokes are negative while the button is held (like
+    // holding alt), released on lift. Works two-fingered on iPad: one finger
+    // holds the button, the other sculpts.
+    this.negativeBtn = toolButton('−', 'Hold: negative sculpting (carve)');
+    this.negativeBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try {
+        this.negativeBtn.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+      this.input.setNegativeBase(true);
       this.refresh();
     });
+    const releaseNegative = (): void => {
+      if (!this.input.getNegativeBase()) return;
+      this.input.setNegativeBase(false);
+      this.refresh();
+    };
+    this.negativeBtn.addEventListener('pointerup', releaseNegative);
+    this.negativeBtn.addEventListener('pointercancel', releaseNegative);
+    this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     left.appendChild(this.negativeBtn);
 
     const center = document.createElement('div');

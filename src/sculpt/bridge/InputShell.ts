@@ -71,6 +71,11 @@ export class InputShell {
     window.addEventListener('keydown', this.onKeyDown, true);
     window.addEventListener('keyup', this.onKeyUp, true);
     this.syncCursorBrush();
+    // Review decision: invert the Crease default (upstream ships _negative
+    // true, a carving valley; Bozzetto defaults to the raised ridge, and alt
+    // or the Negative button carves).
+    const crease = this.session.getSculptManager().getTool(Enums.Tools.CREASE);
+    if (crease && '_negative' in crease) crease._negative = false;
     // Hint that keyboard modifiers matter here (and match SculptGL's feel).
     this.session.setCanvasCursor('crosshair');
   }

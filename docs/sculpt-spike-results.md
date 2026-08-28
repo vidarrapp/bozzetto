@@ -203,3 +203,17 @@ changes, verified by the ws1b suite plus a WS1 regression pass:
   plain Inflate stroke carve inward with no Alt involved, digit keys
   highlight the matching button, and the full prior suite still passes.
 - Field report on round 3/4 (RTX 3060): "much snappier".
+
+# WS1 round 6 (view-stable pivot, hold-to-carve, crease default)
+
+- Stroke-end pivot no longer moves the view: the edit point is projected
+  onto the current view ray and only the target's depth changes (camera
+  position and look direction verified bit-identical in the suite:
+  posMoved ~1e-14, dirDrift ~1e-16, target depth moved ~3 units). The
+  earlier naive re-target visibly jumped the view at every stroke end.
+- The toolbar Negative button is hold-to-carve (pointerdown engages,
+  lift releases), matching held alt; two-finger iPad flow works because
+  the button lives outside the viewer container's input arbitration.
+- Crease defaults inverted from upstream: ridge by default, alt or the
+  Negative hold carves the valley.
+- Backlog noted in the plan (12b): file save/load menu, OBJ export.

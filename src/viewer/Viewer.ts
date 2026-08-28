@@ -1179,13 +1179,22 @@ export class Viewer {
   }
 
   /**
-   * Move the orbit pivot to a world point, keeping the camera where it is.
-   * Sculpt mode: after each stroke the pivot follows the last edit, so
-   * orbiting turns around where you are working.
+   * Re-pivot the orbit around a world point WITHOUT moving the view: the
+   * point is projected onto the current view ray and the target takes that
+   * depth, so the camera's position and look direction are untouched and
+   * only the next rotation feels it. Sculpt mode calls this at stroke end,
+   * so orbiting turns around where you are working with no view jump.
    */
   orbitAt(point: [number, number, number]): void {
     const s = this.controls.getState();
-    this.controls.setState(s.position, point);
+    const pos = new Vector3(s.position[0], s.position[1], s.position[2]);
+    const dir = new Vector3(s.target[0], s.target[1], s.target[2]).sub(pos);
+    if (dir.lengthSq() < 1e-10) return;
+    dir.normalize();
+    const depth = new Vector3(point[0], point[1], point[2]).sub(pos).dot(dir);
+    if (!(depth > 1e-3)) return; // behind the camera: keep the current pivot
+    const target = pos.addScaledVector(dir, depth);
+    this.controls.setState(s.position, [target.x, target.y, target.z]);
   }
 
   private logAoDebug(): void {
