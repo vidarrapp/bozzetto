@@ -1,0 +1,15 @@
+{
+  "name": "Bozzetto",
+  "short_name": "Bozzetto",
+  "description": "Sculpt timelapses & 3D studies: sculpt, relight, and replay real geometry in the browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "background_color": "#1c1814",
+  "theme_color": "#1c1814",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

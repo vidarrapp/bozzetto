@@ -256,3 +256,18 @@ the render centre sat at the visible bottom edge. Fixes:
   pressure 0.15 vs 0.95 produced total deformation 0.8 vs 130.9 (the
   radius and intensity scaling compound), and Tablet reads 0.5 after
   the stroke. Full suite plus the WS1 regression pass.
+
+# WS1 round 9 (web-app manifest)
+
+- manifest.webmanifest (name Bozzetto, display fullscreen with the spec
+  fallback chain, scope /, start_url /, house colors) linked from all
+  three entry pages, plus apple-mobile-web-app metas (opaque black
+  status bar to match the ink theme) and apple-touch-icon.
+- Placeholder icons generated procedurally (scripts/generate-icons.mjs,
+  dependency-free PNG writer): the default sculpt sphere in clay-rust
+  on warm ink, sized 512/192/180 and maskable-safe. Swap by replacing
+  public/icons/* when the real icon arrives (or rerun the script after
+  editing it).
+- Note: iOS commonly keeps the URL the page was added from as the
+  launch URL regardless of start_url, so adding from /?sculpt=1 keeps
+  launching straight into sculpt mode.

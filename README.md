@@ -30,6 +30,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 - **Touch toolbar** — a bottom bar for keyboard-less iPads: a hold-to-carve Negative button in the left corner (strokes carve while it's held, like holding `Alt`; sculpt with a second finger) and the six brushes as numbered buttons synced with the hotkeys. Icons come later.
 - **Shading from the settings panel** — the regular settings panel drives sculpt shading too: material mode, albedo, roughness, matcaps, smooth/flat, wireframe, plus a new master **Shadows** toggle (also `Shift+S` while sculpting). Depth-of-field controls hide during sculpt, staying a view-mode concern.
 - **Scene keys** — `F` frames the model while the orbit pivot automatically follows your strokes; `L` + drag rotates the light rig. The `H` hotkey guide switches between the viewer and sculpt tables automatically.
+- **Web app** — a web-app manifest plus home-screen icons: add Bozzetto to your iPad or phone home screen and it launches fullscreen as its own app (placeholder icon for now).
 - **Viewer change** — the `B` depth-of-field hotkey is removed (DoF lives in the settings panel); in sculpt mode number keys select brushes instead of materials.
 
 Sculpt-to-timelapse capture (recording strokes as frames) is the next milestone.
