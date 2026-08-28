@@ -1,12 +1,17 @@
 import Enums from '@sculpt-vendor/misc/Enums';
+// Flaticon uicons, solid straight style (fi-ss-*): the whole style sheet is
+// imported for upgrade-proof font URLs; the font itself only downloads when
+// a glyph first renders (sculpt mode). Attribution lives in the README.
+import '@flaticon/flaticon-uicons/css/solid/straight.css';
 import type { InputShell } from '../bridge/InputShell';
 
 /**
  * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
  * bottom bar with a hold-to-carve Negative button pinned in the left corner
- * and the six digit brushes centered, numbered 1-6 to match the hotkeys
- * (icons later). Most iPads have no keyboard, so this is the native way to
- * invert strokes and swap brushes; buttons and hotkeys stay in sync.
+ * and the digit brushes centered, each showing its icon with the hotkey
+ * digit as a corner badge. Most iPads have no keyboard, so this is the
+ * native way to invert strokes and swap brushes; buttons and hotkeys stay
+ * in sync.
  *
  * Negative is held, not toggled (per testing feedback): strokes invert while
  * the button is down, exactly like holding alt; alt itself still flips
@@ -28,7 +33,7 @@ export class SculptToolbar {
     // Hold-to-carve: strokes are negative while the button is held (like
     // holding alt), released on lift. Works two-fingered on iPad: one finger
     // holds the button, the other sculpts.
-    this.negativeBtn = toolButton('−', 'Hold: negative sculpting (carve)');
+    this.negativeBtn = toolButton('', 'Hold: negative sculpting (carve)', 'fi-ss-flip-horizontal');
     this.negativeBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       try {
@@ -52,19 +57,21 @@ export class SculptToolbar {
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
     const tools = Enums.Tools;
-    const brushes: Array<[number, string, string]> = [
-      [tools.CREASE, '1', 'Crease'],
-      [tools.MOVE, '2', 'Move'],
-      [tools.BRUSH, '3', 'Standard (clay)'],
-      [tools.INFLATE, '4', 'Inflate'],
-      [tools.PINCH, '5', 'Pinch'],
-      [tools.FLATTEN, '6', 'Flatten'],
-      [tools.SMOOTH, '7', 'Smooth'],
-      [tools.DRAG, '8', 'Drag'],
-      [tools.TWIST, '9', 'Twist'],
+    // Icon picks are Vidar's where the pack ships them in solid straight;
+    // the rest are the closest fi-ss matches (see the WS2b results note).
+    const brushes: Array<[number, string, string, string]> = [
+      [tools.CREASE, '1', 'Crease', 'fi-ss-scalpel'],
+      [tools.MOVE, '2', 'Move', 'fi-ss-arrows'],
+      [tools.BRUSH, '3', 'Standard (clay)', 'fi-ss-brush'],
+      [tools.INFLATE, '4', 'Inflate', 'fi-ss-paintbrush-pencil'],
+      [tools.PINCH, '5', 'Pinch', 'fi-ss-compress'],
+      [tools.FLATTEN, '6', 'Flatten', 'fi-ss-arrows-to-line'],
+      [tools.SMOOTH, '7', 'Smooth', 'fi-ss-shredder'],
+      [tools.DRAG, '8', 'Drag', 'fi-ss-hand-back-fist'],
+      [tools.TWIST, '9', 'Twist', 'fi-ss-pen-swirl'],
     ];
-    for (const [id, label, name] of brushes) {
-      const btn = toolButton(label, name);
+    for (const [id, key, name, icon] of brushes) {
+      const btn = toolButton(key, name, icon);
       btn.addEventListener('click', () => this.input.selectBrush(id));
       this.brushBtns.set(id, btn);
       center.appendChild(btn);
@@ -95,11 +102,22 @@ export class SculptToolbar {
   }
 }
 
-function toolButton(label: string, title: string): HTMLButtonElement {
+function toolButton(key: string, title: string, icon: string): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'sculpt-toolbar__btn';
-  btn.textContent = label;
+  const glyph = document.createElement('i');
+  glyph.className = `fi ${icon}`;
+  glyph.setAttribute('aria-hidden', 'true');
+  btn.appendChild(glyph);
+  if (key) {
+    // The hotkey digit stays visible as a corner badge (and as the button
+    // text the headless suite matches on).
+    const badge = document.createElement('span');
+    badge.className = 'sculpt-toolbar__key';
+    badge.textContent = key;
+    btn.appendChild(badge);
+  }
   btn.title = title;
   btn.setAttribute('aria-label', title);
   return btn;

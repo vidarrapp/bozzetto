@@ -240,8 +240,15 @@ Keyboards are rare on iPads, so a bottom toolbar ships ahead of the full
 WS4 panel: a hold-to-carve Negative button pinned in the left corner
 (strokes invert while held, exactly like holding alt; round 6 changed it
 from a toggle per testing feedback) and the digit brushes centered,
-labeled to match the hotkeys (icons later; 1-6 at round 5, all nine
-digits since WS2). Buttons and hotkeys stay in sync both ways. Built from the house tokens with 44px touch targets;
+labeled to match the hotkeys (1-6 at round 5, all nine digits since
+WS2). Buttons and hotkeys stay in sync both ways.
+
+Icons (WS2b): Flaticon uicons via the @flaticon/flaticon-uicons npm
+package, solid straight style (fi-ss-*), with the hotkey digit kept as a
+corner badge. Vidar's picks where the npm release ships them; closest
+in-pack stand-ins otherwise (the npm release trails the site), see the
+results log for the exact per-brush mapping and substitutions.
+Attribution ("Uicons by Flaticon") lives in the README credits. Built from the house tokens with 44px touch targets;
 it sits above the transport bar when sculpting over a loaded project.
 
 Tool-default deviation (round 6): the Crease brush defaults to the

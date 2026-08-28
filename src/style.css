@@ -1497,6 +1497,10 @@ html.is-page body {
 }
 
 .sculpt-toolbar__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 44px;
   min-height: 44px;
   padding: 0 10px;
@@ -1509,6 +1513,30 @@ html.is-page body {
   line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* Flaticon uicons glyph (fi-ss-*); the font baseline sits low, so center
+   optically with flex and let the icon inherit the button color. */
+.sculpt-toolbar__btn .fi {
+  font-size: 17px;
+  line-height: 1;
+  display: block;
+  pointer-events: none;
+}
+
+/* Hotkey digit as a corner badge so icons stay learnable from the keys. */
+.sculpt-toolbar__key {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.sculpt-toolbar__btn--active .sculpt-toolbar__key {
+  color: var(--bg);
 }
 
 .sculpt-toolbar__btn:hover {

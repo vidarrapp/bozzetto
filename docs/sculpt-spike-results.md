@@ -339,3 +339,22 @@ the render centre sat at the visible bottom edge. Fixes:
   undo stack, not checksum deltas, to decide whether an op landed.
 - Pointer Events remain sufficient for every WS2 gesture; hammerjs stays
   out (plan 6.3 note stands).
+
+# WS2b (toolbar icons)
+
+- Flaticon uicons (npm @flaticon/flaticon-uicons v3.3.1), solid straight
+  style, imported as the package's own stylesheet so font URLs survive
+  package upgrades; the woff2 only downloads when a glyph first renders,
+  i.e. in sculpt mode. Hotkey digits stay on the buttons as corner
+  badges. Attribution added to the README credits.
+- Per-brush mapping. Vidar's picks, where the npm release has them in
+  solid straight: Crease = scalpel, Inflate = paintbrush-pencil,
+  Smooth = shredder, Twist = pen-swirl. Stand-ins (closest in-pack
+  glyph) where it does not: Standard = brush (paint-brush ships only in
+  regular/bold styles in 3.3.1), Flatten = arrows-to-line (scraper is
+  newer than the 3.3.1 release), Negative = flip-horizontal (the invert
+  pick is a classic Flaticon icon, not part of the uicons font, and the
+  icon CDN is outside this environment's network policy). Unassigned
+  brushes got in-pack picks: Move = arrows, Pinch = compress,
+  Drag = hand-back-fist. All swappable one string per brush in
+  SculptToolbar.ts when better picks land.
