@@ -459,3 +459,8 @@ the render centre sat at the visible bottom edge. Fixes:
   entirely instead of attempting multi-hundred-MB puts; the last
   in-budget save stays in place for restore, and the 1.6M slow-cadence
   band continues to cover the 1.6M-8M range.
+- Level toast (same round): a transient "Subdiv N/M" pill above the
+  toolbar announces every multires level move - d / shift+d, ctrl+d,
+  and undo/redo that land on another level (SculptSession.onLevelChange
+  fires from the step/subdivide paths plus an undo/redo level-signature
+  diff). Repeated steps reuse the pill and reset its fade.

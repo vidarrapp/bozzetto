@@ -49,6 +49,8 @@ export class SculptSession {
 
   /** Fired when the active mesh instance changes (select, dyntopo, undo). */
   onActiveMeshChange: (() => void) | null = null;
+  /** Fired when the multires level moves (step, subdivide, undo/redo). */
+  onLevelChange: ((sel: number, levels: number) => void) | null = null;
 
   private readonly meshes: SculptMesh[] = [];
   private readonly selectMeshes: SculptMesh[] = [];
@@ -188,13 +190,30 @@ export class SculptSession {
   // --- sculpt commands (hotkey surface) -----------------------------------
 
   undo(): void {
+    const before = this.levelSignature();
     this.stateManager.undo();
     this.render();
+    this.fireLevelChangeIfMoved(before);
   }
 
   redo(): void {
+    const before = this.levelSignature();
     this.stateManager.redo();
     this.render();
+    this.fireLevelChangeIfMoved(before);
+  }
+
+  /** [sel, levels] of the active multimesh, or null (dyntopo, no mesh). */
+  private levelSignature(): [number, number] | null {
+    const mul = this.asMultimesh();
+    return mul ? [mul._sel, mul._meshes.length] : null;
+  }
+
+  private fireLevelChangeIfMoved(before: [number, number] | null): void {
+    const after = this.levelSignature();
+    if (before && after && (before[0] !== after[0] || before[1] !== after[1])) {
+      this.onLevelChange?.(after[0], after[1]);
+    }
   }
 
   /** Mirror-sculpting toggle (x). Returns the new state. */
@@ -229,6 +248,7 @@ export class SculptSession {
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);
     mul.addLevel();
     this.setMesh(mul);
+    this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
 
@@ -242,6 +262,7 @@ export class SculptSession {
     if (dir > 0) mul.higherLevel();
     else mul.lowerLevel();
     this.render();
+    this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
 

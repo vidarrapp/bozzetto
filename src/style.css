@@ -1524,6 +1524,30 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* Transient subdivision-level pill (d / shift+d / ctrl+d). */
+.sculpt-leveltoast {
+  position: fixed;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  z-index: 30;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.sculpt-leveltoast.is-visible {
+  opacity: 1;
+}
+
 /* Restored-session notice (sculpt reload persistence). */
 .sculpt-toast {
   position: fixed;

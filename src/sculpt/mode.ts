@@ -84,6 +84,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
   };
 
+  // A small transient pill announces level moves ("Subdiv 2/4"): steps,
+  // ctrl+d, and undo/redo that land on another level.
+  const levelToast = makeLevelToast();
+  session.onLevelChange = (sel, levels) => levelToast.show(sel + 1, levels);
+
   const cursor = new BrushCursor(container, viewer.scene);
   const input = new InputShell(session, container, cursor, {
     frameModel: () => {
@@ -131,6 +136,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
+    session.onLevelChange = null;
+    levelToast.dispose();
     persist.dispose();
     toolbar.dispose();
     input.dispose();
@@ -147,6 +154,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.onDofChange?.();
     viewer.exitSculpt();
     sync.dispose();
+  };
+}
+
+/** Transient "Subdiv 2/4" pill; repeated steps reuse it and reset the fade. */
+function makeLevelToast(): { show(at: number, total: number): void; dispose(): void } {
+  const el = document.createElement('div');
+  el.className = 'sculpt-leveltoast';
+  document.body.appendChild(el);
+  let timer = 0;
+  return {
+    show(at, total) {
+      el.textContent = `Subdiv ${at}/${total}`;
+      el.classList.add('is-visible');
+      clearTimeout(timer);
+      timer = window.setTimeout(() => el.classList.remove('is-visible'), 1200);
+    },
+    dispose() {
+      clearTimeout(timer);
+      el.remove();
+    },
   };
 }
 
