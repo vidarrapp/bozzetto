@@ -308,7 +308,7 @@ and return on exit.
 | ctrl + left drag | mask (paint) | temporary Masking tool while held |
 | ctrl + alt + left drag | unmask | Masking tool, negative |
 | ctrl + z / ctrl + shift + z | undo / redo | |
-| ctrl + d | subdivide (add a level) | top level only; capped ~4M tris (raised from 1.6M after RTX 3060 runs) |
+| ctrl + d | subdivide (add a level) | top level only; confirm dialog past 4M tris (upstream parity, restored after a 4070 held 60fps at 4M), hard ceiling 16M |
 | d | step up a subdivision level | |
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |

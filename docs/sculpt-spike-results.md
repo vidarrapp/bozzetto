@@ -446,3 +446,16 @@ the render centre sat at the visible bottom edge. Fixes:
   uicons font family, fetched only when the toolbar renders.
 - ws1b extended: hold/release, double-tap latch, single-tap unlatch
   all asserted through synthetic pointer taps.
+
+# WS2d (subdivision headroom)
+
+- After the RTX 4070 SUPER run held a locked 60 fps at the 4M-tri cap
+  (once Chrome's crashed GPU process was restarted out of software
+  rendering), ctrl+d now gates instead of capping there: past 4M
+  result-tris a confirm dialog warns about weaker devices (restoring
+  upstream GuiTopology's dialog behavior), with a 16M hard ceiling for
+  browser memory.
+- Autosave interplay: past 8M top-level tris ScenePersist skips writes
+  entirely instead of attempting multi-hundred-MB puts; the last
+  in-budget save stays in place for restore, and the 1.6M slow-cadence
+  band continues to cover the 1.6M-8M range.

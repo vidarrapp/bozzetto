@@ -13,8 +13,14 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedScene } from './ScenePersist';
 
-/** Hard ceiling for ctrl+d subdivision (raised to ~4M after RTX 3060 runs). */
-const MAX_SUBDIVISION_TRIS = 4000000;
+/**
+ * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
+ * GuiTopology had the same dialog; a 4070-class desktop holds 60 fps at 4M
+ * so capable machines may go on); the hard ceiling guards browser memory,
+ * since the vendored mesh structures cost several times the raw arrays.
+ */
+const SOFT_SUBDIVISION_TRIS = 4000000;
+const MAX_SUBDIVISION_TRIS = 16000000;
 
 /** Surface data under the cursor, for the brush ring (world space). */
 export interface HoverSurface {
@@ -204,13 +210,22 @@ export class SculptSession {
   }
 
   /**
-   * ctrl+d: add a subdivision level (ported from GuiTopology.subdivide, minus
-   * the dialogs: requires the top level, silently refuses past the tri cap).
+   * ctrl+d: add a subdivision level (ported from GuiTopology.subdivide;
+   * requires the top level). Results past the soft line ask first, matching
+   * upstream's dialog; the hard ceiling refuses silently.
    */
   subdivide(): boolean {
     const mul = this.asMultimesh();
     if (!mul || mul._sel !== mul._meshes.length - 1) return false;
-    if (mul.getNbTriangles() * 4 > MAX_SUBDIVISION_TRIS) return false;
+    const next = mul.getNbTriangles() * 4;
+    if (next > MAX_SUBDIVISION_TRIS) return false;
+    if (next > SOFT_SUBDIVISION_TRIS) {
+      const ok = window.confirm(
+        `Subdividing takes this mesh to about ${Math.round(next / 1e6)} million triangles, ` +
+          'which can be slow or unstable on weaker devices. Continue?',
+      );
+      if (!ok) return false;
+    }
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);
     mul.addLevel();
     this.setMesh(mul);

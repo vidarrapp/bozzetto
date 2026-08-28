@@ -70,6 +70,12 @@ const STORE = 'scene';
 const KEY = 'current';
 /** Above this many top-level tris, saves run on the slow cadence instead. */
 const FAST_SAVE_TRIS = 1600000;
+/**
+ * Above this, skip writes entirely (the ctrl+d ceiling allows 16M-tri tops
+ * whose stack payload would reach hundreds of MB; a failed put would risk
+ * the store). The last in-budget save stays in place for restore.
+ */
+const SKIP_SAVE_TRIS = 8000000;
 /** Idle debounce: coalesce a burst of strokes into one write. */
 const FAST_SAVE_GAP_MS = 1500;
 /** Big-mesh cadence: at most one multi-ten-MB put every five minutes. */
@@ -265,6 +271,7 @@ export class ScenePersist {
   /** Serialize and write now (used by the idle pass, hide events, tests). */
   async flush(): Promise<void> {
     if (!this.dirty || this.saving || this.disabled) return;
+    if (this.session.topLevelTriangles() > SKIP_SAVE_TRIS) return;
     const scene = this.session.serializeScene();
     if (!scene) return;
     this.dirty = false;
