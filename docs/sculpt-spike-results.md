@@ -217,3 +217,11 @@ changes, verified by the ws1b suite plus a WS1 regression pass:
 - Crease defaults inverted from upstream: ridge by default, alt or the
   Negative hold carves the valley.
 - Backlog noted in the plan (12b): file save/load menu, OBJ export.
+
+Round 6 follow-up: the WS1 suite regression seen during this round was a
+test-geometry collision, not a product bug. The round-5 toolbar (raised
+above the transport in the ?tl=...&sculpt=1 flow) covers the bottom band
+of the tiny 480x360 test viewport, and the suite's multires stroke
+coordinate landed on the brush row (the WS1 suite had not been re-run in
+round 5 to catch it). Verified via elementFromPoint; the suite strokes
+now stay clear of the toolbar and both suites pass on the shipped code.
