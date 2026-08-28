@@ -39,6 +39,8 @@ export class BrushCursor {
 
   // Surface-aligned representation (scene objects).
   private readonly group = new Group();
+  private readonly ring3d: Line;
+  private readonly dot3d: Line;
   private readonly strengthLine: Line;
   private readonly up = new Vector3(0, 0, 1);
   private readonly quat = new Quaternion();
@@ -49,6 +51,7 @@ export class BrushCursor {
   private y = 0;
   private intensity = 0.5;
   private mat!: LineBasicMaterial;
+  private ringMat!: LineBasicMaterial;
 
   constructor(container: HTMLElement, private readonly scene: Scene) {
     const NS = 'http://www.w3.org/2000/svg';
@@ -72,6 +75,8 @@ export class BrushCursor {
       depthTest: false,
     });
     this.mat = mat;
+    // The ring dims independently mid-stroke; the dot stays the anchor.
+    this.ringMat = mat.clone();
 
     // Closed circles as plain Lines (first point repeated): WebGPURenderer
     // does not draw LineLoop. Unit radius; group scale carries the world size.
@@ -86,12 +91,12 @@ export class BrushCursor {
     };
     const ringGeom = new BufferGeometry();
     ringGeom.setAttribute('position', new BufferAttribute(circlePoints(RING_SEGMENTS, 1), 3));
-    const ring = new Line(ringGeom, mat);
+    this.ring3d = new Line(ringGeom, this.ringMat);
 
     // Center dot: a tiny fixed-fraction circle of the ring radius.
     const dotGeom = new BufferGeometry();
     dotGeom.setAttribute('position', new BufferAttribute(circlePoints(12, 0.03), 3));
-    const dotLoop = new Line(dotGeom, mat);
+    this.dot3d = new Line(dotGeom, mat);
 
     // Strength line along local +Z (the picked normal after orientation);
     // its z-scale is the intensity, so world length = radius x intensity.
@@ -99,7 +104,7 @@ export class BrushCursor {
     lineGeom.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 1]), 3));
     this.strengthLine = new Line(lineGeom, mat);
 
-    this.group.add(ring, dotLoop, this.strengthLine);
+    this.group.add(this.ring3d, this.dot3d, this.strengthLine);
     this.group.visible = false;
     this.group.renderOrder = 999;
     this.group.traverse((o) => {
@@ -149,8 +154,25 @@ export class BrushCursor {
 
   /** Smooth active (tool 7 or held shift): the whole cursor turns blue. */
   setSmoothing(on: boolean): void {
-    this.mat.color.setHex(on ? SMOOTH_BLUE : ACCENT);
+    const hex = on ? SMOOTH_BLUE : ACCENT;
+    this.mat.color.setHex(hex);
+    this.ringMat.color.setHex(hex);
     this.root.classList.toggle('is-smooth', on);
+  }
+
+  /**
+   * Mid-stroke reduction (ZBrush-style, WS2 review): while the stroke is
+   * down, sculpt brushes keep only the center dot so the deforming surface
+   * stays readable; Smooth keeps its ring but dimmed (the outline matters
+   * there, obtrusiveness does not). The strength line rests either way.
+   * null restores the full hover cursor.
+   */
+  setStrokeStyle(style: null | 'dot' | 'dim'): void {
+    this.ring3d.visible = style !== 'dot';
+    this.strengthLine.visible = style === null;
+    this.ringMat.opacity = style === 'dim' ? 0.3 : 0.85;
+    this.root.classList.toggle('is-dot-only', style === 'dot');
+    this.root.classList.toggle('is-dim', style === 'dim');
   }
 
   /** Update to the tool's screen radius (CSS px) and strength (0..1). */

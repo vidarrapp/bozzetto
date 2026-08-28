@@ -192,6 +192,10 @@ export class InputShell {
 
     s._action = Enums.Action.SCULPT_EDIT;
     this.pointerId = e.pointerId;
+    // Mid-stroke the cursor gets out of the way (review decision): sculpt
+    // brushes keep the center dot only; Smooth keeps a dimmed ring.
+    const strokeTool = s.getSculptManager().getToolIndex();
+    this.cursor.setStrokeStyle(strokeTool === Enums.Tools.SMOOTH ? 'dim' : 'dot');
     try {
       s.getCanvas().setPointerCapture(e.pointerId);
     } catch {
@@ -282,6 +286,7 @@ export class InputShell {
 
     if (e.pointerId !== this.pointerId) return;
     this.pointerId = -1;
+    this.cursor.setStrokeStyle(null);
 
     if (s._action === Enums.Action.SCULPT_EDIT) {
       // Upstream onDeviceUp: octree rebalance + drop no-op undo entries.

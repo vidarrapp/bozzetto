@@ -130,6 +130,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sync,
     input,
     persist,
+    cursor,
     tablet: Tablet,
   };
 

@@ -478,3 +478,11 @@ the render centre sat at the visible bottom edge. Fixes:
   also resyncs ring radius to the temp tool.
 - ws1b asserts: stats name/count, count tracking a level step, blue on
   tool 7, blue while shift held, restored after.
+- Mid-stroke cursor reduction (same round, review decision after trying
+  the full cursor against real strokes): sculpt brushes keep only the
+  center dot while the stroke is down (the ring's normal-chasing over
+  deforming geometry plus pen-pressure pulsing was reading as noise);
+  Smooth keeps its ring dimmed to 0.3 (separate ring material so the
+  anchor dot stays full strength); the strength line rests during every
+  stroke. Applies to both the 3D and SVG representations; full cursor
+  returns on release. ws1b asserts all three states.

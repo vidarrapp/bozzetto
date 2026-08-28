@@ -391,6 +391,12 @@ smoothing is effective - the Smooth tool selected, or shift held (the
 temp-smooth preview and the stroke itself). Restored with the tool on
 release.
 
+Mid-stroke reduction (WS2 review, ZBrush-informed): while a stroke is
+down, sculpt brushes show only the center dot (the ring's normal-chasing
+and pressure pulsing obscured the deforming surface); Smooth keeps its
+ring, dimmed to 0.3 opacity, since the outline is the tool there. The
+strength line rests during every stroke. Full cursor returns on release.
+
 
 Two representations behind one cursor (review round 2): over the mesh, a
 3D ring aligned to the picked surface normal, drawn at the intersection
