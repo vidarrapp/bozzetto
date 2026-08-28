@@ -223,17 +223,26 @@ deferred CONSUMER of undo states instead of an eager producer of copies:
 
 A reload (or iOS evicting the home-screen app) must not lose work.
 Upstream keeps sessions via its .sgl serialization, which section 4.2
-cut; ScenePersist.ts does the same natively: the active mesh's current
-resolution (vertices/colors/materials/faces), transform and symmetry
-autosave to IndexedDB. Same performance contract as 6.6b: edits only
-mark a dirty flag (StateManager pushState/undo/redo wrapped instance-
-side, no vendor edits); the serialize + put runs debounced in idle time
-plus a visibilitychange/pagehide flush. On sculpt entry a saved scene
-replaces the default sphere, with a "Restored your last sculpt / Start
-fresh" toast. Parity limits, documented: lower multires levels and the
-undo history do not survive (upstream .sgl stores the same); meshes
-past 1.6M tris skip autosave (a put that size is a ~60MB write). The
-WS5 capture flow will reuse this store's idle machinery.
+cut; ScenePersist.ts does the same natively and goes one step past
+.sgl: the WHOLE multiresolution stack autosaves to IndexedDB, byte-
+faithful per level (vertices, live normals, colors, materials, detail
+vectors), plus base topology (higher levels re-derive by subdivision),
+transform, selection and symmetry. Same performance contract as 6.6b:
+edits only mark a dirty flag (StateManager pushState/undo/redo wrapped
+instance-side, no vendor edits); the serialize + put runs debounced in
+idle time plus a visibilitychange/pagehide flush. Normal-size meshes
+debounce at 1.5s; past 1.6M top-level tris the debounce stretches to a
+five-minute cadence (WS2c review: those puts are tens of MB, but big
+sculpts deserve saving too), with hide/dispose flushes bypassing the
+gap. On sculpt entry a saved scene replaces the default sphere, with a
+"Restored your last sculpt / Start fresh" toast; restore uses plain
+setSelection (never the analysis/synthesis walk) so a stale top and
+its details come back exactly, and post-reload level steps are bit-
+identical to pre-reload ones. Undo history is the one thing that does
+not survive (nor does upstream's): states reference live mesh object
+graphs (AddRemove states hold whole meshes), so persisting them is a
+large, bug-prone serialization surface for marginal value; the WS5
+capture flow keeps long-term history as timelapse frames instead.
 
 ## 7. GUI specification (yagui replacement)
 

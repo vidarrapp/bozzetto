@@ -5,16 +5,54 @@ import type { SculptSession } from './SculptSession';
  * reload (or iOS evicting the home-screen app) never loses work. Upstream
  * SculptGL keeps sessions through its .sgl serialization, which Bozzetto cut
  * by plan decision (section 4.2); this is the same idea done natively, and
- * it stores what .sgl stores: the CURRENT resolution's arrays. Lower multires
- * levels and the undo history do not survive a reload (upstream parity).
+ * goes one step past .sgl: the WHOLE multiresolution stack survives (every
+ * level's arrays plus its detail vectors, byte-faithful, including a stale
+ * top when sculpting happened below it), where .sgl flattens to the current
+ * level. Undo history is the one thing neither keeps.
  *
  * Performance contract (same spirit as the capture design, plan 6.6b):
  * nothing runs during a stroke. Edits only mark a dirty flag via wrapped
  * StateManager entry points; the actual serialize + write happens in idle
- * time, debounced, plus a best-effort flush when the tab goes hidden.
+ * time, debounced, plus a best-effort flush when the tab goes hidden. Big
+ * meshes (past FAST_SAVE_TRIS at the top level) stretch the debounce to a
+ * five-minute cadence instead of skipping autosave, since their puts are
+ * tens of megabytes.
  */
 
+export interface SavedLevel {
+  nbVertices: number;
+  vertices: Float32Array;
+  /**
+   * Live vertex normals. Not derivable at restore time: incremental stroke
+   * updates accumulate in a different float order than a full recompute,
+   * and synthesis builds its tangent frames from these, so bit-faithful
+   * level restoration requires the live values. Null only in upgraded v1
+   * records (single level, recompute stands in).
+   */
+  normals: Float32Array | null;
+  colors: Float32Array;
+  materials: Float32Array;
+  /** Detail vectors from the last analysis crossing, null if never crossed. */
+  detailsXYZ: Float32Array | null;
+  detailsRGB: Float32Array | null;
+  detailsPBR: Float32Array | null;
+}
+
 export interface SavedScene {
+  v: 2;
+  savedAt: number;
+  /** Base (lowest) level topology; higher levels re-derive by subdivision. */
+  nbBaseFaces: number;
+  baseFaces: Uint32Array;
+  /** Level 0 = base ... last = top; the live selection is `sel`. */
+  levels: SavedLevel[];
+  sel: number;
+  matrix: Float32Array;
+  symmetry: boolean;
+}
+
+/** The pre-multires single-level format, upgraded on read. */
+interface SavedSceneV1 {
   v: 1;
   savedAt: number;
   nbVertices: number;
@@ -30,10 +68,12 @@ export interface SavedScene {
 const DB_NAME = 'bozzetto-sculpt';
 const STORE = 'scene';
 const KEY = 'current';
-/** Don't autosave meshes beyond this (a 1.6M-tri put is a ~60MB write). */
-const MAX_SAVE_TRIS = 1600000;
+/** Above this many top-level tris, saves run on the slow cadence instead. */
+const FAST_SAVE_TRIS = 1600000;
 /** Idle debounce: coalesce a burst of strokes into one write. */
-const SAVE_MIN_GAP_MS = 1500;
+const FAST_SAVE_GAP_MS = 1500;
+/** Big-mesh cadence: at most one multi-ten-MB put every five minutes. */
+const SLOW_SAVE_GAP_MS = 5 * 60 * 1000;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -64,19 +104,71 @@ async function withStore<T>(
   }
 }
 
+function validLevel(l: SavedLevel): boolean {
+  const n = l.nbVertices * 3;
+  return (
+    l.vertices instanceof Float32Array &&
+    l.vertices.length === n &&
+    (l.normals === null || l.normals?.length === n) &&
+    l.colors?.length === n &&
+    l.materials?.length === n &&
+    (l.detailsXYZ === null || l.detailsXYZ?.length === n) &&
+    (l.detailsRGB === null || l.detailsRGB?.length === n) &&
+    (l.detailsPBR === null || l.detailsPBR?.length === n)
+  );
+}
+
 /** The saved scene, or null when there is none (or storage is unavailable). */
 export async function loadSavedScene(): Promise<SavedScene | null> {
   try {
-    const rec = (await withStore('readonly', (s) => s.get(KEY))) as SavedScene | undefined;
+    const rec = (await withStore('readonly', (s) => s.get(KEY))) as
+      | SavedScene
+      | SavedSceneV1
+      | undefined;
+    if (!rec) return null;
+    if (rec.v === 1) {
+      // Pre-multires format: one level whose faces are the base topology.
+      if (
+        !(rec.vertices instanceof Float32Array) ||
+        !(rec.faces instanceof Uint32Array) ||
+        rec.vertices.length !== rec.nbVertices * 3 ||
+        rec.colors?.length !== rec.nbVertices * 3 ||
+        rec.materials?.length !== rec.nbVertices * 3 ||
+        rec.faces.length !== rec.nbFaces * 4 ||
+        rec.matrix?.length !== 16
+      ) {
+        return null;
+      }
+      return {
+        v: 2,
+        savedAt: rec.savedAt,
+        nbBaseFaces: rec.nbFaces,
+        baseFaces: rec.faces,
+        levels: [
+          {
+            nbVertices: rec.nbVertices,
+            vertices: rec.vertices,
+            normals: null,
+            colors: rec.colors,
+            materials: rec.materials,
+            detailsXYZ: null,
+            detailsRGB: null,
+            detailsPBR: null,
+          },
+        ],
+        sel: 0,
+        matrix: rec.matrix,
+        symmetry: rec.symmetry,
+      };
+    }
     if (
-      !rec ||
-      rec.v !== 1 ||
-      !(rec.vertices instanceof Float32Array) ||
-      !(rec.faces instanceof Uint32Array) ||
-      rec.vertices.length !== rec.nbVertices * 3 ||
-      rec.colors?.length !== rec.nbVertices * 3 ||
-      rec.materials?.length !== rec.nbVertices * 3 ||
-      rec.faces.length !== rec.nbFaces * 4 ||
+      rec.v !== 2 ||
+      !(rec.baseFaces instanceof Uint32Array) ||
+      rec.baseFaces.length !== rec.nbBaseFaces * 4 ||
+      !Array.isArray(rec.levels) ||
+      rec.levels.length === 0 ||
+      !rec.levels.every(validLevel) ||
+      !(rec.sel >= 0 && rec.sel < rec.levels.length) ||
       rec.matrix?.length !== 16
     ) {
       return null;
@@ -130,6 +222,18 @@ export class ScenePersist {
     });
   }
 
+  /**
+   * The debounce gap for the current subject: burst-coalescing for normal
+   * meshes, a five-minute cadence once the top level passes FAST_SAVE_TRIS
+   * (those puts are tens of megabytes). Event flushes (hidden, pagehide,
+   * dispose) bypass the gap either way.
+   */
+  private minGapMs(): number {
+    return this.session.topLevelTriangles() > FAST_SAVE_TRIS
+      ? SLOW_SAVE_GAP_MS
+      : FAST_SAVE_GAP_MS;
+  }
+
   /** Note an edit; the write happens later, in idle time. */
   markDirty(): void {
     if (this.disabled) return;
@@ -137,7 +241,7 @@ export class ScenePersist {
     if (this.cancelScheduled) return;
     const run = (): void => {
       this.cancelScheduled = null;
-      const wait = this.lastSave + SAVE_MIN_GAP_MS - Date.now();
+      const wait = this.lastSave + this.minGapMs() - Date.now();
       if (wait > 0) {
         const t = window.setTimeout(run, wait);
         this.cancelScheduled = () => clearTimeout(t);
@@ -161,8 +265,6 @@ export class ScenePersist {
   /** Serialize and write now (used by the idle pass, hide events, tests). */
   async flush(): Promise<void> {
     if (!this.dirty || this.saving || this.disabled) return;
-    const mesh = this.session.getMesh();
-    if (!mesh || mesh.getNbTriangles() > MAX_SAVE_TRIS) return;
     const scene = this.session.serializeScene();
     if (!scene) return;
     this.dirty = false;

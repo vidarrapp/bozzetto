@@ -106,12 +106,18 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getMatrix(): Float32Array;
     normalizeSize(): void;
     updateGeometry(iFaces?: Uint32Array, iVerts?: Uint32Array): void;
+    updateFacesAabbAndNormal(iFaces?: Uint32Array): void;
+    updateOctree(iFaces?: Uint32Array): void;
     updateGeometryBuffers(): void;
     updateBuffers(): void;
     balanceOctree(): void;
     isVisible(): boolean;
     /** Set on dynamic-topology meshes only. */
     isDynamic?: boolean;
+    /** MeshResolution levels only: detail vectors from the last analysis. */
+    _detailsXYZ?: Float32Array | null;
+    _detailsRGB?: Float32Array | null;
+    _detailsPBR?: Float32Array | null;
     /** Bridge hooks installed by GeometrySync (see the Mesh.js seam edits). */
     _bridgeSync?: {
       onGeometryBuffers(mesh: SculptMesh): void;
@@ -128,12 +134,13 @@ declare module '@sculpt-vendor/mesh/multiresolution/Multimesh' {
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
   class Multimesh {
     constructor(mesh: unknown);
-    _meshes: unknown[];
+    _meshes: SculptMesh[];
     _sel: number;
     addLevel(): SculptMesh;
     higherLevel(): SculptMesh;
     lowerLevel(): SculptMesh;
     getCurrentMesh(): SculptMesh;
+    setSelection(sel: number): void;
   }
   interface Multimesh extends SculptMesh {}
   export default Multimesh;

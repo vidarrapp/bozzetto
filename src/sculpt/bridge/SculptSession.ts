@@ -11,7 +11,7 @@ import Picking from '@sculpt-vendor/math3d/Picking';
 import { mat3, mat4, vec3 } from 'gl-matrix';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
-import type { SavedScene } from './ScenePersist';
+import type { SavedLevel, SavedScene } from './ScenePersist';
 
 /** Hard ceiling for ctrl+d subdivision (raised to ~4M after RTX 3060 runs). */
 const MAX_SUBDIVISION_TRIS = 4000000;
@@ -321,50 +321,118 @@ export class SculptSession {
 
   // --- reload persistence (bridge feature, see ScenePersist) --------------
 
+  /** Triangle count of the top multires level (the autosave payload driver). */
+  topLevelTriangles(): number {
+    const mul = this.asMultimesh();
+    if (mul) return mul._meshes[mul._meshes.length - 1].getNbTriangles();
+    return this.mesh ? this.mesh.getNbTriangles() : 0;
+  }
+
   /**
-   * Snapshot the active mesh for autosave: the current resolution's live
-   * arrays (what upstream's .sgl stores too), the transform, and symmetry.
-   * Bounded copies; runs in idle time only, never during a stroke.
+   * Snapshot the active mesh for autosave: every multires level's live
+   * arrays plus its detail vectors (byte-faithful, including a stale top
+   * when sculpting happened below it), the base topology (higher levels
+   * re-derive by subdivision), transform, selection and symmetry. Bounded
+   * copies; runs in idle time only, never during a stroke. A dynamic-
+   * topology mesh saves as a single level, static (upstream .sgl parity).
    */
   serializeScene(): SavedScene | null {
     const mesh = this.mesh;
     if (!mesh) return null;
-    const nbV = mesh.getNbVertices();
-    const nbF = mesh.getNbFaces();
-    if (!(nbV > 0) || !(nbF > 0)) return null;
+    const mul = this.asMultimesh();
+    const levelMeshes: SculptMesh[] = mul ? mul._meshes : [mesh];
+    const base = levelMeshes[0];
+    const nbBaseFaces = base.getNbFaces();
+    if (!(nbBaseFaces > 0)) return null;
+
+    const levels: SavedLevel[] = [];
+    for (const m of levelMeshes) {
+      const nbV = m.getNbVertices();
+      if (!(nbV > 0)) return null;
+      levels.push({
+        nbVertices: nbV,
+        vertices: new Float32Array(m.getVertices().subarray(0, nbV * 3)),
+        normals: new Float32Array(m.getNormals().subarray(0, nbV * 3)),
+        colors: new Float32Array(m.getColors().subarray(0, nbV * 3)),
+        materials: new Float32Array(m.getMaterials().subarray(0, nbV * 3)),
+        detailsXYZ: m._detailsXYZ ? new Float32Array(m._detailsXYZ) : null,
+        detailsRGB: m._detailsRGB ? new Float32Array(m._detailsRGB) : null,
+        detailsPBR: m._detailsPBR ? new Float32Array(m._detailsPBR) : null,
+      });
+    }
+
     return {
-      v: 1,
+      v: 2,
       savedAt: Date.now(),
-      nbVertices: nbV,
-      nbFaces: nbF,
-      vertices: new Float32Array(mesh.getVertices().subarray(0, nbV * 3)),
-      colors: new Float32Array(mesh.getColors().subarray(0, nbV * 3)),
-      materials: new Float32Array(mesh.getMaterials().subarray(0, nbV * 3)),
-      faces: new Uint32Array(mesh.getFaces().subarray(0, nbF * 4)),
+      nbBaseFaces,
+      baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
+      levels,
+      sel: mul ? mul._sel : 0,
       matrix: new Float32Array(mesh.getMatrix()),
       symmetry: this.sculptManager._symmetry,
     };
   }
 
   /**
-   * Rebuild a saved scene as the session subject (the reload path). Same
-   * proven construction as convertToStaticMesh + addSphere, minus the
-   * normalize: the saved matrix already carries the scale.
+   * Rebuild a saved scene as the session subject (the reload path). The base
+   * level uses the proven convertToStaticMesh construction (no normalize:
+   * the saved matrix carries the scale); each higher level re-derives its
+   * topology through addLevel, then every array is overwritten with the
+   * saved bytes. setSelection is a plain pointer swap (no analysis or
+   * synthesis recompute), so the restored stack, its detail vectors, and a
+   * stale top all come back exactly as saved. Throws on any shape mismatch;
+   * the caller falls back to a fresh sphere.
    */
   addRestoredMesh(saved: SavedScene): Multimesh {
+    const l0 = saved.levels[0];
     const base = new MeshStatic(null);
-    base.setVertices(saved.vertices);
-    base.setColors(saved.colors);
-    base.setMaterials(saved.materials);
-    base.setFaces(saved.faces as Uint32Array);
+    base.setVertices(l0.vertices);
+    base.setColors(l0.colors);
+    base.setMaterials(l0.materials);
+    base.setFaces(saved.baseFaces);
     Mesh.OPTIMIZE = false;
     base.init();
     Mesh.OPTIMIZE = true;
+    if (base.getNbVertices() !== l0.nbVertices) {
+      throw new Error('sculpt restore: base level shape mismatch');
+    }
 
-    const mesh = new Multimesh(base as unknown as SculptMesh);
+    const mesh = new Multimesh(base);
+    for (let i = 1; i < saved.levels.length; i++) {
+      const li = saved.levels[i];
+      const m = mesh.addLevel();
+      if (m.getNbVertices() !== li.nbVertices) {
+        throw new Error(`sculpt restore: level ${i} shape mismatch`);
+      }
+      m.getVertices().set(li.vertices);
+      m.getColors().set(li.colors);
+      m.getMaterials().set(li.materials);
+      m._detailsXYZ = li.detailsXYZ ? new Float32Array(li.detailsXYZ) : null;
+      m._detailsRGB = li.detailsRGB ? new Float32Array(li.detailsRGB) : null;
+      m._detailsPBR = li.detailsPBR ? new Float32Array(li.detailsPBR) : null;
+      // Refresh the derived spatial data from the restored verts: face
+      // aabbs/normals are pure per-face functions and the octree follows
+      // them, so both rebuild deterministically.
+      m.updateFacesAabbAndNormal();
+      m.updateOctree();
+    }
+    // Vertex normals are NOT derived here: live normals accumulate through
+    // incremental stroke updates in a different float order than a full
+    // recompute, and synthesis reads them for its tangent frames, so the
+    // saved values are restored verbatim (after every geometry pass above,
+    // which would otherwise clobber them). v1 records carry none; the
+    // init/addLevel recompute stands in for those.
+    const levelMeshes = mesh._meshes;
+    for (let i = 0; i < saved.levels.length; i++) {
+      const normals = saved.levels[i].normals;
+      if (normals) levelMeshes[i].getNormals().set(normals);
+    }
+    mesh.setSelection(saved.sel);
+    mesh.updateBuffers();
+
     mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
     this.sculptManager._symmetry = saved.symmetry;
-    this.addNewMesh(mesh as unknown as SculptMesh);
+    this.addNewMesh(mesh);
     return mesh;
   }
 

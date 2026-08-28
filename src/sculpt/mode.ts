@@ -27,8 +27,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const camera = new CameraAdapter(viewer.camera, canvas);
   const session = new SculptSession(camera, canvas, () => {});
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
-  const saved = await loadSavedScene();
-  const multimesh = saved ? session.addRestoredMesh(saved) : session.addSphere();
+  let saved = await loadSavedScene();
+  let multimesh;
+  try {
+    multimesh = saved ? session.addRestoredMesh(saved) : session.addSphere();
+  } catch (err) {
+    // A malformed record must never brick sculpt entry: drop it, start clean.
+    console.warn('sculpt restore failed, starting fresh:', err);
+    void clearSavedScene();
+    saved = null;
+    multimesh = session.addSphere();
+  }
 
   const sync = new GeometrySync();
   sync.bind(multimesh as unknown as SculptMesh);

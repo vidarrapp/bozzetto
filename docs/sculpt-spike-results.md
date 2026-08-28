@@ -395,3 +395,40 @@ the render centre sat at the visible bottom edge. Fixes:
   flush; Start fresh returns to the default sphere with nothing
   restored after. WS1/WS1b/WS2 suites now clear the store on boot so
   runs stay deterministic.
+
+# WS2c round 2 (full-stack persistence + big-mesh cadence)
+
+- Review corrections: the "matching upstream .sgl" limits were parity,
+  not necessity. v2 format now persists the WHOLE multires stack; and
+  meshes past 1.6M top-level tris autosave on a five-minute cadence
+  (review request) instead of being skipped - the debounce gap is
+  size-dependent (1.5s normal, 300s big), with hide/dispose flushes
+  bypassing it either way.
+- v2 payload per level: vertices, live normals, colors, materials, and
+  the three detail-vector arrays (null until an analysis crossing);
+  plus base faces only (higher-level topology re-derives exactly by
+  re-running the deterministic subdivision), selection, transform,
+  symmetry. v1 records upgrade on read (single level, no normals).
+- Restore rebuilds levels via addLevel then overwrites every array
+  with the saved bytes; face aabbs/normals and octrees rebuild
+  deterministically (pure per-face functions); selection is set with
+  plain setSelection, never the analysis/synthesis walk, so a stale
+  top and its detail vectors come back exactly as saved. Any shape
+  mismatch throws and falls back to a fresh sphere (record cleared).
+- Finding: vertex normals are NOT reproducible by recompute. Live
+  normals accumulate through incremental stroke updates in a different
+  float order than a full recompute, and synthesis builds its tangent
+  frames from them, so a recompute-at-restore made post-reload level
+  steps diverge from pre-reload ones by the re-projection scale
+  (~0.09 checksum-sum). Persisting live normals (+25 percent payload)
+  restores them verbatim; the debug harness confirms every synthesis
+  input round-trips byte-identical.
+- Verified headless: everything from the first WS2c suite, plus: sculpt
+  BELOW the top level, reload, current level bit-exact, stack shape and
+  selection preserved, and a post-reload step up equals the pre-reload
+  step up bit-exactly (only possible if verts, details AND normals all
+  round-tripped).
+- Undo history stays unpersisted, now as an explicit decision (plan
+  6.6c): states reference live mesh object graphs (AddRemove states
+  hold entire meshes), a large serialization surface for marginal
+  value; WS5 capture keeps long-term history as timelapse frames.
