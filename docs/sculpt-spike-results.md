@@ -242,3 +242,17 @@ the render centre sat at the visible bottom edge. Fixes:
 - viewport-fit=cover added to all three entry pages (also required for
   the toolbar's env(safe-area-inset-bottom) to be non-zero on notched
   devices in standalone mode).
+
+# WS1 round 8 (stylus pressure)
+
+- PointerEvent pressure now feeds the vendored Tablet state on stroke
+  start and every stroke move, swaying both radius (factor 0.75, the
+  vendor default) and intensity (0.75, enabled per Vidar; upstream
+  shipped it off). Mouse and plain touch report 0.5 while pressed (the
+  spec value), which is exactly Tablet's neutral, so they are unchanged;
+  the value resets to neutral at stroke end so hover picking never sees
+  stale pressure.
+- Verified headless with synthetic pen strokes: identical stroke at
+  pressure 0.15 vs 0.95 produced total deformation 0.8 vs 130.9 (the
+  radius and intensity scaling compound), and Tablet reads 0.5 after
+  the stroke. Full suite plus the WS1 regression pass.

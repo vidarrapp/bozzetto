@@ -292,6 +292,13 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
   one-frame manifest (no API call, no timelapse load, no transport bar,
   no environment fetch); the gallery Sculpt! link points there. The
   ?tl=<id>&sculpt=1 form remains for sculpting over a loaded project.
+- Stylus pressure (round 8): PointerEvent pressure feeds the vendored
+  Tablet state during strokes, swaying BOTH brush radius and intensity
+  (factors 0.75/0.75; vendor default enabled radius only). The
+  PointerEvent spec reports 0.5 - Tablet's neutral - for pressed
+  pressure-less devices, so mouse and plain touch behave unchanged;
+  pressure resets to neutral at stroke end so hover picking never sees
+  stale values. The factors become palette sliders in WS4.
 - The settings panel drives ALL sculpt shading (review round 3): the
   sculpt geometry is adopted by the viewer's display mesh, so material
   mode, albedo/roughness/metalness, matcaps, smooth/flat and the

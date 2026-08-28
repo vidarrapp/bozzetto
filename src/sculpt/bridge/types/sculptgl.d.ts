@@ -36,6 +36,21 @@ declare module '@sculpt-vendor/misc/Enums' {
   export default Enums;
 }
 
+declare module '@sculpt-vendor/misc/Tablet' {
+  /**
+   * Pressure state the stroke tools and picking read: pressure 0..1 with 0.5
+   * neutral; the factors scale how much pressure sways radius/intensity.
+   */
+  const Tablet: {
+    radiusFactor: number;
+    intensityFactor: number;
+    pressure: number;
+    getPressureIntensity(): number;
+    getPressureRadius(): number;
+  };
+  export default Tablet;
+}
+
 declare module '@sculpt-vendor/misc/Utils' {
   const Utils: {
     SCALE: number;

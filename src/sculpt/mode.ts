@@ -4,6 +4,7 @@ import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
 import { InputShell } from './bridge/InputShell';
+import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
 import { SculptToolbar } from './ui/SculptToolbar';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
@@ -92,7 +93,7 @@ export function mountSculptMode(viewer: Viewer): () => void {
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
-  (window as unknown as { __sculpt?: object }).__sculpt = { session, sync, input };
+  (window as unknown as { __sculpt?: object }).__sculpt = { session, sync, input, tablet: Tablet };
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));

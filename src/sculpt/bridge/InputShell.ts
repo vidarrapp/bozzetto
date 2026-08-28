@@ -1,4 +1,5 @@
 import Enums from '@sculpt-vendor/misc/Enums';
+import Tablet from '@sculpt-vendor/misc/Tablet';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -63,6 +64,11 @@ export class InputShell {
   ) {}
 
   install(): void {
+    // Pen pressure sways both brush radius and intensity (vendor defaults
+    // enable radius only). Factors become palette sliders in WS4.
+    Tablet.radiusFactor = 0.75;
+    Tablet.intensityFactor = 0.75;
+    Tablet.pressure = 0.5;
     this.container.addEventListener('pointerdown', this.onPointerDown, true);
     this.container.addEventListener('pointermove', this.onPointerMove, true);
     this.container.addEventListener('pointerup', this.onPointerUp, true);
@@ -89,6 +95,17 @@ export class InputShell {
     window.removeEventListener('keydown', this.onKeyDown, true);
     window.removeEventListener('keyup', this.onKeyUp, true);
     this.session.setCanvasCursor('default');
+  }
+
+  /**
+   * Feed stylus pressure to the vendored Tablet state. The PointerEvent spec
+   * reports 0.5 for pressed pressure-less devices (mouse, plain touch), which
+   * is exactly Tablet's neutral value, so no per-device casing is needed;
+   * a few browsers report 0 for active pressure-less touches, mapped back to
+   * neutral here.
+   */
+  private feedPressure(e: PointerEvent): void {
+    Tablet.pressure = e.buttons && e.pressure > 0 ? e.pressure : 0.5;
   }
 
   /** Mirror upstream setMousePosition: device pixels relative to the canvas. */
@@ -147,6 +164,7 @@ export class InputShell {
       this.negativeOverride = { tool, prev };
     }
 
+    this.feedPressure(e); // before start: the first dab already feels it
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
@@ -156,7 +174,11 @@ export class InputShell {
 
     s._action = Enums.Action.SCULPT_EDIT;
     this.pointerId = e.pointerId;
-    s.getCanvas().setPointerCapture(e.pointerId);
+    try {
+      s.getCanvas().setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic events carry no active pointer; capture is best-effort.
+    }
     e.preventDefault();
     e.stopPropagation();
     s._lastMouseX = s._mouseX;
@@ -205,6 +227,7 @@ export class InputShell {
     e.stopPropagation();
 
     // Upstream onDeviceMove, sculpt branch: refresh picking, then stroke.
+    this.feedPressure(e);
     s.getSculptManager().preUpdate();
     s.getSculptManager().update();
 
@@ -235,6 +258,7 @@ export class InputShell {
       if (edit) this.hooks.focusEdit(edit);
     }
     this.restoreStrokeTool();
+    Tablet.pressure = 0.5; // neutral, so hover picking never sees stale pressure
     s._action = Enums.Action.NOTHING;
     s.render();
   };
