@@ -348,10 +348,10 @@ the render centre sat at the visible bottom edge. Fixes:
   i.e. in sculpt mode. Hotkey digits stay on the buttons as corner
   badges. Attribution added to the README credits.
 - Per-brush mapping. Vidar's picks, where the npm release has them in
-  solid straight: Crease = scalpel, Inflate = paintbrush-pencil,
+  solid straight: Crease = scalpel, Standard = screwdriver (review pick,
+  replacing the initial brush stand-in), Inflate = paintbrush-pencil,
   Smooth = shredder, Twist = pen-swirl. Stand-ins (closest in-pack
-  glyph) where it does not: Standard = brush (paint-brush ships only in
-  regular/bold styles in 3.3.1), Flatten = arrows-to-line (scraper is
+  glyph) where it does not: Flatten = arrows-to-line (scraper is
   newer than the 3.3.1 release), Negative = flip-horizontal (the invert
   pick is a classic Flaticon icon, not part of the uicons font, and the
   icon CDN is outside this environment's network policy). Unassigned

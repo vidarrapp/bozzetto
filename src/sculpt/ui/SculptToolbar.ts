@@ -62,7 +62,7 @@ export class SculptToolbar {
     const brushes: Array<[number, string, string, string]> = [
       [tools.CREASE, '1', 'Crease', 'fi-ss-scalpel'],
       [tools.MOVE, '2', 'Move', 'fi-ss-arrows'],
-      [tools.BRUSH, '3', 'Standard (clay)', 'fi-ss-brush'],
+      [tools.BRUSH, '3', 'Standard (clay)', 'fi-ss-screwdriver'],
       [tools.INFLATE, '4', 'Inflate', 'fi-ss-paintbrush-pencil'],
       [tools.PINCH, '5', 'Pinch', 'fi-ss-compress'],
       [tools.FLATTEN, '6', 'Flatten', 'fi-ss-arrows-to-line'],
