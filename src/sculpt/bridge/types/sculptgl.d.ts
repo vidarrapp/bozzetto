@@ -183,6 +183,8 @@ declare module '@sculpt-vendor/states/StateManager' {
     /** Undo stack depth cap (upstream default 15; the bridge raises it). */
     static STACK_LENGTH: number;
     constructor(main: unknown);
+    /** Every undoable edit funnels through here (autosave hooks it). */
+    pushState(state: unknown): void;
     pushStateAdd(mesh: unknown): void;
     pushStateAddRemove(addMesh: unknown, remMesh: unknown, squash?: boolean): void;
     pushStateMultiresolution(multimesh: unknown, type: number): void;

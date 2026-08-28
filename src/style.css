@@ -1524,6 +1524,41 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* Restored-session notice (sculpt reload persistence). */
+.sculpt-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  z-index: 30;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+}
+
+.sculpt-toast__btn {
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sculpt-toast__btn:hover {
+  background: var(--hover);
+}
+
 /* Inline-SVG icons (repo overrides) sized and tinted like font glyphs. */
 .sculpt-toolbar__svg {
   display: block;

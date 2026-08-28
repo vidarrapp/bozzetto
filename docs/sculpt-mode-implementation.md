@@ -219,6 +219,22 @@ deferred CONSUMER of undo states instead of an eager producer of copies:
   past captured frames simply yields a timelapse that shows the sculpt,
   the mistake, and the recovery, which is the honest record we want.
 
+#### 6.6c Reload persistence (shipped with WS2, pulled forward) `[Decision]`
+
+A reload (or iOS evicting the home-screen app) must not lose work.
+Upstream keeps sessions via its .sgl serialization, which section 4.2
+cut; ScenePersist.ts does the same natively: the active mesh's current
+resolution (vertices/colors/materials/faces), transform and symmetry
+autosave to IndexedDB. Same performance contract as 6.6b: edits only
+mark a dirty flag (StateManager pushState/undo/redo wrapped instance-
+side, no vendor edits); the serialize + put runs debounced in idle time
+plus a visibilitychange/pagehide flush. On sculpt entry a saved scene
+replaces the default sphere, with a "Restored your last sculpt / Start
+fresh" toast. Parity limits, documented: lower multires levels and the
+undo history do not survive (upstream .sgl stores the same); meshes
+past 1.6M tris skip autosave (a put that size is a ~60MB write). The
+WS5 capture flow will reuse this store's idle machinery.
+
 ## 7. GUI specification (yagui replacement)
 
 ### 7.1 Standards (all `[Verified]` at the pinned bozzetto commit)

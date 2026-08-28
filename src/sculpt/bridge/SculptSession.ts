@@ -8,9 +8,10 @@ import SculptManager from '@sculpt-vendor/editing/SculptManager';
 import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
-import { mat3, vec3 } from 'gl-matrix';
+import { mat3, mat4, vec3 } from 'gl-matrix';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
+import type { SavedScene } from './ScenePersist';
 
 /** Hard ceiling for ctrl+d subdivision (raised to ~4M after RTX 3060 runs). */
 const MAX_SUBDIVISION_TRIS = 4000000;
@@ -316,6 +317,55 @@ export class SculptSession {
     const out = vec3.create();
     vec3.transformMat4(out, this.picking.getIntersectionPoint() as unknown as vec3, mesh.getMatrix());
     return [out[0], out[1], out[2]];
+  }
+
+  // --- reload persistence (bridge feature, see ScenePersist) --------------
+
+  /**
+   * Snapshot the active mesh for autosave: the current resolution's live
+   * arrays (what upstream's .sgl stores too), the transform, and symmetry.
+   * Bounded copies; runs in idle time only, never during a stroke.
+   */
+  serializeScene(): SavedScene | null {
+    const mesh = this.mesh;
+    if (!mesh) return null;
+    const nbV = mesh.getNbVertices();
+    const nbF = mesh.getNbFaces();
+    if (!(nbV > 0) || !(nbF > 0)) return null;
+    return {
+      v: 1,
+      savedAt: Date.now(),
+      nbVertices: nbV,
+      nbFaces: nbF,
+      vertices: new Float32Array(mesh.getVertices().subarray(0, nbV * 3)),
+      colors: new Float32Array(mesh.getColors().subarray(0, nbV * 3)),
+      materials: new Float32Array(mesh.getMaterials().subarray(0, nbV * 3)),
+      faces: new Uint32Array(mesh.getFaces().subarray(0, nbF * 4)),
+      matrix: new Float32Array(mesh.getMatrix()),
+      symmetry: this.sculptManager._symmetry,
+    };
+  }
+
+  /**
+   * Rebuild a saved scene as the session subject (the reload path). Same
+   * proven construction as convertToStaticMesh + addSphere, minus the
+   * normalize: the saved matrix already carries the scale.
+   */
+  addRestoredMesh(saved: SavedScene): Multimesh {
+    const base = new MeshStatic(null);
+    base.setVertices(saved.vertices);
+    base.setColors(saved.colors);
+    base.setMaterials(saved.materials);
+    base.setFaces(saved.faces as Uint32Array);
+    Mesh.OPTIMIZE = false;
+    base.init();
+    Mesh.OPTIMIZE = true;
+
+    const mesh = new Multimesh(base as unknown as SculptMesh);
+    mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
+    this.sculptManager._symmetry = saved.symmetry;
+    this.addNewMesh(mesh as unknown as SculptMesh);
+    return mesh;
   }
 
   // --- primitives (ported from Scene.js + drawables/Primitives.js) --------

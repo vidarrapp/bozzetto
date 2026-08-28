@@ -6,6 +6,7 @@ import { GeometrySync } from './bridge/GeometrySync';
 import { InputShell } from './bridge/InputShell';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
+import { ScenePersist, clearSavedScene, loadSavedScene } from './bridge/ScenePersist';
 import { SculptToolbar } from './ui/SculptToolbar';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
@@ -19,13 +20,15 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
  * sphere is ~50k triangles with its multiresolution stack available on
  * d / shift+d / ctrl+d.
  */
-export function mountSculptMode(viewer: Viewer): () => void {
+export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const canvas = viewer.captureCanvas;
   const container = canvas.parentElement as HTMLElement;
 
   const camera = new CameraAdapter(viewer.camera, canvas);
   const session = new SculptSession(camera, canvas, () => {});
-  const multimesh = session.addSphere();
+  // Reload safety: a saved session takes the sphere's place (ScenePersist).
+  const saved = await loadSavedScene();
+  const multimesh = saved ? session.addRestoredMesh(saved) : session.addSphere();
 
   const sync = new GeometrySync();
   sync.bind(multimesh as unknown as SculptMesh);
@@ -91,9 +94,26 @@ export function mountSculptMode(viewer: Viewer): () => void {
   input.install();
   const toolbar = new SculptToolbar(input);
 
+  // Autosave from here on; if a session was restored, say so and offer a
+  // way back to a clean sphere.
+  const persist = new ScenePersist(session);
+  persist.install();
+  const toast = saved
+    ? restoredToast(() => {
+        persist.disable();
+        void clearSavedScene().then(() => location.reload());
+      })
+    : null;
+
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
-  (window as unknown as { __sculpt?: object }).__sculpt = { session, sync, input, tablet: Tablet };
+  (window as unknown as { __sculpt?: object }).__sculpt = {
+    session,
+    sync,
+    input,
+    persist,
+    tablet: Tablet,
+  };
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
@@ -101,6 +121,8 @@ export function mountSculptMode(viewer: Viewer): () => void {
   return () => {
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
+    toast?.remove();
+    persist.dispose();
     toolbar.dispose();
     input.dispose();
     cursor.dispose();
@@ -117,6 +139,23 @@ export function mountSculptMode(viewer: Viewer): () => void {
     viewer.exitSculpt();
     sync.dispose();
   };
+}
+
+/** "Restored your sculpt" notice with a start-fresh escape hatch. */
+function restoredToast(onFresh: () => void): HTMLDivElement {
+  const toast = document.createElement('div');
+  toast.className = 'sculpt-toast';
+  const label = document.createElement('span');
+  label.textContent = 'Restored your last sculpt';
+  const fresh = document.createElement('button');
+  fresh.type = 'button';
+  fresh.className = 'sculpt-toast__btn';
+  fresh.textContent = 'Start fresh';
+  fresh.addEventListener('click', onFresh);
+  toast.append(label, fresh);
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 10000);
+  return toast;
 }
 
 /** World-space box of the live vertex region (over-allocated tail excluded). */

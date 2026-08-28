@@ -367,3 +367,31 @@ the render centre sat at the visible bottom edge. Fixes:
   glyph stands. Verified end to end with a throwaway flatten.svg
   (rendered, themed, removed again). Awaiting Vidar's scraper and
   invert downloads to land as flatten.svg and negative.svg.
+
+# WS2c (reload persistence)
+
+- ScenePersist.ts: the active mesh autosaves to IndexedDB
+  (bozzetto-sculpt/scene/current) so reloads and iOS app eviction keep
+  the work; a saved scene replaces the default sphere on entry, with a
+  Restored toast offering Start fresh (clears the store, reloads; the
+  persist hook is hard-disabled first so the reload's own pagehide
+  flush cannot resurrect the cleared scene).
+- Zero stroke-loop cost: StateManager pushState/undo/redo are wrapped
+  on the instance (no vendor edits) to set a dirty flag; the serialize
+  (bounded copies of the live regions) and IDB put run in idle time,
+  debounced 1.5s, plus a visibilitychange/pagehide best-effort flush.
+  Storage failure (quota, private windows) disables autosave quietly;
+  sculpting is unaffected.
+- Saved payload = what upstream .sgl stores: current level only, plus
+  transform and symmetry. Lower multires levels and undo history do
+  not survive a reload (upstream parity); meshes past 1.6M tris skip
+  autosave (~60MB puts).
+- Restore path reuses the proven convertToStaticMesh construction
+  (OPTIMIZE off around init) wrapped in a fresh Multimesh, no
+  normalize (the saved matrix carries scale).
+- Verified headless (persist-test.mjs): flush -> reload restores
+  bit-exact (checksum, symmetry, toast); sculpt + undo on the restored
+  mesh stay exact; the debounced autosave persists without an explicit
+  flush; Start fresh returns to the default sphere with nothing
+  restored after. WS1/WS1b/WS2 suites now clear the store on boot so
+  runs stay deterministic.

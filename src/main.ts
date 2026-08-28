@@ -51,7 +51,7 @@ async function bootSculpt(): Promise<void> {
     overlay?.remove();
     addGalleryLink();
     const { mountSculptMode } = await import('./sculpt/mode');
-    mountSculptMode(viewer);
+    await mountSculptMode(viewer);
   } catch (err) {
     console.error(err);
     showError(overlay, err);
@@ -80,7 +80,7 @@ async function bootViewer(id: string): Promise<void> {
     // with WS5 (see docs/sculpt-mode-implementation.md).
     if (new URLSearchParams(window.location.search).get('sculpt') === '1') {
       const { mountSculptMode } = await import('./sculpt/mode');
-      mountSculptMode(viewer);
+      await mountSculptMode(viewer);
     }
   } catch (err) {
     console.error(err);

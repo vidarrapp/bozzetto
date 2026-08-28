@@ -32,6 +32,7 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 - **Shading from the settings panel** — the regular settings panel drives sculpt shading too: material mode, albedo, roughness, matcaps, smooth/flat, wireframe, plus a new master **Shadows** toggle (also `Shift+S` while sculpting). Depth-of-field controls hide during sculpt, staying a view-mode concern.
 - **Scene keys** — `F` frames the model while the orbit pivot automatically follows your strokes; `L` + drag rotates the light rig. The `H` hotkey guide switches between the viewer and sculpt tables automatically.
 - **Web app** — a web-app manifest plus home-screen icons: add Bozzetto to your iPad or phone home screen and it launches fullscreen as its own app (placeholder icon for now).
+- **Reload-safe sculpting** — your sculpt autosaves to the browser (IndexedDB) after every edit, in idle time so strokes never pay for it. Reload the page or get evicted by iOS and the sculpt comes back exactly as it was, with a "Start fresh" escape hatch. Undo history and lower subdivision levels don't survive a reload (same as SculptGL's own session save).
 - **Viewer change** — the `B` depth-of-field hotkey is removed (DoF lives in the settings panel); in sculpt mode number keys select brushes instead of materials.
 
 Sculpt-to-timelapse capture (recording strokes as frames) is the next milestone.
