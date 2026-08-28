@@ -350,11 +350,13 @@ the render centre sat at the visible bottom edge. Fixes:
 - Per-brush mapping. Vidar's picks, where the npm release has them in
   solid straight: Crease = scalpel, Standard = screwdriver (review pick,
   replacing the initial brush stand-in), Inflate = paintbrush-pencil,
-  Smooth = shredder, Twist = pen-swirl. Stand-ins (closest in-pack
-  glyph) where it does not: Flatten = arrows-to-line (scraper is
-  newer than the 3.3.1 release), Negative = flip-horizontal (the invert
-  pick is a classic Flaticon icon, not part of the uicons font, and the
-  icon CDN is outside this environment's network policy). Unassigned
+  Smooth = shredder, Twist = pen-swirl, Negative = reflect-vertical
+  (review pick, replacing the flip-horizontal stand-in; solid straight
+  variant of the fi-tr embed Vidar pasted, keeping one font family).
+  Flatten = the real scraper (newer than the npm 3.3.1 release), landed
+  as an inline-SVG override (icons/flatten.svg) from Vidar's download;
+  the invert idea for Negative was dropped with the reflect pick, so no
+  SVG needed there. Unassigned
   brushes got in-pack picks: Move = arrows, Pinch = compress,
   Drag = hand-back-fist. All swappable one string per brush in
   SculptToolbar.ts when better picks land.

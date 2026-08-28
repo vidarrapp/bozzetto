@@ -50,7 +50,7 @@ export class SculptToolbar {
       '',
       'Hold: negative sculpting (carve)',
       'negative',
-      'fi-ss-flip-horizontal',
+      'fi-ss-reflect-vertical',
     );
     this.negativeBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
