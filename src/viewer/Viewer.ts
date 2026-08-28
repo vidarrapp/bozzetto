@@ -306,7 +306,9 @@ export class Viewer {
   ): Promise<Viewer> {
     const renderer = new WebGPURenderer({ antialias: true });
     await renderer.init();
-    return new Viewer(renderer, container, manifest, source, options);
+    const viewer = new Viewer(renderer, container, manifest, source, options);
+    viewer.warnIfSoftwareRendering();
+    return viewer;
   }
 
   private constructor(
@@ -723,14 +725,80 @@ export class Viewer {
     return this.fps;
   }
 
+  private gpuInfoCache: string | null = null;
+
+  /**
+   * The device actually rendering, so "slow for some reason" reports carry
+   * the reason: the WebGPU adapter description, or for the WebGL2 fallback
+   * the unmasked renderer string, which names software rasterizers
+   * (SwiftShader, WARP, llvmpipe) and remote-desktop stand-ins outright.
+   */
+  private gpuDescription(): string {
+    if (this.gpuInfoCache !== null) return this.gpuInfoCache;
+    let info = '?';
+    const b = this.renderer.backend as {
+      isWebGPUBackend?: boolean;
+      device?: { adapterInfo?: { vendor?: string; architecture?: string; description?: string } };
+      gl?: WebGL2RenderingContext;
+    };
+    try {
+      if (b.isWebGPUBackend && b.device) {
+        const ai = b.device.adapterInfo;
+        info =
+          [ai?.description, ai?.vendor, ai?.architecture].filter(Boolean).join(' · ') ||
+          'adapter (no info)';
+      } else if (b.gl) {
+        const gl = b.gl;
+        const ext = gl.getExtension('WEBGL_debug_renderer_info') as {
+          UNMASKED_RENDERER_WEBGL: number;
+        } | null;
+        const raw = String(
+          gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '?',
+        );
+        // "ANGLE (vendor, device (id), backend)" -> the device part.
+        const inner = raw.replace(/^ANGLE \((.*)\)$/, '$1');
+        const parts = inner.split(', ');
+        info = parts.length >= 2 ? parts[1] : inner;
+      }
+    } catch {
+      info = '?';
+    }
+    if (info.length > 44) info = `${info.slice(0, 43)}…`;
+    this.gpuInfoCache = info;
+    return info;
+  }
+
+  /** One console note when the fallback landed on a software rasterizer. */
+  warnIfSoftwareRendering(): void {
+    const gpu = this.gpuDescription();
+    if (/swiftshader|software|basic render|llvmpipe|warp\b/i.test(gpu)) {
+      console.warn(
+        `Bozzetto: software rendering detected (${gpu}). ` +
+          'Check that hardware acceleration is enabled (chrome://settings/system) ' +
+          'and see chrome://gpu; remote-desktop sessions often lack GPU access.',
+      );
+    }
+  }
+
   /** Live diagnostics for the debug overlay (hotkey "t"): [label, value] rows. */
   debugInfo(): Array<[string, string]> {
     const b = this.renderer.backend as { isWebGPUBackend?: boolean; isWebGLBackend?: boolean };
     const backend = b.isWebGPUBackend ? 'WebGPU' : b.isWebGLBackend ? 'WebGL2' : '?';
     const { w, h } = this.viewportSize();
+    const rows: Array<[string, string]> = [];
+    if (backend === 'WebGL2') {
+      // Say WHY WebGPU was skipped: adapter refused (blocklist, software
+      // rendering, remote desktop) vs a browser without the API.
+      rows.push([
+        'webgpu',
+        'gpu' in navigator ? 'no adapter · see chrome://gpu' : 'unsupported browser',
+      ]);
+    }
     return [
       ['fps', String(Math.round(this.fps))],
       ['backend', backend],
+      ['gpu', this.gpuDescription()],
+      ...rows,
       ['size', `${w}×${h} @${this.renderer.getPixelRatio()}x`],
       ['material', this.currentMode],
       ['AO', this.aoEnabled ? `str ${this.aoIntensity.toFixed(2)} · rad ${this.aoRadiusFraction.toFixed(2)}` : 'off'],
