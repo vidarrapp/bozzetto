@@ -1524,6 +1524,25 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* Inline-SVG icons (repo overrides) sized and tinted like font glyphs. */
+.sculpt-toolbar__svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+}
+
+.sculpt-toolbar__svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.sculpt-toolbar__svg svg path {
+  fill: currentColor;
+}
+
 /* Hotkey digit as a corner badge so icons stay learnable from the keys. */
 .sculpt-toolbar__key {
   position: absolute;

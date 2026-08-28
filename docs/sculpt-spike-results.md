@@ -358,3 +358,10 @@ the render centre sat at the visible bottom edge. Fixes:
   brushes got in-pack picks: Move = arrows, Pinch = compress,
   Drag = hand-back-fist. All swappable one string per brush in
   SculptToolbar.ts when better picks land.
+- Inline-SVG override path (follow-up round): src/sculpt/ui/icons/
+  <slot>.svg (crease/move/standard/.../negative) raw-inlines into that
+  button at build time via import.meta.glob, recolored through
+  currentColor and sized like the font glyphs; no file means the font
+  glyph stands. Verified end to end with a throwaway flatten.svg
+  (rendered, themed, removed again). Awaiting Vidar's scraper and
+  invert downloads to land as flatten.svg and negative.svg.

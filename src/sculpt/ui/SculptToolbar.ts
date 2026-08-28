@@ -5,6 +5,19 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import '@flaticon/flaticon-uicons/css/solid/straight.css';
 import type { InputShell } from '../bridge/InputShell';
 
+// Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
+// or negative.svg) replaces that button's font glyph at build time. This is
+// the route for icons the npm uicons release does not ship; see icons/README.
+const svgIcons = import.meta.glob('./icons/*.svg', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+function svgFor(slot: string): string | null {
+  return svgIcons[`./icons/${slot}.svg`] ?? null;
+}
+
 /**
  * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
  * bottom bar with a hold-to-carve Negative button pinned in the left corner
@@ -33,7 +46,12 @@ export class SculptToolbar {
     // Hold-to-carve: strokes are negative while the button is held (like
     // holding alt), released on lift. Works two-fingered on iPad: one finger
     // holds the button, the other sculpts.
-    this.negativeBtn = toolButton('', 'Hold: negative sculpting (carve)', 'fi-ss-flip-horizontal');
+    this.negativeBtn = toolButton(
+      '',
+      'Hold: negative sculpting (carve)',
+      'negative',
+      'fi-ss-flip-horizontal',
+    );
     this.negativeBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       try {
@@ -59,19 +77,20 @@ export class SculptToolbar {
     const tools = Enums.Tools;
     // Icon picks are Vidar's where the pack ships them in solid straight;
     // the rest are the closest fi-ss matches (see the WS2b results note).
-    const brushes: Array<[number, string, string, string]> = [
-      [tools.CREASE, '1', 'Crease', 'fi-ss-scalpel'],
-      [tools.MOVE, '2', 'Move', 'fi-ss-arrows'],
-      [tools.BRUSH, '3', 'Standard (clay)', 'fi-ss-screwdriver'],
-      [tools.INFLATE, '4', 'Inflate', 'fi-ss-paintbrush-pencil'],
-      [tools.PINCH, '5', 'Pinch', 'fi-ss-compress'],
-      [tools.FLATTEN, '6', 'Flatten', 'fi-ss-arrows-to-line'],
-      [tools.SMOOTH, '7', 'Smooth', 'fi-ss-shredder'],
-      [tools.DRAG, '8', 'Drag', 'fi-ss-hand-back-fist'],
-      [tools.TWIST, '9', 'Twist', 'fi-ss-pen-swirl'],
+    // The slot name (column 4) doubles as the inline-SVG override filename.
+    const brushes: Array<[number, string, string, string, string]> = [
+      [tools.CREASE, '1', 'Crease', 'crease', 'fi-ss-scalpel'],
+      [tools.MOVE, '2', 'Move', 'move', 'fi-ss-arrows'],
+      [tools.BRUSH, '3', 'Standard (clay)', 'standard', 'fi-ss-screwdriver'],
+      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-paintbrush-pencil'],
+      [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress'],
+      [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line'],
+      [tools.SMOOTH, '7', 'Smooth', 'smooth', 'fi-ss-shredder'],
+      [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist'],
+      [tools.TWIST, '9', 'Twist', 'twist', 'fi-ss-pen-swirl'],
     ];
-    for (const [id, key, name, icon] of brushes) {
-      const btn = toolButton(key, name, icon);
+    for (const [id, key, name, slot, icon] of brushes) {
+      const btn = toolButton(key, name, slot, icon);
       btn.addEventListener('click', () => this.input.selectBrush(id));
       this.brushBtns.set(id, btn);
       center.appendChild(btn);
@@ -102,14 +121,25 @@ export class SculptToolbar {
   }
 }
 
-function toolButton(key: string, title: string, icon: string): HTMLButtonElement {
+function toolButton(key: string, title: string, slot: string, icon: string): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'sculpt-toolbar__btn';
-  const glyph = document.createElement('i');
-  glyph.className = `fi ${icon}`;
-  glyph.setAttribute('aria-hidden', 'true');
-  btn.appendChild(glyph);
+  const svg = svgFor(slot);
+  if (svg) {
+    // Inline SVG from the repo (trusted content); CSS recolors it via
+    // currentColor and sizes it like the font glyphs.
+    const holder = document.createElement('span');
+    holder.className = 'sculpt-toolbar__svg';
+    holder.setAttribute('aria-hidden', 'true');
+    holder.innerHTML = svg;
+    btn.appendChild(holder);
+  } else {
+    const glyph = document.createElement('i');
+    glyph.className = `fi ${icon}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    btn.appendChild(glyph);
+  }
   if (key) {
     // The hotkey digit stays visible as a corner badge (and as the button
     // text the headless suite matches on).
