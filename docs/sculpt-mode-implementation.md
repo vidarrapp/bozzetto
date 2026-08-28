@@ -269,8 +269,11 @@ labeled to match the hotkeys (1-6 at round 5, all nine digits since
 WS2). Buttons and hotkeys stay in sync both ways.
 
 Icons (WS2b): Flaticon uicons via the @flaticon/flaticon-uicons npm
-package, solid straight style (fi-ss-*), with the hotkey digit kept as a
-corner badge. Vidar's picks where the npm release ships them; closest
+package, solid straight style (fi-ss-*) for the brushes and thin
+straight (fi-ts-*) for the Negative mode button (review pick; the
+lighter face sets the modifier apart), with the hotkey digit kept as a
+corner badge. Negative gestures: hold = momentary carve, double-tap =
+latch carving on, a single tap unlatches (WS2 review). Vidar's picks where the npm release ships them; closest
 in-pack stand-ins otherwise (the npm release trails the site), see the
 results log for the exact per-brush mapping and substitutions.
 Attribution ("Uicons by Flaticon") lives in the README credits. Built from the house tokens with 44px touch targets;

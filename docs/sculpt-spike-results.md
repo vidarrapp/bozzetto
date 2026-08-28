@@ -432,3 +432,17 @@ the render centre sat at the visible bottom edge. Fixes:
   6.6c): states reference live mesh object graphs (AddRemove states
   hold entire meshes), a large serialization surface for marginal
   value; WS5 capture keeps long-term history as timelapse frames.
+
+# WS2b round 2 (Negative button gestures + thin icon)
+
+- Double-tap on the Negative button latches carving on (no held finger
+  needed); while latched a single tap unlatches, and holding still
+  works as the momentary carve. 350ms double-tap window, pointer-event
+  based (works for touch, pen and mouse alike); a triple tap nets out
+  to a momentary carve.
+- Icon swapped to reflect-vertical in the THIN straight face
+  (fi-ts-*, review pick): visually separates the mode-modifier button
+  from the solid-straight brush icons. Costs a second lazily-loaded
+  uicons font family, fetched only when the toolbar renders.
+- ws1b extended: hold/release, double-tap latch, single-tap unlatch
+  all asserted through synthetic pointer taps.

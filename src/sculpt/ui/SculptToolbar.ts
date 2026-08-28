@@ -1,8 +1,11 @@
 import Enums from '@sculpt-vendor/misc/Enums';
-// Flaticon uicons, solid straight style (fi-ss-*): the whole style sheet is
-// imported for upgrade-proof font URLs; the font itself only downloads when
-// a glyph first renders (sculpt mode). Attribution lives in the README.
+// Flaticon uicons: solid straight (fi-ss-*) for the brushes, thin straight
+// (fi-ts-*) for the Negative mode button (review pick; the lighter face
+// sets the modifier apart from the tools). Whole style sheets are imported
+// for upgrade-proof font URLs; each font only downloads when one of its
+// glyphs first renders (sculpt mode). Attribution lives in the README.
 import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import '@flaticon/flaticon-uicons/css/thin/straight.css';
 import type { InputShell } from '../bridge/InputShell';
 
 // Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
@@ -34,6 +37,10 @@ export class SculptToolbar {
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
   private readonly brushBtns = new Map<number, HTMLButtonElement>();
+  /** Double-tap latch on Negative: carving stays on without holding. */
+  private negSticky = false;
+  private unlatchOnUp = false;
+  private lastNegDown = 0;
 
   constructor(private readonly input: InputShell) {
     this.root = document.createElement('div');
@@ -45,12 +52,13 @@ export class SculptToolbar {
     left.className = 'sculpt-toolbar__group sculpt-toolbar__left';
     // Hold-to-carve: strokes are negative while the button is held (like
     // holding alt), released on lift. Works two-fingered on iPad: one finger
-    // holds the button, the other sculpts.
+    // holds the button, the other sculpts. A double-tap latches carving on
+    // (review request); while latched, a single tap unlatches.
     this.negativeBtn = toolButton(
       '',
-      'Hold: negative sculpting (carve)',
+      'Hold: carve (negative). Double-tap: lock carving on',
       'negative',
-      'fi-ss-reflect-vertical',
+      'fi-ts-reflect-vertical',
     );
     this.negativeBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -59,12 +67,26 @@ export class SculptToolbar {
       } catch {
         // Synthetic events carry no active pointer; capture is best-effort.
       }
-      this.input.setNegativeBase(true);
+      if (this.negSticky) {
+        // Latched: this press ends the lock when it lifts.
+        this.unlatchOnUp = true;
+      } else {
+        const now = performance.now();
+        if (now - this.lastNegDown < 350) this.negSticky = true; // double-tap
+        this.lastNegDown = now;
+        this.input.setNegativeBase(true);
+      }
       this.refresh();
     });
     const releaseNegative = (): void => {
-      if (!this.input.getNegativeBase()) return;
-      this.input.setNegativeBase(false);
+      if (this.unlatchOnUp) {
+        this.unlatchOnUp = false;
+        this.negSticky = false;
+        this.input.setNegativeBase(false);
+      } else if (!this.negSticky) {
+        if (!this.input.getNegativeBase()) return;
+        this.input.setNegativeBase(false);
+      }
       this.refresh();
     };
     this.negativeBtn.addEventListener('pointerup', releaseNegative);
