@@ -188,6 +188,37 @@ The raw path calls the same quantize+gzip flow that `meshToGLB` feeds today, rep
 - Capture settings: `mode: 'everyStroke' | 'interval'` with `everyStroke` as the default (`[Decision]`, section 12; interval stays available, 2000 ms when chosen), memory budget with spill-to-OPFS beyond it, max frame count, and a per-frame wall-clock timestamp recorded at capture.
 - Camera track: since the camera is native, sample `Controls` directly: a keyframe on `cameraMoveEnded` plus ~10 Hz sampling while a camera action is live, storing `{t, position, target, focalLength}`. Wheel/dolly paths must also record; `[Verify-in-WS5]` which Controls paths bypass the action state machine.
 
+#### 6.6b Frictionless capture: consume the undo stack (WS2 review) `[Decision]`
+
+Answering "how do we snapshot without hurting sculpting performance": the
+work is already paid for. Every stroke begins with `pushStateGeometry`,
+which snapshots exactly the vertices the stroke goes on to touch; the undo
+stack therefore already holds a per-stroke delta history. Capture becomes a
+deferred CONSUMER of undo states instead of an eager producer of copies:
+
+- Nothing capture-related runs during a stroke or in the render loop. The
+  recorder only marks states dirty (an integer watermark against
+  `_curUndoIndex`).
+- An idle pass (`requestIdleCallback`, falling back to a short timer after
+  the last pointer/key activity) materializes one compact frame per
+  not-yet-captured state: bounded main-thread array copies, then transfer
+  to the convert worker for the existing quantize+gzip raw path (6.6).
+  Frames beyond the memory budget spill to OPFS; upload also happens only
+  from idle time (never while a pointer is down), with a `pagehide`
+  best-effort flush. WS5 owns the manifest/chunking details.
+- `StateManager.STACK_LENGTH` was raised 15 -> 64 in WS2 (the fuzz needs
+  50; capture benefits from the headroom). When sculpting outruns idle
+  time and a state is about to fall off the cap (`pushState` shift), it is
+  drained into a pending-capture queue first, so no frame is ever lost.
+- Per-stroke deltas cannot describe topology transitions. At topology
+  boundaries (dyntopo toggle, ctrl+d subdivision, remesh, level steps,
+  add/remove undo) the recorder takes an explicit full snapshot instead;
+  those are discrete click-scale actions, never inside the stroke loop.
+- Undo/redo themselves need no special casing for capture: walking the
+  watermark forward captures the states that exist NOW; a user undoing
+  past captured frames simply yields a timelapse that shows the sculpt,
+  the mistake, and the recovery, which is the honest record we want.
+
 ## 7. GUI specification (yagui replacement)
 
 ### 7.1 Standards (all `[Verified]` at the pinned bozzetto commit)
@@ -208,9 +239,9 @@ States to specify for every control: default, hover, active, disabled, and the t
 Keyboards are rare on iPads, so a bottom toolbar ships ahead of the full
 WS4 panel: a hold-to-carve Negative button pinned in the left corner
 (strokes invert while held, exactly like holding alt; round 6 changed it
-from a toggle per testing feedback) and the six digit brushes centered,
-labeled 1-6 to match the hotkeys (icons later). Buttons and hotkeys stay
-in sync both ways. Built from the house tokens with 44px touch targets;
+from a toggle per testing feedback) and the digit brushes centered,
+labeled to match the hotkeys (icons later; 1-6 at round 5, all nine
+digits since WS2). Buttons and hotkeys stay in sync both ways. Built from the house tokens with 44px touch targets;
 it sits above the transport bar when sculpting over a loaded project.
 
 Tool-default deviation (round 6): the Crease brush defaults to the
@@ -259,7 +290,12 @@ and return on exit.
 | 4 | Inflate brush | |
 | 5 | Pinch brush | |
 | 6 | Flatten brush | |
-| 7-9 | reserved for future brushes | digits stay brush-only per 7.3 |
+| 7 | Smooth brush | WS2; shift+drag remains the hold-to-smooth shortcut |
+| 8 | Drag brush | WS2 |
+| 9 | Twist brush | WS2 |
+
+LocalScale did not get a digit (all nine are taken); it ships through the
+WS4 tool palette instead. Transform and Paint stay deferred per section 2.
 
 ### 7.5 Sculpt-mode defaults (WS1 review round) `[Decision]`
 

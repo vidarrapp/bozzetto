@@ -119,6 +119,18 @@ export class GeometrySync {
     this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
   }
 
+  /** Vendor hook: per-vertex colors/materials changed (mask and paint). */
+  onColorsMaterials(mesh: SculptMesh): void {
+    if (mesh !== this.mesh) return;
+    if (this.arraysChanged(mesh)) {
+      this.rebuild();
+      this.resetDirty();
+      return;
+    }
+    (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
+    (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
+  }
+
   /** Vendor hook: everything changed (topology ops, resolution switches). */
   onAllBuffers(mesh: SculptMesh): void {
     if (mesh !== this.mesh) return;

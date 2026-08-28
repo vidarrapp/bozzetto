@@ -58,6 +58,10 @@ export class SculptSession {
     /** Ask Bozzetto for a redraw (the viewer's rAF loop already repaints). */
     private readonly requestRender: () => void,
   ) {
+    // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and the
+    // WS5 capture design consumes undo states as timelapse deltas, so history
+    // is worth keeping (a stroke state holds only the touched vertices).
+    StateManager.STACK_LENGTH = 64;
     this.sculptManager = new SculptManager(this);
     this.picking = new Picking(this);
     this.pickingSym = new Picking(this, true);

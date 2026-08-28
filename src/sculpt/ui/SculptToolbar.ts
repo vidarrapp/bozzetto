@@ -59,6 +59,9 @@ export class SculptToolbar {
       [tools.INFLATE, '4', 'Inflate'],
       [tools.PINCH, '5', 'Pinch'],
       [tools.FLATTEN, '6', 'Flatten'],
+      [tools.SMOOTH, '7', 'Smooth'],
+      [tools.DRAG, '8', 'Drag'],
+      [tools.TWIST, '9', 'Twist'],
     ];
     for (const [id, label, name] of brushes) {
       const btn = toolButton(label, name);

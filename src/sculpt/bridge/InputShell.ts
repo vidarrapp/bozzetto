@@ -49,6 +49,8 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   private adjust: AdjustMode = null;
+  /** ctrl+press that missed the mesh: pending whole-mask gesture (WS2). */
+  private maskGesture: { x: number; y: number; pointerId: number } | null = null;
   private lKeyHeld = false;
   private lastClientX = 0;
   private lastClientY = 0;
@@ -168,6 +170,15 @@ export class InputShell {
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
+      // Upstream parity: a ctrl press that MISSES the mesh is a whole-mask
+      // gesture. Released in place = invert the mask; dragged = clear it.
+      if (e.ctrlKey && !e.metaKey) {
+        this.maskGesture = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+        s._action = Enums.Action.MASK_EDIT;
+        e.preventDefault();
+        e.stopPropagation(); // no orbit under a mask gesture
+        return;
+      }
       s._action = Enums.Action.NOTHING;
       return; // no hit: the event continues on to OrbitControls (orbit)
     }
@@ -245,6 +256,23 @@ export class InputShell {
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
+
+    if (this.maskGesture && e.pointerId === this.maskGesture.pointerId) {
+      // A cancelled pointer (browser gesture takeover) aborts, not inverts.
+      if (e.type !== 'pointercancel') {
+        const moved =
+          Math.hypot(e.clientX - this.maskGesture.x, e.clientY - this.maskGesture.y) > 6;
+        const masking = s.getSculptManager().getTool(Enums.Tools.MASKING);
+        if (moved) masking.clear?.();
+        else masking.invert?.();
+      }
+      this.maskGesture = null;
+      s._action = Enums.Action.NOTHING;
+      e.stopPropagation();
+      s.render();
+      return;
+    }
+
     if (e.pointerId !== this.pointerId) return;
     this.pointerId = -1;
 
@@ -354,9 +382,11 @@ export class InputShell {
       case '6':
         return this.selectTool(Enums.Tools.FLATTEN, e);
       case '7':
+        return this.selectTool(Enums.Tools.SMOOTH, e);
       case '8':
+        return this.selectTool(Enums.Tools.DRAG, e);
       case '9':
-        return this.claim(e); // reserved for future brushes
+        return this.selectTool(Enums.Tools.TWIST, e);
     }
   };
 

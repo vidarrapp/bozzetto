@@ -53,6 +53,9 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>4</kbd><span>Inflate</span></div>
     <div class="help-row"><kbd>5</kbd><span>Pinch</span></div>
     <div class="help-row"><kbd>6</kbd><span>Flatten</span></div>
+    <div class="help-row"><kbd>7</kbd><span>Smooth</span></div>
+    <div class="help-row"><kbd>8</kbd><span>Drag</span></div>
+    <div class="help-row"><kbd>9</kbd><span>Twist</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Detail</div>

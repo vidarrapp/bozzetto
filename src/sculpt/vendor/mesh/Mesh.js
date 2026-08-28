@@ -1954,11 +1954,22 @@ class Mesh {
   }
 
   updateColorBuffer() {
+    // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook
+    // (Masking/Paint strokes and their undo states call this directly).
+    if (!this._renderData) {
+      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this);
+      return;
+    }
     var colors = this.isUsingDrawArrays() ? this.getColorsDrawArrays() : this.getColors();
     this.getColorBuffer().update(colors, this.getRenderNbVertices() * 3);
   }
 
   updateMaterialBuffer() {
+    // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook.
+    if (!this._renderData) {
+      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this);
+      return;
+    }
     var materials = this.isUsingDrawArrays() ? this.getMaterialsDrawArrays() : this.getMaterials();
     this.getMaterialBuffer().update(materials, this.getRenderNbVertices() * 3);
   }

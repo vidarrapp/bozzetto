@@ -116,6 +116,7 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     _bridgeSync?: {
       onGeometryBuffers(mesh: SculptMesh): void;
       onAllBuffers(mesh: SculptMesh): void;
+      onColorsMaterials(mesh: SculptMesh): void;
       onDirtyGeometry(mesh: SculptMesh, iVerts?: Uint32Array): void;
     } | null;
   }
@@ -171,11 +172,16 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     /** Brush only: clay mode (flatten-toward-plane deformation). */
     _clay?: boolean;
     getScreenRadius(): number;
+    /** Masking tool only: whole-mask operations (ctrl gestures). */
+    invert?(): void;
+    clear?(): void;
   }
 }
 
 declare module '@sculpt-vendor/states/StateManager' {
   class StateManager {
+    /** Undo stack depth cap (upstream default 15; the bridge raises it). */
+    static STACK_LENGTH: number;
     constructor(main: unknown);
     pushStateAdd(mesh: unknown): void;
     pushStateAddRemove(addMesh: unknown, remMesh: unknown, squash?: boolean): void;

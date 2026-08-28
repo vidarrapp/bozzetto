@@ -271,3 +271,71 @@ the render centre sat at the visible bottom edge. Fixes:
 - Note: iOS commonly keeps the URL the page was added from as the
   launch URL regardless of start_url, so adding from /?sculpt=1 keeps
   launching straight into sculpt mode.
+
+# WS2 results (full toolset, masking, undo/redo fuzz)
+
+## What landed
+
+- Digits 7/8/9 select Smooth, Drag and Twist (InputShell, touch toolbar
+  and the help overlay all extended); the full plan 7.4 digit row is now
+  live. LocalScale gets no digit and ships via the WS4 palette; Transform
+  and Paint stay deferred per plan section 2.
+- Upstream mask parity for presses that miss the mesh while holding ctrl:
+  release in place inverts the whole mask, dragging clears it. On-mesh
+  ctrl strokes still paint (alt unmasks), as landed in WS1.
+- StateManager.STACK_LENGTH raised 15 -> 64: the acceptance fuzz walks 50+
+  states, and the WS5 capture design (plan 6.6b) consumes undo states as
+  timelapse deltas, so the deeper history pays twice.
+- Seam gap found by the fuzz and fixed: Masking/Paint/undo paths call
+  updateColorBuffer/updateMaterialBuffer on the render-less mesh, which
+  dereferenced the null _renderData. Those two Mesh.js methods now route
+  to a new GeometrySync.onColorsMaterials hook (color + materialsPBR
+  attribute refresh, rebuild on array swap) behind BOZZETTO EDIT tags.
+
+## Verified (automated, headless Chromium against the built site)
+
+- Tool smoke: each digit 1-9 strokes, pushes exactly one undo state, and
+  undoes back to a bit-identical checksum.
+- Symmetry: a right-side stroke moves both halves with x mirroring on.
+- Masking: painted mask resists sculpting (masked-side displacement 2.09
+  vs 67.6 free under the same inflate stroke); ctrl-click empty inverts
+  (mask mean 0.856 -> 0.144); ctrl-drag empty clears (mask uniform 1.0).
+  Semantics confirmed: materialsPBR z = 1 free, 0 fully masked, which
+  also settles the WS3 tint direction (tint where z is LOW).
+- Fuzz: 52 state-pushing ops (random strokes across all nine tools with
+  random polarity/pressure, multires level steps every ninth op, a
+  dyntopo on/off round trip), then a full 52-deep undo walk verifying
+  every intermediate state, a full redo walk, a 30-step random undo/redo
+  walk, and a finite-data sweep. Three seeds pass (1337, 7, 424242).
+
+## Findings worth keeping
+
+- Multires level-step undo/redo is approximate by upstream design. A
+  SELECTION state stores no vertex snapshot; undoing it re-runs the
+  analysis/synthesis recompute. Two error sources, both measured with a
+  minimal repro: (1) detail vectors round-trip a per-vertex tangent-frame
+  rotation in float32, drifting <= ~5e-13 per component on a clean
+  round trip; (2) the real one: a boundary's detail vectors are only
+  recomputed when crossing DOWN, so sculpting a lower level and stepping
+  up synthesizes the high level from stale details, and undoing that step
+  re-analyzes onto a re-projection of the sculpt (measured max 4.4e-4 per
+  component, checksum-sum drift 0.1-0.4 per crossing; scales with how
+  much was sculpted since the last down-crossing). Relative error is
+  ~1e-5 of the coordinate scale: invisible in use, structure (level,
+  counts) restores exactly, and every piece involved is unmodified
+  vendored upstream code. The fuzz models it honestly: comparisons are
+  bit-exact until the walk crosses its first level step, after which
+  structure stays exact and the vertex sum gets a 1.0 tolerance (~60x
+  under a lost stroke, the real-bug signal); a strokes-only fuzz variant
+  (NO_SUBDIV + NO_DYNTOPO) runs fully bit-exact as the sharp instrument.
+- Upstream undo bookkeeping is index-based: StateManager.undo() only
+  decrements _curUndoIndex (entries stay parked for redo) and the next
+  push truncates the tail, so _undos.length is NOT the live state count.
+  Tests must read _curUndoIndex + 1. (Cost one debugging round: a
+  length-based probe made healthy strokes look like they pushed nothing.)
+- Twist strokes need angular sweep around the pick point: a straight
+  drag has constant bearing and can push a state yet produce zero net
+  displacement. Smoke strokes use a bent path, and the fuzz trusts the
+  undo stack, not checksum deltas, to decide whether an op landed.
+- Pointer Events remain sufficient for every WS2 gesture; hammerjs stays
+  out (plan 6.3 note stands).
