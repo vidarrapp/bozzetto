@@ -103,7 +103,7 @@ export class SculptPanel {
     const dyn = this.dynamicsBody;
     dyn.replaceChildren();
     dyn.appendChild(
-      checkbox('Pressure sways size', d.sizeOn, (on) => {
+      checkbox('Pen pressure size', d.sizeOn, (on) => {
         d.sizeOn = on;
       }),
     );
@@ -116,13 +116,13 @@ export class SculptPanel {
       ),
     );
     dyn.appendChild(
-      checkbox('Pressure sways strength', d.strengthOn, (on) => {
+      checkbox('Pen pressure intensity', d.strengthOn, (on) => {
         d.strengthOn = on;
       }),
     );
     dyn.appendChild(
       labelRow(
-        'Strength curve',
+        'Intensity curve',
         this.curveSelect(d.strengthCurve, (c) => {
           d.strengthCurve = c;
         }),
