@@ -587,3 +587,27 @@ Eight review items from desktop testing, in one round:
   (pauses and reversals reset to the exact degree), so a fast TourBox
   wheel spin reads as a fast model spin while slow ticks stay precise.
   ws1b asserts a slow tick lands ~1 degree and a 35ms pair exceeds 2.5.
+
+# WS3 (mask tint + unselectable chrome)
+
+- Masks are visible: masked vertices darken to 45 percent brightness,
+  smoothly with partial mask values. Implementation: the Lit and Matcap
+  materials became their node variants (registry-level swap, behavior
+  identical; the pedestal/floor already used node materials) and sculpt
+  mode splices a TSL colorNode reading materialsPBR.z (1 free, 0 masked,
+  the WS2-verified semantics) - materialColor x mix(1, 0.45, masked).
+  The matcap path multiplies its sample by the color, so one node covers
+  both modes. Wired through setSculptShading, off outside sculpt (viewer
+  meshes lack the attribute). Verified by pixels: region brightness 180
+  -> 126 after painting, exactly 180.0 again after undo; the matcap
+  material carries the node structurally.
+- Test-writing footnote: the first pixel test "failed" because its paint
+  strokes started ON the silhouette (sphere radius is ~130px at 700x460)
+  and the miss fell into the ctrl whole-mask gesture - the machinery was
+  fine, the coordinates were not.
+- Chrome text is unselectable app-wide (body user-select none) with
+  inputs/textareas/selects/contenteditable re-enabled and error-overlay
+  text kept copyable - alt-heavy sculpting kept selecting the Gallery
+  button label (reported from device testing).
+- WS3's stroke-time adaptive quality item stays deferred until iPad
+  testing shows a need (desktop holds 60fps to 12.6M tris).

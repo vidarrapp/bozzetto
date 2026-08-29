@@ -1,11 +1,6 @@
-import {
-  Color,
-  Material,
-  MeshMatcapMaterial,
-  MeshStandardMaterial,
-  SRGBColorSpace,
-  Texture,
-} from 'three';
+import { Color, Material, SRGBColorSpace, Texture } from 'three';
+import { MeshMatcapNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import { attribute, float, materialColor, mix, vec3 } from 'three/tsl';
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
 
@@ -37,6 +32,9 @@ interface MatcapConfig {
 }
 
 const DEFAULT_ALBEDO = '#b9b1a8';
+
+/** Fully masked vertices drop to this brightness (sculpt mask tint, WS3). */
+const MASK_DARKEN = 0.45;
 
 // The project's matcaps: single-sphere PNGs loaded as-is.
 const MATCAPS: MatcapConfig[] = [
@@ -79,9 +77,11 @@ export class Materials {
 
     // Lit PBR — the default mode and the reason lighting exists. polygonOffset
     // pushes the surface back a touch so the wireframe overlay reads on top.
+    // Node variants (behavior-identical to the classic materials) so sculpt
+    // mode can splice the TSL mask tint into the color path.
     this.registry.set(
       'lit',
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: new Color(DEFAULT_ALBEDO),
         roughness: 0.78,
         metalness: 0.0,
@@ -93,13 +93,38 @@ export class Materials {
     // Matcap — reproduces a sculpt clay read, ignoring scene lights.
     this.registry.set(
       'matcap',
-      new MeshMatcapMaterial({
+      new MeshMatcapNodeMaterial({
         matcap: this.matcapTextures[0],
         polygonOffset: true,
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
       }),
     );
+  }
+
+  /**
+   * Sculpt mask visibility (WS3): masked vertices darken. The mesh carries
+   * masking in materialsPBR.z (1 = free, 0 = fully masked, verified in
+   * WS2), so the tint is a per-vertex darkening of the material color -
+   * which multiplies the matcap sample too, covering both modes. Only
+   * active in sculpt mode: viewer subjects have no materialsPBR attribute.
+   */
+  setSculptMaskTint(on: boolean): void {
+    for (const id of ['lit', 'matcap']) {
+      const m = this.registry.get(id) as MeshStandardNodeMaterial;
+      if (on) {
+        // The TSL runtime hands back fluent proxies; the published typings
+        // for attribute()/materialColor lag behind, hence the casts.
+        type Vec3Node = ReturnType<typeof vec3>;
+        const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
+        const masked = materialsPBR.z.clamp(0, 1).oneMinus();
+        const base = materialColor as unknown as Vec3Node;
+        m.colorNode = base.mul(mix(float(1), float(MASK_DARKEN), masked));
+      } else {
+        m.colorNode = null;
+      }
+      m.needsUpdate = true;
+    }
   }
 
   has(mode: string): boolean {
@@ -124,28 +149,28 @@ export class Materials {
   setMatcapIndex(index: number): void {
     if (index < 0 || index >= this.matcapTextures.length) return;
     this.matcapIndex = index;
-    const mat = this.registry.get('matcap') as MeshMatcapMaterial;
+    const mat = this.registry.get('matcap') as MeshMatcapNodeMaterial;
     mat.matcap = this.matcapTextures[index];
     mat.needsUpdate = true;
   }
 
   setAlbedo(hex: string): void {
-    (this.registry.get('lit') as MeshStandardMaterial).color = new Color(hex);
+    (this.registry.get('lit') as MeshStandardNodeMaterial).color = new Color(hex);
   }
 
   setRoughness(value: number): void {
-    (this.registry.get('lit') as MeshStandardMaterial).roughness = value;
+    (this.registry.get('lit') as MeshStandardNodeMaterial).roughness = value;
   }
 
   setMetalness(value: number): void {
-    (this.registry.get('lit') as MeshStandardMaterial).metalness = value;
+    (this.registry.get('lit') as MeshStandardNodeMaterial).metalness = value;
   }
 
   /** Perceptual luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
   albedoLuminance(): number {
     // getHexString() yields sRGB regardless of the renderer's working colour
     // space, so this matches how the albedo actually reads on screen.
-    const hex = (this.registry.get('lit') as MeshStandardMaterial).color.getHexString();
+    const hex = (this.registry.get('lit') as MeshStandardNodeMaterial).color.getHexString();
     const r = parseInt(hex.slice(0, 2), 16) / 255;
     const g = parseInt(hex.slice(2, 4), 16) / 255;
     const b = parseInt(hex.slice(4, 6), 16) / 255;
@@ -172,7 +197,7 @@ export class Materials {
   }
 
   getMaterialState(): MaterialState {
-    const lit = this.registry.get('lit') as MeshStandardMaterial;
+    const lit = this.registry.get('lit') as MeshStandardNodeMaterial;
     return {
       albedo: `#${lit.color.getHexString()}`,
       roughness: lit.roughness,

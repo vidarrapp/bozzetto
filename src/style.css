@@ -85,6 +85,24 @@ body {
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.5;
+  /* App chrome, not a document: modifier-key gestures (alt strokes) must
+     never start selecting button/link text. Real text entry re-enables. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Error text stays copyable for bug reports. */
+.overlay--error .overlay__msg {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Display serif for titles; mono for spec labels. */

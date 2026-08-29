@@ -167,6 +167,16 @@ Mesh list management (`getMeshes`, `setOrUnsetMesh`, `addNewMesh`, remove), prim
 
 ### 6.5 Overlays and material hooks
 
+WS3 (shipped): the mask tint. Materials moved to their node variants
+(MeshStandardNodeMaterial / MeshMatcapNodeMaterial, behavior-identical)
+and sculpt mode splices a TSL colorNode: materialColor scaled by
+mix(1, 0.45, 1 - materialsPBR.z), so masked vertices darken in both
+material modes (the matcap sample multiplies the color path). Installed/
+removed with setSculptShading, since viewer subjects lack the attribute.
+The MASK_DARKEN constant becomes a WS4 palette slider. Stroke-time
+adaptive quality stays deferred until iPad testing shows a need.
+
+
 - Brush ring: replaces `drawables/Selection`. A line-loop positioned from the last picking hit (point + normal), radius = current world brush radius; screen-space fallback ring when no surface hit. Render after post-processing or with state that keeps it out of GTAO/DoF; acceptance is "ring never AO-darkened or defocused". `[Proposal on technique; requirement is a Decision]`
 - Symmetry indicator: line/plane per mesh symmetry state.
 - Mask tint: in `Materials.ts`, darken shaded color by the `materialsPBR` z channel in lit, matcap, and normal modes. `[Verify-in-WS3]` the exact mask semantics (which end of 0..1 is "masked") against `tools/Masking.js` and the upstream live build before wiring the tint direction.

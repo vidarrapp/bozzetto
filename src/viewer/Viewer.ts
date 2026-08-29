@@ -1251,6 +1251,9 @@ export class Viewer {
   setSculptShading(on: boolean): void {
     if (this.sculptShading === on) return;
     this.sculptShading = on;
+    // Mask visibility rides the sculpt shading state: masked vertices darken
+    // (the sculpt geometry carries masking in its materialsPBR attribute).
+    this.materials.setSculptMaskTint(on);
     this.rebuildOutput();
   }
 
