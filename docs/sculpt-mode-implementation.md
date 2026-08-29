@@ -314,7 +314,7 @@ and return on exit.
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
 | [ / ] | brush size step down/up (~6 percent per tick) | WS2g, bound by PHYSICAL key code (BracketLeft/Right) so TourBox-style controller macros and non-US layouts agree; wheel-friendly |
 | ; / ' (physical Semicolon/Quote, the row below the brackets) | brush strength step down/up (0.03 per tick) | WS2g; moved off shift+brackets in review because shift belongs to the smooth override |
-| left / right arrows | turn the model 1 degree around Y | WS2g, wheel-friendly turntable (camera azimuth about the target; the view-follow light rides along) |
+| left / right arrows | turn the model 1 degree around Y, accelerating with tick rate | WS2g/WS2h: ticks faster than 200ms scale the step up to 8x (same-direction only; pauses and reversals reset), so spinning a controller wheel spins the model. Camera azimuth about the target; the view-follow light rides along |
 | s | brush strength (hold + drag vertically, up = stronger) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. Vertical per review round 2. |
 | shift + s | toggle shadows on/off | confirmed |
 | x | symmetry toggle | |

@@ -582,3 +582,8 @@ Eight review items from desktop testing, in one round:
   the sculpt input shell or OrbitControls.
 - ws1b asserts: slider drags set strength ~0.8 and grow size past 200px,
   and the size nub follows a wheel-key nudge.
+- Turntable acceleration (device feedback): arrow ticks arriving faster
+  than 200ms scale their step by 200/gap up to 8x, same-direction only
+  (pauses and reversals reset to the exact degree), so a fast TourBox
+  wheel spin reads as a fast model spin while slow ticks stay precise.
+  ws1b asserts a slow tick lands ~1 degree and a 35ms pair exceeds 2.5.

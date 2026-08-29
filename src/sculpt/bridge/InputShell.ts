@@ -49,6 +49,13 @@ const NUDGE_FLASH_MS = 450;
 /** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
 const INTENSITY_STEP = 0.03;
 const ORBIT_STEP_DEG = 1;
+/**
+ * Turntable acceleration (review request): ticks arriving faster than the
+ * reference gap scale their step up, so spinning the wheel quickly spins
+ * the model quickly while slow ticks stay an exact degree.
+ */
+const ORBIT_ACCEL_REF_MS = 200;
+const ORBIT_ACCEL_MAX = 8;
 
 export class InputShell {
   /** Fired when the selected brush changes (digit keys or toolbar). */
@@ -70,6 +77,8 @@ export class InputShell {
   private shiftHeld = false;
   private lKeyHeld = false;
   private strokeReduceTimer = 0;
+  private lastOrbitTime = 0;
+  private lastOrbitDir = 0;
   private lastClientX = 0;
   private lastClientY = 0;
   /** Last pointer position in viewport-absolute px (adjust/light drags). */
@@ -431,7 +440,18 @@ export class InputShell {
         return this.claim(e);
       }
       if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-        this.hooks.orbitY(e.code === 'ArrowLeft' ? -ORBIT_STEP_DEG : ORBIT_STEP_DEG);
+        const dir = e.code === 'ArrowLeft' ? -1 : 1;
+        const now = performance.now();
+        const gap = now - this.lastOrbitTime;
+        // Same-direction ticks accelerate by their rate; a direction change
+        // or a pause resets to the base degree.
+        const mult =
+          dir === this.lastOrbitDir && gap > 0
+            ? Math.min(ORBIT_ACCEL_MAX, Math.max(1, ORBIT_ACCEL_REF_MS / gap))
+            : 1;
+        this.lastOrbitTime = now;
+        this.lastOrbitDir = dir;
+        this.hooks.orbitY(dir * ORBIT_STEP_DEG * mult);
         return this.claim(e);
       }
     }
