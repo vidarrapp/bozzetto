@@ -313,7 +313,7 @@ and return on exit.
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
 | [ / ] | brush size step down/up (~6 percent per tick) | WS2g, bound by PHYSICAL key code (BracketLeft/Right) so TourBox-style controller macros and non-US layouts agree; wheel-friendly |
-| shift + [ / ] | brush strength step down/up (0.03 per tick) | WS2g, wheel-friendly |
+| ; / ' (physical Semicolon/Quote, the row below the brackets) | brush strength step down/up (0.03 per tick) | WS2g; moved off shift+brackets in review because shift belongs to the smooth override |
 | left / right arrows | turn the model 1 degree around Y | WS2g, wheel-friendly turntable (camera azimuth about the target; the view-follow light rides along) |
 | s | brush strength (hold + drag vertically, up = stronger) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. Vertical per review round 2. |
 | shift + s | toggle shadows on/off | confirmed |

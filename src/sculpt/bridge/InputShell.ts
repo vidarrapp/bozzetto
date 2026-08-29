@@ -386,12 +386,16 @@ export class InputShell {
 
     // Wheel-mappable keys (TourBox review request), bound by PHYSICAL code
     // so controller macros and non-US layouts agree: brackets step brush
-    // size (shift: strength), arrows turn the model a degree per tick.
+    // size, the row below (; and ') steps strength - modifier-free, since
+    // shift belongs to the smooth override - and arrows turn the model a
+    // degree per tick.
     if (!e.ctrlKey && !e.metaKey && !e.altKey) {
       if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
-        const dir = e.code === 'BracketRight' ? 1 : -1;
-        if (e.shiftKey) this.nudgeIntensity(dir * INTENSITY_STEP);
-        else this.nudgeRadius(dir);
+        if (!e.shiftKey) this.nudgeRadius(e.code === 'BracketRight' ? 1 : -1);
+        return this.claim(e);
+      }
+      if (e.code === 'Semicolon' || e.code === 'Quote') {
+        this.nudgeIntensity((e.code === 'Quote' ? 1 : -1) * INTENSITY_STEP);
         return this.claim(e);
       }
       if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {

@@ -564,3 +564,8 @@ Eight review items from desktop testing, in one round:
 - Backlog noted in plan 12b: per-brush pressure dynamics (size and
   intensity on/off per brush, each with a response-curve option) in the
   WS4 palette.
+- WS2g fix from device testing: strength moved off shift+brackets (the
+  shift chord collided with the smooth override and previewed blue per
+  tick) onto the modifier-free physical Semicolon/Quote keys, the row
+  below the brackets. The flashed screen ring also gained the strength
+  line, so intensity ticks are visible without hover.

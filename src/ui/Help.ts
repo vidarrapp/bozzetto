@@ -43,7 +43,7 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>B</kbd><span>Brush size (hold + drag)</span></div>
     <div class="help-row"><kbd>S</kbd><span>Brush strength (hold + drag up/down)</span></div>
     <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Brush size step (wheel-friendly)</span></div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>[</kbd><kbd>]</kbd><span>Brush strength step</span></div>
+    <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
     <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
   </div>

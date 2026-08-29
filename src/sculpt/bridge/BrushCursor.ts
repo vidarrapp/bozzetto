@@ -191,7 +191,9 @@ export class BrushCursor {
     this.root.dataset.mode = mode;
     this.root.style.display = mode === 'hidden' ? 'none' : '';
     this.ringPath.style.display = mode === 'surface' ? '' : 'none';
-    this.strength.style.display = mode === 'surface' ? '' : 'none';
+    // The strength line draws in both live modes, so keyboard intensity
+    // nudges read on the flashed screen ring too (hover-less pencils).
+    this.strength.style.display = mode === 'hidden' ? 'none' : '';
     this.screenRing.style.display = mode === 'screen' ? '' : 'none';
   }
 
@@ -279,6 +281,11 @@ export class BrushCursor {
     this.screenRing.setAttribute('r', String(this.radiusCss));
     this.dot.setAttribute('cx', String(this.x));
     this.dot.setAttribute('cy', String(this.y));
+    this.strength.setAttribute('x1', String(this.x));
+    this.strength.setAttribute('y1', String(this.y));
+    this.strength.setAttribute('x2', String(this.x));
+    this.strength.setAttribute('y2', String(this.y - this.radiusCss * this.intensity));
+    this.strength.style.visibility = '';
   }
 
   dispose(): void {
