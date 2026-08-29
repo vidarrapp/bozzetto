@@ -36,6 +36,9 @@ const STRIPS_LAYER = 0.25;
  *   more of the ball rides along (upstream felt sharp in review).
  */
 export class VolumetricMove extends Move {
+  /** Falloff softness (quartic pow): lower = broader bell (WS4 slider). */
+  falloffPow = MOVE_FALLOFF_POW;
+
   constructor(private readonly session: SculptSession) {
     super(session);
   }
@@ -158,7 +161,7 @@ export class VolumetricMove extends Move {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
       let fallOff = dist * dist;
       fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * dist + 1.0;
-      fallOff = Math.pow(Math.max(fallOff, 0), MOVE_FALLOFF_POW); // CHANGED
+      fallOff = Math.pow(Math.max(fallOff, 0), this.falloffPow); // CHANGED
       fallOff *= mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
       vAr[ind] += dirx * fallOff;
       vAr[ind + 1] += diry * fallOff;
@@ -174,6 +177,11 @@ export class VolumetricMove extends Move {
  * instead of soft mounds.
  */
 export class ClayStripsBrush extends Brush {
+  /** Flat-top fraction of the radius at full strength (WS4 slider). */
+  plateau = STRIPS_PLATEAU;
+  /** Strip layer height as a fraction of the radius (WS4 slider). */
+  layer = STRIPS_LAYER;
+
   constructor(session: SculptSession) {
     super(session);
   }
@@ -213,7 +221,7 @@ export class ClayStripsBrush extends Brush {
       const aCenter = this._lockPosition
         ? picking.getIntersectionPoint().slice()
         : this.areaCenter(iVertsFront);
-      const off = Math.sqrt(r2) * STRIPS_LAYER; // CHANGED (upstream 0.1)
+      const off = Math.sqrt(r2) * this.layer; // CHANGED (upstream 0.1)
       vec3.scaleAndAdd(
         aCenter as unknown as vec3,
         aCenter as unknown as vec3,
@@ -306,10 +314,11 @@ export class ClayStripsBrush extends Brush {
       if (dist >= 1.0) continue;
       // CHANGED: plateau falloff (upstream applies the quartic from d=0).
       let fallOff: number;
-      if (dist <= STRIPS_PLATEAU) {
+      const plateau = this.plateau;
+      if (dist <= plateau) {
         fallOff = 1.0;
       } else {
-        const t = (dist - STRIPS_PLATEAU) / (1.0 - STRIPS_PLATEAU);
+        const t = (dist - plateau) / (1.0 - plateau);
         fallOff = t * t;
         fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * t + 1.0;
       }

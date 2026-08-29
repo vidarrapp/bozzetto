@@ -1,9 +1,13 @@
+import { CylinderGeometry, TorusGeometry, type BufferGeometry } from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Enums from '@sculpt-vendor/misc/Enums';
+import Utils from '@sculpt-vendor/misc/Utils';
 import Mesh from '@sculpt-vendor/mesh/Mesh';
 import MeshStatic from '@sculpt-vendor/mesh/meshStatic/MeshStatic';
 import MeshDynamic from '@sculpt-vendor/mesh/dynamic/MeshDynamic';
 import Multimesh from '@sculpt-vendor/mesh/multiresolution/Multimesh';
 import Subdivision from '@sculpt-vendor/editing/Subdivision';
+import Remesh from '@sculpt-vendor/editing/Remesh';
 import SculptManager from '@sculpt-vendor/editing/SculptManager';
 import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
@@ -13,7 +17,7 @@ import { ClayStripsBrush, VolumetricMove } from './tools';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
-import type { SavedLevel, SavedScene } from './ScenePersist';
+import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -203,8 +207,21 @@ export class SculptSession {
     return (this.mesh && this.meshNames.get(this.mesh)) || 'Sphere';
   }
 
+  getMeshName(mesh: SculptMesh): string {
+    return this.meshNames.get(mesh) ?? 'Object';
+  }
+
   setMeshName(mesh: SculptMesh, name: string): void {
     this.meshNames.set(mesh, name);
+  }
+
+  /** "Sphere", "Sphere 2", ... against the names already in the scene. */
+  private uniqueMeshName(base: string): string {
+    const taken = new Set(this.meshes.map((m) => this.meshNames.get(m)));
+    if (!taken.has(base)) return base;
+    let i = 2;
+    while (taken.has(`${base} ${i}`)) i++;
+    return `${base} ${i}`;
   }
 
   // --- sculpt commands (hotkey surface) -----------------------------------
@@ -284,6 +301,119 @@ export class SculptSession {
     this.render();
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
+  }
+
+  // --- WS4 palette surface -------------------------------------------------
+
+  /**
+   * Extract the masked region as a new shelled mesh (upstream Masking
+   * extract; thickness in world units, 0 = single-sided). The extraction
+   * becomes a new scene object; the source mesh stays selected.
+   */
+  extractMasked(thickness: number): boolean {
+    const masking = this.sculptManager.getTool(Enums.Tools.MASKING);
+    if (!masking.extract) return false;
+    masking._thickness = thickness;
+    const before = this.meshes.length;
+    masking.extract();
+    const added = this.meshes.length > before;
+    if (added) {
+      this.meshNames.set(this.meshes[this.meshes.length - 1], this.uniqueMeshName('Extracted'));
+      this.onActiveMeshChange?.(); // mesh list changed even if selection kept
+    }
+    return added;
+  }
+
+  /** Voxel remesh of the active mesh (upstream GuiTopology; new topology). */
+  voxelRemesh(resolution: number): boolean {
+    const mesh = this.mesh;
+    if (!mesh) return false;
+    Remesh.RESOLUTION = Math.min(400, Math.max(8, Math.round(resolution)));
+    const newMesh = Remesh.remesh([mesh], mesh);
+    const name = this.meshNames.get(mesh);
+    if (name) this.meshNames.set(newMesh, name);
+    this.stateManager.pushStateAddRemove(newMesh, mesh);
+    this.replaceMesh(mesh, newMesh);
+    return true;
+  }
+
+  /** Stroke-time dynamic-topology aggressiveness (0..100 each). */
+  getDynTopoDetail(): { subdivision: number; decimation: number } {
+    return {
+      subdivision: MeshDynamic.SUBDIVISION_FACTOR,
+      decimation: MeshDynamic.DECIMATION_FACTOR,
+    };
+  }
+
+  setDynTopoDetail(detail: { subdivision?: number; decimation?: number }): void {
+    if (typeof detail.subdivision === 'number') {
+      MeshDynamic.SUBDIVISION_FACTOR = Math.min(100, Math.max(0, detail.subdivision));
+    }
+    if (typeof detail.decimation === 'number') {
+      MeshDynamic.DECIMATION_FACTOR = Math.min(100, Math.max(0, detail.decimation));
+    }
+  }
+
+  isDynamicTopology(): boolean {
+    return !!this.mesh?.isDynamic;
+  }
+
+  /** Scene menu: add a primitive as a new object (WS4 outliner plus). */
+  addPrimitive(kind: 'sphere' | 'cube' | 'cylinder' | 'torus'): Multimesh {
+    if (kind === 'sphere') return this.addSphere();
+    if (kind === 'cube') return this.addCubePrimitive();
+    const geom =
+      kind === 'cylinder'
+        ? new CylinderGeometry(0.75, 0.75, 1.6, 32, 6)
+        : new TorusGeometry(0.62, 0.26, 18, 36);
+    const name = kind === 'cylinder' ? 'Cylinder' : 'Torus';
+    return this.meshFromTriGeometry(geom, name);
+  }
+
+  /** The sphere's quad-cube base with LINEAR subdivision keeps cube corners. */
+  private addCubePrimitive(): Multimesh {
+    const base = this.buildQuadCubeBase();
+    const mesh = new Multimesh(base);
+    mesh.normalizeSize();
+    this.subdivideClamp(mesh, true);
+    this.meshNames.set(mesh, this.uniqueMeshName('Cube'));
+    this.addNewMesh(mesh);
+    return mesh;
+  }
+
+  /** Weld a three triangle geometry and adopt it as a sculptable object. */
+  private meshFromTriGeometry(geom: BufferGeometry, name: string): Multimesh {
+    // Position-only weld: uv/normal seams would otherwise crack under
+    // sculpting (duplicate vertices along the seam).
+    geom.deleteAttribute('normal');
+    geom.deleteAttribute('uv');
+    const welded = mergeVertices(geom);
+    const pos = welded.getAttribute('position');
+    const index = welded.getIndex();
+    if (!index) throw new Error('primitive geometry must be indexed');
+    const v = new Float32Array(pos.count * 3);
+    v.set(pos.array as Float32Array);
+    const nbTris = index.count / 3;
+    const f = new Uint32Array(nbTris * 4);
+    for (let i = 0; i < nbTris; i++) {
+      f[i * 4] = index.getX(i * 3);
+      f[i * 4 + 1] = index.getX(i * 3 + 1);
+      f[i * 4 + 2] = index.getX(i * 3 + 2);
+      f[i * 4 + 3] = Utils.TRI_INDEX;
+    }
+    geom.dispose();
+    welded.dispose();
+
+    const base = new MeshStatic(null);
+    base.setVertices(v);
+    base.setFaces(f);
+    base.init();
+    const mesh = new Multimesh(base);
+    mesh.normalizeSize();
+    this.subdivideClamp(mesh);
+    this.meshNames.set(mesh, this.uniqueMeshName(name));
+    this.addNewMesh(mesh);
+    return mesh;
   }
 
   /**
@@ -379,25 +509,43 @@ export class SculptSession {
 
   // --- reload persistence (bridge feature, see ScenePersist) --------------
 
-  /** Triangle count of the top multires level (the autosave payload driver). */
+  /** Summed top-level triangles across the scene (autosave payload driver). */
   topLevelTriangles(): number {
-    const mul = this.asMultimesh();
-    if (mul) return mul._meshes[mul._meshes.length - 1].getNbTriangles();
-    return this.mesh ? this.mesh.getNbTriangles() : 0;
+    let total = 0;
+    for (const mesh of this.meshes) {
+      const mul = mesh._meshes ? (mesh as unknown as Multimesh) : null;
+      total += mul ? mul._meshes[mul._meshes.length - 1].getNbTriangles() : mesh.getNbTriangles();
+    }
+    return total;
   }
 
   /**
-   * Snapshot the active mesh for autosave: every multires level's live
-   * arrays plus its detail vectors (byte-faithful, including a stale top
-   * when sculpting happened below it), the base topology (higher levels
-   * re-derive by subdivision), transform, selection and symmetry. Bounded
-   * copies; runs in idle time only, never during a stroke. A dynamic-
-   * topology mesh saves as a single level, static (upstream .sgl parity).
+   * Snapshot the whole scene for autosave: for every object, each multires
+   * level's live arrays plus its detail vectors (byte-faithful, including a
+   * stale top when sculpting happened below it), the base topology (higher
+   * levels re-derive by subdivision) and transform; plus selection and
+   * symmetry. Bounded copies; runs in idle time only, never during a
+   * stroke. Dynamic-topology meshes save as a single level, static.
    */
   serializeScene(): SavedScene | null {
-    const mesh = this.mesh;
-    if (!mesh) return null;
-    const mul = this.asMultimesh();
+    if (this.meshes.length === 0 || !this.mesh) return null;
+    const savedMeshes: SavedMesh[] = [];
+    for (const mesh of this.meshes) {
+      const one = this.serializeMesh(mesh);
+      if (!one) return null;
+      savedMeshes.push(one);
+    }
+    return {
+      v: 3,
+      savedAt: Date.now(),
+      meshes: savedMeshes,
+      active: Math.max(0, this.meshes.indexOf(this.mesh)),
+      symmetry: this.sculptManager._symmetry,
+    };
+  }
+
+  private serializeMesh(mesh: SculptMesh): SavedMesh | null {
+    const mul = mesh._meshes ? (mesh as unknown as Multimesh) : null;
     const levelMeshes: SculptMesh[] = mul ? mul._meshes : [mesh];
     const base = levelMeshes[0];
     const nbBaseFaces = base.getNbFaces();
@@ -420,29 +568,40 @@ export class SculptSession {
     }
 
     return {
-      v: 2,
-      savedAt: Date.now(),
-      name: this.activeName(),
+      name: this.getMeshName(mesh),
       nbBaseFaces,
       baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
       levels,
       sel: mul ? mul._sel : 0,
       matrix: new Float32Array(mesh.getMatrix()),
-      symmetry: this.sculptManager._symmetry,
     };
   }
 
   /**
-   * Rebuild a saved scene as the session subject (the reload path). The base
-   * level uses the proven convertToStaticMesh construction (no normalize:
-   * the saved matrix carries the scale); each higher level re-derives its
-   * topology through addLevel, then every array is overwritten with the
-   * saved bytes. setSelection is a plain pointer swap (no analysis or
-   * synthesis recompute), so the restored stack, its detail vectors, and a
-   * stale top all come back exactly as saved. Throws on any shape mismatch;
-   * the caller falls back to a fresh sphere.
+   * Rebuild a saved scene (the reload path): every object, in order, then
+   * the saved selection and symmetry. Returns the ACTIVE multimesh (the
+   * mount adopts its geometry). Throws on any shape mismatch; the caller
+   * falls back to a fresh sphere.
    */
-  addRestoredMesh(saved: SavedScene): Multimesh {
+  restoreScene(saved: SavedScene): Multimesh {
+    const built: Multimesh[] = [];
+    for (const savedMesh of saved.meshes) built.push(this.buildRestoredMesh(savedMesh));
+    this.sculptManager._symmetry = saved.symmetry;
+    const active = built[Math.min(saved.active, built.length - 1)];
+    this.setMesh(active);
+    return active;
+  }
+
+  /**
+   * One saved object back to a live multimesh. The base level uses the
+   * proven convertToStaticMesh construction (no normalize: the saved matrix
+   * carries the scale); each higher level re-derives its topology through
+   * addLevel, then every array is overwritten with the saved bytes.
+   * setSelection is a plain pointer swap (no analysis or synthesis
+   * recompute), so the restored stack, its detail vectors, and a stale top
+   * all come back exactly as saved.
+   */
+  private buildRestoredMesh(saved: SavedMesh): Multimesh {
     const l0 = saved.levels[0];
     const base = new MeshStatic(null);
     base.setVertices(l0.vertices);
@@ -490,7 +649,6 @@ export class SculptSession {
     mesh.updateBuffers();
 
     mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
-    this.sculptManager._symmetry = saved.symmetry;
     this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
     this.addNewMesh(mesh);
     return mesh;
@@ -506,6 +664,16 @@ export class SculptSession {
    * WS1 review defaults; ctrl+d subdivides further on demand.
    */
   addSphere(): Multimesh {
+    const mesh = new Multimesh(this.buildQuadCubeBase());
+    mesh.normalizeSize();
+    this.subdivideClamp(mesh);
+    this.meshNames.set(mesh, this.uniqueMeshName('Sphere'));
+    this.addNewMesh(mesh);
+    return mesh;
+  }
+
+  /** The 8-vertex quad cube both Sphere (smoothed) and Cube (linear) grow from. */
+  private buildQuadCubeBase(): MeshStatic {
     const v = new Float32Array(24);
     v[1] = v[2] = v[4] = v[6] = v[7] = v[9] = v[10] = v[11] = v[14] = v[18] = v[21] = v[23] = -0.5;
     v[0] = v[3] = v[5] = v[8] = v[12] = v[13] = v[15] = v[16] = v[17] = v[19] = v[20] = v[22] = 0.5;
@@ -524,13 +692,7 @@ export class SculptSession {
     base.setVertices(v);
     base.setFaces(f);
     base.init();
-
-    const mesh = new Multimesh(base);
-    mesh.normalizeSize();
-    this.subdivideClamp(mesh);
-    this.meshNames.set(mesh, 'Sphere');
-    this.addNewMesh(mesh);
-    return mesh;
+    return base;
   }
 
   /** Ported from Scene.subdivideClamp with a ~50k-tri clamp; keeps 4 levels. */

@@ -52,7 +52,9 @@ export class GeometrySync {
 
   /** Wrap `mesh` and install the buffer-update hooks on it. */
   bind(mesh: SculptMesh): void {
-    if (this.mesh) this.mesh._bridgeSync = null;
+    // Multi-mesh: another sync may already own our old mesh's hook, so only
+    // clear a hook that is actually ours.
+    if (this.mesh && this.mesh._bridgeSync === this) this.mesh._bridgeSync = null;
     this.mesh = mesh;
     mesh._bridgeSync = this;
     this.dirty.length = 0;
@@ -188,7 +190,7 @@ export class GeometrySync {
   }
 
   dispose(): void {
-    if (this.mesh) this.mesh._bridgeSync = null;
+    if (this.mesh && this.mesh._bridgeSync === this) this.mesh._bridgeSync = null;
     this.mesh = null;
     this.geometry.dispose();
   }

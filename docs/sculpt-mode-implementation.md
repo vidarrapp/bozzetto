@@ -263,7 +263,20 @@ capture flow keeps long-term history as timelapse frames instead.
 - Tokens only, never literal colors or radii: `--bg --text --muted --text-muted --panel-bg --panel-border --control-bg --hover --accent --accent-hover --accent-soft --primary --radius --font-body --font-display --font-spec`. Theme switching rides `data-theme` on `<html>` via `src/ui/theme.ts` (`initTheme/getTheme/setTheme`, `bozzetto:themechange` event, `THEME_BG` warm ink `#1c1814` / warm paper `#f1ebe1`); both themes must pass visual review.
 - Hotkeys go through the `installShortcuts(viewer, handlers)` pattern (`src/ui/shortcuts.ts`), with an uninstaller returned for mode teardown.
 
-### 7.2 Sculpt panel structure `[Proposal]`
+### 7.2 Sculpt panel structure `[Shipped in WS4; original proposal below]`
+
+As built (WS4): right-edge "Sculpt" panel below the settings tab
+(mutual collapse via bozzetto:panel-open) with Brush (per-brush
+pressure dynamics + active-tool extras), Mask (darken, ops, extract +
+thickness), Detail (dyntopo toggle/detail, voxel remesh), Cavity SSAO;
+plus a LEFT-docked Scene outliner (collapsed default) with object list,
+click-select and an add-primitive menu - the future home of save/load/
+export (12b). Multi-mesh display shipped with it (extract and add
+require it): active mesh on the primary sync, extras as viewer-managed
+meshes sharing the material; persistence v3 stores the whole scene.
+The Capture section still lands with WS5.
+
+
 
 Sections, in order: Tool (button grid with hotkey hints; active tool uses `--accent`), Brush (radius, intensity, negative toggle; per-tool extras appear via `refreshControls()` on tool change), Symmetry (on/off, axis), Topology (dyntopo on/off + detail, multires subdivide/step up/step down, voxel remesh + resolution), Scene (add primitive, import mesh via existing loaders, clear), Capture (record toggle, mode, frame count + memory readout, finish -> hands frames to the timelapse project).
 

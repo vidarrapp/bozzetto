@@ -611,3 +611,57 @@ Eight review items from desktop testing, in one round:
   button label (reported from device testing).
 - WS3's stroke-time adaptive quality item stays deferred until iPad
   testing shows a need (desktop holds 60fps to 12.6M tris).
+
+# WS4 (sculpt palette, scene outliner, multi-mesh)
+
+## What landed
+
+- Sculpt palette (right edge, docked below the settings tab; opening
+  one collapses the other via a bozzetto:panel-open event, mirrored in
+  the settings Panel). Sections, built from the exported house control
+  helpers (section/checkbox/compactRange):
+  - Brush: per-brush pressure dynamics - size and strength toggles with
+    response curves (linear / soft / firm) each - plus the active
+    tool's feel extras (Move falloff; clay-strips plateau and layer,
+    now live fields on the bridge subclasses instead of constants).
+    Dynamics ride a bridge patch of the vendored Tablet getters
+    (dynamics.ts), so per-channel curves work off one raw pressure.
+  - Mask: darken slider (now a TSL uniform, no recompile), blur /
+    sharpen / invert / clear buttons, and EXTRACT with a thickness
+    slider (review request) - the upstream Masking.extract shell,
+    landing as a new named scene object.
+  - Detail: dynamic-topology toggle plus subdivision/decimation
+    aggressiveness (MeshDynamic factors), and voxel remesh with a
+    resolution slider (vendored Remesh; replaces the active mesh's
+    topology with undo).
+  - Cavity (SSAO): strength and radius sliders on the sculpt
+    composite's uniforms.
+- Scene outliner (left edge above the brush sliders, collapsed by
+  default, review request): object list with the active row
+  highlighted, click to select, and a plus menu adding Sphere / Cube /
+  Cylinder / Torus (cube = linear-subdivided quad cube; cylinder and
+  torus come from welded three geometries - position-only mergeVertices
+  so uv seams cannot crack under sculpting). Save/load/export options
+  land here later (12b).
+- MULTI-MESH: extract and add-object made it real. The active mesh
+  renders through the primary GeometrySync + viewer display machinery;
+  every other object gets its own sync and an extra display mesh
+  sharing the primary's material (Viewer.addSculptExtra), reconciled on
+  every selection/list change (extract, add, dyntopo, undo). Picking
+  across meshes was already multi upstream, so clicking any object
+  selects it; GeometrySync bind/dispose now only clear hooks they own.
+- Persistence v3: the whole scene (every object with its full level
+  stack, names, transforms) plus the active index; v1/v2 records
+  upgrade on read. The autosave size gates now use scene-total
+  top-level triangles.
+
+## Verified (ws4-test.mjs + full battery)
+
+- Palette opens, dynamics toggles apply to the live store; extract adds
+  a displayed mesh; outliner lists Sphere/Extracted, click selects;
+  Torus adds and displays; voxel remesh changes topology in place;
+  dyntopo detail round-trips; flush -> reload restores all three
+  objects with names and the active selection.
+- Bug found by the suite: a display:flex on the add menu overrode the
+  hidden attribute (no [hidden] guard in the app stylesheet), leaving
+  the menu permanently open over the rows.

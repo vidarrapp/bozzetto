@@ -1,6 +1,6 @@
 import { Color, Material, SRGBColorSpace, Texture } from 'three';
 import { MeshMatcapNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
-import { attribute, float, materialColor, mix, vec3 } from 'three/tsl';
+import { attribute, float, materialColor, mix, uniform, vec3 } from 'three/tsl';
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
 
@@ -33,8 +33,9 @@ interface MatcapConfig {
 
 const DEFAULT_ALBEDO = '#b9b1a8';
 
-/** Fully masked vertices drop to this brightness (sculpt mask tint, WS3). */
-const MASK_DARKEN = 0.45;
+/** Fully masked vertices drop to this brightness (sculpt mask tint, WS3;
+    live-adjustable from the WS4 palette through a uniform, no recompile). */
+const MASK_DARKEN_DEFAULT = 0.45;
 
 // The project's matcaps: single-sphere PNGs loaded as-is.
 const MATCAPS: MatcapConfig[] = [
@@ -109,6 +110,8 @@ export class Materials {
    * which multiplies the matcap sample too, covering both modes. Only
    * active in sculpt mode: viewer subjects have no materialsPBR attribute.
    */
+  private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
+
   setSculptMaskTint(on: boolean): void {
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
@@ -119,12 +122,21 @@ export class Materials {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
         const masked = materialsPBR.z.clamp(0, 1).oneMinus();
         const base = materialColor as unknown as Vec3Node;
-        m.colorNode = base.mul(mix(float(1), float(MASK_DARKEN), masked));
+        m.colorNode = base.mul(mix(float(1), this.maskDarkenU, masked));
       } else {
         m.colorNode = null;
       }
       m.needsUpdate = true;
     }
+  }
+
+  /** Brightness floor of fully masked areas (0 = black, 1 = no tint). */
+  setMaskDarken(v: number): void {
+    this.maskDarkenU.value = Math.min(1, Math.max(0, v));
+  }
+
+  getMaskDarken(): number {
+    return this.maskDarkenU.value;
   }
 
   has(mode: string): boolean {

@@ -1541,12 +1541,147 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* --- sculpt panels (WS4): right palette + left scene outliner --- */
+/* The sculpt palette docks below the settings tab on the right edge. */
+.panel--sculpt {
+  top: 200px;
+  max-height: calc(100vh - 290px);
+}
+
+/* Left-docked panel variant (scene outliner): mirrors the right panel. */
+.panel--left {
+  right: auto;
+  left: 12px;
+  top: 132px;
+  width: 200px;
+  max-height: calc(100vh - 320px);
+  z-index: 14; /* over the brush sliders while open */
+}
+
+.panel--left.panel--collapsed {
+  transform: translateX(calc(-100% - 12px));
+}
+
+.panel__handle--left {
+  left: auto;
+  right: -36px;
+  border: 1px solid var(--panel-border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.outliner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.outliner__row {
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.outliner__row:hover {
+  background: var(--hover);
+}
+
+.outliner__row--active {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.outliner__footer {
+  position: relative;
+  padding: 4px 8px 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.outliner__add {
+  min-width: 36px;
+  min-height: 30px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.outliner__add:hover {
+  background: var(--hover);
+}
+
+.outliner__menu {
+  position: absolute;
+  left: 8px;
+  bottom: 44px;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  z-index: 5;
+}
+
+.outliner__menu[hidden] {
+  display: none;
+}
+
+.outliner__menu-item {
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.outliner__menu-item:hover {
+  background: var(--hover);
+}
+
+.sculpt-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sculpt-panel__btn {
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sculpt-panel__btn:hover {
+  background: var(--hover);
+}
+
 /* Procreate-style side sliders: brush size + strength, left edge. */
 .sculpt-sliders {
   position: fixed;
   left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+  /* Below the scene panel's docked tab (left column: gallery, hint, stats,
+     scene tab, sliders). */
+  top: 258px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1557,7 +1692,7 @@ html.is-page body {
 .sculpt-slider {
   position: relative;
   width: 26px;
-  height: 132px;
+  height: 110px;
   cursor: pointer;
   touch-action: none;
 }

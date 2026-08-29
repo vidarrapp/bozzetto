@@ -39,6 +39,14 @@ export class Panel {
   private dofSection?: HTMLDivElement;
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
+  private readonly onOtherPanelOpen = (e: Event): void => {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    if (id && id !== 'settings' && !this.collapsed) {
+      this.collapsed = true;
+      this.applyCollapsed();
+    }
+  };
+
   private readonly onSculptMode = (e: Event): void => {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
@@ -104,6 +112,7 @@ export class Panel {
     this.applyCollapsed();
 
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
 
     if (options.actions) this.bodyEl.appendChild(options.actions);
     if (this.editor) this.buildTimeline(this.bodyEl);
@@ -126,6 +135,11 @@ export class Panel {
   setCollapsed(collapsed: boolean): void {
     this.collapsed = collapsed;
     this.applyCollapsed();
+    // Right-edge panels coordinate: opening one collapses the others
+    // (the sculpt panel listens for this and reciprocates).
+    if (!collapsed) {
+      window.dispatchEvent(new CustomEvent('bozzetto:panel-open', { detail: { id: 'settings' } }));
+    }
   }
 
   isCollapsed(): boolean {
@@ -154,6 +168,7 @@ export class Panel {
 
   dispose(): void {
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();
@@ -659,7 +674,7 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   return b;
 }
 
-function section(parent: HTMLElement, heading: string): HTMLDivElement {
+export function section(parent: HTMLElement, heading: string): HTMLDivElement {
   const s = div('section');
   const h = document.createElement('h3');
   h.textContent = heading;
@@ -685,7 +700,7 @@ function range(
   return r;
 }
 
-function compactRange(
+export function compactRange(
   label: string,
   min: number,
   max: number,
@@ -705,7 +720,7 @@ function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
   return labelRow(label, build());
 }
 
-function checkbox(
+export function checkbox(
   label: string,
   checked: boolean,
   onChange: (checked: boolean) => void,

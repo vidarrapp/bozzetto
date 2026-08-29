@@ -1,5 +1,6 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
+import { DynamicsStore } from './dynamics';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -92,11 +93,13 @@ export class InputShell {
     private readonly hooks: InputShellHooks,
   ) {}
 
+  /** Per-brush pressure dynamics (the WS4 palette binds to this). */
+  readonly dynamics = new DynamicsStore(() => this.session.getSculptManager().getToolIndex());
+
   install(): void {
-    // Pen pressure: size stays constant, intensity fully dynamic (review
-    // default from the WS2f pass). Factors become palette sliders in WS4.
-    Tablet.radiusFactor = 0;
-    Tablet.intensityFactor = 1;
+    // Pen pressure routing lives in the dynamics store (per-brush toggles
+    // and curves; defaults: size constant, strength fully dynamic).
+    this.dynamics.install();
     Tablet.pressure = 0.5;
     this.container.addEventListener('pointerdown', this.onPointerDown, true);
     this.container.addEventListener('pointermove', this.onPointerMove, true);
@@ -116,6 +119,7 @@ export class InputShell {
   }
 
   dispose(): void {
+    this.dynamics.dispose();
     this.container.removeEventListener('pointerdown', this.onPointerDown, true);
     this.container.removeEventListener('pointermove', this.onPointerMove, true);
     this.container.removeEventListener('pointerup', this.onPointerUp, true);

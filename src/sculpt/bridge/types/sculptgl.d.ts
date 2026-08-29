@@ -54,6 +54,8 @@ declare module '@sculpt-vendor/misc/Tablet' {
 declare module '@sculpt-vendor/misc/Utils' {
   const Utils: {
     SCALE: number;
+    /** Sentinel for the 4th index of triangle faces in the 4-stride arrays. */
+    TRI_INDEX: number;
   };
   export default Utils;
 }
@@ -71,6 +73,9 @@ declare module '@sculpt-vendor/mesh/dynamic/MeshDynamic' {
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
   /** Dynamic-topology mesh; wraps an existing mesh's data at construction. */
   class MeshDynamic {
+    /** Stroke-time refinement/decimation aggressiveness (0..100, WS4 UI). */
+    static SUBDIVISION_FACTOR: number;
+    static DECIMATION_FACTOR: number;
     constructor(mesh: SculptMesh);
   }
   interface MeshDynamic extends SculptMesh {}
@@ -118,6 +123,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     isVisible(): boolean;
     /** Set on dynamic-topology meshes only. */
     isDynamic?: boolean;
+    /** Set on multiresolution meshes only (the level stack). */
+    _meshes?: SculptMesh[];
     /** MeshResolution levels only: detail vectors from the last analysis. */
     _detailsXYZ?: Float32Array | null;
     _detailsRGB?: Float32Array | null;
@@ -148,6 +155,18 @@ declare module '@sculpt-vendor/mesh/multiresolution/Multimesh' {
   }
   interface Multimesh extends SculptMesh {}
   export default Multimesh;
+}
+
+declare module '@sculpt-vendor/editing/Remesh' {
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  const Remesh: {
+    /** Voxel grid resolution along the longest bounds axis. */
+    RESOLUTION: number;
+    BLOCK: boolean;
+    SMOOTHING: boolean;
+    remesh(meshes: SculptMesh[], baseMesh: SculptMesh, manifold?: boolean): SculptMesh;
+  };
+  export default Remesh;
 }
 
 declare module '@sculpt-vendor/editing/Subdivision' {
@@ -185,9 +204,14 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     /** Brush only: clay mode (flatten-toward-plane deformation). */
     _clay?: boolean;
     getScreenRadius(): number;
-    /** Masking tool only: whole-mask operations (ctrl gestures). */
+    /** Masking tool only: whole-mask operations (ctrl gestures + WS4 UI). */
     invert?(): void;
     clear?(): void;
+    blur?(): void;
+    sharpen?(): void;
+    /** Masking tool only: shell extraction of the masked region (WS4). */
+    _thickness?: number;
+    extract?(): void;
   }
 }
 

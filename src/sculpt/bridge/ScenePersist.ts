@@ -39,15 +39,36 @@ export interface SavedLevel {
   detailsPBR: Float32Array | null;
 }
 
-export interface SavedScene {
-  v: 2;
-  savedAt: number;
-  /** Display name of the mesh (outliner-ready); absent in older records. */
+/** One scene object: its multires stack, topology, transform and name. */
+export interface SavedMesh {
+  /** Display name (outliner); absent in upgraded older records. */
   name?: string;
   /** Base (lowest) level topology; higher levels re-derive by subdivision. */
   nbBaseFaces: number;
   baseFaces: Uint32Array;
   /** Level 0 = base ... last = top; the live selection is `sel`. */
+  levels: SavedLevel[];
+  sel: number;
+  matrix: Float32Array;
+}
+
+export interface SavedScene {
+  v: 3;
+  savedAt: number;
+  /** Every scene object (multi-mesh since WS4: extractions, added shapes). */
+  meshes: SavedMesh[];
+  /** Index of the selected mesh. */
+  active: number;
+  symmetry: boolean;
+}
+
+/** The single-mesh v2 format, upgraded on read. */
+interface SavedSceneV2 {
+  v: 2;
+  savedAt: number;
+  name?: string;
+  nbBaseFaces: number;
+  baseFaces: Uint32Array;
   levels: SavedLevel[];
   sel: number;
   matrix: Float32Array;
@@ -127,11 +148,25 @@ function validLevel(l: SavedLevel): boolean {
   );
 }
 
+function validMesh(m: SavedMesh): boolean {
+  return (
+    m.baseFaces instanceof Uint32Array &&
+    m.baseFaces.length === m.nbBaseFaces * 4 &&
+    Array.isArray(m.levels) &&
+    m.levels.length > 0 &&
+    m.levels.every(validLevel) &&
+    m.sel >= 0 &&
+    m.sel < m.levels.length &&
+    m.matrix?.length === 16
+  );
+}
+
 /** The saved scene, or null when there is none (or storage is unavailable). */
 export async function loadSavedScene(): Promise<SavedScene | null> {
   try {
     const rec = (await withStore('readonly', (s) => s.get(KEY))) as
       | SavedScene
+      | SavedSceneV2
       | SavedSceneV1
       | undefined;
     if (!rec) return null;
@@ -149,36 +184,50 @@ export async function loadSavedScene(): Promise<SavedScene | null> {
         return null;
       }
       return {
-        v: 2,
+        v: 3,
         savedAt: rec.savedAt,
-        nbBaseFaces: rec.nbFaces,
-        baseFaces: rec.faces,
-        levels: [
+        meshes: [
           {
-            nbVertices: rec.nbVertices,
-            vertices: rec.vertices,
-            normals: null,
-            colors: rec.colors,
-            materials: rec.materials,
-            detailsXYZ: null,
-            detailsRGB: null,
-            detailsPBR: null,
+            nbBaseFaces: rec.nbFaces,
+            baseFaces: rec.faces,
+            levels: [
+              {
+                nbVertices: rec.nbVertices,
+                vertices: rec.vertices,
+                normals: null,
+                colors: rec.colors,
+                materials: rec.materials,
+                detailsXYZ: null,
+                detailsRGB: null,
+                detailsPBR: null,
+              },
+            ],
+            sel: 0,
+            matrix: rec.matrix,
           },
         ],
-        sel: 0,
-        matrix: rec.matrix,
+        active: 0,
         symmetry: rec.symmetry,
       };
     }
+    if (rec.v === 2) {
+      const mesh: SavedMesh = {
+        name: rec.name,
+        nbBaseFaces: rec.nbBaseFaces,
+        baseFaces: rec.baseFaces,
+        levels: rec.levels,
+        sel: rec.sel,
+        matrix: rec.matrix,
+      };
+      if (!validMesh(mesh)) return null;
+      return { v: 3, savedAt: rec.savedAt, meshes: [mesh], active: 0, symmetry: rec.symmetry };
+    }
     if (
-      rec.v !== 2 ||
-      !(rec.baseFaces instanceof Uint32Array) ||
-      rec.baseFaces.length !== rec.nbBaseFaces * 4 ||
-      !Array.isArray(rec.levels) ||
-      rec.levels.length === 0 ||
-      !rec.levels.every(validLevel) ||
-      !(rec.sel >= 0 && rec.sel < rec.levels.length) ||
-      rec.matrix?.length !== 16
+      rec.v !== 3 ||
+      !Array.isArray(rec.meshes) ||
+      rec.meshes.length === 0 ||
+      !rec.meshes.every(validMesh) ||
+      !(rec.active >= 0 && rec.active < rec.meshes.length)
     ) {
       return null;
     }

@@ -9,6 +9,8 @@ import { SculptSession } from './bridge/SculptSession';
 import { ScenePersist, clearSavedScene, loadSavedScene } from './bridge/ScenePersist';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
+import { ScenePanel } from './ui/ScenePanel';
+import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
 /**
@@ -31,7 +33,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let saved = await loadSavedScene();
   let multimesh;
   try {
-    multimesh = saved ? session.addRestoredMesh(saved) : session.addSphere();
+    multimesh = saved ? session.restoreScene(saved) : session.addSphere();
   } catch (err) {
     // A malformed record must never brick sculpt entry: drop it, start clean.
     console.warn('sculpt restore failed, starting fresh:', err);
@@ -77,13 +79,55 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
 
+  // Multi-mesh (WS4): the ACTIVE mesh renders through the primary sync and
+  // the viewer's display machinery; every other scene object gets its own
+  // sync + extra display mesh sharing the primary's material. Reconciled on
+  // every mesh-list or selection change (extract, add, dyntopo, undo).
+  let scenePanel: ScenePanel | null = null;
+  let sculptPanel: SculptPanel | null = null;
+  const extras = new Map<
+    SculptMesh,
+    { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
+  >();
+  const reconcile = (): void => {
+    const active = session.getMesh();
+    const list = session.getMeshes();
+    for (const [mesh, e] of extras) {
+      if (!list.includes(mesh) || mesh === active) {
+        viewer.removeSculptExtra(e.handle);
+        e.sync.dispose();
+        extras.delete(mesh);
+      }
+    }
+    for (const mesh of list) {
+      if (mesh === active) continue;
+      const existing = extras.get(mesh);
+      if (existing) {
+        viewer.setSculptExtraMatrix(existing.handle, new Matrix4().fromArray(mesh.getMatrix()));
+        continue;
+      }
+      const extraSync = new GeometrySync();
+      extraSync.bind(mesh);
+      const handle = viewer.addSculptExtra(
+        extraSync.geometry,
+        new Matrix4().fromArray(mesh.getMatrix()),
+      );
+      extras.set(mesh, { sync: extraSync, handle });
+    }
+  };
+
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
   session.onActiveMeshChange = () => {
     const active = session.getMesh();
-    if (!active) return;
-    sync.bind(active);
-    viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
+    if (active) {
+      sync.bind(active);
+      viewer.setSculptMatrix(new Matrix4().fromArray(active.getMatrix()));
+    }
+    reconcile();
+    scenePanel?.refresh();
+    sculptPanel?.refreshState();
   };
+  reconcile();
 
   // A small transient pill announces level moves ("Subdiv 2/4"): steps,
   // ctrl+d, and undo/redo that land on another level.
@@ -161,6 +205,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   input.install();
   const toolbar = new SculptToolbar(input);
   const sliders = new BrushSliders(input);
+  scenePanel = new ScenePanel(session);
+  sculptPanel = new SculptPanel(session, input, viewer);
+  // The toolbar owns onToolChange; chain the palette's per-brush refresh.
+  {
+    const prevToolChange = input.onToolChange;
+    input.onToolChange = () => {
+      prevToolChange?.();
+      sculptPanel?.refreshBrush();
+    };
+  }
 
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
@@ -181,6 +235,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input,
     persist,
     cursor,
+    scenePanel,
+    sculptPanel,
     tablet: Tablet,
   };
 
@@ -195,6 +251,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     levelToast.dispose();
     stats.dispose();
     persist.dispose();
+    sculptPanel?.dispose();
+    scenePanel?.dispose();
+    for (const [, e] of extras) {
+      viewer.removeSculptExtra(e.handle);
+      e.sync.dispose();
+    }
+    extras.clear();
     sliders.dispose();
     toolbar.dispose();
     input.dispose();

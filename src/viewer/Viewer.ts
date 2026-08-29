@@ -588,9 +588,49 @@ export class Viewer {
     if (!this.materials.has(mode)) return;
     this.currentMode = mode;
     this.display.material = this.materials.get(mode);
+    for (const extra of this.sculptExtras) extra.material = this.display.material;
     // The ground/shadow/pedestal follow the chosen Ground option, not the
     // material's shading — so matcap renders keep the stage too.
     this.updateStage();
+  }
+
+  // --- extra sculpt subjects (multi-mesh: extractions, added objects) -----
+
+  private readonly sculptExtras: Mesh[] = [];
+
+  /** Add a secondary sculpt mesh sharing the primary's material and flags. */
+  addSculptExtra(geometry: BufferGeometry, matrix: Matrix4): Mesh {
+    const mesh = new Mesh(geometry, this.display.material);
+    mesh.castShadow = this.display.castShadow;
+    mesh.receiveShadow = this.display.receiveShadow;
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(matrix);
+    mesh.matrixWorldNeedsUpdate = true;
+    mesh.frustumCulled = false; // over-allocated sculpt arrays: bounds lie
+    this.sculptExtras.push(mesh);
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  setSculptExtraMatrix(mesh: Mesh, matrix: Matrix4): void {
+    mesh.matrix.copy(matrix);
+    mesh.matrixWorldNeedsUpdate = true;
+  }
+
+  removeSculptExtra(mesh: Mesh): void {
+    const i = this.sculptExtras.indexOf(mesh);
+    if (i >= 0) this.sculptExtras.splice(i, 1);
+    this.scene.remove(mesh);
+  }
+
+  /** Sculpt SSAO knobs (WS4 palette): cavity strength and tap radius (px). */
+  setSculptAO(state: { strength?: number; radius?: number }): void {
+    if (typeof state.strength === 'number') this.cavityStrengthU.value = state.strength;
+    if (typeof state.radius === 'number') this.sculptAoRadiusU.value = state.radius;
+  }
+
+  getSculptAO(): { strength: number; radius: number } {
+    return { strength: this.cavityStrengthU.value, radius: this.sculptAoRadiusU.value };
   }
 
   getMaterial(): string {
