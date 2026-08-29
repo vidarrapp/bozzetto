@@ -85,6 +85,26 @@ export class Controls {
     this.controls.update();
   }
 
+  /**
+   * Turntable step: rotate the camera around the world Y axis about the
+   * orbit target (sculpt wheel keys; positive = model appears to turn
+   * right). Position-based, so OrbitControls just re-derives its spherical
+   * on the next update.
+   */
+  rotateAzimuth(deg: number): void {
+    const offset = new Vector3().subVectors(this.camera.position, this.controls.target);
+    const rad = (deg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const x = offset.x * cos - offset.z * sin;
+    const z = offset.x * sin + offset.z * cos;
+    offset.x = x;
+    offset.z = z;
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+  }
+
   /** Distance from the camera to the orbit target (the depth-of-field focus). */
   targetDistance(): number {
     return this.camera.position.distanceTo(this.controls.target);

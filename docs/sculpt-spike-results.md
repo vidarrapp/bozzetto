@@ -544,3 +544,23 @@ Eight review items from desktop testing, in one round:
   and SculptManager.end plus toggleSymmetry are wrapped so stroke ends
   and symmetry changes re-mark. The persistence suite caught it as a
   partial-stroke restore with stale symmetry.
+
+# WS2g (wheel keys, stroke-start ring grace)
+
+- iPad follow-up on the "missing hover ring": it is Apple Pencil
+  hardware (hover exists only on Pencil 2/Pro-class devices), not the
+  renderer - the projected-SVG rework stands for desktop DPI. Mitigation
+  per review: the mid-stroke cursor reduction now waits 250ms after the
+  stroke lands, so the full outline shows at stroke start even with no
+  hover events; keyboard size/strength nudges also flash a screen ring
+  for 450ms when nothing else is showing.
+- Wheel-mappable hotkeys (TourBox Elite review request), bound by
+  PHYSICAL key code so controller macros and the Swedish layout agree:
+  BracketLeft/Right = brush size -/+ (~6 percent per tick, min 2px),
+  Shift+brackets = strength -/+ (0.03 per tick), ArrowLeft/Right = turn
+  the model 1 degree around Y (camera azimuth about the target through
+  Controls.rotateAzimuth; the view-follow light rig rides along, so it
+  reads as the model turning). All claimed in sculpt mode only.
+- Backlog noted in plan 12b: per-brush pressure dynamics (size and
+  intensity on/off per brush, each with a response-curve option) in the
+  WS4 palette.

@@ -1259,6 +1259,11 @@ export class Viewer {
     this.fitSubjectBounds(box, true);
   }
 
+  /** Turntable step around the subject (sculpt wheel keys, degrees). */
+  orbitAzimuth(deg: number): void {
+    this.controls.rotateAzimuth(deg);
+  }
+
   /**
    * Re-pivot the orbit around a world point WITHOUT moving the view: the
    * point is projected onto the current view ray and the target takes that

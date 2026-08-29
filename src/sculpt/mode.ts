@@ -155,6 +155,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       lighting.setRigRotation(deg);
       viewer.environment.setRotation(lighting.getRigRotation());
     },
+    orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
   });
   input.install();
   const toolbar = new SculptToolbar(input);

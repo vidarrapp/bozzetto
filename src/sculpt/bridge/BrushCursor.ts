@@ -119,6 +119,29 @@ export class BrushCursor {
     if (this.mode === 'surface' && this.surface) this.renderSurface();
   }
 
+  private flashTimer = 0;
+  private flashOwned = false;
+
+  /**
+   * Brief screen-ring feedback for keyboard size/strength nudges when
+   * nothing else is showing (iPad pencils without hover never see the
+   * ring otherwise). A visible surface ring already shows the change;
+   * an existing screen ring (Move aim) just re-renders and stays.
+   */
+  flashScreen(ms: number): void {
+    if (this.anchored || this.mode === 'surface') return;
+    const created = this.mode === 'hidden';
+    if (created) this.applyMode('screen');
+    this.renderScreen();
+    if (created) {
+      this.flashOwned = true;
+      clearTimeout(this.flashTimer);
+      this.flashTimer = window.setTimeout(() => {
+        if (this.flashOwned && this.mode === 'screen') this.applyMode('hidden');
+      }, ms);
+    }
+  }
+
   /** Freeze (b/s adjust) or release the cursor position. */
   setAnchored(anchored: boolean): void {
     this.anchored = anchored;
@@ -163,6 +186,7 @@ export class BrushCursor {
   }
 
   private applyMode(mode: 'hidden' | 'screen' | 'surface'): void {
+    this.flashOwned = false; // any explicit mode change outlives the flash
     this.mode = mode;
     this.root.dataset.mode = mode;
     this.root.style.display = mode === 'hidden' ? 'none' : '';

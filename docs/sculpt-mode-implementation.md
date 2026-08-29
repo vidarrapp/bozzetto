@@ -312,6 +312,9 @@ and return on exit.
 | d | step up a subdivision level | |
 | shift + d | step down a subdivision level | |
 | b | brush size (hold + drag horizontally) | ring stays anchored while adjusting |
+| [ / ] | brush size step down/up (~6 percent per tick) | WS2g, bound by PHYSICAL key code (BracketLeft/Right) so TourBox-style controller macros and non-US layouts agree; wheel-friendly |
+| shift + [ / ] | brush strength step down/up (0.03 per tick) | WS2g, wheel-friendly |
+| left / right arrows | turn the model 1 degree around Y | WS2g, wheel-friendly turntable (camera azimuth about the target; the view-follow light rides along) |
 | s | brush strength (hold + drag vertically, up = stronger) | The source map listed `s` for both brush strength and shadows; resolved as `s` = strength, `shift+s` = shadows, and Vidar confirmed the split. Vertical per review round 2. |
 | shift + s | toggle shadows on/off | confirmed |
 | x | symmetry toggle | |
@@ -488,6 +491,12 @@ All five are now locked. `[Decision]` on each.
    /admin editor flow; not signed in -> the public /create flow.
 
 ## 12b. Backlog (noted for later, not scheduled)
+
+- Per-brush dynamics in the WS4 settings palette (review request,
+  2026-08-29): pressure on/off toggles for SIZE and INTENSITY per brush,
+  each with a selectable response curve (e.g. linear / soft / firm), on
+  top of the global Tablet factors. The current global default is size
+  constant, intensity fully dynamic (7.4 note).
 
 - File menu: save / load sculpts (serialize the active mesh; likely the
   OPFS spill store from 6.6 doubles as the save target).

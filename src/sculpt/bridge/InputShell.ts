@@ -29,6 +29,8 @@ export interface InputShellHooks {
   toggleShadows(): void;
   /** l + drag: rotate the light rig by a degree delta. */
   rotateLightRig(deltaDeg: number): void;
+  /** Arrow keys: turntable step around the subject (degrees). */
+  orbitY(deltaDeg: number): void;
 }
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
@@ -36,6 +38,17 @@ type AdjustMode = 'radius' | 'intensity' | null;
 
 const RADIUS_MIN = 5;
 const RADIUS_MAX = 500;
+/**
+ * Stroke-start grace: the full ring stays up this long before the
+ * mid-stroke reduction, so pencils without hover (iPad) still see the
+ * brush outline at the moment it lands (review request).
+ */
+const STROKE_REDUCE_DELAY_MS = 250;
+/** Screen-ring feedback duration for keyboard size/strength nudges. */
+const NUDGE_FLASH_MS = 450;
+/** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
+const INTENSITY_STEP = 0.03;
+const ORBIT_STEP_DEG = 1;
 
 export class InputShell {
   /** Fired when the selected brush changes (digit keys or toolbar). */
@@ -54,6 +67,7 @@ export class InputShell {
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
+  private strokeReduceTimer = 0;
   private lastClientX = 0;
   private lastClientY = 0;
   /** Last pointer position in viewport-absolute px (adjust/light drags). */
@@ -200,9 +214,14 @@ export class InputShell {
     s._action = Enums.Action.SCULPT_EDIT;
     this.pointerId = e.pointerId;
     // Mid-stroke the cursor gets out of the way (review decision): sculpt
-    // brushes keep the center dot only; Smooth keeps a dimmed ring.
+    // brushes keep the center dot only; Smooth keeps a dimmed ring. The
+    // reduction waits a beat so hover-less pencils see the outline land.
     const strokeTool = s.getSculptManager().getToolIndex();
-    this.cursor.setStrokeStyle(strokeTool === Enums.Tools.SMOOTH ? 'dim' : 'dot');
+    const strokeStyle = strokeTool === Enums.Tools.SMOOTH ? ('dim' as const) : ('dot' as const);
+    clearTimeout(this.strokeReduceTimer);
+    this.strokeReduceTimer = window.setTimeout(() => {
+      if (this.pointerId !== -1) this.cursor.setStrokeStyle(strokeStyle);
+    }, STROKE_REDUCE_DELAY_MS);
     try {
       s.getCanvas().setPointerCapture(e.pointerId);
     } catch {
@@ -307,6 +326,7 @@ export class InputShell {
 
     if (e.pointerId !== this.pointerId) return;
     this.pointerId = -1;
+    clearTimeout(this.strokeReduceTimer);
     this.cursor.setStrokeStyle(null);
 
     if (s._action === Enums.Action.SCULPT_EDIT) {
@@ -362,6 +382,22 @@ export class InputShell {
     if (e.key === 'Shift' && !this.shiftHeld) {
       this.shiftHeld = true;
       this.syncCursorBrush();
+    }
+
+    // Wheel-mappable keys (TourBox review request), bound by PHYSICAL code
+    // so controller macros and non-US layouts agree: brackets step brush
+    // size (shift: strength), arrows turn the model a degree per tick.
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+        const dir = e.code === 'BracketRight' ? 1 : -1;
+        if (e.shiftKey) this.nudgeIntensity(dir * INTENSITY_STEP);
+        else this.nudgeRadius(dir);
+        return this.claim(e);
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        this.hooks.orbitY(e.code === 'ArrowLeft' ? -ORBIT_STEP_DEG : ORBIT_STEP_DEG);
+        return this.claim(e);
+      }
     }
 
     // ctrl chords first.
@@ -443,6 +479,22 @@ export class InputShell {
     if (key === 's' && this.adjust === 'intensity') this.endAdjust();
     if (key === 'l') this.lKeyHeld = false;
   };
+
+  /** One wheel tick of brush size: ~6 percent, at least 2px, clamped. */
+  private nudgeRadius(dir: number): void {
+    const tool = this.currentTool();
+    const step = Math.max(2, tool._radius * 0.06) * dir;
+    tool._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, tool._radius + step));
+    this.syncCursorBrush();
+    this.cursor.flashScreen(NUDGE_FLASH_MS);
+  }
+
+  private nudgeIntensity(delta: number): void {
+    const tool = this.currentTool();
+    tool._intensity = Math.min(1, Math.max(0, tool._intensity + delta));
+    this.syncCursorBrush();
+    this.cursor.flashScreen(NUDGE_FLASH_MS);
+  }
 
   private beginAdjust(mode: Exclude<AdjustMode, null>): void {
     this.adjust = mode;
