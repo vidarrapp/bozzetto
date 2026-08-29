@@ -1,117 +1,75 @@
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Group,
-  Line,
-  LineBasicMaterial,
-  Quaternion,
-  Scene,
-  Vector3,
-} from 'three';
-
 /**
- * Brush cursor (plan 7.6). Two representations share one API:
+ * Brush cursor (plan 7.6, reworked in the WS2f behavior pass). One SVG
+ * overlay draws every representation, with the surface-aligned ring built
+ * by PROJECTING a world-space circle to screen each update:
  *
- * - On a surface hit, a 3D ring aligned to the picked normal, drawn in the
- *   scene at the intersection point: circle at the world brush radius, a
- *   center dot, and a line along the normal whose length shows strength
- *   (radius x intensity, i.e. 10x the standard brush's true displacement).
- * - Off the mesh, a screen-space SVG fallback ring at the pointer.
+ * - On a surface hit: a ring around the picked point in the tangent plane,
+ *   at the true world brush radius, plus a center dot and a strength line
+ *   along the normal (length = radius x intensity).
+ * - Off the mesh (only when the caller asks: Move's volumetric aim, b/s
+ *   size adjustment): a screen-space ring at the pointer.
  *
- * While the user holds b/s to adjust, the cursor anchors: the surface (or
- * screen position) freezes and the ring/line update in place. Materials draw
- * with depthTest off and a late renderOrder, so the ring stays legible over
- * the mesh regardless of the composite (cavity/AO never touch line color
- * meaningfully).
+ * Projection replaced the old scene-side Line ring deliberately: WebGPU
+ * caps GL lines at one device pixel, which vanished on high-resolution
+ * displays; an SVG stroke stays a crisp CSS-pixel width on every backend,
+ * and one code path now styles, dims and hides all cursor pieces.
+ *
+ * Visibility policy lives in InputShell; this class renders what it is
+ * told. `root.dataset.mode` mirrors the active representation for tests.
  */
 
-const ACCENT = 0xbb5b33;
-/** Smoothing reads as water-on-clay: the cursor cools to blue. */
-const SMOOTH_BLUE = 0x4d8fd1;
-const RING_SEGMENTS = 64;
+const RING_SEGMENTS = 48;
+
+type StrokeStyle = null | 'dot' | 'dim';
+
+/** World -> container CSS px; null when the point is behind the camera. */
+export type CursorProjector = (p: [number, number, number]) => [number, number] | null;
+
+interface SurfaceState {
+  point: [number, number, number];
+  normal: [number, number, number];
+  worldRadius: number;
+}
 
 export class BrushCursor {
-  // Screen-space fallback (SVG).
   private readonly root: SVGSVGElement;
-  private readonly circle: SVGCircleElement;
+  private readonly ringPath: SVGPathElement;
+  private readonly screenRing: SVGCircleElement;
   private readonly dot: SVGCircleElement;
-  private readonly line: SVGLineElement;
+  private readonly strength: SVGLineElement;
 
-  // Surface-aligned representation (scene objects).
-  private readonly group = new Group();
-  private readonly ring3d: Line;
-  private readonly dot3d: Line;
-  private readonly strengthLine: Line;
-  private readonly up = new Vector3(0, 0, 1);
-  private readonly quat = new Quaternion();
-  private readonly normal = new Vector3();
-
+  private projector: CursorProjector | null = null;
+  private surface: SurfaceState | null = null;
+  private mode: 'hidden' | 'screen' | 'surface' = 'hidden';
   private anchored = false;
   private x = 0;
   private y = 0;
+  private radiusCss = 50;
   private intensity = 0.5;
-  private mat!: LineBasicMaterial;
-  private ringMat!: LineBasicMaterial;
+  private lastAnchorCss = 0;
+  private anchorWorldRadius = 0;
 
-  constructor(container: HTMLElement, private readonly scene: Scene) {
+  constructor(container: HTMLElement) {
     const NS = 'http://www.w3.org/2000/svg';
     this.root = document.createElementNS(NS, 'svg');
     this.root.setAttribute('class', 'sculpt-cursor');
-    this.circle = document.createElementNS(NS, 'circle');
-    this.circle.setAttribute('class', 'sculpt-cursor__ring');
+    this.ringPath = document.createElementNS(NS, 'path');
+    this.ringPath.setAttribute('class', 'sculpt-cursor__ring');
+    this.screenRing = document.createElementNS(NS, 'circle');
+    this.screenRing.setAttribute('class', 'sculpt-cursor__ring');
     this.dot = document.createElementNS(NS, 'circle');
     this.dot.setAttribute('class', 'sculpt-cursor__dot');
-    this.dot.setAttribute('r', '2');
-    this.line = document.createElementNS(NS, 'line');
-    this.line.setAttribute('class', 'sculpt-cursor__strength');
-    this.root.append(this.circle, this.dot, this.line);
-    this.root.style.display = 'none';
+    this.dot.setAttribute('r', '2.5');
+    this.strength = document.createElementNS(NS, 'line');
+    this.strength.setAttribute('class', 'sculpt-cursor__strength');
+    this.root.append(this.ringPath, this.screenRing, this.dot, this.strength);
     container.appendChild(this.root);
+    this.applyMode('hidden');
+  }
 
-    const mat = new LineBasicMaterial({
-      color: ACCENT,
-      transparent: true,
-      opacity: 0.85,
-      depthTest: false,
-    });
-    this.mat = mat;
-    // The ring dims independently mid-stroke; the dot stays the anchor.
-    this.ringMat = mat.clone();
-
-    // Closed circles as plain Lines (first point repeated): WebGPURenderer
-    // does not draw LineLoop. Unit radius; group scale carries the world size.
-    const circlePoints = (segments: number, radius: number): Float32Array => {
-      const out = new Float32Array((segments + 1) * 3);
-      for (let i = 0; i <= segments; i++) {
-        const a = (i / segments) * Math.PI * 2;
-        out[i * 3] = Math.cos(a) * radius;
-        out[i * 3 + 1] = Math.sin(a) * radius;
-      }
-      return out;
-    };
-    const ringGeom = new BufferGeometry();
-    ringGeom.setAttribute('position', new BufferAttribute(circlePoints(RING_SEGMENTS, 1), 3));
-    this.ring3d = new Line(ringGeom, this.ringMat);
-
-    // Center dot: a tiny fixed-fraction circle of the ring radius.
-    const dotGeom = new BufferGeometry();
-    dotGeom.setAttribute('position', new BufferAttribute(circlePoints(12, 0.03), 3));
-    this.dot3d = new Line(dotGeom, mat);
-
-    // Strength line along local +Z (the picked normal after orientation);
-    // its z-scale is the intensity, so world length = radius x intensity.
-    const lineGeom = new BufferGeometry();
-    lineGeom.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 1]), 3));
-    this.strengthLine = new Line(lineGeom, mat);
-
-    this.group.add(this.ring3d, this.dot3d, this.strengthLine);
-    this.group.visible = false;
-    this.group.renderOrder = 999;
-    this.group.traverse((o) => {
-      o.frustumCulled = false;
-      o.renderOrder = 999;
-    });
-    scene.add(this.group);
+  /** Wire the world-to-screen projection (mode.ts supplies the camera). */
+  setProjector(projector: CursorProjector): void {
+    this.projector = projector;
   }
 
   /** Track the pointer (CSS px, container-relative), unless anchored. */
@@ -119,13 +77,12 @@ export class BrushCursor {
     if (this.anchored) return;
     this.x = x;
     this.y = y;
-    this.layout();
+    if (this.mode === 'screen') this.renderScreen();
   }
 
   /**
-   * Surface under the cursor, in world space (point, unit normal, brush
-   * radius), or null when the pointer is off the mesh. Chooses which
-   * representation shows. Ignored while anchored.
+   * Surface under the cursor, in world space, or null to drop the surface
+   * representation. Ignored while anchored (b/s adjustment freezes it).
    */
   setSurface(
     point: [number, number, number] | null,
@@ -134,92 +91,173 @@ export class BrushCursor {
   ): void {
     if (this.anchored) return;
     if (!point || !normal || !worldRadius) {
-      this.group.visible = false;
+      this.surface = null;
+      if (this.mode === 'surface') this.applyMode('hidden');
       return;
     }
-    this.group.visible = true;
-    this.root.style.display = 'none';
-    this.group.position.set(point[0], point[1], point[2]);
-    this.normal.set(normal[0], normal[1], normal[2]).normalize();
-    this.quat.setFromUnitVectors(this.up, this.normal);
-    this.group.quaternion.copy(this.quat);
-    this.group.scale.setScalar(Math.max(worldRadius, 1e-4));
-    this.strengthLine.scale.z = this.intensity;
+    this.surface = { point, normal, worldRadius };
+    this.applyMode('surface');
+    this.renderSurface();
+  }
+
+  /** Screen-space ring at the pointer (Move's off-model aim, b/s adjust). */
+  showScreen(): void {
+    if (this.anchored) return;
+    this.surface = null;
+    this.applyMode('screen');
+    this.renderScreen();
+  }
+
+  hide(): void {
+    if (this.anchored) return;
+    this.surface = null;
+    this.applyMode('hidden');
+  }
+
+  /** Re-project the cached surface (camera moved under a still pointer). */
+  refresh(): void {
+    if (this.mode === 'surface' && this.surface) this.renderSurface();
   }
 
   /** Freeze (b/s adjust) or release the cursor position. */
   setAnchored(anchored: boolean): void {
     this.anchored = anchored;
+    if (anchored && this.mode === 'hidden') {
+      // Off-model size/strength adjust still deserves a ring to read.
+      this.applyMode('screen');
+      this.renderScreen();
+    }
+  }
+
+  /** Record the radius pair at anchor time so b-adjust can rescale the ring. */
+  beginAnchorScale(radiusCss: number): void {
+    this.lastAnchorCss = Math.max(2, radiusCss);
+    this.anchorWorldRadius = this.surface ? this.surface.worldRadius : 0;
+  }
+
+  /** Update to the tool's screen radius (CSS px) and strength (0..1). */
+  setBrush(radiusCss: number, intensity: number): void {
+    this.intensity = Math.min(1, Math.max(0, intensity));
+    this.radiusCss = Math.max(2, radiusCss);
+    if (this.anchored && this.surface && this.lastAnchorCss > 0 && this.anchorWorldRadius > 0) {
+      this.surface.worldRadius = this.anchorWorldRadius * (this.radiusCss / this.lastAnchorCss);
+    }
+    if (this.mode === 'surface') this.renderSurface();
+    else if (this.mode === 'screen') this.renderScreen();
   }
 
   /** Smooth active (tool 7 or held shift): the whole cursor turns blue. */
   setSmoothing(on: boolean): void {
-    const hex = on ? SMOOTH_BLUE : ACCENT;
-    this.mat.color.setHex(hex);
-    this.ringMat.color.setHex(hex);
     this.root.classList.toggle('is-smooth', on);
   }
 
   /**
    * Mid-stroke reduction (ZBrush-style, WS2 review): while the stroke is
    * down, sculpt brushes keep only the center dot so the deforming surface
-   * stays readable; Smooth keeps its ring but dimmed (the outline matters
-   * there, obtrusiveness does not). The strength line rests either way.
-   * null restores the full hover cursor.
+   * stays readable; Smooth keeps its ring but dimmed. The strength line
+   * rests either way. null restores the full hover cursor.
    */
-  setStrokeStyle(style: null | 'dot' | 'dim'): void {
-    this.ring3d.visible = style !== 'dot';
-    this.strengthLine.visible = style === null;
-    this.ringMat.opacity = style === 'dim' ? 0.3 : 0.85;
+  setStrokeStyle(style: StrokeStyle): void {
     this.root.classList.toggle('is-dot-only', style === 'dot');
     this.root.classList.toggle('is-dim', style === 'dim');
   }
 
-  /** Update to the tool's screen radius (CSS px) and strength (0..1). */
-  setBrush(radiusCss: number, intensity: number): void {
-    this.intensity = Math.min(1, Math.max(0, intensity));
-    const r = Math.max(2, radiusCss);
-    this.circle.setAttribute('r', String(r));
-    this.line.setAttribute('y2', String(-r * this.intensity));
-    this.strengthLine.scale.z = this.intensity;
-    // While anchored on a surface, grow the 3D ring with the screen radius:
-    // scale proportionally so the adjustment reads at the anchored spot.
-    if (this.anchored && this.group.visible && this.lastAnchorCss > 0) {
-      this.group.scale.setScalar(this.anchorWorldRadius * (r / this.lastAnchorCss));
+  private applyMode(mode: 'hidden' | 'screen' | 'surface'): void {
+    this.mode = mode;
+    this.root.dataset.mode = mode;
+    this.root.style.display = mode === 'hidden' ? 'none' : '';
+    this.ringPath.style.display = mode === 'surface' ? '' : 'none';
+    this.strength.style.display = mode === 'surface' ? '' : 'none';
+    this.screenRing.style.display = mode === 'screen' ? '' : 'none';
+  }
+
+  /** Project the world-space ring/dot/strength line into the SVG. */
+  private renderSurface(): void {
+    const s = this.surface;
+    const project = this.projector;
+    if (!s || !project) return;
+    const [px, py, pz] = s.point;
+    const center = project(s.point);
+    if (!center) {
+      // Behind the camera: blank the overlay but keep mode + cache so a
+      // later refresh() can bring it back.
+      this.root.style.display = 'none';
+      this.root.dataset.mode = 'surface-behind';
+      return;
     }
-    this.layout();
+    this.root.style.display = '';
+    this.root.dataset.mode = 'surface';
+
+    // Tangent basis for the ring plane.
+    let [nx, ny, nz] = s.normal;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+    let ux: number;
+    let uy: number;
+    let uz: number;
+    if (Math.abs(ny) < 0.98) {
+      // u = normalize(n x up)
+      ux = nz;
+      uy = 0;
+      uz = -nx;
+    } else {
+      ux = 1;
+      uy = 0;
+      uz = 0;
+    }
+    const uLen = Math.hypot(ux, uy, uz) || 1;
+    ux /= uLen;
+    uy /= uLen;
+    uz /= uLen;
+    const vx = ny * uz - nz * uy;
+    const vy = nz * ux - nx * uz;
+    const vz = nx * uy - ny * ux;
+
+    const r = s.worldRadius;
+    let d = '';
+    let started = false;
+    for (let i = 0; i < RING_SEGMENTS; i++) {
+      const a = (i / RING_SEGMENTS) * Math.PI * 2;
+      const ca = Math.cos(a) * r;
+      const sa = Math.sin(a) * r;
+      const pt = project([px + ux * ca + vx * sa, py + uy * ca + vy * sa, pz + uz * ca + vz * sa]);
+      if (!pt) {
+        started = false;
+        continue;
+      }
+      d += `${started ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
+      started = true;
+    }
+    if (d && started) d += 'Z';
+    this.ringPath.setAttribute('d', d);
+
+    this.dot.setAttribute('cx', String(center[0]));
+    this.dot.setAttribute('cy', String(center[1]));
+
+    const tipLen = r * this.intensity;
+    const tip = project([px + nx * tipLen, py + ny * tipLen, pz + nz * tipLen]);
+    if (tip) {
+      this.strength.setAttribute('x1', String(center[0]));
+      this.strength.setAttribute('y1', String(center[1]));
+      this.strength.setAttribute('x2', String(tip[0]));
+      this.strength.setAttribute('y2', String(tip[1]));
+      this.strength.style.visibility = '';
+    } else {
+      this.strength.style.visibility = 'hidden';
+    }
   }
 
-  private lastAnchorCss = 0;
-  private anchorWorldRadius = 0;
-
-  /** Record the radius pair at anchor time so b-adjust can rescale the ring. */
-  beginAnchorScale(radiusCss: number): void {
-    this.lastAnchorCss = Math.max(2, radiusCss);
-    this.anchorWorldRadius = this.group.scale.x;
-  }
-
-  show(): void {
-    if (!this.group.visible) this.root.style.display = '';
-  }
-
-  hide(): void {
-    if (this.anchored) return;
-    this.root.style.display = 'none';
-    this.group.visible = false;
-  }
-
-  private layout(): void {
-    this.root.style.transform = `translate(${this.x}px, ${this.y}px)`;
+  private renderScreen(): void {
+    this.screenRing.setAttribute('cx', String(this.x));
+    this.screenRing.setAttribute('cy', String(this.y));
+    this.screenRing.setAttribute('r', String(this.radiusCss));
+    this.dot.setAttribute('cx', String(this.x));
+    this.dot.setAttribute('cy', String(this.y));
   }
 
   dispose(): void {
     this.root.remove();
-    this.scene.remove(this.group);
-    this.group.traverse((o) => {
-      const mesh = o as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } };
-      mesh.geometry?.dispose();
-      mesh.material?.dispose();
-    });
   }
 }

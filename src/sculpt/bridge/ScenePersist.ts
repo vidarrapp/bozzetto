@@ -1,3 +1,4 @@
+import Enums from '@sculpt-vendor/misc/Enums';
 import type { SculptSession } from './SculptSession';
 
 /**
@@ -208,11 +209,17 @@ export class ScenePersist {
   install(): void {
     // Every undoable edit (stroke start, mask op, topology op) funnels
     // through pushState; undo/redo change geometry without pushing. Wrapping
-    // the instance keeps the vendor untouched.
+    // the instance keeps the vendor untouched. Stroke END must re-mark too:
+    // pushState fires at stroke start, so an idle save landing mid-stroke
+    // would otherwise clear the flag while the stroke's tail goes unsaved
+    // (found by the persistence suite as a partial-stroke restore).
     const sm = this.session.getStateManager();
     this.wrap(sm, 'pushState');
     this.wrap(sm, 'undo');
     this.wrap(sm, 'redo');
+    this.wrap(this.session.getSculptManager(), 'end');
+    // Symmetry is part of the saved scene but changes without a state push.
+    this.wrap(this.session, 'toggleSymmetry');
     document.addEventListener('visibilitychange', this.onHidden);
     window.addEventListener('pagehide', this.onHidden);
   }
@@ -273,6 +280,9 @@ export class ScenePersist {
   /** Serialize and write now (used by the idle pass, hide events, tests). */
   async flush(): Promise<void> {
     if (!this.dirty || this.saving || this.disabled) return;
+    // Never serialize a half-finished stroke: stay dirty and let the
+    // stroke-end wrap reschedule.
+    if (this.session._action === Enums.Action.SCULPT_EDIT) return;
     if (this.session.topLevelTriangles() > SKIP_SAVE_TRIS) return;
     const scene = this.session.serializeScene();
     if (!scene) return;

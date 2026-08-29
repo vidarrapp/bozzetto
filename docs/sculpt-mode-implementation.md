@@ -397,6 +397,20 @@ and pressure pulsing obscured the deforming surface); Smooth keeps its
 ring, dimmed to 0.3 opacity, since the outline is the tool there. The
 strength line rests during every stroke. Full cursor returns on release.
 
+WS2f visibility policy and rendering: off the model the cursor hides
+entirely (exceptions: Move's screen-space aim ring for the volumetric
+grab, and b/s adjustment); any held button that is not a stroke (orbit,
+pan, zoom, mask gestures) hides it and skips hover picking. The surface
+ring renders as PROJECTED SVG (world circle projected per update, with
+render-loop refresh on camera motion) because WebGPU's 1-device-px GL
+lines vanished on high-DPI displays. Pressure defaults: radius factor
+0, intensity factor 1. b/s/l drags claim the pointer ahead of
+OrbitControls. Sculpt lighting rides a camera-orbit quaternion delta
+(Lighting.setRigFollow), restored on exit; L-drag offsets compose. Tool
+overrides (bridge subclasses, vendor untouched): VolumetricMove
+(off-model silhouette grab + falloff pow 0.55) and ClayStripsBrush
+(plateau 0.45 falloff, 0.25r layer) replace MOVE/BRUSH registry slots.
+
 
 Two representations behind one cursor (review round 2): over the mesh, a
 3D ring aligned to the picked surface normal, drawn at the intersection

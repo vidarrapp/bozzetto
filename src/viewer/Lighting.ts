@@ -5,6 +5,7 @@ import {
   Group,
   HemisphereLight,
   MathUtils,
+  Quaternion,
   Scene,
   Sphere,
   Vector3,
@@ -80,6 +81,8 @@ const LIGHT_LABELS: Record<LightId, string> = {
 };
 
 const ALL: LightId[] = ['key', 'fill', 'rim'];
+
+const UP_AXIS = new Vector3(0, 1, 0);
 
 /** Default three-point rig and a raking-key preset for form study (§6). */
 export const PRESETS: LightingPreset[] = [
@@ -237,7 +240,32 @@ export class Lighting {
   /** Rotate the whole rig around the subject (degrees). */
   setRigRotation(deg: number): void {
     this.rigRotationDeg = deg;
+    if (this.followQuat) {
+      this.applyRigFollow();
+      return;
+    }
     this.rig.rotation.y = MathUtils.degToRad(deg);
+  }
+
+  private followQuat: Quaternion | null = null;
+  private readonly followScratch = new Quaternion();
+
+  /**
+   * Sculpt-mode view follow: the whole rig rides a camera-derived delta
+   * rotation (so the light stays put relative to the VIEWER, like turning
+   * the model in your hand), composed with the user's L-drag rig rotation.
+   * Pass null to restore the plain world-fixed Y rotation.
+   */
+  setRigFollow(q: Quaternion | null): void {
+    this.followQuat = q ? (this.followQuat ?? new Quaternion()).copy(q) : null;
+    if (this.followQuat) this.applyRigFollow();
+    else this.rig.rotation.set(0, MathUtils.degToRad(this.rigRotationDeg), 0);
+  }
+
+  private applyRigFollow(): void {
+    if (!this.followQuat) return;
+    this.followScratch.setFromAxisAngle(UP_AXIS, MathUtils.degToRad(this.rigRotationDeg));
+    this.rig.quaternion.copy(this.followQuat).multiply(this.followScratch);
   }
 
   getRigRotation(): number {

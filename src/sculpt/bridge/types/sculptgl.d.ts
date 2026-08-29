@@ -104,6 +104,10 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getNbTriangles(): number;
     getNbFaces(): number;
     getMatrix(): Float32Array;
+    getSymmetryOrigin(): number[];
+    getSymmetryNormal(): number[];
+    getVerticesProxy(): Float32Array;
+    getFacesFromVertices(iVerts: Uint32Array): Uint32Array;
     normalizeSize(): void;
     updateGeometry(iFaces?: Uint32Array, iVerts?: Uint32Array): void;
     updateFacesAabbAndNormal(iFaces?: Uint32Array): void;
@@ -155,6 +159,8 @@ declare module '@sculpt-vendor/editing/SculptManager' {
   import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
   class SculptManager {
     _symmetry: boolean;
+    /** Tool registry by Enums.Tools index (bridge swaps entries in). */
+    _tools: SculptTool[];
     constructor(main: unknown);
     setToolIndex(id: number): void;
     getToolIndex(): number;
@@ -192,6 +198,8 @@ declare module '@sculpt-vendor/states/StateManager' {
     constructor(main: unknown);
     /** Every undoable edit funnels through here (autosave hooks it). */
     pushState(state: unknown): void;
+    /** Record touched vertices on the current state (stroke tools). */
+    pushVertices(iVerts: Uint32Array): void;
     pushStateAdd(mesh: unknown): void;
     pushStateAddRemove(addMesh: unknown, remMesh: unknown, squash?: boolean): void;
     pushStateMultiresolution(multimesh: unknown, type: number): void;
@@ -214,15 +222,90 @@ declare module '@sculpt-vendor/states/StateMultiresolution' {
 declare module '@sculpt-vendor/math3d/Picking' {
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
   class Picking {
+    /** Written directly by the volumetric Move start (no raycast hit). */
+    _mesh: SculptMesh | null;
     constructor(main: unknown, xSym?: boolean);
     intersectionMouseMeshes(): boolean;
     intersectionMouseMesh(mesh?: SculptMesh, mouseX?: number, mouseY?: number): boolean;
     getMesh(): SculptMesh | null;
     /** Intersection point in the picked mesh's local space. */
     getIntersectionPoint(): number[];
+    setIntersectionPoint(inter: number[]): void;
     getPickedFace(): number;
+    getPickedVertices(): Uint32Array;
     updateLocalAndWorldRadius2(): void;
     getWorldRadius(): number;
+    getLocalRadius2(): number;
+    setLocalRadius2(r2: number): void;
+    /** World-space unprojection of device-px mouse coords at NDC depth z. */
+    unproject(mouseX: number, mouseY: number, z: number): number[];
+    initAlpha(): void;
+    updateAlpha(keepOrigin: boolean): void;
+    setIdAlpha(id: number): void;
+    getAlpha(x: number, y: number, z: number): number;
+    getEyeDirection(): number[];
+    getPickedNormal(): number[] | null;
   }
   export default Picking;
+}
+
+declare module '@sculpt-vendor/math3d/Geometry' {
+  const Geometry: {
+    /** Mirrors `point` through the plane (in place) and returns it. */
+    mirrorPoint(point: number[], ptPlane: number[], nPlane: number[]): number[];
+  };
+  export default Geometry;
+}
+
+declare module '@sculpt-vendor/editing/tools/Move' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  class Move {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _topoCheck: boolean;
+    _negative: boolean;
+    _moveData: unknown;
+    _moveDataSym: unknown;
+    _lastMouseX: number;
+    _lastMouseY: number;
+    constructor(main: unknown);
+    getMesh(): import('@sculpt-vendor/mesh/Mesh').SculptMesh;
+    start(ctrl: boolean): boolean;
+    pushState(): void;
+    initMoveData(picking: Picking, moveData: unknown): void;
+    move(
+      iVerts: Uint32Array,
+      center: number[],
+      radiusSquared: number,
+      moveData: unknown,
+      picking: Picking,
+    ): void;
+  }
+  export default Move;
+}
+
+declare module '@sculpt-vendor/editing/tools/Brush' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  class Brush {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _negative: boolean;
+    _clay: boolean;
+    _culling: boolean;
+    _accumulate: boolean;
+    _idAlpha: number;
+    _lockPosition: boolean;
+    constructor(main: unknown);
+    getMesh(): SculptMesh;
+    stroke(picking: Picking): void;
+    updateProxy(iVerts: Uint32Array): void;
+    dynamicTopology(picking: Picking): Uint32Array;
+    getFrontVertices(iVerts: Uint32Array, eyeDir: number[]): Uint32Array;
+    areaNormal(iVerts: Uint32Array): number[] | null;
+    areaCenter(iVerts: Uint32Array): number[];
+  }
+  export default Brush;
 }

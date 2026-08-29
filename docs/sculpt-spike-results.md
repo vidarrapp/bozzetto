@@ -486,3 +486,61 @@ the render centre sat at the visible bottom edge. Fixes:
   anchor dot stays full strength); the strength line rests during every
   stroke. Applies to both the 3D and SVG representations; full cursor
   returns on release. ws1b asserts all three states.
+
+# WS2f (cursor + tool behavior pass, review-driven)
+
+Eight review items from desktop testing, in one round:
+
+- Cursor visibility policy: off the model there is NO cursor - the ring
+  no longer chases the pointer during orbit/pan/zoom grabs (any held
+  button that is not a stroke also hides it and skips the hover raycast
+  entirely). Exceptions: the Move brush shows a screen-space aim ring
+  off-model (its volumetric grab starts there), and b/s size/strength
+  adjustment keeps its ring anywhere. Pointer over UI chrome hides the
+  cursor (the leave handler now only reacts to the container's own
+  pointerleave, not descendant crossings - that bug also explains the
+  "no ring on hover" report: body-level overlay chips ate the hover).
+- The surface ring is now PROJECTED SVG instead of scene-side GL lines:
+  WebGPU caps lines at one device pixel, which vanished on the 2560px
+  display; a projected path keeps a crisp CSS-pixel stroke on every
+  backend and DPI, and one code path now styles/dims/hides everything.
+  The projection refreshes from the render loop when the camera moves
+  under a still pointer (wheel zoom).
+- Pen pressure defaults: radius factor 0 (size constant), intensity
+  factor 1 (fully dynamic) - review preference, WS4 palette sliders
+  still planned.
+- b/s size-strength drags and l light drags claim the pointer: the
+  press is swallowed before OrbitControls, so adjusting never orbits.
+- View-follow lighting: the rig rides the camera orbit as a quaternion
+  delta from the entry view (azimuth AND elevation), approximating
+  turning the model in your hand - the underside is lit when viewed
+  from below. The L-drag azimuth offset composes on top; world-fixed
+  behavior is restored on mode exit (Lighting.setRigFollow).
+- Volumetric Move (bridge subclass VolumetricMove, vendor untouched):
+  a press that misses the mesh still grabs when the pick ray passes
+  within the brush radius of the surface; the grab sphere sits on the
+  ray at the nearest-vertex depth, so silhouettes can be pulled from
+  just outside the outline. Symmetry mirrors the sphere through the
+  symmetry plane. Off-surface grabs use the plain sphere pick (no
+  topology walk). Other brushes keep miss = orbit.
+- Move falloff softened: the upstream quartic raised to pow 0.55, so
+  more of the ball rides along (review: upstream felt sharp vs ZBrush).
+- Standard brush is now clay strips (bridge subclass ClayStripsBrush):
+  plateau falloff (full strength to 0.45 of the radius, quartic tail
+  after) and a 0.25 x radius layer plane (upstream clay used 0.1), so
+  strokes lay ribbon-like layers. Tagged copies of the upstream loops
+  with the changed lines called out; registry-swapped in SculptSession.
+- Verified headless (ws2f-check + updated ws1b): all cursor modes and
+  transitions, orbit-hide, b-drag with a provably still camera, rig
+  quaternion following orbit, volumetric grab from outside the
+  silhouette (displaces, one undo state, exact undo; sculpt brushes
+  still refuse off-model), clay strips stroke + exact undo. Plus the
+  WS1/WS1b/persistence/fuzz batteries.
+- Autosave race found by the suite while landing this round: dirty was
+  marked only at stroke START (pushState), so an idle save landing in a
+  stroke's event gaps captured half a stroke, cleared the flag, and the
+  rest of the stroke went unsaved until the next push. Fixed twice over:
+  flush() never serializes while _action is SCULPT_EDIT (stays dirty),
+  and SculptManager.end plus toggleSymmetry are wrapped so stroke ends
+  and symmetry changes re-mark. The persistence suite caught it as a
+  partial-stroke restore with stale symmetry.

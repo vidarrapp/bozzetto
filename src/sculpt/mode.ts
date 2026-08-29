@@ -1,4 +1,4 @@
-import { Box3, Matrix4, Vector3 } from 'three';
+import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -93,7 +93,54 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // column becomes the scene graph/outliner entry point later).
   const stats = makeStatsCorner(session);
 
-  const cursor = new BrushCursor(container, viewer.scene);
+  const cursor = new BrushCursor(container);
+  // The surface ring is projected SVG: crisp at any DPI on any backend.
+  const projVec = new Vector3();
+  cursor.setProjector((p) => {
+    projVec.set(p[0], p[1], p[2]).project(viewer.camera);
+    if (projVec.z > 1 || projVec.z < -1) return null;
+    return [
+      (projVec.x * 0.5 + 0.5) * container.clientWidth,
+      (0.5 - projVec.y * 0.5) * container.clientHeight,
+    ];
+  });
+
+  // View-follow lighting (review decision): the rig rides the camera orbit
+  // as a delta from the entry view, approximating turning the model in your
+  // hand - the underside is lit when you look at it from below. The L-drag
+  // offset still composes on top. The same tick re-projects the cursor when
+  // the camera moves under a still pointer (wheel zoom).
+  const camScratch = {
+    prevPos: new Vector3(),
+    prevQuat: new Quaternion(),
+    dir: new Vector3(),
+    eul: new Euler(),
+    q: new Quaternion(),
+    entryInv: new Quaternion(),
+    delta: new Quaternion(),
+  };
+  const orbitQuat = (out: Quaternion): Quaternion => {
+    viewer.camera.getWorldDirection(camScratch.dir);
+    camScratch.dir.multiplyScalar(-1); // subject -> camera
+    const azim = Math.atan2(camScratch.dir.x, camScratch.dir.z);
+    const elev = Math.asin(Math.min(1, Math.max(-1, camScratch.dir.y)));
+    return out.setFromEuler(camScratch.eul.set(-elev, azim, 0, 'YXZ'));
+  };
+  orbitQuat(camScratch.entryInv).invert();
+  const followTick = (): void => {
+    const cam = viewer.camera;
+    if (cam.position.equals(camScratch.prevPos) && cam.quaternion.equals(camScratch.prevQuat)) {
+      return;
+    }
+    camScratch.prevPos.copy(cam.position);
+    camScratch.prevQuat.copy(cam.quaternion);
+    viewer.lighting.setRigFollow(
+      camScratch.delta.copy(orbitQuat(camScratch.q)).multiply(camScratch.entryInv),
+    );
+    cursor.refresh();
+  };
+  viewer.onTick = followTick;
+
   const input = new InputShell(session, container, cursor, {
     frameModel: () => {
       const active = session.getMesh();
@@ -149,6 +196,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.dispose();
     cursor.dispose();
     session.onActiveMeshChange = null;
+    viewer.onTick = null;
+    lighting.setRigFollow(null);
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);
     viewer.setGround(savedGround);

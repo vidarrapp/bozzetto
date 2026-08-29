@@ -1494,8 +1494,12 @@ export class Viewer {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   }
 
+  /** Per-frame hook (sculpt mode: light follow + cursor re-projection). */
+  onTick: (() => void) | null = null;
+
   private readonly loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
+    this.onTick?.();
     this.timer.update();
     const raw = this.timer.getDelta();
     if (raw > 0) this.fps += (1 / raw - this.fps) * 0.1; // smoothed

@@ -68,10 +68,10 @@ export class InputShell {
   ) {}
 
   install(): void {
-    // Pen pressure sways both brush radius and intensity (vendor defaults
-    // enable radius only). Factors become palette sliders in WS4.
-    Tablet.radiusFactor = 0.75;
-    Tablet.intensityFactor = 0.75;
+    // Pen pressure: size stays constant, intensity fully dynamic (review
+    // default from the WS2f pass). Factors become palette sliders in WS4.
+    Tablet.radiusFactor = 0;
+    Tablet.intensityFactor = 1;
     Tablet.pressure = 0.5;
     this.container.addEventListener('pointerdown', this.onPointerDown, true);
     this.container.addEventListener('pointermove', this.onPointerMove, true);
@@ -140,6 +140,13 @@ export class InputShell {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) return; // middle/right stay with OrbitControls
+    // While adjusting brush size/strength (b/s) or dragging the light rig
+    // (l), the press belongs to that gesture: never let it start an orbit.
+    if (this.adjust || this.lKeyHeld) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const s = this.session;
     this.setMouse(e);
 
@@ -237,12 +244,26 @@ export class InputShell {
 
     this.setMouse(e);
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
-    this.cursor.show();
 
     if (s._action !== Enums.Action.SCULPT_EDIT || e.pointerId !== this.pointerId) {
-      // Hover: align the ring to the surface under the cursor (fresh pick).
+      // A held button that is not our stroke is a camera drag (or a mask
+      // gesture): the cursor gets out of the way entirely, and skipping the
+      // hover raycast keeps orbiting cheap.
+      if (e.buttons !== 0) {
+        this.cursor.hide();
+        return;
+      }
+      // Hover: ring on the surface under the cursor. Off the mesh, no
+      // cursor at all - except Move, whose volumetric grab can start out
+      // there and deserves an aim ring (review policy).
       const surf = s.hoverSurface(true);
-      this.cursor.setSurface(surf ? surf.point : null, surf?.normal, surf?.worldRadius);
+      if (surf) {
+        this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius);
+      } else if (this.currentToolIndex() === Enums.Tools.MOVE) {
+        this.cursor.showScreen();
+      } else {
+        this.cursor.hide();
+      }
       return;
     }
     e.preventDefault();
@@ -303,8 +324,11 @@ export class InputShell {
     s.render();
   };
 
-  private readonly onPointerLeave = (): void => {
-    this.cursor.hide();
+  private readonly onPointerLeave = (e: PointerEvent): void => {
+    // Capture-phase leave fires for every descendant crossing (canvas to
+    // overlay chips and back); only the container's own leave means the
+    // pointer left the viewport.
+    if (e.target === this.container) this.cursor.hide();
   };
 
   /** Undo the per-stroke negative override and mask tool swap. */
@@ -425,7 +449,6 @@ export class InputShell {
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
     this.cursor.beginAnchorScale(this.currentTool()._radius);
     this.cursor.setAnchored(true);
-    this.cursor.show();
     this.syncCursorBrush();
   }
 
