@@ -1523,6 +1523,58 @@ html.is-page body {
   pointer-events: none;
 }
 
+/* Procreate-style side sliders: brush size + strength, left edge. */
+.sculpt-sliders {
+  position: fixed;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 12;
+  user-select: none;
+}
+
+.sculpt-slider {
+  position: relative;
+  width: 26px;
+  height: 132px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.sculpt-slider__track {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--panel-border);
+  opacity: 0.85;
+}
+
+.sculpt-slider__nub {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 13px;
+  height: 13px;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  background: var(--control-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  pointer-events: none;
+}
+
+.sculpt-slider:hover .sculpt-slider__nub,
+.sculpt-slider:active .sculpt-slider__nub {
+  border-color: var(--accent);
+}
+
 /* Sculpt corner stats: object name + live poly count (top-left). */
 .sculpt-stats {
   position: fixed;

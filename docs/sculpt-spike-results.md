@@ -569,3 +569,16 @@ Eight review items from desktop testing, in one round:
   tick) onto the modifier-free physical Semicolon/Quote keys, the row
   below the brackets. The flashed screen ring also gained the strength
   line, so intensity ticks are visible without hover.
+
+# WS2h (side sliders)
+
+- Minimal Procreate-style vertical sliders on the left edge: brush size
+  (log-mapped 5..500 so small brushes get room) above strength (linear),
+  each just a 3px track and a nub, house tokens, 26px touch strip.
+  Drags set the active tool and flash the centered preview ring (with
+  strength line); InputShell.onBrushChange keeps the nubs live for every
+  other route (digits, b/s drags, wheel keys, tool switches, temp
+  swaps). Appended to body like the toolbar, so slider drags never reach
+  the sculpt input shell or OrbitControls.
+- ws1b asserts: slider drags set strength ~0.8 and grow size past 200px,
+  and the size nub follows a wheel-key nudge.

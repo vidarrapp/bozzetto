@@ -8,6 +8,7 @@ import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
 import { ScenePersist, clearSavedScene, loadSavedScene } from './bridge/ScenePersist';
 import { SculptToolbar } from './ui/SculptToolbar';
+import { BrushSliders } from './ui/BrushSliders';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
 /**
@@ -159,6 +160,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   input.install();
   const toolbar = new SculptToolbar(input);
+  const sliders = new BrushSliders(input);
 
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
@@ -193,6 +195,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     levelToast.dispose();
     stats.dispose();
     persist.dispose();
+    sliders.dispose();
     toolbar.dispose();
     input.dispose();
     cursor.dispose();

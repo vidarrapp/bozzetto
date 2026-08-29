@@ -53,6 +53,8 @@ const ORBIT_STEP_DEG = 1;
 export class InputShell {
   /** Fired when the selected brush changes (digit keys or toolbar). */
   onToolChange: (() => void) | null = null;
+  /** Fired whenever brush radius/strength/selection may have moved. */
+  onBrushChange: (() => void) | null = null;
 
   private pointerId = -1;
   /** Sticky negative base (toolbar toggle); alt inverts relative to it. */
@@ -148,6 +150,36 @@ export class InputShell {
     this.cursor.setBrush(tool._radius, tool._intensity);
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
+    this.onBrushChange?.();
+  }
+
+  // --- brush value access (side sliders + future palette) -----------------
+
+  getBrushRadius(): number {
+    return this.currentTool()._radius;
+  }
+
+  getBrushIntensity(): number {
+    return this.currentTool()._intensity;
+  }
+
+  /** Set radius directly (slider drags); flashes a centered preview ring. */
+  setBrushRadius(px: number): void {
+    this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
+    this.syncCursorBrush();
+    this.centerFlash();
+  }
+
+  setBrushIntensity(v: number): void {
+    this.currentTool()._intensity = Math.min(1, Math.max(0, v));
+    this.syncCursorBrush();
+    this.centerFlash();
+  }
+
+  /** Preview ring mid-viewport while a slider drags (Procreate-style). */
+  private centerFlash(): void {
+    this.cursor.moveTo(this.container.clientWidth / 2, this.container.clientHeight / 2);
+    this.cursor.flashScreen(NUDGE_FLASH_MS);
   }
 
   // --- pointer machine ----------------------------------------------------
