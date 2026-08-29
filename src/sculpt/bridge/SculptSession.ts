@@ -227,6 +227,10 @@ export class SculptSession {
   // --- sculpt commands (hotkey surface) -----------------------------------
 
   undo(): void {
+    // Mid-action guard: on iPad a finger can tap the history buttons while
+    // the pen is still drawing; undoing the state the stroke is writing into
+    // would corrupt it. (The keyboard path gets the same protection.)
+    if (this._action !== Enums.Action.NOTHING) return;
     const before = this.levelSignature();
     this.stateManager.undo();
     this.render();
@@ -234,10 +238,32 @@ export class SculptSession {
   }
 
   redo(): void {
+    if (this._action !== Enums.Action.NOTHING) return;
     const before = this.levelSignature();
     this.stateManager.redo();
     this.render();
     this.fireLevelChangeIfMoved(before);
+  }
+
+  /**
+   * Forget all history. Mount calls this once the boot scene is assembled:
+   * addNewMesh pushes an add-state per mesh (undoable object add is right
+   * mid-session), but undoing PAST the boot state would delete the initial
+   * sphere or restored objects one by one.
+   */
+  clearHistory(): void {
+    this.stateManager._undos.length = 0;
+    this.stateManager._redos.length = 0;
+    this.stateManager._curUndoIndex = -1;
+  }
+
+  /** History availability (drives the left-rail undo/redo buttons). */
+  canUndo(): boolean {
+    return this.stateManager._curUndoIndex >= 0 && this.stateManager._undos.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.stateManager._redos.length > 0;
   }
 
   /** [sel, levels] of the active multimesh, or null (dyntopo, no mesh). */

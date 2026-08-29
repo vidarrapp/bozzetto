@@ -665,3 +665,37 @@ Eight review items from desktop testing, in one round:
 - Bug found by the suite: a display:flex on the add menu overrode the
   hidden attribute (no [hidden] guard in the app stylesheet), leaving
   the menu permanently open over the rows.
+
+# Undo/redo buttons round (post-WS4 UI request)
+
+## What landed
+
+- Undo/redo chips at the foot of the left rail (below the strength
+  slider), where Procreate parks its history arrows: tap steps once,
+  holding walks the stack (400 ms delay, then a step every 110 ms),
+  and each chip greys out when its direction is empty. They call the
+  same session.undo()/redo() the ctrl+z path uses, so the level toast
+  and autosave dirty-marking come along for free.
+- Enabled state is polled from the existing mode tick (two flag reads
+  a frame, DOM touched only on change) instead of wiring callbacks
+  through every history route (strokes, panel ops, keyboard, restore).
+- session.undo()/redo() now no-op while an action is live (_action
+  guard): on iPad a second finger can tap the chips mid-pen-stroke,
+  which would have undone the state the stroke was writing into.
+- Boot history is now cleared after the scene is assembled: addNewMesh
+  pushes an add-state per mesh, so a restored scene used to boot with
+  N undoable "add object" states - ctrl+z right after reload could
+  delete restored objects one by one. Surfaced by the button suite's
+  "disabled on a fresh scene" check; the keyboard path had the same
+  latent bug.
+
+## Verified (ws1b-test.mjs additions + full battery)
+
+- Chips exist and start disabled on a fresh scene; enabled after a
+  stroke; tap undo reverts to the exact pre-stroke checksum; redo
+  restores it; mid-stroke undo is ignored (_curUndoIndex unmoved);
+  hold-to-repeat exhausts a multi-state stack until the chip disables
+  itself, and redo revives it.
+- One bug caught by the suite: buttons started DOM-enabled while the
+  change-detection cache said disabled, so the first refresh skipped
+  the write (fixed by constructing them disabled).

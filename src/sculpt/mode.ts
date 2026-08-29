@@ -41,6 +41,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     saved = null;
     multimesh = session.addSphere();
   }
+  // The boot scene is the floor of history: its add-states must not be
+  // undoable (ctrl+z or the rail buttons would delete restored objects).
+  session.clearHistory();
 
   const sync = new GeometrySync();
   sync.bind(multimesh as unknown as SculptMesh);
@@ -85,6 +88,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // every mesh-list or selection change (extract, add, dyntopo, undo).
   let scenePanel: ScenePanel | null = null;
   let sculptPanel: SculptPanel | null = null;
+  let sliders: BrushSliders | null = null;
   const extras = new Map<
     SculptMesh,
     { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
@@ -173,6 +177,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   orbitQuat(camScratch.entryInv).invert();
   const followTick = (): void => {
+    // History flags move through many routes (strokes, panel ops, keyboard,
+    // buttons, restore); polling each frame is cheaper than wiring them all.
+    sliders?.refreshHistory();
     const cam = viewer.camera;
     if (cam.position.equals(camScratch.prevPos) && cam.quaternion.equals(camScratch.prevQuat)) {
       return;
@@ -204,7 +211,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   input.install();
   const toolbar = new SculptToolbar(input);
-  const sliders = new BrushSliders(input);
+  sliders = new BrushSliders(input, {
+    undo: () => session.undo(),
+    redo: () => session.redo(),
+    canUndo: () => session.canUndo(),
+    canRedo: () => session.canRedo(),
+  });
   scenePanel = new ScenePanel(session);
   sculptPanel = new SculptPanel(session, input, viewer);
   // The toolbar owns onToolChange; chain the palette's per-brush refresh.
@@ -258,7 +270,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       e.sync.dispose();
     }
     extras.clear();
-    sliders.dispose();
+    sliders?.dispose();
     toolbar.dispose();
     input.dispose();
     cursor.dispose();

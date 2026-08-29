@@ -220,6 +220,10 @@ declare module '@sculpt-vendor/states/StateManager' {
     /** Undo stack depth cap (upstream default 15; the bridge raises it). */
     static STACK_LENGTH: number;
     constructor(main: unknown);
+    /** History internals (index-based: undo moves the cursor, not length). */
+    _undos: unknown[];
+    _redos: unknown[];
+    _curUndoIndex: number;
     /** Every undoable edit funnels through here (autosave hooks it). */
     pushState(state: unknown): void;
     /** Record touched vertices on the current state (stroke tools). */
