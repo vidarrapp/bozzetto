@@ -254,6 +254,31 @@ graphs (AddRemove states hold whole meshes), so persisting them is a
 large, bug-prone serialization surface for marginal value; the WS5
 capture flow keeps long-term history as timelapse frames instead.
 
+#### 6.6d Look persistence (WS6 review) `[Decision]`
+
+The scene came back on re-entry; the look did not, so leaving for the
+gallery and returning reset lighting, environment, AO, material,
+shadows and camera to the mount defaults of 7.5 - which are only meant
+for a first visit. `Viewer.getLook()/applyLook()` gather and re-apply
+the whole look as one record (the same fields the editor's Save look
+writes, so the two cannot drift), and sculpt mode stores it under its
+own IndexedDB key rather than inside `SavedScene`: the look changes on
+its own rhythm and must not drag a multi-megabyte vertex payload
+through a rewrite. Writes are debounced off any panel input and forced
+on hide, on the gallery link and on unmount (before the viewer's own
+look is restored), which also catches the hotkeys that change the look
+without firing an input event. Two fields were missing from the
+existing serialization and were added there rather than duplicated:
+the master shadow switch (`LightingState.shadowsMaster`) and the
+cavity/SSAO pass sculpt mode uses instead of GTAO. A `.bozz` file does
+carry its look inside `SavedScene` (optional, so older files still
+load), and publishing a sculpt to the gallery now sends the look with
+the frames. The Render panel rebuilds its sections on entering sculpt
+mode and on a restored look: every control reads its value once, when
+built, so a wholesale change is a rebuild rather than a hand-written
+re-sync of a couple of widgets with the rest left showing stale
+numbers.
+
 ## 7. GUI specification (yagui replacement)
 
 ### 7.1 Standards (all `[Verified]` at the pinned bozzetto commit)

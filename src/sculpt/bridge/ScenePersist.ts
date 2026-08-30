@@ -1,5 +1,6 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import type { SculptSession } from './SculptSession';
+import type { LookState } from '../../viewer/Viewer';
 
 /**
  * Reload-safe sculpting: the active mesh autosaves to IndexedDB so a page
@@ -62,6 +63,13 @@ export interface SavedScene {
   /** Index of the selected mesh. */
   active: number;
   symmetry: boolean;
+  /**
+   * Look-dev settings, so a .bozz file opens under the lighting it was
+   * saved in. Optional: records written before this, and the autosave
+   * (which keeps the look under its own key, so a slider drag never
+   * rewrites a multi-megabyte vertex payload), have none.
+   */
+  look?: LookState;
 }
 
 /** The single-mesh v2 format, upgraded on read. */
@@ -104,6 +112,12 @@ const KEY = 'current';
  * can read it without inflating a multi-megabyte vertex payload.
  */
 const SNAPSHOT_KEY = 'currentSnapshot';
+/**
+ * The sculpt session's look-dev settings, kept beside the scene rather than
+ * inside it: the look changes on its own rhythm (a slider drag, a light
+ * rotation) and must not drag the whole vertex payload through a rewrite.
+ */
+const LOOK_KEY = 'currentLook';
 
 export interface SculptSnapshot {
   /** JPEG of the viewport as it was left. */
@@ -111,6 +125,28 @@ export interface SculptSnapshot {
   savedAt: number;
   objects: number;
   tris: number;
+}
+
+/**
+ * Keep the sculpt session's look. Without this, leaving sculpt mode and
+ * coming back reset the lighting, AO, material and camera to the mount
+ * defaults, losing whatever had been set up.
+ */
+export async function saveSculptLook(look: LookState): Promise<void> {
+  try {
+    await withStore('readwrite', (s) => s.put(look, LOOK_KEY));
+  } catch {
+    // Private windows / blocked storage: the look is simply not remembered.
+  }
+}
+
+/** The saved sculpt look, or null when there is none. */
+export async function loadSculptLook(): Promise<LookState | null> {
+  try {
+    return ((await withStore('readonly', (s) => s.get(LOOK_KEY))) as LookState) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Remember what the work looked like, for the gallery's "in progress" card. */

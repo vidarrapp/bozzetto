@@ -25,8 +25,11 @@ import type { BrushCursor } from './BrushCursor';
 export interface InputShellHooks {
   /** f: frame the whole current mesh. */
   frameModel(): void;
-  /** Stroke end: move the orbit pivot to the last edit point. */
+  /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
+  /** A drag that missed the mesh is about to orbit / has finished. */
+  orbitBegin(): void;
+  orbitEnd(): void;
   /** shift+s: toggle shadows; returns the new state (unused, for parity). */
   toggleShadows(): void;
   /** l + drag: rotate the light rig by a degree delta. */
@@ -93,6 +96,8 @@ export class InputShell {
   private pointerId = -1;
   /** Strokes begun since mount; the toolbar reads it to tell a hold from a tap. */
   private strokes = 0;
+  /** Pointer that fell through to an orbit, or -1. */
+  private orbitPointer = -1;
   /** Sticky negative base (toolbar toggle); alt inverts relative to it. */
   private negativeBase = false;
   /** Tool whose _negative was overridden for the current stroke, if any. */
@@ -318,7 +323,11 @@ export class InputShell {
         return;
       }
       s._action = Enums.Action.NOTHING;
-      return; // no hit: the event continues on to OrbitControls (orbit)
+      // No hit: the event continues on to OrbitControls, which will orbit.
+      // Tell the host so it can re-centre that rotation on the last stroke.
+      this.orbitPointer = e.pointerId;
+      this.hooks.orbitBegin();
+      return;
     }
 
     s._action = Enums.Action.SCULPT_EDIT;
@@ -459,6 +468,11 @@ export class InputShell {
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
+
+    if (this.orbitPointer === e.pointerId) {
+      this.orbitPointer = -1;
+      this.hooks.orbitEnd();
+    }
 
     if (this.ctrlEmpty && e.pointerId === this.ctrlEmpty.pointerId) {
       const gesture = this.ctrlEmpty;

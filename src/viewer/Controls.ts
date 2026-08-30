@@ -106,6 +106,19 @@ export class Controls {
   }
 
   /**
+   * Place camera and target without running the controls. setState() ends in
+   * controls.update(), which re-applies the frame's damped delta - fine when
+   * called once, wrong from inside a post-update hook, where it applies the
+   * same easing twice and skews the result.
+   */
+  placeCamera(position: Vector3, target: Vector3): void {
+    this.camera.position.copy(position);
+    this.controls.target.copy(target);
+    this.camera.lookAt(this.controls.target);
+    this.camera.updateMatrixWorld();
+  }
+
+  /**
    * Turntable: rotate the camera AND the orbit target about a vertical axis
    * through `centre`. Rotating the target too keeps the view relationship
    * intact, so this stays a true turntable however far the stroke pivot has

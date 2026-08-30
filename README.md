@@ -46,8 +46,9 @@ Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at
 - **Symmetry controls** — the palette gains a Symmetry section: the mirror checkbox (synced with the `X` key) and an X/Y/Z axis choice per object, both remembered by the autosave.
 - **Side sliders** — two minimal vertical sliders on the left edge, Procreate-style: brush size (log-scaled) and strength. Dragging shows a centered preview ring so you see the size land; the nubs track every other way of changing the brush (keys, `B`/`S` drags, tool switches). Below them, **undo/redo buttons** (again where Procreate puts them): tap to step, hold to walk the history, greyed out when there's nothing left in that direction — no keyboard needed on the iPad.
 - **Wheel-friendly keys** — made for mapping to controller wheels (TourBox and friends): `[` / `]` step brush size, the two keys below them (`;` / `'`) step strength (with a brief on-screen ring and strength line so you see both without hover), and `←` / `→` turn the model one degree per tick, accelerating up to 8× when the wheel spins fast.
-- **Web app** — a web-app manifest plus home-screen icons: add Bozzetto to your iPad or phone home screen and it launches fullscreen as its own app (placeholder icon for now).
+- **Web app** — a web-app manifest plus home-screen icons: add Bozzetto to your iPad or phone home screen and it launches fullscreen as its own app. The icon is the Flaticon *sculpture* glyph on the house clay, generated (rasters and SVG favicon alike) by `node scripts/generate-icons.mjs`.
 - **Reload-safe sculpting** — your sculpt autosaves to the browser (IndexedDB) after every edit, in idle time so strokes never pay for it. Reload the page or get evicted by iOS and the sculpt comes back exactly as it was — the full subdivision-level stack included, one better than SculptGL's own session save — with a "Start fresh" escape hatch. Very large meshes (past ~1.6M triangles) save on a five-minute cadence instead of after every edit. Undo history doesn't survive a reload.
+- **The look comes back too** — lighting, environment, AO, material, shadows and the camera are saved with the session, under their own key so a slider drag never rewrites a multi-megabyte vertex payload. Leave for the gallery and come back and the studio is as you left it. A `.bozz` file carries its look as well, so opening one restores the lighting it was saved in, and publishing a sculpt to the gallery publishes the look with it — the same fields the editor's **Save look** writes.
 - **UI polish** — interface text and links are unselectable (modifier-heavy sculpting kept selecting button text); real text fields still select normally.
 - **Viewer change** — the `B` depth-of-field hotkey is removed (DoF lives in the Render panel); in sculpt mode number keys select brushes instead of materials.
 
@@ -290,7 +291,7 @@ The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through 
 ## Credits
 
 - Sculpt mode is built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core — MIT, by Stephane GINIER; the vendored source and its license live in `src/sculpt/vendor/`.
-- Toolbar icons: [Uicons by Flaticon](https://www.flaticon.com/uicons) (`@flaticon/flaticon-uicons`, solid straight style).
+- Toolbar icons and the app icon: [Uicons by Flaticon](https://www.flaticon.com/uicons) (`@flaticon/flaticon-uicons`, solid straight style). The app icon is the `sculpture` glyph, kept in `scripts/icons/` because the npm release does not ship it.
 
 ## License
 

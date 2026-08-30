@@ -42,7 +42,9 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // it here, since they get no tile.
   if (!admin) bar.appendChild(topChip('Sculpt', '/?sculpt=1'));
   bar.appendChild(topChip('Upload timelapse', '/create/'));
-  if (!admin) bar.appendChild(topChip('Log in', '/admin/'));
+  // Same slot either way: the way in for a guest, the way to the editor for
+  // the owner - who otherwise had no link to the admin panel at all.
+  bar.appendChild(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
 
   let projects: ProjectSummary[] = [];
   try {

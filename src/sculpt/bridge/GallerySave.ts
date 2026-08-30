@@ -2,6 +2,7 @@ import { api } from '../../admin/api';
 import { mergeSceneArrays } from './SceneFile';
 import type { SnapshotRecorder } from './SnapshotRecorder';
 import type { SculptSession } from './SculptSession';
+import type { LookState } from '../../viewer/Viewer';
 
 /**
  * Publishing sculpts to the gallery (WS5, admin only - Cloudflare Access
@@ -16,6 +17,26 @@ export const PROJECT_SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export interface GalleryHooks {
   /** Current-view JPEG for the gallery card (Viewer.captureThumbnail). */
   thumbnail(): Promise<Blob>;
+  /** The look to publish with, so the project opens as it was sculpted. */
+  look(): LookState;
+}
+
+/**
+ * Publish the look alongside the frames, exactly as the editor's "Save look"
+ * does. Without it a published sculpt opened under the viewer's defaults
+ * rather than the lighting it was made in.
+ */
+function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
+  const look = hooks.look();
+  return {
+    lighting: look.lighting,
+    material: look.material,
+    environment: look.environment,
+    ao: look.ao,
+    presentation: look.presentation,
+    camera: look.camera,
+    defaults: { material: look.materialMode },
+  };
 }
 
 /** Walk the capture store into a new timelapse project. */
@@ -42,7 +63,7 @@ export async function saveTimelapseToGallery(
     frames.push({ index: i, tris: metas[i].tris });
   }
   onProgress('Finishing...');
-  await api.update(id, { frames });
+  await api.update(id, { frames, ...lookPatch(hooks) });
   await uploadThumbBestEffort(id, hooks);
   return `/?tl=${id}`;
 }
@@ -65,7 +86,10 @@ export async function saveModelToGallery(
   await api.create({ id, title: title || id, mode: 'model', fps: 4 });
   onProgress('Uploading...');
   await api.uploadFrame(id, 0, glb);
-  await api.update(id, { frames: [{ index: 0, tris: merged.tris }] });
+  await api.update(id, {
+    frames: [{ index: 0, tris: merged.tris }],
+    ...lookPatch(hooks),
+  });
   await uploadThumbBestEffort(id, hooks);
   return `/?tl=${id}`;
 }

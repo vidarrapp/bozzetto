@@ -10,6 +10,8 @@ import {
   ScenePersist,
   clearSavedScene,
   loadSavedScene,
+  loadSculptLook,
+  saveSculptLook,
   saveSculptSnapshot,
 } from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
@@ -122,6 +124,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
+  // ...and then, on top of those defaults, whatever the last session set up.
+  // Without this, leaving sculpt mode and coming back reset every look-dev
+  // control - the defaults above are only meant for a first visit.
+  await viewer.applyLook(await loadSculptLook());
 
   // Multi-mesh (WS4): the ACTIVE mesh renders through the primary sync and
   // the viewer's display machinery; every other scene object gets its own
@@ -256,6 +262,94 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cursor.refresh();
   };
   viewer.onTick = followTick;
+  // After the controls, not before: onTick's camera is overwritten by
+  // controls.update() later in the same frame.
+  viewer.onPostControls = () => applyPivotOrbit();
+
+  /**
+   * Orbit around the last stroke instead of the middle of the view, without
+   * the view jumping when the pivot moves.
+   *
+   * OrbitControls can only rotate about its own target, and moving that
+   * target off the view axis necessarily swings the view - which is exactly
+   * the jump to avoid. So the target is left alone and OrbitControls is used
+   * purely as an input device: each frame of a drag, the rotation R it has
+   * produced (the turn from the start offset to the current one) is re-applied
+   * about the pivot instead. Rotating camera and target rigidly about P by
+   * the same R IS a rotation about P, and since both move together the
+   * controls' own spherical state is untouched, so nothing fights back and
+   * damping, pinch and dolly all keep working.
+   */
+  const pivot = new Vector3();
+  let orbitFrom: {
+    cam: Vector3;
+    target: Vector3;
+    theta: number;
+    phi: number;
+    dist: number;
+    right: Vector3;
+  } | null = null;
+  const orbitScratch = {
+    q: new Quaternion(),
+    qy: new Quaternion(),
+    off: new Vector3(),
+    v: new Vector3(),
+  };
+  const UP = new Vector3(0, 1, 0);
+  /** How long the damped tail after a release stays re-centred. */
+  const ORBIT_SETTLE_MS = 900;
+  let orbitUntil = 0;
+
+  /** Azimuth/elevation of an offset, the same decomposition OrbitControls uses. */
+  const sphericalOf = (off: Vector3): { theta: number; phi: number; dist: number } => ({
+    theta: Math.atan2(off.x, off.z),
+    phi: Math.acos(Math.min(1, Math.max(-1, off.y / (off.length() || 1)))),
+    dist: off.length(),
+  });
+
+  const beginPivotOrbit = (): void => {
+    orbitUntil = 0;
+    const st = viewer.getCameraState();
+    const cam = new Vector3(...st.position);
+    const target = new Vector3(...st.target);
+    const off = cam.clone().sub(target);
+    const sph = sphericalOf(off);
+    orbitFrom = {
+      cam,
+      target,
+      theta: sph.theta,
+      phi: sph.phi,
+      dist: sph.dist,
+      // The axis elevation turns about: perpendicular to up and to the view.
+      right: new Vector3().crossVectors(UP, off).normalize(),
+    };
+  };
+
+  const applyPivotOrbit = (): void => {
+    if (!orbitFrom) return;
+    if (orbitUntil > 0 && performance.now() > orbitUntil) {
+      orbitFrom = null;
+      orbitUntil = 0;
+      return;
+    }
+    const st = viewer.getCameraState();
+    const off = orbitScratch.off
+      .set(st.position[0], st.position[1], st.position[2])
+      .sub(orbitScratch.v.set(st.target[0], st.target[1], st.target[2]));
+    if (off.lengthSq() < 1e-12 || orbitFrom.dist < 1e-6) return;
+    const sph = sphericalOf(off);
+    // Rebuild the rotation the controls just made, as elevation about the
+    // start right axis followed by azimuth about world up. A minimal-arc
+    // quaternion between the two offsets is NOT the same rotation - it
+    // carries a roll for any non-zero elevation, which left the pivot
+    // drifting across the screen instead of staying put.
+    const q = orbitScratch.q.setFromAxisAngle(orbitFrom.right, sph.phi - orbitFrom.phi);
+    q.premultiply(orbitScratch.qy.setFromAxisAngle(UP, sph.theta - orbitFrom.theta));
+    const scale = sph.dist / orbitFrom.dist;
+    const place = (start: Vector3): Vector3 =>
+      start.clone().sub(pivot).applyQuaternion(q).multiplyScalar(scale).add(pivot);
+    viewer.setCameraState(place(orbitFrom.cam), place(orbitFrom.target));
+  };
 
   // Turntable (arrow keys / a wheel mapped to them). Two things separate it
   // from a drag-orbit: it always spins about the OBJECT's centre, never the
@@ -279,9 +373,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const input = new InputShell(session, container, cursor, {
     frameModel: () => {
       const active = session.getMesh();
-      if (active) viewer.frameBounds(liveWorldBox(active));
+      if (!active) return;
+      viewer.frameBounds(liveWorldBox(active));
+      // Framing re-centres deliberately, so it also resets what you orbit
+      // around; otherwise the next drag would swing away from the framing.
+      liveWorldBox(active).getCenter(pivot);
     },
-    focusEdit: (point) => viewer.orbitAt(point),
+    // Remember where the work was; do NOT move the view for it. The jump
+    // after every stroke was the objectionable part, not the re-pivot.
+    focusEdit: (point) => pivot.set(point[0], point[1], point[2]),
+    orbitBegin: () => beginPivotOrbit(),
+    // Not cleared on release: the controls keep easing for a while after the
+    // finger lifts, and that damped tail has to stay re-centred too or it
+    // undoes part of the correction.
+    orbitEnd: () => {
+      orbitUntil = performance.now() + ORBIT_SETTLE_MS;
+    },
     toggleShadows: () => {
       lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },
@@ -309,7 +416,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
   });
-  filePanel = new FilePanel(session, recorder);
+  filePanel = new FilePanel(session, recorder, {
+    get: () => viewer.getLook(),
+    apply: (look) => {
+      void viewer.applyLook(look).then(() => {
+        sculptPanel?.refreshBrush();
+        window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+      });
+    },
+  });
   scenePanel = new ScenePanel(session);
   sculptPanel = new SculptPanel(session, input, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
@@ -332,7 +447,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // admin probe confirms a Cloudflare Access session. Guests keep the
   // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
   {
-    const hooks = { thumbnail: () => viewer.captureThumbnail() };
+    const hooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
     const tlForm = galleryForm({
       buttonLabel: 'Publish timelapse',
       onSave: (id, title, progress) =>
@@ -352,6 +467,29 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       modelForm.setAdmin(!!email);
     });
   }
+
+  /**
+   * Keep the look with the session, so leaving sculpt mode and coming back
+   * does not reset the lighting, AO, material and camera to the mount
+   * defaults. The whole look is re-read wholesale rather than tracked
+   * control by control: a change anywhere in a panel schedules a write, and
+   * the moments we are certainly leaving (hide, gallery, unmount) force one,
+   * which also catches the hotkeys that never fire an input event.
+   */
+  const storeLook = (): Promise<void> => saveSculptLook(viewer.getLook());
+  let lookTimer = 0;
+  const onLookInput = (e: Event): void => {
+    if (!(e.target as HTMLElement | null)?.closest?.('.panel')) return;
+    clearTimeout(lookTimer);
+    lookTimer = window.setTimeout(() => void storeLook(), 400);
+  };
+  const onLookHide = (e: Event): void => {
+    if (e.type === 'pagehide' || document.visibilityState === 'hidden') void storeLook();
+  };
+  document.addEventListener('input', onLookInput, true);
+  document.addEventListener('change', onLookInput, true);
+  document.addEventListener('visibilitychange', onLookHide);
+  window.addEventListener('pagehide', onLookHide);
 
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
@@ -386,9 +524,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       pack: async () => {
         const scene = session.serializeScene();
         if (!scene) throw new Error('nothing to pack');
+        scene.look = viewer.getLook(); // same payload the Save file button writes
         return (await packScene(scene)).arrayBuffer();
       },
-      open: async (bytes: ArrayBuffer) => session.replaceScene(await unpackScene(bytes)),
+      open: async (bytes: ArrayBuffer) => {
+        const scene = await unpackScene(bytes);
+        session.replaceScene(scene);
+        if (scene.look) {
+          await viewer.applyLook(scene.look);
+          window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+        }
+      },
       toOBJ: () => sceneToOBJ(session),
     },
   };
@@ -415,7 +561,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     e.preventDefault();
     // The flush is what makes the card honest: the picture and the geometry
     // behind it must describe the same moment.
-    void Promise.all([snapshot(), persist.flush()]).finally(() => {
+    void Promise.all([snapshot(), persist.flush(), storeLook()]).finally(() => {
       window.location.href = galleryLink.href;
     });
   };
@@ -425,6 +571,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
 
   return () => {
+    // Before the viewer's own look is put back below, or the session's would
+    // be recorded as whatever the viewer had before sculpt started.
+    clearTimeout(lookTimer);
+    void storeLook();
+    document.removeEventListener('input', onLookInput, true);
+    document.removeEventListener('change', onLookInput, true);
+    document.removeEventListener('visibilitychange', onLookHide);
+    window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
@@ -450,6 +604,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cursor.dispose();
     session.onActiveMeshChange = null;
     viewer.onTick = null;
+    viewer.onPostControls = null;
     lighting.setRigFollow(null);
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);

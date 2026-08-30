@@ -63,8 +63,32 @@ export class Panel {
     }
   };
 
+  private sculpting = false;
   private readonly onSculptMode = (e: Event): void => {
-    const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    this.sculpting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    // Entering sculpt changes a pile of viewer state (ground, shading,
+    // shadows, AO) and restores a saved look on top of it, all after this
+    // panel was built - so rebuild rather than trying to re-sync by hand.
+    this.buildBody();
+    if (!this.editor) {
+      this.titleEl.textContent = this.sculpting
+        ? 'Render'
+        : this.viewer.manifest.title || 'Bozzetto';
+    }
+  };
+
+  /** A saved look was applied under us (opening a .bozz file). */
+  private readonly onLookRestored = (): void => {
+    this.buildBody();
+  };
+
+  /**
+   * Show the look-dev half only while sculpting. Every control reads its
+   * value once, when it is built, so this runs after buildBody() rather
+   * than trying to keep two copies of the state in step.
+   */
+  private applySculptVisibility(): void {
+    const active = this.sculpting;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
     if (this.dofSection) this.dofSection.hidden = active;
     // Sculpt mode gets look-dev parity with the editor: the full light rig,
@@ -73,13 +97,8 @@ export class Panel {
     if (this.lightControls) this.lightControls.hidden = !active;
     if (this.lightToggles) this.lightToggles.hidden = active;
     if (active) this.rebuildLightControls();
-    if (!this.editor) {
-      this.titleEl.textContent = active
-        ? 'Render'
-        : this.viewer.manifest.title || 'Bozzetto';
-    }
-    this.refreshControls();
-  };
+  }
+  private readonly actions?: HTMLElement;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -145,10 +164,23 @@ export class Panel {
     this.applyCollapsed();
 
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.addEventListener('bozzetto:look-restored', this.onLookRestored);
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.addEventListener('bozzetto:panel-close-all', this.onCloseAll);
 
-    if (options.actions) this.bodyEl.appendChild(options.actions);
+    this.actions = options.actions;
+    this.buildBody();
+  }
+
+  /**
+   * Build every section from the viewer's live state. Controls read their
+   * value once, here, so anything that changes the look wholesale - entering
+   * sculpt mode, opening a scene file - rebuilds instead of hand-syncing a
+   * couple of the widgets and leaving the rest showing stale numbers.
+   */
+  private buildBody(): void {
+    this.bodyEl.replaceChildren();
+    if (this.actions) this.bodyEl.appendChild(this.actions);
     if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
@@ -167,6 +199,8 @@ export class Panel {
       for (const sec of this.lookDevSections) sec.hidden = true;
     }
     if (devMode()) this.buildDeveloper(this.bodyEl);
+    if (this.sculpting) this.applySculptVisibility();
+    this.refreshControls();
   }
 
   /**
@@ -278,6 +312,7 @@ export class Panel {
 
   dispose(): void {
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.removeEventListener('bozzetto:look-restored', this.onLookRestored);
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.removeEventListener('bozzetto:panel-close-all', this.onCloseAll);
     this.viewer.onFrame = null;

@@ -66,6 +66,12 @@ export interface LightingState {
   ambient: AmbientConfig;
   rigRotation: number;
   /**
+   * Master shadow switch (shift+S, and the panel checkbox). Optional so
+   * saves written before it existed still parse; without it a saved look
+   * came back with shadows however the mode happened to default them.
+   */
+  shadowsMaster?: boolean;
+  /**
    * Legacy shadow-filter selector. Kept only so older saves parse; the WebGPU
    * renderer uses VSM soft shadows exclusively, so any persisted value is ignored.
    */
@@ -299,6 +305,7 @@ export class Lighting {
         ground: `#${this.hemi.groundColor.getHexString()}`,
       },
       rigRotation: this.rigRotationDeg,
+      shadowsMaster: this.shadowsMaster,
     };
   }
 
@@ -313,6 +320,7 @@ export class Lighting {
       if (state.ambient.ground) this.hemi.groundColor = new Color(state.ambient.ground);
     }
     if (typeof state.rigRotation === 'number') this.setRigRotation(state.rigRotation);
+    if (typeof state.shadowsMaster === 'boolean') this.shadowsMaster = state.shadowsMaster;
     this.refresh();
   }
 

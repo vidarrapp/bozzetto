@@ -63,14 +63,17 @@ function buildLookActions(p: Viewer, id: string): HTMLElement {
   const saveLook = button('Save look', 'btn btn--primary');
   saveLook.addEventListener('click', () =>
     void runSave(saveLook, async () => {
+      // One gatherer for the whole look (Viewer.getLook), shared with sculpt
+      // mode's session save, so the two cannot drift apart.
+      const look = p.getLook();
       await api.update(id, {
-        lighting: p.lighting.serialize(),
-        material: p.materials.getMaterialState(),
-        environment: p.environment.getState(),
-        ao: p.getAOState(),
-        presentation: p.getStageState(),
-        camera: p.getCameraState(),
-        defaults: { material: p.getMaterial() },
+        lighting: look.lighting,
+        material: look.material,
+        environment: look.environment,
+        ao: look.ao,
+        presentation: look.presentation,
+        camera: look.camera,
+        defaults: { material: look.materialMode },
       });
     }),
   );

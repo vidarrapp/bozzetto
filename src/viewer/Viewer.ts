@@ -98,6 +98,29 @@ export interface DoFState {
   focusPoint?: [number, number, number];
 }
 
+/**
+ * Everything the Look dev panel owns, gathered into one serialisable record:
+ * the shape a project's saved look and a sculpt session's saved look share.
+ */
+export interface LookState {
+  lighting: LightingState;
+  material: MaterialState;
+  environment: EnvState;
+  ao: AOState;
+  /** The cheap depth-SSAO ("cavity") pass, which sculpt mode uses instead. */
+  sculptAO: { strength: number; radius: number };
+  presentation: StageState;
+  camera: {
+    autoFrame: boolean;
+    position: number[];
+    target: number[];
+    focalLength: number;
+    dof: DoFState;
+  };
+  /** Material mode (lit / a matcap), stored as `defaults.material`. */
+  materialMode: string;
+}
+
 /** Ground presentation: a contact shadow, a fading studio floor, or a pedestal. */
 export type GroundMode = 'off' | 'shadow' | 'floor' | 'pedestal';
 
@@ -970,6 +993,55 @@ export class Viewer {
     };
   }
 
+  /**
+   * The whole look as one record: what the editor's "Save look" writes to a
+   * project, and what sculpt mode keeps so a session comes back the way it
+   * was left. One place to gather it means the two paths cannot drift.
+   */
+  getLook(): LookState {
+    return {
+      lighting: this.lighting.serialize(),
+      material: this.materials.getMaterialState(),
+      environment: this.environment.getState(),
+      ao: this.getAOState(),
+      sculptAO: this.getSculptAO(),
+      presentation: this.getStageState(),
+      camera: this.getCameraState(),
+      materialMode: this.getMaterial(),
+    };
+  }
+
+  /**
+   * Re-apply a saved look. Mirrors the order boot() applies a manifest in,
+   * because it matters: the HDRI has to land before the rig rotation is
+   * pushed to it, and setDoF clears any tap-to-focus lock it must restore.
+   * Every field is optional so a partial record (an older save) still works.
+   */
+  async applyLook(look: Partial<LookState> | null | undefined): Promise<void> {
+    if (!look) return;
+    if (look.materialMode) this.setMaterial(look.materialMode);
+    if (look.lighting) this.lighting.applyState(look.lighting);
+    if (look.material) this.materials.applyMaterialState(look.material);
+    if (look.environment) await this.environment.applyState(look.environment);
+    if (look.ao) this.setAO(look.ao);
+    if (look.sculptAO) this.setSculptAO(look.sculptAO);
+    if (look.presentation) this.applyStageState(look.presentation);
+    const cam = look.camera;
+    if (cam) {
+      if (cam.focalLength) this.setFocalLength(cam.focalLength);
+      if (cam.position?.length === 3 && cam.target?.length === 3) {
+        this.controls.setState(cam.position, cam.target);
+      }
+      if (cam.dof) {
+        this.setDoF(cam.dof);
+        const fp = cam.dof.focusPoint;
+        if (fp) this.dofFocusPoint = new Vector3(fp[0], fp[1], fp[2]);
+      }
+    }
+    this.environment.setRotation(this.lighting.getRigRotation());
+    this.onDofChange?.();
+  }
+
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
     const geom = this.display.geometry;
@@ -1307,6 +1379,11 @@ export class Viewer {
     this.controls.rotateAzimuth(deg);
   }
 
+  /** Place the camera and its orbit target directly (pivot-orbit rewrite). */
+  setCameraState(position: Vector3, target: Vector3): void {
+    this.controls.placeCamera(position, target);
+  }
+
   /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
   orbitAzimuthAbout(centre: Vector3, deg: number): void {
     this.controls.rotateAzimuthAbout(centre, deg);
@@ -1554,6 +1631,12 @@ export class Viewer {
 
   /** Per-frame hook (sculpt mode: light follow + cursor re-projection). */
   onTick: (() => void) | null = null;
+  /**
+   * Called right AFTER the orbit controls have updated. Anything that needs
+   * the final camera for the frame - or needs to override it - belongs here;
+   * onTick runs before the controls and gets overwritten.
+   */
+  onPostControls: (() => void) | null = null;
 
   private readonly loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
@@ -1598,6 +1681,7 @@ export class Viewer {
     }
 
     this.controls.update();
+    this.onPostControls?.();
     this.renderOnce();
   };
 

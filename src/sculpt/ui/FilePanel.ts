@@ -3,7 +3,14 @@ import { checkbox, section } from '../../ui/Panel';
 import { SidePanel } from './SidePanel';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { SnapshotRecorder } from '../bridge/SnapshotRecorder';
+import type { LookState } from '../../viewer/Viewer';
 import { downloadBlob, packScene, sceneToOBJ, stampName, unpackScene } from '../bridge/SceneFile';
+
+/** How the panel reaches the viewer's look, so .bozz files carry it. */
+export interface LookBridge {
+  get(): LookState;
+  apply(look: LookState): void;
+}
 
 /**
  * File panel: the top-left docked panel, everything about getting work IN
@@ -26,6 +33,7 @@ export class FilePanel extends SidePanel {
   constructor(
     private readonly session: SculptSession,
     private readonly recorder: SnapshotRecorder,
+    private readonly look: LookBridge | null = null,
   ) {
     super({ id: 'file', title: 'File', side: 'left', variant: 'panel--file' });
 
@@ -47,6 +55,9 @@ export class FilePanel extends SidePanel {
       this.fileButton('Save file', 'Saved', async () => {
         const scene = this.session.serializeScene();
         if (!scene) throw new Error('Nothing to save');
+        // The look travels with the file: reopening it puts the work back
+        // under the lighting, material and camera it was saved in.
+        if (this.look) scene.look = this.look.get();
         downloadBlob(await packScene(scene), stampName('bozz'));
       }),
     );
@@ -154,6 +165,7 @@ export class FilePanel extends SidePanel {
     try {
       const scene = await unpackScene(await file.arrayBuffer());
       this.session.replaceScene(scene);
+      if (scene.look && this.look) this.look.apply(scene.look);
     } catch (err) {
       alert((err as Error).message);
     }
