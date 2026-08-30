@@ -131,7 +131,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   try {
     project = (await api.get(id)) as EditorProject;
   } catch (err) {
-    host.innerHTML = `<div class="admin"><a class="admin__home" href="/admin/">← Projects</a>
+    host.innerHTML = `<div class="admin"><div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div>
       <p>Could not load “${id}”: ${(err as Error).message}</p></div>`;
     return;
   }
@@ -139,7 +139,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   host.innerHTML = `
     <div class="editor">
       <div id="preview" class="editor__preview"></div>
-      <a class="editor__home" href="/admin/">← Projects</a>
+      <div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div>
 
       <aside class="editor__sidebar">
         <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>

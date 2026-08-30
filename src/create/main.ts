@@ -65,7 +65,7 @@ function main(): void {
   host.innerHTML = `
     <div class="editor">
       <div id="preview" class="editor__preview"></div>
-      <a class="editor__home" href="/">← Gallery</a>
+      <div class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></div>
 
       <aside class="editor__sidebar">
         <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>

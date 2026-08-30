@@ -281,74 +281,104 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * damping, pinch and dolly all keep working.
    */
   const pivot = new Vector3();
-  let orbitFrom: {
-    cam: Vector3;
-    target: Vector3;
-    theta: number;
-    phi: number;
-    dist: number;
-    right: Vector3;
-  } | null = null;
-  const orbitScratch = {
-    q: new Quaternion(),
-    qy: new Quaternion(),
-    off: new Vector3(),
-    v: new Vector3(),
-  };
   const UP = new Vector3(0, 1, 0);
+  /**
+   * The previous frame's corrected camera and target, while a drag is being
+   * re-centred. The correction is INCREMENTAL - each frame it re-applies
+   * only what the controls did in that frame - because the absolute form
+   * (rebuild the whole state from the drag's first frame) silently ate
+   * panning: a pan moves camera and target together, leaving the offset
+   * unchanged, so the rotation derived from it was the identity and the
+   * correction put the view straight back where the pan started.
+   */
+  let prev: { cam: Vector3; target: Vector3 } | null = null;
   /** How long the damped tail after a release stays re-centred. */
   const ORBIT_SETTLE_MS = 900;
   let orbitUntil = 0;
 
-  /** Azimuth/elevation of an offset, the same decomposition OrbitControls uses. */
-  const sphericalOf = (off: Vector3): { theta: number; phi: number; dist: number } => ({
-    theta: Math.atan2(off.x, off.z),
-    phi: Math.acos(Math.min(1, Math.max(-1, off.y / (off.length() || 1)))),
-    dist: off.length(),
-  });
+  const orbitScratch = {
+    cam: new Vector3(),
+    tgt: new Vector3(),
+    off0: new Vector3(),
+    off1: new Vector3(),
+    pan: new Vector3(),
+    outCam: new Vector3(),
+    outTgt: new Vector3(),
+    x: new Vector3(),
+    y: new Vector3(),
+    z: new Vector3(),
+    m0: new Matrix4(),
+    m1: new Matrix4(),
+    r: new Matrix4(),
+    q: new Quaternion(),
+  };
+
+  /**
+   * The camera's no-roll world basis for a camera-to-target offset, which is
+   * what fixes the rotation completely: OrbitControls keeps up at +Y, so the
+   * offset alone determines the orientation. False when the offset is along
+   * the up axis, where the basis is undefined (the controls clamp short of
+   * it, so this is only a guard).
+   */
+  const basisOf = (off: Vector3, m: Matrix4): boolean => {
+    const { x, y, z } = orbitScratch;
+    z.copy(off).normalize();
+    x.crossVectors(UP, z);
+    if (x.lengthSq() < 1e-8) return false;
+    x.normalize();
+    y.crossVectors(z, x);
+    m.makeBasis(x, y, z);
+    return true;
+  };
 
   const beginPivotOrbit = (): void => {
     orbitUntil = 0;
     const st = viewer.getCameraState();
-    const cam = new Vector3(...st.position);
-    const target = new Vector3(...st.target);
-    const off = cam.clone().sub(target);
-    const sph = sphericalOf(off);
-    orbitFrom = {
-      cam,
-      target,
-      theta: sph.theta,
-      phi: sph.phi,
-      dist: sph.dist,
-      // The axis elevation turns about: perpendicular to up and to the view.
-      right: new Vector3().crossVectors(UP, off).normalize(),
+    prev = {
+      cam: new Vector3(st.position[0], st.position[1], st.position[2]),
+      target: new Vector3(st.target[0], st.target[1], st.target[2]),
     };
   };
 
   const applyPivotOrbit = (): void => {
-    if (!orbitFrom) return;
+    if (!prev) return;
     if (orbitUntil > 0 && performance.now() > orbitUntil) {
-      orbitFrom = null;
+      prev = null;
       orbitUntil = 0;
       return;
     }
+    const sc = orbitScratch;
     const st = viewer.getCameraState();
-    const off = orbitScratch.off
-      .set(st.position[0], st.position[1], st.position[2])
-      .sub(orbitScratch.v.set(st.target[0], st.target[1], st.target[2]));
-    if (off.lengthSq() < 1e-12 || orbitFrom.dist < 1e-6) return;
-    const sph = sphericalOf(off);
-    // Rebuild the rotation the controls just made, as elevation about the
-    // start right axis followed by azimuth about world up. A minimal-arc
-    // quaternion between the two offsets is NOT the same rotation - it
-    // carries a roll for any non-zero elevation, which left the pivot
-    // drifting across the screen instead of staying put.
-    const q = orbitScratch.q.setFromAxisAngle(orbitFrom.right, sph.phi - orbitFrom.phi);
-    q.premultiply(orbitScratch.qy.setFromAxisAngle(UP, sph.theta - orbitFrom.theta));
-    const scale = sph.dist / orbitFrom.dist;
-    const place = (start: Vector3): Vector3 =>
-      start.clone().sub(pivot).applyQuaternion(q).multiplyScalar(scale).add(pivot);
-    viewer.setCameraState(place(orbitFrom.cam), place(orbitFrom.target));
+    const cam = sc.cam.set(st.position[0], st.position[1], st.position[2]);
+    const tgt = sc.tgt.set(st.target[0], st.target[1], st.target[2]);
+    const off0 = sc.off0.subVectors(prev.cam, prev.target);
+    const off1 = sc.off1.subVectors(cam, tgt);
+    const d0 = off0.length();
+    const d1 = off1.length();
+    if (d0 < 1e-6 || d1 < 1e-6 || !basisOf(off0, sc.m0) || !basisOf(off1, sc.m1)) {
+      prev.cam.copy(cam);
+      prev.target.copy(tgt);
+      return;
+    }
+    // Split the frame into the rotation the controls made and the pan they
+    // made: a rotation leaves the target alone, so whatever the target moved
+    // IS the pan, and it passes through untouched. Rebuilding the rotation
+    // from the two bases (rather than a minimal arc between the offsets)
+    // keeps it roll-free, which is what holds the pivot on screen.
+    sc.q.setFromRotationMatrix(sc.r.multiplyMatrices(sc.m1, sc.m0.transpose()));
+    const scale = d1 / d0;
+    const pan = sc.pan.subVectors(tgt, prev.target);
+    const place = (from: Vector3, out: Vector3): Vector3 =>
+      out
+        .copy(from)
+        .sub(pivot)
+        .applyQuaternion(sc.q)
+        .multiplyScalar(scale)
+        .add(pivot)
+        .add(pan);
+    viewer.setCameraState(place(prev.cam, sc.outCam), place(prev.target, sc.outTgt));
+    prev.cam.copy(sc.outCam);
+    prev.target.copy(sc.outTgt);
   };
 
   // Turntable (arrow keys / a wheel mapped to them). Two things separate it

@@ -551,7 +551,9 @@ html.is-page body {
 .admin {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 32px 20px 64px;
+  /* Top padding clears the fixed top row: the back link used to sit in the
+     document flow and push the heading down, and it is a chip now. */
+  padding: 64px 20px 64px;
 }
 
 .landing__head,
@@ -576,15 +578,13 @@ html.is-page body {
   color: var(--muted);
 }
 
-.landing__editor,
-.admin__home {
+.landing__editor {
   color: var(--accent);
   text-decoration: none;
   white-space: nowrap;
 }
 
-.landing__editor:hover,
-.admin__home:hover {
+.landing__editor:hover {
   text-decoration: underline;
 }
 
@@ -1386,28 +1386,6 @@ html.is-page body {
   backdrop-filter: blur(8px);
 }
 
-/* Fixed back button — stays put when the panels slide away (like the theme toggle). */
-.editor__home {
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 30;
-  padding: 5px 12px;
-  font-family: var(--font-spec);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text);
-  text-decoration: none;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  backdrop-filter: blur(8px);
-}
-
-.editor__home:hover {
-  background: var(--hover);
-}
 
 .editor__sidebar .editor__title {
   margin: 0;
@@ -1440,11 +1418,6 @@ html.is-page body {
   color: var(--accent);
 }
 
-/* list (project picker) back-link, top-left */
-.admin__home {
-  display: inline-block;
-  margin-bottom: 12px;
-}
 
 /* Narrow screens (phones): keep each slide-out panel and its edge handle on
    screen. The two are mutually exclusive here (see EditorLayout) so they don't

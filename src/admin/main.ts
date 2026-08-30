@@ -46,7 +46,7 @@ async function createWithSlug(title: string): Promise<{ id: string }> {
 async function renderList(host: HTMLElement): Promise<void> {
   host.innerHTML = `
     <div class="admin">
-      <a class="admin__home" href="/">← Gallery</a>
+      <div class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></div>
       <header class="admin__head">
         <h1>Bozzetto editor</h1>
       </header>
