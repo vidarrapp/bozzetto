@@ -19,10 +19,14 @@ const MOVE_FALLOFF_POW = 0.55;
 /** Volumetric grab reach: how far past the silhouette a press still grabs. */
 const MOVE_GRAB_FACTOR = 1.0;
 
-/** Clay strips: plateau fraction of the radius at full strength... */
-const STRIPS_PLATEAU = 0.45;
-/** ...and the strip layer height as a fraction of the radius (upstream 0.1). */
-const STRIPS_LAYER = 0.25;
+/**
+ * Clay strips: plateau fraction of the radius at full strength, and the
+ * strip layer height as a fraction of the radius (upstream 0.1). Both sit
+ * at their slider extremes by review call - the widest flat top and the
+ * thinnest layer, which is the flattest, most ribbon-like default.
+ */
+const STRIPS_PLATEAU = 0.8;
+const STRIPS_LAYER = 0.05;
 
 /**
  * Move, ZBrush-flavored:

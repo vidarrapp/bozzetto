@@ -888,3 +888,36 @@ by slot (data-slot=model|timelapse) and the suite drives them there.
   bigger mask means a SMALLER sum. The first invert assertion had the sign
   backwards; it now asserts the invariant (inverting twice is identity)
   instead of guessing how much of the mesh got painted.
+
+## WS6 round 3 (test feedback)
+
+- Outliner: the add popup now lives on the body with `position: fixed`,
+  placed against the button's rect and opening BESIDE the panel. It used
+  to be an in-flow child of the scrolling panel body, so with only the
+  default sphere in the list the panel was shorter than the menu and the
+  menu was simply invisible. The object list also got a `min-height` so a
+  one-object scene does not render as a sliver.
+- Outliner delete (minus) with a confirmation, disabled while one object
+  is left. `SculptSession.deleteMesh` pushes an add/remove state, hands
+  selection to a neighbour when the active object goes, and fires
+  onActiveMeshChange even when selection did not change - the display
+  pool and the outliner both key off it.
+- Palette: Size and Strength sliders above their pressure rows; Detail
+  renamed Topology; Cavity/SSAO moved to the Render panel, shown only
+  while sculpting (the mirror of how DoF is hidden there). ctrl+e
+  extracts at the palette's thickness. File panel gained New scene, which
+  clears the objects and the recording behind one confirmation.
+- Clay strips now default to the extremes of their sliders: plateau 0.8
+  (widest flat top), layer 0.05 (thinnest), which is the flattest and
+  most ribbon-like default.
+- The interface corners are bare now - the Negative button bottom-left
+  and the hide/show eye bottom-right, each without the group panel behind
+  it. Opposite corners so a resting left hand cannot brush the eye.
+- BUG the fuzz suite caught, introduced by the new sliders: Drag, Twist,
+  LocalScale and Transform have no `_intensity` (and Transform no
+  `_radius`), so `getBrushIntensity().toFixed()` threw a TypeError every
+  time one of those tools was selected. The getters now fall back to a
+  usable number, and the palette asks `hasBrushIntensity()` before
+  building a row rather than showing a slider that controls nothing.
+  ws6 now FAILS on any pageerror - it had been logging them to the
+  console only, which is exactly why this rode along green.

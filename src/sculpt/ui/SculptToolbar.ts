@@ -51,8 +51,10 @@ export class SculptToolbar {
     // With a transport bar present (?tl=...&sculpt=1), sit above it.
     if (document.querySelector('.transport')) this.root.classList.add('sculpt-toolbar--raised');
 
+    // The two corner controls sit bare, without the group's panel behind
+    // them (review call) - they are single icons, not a cluster.
     const left = document.createElement('div');
-    left.className = 'sculpt-toolbar__group sculpt-toolbar__left';
+    left.className = 'sculpt-toolbar__corner sculpt-toolbar__left';
     // Hold-to-carve: strokes are negative while the button is held (like
     // holding alt), released on lift. Works two-fingered on iPad: one finger
     // holds the button, the other sculpts. A double-tap latches carving on
@@ -97,10 +99,10 @@ export class SculptToolbar {
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     left.appendChild(this.negativeBtn);
 
-    // The pointer route into the clean screen. Tab is the keyboard/TourBox
-    // way, but the primary device is an iPad with no Tab key at all - so
-    // without this button the mode is simply unreachable for the main
-    // audience, and only strangers with keyboards could ever land in it.
+    // The pointer route into the clean screen, and back out of it: Tab is
+    // the keyboard/TourBox way, but the primary device is an iPad with no
+    // Tab key at all. Parked in the opposite corner from Negative so a
+    // resting left hand cannot brush it.
     const hideBtn = document.createElement('button');
     hideBtn.type = 'button';
     hideBtn.className = 'sculpt-toolbar__btn';
@@ -117,7 +119,9 @@ export class SculptToolbar {
     // panels. Assigned by mode.ts; read at click time so ordering is free.
     hideBtn.addEventListener('click', () => this.onToggleChrome?.());
     this.hideBtn = hideBtn;
-    left.appendChild(hideBtn);
+    const right = document.createElement('div');
+    right.className = 'sculpt-toolbar__corner sculpt-toolbar__right';
+    right.appendChild(hideBtn);
 
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
@@ -143,7 +147,7 @@ export class SculptToolbar {
       center.appendChild(btn);
     }
 
-    this.root.append(left, center);
+    this.root.append(left, center, right);
     document.body.appendChild(this.root);
 
     this.input.onToolChange = () => this.refresh();

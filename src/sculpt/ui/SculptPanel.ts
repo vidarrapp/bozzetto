@@ -8,11 +8,15 @@ import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
 import { SidePanel } from './SidePanel';
 
+/** Matches the left rail's range so the two controls agree end to end. */
+const RADIUS_MIN = 5;
+const RADIUS_MAX = 500;
+
 /**
  * The sculpt palette (WS4/WS5): the lower-right docked panel - everything
  * about HOW you sculpt. Sections: Brush (per-brush pressure dynamics + the
- * active tool's feel extras), Symmetry, Mask (darken, ops, extract), Detail
- * (dyntopo, voxel remesh), and the sculpt SSAO. Getting work in and out
+ * active tool's feel extras), Symmetry, Mask (darken, ops, extract), Topology
+ * (dyntopo, voxel remesh). Getting work in and out
  * (files, capture, publishing) lives in the left File panel, and the object
  * list in Scene. Opening this collapses the Render panel above it, since
  * they share the right edge (see SidePanel's side-scoped protocol).
@@ -23,6 +27,8 @@ export class SculptPanel extends SidePanel {
   private dyntopoCheckbox!: HTMLInputElement;
   private symCheckbox!: HTMLInputElement;
   private axisButtons: HTMLButtonElement[] = [];
+  private sizeInput?: HTMLInputElement;
+  private strengthInput?: HTMLInputElement;
   private extractThickness = 1;
   private remeshResolution = 150;
 
@@ -36,7 +42,6 @@ export class SculptPanel extends SidePanel {
     this.buildSymmetry(this.body);
     this.buildMask(this.body);
     this.buildDetail(this.body);
-    this.buildShading(this.body);
   }
 
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
@@ -56,6 +61,26 @@ export class SculptPanel extends SidePanel {
     const d = this.input.dynamics.get(tool);
     const dyn = this.dynamicsBody;
     dyn.replaceChildren();
+    // The old inputs are detached by replaceChildren; drop the handles too,
+    // or refreshBrushValues writes into orphans (and, for a tool with no
+    // strength at all, into nothing).
+    this.sizeInput = undefined;
+    this.strengthInput = undefined;
+    // Radius and strength are per-tool in the vendored core, so these are
+    // rebuilt with the rest of the row set when the brush changes, and
+    // re-synced by refreshBrushValues when the rail or a hotkey moves them.
+    if (this.input.hasBrushRadius()) {
+      const sizeRow = compactRange(
+        'Size',
+        RADIUS_MIN,
+        RADIUS_MAX,
+        1,
+        this.input.getBrushRadius(),
+        (v) => this.input.setBrushRadius(v),
+      );
+      this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
+      dyn.appendChild(sizeRow);
+    }
     dyn.appendChild(
       checkbox('Pen pressure size', d.sizeOn, (on) => {
         d.sizeOn = on;
@@ -69,6 +94,19 @@ export class SculptPanel extends SidePanel {
         }),
       ),
     );
+    // Drag and Twist have no strength at all; a slider for it would be a lie.
+    if (this.input.hasBrushIntensity()) {
+      const strengthRow = compactRange(
+        'Strength',
+        0,
+        1,
+        0.01,
+        this.input.getBrushIntensity(),
+        (v) => this.input.setBrushIntensity(v),
+      );
+      this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
+      dyn.appendChild(strengthRow);
+    }
     dyn.appendChild(
       checkbox('Pen pressure strength', d.strengthOn, (on) => {
         d.strengthOn = on;
@@ -183,10 +221,10 @@ export class SculptPanel extends SidePanel {
     sec.appendChild(extractRow);
   }
 
-  // --- Detail (dyntopo + voxel remesh) ------------------------------------
+  // --- Topology (dyntopo + voxel remesh) ----------------------------------
 
   private buildDetail(body: HTMLElement): void {
-    const sec = section(body, 'Detail');
+    const sec = section(body, 'Topology');
     const dyn = checkbox('Dynamic topology', this.session.isDynamicTopology(), () => {
       this.session.toggleDynamicTopology();
       this.refreshState();
@@ -218,19 +256,17 @@ export class SculptPanel extends SidePanel {
     sec.appendChild(row);
   }
 
-  // --- Sculpt shading (the depth SSAO) ------------------------------------
+  /** Follow radius/strength changes made anywhere else (rail, keys, drags). */
+  refreshBrushValues(): void {
+    if (this.sizeInput) this.sizeInput.value = String(Math.round(this.input.getBrushRadius()));
+    if (this.strengthInput) {
+      this.strengthInput.value = this.input.getBrushIntensity().toFixed(2);
+    }
+  }
 
-  private buildShading(body: HTMLElement): void {
-    const sec = section(body, 'Cavity (SSAO)');
-    const ao = this.viewer.getSculptAO();
-    sec.appendChild(
-      compactRange('Strength', 0, 2, 0.05, ao.strength, (v) =>
-        this.viewer.setSculptAO({ strength: v }),
-      ),
-    );
-    sec.appendChild(
-      compactRange('Radius', 2, 24, 1, ao.radius, (v) => this.viewer.setSculptAO({ radius: v })),
-    );
+  /** The Extract thickness the ctrl+e hotkey should use. */
+  getExtractThickness(): number {
+    return this.extractThickness;
   }
 
   /** Re-sync stateful controls after engine-side changes (undo, dyntopo). */

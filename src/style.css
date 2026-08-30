@@ -1503,8 +1503,18 @@ html.is-page body {
   pointer-events: auto;
 }
 
+.sculpt-toolbar__corner {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
 .sculpt-toolbar__left {
   justify-self: start;
+}
+
+.sculpt-toolbar__right {
+  justify-self: end;
 }
 
 .sculpt-toolbar__brushes {
@@ -1605,6 +1615,9 @@ html.is-page body {
   flex-direction: column;
   gap: 2px;
   padding: 8px;
+  /* Room for a few objects from the start: a panel sized to one sphere
+     read as a glitch, and gave the add popup nothing to open over. */
+  min-height: 108px;
 }
 
 .outliner__row {
@@ -1629,12 +1642,13 @@ html.is-page body {
 }
 
 .outliner__footer {
-  position: relative;
-  padding: 4px 8px 10px;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px 10px;
   border-top: 1px solid var(--panel-border);
 }
 
-.outliner__add {
+.outliner__btn {
   min-width: 36px;
   min-height: 30px;
   border: 1px solid var(--panel-border);
@@ -1646,22 +1660,27 @@ html.is-page body {
   cursor: pointer;
 }
 
-.outliner__add:hover {
+.outliner__btn:hover:not(:disabled) {
   background: var(--hover);
 }
 
+.outliner__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .outliner__menu {
-  position: absolute;
-  left: 8px;
-  bottom: 44px;
+  position: fixed;
   display: flex;
   flex-direction: column;
-  min-width: 120px;
+  min-width: 132px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
+  backdrop-filter: blur(8px);
   box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
-  z-index: 5;
+  /* Above every panel (15) so it is never clipped or covered. */
+  z-index: 32;
 }
 
 .outliner__menu[hidden] {

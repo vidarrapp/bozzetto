@@ -220,6 +220,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
     toggleChrome: () => chrome.handleTab(),
+    extractMasked: () => session.extractMasked(sculptPanel?.getExtractThickness() ?? 1),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
@@ -238,12 +239,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   filePanel = new FilePanel(session, recorder);
   scenePanel = new ScenePanel(session);
   sculptPanel = new SculptPanel(session, input, viewer);
-  // The toolbar owns onToolChange; chain the palette's per-brush refresh.
+  // Both callbacks are single-slot and already claimed (the toolbar owns
+  // onToolChange, the rail owns onBrushChange), so the palette chains onto
+  // each rather than replacing it.
   {
     const prevToolChange = input.onToolChange;
     input.onToolChange = () => {
       prevToolChange?.();
       sculptPanel?.refreshBrush();
+    };
+    const prevBrushChange = input.onBrushChange;
+    input.onBrushChange = () => {
+      prevBrushChange?.();
+      sculptPanel?.refreshBrushValues();
     };
   }
 

@@ -33,6 +33,17 @@ export class FilePanel extends SidePanel {
     const filesCol = div('outliner__files');
     files.appendChild(filesCol);
     filesCol.appendChild(
+      this.fileButton('New scene', null, async () => {
+        // Everything in one confirmation: the objects AND the recording,
+        // since a timelapse of a scene you just discarded is not much use.
+        const frames = this.recorder.frameCount();
+        const extra = frames > 0 ? ` and ${frames} captured frame${frames === 1 ? '' : 's'}` : '';
+        if (!confirm(`Start a new scene? The current objects${extra} will be lost.`)) return;
+        await this.recorder.clear();
+        this.session.newScene();
+      }),
+    );
+    filesCol.appendChild(
       this.fileButton('Save file', 'Saved', async () => {
         const scene = this.session.serializeScene();
         if (!scene) throw new Error('Nothing to save');

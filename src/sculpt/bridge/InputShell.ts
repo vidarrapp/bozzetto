@@ -37,6 +37,8 @@ export interface InputShellHooks {
   toggleChrome(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
   toggleMaskTint(): void;
+  /** ctrl+e: extract the masked region at the palette's thickness. */
+  extractMasked(): void;
 }
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
@@ -174,12 +176,28 @@ export class InputShell {
 
   // --- brush value access (side sliders + future palette) -----------------
 
+  /**
+   * Not every tool carries both: Drag, Twist, LocalScale and Transform have
+   * no _intensity, and Transform has no _radius either. Callers get a
+   * usable number rather than undefined; use hasBrushIntensity() to decide
+   * whether a control for it should exist at all.
+   */
   getBrushRadius(): number {
-    return this.currentTool()._radius;
+    const r = this.currentTool()._radius;
+    return typeof r === 'number' ? r : RADIUS_MIN;
   }
 
   getBrushIntensity(): number {
-    return this.currentTool()._intensity;
+    const i = this.currentTool()._intensity;
+    return typeof i === 'number' ? i : 0;
+  }
+
+  hasBrushRadius(): boolean {
+    return typeof this.currentTool()._radius === 'number';
+  }
+
+  hasBrushIntensity(): boolean {
+    return typeof this.currentTool()._intensity === 'number';
   }
 
   /** Set radius directly (slider drags); flashes a centered preview ring. */
@@ -493,6 +511,9 @@ export class InputShell {
       } else if (key === 'i') {
         this.maskTool()?.invert?.();
         s.render();
+        this.claim(e);
+      } else if (key === 'e') {
+        this.hooks.extractMasked();
         this.claim(e);
       } else if (key === 'h') {
         // Hides the mask's darkening, not the mask: strokes keep respecting

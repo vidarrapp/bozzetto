@@ -38,6 +38,8 @@ export class Panel {
   private dofCheckbox?: HTMLInputElement;
   /** DoF section wrapper: hidden while sculpt mode is active. */
   private dofSection?: HTMLDivElement;
+  /** Cavity/SSAO wrapper: the mirror case, shown only while sculpting. */
+  private cavitySection?: HTMLDivElement;
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
   private readonly onOtherPanelOpen = (e: Event): void => {
@@ -63,6 +65,8 @@ export class Panel {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
     if (this.dofSection) this.dofSection.hidden = active;
+    // Cavity is the sculpt shading path; it has nothing to act on in the viewer.
+    if (this.cavitySection) this.cavitySection.hidden = !active;
     if (!this.editor) {
       this.titleEl.textContent = active
         ? 'Render'
@@ -144,6 +148,7 @@ export class Panel {
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildCamera(this.bodyEl);
     this.buildDoF(this.bodyEl); // viewer + editor
+    if (!this.editor) this.buildCavity(this.bodyEl);
     if (this.editor) this.buildEnvironment(this.bodyEl);
     if (this.editor) this.buildAO(this.bodyEl);
     if (devMode()) this.buildDeveloper(this.bodyEl);
@@ -180,6 +185,26 @@ export class Panel {
     this.root.classList.toggle('panel--collapsed', this.collapsed);
     // Arrow shows travel direction: out (›) when open, in (‹) when collapsed.
     this.handleArrow.textContent = this.collapsed ? '‹' : '›';
+  }
+
+  /**
+   * Sculpt's cavity shading (moved here from the sculpt palette): a depth
+   * SSAO that keeps creases readable on flat-shaded facets. Hidden until
+   * sculpt mode announces itself, exactly like DoF in reverse.
+   */
+  private buildCavity(body: HTMLElement): void {
+    const sec = section(body, 'Cavity (SSAO)');
+    const ao = this.viewer.getSculptAO();
+    sec.appendChild(
+      compactRange('Strength', 0, 2, 0.05, ao.strength, (v) =>
+        this.viewer.setSculptAO({ strength: v }),
+      ),
+    );
+    sec.appendChild(
+      compactRange('Radius', 2, 24, 1, ao.radius, (v) => this.viewer.setSculptAO({ radius: v })),
+    );
+    sec.hidden = true;
+    this.cavitySection = sec;
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */

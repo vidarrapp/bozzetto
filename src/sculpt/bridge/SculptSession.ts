@@ -654,6 +654,44 @@ export class SculptSession {
   }
 
   /**
+   * Remove one object from the scene (outliner minus). Refuses to empty the
+   * scene - there would be nothing to sculpt and no way back except a
+   * reload - and hands selection to a neighbour when the active object is
+   * the one going.
+   */
+  deleteMesh(mesh: SculptMesh): boolean {
+    if (this.meshes.length <= 1) return false;
+    const index = this.meshes.indexOf(mesh);
+    if (index < 0) return false;
+    this.stateManager.pushStateAddRemove([], [mesh]);
+    this.meshes.splice(index, 1);
+    const sel = this.selectMeshes.indexOf(mesh);
+    if (sel >= 0) this.selectMeshes.splice(sel, 1);
+    if (this.mesh === mesh) {
+      this.setMesh(this.meshes[Math.min(index, this.meshes.length - 1)]);
+    } else {
+      // Selection is unchanged, but the mesh LIST moved: the display pool
+      // and the outliner both key off this callback.
+      this.onActiveMeshChange?.();
+    }
+    this.render();
+    return true;
+  }
+
+  /**
+   * Start over: drop every object for a fresh sphere. The new scene is the
+   * history floor, so undo cannot resurrect what was just discarded.
+   */
+  newScene(): Multimesh {
+    this.meshes.length = 0;
+    this.selectMeshes.length = 0;
+    this.mesh = null;
+    const mesh = this.addSphere();
+    this.clearHistory();
+    return mesh;
+  }
+
+  /**
    * Swap the whole scene for a loaded file (Open). The current objects are
    * dropped, the loaded ones become the new history floor, and the active
    * mesh change fans out through the usual callback (display reconcile,
