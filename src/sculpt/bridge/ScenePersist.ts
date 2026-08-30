@@ -50,6 +50,8 @@ export interface SavedMesh {
   levels: SavedLevel[];
   sel: number;
   matrix: Float32Array;
+  /** Mirror-plane normal (local space); absent in older records = X. */
+  sym?: number[];
 }
 
 export interface SavedScene {
@@ -91,6 +93,10 @@ interface SavedSceneV1 {
 
 const DB_NAME = 'bozzetto-sculpt';
 const STORE = 'scene';
+/** WS5 capture: gzipped GLB frame bytes by sequence number. */
+export const FRAMES_STORE = 'frames';
+/** WS5 capture: small per-frame metadata ({tris, t, bytes}) by sequence. */
+export const FRAME_META_STORE = 'frameMeta';
 const KEY = 'current';
 /** Above this many top-level tris, saves run on the slow cadence instead. */
 const FAST_SAVE_TRIS = 1600000;
@@ -105,26 +111,31 @@ const FAST_SAVE_GAP_MS = 1500;
 /** Big-mesh cadence: at most one multi-ten-MB put every five minutes. */
 const SLOW_SAVE_GAP_MS = 5 * 60 * 1000;
 
-function openDb(): Promise<IDBDatabase> {
+/** One DB for all sculpt persistence; v2 adds the capture frame stores. */
+export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+      for (const store of [STORE, FRAMES_STORE, FRAME_META_STORE]) {
+        if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store);
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function withStore<T>(
+/** Run one request against a named store (shared with the capture store). */
+export async function withNamedStore<T>(
+  storeName: string,
   mode: IDBTransactionMode,
   op: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
   const db = await openDb();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const req = op(tx.objectStore(STORE));
+      const tx = db.transaction(storeName, mode);
+      const req = op(tx.objectStore(storeName));
       tx.oncomplete = () => resolve(req.result);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
@@ -133,6 +144,11 @@ async function withStore<T>(
     db.close();
   }
 }
+
+const withStore = <T>(
+  mode: IDBTransactionMode,
+  op: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> => withNamedStore(STORE, mode, op);
 
 function validLevel(l: SavedLevel): boolean {
   const n = l.nbVertices * 3;
@@ -222,19 +238,24 @@ export async function loadSavedScene(): Promise<SavedScene | null> {
       if (!validMesh(mesh)) return null;
       return { v: 3, savedAt: rec.savedAt, meshes: [mesh], active: 0, symmetry: rec.symmetry };
     }
-    if (
-      rec.v !== 3 ||
-      !Array.isArray(rec.meshes) ||
-      rec.meshes.length === 0 ||
-      !rec.meshes.every(validMesh) ||
-      !(rec.active >= 0 && rec.active < rec.meshes.length)
-    ) {
-      return null;
-    }
-    return rec;
+    return validSavedScene(rec) ? rec : null;
   } catch {
     return null; // private windows / blocked storage: sculpt still works
   }
+}
+
+/** Structural check for a v3 record (shared with the .bozz file loader). */
+export function validSavedScene(rec: unknown): rec is SavedScene {
+  const r = rec as SavedScene | undefined;
+  return (
+    !!r &&
+    r.v === 3 &&
+    Array.isArray(r.meshes) &&
+    r.meshes.length > 0 &&
+    r.meshes.every(validMesh) &&
+    r.active >= 0 &&
+    r.active < r.meshes.length
+  );
 }
 
 export async function clearSavedScene(): Promise<void> {
@@ -269,6 +290,7 @@ export class ScenePersist {
     this.wrap(this.session.getSculptManager(), 'end');
     // Symmetry is part of the saved scene but changes without a state push.
     this.wrap(this.session, 'toggleSymmetry');
+    this.wrap(this.session, 'setSymmetryAxis');
     document.addEventListener('visibilitychange', this.onHidden);
     window.addEventListener('pagehide', this.onHidden);
   }

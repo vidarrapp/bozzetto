@@ -1,9 +1,11 @@
-import { objToGLB } from './glb';
+import { meshToGLB, objToGLB } from './glb';
 
 // Dedicated worker: convert OBJ text to a .glb off the main thread so the UI
 // stays responsive while a sequence is processed. The finished GLB is gzipped
 // here too (quantized int16 geometry deflates well); the viewer inflates by
 // magic sniff, so the bytes stay drop-in wherever a raw .glb was accepted.
+// Sculpt capture (WS5) reuses the same worker with raw arrays instead of OBJ
+// text: {id, positions, indices} in (transferred), the same gzipped GLB out.
 const ctx = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
   postMessage: (message: unknown, transfer?: Transferable[]) => void;
@@ -11,8 +13,10 @@ const ctx = self as unknown as {
 
 interface Job {
   id: number;
-  text: string;
-  zUp: boolean;
+  text?: string;
+  zUp?: boolean;
+  positions?: Float32Array;
+  indices?: Uint32Array;
 }
 
 async function gzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
@@ -24,9 +28,12 @@ async function gzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
 }
 
 ctx.onmessage = (e: MessageEvent) => {
-  const { id, text, zUp } = e.data as Job;
+  const { id, text, zUp, positions, indices } = e.data as Job;
   try {
-    const { glb, tris } = objToGLB(text, zUp);
+    const { glb, tris } =
+      positions && indices
+        ? { glb: meshToGLB(positions, indices), tris: indices.length / 3 }
+        : objToGLB(text ?? '', zUp);
     void gzip(glb).then((packed) => {
       ctx.postMessage({ id, glb: packed, tris }, [packed]);
     });

@@ -7,6 +7,11 @@ import { InputShell } from './bridge/InputShell';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
 import { ScenePersist, clearSavedScene, loadSavedScene } from './bridge/ScenePersist';
+import { SnapshotRecorder } from './bridge/SnapshotRecorder';
+import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
+import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
+import { galleryForm } from './ui/galleryForm';
+import { probeAdmin } from '../admin/api';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
@@ -210,6 +215,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
   });
   input.install();
+  const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   sliders = new BrushSliders(input, {
     undo: () => session.undo(),
@@ -218,7 +224,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canRedo: () => session.canRedo(),
   });
   scenePanel = new ScenePanel(session);
-  sculptPanel = new SculptPanel(session, input, viewer);
+  sculptPanel = new SculptPanel(session, input, viewer, recorder);
   // The toolbar owns onToolChange; chain the palette's per-brush refresh.
   {
     const prevToolChange = input.onToolChange;
@@ -228,10 +234,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     };
   }
 
+  // Gallery publishing (WS5): built for everyone, revealed only when the
+  // admin probe confirms a Cloudflare Access session. Guests keep the
+  // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
+  {
+    const hooks = { thumbnail: () => viewer.captureThumbnail() };
+    const tlForm = galleryForm({
+      buttonLabel: 'Publish timelapse',
+      onSave: (id, title, progress) =>
+        saveTimelapseToGallery(recorder, hooks, id, title, progress),
+    });
+    const modelForm = galleryForm({
+      buttonLabel: 'Publish model',
+      onSave: (id, title, progress) =>
+        saveModelToGallery(session, recorder, hooks, id, title, progress),
+    });
+    sculptPanel.captureSlot.appendChild(tlForm.root);
+    scenePanel.filesSlot.appendChild(modelForm.root);
+    void probeAdmin().then((email) => {
+      if (!email) return;
+      tlForm.root.hidden = false;
+      modelForm.root.hidden = false;
+    });
+  }
+
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
   const persist = new ScenePersist(session);
   persist.install();
+  // Timelapse capture stacks its edit hooks on top of the autosave's (the
+  // unmount below unwinds in reverse). Install is async (frame index read).
+  void recorder.install();
   const toast = saved
     ? restoredToast(() => {
         persist.disable();
@@ -246,10 +279,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sync,
     input,
     persist,
+    recorder,
     cursor,
     scenePanel,
     sculptPanel,
     tablet: Tablet,
+    // File pipeline, callable from the console/tests without the buttons.
+    file: {
+      pack: async () => {
+        const scene = session.serializeScene();
+        if (!scene) throw new Error('nothing to pack');
+        return (await packScene(scene)).arrayBuffer();
+      },
+      open: async (bytes: ArrayBuffer) => session.replaceScene(await unpackScene(bytes)),
+      toOBJ: () => sceneToOBJ(session),
+    },
   };
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
@@ -262,6 +306,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.onLevelChange = null;
     levelToast.dispose();
     stats.dispose();
+    recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();
     scenePanel?.dispose();

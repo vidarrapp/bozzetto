@@ -1675,6 +1675,77 @@ html.is-page body {
   background: var(--hover);
 }
 
+.sculpt-panel__btn--on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* File actions at the foot of the scene outliner (save/open/export). */
+.outliner__files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.outliner__filebtn {
+  width: 100%;
+  text-align: left;
+}
+
+/* Small readout lines inside the sculpt panels (capture counter etc.). */
+.sculpt-panel__hint {
+  font-family: var(--font-spec);
+  font-size: 10px;
+  color: var(--muted);
+  margin: 2px 0 6px;
+}
+
+.sculpt-panel__slot {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The hidden attribute must always win over class display rules (this bit
+   twice: the outliner add-menu in WS4, the publish forms in WS5). */
+[hidden] {
+  display: none !important;
+}
+
+/* Admin-only publish form: slug + title + go + progress line. */
+.gallery-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--panel-border);
+}
+
+.gallery-form__input {
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 11px;
+}
+
+.gallery-form__status {
+  font-family: var(--font-spec);
+  font-size: 10px;
+  color: var(--muted);
+  min-height: 12px;
+  overflow-wrap: anywhere;
+}
+
+.gallery-form__status a {
+  color: var(--accent);
+}
+
 /* Procreate-style side sliders: brush size + strength, left edge. */
 .sculpt-sliders {
   position: fixed;

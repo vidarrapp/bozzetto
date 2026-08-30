@@ -1,17 +1,22 @@
 import { div } from '../../ui/dom';
 import type { SculptSession } from '../bridge/SculptSession';
+import { downloadBlob, packScene, sceneToOBJ, stampName, unpackScene } from '../bridge/SceneFile';
 
 /**
  * Scene outliner (WS4 review request): a LEFT-docked panel, collapsed by
  * default, listing the scene's objects with the active one highlighted
- * (click selects) and a plus button offering primitives to add. Save /
- * load / export options land here later (plan 12b backlog).
+ * (click selects) and a plus button offering primitives to add. WS5 adds
+ * the file row beneath: save/open the full scene as a .bozz file and
+ * export OBJ - the guest-safe outputs (nothing uploads).
  */
 export class ScenePanel {
   private readonly root: HTMLDivElement;
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
   private readonly handleArrow: HTMLSpanElement;
+  private readonly openInput: HTMLInputElement;
+  /** mode.ts appends the admin-only "publish model" form here (WS5). */
+  readonly filesSlot = div('sculpt-panel__slot');
   private collapsed = true;
 
   constructor(private readonly session: SculptSession) {
@@ -75,9 +80,78 @@ export class ScenePanel {
     });
     footer.append(addBtn, this.addMenu);
     body.appendChild(footer);
+
+    // File row (guest-safe: everything below stays on the device).
+    const files = div('outliner__files');
+    files.appendChild(
+      this.fileButton('Save file', 'Saved', async () => {
+        const scene = this.session.serializeScene();
+        if (!scene) throw new Error('Nothing to save');
+        downloadBlob(await packScene(scene), stampName('bozz'));
+      }),
+    );
+    this.openInput = document.createElement('input');
+    this.openInput.type = 'file';
+    this.openInput.accept = '.bozz';
+    this.openInput.hidden = true;
+    this.openInput.addEventListener('change', () => {
+      const file = this.openInput.files?.[0];
+      this.openInput.value = '';
+      if (file) void this.openFile(file);
+    });
+    const openBtn = this.fileButton('Open file...', null, async () => {
+      this.openInput.click();
+    });
+    files.appendChild(openBtn);
+    files.appendChild(this.openInput);
+    files.appendChild(
+      this.fileButton('Export OBJ', 'Exported', async () => {
+        downloadBlob(new Blob([sceneToOBJ(this.session)], { type: 'text/plain' }), stampName('obj'));
+      }),
+    );
+    files.appendChild(this.filesSlot);
+    body.appendChild(files);
     this.root.appendChild(body);
     this.applyCollapsed();
     this.refresh();
+  }
+
+  /** A full-width action button with done-flash and alert-on-error. */
+  private fileButton(
+    label: string,
+    doneLabel: string | null,
+    action: () => Promise<void>,
+  ): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sculpt-panel__btn outliner__filebtn';
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      void action()
+        .then(() => {
+          if (doneLabel) {
+            b.textContent = doneLabel;
+            setTimeout(() => {
+              b.textContent = label;
+            }, 1200);
+          }
+        })
+        .catch((err: Error) => alert(err.message))
+        .finally(() => {
+          b.disabled = false;
+        });
+    });
+    return b;
+  }
+
+  private async openFile(file: File): Promise<void> {
+    try {
+      const scene = await unpackScene(await file.arrayBuffer());
+      this.session.replaceScene(scene);
+    } catch (err) {
+      alert((err as Error).message);
+    }
   }
 
   setCollapsed(collapsed: boolean): void {

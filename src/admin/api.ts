@@ -41,6 +41,24 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+/**
+ * Whether this browser holds an admin session, and for whom. Returns null
+ * for guests. Cloudflare Access answers for unauthenticated visitors with
+ * a redirect to its login page (or an HTML interstitial), never JSON - so
+ * anything but a JSON 200 reads as "guest", and network errors do too.
+ */
+export async function probeAdmin(): Promise<string | null> {
+  try {
+    const res = await fetch('/admin/api/whoami', { redirect: 'manual' });
+    if (!res.ok) return null;
+    if (!(res.headers.get('content-type') ?? '').includes('application/json')) return null;
+    const body = (await res.json()) as { email?: string };
+    return typeof body.email === 'string' ? body.email : null;
+  } catch {
+    return null;
+  }
+}
+
 export const api = {
   list: () => fetch('/api/projects').then((r) => unwrap<ProjectSummary[]>(r)),
 

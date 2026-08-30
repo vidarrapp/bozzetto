@@ -699,3 +699,59 @@ Eight review items from desktop testing, in one round:
 - One bug caught by the suite: buttons started DOM-enabled while the
   change-detection cache said disabled, so the first refresh skipped
   the write (fixed by constructing them disabled).
+
+# WS5 round 1: capture, files, and gated publishing
+
+## What landed
+
+- SnapshotRecorder (plan 6.6/6.6b, simplified): pushState/stroke-end
+  seams mark it pending; a requestIdleCallback (setTimeout on Safari)
+  snapshots the visible scene - every object at its current level,
+  matrix baked, merged with offset indices, bounded copies only - and
+  ships it to the convert worker. The worker grew a raw-arrays job
+  ({id, positions, indices}) beside the OBJ one and answers with the
+  same quantized+gzipped GLB the editor uploads, so stored capture
+  bytes ARE upload-ready gallery frames. Frames append to IndexedDB
+  (bozzetto-sculpt v2: frames + frameMeta stores next to scene), so a
+  timelapse survives reloads; metadata alone is read at boot. Record
+  defaults on with a 500 MB budget and a localStorage preference;
+  identical-geometry edits (mask paints) dedupe via a strided
+  position-sum signature. Deviation from 6.6b noted: capture snapshots
+  the LIVE mesh at idle rather than reconstructing per-undo-state, so
+  strokes coalesce under load instead of queueing - the accepted
+  degradation, with far less machinery. Undo/redo mint no frames.
+- Scene files: serializeScene packs to a .bozz container (magic +
+  JSON header whose typed arrays become {__buf} refs + aligned blob
+  region, gzipped via CompressionStream when present, sniffed on
+  open). unpack validates with the same structural checks as the
+  autosave read. session.replaceScene swaps the whole scene for a
+  loaded file and clears history (the loaded scene is the new floor).
+  OBJ export writes every object matrix-baked with a running 1-based
+  offset. All three sit in the Scene panel's file row.
+- Gallery publishing, admin-gated: /admin/api/whoami (requireAdmin)
+  plus a client probe (redirect:'manual', JSON-200-or-guest, so
+  Cloudflare Access redirects read as guest). Publish forms (slug +
+  title + progress line) exist in both panels but stay hidden until
+  the probe passes; flows mirror the editor exactly - create,
+  uploadFrame per index, update {frames}, best-effort thumbnail from
+  Viewer.captureThumbnail. Timelapse walks the frozen frame set;
+  model saves the merged scene as a one-frame mode:'model' project.
+- Symmetry UI: checkbox synced both ways with the X key
+  (onSymmetryChange), X/Y/Z axis buttons. One in-place write covers
+  wrapper + levels + dyntopo (they share a TransformData); the normal
+  persists per mesh (v3 optional `sym`) and the axis setter is
+  wrapped for autosave dirty-marking.
+
+## Verified (ws5-test.mjs + full battery)
+
+- Symmetry default/hotkey sync, Y-axis write reaching every level,
+  axis surviving reload; seed frame at boot; one frame per stroke;
+  no frame on undo; frames surviving reload; record-off freezing the
+  count; clear re-seeding; .bozz round-trip restoring the exact scene
+  checksum; OBJ o/v/f counts matching the live scene; publish forms
+  hidden for guests and revealed under a stubbed whoami; stubbed API
+  seeing the full editor-shaped sequence with the right modes, frame
+  counts, byte-bearing bodies, and thumbnails for both flows.
+- One race caught by the suite: a frame finishing mid-publish
+  stretched the upload walk; the flow now freezes the frame list at
+  entry.

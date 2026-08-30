@@ -479,6 +479,8 @@ Ordered; each lands as its own reviewed change.
 - WS3 Overlays + materials. Brush ring, symmetry indicator, mask tint (direction verified), stroke-time adaptive quality. Acceptance: ring unaffected by GTAO/DoF; frame time during stroke within the WS0 budget with effects enabled.
 - WS4 GUI. Section 7 in full. Acceptance: tokens only (no literal colors), both themes pass, collapse works, `refreshControls` drives per-tool options, hotkey table implemented with zero collisions, `npm run typecheck` green.
 - WS5 Capture + manifest + playback. Section 6.6 and 8; `/create` gains a "start sculpting" entry whose finished frames flow into the normal project; single-file `.html` export includes sculpt-born frames; mp4 pacing modes. Acceptance: a 50-stroke sculpt plays back in the viewer with identical look to live; recorded-camera toggle interpolates smoothly; export round-trips.
+  - **Round 1 shipped** (see spike results "WS5 round 1"): always-on idle capture to IndexedDB via the convert worker's new raw-arrays job (frames ARE gallery-ready gzipped GLBs); scene save/open as .bozz + OBJ export for guests; admin-gated gallery publishing (whoami probe + Access) for captured timelapses and one-frame model projects, mirroring the editor's upload sequence. Publishing uses the normal project pipeline, so captured sculpts play back in the viewer today.
+  - Still open from this workstream: recorded camera track + interpolating playback toggle, realtime-scaled pacing (frame timestamps are already stored per capture), `/create` sculpt entry, single-file export of sculpt-born frames, capture interval mode.
 - WS6 Cleanup. LICENSE placement verified, no upstream assets present, README changelog entry, dead flags removed.
 
 ## 10. Risks and mitigations

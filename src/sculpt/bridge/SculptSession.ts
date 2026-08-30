@@ -57,6 +57,8 @@ export class SculptSession {
   onActiveMeshChange: (() => void) | null = null;
   /** Fired when the multires level moves (step, subdivide, undo/redo). */
   onLevelChange: ((sel: number, levels: number) => void) | null = null;
+  /** Fired on symmetry toggles (the palette checkbox mirrors the X key). */
+  onSymmetryChange: ((on: boolean) => void) | null = null;
 
   private readonly meshes: SculptMesh[] = [];
   private readonly selectMeshes: SculptMesh[] = [];
@@ -282,7 +284,39 @@ export class SculptSession {
   /** Mirror-sculpting toggle (x). Returns the new state. */
   toggleSymmetry(): boolean {
     this.sculptManager._symmetry = !this.sculptManager._symmetry;
+    this.onSymmetryChange?.(this.sculptManager._symmetry);
     return this.sculptManager._symmetry;
+  }
+
+  getSymmetry(): boolean {
+    return this.sculptManager._symmetry;
+  }
+
+  /**
+   * Mirror-plane axis of the ACTIVE mesh, read back as the dominant
+   * component (the normal is always axis-aligned when set through here).
+   */
+  getSymmetryAxis(): 'x' | 'y' | 'z' {
+    const n = this.mesh?.getSymmetryNormal();
+    if (!n) return 'x';
+    const ax = Math.abs(n[0]);
+    const ay = Math.abs(n[1]);
+    const az = Math.abs(n[2]);
+    return ay > ax && ay >= az ? 'y' : az > ax ? 'z' : 'x';
+  }
+
+  /**
+   * Point the active mesh's mirror plane down an axis (local space). One
+   * in-place write covers everything: the Multimesh wrapper, every level,
+   * and dyntopo conversions all share a single TransformData.
+   */
+  setSymmetryAxis(axis: 'x' | 'y' | 'z'): void {
+    const n = this.mesh?.getSymmetryNormal();
+    if (!n) return;
+    n[0] = axis === 'x' ? 1 : 0;
+    n[1] = axis === 'y' ? 1 : 0;
+    n[2] = axis === 'z' ? 1 : 0;
+    this.render();
   }
 
   /** The active mesh as a Multimesh, or null (e.g. while dyntopo is active). */
@@ -600,6 +634,7 @@ export class SculptSession {
       levels,
       sel: mul ? mul._sel : 0,
       matrix: new Float32Array(mesh.getMatrix()),
+      sym: [...mesh.getSymmetryNormal()],
     };
   }
 
@@ -615,6 +650,21 @@ export class SculptSession {
     this.sculptManager._symmetry = saved.symmetry;
     const active = built[Math.min(saved.active, built.length - 1)];
     this.setMesh(active);
+    return active;
+  }
+
+  /**
+   * Swap the whole scene for a loaded file (Open). The current objects are
+   * dropped, the loaded ones become the new history floor, and the active
+   * mesh change fans out through the usual callback (display reconcile,
+   * outliner, stats).
+   */
+  replaceScene(saved: SavedScene): Multimesh {
+    this.meshes.length = 0;
+    this.selectMeshes.length = 0;
+    this.mesh = null;
+    const active = this.restoreScene(saved);
+    this.clearHistory();
     return active;
   }
 
@@ -675,6 +725,12 @@ export class SculptSession {
     mesh.updateBuffers();
 
     mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
+    if (Array.isArray(saved.sym) && saved.sym.length === 3) {
+      const n = mesh.getSymmetryNormal();
+      n[0] = saved.sym[0];
+      n[1] = saved.sym[1];
+      n[2] = saved.sym[2];
+    }
     this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
     this.addNewMesh(mesh);
     return mesh;
