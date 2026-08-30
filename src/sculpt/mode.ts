@@ -27,17 +27,30 @@ import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
 /**
- * Turntable coast: only fast ticks glide, and only a little. The total glide
- * is a geometric series, gain / (1 - decay) times the last step, so these
- * numbers matter more than they look - 0.45/0.9 would carry a 13 degree
- * step another 130 degrees, a flywheel rather than a settle. At 0.35/0.8 it
- * is about 1.75 steps, which reads as the wheel easing to a stop.
+ * Turntable coast: only fast ticks glide, and only a little.
+ *
+ * Decay is per SECOND, not per frame. A per-frame factor makes the glide
+ * last as long as the machine is slow - measured still drifting three
+ * seconds after the last tick under a software renderer, because thirty
+ * frames of decay took that long to arrive. Velocity is degrees per second
+ * and both the step and the decay are scaled by real elapsed time.
+ *
+ * Total glide is v0 * TAU, so v0 is set to make that about 1.75 steps: enough
+ * to read as the wheel easing to a stop, not enough to be a flywheel.
  */
 const SPIN_COAST_MIN_DEG = 3;
 const SPIN_COAST_AFTER_MS = 90;
-const SPIN_COAST_GAIN = 0.35;
-const SPIN_DECAY = 0.8;
-const SPIN_STOP_DEG = 0.05;
+const SPIN_TAU_S = 0.15;
+const SPIN_COAST_TURNS = 1.75;
+const SPIN_STOP_DEG_S = 2;
+/**
+ * Hard wall-clock deadline for the glide. The per-frame dt is clamped so a
+ * stalled frame cannot fling the camera, but that clamp also slows the
+ * DECAY when frames are scarce - which had the coast still drifting seconds
+ * later on a software renderer. The deadline makes the end of the glide a
+ * property of time rather than of frame rate.
+ */
+const SPIN_COAST_MAX_MS = 600;
 
 /**
  * Mount sculpt mode into a running Viewer (plan section 5): build the vendored
@@ -84,7 +97,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     liveWorldBox(multimesh as unknown as SculptMesh),
   );
 
-  // Performance defaults (plan 7.5): one light, no shadows, no DoF, no HDRI
+  // Performance defaults (plan 7.5): one light, no DoF, no HDRI
   // environment sampling (the hemisphere ambient carries the fill; cheapest
   // possible IBL is none), and the cavity composite instead of GTAO. All
   // saved and restored around the session.
@@ -97,7 +110,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const savedGround = viewer.getGround();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
-  lighting.setShadowsMaster(false);
+  // Shadows on by default (review call): they read the form far better than
+  // the flat key light did, and the frame cost is affordable now.
+  lighting.setShadowsMaster(true);
   if (savedDof.enabled) viewer.setDoF({ enabled: false });
   viewer.onDofChange?.();
   viewer.scene.environment = null;
@@ -215,10 +230,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Coast: once the ticks stop arriving, keep the spin going briefly and
     // let it decay. The gap check keeps this from double-counting while the
     // wheel is still feeding steps.
-    if (spin.vel !== 0 && performance.now() - spin.lastTick > SPIN_COAST_AFTER_MS) {
-      viewer.orbitAzimuthAbout(spin.centre, spin.vel);
-      spin.vel *= SPIN_DECAY;
-      if (Math.abs(spin.vel) < SPIN_STOP_DEG) spin.vel = 0;
+    if (spin.vel !== 0) {
+      const now = performance.now();
+      const dt = Math.min(0.05, Math.max(0, (now - spin.lastFrame) / 1000));
+      spin.lastFrame = now;
+      if (now > spin.until) spin.vel = 0;
+      else if (now - spin.lastTick > SPIN_COAST_AFTER_MS) {
+        viewer.orbitAzimuthAbout(spin.centre, spin.vel * dt);
+        spin.vel *= Math.exp(-dt / SPIN_TAU_S);
+        if (Math.abs(spin.vel) < SPIN_STOP_DEG_S) spin.vel = 0;
+      }
     }
     // History flags move through many routes (strokes, panel ops, keyboard,
     // buttons, restore); polling each frame is cheaper than wiring them all.
@@ -240,15 +261,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // from a drag-orbit: it always spins about the OBJECT's centre, never the
   // stroke pivot, so it stays a turntable wherever you have been working;
   // and a fast spin coasts briefly instead of stopping dead with the wheel.
-  const spin = { vel: 0, lastTick: 0, centre: new Vector3() };
+  // vel is degrees per second; lastFrame is what makes the decay wall-clock.
+  const spin = { vel: 0, lastTick: 0, lastFrame: 0, until: 0, centre: new Vector3() };
   const turntable = (deg: number): void => {
     const active = session.getMesh();
     if (active) liveWorldBox(active).getCenter(spin.centre);
     viewer.orbitAzimuthAbout(spin.centre, deg);
     // Only a genuinely fast tick leaves momentum behind; a single keypress
     // or a slow creep should stop exactly where it was put.
-    spin.vel = Math.abs(deg) >= SPIN_COAST_MIN_DEG ? deg * SPIN_COAST_GAIN : 0;
+    spin.vel =
+      Math.abs(deg) >= SPIN_COAST_MIN_DEG ? (deg * SPIN_COAST_TURNS) / SPIN_TAU_S : 0;
     spin.lastTick = performance.now();
+    spin.lastFrame = spin.lastTick;
+    spin.until = spin.lastTick + SPIN_COAST_MAX_MS;
   };
 
   const input = new InputShell(session, container, cursor, {

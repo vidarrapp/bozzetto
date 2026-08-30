@@ -151,6 +151,10 @@ h1,
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  /* OrbitControls sets this on the canvas itself, but the container around
+     it was still 'auto', leaving the browser free to run pan/zoom gesture
+     recognition over anything that misses the canvas. */
+  touch-action: none;
 }
 
 #viewport canvas {
@@ -1140,13 +1144,11 @@ html.is-page body {
 
 /* --- global theme toggle (top-right, all views) --- */
 .theme-toggle {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  /* Fixed width so "Ink" and "Paper" occupy the same box - the help button
-     sits at a constant offset beside it and must not jitter on theme change. */
+  /* Fixed width so "Ink" and "Paper" occupy the same box: the row must not
+     shuffle when the label changes. */
   min-width: 72px;
   text-align: center;
+  order: 3;
   z-index: 30;
   padding: 5px 12px;
   font-family: var(--font-spec);
@@ -1168,24 +1170,8 @@ html.is-page body {
 /* Hotkey guide button, left of the theme toggle: 72px of toggle + its 12px
    inset + an 8px gap. H does the same thing, but not on an iPad. */
 .help-toggle {
-  position: fixed;
-  top: 12px;
-  right: 92px;
-  z-index: 30;
   min-width: 32px;
-  padding: 5px 10px;
-  font-family: var(--font-spec);
-  font-size: 11px;
-  color: var(--text);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  backdrop-filter: blur(8px);
-  cursor: pointer;
-}
-
-.help-toggle:hover {
-  background: var(--hover);
+  order: 2;
 }
 
 /* --- hotkey hint + guide (viewer, left) --- */
@@ -2200,4 +2186,95 @@ body.chrome-hidden .transport {
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+/* --- the shared top row --- */
+.topbar {
+  position: fixed;
+  top: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none; /* the gap between chips stays click-through */
+}
+
+.topbar--left {
+  left: 12px;
+}
+
+.topbar--right {
+  right: 12px;
+}
+
+/* One look for every top-row control, link or button. */
+.topchip {
+  order: 1;
+  pointer-events: auto;
+  padding: 5px 12px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topchip:hover {
+  background: var(--hover);
+}
+
+.topchip--accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The gallery's "start a sculpt" tile: same footprint as a project card,
+   but a plus over the default subject rather than a thumbnail. */
+.card--new {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius-image);
+  background:
+    radial-gradient(circle at 50% 45%, rgb(255 255 255 / 10%) 0 22%, transparent 60%),
+    var(--control-bg);
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.card--new:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.card--new__plus {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.card--new__label {
+  margin-top: 8px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Ordering lives here, after .topchip's default: page actions first, then
+   the guide, then the theme toggle pinned to the outside edge. Set on the
+   same specificity as .topchip and it would be a source-order coin toss. */
+.topbar .help-toggle {
+  order: 2;
+}
+
+.topbar .theme-toggle {
+  order: 3;
 }

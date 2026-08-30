@@ -21,8 +21,11 @@ export class InputDebug {
   private readonly t0 = performance.now();
 
   private readonly onPointer = (e: PointerEvent): void => {
-    const target = (e.target as HTMLElement | null)?.closest('button') ? 'BTN' : 'page';
-    this.push(`${e.type.replace('pointer', 'p.')} ${e.pointerType[0]}#${e.pointerId} ${target}`);
+    const el = e.target as HTMLElement | null;
+    const target = el?.closest('button') ? 'BTN' : el?.tagName === 'CANVAS' ? 'CANVAS' : 'page';
+    // pointerType in full: the whole finger-plus-Pencil question is about
+    // which device each event came from.
+    this.push(`${e.type.replace('pointer', 'p.')} ${e.pointerType}#${e.pointerId} ${target}`);
   };
 
   private readonly onTouch = (e: TouchEvent): void => {

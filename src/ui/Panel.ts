@@ -1,6 +1,6 @@
 import type { Viewer, GroundMode } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
-import { div, labelRow } from './dom';
+import { div, labelRow, selectEl } from './dom';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -38,8 +38,10 @@ export class Panel {
   private dofCheckbox?: HTMLInputElement;
   /** DoF section wrapper: hidden while sculpt mode is active. */
   private dofSection?: HTMLDivElement;
-  /** Cavity/SSAO wrapper: the mirror case, shown only while sculpting. */
-  private cavitySection?: HTMLDivElement;
+  /** Look-dev sections built for the viewer, revealed only while sculpting. */
+  private lookDevSections: HTMLElement[] = [];
+  private aoMode = 'cavity';
+  private cavityStrength = 0.9;
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
   private readonly onOtherPanelOpen = (e: Event): void => {
@@ -65,8 +67,12 @@ export class Panel {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
     if (this.dofSection) this.dofSection.hidden = active;
-    // Cavity is the sculpt shading path; it has nothing to act on in the viewer.
-    if (this.cavitySection) this.cavitySection.hidden = !active;
+    // Sculpt mode gets look-dev parity with the editor: the full light rig,
+    // camera, environment and AO, which the plain viewer has no use for.
+    for (const sec of this.lookDevSections) sec.hidden = !active;
+    if (this.lightControls) this.lightControls.hidden = !active;
+    if (this.lightToggles) this.lightToggles.hidden = active;
+    if (active) this.rebuildLightControls();
     if (!this.editor) {
       this.titleEl.textContent = active
         ? 'Render'
@@ -148,9 +154,18 @@ export class Panel {
     this.buildLighting(this.bodyEl);
     if (this.editor) this.buildCamera(this.bodyEl);
     this.buildDoF(this.bodyEl); // viewer + editor
-    if (!this.editor) this.buildCavity(this.bodyEl);
-    if (this.editor) this.buildEnvironment(this.bodyEl);
-    if (this.editor) this.buildAO(this.bodyEl);
+    // The viewer builds the look-dev sections too, hidden until sculpt mode
+    // announces itself - the editor shows them outright.
+    const lookDevFrom = this.bodyEl.childElementCount;
+    if (!this.editor) this.buildCamera(this.bodyEl);
+    this.buildEnvironment(this.bodyEl);
+    this.buildAOSection(this.bodyEl);
+    if (!this.editor) {
+      this.lookDevSections = [...this.bodyEl.children]
+        .slice(lookDevFrom)
+        .filter((el): el is HTMLElement => el instanceof HTMLElement);
+      for (const sec of this.lookDevSections) sec.hidden = true;
+    }
     if (devMode()) this.buildDeveloper(this.bodyEl);
   }
 
@@ -188,23 +203,63 @@ export class Panel {
   }
 
   /**
-   * Sculpt's cavity shading (moved here from the sculpt palette): a depth
-   * SSAO that keeps creases readable on flat-shaded facets. Hidden until
-   * sculpt mode announces itself, exactly like DoF in reverse.
+   * Ambient occlusion, both models in one place. GTAO is the viewer's
+   * screen-space pass; Cavity is the cheap depth SSAO sculpt mode uses,
+   * which keeps creases readable on flat-shaded facets without gridding.
+   * Sculpt defaults to Cavity, the viewer to whatever the project saved.
    */
-  private buildCavity(body: HTMLElement): void {
-    const sec = section(body, 'Cavity (SSAO)');
-    const ao = this.viewer.getSculptAO();
-    sec.appendChild(
-      compactRange('Strength', 0, 2, 0.05, ao.strength, (v) =>
-        this.viewer.setSculptAO({ strength: v }),
-      ),
+  private buildAOSection(body: HTMLElement): void {
+    const sec = section(body, 'Ambient occlusion');
+    const hasGtao = this.viewer.aoAvailable();
+
+    const gtaoRows = div('ao-rows');
+    const cavityRows = div('ao-rows');
+
+    const apply = (mode: string): void => {
+      this.aoMode = mode;
+      if (hasGtao) this.viewer.setAO({ enabled: mode === 'gtao' });
+      // Cavity has no enable flag of its own; zero strength is "off", so the
+      // last real strength is remembered to switch back to.
+      const live = this.viewer.getSculptAO().strength;
+      if (live > 0) this.cavityStrength = live;
+      this.viewer.setSculptAO({ strength: mode === 'cavity' ? this.cavityStrength : 0 });
+      gtaoRows.hidden = mode !== 'gtao';
+      cavityRows.hidden = mode !== 'cavity';
+    };
+
+    const options: [string, string][] = [['off', 'Off']];
+    options.push(['cavity', 'Cavity (SSAO)']);
+    if (hasGtao) options.push(['gtao', 'GTAO']);
+    const modeSel = selectEl(options, this.aoMode);
+    modeSel.addEventListener('change', () => apply(modeSel.value));
+    sec.appendChild(labelRow('Model', modeSel));
+
+    if (hasGtao) {
+      const ao = this.viewer.getAOState();
+      // Strength blends the GTAO term toward 1 (0 = none, >1 deepens it).
+      gtaoRows.appendChild(
+        compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
+      );
+      gtaoRows.appendChild(
+        compactRange('Radius', 0.05, 1, 0.05, ao.radius, (v) => this.viewer.setAO({ radius: v })),
+      );
+      sec.appendChild(gtaoRows);
+    }
+
+    const cav = this.viewer.getSculptAO();
+    this.cavityStrength = cav.strength > 0 ? cav.strength : 0.9;
+    cavityRows.appendChild(
+      compactRange('Strength', 0, 2, 0.05, this.cavityStrength, (v) => {
+        this.cavityStrength = v;
+        this.viewer.setSculptAO({ strength: v });
+      }),
     );
-    sec.appendChild(
-      compactRange('Radius', 2, 24, 1, ao.radius, (v) => this.viewer.setSculptAO({ radius: v })),
+    cavityRows.appendChild(
+      compactRange('Radius', 2, 24, 1, cav.radius, (v) => this.viewer.setSculptAO({ radius: v })),
     );
-    sec.hidden = true;
-    this.cavitySection = sec;
+    sec.appendChild(cavityRows);
+
+    apply(this.aoMode);
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */
@@ -396,6 +451,13 @@ export class Panel {
       lighting.appendChild(this.lightControls);
       this.rebuildLightControls();
     } else {
+      // Viewer builds BOTH: the simple toggles for playback, and the full rig
+      // for sculpt mode, swapped by onSculptMode.
+      this.lightControls = div('light-controls');
+      this.lightControls.hidden = true;
+      lighting.appendChild(this.lightControls);
+    }
+    if (!this.editor) {
       // Viewer gets just on/off toggles per light; advanced settings live in the editor.
       this.lightToggles = div('light-toggles');
       lighting.appendChild(this.lightToggles);
@@ -621,21 +683,6 @@ export class Panel {
     );
     sec.appendChild(
       compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
-    );
-  }
-
-  private buildAO(body: HTMLElement): void {
-    if (!this.viewer.aoAvailable()) return;
-    const ao = this.viewer.getAOState();
-    const sec = section(body, 'Ambient occlusion');
-
-    sec.appendChild(checkbox('Enabled', ao.enabled, (on) => this.viewer.setAO({ enabled: on })));
-    // Strength blends the GTAO term toward 1 (0 = none, 1 = full, >1 deepens it).
-    sec.appendChild(
-      compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
-    );
-    sec.appendChild(
-      compactRange('Radius', 0.05, 1, 0.05, ao.radius, (v) => this.viewer.setAO({ radius: v })),
     );
   }
 

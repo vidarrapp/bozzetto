@@ -4,6 +4,7 @@ import { HttpSource } from './viewer/AssetSource';
 import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
+import { topChip, topbarLeft } from './ui/topbar';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -113,11 +114,9 @@ async function loadProject(
 }
 
 function addGalleryLink(): void {
-  const a = document.createElement('a');
-  a.className = 'viewer-back';
-  a.href = window.location.pathname; // back to the gallery (no ?tl)
-  a.textContent = '← Gallery';
-  document.getElementById('app')?.appendChild(a);
+  const a = topChip('← Gallery', window.location.pathname);
+  a.classList.add('viewer-back');
+  topbarLeft().appendChild(a);
 }
 
 function showError(overlay: HTMLElement | null, err: unknown): void {

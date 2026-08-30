@@ -255,6 +255,9 @@ export class InputShell {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) return; // middle/right stay with OrbitControls
+    // One stroke at a time: a finger landing mid-stroke (to hold a modifier
+    // button, or just resting) must not restart or steal the pen's stroke.
+    if (this.pointerId !== -1 && e.pointerId !== this.pointerId) return;
     // While adjusting brush size/strength (b/s) or dragging the light rig
     // (l), the press belongs to that gesture: never let it start an orbit.
     if (this.adjust || this.lKeyHeld) {
@@ -335,10 +338,17 @@ export class InputShell {
         this.cursor.setStrokeStyle(strokeStyle);
       }
     }, STROKE_REDUCE_DELAY_MS);
-    try {
-      s.getCanvas().setPointerCapture(e.pointerId);
-    } catch {
-      // Synthetic events carry no active pointer; capture is best-effort.
+    // NOT for touch. Capturing a touch pointer is what Safari punishes: the
+    // moment a second pointer arrives it cancels the captured one, and on
+    // iPadOS that second pointer is the Pencil. A finger resting anywhere
+    // then blocked pen input entirely. Mouse and pen still capture, where
+    // it buys tracking outside the canvas and costs nothing.
+    if (e.pointerType !== 'touch') {
+      try {
+        s.getCanvas().setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
     }
     e.preventDefault();
     e.stopPropagation();

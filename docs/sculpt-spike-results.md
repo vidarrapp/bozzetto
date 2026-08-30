@@ -1071,3 +1071,65 @@ the part that reaches Safari anyway.
 - Leaving for the gallery stores a thumbnail plus object/triangle counts
   beside the autosave, and the landing page leads with an "In progress"
   card that goes straight back into the work.
+
+## WS8 round: look-dev parity, AO models, and one shared top row
+
+- The Render panel now carries the editor's look-dev controls in sculpt
+  mode: the full light rig, camera, environment and AO. They are built for
+  the viewer variant too but hidden until `bozzetto:sculptmode` fires - the
+  same pattern DoF already used in reverse - so the plain viewer is
+  unchanged and there is no second panel implementation to keep in step.
+- Ambient occlusion became one section with a model picker: Off, Cavity
+  (the depth SSAO sculpt has always used) or GTAO (the viewer's pass,
+  renamed from the bare "Ambient occlusion"). Cavity has no enable flag of
+  its own, so "off" is zero strength and the last real value is remembered
+  to switch back to. Sculpt defaults to Cavity; shadows now default ON.
+- One top row for every page and mode (src/ui/topbar.ts): page actions
+  left, global ones right, all the same `.topchip`. Before this the same
+  idea had three treatments - a bare text link in the viewer, a chip in the
+  admin editor, and the landing nav in document flow while the theme toggle
+  floated above it. The landing's links became chips: Sculpt (guests only),
+  Upload timelapse, Log in (guests only). Signed in, the way into sculpt is
+  a "New sculpt" tile in the first gallery slot instead.
+- Ordering inside the row is set with `order` in a rule appended AFTER
+  `.topchip`, not on it: at equal specificity the winner is whichever rule
+  comes last in the file, and the first attempt put the theme toggle at the
+  wrong end of the row for exactly that reason.
+
+## Finger-plus-Pencil: what the evidence now says
+
+The report changed shape this round - it is not the Negative button, it is
+ANY finger contact anywhere (button, empty space, the model) blocking
+Pencil input, while two fingers together work fine. Two things follow from
+that, and both are now fixed:
+
+- `setPointerCapture` is no longer called for touch pointers. Capturing a
+  touch pointer is what Safari punishes: it cancels the captured pointer
+  the moment a second one arrives, and on iPadOS that second pointer is the
+  Pencil. Mouse and pen still capture, where it costs nothing.
+- `#viewport` was `touch-action: auto`. OrbitControls sets `none` on the
+  canvas itself, but anything that missed the canvas left the browser free
+  to run its own gesture recognition.
+
+Also, a stroke can no longer be restarted or stolen by a second pointer, so
+a finger landing mid-stroke - to hold a modifier, or just resting - cannot
+disturb the pen. None of this is reproducible headlessly, so it is a
+reasoned fix rather than a verified one; `?inputdebug=1` now prints the full
+pointerType and marks canvas targets, which is what would settle it.
+
+### Frame-rate dependence in the turntable coast
+
+Two bugs in one feature, both found by a test that had no business failing:
+
+1. The decay was per FRAME (`vel *= 0.8` each tick), so the glide lasted as
+   long as the machine was slow - measured still drifting three seconds
+   after the last arrow key under a software renderer, where thirty frames
+   of decay took that long to arrive. Rewritten as degrees per second with
+   an exponential decay over real elapsed time.
+2. That was still not enough, because the per-frame `dt` is clamped (so a
+   stalled frame cannot fling the camera) and the clamp slows the decay when
+   frames are scarce. A wall-clock deadline now ends the glide outright.
+
+Worth remembering as a class: any animation driven from a render tick has
+to decay against the clock, and any clamp on `dt` quietly reintroduces the
+frame-rate dependence the clock was supposed to remove.

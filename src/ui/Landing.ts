@@ -4,6 +4,9 @@
  * has any projects (or when the API isn't reachable, e.g. plain `vite dev`).
  */
 
+import { probeAdmin } from '../admin/api';
+import { topChip, topbarRight } from './topbar';
+
 interface ProjectSummary {
   id: string;
   title: string;
@@ -23,17 +26,23 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
           <h1 class="landing__title">Bozzetto</h1>
           <p class="landing__tagline">Sculpt timelapses &amp; 3D studies</p>
         </div>
-        <nav class="landing__links">
-          <a class="landing__editor" href="/?sculpt=1">Sculpt!</a>
-          <a class="landing__editor" href="/create/">Make your own →</a>
-          <a class="landing__admin muted" href="/admin/">Admin</a>
-        </nav>
+
       </header>
       <div class="landing__grid" id="landing-grid"></div>
     </div>`;
 
   const grid = app.querySelector<HTMLElement>('#landing-grid');
   if (!grid) return;
+
+  // Page actions live in the shared top row with the theme toggle, so the
+  // same controls sit in the same place on every page and mode.
+  const admin = await probeAdmin().catch(() => null);
+  const bar = topbarRight();
+  // Signed in, the way into sculpt is the gallery tile below; a guest needs
+  // it here, since they get no tile.
+  if (!admin) bar.appendChild(topChip('Sculpt', '/?sculpt=1'));
+  bar.appendChild(topChip('Upload timelapse', '/create/'));
+  if (!admin) bar.appendChild(topChip('Log in', '/admin/'));
 
   let projects: ProjectSummary[] = [];
   try {
@@ -43,19 +52,34 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     /* API not reachable — fall through to demo-only. */
   }
 
-  // Work in progress comes first: the sculpt autosave lives in this
-  // browser, so it is not a project the API knows about, but it is the
-  // thing most worth getting back to.
+  // Signed in, the first tile starts a new sculpt - the gallery is where
+  // the owner's work begins, not a nav link above it.
+  if (admin) grid.appendChild(newSculptCard());
+
+  // Then work in progress: the sculpt autosave lives in this browser, so it
+  // is not a project the API knows about, but it is the thing most worth
+  // getting back to.
   const inProgress = await sculptCard();
   if (inProgress) grid.appendChild(inProgress);
 
   // Only projects with frames are shown publicly; empties live in the editor.
   const list = projects.filter((p) => p.frameCount > 0);
-  if (list.length === 0 && !inProgress) {
+  if (list.length === 0 && !inProgress && !admin) {
     grid.innerHTML = '<p class="muted">No projects yet.</p>';
     return;
   }
   for (const p of list) grid.appendChild(card(p));
+}
+
+/** Start a fresh sculpt: a plus over the default subject. */
+function newSculptCard(): HTMLElement {
+  const a = document.createElement('a');
+  a.className = 'card card--new';
+  a.href = '/?sculpt=1';
+  a.innerHTML =
+    '<div><div class="card--new__plus">+</div>' +
+    '<div class="card--new__label">New sculpt</div></div>';
+  return a;
 }
 
 /**

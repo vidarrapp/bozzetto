@@ -4,6 +4,8 @@
  * re-tint its 3D background. Call initTheme() before first paint and
  * mountThemeToggle() once per page.
  */
+
+import { topbarRight } from './topbar';
 export type Theme = 'dark' | 'light';
 
 const KEY = 'bozzetto-theme';
@@ -58,7 +60,7 @@ export function mountThemeToggle(): void {
   if (document.querySelector('.theme-toggle')) return;
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'theme-toggle';
+  button.className = 'topchip theme-toggle';
 
   const sync = (): void => {
     const theme = getTheme();
@@ -72,5 +74,5 @@ export function mountThemeToggle(): void {
     sync();
   });
   onThemeChange(sync); // keep in sync if toggled elsewhere
-  document.body.appendChild(button);
+  topbarRight().appendChild(button);
 }

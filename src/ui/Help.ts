@@ -1,3 +1,5 @@
+import { topbarRight } from './topbar';
+
 /**
  * Hotkey guide for the viewer: a dismissible top-left hint ("Press H …") that
  * fades after a few seconds, plus a left-side overlay listing every shortcut,
@@ -114,12 +116,12 @@ export class Help {
     // Parked beside the theme toggle in the top-right corner.
     this.button = document.createElement('button');
     this.button.type = 'button';
-    this.button.className = 'help-toggle';
+    this.button.className = 'topchip help-toggle';
     this.button.textContent = '?';
     this.button.title = 'Hotkey guide (H)';
     this.button.setAttribute('aria-label', 'Hotkey guide');
     this.button.addEventListener('click', () => this.toggle());
-    document.body.appendChild(this.button);
+    topbarRight().appendChild(this.button);
 
     this.guide = document.createElement('div');
     this.guide.className = 'help-guide';
