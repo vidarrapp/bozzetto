@@ -921,3 +921,33 @@ by slot (data-slot=model|timelapse) and the suite drives them there.
   building a row rather than showing a slider that controls nothing.
   ws6 now FAILS on any pageerror - it had been logging them to the
   console only, which is exactly why this rode along green.
+
+## WS6 round 4 (test feedback)
+
+- HOLD-TO-CARVE, take two. The touch-action fix was not the cause. The
+  button called `setPointerCapture` on the finger's pointer and then
+  `preventDefault`; on iPadOS, capturing a touch pointer and putting a
+  SECOND pointer down (the Pencil, starting a stroke) makes Safari cancel
+  the captured one, and the cancel handler released the hold at exactly
+  the moment drawing began. That is the whole symptom: the double-tap
+  latch survived because a latched release is a no-op, so toggling
+  "worked" and holding never did. Now: no capture, no preventDefault
+  (touch-action: none already covers what it guarded), the lift is
+  watched on the window keyed by pointerId, pointercancel is NOT a
+  release, and a window touchend with an empty touch list is the backstop
+  for a pointer that was cancelled and will never report its lift.
+  ws6 reproduces it directly - press, cancel, stroke, assert still armed.
+- ctrl + drag OFF the model now zooms (review request: the Pencil needs a
+  zoom that is not a pinch), vertical travel through an exponential
+  pixels-to-factor so a given drag changes framing by the same proportion
+  at any distance. This replaces upstream's whole-mask gestures on empty
+  space (tap to invert, drag to clear), which became redundant the moment
+  ctrl+i and ctrl+c landed. ctrl ON the model still paints mask, and the
+  suite asserts both halves plus that masking never moves the camera.
+- A `?` button beside the theme toggle opens the hotkey guide; H still
+  does too, but H does not exist on a keyboard-less iPad. The theme
+  toggle got a fixed min-width so the button's offset does not jitter
+  between "Ink" and "Paper". The guide is regrouped as Sculpting /
+  Masking / Navigation / Brushes / Subdiv / Lighting / Interface (Detail
+  renamed Subdiv) and scrolls, since it is now taller than a short
+  viewport.

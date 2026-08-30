@@ -219,6 +219,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.environment.setRotation(lighting.getRigRotation());
     },
     orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
+    dolly: (factor) => viewer.dolly(factor),
     toggleChrome: () => chrome.handleTab(),
     extractMasked: () => session.extractMasked(sculptPanel?.getExtractThickness() ?? 1),
     toggleMaskTint: () => {

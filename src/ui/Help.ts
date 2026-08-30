@@ -36,20 +36,31 @@ const SCULPT_HTML = `
   <div class="help-guide__head">Sculpt hotkeys <span class="help-guide__close">H to close</span></div>
   <div class="help-guide__group">
     <div class="help-guide__title">Sculpting</div>
-    <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt (off mesh: orbit)</span></div>
+    <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt</span></div>
     <div class="help-row"><span class="help-key">Alt + drag</span><span>Negative (carve)</span></div>
     <div class="help-row"><span class="help-key">Shift + drag</span><span>Smooth</span></div>
-    <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Mask (+ Alt to unmask)</span></div>
     <div class="help-row"><kbd>B</kbd><span>Brush size (hold + drag)</span></div>
     <div class="help-row"><kbd>S</kbd><span>Brush strength (hold + drag up/down)</span></div>
     <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Brush size step (wheel-friendly)</span></div>
     <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
     <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Masking</div>
+    <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Paint mask (+ Alt to unmask)</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Clear mask</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>I</kbd><span>Invert mask</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>H</kbd><span>Show / hide mask tint</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>E</kbd><span>Extract masked region</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Navigation</div>
+    <div class="help-row"><span class="help-key">Drag off mesh</span><span>Orbit</span></div>
+    <div class="help-row"><span class="help-key">Ctrl + drag off mesh</span><span>Zoom</span></div>
+    <div class="help-row"><span class="help-key">Scroll / pinch</span><span>Zoom</span></div>
+    <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
+    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turn model 1° (wheel-friendly)</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Brushes</div>
@@ -64,15 +75,13 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>9</kbd><span>Twist</span></div>
   </div>
   <div class="help-guide__group">
-    <div class="help-guide__title">Detail</div>
+    <div class="help-guide__title">Subdiv</div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>D</kbd><span>Subdivide</span></div>
     <div class="help-row"><kbd>D</kbd><span>Subdivision level up</span></div>
     <div class="help-row"><kbd>Shift</kbd>+<kbd>D</kbd><span>Subdivision level down</span></div>
   </div>
   <div class="help-guide__group">
-    <div class="help-guide__title">Scene</div>
-    <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
-    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turn model 1° (wheel-friendly)</span></div>
+    <div class="help-guide__title">Lighting</div>
     <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
     <div class="help-row"><kbd>L</kbd><span>Rotate light (hold + drag)</span></div>
   </div>
@@ -86,6 +95,7 @@ const SCULPT_HTML = `
 export class Help {
   private readonly hint: HTMLDivElement;
   private readonly guide: HTMLDivElement;
+  private readonly button: HTMLButtonElement;
   private hintTimer: number | undefined;
   private readonly onSculptMode = (e: Event): void => {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
@@ -98,6 +108,17 @@ export class Help {
     this.hint.textContent = 'Press H for hotkey guide';
     document.body.appendChild(this.hint);
     this.hintTimer = window.setTimeout(() => this.hint.classList.add('is-hidden'), 8000);
+
+    // A visible way in, since H is unreachable on a keyboard-less iPad.
+    // Parked beside the theme toggle in the top-right corner.
+    this.button = document.createElement('button');
+    this.button.type = 'button';
+    this.button.className = 'help-toggle';
+    this.button.textContent = '?';
+    this.button.title = 'Hotkey guide (H)';
+    this.button.setAttribute('aria-label', 'Hotkey guide');
+    this.button.addEventListener('click', () => this.toggle());
+    document.body.appendChild(this.button);
 
     this.guide = document.createElement('div');
     this.guide.className = 'help-guide';
@@ -126,6 +147,7 @@ export class Help {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     this.hint.remove();
+    this.button.remove();
     this.guide.remove();
   }
 }

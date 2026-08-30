@@ -1143,6 +1143,10 @@ html.is-page body {
   position: fixed;
   top: 12px;
   right: 12px;
+  /* Fixed width so "Ink" and "Paper" occupy the same box - the help button
+     sits at a constant offset beside it and must not jitter on theme change. */
+  min-width: 72px;
+  text-align: center;
   z-index: 30;
   padding: 5px 12px;
   font-family: var(--font-spec);
@@ -1158,6 +1162,29 @@ html.is-page body {
 }
 
 .theme-toggle:hover {
+  background: var(--hover);
+}
+
+/* Hotkey guide button, left of the theme toggle: 72px of toggle + its 12px
+   inset + an 8px gap. H does the same thing, but not on an iPad. */
+.help-toggle {
+  position: fixed;
+  top: 12px;
+  right: 92px;
+  z-index: 30;
+  min-width: 32px;
+  padding: 5px 10px;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.help-toggle:hover {
   background: var(--hover);
 }
 
@@ -1183,6 +1210,8 @@ html.is-page body {
 }
 
 .help-guide {
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
   position: fixed;
   top: 52px;
   left: 12px;
@@ -1771,6 +1800,7 @@ body.chrome-hidden .panel,
 body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .theme-toggle,
+body.chrome-hidden .help-toggle,
 body.chrome-hidden .transport {
   opacity: 0;
   visibility: hidden;

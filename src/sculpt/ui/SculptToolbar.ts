@@ -44,6 +44,44 @@ export class SculptToolbar {
   private negSticky = false;
   private unlatchOnUp = false;
   private lastNegDown = 0;
+  /** Pointer currently holding Negative down, or -1. */
+  private negHoldId = -1;
+
+  /**
+   * The lift is watched on the WINDOW, not the button: once the button
+   * stops capturing, the release can land anywhere, and on a touch device
+   * it routinely does. pointercancel is NOT treated as a lift for the same
+   * reason it broke the feature - the finger is still on the button.
+   */
+  private readonly onWindowPointerUp = (e: PointerEvent): void => {
+    if (e.pointerId !== this.negHoldId) return;
+    this.negHoldId = -1;
+    this.releaseNegative();
+  };
+
+  /**
+   * Backstop for a pointer that was cancelled and will therefore never
+   * report its lift: touch events keep flowing regardless, so an empty
+   * touch list means every finger is off the glass.
+   */
+  private readonly onWindowTouchEnd = (e: TouchEvent): void => {
+    if (this.negHoldId !== -1 && e.touches.length === 0) {
+      this.negHoldId = -1;
+      this.releaseNegative();
+    }
+  };
+
+  private releaseNegative(): void {
+    if (this.unlatchOnUp) {
+      this.unlatchOnUp = false;
+      this.negSticky = false;
+      this.input.setNegativeBase(false);
+    } else if (!this.negSticky) {
+      if (!this.input.getNegativeBase()) return;
+      this.input.setNegativeBase(false);
+    }
+    this.refresh();
+  }
 
   constructor(private readonly input: InputShell) {
     this.root = document.createElement('div');
@@ -65,13 +103,14 @@ export class SculptToolbar {
       'negative',
       'fi-ts-reflect-vertical',
     );
+    // Deliberately NO setPointerCapture and NO preventDefault here. On
+    // iPadOS, capturing a touch pointer and then putting a SECOND pointer
+    // down - the Pencil, starting a stroke - makes Safari cancel the
+    // captured one. That cancel released the hold at the exact moment
+    // drawing began, which is why carving could be latched by double-tap
+    // (the latch survives a release) but never held. touch-action: none on
+    // the button already suppresses the gestures preventDefault guarded.
     this.negativeBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      try {
-        this.negativeBtn.setPointerCapture(e.pointerId);
-      } catch {
-        // Synthetic events carry no active pointer; capture is best-effort.
-      }
       if (this.negSticky) {
         // Latched: this press ends the lock when it lifts.
         this.unlatchOnUp = true;
@@ -81,21 +120,9 @@ export class SculptToolbar {
         this.lastNegDown = now;
         this.input.setNegativeBase(true);
       }
+      this.negHoldId = e.pointerId;
       this.refresh();
     });
-    const releaseNegative = (): void => {
-      if (this.unlatchOnUp) {
-        this.unlatchOnUp = false;
-        this.negSticky = false;
-        this.input.setNegativeBase(false);
-      } else if (!this.negSticky) {
-        if (!this.input.getNegativeBase()) return;
-        this.input.setNegativeBase(false);
-      }
-      this.refresh();
-    };
-    this.negativeBtn.addEventListener('pointerup', releaseNegative);
-    this.negativeBtn.addEventListener('pointercancel', releaseNegative);
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     left.appendChild(this.negativeBtn);
 
@@ -150,6 +177,9 @@ export class SculptToolbar {
     this.root.append(left, center, right);
     document.body.appendChild(this.root);
 
+    window.addEventListener('pointerup', this.onWindowPointerUp, true);
+    window.addEventListener('touchend', this.onWindowTouchEnd, true);
+    window.addEventListener('touchcancel', this.onWindowTouchEnd, true);
     this.input.onToolChange = () => this.refresh();
     this.refresh();
   }
@@ -175,6 +205,9 @@ export class SculptToolbar {
   }
 
   dispose(): void {
+    window.removeEventListener('pointerup', this.onWindowPointerUp, true);
+    window.removeEventListener('touchend', this.onWindowTouchEnd, true);
+    window.removeEventListener('touchcancel', this.onWindowTouchEnd, true);
     this.input.onToolChange = null;
     this.root.remove();
   }

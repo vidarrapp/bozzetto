@@ -1307,6 +1307,11 @@ export class Viewer {
     this.controls.rotateAzimuth(deg);
   }
 
+  /** Dolly by a multiplier (>1 out, <1 in); see Controls.dollyBy. */
+  dolly(factor: number): void {
+    this.controls.dollyBy(factor);
+  }
+
   /**
    * Re-pivot the orbit around a world point WITHOUT moving the view: the
    * point is projected onto the current view ray and the target takes that

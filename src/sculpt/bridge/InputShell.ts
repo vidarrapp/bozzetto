@@ -33,6 +33,8 @@ export interface InputShellHooks {
   rotateLightRig(deltaDeg: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
+  /** ctrl + drag off the model: dolly by a multiplier (>1 out, <1 in). */
+  dolly(factor: number): void;
   /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
@@ -64,6 +66,12 @@ const ORBIT_STEP_DEG = 1;
  */
 const ORBIT_ACCEL_REF_MS = 200;
 const ORBIT_ACCEL_MAX = 8;
+/**
+ * ctrl-drag zoom: per-pixel exponent, so a drag of the same length changes
+ * the framing by the same proportion however close you already are. About
+ * 2x per 170px.
+ */
+const ZOOM_DRAG_RATE = 0.004;
 
 export class InputShell {
   /** Fired when the selected brush changes (digit keys or toolbar). */
@@ -79,8 +87,8 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   private adjust: AdjustMode = null;
-  /** ctrl+press that missed the mesh: pending whole-mask gesture (WS2). */
-  private maskGesture: { x: number; y: number; pointerId: number } | null = null;
+  /** ctrl+press that missed the mesh: a drag-to-zoom in progress. */
+  private zoomDrag: { y: number; pointerId: number } | null = null;
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
@@ -267,13 +275,15 @@ export class InputShell {
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
-      // Upstream parity: a ctrl press that MISSES the mesh is a whole-mask
-      // gesture. Released in place = invert the mask; dragged = clear it.
+      // A ctrl press that MISSES the mesh drags to zoom (review request:
+      // the Pencil needs a way to zoom without a pinch). This used to be
+      // upstream's whole-mask gesture - tap to invert, drag to clear - but
+      // both now have their own chords (ctrl+i, ctrl+c), so the gesture was
+      // redundant and the modifier is better spent here.
       if (e.ctrlKey && !e.metaKey) {
-        this.maskGesture = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-        s._action = Enums.Action.MASK_EDIT;
+        this.zoomDrag = { y: e.clientY, pointerId: e.pointerId };
         e.preventDefault();
-        e.stopPropagation(); // no orbit under a mask gesture
+        e.stopPropagation(); // no orbit under a zoom drag
         return;
       }
       s._action = Enums.Action.NOTHING;
@@ -333,9 +343,22 @@ export class InputShell {
     this.setMouse(e);
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
 
+    // ctrl-drag off the model: vertical travel dollies. Pixels-to-factor is
+    // exponential so the step is proportional at any distance, and dragging
+    // up zooms IN, matching the wheel.
+    if (this.zoomDrag && e.pointerId === this.zoomDrag.pointerId) {
+      const dy = e.clientY - this.zoomDrag.y;
+      this.zoomDrag.y = e.clientY;
+      this.hooks.dolly(Math.exp(dy * ZOOM_DRAG_RATE));
+      this.cursor.hide();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     if (s._action !== Enums.Action.SCULPT_EDIT || e.pointerId !== this.pointerId) {
-      // A held button that is not our stroke is a camera drag (or a mask
-      // gesture): the cursor gets out of the way entirely, and skipping the
+      // A held button that is not our stroke is a camera drag (or a zoom
+      // drag): the cursor gets out of the way entirely, and skipping the
       // hover raycast keeps orbiting cheap.
       if (e.buttons !== 0) {
         this.cursor.hide();
@@ -377,19 +400,10 @@ export class InputShell {
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
 
-    if (this.maskGesture && e.pointerId === this.maskGesture.pointerId) {
-      // A cancelled pointer (browser gesture takeover) aborts, not inverts.
-      if (e.type !== 'pointercancel') {
-        const moved =
-          Math.hypot(e.clientX - this.maskGesture.x, e.clientY - this.maskGesture.y) > 6;
-        const masking = s.getSculptManager().getTool(Enums.Tools.MASKING);
-        if (moved) masking.clear?.();
-        else masking.invert?.();
-      }
-      this.maskGesture = null;
+    if (this.zoomDrag && e.pointerId === this.zoomDrag.pointerId) {
+      this.zoomDrag = null;
       s._action = Enums.Action.NOTHING;
       e.stopPropagation();
-      s.render();
       return;
     }
 

@@ -105,6 +105,23 @@ export class Controls {
     this.controls.update();
   }
 
+  /**
+   * Dolly by a multiplier along the view ray (>1 pulls back, <1 moves in),
+   * clamped to the same min/max the wheel obeys. Drives the sculpt ctrl-drag
+   * zoom, which exists so a Pencil can zoom without a pinch gesture.
+   */
+  dollyBy(factor: number): void {
+    const offset = new Vector3().subVectors(this.camera.position, this.controls.target);
+    const dist = offset.length();
+    if (dist < 1e-6) return;
+    const next = Math.min(
+      this.controls.maxDistance,
+      Math.max(this.controls.minDistance, dist * factor),
+    );
+    this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), next);
+    this.controls.update();
+  }
+
   /** Distance from the camera to the orbit target (the depth-of-field focus). */
   targetDistance(): number {
     return this.camera.position.distanceTo(this.controls.target);
