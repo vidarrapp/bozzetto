@@ -116,13 +116,13 @@ export class SculptPanel {
       ),
     );
     dyn.appendChild(
-      checkbox('Pen pressure intensity', d.strengthOn, (on) => {
+      checkbox('Pen pressure strength', d.strengthOn, (on) => {
         d.strengthOn = on;
       }),
     );
     dyn.appendChild(
       labelRow(
-        'Intensity curve',
+        'Strength curve',
         this.curveSelect(d.strengthCurve, (c) => {
           d.strengthCurve = c;
         }),
