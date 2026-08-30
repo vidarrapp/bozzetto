@@ -954,3 +954,42 @@ by slot (data-slot=model|timelapse) and the suite drives them there.
   Masking / Navigation / Brushes / Subdiv / Lighting / Interface (Detail
   renamed Subdiv) and scrolls, since it is now taller than a short
   viewport.
+
+## WS6 round 5: hold-to-carve, third attempt (and a change of approach)
+
+Two fixes had already failed on device, each for a different reason, and
+both were plausible enough to ship:
+
+1. `touch-action: manipulation` let the browser claim a held finger for
+   panning. Real, worth fixing, not the cause.
+2. `setPointerCapture` on the finger's pointer: on iPadOS, capturing a
+   touch pointer and then putting a second pointer down makes Safari
+   cancel the captured one. Also plausible, also not sufficient - and the
+   `touchcancel` backstop added alongside it probably introduced a THIRD
+   failure, since it released whenever the touch list emptied and the
+   Pencil may not appear in that list at all.
+
+The lesson is that the release event for a held finger is simply not
+dependable while a stylus is in play, and no amount of listener juggling
+makes it dependable. So correctness stopped depending on it:
+
+- A press while carving is already on turns it OFF. The button is
+  therefore a plain toggle that cannot get stuck, whatever the browser
+  does with the release, and that path needs no second event at all.
+- The lift handler only ADDS momentary behaviour: it turns carving off
+  only if a stroke actually began while the button was down (InputShell
+  now exposes a stroke counter). A lift with no stroke was a tap, and a
+  tap leaves it on.
+- `pointercancel` and the touch backstop are gone entirely.
+
+ws1b reproduces both known device failures directly - a pointercancel
+while the finger is still down, and a lift that never arrives - and
+asserts the stroke still carves in the first case and that the button is
+not stuck in the second.
+
+Also added `?inputdebug=1`: an on-screen log of raw pointer/touch traffic
+(type, pointerType, id, whether the target was a button, touch-list
+length). Headless testing cannot reproduce any of this - synthetic
+pointers are never cancelled and always report their lift - so if the
+hold still misbehaves, the next step is data from the device rather than
+a fourth theory.

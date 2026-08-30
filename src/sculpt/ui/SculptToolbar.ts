@@ -23,15 +23,18 @@ function svgFor(slot: string): string | null {
 
 /**
  * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
- * bottom bar with a hold-to-carve Negative button pinned in the left corner
- * and the digit brushes centered, each showing its icon with the hotkey
- * digit as a corner badge. Most iPads have no keyboard, so this is the
- * native way to invert strokes and swap brushes; buttons and hotkeys stay
- * in sync.
+ * bottom bar with the Negative button in the left corner, the digit brushes
+ * centered and the hide-interface eye on the right, each showing its icon
+ * with the hotkey digit as a corner badge. Most iPads have no keyboard, so
+ * this is the native way to invert strokes and swap brushes; buttons and
+ * hotkeys stay in sync.
  *
- * Negative is held, not toggled (per testing feedback): strokes invert while
- * the button is down, exactly like holding alt; alt itself still flips
- * relative to it, so keyboard users lose nothing.
+ * Negative is a toggle you can also hold. Holding it while you draw was the
+ * original design (it mirrors alt), but two rounds of iPad testing showed
+ * the browser's release event cannot be trusted with a stylus in play, so
+ * the toggle is the guaranteed path and the momentary behaviour rides on
+ * top. alt itself still flips relative to whatever the button says, so
+ * keyboard users lose nothing either way.
  */
 export class SculptToolbar {
   private readonly root: HTMLDivElement;
@@ -40,46 +43,36 @@ export class SculptToolbar {
   /** Set by mode.ts: a direct hide/show switch for the toolbar button. */
   onToggleChrome: (() => void) | null = null;
   private hideBtn!: HTMLButtonElement;
-  /** Double-tap latch on Negative: carving stays on without holding. */
-  private negSticky = false;
-  private unlatchOnUp = false;
-  private lastNegDown = 0;
   /** Pointer currently holding Negative down, or -1. */
   private negHoldId = -1;
+  /** Stroke count when the press landed: tells a hold-and-draw from a tap. */
+  private negDownStrokes = 0;
 
   /**
-   * The lift is watched on the WINDOW, not the button: once the button
-   * stops capturing, the release can land anywhere, and on a touch device
-   * it routinely does. pointercancel is NOT treated as a lift for the same
-   * reason it broke the feature - the finger is still on the button.
+   * The lift is watched on the WINDOW rather than the button, because once
+   * the button stops capturing, the release can land anywhere - and on a
+   * touch device it routinely does.
+   *
+   * Crucially, correctness no longer DEPENDS on this arriving. Two earlier
+   * attempts at hold-to-carve both failed on iPadOS because the release
+   * event was unreliable in a different way each time (a pointercancel
+   * fired when the Pencil landed; then a touchcancel whose touch list did
+   * not include the Pencil at all). So the press now decides by itself:
+   * a press while carving is already on turns it OFF, which makes the
+   * button a plain toggle that cannot get stuck, and this handler only
+   * adds the momentary behaviour on top when the events do cooperate.
    */
   private readonly onWindowPointerUp = (e: PointerEvent): void => {
     if (e.pointerId !== this.negHoldId) return;
     this.negHoldId = -1;
-    this.releaseNegative();
+    // Drew while holding: that was a modifier press, so it ends with the
+    // lift. Lifted without drawing: that was a tap, and a tap toggles on
+    // and stays on.
+    if (this.input.strokeCount() > this.negDownStrokes) this.setNegative(false);
   };
 
-  /**
-   * Backstop for a pointer that was cancelled and will therefore never
-   * report its lift: touch events keep flowing regardless, so an empty
-   * touch list means every finger is off the glass.
-   */
-  private readonly onWindowTouchEnd = (e: TouchEvent): void => {
-    if (this.negHoldId !== -1 && e.touches.length === 0) {
-      this.negHoldId = -1;
-      this.releaseNegative();
-    }
-  };
-
-  private releaseNegative(): void {
-    if (this.unlatchOnUp) {
-      this.unlatchOnUp = false;
-      this.negSticky = false;
-      this.input.setNegativeBase(false);
-    } else if (!this.negSticky) {
-      if (!this.input.getNegativeBase()) return;
-      this.input.setNegativeBase(false);
-    }
+  private setNegative(on: boolean): void {
+    this.input.setNegativeBase(on);
     this.refresh();
   }
 
@@ -93,35 +86,34 @@ export class SculptToolbar {
     // them (review call) - they are single icons, not a cluster.
     const left = document.createElement('div');
     left.className = 'sculpt-toolbar__corner sculpt-toolbar__left';
-    // Hold-to-carve: strokes are negative while the button is held (like
-    // holding alt), released on lift. Works two-fingered on iPad: one finger
-    // holds the button, the other sculpts. A double-tap latches carving on
-    // (review request); while latched, a single tap unlatches.
+    // Carve, two ways, because on iPadOS only one of them can be relied
+    // on. TAP toggles carving on and leaves it on; tap again to turn it
+    // off. HOLD while you draw is momentary, like holding alt - it works
+    // when the browser reports the lift, and when it does not, the state
+    // simply stays on and the next tap clears it.
     this.negativeBtn = toolButton(
       '',
-      'Hold: carve (negative). Double-tap: lock carving on',
+      'Carve (negative): tap to keep it on, or hold while you draw',
       'negative',
       'fi-ts-reflect-vertical',
     );
     // Deliberately NO setPointerCapture and NO preventDefault here. On
     // iPadOS, capturing a touch pointer and then putting a SECOND pointer
     // down - the Pencil, starting a stroke - makes Safari cancel the
-    // captured one. That cancel released the hold at the exact moment
-    // drawing began, which is why carving could be latched by double-tap
-    // (the latch survives a release) but never held. touch-action: none on
-    // the button already suppresses the gestures preventDefault guarded.
+    // captured one. touch-action: none already suppresses the gestures
+    // preventDefault guarded.
     this.negativeBtn.addEventListener('pointerdown', (e) => {
-      if (this.negSticky) {
-        // Latched: this press ends the lock when it lifts.
-        this.unlatchOnUp = true;
-      } else {
-        const now = performance.now();
-        if (now - this.lastNegDown < 350) this.negSticky = true; // double-tap
-        this.lastNegDown = now;
-        this.input.setNegativeBase(true);
+      if (this.input.getNegativeBase()) {
+        // Already carving, from a tap or from a hold whose lift went
+        // missing: this press turns it off. That is what stops the button
+        // ever getting stuck, whatever the browser does with the release.
+        this.negHoldId = -1;
+        this.setNegative(false);
+        return;
       }
       this.negHoldId = e.pointerId;
-      this.refresh();
+      this.negDownStrokes = this.input.strokeCount();
+      this.setNegative(true);
     });
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     left.appendChild(this.negativeBtn);
@@ -178,8 +170,6 @@ export class SculptToolbar {
     document.body.appendChild(this.root);
 
     window.addEventListener('pointerup', this.onWindowPointerUp, true);
-    window.addEventListener('touchend', this.onWindowTouchEnd, true);
-    window.addEventListener('touchcancel', this.onWindowTouchEnd, true);
     this.input.onToolChange = () => this.refresh();
     this.refresh();
   }
@@ -206,8 +196,6 @@ export class SculptToolbar {
 
   dispose(): void {
     window.removeEventListener('pointerup', this.onWindowPointerUp, true);
-    window.removeEventListener('touchend', this.onWindowTouchEnd, true);
-    window.removeEventListener('touchcancel', this.onWindowTouchEnd, true);
     this.input.onToolChange = null;
     this.root.remove();
   }

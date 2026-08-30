@@ -85,6 +85,8 @@ export class InputShell {
   onBrushChange: (() => void) | null = null;
 
   private pointerId = -1;
+  /** Strokes begun since mount; the toolbar reads it to tell a hold from a tap. */
+  private strokes = 0;
   /** Sticky negative base (toolbar toggle); alt inverts relative to it. */
   private negativeBase = false;
   /** Tool whose _negative was overridden for the current stroke, if any. */
@@ -311,6 +313,7 @@ export class InputShell {
     }
 
     s._action = Enums.Action.SCULPT_EDIT;
+    this.strokes++;
     this.pointerId = e.pointerId;
     // Mid-stroke the cursor gets out of the way (review decision): sculpt
     // brushes keep the center dot only; Smooth keeps a dimmed ring. The
@@ -690,6 +693,11 @@ export class InputShell {
   }
 
   /** Sticky stroke inversion (the toolbar's Negative toggle). */
+  /** How many strokes have started (monotonic). */
+  strokeCount(): number {
+    return this.strokes;
+  }
+
   setNegativeBase(on: boolean): void {
     this.negativeBase = on;
   }

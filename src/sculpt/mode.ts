@@ -16,6 +16,7 @@ import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ChromeToggle } from './ui/ChromeToggle';
+import { InputDebug } from './ui/InputDebug';
 import { FilePanel } from './ui/FilePanel';
 import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
@@ -149,6 +150,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Top-left stats: active object name + live triangle count (the name
   // column becomes the scene graph/outliner entry point later).
   const stats = makeStatsCorner(session);
+
+  // Opt-in hardware input log, for bugs that only exist on a real tablet.
+  const inputDebug = new URLSearchParams(location.search).get('inputdebug') === '1'
+    ? new InputDebug()
+    : null;
 
   // Tab clears the interface for focused work; the toggle owns the ways back.
   const chrome = new ChromeToggle();
@@ -340,6 +346,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       e.sync.dispose();
     }
     extras.clear();
+    inputDebug?.dispose();
     chrome.dispose();
     sliders?.dispose();
     toolbar.dispose();
