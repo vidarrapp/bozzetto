@@ -764,3 +764,86 @@ Save/record/import/export all belong to the SCENE panel: File section
 outliner, leaving the right palette purely about how you sculpt
 (brush, symmetry, mask, detail, cavity). Publish forms are addressed
 by slot (data-slot=model|timelapse) and the suite drives them there.
+
+# WS6 layout round: four panels, Render, and hide-the-interface
+
+## What landed
+
+- The left edge now mirrors the right: File over Scene, matching Render
+  over Sculpt. A shared SidePanel base owns the sliding root, the edge
+  tab, the title bar and the collapse, and the bozzetto:panel-open
+  protocol grew a `side` so mutual collapse is PER EDGE - one panel per
+  side (they would cover each other's tab), but a left and a right panel
+  coexist. File holds save/open/export + capture + the publish forms;
+  Scene is now just the outliner.
+- The brush rail moved right (left: 10 -> 46) so the collapsed tabs own
+  the x 0..36 column outright. This is what makes two stacked tabs fit:
+  the rail's top was previously hand-computed as 132 + 116 + 10, so a
+  second tab would have collided with it, and the survey's height budget
+  said two 116px tabs plus the rail needed 100vh >= 792px. Separating
+  the columns horizontally decouples them entirely.
+- Settings -> Render, on the tab and (during sculpt only) in the header,
+  which also fixes a live collision: the synthetic sculpt manifest is
+  titled "Sculpt", so that panel was headed "Sculpt" directly above the
+  Sculpt palette. The viewer keeps showing the project title.
+- Tab hides all chrome (ChromeToggle). Claimed in InputShell's
+  capture-phase keydown, which shadows the viewer's Tab exactly the way
+  the digit and w/s/f/d bindings already are - so viewer Tab still
+  toggles the panel and no ownership had to move. Hiding uses
+  visibility:hidden, never opacity or transform, so hidden controls
+  leave the tab order; a transform-only hide would have parked a dozen
+  focusable controls in an invisible focus ring.
+- Recovery, which is the actual feature: never persists (reload is the
+  universal floor); a toolbar hide button, because the iPad has no Tab
+  key and the mode was otherwise unreachable for the primary device; an
+  eye in the top-left that is born bright and settles to 0.22; Escape as
+  a one-way exit; and a dead-tap ladder - a short, still tap that pushed
+  no undo state means someone is poking at a screen that is not
+  responding, so two of them re-teach and four simply give the interface
+  back.
+- Chattiness decays against a persisted lesson count (bz.sculpt.
+  chromeLessons): hides 1-2 spell it out, 3-5 whisper, 6+ say nothing.
+  The owner reaches silence on his first afternoon; a stranger's counter
+  is always zero. The COUNT persists, the hidden state never does.
+
+## Bugs found on the way (all pre-existing)
+
+- Shift+Tab was preventDefaulted on every viewer page, killing backward
+  focus traversal; and the form-field guard only covered INPUT/SELECT/
+  TEXTAREA, so Tab from any focused BUTTON or link toggled the panel
+  instead of moving focus. Both now go through shared tabShouldMoveFocus
+  / isTextEntryTarget helpers in ui/dom.ts.
+- Panel.toggleCollapsed() never dispatched bozzetto:panel-open, so on
+  the sculpt page mutual collapse was one-way: the palette closed the
+  settings panel but never the reverse, and both could sit open on the
+  same edge. Routed through setCollapsed.
+- An open upper panel covers the lower panel's tab, and the tab was only
+  clickable thanks to DOM construction order. Made explicit with
+  z-index on the lower panel of each edge.
+- The stats corner polled getNbTriangles() twice a second forever with
+  no visibility check; it now parks while the interface is hidden.
+
+## Verified (ws6-test.mjs + full battery)
+
+- Four named tabs with no "Settings" survivor; Render header names
+  itself; tabs do not overlap each other or the rail (geometry asserted
+  from getBoundingClientRect, not eyeballed).
+- Per-side mutual collapse in both directions, including from the tab
+  click that used to be silent; left and right coexist.
+- Tab hides every chrome root and leaves the canvas; hidden controls are
+  genuinely unfocusable (asserted by calling focus() and checking it did
+  not take - offsetParent only reports display:none and would have
+  passed a broken implementation); Tab, the eye, and Escape each
+  restore; the toolbar button is the no-keyboard way in; state never
+  survives a reload.
+- The rescue ladder: a sculpt stroke does NOT wake the eye (the obvious
+  wake-on-every-pointerdown implementation blooms it on every stroke -
+  caught in review before it shipped), one dead tap is silent, two
+  re-teach, four restore.
+- The hint decays to nothing after enough hides.
+- Two test-harness traps worth remembering: asserting visibility after a
+  fixed sleep is flaky here, because a 180ms CSS fade can take over a
+  second of wall clock when swiftshader and a capture encode are
+  competing for the main thread - wait for the settled state instead;
+  and mid-transition opacity is not a reliable signal at all, so the
+  hint is asserted on its state class.

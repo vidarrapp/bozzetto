@@ -1542,26 +1542,50 @@ html.is-page body {
 }
 
 /* --- sculpt panels (WS4): right palette + left scene outliner --- */
-/* The sculpt palette docks below the settings tab on the right edge. */
+/* The sculpt palette docks below the Render tab on the right edge. */
 .panel--sculpt {
   top: 200px;
   max-height: calc(100vh - 290px);
+  z-index: 11; /* over the Render panel above it, whose tab it can cover */
 }
 
-/* Left-docked panel variant (scene panel): mirrors the right panel. It
-   covers the sliders while open (z-index) so it may run down to just shy
-   of the toolbar - File + Capture fit without scrolling on iPad. */
+/* Left-docked panel variant: mirrors the right panel. Left panels cover the
+   brush sliders while open (z-index), so they may run down to just shy of
+   the toolbar. */
+/* Open panels start clear of the 36px tab column rather than on top of it,
+   so the neighbouring panel's tab is never covered - with two tabs stacked
+   down one edge, an open upper panel would otherwise sit right across the
+   lower one's label. The collapse transform has to travel the extra
+   distance to park the tab back at the screen edge. */
 .panel--left {
   right: auto;
-  left: 12px;
-  top: 132px;
+  left: 44px;
   width: 200px;
-  max-height: calc(100vh - 222px);
   z-index: 14; /* over the brush sliders while open */
 }
 
+/* The left edge stacks File over Scene, mirroring Render over Sculpt on the
+   right; the tops are one collapsed-tab height apart so both tabs show at
+   once, and both panels stop just above the brush toolbar. */
+.panel--file {
+  top: 132px;
+  max-height: calc(100vh - 222px);
+}
+
+/* An open upper panel grows down over the lower panel's docked tab, so the
+   lower one outranks it - otherwise the tab is only clickable because of
+   DOM construction order, which a refactor would silently flip. The same
+   reasoning puts the palette above the Render panel on the right edge. */
+.panel--scene {
+  top: 280px; /* 132 + 116 tab + 32 gap, the same rhythm as the right edge */
+  max-height: calc(100vh - 370px);
+  z-index: 15;
+}
+
+/* Travels its own width plus its left offset, which parks the handle -
+   which juts 36px off the panel's right edge - flush at x 0. */
 .panel--left.panel--collapsed {
-  transform: translateX(calc(-100% - 12px));
+  transform: translateX(calc(-100% - 44px));
 }
 
 .panel__handle--left {
@@ -1713,6 +1737,129 @@ html.is-page body {
   display: none !important;
 }
 
+/* --- hide-the-interface mode (Tab) --- */
+
+/* visibility, not opacity or a transform: those leave every control still
+   focusable, and hidden chrome that keeps its tab stops would put a
+   keyboard user in an invisible focus order with nothing to escape to.
+   The zero-duration visibility delay lets the fade finish before the
+   elements go inert. */
+body.chrome-hidden .panel,
+body.chrome-hidden .sculpt-toolbar,
+body.chrome-hidden .sculpt-sliders,
+body.chrome-hidden .sculpt-stats,
+body.chrome-hidden .viewer-back,
+body.chrome-hidden .theme-toggle,
+body.chrome-hidden .help-hint,
+body.chrome-hidden .help-guide,
+body.chrome-hidden .fps-meter,
+body.chrome-hidden .transport,
+body.chrome-hidden .sculpt-leveltoast {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    visibility 0s linear 0.18s;
+}
+
+/* Deliberately NOT hidden: .sculpt-toast carries "Restored your last
+   sculpt" with its Start fresh button, which self-expires after ten
+   seconds and is the only route back to a clean sphere. Hiding it would
+   silently burn someone's only escape from a restore they did not want.
+   Restoring is instant by construction - the transition above lives on the
+   hidden-state rule, so dropping the class snaps everything straight back
+   rather than fading, which is what you want at fifty toggles a day. */
+
+/* The one thing that stays: a quiet eye in the corner the Gallery link
+   came from, which is where people look to get out of something. It is
+   born at full strength - unmistakably a control at the moment it becomes
+   the only one - then settles to something ignorable, and wakes again on
+   any press. Never absent: it is the only way back on a device with no
+   Tab key. The 44px box is the app's own touch floor. */
+.chrome-restore {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 31;
+  width: 44px;
+  height: 44px;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  opacity: 0.22;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    opacity 0.5s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.chrome-restore svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Awake: just after hiding, and on any press while hidden - a lost user's
+   tap lights up the way out. */
+.chrome-restore.is-awake,
+.chrome-restore:hover,
+.chrome-restore:focus-visible {
+  opacity: 1;
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
+  transition:
+    opacity 0.14s ease,
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+
+/* No motion to catch the eye, so pay for it with permanent contrast. */
+@media (prefers-reduced-motion: reduce) {
+  .chrome-restore {
+    opacity: 0.5;
+    transition: none;
+  }
+}
+
+/* Asked for more contrast: this is the last control on screen, so it stops
+   being subtle at all. */
+@media (prefers-contrast: more) {
+  .chrome-restore {
+    opacity: 1;
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+  }
+}
+
+/* Said once, when the interface goes, naming both ways back. */
+.chrome-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  z-index: 31;
+  padding: 8px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--muted);
+  font-family: var(--font-spec);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.chrome-hint.is-visible {
+  opacity: 1;
+}
+
 /* Admin-only publish form: slug + title + go + progress line. */
 .gallery-form {
   display: flex;
@@ -1745,12 +1892,13 @@ html.is-page body {
   color: var(--accent);
 }
 
-/* Procreate-style side sliders: brush size + strength, left edge. */
+/* Procreate-style side sliders: brush size + strength, left edge. They sit
+   just RIGHT of the collapsed panel tabs (which occupy x 0..36 once slid
+   out) rather than under them, so the File and Scene tabs can stack down
+   the edge without the two columns fighting for the same pixels. */
 .sculpt-sliders {
   position: fixed;
-  left: 10px;
-  /* Below the scene panel's docked tab (left column: gallery, hint, stats,
-     scene tab, sliders). */
+  left: 46px;
   top: 258px;
   display: flex;
   flex-direction: column;

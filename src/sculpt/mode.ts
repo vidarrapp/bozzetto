@@ -15,6 +15,8 @@ import { probeAdmin } from '../admin/api';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
+import { ChromeToggle } from './ui/ChromeToggle';
+import { FilePanel } from './ui/FilePanel';
 import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
@@ -55,7 +57,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // The display mesh adopts the sculpt geometry (with the vendor mesh's
   // matrix: its normalizeSize scales by matrix, not by baking), so the whole
-  // settings panel - material mode, albedo/roughness, matcaps, smooth/flat,
+  // Render panel - material mode, albedo/roughness, matcaps, smooth/flat,
   // wireframe - drives the sculpt subject through the existing machinery.
   viewer.enterSculpt(
     sync.geometry,
@@ -92,6 +94,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // sync + extra display mesh sharing the primary's material. Reconciled on
   // every mesh-list or selection change (extract, add, dyntopo, undo).
   let scenePanel: ScenePanel | null = null;
+  let filePanel: FilePanel | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   const extras = new Map<
@@ -146,6 +149,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Top-left stats: active object name + live triangle count (the name
   // column becomes the scene graph/outliner entry point later).
   const stats = makeStatsCorner(session);
+
+  // Tab clears the interface for focused work; the toggle owns the ways back.
+  const chrome = new ChromeToggle({
+    // The undo index is the cheapest honest "did that pointer edit
+    // anything" signal: a sculpt dab pushes a state, a lost tap does not.
+    editToken: () => session.getStateManager()._curUndoIndex,
+    onChange: (hidden) => stats.setPaused(hidden),
+  });
 
   const cursor = new BrushCursor(container);
   // The surface ring is projected SVG: crisp at any DPI on any backend.
@@ -213,6 +224,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.environment.setRotation(lighting.getRigRotation());
     },
     orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
+    toggleChrome: () => chrome.toggle(),
   });
   input.install();
   const recorder = new SnapshotRecorder(session);
@@ -223,7 +235,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
   });
-  scenePanel = new ScenePanel(session, recorder);
+  filePanel = new FilePanel(session, recorder);
+  scenePanel = new ScenePanel(session);
   sculptPanel = new SculptPanel(session, input, viewer);
   // The toolbar owns onToolChange; chain the palette's per-brush refresh.
   {
@@ -249,8 +262,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       onSave: (id, title, progress) =>
         saveModelToGallery(session, recorder, hooks, id, title, progress),
     });
-    scenePanel.captureSlot.appendChild(tlForm.root);
-    scenePanel.filesSlot.appendChild(modelForm.root);
+    filePanel.captureSlot.appendChild(tlForm.root);
+    filePanel.filesSlot.appendChild(modelForm.root);
     void probeAdmin().then((email) => {
       if (!email) return;
       tlForm.root.hidden = false;
@@ -281,7 +294,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist,
     recorder,
     cursor,
+    chrome,
     scenePanel,
+    filePanel,
     sculptPanel,
     tablet: Tablet,
     // File pipeline, callable from the console/tests without the buttons.
@@ -310,11 +325,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.dispose();
     sculptPanel?.dispose();
     scenePanel?.dispose();
+    filePanel?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();
     }
     extras.clear();
+    chrome.dispose();
     sliders?.dispose();
     toolbar.dispose();
     input.dispose();
@@ -337,7 +354,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 }
 
 /** Top-left corner stats: object name + live poly count (polled, cheap). */
-function makeStatsCorner(session: SculptSession): { dispose(): void } {
+function makeStatsCorner(session: SculptSession): {
+  setPaused(paused: boolean): void;
+  dispose(): void;
+} {
   const el = document.createElement('div');
   el.className = 'sculpt-stats';
   const name = document.createElement('div');
@@ -346,7 +366,11 @@ function makeStatsCorner(session: SculptSession): { dispose(): void } {
   tris.className = 'sculpt-stats__tris';
   el.append(name, tris);
   document.body.appendChild(el);
+  let paused = false;
   const update = (): void => {
+    // Counting triangles twice a second for an invisible readout is pure
+    // waste; the hide toggle parks this while the interface is away.
+    if (paused) return;
     const mesh = session.getMesh();
     name.textContent = session.activeName();
     tris.textContent = mesh ? `${mesh.getNbTriangles().toLocaleString('en-US')} tris` : '';
@@ -354,6 +378,10 @@ function makeStatsCorner(session: SculptSession): { dispose(): void } {
   update();
   const timer = window.setInterval(update, 500);
   return {
+    setPaused(next: boolean) {
+      paused = next;
+      if (!next) update(); // catch up on whatever changed while away
+    },
     dispose() {
       clearInterval(timer);
       el.remove();

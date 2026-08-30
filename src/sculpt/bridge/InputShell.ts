@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
+import { isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -32,6 +33,8 @@ export interface InputShellHooks {
   rotateLightRig(deltaDeg: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
+  /** Tab: show/hide every panel, toolbar and overlay. */
+  toggleChrome(): void;
 }
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
@@ -90,7 +93,8 @@ export class InputShell {
     private readonly session: SculptSession,
     private readonly container: HTMLElement,
     private readonly cursor: BrushCursor,
-    private readonly hooks: InputShellHooks,
+    /** Also read by the toolbar, which offers a pointer route to some of these. */
+    readonly hooks: InputShellHooks,
   ) {}
 
   /** Per-brush pressure dynamics (the WS4 palette binds to this). */
@@ -412,10 +416,19 @@ export class InputShell {
   // --- keyboard (plan 7.4) ------------------------------------------------
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    const target = e.target as HTMLElement | null;
-    if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+    if (isTextEntryTarget(e)) return;
     const s = this.session;
     const key = e.key.toLowerCase();
+
+    // Tab clears the screen for focused work. Claimed here in the capture
+    // phase so it shadows the viewer's Tab (which toggles the Render panel)
+    // exactly the way the digit and w/s/f/d bindings are shadowed - but
+    // only when Tab is not busy being Tab (see tabShouldMoveFocus).
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (tabShouldMoveFocus(e)) return;
+      this.hooks.toggleChrome();
+      return this.claim(e);
+    }
 
     // Keep Firefox from opening the menu bar on the negative modifier.
     if (e.key === 'Alt') {

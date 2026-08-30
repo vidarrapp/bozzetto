@@ -6,20 +6,18 @@ import { ClayStripsBrush, VolumetricMove } from '../bridge/tools';
 import type { InputShell } from '../bridge/InputShell';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
+import { SidePanel } from './SidePanel';
 
 /**
- * The sculpt palette (WS4/WS5): a right-edge panel below the settings tab,
- * in the house panel markup - everything about HOW you sculpt. Sections:
- * Brush (per-brush pressure dynamics + the active tool's feel extras),
- * Symmetry, Mask (darken, ops, extract), Detail (dyntopo, voxel remesh),
- * and the sculpt SSAO. Scene-level concerns (files, capture, publishing)
- * live in the left Scene panel. Opening this collapses the settings panel
- * and vice versa (bozzetto:panel-open).
+ * The sculpt palette (WS4/WS5): the lower-right docked panel - everything
+ * about HOW you sculpt. Sections: Brush (per-brush pressure dynamics + the
+ * active tool's feel extras), Symmetry, Mask (darken, ops, extract), Detail
+ * (dyntopo, voxel remesh), and the sculpt SSAO. Getting work in and out
+ * (files, capture, publishing) lives in the left File panel, and the object
+ * list in Scene. Opening this collapses the Render panel above it, since
+ * they share the right edge (see SidePanel's side-scoped protocol).
  */
-export class SculptPanel {
-  private readonly root: HTMLDivElement;
-  private readonly handleArrow: HTMLSpanElement;
-  private collapsed = true;
+export class SculptPanel extends SidePanel {
   private dynamicsBody!: HTMLDivElement;
   private extrasBody!: HTMLDivElement;
   private dyntopoCheckbox!: HTMLInputElement;
@@ -28,66 +26,17 @@ export class SculptPanel {
   private extractThickness = 1;
   private remeshResolution = 150;
 
-  private readonly onOtherPanelOpen = (e: Event): void => {
-    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
-    if (id && id !== 'sculpt' && !this.collapsed) this.setCollapsed(true);
-  };
-
   constructor(
     private readonly session: SculptSession,
     private readonly input: InputShell,
     private readonly viewer: Viewer,
   ) {
-    this.root = div('panel panel--sculpt panel--collapsed');
-    document.body.appendChild(this.root);
-
-    const handle = document.createElement('button');
-    handle.type = 'button';
-    handle.className = 'panel__handle';
-    const label = document.createElement('span');
-    label.className = 'handle__label';
-    label.textContent = 'Sculpt';
-    this.handleArrow = document.createElement('span');
-    this.handleArrow.className = 'handle__arrow';
-    handle.append(label, this.handleArrow);
-    handle.addEventListener('click', () => this.setCollapsed(!this.collapsed));
-    this.root.appendChild(handle);
-
-    const header = div('panel__header');
-    const title = document.createElement('span');
-    title.className = 'panel__title';
-    title.textContent = 'Sculpt';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'panel__close';
-    close.textContent = '›';
-    close.addEventListener('click', () => this.setCollapsed(true));
-    header.append(title, close);
-    this.root.appendChild(header);
-
-    const body = div('panel__body');
-    this.root.appendChild(body);
-    this.buildBrush(body);
-    this.buildSymmetry(body);
-    this.buildMask(body);
-    this.buildDetail(body);
-    this.buildShading(body);
-    this.applyCollapsed();
-
-    window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-  }
-
-  setCollapsed(collapsed: boolean): void {
-    this.collapsed = collapsed;
-    this.applyCollapsed();
-    if (!collapsed) {
-      window.dispatchEvent(new CustomEvent('bozzetto:panel-open', { detail: { id: 'sculpt' } }));
-    }
-  }
-
-  private applyCollapsed(): void {
-    this.root.classList.toggle('panel--collapsed', this.collapsed);
-    this.handleArrow.textContent = this.collapsed ? '‹' : '›';
+    super({ id: 'sculpt', title: 'Sculpt', side: 'right', variant: 'panel--sculpt' });
+    this.buildBrush(this.body);
+    this.buildSymmetry(this.body);
+    this.buildMask(this.body);
+    this.buildDetail(this.body);
+    this.buildShading(this.body);
   }
 
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
@@ -300,9 +249,8 @@ export class SculptPanel {
     return b;
   }
 
-  dispose(): void {
+  override dispose(): void {
     this.session.onSymmetryChange = null;
-    window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-    this.root.remove();
+    super.dispose();
   }
 }

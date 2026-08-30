@@ -94,6 +94,25 @@ export class SculptToolbar {
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     left.appendChild(this.negativeBtn);
 
+    // The pointer route into the clean screen. Tab is the keyboard/TourBox
+    // way, but the primary device is an iPad with no Tab key at all - so
+    // without this button the mode is simply unreachable for the main
+    // audience, and only strangers with keyboards could ever land in it.
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'sculpt-toolbar__btn';
+    hideBtn.title = 'Hide the interface (Tab)';
+    hideBtn.setAttribute('aria-label', 'Hide the interface');
+    hideBtn.innerHTML =
+      '<span class="sculpt-toolbar__svg" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24"><path d="M3 3l18 18" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.7" stroke-linecap="round"/>' +
+      '<path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.5 8.1A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.4 9.4 0 0 0 3.6-.7" ' +
+      'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg></span>';
+    hideBtn.addEventListener('click', () => this.input.hooks.toggleChrome());
+    left.appendChild(hideBtn);
+
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
     const tools = Enums.Tools;

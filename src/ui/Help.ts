@@ -71,6 +71,10 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turn model 1° (wheel-friendly)</span></div>
     <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
     <div class="help-row"><kbd>L</kbd><span>Rotate light (hold + drag)</span></div>
+  </div>
+  <div class="help-guide__group">
+    <div class="help-guide__title">Interface</div>
+    <div class="help-row"><kbd>Tab</kbd><span>Hide / show the interface</span></div>
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
   </div>`;
 

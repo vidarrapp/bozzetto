@@ -1,4 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
+import { isTextEntryTarget, tabShouldMoveFocus } from './dom';
 
 export interface ShortcutHandlers {
   /** Toggle the side panel open/closed (Tab). */
@@ -24,8 +25,7 @@ export interface ShortcutHandlers {
  */
 export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}): () => void {
   const onKey = (e: KeyboardEvent): void => {
-    const target = e.target as HTMLElement | null;
-    if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+    if (isTextEntryTarget(e)) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
 
     switch (e.key) {
@@ -57,6 +57,10 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         handlers.refresh?.();
         return;
       case 'Tab':
+        // Shift+Tab, and Tab from anything focusable, belong to the browser:
+        // this used to swallow both, killing backward traversal everywhere
+        // and stranding anyone who tabbed onto a button.
+        if (tabShouldMoveFocus(e)) return;
         e.preventDefault();
         handlers.togglePanel?.();
         return;

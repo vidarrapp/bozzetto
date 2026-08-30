@@ -21,6 +21,7 @@ export class Panel {
   private readonly bodyEl: HTMLDivElement;
   private readonly collapseBtn: HTMLButtonElement;
   private readonly handleArrow: HTMLSpanElement;
+  private titleEl!: HTMLSpanElement;
   private readonly editor: boolean;
   private collapsed = false;
 
@@ -40,8 +41,11 @@ export class Panel {
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
   private readonly onOtherPanelOpen = (e: Event): void => {
-    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
-    if (id && id !== 'settings' && !this.collapsed) {
+    const detail = (e as CustomEvent<{ id?: string; side?: string }>).detail;
+    // Only panels sharing this one's edge contend for the space; the left
+    // stack (File, Scene) can be open alongside it.
+    if (!detail?.id || detail.id === 'settings' || (detail.side ?? 'right') !== 'right') return;
+    if (!this.collapsed) {
       this.collapsed = true;
       this.applyCollapsed();
     }
@@ -51,6 +55,11 @@ export class Panel {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
     if (this.dofSection) this.dofSection.hidden = active;
+    if (!this.editor) {
+      this.titleEl.textContent = active
+        ? 'Render'
+        : this.viewer.manifest.title || 'Bozzetto';
+    }
     this.refreshControls();
   };
   private lightControls?: HTMLDivElement;
@@ -86,13 +95,18 @@ export class Panel {
     this.handleArrow.className = 'handle__arrow';
     const handleLabel = document.createElement('span');
     handleLabel.className = 'handle__label';
-    handleLabel.textContent = this.editor ? 'Look dev' : 'Settings';
+    handleLabel.textContent = this.editor ? 'Look dev' : 'Render';
     this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
     this.root.appendChild(this.collapseBtn);
 
     const header = div('panel__header');
     const title = document.createElement('span');
+    this.titleEl = title;
     title.className = 'panel__title';
+    // The viewer header doubles as the project's title bar; sculpt mode
+    // swaps it for the panel's own name, since the synthetic sculpt
+    // manifest is titled "Sculpt" and would sit right above the Sculpt
+    // palette (onSculptMode below).
     title.textContent = this.editor ? 'Look dev' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
@@ -100,7 +114,8 @@ export class Panel {
       this.onToggle?.(true);
     });
     closeBtn.className = 'panel__close';
-    closeBtn.setAttribute('aria-label', 'Hide panel');
+    // Four panels can be on screen at once; name this one for screen readers.
+    closeBtn.setAttribute('aria-label', this.editor ? 'Hide look dev panel' : 'Hide render panel');
     header.append(title, closeBtn);
     this.root.appendChild(header);
 
@@ -125,10 +140,14 @@ export class Panel {
     if (devMode()) this.buildDeveloper(this.bodyEl);
   }
 
-  /** Slide the panel in/out from its docked edge (Tab). Returns the new state. */
+  /**
+   * Slide the panel in/out from its docked edge. Routed through
+   * setCollapsed so opening always announces on 'bozzetto:panel-open' -
+   * going straight to applyCollapsed made mutual collapse one-way, and the
+   * sculpt palette could sit open underneath this panel.
+   */
   toggleCollapsed(): boolean {
-    this.collapsed = !this.collapsed;
-    this.applyCollapsed();
+    this.setCollapsed(!this.collapsed);
     return this.collapsed;
   }
 
@@ -138,7 +157,9 @@ export class Panel {
     // Right-edge panels coordinate: opening one collapses the others
     // (the sculpt panel listens for this and reciprocates).
     if (!collapsed) {
-      window.dispatchEvent(new CustomEvent('bozzetto:panel-open', { detail: { id: 'settings' } }));
+      window.dispatchEvent(
+        new CustomEvent('bozzetto:panel-open', { detail: { id: 'settings', side: 'right' } }),
+      );
     }
   }
 
