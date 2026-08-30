@@ -223,8 +223,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
   });
-  scenePanel = new ScenePanel(session);
-  sculptPanel = new SculptPanel(session, input, viewer, recorder);
+  scenePanel = new ScenePanel(session, recorder);
+  sculptPanel = new SculptPanel(session, input, viewer);
   // The toolbar owns onToolChange; chain the palette's per-brush refresh.
   {
     const prevToolChange = input.onToolChange;
@@ -249,7 +249,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       onSave: (id, title, progress) =>
         saveModelToGallery(session, recorder, hooks, id, title, progress),
     });
-    sculptPanel.captureSlot.appendChild(tlForm.root);
+    scenePanel.captureSlot.appendChild(tlForm.root);
     scenePanel.filesSlot.appendChild(modelForm.root);
     void probeAdmin().then((email) => {
       if (!email) return;

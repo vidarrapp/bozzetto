@@ -1,13 +1,17 @@
 import { div } from '../../ui/dom';
+import { checkbox, section } from '../../ui/Panel';
 import type { SculptSession } from '../bridge/SculptSession';
+import type { SnapshotRecorder } from '../bridge/SnapshotRecorder';
 import { downloadBlob, packScene, sceneToOBJ, stampName, unpackScene } from '../bridge/SceneFile';
 
 /**
- * Scene outliner (WS4 review request): a LEFT-docked panel, collapsed by
- * default, listing the scene's objects with the active one highlighted
- * (click selects) and a plus button offering primitives to add. WS5 adds
- * the file row beneath: save/open the full scene as a .bozz file and
- * export OBJ - the guest-safe outputs (nothing uploads).
+ * Scene panel (WS4 outliner + WS5, "my work" per the owner's layout call):
+ * a LEFT-docked panel, collapsed by default. The outliner lists the
+ * scene's objects with the active one highlighted (click selects) and a
+ * plus button offering primitives. Below it, the File section (save/open
+ * the .bozz scene, export OBJ - guest-safe, nothing uploads) and the
+ * Capture section (the timelapse recorder's toggle/readout/clear). The
+ * admin-only publish forms slot into their matching sections.
  */
 export class ScenePanel {
   private readonly root: HTMLDivElement;
@@ -17,9 +21,17 @@ export class ScenePanel {
   private readonly openInput: HTMLInputElement;
   /** mode.ts appends the admin-only "publish model" form here (WS5). */
   readonly filesSlot = div('sculpt-panel__slot');
+  /** mode.ts appends the admin-only "publish timelapse" form here (WS5). */
+  readonly captureSlot = div('sculpt-panel__slot');
+  private recordCheckbox!: HTMLInputElement;
+  private captureReadout!: HTMLDivElement;
+  private captureStopReason = '';
   private collapsed = true;
 
-  constructor(private readonly session: SculptSession) {
+  constructor(
+    private readonly session: SculptSession,
+    private readonly recorder: SnapshotRecorder,
+  ) {
     this.root = div('panel panel--left panel--scene panel--collapsed');
     document.body.appendChild(this.root);
 
@@ -81,9 +93,11 @@ export class ScenePanel {
     footer.append(addBtn, this.addMenu);
     body.appendChild(footer);
 
-    // File row (guest-safe: everything below stays on the device).
-    const files = div('outliner__files');
-    files.appendChild(
+    // File section (guest-safe: everything here stays on the device).
+    const files = section(body, 'File');
+    const filesCol = div('outliner__files');
+    files.appendChild(filesCol);
+    filesCol.appendChild(
       this.fileButton('Save file', 'Saved', async () => {
         const scene = this.session.serializeScene();
         if (!scene) throw new Error('Nothing to save');
@@ -102,18 +116,66 @@ export class ScenePanel {
     const openBtn = this.fileButton('Open file...', null, async () => {
       this.openInput.click();
     });
-    files.appendChild(openBtn);
-    files.appendChild(this.openInput);
-    files.appendChild(
+    filesCol.appendChild(openBtn);
+    filesCol.appendChild(this.openInput);
+    filesCol.appendChild(
       this.fileButton('Export OBJ', 'Exported', async () => {
         downloadBlob(new Blob([sceneToOBJ(this.session)], { type: 'text/plain' }), stampName('obj'));
       }),
     );
-    files.appendChild(this.filesSlot);
-    body.appendChild(files);
+    this.filesSlot.dataset.slot = 'model';
+    filesCol.appendChild(this.filesSlot);
+
+    this.buildCapture(body);
+
     this.root.appendChild(body);
     this.applyCollapsed();
     this.refresh();
+  }
+
+  // --- Capture (the sculpt-to-timelapse recorder) -------------------------
+
+  private buildCapture(body: HTMLElement): void {
+    const sec = section(body, 'Capture');
+    const rec = checkbox('Record timelapse', this.recorder.isEnabled(), (on) => {
+      this.recorder.setEnabled(on);
+      this.paintCapture();
+    });
+    this.recordCheckbox = rec.querySelector('input') as HTMLInputElement;
+    sec.appendChild(rec);
+
+    this.captureReadout = div('sculpt-panel__hint');
+    sec.appendChild(this.captureReadout);
+
+    const col = div('outliner__files');
+    col.appendChild(
+      this.fileButton('Clear frames', null, async () => {
+        if (this.recorder.frameCount() === 0) return;
+        if (!confirm('Delete all captured timelapse frames?')) return;
+        await this.recorder.clear();
+      }),
+    );
+    this.captureSlot.dataset.slot = 'timelapse';
+    col.appendChild(this.captureSlot);
+    sec.appendChild(col);
+
+    this.recorder.onChange = () => this.paintCapture();
+    this.recorder.onStopped = (reason) => {
+      this.captureStopReason =
+        reason === 'budget' ? 'stopped: frame budget reached' : 'stopped: storage unavailable';
+      this.paintCapture();
+    };
+    this.paintCapture();
+  }
+
+  private paintCapture(): void {
+    this.recordCheckbox.checked = this.recorder.isEnabled();
+    const n = this.recorder.frameCount();
+    const mb = this.recorder.bytes() / (1024 * 1024);
+    const size = mb >= 100 ? Math.round(mb).toString() : mb.toFixed(1);
+    const parts = [`${n} frame${n === 1 ? '' : 's'} - ${size} MB`];
+    if (this.captureStopReason && !this.recorder.isEnabled()) parts.push(this.captureStopReason);
+    this.captureReadout.textContent = parts.join(' - ');
   }
 
   /** A full-width action button with done-flash and alert-on-error. */
@@ -184,6 +246,8 @@ export class ScenePanel {
   }
 
   dispose(): void {
+    this.recorder.onChange = null;
+    this.recorder.onStopped = null;
     this.root.remove();
   }
 }

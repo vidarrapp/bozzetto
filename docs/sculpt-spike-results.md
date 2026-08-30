@@ -755,3 +755,12 @@ Eight review items from desktop testing, in one round:
 - One race caught by the suite: a frame finishing mid-publish
   stretched the upload walk; the flow now freezes the frame list at
   entry.
+
+## Layout revision (owner call, same round)
+
+Save/record/import/export all belong to the SCENE panel: File section
+(save/open .bozz, export OBJ, publish model) and Capture section
+(record toggle, readout, clear, publish timelapse) now sit under the
+outliner, leaving the right palette purely about how you sculpt
+(brush, symmetry, mask, detail, cavity). Publish forms are addressed
+by slot (data-slot=model|timelapse) and the suite drives them there.

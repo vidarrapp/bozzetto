@@ -5,16 +5,16 @@ import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
 import { ClayStripsBrush, VolumetricMove } from '../bridge/tools';
 import type { InputShell } from '../bridge/InputShell';
 import type { SculptSession } from '../bridge/SculptSession';
-import type { SnapshotRecorder } from '../bridge/SnapshotRecorder';
 import type { Viewer } from '../../viewer/Viewer';
 
 /**
  * The sculpt palette (WS4/WS5): a right-edge panel below the settings tab,
- * in the house panel markup. Sections: Brush (per-brush pressure dynamics +
- * the active tool's feel extras), Symmetry, Mask (darken, ops, extract),
- * Detail (dyntopo, voxel remesh), Capture (the timelapse recorder), and the
- * sculpt SSAO. Opening it collapses the settings panel and vice versa
- * (bozzetto:panel-open).
+ * in the house panel markup - everything about HOW you sculpt. Sections:
+ * Brush (per-brush pressure dynamics + the active tool's feel extras),
+ * Symmetry, Mask (darken, ops, extract), Detail (dyntopo, voxel remesh),
+ * and the sculpt SSAO. Scene-level concerns (files, capture, publishing)
+ * live in the left Scene panel. Opening this collapses the settings panel
+ * and vice versa (bozzetto:panel-open).
  */
 export class SculptPanel {
   private readonly root: HTMLDivElement;
@@ -25,9 +25,6 @@ export class SculptPanel {
   private dyntopoCheckbox!: HTMLInputElement;
   private symCheckbox!: HTMLInputElement;
   private axisButtons: HTMLButtonElement[] = [];
-  private recordCheckbox!: HTMLInputElement;
-  private captureReadout!: HTMLDivElement;
-  private captureStopReason = '';
   private extractThickness = 1;
   private remeshResolution = 150;
 
@@ -36,14 +33,10 @@ export class SculptPanel {
     if (id && id !== 'sculpt' && !this.collapsed) this.setCollapsed(true);
   };
 
-  /** mode.ts appends the admin-only "publish timelapse" form here (WS5). */
-  readonly captureSlot = div('sculpt-panel__slot');
-
   constructor(
     private readonly session: SculptSession,
     private readonly input: InputShell,
     private readonly viewer: Viewer,
-    private readonly recorder: SnapshotRecorder,
   ) {
     this.root = div('panel panel--sculpt panel--collapsed');
     document.body.appendChild(this.root);
@@ -78,7 +71,6 @@ export class SculptPanel {
     this.buildSymmetry(body);
     this.buildMask(body);
     this.buildDetail(body);
-    this.buildCapture(body);
     this.buildShading(body);
     this.applyCollapsed();
 
@@ -277,50 +269,6 @@ export class SculptPanel {
     sec.appendChild(row);
   }
 
-  // --- Capture (the sculpt-to-timelapse recorder) -------------------------
-
-  private buildCapture(body: HTMLElement): void {
-    const sec = section(body, 'Capture');
-    const rec = checkbox('Record timelapse', this.recorder.isEnabled(), (on) => {
-      this.recorder.setEnabled(on);
-      this.paintCapture();
-    });
-    this.recordCheckbox = rec.querySelector('input') as HTMLInputElement;
-    sec.appendChild(rec);
-
-    this.captureReadout = div('sculpt-panel__hint');
-    sec.appendChild(this.captureReadout);
-
-    const row = div('sculpt-panel__row');
-    row.appendChild(
-      this.opButton('Clear frames', () => {
-        if (this.recorder.frameCount() === 0) return;
-        if (!confirm('Delete all captured timelapse frames?')) return;
-        void this.recorder.clear();
-      }),
-    );
-    sec.appendChild(row);
-    sec.appendChild(this.captureSlot);
-
-    this.recorder.onChange = () => this.paintCapture();
-    this.recorder.onStopped = (reason) => {
-      this.captureStopReason =
-        reason === 'budget' ? 'stopped: frame budget reached' : 'stopped: storage unavailable';
-      this.paintCapture();
-    };
-    this.paintCapture();
-  }
-
-  private paintCapture(): void {
-    this.recordCheckbox.checked = this.recorder.isEnabled();
-    const n = this.recorder.frameCount();
-    const mb = this.recorder.bytes() / (1024 * 1024);
-    const size = mb >= 100 ? Math.round(mb).toString() : mb.toFixed(1);
-    const parts = [`${n} frame${n === 1 ? '' : 's'} - ${size} MB`];
-    if (this.captureStopReason && !this.recorder.isEnabled()) parts.push(this.captureStopReason);
-    this.captureReadout.textContent = parts.join(' - ');
-  }
-
   // --- Sculpt shading (the depth SSAO) ------------------------------------
 
   private buildShading(body: HTMLElement): void {
@@ -354,8 +302,6 @@ export class SculptPanel {
 
   dispose(): void {
     this.session.onSymmetryChange = null;
-    this.recorder.onChange = null;
-    this.recorder.onStopped = null;
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     this.root.remove();
   }

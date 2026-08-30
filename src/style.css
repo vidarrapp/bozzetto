@@ -1548,13 +1548,15 @@ html.is-page body {
   max-height: calc(100vh - 290px);
 }
 
-/* Left-docked panel variant (scene outliner): mirrors the right panel. */
+/* Left-docked panel variant (scene panel): mirrors the right panel. It
+   covers the sliders while open (z-index) so it may run down to just shy
+   of the toolbar - File + Capture fit without scrolling on iPad. */
 .panel--left {
   right: auto;
   left: 12px;
   top: 132px;
   width: 200px;
-  max-height: calc(100vh - 320px);
+  max-height: calc(100vh - 222px);
   z-index: 14; /* over the brush sliders while open */
 }
 
@@ -1680,14 +1682,11 @@ html.is-page body {
   color: var(--accent);
 }
 
-/* File actions at the foot of the scene outliner (save/open/export). */
+/* Button columns in the scene panel's File/Capture sections. */
 .outliner__files {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--panel-border);
 }
 
 .outliner__filebtn {
