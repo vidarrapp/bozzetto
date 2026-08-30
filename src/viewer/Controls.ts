@@ -106,6 +106,28 @@ export class Controls {
   }
 
   /**
+   * Turntable: rotate the camera AND the orbit target about a vertical axis
+   * through `centre`. Rotating the target too keeps the view relationship
+   * intact, so this stays a true turntable however far the stroke pivot has
+   * wandered from the object's middle.
+   */
+  rotateAzimuthAbout(centre: Vector3, deg: number): void {
+    const rad = (deg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const spin = (p: Vector3): void => {
+      const dx = p.x - centre.x;
+      const dz = p.z - centre.z;
+      p.x = centre.x + dx * cos + dz * sin;
+      p.z = centre.z - dx * sin + dz * cos;
+    };
+    spin(this.camera.position);
+    spin(this.controls.target);
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+  }
+
+  /**
    * Dolly by a multiplier along the view ray (>1 pulls back, <1 moves in),
    * clamped to the same min/max the wheel obeys. Drives the sculpt ctrl-drag
    * zoom, which exists so a Pencil can zoom without a pinch gesture.

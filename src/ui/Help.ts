@@ -61,7 +61,7 @@ const SCULPT_HTML = `
     <div class="help-row"><span class="help-key">Ctrl + drag off mesh</span><span>Zoom</span></div>
     <div class="help-row"><span class="help-key">Scroll / pinch</span><span>Zoom</span></div>
     <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
-    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turn model 1° (wheel-friendly)</span></div>
+    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turntable (accelerates with the wheel)</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Brushes</div>

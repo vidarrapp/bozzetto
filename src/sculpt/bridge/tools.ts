@@ -42,14 +42,25 @@ const STRIPS_LAYER = 0.05;
 export class VolumetricMove extends Move {
   /** Falloff softness (quartic pow): lower = broader bell (WS4 slider). */
   falloffPow = MOVE_FALLOFF_POW;
+  /**
+   * True when the last start() grabbed from OUTSIDE the silhouette. The
+   * cursor reads it: the grabbed point is on the mesh, but the pointer is
+   * not, and drawing the ring on the mesh leaves the pen with no cursor
+   * at all - which is what "the circle only shows on the model" meant.
+   */
+  grabbedFromOutside = false;
 
   constructor(private readonly session: SculptSession) {
     super(session);
   }
 
   override start(ctrl: boolean): boolean {
-    if (super.start(ctrl)) return true;
-    return this.startVolumetric(ctrl);
+    if (super.start(ctrl)) {
+      this.grabbedFromOutside = false;
+      return true;
+    }
+    this.grabbedFromOutside = this.startVolumetric(ctrl);
+    return this.grabbedFromOutside;
   }
 
   private startVolumetric(ctrl: boolean): boolean {

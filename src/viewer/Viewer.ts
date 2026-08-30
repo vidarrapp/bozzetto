@@ -1307,6 +1307,11 @@ export class Viewer {
     this.controls.rotateAzimuth(deg);
   }
 
+  /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
+  orbitAzimuthAbout(centre: Vector3, deg: number): void {
+    this.controls.rotateAzimuthAbout(centre, deg);
+  }
+
   /** Dolly by a multiplier (>1 out, <1 in); see Controls.dollyBy. */
   dolly(factor: number): void {
     this.controls.dollyBy(factor);

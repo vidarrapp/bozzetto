@@ -1864,6 +1864,7 @@ body.chrome-hidden .transport {
   font-size: 11px;
 }
 
+.gallery-form__gatenote,
 .gallery-form__status {
   font-family: var(--font-spec);
   font-size: 10px;
@@ -1872,6 +1873,7 @@ body.chrome-hidden .transport {
   overflow-wrap: anywhere;
 }
 
+.gallery-form__gatenote a,
 .gallery-form__status a {
   color: var(--accent);
 }
@@ -2162,4 +2164,40 @@ body.chrome-hidden .transport {
   border-radius: var(--radius);
   pointer-events: none;
   user-select: text;
+}
+
+/* Guest state of the publish form: one line that re-checks, rather than
+   nothing at all - an invisible form made a failed admin probe look like a
+   missing feature. */
+.gallery-form__gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gallery-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The in-progress sculpt card: same shape as a project card, marked so it
+   reads as yours and unfinished rather than as something published. */
+.card--sculpt {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.card__badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }

@@ -43,13 +43,67 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     /* API not reachable — fall through to demo-only. */
   }
 
+  // Work in progress comes first: the sculpt autosave lives in this
+  // browser, so it is not a project the API knows about, but it is the
+  // thing most worth getting back to.
+  const inProgress = await sculptCard();
+  if (inProgress) grid.appendChild(inProgress);
+
   // Only projects with frames are shown publicly; empties live in the editor.
   const list = projects.filter((p) => p.frameCount > 0);
-  if (list.length === 0) {
+  if (list.length === 0 && !inProgress) {
     grid.innerHTML = '<p class="muted">No projects yet.</p>';
     return;
   }
   for (const p of list) grid.appendChild(card(p));
+}
+
+/**
+ * The unfinished sculpt sitting in this browser's storage, as a card. The
+ * picture is the snapshot taken when sculpt mode was last left; clicking
+ * goes straight back in, where the autosave restores the geometry.
+ */
+async function sculptCard(): Promise<HTMLElement | null> {
+  let snap: Awaited<ReturnType<typeof import('../sculpt/bridge/ScenePersist').loadSculptSnapshot>>;
+  try {
+    // Imported lazily: the landing page should not pull in sculpt code just
+    // to discover there is nothing saved.
+    const store = await import('../sculpt/bridge/ScenePersist');
+    snap = await store.loadSculptSnapshot();
+  } catch {
+    return null; // storage blocked, or the module failed to load
+  }
+  if (!snap) return null;
+
+  const a = document.createElement('a');
+  a.className = 'card card--sculpt';
+  a.href = '/?sculpt=1';
+  const url = URL.createObjectURL(snap.thumb);
+  a.innerHTML = `
+    <div class="card__thumb">
+      <img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
+      <img class="card__img" alt="" src="${url}" />
+      <span class="card__badge">In progress</span>
+    </div>
+    <div class="card__body">
+      <span class="card__title">Your sculpt</span>
+      <span class="card__meta"></span>
+    </div>`;
+  const objects = `${snap.objects} object${snap.objects === 1 ? '' : 's'}`;
+  a.querySelector<HTMLElement>('.card__meta')!.textContent =
+    `${objects} · ${snap.tris.toLocaleString('en-US')} tris · ${ago(snap.savedAt)}`;
+  return a;
+}
+
+/** "just now" / "3 hours ago" - enough to recognise which session it was. */
+function ago(t: number): string {
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function card(p: ProjectSummary): HTMLElement {

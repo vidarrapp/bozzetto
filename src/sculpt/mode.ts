@@ -6,7 +6,12 @@ import { GeometrySync } from './bridge/GeometrySync';
 import { InputShell } from './bridge/InputShell';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
-import { ScenePersist, clearSavedScene, loadSavedScene } from './bridge/ScenePersist';
+import {
+  ScenePersist,
+  clearSavedScene,
+  loadSavedScene,
+  saveSculptSnapshot,
+} from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
@@ -20,6 +25,19 @@ import { InputDebug } from './ui/InputDebug';
 import { FilePanel } from './ui/FilePanel';
 import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+
+/**
+ * Turntable coast: only fast ticks glide, and only a little. The total glide
+ * is a geometric series, gain / (1 - decay) times the last step, so these
+ * numbers matter more than they look - 0.45/0.9 would carry a 13 degree
+ * step another 130 degrees, a flywheel rather than a settle. At 0.35/0.8 it
+ * is about 1.75 steps, which reads as the wheel easing to a stop.
+ */
+const SPIN_COAST_MIN_DEG = 3;
+const SPIN_COAST_AFTER_MS = 90;
+const SPIN_COAST_GAIN = 0.35;
+const SPIN_DECAY = 0.8;
+const SPIN_STOP_DEG = 0.05;
 
 /**
  * Mount sculpt mode into a running Viewer (plan section 5): build the vendored
@@ -194,6 +212,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   orbitQuat(camScratch.entryInv).invert();
   const followTick = (): void => {
+    // Coast: once the ticks stop arriving, keep the spin going briefly and
+    // let it decay. The gap check keeps this from double-counting while the
+    // wheel is still feeding steps.
+    if (spin.vel !== 0 && performance.now() - spin.lastTick > SPIN_COAST_AFTER_MS) {
+      viewer.orbitAzimuthAbout(spin.centre, spin.vel);
+      spin.vel *= SPIN_DECAY;
+      if (Math.abs(spin.vel) < SPIN_STOP_DEG) spin.vel = 0;
+    }
     // History flags move through many routes (strokes, panel ops, keyboard,
     // buttons, restore); polling each frame is cheaper than wiring them all.
     sliders?.refreshHistory();
@@ -210,6 +236,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   viewer.onTick = followTick;
 
+  // Turntable (arrow keys / a wheel mapped to them). Two things separate it
+  // from a drag-orbit: it always spins about the OBJECT's centre, never the
+  // stroke pivot, so it stays a turntable wherever you have been working;
+  // and a fast spin coasts briefly instead of stopping dead with the wheel.
+  const spin = { vel: 0, lastTick: 0, centre: new Vector3() };
+  const turntable = (deg: number): void => {
+    const active = session.getMesh();
+    if (active) liveWorldBox(active).getCenter(spin.centre);
+    viewer.orbitAzimuthAbout(spin.centre, deg);
+    // Only a genuinely fast tick leaves momentum behind; a single keypress
+    // or a slow creep should stop exactly where it was put.
+    spin.vel = Math.abs(deg) >= SPIN_COAST_MIN_DEG ? deg * SPIN_COAST_GAIN : 0;
+    spin.lastTick = performance.now();
+  };
+
   const input = new InputShell(session, container, cursor, {
     frameModel: () => {
       const active = session.getMesh();
@@ -224,7 +265,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       lighting.setRigRotation(deg);
       viewer.environment.setRotation(lighting.getRigRotation());
     },
-    orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
+    orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor) => viewer.dolly(factor),
     toggleChrome: () => chrome.handleTab(),
     extractMasked: () => session.extractMasked(sculptPanel?.getExtractThickness() ?? 1),
@@ -271,18 +312,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       buttonLabel: 'Publish timelapse',
       onSave: (id, title, progress) =>
         saveTimelapseToGallery(recorder, hooks, id, title, progress),
+      recheck: probeAdmin,
     });
     const modelForm = galleryForm({
       buttonLabel: 'Publish model',
       onSave: (id, title, progress) =>
         saveModelToGallery(session, recorder, hooks, id, title, progress),
+      recheck: probeAdmin,
     });
     filePanel.captureSlot.appendChild(tlForm.root);
     filePanel.filesSlot.appendChild(modelForm.root);
     void probeAdmin().then((email) => {
-      if (!email) return;
-      tlForm.root.hidden = false;
-      modelForm.root.hidden = false;
+      tlForm.setAdmin(!!email);
+      modelForm.setAdmin(!!email);
     });
   }
 
@@ -326,6 +368,34 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   };
 
+  // Leaving for the gallery: remember what the work looked like, so the
+  // landing page can offer it back as a card. The autosave already keeps the
+  // geometry; this is only the picture and the counts that go with it.
+  const snapshot = async (): Promise<void> => {
+    try {
+      const meshes = session.getMeshes();
+      await saveSculptSnapshot({
+        thumb: await viewer.captureThumbnail(480),
+        savedAt: Date.now(),
+        objects: meshes.length,
+        tris: meshes.reduce((n, m) => n + m.getNbTriangles(), 0),
+      });
+    } catch {
+      // Never block leaving the page over a thumbnail.
+    }
+  };
+  const galleryLink = document.querySelector<HTMLAnchorElement>('.viewer-back');
+  const onLeave = (e: MouseEvent): void => {
+    if (!galleryLink || e.defaultPrevented || e.button !== 0) return;
+    e.preventDefault();
+    // The flush is what makes the card honest: the picture and the geometry
+    // behind it must describe the same moment.
+    void Promise.all([snapshot(), persist.flush()]).finally(() => {
+      window.location.href = galleryLink.href;
+    });
+  };
+  galleryLink?.addEventListener('click', onLeave);
+
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
 
@@ -346,6 +416,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       e.sync.dispose();
     }
     extras.clear();
+    galleryLink?.removeEventListener('click', onLeave);
     inputDebug?.dispose();
     chrome.dispose();
     sliders?.dispose();

@@ -98,6 +98,40 @@ export const FRAMES_STORE = 'frames';
 /** WS5 capture: small per-frame metadata ({tris, t, bytes}) by sequence. */
 export const FRAME_META_STORE = 'frameMeta';
 const KEY = 'current';
+/**
+ * Small companion record to the saved scene: a thumbnail plus the counts the
+ * gallery card shows. Kept apart from the scene itself so the landing page
+ * can read it without inflating a multi-megabyte vertex payload.
+ */
+const SNAPSHOT_KEY = 'currentSnapshot';
+
+export interface SculptSnapshot {
+  /** JPEG of the viewport as it was left. */
+  thumb: Blob;
+  savedAt: number;
+  objects: number;
+  tris: number;
+}
+
+/** Remember what the work looked like, for the gallery's "in progress" card. */
+export async function saveSculptSnapshot(snap: SculptSnapshot): Promise<void> {
+  try {
+    await withStore('readwrite', (s) => s.put(snap, SNAPSHOT_KEY));
+  } catch {
+    // A missing snapshot only costs the card its picture.
+  }
+}
+
+export async function loadSculptSnapshot(): Promise<SculptSnapshot | null> {
+  try {
+    const rec = (await withStore('readonly', (s) => s.get(SNAPSHOT_KEY))) as
+      | SculptSnapshot
+      | undefined;
+    return rec?.thumb instanceof Blob ? rec : null;
+  } catch {
+    return null;
+  }
+}
 /** Above this many top-level tris, saves run on the slow cadence instead. */
 const FAST_SAVE_TRIS = 1600000;
 /**
@@ -260,6 +294,7 @@ export function validSavedScene(rec: unknown): rec is SavedScene {
 
 export async function clearSavedScene(): Promise<void> {
   try {
+    await withStore('readwrite', (s) => s.delete(SNAPSHOT_KEY));
     await withStore('readwrite', (s) => s.delete(KEY));
   } catch {
     // Nothing to clear (or storage unavailable); either way we're done.

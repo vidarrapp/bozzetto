@@ -58,14 +58,20 @@ const STROKE_REDUCE_DELAY_MS = 250;
 const NUDGE_FLASH_MS = 450;
 /** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
 const INTENSITY_STEP = 0.03;
-const ORBIT_STEP_DEG = 1;
 /**
- * Turntable acceleration (review request): ticks arriving faster than the
- * reference gap scale their step up, so spinning the wheel quickly spins
- * the model quickly while slow ticks stay an exact degree.
+ * Turntable stepping, retuned after wheel testing: a degree per tick was
+ * too coarse to creep with and 8 degrees too slow to spin with, so the base
+ * step is finer and the acceleration much steeper. The multiplier is the
+ * tick RATE raised to a power, which spreads the range where a wheel
+ * actually lives:
+ *
+ *   250ms gap (creeping)  x1   -> 0.4 deg      25ms gap (spinning) x60 -> 24 deg
+ *   100ms gap             x5   -> 2.1 deg      50ms gap            x18 -> 7.2 deg
  */
-const ORBIT_ACCEL_REF_MS = 200;
-const ORBIT_ACCEL_MAX = 8;
+const ORBIT_STEP_DEG = 0.4;
+const ORBIT_ACCEL_REF_MS = 250;
+const ORBIT_ACCEL_POW = 1.8;
+const ORBIT_ACCEL_MAX = 60;
 /**
  * ctrl-drag zoom: per-pixel exponent, so a drag of the same length changes
  * the framing by the same proportion however close you already are. About
@@ -322,7 +328,12 @@ export class InputShell {
     const strokeStyle = strokeTool === Enums.Tools.SMOOTH ? ('dim' as const) : ('dot' as const);
     clearTimeout(this.strokeReduceTimer);
     this.strokeReduceTimer = window.setTimeout(() => {
-      if (this.pointerId !== -1) this.cursor.setStrokeStyle(strokeStyle);
+      // A Move grab begun outside the outline keeps its full ring: it is the
+      // only thing showing where the grab reaches, and reducing it to a dot
+      // leaves the pen with no indication it is affecting anything.
+      if (this.pointerId !== -1 && !this.grabbingFromOutside()) {
+        this.cursor.setStrokeStyle(strokeStyle);
+      }
     }, STROKE_REDUCE_DELAY_MS);
     try {
       s.getCanvas().setPointerCapture(e.pointerId);
@@ -417,12 +428,20 @@ export class InputShell {
     s.getSculptManager().update();
 
     // The stroke just refreshed picking; reuse it for the ring (no re-pick).
-    const strokeSurf = s.hoverSurface(false);
-    this.cursor.setSurface(
-      strokeSurf ? strokeSurf.point : null,
-      strokeSurf?.normal,
-      strokeSurf?.worldRadius,
-    );
+    // Except for a volumetric Move grab begun outside the silhouette: there
+    // the picked point sits on the mesh while the pen is off it, so the
+    // ring would abandon the pointer entirely. Keep it under the pen.
+    if (this.grabbingFromOutside()) {
+      this.cursor.moveTo(this.lastClientX, this.lastClientY);
+      this.cursor.showScreen();
+    } else {
+      const strokeSurf = s.hoverSurface(false);
+      this.cursor.setSurface(
+        strokeSurf ? strokeSurf.point : null,
+        strokeSurf?.normal,
+        strokeSurf?.worldRadius,
+      );
+    }
 
     s._lastMouseX = s._mouseX;
     s._lastMouseY = s._mouseY;
@@ -536,7 +555,7 @@ export class InputShell {
         // or a pause resets to the base degree.
         const mult =
           dir === this.lastOrbitDir && gap > 0
-            ? Math.min(ORBIT_ACCEL_MAX, Math.max(1, ORBIT_ACCEL_REF_MS / gap))
+            ? Math.min(ORBIT_ACCEL_MAX, Math.max(1, (ORBIT_ACCEL_REF_MS / gap) ** ORBIT_ACCEL_POW))
             : 1;
         this.lastOrbitTime = now;
         this.lastOrbitDir = dir;
@@ -704,6 +723,12 @@ export class InputShell {
 
   getNegativeBase(): boolean {
     return this.negativeBase;
+  }
+
+  /** True mid-stroke when Move grabbed the mesh from outside its outline. */
+  private grabbingFromOutside(): boolean {
+    const tool = this.currentTool() as unknown as { grabbedFromOutside?: boolean };
+    return tool.grabbedFromOutside === true;
   }
 
   /** The masking tool carries the whole-mask operations (clear/invert). */

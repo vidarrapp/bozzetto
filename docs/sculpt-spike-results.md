@@ -1032,3 +1032,42 @@ constructible in a desktop Chromium); and `-webkit-touch-callout` is
 WebKit-only, so Chromium neither computes it nor keeps it in the CSSOM -
 the suite fetches the shipped stylesheet and asserts the bytes, which is
 the part that reaches Safari anyway.
+
+## WS7 round: review items from device testing
+
+- Move's aim ring. The tool grabs from outside the silhouette, but the ring
+  was drawn at the GRABBED point - which is on the mesh - so the pen had no
+  cursor at all, which is what "the circle only shows on the model" meant.
+  VolumetricMove now reports `grabbedFromOutside`, and such a stroke keeps a
+  screen-space ring under the pointer. The mid-stroke reduction is also
+  skipped for it: dropping to a bare dot removes the only indication of what
+  the grab reaches. The test finds the silhouette by probing hoverSurface
+  rather than guessing a pixel offset, which is what made the first version
+  of it press onto the mesh and pass for the wrong reason.
+- Turntable. It rotated about the OrbitControls target, which the stroke
+  pivot moves, so it stopped being a turntable as soon as you sculpted off
+  centre. It now rotates camera and target together about the object's own
+  centre (Controls.rotateAzimuthAbout). The step curve was retuned from a
+  flat 1deg with a x8 ceiling to 0.4deg with a rate^1.8 multiplier capped at
+  x60: measured 0.40 deg/tick creeping and 19.3 deg/tick spinning, against
+  the previous 1.0 and 8.0. A fast spin also coasts briefly and decays;
+  slow ticks deliberately do not, so a single keypress still lands exactly.
+- Measuring rotation by comparing start and end angles is wrong once a sweep
+  can exceed 180 degrees - the first version of the test read a 288 degree
+  spin as 72 and reported the fast case as SLOWER than the slow one. The
+  suite now sums per-tick deltas.
+- The stroke pivot does move at the end of a stroke, but only in DEPTH: the
+  target slides along the view ray to the stroke's distance and stays at
+  screen centre, so orbiting still swings about the middle of the view. That
+  is the original "re-pivot without moving the view" design, not a
+  regression - measured target (0,0,0) -> (14.4, 8.8, 16.1) after an
+  off-centre stroke. Moving it laterally means either panning the view so
+  the stroke centres, or letting the model swing during the orbit; that is a
+  real choice and is left for the owner to make.
+- Publishing was invisible rather than merely unavailable: the whole form
+  was hidden unless the admin probe passed, so a failed probe looked exactly
+  like a missing feature. Guests now see one line that re-checks the sign-in
+  on tap and says what it found.
+- Leaving for the gallery stores a thumbnail plus object/triangle counts
+  beside the autosave, and the landing page leads with an "In progress"
+  card that goes straight back into the work.
