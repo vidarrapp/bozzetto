@@ -847,3 +847,44 @@ by slot (data-slot=model|timelapse) and the suite drives them there.
   competing for the main thread - wait for the settled state instead;
   and mid-transition opacity is not a reliable signal at all, so the
   hint is asserted on its state class.
+
+## WS6 round 2 (test feedback)
+
+- Tab is now staged: the first press closes any open panel, and only with
+  nothing open does a second press clear the interface. Panels are asked
+  to collapse through a `bozzetto:panel-close-all` event rather than
+  through references, because the four panels have two different owners
+  (the Render panel belongs to the viewer mount) and neither side can see
+  the other's instances; "is anything open" is a DOM query for
+  `.panel:not(.panel--collapsed)`.
+- The hidden set shrank to what it should always have been: panels and
+  their tabs, the brush row, the Gallery link, the theme toggle and the
+  transport. The brush sliders, undo/redo chips, Negative button, object
+  stats and every toast/tooltip/guide now stay - hiding those made the
+  mode useless rather than minimal, which was the point of the feedback.
+- Because the toolbar's left group survives, the hide button in it does
+  too, and it flips to "Show the interface" with an active state. That is
+  a better recovery affordance than the corner eye it replaces: labelled,
+  in the toolbar, where the hand already is. The eye, the dead-tap rescue
+  ladder and their CSS are gone - with a visible toggle on screen there is
+  no stranding scenario left for them to solve. The decaying hint and the
+  Escape exit stayed.
+- HOLD-TO-CARVE BUG (reported: Negative could be latched by double-tap but
+  not held with a finger while the Pencil drew). Cause: the toolbar
+  buttons carried `touch-action: manipulation`, which still permits
+  panning, so iOS claimed the held finger for a pan and the resulting
+  `pointercancel` ran releaseNegative the moment the second pointer landed.
+  The brush rail and history chips already used `touch-action: none` and
+  worked, which was the tell. Fixed by matching them. Note this is
+  invisible to the headless suite (synthetic pointers never get cancelled),
+  so ws6 asserts the computed `touch-action` value directly rather than
+  pretending to reproduce the gesture.
+- Mask hotkeys, ZBrush-shaped: ctrl+c clear, ctrl+i invert, ctrl+h toggles
+  the mask TINT only - the mask stays live and strokes keep respecting it.
+  ctrl+c and ctrl+h shadow browser Copy and History, which is safe only
+  because the text-entry guard runs first; both are claimed in InputShell's
+  capture phase like the rest of the sculpt chords.
+- Test note: `materialsPBR.z` is 1 where FREE and 0 where masked, so a
+  bigger mask means a SMALLER sum. The first invert assertion had the sign
+  backwards; it now asserts the invariant (inverting twice is identity)
+  instead of guessing how much of the mesh got painted.

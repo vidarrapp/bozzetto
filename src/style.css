@@ -1529,7 +1529,11 @@ html.is-page body {
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
-  touch-action: manipulation;
+  /* none, not manipulation: `manipulation` still lets the browser claim a
+     held finger for panning, and the resulting pointercancel released
+     hold-to-carve the instant the Pencil touched down - so Negative could
+     be latched but never held. The brush rail already uses none. */
+  touch-action: none;
 }
 
 /* Flaticon uicons glyph (fi-ss-*); the font baseline sits low, so center
@@ -1745,16 +1749,10 @@ html.is-page body {
    The zero-duration visibility delay lets the fade finish before the
    elements go inert. */
 body.chrome-hidden .panel,
-body.chrome-hidden .sculpt-toolbar,
-body.chrome-hidden .sculpt-sliders,
-body.chrome-hidden .sculpt-stats,
+body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .theme-toggle,
-body.chrome-hidden .help-hint,
-body.chrome-hidden .help-guide,
-body.chrome-hidden .fps-meter,
-body.chrome-hidden .transport,
-body.chrome-hidden .sculpt-leveltoast {
+body.chrome-hidden .transport {
   opacity: 0;
   visibility: hidden;
   transition:
@@ -1762,81 +1760,18 @@ body.chrome-hidden .sculpt-leveltoast {
     visibility 0s linear 0.18s;
 }
 
-/* Deliberately NOT hidden: .sculpt-toast carries "Restored your last
-   sculpt" with its Start fresh button, which self-expires after ten
-   seconds and is the only route back to a clean sphere. Hiding it would
-   silently burn someone's only escape from a restore they did not want.
-   Restoring is instant by construction - the transition above lives on the
+/* Deliberately NOT hidden (review call): the brush sliders and undo/redo
+   chips, the Negative button and its group, the object stats, and every
+   toast, tooltip and hotkey guide. Hiding those left a screen you could
+   not work on or read - the standing panels and their docked tabs were
+   the clutter worth clearing, not the tools. Keeping the toolbar's left
+   group also keeps the hide button itself on screen, which is what makes
+   the way back obvious without a corner glyph.
+   Restoring is instant by construction: the transition above lives on the
    hidden-state rule, so dropping the class snaps everything straight back
    rather than fading, which is what you want at fifty toggles a day. */
 
-/* The one thing that stays: a quiet eye in the corner the Gallery link
-   came from, which is where people look to get out of something. It is
-   born at full strength - unmistakably a control at the moment it becomes
-   the only one - then settles to something ignorable, and wakes again on
-   any press. Never absent: it is the only way back on a device with no
-   Tab key. The 44px box is the app's own touch floor. */
-.chrome-restore {
-  position: fixed;
-  top: max(10px, env(safe-area-inset-top));
-  left: max(10px, env(safe-area-inset-left));
-  z-index: 31;
-  width: 44px;
-  height: 44px;
-  padding: 11px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text);
-  opacity: 0.22;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    opacity 0.5s ease,
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.chrome-restore svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-/* Awake: just after hiding, and on any press while hidden - a lost user's
-   tap lights up the way out. */
-.chrome-restore.is-awake,
-.chrome-restore:hover,
-.chrome-restore:focus-visible {
-  opacity: 1;
-  background: var(--panel-bg);
-  border-color: var(--panel-border);
-  transition:
-    opacity 0.14s ease,
-    background-color 0.14s ease,
-    border-color 0.14s ease;
-}
-
-/* No motion to catch the eye, so pay for it with permanent contrast. */
-@media (prefers-reduced-motion: reduce) {
-  .chrome-restore {
-    opacity: 0.5;
-    transition: none;
-  }
-}
-
-/* Asked for more contrast: this is the last control on screen, so it stops
-   being subtle at all. */
-@media (prefers-contrast: more) {
-  .chrome-restore {
-    opacity: 1;
-    background: var(--panel-bg);
-    border-color: var(--panel-border);
-  }
-}
-
-/* Said once, when the interface goes, naming both ways back. */
+/* Said once, when the interface goes, and less each time you do it. */
 .chrome-hint {
   position: fixed;
   left: 50%;

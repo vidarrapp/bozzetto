@@ -1,4 +1,5 @@
 import { div } from '../../ui/dom';
+import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
 
 /**
  * Shared shell for the docked sculpt panels: the sliding root, the edge
@@ -38,6 +39,11 @@ export class SidePanel {
 
   /** Called when this panel collapses or expands (subclasses may react). */
   protected onCollapsedChange: ((collapsed: boolean) => void) | null = null;
+
+  /** Tab's first press tidies the screen: every open panel collapses. */
+  private readonly onCloseAll = (): void => {
+    if (!this.collapsed) this.setCollapsed(true);
+  };
 
   private readonly onOtherPanelOpen = (e: Event): void => {
     const detail = (e as CustomEvent<{ id?: string; side?: PanelSide }>).detail;
@@ -92,6 +98,7 @@ export class SidePanel {
 
     this.applyCollapsed();
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.addEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
   }
 
   setCollapsed(collapsed: boolean): void {
@@ -119,6 +126,7 @@ export class SidePanel {
 
   dispose(): void {
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.removeEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
     this.root.remove();
   }
 }

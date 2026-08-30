@@ -37,6 +37,9 @@ export class SculptToolbar {
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
   private readonly brushBtns = new Map<number, HTMLButtonElement>();
+  /** Set by mode.ts: a direct hide/show switch for the toolbar button. */
+  onToggleChrome: (() => void) | null = null;
+  private hideBtn!: HTMLButtonElement;
   /** Double-tap latch on Negative: carving stays on without holding. */
   private negSticky = false;
   private unlatchOnUp = false;
@@ -110,7 +113,10 @@ export class SculptToolbar {
       '<path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.5 8.1A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.4 9.4 0 0 0 3.6-.7" ' +
       'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
       '</svg></span>';
-    hideBtn.addEventListener('click', () => this.input.hooks.toggleChrome());
+    // The button is a plain switch, unlike Tab, which first tidies open
+    // panels. Assigned by mode.ts; read at click time so ordering is free.
+    hideBtn.addEventListener('click', () => this.onToggleChrome?.());
+    this.hideBtn = hideBtn;
     left.appendChild(hideBtn);
 
     const center = document.createElement('div');
@@ -142,6 +148,14 @@ export class SculptToolbar {
 
     this.input.onToolChange = () => this.refresh();
     this.refresh();
+  }
+
+  /** The hide button stays on screen while hidden, so it shows its state. */
+  setChromeHidden(hidden: boolean): void {
+    this.hideBtn.classList.toggle('sculpt-toolbar__btn--active', hidden);
+    const label = hidden ? 'Show the interface (Tab)' : 'Hide the interface (Tab)';
+    this.hideBtn.title = label;
+    this.hideBtn.setAttribute('aria-label', hidden ? 'Show the interface' : 'Hide the interface');
   }
 
   /** Reflect the active brush and the negative base on the buttons. */

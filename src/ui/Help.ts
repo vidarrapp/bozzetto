@@ -46,6 +46,9 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
     <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
+    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Clear mask</span></div>
+    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>I</kbd><span>Invert mask</span></div>
+    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>H</kbd><span>Show / hide mask tint</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Brushes</div>
@@ -74,7 +77,8 @@ const SCULPT_HTML = `
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Interface</div>
-    <div class="help-row"><kbd>Tab</kbd><span>Hide / show the interface</span></div>
+    <div class="help-row"><kbd>Tab</kbd><span>Close panels, then hide the interface</span></div>
+    <div class="help-row"><kbd>Esc</kbd><span>Show the interface</span></div>
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
   </div>`;
 

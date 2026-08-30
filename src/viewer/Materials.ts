@@ -111,8 +111,15 @@ export class Materials {
    * active in sculpt mode: viewer subjects have no materialsPBR attribute.
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
+  private maskTintOn = false;
+
+  /** Whether masked areas are currently drawn darkened (ctrl+h toggles). */
+  getSculptMaskTint(): boolean {
+    return this.maskTintOn;
+  }
 
   setSculptMaskTint(on: boolean): void {
+    this.maskTintOn = on;
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
       if (on) {

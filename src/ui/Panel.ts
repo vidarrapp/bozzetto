@@ -51,6 +51,14 @@ export class Panel {
     }
   };
 
+  /** Sculpt's Tab tidies the screen before it clears it (ChromeToggle). */
+  private readonly onCloseAll = (): void => {
+    if (!this.collapsed) {
+      this.collapsed = true;
+      this.applyCollapsed();
+    }
+  };
+
   private readonly onSculptMode = (e: Event): void => {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
     // DoF is reserved for the view/render mode; sculpt hides its controls.
@@ -128,6 +136,7 @@ export class Panel {
 
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.addEventListener('bozzetto:panel-close-all', this.onCloseAll);
 
     if (options.actions) this.bodyEl.appendChild(options.actions);
     if (this.editor) this.buildTimeline(this.bodyEl);
@@ -190,6 +199,7 @@ export class Panel {
   dispose(): void {
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.removeEventListener('bozzetto:panel-close-all', this.onCloseAll);
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();

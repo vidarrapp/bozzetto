@@ -33,8 +33,10 @@ export interface InputShellHooks {
   rotateLightRig(deltaDeg: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
-  /** Tab: show/hide every panel, toolbar and overlay. */
+  /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
+  /** ctrl+h: show/hide the mask tint (the mask itself stays). */
+  toggleMaskTint(): void;
 }
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
@@ -473,7 +475,9 @@ export class InputShell {
       }
     }
 
-    // ctrl chords first.
+    // ctrl chords first. The mask trio mirrors ZBrush; ctrl+c and ctrl+h
+    // shadow browser Copy and History, so they are only claimed here where
+    // the text-entry guard above has already let real typing through.
     if (e.ctrlKey || e.metaKey) {
       if (key === 'z') {
         if (e.shiftKey) s.redo();
@@ -481,6 +485,19 @@ export class InputShell {
         this.claim(e);
       } else if (key === 'd') {
         s.subdivide();
+        this.claim(e);
+      } else if (key === 'c') {
+        this.maskTool()?.clear?.();
+        s.render();
+        this.claim(e);
+      } else if (key === 'i') {
+        this.maskTool()?.invert?.();
+        s.render();
+        this.claim(e);
+      } else if (key === 'h') {
+        // Hides the mask's darkening, not the mask: strokes keep respecting
+        // it, you just stop looking at it.
+        this.hooks.toggleMaskTint();
         this.claim(e);
       }
       return;
@@ -609,6 +626,11 @@ export class InputShell {
 
   getNegativeBase(): boolean {
     return this.negativeBase;
+  }
+
+  /** The masking tool carries the whole-mask operations (clear/invert). */
+  private maskTool(): SculptTool | undefined {
+    return this.session.getSculptManager().getTool(Enums.Tools.MASKING);
   }
 
   /** Swallow a claimed key so the viewer's shortcut bindings stay dormant. */

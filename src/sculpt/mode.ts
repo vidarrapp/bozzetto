@@ -151,12 +151,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const stats = makeStatsCorner(session);
 
   // Tab clears the interface for focused work; the toggle owns the ways back.
-  const chrome = new ChromeToggle({
-    // The undo index is the cheapest honest "did that pointer edit
-    // anything" signal: a sculpt dab pushes a state, a lost tap does not.
-    editToken: () => session.getStateManager()._curUndoIndex,
-    onChange: (hidden) => stats.setPaused(hidden),
-  });
+  const chrome = new ChromeToggle();
 
   const cursor = new BrushCursor(container);
   // The surface ring is projected SVG: crisp at any DPI on any backend.
@@ -224,11 +219,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.environment.setRotation(lighting.getRigRotation());
     },
     orbitY: (deltaDeg) => viewer.orbitAzimuth(deltaDeg),
-    toggleChrome: () => chrome.toggle(),
+    toggleChrome: () => chrome.handleTab(),
+    toggleMaskTint: () => {
+      viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
+    },
   });
   input.install();
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
+  toolbar.onToggleChrome = () => chrome.toggle();
+  chrome.onChange = (hidden) => toolbar.setChromeHidden(hidden);
   sliders = new BrushSliders(input, {
     undo: () => session.undo(),
     redo: () => session.redo(),
@@ -354,10 +354,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 }
 
 /** Top-left corner stats: object name + live poly count (polled, cheap). */
-function makeStatsCorner(session: SculptSession): {
-  setPaused(paused: boolean): void;
-  dispose(): void;
-} {
+function makeStatsCorner(session: SculptSession): { dispose(): void } {
   const el = document.createElement('div');
   el.className = 'sculpt-stats';
   const name = document.createElement('div');
@@ -366,11 +363,7 @@ function makeStatsCorner(session: SculptSession): {
   tris.className = 'sculpt-stats__tris';
   el.append(name, tris);
   document.body.appendChild(el);
-  let paused = false;
   const update = (): void => {
-    // Counting triangles twice a second for an invisible readout is pure
-    // waste; the hide toggle parks this while the interface is away.
-    if (paused) return;
     const mesh = session.getMesh();
     name.textContent = session.activeName();
     tris.textContent = mesh ? `${mesh.getNbTriangles().toLocaleString('en-US')} tris` : '';
@@ -378,10 +371,6 @@ function makeStatsCorner(session: SculptSession): {
   update();
   const timer = window.setInterval(update, 500);
   return {
-    setPaused(next: boolean) {
-      paused = next;
-      if (!next) update(); // catch up on whatever changed while away
-    },
     dispose() {
       clearInterval(timer);
       el.remove();
