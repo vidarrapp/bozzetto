@@ -993,3 +993,42 @@ length). Headless testing cannot reproduce any of this - synthetic
 pointers are never cancelled and always report their lift - so if the
 hold still misbehaves, the next step is data from the device rather than
 a fourth theory.
+
+## WS6 round 6: the actual cause, from the device log
+
+The log settled it in one reading:
+
+    2.24  p.down t#...  BTN      finger lands on the button
+    2.24  t.start touches=1
+    2.69  p.cancel t#... BTN     450ms later, cancelled
+    2.69  t.cancel touches=0
+    (nothing at all when the Pencil is added)
+
+Two facts kill every previous theory. The cancel arrives ~450ms after
+the press and BEFORE the Pencil is involved at all - so it was never the
+second pointer, and never the capture. And after it, the Pencil produces
+no events whatsoever, which is not an app bug but a system gesture
+having taken the whole interaction.
+
+450ms is iOS's long-press threshold. A STATIONARY finger on a control
+arms Safari's callout / drag gesture; it then cancels the touch and
+swallows subsequent input. `#viewport` had opted out with
+`-webkit-touch-callout: none` since the beginning, but the toolbar lives
+outside `#viewport` and never did. A MOVING finger escapes it, because
+the drag cancels the long-press timer - which is exactly why the brush
+sliders and the panel handles never showed the bug, and why only the one
+control anybody holds still was affected.
+
+Fix: `-webkit-touch-callout: none` plus `-webkit-user-drag: none` on
+every held control outside the viewport (an inline SVG icon is itself
+draggable, so the icon needed it too), and `preventDefault()` on
+`touchstart` for the Negative button, which is what actually stops the
+gesture arming rather than merely suppressing its menu.
+
+Testing note: none of the three guards can be checked the same way.
+`touch-action` computes normally; the touchstart preventDefault is
+observable by dispatching a plain `Event` (TouchEvent is not
+constructible in a desktop Chromium); and `-webkit-touch-callout` is
+WebKit-only, so Chromium neither computes it nor keeps it in the CSSOM -
+the suite fetches the shipped stylesheet and asserts the bytes, which is
+the part that reaches Safari anyway.

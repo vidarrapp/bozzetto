@@ -29,12 +29,15 @@ function svgFor(slot: string): string | null {
  * this is the native way to invert strokes and swap brushes; buttons and
  * hotkeys stay in sync.
  *
- * Negative is a toggle you can also hold. Holding it while you draw was the
- * original design (it mirrors alt), but two rounds of iPad testing showed
- * the browser's release event cannot be trusted with a stylus in play, so
- * the toggle is the guaranteed path and the momentary behaviour rides on
- * top. alt itself still flips relative to whatever the button says, so
- * keyboard users lose nothing either way.
+ * Negative is a toggle you can also hold. Holding it while you draw mirrors
+ * alt, and it took an on-device input log to make it work: a STATIONARY
+ * finger on a control makes iOS arm its callout/drag gesture at about
+ * 450ms, at which point Safari cancels the touch and then ignores the
+ * Pencil for the rest of the interaction. Suppressing that gesture is the
+ * fix (see the touchstart handler and the CSS beside it); the toggle
+ * remains the guaranteed path underneath, since a press decides on its own
+ * and never needs a release to arrive. alt still flips relative to whatever
+ * the button says, so keyboard users lose nothing either way.
  */
 export class SculptToolbar {
   private readonly root: HTMLDivElement;
@@ -53,14 +56,11 @@ export class SculptToolbar {
    * the button stops capturing, the release can land anywhere - and on a
    * touch device it routinely does.
    *
-   * Crucially, correctness no longer DEPENDS on this arriving. Two earlier
-   * attempts at hold-to-carve both failed on iPadOS because the release
-   * event was unreliable in a different way each time (a pointercancel
-   * fired when the Pencil landed; then a touchcancel whose touch list did
-   * not include the Pencil at all). So the press now decides by itself:
-   * a press while carving is already on turns it OFF, which makes the
-   * button a plain toggle that cannot get stuck, and this handler only
-   * adds the momentary behaviour on top when the events do cooperate.
+   * Correctness does not DEPEND on this arriving, which is what kept the
+   * button usable through three rounds of chasing the iOS gesture bug: a
+   * press while carving is already on turns it OFF, so the button is a
+   * toggle that cannot get stuck whatever happens to the release, and this
+   * handler only adds the momentary behaviour on top.
    */
   private readonly onWindowPointerUp = (e: PointerEvent): void => {
     if (e.pointerId !== this.negHoldId) return;
@@ -97,11 +97,8 @@ export class SculptToolbar {
       'negative',
       'fi-ts-reflect-vertical',
     );
-    // Deliberately NO setPointerCapture and NO preventDefault here. On
-    // iPadOS, capturing a touch pointer and then putting a SECOND pointer
-    // down - the Pencil, starting a stroke - makes Safari cancel the
-    // captured one. touch-action: none already suppresses the gestures
-    // preventDefault guarded.
+    // No setPointerCapture: capturing a touch pointer and then putting a
+    // second one down makes Safari cancel the captured one.
     this.negativeBtn.addEventListener('pointerdown', (e) => {
       if (this.input.getNegativeBase()) {
         // Already carving, from a tap or from a hold whose lift went
@@ -116,6 +113,17 @@ export class SculptToolbar {
       this.setNegative(true);
     });
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The belt to the CSS braces. On iOS a stationary press starts a
+    // callout/drag gesture at ~450ms and Safari cancels the touch - then
+    // ignores the Pencil for the rest of the interaction, which is exactly
+    // what made hold-to-carve impossible. Cancelling the default on
+    // touchstart is what actually stops that gesture from ever arming.
+    // Safe here because this button is driven by pointerdown, not click.
+    this.negativeBtn.addEventListener(
+      'touchstart',
+      (e) => e.preventDefault(),
+      { passive: false },
+    );
     left.appendChild(this.negativeBtn);
 
     // The pointer route into the clean screen, and back out of it: Tab is

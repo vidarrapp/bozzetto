@@ -2117,6 +2117,32 @@ body.chrome-hidden .transport {
   color: var(--bg);
 }
 
+/* iOS long-press hijack, found with ?inputdebug=1: a stationary finger on
+   a control fires pointercancel + touchcancel about 450ms in, as Safari
+   starts its callout / drag gesture - and from then on it swallows the
+   Pencil too, so holding a modifier button while drawing was impossible.
+   #viewport already opted out; every held control outside it needs the
+   same, plus user-drag off because an inline SVG icon is itself draggable.
+   A moving finger escapes this (the drag cancels the long-press timer),
+   which is why the brush sliders never showed it. */
+.sculpt-toolbar__btn,
+.sculpt-slider,
+.sculpt-histbtn,
+.outliner__btn,
+.panel__handle,
+.chrome-restore {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sculpt-toolbar__btn *,
+.sculpt-histbtn * {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
 /* Opt-in hardware input log (?inputdebug=1): raw pointer/touch traffic,
    for input bugs that cannot be reproduced in a headless browser. */
 .input-debug {
