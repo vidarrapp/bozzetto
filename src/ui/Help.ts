@@ -49,6 +49,7 @@ const SCULPT_HTML = `
   <div class="help-guide__group">
     <div class="help-guide__title">Masking</div>
     <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Paint mask (+ Alt to unmask)</span></div>
+    <div class="help-row"><span class="help-key">Ctrl + click off mesh</span><span>Invert mask</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Clear mask</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>I</kbd><span>Invert mask</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>H</kbd><span>Show / hide mask tint</span></div>

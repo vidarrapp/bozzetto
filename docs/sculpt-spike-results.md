@@ -937,13 +937,16 @@ by slot (data-slot=model|timelapse) and the suite drives them there.
   release, and a window touchend with an empty touch list is the backstop
   for a pointer that was cancelled and will never report its lift.
   ws6 reproduces it directly - press, cancel, stroke, assert still armed.
-- ctrl + drag OFF the model now zooms (review request: the Pencil needs a
-  zoom that is not a pinch), vertical travel through an exponential
-  pixels-to-factor so a given drag changes framing by the same proportion
-  at any distance. This replaces upstream's whole-mask gestures on empty
-  space (tap to invert, drag to clear), which became redundant the moment
-  ctrl+i and ctrl+c landed. ctrl ON the model still paints mask, and the
-  suite asserts both halves plus that masking never moves the camera.
+- ctrl OFF the model is now a tap-versus-drag pair: a TAP still inverts
+  the whole mask (upstream parity, kept on request) and a DRAG zooms -
+  the Pencil needs a zoom that is not a pinch. Vertical travel goes
+  through an exponential pixels-to-factor so a given drag changes framing
+  by the same proportion at any distance, and the dolly measures from
+  where the slop was crossed so nothing jumps. Only upstream's drag-to-
+  CLEAR was displaced, and ctrl+c had already taken that job. The slop is
+  8px because a Pencil never lands perfectly still; the suite asserts a
+  jittery tap still reads as a tap and that neither gesture leaks into
+  the other (masking never moves the camera, a tap never does either).
 - A `?` button beside the theme toggle opens the hotkey guide; H still
   does too, but H does not exist on a keyboard-less iPad. The theme
   toggle got a fixed min-width so the button's offset does not jitter

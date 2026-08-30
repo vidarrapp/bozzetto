@@ -72,6 +72,11 @@ const ORBIT_ACCEL_MAX = 8;
  * 2x per 170px.
  */
 const ZOOM_DRAG_RATE = 0.004;
+/**
+ * How far a ctrl press off the model may wander and still count as a tap.
+ * Generous enough for a Pencil, which never lands perfectly still.
+ */
+const CTRL_DRAG_SLOP = 8;
 
 export class InputShell {
   /** Fired when the selected brush changes (digit keys or toolbar). */
@@ -87,8 +92,19 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   private adjust: AdjustMode = null;
-  /** ctrl+press that missed the mesh: a drag-to-zoom in progress. */
-  private zoomDrag: { y: number; pointerId: number } | null = null;
+  /**
+   * ctrl+press that missed the mesh. Which gesture it is stays undecided
+   * until the pointer either travels (zoom) or lifts in place (invert the
+   * whole mask), the same tap-vs-drag split upstream used to choose
+   * between inverting and clearing.
+   */
+  private ctrlEmpty: {
+    x: number;
+    y: number;
+    lastY: number;
+    pointerId: number;
+    dragging: boolean;
+  } | null = null;
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
@@ -275,15 +291,19 @@ export class InputShell {
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
-      // A ctrl press that MISSES the mesh drags to zoom (review request:
-      // the Pencil needs a way to zoom without a pinch). This used to be
-      // upstream's whole-mask gesture - tap to invert, drag to clear - but
-      // both now have their own chords (ctrl+i, ctrl+c), so the gesture was
-      // redundant and the modifier is better spent here.
+      // A ctrl press that MISSES the mesh: tap inverts the whole mask
+      // (upstream parity), drag zooms - the Pencil needs a zoom that is not
+      // a pinch. Clearing moved to ctrl+c, which is what freed the drag.
       if (e.ctrlKey && !e.metaKey) {
-        this.zoomDrag = { y: e.clientY, pointerId: e.pointerId };
+        this.ctrlEmpty = {
+          x: e.clientX,
+          y: e.clientY,
+          lastY: e.clientY,
+          pointerId: e.pointerId,
+          dragging: false,
+        };
         e.preventDefault();
-        e.stopPropagation(); // no orbit under a zoom drag
+        e.stopPropagation(); // no orbit under either gesture
         return;
       }
       s._action = Enums.Action.NOTHING;
@@ -343,13 +363,21 @@ export class InputShell {
     this.setMouse(e);
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
 
-    // ctrl-drag off the model: vertical travel dollies. Pixels-to-factor is
-    // exponential so the step is proportional at any distance, and dragging
-    // up zooms IN, matching the wheel.
-    if (this.zoomDrag && e.pointerId === this.zoomDrag.pointerId) {
-      const dy = e.clientY - this.zoomDrag.y;
-      this.zoomDrag.y = e.clientY;
-      this.hooks.dolly(Math.exp(dy * ZOOM_DRAG_RATE));
+    // ctrl off the model: past the slop this is a zoom, and vertical travel
+    // dollies. Pixels-to-factor is exponential so the step is proportional
+    // at any distance, and dragging up zooms IN, matching the wheel.
+    if (this.ctrlEmpty && e.pointerId === this.ctrlEmpty.pointerId) {
+      const g = this.ctrlEmpty;
+      if (!g.dragging && Math.hypot(e.clientX - g.x, e.clientY - g.y) > CTRL_DRAG_SLOP) {
+        g.dragging = true;
+        // Measure from here, so crossing the slop does not jump the camera.
+        g.lastY = e.clientY;
+      }
+      if (g.dragging) {
+        const dy = e.clientY - g.lastY;
+        g.lastY = e.clientY;
+        this.hooks.dolly(Math.exp(dy * ZOOM_DRAG_RATE));
+      }
       this.cursor.hide();
       e.preventDefault();
       e.stopPropagation();
@@ -400,9 +428,16 @@ export class InputShell {
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
 
-    if (this.zoomDrag && e.pointerId === this.zoomDrag.pointerId) {
-      this.zoomDrag = null;
+    if (this.ctrlEmpty && e.pointerId === this.ctrlEmpty.pointerId) {
+      const gesture = this.ctrlEmpty;
+      this.ctrlEmpty = null;
       s._action = Enums.Action.NOTHING;
+      // Never travelled, so it was a tap: invert the whole mask. A
+      // cancelled pointer aborts rather than inverting.
+      if (!gesture.dragging && e.type !== 'pointercancel') {
+        s.getSculptManager().getTool(Enums.Tools.MASKING).invert?.();
+        s.render();
+      }
       e.stopPropagation();
       return;
     }
