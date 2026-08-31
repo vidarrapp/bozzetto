@@ -81,6 +81,27 @@ function newSculptCard(): HTMLElement {
   a.innerHTML =
     '<div><div class="card--new__plus">+</div>' +
     '<div class="card--new__label">New sculpt</div></div>';
+  // Sculpt mode restores the autosave on entry, so without this the tile
+  // quietly RESUMED the work in progress instead of starting anything new.
+  // Ask, then clear the scene and its recording before going in.
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    void (async () => {
+      const store = await import('../sculpt/bridge/ScenePersist');
+      const snap = await store.loadSculptSnapshot().catch(() => null);
+      if (
+        snap &&
+        !confirm('Start a new sculpt? The work in progress on this device will be replaced.')
+      ) {
+        return;
+      }
+      if (snap) {
+        await store.clearSavedScene();
+        await store.clearSculptFrames();
+      }
+      window.location.href = a.href;
+    })();
+  });
   return a;
 }
 

@@ -456,6 +456,17 @@ export class Panel {
   private buildLighting(body: HTMLElement): void {
     const lighting = section(body, 'Lighting');
 
+    // Sculpt keeps its look between sessions, so a look set up badly (or
+    // saved mid-experiment) would otherwise restore for ever. The panel
+    // only asks; sculpt mode owns the defaults and the stored record.
+    if (this.sculpting) {
+      const reset = button('Reset look', () => {
+        window.dispatchEvent(new CustomEvent('bozzetto:look-reset'));
+      });
+      reset.className = 'btn btn--small panel__reset';
+      lighting.appendChild(reset);
+    }
+
     // Preset switch (viewer + editor): Three-point <-> Raking.
     const presetSelect = document.createElement('select');
     for (const preset of this.viewer.lighting.presets()) {

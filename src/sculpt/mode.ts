@@ -10,6 +10,7 @@ import {
   ScenePersist,
   clearSavedScene,
   loadSavedScene,
+  clearSculptLook,
   loadSculptLook,
   saveSculptLook,
   saveSculptSnapshot,
@@ -154,10 +155,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
+  // Snapshot the mount defaults BEFORE any saved look lands on top: this is
+  // what "Reset look" goes back to, and it has to be captured here, while
+  // the defaults above are still what the viewer is showing.
+  const defaultLook = viewer.getLook();
   // ...and then, on top of those defaults, whatever the last session set up.
   // Without this, leaving sculpt mode and coming back reset every look-dev
   // control - the defaults above are only meant for a first visit.
   await viewer.applyLook(await loadSculptLook());
+  const onLookReset = (): void => {
+    void (async () => {
+      await clearSculptLook();
+      await viewer.applyLook(defaultLook);
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    })();
+  };
+  window.addEventListener('bozzetto:look-reset', onLookReset);
 
   // Multi-mesh (WS4): the ACTIVE mesh renders through the primary sync and
   // the viewer's display machinery; every other scene object gets its own
@@ -618,6 +631,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Before the viewer's own look is put back below, or the session's would
     // be recorded as whatever the viewer had before sculpt started.
     clearTimeout(lookTimer);
+    window.removeEventListener('bozzetto:look-reset', onLookReset);
     void storeLook();
     document.removeEventListener('input', onLookInput, true);
     document.removeEventListener('change', onLookInput, true);

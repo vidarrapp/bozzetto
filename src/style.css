@@ -2256,3 +2256,12 @@ body.chrome-hidden .transport {
 .topbar .theme-toggle {
   order: 3;
 }
+
+/* "Reset look" sits inside the Lighting section, quieter than a primary
+   action: it is an escape hatch, not part of the normal flow. */
+.panel__reset {
+  align-self: flex-start;
+  margin-bottom: 8px;
+  padding: 3px 10px;
+  font-size: 11px;
+}

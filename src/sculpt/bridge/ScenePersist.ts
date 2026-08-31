@@ -140,6 +140,19 @@ export async function saveSculptLook(look: LookState): Promise<void> {
   }
 }
 
+/**
+ * Forget the saved sculpt look, so the next entry falls back to the mount
+ * defaults. Without this a look saved in a bad state - a light dragged flat,
+ * say - restored faithfully on every entry with no way out of it.
+ */
+export async function clearSculptLook(): Promise<void> {
+  try {
+    await withStore('readwrite', (s) => s.delete(LOOK_KEY));
+  } catch {
+    // Nothing to clear (or storage unavailable); either way we are done.
+  }
+}
+
 /** The saved sculpt look, or null when there is none. */
 export async function loadSculptLook(): Promise<LookState | null> {
   try {
@@ -326,6 +339,21 @@ export function validSavedScene(rec: unknown): rec is SavedScene {
     r.active >= 0 &&
     r.active < r.meshes.length
   );
+}
+
+/**
+ * Drop every captured timelapse frame. Starting a new sculpt discards the
+ * recording with the scene it belongs to - a timelapse of work you just
+ * replaced is not much use - matching the File panel's New scene button.
+ */
+export async function clearSculptFrames(): Promise<void> {
+  for (const store of [FRAMES_STORE, FRAME_META_STORE]) {
+    try {
+      await withNamedStore(store, 'readwrite', (s) => s.clear());
+    } catch {
+      // Storage unavailable; nothing to clear.
+    }
+  }
 }
 
 export async function clearSavedScene(): Promise<void> {
