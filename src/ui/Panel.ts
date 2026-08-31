@@ -1,6 +1,7 @@
 import type { Viewer, GroundMode } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, selectEl } from './dom';
+import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -99,6 +100,7 @@ export class Panel {
     if (active) this.rebuildLightControls();
   }
   private readonly actions?: HTMLElement;
+  private albedoPicker?: ColorPickerHandle;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -311,6 +313,7 @@ export class Panel {
   }
 
   dispose(): void {
+    this.albedoPicker?.dispose();
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     window.removeEventListener('bozzetto:look-restored', this.onLookRestored);
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
@@ -423,11 +426,11 @@ export class Panel {
     const state = mats.getMaterialState();
 
     if (this.viewer.getMaterial() === 'lit') {
-      const albedo = document.createElement('input');
-      albedo.type = 'color';
-      albedo.value = state.albedo;
-      albedo.addEventListener('input', () => mats.setAlbedo(albedo.value));
-      this.materialOptions.appendChild(labelRow('Albedo', albedo));
+      // The shared HSV picker, not <input type="color">: the same control
+      // the paint brush uses, so albedo and paint are picked the same way.
+      this.albedoPicker?.dispose();
+      this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
+      this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
       this.materialOptions.appendChild(
         compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v)),
       );

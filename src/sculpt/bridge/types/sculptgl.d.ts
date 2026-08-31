@@ -103,6 +103,10 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getNormals(): Float32Array;
     getColors(): Float32Array;
     getMaterials(): Float32Array;
+    /** Re-fan colours/materials into the duplicated render vertices. */
+    updateDuplicateColorsAndMaterials(iVerts?: Uint32Array): void;
+    /** Re-upload the vertex colour buffer after a bulk write (paint fill). */
+    updateColorBuffer(): void;
     getTriangles(): Uint32Array;
     getFaces(): Uint32Array | Int32Array;
     getNbVertices(): number;
@@ -212,6 +216,14 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     /** Masking tool only: shell extraction of the masked region (WS4). */
     _thickness?: number;
     extract?(): void;
+    /** Paint tool only: the albedo it lays down, linear RGB 0..1. */
+    _color?: Float32Array;
+    /** Paint tool only: this stroke is an eyedropper, not a paint stroke. */
+    _pickColor?: boolean;
+    /** Paint tool only: edge falloff of the dab. */
+    _hardness?: number;
+    /** Paint tool only: called after an eyedropper pick with the sample. */
+    setPickCallback?(cb: (color: Float32Array, roughness: number, metallic: number) => void): void;
   }
 
   /**

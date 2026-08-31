@@ -2265,3 +2265,109 @@ body.chrome-hidden .transport {
   padding: 3px 10px;
   font-size: 11px;
 }
+
+/* --- HSV colour picker (albedo + paint brush) --------------------------- */
+.cpick {
+  position: relative;
+  display: inline-flex;
+}
+
+.cpick__swatch {
+  width: 46px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.cpick__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  width: 196px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  /* The panel scrolls; the popover must not be clipped by its own row. */
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.cpick__spectrum {
+  display: flex;
+  gap: 8px;
+  /* none: dragging a colour field is a drag, never a page gesture. */
+  touch-action: none;
+}
+
+.cpick__field {
+  position: relative;
+  flex: 1;
+  height: 110px;
+  border-radius: var(--radius);
+  cursor: crosshair;
+}
+
+.cpick__hue {
+  position: relative;
+  width: 14px;
+  border-radius: var(--radius);
+  cursor: ns-resize;
+  background: linear-gradient(
+    to bottom,
+    #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%
+  );
+}
+
+.cpick__dot,
+.cpick__huedot {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
+}
+
+.cpick__dot {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+}
+
+.cpick__huedot {
+  left: -2px;
+  right: -2px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+
+.cpick__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cpick__row {
+  display: grid;
+  grid-template-columns: 14px 1fr 28px;
+  align-items: center;
+  gap: 6px;
+}
+
+.cpick__label,
+.cpick__value {
+  font-family: var(--font-spec);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.cpick__value {
+  text-align: right;
+}

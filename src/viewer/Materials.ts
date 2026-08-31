@@ -112,6 +112,8 @@ export class Materials {
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
   private maskTintOn = false;
+  /** Sculpt mode reads albedo from the painted `color` attribute. */
+  private sculptVertexColor = false;
 
   /** Whether masked areas are currently drawn darkened (ctrl+h toggles). */
   getSculptMaskTint(): boolean {
@@ -120,19 +122,45 @@ export class Materials {
 
   setSculptMaskTint(on: boolean): void {
     this.maskTintOn = on;
+    this.rebuildSculptColor();
+  }
+
+  /**
+   * Sculpt mode paints per-vertex, so albedo comes from the `color`
+   * attribute rather than the material uniform. Vertex colours start white
+   * and are filled from the material albedo when an object is created or
+   * recoloured, so an unpainted object reads as its material exactly; once
+   * painted, the attribute IS the colour, which is why it replaces the
+   * uniform here instead of multiplying it (a multiply would tint every
+   * painted stroke by the material underneath it).
+   *
+   * The mask tint composes on top either way, and off sculpt mode both
+   * drop away - a viewer subject has neither attribute.
+   */
+  setSculptVertexColor(on: boolean): void {
+    this.sculptVertexColor = on;
+    this.rebuildSculptColor();
+  }
+
+  private rebuildSculptColor(): void {
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
-      if (on) {
-        // The TSL runtime hands back fluent proxies; the published typings
-        // for attribute()/materialColor lag behind, hence the casts.
-        type Vec3Node = ReturnType<typeof vec3>;
+      // The TSL runtime hands back fluent proxies; the published typings
+      // for attribute()/materialColor lag behind, hence the casts.
+      type Vec3Node = ReturnType<typeof vec3>;
+      // Held as unknown while it is composed: the node types returned by
+      // attribute() and .mul() differ, and only the final assignment needs
+      // to name a type.
+      let node: unknown = this.sculptVertexColor ? attribute('color', 'vec3') : null;
+      if (this.maskTintOn) {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
         const masked = materialsPBR.z.clamp(0, 1).oneMinus();
-        const base = materialColor as unknown as Vec3Node;
-        m.colorNode = base.mul(mix(float(1), this.maskDarkenU, masked));
-      } else {
-        m.colorNode = null;
+        const base = (node ?? materialColor) as unknown as Vec3Node;
+        node = base.mul(mix(float(1), this.maskDarkenU, masked));
       }
+      // Same cast rationale as above: the published node typings are
+      // narrower than what the TSL runtime actually accepts here.
+      m.colorNode = node as unknown as MeshStandardNodeMaterial['colorNode'];
       m.needsUpdate = true;
     }
   }
@@ -173,8 +201,12 @@ export class Materials {
     mat.needsUpdate = true;
   }
 
+  /** Fired after the Lit albedo changes (sculpt re-fills unpainted objects). */
+  onAlbedoChange: (() => void) | null = null;
+
   setAlbedo(hex: string): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).color = new Color(hex);
+    this.onAlbedoChange?.();
   }
 
   setRoughness(value: number): void {

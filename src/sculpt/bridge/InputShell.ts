@@ -1,3 +1,4 @@
+import { Color } from 'three';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
@@ -28,6 +29,8 @@ export interface InputShellHooks {
   frameModel(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
+  /** A paint stroke began: the active object owns its vertex colours now. */
+  markPainted(): void;
   /** A drag that missed the mesh is about to orbit / has finished. */
   orbitBegin(): void;
   orbitEnd(): void;
@@ -89,6 +92,10 @@ const ZOOM_DRAG_RATE = 0.004;
 const CTRL_DRAG_SLOP = 8;
 
 export class InputShell {
+  /** Set when the current stroke is an eyedropper, so the UI can re-read. */
+  private pickedColor = false;
+  /** Fired after the eyedropper changed the paint colour. */
+  onPaintColorChange: (() => void) | null = null;
   /** Fired when the selected brush changes (digit keys or toolbar). */
   onToolChange: (() => void) | null = null;
   /** Fired whenever brush radius/strength/selection may have moved. */
@@ -157,6 +164,13 @@ export class InputShell {
     // Pen pressure routing lives in the dynamics store (per-brush toggles
     // and curves; defaults: size constant, strength fully dynamic).
     this.dynamics.install();
+    // The eyedropper calls straight through to this; upstream's GUI sets it
+    // and there is no null guard in the vendor, so picking a colour threw
+    // right after it had (correctly) sampled one.
+    this.session
+      .getSculptManager()
+      .getTool(Enums.Tools.PAINT)
+      .setPickCallback?.(() => this.onPaintColorChange?.());
     Tablet.pressure = 0.5;
     this.container.addEventListener('pointerdown', this.onPointerDown, true);
     this.container.addEventListener('pointermove', this.onPointerMove, true);
@@ -267,6 +281,36 @@ export class InputShell {
     return typeof i === 'number' ? i : 0;
   }
 
+  /** Whether the paint brush is the active tool (drives its palette rows). */
+  isPainting(): boolean {
+    return this.session.getSculptManager().getToolIndex() === Enums.Tools.PAINT;
+  }
+
+  /**
+   * The paint colour, as the sRGB hex the picker speaks.
+   *
+   * The vertex colour attribute is LINEAR, and so is the vendor's _color,
+   * so both directions convert rather than dividing by 255: a raw hex
+   * written straight in paints far lighter and flatter than the swatch
+   * shows, which is what it did at first - a strong red landing as pink.
+   * three's Color does the same conversion the albedo fill path uses, so
+   * painting and the material now agree on what a colour is.
+   */
+  getPaintColor(): string {
+    const c = this.currentTool()._color;
+    if (!c) return '#ffffff';
+    return `#${new Color().setRGB(c[0], c[1], c[2]).getHexString()}`;
+  }
+
+  setPaintColor(hex: string): void {
+    const c = this.currentTool()._color;
+    if (!c) return;
+    const col = new Color(hex); // hex is sRGB; Color stores it linear
+    c[0] = col.r;
+    c[1] = col.g;
+    c[2] = col.b;
+  }
+
   hasBrushRadius(): boolean {
     return typeof this.currentTool()._radius === 'number';
   }
@@ -342,6 +386,18 @@ export class InputShell {
     // The ring reflects the tool actually stroking (radius and the blue
     // smoothing tint for shift strokes); restored on release.
     if (this.maskPrevTool >= 0) this.syncCursorBrush();
+
+    // Paint reads alt as the eyedropper (upstream's _pickColor), not as an
+    // inverted stroke: there is no such thing as painting negatively, and
+    // sampling a colour off the model is what alt is for in every paint
+    // app. The vendor clears the flag itself in Paint.end().
+    const painting = s.getSculptManager().getToolIndex() === Enums.Tools.PAINT;
+    if (painting) {
+      const paint = this.currentTool();
+      paint._pickColor = e.altKey;
+      this.pickedColor = e.altKey;
+      if (!e.altKey) this.hooks.markPainted();
+    }
 
     // Stroke polarity: the sticky toolbar base XOR alt, per tool support
     // (mask: alt = unmask, base ignored).
@@ -528,6 +584,13 @@ export class InputShell {
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
+
+    // An eyedropper stroke changed the paint colour under the palette's
+    // feet; tell it so the swatch stops showing the old one.
+    if (this.pickedColor) {
+      this.pickedColor = false;
+      this.onPaintColorChange?.();
+    }
 
     if (this.orbitPointer === e.pointerId) {
       this.orbitPointer = -1;
@@ -758,6 +821,8 @@ export class InputShell {
         return this.selectTool(Enums.Tools.DRAG, e);
       case '9':
         return this.selectTool(Enums.Tools.TWIST, e);
+      case '0':
+        return this.selectTool(Enums.Tools.PAINT, e);
     }
   };
 

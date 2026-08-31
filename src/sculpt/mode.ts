@@ -1,4 +1,4 @@
-import { Box3, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { Box3, Color, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -162,6 +162,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Sculpt-local, so a published project's own saved material is untouched.
   viewer.materials.setAlbedo(SCULPT_ALBEDO);
   viewer.materials.setRoughness(SCULPT_ROUGHNESS);
+  // Albedo comes from the painted `color` attribute while sculpting. Vertex
+  // colours start white, so every object is filled with the material colour
+  // to read as that material - which is also the state a first paint stroke
+  // paints on top of.
+  viewer.materials.setSculptVertexColor(true);
+  /** The material colour as linear RGB, which is what the attribute holds. */
+  const albedoRGB = (): [number, number, number] => {
+    const c = new Color(viewer.materials.getMaterialState().albedo);
+    return [c.r, c.g, c.b];
+  };
+  /** Meshes a paint stroke has touched: never re-filled by an albedo change. */
+  const painted = new WeakSet<SculptMesh>();
+  const fillUnpainted = (): void => {
+    const rgb = albedoRGB();
+    for (const m of session.getMeshes()) if (!painted.has(m)) session.fillColors(m, rgb);
+    session.render();
+  };
+  // Recolouring the material re-fills anything not yet painted, so the
+  // albedo control still behaves like an object colour until you paint.
+  viewer.materials.onAlbedoChange = () => fillUnpainted();
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
@@ -219,6 +239,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       );
       extras.set(mesh, { sync: extraSync, handle });
     }
+    // A newly added object still has SculptGL's white vertex colours.
+    fillUnpainted();
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
@@ -450,6 +472,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Remember where the work was; do NOT move the view for it. The jump
     // after every stroke was the objectionable part, not the re-pivot.
     focusEdit: (point) => pivot.set(point[0], point[1], point[2]),
+    // Once painted, an object owns its vertex colours: recolouring the
+    // material must not wipe the strokes.
+    markPainted: () => {
+      const active = session.getMesh();
+      if (active) painted.add(active);
+    },
     orbitBegin: () => beginPivotOrbit(),
     // Not cleared on release: the controls keep easing for a while after the
     // finger lifts, and that damped tail has to stay re-centred too or it
@@ -536,6 +564,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       prevToolChange?.();
       sculptPanel?.refreshBrush();
     };
+    input.onPaintColorChange = () => sculptPanel?.refreshBrush();
     const prevBrushChange = input.onBrushChange;
     input.onBrushChange = () => {
       prevBrushChange?.();
@@ -706,6 +735,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.onActiveMeshChange = null;
     viewer.onTick = null;
     viewer.onPostControls = null;
+    viewer.materials.onAlbedoChange = null;
+    viewer.materials.setSculptVertexColor(false);
     lighting.setRigFollow(null);
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);

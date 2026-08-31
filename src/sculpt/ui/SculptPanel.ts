@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
+import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
 import { ClayStripsBrush, VolumetricMove } from '../bridge/tools';
 import type { InputShell } from '../bridge/InputShell';
@@ -23,6 +24,7 @@ const RADIUS_MAX = 500;
  */
 export class SculptPanel extends SidePanel {
   private dynamicsBody!: HTMLDivElement;
+  private paintPicker?: ColorPickerHandle;
   private extrasBody!: HTMLDivElement;
   private dyntopoCheckbox!: HTMLInputElement;
   private symCheckbox!: HTMLInputElement;
@@ -81,6 +83,20 @@ export class SculptPanel extends SidePanel {
     // strength at all, into nothing).
     this.sizeInput = undefined;
     this.strengthInput = undefined;
+    // The paint brush leads with its colour: the same HSV picker the Render
+    // panel uses for albedo, so a colour is chosen the same way wherever
+    // you are. Alt + click on the model samples one off the surface.
+    this.paintPicker?.dispose();
+    this.paintPicker = undefined;
+    if (this.input.isPainting()) {
+      this.paintPicker = colorPicker(this.input.getPaintColor(), (hex) =>
+        this.input.setPaintColor(hex),
+      );
+      dyn.appendChild(labelRow('Colour', this.paintPicker.root));
+      const hint = div('sculpt-panel__hint muted');
+      hint.textContent = 'Alt + click picks a colour off the model';
+      dyn.appendChild(hint);
+    }
     // Radius and strength are per-tool in the vendored core, so these are
     // rebuilt with the rest of the row set when the brush changes, and
     // re-synced by refreshBrushValues when the rail or a hotkey moves them.

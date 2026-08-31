@@ -125,6 +125,28 @@ export class SculptSession {
     return this.mesh;
   }
 
+  /**
+   * Paint a mesh's vertex colours a single colour.
+   *
+   * Sculpt albedo comes from the `color` attribute, and SculptGL starts
+   * those at white, so an object has to be filled with its material colour
+   * to read as that material at all. It is also what "painting fills with
+   * the material colour first" means: the fill happens once, when an object
+   * is created or recoloured, and after that a paint stroke owns the
+   * vertices it touches.
+   */
+  fillColors(mesh: SculptMesh, rgb: [number, number, number]): void {
+    const colors = mesh.getColors();
+    const n = mesh.getNbVertices() * 3;
+    for (let i = 0; i < n; i += 3) {
+      colors[i] = rgb[0];
+      colors[i + 1] = rgb[1];
+      colors[i + 2] = rgb[2];
+    }
+    mesh.updateDuplicateColorsAndMaterials();
+    mesh.updateColorBuffer();
+  }
+
   getMeshes(): SculptMesh[] {
     return this.meshes;
   }
