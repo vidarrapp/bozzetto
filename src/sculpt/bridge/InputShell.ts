@@ -192,7 +192,20 @@ export class InputShell {
    * neutral here.
    */
   private feedPressure(e: PointerEvent): void {
-    Tablet.pressure = e.buttons && e.pressure > 0 ? e.pressure : 0.5;
+    // A pen reports real pressure, including the zero it emits as the tip
+    // leaves the glass and sometimes on first contact. Substituting a
+    // "neutral" 0.5 there is not neutral at all: getPressureIntensity maps
+    // pressure to 2p, so 0.5 is factor 1.0 - the full slider strength -
+    // which stamped a hard dot at the end of a stroke, and now and then at
+    // the start of one. Trust the pen; a zero should mean a no-op dab.
+    if (e.pointerType === 'pen') {
+      Tablet.pressure = Math.min(1, Math.max(0, e.pressure));
+      return;
+    }
+    // Mouse and plain touch carry no usable pressure (a mouse reports a
+    // flat 0.5 while held, touch usually 0), so they stay at the neutral
+    // value that leaves strength on the slider setting.
+    Tablet.pressure = 0.5;
   }
 
   /** Mirror upstream setMousePosition: device pixels relative to the canvas. */
