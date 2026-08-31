@@ -213,6 +213,14 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     _thickness?: number;
     extract?(): void;
   }
+
+  /**
+   * The tool base class. Only its prototype is of interest to the bridge:
+   * world-scale sizing patches getScreenRadius there, so every tool picks
+   * the change up without the vendor being edited (see worldScale.ts).
+   */
+  const SculptBase: { prototype: SculptTool };
+  export default SculptBase;
 }
 
 declare module '@sculpt-vendor/states/StateManager' {

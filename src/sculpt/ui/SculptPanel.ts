@@ -48,6 +48,21 @@ export class SculptPanel extends SidePanel {
 
   private buildBrush(body: HTMLElement): void {
     const sec = section(body, 'Brush');
+
+    // Screen scale is upstream's behaviour: the brush is a fixed number of
+    // pixels, so it covers less of the model up close and more far away.
+    // World scale pins it to the mesh instead, so a size means the same
+    // thing wherever the camera is.
+    const ws = this.input.worldScale;
+    if (ws) {
+      sec.appendChild(
+        checkbox('World-scale size', ws.isEnabled(), (on) => {
+          ws.setEnabled(on);
+          this.input.refreshBrushCursor();
+          this.refreshBrushValues();
+        }),
+      );
+    }
     this.dynamicsBody = div('sculpt-panel__dynamics');
     sec.appendChild(this.dynamicsBody);
     this.extrasBody = div('sculpt-panel__extras');

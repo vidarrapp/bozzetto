@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
+import type { WorldScaleBrush } from './worldScale';
 import { isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
@@ -149,6 +150,8 @@ export class InputShell {
 
   /** Per-brush pressure dynamics (the WS4 palette binds to this). */
   readonly dynamics = new DynamicsStore(() => this.session.getSculptManager().getToolIndex());
+  /** World-scale brush sizing; mode.ts owns it (it needs the three camera). */
+  worldScale: WorldScaleBrush | null = null;
 
   install(): void {
     // Pen pressure routing lives in the dynamics store (per-brush toggles
@@ -225,9 +228,20 @@ export class InputShell {
   }
 
   /** Push the active tool's radius/strength/color into the cursor overlay. */
+  /** Re-read the brush into the cursor (the world-scale toggle needs it). */
+  refreshBrushCursor(): void {
+    this.syncCursorBrush();
+  }
+
   private syncCursorBrush(): void {
     const tool = this.currentTool();
-    this.cursor.setBrush(tool._radius, tool._intensity);
+    // In world scale the slider value is no longer the on-screen radius, so
+    // the ring has to ask for the effective one or it would draw a
+    // fixed-pixel circle around a footprint that changes as you zoom.
+    const radiusCss = this.worldScale?.isEnabled()
+      ? this.worldScale.screenRadiusCss()
+      : tool._radius;
+    this.cursor.setBrush(radiusCss, tool._intensity);
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
     this.onBrushChange?.();
@@ -262,6 +276,9 @@ export class InputShell {
   /** Set radius directly (slider drags); flashes a centered preview ring. */
   setBrushRadius(px: number): void {
     this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
+    // In world scale the slider re-pins the world size: "bigger" and
+    // "smaller" still have to mean something while you drag it.
+    this.worldScale?.repin();
     this.syncCursorBrush();
     this.centerFlash();
   }

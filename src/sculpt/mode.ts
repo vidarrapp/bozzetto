@@ -16,6 +16,7 @@ import {
   saveSculptSnapshot,
 } from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
+import { WorldScaleBrush } from './bridge/worldScale';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
@@ -458,6 +459,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
   });
+  // World-scale brush sizing needs the three camera (for the fov) and the
+  // orbit distance, neither of which the vendor session knows about.
+  const worldScale = new WorldScaleBrush(session, viewer.camera, () =>
+    viewer.camera.position.distanceTo(
+      new Vector3(...(viewer.getCameraState().target as [number, number, number])),
+    ),
+  );
+  worldScale.install();
+  input.worldScale = worldScale;
   input.install();
   // The log wants to know what the shell did with each pointer, not just
   // that one arrived: the two together tell a dropped Pencil event apart
@@ -643,6 +653,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.onLevelChange = null;
     levelToast.dispose();
     stats.dispose();
+    worldScale.dispose();
     recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();
