@@ -1293,7 +1293,7 @@ export class Viewer {
    * framing. Shared by fitScene (streamed subjects, bounds from geometry) and
    * enterSculpt (an external subject with its own world box).
    */
-  private fitSubjectBounds(box: Box3, frame: boolean): void {
+  private fitSubjectBounds(box: Box3, frame: boolean, keepAngle = false): void {
     this.subjectBox.copy(box);
 
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
@@ -1301,7 +1301,13 @@ export class Viewer {
     this.applyAoRadius();
     this.applyDof(); // focus-band range scales with the subject
 
-    if (frame) this.controls.frameSubject(this.subjectBox);
+    if (frame) {
+      // keepAngle is the DCC "frame selected": pan and dolly the subject
+      // into view without touching the orbit angle. Only a first load (or
+      // sculpt entry) is entitled to choose the direction for you.
+      if (keepAngle) this.controls.focus(this.subjectBox);
+      else this.controls.frameSubject(this.subjectBox);
+    }
     this.lighting.fitToBounds(this.subjectBox);
     this.layoutStage();
   }
@@ -1369,9 +1375,14 @@ export class Viewer {
     this.rebuildOutput();
   }
 
-  /** Frame arbitrary world bounds (sculpt f: frame the live sculpt mesh). */
+  /**
+   * Frame arbitrary world bounds (sculpt f: frame the live sculpt mesh),
+   * keeping the view angle - f means "fit this in view", not "look at it
+   * from somewhere else", and it used to swing the camera to the default
+   * three-quarter direction.
+   */
   frameBounds(box: Box3): void {
-    this.fitSubjectBounds(box, true);
+    this.fitSubjectBounds(box, true, true);
   }
 
   /** Turntable step around the subject (sculpt wheel keys, degrees). */

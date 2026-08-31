@@ -66,7 +66,7 @@ const SCULPT_HTML = `
     <div class="help-row"><span class="help-key">Scroll / pinch</span><span>Zoom</span></div>
     <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
     <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turntable (accelerates with the wheel)</span></div>
-    <div class="help-row"><span class="help-key">Pencil first</span><span>iPadOS hides the Pencil while a finger is already down — land the pen before your hand</span></div>
+    <div class="help-row"><span class="help-key">iPad + Pencil</span><span>A resting palm is fine; a finger on the glass hides the Pencil from the browser</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Brushes</div>

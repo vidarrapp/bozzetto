@@ -309,10 +309,13 @@ element the finger is on, or whether our listeners ever see it.
 Two consequences worth keeping. Touch Events are NOT a fallback path: iOS
 synthesises pointer events from the same `WKTouchEvent`
 (`PointerCaptureController::dispatchEventForTouchAtIndex`), so a touch
-missing from one list is missing from both. And the lock is first-wins and
-symmetric, so landing the Pencil BEFORE the hand gives real palm
-rejection - the ordinary drawing posture (hand down first) is the broken
-one.
+missing from one list is missing from both. And a PALM is not a finger:
+device testing found a resting hand rejected in either order, because
+iPadOS discards a palm contact before it becomes a `UITouch` at all. So
+the ordinary drawing posture is fine and only a deliberate fingertip - a
+held toolbar button, a parked finger - takes the Pencil away. An earlier
+draft of this note advised landing the Pencil first; that was inferred
+from the mechanism and the hardware says it is unnecessary.
 
 Nothing in this repo can fix it. It is documented in the hotkey guide as
 the workaround it is, and the ownership guard from round four stays: it is

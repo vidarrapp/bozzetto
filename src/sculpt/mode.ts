@@ -99,6 +99,36 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     liveWorldBox(multimesh as unknown as SculptMesh),
   );
 
+  // View-follow lighting (review decision): the rig rides the camera orbit
+  // as a delta from a REFERENCE view, approximating turning the model in
+  // your hand - the underside is lit when you look at it from below. The
+  // L-drag offset still composes on top.
+  //
+  // The reference is captured HERE, straight after enterSculpt framed the
+  // model from the default three-quarter direction, because that is the
+  // orientation the rig's default azimuth and elevation were authored
+  // against. Capturing it later - after a restored look has moved the
+  // camera - left the rig at its world default while the camera sat two
+  // hundred degrees away, which put the key light behind the subject on
+  // every re-entry.
+  const camScratch = {
+    prevPos: new Vector3(),
+    prevQuat: new Quaternion(),
+    dir: new Vector3(),
+    eul: new Euler(),
+    q: new Quaternion(),
+    entryInv: new Quaternion(),
+    delta: new Quaternion(),
+  };
+  const orbitQuat = (out: Quaternion): Quaternion => {
+    viewer.camera.getWorldDirection(camScratch.dir);
+    camScratch.dir.multiplyScalar(-1); // subject -> camera
+    const azim = Math.atan2(camScratch.dir.x, camScratch.dir.z);
+    const elev = Math.asin(Math.min(1, Math.max(-1, camScratch.dir.y)));
+    return out.setFromEuler(camScratch.eul.set(-elev, azim, 0, 'YXZ'));
+  };
+  orbitQuat(camScratch.entryInv).invert();
+
   // Performance defaults (plan 7.5): one light, no DoF, no HDRI
   // environment sampling (the hemisphere ambient carries the fill; cheapest
   // possible IBL is none), and the cavity composite instead of GTAO. All
@@ -210,28 +240,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     ];
   });
 
-  // View-follow lighting (review decision): the rig rides the camera orbit
-  // as a delta from the entry view, approximating turning the model in your
-  // hand - the underside is lit when you look at it from below. The L-drag
-  // offset still composes on top. The same tick re-projects the cursor when
-  // the camera moves under a still pointer (wheel zoom).
-  const camScratch = {
-    prevPos: new Vector3(),
-    prevQuat: new Quaternion(),
-    dir: new Vector3(),
-    eul: new Euler(),
-    q: new Quaternion(),
-    entryInv: new Quaternion(),
-    delta: new Quaternion(),
-  };
-  const orbitQuat = (out: Quaternion): Quaternion => {
-    viewer.camera.getWorldDirection(camScratch.dir);
-    camScratch.dir.multiplyScalar(-1); // subject -> camera
-    const azim = Math.atan2(camScratch.dir.x, camScratch.dir.z);
-    const elev = Math.asin(Math.min(1, Math.max(-1, camScratch.dir.y)));
-    return out.setFromEuler(camScratch.eul.set(-elev, azim, 0, 'YXZ'));
-  };
-  orbitQuat(camScratch.entryInv).invert();
+  // The same tick re-projects the cursor when the camera moves under a
+  // still pointer (wheel zoom).
   const followTick = (): void => {
     // Coast: once the ticks stop arriving, keep the spin going briefly and
     // let it decay. The gap check keeps this from double-counting while the
