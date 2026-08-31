@@ -279,6 +279,45 @@ built, so a wholesale change is a rebuild rather than a hand-written
 re-sync of a couple of widgets with the rest left showing stale
 numbers.
 
+#### 6.6e A finger on the glass hides the Pencil (platform) `[Verified]`
+
+Four rounds of device fixes chased this: `touch-action`, our own
+`setPointerCapture` on touch pointers, iOS's ~450 ms callout gesture, and
+a stroke-ownership guard that let a Pencil outrank a finger. Each fixed
+something real. None fixed the report, because the cause is below the web
+platform entirely.
+
+All web touch input on iOS reaches WebKit through ONE
+`WKTouchEventsGestureRecognizer` attached to `WKContentView`
+(`WKContentViewInteraction.mm:1400`). Every entry point reads
+`[event touchesForGestureRecognizer:self]`, and `UIGestureRecognizer`
+defaults `requiresExclusiveTouchType` to YES: "once it receives a touch of
+a certain type, it will ignore new touches of other types, until it is
+reset to UIGestureRecognizerStatePossible". WebKit never sets it to NO -
+it knows the API family (it sets `allowedTouchTypes` on the gamepad
+recognizer at :1492) and leaves this one at the default. So a finger
+anywhere in the web view makes an Apple Pencil `UITouch` invisible before
+WebKit builds any event: no `touchstart`, no `pointerdown`, nothing for JS
+to intercept. Apple Developer Forums 773213 / FB16411500 report the same.
+
+The lock is on touch TYPE, not count, which is what the symptom matrix
+says: two fingers work (one type), Pencil alone works (first type), and
+finger-then-Pencil fails identically on the canvas and on the toolbar -
+the recognizer covers the whole web view, so it makes no difference which
+element the finger is on, or whether our listeners ever see it.
+
+Two consequences worth keeping. Touch Events are NOT a fallback path: iOS
+synthesises pointer events from the same `WKTouchEvent`
+(`PointerCaptureController::dispatchEventForTouchAtIndex`), so a touch
+missing from one list is missing from both. And the lock is first-wins and
+symmetric, so landing the Pencil BEFORE the hand gives real palm
+rejection - the ordinary drawing posture (hand down first) is the broken
+one.
+
+Nothing in this repo can fix it. It is documented in the hotkey guide as
+the workaround it is, and the ownership guard from round four stays: it is
+correct on Surface and Android, where a stylus and a touch do coexist.
+
 ## 7. GUI specification (yagui replacement)
 
 ### 7.1 Standards (all `[Verified]` at the pinned bozzetto commit)
