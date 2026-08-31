@@ -56,6 +56,10 @@ const SPIN_STOP_DEG_S = 2;
  */
 const SPIN_COAST_MAX_MS = 600;
 
+/** Sculpt's clay: warmer and smoother than the viewer's neutral default. */
+const SCULPT_ALBEDO = '#fed9a8';
+const SCULPT_ROUGHNESS = 0.5;
+
 /**
  * Mount sculpt mode into a running Viewer (plan section 5): build the vendored
  * editing session around Bozzetto's camera and canvas, adopt the sculpt mesh
@@ -153,6 +157,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   viewer.setSculptShading(true);
   // Flat shading is the sculpt default; the panel checkbox drives it live.
   viewer.materials.setFlatShading(true);
+  // Clay, not the viewer's neutral grey: warmer and less rough, which reads
+  // form better under a single key light and suits what the app is for.
+  // Sculpt-local, so a published project's own saved material is untouched.
+  viewer.materials.setAlbedo(SCULPT_ALBEDO);
+  viewer.materials.setRoughness(SCULPT_ROUGHNESS);
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
@@ -487,6 +496,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   );
   input.worldScale = worldScale;
+  // On by default: a brush you can rely on is worth more than one that
+  // rescales with the camera, and the screen-pixel behaviour is a tick away.
+  // Enabled here (not by a field default) so the pinned world radius is
+  // converted from the tool's starting pixel size at the entry distance.
+  worldScale.setEnabled(true);
   input.install();
   // The log wants to know what the shell did with each pointer, not just
   // that one arrived: the two together tell a dropped Pencil event apart
