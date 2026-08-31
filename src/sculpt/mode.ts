@@ -1,4 +1,4 @@
-import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import { Box3, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -283,6 +283,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.lighting.setRigFollow(
       camScratch.delta.copy(orbitQuat(camScratch.q)).multiply(camScratch.entryInv),
     );
+    // A world-scale radius is a function of the camera, so it has to be
+    // re-derived when the camera moves and not only when a pointer does:
+    // a wheel zoom on a still pointer would otherwise leave the tool
+    // holding the pixel radius from the old distance.
+    worldScale.sync();
     cursor.refresh();
   };
   viewer.onTick = followTick;
@@ -446,10 +451,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleShadows: () => {
       lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },
-    rotateLightRig: (deltaDeg) => {
-      const deg = lighting.getRigRotation() + deltaDeg;
-      lighting.setRigRotation(deg);
-      viewer.environment.setRotation(lighting.getRigRotation());
+    // Sideways swings the key light around the model, up/down raises it.
+    // Elevation is clamped just shy of the poles, where azimuth stops
+    // meaning anything and the light would appear to stick.
+    moveKeyLight: (deltaAzimuth, deltaElevation) => {
+      const key = lighting.state().find((l) => l.id === 'key');
+      if (!key) return;
+      let az = (key.azimuth + deltaAzimuth) % 360;
+      if (az > 180) az -= 360;
+      if (az < -180) az += 360;
+      const el = Math.max(-20, Math.min(90, key.elevation + deltaElevation));
+      lighting.setAngles('key', az, el);
     },
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor) => viewer.dolly(factor),
@@ -461,12 +473,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   // World-scale brush sizing needs the three camera (for the fov) and the
   // orbit distance, neither of which the vendor session knows about.
-  const worldScale = new WorldScaleBrush(session, viewer.camera, () =>
-    viewer.camera.position.distanceTo(
-      new Vector3(...(viewer.getCameraState().target as [number, number, number])),
-    ),
+  const worldScale = new WorldScaleBrush(
+    session,
+    viewer.camera,
+    () =>
+      viewer.camera.position.distanceTo(
+        new Vector3(...(viewer.getCameraState().target as [number, number, number])),
+      ),
+    () => {
+      const active = session.getMesh();
+      if (!active) return 1;
+      return Math.max(1e-3, liveWorldBox(active).getBoundingSphere(new Sphere()).radius);
+    },
   );
-  worldScale.install();
   input.worldScale = worldScale;
   input.install();
   // The log wants to know what the shell did with each pointer, not just
@@ -653,7 +672,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.onLevelChange = null;
     levelToast.dispose();
     stats.dispose();
-    worldScale.dispose();
     recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();

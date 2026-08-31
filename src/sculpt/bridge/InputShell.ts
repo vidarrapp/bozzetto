@@ -33,8 +33,8 @@ export interface InputShellHooks {
   orbitEnd(): void;
   /** shift+s: toggle shadows; returns the new state (unused, for parity). */
   toggleShadows(): void;
-  /** l + drag: rotate the light rig by a degree delta. */
-  rotateLightRig(deltaDeg: number): void;
+  /** l + drag: move the key light by azimuth/elevation degree deltas. */
+  moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
   /** ctrl + drag off the model: dolly by a multiplier (>1 out, <1 in). */
@@ -234,14 +234,12 @@ export class InputShell {
   }
 
   private syncCursorBrush(): void {
+    // Re-derive the pixel radius first: in world scale it depends on where
+    // the camera is, so both the ring and the vendor's own reads of
+    // _radius (dab spacing especially) have to see the current value.
+    this.worldScale?.sync();
     const tool = this.currentTool();
-    // In world scale the slider value is no longer the on-screen radius, so
-    // the ring has to ask for the effective one or it would draw a
-    // fixed-pixel circle around a footprint that changes as you zoom.
-    const radiusCss = this.worldScale?.isEnabled()
-      ? this.worldScale.screenRadiusCss()
-      : tool._radius;
-    this.cursor.setBrush(radiusCss, tool._intensity);
+    this.cursor.setBrush(tool._radius, tool._intensity);
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
     this.onBrushChange?.();
@@ -256,6 +254,10 @@ export class InputShell {
    * whether a control for it should exist at all.
    */
   getBrushRadius(): number {
+    // World scale moves the slider's meaning: it owns a world radius, and
+    // the tool's _radius is a derived pixel count that changes with the
+    // camera. Reading _radius here would make the slider jump as you zoom.
+    if (this.worldScale?.isEnabled()) return this.worldScale.getSliderValue();
     const r = this.currentTool()._radius;
     return typeof r === 'number' ? r : RADIUS_MIN;
   }
@@ -275,10 +277,8 @@ export class InputShell {
 
   /** Set radius directly (slider drags); flashes a centered preview ring. */
   setBrushRadius(px: number): void {
-    this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
-    // In world scale the slider re-pins the world size: "bigger" and
-    // "smaller" still have to mean something while you drag it.
-    this.worldScale?.repin();
+    if (this.worldScale?.isEnabled()) this.worldScale.setSliderValue(px);
+    else this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
     this.syncCursorBrush();
     this.centerFlash();
   }
@@ -353,6 +353,7 @@ export class InputShell {
       this.negativeOverride = { tool, prev };
     }
 
+    this.worldScale?.sync(); // the depth under this press sets the radius
     this.feedPressure(e); // before start: the first dab already feels it
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
@@ -425,9 +426,12 @@ export class InputShell {
     this.lastAbsX = e.clientX;
     this.lastAbsY = e.clientY;
 
-    // Hold-l light rotation rides pointer movement, sculpt-free.
+    // Hold-l moves the key light, sculpt-free: sideways swings it around
+    // the model, up and down raises and lowers it. It used to turn the rig
+    // on its vertical axis alone, so the light could never come from above
+    // or below.
     if (this.lKeyHeld) {
-      this.hooks.rotateLightRig((e.clientX - prevAbsX) * 0.5);
+      this.hooks.moveKeyLight((e.clientX - prevAbsX) * 0.5, -(e.clientY - prevAbsY) * 0.5);
       return;
     }
 
@@ -438,7 +442,7 @@ export class InputShell {
       const dy = prevAbsY - e.clientY;
       const tool = this.currentTool();
       if (this.adjust === 'radius') {
-        tool._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, tool._radius + dx));
+        this.setBrushRadius(this.getBrushRadius() + dx);
       } else {
         tool._intensity = Math.min(1, Math.max(0, tool._intensity + dy * 0.005));
       }
@@ -496,6 +500,9 @@ export class InputShell {
 
     // Upstream onDeviceMove, sculpt branch: refresh picking, then stroke.
     this.feedPressure(e);
+    // Mid-stroke the camera can still move (wheel, two-finger), and the
+    // dab spacing is read off _radius, so re-derive it before each step.
+    this.worldScale?.sync();
     s.getSculptManager().preUpdate();
     s.getSculptManager().update();
 
@@ -770,7 +777,7 @@ export class InputShell {
   private nudgeRadius(dir: number): void {
     const tool = this.currentTool();
     const step = Math.max(2, tool._radius * 0.06) * dir;
-    tool._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, tool._radius + step));
+    this.setBrushRadius(this.getBrushRadius() + step);
     this.syncCursorBrush();
     this.cursor.flashScreen(NUDGE_FLASH_MS);
   }

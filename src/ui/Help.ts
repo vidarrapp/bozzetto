@@ -90,7 +90,7 @@ const SCULPT_HTML = `
   <div class="help-guide__group">
     <div class="help-guide__title">Lighting</div>
     <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
-    <div class="help-row"><kbd>L</kbd><span>Rotate light (hold + drag)</span></div>
+    <div class="help-row"><kbd>L</kbd><span>Move the key light (hold + drag: across / up)</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Interface</div>

@@ -98,6 +98,10 @@ function newSculptCard(): HTMLElement {
       if (snap) {
         await store.clearSavedScene();
         await store.clearSculptFrames();
+        // The look too: "new" has to mean new. Leaving it behind is how a
+        // light set flat in one session kept arriving in the next one, with
+        // a fresh sphere lit by it and no obvious cause.
+        await store.clearSculptLook();
       }
       window.location.href = a.href;
     })();
