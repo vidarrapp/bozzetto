@@ -1473,6 +1473,11 @@ html.is-page body {
   gap: 10px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
+  /* The buttons opt out of browser gestures; so must the bar around them.
+     A touch landing in the gap between two buttons is still a touch iOS can
+     start a gesture from, and a gesture in progress is a Pencil that never
+     arrives. */
+  touch-action: none;
 }
 
 /* Above the transport bar when sculpting over a loaded project. */

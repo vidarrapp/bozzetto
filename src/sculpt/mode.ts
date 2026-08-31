@@ -436,6 +436,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   });
   input.install();
+  // The log wants to know what the shell did with each pointer, not just
+  // that one arrived: the two together tell a dropped Pencil event apart
+  // from one we received and then discarded.
+  input.setVerdictSink(inputDebug ? inputDebug.verdict : null);
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   toolbar.onToggleChrome = () => chrome.toggle();

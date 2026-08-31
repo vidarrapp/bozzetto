@@ -94,6 +94,15 @@ export class InputShell {
   onBrushChange: (() => void) | null = null;
 
   private pointerId = -1;
+  /** Device that owns the current stroke, so a Pencil can outrank a finger. */
+  private strokePointerType = '';
+  /**
+   * Why the last pointerdown was accepted or dropped. The finger-blocks-the-
+   * Pencil report has survived three fixes, each aimed at a different guess;
+   * ?inputdebug=1 prints this so the next report says which one it is
+   * instead of "nothing happens".
+   */
+  private verdict: ((text: string) => void) | null = null;
   /** Strokes begun since mount; the toolbar reads it to tell a hold from a tap. */
   private strokes = 0;
   /** Pointer that fell through to an orbit, or -1. */
@@ -262,10 +271,21 @@ export class InputShell {
     if (e.button !== 0) return; // middle/right stay with OrbitControls
     // One stroke at a time: a finger landing mid-stroke (to hold a modifier
     // button, or just resting) must not restart or steal the pen's stroke.
-    if (this.pointerId !== -1 && e.pointerId !== this.pointerId) return;
+    // A Pencil is the exception and outranks a finger, because on an iPad
+    // the hand rests on the glass: a touch that got in first has to hand the
+    // stroke over, not lock the pen out for as long as the finger stays down.
+    if (this.pointerId !== -1 && e.pointerId !== this.pointerId) {
+      if (e.pointerType !== 'pen' || this.strokePointerType === 'pen') {
+        this.verdict?.(`drop ${e.pointerType}: ${this.strokePointerType} owns the stroke`);
+        return;
+      }
+      this.verdict?.(`pen takes over from ${this.strokePointerType}`);
+      this.abandonStroke();
+    }
     // While adjusting brush size/strength (b/s) or dragging the light rig
     // (l), the press belongs to that gesture: never let it start an orbit.
     if (this.adjust || this.lKeyHeld) {
+      this.verdict?.(`drop ${e.pointerType}: ${this.adjust ?? 'light'} drag owns it`);
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -326,6 +346,7 @@ export class InputShell {
       // No hit: the event continues on to OrbitControls, which will orbit.
       // Tell the host so it can re-centre that rotation on the last stroke.
       this.orbitPointer = e.pointerId;
+      this.verdict?.(`orbit ${e.pointerType} (missed the mesh)`);
       this.hooks.orbitBegin();
       return;
     }
@@ -333,6 +354,8 @@ export class InputShell {
     s._action = Enums.Action.SCULPT_EDIT;
     this.strokes++;
     this.pointerId = e.pointerId;
+    this.strokePointerType = e.pointerType;
+    this.verdict?.(`stroke ${e.pointerType}`);
     // Mid-stroke the cursor gets out of the way (review decision): sculpt
     // brushes keep the center dot only; Smooth keeps a dimmed ring. The
     // reduction waits a beat so hover-less pencils see the outline land.
@@ -490,6 +513,7 @@ export class InputShell {
 
     if (e.pointerId !== this.pointerId) return;
     this.pointerId = -1;
+    this.strokePointerType = '';
     clearTimeout(this.strokeReduceTimer);
     this.cursor.setStrokeStyle(null);
 
@@ -514,6 +538,32 @@ export class InputShell {
     // pointer left the viewport.
     if (e.target === this.container) this.cursor.hide();
   };
+
+  /**
+   * Close out the stroke a finger had started, so the Pencil can begin its
+   * own: the same tidy-up a lift does (octree rebalance, drop a no-op undo
+   * entry, pivot follows the work), minus the event bookkeeping.
+   */
+  private abandonStroke(): void {
+    const s = this.session;
+    if (s._action === Enums.Action.SCULPT_EDIT) {
+      s.getSculptManager().end();
+      s.getStateManager().cleanNoop();
+      const edit = s.lastEditWorldPoint();
+      if (edit) this.hooks.focusEdit(edit);
+    }
+    clearTimeout(this.strokeReduceTimer);
+    this.cursor.setStrokeStyle(null);
+    this.restoreStrokeTool();
+    this.pointerId = -1;
+    this.strokePointerType = '';
+    s._action = Enums.Action.NOTHING;
+  }
+
+  /** Route pointerdown decisions to the on-device log (?inputdebug=1). */
+  setVerdictSink(sink: ((text: string) => void) | null): void {
+    this.verdict = sink;
+  }
 
   /** Undo the per-stroke negative override and mask tool swap. */
   private restoreStrokeTool(): void {

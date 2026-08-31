@@ -24,8 +24,16 @@ export class InputDebug {
     const el = e.target as HTMLElement | null;
     const target = el?.closest('button') ? 'BTN' : el?.tagName === 'CANVAS' ? 'CANVAS' : 'page';
     // pointerType in full: the whole finger-plus-Pencil question is about
-    // which device each event came from.
+    // which device each event came from. This listener is on window, in the
+    // capture phase, so a line appearing at all proves the browser
+    // delivered the event - and its absence proves it did not, which is the
+    // fork the report keeps turning on.
     this.push(`${e.type.replace('pointer', 'p.')} ${e.pointerType}#${e.pointerId} ${target}`);
+  };
+
+  /** What the sculpt input shell decided to do with that pointer. */
+  readonly verdict = (text: string): void => {
+    this.push(`  -> ${text}`);
   };
 
   private readonly onTouch = (e: TouchEvent): void => {
