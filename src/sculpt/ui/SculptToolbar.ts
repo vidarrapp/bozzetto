@@ -168,7 +168,7 @@ export class SculptToolbar {
       [tools.TWIST, '9', 'Twist', 'twist', 'fi-ss-pen-swirl'],
       // Paint takes the tenth slot; the digit row was full at 1-9, and 0
       // sits next to 9 on every keyboard.
-      [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-brush'],
+      [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-palette'],
     ];
     for (const [id, key, name, slot, icon] of brushes) {
       const btn = toolButton(key, name, slot, icon);
