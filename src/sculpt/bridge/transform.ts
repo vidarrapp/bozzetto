@@ -1,7 +1,13 @@
-import { Matrix4, Object3D, type PerspectiveCamera, type Scene } from 'three';
+import { BoxGeometry, Matrix4, Object3D, type BufferGeometry, type Mesh, type PerspectiveCamera, type Scene } from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
+
+/** The gizmo/picker groups inside a TransformControls (stable r184 shape). */
+type GizmoInternals = {
+  gizmo: Record<string, Object3D>;
+  picker: Record<string, Object3D>;
+};
 
 export type GizmoMode = 'all' | 'translate' | 'rotate' | 'scale';
 
@@ -124,6 +130,11 @@ export class TransformGizmo {
 
   dispose(): void {
     this.exit();
+    // Hand the stock handles back before the controls dispose themselves,
+    // then drop the geometries the trim created.
+    this.applyUnifiedTrim(false);
+    this.centreBig?.gizmo.dispose();
+    this.centreBig?.picker.dispose();
     for (const tc of this.stack) {
       this.scene.remove(tc.getHelper());
       tc.dispose();
@@ -134,6 +145,7 @@ export class TransformGizmo {
   // --- internals ----------------------------------------------------------
 
   private applyMode(): void {
+    this.applyUnifiedTrim(this.mode === 'all');
     for (const tc of this.stack) {
       const on = this.mode === 'all' || tc.mode === this.mode;
       tc.enabled = on && !!this.mesh;
@@ -141,6 +153,71 @@ export class TransformGizmo {
       if (on && this.mesh) tc.attach(this.proxy);
       else tc.detach();
     }
+  }
+
+  // --- unified-mode handle trim (owner feedback) --------------------------
+
+  /** Handles detached in unified mode, restored for the single modes. */
+  private trimmed: Array<{ parent: Object3D; child: Object3D }> = [];
+  private centreStock: { gizmo: BufferGeometry; picker: BufferGeometry } | null = null;
+  private centreBig: { gizmo: BufferGeometry; picker: BufferGeometry } | null = null;
+
+  private internalsOf(mode: 'translate' | 'scale'): GizmoInternals {
+    const tc = this.stack.find((c) => c.mode === mode)!;
+    return (tc as unknown as { _gizmo: GizmoInternals })._gizmo;
+  }
+
+  /**
+   * The stacked (unified) gizmo showed every handle of all three controls,
+   * and several of them sit on top of each other in the middle: the
+   * translate centre octahedron over the uniform-scale cube, and the
+   * translate planes over the scale planes. In unified mode the centre
+   * belongs to uniform scale (view-plane translate keeps working in the
+   * single move mode), the two-axis planes go entirely, and the uniform
+   * cube grows so it is an easy target. Detaching nodes rather than hiding
+   * them is deliberate: TransformControlsGizmo rewrites every handle's
+   * `.visible` (and scale) each frame, so only removal - and, for the
+   * centre cube, swapped geometry - survives. Single modes get stock
+   * handles back.
+   */
+  private applyUnifiedTrim(unified: boolean): void {
+    for (const { parent, child } of this.trimmed) parent.add(child);
+    this.trimmed = [];
+
+    const translate = this.internalsOf('translate');
+    const scale = this.internalsOf('scale');
+
+    // Centre cube geometry: stock in single modes, chunkier in unified.
+    const centre = (group: Object3D): Mesh | undefined =>
+      group.children.find((c) => c.name === 'XYZ' && (c as Mesh).isMesh) as Mesh | undefined;
+    const cubeG = centre(scale.gizmo.scale);
+    const cubeP = centre(scale.picker.scale);
+    if (cubeG && cubeP) {
+      if (!this.centreStock) {
+        this.centreStock = { gizmo: cubeG.geometry, picker: cubeP.geometry };
+        this.centreBig = {
+          gizmo: new BoxGeometry(0.17, 0.17, 0.17),
+          picker: new BoxGeometry(0.32, 0.32, 0.32),
+        };
+      }
+      const want = unified ? this.centreBig! : this.centreStock;
+      cubeG.geometry = want.gizmo;
+      cubeP.geometry = want.picker;
+    }
+
+    if (!unified) return;
+    const detach = (group: Object3D, names: string[]): void => {
+      for (const child of [...group.children]) {
+        if (names.includes(child.name)) {
+          this.trimmed.push({ parent: group, child });
+          group.remove(child);
+        }
+      }
+    };
+    detach(translate.gizmo.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
+    detach(translate.picker.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
+    detach(scale.gizmo.scale, ['XY', 'YZ', 'XZ']);
+    detach(scale.picker.scale, ['XY', 'YZ', 'XZ']);
   }
 
   private beginDrag(winner: TransformControls): void {

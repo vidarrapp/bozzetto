@@ -129,7 +129,7 @@ export class SculptPanel extends SidePanel {
         }),
       ),
     );
-    // Drag and Twist have no strength at all; a slider for it would be a lie.
+    // Drag has no strength at all; a slider for it would be a lie.
     if (this.input.hasBrushIntensity()) {
       const strengthRow = compactRange(
         'Strength',

@@ -1,6 +1,7 @@
 import { mat4, vec3 } from 'gl-matrix';
 import Move from '@sculpt-vendor/editing/tools/Move';
 import Brush from '@sculpt-vendor/editing/tools/Brush';
+import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
@@ -27,6 +28,21 @@ const MOVE_GRAB_FACTOR = 1.0;
  */
 const STRIPS_PLATEAU = 0.8;
 const STRIPS_LAYER = 0.05;
+
+/**
+ * Polish (hPolish-inspired, replaces Twist on 9):
+ * - Flat-top falloff so the footprint planarizes rather than domes.
+ * - Clip: a vertex farther off the sampled plane than this fraction of the
+ *   brush radius belongs to some OTHER feature - an adjacent face, an edge,
+ *   a corner - and is left alone entirely. This is what lets the brush
+ *   smooth a face right up to an edge and leave the edge crisp, where
+ *   Flatten would drag the neighbouring form in and melt it.
+ * - Gain: a strong pull toward the plane, capped so a vertex lands ON the
+ *   plane and never overshoots through it.
+ */
+const POLISH_PLATEAU = 0.7;
+const POLISH_CLIP = 0.25;
+const POLISH_GAIN = 1.5;
 
 /**
  * Move, ZBrush-flavored:
@@ -181,6 +197,87 @@ export class VolumetricMove extends Move {
       vAr[ind] += dirx * fallOff;
       vAr[ind + 1] += diry * fallOff;
       vAr[ind + 2] += dirz * fallOff;
+    }
+  }
+}
+
+/**
+ * Polish, modelled on ZBrush's hPolish (owner request, replacing Twist):
+ * a hard planar smoother. Each dab fits a plane to the area under the
+ * brush (Flatten's own sampling) and pulls only the NEARBY side of the
+ * surface flat onto it - anything sitting farther off the plane than
+ * POLISH_CLIP of the radius is other geometry and stays put, so working
+ * a surface toward an edge sharpens the edge instead of rounding it.
+ * The default direction shaves proud material down (vendor Flatten's
+ * negative); alt inverts to fill hollows up to the plane instead.
+ */
+export class PolishBrush extends Flatten {
+  constructor(session: SculptSession) {
+    super(session);
+    this._intensity = 0.9; // a strong polish is the point
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js): the
+   * same projection loop with three changed lines called out below - the
+   * off-plane clip, the plateau falloff, and the capped gain.
+   */
+  override flatten(
+    iVertsInRadius: Uint32Array,
+    aNormal: number[],
+    aCenter: number[],
+    center: number[],
+    radiusSquared: number,
+    intensity: number,
+    picking: Picking,
+  ): void {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const mAr = mesh.getMaterials();
+    const radius = Math.sqrt(radiusSquared);
+    const vProxy =
+      this._accumulate === false && this._lockPosition === false ? mesh.getVerticesProxy() : vAr;
+    const cx = center[0];
+    const cy = center[1];
+    const cz = center[2];
+    const ax = aCenter[0];
+    const ay = aCenter[1];
+    const az = aCenter[2];
+    const anx = aNormal[0];
+    const any = aNormal[1];
+    const anz = aNormal[2];
+    const comp = this._negative ? -1.0 : 1.0;
+    const clip = radius * POLISH_CLIP; // CHANGED: the edge-preserving band
+    for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
+      const ind = iVertsInRadius[i] * 3;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      const distToPlane = (vx - ax) * anx + (vy - ay) * any + (vz - az) * anz;
+      if (distToPlane * comp > 0.0) continue;
+      if (Math.abs(distToPlane) > clip) continue; // CHANGED: other features stay
+      const dx = vProxy[ind] - cx;
+      const dy = vProxy[ind + 1] - cy;
+      const dz = vProxy[ind + 2] - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist >= 1.0) continue;
+      // CHANGED: plateau falloff (upstream applies the quartic from d=0).
+      let fallOff: number;
+      if (dist <= POLISH_PLATEAU) {
+        fallOff = 1.0;
+      } else {
+        const t = (dist - POLISH_PLATEAU) / (1.0 - POLISH_PLATEAU);
+        fallOff = t * t;
+        fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * t + 1.0;
+      }
+      // CHANGED: strong pull, capped at landing exactly on the plane.
+      const frac = Math.min(
+        1.0,
+        POLISH_GAIN * intensity * fallOff * mAr[ind + 2] * picking.getAlpha(vx, vy, vz),
+      );
+      vAr[ind] -= anx * distToPlane * frac;
+      vAr[ind + 1] -= any * distToPlane * frac;
+      vAr[ind + 2] -= anz * distToPlane * frac;
     }
   }
 }

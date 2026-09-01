@@ -272,9 +272,9 @@ export class InputShell {
   // --- brush value access (side sliders + future palette) -----------------
 
   /**
-   * Not every tool carries both: Drag, Twist, LocalScale and Transform have
-   * no _intensity, and Transform has no _radius either. Callers get a
-   * usable number rather than undefined; use hasBrushIntensity() to decide
+   * Not every tool carries both: Drag, LocalScale and Transform have no
+   * _intensity, and Transform has no _radius either. Callers get a usable
+   * number rather than undefined; use hasBrushIntensity() to decide
    * whether a control for it should exist at all.
    */
   getBrushRadius(): number {

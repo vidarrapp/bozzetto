@@ -13,7 +13,7 @@ import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
 import { mat3, mat4, vec3 } from 'gl-matrix';
-import { ClayStripsBrush, VolumetricMove } from './tools';
+import { ClayStripsBrush, PolishBrush, VolumetricMove } from './tools';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -84,11 +84,14 @@ export class SculptSession {
     this.sculptManager = new SculptManager(this);
     // WS2f review pass: ZBrush-flavored overrides ride the vendor registry
     // (volumetric silhouette-grab Move with a softer falloff; the Standard
-    // slot becomes a clay-strips brush).
+    // slot becomes a clay-strips brush; the Twist slot becomes the
+    // hPolish-style Polish brush - Twist is retired by owner call, and
+    // reusing its enum keeps the digit, undo enum and dynamics table).
     this.sculptManager._tools[Enums.Tools.MOVE] = new VolumetricMove(this) as unknown as SculptTool;
     this.sculptManager._tools[Enums.Tools.BRUSH] = new ClayStripsBrush(
       this,
     ) as unknown as SculptTool;
+    this.sculptManager._tools[Enums.Tools.TWIST] = new PolishBrush(this) as unknown as SculptTool;
     this.picking = new Picking(this);
     this.pickingSym = new Picking(this, true);
   }

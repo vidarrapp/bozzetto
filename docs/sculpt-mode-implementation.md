@@ -454,7 +454,7 @@ and return on exit.
 | 6 | Flatten brush | |
 | 7 | Smooth brush | WS2; shift+drag remains the hold-to-smooth shortcut |
 | 8 | Drag brush | WS2 |
-| 9 | Twist brush | WS2 |
+| 9 | Polish brush | WS2 shipped Twist; retired by owner call for an hPolish-style Polish (bridge PolishBrush over the Twist slot: plane-clip keeps edges sharp) |
 
 LocalScale did not get a digit (all nine are taken); it ships through the
 WS4 tool palette instead. Transform and Paint stay deferred per section 2.

@@ -349,6 +349,34 @@ declare module '@sculpt-vendor/editing/tools/Move' {
   export default Move;
 }
 
+declare module '@sculpt-vendor/editing/tools/Flatten' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  class Flatten {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _negative: boolean;
+    _culling: boolean;
+    _accumulate: boolean;
+    _idAlpha: number;
+    _lockPosition: boolean;
+    constructor(main: unknown);
+    getMesh(): SculptMesh;
+    stroke(picking: Picking): void;
+    flatten(
+      iVertsInRadius: Uint32Array,
+      aNormal: number[],
+      aCenter: number[],
+      center: number[],
+      radiusSquared: number,
+      intensity: number,
+      picking: Picking,
+    ): void;
+  }
+  export default Flatten;
+}
+
 declare module '@sculpt-vendor/editing/tools/Brush' {
   import type Picking from '@sculpt-vendor/math3d/Picking';
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
