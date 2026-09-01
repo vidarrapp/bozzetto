@@ -2367,9 +2367,12 @@ body.chrome-hidden .transport {
 }
 
 .cpick__pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  /* On the body, not in the panel: the panel body scrolls and clips, and
+     its backdrop-filter makes a stacking context no z-index climbs out of
+     - the popover painted under later rows, and taps meant for its
+     sliders landed on whatever covered it, which the outside-press
+     dismiss read as "outside" (same disease the outliner menu had). */
+  position: fixed;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -2380,7 +2383,6 @@ body.chrome-hidden .transport {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   backdrop-filter: blur(8px);
-  /* The panel scrolls; the popover must not be clipped by its own row. */
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 

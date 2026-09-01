@@ -19,6 +19,8 @@ export interface ColorPickerHandle {
   readonly root: HTMLElement;
   /** Set the colour from outside (a tool switch, an eyedropper pick). */
   set(hex: string): void;
+  /** Whether the popover is up (hosts skip echo set()s while it is). */
+  isOpen(): boolean;
   close(): void;
   dispose(): void;
 }
@@ -96,9 +98,28 @@ export function colorPicker(
   swatch.setAttribute('aria-label', 'Choose a colour');
   root.appendChild(swatch);
 
+  // The popover lives on the BODY: inside the panel it was clipped by the
+  // scrolling body and trapped under the backdrop-filter stacking context,
+  // painting behind later rows - and taps meant for its sliders hit
+  // whatever covered it, which the outside-press dismiss then treated as
+  // "outside" and closed the picker mid-reach (owner report).
   const pop = div('cpick__pop');
   pop.hidden = true;
-  root.appendChild(pop);
+  document.body.appendChild(pop);
+
+  /** Fixed-position the popover against the swatch, on-screen whatever the
+   * anchor's corner: beside it to the left when there is room (the panels
+   * hug the right edge), else to the right, clamped vertically. */
+  const place = (): void => {
+    const r = swatch.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    const leftSide = r.left - w - 8;
+    const left = leftSide >= 8 ? leftSide : Math.min(window.innerWidth - w - 8, r.right + 8);
+    const top = Math.min(window.innerHeight - h - 8, Math.max(8, r.top - 4));
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  };
 
   // --- spectrum: saturation across, value down, over the current hue ------
   const field = div('cpick__field');
@@ -195,7 +216,15 @@ export function colorPicker(
     pop.hidden = true;
   };
   const onDocDown = (e: PointerEvent): void => {
-    if (!pop.hidden && !root.contains(e.target as Node)) close();
+    if (pop.hidden) return;
+    // The swatch's own row can be rebuilt (or its panel closed) under an
+    // open popover; a floating picker with no anchor left is stale.
+    if (!swatch.isConnected) return close();
+    const t = e.target as Node;
+    // Open until the tile is pressed again or the press is outside the
+    // picker window (owner contract); everything inside it - sliders,
+    // spectrum, hue bar - never dismisses.
+    if (!pop.contains(t) && !root.contains(t)) close();
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && !pop.hidden) {
@@ -205,7 +234,10 @@ export function colorPicker(
   };
   swatch.addEventListener('click', () => {
     pop.hidden = !pop.hidden;
-    if (!pop.hidden) paint();
+    if (!pop.hidden) {
+      paint();
+      place(); // measured after unhiding, so the size is real
+    }
   });
   document.addEventListener('pointerdown', onDocDown, true);
   document.addEventListener('keydown', onKey, true);
@@ -220,10 +252,14 @@ export function colorPicker(
       paint();
       syncRows();
     },
+    isOpen(): boolean {
+      return !pop.hidden;
+    },
     close,
     dispose(): void {
       document.removeEventListener('pointerdown', onDocDown, true);
       document.removeEventListener('keydown', onKey, true);
+      pop.remove(); // body-mounted: removing the root no longer takes it
       root.remove();
     },
   };

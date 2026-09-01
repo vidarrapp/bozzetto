@@ -428,8 +428,16 @@ export class Panel {
     if (this.viewer.getMaterial() === 'lit') {
       // The shared HSV picker, not <input type="color">: the same control
       // the paint brush uses, so albedo and paint are picked the same way.
-      this.albedoPicker?.dispose();
-      this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
+      // REUSED across rebuilds, never recreated: the picker's own slider
+      // drag echoes back through look-restored and lands here mid-drag,
+      // and disposing closed the popover under the pointer (owner report).
+      // While the popover is up, the picker is the source of truth, so the
+      // echo's set() is skipped too - it would fight the thumb being held.
+      if (!this.albedoPicker) {
+        this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
+      } else if (!this.albedoPicker.isOpen()) {
+        this.albedoPicker.set(state.albedo);
+      }
       this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
       this.materialOptions.appendChild(
         compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v)),
