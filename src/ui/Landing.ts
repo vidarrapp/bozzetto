@@ -38,9 +38,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // same controls sit in the same place on every page and mode.
   const admin = await probeAdmin().catch(() => null);
   const bar = topbarRight();
-  // Signed in, the way into sculpt is the gallery tile below; a guest needs
-  // it here, since they get no tile.
-  if (!admin) bar.appendChild(topChip('Sculpt', '/?sculpt=1'));
   bar.appendChild(topChip('Upload timelapse', '/create/'));
   // Same slot either way: the way in for a guest, the way to the editor for
   // the owner - who otherwise had no link to the admin panel at all.
@@ -54,9 +51,12 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     /* API not reachable — fall through to demo-only. */
   }
 
-  // Signed in, the first tile starts a new sculpt - the gallery is where
-  // the owner's work begins, not a nav link above it.
-  if (admin) grid.appendChild(newSculptCard());
+  // The first tile starts a new sculpt, for everyone: it used to be a
+  // guest's top-row "Sculpt" chip, and the tile read much clearer (owner
+  // call before showing the app around). It doubles as the empty state -
+  // a gallery with nothing in it still leads with the way to make
+  // something.
+  grid.appendChild(newSculptCard());
 
   // Then work in progress: the sculpt autosave lives in this browser, so it
   // is not a project the API knows about, but it is the thing most worth
@@ -65,12 +65,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   if (inProgress) grid.appendChild(inProgress);
 
   // Only projects with frames are shown publicly; empties live in the editor.
-  const list = projects.filter((p) => p.frameCount > 0);
-  if (list.length === 0 && !inProgress && !admin) {
-    grid.innerHTML = '<p class="muted">No projects yet.</p>';
-    return;
-  }
-  for (const p of list) grid.appendChild(card(p));
+  for (const p of projects.filter((p) => p.frameCount > 0)) grid.appendChild(card(p));
 }
 
 /** Start a fresh sculpt: a plus over the default subject. */
