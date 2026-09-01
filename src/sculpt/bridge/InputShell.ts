@@ -4,7 +4,7 @@ import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
-import { isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
+import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -444,6 +444,23 @@ export class InputShell {
       this.negativeOverride = { tool, prev };
     }
 
+    // A locked object (outliner padlock) refuses the stroke: probe what the
+    // press would edit before the tool commits to it, and orbit instead -
+    // the same treatment as missing the mesh entirely. The probe uses the
+    // picking start() itself runs, so they cannot disagree on the target.
+    // The eyedropper is exempt: sampling a colour edits nothing.
+    if (!this.pickedColor && s.getPicking().intersectionMouseMeshes()) {
+      const hit = s.getPicking().getMesh();
+      if (hit && s.isLocked(hit as never)) {
+        this.restoreStrokeTool();
+        s._action = Enums.Action.NOTHING;
+        this.orbitPointer = e.pointerId;
+        this.verdict?.(`orbit ${e.pointerType} (object locked)`);
+        this.hooks.orbitBegin();
+        return;
+      }
+    }
+
     this.worldScale?.sync(); // the depth under this press sets the radius
     this.feedPressure(e); // before start: the first dab already feels it
     const canEdit = s.getSculptManager().start(false);
@@ -723,6 +740,10 @@ export class InputShell {
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (isTextEntryTarget(e)) return;
+    // A focused checkbox/slider/select keeps its PLAIN keys (space toggles,
+    // arrows slide), but modifier chords stay hotkeys: after clicking a
+    // panel checkbox, ctrl+z must still undo rather than go quietly dead.
+    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey) return;
     const s = this.session;
     const key = e.key.toLowerCase();
 

@@ -15,7 +15,7 @@ import {
   Vector3,
 } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, cameraNear, cameraFar, perspectiveDepthToViewZ } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry, Matrix4, Texture } from 'three';
@@ -248,6 +248,13 @@ export class Viewer {
   private aoNode: ReturnType<typeof ao> | null = null;
   /** Sculpt-mode output: scene colour x screen-space cavity, no GTAO, no DoF. */
   private sculptOut: Node | null = null;
+  /** Sculpt-mode output with no AO at all (the picker's Off). */
+  private sculptPlain: Node | null = null;
+  /** `?aodebug` in sculpt: R = view distance/400, G = raw occlusion, B = factor. */
+  private sculptAoDebugNode: Node | null = null;
+  /** `?dofdebug` in viewer: the DoF chain's viewZ as distance/400 greyscale. */
+  private dofViewZDebugNode: Node | null = null;
+  private readonly dofDebug = new URLSearchParams(location.search).has('dofdebug');
   private sculptShading = false;
   /** Pre-built graph nodes: the AO-composited colour, and the DoF gather over it. */
   private aoColor: Node | null = null;
@@ -652,9 +659,20 @@ export class Viewer {
     this.scene.remove(mesh);
   }
 
+  /**
+   * Show or hide the PRIMARY sculpt subject (outliner eye on the active
+   * object; the extras carry their own `.visible`). Sculpt mode must restore
+   * this on unmount - the viewer side never hides its display itself.
+   */
+  setSculptVisible(visible: boolean): void {
+    this.display.visible = visible;
+  }
+
   /** Sculpt SSAO knobs (WS4 palette): cavity strength and tap radius (px). */
   setSculptAO(state: { strength?: number; radius?: number }): void {
     if (typeof state.strength === 'number') this.cavityStrengthU.value = state.strength;
+    // Which sculpt output applies depends on whether cavity is live.
+    if (this.sculptShading) this.rebuildOutput();
     if (typeof state.radius === 'number') this.sculptAoRadiusU.value = state.radius;
   }
 
@@ -893,7 +911,9 @@ export class Viewer {
       this.applyAoRadius();
     }
     // AO stays in the graph; enabling/strength just drive the effective-strength
-    // uniform (0 when disabled), so no recompile is needed.
+    // uniform (0 when disabled), so no recompile is needed. Except in sculpt
+    // mode, where enabling GTAO changes which output graph is selected.
+    if (this.sculptShading) this.rebuildOutput();
     this.applyAoStrength();
   }
 
@@ -1496,38 +1516,84 @@ export class Viewer {
     const depthTex = scenePass.getTextureNode('depth');
     const suv = uv();
     const pixel = vec2(1, 1).div(screenSize).mul(this.sculptAoRadiusU);
+    // near/far must be bound to the SCENE camera explicitly. The contextual
+    // cameraNear/cameraFar accessors update per render call, and this code
+    // runs in the pipeline's fullscreen quad, whose orthographic camera
+    // (near 0, far 1) makes perspectiveDepthToViewZ collapse to ~0 for every
+    // pixel - which is why the cavity term never darkened anything.
+    const camNearU = uniform(this.camera.near).onRenderUpdate(() => this.camera.near);
+    const camFarU = uniform(this.camera.far).onRenderUpdate(() => this.camera.far);
     // TSL's generated typings are narrower than the runtime accepts, so the
     // uv/accumulator seams cast through the shared Node type.
     const viewDist = (uvNode: unknown): Node =>
       perspectiveDepthToViewZ(
         depthTex.sample(uvNode as never).r,
-        cameraNear,
-        cameraFar,
+        camNearU,
+        camFarU,
       ).negate() as unknown as Node;
     const centerDist = viewDist(suv) as ReturnType<typeof float>;
-    const taps: Array<[number, number]> = [
-      [1, 0], [-1, 0], [0, 1], [0, -1],
-      [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7],
+    // Four OPPOSED tap pairs, measuring concavity rather than closeness: the
+    // centre against the average of each pair. On a slope the nearer and
+    // farther neighbour cancel, so smoothly curved surfaces (a sphere's
+    // whole limb) read zero however steep they get on screen - a
+    // one-sided "neighbour is closer" diff fired across half of every
+    // curved surface. Only a genuine crease, where BOTH sides sit closer,
+    // pushes the average under the centre; at silhouettes the far side
+    // blows the average out the other way and the term goes negative.
+    const axes: Array<[number, number]> = [
+      [1, 0], [0, 1], [0.7, 0.7], [0.7, -0.7],
     ];
     let occlusion: Node = float(0);
-    for (const [ox, oy] of taps) {
-      // Relative closeness of the neighbour: > 0 means it occludes the centre.
-      const diff = (centerDist
-        .sub(viewDist(suv.add(vec2(ox, oy).mul(pixel))) as never)
+    for (const [ox, oy] of axes) {
+      const off = vec2(ox, oy).mul(pixel);
+      const a = viewDist(suv.add(off)) as ReturnType<typeof float>;
+      const b = viewDist(suv.sub(off)) as ReturnType<typeof float>;
+      const cav = (centerDist
+        .sub(a.add(b as never).mul(0.5) as never)
         .div(centerDist.max(float(1e-4) as never) as never) as unknown) as ReturnType<typeof float>;
-      // Ramp in past a self-occlusion bias; ramp out so distant silhouettes
-      // (big depth gaps) do not darken as if they were creases.
-      const crease = smoothstep(float(0.002), float(0.02), diff).mul(
-        float(1).sub(smoothstep(float(0.06), float(0.2), diff)),
+      // The floor sits ~5x above a sphere's curvature term at the default
+      // radius (second-order, ~1.5e-4 of view distance) and well under a
+      // sculpted crease (~1e-2, measured); the ceiling fades out gaps seen
+      // clean through the model, where the background is the centre.
+      const crease = smoothstep(float(0.0008), float(0.006), cav).mul(
+        float(1).sub(smoothstep(float(0.15), float(0.5), cav)),
       );
       occlusion = (occlusion as ReturnType<typeof float>).add(crease) as unknown as Node;
     }
     const sculptAo = float(1)
-      .sub((occlusion as ReturnType<typeof float>).div(taps.length).mul(this.cavityStrengthU))
+      .sub((occlusion as ReturnType<typeof float>).div(axes.length).mul(this.cavityStrengthU))
       .clamp(0.35, 1);
     this.sculptOut = scenePass
       .getTextureNode('output')
       .mul(vec4(vec3(sculptAo), float(1)));
+    this.sculptPlain = scenePass.getTextureNode('output') as unknown as Node;
+    // Diagnostic view for ?aodebug in sculpt: channels expose each stage so a
+    // dead cavity can be blamed on depth, ramp or composite in one frame.
+    this.sculptAoDebugNode = vec4(
+      (centerDist as unknown as ReturnType<typeof float>).div(float(400)),
+      (occlusion as ReturnType<typeof float>).div(axes.length),
+      sculptAo,
+      float(1),
+    ) as unknown as Node;
+    // ?dofdebug: scene depth as distance/400 greyscale, through the SAME
+    // bound-uniform conversion the cavity uses. A model-vs-background
+    // gradient proves the depth texture and conversion; note DoF itself
+    // keeps getViewZNode() below - its contextual camera accessors resolve
+    // correctly inside the DoF node's own passes (verified by A/B), unlike
+    // in this pipeline's final output quad, where the cavity had to bind
+    // the camera explicitly.
+    this.dofViewZDebugNode = vec4(
+      vec3(
+        (perspectiveDepthToViewZ(
+          scenePass.getTextureNode('depth'),
+          camNearU,
+          camFarU,
+        ) as unknown as ReturnType<typeof float>)
+          .negate()
+          .div(float(400)),
+      ),
+      float(1),
+    ) as unknown as Node;
     const dofNode = dof(
       aoColor,
       scenePass.getViewZNode(),
@@ -1542,7 +1608,7 @@ export class Viewer {
     this.pipeline = new RenderPipeline(this.renderer);
     // In AO-debug, show the raw occlusion values (1 = unoccluded ... 0 = fully
     // occluded) without the ACES/sRGB output transform, so the buffer reads true.
-    if (this.aoDebug) this.pipeline.outputColorTransform = false;
+    if (this.aoDebug || this.dofDebug) this.pipeline.outputColorTransform = false;
     this.applyAoStrength();
     this.applyDof();
     this.rebuildOutput();
@@ -1556,13 +1622,25 @@ export class Viewer {
   private rebuildOutput(): void {
     if (!this.pipeline || !this.aoColor || !this.dofNode || !this.aoNode) return;
     if (this.sculptShading && this.sculptOut) {
-      // Sculpt mode: scene colour x cavity only. GTAO and the DoF gather are
-      // unreferenced by this output, so neither pass executes.
-      this.pipeline.outputNode = this.sculptOut;
+      if (this.aoDebug && this.sculptAoDebugNode) {
+        this.pipeline.outputNode = this.sculptAoDebugNode;
+        this.pipeline.needsUpdate = true;
+        return;
+      }
+      // The AO picker's three models, honest at last: Cavity is the sculpt
+      // composite, GTAO is the same AO-composited colour the viewer uses
+      // (the picker offered it here for months while this branch ignored
+      // the AO node entirely - it could never have worked), and Off is the
+      // plain scene colour. DoF stays out of sculpt either way.
+      if (this.cavityStrengthU.value > 0) this.pipeline.outputNode = this.sculptOut;
+      else if (this.aoEnabled) this.pipeline.outputNode = this.aoColor;
+      else this.pipeline.outputNode = this.sculptPlain ?? this.sculptOut;
       this.pipeline.needsUpdate = true;
       return;
     }
-    if (this.aoDebug) {
+    if (this.dofDebug && this.dofViewZDebugNode) {
+      this.pipeline.outputNode = this.dofViewZDebugNode;
+    } else if (this.aoDebug) {
       // Diagnostic view: the raw GTAO buffer as greyscale. Uniform white means
       // GTAO computed no occlusion anywhere (the bug we're chasing); visible dark
       // creases mean AO works and the composite/strength is the problem instead.

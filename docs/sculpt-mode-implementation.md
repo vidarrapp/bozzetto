@@ -343,6 +343,40 @@ require it): active mesh on the primary sync, extras as viewer-managed
 meshes sharing the material; persistence v3 stores the whole scene.
 The Capture section still lands with WS5.
 
+Reworked after user feedback (post-WS7):
+
+- Topology section: dyntopo checkbox asks before enabling (it replaces
+  the mesh and flattens the level stack; ctrl+z undoes) and its stroke
+  subdivision/decimation sliders sit under it, greyed while it is off -
+  they are MeshDynamic stroke factors and posed as dead scene controls
+  before. Multires got real controls: a discrete Level slider with a
+  "sel/levels" readout, and Lower / Higher / Subdivide / Rebuild.
+  Rebuild is `Multimesh.computeReverse` (upstream reversion), session
+  `reverse()` porting GuiTopology's order: build the StateMultiresolution
+  first, push it only if the reversion succeeds. Voxel remesh moved to
+  its own Remesh section with a numbered resolution slider. Both
+  `toggleDynamicTopology` (off path) and `voxelRemesh` now wrap their
+  result in a fresh Multimesh (upstream applyRemesh parity), so those
+  objects keep level controls instead of coming back permanently flat.
+- Scene outliner rows: eye (visibility; vendor `setVisible` also gates
+  picking, display side synced in mode.ts reconcile incl. the primary
+  via `viewer.setSculptVisible`) and padlock (edit lock; `lockedIds` in
+  the session, enforced at InputShell stroke start - a locked hit
+  orbits like a miss, eyedropper exempt - and by the gizmo, which
+  refuses hidden/locked targets) left of the name; double-click renames
+  in place; trash on the active row (delete was always undoable -
+  pushStateAddRemove - so the prompt is just `Delete "name"?`). Both
+  flags persist (SavedMesh v4 visible/locked). "Add to scene" wide
+  button replaces +/−; New material prompts for a name; a locked
+  object's material controls are read-only.
+- Hotkey focus rule (found by the topology suite): isTextEntryTarget
+  used to match EVERY input, so clicking any panel checkbox killed all
+  hotkeys - undo included - until focus moved. Now typing surfaces
+  swallow everything; non-typing form controls (checkbox/slider/select)
+  keep their plain keys but yield modifier chords, so ctrl+z works
+  right after toggling a checkbox. Viewer shortcuts (all plain keys)
+  still stand down for both.
+
 
 
 Sections, in order: Tool (button grid with hotkey hints; active tool uses `--accent`), Brush (radius, intensity, negative toggle; per-tool extras appear via `refreshControls()` on tool change), Symmetry (on/off, axis), Topology (dyntopo on/off + detail, multires subdivide/step up/step down, voxel remesh + resolution), Scene (add primitive, import mesh via existing loaders, clear), Capture (record toggle, mode, frame count + memory readout, finish -> hands frames to the timelapse project).
@@ -444,6 +478,27 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
   edge is a normal discontinuity, which painted a grid at low
   subdivision levels - depth ignores facet normals, so round 3 replaced
   it.) GTAO returns as an opt-in render option later (WS4 palette).
+  - Post-mortem (user bug report, "AO/cavity has no effect"): the pass
+    had computed exactly nothing since it was written. Its
+    `perspectiveDepthToViewZ` used TSL's contextual `cameraNear`/
+    `cameraFar`, which are render-updated shared uniforms - and the
+    cavity expression runs in the pipeline's final fullscreen quad,
+    whose orthographic camera is near 0 / far 1, collapsing the formula
+    to 0 for every pixel (0·far / ((far−near)·d − far) with near=0).
+    Fix: near/far bound to the scene camera via `uniform().onRenderUpdate`.
+    NOTE the asymmetry: the DoF node consumes `getViewZNode()` built on
+    the same contextual accessors and is NOT broken (A/B-verified
+    identical) - its viewZ evaluates inside the DoF node's own passes,
+    where the accessors resolve the scene camera. The collapse is
+    specific to expressions placed directly in `pipeline.outputNode`.
+  - The working pass also demanded a retune: a one-sided
+    "neighbour closer than centre" diff fires across half of every
+    curved surface (a sphere's limb measured 25% occlusion). Round 4 is
+    a Laplacian - the centre against the AVERAGE of each opposed tap
+    pair - so slopes cancel exactly, silhouettes go negative and
+    self-reject, and only true concavity (both sides closer) darkens.
+    Measured: flat band 0.0 occlusion, crease −24.9 luminance at
+    strength 2 (ao-test.mjs asserts ≥ 3).
 - HDRI environment: not sampled in sculpt mode (scene.environment is
   null; restored on exit). IBL cost is per-fragment in the PBR shader,
   so the cheapest environment is none; the hemisphere ambient plus key

@@ -1,17 +1,37 @@
 // Shared DOM primitives used by the editor control panels.
 
 /**
- * True when a key event belongs to text entry rather than to a hotkey: the
- * two window-level keydown handlers (the viewer's shortcuts and the sculpt
- * InputShell) both bail on this before claiming anything. Covers IME
- * composition and contenteditable as well as the form tags, so a hotkey
- * never eats a character mid-word.
+ * True when a key event belongs to TYPING: a text-entry input, a textarea,
+ * contenteditable, or mid-IME-composition. Both window-level keydown
+ * handlers (the viewer's shortcuts and the sculpt InputShell) bail on this
+ * unconditionally, so a hotkey never eats a character mid-word. Checkboxes,
+ * sliders and selects are deliberately NOT typing - see
+ * isFormControlTarget, which used to be folded in here: that made a single
+ * click on a panel checkbox kill every hotkey (undo included) until focus
+ * happened to move somewhere else.
  */
 export function isTextEntryTarget(e: KeyboardEvent): boolean {
   if (e.isComposing) return true;
   const el = e.target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;
-  return /^(INPUT|SELECT|TEXTAREA|OPTION)$/.test(el.tagName) || el.isContentEditable === true;
+  if (el.tagName === 'TEXTAREA' || el.isContentEditable === true) return true;
+  if (el.tagName !== 'INPUT') return false;
+  const type = (el as HTMLInputElement).type;
+  return !/^(checkbox|radio|range|button|submit|reset|color|file)$/.test(type);
+}
+
+/**
+ * True when focus sits on a non-typing form control - a checkbox, slider or
+ * select - whose PLAIN keys mean something to the control itself (space
+ * toggles, arrows slide and pick). The viewer's shortcuts, all plain keys,
+ * stand down entirely; the sculpt InputShell stands down for plain keys but
+ * keeps modifier chords, because ctrl+z aimed at a checkbox isn't a thing
+ * and losing undo to a focused checkbox reads as breakage.
+ */
+export function isFormControlTarget(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  return /^(INPUT|SELECT|OPTION)$/.test(el.tagName);
 }
 
 /**

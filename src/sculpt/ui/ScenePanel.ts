@@ -1,20 +1,30 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { SidePanel } from './SidePanel';
 import type { SculptSession } from '../bridge/SculptSession';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 
 /**
- * Scene outliner: the lower-left docked panel, and only the objects. Rows
- * list the scene's meshes with the active one highlighted (click selects);
- * the plus button offers primitives to add. Saving, exporting and capture
- * live next door in the File panel.
+ * Scene outliner: the lower-left docked panel, and only the objects. Each
+ * row is an eye (visibility), a padlock (edit lock), the name - click
+ * selects, double-click renames in place - and, on the selected row, a
+ * trash can. Objects are added through the wide button under the list.
+ * Saving, exporting and capture live next door in the File panel.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
-  private delBtn!: HTMLButtonElement;
   private matRow?: HTMLDivElement;
   private newMatBtn?: HTMLButtonElement;
+  /** The object whose name is being edited, so refresh keeps the input. */
+  private renaming: SculptMesh | null = null;
+
+  /**
+   * Fired after any panel-driven scene edit that bypasses the undo stack
+   * (rename, eye, padlock): the mount syncs the display side and tells the
+   * autosave. Selection and history-backed edits announce themselves.
+   */
+  onSceneEdit: (() => void) | null = null;
 
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
@@ -30,8 +40,8 @@ export class ScenePanel extends SidePanel {
     this.listEl = div('outliner');
     this.body.appendChild(this.listEl);
 
-    // Material assignment sits between the objects and the add/delete
-    // footer: it belongs to the selected object above it.
+    // Material assignment sits between the objects and the add button: it
+    // belongs to the selected object above it.
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
     this.newMatBtn = document.createElement('button');
@@ -41,25 +51,24 @@ export class ScenePanel extends SidePanel {
     this.newMatBtn.addEventListener('click', () => {
       const active = this.session.getMesh();
       if (!active || !this.library) return;
-      this.library.assign(active, this.library.create().id);
+      const name = prompt('New material name', 'Clay');
+      if (name === null) return;
+      // Assigning re-fills the object, so painted work would go: ask first.
+      if (
+        this.library.isPainted(active) &&
+        !confirm('New material? The colours painted on this object will be replaced.')
+      ) {
+        return;
+      }
+      this.library.assign(active, this.library.create(name.trim() || 'Clay').id);
       this.session.render();
     });
 
     const footer = div('outliner__footer');
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'outliner__btn';
-    addBtn.textContent = '+';
-    addBtn.title = 'Add object';
-    addBtn.setAttribute('aria-label', 'Add object');
-
-    this.delBtn = document.createElement('button');
-    this.delBtn.type = 'button';
-    this.delBtn.className = 'outliner__btn';
-    this.delBtn.textContent = '\u2212'; // minus
-    this.delBtn.title = 'Delete the selected object';
-    this.delBtn.setAttribute('aria-label', 'Delete the selected object');
-    this.delBtn.addEventListener('click', () => this.deleteActive());
+    addBtn.className = 'outliner__btn outliner__btn--wide';
+    addBtn.textContent = 'Add to scene';
 
     // The menu lives on the body, not in the panel: the panel body scrolls
     // and clips, and with only the default sphere in the list the panel is
@@ -89,7 +98,7 @@ export class ScenePanel extends SidePanel {
       if (this.addMenu.hidden) this.openAddMenu(addBtn);
       else this.closeAddMenu();
     });
-    footer.append(addBtn, this.delBtn);
+    footer.append(addBtn);
     this.body.appendChild(footer);
 
     // A collapsing panel must not leave its popup menu armed.
@@ -124,7 +133,7 @@ export class ScenePanel extends SidePanel {
     document.removeEventListener('pointerdown', this.onDocPointerDown, true);
   }
 
-  /** Minus: drop the selected object, once, after asking. */
+  /** Trash can: drop the selected object, once, after asking. */
   private deleteActive(): void {
     const mesh = this.session.getMesh();
     if (!mesh) return;
@@ -132,30 +141,123 @@ export class ScenePanel extends SidePanel {
       alert('The scene needs at least one object. Use New scene to start over.');
       return;
     }
-    const name = this.session.getMeshName(mesh);
-    if (!confirm(`Delete "${name}"? This cannot be undone from the outliner.`)) return;
+    // Ctrl+z brings it back, so the prompt does not threaten permanence.
+    if (!confirm(`Delete "${this.session.getMeshName(mesh)}"?`)) return;
     this.session.deleteMesh(mesh);
     this.refresh();
+  }
+
+  /** A small icon-only button (eye, padlock, trash). */
+  private iconBtn(icon: string, title: string, onPress: () => void): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'outliner__icon';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    const glyph = document.createElement('i');
+    glyph.className = `fi ${icon}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    btn.appendChild(glyph);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // the row behind selects; the icons must not
+      onPress();
+    });
+    return btn;
+  }
+
+  /** Swap the name for an input; Enter/blur commits, Escape abandons. */
+  private startRename(mesh: SculptMesh, nameEl: HTMLElement): void {
+    this.renaming = mesh;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'outliner__rename';
+    input.value = this.session.getMeshName(mesh);
+    let done = false;
+    const finish = (commit: boolean): void => {
+      if (done) return; // Enter commits, then the removal fires blur too
+      done = true;
+      this.renaming = null;
+      const next = input.value.trim();
+      if (commit && next && next !== this.session.getMeshName(mesh)) {
+        this.session.setMeshName(mesh, next);
+        this.onSceneEdit?.();
+      }
+      this.refresh();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing must not trigger sculpt hotkeys
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();
+    const many = this.session.getMeshes().length > 1;
+    // The object under rename can vanish mid-edit (undo, delete elsewhere);
+    // a stale flag would wait forever for an input that no longer exists.
+    if (this.renaming && !this.session.getMeshes().includes(this.renaming)) this.renaming = null;
     this.listEl.replaceChildren(
       ...this.session.getMeshes().map((mesh) => {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'outliner__row';
+        const row = div('outliner__row');
+        const visible = mesh.isVisible();
+        const locked = this.session.isLocked(mesh);
         if (mesh === active) row.classList.add('outliner__row--active');
-        row.textContent = this.session.getMeshName(mesh);
+        if (!visible) row.classList.add('outliner__row--hidden');
+
+        row.appendChild(
+          this.iconBtn(
+            visible ? 'fi-ss-eye' : 'fi-ss-eye-crossed',
+            visible ? 'Hide' : 'Show',
+            () => {
+              this.session.setMeshVisible(mesh, !visible);
+              this.onSceneEdit?.();
+              this.refresh();
+            },
+          ),
+        );
+        const lockBtn = this.iconBtn(
+          locked ? 'fi-ss-lock' : 'fi-ss-unlock',
+          locked ? 'Unlock editing' : 'Lock editing',
+          () => {
+            this.session.setLocked(mesh, !locked);
+            this.onSceneEdit?.();
+            this.refresh();
+          },
+        );
+        if (locked) lockBtn.classList.add('outliner__icon--on');
+        row.appendChild(lockBtn);
+
+        if (this.renaming === mesh) {
+          // Rebuilt mid-rename (a background refresh): stay in edit mode.
+          const placeholder = document.createElement('span');
+          row.appendChild(placeholder);
+          this.startRename(mesh, placeholder);
+        } else {
+          const name = document.createElement('span');
+          name.className = 'outliner__name';
+          name.textContent = this.session.getMeshName(mesh);
+          name.addEventListener('dblclick', () => this.startRename(mesh, name));
+          row.appendChild(name);
+        }
+
+        if (mesh === active && many) {
+          const del = this.iconBtn('fi-ss-trash', 'Delete object', () => this.deleteActive());
+          del.classList.add('outliner__icon--danger');
+          row.appendChild(del);
+        }
+
         row.addEventListener('click', () => {
-          this.session.setMesh(mesh);
+          if (mesh !== this.session.getMesh()) this.session.setMesh(mesh);
         });
         return row;
       }),
     );
-    // Nothing to delete when the scene is down to its last object.
-    this.delBtn.disabled = this.session.getMeshes().length <= 1;
     this.refreshMaterial();
   }
 
@@ -175,6 +277,11 @@ export class ScenePanel extends SidePanel {
       this.library.list().map((m) => [m.id, m.name] as [string, string]),
       current.id,
     );
+    // The padlock means "not edited": re-assigning fills the object's
+    // colours, so a locked object's material is read-only with it.
+    const locked = this.session.isLocked(active);
+    select.disabled = locked;
+    this.newMatBtn!.disabled = locked;
     select.addEventListener('change', () => {
       // Re-assigning re-fills the object, so painted work would go: ask.
       if (

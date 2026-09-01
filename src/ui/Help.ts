@@ -99,6 +99,7 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>Tab</kbd><span>Close panels, then hide the interface</span></div>
     <div class="help-row"><kbd>Esc</kbd><span>Show the interface</span></div>
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
+    <div class="help-row"><span class="help-key">Double-click</span><span>Rename an object in the Scene list</span></div>
   </div>`;
 
 export class Help {

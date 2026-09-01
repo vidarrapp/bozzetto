@@ -305,6 +305,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const existing = extras.get(mesh);
       if (existing) {
         viewer.setSculptExtraMatrix(existing.handle, new Matrix4().fromArray(mesh.getMatrix()));
+        existing.handle.visible = mesh.isVisible();
         continue;
       }
       const extraSync = new GeometrySync();
@@ -313,10 +314,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         extraSync.geometry,
         new Matrix4().fromArray(mesh.getMatrix()),
       );
+      handle.visible = mesh.isVisible();
       extras.set(mesh, { sync: extraSync, handle });
     }
+    // The outliner eye: the vendor flag is the truth, the display follows.
+    viewer.setSculptVisible(active ? active.isVisible() : true);
     // A newly added object still has SculptGL's white vertex colours.
     library.applyNew();
+  };
+  // The gizmo refuses hidden and locked objects: moving what you cannot see
+  // (or deliberately froze) is never what a press meant.
+  const gizmoTarget = (): SculptMesh | null => {
+    const active = session.getMesh();
+    return active && active.isVisible() && !session.isLocked(active) ? active : null;
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
@@ -330,14 +340,18 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel?.refresh();
     sculptPanel?.refreshState();
     syncPanelMaterial();
-    if (gizmo.isActive()) gizmo.attach(session.getMesh());
+    if (gizmo.isActive()) gizmo.attach(gizmoTarget());
   };
   reconcile();
 
   // A small transient pill announces level moves ("Subdiv 2/4"): steps,
-  // ctrl+d, and undo/redo that land on another level.
+  // ctrl+d, and undo/redo that land on another level. The palette's
+  // Topology block shows the same numbers, so it follows along.
   const levelToast = makeLevelToast();
-  session.onLevelChange = (sel, levels) => levelToast.show(sel + 1, levels);
+  session.onLevelChange = (sel, levels) => {
+    levelToast.show(sel + 1, levels);
+    sculptPanel?.refreshTopology();
+  };
 
   // Top-left stats: active object name + live triangle count (the name
   // column becomes the scene graph/outliner entry point later).
@@ -579,6 +593,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       if (az < -180) az += 360;
       const el = Math.max(-20, Math.min(90, key.elevation + deltaElevation));
       lighting.setAngles('key', az, el);
+      // The Render panel's azimuth/elevation rows read their values once,
+      // when built; without this the sliders kept showing wherever the
+      // light was before the drag. One rebuild after the drag settles.
+      clearTimeout(lightSyncTimer);
+      lightSyncTimer = window.setTimeout(
+        () => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')),
+        350,
+      );
     },
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor) => viewer.dolly(factor),
@@ -610,6 +632,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * from e/r/t, q to leave. It lives in the viewer's scene and writes into
    * the vendor mesh matrix, so persistence and undo see ordinary state.
    */
+  let lightSyncTimer = 0;
   const gizmo = new TransformGizmo(session, viewer.camera, canvas, viewer.scene);
   input.transform = gizmo;
   gizmo.onTransform = (mesh) => {
@@ -631,7 +654,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   const enterTransform = (mode: GizmoMode): void => {
     if (gizmo.isActive() && mode !== 'all' && gizmo.getMode() === mode) return;
-    gizmo.enter(mode, session.getMesh());
+    gizmo.enter(mode, gizmoTarget());
     cursor.hide();
     toolbar.setTransformActive(true);
   };
@@ -708,6 +731,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.render();
   };
   scenePanel = new ScenePanel(session, library);
+  // Rename, eye and padlock bypass the undo stack: sync the display side
+  // (visibility, the stats corner name) and let the autosave know directly.
+  scenePanel.onSceneEdit = () => {
+    reconcile();
+    if (gizmo.isActive()) gizmo.attach(gizmoTarget());
+    persist.markDirty();
+    session.render();
+  };
   sculptPanel = new SculptPanel(session, input, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
@@ -764,6 +795,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const onLookInput = (e: Event): void => {
     if (!(e.target as HTMLElement | null)?.closest?.('.panel')) return;
     clearTimeout(lookTimer);
+    clearTimeout(lightSyncTimer);
     lookTimer = window.setTimeout(() => void storeLook(), 400);
   };
   const onLookHide = (e: Event): void => {
@@ -903,6 +935,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       e.sync.dispose();
     }
     extras.clear();
+    // The eye may have hidden the active object; the viewer's display mesh
+    // outlives sculpt mode and must come back visible for playback.
+    viewer.setSculptVisible(true);
     galleryLink?.removeEventListener('click', onLeave);
     inputDebug?.dispose();
     chrome.dispose();

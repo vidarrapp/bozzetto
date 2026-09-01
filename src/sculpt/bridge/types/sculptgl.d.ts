@@ -99,6 +99,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     init(): void;
     initRender(): void;
     getID(): number;
+    isVisible(): boolean;
+    setVisible(visible: boolean): void;
     getVertices(): Float32Array;
     getNormals(): Float32Array;
     getColors(): Float32Array;
@@ -156,6 +158,10 @@ declare module '@sculpt-vendor/mesh/multiresolution/Multimesh' {
     addLevel(): SculptMesh;
     higherLevel(): SculptMesh;
     lowerLevel(): SculptMesh;
+    /** Rebuild a LOWER level from level 0 (reversion); undefined if impossible. */
+    computeReverse(): SculptMesh | undefined;
+    /** Walk the selection to `sel` one level at a time (the level slider). */
+    selectResolution(sel: number): void;
     getCurrentMesh(): SculptMesh;
     setSelection(sel: number): void;
   }
@@ -263,11 +269,17 @@ declare module '@sculpt-vendor/states/StateManager' {
 }
 
 declare module '@sculpt-vendor/states/StateMultiresolution' {
-  const StateMultiresolution: {
-    SUBDIVISION: number;
-    REVERSION: number;
-    SELECTION: number;
-  };
+  class StateMultiresolution {
+    static SUBDIVISION: number;
+    static REVERSION: number;
+    static SELECTION: number;
+    /**
+     * Captures the current level's arrays up front, so it can be built
+     * BEFORE a fallible operation (reversion) and pushed only on success -
+     * the upstream GuiTopology order.
+     */
+    constructor(main: unknown, multimesh: unknown, type: number, isRedo?: boolean);
+  }
   export default StateMultiresolution;
 }
 

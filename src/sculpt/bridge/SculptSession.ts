@@ -401,6 +401,45 @@ export class SculptSession {
     return true;
   }
 
+  /** The active object's multires position, for the palette's level slider. */
+  getLevels(): { sel: number; levels: number } | null {
+    const sig = this.levelSignature();
+    return sig ? { sel: sig[0], levels: sig[1] } : null;
+  }
+
+  /** Jump the selection to `sel` (the level slider): one undo entry. */
+  selectLevel(sel: number): boolean {
+    const mul = this.asMultimesh();
+    if (!mul) return false;
+    const target = Math.max(0, Math.min(mul._meshes.length - 1, Math.round(sel)));
+    if (target === mul._sel) return false;
+    this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SELECTION);
+    mul.selectResolution(target);
+    this.render();
+    this.onLevelChange?.(mul._sel, mul._meshes.length);
+    return true;
+  }
+
+  /**
+   * Reversion (ported from GuiTopology.reverse): rebuild a LOWER level under
+   * level 0 by reversing the subdivision, so an imported or remeshed model
+   * gains a coarse level to block out on. Only from the bottom level; fails
+   * on topology subdivision cannot produce (the vendor detects it). The
+   * state is built first but pushed only on success - reversion is the one
+   * multires op that can refuse.
+   */
+  reverse(): boolean {
+    const mul = this.asMultimesh();
+    if (!mul || mul._sel !== 0) return false;
+    const state = new StateMultiresolution(this, mul, StateMultiresolution.REVERSION);
+    const created = mul.computeReverse();
+    if (!created) return false;
+    this.stateManager.pushState(state);
+    this.setMesh(mul);
+    this.onLevelChange?.(mul._sel, mul._meshes.length);
+    return true;
+  }
+
   // --- WS4 palette surface -------------------------------------------------
 
   /**
@@ -427,7 +466,8 @@ export class SculptSession {
     const mesh = this.mesh;
     if (!mesh) return false;
     Remesh.RESOLUTION = Math.min(400, Math.max(8, Math.round(resolution)));
-    const newMesh = Remesh.remesh([mesh], mesh);
+    // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
+    const newMesh = new Multimesh(Remesh.remesh([mesh], mesh)) as unknown as SculptMesh;
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -516,15 +556,18 @@ export class SculptSession {
 
   /**
    * Dynamic topology on/off (ported from GuiTopology.dynamicToggleActivate +
-   * convertToStaticMesh). Off returns to a plain static mesh; the multires
-   * stack does not survive the round trip, matching upstream.
+   * convertToStaticMesh). The multires stack does not survive the round
+   * trip, matching upstream - but unlike upstream the static mesh comes
+   * back WRAPPED in a fresh single-level Multimesh, so the palette's level
+   * controls (Subdivide, Rebuild) work again instead of being dead for the
+   * object's remaining life.
    */
   toggleDynamicTopology(): boolean {
     const mesh = this.mesh;
     if (!mesh) return false;
     const newMesh = !mesh.isDynamic
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
-      : this.convertToStaticMesh(mesh);
+      : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -667,6 +710,8 @@ export class SculptSession {
 
     return {
       name: this.getMeshName(mesh),
+      visible: mesh.isVisible(),
+      locked: this.isLocked(mesh),
       nbBaseFaces,
       baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
       levels,
@@ -684,7 +729,12 @@ export class SculptSession {
    */
   restoreScene(saved: SavedScene): Multimesh {
     const built: Multimesh[] = [];
-    for (const savedMesh of saved.meshes) built.push(this.buildRestoredMesh(savedMesh));
+    for (const savedMesh of saved.meshes) {
+      const mesh = this.buildRestoredMesh(savedMesh);
+      if (savedMesh.visible === false) mesh.setVisible(false);
+      if (savedMesh.locked) this.setLocked(mesh as unknown as SculptMesh, true);
+      built.push(mesh);
+    }
     this.sculptManager._symmetry = saved.symmetry;
     const active = built[Math.min(saved.active, built.length - 1)];
     this.setMesh(active);
@@ -697,6 +747,28 @@ export class SculptSession {
    * reload - and hands selection to a neighbour when the active object is
    * the one going.
    */
+  /**
+   * Edit locks (outliner padlock): a locked object stays visible and
+   * selectable, but strokes and the transform gizmo refuse it. Kept here
+   * beside the mesh list so persistence and the panels share one truth.
+   */
+  private readonly lockedIds = new Set<number>();
+
+  isLocked(mesh: SculptMesh): boolean {
+    return this.lockedIds.has(mesh.getID());
+  }
+
+  setLocked(mesh: SculptMesh, locked: boolean): void {
+    if (locked) this.lockedIds.add(mesh.getID());
+    else this.lockedIds.delete(mesh.getID());
+  }
+
+  /** Visibility (outliner eye). The vendor flag also gates its picking. */
+  setMeshVisible(mesh: SculptMesh, visible: boolean): void {
+    mesh.setVisible(visible);
+    this.render();
+  }
+
   deleteMesh(mesh: SculptMesh): boolean {
     if (this.meshes.length <= 1) return false;
     const index = this.meshes.indexOf(mesh);

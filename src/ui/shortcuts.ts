@@ -1,5 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
-import { isTextEntryTarget, tabShouldMoveFocus } from './dom';
+import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from './dom';
 
 export interface ShortcutHandlers {
   /** Toggle the side panel open/closed (Tab). */
@@ -25,7 +25,9 @@ export interface ShortcutHandlers {
  */
 export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}): () => void {
   const onKey = (e: KeyboardEvent): void => {
-    if (isTextEntryTarget(e)) return;
+    // Every binding here is a plain key, and plain keys on a focused form
+    // control (space on a checkbox, arrows on a slider) belong to it.
+    if (isTextEntryTarget(e) || isFormControlTarget(e)) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
 
     switch (e.key) {

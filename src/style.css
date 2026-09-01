@@ -1614,8 +1614,11 @@ html.is-page body {
 }
 
 .outliner__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   text-align: left;
-  padding: 7px 10px;
+  padding: 3px 6px 3px 4px;
   border: none;
   border-radius: var(--radius);
   background: none;
@@ -1632,6 +1635,72 @@ html.is-page body {
 .outliner__row--active {
   background: var(--accent-soft);
   color: var(--accent-hover);
+}
+
+/* A hidden object stays listed but reads as absent. */
+.outliner__row--hidden .outliner__name {
+  opacity: 0.45;
+}
+
+.outliner__name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In-place rename: same metrics as the name it replaces. */
+.outliner__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  outline: none;
+}
+
+/* Row icons: eye, padlock, trash. Quiet until hovered; the padlock lights
+   up while a lock is on, the trash warns. */
+.outliner__icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  opacity: 0.4;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.outliner__icon .fi {
+  display: block;
+  height: 1em;
+}
+
+.outliner__icon:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+
+.outliner__icon--on {
+  opacity: 0.9;
+  color: var(--accent-hover);
+}
+
+.outliner__icon--danger:hover {
+  color: #e5484d;
 }
 
 .outliner__footer {
@@ -1740,6 +1809,22 @@ html.is-page body {
   font-size: 10px;
   color: var(--muted);
   margin: 2px 0 6px;
+}
+
+/* Live value at a slider's right (level, remesh resolution, dyntopo detail).
+   Overrides the label column's fixed flex basis, which is also a > span. */
+.compact > .sculpt-panel__val {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: right;
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 11px;
+}
+
+/* Dyntopo's stroke sliders grey out while dynamic topology is off. */
+.sculpt-panel__row--off {
+  opacity: 0.45;
 }
 
 .sculpt-panel__slot {

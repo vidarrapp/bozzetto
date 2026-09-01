@@ -73,6 +73,9 @@ export interface SavedMesh {
   sym?: number[];
   /** Which material this object uses (v4); absent means the first one. */
   materialId?: string;
+  /** Outliner eye/padlock; absent means visible and unlocked. */
+  visible?: boolean;
+  locked?: boolean;
   /**
    * Whether a paint stroke owns this object's colours. Persisted because it
    * decides whether editing a material may overwrite them, and getting that
