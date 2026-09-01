@@ -52,6 +52,16 @@ const POLISH_CLIP = 0.25;
 const POLISH_STICK = 0.85;
 const POLISH_GAIN = 1.5;
 const POLISH_MIN_GRIP = 8;
+/**
+ * Normal agreement (v2 edge-test finding): the clip band is a spatial
+ * slab, and the strip of an ADJACENT face nearest the edge lies inside
+ * that slab - distance alone cannot tell it from polishable chatter, and
+ * it was dragged onto the plane, i.e. the edge still rounded. A vertex
+ * now also has to FACE roughly the way the plane does (dot > this, ~60°)
+ * to be fit or moved; a 90° face fails at any distance, moderate chatter
+ * walls pass, and gentle curvature is nowhere near the line.
+ */
+const POLISH_NORMAL_COS = 0.5;
 
 /**
  * Move, ZBrush-flavored:
@@ -356,12 +366,20 @@ export class PolishBrush extends Flatten {
         (vAr[ind + 1] - seedC[1]) * seed[1] +
         (vAr[ind + 2] - seedC[2]) * seed[2];
       if (Math.abs(d) > clip) continue;
+      // Inliers must also FACE the plane's way: an adjacent face's strip
+      // sits inside the slab but points elsewhere.
+      const vnx = nAr[ind];
+      const vny = nAr[ind + 1];
+      const vnz = nAr[ind + 2];
+      const nlen = Math.hypot(vnx, vny, vnz);
+      if (nlen < 1e-10) continue;
+      if ((vnx * seed[0] + vny * seed[1] + vnz * seed[2]) / nlen < POLISH_NORMAL_COS) continue;
       cx += vAr[ind];
       cy += vAr[ind + 1];
       cz += vAr[ind + 2];
-      nx += nAr[ind];
-      ny += nAr[ind + 1];
-      nz += nAr[ind + 2];
+      nx += vnx;
+      ny += vny;
+      nz += vnz;
       count++;
     }
     if (count < POLISH_MIN_GRIP) return null;
@@ -403,6 +421,7 @@ export class PolishBrush extends Flatten {
   ): void {
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
+    const nAr = mesh.getNormals();
     const mAr = mesh.getMaterials();
     const radius = Math.sqrt(radiusSquared);
     const vProxy =
@@ -426,6 +445,14 @@ export class PolishBrush extends Flatten {
       const distToPlane = (vx - ax) * anx + (vy - ay) * any + (vz - az) * anz;
       if (Math.abs(distToPlane) > clip) continue; // other features stay
       if (shaveOnly && distToPlane < 0.0) continue; // trim leaves the dents
+      // The slab is not enough at an edge: the neighbouring face's first
+      // strip lies inside it. Only vertices FACING the plane's way polish.
+      const vnx = nAr[ind];
+      const vny = nAr[ind + 1];
+      const vnz = nAr[ind + 2];
+      const nlen = Math.hypot(vnx, vny, vnz);
+      if (nlen < 1e-10) continue;
+      if ((vnx * anx + vny * any + vnz * anz) / nlen < POLISH_NORMAL_COS) continue;
       const dx = vProxy[ind] - cx;
       const dy = vProxy[ind + 1] - cy;
       const dz = vProxy[ind + 2] - cz;
