@@ -3,6 +3,7 @@ import { checkbox, section } from '../../ui/Panel';
 import { SidePanel } from './SidePanel';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { SnapshotRecorder } from '../bridge/SnapshotRecorder';
+import type { SavedScene } from '../bridge/ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { downloadBlob, packScene, sceneToOBJ, stampName, unpackScene } from '../bridge/SceneFile';
 
@@ -25,6 +26,9 @@ export class FilePanel extends SidePanel {
   readonly filesSlot = div('sculpt-panel__slot');
   /** mode.ts appends the admin-only "publish timelapse" form here. */
   readonly captureSlot = div('sculpt-panel__slot');
+  /** mode.ts hooks the material library onto save and open. */
+  decorate: ((scene: SavedScene) => void) | null = null;
+  adopt: ((scene: SavedScene) => void) | null = null;
   private readonly openInput: HTMLInputElement;
   private recordCheckbox!: HTMLInputElement;
   private captureReadout!: HTMLDivElement;
@@ -58,6 +62,7 @@ export class FilePanel extends SidePanel {
         // The look travels with the file: reopening it puts the work back
         // under the lighting, material and camera it was saved in.
         if (this.look) scene.look = this.look.get();
+        this.decorate?.(scene);
         downloadBlob(await packScene(scene), stampName('bozz'));
       }),
     );
@@ -165,6 +170,7 @@ export class FilePanel extends SidePanel {
     try {
       const scene = await unpackScene(await file.arrayBuffer());
       this.session.replaceScene(scene);
+      this.adopt?.(scene); // materials, before anything reads them back
       if (scene.look && this.look) this.look.apply(scene.look);
     } catch (err) {
       alert((err as Error).message);

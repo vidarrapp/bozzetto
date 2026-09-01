@@ -1,6 +1,7 @@
 import { Color } from 'three';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
+import type { SavedScene } from './ScenePersist';
 
 /**
  * Per-object materials.
@@ -39,6 +40,8 @@ export class MaterialLibrary {
   private readonly assigned = new Map<number, string>();
   /** Meshes whose vertex colours a paint stroke owns. */
   private readonly painted = new Set<number>();
+  /** Meshes that have had a material written to them at least once. */
+  private readonly initialised = new Set<number>();
   private seq = 0;
   /** Fired when the list or an assignment changes (panels re-read). */
   onChange: (() => void) | null = null;
@@ -121,6 +124,7 @@ export class MaterialLibrary {
 
   /** Write a material's values into a mesh's colour and PBR attributes. */
   applyTo(mesh: SculptMesh): void {
+    this.initialised.add(mesh.getID());
     const mat = this.materialFor(mesh);
     if (!this.painted.has(mesh.getID())) {
       const c = new Color(mat.albedo); // hex is sRGB; Color stores it linear
@@ -129,8 +133,67 @@ export class MaterialLibrary {
     this.session.fillMaterials(mesh, mat.roughness, mat.metalness);
   }
 
-  /** Apply every assignment (mount, and after a scene load). */
-  applyAll(): void {
-    for (const mesh of this.session.getMeshes()) this.applyTo(mesh);
+  /**
+   * Set up any object that has not been given its material yet - a newly
+   * added shape, or an extraction. Deliberately not a re-apply of the whole
+   * scene: this runs on every mesh-list and selection change, and writing
+   * two full attribute arrays per object each time would cost real work on
+   * a multi-million-vertex scene for no change at all.
+   */
+  applyNew(): void {
+    for (const mesh of this.session.getMeshes()) {
+      if (this.initialised.has(mesh.getID())) continue;
+      this.applyTo(mesh);
+    }
+  }
+
+  /**
+   * Write the library into a scene record. Assignments ride on the meshes
+   * themselves, index-aligned with `session.getMeshes()`, because a saved
+   * mesh has no identity of its own - the vendor hands out fresh ids on
+   * restore, so anything keyed by id would land on the wrong object.
+   */
+  saveInto(scene: SavedScene): void {
+    scene.materials = this.materials.map((m) => ({ ...m }));
+    const meshes = this.session.getMeshes();
+    scene.meshes.forEach((saved, i) => {
+      const mesh = meshes[i];
+      if (!mesh) return;
+      saved.materialId = this.materialFor(mesh).id;
+      saved.painted = this.painted.has(mesh.getID());
+    });
+  }
+
+  /**
+   * Rebuild from a scene record, after the meshes exist. A v3 record has no
+   * materials, so the library keeps its default and every object points at
+   * it - which is what those scenes already looked like.
+   */
+  loadFrom(scene: SavedScene): void {
+    if (scene.materials?.length) {
+      this.materials.length = 0;
+      for (const m of scene.materials) this.materials.push({ ...m });
+      // Keep new ids clear of restored ones.
+      this.seq = this.materials.reduce((max, m) => {
+        const n = Number(m.id.replace(/^m/, ''));
+        return Number.isFinite(n) ? Math.max(max, n) : max;
+      }, 0);
+    }
+    this.assigned.clear();
+    this.painted.clear();
+    this.initialised.clear();
+    const meshes = this.session.getMeshes();
+    scene.meshes.forEach((saved, i) => {
+      const mesh = meshes[i];
+      if (!mesh) return;
+      if (saved.materialId && this.get(saved.materialId)) {
+        this.assigned.set(mesh.getID(), saved.materialId);
+      }
+      if (saved.painted) this.painted.add(mesh.getID());
+    });
+    // Restored vertex colours are already correct; only the objects with no
+    // painting of their own need their material written back over them.
+    for (const mesh of meshes) if (!this.painted.has(mesh.getID())) this.applyTo(mesh);
+    this.onChange?.();
   }
 }

@@ -173,6 +173,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // whole scene. The Render panel's controls drive the ACTIVE object's
   // material, so those sliders keep meaning what they look like they mean.
   const library = new MaterialLibrary(session);
+  // A restored scene brings its own library and assignments. Applied here,
+  // before the panels are built, so the first thing they show is right.
+  if (saved) library.loadFrom(saved);
   const activeMaterial = (): SculptMaterial => {
     const active = session.getMesh();
     return active ? library.materialFor(active) : library.list()[0];
@@ -182,6 +185,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.render();
   };
   viewer.materials.onAlbedoChange = () => {
+    if (syncingPanel) return;
     const albedo = viewer.materials.getMaterialState().albedo;
     if (albedo !== activeMaterial().albedo) pushActiveMaterial({ albedo });
   };
@@ -190,18 +194,45 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * Those controls edit a material, and which material depends on what is
    * selected, so switching objects has to re-point them.
    */
+  // True while the panel is being pointed at a different material. The
+  // setters below fire the same change hooks a user edit does, and without
+  // this the sync was read back as an edit and wrote the OUTGOING object's
+  // colour onto the incoming object's material.
+  let syncingPanel = false;
+  /**
+   * Apply a look (or re-point the panel) without the material hooks reading
+   * it back as an edit. Materials.applyMaterialState goes through the same
+   * setAlbedo/setRoughness/setMetalness a user drag does, so restoring a
+   * look wrote the LOOK's material onto whichever object was selected -
+   * which is how a reopened file came back with one object's colour on
+   * another's material. The object's own material wins in sculpt mode, so
+   * the panel is re-pointed at it afterwards.
+   */
+  const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
+    syncingPanel = true;
+    try {
+      await viewer.applyLook(look);
+    } finally {
+      syncingPanel = false;
+    }
+    syncPanelMaterial();
+  };
   const syncPanelMaterial = (): void => {
     const mat = activeMaterial();
     if (!mat) return;
     const mats = viewer.materials;
-    const st = mats.getMaterialState();
-    // Guarded: these setters fire the change hooks that write back.
-    if (st.albedo !== mat.albedo) mats.setAlbedo(mat.albedo);
-    if (st.roughness !== mat.roughness) mats.setRoughness(mat.roughness);
-    if (st.metalness !== mat.metalness) mats.setMetalness(mat.metalness);
+    syncingPanel = true;
+    try {
+      mats.setAlbedo(mat.albedo);
+      mats.setRoughness(mat.roughness);
+      mats.setMetalness(mat.metalness);
+    } finally {
+      syncingPanel = false;
+    }
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
   };
   viewer.materials.onPbrChange = () => {
+    if (syncingPanel) return;
     const st = viewer.materials.getMaterialState();
     const mat = activeMaterial();
     if (st.roughness !== mat.roughness || st.metalness !== mat.metalness) {
@@ -218,11 +249,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // ...and then, on top of those defaults, whatever the last session set up.
   // Without this, leaving sculpt mode and coming back reset every look-dev
   // control - the defaults above are only meant for a first visit.
-  await viewer.applyLook(await loadSculptLook());
+  await applyLookSafely(await loadSculptLook());
   const onLookReset = (): void => {
     void (async () => {
       await clearSculptLook();
-      await viewer.applyLook(defaultLook);
+      await applyLookSafely(defaultLook);
       window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     })();
   };
@@ -266,7 +297,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       extras.set(mesh, { sync: extraSync, handle });
     }
     // A newly added object still has SculptGL's white vertex colours.
-    library.applyAll();
+    library.applyNew();
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
@@ -574,12 +605,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   filePanel = new FilePanel(session, recorder, {
     get: () => viewer.getLook(),
     apply: (look) => {
-      void viewer.applyLook(look).then(() => {
+      void applyLookSafely(look).then(() => {
         sculptPanel?.refreshBrush();
         window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
       });
     },
   });
+  filePanel.decorate = (scene) => library.saveInto(scene);
+  filePanel.adopt = (scene) => {
+    library.loadFrom(scene);
+    session.render();
+  };
   scenePanel = new ScenePanel(session, library);
   // Creating, assigning or editing a material changes what the outliner
   // row and the Render controls should show.
@@ -656,6 +692,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
   const persist = new ScenePersist(session);
+  persist.decorate = (scene) => library.saveInto(scene);
   persist.install();
   // Timelapse capture stacks its edit hooks on top of the autosave's (the
   // unmount below unwinds in reverse). Install is async (frame index read).
@@ -688,16 +725,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         const scene = session.serializeScene();
         if (!scene) throw new Error('nothing to pack');
         scene.look = viewer.getLook(); // same payload the Save file button writes
+        library.saveInto(scene); // ...and the same materials
         return (await packScene(scene)).arrayBuffer();
       },
       open: async (bytes: ArrayBuffer) => {
         const scene = await unpackScene(bytes);
         session.replaceScene(scene);
+        library.loadFrom(scene); // same as the File panel's Open
         if (scene.look) {
-          await viewer.applyLook(scene.look);
+          await applyLookSafely(scene.look);
           window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
         }
       },
+      /** Unpack without applying, for tests that inspect a record. */
+      unpack: (bytes: ArrayBuffer) => unpackScene(bytes),
       toOBJ: () => sceneToOBJ(session),
     },
   };

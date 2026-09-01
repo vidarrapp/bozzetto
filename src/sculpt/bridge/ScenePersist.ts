@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import type { SculptSession } from './SculptSession';
 import type { LookState } from '../../viewer/Viewer';
+import type { SculptMaterial } from './materials';
 
 /**
  * Reload-safe sculpting: the active mesh autosaves to IndexedDB so a page
@@ -53,10 +54,19 @@ export interface SavedMesh {
   matrix: Float32Array;
   /** Mirror-plane normal (local space); absent in older records = X. */
   sym?: number[];
+  /** Which material this object uses (v4); absent means the first one. */
+  materialId?: string;
+  /**
+   * Whether a paint stroke owns this object's colours. Persisted because it
+   * decides whether editing a material may overwrite them, and getting that
+   * wrong after a reload would silently eat someone's painting.
+   */
+  painted?: boolean;
 }
 
 export interface SavedScene {
-  v: 3;
+  /** 4 adds the material library; 3 records load unchanged, without one. */
+  v: 3 | 4;
   savedAt: number;
   /** Every scene object (multi-mesh since WS4: extractions, added shapes). */
   meshes: SavedMesh[];
@@ -70,6 +80,12 @@ export interface SavedScene {
    * rewrites a multi-megabyte vertex payload), have none.
    */
   look?: LookState;
+  /**
+   * The scene's materials. Absent in v3, where every object simply takes
+   * the default - the per-vertex colours were always saved, so an older
+   * scene still LOOKS right; it just has no library behind it.
+   */
+  materials?: SculptMaterial[];
 }
 
 /** The single-mesh v2 format, upgraded on read. */
@@ -327,12 +343,12 @@ export async function loadSavedScene(): Promise<SavedScene | null> {
   }
 }
 
-/** Structural check for a v3 record (shared with the .bozz file loader). */
+/** Structural check for a v3/v4 record (shared with the .bozz file loader). */
 export function validSavedScene(rec: unknown): rec is SavedScene {
   const r = rec as SavedScene | undefined;
   return (
     !!r &&
-    r.v === 3 &&
+    (r.v === 3 || r.v === 4) &&
     Array.isArray(r.meshes) &&
     r.meshes.length > 0 &&
     r.meshes.every(validMesh) &&
@@ -372,6 +388,13 @@ export class ScenePersist {
   private lastSave = 0;
   private saving = false;
   private readonly unwraps: Array<() => void> = [];
+
+  /**
+   * Last chance to add to a record before it is written - the material
+   * library rides here, since the session that serialises the geometry
+   * knows nothing about it.
+   */
+  decorate: ((scene: SavedScene) => void) | null = null;
 
   constructor(private readonly session: SculptSession) {}
 
@@ -456,6 +479,7 @@ export class ScenePersist {
     if (this.session.topLevelTriangles() > SKIP_SAVE_TRIS) return;
     const scene = this.session.serializeScene();
     if (!scene) return;
+    this.decorate?.(scene);
     this.dirty = false;
     this.saving = true;
     try {
