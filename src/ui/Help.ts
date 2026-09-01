@@ -63,7 +63,7 @@ const SCULPT_HTML = `
   <div class="help-guide__group">
     <div class="help-guide__title">Navigation</div>
     <div class="help-row"><span class="help-key">Drag off mesh</span><span>Orbit (around your last stroke)</span></div>
-    <div class="help-row"><span class="help-key">Cmd / Shift + drag</span><span>Pan (two-finger drag on touch)</span></div>
+    <div class="help-row"><span class="help-key">Cmd / Shift + drag</span><span>Pan (two fingers always navigate, even on the model)</span></div>
     <div class="help-row"><span class="help-key">Ctrl + drag off mesh</span><span>Zoom</span></div>
     <div class="help-row"><span class="help-key">Scroll / pinch</span><span>Zoom</span></div>
     <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>

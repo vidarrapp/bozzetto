@@ -66,6 +66,13 @@ const RADIUS_MAX = 500;
  * brush outline at the moment it lands (review request).
  */
 const STROKE_REDUCE_DELAY_MS = 250;
+/**
+ * A second finger within this window of a touch stroke's start means the
+ * whole thing was a navigation gesture: the stroke's dab is undone. Past
+ * it the sculpting was deliberate and keeps its work (the fingers still
+ * take over navigation either way).
+ */
+const GESTURE_GRACE_MS = 250;
 /** Screen-ring feedback duration for keyboard size/strength nudges. */
 const NUDGE_FLASH_MS = 450;
 /** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
@@ -112,6 +119,14 @@ export class InputShell {
   private pointerId = -1;
   /** Device that owns the current stroke, so a Pencil can outrank a finger. */
   private strokePointerType = '';
+  /** When the current stroke began (gesture-grace: see the two-finger branch). */
+  private strokeStartedAt = 0;
+  /** Undo depth just before the current stroke pushed its state. */
+  private undoDepthAtStroke = -1;
+  /** Touch pointers currently on the glass (palms never appear; iPadOS eats them). */
+  private readonly touchesDown = new Set<number>();
+  /** True while re-dispatching a swallowed pointerdown to OrbitControls. */
+  private handingToOrbit = false;
   /**
    * Why the last pointerdown was accepted or dropped. The finger-blocks-the-
    * Pencil report has survived three fixes, each aimed at a different guess;
@@ -353,19 +368,56 @@ export class InputShell {
   // --- pointer machine ----------------------------------------------------
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    // Our own re-dispatch on its way to OrbitControls; let it through.
+    if (this.handingToOrbit) return;
     if (e.button !== 0) return; // middle/right stay with OrbitControls
+    if (e.pointerType === 'touch') this.touchesDown.add(e.pointerId);
     // One stroke at a time: a finger landing mid-stroke (to hold a modifier
     // button, or just resting) must not restart or steal the pen's stroke.
     // A Pencil is the exception and outranks a finger, because on an iPad
     // the hand rests on the glass: a touch that got in first has to hand the
     // stroke over, not lock the pen out for as long as the finger stays down.
     if (this.pointerId !== -1 && e.pointerId !== this.pointerId) {
+      // A second FINGER joining a finger stroke is never a second stroke:
+      // multi-touch always means navigation (owner call), so pan and zoom
+      // work however deep into the model you are. The stroke is abandoned
+      // and both pointers go to OrbitControls - finger one's pointerdown
+      // was swallowed by the stroke, so it is re-dispatched at its current
+      // position or Orbit would see one finger and rotate instead of
+      // pinching. A stroke younger than the gesture grace was the start of
+      // the gesture, not sculpting, and its dab is undone; older strokes
+      // were meant, and keep their work. (A finger during a PEN stroke
+      // still drops: resting fingers must not end pen strokes.)
+      if (e.pointerType === 'touch' && this.strokePointerType === 'touch') {
+        const s = this.session;
+        const firstId = this.pointerId;
+        const fx = this.lastAbsX;
+        const fy = this.lastAbsY;
+        const young = performance.now() - this.strokeStartedAt < GESTURE_GRACE_MS;
+        const depthBefore = this.undoDepthAtStroke;
+        this.abandonStroke();
+        if (young && depthBefore >= 0 && s.getStateManager()._curUndoIndex > depthBefore) {
+          s.undo();
+        }
+        this.handToOrbit(firstId, fx, fy);
+        this.orbitPointer = e.pointerId;
+        this.hooks.orbitBegin();
+        this.verdict?.('two fingers: navigation takes over');
+        return; // unclaimed: this event reaches OrbitControls as finger two
+      }
       if (e.pointerType !== 'pen' || this.strokePointerType === 'pen') {
         this.verdict?.(`drop ${e.pointerType}: ${this.strokePointerType} owns the stroke`);
         return;
       }
       this.verdict?.(`pen takes over from ${this.strokePointerType}`);
       this.abandonStroke();
+    }
+    // A touch landing while other touches are already down (mid-gesture
+    // third finger, or a finger pair after a drop) must never start a
+    // stroke; it stays with navigation.
+    if (e.pointerType === 'touch' && this.touchesDown.size > 1) {
+      this.verdict?.('touch joins the gesture: navigation');
+      return;
     }
     // While adjusting brush size/strength (b/s) or dragging the light rig
     // (l), the press belongs to that gesture: never let it start an orbit.
@@ -463,6 +515,9 @@ export class InputShell {
 
     this.worldScale?.sync(); // the depth under this press sets the radius
     this.feedPressure(e); // before start: the first dab already feels it
+    // Snapshot BEFORE start() pushes the stroke's undo state, so the
+    // two-finger branch can tell whether the stroke left one to cancel.
+    const undoDepthBefore = s.getStateManager()._curUndoIndex;
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
@@ -494,6 +549,13 @@ export class InputShell {
     this.strokes++;
     this.pointerId = e.pointerId;
     this.strokePointerType = e.pointerType;
+    this.strokeStartedAt = performance.now();
+    this.undoDepthAtStroke = undoDepthBefore;
+    // Seed the last-known position: moves keep it fresh, but a second
+    // finger can arrive before the first ever moves, and the two-finger
+    // handover replays the first finger's pointerdown from here.
+    this.lastAbsX = e.clientX;
+    this.lastAbsY = e.clientY;
     this.verdict?.(`stroke ${e.pointerType}`);
     // Mid-stroke the cursor gets out of the way (review decision): sculpt
     // brushes keep the center dot only; Smooth keeps a dimmed ring. The
@@ -642,6 +704,7 @@ export class InputShell {
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
+    if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
 
     // An eyedropper stroke changed the paint colour under the palette's
     // feet; tell it so the swatch stops showing the old one.
@@ -702,6 +765,34 @@ export class InputShell {
    * own: the same tidy-up a lift does (octree rebalance, drop a no-op undo
    * entry, pivot follows the work), minus the event bookkeeping.
    */
+  /**
+   * Replay a stroke-swallowed pointerdown at OrbitControls (two-finger
+   * handover): the canvas dispatch runs our container capture listener
+   * again, so a flag routes the copy straight past it. Synthetic events
+   * carry no trust flags OrbitControls cares about; id and position are
+   * all it reads.
+   */
+  private handToOrbit(pointerId: number, clientX: number, clientY: number): void {
+    this.handingToOrbit = true;
+    try {
+      this.session.getCanvas().dispatchEvent(
+        new PointerEvent('pointerdown', {
+          pointerId,
+          pointerType: 'touch',
+          isPrimary: false,
+          clientX,
+          clientY,
+          button: 0,
+          buttons: 1,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    } finally {
+      this.handingToOrbit = false;
+    }
+  }
+
   private abandonStroke(): void {
     const s = this.session;
     if (s._action === Enums.Action.SCULPT_EDIT) {
