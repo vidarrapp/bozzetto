@@ -457,7 +457,7 @@ and return on exit.
 | 6 | Flatten brush | |
 | 7 | Smooth brush | WS2; shift+drag remains the hold-to-smooth shortcut |
 | 8 | Drag brush | WS2 |
-| 9 | Polish brush | WS2 shipped Twist; retired by owner call for an hPolish-style Polish (bridge PolishBrush over the Twist slot). v2 after iPad testing ("runs edges over"): a per-STROKE held plane - outlier-rejected fit (inlier vertex normals within the clip band), ~85% sticky across dabs, centre re-anchored per dab on the band's inliers - two-sided inside the band (polish), alt = shave-only trim, dab skipped when the band grips too little. The v1 per-dab area fit blended adjacent faces into one tilted plane, which is exactly what rounded edges off. |
+| 9 | Polish brush | WS2 shipped Twist; retired by owner call for an hPolish-style Polish (bridge PolishBrush over the Twist slot). v2 after iPad testing ("runs edges over"): a per-STROKE held plane - outlier-rejected fit (inlier vertex normals within the clip band), sticky across dabs (0.6 after curvature feedback: 0.85 lagged a gentle curve by ~11 degrees and flattened it; edge-stop rides on the band + normal gate, not the stickiness), centre re-anchored per dab on the band's inliers - two-sided inside the band (polish), alt = shave-only trim, dab skipped when the band grips too little. The v1 per-dab area fit blended adjacent faces into one tilted plane, which is exactly what rounded edges off. |
 
 LocalScale did not get a digit (all nine are taken); it ships through the
 WS4 tool palette instead. Transform and Paint stay deferred per section 2.

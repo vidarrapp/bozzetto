@@ -37,11 +37,13 @@ const STRIPS_LAYER = 0.05;
  *   brush radius belongs to some OTHER feature - an adjacent face, an edge,
  *   a corner - and is left alone entirely, in the plane FIT as well as in
  *   the move.
- * - Stickiness: how much of the held normal survives each dab (v2). Round
- *   1 refit the plane per dab from everything under the brush, so crossing
- *   an edge tilted the plane toward the blend of both faces and the brush
- *   "ran edges right over" (owner report); a held, outlier-rejected plane
- *   is what actually stops at edges.
+ * - Stickiness: how much of the held normal survives each dab. With dabs
+ *   at 0.15 radius apart the held normal converges on the local fit in
+ *   about 1/(1-stick) dabs, so this is a lag: 0.85 trailed a gently
+ *   curved surface by ~11 degrees and planarized the curve away (owner
+ *   report); 0.6 follows it within ~4 degrees while still ironing out
+ *   fit noise. Edge-stopping does NOT ride on this - the band and the
+ *   normal-agreement gate reject a neighbouring face at any stickiness.
  * - Gain: a strong pull toward the plane, capped so a vertex lands ON the
  *   plane and never overshoots through it.
  * - Grip floor: a dab whose band catches almost nothing (the stroke has
@@ -49,7 +51,7 @@ const STRIPS_LAYER = 0.05;
  */
 const POLISH_PLATEAU = 0.7;
 const POLISH_CLIP = 0.25;
-const POLISH_STICK = 0.85;
+const POLISH_STICK = 0.6;
 const POLISH_GAIN = 1.5;
 const POLISH_MIN_GRIP = 8;
 /**
