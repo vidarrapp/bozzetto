@@ -178,6 +178,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // material, so those sliders keep meaning what they look like they mean.
   const paintTool = (): { _color?: Float32Array } =>
     session.getSculptManager().getTool(Enums.Tools.PAINT);
+  // Paint owns COLOUR ONLY. Upstream's Paint also writes roughness and
+  // metalness from its own settings - which default to rough 0.3, metal
+  // 0.95, so every stroke turned the clay mirror-shiny (owner bug report).
+  // Bozzetto's surface response belongs to the object's material; the
+  // vendor ships the off-switches, so use them.
+  {
+    const paint = session.getSculptManager().getTool(Enums.Tools.PAINT);
+    paint._writeRoughness = false;
+    paint._writeMetalness = false;
+  }
   const paintColorOf = (): string => {
     const c = paintTool()._color;
     if (!c) return '#ffffff';

@@ -193,7 +193,20 @@ export class MaterialLibrary {
     });
     // Restored vertex colours are already correct; only the objects with no
     // painting of their own need their material written back over them.
-    for (const mesh of meshes) if (!this.painted.has(mesh.getID())) this.applyTo(mesh);
+    // Painted objects keep their colours but get their PBR channels
+    // re-stamped from the material: the paint brush used to smear the
+    // vendor's own roughness/metalness (0.3/0.95 - the shiny-paint bug)
+    // into every stroke, and saves from before the fix carry those values.
+    // Paint never writes PBR any more, so this heals old scenes and is a
+    // no-op for new ones.
+    for (const mesh of meshes) {
+      if (!this.painted.has(mesh.getID())) {
+        this.applyTo(mesh);
+      } else {
+        const mat = this.materialFor(mesh);
+        this.session.fillMaterials(mesh, mat.roughness, mat.metalness);
+      }
+    }
     this.onChange?.();
   }
 }

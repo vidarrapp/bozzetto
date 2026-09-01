@@ -230,6 +230,13 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     _pickColor?: boolean;
     /** Paint tool only: edge falloff of the dab. */
     _hardness?: number;
+    /**
+     * Paint tool only: whether strokes also write the tool's own
+     * roughness/metalness (vendor defaults 0.3/0.95). Bozzetto turns both
+     * off - the surface response belongs to the object's material.
+     */
+    _writeRoughness?: boolean;
+    _writeMetalness?: boolean;
     /** Paint tool only: called after an eyedropper pick with the sample. */
     setPickCallback?(cb: (color: Float32Array, roughness: number, metallic: number) => void): void;
   }
