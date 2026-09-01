@@ -7,7 +7,9 @@ import type { Manifest } from '../types/manifest';
  * "model" manifest backed by an in-memory source, so the viewer boots without
  * touching the API or any timelapse (no transport bar, no frame streaming,
  * no environment load). The one frame is a placeholder cube that sculpt mode
- * replaces with the live sphere the moment it mounts; shared assets (matcaps)
+ * replaces with the live sphere the moment it mounts - it stays hidden
+ * behind the boot overlay until then, so it is never on screen (it made an
+ * ugly splash when the overlay dropped early); shared assets (matcaps)
  * still fetch from the site through MemorySource's fallback.
  */
 export function sculptStandaloneProject(): { manifest: Manifest; source: MemorySource } {

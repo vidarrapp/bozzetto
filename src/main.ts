@@ -49,10 +49,16 @@ async function bootSculpt(): Promise<void> {
     const { sculptStandaloneProject } = await import('./sculpt/standalone');
     const { manifest, source } = sculptStandaloneProject();
     const viewer = await mountViewer(viewport, manifest, source, setStatus);
-    overlay?.remove();
     addGalleryLink();
     const { mountSculptMode } = await import('./sculpt/mode');
     await mountSculptMode(viewer);
+    // Only now: the synthetic manifest's frame is a placeholder cube, and
+    // dropping the overlay before sculpt mode swapped in the live subject
+    // showed it as an ugly splash (owner report) - for however long the
+    // module import, the autosave read and the subdivision build take. It
+    // also left showError printing into a removed overlay if the mount
+    // threw. The first visible frame is the real scene.
+    overlay?.remove();
   } catch (err) {
     console.error(err);
     showError(overlay, err);
