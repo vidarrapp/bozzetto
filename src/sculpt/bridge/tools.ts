@@ -2,6 +2,7 @@ import { mat4, vec3 } from 'gl-matrix';
 import Move from '@sculpt-vendor/editing/tools/Move';
 import Brush from '@sculpt-vendor/editing/tools/Brush';
 import Flatten from '@sculpt-vendor/editing/tools/Flatten';
+import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
@@ -198,6 +199,40 @@ export class VolumetricMove extends Move {
       vAr[ind + 1] += diry * fallOff;
       vAr[ind + 2] += dirz * fallOff;
     }
+  }
+}
+
+/**
+ * Smooth with the interpolation factor clamped to 1 (explosion bug).
+ *
+ * The vendor's smooth is `v = v·(1−k) + average·k`, which is only stable
+ * for k ≤ 1: at k = 1 a vertex lands exactly on its neighbours' average,
+ * and past it the move OVERSHOOTS the average, amplifying the very
+ * roughness it should remove - dab after dab that divergence turns a
+ * sphere into shrapnel. Upstream never sees this because it ships with
+ * pen pressure driving radius only (intensityFactor 0); Bozzetto's
+ * per-brush dynamics map full pen pressure to a 2x intensity multiplier,
+ * so Smooth at its 0.75 default reached k = 1.5. Pressure below the cap
+ * still softens the smoothing; the cap just makes "harder than full" mean
+ * full instead of chaos. The tangent and along-normal variants get the
+ * same ceiling - their overshoot merely oscillates, but it is still
+ * meaningless.
+ */
+export class StableSmooth extends Smooth {
+  constructor(session: SculptSession) {
+    super(session);
+  }
+
+  override smooth(iVerts: Uint32Array, intensity: number, picking?: Picking): void {
+    super.smooth(iVerts, Math.min(1, intensity), picking);
+  }
+
+  override smoothTangent(iVerts: Uint32Array, intensity: number, picking?: Picking): void {
+    super.smoothTangent(iVerts, Math.min(1, intensity), picking);
+  }
+
+  override smoothAlongNormals(iVerts: Uint32Array, intensity: number, picking?: Picking): void {
+    super.smoothAlongNormals(iVerts, Math.min(1, intensity), picking);
   }
 }
 

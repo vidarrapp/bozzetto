@@ -521,6 +521,17 @@ Chosen for GPU cost after the first PC test ("not too great"; iPad untested):
   pressure-less devices, so mouse and plain touch behave unchanged;
   pressure resets to neutral at stroke end so hover picking never sees
   stale values. The factors become palette sliders in WS4.
+  - Post-mortem (user bug report: "Smooth at high pressure explodes the
+    mesh"): Tablet's model is a MULTIPLIER, `1 + f·(2p−1)` - up to 2.0
+    at full pressure with the dynamics curves. Displacement brushes just
+    get stronger, but Smooth is the lerp `v·(1−k) + avg·k`, which past
+    k = 1 overshoots the neighbour average and AMPLIFIES roughness
+    exponentially dab over dab (upstream never hits it: its
+    intensityFactor ships 0). Fix: StableSmooth in the bridge registry
+    clamps the factor to 1 in all three smoothing variants -
+    "harder than full" now means full. smooth-test.mjs drives a
+    synthetic pen at pressure 1.0 and asserts the mesh shrinks toward
+    smooth rather than growing.
 - The settings panel drives ALL sculpt shading (review round 3): the
   sculpt geometry is adopted by the viewer's display mesh, so material
   mode, albedo/roughness/metalness, matcaps, smooth/flat and the

@@ -13,7 +13,7 @@ import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
 import { mat3, mat4, vec3 } from 'gl-matrix';
-import { ClayStripsBrush, PolishBrush, VolumetricMove } from './tools';
+import { ClayStripsBrush, PolishBrush, StableSmooth, VolumetricMove } from './tools';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -92,6 +92,11 @@ export class SculptSession {
       this,
     ) as unknown as SculptTool;
     this.sculptManager._tools[Enums.Tools.TWIST] = new PolishBrush(this) as unknown as SculptTool;
+    // Smooth with its interpolation clamped: pen pressure maps to a 2x
+    // intensity multiplier here, and the vendor lerp diverges past 1.
+    this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(
+      this,
+    ) as unknown as SculptTool;
     this.picking = new Picking(this);
     this.pickingSym = new Picking(this, true);
   }

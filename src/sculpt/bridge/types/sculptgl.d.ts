@@ -349,6 +349,23 @@ declare module '@sculpt-vendor/editing/tools/Move' {
   export default Move;
 }
 
+declare module '@sculpt-vendor/editing/tools/Smooth' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  class Smooth {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _culling: boolean;
+    _tangent: boolean;
+    constructor(main: unknown);
+    stroke(picking: Picking): void;
+    smooth(iVerts: Uint32Array, intensity: number, picking?: Picking): void;
+    smoothTangent(iVerts: Uint32Array, intensity: number, picking?: Picking): void;
+    smoothAlongNormals(iVerts: Uint32Array, intensity: number, picking?: Picking): void;
+  }
+  export default Smooth;
+}
+
 declare module '@sculpt-vendor/editing/tools/Flatten' {
   import type Picking from '@sculpt-vendor/math3d/Picking';
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
