@@ -4,6 +4,7 @@ import { checkbox, compactRange, section } from '../../ui/Panel';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
 import { ClayStripsBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
+import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
@@ -34,6 +35,7 @@ export class SculptPanel extends SidePanel {
   private extractThickness = 1;
   private remeshResolution = 150;
   private topoBody?: HTMLDivElement;
+  private brushHeading: HTMLHeadingElement | null = null;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
 
   constructor(
@@ -51,7 +53,10 @@ export class SculptPanel extends SidePanel {
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
 
   private buildBrush(body: HTMLElement): void {
+    // Named for the ACTIVE tool (owner call): "Brush" never said whose
+    // settings these sliders drive; refreshBrush renames it per selection.
     const sec = section(body, 'Brush');
+    this.brushHeading = sec.querySelector('h3');
 
     // Screen scale is upstream's behaviour: the brush is a fixed number of
     // pixels, so it covers less of the model up close and more far away.
@@ -77,6 +82,7 @@ export class SculptPanel extends SidePanel {
   /** Rebuild the per-brush rows for the ACTIVE tool (tool switches). */
   refreshBrush(): void {
     const tool = this.input.currentToolIndex();
+    if (this.brushHeading) this.brushHeading.textContent = TOOL_NAMES[tool] ?? 'Brush';
     const d = this.input.dynamics.get(tool);
     const dyn = this.dynamicsBody;
     dyn.replaceChildren();

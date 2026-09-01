@@ -22,6 +22,27 @@ function svgFor(slot: string): string | null {
 }
 
 /**
+ * Palette-heading names per tool: the Sculpt panel's top section is named
+ * for the ACTIVE brush ("Polish", not "Brush"), so it is clear whose
+ * settings the sliders drive. Kept beside the toolbar's own tuple list -
+ * whose labels double as tooltips and carry hints ("alt: pick colour")
+ * that a heading should not.
+ */
+export const TOOL_NAMES: Record<number, string> = {
+  [Enums.Tools.CREASE]: 'Crease',
+  [Enums.Tools.MOVE]: 'Move',
+  [Enums.Tools.BRUSH]: 'Standard clay',
+  [Enums.Tools.INFLATE]: 'Inflate',
+  [Enums.Tools.PINCH]: 'Pinch',
+  [Enums.Tools.FLATTEN]: 'Flatten',
+  [Enums.Tools.SMOOTH]: 'Smooth',
+  [Enums.Tools.DRAG]: 'Drag',
+  [Enums.Tools.TWIST]: 'Polish',
+  [Enums.Tools.PAINT]: 'Paint',
+  [Enums.Tools.MASKING]: 'Mask',
+};
+
+/**
  * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
  * bottom bar with the Negative button in the left corner, the digit brushes
  * centered and the hide-interface eye on the right, each showing its icon
