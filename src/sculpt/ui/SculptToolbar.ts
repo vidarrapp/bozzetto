@@ -167,7 +167,7 @@ export class SculptToolbar {
       [tools.CREASE, '1', 'Crease', 'crease', 'fi-ss-scalpel'],
       [tools.MOVE, '2', 'Move', 'move', 'fi-ss-arrows'],
       [tools.BRUSH, '3', 'Standard (clay)', 'standard', 'fi-ss-screwdriver'],
-      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-paintbrush-pencil'],
+      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-expand-arrows-alt'],
       [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress'],
       [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line'],
       [tools.SMOOTH, '7', 'Smooth', 'smooth', 'fi-ss-shredder'],
