@@ -112,8 +112,13 @@ export class Materials {
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
   private maskTintOn = false;
-  /** Sculpt mode reads albedo from the painted `color` attribute. */
+  /** Read albedo from the painted `color` attribute (sculpt, and published
+      models that carry COLOR_0). */
   private sculptVertexColor = false;
+  /** Read roughness/metalness from materialsPBR.x/.y - sculpt only: a
+      published model has a colour attribute but no materialsPBR, and a
+      shader reading a missing attribute is not an error you get to see. */
+  private sculptVertexPBR = false;
 
   /** Whether masked areas are currently drawn darkened (ctrl+h toggles). */
   getSculptMaskTint(): boolean {
@@ -142,6 +147,11 @@ export class Materials {
     this.rebuildSculptColor();
   }
 
+  setSculptVertexPBR(on: boolean): void {
+    this.sculptVertexPBR = on;
+    this.rebuildSculptColor();
+  }
+
   private rebuildSculptColor(): void {
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
@@ -156,7 +166,7 @@ export class Materials {
           x: FloatNode;
           y: FloatNode;
         };
-        const on = this.sculptVertexColor;
+        const on = this.sculptVertexPBR;
         m.roughnessNode = (on ? pbr.x : null) as MeshStandardNodeMaterial['roughnessNode'];
         m.metalnessNode = (on ? pbr.y : null) as MeshStandardNodeMaterial['metalnessNode'];
       }

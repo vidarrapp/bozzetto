@@ -204,7 +204,11 @@ export class SnapshotRecorder {
   }
 
   /** GLB-encode one mesh on the shared worker (also used by model save). */
-  encodeFrame(positions: Float32Array, indices: Uint32Array): Promise<ArrayBuffer> {
+  encodeFrame(
+    positions: Float32Array,
+    indices: Uint32Array,
+    colors?: Float32Array,
+  ): Promise<ArrayBuffer> {
     if (!this.worker) {
       this.worker = new Worker(new URL('../../admin/convert.worker.ts', import.meta.url), {
         type: 'module',
@@ -221,7 +225,9 @@ export class SnapshotRecorder {
         else reject(new Error(d.error ?? 'frame encode failed'));
       };
       w.addEventListener('message', onMsg);
-      w.postMessage({ id, positions, indices }, [positions.buffer, indices.buffer]);
+      const transfer = [positions.buffer, indices.buffer];
+      if (colors) transfer.push(colors.buffer);
+      w.postMessage({ id, positions, indices, colors }, transfer);
     });
   }
 

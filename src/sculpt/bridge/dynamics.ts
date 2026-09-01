@@ -49,6 +49,20 @@ export class DynamicsStore {
     return d;
   }
 
+  /** The per-tool table, for persistence. Only tools that were touched. */
+  serialize(): Record<number, BrushDynamics> {
+    const out: Record<number, BrushDynamics> = {};
+    for (const [tool, d] of this.map) out[tool] = { ...d };
+    return out;
+  }
+
+  load(table: Record<number, BrushDynamics> | undefined): void {
+    if (!table) return;
+    for (const [tool, d] of Object.entries(table)) {
+      this.map.set(Number(tool), { ...this.get(Number(tool)), ...d });
+    }
+  }
+
   install(): void {
     const origIntensity = Tablet.getPressureIntensity;
     const origRadius = Tablet.getPressureRadius;

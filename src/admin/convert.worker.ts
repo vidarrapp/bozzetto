@@ -17,6 +17,8 @@ interface Job {
   zUp?: boolean;
   positions?: Float32Array;
   indices?: Uint32Array;
+  /** Linear vertex colours; present only for painted model publishes. */
+  colors?: Float32Array;
 }
 
 async function gzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
@@ -28,11 +30,11 @@ async function gzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
 }
 
 ctx.onmessage = (e: MessageEvent) => {
-  const { id, text, zUp, positions, indices } = e.data as Job;
+  const { id, text, zUp, positions, indices, colors } = e.data as Job;
   try {
     const { glb, tris } =
       positions && indices
-        ? { glb: meshToGLB(positions, indices), tris: indices.length / 3 }
+        ? { glb: meshToGLB(positions, indices, colors), tris: indices.length / 3 }
         : objToGLB(text ?? '', zUp);
     void gzip(glb).then((packed) => {
       ctx.postMessage({ id, glb: packed, tris }, [packed]);

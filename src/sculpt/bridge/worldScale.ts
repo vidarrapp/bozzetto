@@ -34,6 +34,8 @@ const SLIDER_MAX = 500;
 
 export class WorldScaleBrush {
   private on = false;
+  /** Fired on user-driven changes, so the autosave learns about them. */
+  onChange: (() => void) | null = null;
   /** The pinned radius, in world units. Authoritative while `on`. */
   private world = 1;
   private readonly tmp = vec3.create();
@@ -64,6 +66,7 @@ export class WorldScaleBrush {
     // it rather than restoring a stale slider value.
     if (!on) this.setToolRadius(px);
     this.sync();
+    this.onChange?.();
   }
 
   /**
@@ -94,6 +97,7 @@ export class WorldScaleBrush {
   setSliderValue(v: number): void {
     this.world = Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, v)) * this.unit();
     this.sync();
+    this.onChange?.();
   }
 
   /** The brush's current on-screen radius in CSS px, for the cursor ring. */
@@ -105,6 +109,17 @@ export class WorldScaleBrush {
   /** The pinned radius in world units (what the strength line is anchored to). */
   worldRadius(): number {
     return this.world;
+  }
+
+  /**
+   * Restore a persisted state directly: setEnabled derives the world radius
+   * from the current pixel size, which is right for a live toggle and wrong
+   * for a reload, where the saved radius IS the truth.
+   */
+  restore(on: boolean, world?: number): void {
+    this.on = on;
+    if (on && world && world > 0) this.world = world;
+    this.sync();
   }
 
   // --- conversions --------------------------------------------------------

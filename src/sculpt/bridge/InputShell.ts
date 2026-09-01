@@ -96,6 +96,9 @@ export class InputShell {
   private pickedColor = false;
   /** Fired after the eyedropper changed the paint colour. */
   onPaintColorChange: (() => void) | null = null;
+  /** Fired when a workspace setting changes (dynamics, paint colour...):
+      none of these are edits, so without it the autosave never learned. */
+  onBrushSettingsChange: (() => void) | null = null;
   /** Fired when the selected brush changes (digit keys or toolbar). */
   onToolChange: (() => void) | null = null;
   /** Fired whenever brush radius/strength/selection may have moved. */
@@ -309,6 +312,7 @@ export class InputShell {
     c[0] = col.r;
     c[1] = col.g;
     c[2] = col.b;
+    this.onBrushSettingsChange?.();
   }
 
   hasBrushRadius(): boolean {

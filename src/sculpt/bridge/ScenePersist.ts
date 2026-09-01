@@ -2,6 +2,23 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import type { SculptSession } from './SculptSession';
 import type { LookState } from '../../viewer/Viewer';
 import type { SculptMaterial } from './materials';
+import type { BrushDynamics } from './dynamics';
+
+/**
+ * Workspace preferences that ride with a scene: how the brushes are set up,
+ * not what the mesh looks like. Saved so a session (or a .bozz handed to
+ * someone else) opens with the brushes behaving as they did when it was
+ * made.
+ */
+export interface SculptSettings {
+  /** World-scale brush sizing, and the pinned radius when it is on. */
+  worldScale: boolean;
+  worldRadius?: number;
+  /** Per-brush pressure dynamics, keyed by the vendor tool index. */
+  dynamics?: Record<number, BrushDynamics>;
+  /** The paint brush's colour, sRGB hex. */
+  paintColor?: string;
+}
 
 /**
  * Reload-safe sculpting: the active mesh autosaves to IndexedDB so a page
@@ -86,6 +103,8 @@ export interface SavedScene {
    * scene still LOOKS right; it just has no library behind it.
    */
   materials?: SculptMaterial[];
+  /** Brush workspace settings (v4 addition; absent means the defaults). */
+  settings?: SculptSettings;
 }
 
 /** The single-mesh v2 format, upgraded on read. */

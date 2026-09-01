@@ -115,6 +115,7 @@ export class SculptPanel extends SidePanel {
     dyn.appendChild(
       checkbox('Pen pressure size', d.sizeOn, (on) => {
         d.sizeOn = on;
+          this.input.onBrushSettingsChange?.();
       }),
     );
     dyn.appendChild(
@@ -122,6 +123,7 @@ export class SculptPanel extends SidePanel {
         'Size curve',
         this.curveSelect(d.sizeCurve, (c) => {
           d.sizeCurve = c;
+          this.input.onBrushSettingsChange?.();
         }),
       ),
     );
@@ -141,6 +143,7 @@ export class SculptPanel extends SidePanel {
     dyn.appendChild(
       checkbox('Pen pressure strength', d.strengthOn, (on) => {
         d.strengthOn = on;
+          this.input.onBrushSettingsChange?.();
       }),
     );
     dyn.appendChild(
@@ -148,6 +151,7 @@ export class SculptPanel extends SidePanel {
         'Strength curve',
         this.curveSelect(d.strengthCurve, (c) => {
           d.strengthCurve = c;
+          this.input.onBrushSettingsChange?.();
         }),
       ),
     );

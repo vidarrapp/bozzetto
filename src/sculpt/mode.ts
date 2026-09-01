@@ -1,13 +1,15 @@
-import { Box3, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
 import { InputShell } from './bridge/InputShell';
+import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
 import {
   ScenePersist,
+  type SculptSettings,
   clearSavedScene,
   loadSavedScene,
   clearSculptLook,
@@ -168,10 +170,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // to read as that material - which is also the state a first paint stroke
   // paints on top of.
   viewer.materials.setSculptVertexColor(true);
+  viewer.materials.setSculptVertexPBR(true);
   // Materials are per object now: a named set of albedo/roughness/metalness
   // written across a mesh's attributes, rather than one uniform for the
   // whole scene. The Render panel's controls drive the ACTIVE object's
   // material, so those sliders keep meaning what they look like they mean.
+  const paintTool = (): { _color?: Float32Array } =>
+    session.getSculptManager().getTool(Enums.Tools.PAINT);
+  const paintColorOf = (): string => {
+    const c = paintTool()._color;
+    if (!c) return '#ffffff';
+    return `#${new ThreeColor().setRGB(c[0], c[1], c[2]).getHexString()}`;
+  };
+  const setPaintColorOn = (hex: string): void => {
+    const c = paintTool()._color;
+    if (!c) return;
+    const col = new ThreeColor(hex);
+    c[0] = col.r;
+    c[1] = col.g;
+    c[2] = col.b;
+  };
   const library = new MaterialLibrary(session);
   // A restored scene brings its own library and assignments. Applied here,
   // before the panels are built, so the first thing they show is right.
@@ -611,18 +629,41 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       });
     },
   });
-  filePanel.decorate = (scene) => library.saveInto(scene);
+  /**
+   * Brush workspace settings ride every saved scene: how the brushes are
+   * set up is part of coming back to work, and a .bozz opened elsewhere
+   * should feel like the session that made it.
+   */
+  const collectSettings = (): SculptSettings => ({
+    worldScale: worldScale.isEnabled(),
+    worldRadius: worldScale.isEnabled() ? worldScale.worldRadius() : undefined,
+    dynamics: input.dynamics.serialize(),
+    paintColor: paintColorOf(),
+  });
+  const applySettings = (settings: SculptSettings | undefined): void => {
+    if (!settings) return;
+    worldScale.restore(settings.worldScale, settings.worldRadius);
+    input.dynamics.load(settings.dynamics);
+    if (settings.paintColor) setPaintColorOn(settings.paintColor);
+    input.refreshBrushCursor();
+    sculptPanel?.refreshBrush();
+  };
+
+  // The mount restore: materials were applied when the library loaded (the
+  // panels need them first); settings wait until here, where the world
+  // scale and dynamics they describe exist to be written into.
+  if (saved) applySettings(saved.settings);
+
+  filePanel.decorate = (scene) => {
+    library.saveInto(scene);
+    scene.settings = collectSettings();
+  };
   filePanel.adopt = (scene) => {
     library.loadFrom(scene);
+    applySettings(scene.settings);
     session.render();
   };
   scenePanel = new ScenePanel(session, library);
-  // Creating, assigning or editing a material changes what the outliner
-  // row and the Render controls should show.
-  library.onChange = () => {
-    scenePanel?.refresh();
-    syncPanelMaterial();
-  };
   sculptPanel = new SculptPanel(session, input, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
@@ -692,8 +733,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
   const persist = new ScenePersist(session);
-  persist.decorate = (scene) => library.saveInto(scene);
+  persist.decorate = (scene) => {
+    library.saveInto(scene);
+    scene.settings = collectSettings();
+  };
   persist.install();
+  // Materials and workspace settings ride the scene record, but nothing
+  // about them is an EDIT, so they never marked the autosave dirty: create
+  // a material, reload, and it was gone unless a stroke happened to follow.
+  // Every mutation source reports in.
+  const noteWorkspace = (): void => persist.markDirty();
+  library.onChange = () => {
+    scenePanel?.refresh();
+    syncPanelMaterial();
+    noteWorkspace();
+  };
+  worldScale.onChange = noteWorkspace;
+  input.onBrushSettingsChange = noteWorkspace;
   // Timelapse capture stacks its edit hooks on top of the autosave's (the
   // unmount below unwinds in reverse). Install is async (frame index read).
   void recorder.install();
@@ -726,12 +782,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         if (!scene) throw new Error('nothing to pack');
         scene.look = viewer.getLook(); // same payload the Save file button writes
         library.saveInto(scene); // ...and the same materials
+        scene.settings = collectSettings();
         return (await packScene(scene)).arrayBuffer();
       },
       open: async (bytes: ArrayBuffer) => {
         const scene = await unpackScene(bytes);
         session.replaceScene(scene);
         library.loadFrom(scene); // same as the File panel's Open
+        applySettings(scene.settings);
         if (scene.look) {
           await applyLookSafely(scene.look);
           window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
@@ -813,6 +871,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.materials.onAlbedoChange = null;
     viewer.materials.onPbrChange = null;
     viewer.materials.setSculptVertexColor(false);
+    viewer.materials.setSculptVertexPBR(false);
     lighting.setRigFollow(null);
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);

@@ -472,6 +472,12 @@ export class Viewer {
     this.fitScene(geom);
 
     this.setMaterial(this.currentMode);
+    // A published model that was painted carries COLOR_0, which the loader
+    // hands back as a `color` attribute. Albedo then comes from the paint,
+    // exactly as it did in sculpt mode (the fill IS the material colour, so
+    // unpainted areas read as their material too). materialsPBR does not
+    // exist here, so only the colour half of the sculpt path switches on.
+    if (geom.getAttribute('color')) this.materials.setSculptVertexColor(true);
     this.lighting.applyPreset(this.manifest.defaults.lightingPreset);
     // A saved custom rig (set in the editor) overrides the preset.
     if (this.manifest.lighting) {

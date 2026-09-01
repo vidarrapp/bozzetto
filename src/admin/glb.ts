@@ -94,7 +94,11 @@ function quantizePositions(positions: Float32Array): {
   return { quantized, center, half, qMin, qMax };
 }
 
-export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayBuffer {
+export function meshToGLB(
+  positions: Float32Array,
+  indices: Uint32Array,
+  colors?: Float32Array,
+): ArrayBuffer {
   const vertCount = positions.length / 3;
   const { quantized, center, half, qMin, qMax } = quantizePositions(positions);
 
@@ -103,10 +107,25 @@ export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayB
   const indexArray = smallIndex ? Uint16Array.from(indices) : indices;
   const indexType = smallIndex ? 5123 : 5125; // USHORT vs UINT
 
+  // Vertex colour, when a publish carries paint: normalized ubyte VEC3 -
+  // core glTF, one byte a channel, and the loader hands it back as the
+  // `color` attribute. The floats are LINEAR (the sculpt attribute is), and
+  // glTF's COLOR_0 is linear too, so this is a straight scale, not an sRGB
+  // encode.
+  const colorArray =
+    colors && colors.length === positions.length
+      ? Uint8Array.from(colors, (v) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+      : null;
+
   const idxLen = indexArray.byteLength;
   const idxPadded = (idxLen + 3) & ~3;
   const posLen = quantized.byteLength;
-  const binLen = idxPadded + posLen;
+  const posPadded = colorArray ? (posLen + 3) & ~3 : posLen;
+  const colLen = colorArray ? colorArray.byteLength : 0;
+  const binLen = idxPadded + posPadded + colLen;
+
+  const attributes: Record<string, number> = { POSITION: 1 };
+  if (colorArray) attributes.COLOR_0 = 2;
 
   const gltf = {
     asset: { version: '2.0', generator: 'bozzetto obj-to-timelapse' },
@@ -115,7 +134,7 @@ export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayB
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0, translation: center, scale: half }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 1 }, indices: 0, mode: 4 }] }],
+    meshes: [{ primitives: [{ attributes, indices: 0, mode: 4 }] }],
     accessors: [
       { bufferView: 0, componentType: indexType, count: indices.length, type: 'SCALAR' },
       {
@@ -127,10 +146,24 @@ export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayB
         min: qMin,
         max: qMax,
       },
+      ...(colorArray
+        ? [
+            {
+              bufferView: 2,
+              componentType: 5121, // UBYTE
+              normalized: true,
+              count: vertCount,
+              type: 'VEC3',
+            },
+          ]
+        : []),
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: idxLen, target: 34963 },
       { buffer: 0, byteOffset: idxPadded, byteLength: posLen, target: 34962 },
+      ...(colorArray
+        ? [{ buffer: 0, byteOffset: idxPadded + posPadded, byteLength: colLen, target: 34962 }]
+        : []),
     ],
     buffers: [{ byteLength: binLen }],
   };
@@ -155,6 +188,7 @@ export function meshToGLB(positions: Float32Array, indices: Uint32Array): ArrayB
   o += 8;
   u8.set(new Uint8Array(indexArray.buffer, indexArray.byteOffset, idxLen), o);
   u8.set(new Uint8Array(quantized.buffer, quantized.byteOffset, posLen), o + idxPadded);
+  if (colorArray) u8.set(colorArray, o + idxPadded + posPadded);
   // Alignment gaps and trailing bin pad stay 0x00, matching the CLI writer.
   return out;
 }

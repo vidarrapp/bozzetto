@@ -77,11 +77,13 @@ export async function saveModelToGallery(
   title: string,
   onProgress: (text: string) => void,
 ): Promise<string> {
-  const merged = mergeSceneArrays(session);
+  // With colours: a painted model publishes as painted (owner decision).
+  // Timelapse frames stay colour-free - paint was never envisioned there.
+  const merged = mergeSceneArrays(session, true);
   if (!merged) throw new Error('Nothing to save');
   if (!PROJECT_SLUG.test(id)) throw new Error('Id must be a-z, 0-9, hyphens');
   onProgress('Encoding model...');
-  const glb = await recorder.encodeFrame(merged.positions, merged.indices);
+  const glb = await recorder.encodeFrame(merged.positions, merged.indices, merged.colors);
   onProgress('Creating project...');
   await api.create({ id, title: title || id, mode: 'model', fps: 4 });
   onProgress('Uploading...');
