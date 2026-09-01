@@ -381,6 +381,12 @@ declare module '@sculpt-vendor/editing/tools/Flatten' {
     constructor(main: unknown);
     getMesh(): SculptMesh;
     stroke(picking: Picking): void;
+    start(ctrl: boolean): boolean;
+    end(): void;
+    dynamicTopology(picking: Picking): Uint32Array;
+    getFrontVertices(iVerts: Uint32Array, eyeDir: number[]): Uint32Array;
+    areaNormal(iVerts: Uint32Array): number[] | null;
+    areaCenter(iVerts: Uint32Array): number[];
     flatten(
       iVertsInRadius: Uint32Array,
       aNormal: number[],

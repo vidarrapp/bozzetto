@@ -33,17 +33,25 @@ const STRIPS_LAYER = 0.05;
 /**
  * Polish (hPolish-inspired, replaces Twist on 9):
  * - Flat-top falloff so the footprint planarizes rather than domes.
- * - Clip: a vertex farther off the sampled plane than this fraction of the
+ * - Clip: a vertex farther off the working plane than this fraction of the
  *   brush radius belongs to some OTHER feature - an adjacent face, an edge,
- *   a corner - and is left alone entirely. This is what lets the brush
- *   smooth a face right up to an edge and leave the edge crisp, where
- *   Flatten would drag the neighbouring form in and melt it.
+ *   a corner - and is left alone entirely, in the plane FIT as well as in
+ *   the move.
+ * - Stickiness: how much of the held normal survives each dab (v2). Round
+ *   1 refit the plane per dab from everything under the brush, so crossing
+ *   an edge tilted the plane toward the blend of both faces and the brush
+ *   "ran edges right over" (owner report); a held, outlier-rejected plane
+ *   is what actually stops at edges.
  * - Gain: a strong pull toward the plane, capped so a vertex lands ON the
  *   plane and never overshoots through it.
+ * - Grip floor: a dab whose band catches almost nothing (the stroke has
+ *   left its plane) does nothing at all rather than acting on garbage.
  */
 const POLISH_PLATEAU = 0.7;
 const POLISH_CLIP = 0.25;
+const POLISH_STICK = 0.85;
 const POLISH_GAIN = 1.5;
+const POLISH_MIN_GRIP = 8;
 
 /**
  * Move, ZBrush-flavored:
@@ -237,29 +245,156 @@ export class StableSmooth extends Smooth {
 }
 
 /**
- * Polish, modelled on ZBrush's hPolish (owner request, replacing Twist):
- * a hard planar smoother. Each dab fits a plane to the area under the
- * brush (Flatten's own sampling) and pulls only the NEARBY side of the
- * surface flat onto it - anything sitting farther off the plane than
- * POLISH_CLIP of the radius is other geometry and stays put, so working
- * a surface toward an edge sharpens the edge instead of rounding it.
- * The default direction shaves proud material down (vendor Flatten's
- * negative); alt inverts to fill hollows up to the plane instead.
+ * Polish, modelled on ZBrush's hPolish (owner request, replacing Twist).
+ *
+ * v2, after iPad testing read as "flatten/carve that runs edges over":
+ * the plane is now a per-STROKE working plane, not a per-dab average.
+ * The first dab grips it with an outlier-rejected fit - seed with the
+ * area average, then refit centre and normal from only the vertices
+ * within the clip band, using their vertex normals, so a brush landing
+ * near an edge grips the MAJORITY face instead of a blend of both. Later
+ * dabs keep POLISH_STICK of the held normal and re-anchor the centre on
+ * the band's inliers, so the plane rides the face it started on; the
+ * adjacent face never pulls it over, its vertices sit outside the band,
+ * and the edge between them sharpens instead of rounding.
+ *
+ * The move is TWO-SIDED inside the band - bumps shave down and dents
+ * fill up onto the plane, which is what makes it a polish rather than a
+ * carve - and nothing beyond the band moves at all. Alt (or the Negative
+ * toggle) switches to trim: shave-only, dents left alone.
  */
 export class PolishBrush extends Flatten {
+  /** The stroke's held plane normal; null until the first dab grips. */
+  private held: [number, number, number] | null = null;
+
   constructor(session: SculptSession) {
     super(session);
     this._intensity = 0.9; // a strong polish is the point
+    this._negative = false; // default is polish (two-sided); alt trims
+  }
+
+  override start(ctrl: boolean): boolean {
+    // Fresh grip per stroke even if a mid-stroke tool swap ate the end().
+    this.held = null;
+    return super.start(ctrl);
+  }
+
+  override end(): void {
+    this.held = null;
+    super.end();
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Flatten.stroke (vendor Flatten.js): the
+   * same flow, with the area fit replaced by the held robust fit and the
+   * flatten displacement by the banded two-sided polish.
+   */
+  override stroke(picking: Picking): void {
+    let iVertsInRadius = picking.getPickedVertices();
+    const intensity = this._intensity * Tablet.getPressureIntensity();
+
+    (this._main as SculptSession).getStateManager().pushVertices(iVertsInRadius);
+    iVertsInRadius = this.dynamicTopology(picking);
+
+    const iVertsFront = this.getFrontVertices(iVertsInRadius, picking.getEyeDirection());
+    if (this._culling) iVertsInRadius = iVertsFront;
+
+    const radius = Math.sqrt(picking.getLocalRadius2());
+    const plane = this.gripPlane(iVertsFront, radius * POLISH_CLIP);
+    if (!plane) return; // the stroke has left its plane: do nothing
+
+    picking.updateAlpha(this._lockPosition);
+    picking.setIdAlpha(this._idAlpha);
+    this.polish(
+      iVertsInRadius,
+      plane.normal,
+      plane.center,
+      picking.getIntersectionPoint(),
+      picking.getLocalRadius2(),
+      intensity,
+      picking,
+    );
+
+    const mesh = this.getMesh();
+    mesh.updateGeometry(mesh.getFacesFromVertices(iVertsInRadius), iVertsInRadius);
+  }
+
+  /**
+   * The working plane for this dab. Seeded by the vendor area fit (first
+   * dab) or the held normal; the centre and normal are then REFIT from
+   * only the vertices inside the clip band, weighted by vertex normals -
+   * the outlier rejection that keeps an adjacent face from tilting the
+   * plane. Returns null when the band grips too little to mean anything.
+   */
+  private gripPlane(
+    iVertsFront: Uint32Array,
+    clip: number,
+  ): { normal: [number, number, number]; center: number[] } | null {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const nAr = mesh.getNormals();
+
+    let seed = this.held;
+    if (!seed) {
+      const a = this.areaNormal(iVertsFront);
+      if (!a) return null;
+      seed = [a[0], a[1], a[2]];
+    }
+    const seedC = this.areaCenter(iVertsFront);
+
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    let count = 0;
+    for (let i = 0, l = iVertsFront.length; i < l; ++i) {
+      const ind = iVertsFront[i] * 3;
+      const d =
+        (vAr[ind] - seedC[0]) * seed[0] +
+        (vAr[ind + 1] - seedC[1]) * seed[1] +
+        (vAr[ind + 2] - seedC[2]) * seed[2];
+      if (Math.abs(d) > clip) continue;
+      cx += vAr[ind];
+      cy += vAr[ind + 1];
+      cz += vAr[ind + 2];
+      nx += nAr[ind];
+      ny += nAr[ind + 1];
+      nz += nAr[ind + 2];
+      count++;
+    }
+    if (count < POLISH_MIN_GRIP) return null;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-10) return null;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    if (this.held) {
+      const h = this.held;
+      const s = POLISH_STICK;
+      nx = h[0] * s + nx * (1 - s);
+      ny = h[1] * s + ny * (1 - s);
+      nz = h[2] * s + nz * (1 - s);
+      const bl = Math.hypot(nx, ny, nz);
+      if (bl < 1e-10) return null;
+      nx /= bl;
+      ny /= bl;
+      nz /= bl;
+    }
+    this.held = [nx, ny, nz];
+    return { normal: [nx, ny, nz], center: [cx / count, cy / count, cz / count] };
   }
 
   /**
    * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js): the
-   * same projection loop with three changed lines called out below - the
-   * off-plane clip, the plateau falloff, and the capped gain.
+   * same projection loop, banded (nothing beyond the clip moves),
+   * two-sided by default (trim-only under alt/Negative), plateau falloff,
+   * and the pull capped at landing exactly on the plane.
    */
-  override flatten(
+  private polish(
     iVertsInRadius: Uint32Array,
-    aNormal: number[],
+    aNormal: [number, number, number],
     aCenter: number[],
     center: number[],
     radiusSquared: number,
@@ -281,22 +416,21 @@ export class PolishBrush extends Flatten {
     const anx = aNormal[0];
     const any = aNormal[1];
     const anz = aNormal[2];
-    const comp = this._negative ? -1.0 : 1.0;
-    const clip = radius * POLISH_CLIP; // CHANGED: the edge-preserving band
+    const shaveOnly = this._negative;
+    const clip = radius * POLISH_CLIP;
     for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
       const ind = iVertsInRadius[i] * 3;
       const vx = vAr[ind];
       const vy = vAr[ind + 1];
       const vz = vAr[ind + 2];
       const distToPlane = (vx - ax) * anx + (vy - ay) * any + (vz - az) * anz;
-      if (distToPlane * comp > 0.0) continue;
-      if (Math.abs(distToPlane) > clip) continue; // CHANGED: other features stay
+      if (Math.abs(distToPlane) > clip) continue; // other features stay
+      if (shaveOnly && distToPlane < 0.0) continue; // trim leaves the dents
       const dx = vProxy[ind] - cx;
       const dy = vProxy[ind + 1] - cy;
       const dz = vProxy[ind + 2] - cz;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
       if (dist >= 1.0) continue;
-      // CHANGED: plateau falloff (upstream applies the quartic from d=0).
       let fallOff: number;
       if (dist <= POLISH_PLATEAU) {
         fallOff = 1.0;
@@ -305,7 +439,6 @@ export class PolishBrush extends Flatten {
         fallOff = t * t;
         fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * t + 1.0;
       }
-      // CHANGED: strong pull, capped at landing exactly on the plane.
       const frac = Math.min(
         1.0,
         POLISH_GAIN * intensity * fallOff * mAr[ind + 2] * picking.getAlpha(vx, vy, vz),
