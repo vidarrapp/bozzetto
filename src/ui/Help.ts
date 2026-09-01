@@ -47,6 +47,7 @@ const SCULPT_HTML = `
     <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Brush size step (wheel-friendly)</span></div>
     <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
     <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
+    <div class="help-row"><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><span>Move / rotate / scale the object (gizmo); <kbd>Q</kbd> back to sculpting</span></div>
     <div class="help-row"><span class="help-key">Sculpt panel</span><span>World-scale size: pin the brush to the mesh, not the screen</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
   </div>

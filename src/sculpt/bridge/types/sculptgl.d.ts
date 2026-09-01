@@ -239,6 +239,8 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
 
 declare module '@sculpt-vendor/states/StateManager' {
   class StateManager {
+    /** One undo entry from a pair of callbacks (object transforms use it). */
+    pushStateCustom(undocb: () => void, redocb?: () => void, squash?: boolean): void;
     /** Undo stack depth cap (upstream default 15; the bridge raises it). */
     static STACK_LENGTH: number;
     constructor(main: unknown);

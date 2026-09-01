@@ -19,6 +19,7 @@ import {
 } from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
+import { TransformGizmo, type GizmoMode } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
@@ -329,6 +330,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel?.refresh();
     sculptPanel?.refreshState();
     syncPanelMaterial();
+    if (gizmo.isActive()) gizmo.attach(session.getMesh());
   };
   reconcile();
 
@@ -550,6 +552,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     focusEdit: (point) => pivot.set(point[0], point[1], point[2]),
     // Once painted, an object owns its vertex colours: recolouring the
     // material must not wipe the strokes.
+    transformMode: (mode) => enterTransform(mode),
+    transformExit: () => exitTransform(),
     markPainted: () => {
       const active = session.getMesh();
       if (active) library.markPainted(active);
@@ -600,6 +604,42 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   );
   input.worldScale = worldScale;
+
+  /**
+   * The transform gizmo (owner design): unified from the toolbar, one mode
+   * from e/r/t, q to leave. It lives in the viewer's scene and writes into
+   * the vendor mesh matrix, so persistence and undo see ordinary state.
+   */
+  const gizmo = new TransformGizmo(session, viewer.camera, canvas, viewer.scene);
+  input.transform = gizmo;
+  gizmo.onTransform = (mesh) => {
+    const m = new Matrix4().fromArray(mesh.getMatrix());
+    if (mesh === session.getMesh()) viewer.setSculptMatrix(m);
+    else {
+      const extra = extras.get(mesh as never);
+      if (extra) viewer.setSculptExtraMatrix(extra.handle, m);
+    }
+    session.render();
+  };
+  gizmo.onDragState = (dragging) => {
+    // The gizmo and the orbit share a pointer; only one may listen.
+    viewer.setOrbitEnabled(!dragging);
+  };
+  gizmo.onCommit = () => {
+    persist.markDirty();
+    sliders?.refreshHistory();
+  };
+  const enterTransform = (mode: GizmoMode): void => {
+    if (gizmo.isActive() && mode !== 'all' && gizmo.getMode() === mode) return;
+    gizmo.enter(mode, session.getMesh());
+    cursor.hide();
+    toolbar.setTransformActive(true);
+  };
+  const exitTransform = (): void => {
+    if (!gizmo.isActive()) return;
+    gizmo.exit();
+    toolbar.setTransformActive(false);
+  };
   // On by default: a brush you can rely on is worth more than one that
   // rescales with the camera, and the screen-pixel behaviour is a tick away.
   // Enabled here (not by a field default) so the pinned world radius is
@@ -612,6 +652,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   input.setVerdictSink(inputDebug ? inputDebug.verdict : null);
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
+  toolbar.onToggleTransform = () => {
+    if (gizmo.isActive()) exitTransform();
+    else enterTransform('all');
+  };
   toolbar.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => toolbar.setChromeHidden(hidden);
   sliders = new BrushSliders(input, {
@@ -848,6 +892,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.onLevelChange = null;
     levelToast.dispose();
     stats.dispose();
+    gizmo.dispose();
     recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();

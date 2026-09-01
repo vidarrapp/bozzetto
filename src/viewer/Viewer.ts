@@ -1401,6 +1401,14 @@ export class Viewer {
     this.controls.placeCamera(position, target);
   }
 
+  /**
+   * Park or release the orbit controls (the transform gizmo takes the
+   * pointer while dragging, and both listening at once fights the drag).
+   */
+  setOrbitEnabled(on: boolean): void {
+    this.controls.controls.enabled = on;
+  }
+
   /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
   orbitAzimuthAbout(centre: Vector3, deg: number): void {
     this.controls.rotateAzimuthAbout(centre, deg);

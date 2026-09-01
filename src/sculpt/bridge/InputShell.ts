@@ -3,6 +3,7 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
 import type { WorldScaleBrush } from './worldScale';
+import type { TransformGizmo } from './transform';
 import { isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
@@ -31,6 +32,10 @@ export interface InputShellHooks {
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
   markPainted(): void;
+  /** e/r/t/toolbar: enter the transform gizmo, or switch its mode. */
+  transformMode(mode: 'all' | 'translate' | 'rotate' | 'scale'): void;
+  /** q (or picking a brush): leave the gizmo and go back to sculpting. */
+  transformExit(): void;
   /** A drag that missed the mesh is about to orbit / has finished. */
   orbitBegin(): void;
   orbitEnd(): void;
@@ -162,6 +167,8 @@ export class InputShell {
   readonly dynamics = new DynamicsStore(() => this.session.getSculptManager().getToolIndex());
   /** World-scale brush sizing; mode.ts owns it (it needs the three camera). */
   worldScale: WorldScaleBrush | null = null;
+  /** Object transform gizmo; mode.ts owns it (it lives in the three scene). */
+  transform: TransformGizmo | null = null;
 
   install(): void {
     // Pen pressure routing lives in the dynamics store (per-brush toggles
@@ -371,6 +378,30 @@ export class InputShell {
     const s = this.session;
     this.setMouse(e);
 
+    // With the gizmo up there is no sculpting. A press on a handle belongs
+    // to TransformControls (its own listeners run after ours; claiming or
+    // orbiting here would fight the drag). A press on an object selects it,
+    // gizmo included. A press on nothing orbits, as always.
+    if (this.transform?.isActive()) {
+      if (this.transform.handleHovered() || this.transform.isDragging()) {
+        this.verdict?.('gizmo takes the pointer');
+        return;
+      }
+      if (s.getPicking().intersectionMouseMeshes()) {
+        const hit = s.getPicking().getMesh();
+        if (hit && hit !== s.getMesh()) s.setMesh(hit as never);
+        this.verdict?.('select under gizmo');
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      s._action = Enums.Action.NOTHING;
+      this.orbitPointer = e.pointerId;
+      this.verdict?.('orbit (gizmo active, missed)');
+      this.hooks.orbitBegin();
+      return;
+    }
+
     // alt+click (no drag intent resolvable here): select the mesh under the
     // cursor. With a single mesh this is a no-op; it exists for multi-mesh.
     // The same press still sculpts negatively if dragged, matching ZBrush
@@ -539,6 +570,12 @@ export class InputShell {
       // drag): the cursor gets out of the way entirely, and skipping the
       // hover raycast keeps orbiting cheap.
       if (e.buttons !== 0) {
+        this.cursor.hide();
+        return;
+      }
+      // The gizmo owns the view while it is up: a brush ring over the
+      // handles reads as "you can sculpt", which is exactly wrong.
+      if (this.transform?.isActive()) {
         this.cursor.hide();
         return;
       }
@@ -801,11 +838,21 @@ export class InputShell {
       case 'f':
         this.hooks.frameModel();
         return this.claim(e);
-      // Reserved: q returns from the future gizmo; w/e/r are its modes.
+      // The gizmo keys (owner design): e/r/t expose one transform each,
+      // q returns to sculpting. w stays reserved.
       case 'q':
-      case 'w':
+        this.hooks.transformExit();
+        return this.claim(e);
       case 'e':
+        this.hooks.transformMode('translate');
+        return this.claim(e);
       case 'r':
+        this.hooks.transformMode('rotate');
+        return this.claim(e);
+      case 't':
+        this.hooks.transformMode('scale');
+        return this.claim(e);
+      case 'w':
         return this.claim(e);
       case '1':
         return this.selectTool(Enums.Tools.CREASE, e);
@@ -878,6 +925,8 @@ export class InputShell {
 
   /** Select a brush (digit keys and the touch toolbar share this path). */
   selectBrush(index: number, init?: (tool: SculptTool) => void): void {
+    // A brush is a statement of intent: sculpting resumes, the gizmo goes.
+    if (this.transform?.isActive()) this.hooks.transformExit();
     const manager = this.session.getSculptManager();
     manager.setToolIndex(index);
     const tool = manager.getCurrentTool();

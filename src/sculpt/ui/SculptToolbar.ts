@@ -40,6 +40,13 @@ function svgFor(slot: string): string | null {
  * the button says, so keyboard users lose nothing either way.
  */
 export class SculptToolbar {
+  /** Toolbar transform toggle (mode.ts owns the gizmo). */
+  onToggleTransform: (() => void) | null = null;
+  private transformBtn!: HTMLButtonElement;
+
+  setTransformActive(on: boolean): void {
+    this.transformBtn.classList.toggle('sculpt-toolbar__btn--active', on);
+  }
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
   private readonly brushBtns = new Map<number, HTMLButtonElement>();
@@ -176,6 +183,13 @@ export class SculptToolbar {
       this.brushBtns.set(id, btn);
       center.appendChild(btn);
     }
+
+    // Transform is not a brush: it has letter keys (e/r/t, q leaves) and a
+    // gizmo instead of strokes, so it keeps its own button and active state
+    // rather than a digit slot.
+    this.transformBtn = toolButton('', 'Transform (e/r/t modes, q exits)', 'transform', 'fi-ss-transformation-block');
+    this.transformBtn.addEventListener('click', () => this.onToggleTransform?.());
+    center.appendChild(this.transformBtn);
 
     this.root.append(left, center, right);
     document.body.appendChild(this.root);
