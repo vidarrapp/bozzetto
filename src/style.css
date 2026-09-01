@@ -2457,12 +2457,12 @@ body.chrome-hidden .transport {
   text-align: right;
 }
 
-/* Material assignment, under the object list it belongs to. */
+/* Material assignment, under the Create button (it closes the panel now). */
 .outliner__material {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 0 0;
+  padding: 4px 8px 10px;
   border-top: 1px solid var(--panel-border);
 }
 

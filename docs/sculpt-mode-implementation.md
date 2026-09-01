@@ -366,9 +366,12 @@ Reworked after user feedback (post-WS7):
   refuses hidden/locked targets) left of the name; double-click renames
   in place; trash on the active row (delete was always undoable -
   pushStateAddRemove - so the prompt is just `Delete "name"?`). Both
-  flags persist (SavedMesh v4 visible/locked). "Add to scene" wide
-  button replaces +/−; New material prompts for a name; a locked
-  object's material controls are read-only.
+  flags persist (SavedMesh v4 visible/locked). A wide "Create" button
+  right under the list replaces +/− (renamed from "Add to scene" by
+  owner call), with the selection's material line beneath it; new
+  materials are made from the dropdown's trailing "New*" entry (name
+  prompt, painted-confirm) instead of a button. A locked object's
+  material dropdown is read-only.
 - Hotkey focus rule (found by the topology suite): isTextEntryTarget
   used to match EVERY input, so clicking any panel checkbox killed all
   hotkeys - undo included - until focus moved. Now typing surfaces

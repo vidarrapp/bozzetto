@@ -8,14 +8,15 @@ import type { MaterialLibrary } from '../bridge/materials';
  * Scene outliner: the lower-left docked panel, and only the objects. Each
  * row is an eye (visibility), a padlock (edit lock), the name - click
  * selects, double-click renames in place - and, on the selected row, a
- * trash can. Objects are added through the wide button under the list.
+ * trash can. The wide Create button sits right under the list, and the
+ * selection's material row under that; new materials are made from the
+ * dropdown's own trailing "New*" entry rather than a separate button.
  * Saving, exporting and capture live next door in the File panel.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
   private matRow?: HTMLDivElement;
-  private newMatBtn?: HTMLButtonElement;
   /** The object whose name is being edited, so refresh keeps the input. */
   private renaming: SculptMesh | null = null;
 
@@ -40,35 +41,13 @@ export class ScenePanel extends SidePanel {
     this.listEl = div('outliner');
     this.body.appendChild(this.listEl);
 
-    // Material assignment sits between the objects and the add button: it
-    // belongs to the selected object above it.
-    this.matRow = div('outliner__material');
-    this.body.appendChild(this.matRow);
-    this.newMatBtn = document.createElement('button');
-    this.newMatBtn.type = 'button';
-    this.newMatBtn.className = 'outliner__btn outliner__btn--wide';
-    this.newMatBtn.textContent = 'New material';
-    this.newMatBtn.addEventListener('click', () => {
-      const active = this.session.getMesh();
-      if (!active || !this.library) return;
-      const name = prompt('New material name', 'Clay');
-      if (name === null) return;
-      // Assigning re-fills the object, so painted work would go: ask first.
-      if (
-        this.library.isPainted(active) &&
-        !confirm('New material? The colours painted on this object will be replaced.')
-      ) {
-        return;
-      }
-      this.library.assign(active, this.library.create(name.trim() || 'Clay').id);
-      this.session.render();
-    });
-
+    // Create sits directly under the object list it adds to, with the
+    // selection's material line beneath it (owner layout call).
     const footer = div('outliner__footer');
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'outliner__btn outliner__btn--wide';
-    addBtn.textContent = 'Add to scene';
+    addBtn.textContent = 'Create';
 
     // The menu lives on the body, not in the panel: the panel body scrolls
     // and clips, and with only the default sphere in the list the panel is
@@ -100,6 +79,8 @@ export class ScenePanel extends SidePanel {
     });
     footer.append(addBtn);
     this.body.appendChild(footer);
+    this.matRow = div('outliner__material');
+    this.body.appendChild(this.matRow);
 
     // A collapsing panel must not leave its popup menu armed.
     this.onCollapsedChange = (collapsed) => {
@@ -273,17 +254,21 @@ export class ScenePanel extends SidePanel {
     this.matRow.hidden = !active;
     if (!active) return;
     const current = this.library.materialFor(active);
+    // The trailing "New*" entry IS the create button (owner call): picking
+    // it prompts for a name, makes the material and assigns it here.
+    const NEW_ID = '__new__';
     const select = selectEl(
-      this.library.list().map((m) => [m.id, m.name] as [string, string]),
+      [
+        ...this.library.list().map((m) => [m.id, m.name] as [string, string]),
+        [NEW_ID, 'New*'] as [string, string],
+      ],
       current.id,
     );
     // The padlock means "not edited": re-assigning fills the object's
     // colours, so a locked object's material is read-only with it.
-    const locked = this.session.isLocked(active);
-    select.disabled = locked;
-    this.newMatBtn!.disabled = locked;
+    select.disabled = this.session.isLocked(active);
     select.addEventListener('change', () => {
-      // Re-assigning re-fills the object, so painted work would go: ask.
+      // Any assignment re-fills the object, so painted work would go: ask.
       if (
         this.library!.isPainted(active) &&
         !confirm('Change material? The colours painted on this object will be replaced.')
@@ -291,10 +276,21 @@ export class ScenePanel extends SidePanel {
         select.value = current.id;
         return;
       }
+      if (select.value === NEW_ID) {
+        const name = prompt('New material name', 'Clay');
+        if (name === null) {
+          select.value = current.id;
+          return;
+        }
+        this.library!.assign(active, this.library!.create(name.trim() || 'Clay').id);
+        this.session.render();
+        this.refreshMaterial(); // the new material takes the slot, "New*" stays last
+        return;
+      }
       this.library!.assign(active, select.value);
       this.session.render();
     });
-    this.matRow.replaceChildren(labelRow('Material', select), this.newMatBtn!);
+    this.matRow.replaceChildren(labelRow('Material', select));
   }
 
   override dispose(): void {
