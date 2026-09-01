@@ -3,7 +3,7 @@ import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
-import { ClayStripsBrush, VolumetricMove } from '../bridge/tools';
+import { ClayStripsBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
 import type { InputShell } from '../bridge/InputShell';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
@@ -178,6 +178,16 @@ export class SculptPanel extends SidePanel {
       extras.appendChild(
         compactRange('Strip layer', 0.05, 0.5, 0.05, strips.layer, (v) => {
           strips.layer = v;
+        }),
+      );
+    } else if (tool === Enums.Tools.TWIST) {
+      // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
+      // follow trade: locked planarizes chatter hardest, loose rides
+      // gentle curvature without flattening it (owner-tuned by feel).
+      const polish = manager.getTool(tool) as unknown as PolishBrush;
+      extras.appendChild(
+        compactRange('Plane lock (follow-flatten)', 0, 0.95, 0.05, polish.planeLock, (v) => {
+          polish.planeLock = v;
         }),
       );
     }

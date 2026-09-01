@@ -276,8 +276,25 @@ export class StableSmooth extends Smooth {
  * toggle) switches to trim: shave-only, dents left alone.
  */
 export class PolishBrush extends Flatten {
-  /** The stroke's held plane normal; null until the first dab grips. */
-  private held: [number, number, number] | null = null;
+  /**
+   * Plane lock (WS4-style palette slider): the stickiness of the held
+   * normal. High locks the stroke to its first plane (flattens chatter
+   * hardest, planarizes curves); low follows the surface (curves survive,
+   * chatter flattens more slowly). Owner-tuned by feel.
+   */
+  planeLock = POLISH_STICK;
+
+  /**
+   * Held plane normals, one per symmetry side: the vendor runs the same
+   * stroke() once with the primary picking and once with the mirrored
+   * one, and a single held normal handed the pen side's plane to the
+   * mirror (owner report) - whose own geometry then failed the normal
+   * gate against a backwards plane.
+   */
+  private readonly held: {
+    main: [number, number, number] | null;
+    sym: [number, number, number] | null;
+  } = { main: null, sym: null };
 
   constructor(session: SculptSession) {
     super(session);
@@ -285,14 +302,19 @@ export class PolishBrush extends Flatten {
     this._negative = false; // default is polish (two-sided); alt trims
   }
 
+  private clearHeld(): void {
+    this.held.main = null;
+    this.held.sym = null;
+  }
+
   override start(ctrl: boolean): boolean {
     // Fresh grip per stroke even if a mid-stroke tool swap ate the end().
-    this.held = null;
+    this.clearHeld();
     return super.start(ctrl);
   }
 
   override end(): void {
-    this.held = null;
+    this.clearHeld();
     super.end();
   }
 
@@ -312,7 +334,9 @@ export class PolishBrush extends Flatten {
     if (this._culling) iVertsInRadius = iVertsFront;
 
     const radius = Math.sqrt(picking.getLocalRadius2());
-    const plane = this.gripPlane(iVertsFront, radius * POLISH_CLIP);
+    const side =
+      picking === (this._main as SculptSession).getPickingSymmetry() ? ('sym' as const) : ('main' as const);
+    const plane = this.gripPlane(iVertsFront, radius * POLISH_CLIP, side);
     if (!plane) return; // the stroke has left its plane: do nothing
 
     picking.updateAlpha(this._lockPosition);
@@ -341,12 +365,13 @@ export class PolishBrush extends Flatten {
   private gripPlane(
     iVertsFront: Uint32Array,
     clip: number,
+    side: 'main' | 'sym',
   ): { normal: [number, number, number]; center: number[] } | null {
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
     const nAr = mesh.getNormals();
 
-    let seed = this.held;
+    let seed = this.held[side];
     if (!seed) {
       const a = this.areaNormal(iVertsFront);
       if (!a) return null;
@@ -390,9 +415,9 @@ export class PolishBrush extends Flatten {
     nx /= len;
     ny /= len;
     nz /= len;
-    if (this.held) {
-      const h = this.held;
-      const s = POLISH_STICK;
+    const h = this.held[side];
+    if (h) {
+      const s = Math.min(0.95, Math.max(0, this.planeLock));
       nx = h[0] * s + nx * (1 - s);
       ny = h[1] * s + ny * (1 - s);
       nz = h[2] * s + nz * (1 - s);
@@ -402,7 +427,7 @@ export class PolishBrush extends Flatten {
       ny /= bl;
       nz /= bl;
     }
-    this.held = [nx, ny, nz];
+    this.held[side] = [nx, ny, nz];
     return { normal: [nx, ny, nz], center: [cx / count, cy / count, cz / count] };
   }
 
