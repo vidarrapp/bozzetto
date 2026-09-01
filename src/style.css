@@ -2371,3 +2371,17 @@ body.chrome-hidden .transport {
 .cpick__value {
   text-align: right;
 }
+
+/* Material assignment, under the object list it belongs to. */
+.outliner__material {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--panel-border);
+}
+
+.outliner__btn--wide {
+  width: 100%;
+  justify-content: center;
+}

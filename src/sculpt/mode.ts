@@ -1,4 +1,4 @@
-import { Box3, Color, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { Box3, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -17,6 +17,7 @@ import {
 } from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
+import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
@@ -167,21 +168,46 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // to read as that material - which is also the state a first paint stroke
   // paints on top of.
   viewer.materials.setSculptVertexColor(true);
-  /** The material colour as linear RGB, which is what the attribute holds. */
-  const albedoRGB = (): [number, number, number] => {
-    const c = new Color(viewer.materials.getMaterialState().albedo);
-    return [c.r, c.g, c.b];
+  // Materials are per object now: a named set of albedo/roughness/metalness
+  // written across a mesh's attributes, rather than one uniform for the
+  // whole scene. The Render panel's controls drive the ACTIVE object's
+  // material, so those sliders keep meaning what they look like they mean.
+  const library = new MaterialLibrary(session);
+  const activeMaterial = (): SculptMaterial => {
+    const active = session.getMesh();
+    return active ? library.materialFor(active) : library.list()[0];
   };
-  /** Meshes a paint stroke has touched: never re-filled by an albedo change. */
-  const painted = new WeakSet<SculptMesh>();
-  const fillUnpainted = (): void => {
-    const rgb = albedoRGB();
-    for (const m of session.getMeshes()) if (!painted.has(m)) session.fillColors(m, rgb);
+  const pushActiveMaterial = (patch: Partial<Omit<SculptMaterial, 'id'>>): void => {
+    library.update(activeMaterial().id, patch);
     session.render();
   };
-  // Recolouring the material re-fills anything not yet painted, so the
-  // albedo control still behaves like an object colour until you paint.
-  viewer.materials.onAlbedoChange = () => fillUnpainted();
+  viewer.materials.onAlbedoChange = () => {
+    const albedo = viewer.materials.getMaterialState().albedo;
+    if (albedo !== activeMaterial().albedo) pushActiveMaterial({ albedo });
+  };
+  /**
+   * Push the active object's material into the Render panel's controls.
+   * Those controls edit a material, and which material depends on what is
+   * selected, so switching objects has to re-point them.
+   */
+  const syncPanelMaterial = (): void => {
+    const mat = activeMaterial();
+    if (!mat) return;
+    const mats = viewer.materials;
+    const st = mats.getMaterialState();
+    // Guarded: these setters fire the change hooks that write back.
+    if (st.albedo !== mat.albedo) mats.setAlbedo(mat.albedo);
+    if (st.roughness !== mat.roughness) mats.setRoughness(mat.roughness);
+    if (st.metalness !== mat.metalness) mats.setMetalness(mat.metalness);
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+  };
+  viewer.materials.onPbrChange = () => {
+    const st = viewer.materials.getMaterialState();
+    const mat = activeMaterial();
+    if (st.roughness !== mat.roughness || st.metalness !== mat.metalness) {
+      pushActiveMaterial({ roughness: st.roughness, metalness: st.metalness });
+    }
+  };
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
@@ -240,7 +266,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       extras.set(mesh, { sync: extraSync, handle });
     }
     // A newly added object still has SculptGL's white vertex colours.
-    fillUnpainted();
+    library.applyAll();
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
@@ -253,6 +279,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     reconcile();
     scenePanel?.refresh();
     sculptPanel?.refreshState();
+    syncPanelMaterial();
   };
   reconcile();
 
@@ -476,7 +503,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // material must not wipe the strokes.
     markPainted: () => {
       const active = session.getMesh();
-      if (active) painted.add(active);
+      if (active) library.markPainted(active);
     },
     orbitBegin: () => beginPivotOrbit(),
     // Not cleared on release: the controls keep easing for a while after the
@@ -553,7 +580,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       });
     },
   });
-  scenePanel = new ScenePanel(session);
+  scenePanel = new ScenePanel(session, library);
+  // Creating, assigning or editing a material changes what the outliner
+  // row and the Render controls should show.
+  library.onChange = () => {
+    scenePanel?.refresh();
+    syncPanelMaterial();
+  };
   sculptPanel = new SculptPanel(session, input, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
@@ -648,6 +681,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     filePanel,
     sculptPanel,
     tablet: Tablet,
+    library,
     // File pipeline, callable from the console/tests without the buttons.
     file: {
       pack: async () => {
@@ -736,6 +770,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.onTick = null;
     viewer.onPostControls = null;
     viewer.materials.onAlbedoChange = null;
+    viewer.materials.onPbrChange = null;
     viewer.materials.setSculptVertexColor(false);
     lighting.setRigFollow(null);
     lighting.applyState(savedLights);

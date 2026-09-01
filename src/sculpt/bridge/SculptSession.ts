@@ -147,6 +147,22 @@ export class SculptSession {
     mesh.updateColorBuffer();
   }
 
+  /**
+   * Write roughness and metalness across a mesh, leaving the mask alone.
+   * SculptGL packs all three into materialsPBR (x, y, z), and z is the mask
+   * a stroke may have painted - overwriting it here would silently unmask.
+   */
+  fillMaterials(mesh: SculptMesh, roughness: number, metalness: number): void {
+    const mats = mesh.getMaterials();
+    const n = mesh.getNbVertices() * 3;
+    for (let i = 0; i < n; i += 3) {
+      mats[i] = roughness;
+      mats[i + 1] = metalness;
+    }
+    mesh.updateDuplicateColorsAndMaterials();
+    mesh.updateMaterialBuffer();
+  }
+
   getMeshes(): SculptMesh[] {
     return this.meshes;
   }

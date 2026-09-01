@@ -145,6 +145,21 @@ export class Materials {
   private rebuildSculptColor(): void {
     for (const id of ['lit', 'matcap']) {
       const m = this.registry.get(id) as MeshStandardNodeMaterial;
+      // Roughness and metalness are per-vertex too - SculptGL keeps them in
+      // materialsPBR.x and .y, beside the mask in .z - so reading them here
+      // is what lets one object be matte clay and the next one polished
+      // without a second three.js material. Lit only: a matcap bakes its
+      // own shading and has nothing to do with either.
+      if (id === 'lit') {
+        type FloatNode = ReturnType<typeof float>;
+        const pbr = attribute('materialsPBR', 'vec3') as unknown as {
+          x: FloatNode;
+          y: FloatNode;
+        };
+        const on = this.sculptVertexColor;
+        m.roughnessNode = (on ? pbr.x : null) as MeshStandardNodeMaterial['roughnessNode'];
+        m.metalnessNode = (on ? pbr.y : null) as MeshStandardNodeMaterial['metalnessNode'];
+      }
       // The TSL runtime hands back fluent proxies; the published typings
       // for attribute()/materialColor lag behind, hence the casts.
       type Vec3Node = ReturnType<typeof vec3>;
@@ -201,8 +216,10 @@ export class Materials {
     mat.needsUpdate = true;
   }
 
-  /** Fired after the Lit albedo changes (sculpt re-fills unpainted objects). */
+  /** Fired after the Lit albedo changes (sculpt writes it to the object). */
   onAlbedoChange: (() => void) | null = null;
+  /** Fired after roughness or metalness changes, for the same reason. */
+  onPbrChange: (() => void) | null = null;
 
   setAlbedo(hex: string): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).color = new Color(hex);
@@ -211,10 +228,12 @@ export class Materials {
 
   setRoughness(value: number): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).roughness = value;
+    this.onPbrChange?.();
   }
 
   setMetalness(value: number): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).metalness = value;
+    this.onPbrChange?.();
   }
 
   /** Perceptual luminance of the Lit albedo (0..1) — picks the wire overlay colour. */

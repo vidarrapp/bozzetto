@@ -1,6 +1,7 @@
-import { div } from '../../ui/dom';
+import { div, labelRow, selectEl } from '../../ui/dom';
 import { SidePanel } from './SidePanel';
 import type { SculptSession } from '../bridge/SculptSession';
+import type { MaterialLibrary } from '../bridge/materials';
 
 /**
  * Scene outliner: the lower-left docked panel, and only the objects. Rows
@@ -12,17 +13,37 @@ export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
   private delBtn!: HTMLButtonElement;
+  private matRow?: HTMLDivElement;
+  private newMatBtn?: HTMLButtonElement;
 
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
     if (!this.addMenu.hidden && !this.addMenu.contains(e.target as Node)) this.closeAddMenu();
   };
 
-  constructor(private readonly session: SculptSession) {
+  constructor(
+    private readonly session: SculptSession,
+    private readonly library?: MaterialLibrary,
+  ) {
     super({ id: 'scene', title: 'Scene', side: 'left', variant: 'panel--scene' });
 
     this.listEl = div('outliner');
     this.body.appendChild(this.listEl);
+
+    // Material assignment sits between the objects and the add/delete
+    // footer: it belongs to the selected object above it.
+    this.matRow = div('outliner__material');
+    this.body.appendChild(this.matRow);
+    this.newMatBtn = document.createElement('button');
+    this.newMatBtn.type = 'button';
+    this.newMatBtn.className = 'outliner__btn outliner__btn--wide';
+    this.newMatBtn.textContent = 'New material';
+    this.newMatBtn.addEventListener('click', () => {
+      const active = this.session.getMesh();
+      if (!active || !this.library) return;
+      this.library.assign(active, this.library.create().id);
+      this.session.render();
+    });
 
     const footer = div('outliner__footer');
     const addBtn = document.createElement('button');
@@ -135,6 +156,38 @@ export class ScenePanel extends SidePanel {
     );
     // Nothing to delete when the scene is down to its last object.
     this.delBtn.disabled = this.session.getMeshes().length <= 1;
+    this.refreshMaterial();
+  }
+
+  /**
+   * The active object's material, and a way to make another. Assignment
+   * lives here rather than in the Render panel because it is a property of
+   * the OBJECT; the Render panel edits whichever material the selection
+   * points at.
+   */
+  private refreshMaterial(): void {
+    if (!this.library || !this.matRow) return;
+    const active = this.session.getMesh();
+    this.matRow.hidden = !active;
+    if (!active) return;
+    const current = this.library.materialFor(active);
+    const select = selectEl(
+      this.library.list().map((m) => [m.id, m.name] as [string, string]),
+      current.id,
+    );
+    select.addEventListener('change', () => {
+      // Re-assigning re-fills the object, so painted work would go: ask.
+      if (
+        this.library!.isPainted(active) &&
+        !confirm('Change material? The colours painted on this object will be replaced.')
+      ) {
+        select.value = current.id;
+        return;
+      }
+      this.library!.assign(active, select.value);
+      this.session.render();
+    });
+    this.matRow.replaceChildren(labelRow('Material', select), this.newMatBtn!);
   }
 
   override dispose(): void {

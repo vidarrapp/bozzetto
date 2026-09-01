@@ -107,6 +107,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     updateDuplicateColorsAndMaterials(iVerts?: Uint32Array): void;
     /** Re-upload the vertex colour buffer after a bulk write (paint fill). */
     updateColorBuffer(): void;
+    /** Re-upload the roughness/metalness/mask buffer after a bulk write. */
+    updateMaterialBuffer(): void;
     getTriangles(): Uint32Array;
     getFaces(): Uint32Array | Int32Array;
     getNbVertices(): number;
