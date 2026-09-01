@@ -5,6 +5,7 @@
  */
 
 import { probeAdmin } from '../admin/api';
+import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 
 interface ProjectSummary {
@@ -38,6 +39,12 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // same controls sit in the same place on every page and mode.
   const admin = await probeAdmin().catch(() => null);
   const bar = topbarRight();
+  // Guests get the install steps (owner call: the audience being shown the
+  // app); the owner has it installed, and standalone hides it regardless.
+  if (!admin) {
+    const install = installChip();
+    if (install) bar.appendChild(install);
+  }
   bar.appendChild(topChip('Upload timelapse', '/create/'));
   // Same slot either way: the way in for a guest, the way to the editor for
   // the owner - who otherwise had no link to the admin panel at all.

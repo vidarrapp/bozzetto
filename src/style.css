@@ -2470,3 +2470,74 @@ body.chrome-hidden .transport {
   width: 100%;
   justify-content: center;
 }
+
+/* --- Install instructions (guest top-row chip) --------------------------- */
+
+.install-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40; /* above panels (15) and popup menus (32) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 45%);
+  backdrop-filter: blur(2px);
+}
+
+.install-card {
+  position: relative;
+  max-width: 420px;
+  padding: 20px 24px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  color: var(--text);
+}
+
+.install-card h2 {
+  margin: 0 32px 8px 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+
+.install-card p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.install-steps {
+  margin: 10px 0;
+  padding-left: 22px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.install-steps li {
+  margin: 6px 0;
+}
+
+.install-steps svg {
+  vertical-align: -2px;
+  color: var(--accent);
+}
+
+.install-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.install-close:hover {
+  background: var(--hover);
+}
