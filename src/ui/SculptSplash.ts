@@ -28,9 +28,32 @@ export interface SculptSplash {
 /** How long the splash may hold the overlay at most, from mount. */
 const SPLASH_CAP_MS = 4000;
 
+/** sessionStorage flag: the splash plays once per browser session. */
+const SEEN_KEY = 'bozzetto-splash-seen';
+
 export function mountSculptSplash(overlay: HTMLElement | null): SculptSplash {
-  if (!overlay || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  // Once per session (owner call): the write-on is a hello, not a toll.
+  // Later boots - reopening a scene, leaving and re-entering sculpt -
+  // go straight to work. ?nosplash=1 is the automation escape hatch;
+  // reduced-motion users keep the plain overlay always.
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem(SEEN_KEY) === '1';
+  } catch {
+    /* storage unavailable: treat as first launch */
+  }
+  if (
+    !overlay ||
+    seen ||
+    new URLSearchParams(location.search).has('nosplash') ||
+    matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
     return { finished: Promise.resolve(), dispose: () => {} };
+  }
+  try {
+    sessionStorage.setItem(SEEN_KEY, '1');
+  } catch {
+    /* ignore */
   }
 
   overlay.classList.add('overlay--splash');
