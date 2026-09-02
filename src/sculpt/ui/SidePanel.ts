@@ -8,11 +8,18 @@ import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
  *
  * Mutual collapse is SIDE-SCOPED. Each edge holds a stack of panels (right:
  * Render, Sculpt; left: File, Scene) and only one per edge is open at a
- * time, so an open panel never covers its neighbour's tab - but a left and
- * a right panel can be open together, since they never overlap. Panels
- * announce themselves on 'bozzetto:panel-open' with {id, side}; a panel
- * collapses when a DIFFERENT id opens on the SAME side. Older dispatchers
- * that omit `side` are treated as right-edge, which is where they all were.
+ * time - but a left and a right panel can be open together, since they
+ * never overlap. Panels announce themselves on 'bozzetto:panel-open' with
+ * {id, side, top}; a panel collapses when a DIFFERENT id opens on the SAME
+ * side. Older dispatchers that omit `side` are treated as right-edge,
+ * which is where they all were.
+ *
+ * Right-edge panels also DUCK THEIR TABS: an open right panel spans the
+ * tab column, and any collapsed tab stacked at or below its top would
+ * float over the open body (the lower panels out-z-index the upper ones so
+ * their tabs stay clickable). Such a tab hides until the panel that
+ * covered it announces 'bozzetto:panel-close'. Left-edge panels open clear
+ * of their tab column (see .panel--left) and never need this.
  */
 
 export type PanelSide = 'left' | 'right';
@@ -45,11 +52,31 @@ export class SidePanel {
     if (!this.collapsed) this.setCollapsed(true);
   };
 
+  /** Which open panel's body our tab is ducking under (or null). */
+  private tabHiddenBy: string | null = null;
+
   private readonly onOtherPanelOpen = (e: Event): void => {
-    const detail = (e as CustomEvent<{ id?: string; side?: PanelSide }>).detail;
+    const detail = (e as CustomEvent<{ id?: string; side?: PanelSide; top?: number }>).detail;
     if (!detail?.id || detail.id === this.id) return;
     if ((detail.side ?? 'right') !== this.side) return;
     if (!this.collapsed) this.setCollapsed(true);
+    // Duck the tab when the opened panel's body will cover its spot (right
+    // edge only; the -1 forgives sub-pixel rounding between the two rects).
+    if (
+      this.side === 'right' &&
+      typeof detail.top === 'number' &&
+      this.root.getBoundingClientRect().top >= detail.top - 1
+    ) {
+      this.tabHiddenBy = detail.id;
+      this.root.classList.add('panel--tab-hidden');
+    }
+  };
+
+  private readonly onPanelClose = (e: Event): void => {
+    const detail = (e as CustomEvent<{ id?: string }>).detail;
+    if (!detail?.id || detail.id !== this.tabHiddenBy) return;
+    this.tabHiddenBy = null;
+    this.root.classList.remove('panel--tab-hidden');
   };
 
   constructor(opts: SidePanelOptions) {
@@ -98,15 +125,27 @@ export class SidePanel {
 
     this.applyCollapsed();
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.addEventListener('bozzetto:panel-close', this.onPanelClose);
     window.addEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
   }
 
   setCollapsed(collapsed: boolean): void {
+    const wasOpen = !this.collapsed;
     this.collapsed = collapsed;
     this.applyCollapsed();
     if (!collapsed) {
+      // Opening clears our own duck state - the open panel hides its handle
+      // via CSS anyway, but the flag must not linger past our next close.
+      this.tabHiddenBy = null;
+      this.root.classList.remove('panel--tab-hidden');
       window.dispatchEvent(
-        new CustomEvent('bozzetto:panel-open', { detail: { id: this.id, side: this.side } }),
+        new CustomEvent('bozzetto:panel-open', {
+          detail: { id: this.id, side: this.side, top: this.root.getBoundingClientRect().top },
+        }),
+      );
+    } else if (wasOpen) {
+      window.dispatchEvent(
+        new CustomEvent('bozzetto:panel-close', { detail: { id: this.id, side: this.side } }),
       );
     }
     this.onCollapsedChange?.(collapsed);
@@ -126,6 +165,7 @@ export class SidePanel {
 
   dispose(): void {
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
+    window.removeEventListener('bozzetto:panel-close', this.onPanelClose);
     window.removeEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
     this.root.remove();
   }

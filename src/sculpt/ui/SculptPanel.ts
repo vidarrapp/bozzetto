@@ -40,6 +40,11 @@ export class SculptPanel extends SidePanel {
     private readonly viewer: Viewer,
   ) {
     super({ id: 'sculpt', title: 'Tool', side: 'right', variant: 'panel--sculpt' });
+    // The paint popover is body-mounted; collapsing the panel must take it
+    // along or it floats on with its swatch off-screen.
+    this.onCollapsedChange = (collapsed) => {
+      if (collapsed) this.paintPicker?.close();
+    };
     this.buildBrush(this.body);
     this.buildSymmetry(this.body);
     this.buildMask(this.body);
@@ -115,21 +120,25 @@ export class SculptPanel extends SidePanel {
       this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(sizeRow);
     }
+    // The curve shapes the pressure response, so it means nothing while
+    // its pressure checkbox is off - the row folds away with it (same
+    // rule as the Render panel's lights/DoF/ground and dyntopo's sliders).
+    const sizeCurveRow = labelRow(
+      'Size curve',
+      this.curveSelect(d.sizeCurve, (c) => {
+        d.sizeCurve = c;
+        this.input.onBrushSettingsChange?.();
+      }),
+    );
+    sizeCurveRow.hidden = !d.sizeOn;
     dyn.appendChild(
       checkbox('Pen pressure size', d.sizeOn, (on) => {
         d.sizeOn = on;
-          this.input.onBrushSettingsChange?.();
+        sizeCurveRow.hidden = !on;
+        this.input.onBrushSettingsChange?.();
       }),
     );
-    dyn.appendChild(
-      labelRow(
-        'Size curve',
-        this.curveSelect(d.sizeCurve, (c) => {
-          d.sizeCurve = c;
-          this.input.onBrushSettingsChange?.();
-        }),
-      ),
-    );
+    dyn.appendChild(sizeCurveRow);
     // Drag has no strength at all; a slider for it would be a lie.
     if (this.input.hasBrushIntensity()) {
       const strengthRow = compactRange(
@@ -143,21 +152,22 @@ export class SculptPanel extends SidePanel {
       this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(strengthRow);
     }
+    const strengthCurveRow = labelRow(
+      'Strength curve',
+      this.curveSelect(d.strengthCurve, (c) => {
+        d.strengthCurve = c;
+        this.input.onBrushSettingsChange?.();
+      }),
+    );
+    strengthCurveRow.hidden = !d.strengthOn;
     dyn.appendChild(
       checkbox('Pen pressure strength', d.strengthOn, (on) => {
         d.strengthOn = on;
-          this.input.onBrushSettingsChange?.();
+        strengthCurveRow.hidden = !on;
+        this.input.onBrushSettingsChange?.();
       }),
     );
-    dyn.appendChild(
-      labelRow(
-        'Strength curve',
-        this.curveSelect(d.strengthCurve, (c) => {
-          d.strengthCurve = c;
-          this.input.onBrushSettingsChange?.();
-        }),
-      ),
-    );
+    dyn.appendChild(strengthCurveRow);
 
     const extras = this.extrasBody;
     extras.replaceChildren();

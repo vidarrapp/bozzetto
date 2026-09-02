@@ -37,6 +37,10 @@ export class Panel {
   private groundSelect: HTMLSelectElement | null = null;
   /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
   private dofCheckbox?: HTMLInputElement;
+  /** DoF's Aperture/Focus rows, folded away while the effect is off. */
+  private dofRows?: HTMLDivElement;
+  /** Re-applies the Environment section's conditional rows (set per build). */
+  private syncEnvRows: (() => void) | null = null;
   /** Look-dev sections built for the viewer, revealed only while sculpting. */
   private lookDevSections: HTMLElement[] = [];
   private aoMode = 'cavity';
@@ -48,18 +52,15 @@ export class Panel {
     // Only panels sharing this one's edge contend for the space; the left
     // stack (File, Scene) can be open alongside it.
     if (!detail?.id || detail.id === 'settings' || (detail.side ?? 'right') !== 'right') return;
-    if (!this.collapsed) {
-      this.collapsed = true;
-      this.applyCollapsed();
-    }
+    // Through setCollapsed, not straight to applyCollapsed: collapsing must
+    // announce on 'bozzetto:panel-close' so tabs ducked under this panel
+    // come back (SidePanel listens for the id that hid them).
+    if (!this.collapsed) this.setCollapsed(true);
   };
 
   /** Sculpt's Tab tidies the screen before it clears it (ChromeToggle). */
   private readonly onCloseAll = (): void => {
-    if (!this.collapsed) {
-      this.collapsed = true;
-      this.applyCollapsed();
-    }
+    if (!this.collapsed) this.setCollapsed(true);
   };
 
   private sculpting = false;
@@ -99,6 +100,13 @@ export class Panel {
   }
   private readonly actions?: HTMLElement;
   private albedoPicker?: ColorPickerHandle;
+  /** One HSV picker style across the app (owner call): these replace the
+   *  browser's RGB boxes for the background, the stage surface and each
+   *  light. Reused across rebuilds like the albedo one - disposing while
+   *  the popover is up closes it under the pointer. */
+  private bgPicker?: ColorPickerHandle;
+  private stagePicker?: ColorPickerHandle;
+  private readonly lightPickers = new Map<LightId, ColorPickerHandle>();
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -215,13 +223,29 @@ export class Panel {
   }
 
   setCollapsed(collapsed: boolean): void {
+    const wasOpen = !this.collapsed;
     this.collapsed = collapsed;
     this.applyCollapsed();
     // Right-edge panels coordinate: opening one collapses the others
-    // (the sculpt panel listens for this and reciprocates).
+    // (the sculpt panel listens for this and reciprocates). The open event
+    // carries this panel's top so tabs stacked below it can duck out of the
+    // way - the sculpt tabs out-z-index this panel and would float over its
+    // open body; the close event brings them back.
     if (!collapsed) {
       window.dispatchEvent(
-        new CustomEvent('bozzetto:panel-open', { detail: { id: 'settings', side: 'right' } }),
+        new CustomEvent('bozzetto:panel-open', {
+          detail: { id: 'settings', side: 'right', top: this.root.getBoundingClientRect().top },
+        }),
+      );
+    } else if (wasOpen) {
+      // The pickers' popovers are body-mounted; without this they'd float
+      // on after their swatches slid off-screen with the panel.
+      this.albedoPicker?.close();
+      this.bgPicker?.close();
+      this.stagePicker?.close();
+      for (const p of this.lightPickers.values()) p.close();
+      window.dispatchEvent(
+        new CustomEvent('bozzetto:panel-close', { detail: { id: 'settings', side: 'right' } }),
       );
     }
   }
@@ -304,7 +328,12 @@ export class Panel {
     this.smoothCheckbox.checked = !state.flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
-    if (this.dofCheckbox) this.dofCheckbox.checked = this.viewer.getDoFState().enabled;
+    this.syncEnvRows?.(); // ground can move under us (the G key cycles it)
+    if (this.dofCheckbox) {
+      const dofOn = this.viewer.getDoFState().enabled;
+      this.dofCheckbox.checked = dofOn;
+      if (this.dofRows) this.dofRows.hidden = !dofOn;
+    }
     if (this.shadowsCheckbox) {
       this.shadowsCheckbox.checked = this.viewer.lighting.getShadowsMaster();
     }
@@ -312,6 +341,10 @@ export class Panel {
 
   dispose(): void {
     this.albedoPicker?.dispose();
+    this.bgPicker?.dispose();
+    this.stagePicker?.dispose();
+    for (const p of this.lightPickers.values()) p.dispose();
+    this.lightPickers.clear();
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     window.removeEventListener('bozzetto:look-restored', this.onLookRestored);
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
@@ -557,43 +590,60 @@ export class Panel {
       const box = div('light');
       const head = div('light__head');
       head.appendChild(
-        checkbox(light.label, light.enabled, (on) => this.viewer.lighting.setEnabled(light.id, on)),
+        checkbox(light.label, light.enabled, (on) => {
+          this.viewer.lighting.setEnabled(light.id, on);
+          // A disabled light's settings drive nothing; fold them away and
+          // rebuild on re-enable so the rows come back with live values.
+          this.rebuildLightControls();
+        }),
       );
       box.appendChild(head);
 
-      box.appendChild(
-        compactRange('Intensity', 0, 8, 0.1, light.intensity, (v) =>
-          this.viewer.lighting.setIntensity(light.id, v),
-        ),
-      );
-      box.appendChild(
-        compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) => this.setAngle(light.id, 'az', v)),
-      );
-      box.appendChild(
-        compactRange('Elevation', -20, 90, 1, light.elevation, (v) =>
-          this.setAngle(light.id, 'el', v),
-        ),
-      );
-
-      const color = document.createElement('input');
-      color.type = 'color';
-      color.value = light.color;
-      color.addEventListener('input', () => this.viewer.lighting.setColor(light.id, color.value));
-      box.appendChild(labelRow('Colour', color));
-
-      if (light.canShadow) {
+      if (!light.enabled) {
+        // The folded rows take the light's colour popover with them if it
+        // was up (the popover is body-mounted and would outlive its row).
+        this.lightPickers.get(light.id)?.close();
+      } else {
         box.appendChild(
-          checkbox('Casts shadow', light.castShadow, (on) => {
-            this.viewer.lighting.setShadow(light.id, on);
-            this.rebuildLightControls();
-          }),
+          compactRange('Intensity', 0, 8, 0.1, light.intensity, (v) =>
+            this.viewer.lighting.setIntensity(light.id, v),
+          ),
         );
-        if (light.castShadow) {
+        box.appendChild(
+          compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) =>
+            this.setAngle(light.id, 'az', v),
+          ),
+        );
+        box.appendChild(
+          compactRange('Elevation', -20, 90, 1, light.elevation, (v) =>
+            this.setAngle(light.id, 'el', v),
+          ),
+        );
+
+        let picker = this.lightPickers.get(light.id);
+        if (!picker) {
+          const id = light.id;
+          picker = colorPicker(light.color, (hex) => this.viewer.lighting.setColor(id, hex));
+          this.lightPickers.set(id, picker);
+        } else if (!picker.isOpen()) {
+          picker.set(light.color);
+        }
+        box.appendChild(labelRow('Colour', picker.root));
+
+        if (light.canShadow) {
           box.appendChild(
-            compactRange('Softness', 0, 16, 0.5, light.softness, (v) =>
-              this.viewer.lighting.setSoftness(light.id, v),
-            ),
+            checkbox('Casts shadow', light.castShadow, (on) => {
+              this.viewer.lighting.setShadow(light.id, on);
+              this.rebuildLightControls();
+            }),
           );
+          if (light.castShadow) {
+            box.appendChild(
+              compactRange('Softness', 0, 16, 0.5, light.softness, (v) =>
+                this.viewer.lighting.setSoftness(light.id, v),
+              ),
+            );
+          }
         }
       }
 
@@ -632,9 +682,20 @@ export class Panel {
     select.addEventListener('change', () => void env.setEnvironment(select.value || null));
     sec.appendChild(labelRow('HDRI', select));
 
-    sec.appendChild(
+    // All the HDRI knobs live together, right under the picker, and only
+    // while an HDRI is loaded - intensity, rotation and blur have nothing
+    // to act on under "None".
+    const hdriRows = div('env-rows');
+    hdriRows.appendChild(
       compactRange('Intensity', 0, 3, 0.05, state.intensity, (v) => env.setIntensity(v)),
     );
+    hdriRows.appendChild(
+      compactRange('Rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
+    );
+    hdriRows.appendChild(
+      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v)),
+    );
+    sec.appendChild(hdriRows);
 
     const bg = document.createElement('select');
     for (const [value, label] of [
@@ -653,18 +714,13 @@ export class Panel {
     );
     sec.appendChild(labelRow('Background', bg));
 
-    const bgColor = document.createElement('input');
-    bgColor.type = 'color';
-    bgColor.value = state.bgColor;
-    bgColor.addEventListener('input', () => env.setBackgroundColor(bgColor.value));
-    sec.appendChild(labelRow('Bg colour', bgColor));
-
-    sec.appendChild(
-      compactRange('HDR rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
-    );
-    sec.appendChild(
-      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v)),
-    );
+    if (!this.bgPicker) {
+      this.bgPicker = colorPicker(state.bgColor, (hex) => env.setBackgroundColor(hex));
+    } else if (!this.bgPicker.isOpen()) {
+      this.bgPicker.set(state.bgColor);
+    }
+    const bgColorRow = labelRow('Bg colour', this.bgPicker.root);
+    sec.appendChild(bgColorRow);
 
     // Stage: a single ground style (contact shadow, fading floor, or pedestal),
     // each with its own albedo where relevant.
@@ -685,28 +741,45 @@ export class Panel {
     this.groundSelect = ground;
     sec.appendChild(labelRow('Ground', ground));
 
-    // Floor/pedestal share one PBR surface (they're mutually exclusive).
-    const albedo = document.createElement('input');
-    albedo.type = 'color';
-    albedo.value = stage.color;
-    albedo.addEventListener('input', () => this.viewer.setStageColor(albedo.value));
-    sec.appendChild(labelRow('Surface albedo', albedo));
+    // Floor/pedestal share one PBR surface (they're mutually exclusive);
+    // shadow and none have no surface to style, so the rows fold away.
+    const surfaceRows = div('env-rows');
+    if (!this.stagePicker) {
+      this.stagePicker = colorPicker(stage.color, (hex) => this.viewer.setStageColor(hex));
+    } else if (!this.stagePicker.isOpen()) {
+      this.stagePicker.set(stage.color);
+    }
+    surfaceRows.appendChild(labelRow('Surface albedo', this.stagePicker.root));
 
-    sec.appendChild(
+    surfaceRows.appendChild(
       compactRange('Surface roughness', 0, 1, 0.01, stage.roughness, (v) =>
         this.viewer.setStageRoughness(v),
       ),
     );
-    sec.appendChild(
+    surfaceRows.appendChild(
       compactRange('Surface metalness', 0, 1, 0.01, stage.metalness, (v) =>
         this.viewer.setStageMetalness(v),
       ),
     );
-    sec.appendChild(
-      compactRange('Pedestal width', 0.5, 2, 0.05, stage.pedestalScale, (v) =>
-        this.viewer.setPedestalScale(v),
-      ),
+    const pedestalRow = compactRange('Pedestal width', 0.5, 2, 0.05, stage.pedestalScale, (v) =>
+      this.viewer.setPedestalScale(v),
     );
+    surfaceRows.appendChild(pedestalRow);
+    sec.appendChild(surfaceRows);
+
+    // Conditional rows in one place, re-run by every select that changes
+    // them and by refreshControls (the G key cycles ground externally).
+    const sync = (): void => {
+      hdriRows.hidden = !select.value;
+      bgColorRow.hidden = bg.value !== 'color';
+      surfaceRows.hidden = ground.value !== 'floor' && ground.value !== 'pedestal';
+      pedestalRow.hidden = ground.value !== 'pedestal';
+    };
+    select.addEventListener('change', sync);
+    bg.addEventListener('change', sync);
+    ground.addEventListener('change', sync);
+    this.syncEnvRows = sync;
+    sync();
   }
 
   // --- camera (lens: editor only) ---------------------------------------
@@ -730,17 +803,26 @@ export class Panel {
     if (!this.viewer.dofAvailable()) return;
     const sec = section(body, 'Depth of field');
     const dof = this.viewer.getDoFState();
-    const toggle = checkbox('Enabled', dof.enabled, (on) => this.viewer.setDoF({ enabled: on }));
+    // Aperture and Focus act on nothing while the effect is off, so they
+    // fold away with the checkbox (the same rule as lights, ground, HDRI).
+    const rows = div('dof-rows');
+    rows.hidden = !dof.enabled;
+    this.dofRows = rows;
+    const toggle = checkbox('Enabled', dof.enabled, (on) => {
+      this.viewer.setDoF({ enabled: on });
+      rows.hidden = !on;
+    });
     this.dofCheckbox = toggle.querySelector('input')!;
     sec.appendChild(toggle);
-    sec.appendChild(
+    rows.appendChild(
       steppedSlider('Aperture', F_STOPS, dof.fStop, (f) => `f/${f}`, (f) =>
         this.viewer.setDoF({ fStop: f }),
       ),
     );
-    sec.appendChild(
+    rows.appendChild(
       compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
     );
+    sec.appendChild(rows);
   }
 
   // --- developer overlay (?dev) -----------------------------------------

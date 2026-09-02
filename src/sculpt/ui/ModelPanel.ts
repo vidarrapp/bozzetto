@@ -28,6 +28,11 @@ export class ModelPanel extends SidePanel {
     private readonly viewer: Viewer,
   ) {
     super({ id: 'model', title: 'Model', side: 'right', variant: 'panel--model' });
+    // The albedo popover is body-mounted; collapsing the panel must take
+    // it along or it floats on with its swatch off-screen.
+    this.onCollapsedChange = (collapsed) => {
+      if (collapsed) this.albedoPicker?.close();
+    };
     this.buildMaterial(this.body);
     this.buildTopology(this.body);
     this.buildRemesh(this.body);
@@ -100,8 +105,8 @@ export class ModelPanel extends SidePanel {
     this.dyntopoCheckbox = dyn.querySelector('input') as HTMLInputElement;
     sec.appendChild(dyn);
     // Stroke-time detail: these two only act while dynamic topology is on
-    // (they are its subdivision/decimation aggressiveness), so they follow
-    // the checkbox and grey out with it.
+    // (they are its subdivision/decimation aggressiveness), so they fold
+    // away with the checkbox.
     const detail = this.session.getDynTopoDetail();
     this.dynDetailRows = [
       this.numberedRange('Stroke subdivision', 0, 100, 1, detail.subdivision, (v) => {
@@ -175,10 +180,7 @@ export class ModelPanel extends SidePanel {
   refreshTopology(): void {
     if (!this.topoBody) return;
     const dynOn = this.session.isDynamicTopology();
-    for (const r of this.dynDetailRows) {
-      r.input.disabled = !dynOn;
-      r.row.classList.toggle('sculpt-panel__row--off', !dynOn);
-    }
+    for (const r of this.dynDetailRows) r.row.hidden = !dynOn;
     this.topoBody.replaceChildren();
     const lv = this.session.getLevels();
     if (!lv) {

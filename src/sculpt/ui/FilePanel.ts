@@ -83,9 +83,16 @@ export class FilePanel extends SidePanel {
       }),
     );
     filesCol.appendChild(this.openInput);
-    // Import an OBJ as a new object in the scene. The toggle covers Z-up
-    // DCC exports (Blender and friends): checked, the axes rotate to Y-up
-    // on the way in (the same convention the timelapse uploader uses).
+    filesCol.appendChild(
+      this.fileButton('Export OBJ', 'Exported', async () => {
+        downloadBlob(new Blob([sceneToOBJ(this.session)], { type: 'text/plain' }), stampName('obj'));
+      }),
+    );
+    // Import an OBJ as a new object in the scene - below Export, so the
+    // native .bozz round trip reads before the interchange path (owner
+    // layout call). The toggle covers Z-up DCC exports (Blender and
+    // friends): checked, the axes rotate to Y-up on the way in (the same
+    // convention the timelapse uploader uses).
     this.importInput = document.createElement('input');
     this.importInput.type = 'file';
     this.importInput.accept = '.obj';
@@ -105,11 +112,6 @@ export class FilePanel extends SidePanel {
       this.importZUp = on;
     });
     filesCol.appendChild(zup);
-    filesCol.appendChild(
-      this.fileButton('Export OBJ', 'Exported', async () => {
-        downloadBlob(new Blob([sceneToOBJ(this.session)], { type: 'text/plain' }), stampName('obj'));
-      }),
-    );
     this.filesSlot.dataset.slot = 'model';
     filesCol.appendChild(this.filesSlot);
 

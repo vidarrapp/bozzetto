@@ -44,6 +44,10 @@ async function bootSculpt(): Promise<void> {
     if (box) box.textContent = msg;
   };
 
+  // The logo animation plays over the boot, so the wait is the branding;
+  // it can only ever ADD time (2.5s, tap to skip), never wedge the boot.
+  const { mountSculptSplash } = await import('./ui/SculptSplash');
+  const splash = mountSculptSplash(overlay);
   try {
     setStatus('Entering sculpt mode…');
     const { sculptStandaloneProject } = await import('./sculpt/standalone');
@@ -57,10 +61,16 @@ async function bootSculpt(): Promise<void> {
     // showed it as an ugly splash (owner report) - for however long the
     // module import, the autosave read and the subdivision build take. It
     // also left showError printing into a removed overlay if the mount
-    // threw. The first visible frame is the real scene.
-    overlay?.remove();
+    // threw. The first visible frame is the real scene - after the logo
+    // has finished writing itself, faded rather than yanked.
+    await splash.finished;
+    if (overlay) {
+      overlay.classList.add('overlay--done');
+      window.setTimeout(() => overlay.remove(), 450);
+    }
   } catch (err) {
     console.error(err);
+    splash.dispose(); // the error text needs the plain overlay back
     showError(overlay, err);
   }
 }
