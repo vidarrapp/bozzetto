@@ -238,6 +238,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * another's material. The object's own material wins in sculpt mode, so
    * the panel is re-pointed at it afterwards.
    */
+  // Declared ABOVE the look restore below: syncPanelMaterial touches it
+  // during mount, and a later `let` is a temporal dead zone at that point
+  // (found the hard way - the whole sculpt boot died on it).
+  let modelPanel: ModelPanel | null = null;
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
     try {
@@ -297,7 +301,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let scenePanel: ScenePanel | null = null;
   let filePanel: FilePanel | null = null;
   let sculptPanel: SculptPanel | null = null;
-  let modelPanel: ModelPanel | null = null;
   let sliders: BrushSliders | null = null;
   const extras = new Map<
     SculptMesh,

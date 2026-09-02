@@ -195,7 +195,7 @@ export class FilePanel extends SidePanel {
     try {
       const text = await file.text();
       const name = file.name.replace(/\.obj$/i, '').trim() || 'Imported';
-      this.session.importOBJ(text, this.importZUp, name);
+      await this.session.importOBJ(text, this.importZUp, name);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }

@@ -1,5 +1,4 @@
 import { BufferAttribute, BufferGeometry, CylinderGeometry, TorusGeometry } from 'three';
-import { parseObj } from '../../admin/glb';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Utils from '@sculpt-vendor/misc/Utils';
@@ -513,7 +512,10 @@ export class SculptSession {
    * else. NOTE normalizeSize rescales to the canonical sculpt size - an
    * import is a base mesh to work on, not a measured part.
    */
-  importOBJ(text: string, zUp: boolean, name: string): Multimesh {
+  async importOBJ(text: string, zUp: boolean, name: string): Promise<Multimesh> {
+    // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
+    // circular init order ("cannot access before initialization" at boot).
+    const { parseObj } = await import('../../admin/glb');
     const parsed = parseObj(text, zUp);
     if (!parsed.positions.length || !parsed.indices.length) {
       throw new Error('No geometry found in that OBJ file.');

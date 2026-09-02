@@ -4,7 +4,7 @@
 A *bozzetto* is the small clay study a sculptor makes before starting the real piece, the place where the rough form gets worked out. 
 
 The Bozzetto web application applies that idea to sculpt timelapses: instead of a pre-rendered turntable video, every stage of a sculpt is stored as real 3D geometry you can relight, orbit, and step through.
-It's built as a study and teaching tool primarily, as well as a nice way to render out content and timelapses. I built this for my own use, but am sharing it with an MIT liicense for any who find it useful!
+It's built as a study and teaching tool primarily, as well as a nice way to render out content and timelapses. I built this for my own use, but am sharing it with an MIT license for any who find it useful!
 
 Bozzetto has a few parts:
 
@@ -15,6 +15,21 @@ Bozzetto has a few parts:
 It runs entirely on Cloudflare (Pages, Functions, D1, and R2), so there is no server to run yourself.
 
 Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>`, the public editor at `/create/`, and the full editor at `/admin/`.
+
+## Install as an app (iPad, iPhone & Android)
+
+Bozzetto ships a web-app manifest and home-screen icons, so it installs like an app and launches fullscreen from its own icon — which is the way to use sculpt mode on an iPad. The gallery's **Install** button walks you through it; the steps are:
+
+**iPad / iPhone (Safari):**
+1. Open **bozzetto.vidarrapp.se** in Safari.
+2. Tap the **Share** button (the square with an arrow — top right on iPad, bottom on iPhone).
+3. Scroll the sheet and choose **Add to Home Screen**, then tap **Add**.
+
+**Android (Chrome):**
+1. Open **bozzetto.vidarrapp.se** in Chrome.
+2. Open the **⋮** menu and choose **Add to Home screen** (some versions say **Install app**), then confirm.
+
+Your sculpts autosave to the browser's storage either way, installed or not — and nothing ever uploads unless you sign in and publish.
 
 ## Changelog
 
@@ -112,6 +127,20 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 - A device quality tier plus adaptive quality that backs off render cost when the frame rate drops.
 - A DCC-style camera (orbit, pan, dolly) with a saved camera per project, a light/dark theme, an on-screen hotkey guide, and a bottom transport bar with a scrubber and stage markers.
 
+### Sculpt mode
+
+- Ten brushes on `1`–`0`: Crease, a volumetric **Move** that can grab a silhouette from just outside it, **Standard clay** laying ribbon-like strips, Inflate, Pinch, Flatten, Smooth, Drag, an hPolish-style **Polish** that flattens surfaces while keeping edges crisp (with a Plane lock slider from *follow* to *locked*), and **Paint**. Apple Pencil pressure drives strength through the stroke; per-brush pressure response is configurable (toggles + curves).
+- **Masking** (`Ctrl` paints, darkens on the model, resists every brush) with blur/sharpen/invert/clear and **Extract** — the masked region becomes a new object. **Mirror symmetry** with a per-object axis choice.
+- **Topology**: a multiresolution stack (discrete level slider, Subdivide, and Rebuild — reversion that adds a *coarser* level), dynamic topology with stroke detail sliders, and voxel remesh.
+- **Vertex painting & per-object materials**: paint albedo with an HSV picker (alt-click samples off the model), assign named materials per object, and edit a material's albedo/roughness/metalness in the Model panel. Paint is colour-only; the surface response stays the material's.
+- **Object transforms**: a unified move/rotate/scale gizmo from the toolbar, single modes on `E`/`R`/`T`, `Q` back to the clay; multi-object scenes with an outliner (visibility eyes, edit locks, double-click rename).
+- **Five docked panels**: File and Scene on the left; Render (scene-wide look: lighting, AO — cavity SSAO or GTAO — depth of field, environment, camera, material mode/matcaps/shading), Tool (the active brush's settings) and Model (the object's material values, Topology, Remesh) on the right.
+- **A real look**: everything the editor's Render panel can set works while sculpting, persists with the session and with `.bozz` files, publishes with your models, and resets in one click.
+- **Timelapse capture**: idle-time mesh snapshots after each stroke, stored locally, publishable to the gallery when signed in.
+- **Files**: `.bozz` save/open (the full scene — every object, subdivision stack, masks, materials, look), **OBJ import** (Z-up toggle for DCC exports) and **OBJ export**. All device-local for guests.
+- **Made for iPad**: two fingers always navigate (even on the model), a resting palm never blocks the Pencil, the toolbar covers keyboard-less use, and `Tab`'s hide-the-interface staging keeps the screen clean.
+- **Reload-safe**: the scene autosaves to IndexedDB after every edit; an unfinished sculpt shows up in the gallery as an "In progress" card that drops you straight back in.
+
 ### Public editor (`/create/`)
 
 - No sign-in and no backend. Frames are converted and held in the browser; nothing is uploaded.
@@ -151,6 +180,26 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 | `G` | Ground shadow |
 | `Tab` | Show / hide panels |
 | `H` | Hotkey guide |
+
+### Sculpt mode
+
+| Input | Action |
+| --- | --- |
+| Drag on the mesh | Sculpt (`Alt` carves, `Shift` smooths) |
+| Drag off the mesh | Orbit (around your last stroke; `F` re-frames) |
+| Two-finger drag / pinch | Pan / zoom — always, even on the model |
+| `Ctrl` + drag | Paint mask (`+Alt` unmasks); off the mesh: zoom |
+| `Ctrl` + `C` / `I` / `H` / `E` | Clear / invert / hide mask · extract masked region |
+| `1`–`9`, `0` | Brushes (Crease … Polish, Paint) |
+| `B` / `S` (hold + drag) | Brush size / strength (`[` `]` and `;` `'` step them) |
+| `X` | Mirror symmetry |
+| `E` / `R` / `T`, `Q` | Move / rotate / scale gizmo · back to sculpting |
+| `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |
+| `L` (hold + drag) | Move the key light (across / up) |
+| `Shift`+`S` | Shadows on / off |
+| `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z` | Undo / redo |
+| Double-click a Scene row | Rename the object |
+| `Tab` / `Esc` | Close panels, hide the interface / bring it back |
 
 A few URL switches help when debugging the renderer: `?dev` reveals a developer section in the control panel, and `?q=low|medium|high` forces a quality tier.
 
