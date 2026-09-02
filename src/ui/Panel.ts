@@ -1,4 +1,4 @@
-import type { Viewer, GroundMode } from '../viewer/Viewer';
+import type { Viewer, GroundMode, ToneMappingId } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
@@ -110,6 +110,8 @@ export class Panel {
   private readonly lightPickers = new Map<LightId, ColorPickerHandle>();
   /** The matcap gallery popout's trigger, reused like the colour pickers. */
   private mcPicker?: MatcapPickerHandle;
+  /** Output-grade select (Camera section). */
+  private toneSelect?: HTMLSelectElement;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -235,6 +237,9 @@ export class Panel {
     // way - the sculpt tabs out-z-index this panel and would float over its
     // open body; the close event brings them back.
     if (!collapsed) {
+      // Whatever changed while the panel was tucked away (hotkeys, API
+      // calls, a look restore) is on screen the moment it opens.
+      this.refreshControls();
       window.dispatchEvent(
         new CustomEvent('bozzetto:panel-open', {
           detail: { id: 'settings', side: 'right', top: this.root.getBoundingClientRect().top },
@@ -332,6 +337,7 @@ export class Panel {
     this.smoothCheckbox.checked = !state.flatShading;
     this.wireframeCheckbox.checked = this.viewer.isWireframe();
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
+    if (this.toneSelect) this.toneSelect.value = this.viewer.getToneMapping();
     this.syncEnvRows?.(); // ground can move under us (the G key cycles it)
     if (this.dofCheckbox) {
       const dofOn = this.viewer.getDoFState().enabled;
@@ -801,6 +807,23 @@ export class Panel {
         this.viewer.setFocalLength(mm),
       ),
     );
+    // Output grade (owner call): the film curve is a choice now, not a
+    // constant. Rides the saved look; matcap mode always renders ungraded
+    // regardless (the fidelity contract), so this steers the lit modes.
+    const tone = selectEl(
+      [
+        ['none', 'None (linear)'],
+        ['neutral', 'Neutral'],
+        ['agx', 'AgX'],
+        ['cinematic', 'Cinematic (ACES)'],
+      ],
+      this.viewer.getToneMapping(),
+    );
+    tone.addEventListener('change', () =>
+      this.viewer.setToneMapping(tone.value as ToneMappingId),
+    );
+    this.toneSelect = tone;
+    sec.appendChild(labelRow('Tone mapping', tone));
   }
 
   /**

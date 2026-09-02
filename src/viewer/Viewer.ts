@@ -1,6 +1,9 @@
 import {
   ACESFilmicToneMapping,
+  AgXToneMapping,
+  NeutralToneMapping,
   NoToneMapping,
+  type ToneMapping,
   Box3,
   BoxGeometry,
   Timer,
@@ -33,6 +36,15 @@ import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
+
+/** Output grade choices (Render panel > Camera > Tone mapping). */
+export type ToneMappingId = 'none' | 'neutral' | 'agx' | 'cinematic';
+const TONE_MAPPINGS: Record<ToneMappingId, ToneMapping> = {
+  none: NoToneMapping, // straight linear -> sRGB, nothing graded
+  neutral: NeutralToneMapping, // Khronos PBR neutral: true colours, soft shoulder
+  agx: AgXToneMapping, // Blender-era filmic: gentle, desaturating highlights
+  cinematic: ACESFilmicToneMapping, // the shipped default
+};
 
 /** Default lens when a project has no saved focal length (a "normal" lens). */
 const DEFAULT_FOCAL_LENGTH = 50;
@@ -120,6 +132,8 @@ export interface LookState {
   };
   /** Material mode (lit / a matcap), stored as `defaults.material`. */
   materialMode: string;
+  /** Output grade (absent in older saves: they get the Cinematic default). */
+  toneMapping?: ToneMappingId;
 }
 
 /** Ground presentation: a contact shadow, a fading studio floor, or a pedestal. */
@@ -626,21 +640,41 @@ export class Viewer {
     this.currentMode = mode;
     this.display.material = this.materials.get(mode);
     for (const extra of this.sculptExtras) extra.material = this.display.material;
-    // A matcap is display-referred art: its shading was already graded by
-    // whoever painted it. Running it through ACES a second time halved its
-    // brightness and greyed the highlights (measured against the source
-    // PNGs - every channel landed near 0.5x), so matcap mode turns the
-    // filmic curve off for the frame. The stage, if shown, rides along
-    // linearly - a fair trade in a form-review mode - and the sRGB output
-    // transform stays on either way.
-    const tm = mode === 'matcap' ? NoToneMapping : ACESFilmicToneMapping;
+    this.applyToneMapping();
+    // The ground/shadow/pedestal follow the chosen Ground option, not the
+    // material's shading — so matcap renders keep the stage too.
+    this.updateStage();
+  }
+
+  /** The chosen output grade (lit modes; matcap always renders ungraded). */
+  private toneMappingId: ToneMappingId = 'cinematic';
+
+  getToneMapping(): ToneMappingId {
+    return this.toneMappingId;
+  }
+
+  /** Pick the output grade (Render panel; rides the saved look). */
+  setToneMapping(id: ToneMappingId): void {
+    if (!(id in TONE_MAPPINGS)) return;
+    this.toneMappingId = id;
+    this.applyToneMapping();
+  }
+
+  /**
+   * Push the effective grade into the renderer. A matcap is display-
+   * referred art - its shading was already graded by whoever painted it,
+   * and running it through ACES a second time halved its brightness and
+   * greyed the highlights (measured against the source PNGs) - so matcap
+   * mode always renders ungraded, whatever grade the look chose for the
+   * lit modes. The sRGB output transform stays on either way.
+   */
+  private applyToneMapping(): void {
+    const tm =
+      this.currentMode === 'matcap' ? NoToneMapping : TONE_MAPPINGS[this.toneMappingId];
     if (this.renderer.toneMapping !== tm) {
       this.renderer.toneMapping = tm;
       if (this.pipeline) this.pipeline.needsUpdate = true; // output bakes the curve
     }
-    // The ground/shadow/pedestal follow the chosen Ground option, not the
-    // material's shading — so matcap renders keep the stage too.
-    this.updateStage();
   }
 
   // --- extra sculpt subjects (multi-mesh: extractions, added objects) -----
@@ -1044,6 +1078,7 @@ export class Viewer {
       presentation: this.getStageState(),
       camera: this.getCameraState(),
       materialMode: this.getMaterial(),
+      toneMapping: this.toneMappingId,
     };
   }
 
@@ -1055,6 +1090,7 @@ export class Viewer {
    */
   async applyLook(look: Partial<LookState> | null | undefined): Promise<void> {
     if (!look) return;
+    if (look.toneMapping) this.setToneMapping(look.toneMapping);
     if (look.materialMode) this.setMaterial(look.materialMode);
     if (look.lighting) this.lighting.applyState(look.lighting);
     if (look.material) this.materials.applyMaterialState(look.material);
