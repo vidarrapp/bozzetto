@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  NoToneMapping,
   Box3,
   BoxGeometry,
   Timer,
@@ -625,6 +626,18 @@ export class Viewer {
     this.currentMode = mode;
     this.display.material = this.materials.get(mode);
     for (const extra of this.sculptExtras) extra.material = this.display.material;
+    // A matcap is display-referred art: its shading was already graded by
+    // whoever painted it. Running it through ACES a second time halved its
+    // brightness and greyed the highlights (measured against the source
+    // PNGs - every channel landed near 0.5x), so matcap mode turns the
+    // filmic curve off for the frame. The stage, if shown, rides along
+    // linearly - a fair trade in a form-review mode - and the sRGB output
+    // transform stays on either way.
+    const tm = mode === 'matcap' ? NoToneMapping : ACESFilmicToneMapping;
+    if (this.renderer.toneMapping !== tm) {
+      this.renderer.toneMapping = tm;
+      if (this.pipeline) this.pipeline.needsUpdate = true; // output bakes the curve
+    }
     // The ground/shadow/pedestal follow the chosen Ground option, not the
     // material's shading — so matcap renders keep the stage too.
     this.updateStage();

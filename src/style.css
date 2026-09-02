@@ -196,6 +196,13 @@ h1,
   gap: 4px;
 }
 
+/* While the logo animates, it IS the loading message (owner call) - the
+   status line stays for the plain overlay: skipped splashes, returns to
+   the app, and the error path (dispose drops the splash class). */
+.overlay--splash .overlay__msg {
+  visibility: hidden;
+}
+
 .overlay__splash-video {
   width: min(78vw, 640px);
   height: auto;
@@ -403,6 +410,38 @@ h1,
 
 .panel__body::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Matcap gallery: round thumbnails in a wrapping grid, the active one
+   ringed in the accent. Buttons stay square so the ring hugs the disc. */
+.matcap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+
+.matcap-swatch {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.matcap-swatch img {
+  width: 100%;
+  border-radius: 50%;
+}
+
+.matcap-swatch:hover {
+  border-color: var(--panel-border);
+}
+
+.matcap-swatch--on,
+.matcap-swatch--on:hover {
+  border-color: var(--accent);
 }
 
 .section {

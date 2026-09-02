@@ -37,12 +37,21 @@ const DEFAULT_ALBEDO = '#b9b1a8';
     live-adjustable from the WS4 palette through a uniform, no recompile). */
 const MASK_DARKEN_DEFAULT = 0.45;
 
-// The project's matcaps: single-sphere PNGs loaded as-is.
+// The project's matcaps: single-sphere PNGs loaded as-is. Each also has a
+// 64px thumbnail at /assets/matcaps/thumbs/<id>.png for the picker grid.
 const MATCAPS: MatcapConfig[] = [
   { id: 'warm-clay', label: 'Warm clay', url: '/assets/matcaps/warm-clay.png' },
   { id: 'blue-grey', label: 'Blue grey', url: '/assets/matcaps/blue-grey.png' },
   { id: 'terracotta', label: 'Terracotta', url: '/assets/matcaps/terracotta.png' },
   { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png' },
+  // The VR pack (owner-supplied, Blender format). The source PNGs carry a
+  // transparent surround, flattened at import time by radial edge bleed
+  // (scratchpad matcap-flatten.py) so a grazing normal never samples
+  // white; labels keep the pack's own numbering (owner call).
+  ...Array.from({ length: 10 }, (_, i) => {
+    const n = String(i + 1).padStart(2, '0');
+    return { id: `vr${n}`, label: `VR${n}`, url: `/assets/matcaps/vr${n}.png` };
+  }),
 ];
 
 /** A matcap's request URL, version-tagged so an updated PNG isn't served stale. */
@@ -176,7 +185,14 @@ export class Materials {
       // Held as unknown while it is composed: the node types returned by
       // attribute() and .mul() differ, and only the final assignment needs
       // to name a type.
-      let node: unknown = this.sculptVertexColor ? attribute('color', 'vec3') : null;
+      // Owner call: a matcap renders PURE. Paint and albedo fills stay in
+      // the vertex colours for the Lit material, but never tint a matcap -
+      // it exists to read form, and multiplying it by the default warm-clay
+      // fill rendered the blue-grey matcap brown (measured against the
+      // source PNGs). The mask darken below still applies in both modes:
+      // masks must stay visible while sculpting.
+      let node: unknown =
+        this.sculptVertexColor && id === 'lit' ? attribute('color', 'vec3') : null;
       if (this.maskTintOn) {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
         const masked = materialsPBR.z.clamp(0, 1).oneMinus();

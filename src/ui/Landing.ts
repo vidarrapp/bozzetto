@@ -25,7 +25,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
       <header class="landing__head">
         <div>
           <h1 class="landing__title">Bozzetto</h1>
-          <p class="landing__tagline">Sculpt timelapses &amp; 3D studies</p>
+          <p class="landing__tagline">Sculpt, paint &amp; timelapse in your browser</p>
         </div>
 
       </header>

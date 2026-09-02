@@ -482,16 +482,30 @@ export class Panel {
     } else if (this.viewer.getMaterial() === 'matcap') {
       const matcaps = mats.matcaps();
       if (matcaps.length > 1) {
-        const select = document.createElement('select');
+        // A thumbnail gallery, not a dropdown (owner call): matcaps are
+        // pictures, and picking one by name was a guessing game. The grid
+        // rebuilds through refreshControls, so the 2..9 hotkeys move the
+        // ring too.
+        const grid = div('matcap-grid');
         matcaps.forEach((mc, i) => {
-          const opt = document.createElement('option');
-          opt.value = String(i);
-          opt.textContent = mc.label;
-          select.appendChild(opt);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'matcap-swatch';
+          if (i === state.matcapIndex) btn.classList.add('matcap-swatch--on');
+          btn.title = mc.label;
+          btn.setAttribute('aria-label', `Matcap ${mc.label}`);
+          const img = document.createElement('img');
+          img.src = `/assets/matcaps/thumbs/${mc.id}.png`;
+          img.alt = '';
+          img.draggable = false;
+          btn.appendChild(img);
+          btn.addEventListener('click', () => {
+            mats.setMatcapIndex(i);
+            this.rebuildMaterialOptions(); // move the selection ring
+          });
+          grid.appendChild(btn);
         });
-        select.value = String(state.matcapIndex);
-        select.addEventListener('change', () => mats.setMatcapIndex(Number(select.value)));
-        this.materialOptions.appendChild(labelRow('Matcap', select));
+        this.materialOptions.appendChild(grid);
       }
     }
   }
