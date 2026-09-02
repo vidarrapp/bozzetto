@@ -412,13 +412,49 @@ h1,
   background: transparent;
 }
 
-/* Matcap gallery: round thumbnails in a wrapping grid, the active one
-   ringed in the accent. Buttons stay square so the ring hugs the disc. */
+/* Matcap gallery: round thumbnails in a grid, the active one ringed in
+   the accent. Lives in a body-mounted popout (owner call - fourteen
+   thumbs ate half the Material section), anchored to a round trigger
+   swatch showing the active matcap. Same body-mount rationale as
+   .cpick__pop: the panel body scrolls, clips, and stacking-traps. */
 .matcap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
   gap: 8px;
   padding: 6px 0 2px;
+}
+
+.mcpick__trigger {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.mcpick__trigger img {
+  width: 100%;
+  border-radius: 50%;
+}
+
+.mcpick__pop {
+  position: fixed;
+  z-index: 40;
+  width: 264px;
+  padding: 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.matcap-grid--pop {
+  grid-template-columns: repeat(5, 1fr);
+  padding: 0;
 }
 
 .matcap-swatch {

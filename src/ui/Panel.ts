@@ -2,6 +2,7 @@ import type { Viewer, GroundMode } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
+import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -107,6 +108,8 @@ export class Panel {
   private bgPicker?: ColorPickerHandle;
   private stagePicker?: ColorPickerHandle;
   private readonly lightPickers = new Map<LightId, ColorPickerHandle>();
+  /** The matcap gallery popout's trigger, reused like the colour pickers. */
+  private mcPicker?: MatcapPickerHandle;
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
@@ -243,6 +246,7 @@ export class Panel {
       this.albedoPicker?.close();
       this.bgPicker?.close();
       this.stagePicker?.close();
+      this.mcPicker?.close();
       for (const p of this.lightPickers.values()) p.close();
       window.dispatchEvent(
         new CustomEvent('bozzetto:panel-close', { detail: { id: 'settings', side: 'right' } }),
@@ -343,6 +347,7 @@ export class Panel {
     this.albedoPicker?.dispose();
     this.bgPicker?.dispose();
     this.stagePicker?.dispose();
+    this.mcPicker?.dispose();
     for (const p of this.lightPickers.values()) p.dispose();
     this.lightPickers.clear();
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
@@ -480,32 +485,23 @@ export class Panel {
         compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v)),
       );
     } else if (this.viewer.getMaterial() === 'matcap') {
-      const matcaps = mats.matcaps();
-      if (matcaps.length > 1) {
-        // A thumbnail gallery, not a dropdown (owner call): matcaps are
-        // pictures, and picking one by name was a guessing game. The grid
-        // rebuilds through refreshControls, so the 2..9 hotkeys move the
-        // ring too.
-        const grid = div('matcap-grid');
-        matcaps.forEach((mc, i) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'matcap-swatch';
-          if (i === state.matcapIndex) btn.classList.add('matcap-swatch--on');
-          btn.title = mc.label;
-          btn.setAttribute('aria-label', `Matcap ${mc.label}`);
-          const img = document.createElement('img');
-          img.src = `/assets/matcaps/thumbs/${mc.id}.png`;
-          img.alt = '';
-          img.draggable = false;
-          btn.appendChild(img);
-          btn.addEventListener('click', () => {
-            mats.setMatcapIndex(i);
-            this.rebuildMaterialOptions(); // move the selection ring
-          });
-          grid.appendChild(btn);
-        });
-        this.materialOptions.appendChild(grid);
+      // A thumbnail gallery in a POPOUT, not a dropdown or inline rows
+      // (owner calls): matcaps are pictures, picking one by name was a
+      // guessing game, and fourteen thumbs ate half the section. The
+      // trigger swatch shows the active matcap; the handle is reused
+      // across rebuilds so refreshControls (2..9 hotkeys, look restores)
+      // just re-syncs the ring and the trigger.
+      if (mats.matcaps().length > 1) {
+        if (!this.mcPicker) {
+          this.mcPicker = matcapPicker(
+            () => this.viewer.materials.matcaps(),
+            () => this.viewer.materials.getMaterialState().matcapIndex,
+            (i) => this.viewer.materials.setMatcapIndex(i),
+          );
+        } else {
+          this.mcPicker.refresh();
+        }
+        this.materialOptions.appendChild(labelRow('Matcap', this.mcPicker.root));
       }
     }
   }
