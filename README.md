@@ -14,7 +14,7 @@ Bozzetto has a few parts:
 
 It runs entirely on Cloudflare (Pages, Functions, D1, and R2), so there is no server to run yourself.
 
-Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>`, the public editor at `/create/`, and the full editor at `/admin/`.
+Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se). The viewer is at `/?tl=<id>`, sculpt mode at `/?sculpt=1`, the public editor at `/create/`, and the full editor at `/admin/`.
 
 ## Install as an app (iPad, iPhone & Android)
 
@@ -106,21 +106,27 @@ The quickest way to get started is the public editor at [`/create`](https://bozz
 
 1. Open [`/create`](https://bozzetto.vidarrapp.se/create/).
 2. Drop in a sequence of `.obj` or `.glb` files, one mesh per stage of your sculpt, named so they sort in order. Tick **OBJ files are Z-up** if they came from a Z-up tool such as Blender. They convert in the browser as the progress bar fills.
-3. Set up the look in the floating panel on the right: lighting, material, environment, and camera. Orbit to the angle you want.
-4. Optionally add **stages** to mark and name key frames; they become markers on the exported file's scrubber.
-5. Press **Export .html**. You get one file with the viewer, frames, and assets all inlined. It opens offline straight from disk, so you can email it, drop it in a shared folder, or keep it as an archive.
-6. You can also export mp4/gif timelapse or turntable animations.
+3. Give it a title (it names the downloaded file), pick **Timelapse** or **Model**, and set the playback FPS — the preview picks the rate up live.
+4. Set up the look in the floating panel on the right: lighting, material, environment, and camera. Orbit to the angle you want.
+5. Optionally add **stages** to mark and name key frames; they become markers on the exported file's scrubber.
+6. Press **Export .html**. You get one file with the viewer, frames, and assets all inlined. It opens offline straight from disk, so you can email it, drop it in a shared folder, or keep it as an archive.
+7. You can also export MP4/GIF timelapse or turntable animations with the **Record reel** section.
 
 A single mesh works too: drop one file and you get a shareable 3D model on one HTML page. To publish timelapses to the gallery instead of downloading a file, use the full editor at `/admin/` (see the tutorial below).
 
 ## Features
 
+### Gallery
+
+- The landing page lists published projects as thumbnail cards (badged *timelapse* or *model*, with a frame count), and leads with a **New sculpt** tile — plus your own "In progress" sculpt when one is waiting.
+- The top row keeps **Install** (for visitors who haven't added the app yet), **Upload timelapse**, and **Log in** — which becomes **Projects** for the signed-in owner.
+
 ### Viewer
 
 - Per-frame geometry streaming. Frames are stored as gzipped, position-quantized GLBs (roughly 3–4× smaller than the raw meshes) and unpacked natively on load; earlier uncompressed frames still play unchanged. One persistent mesh has its geometry swapped each frame, with the frames near the playhead prefetched eagerly and the rest of the sequence filled in slowly in the background. A timelapse that fits the device's memory budget ends up buffered whole — scrubbing and looping never reload — while larger ones keep the budget's worth of frames around the playhead. If loading falls behind, playback buffers — waiting for a short run of frames instead of skipping ahead — with a loaded-frames bar under the scrubber and a buffering indicator.
 - Renders on WebGPU through three.js's node-based renderer, with an automatic WebGL 2 fallback when WebGPU is unavailable; the same materials, shadows, ambient occlusion, and depth of field run on either backend.
-- Real-time relighting with a multi-light rig and soft (VSM) shadows.
-- Material modes: lit PBR (albedo, roughness, metalness), matcaps, view-space normals, and a wireframe overlay, each with smooth or flat shading.
+- Real-time relighting with a multi-light rig — two presets (Three-point, and a raking key for form studies), per-light toggles and colours, a master shadows switch, rig rotation — and soft (VSM) shadows.
+- Material modes: lit PBR (albedo, roughness, metalness) and matcaps, plus a wireframe overlay, each with smooth or flat shading.
 - HDRI image-based lighting (PMREM) with selectable environments, three background modes (theme colour, solid colour, blurred HDRI), and separate rotation for the light rig and the HDRI.
 - Ground-truth ambient occlusion (GTAO) with adjustable strength and radius, composited in the node post-processing graph. It can be turned off.
 - Depth of field (a node-based gather): aperture and a focus plane that tracks the orbit target. Off by default.
@@ -129,22 +135,22 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 
 ### Sculpt mode
 
-- Ten brushes on `1`–`0`: Crease, a volumetric **Move** that can grab a silhouette from just outside it, **Standard clay** laying ribbon-like strips, Inflate, Pinch, Flatten, Smooth, Drag, an hPolish-style **Polish** that flattens surfaces while keeping edges crisp (with a Plane lock slider from *follow* to *locked*), and **Paint**. Apple Pencil pressure drives strength through the stroke; per-brush pressure response is configurable (toggles + curves).
+- Ten brushes on `1`–`0`: Crease, a volumetric **Move** that can grab a silhouette from just outside it, **Standard clay** laying ribbon-like strips, Inflate, Pinch, Flatten, Smooth, Drag, an hPolish-style **Polish** that flattens surfaces while keeping edges crisp (with a Plane lock slider from *follow* to *flatten*), and **Paint**. Apple Pencil pressure drives strength through the stroke; per-brush pressure response is configurable (toggles + curves).
 - **Masking** (`Ctrl` paints, darkens on the model, resists every brush) with blur/sharpen/invert/clear and **Extract** — the masked region becomes a new object. **Mirror symmetry** with a per-object axis choice.
 - **Topology**: a multiresolution stack (discrete level slider, Subdivide, and Rebuild — reversion that adds a *coarser* level), dynamic topology with stroke detail sliders, and voxel remesh.
 - **Vertex painting & per-object materials**: paint albedo with an HSV picker (alt-click samples off the model), assign named materials per object, and edit a material's albedo/roughness/metalness in the Model panel. Paint is colour-only; the surface response stays the material's.
 - **Object transforms**: a unified move/rotate/scale gizmo from the toolbar, single modes on `E`/`R`/`T`, `Q` back to the clay; multi-object scenes with an outliner (visibility eyes, edit locks, double-click rename).
 - **Five docked panels**: File and Scene on the left; Render (scene-wide look: lighting, AO — cavity SSAO or GTAO — depth of field, environment, camera, material mode/matcaps/shading), Tool (the active brush's settings) and Model (the object's material values, Topology, Remesh) on the right.
 - **A real look**: everything the editor's Render panel can set works while sculpting, persists with the session and with `.bozz` files, publishes with your models, and resets in one click.
-- **Timelapse capture**: idle-time mesh snapshots after each stroke, stored locally, publishable to the gallery when signed in.
+- **Timelapse capture**: idle-time mesh snapshots after each stroke, stored locally, publishable to the gallery when signed in as the admin (Cloudflare Access).
 - **Files**: `.bozz` save/open (the full scene — every object, subdivision stack, masks, materials, look), **OBJ import** (Z-up toggle for DCC exports) and **OBJ export**. All device-local for guests.
 - **Made for iPad**: two fingers always navigate (even on the model), a resting palm never blocks the Pencil, the toolbar covers keyboard-less use, and `Tab`'s hide-the-interface staging keeps the screen clean.
-- **Reload-safe**: the scene autosaves to IndexedDB after every edit; an unfinished sculpt shows up in the gallery as an "In progress" card that drops you straight back in.
+- **Reload-safe**: every edit schedules an idle-time autosave to IndexedDB (huge scenes save on a slower cadence; past ~8M triangles the last in-budget save is what restores). An unfinished sculpt shows in the gallery as an "In progress" card — its picture and counts reflect the last time you left sculpt mode for the gallery; work abandoned by closing the tab still restores through the New sculpt entry.
 
 ### Public editor (`/create/`)
 
 - No sign-in and no backend. Frames are converted and held in the browser; nothing is uploaded.
-- The preview is the real viewer, with the same floating look panel as the full editor.
+- The preview is the real viewer, with the same floating Render panel as the full editor.
 - One button exports a self-contained `.html` with the viewer, frames, and assets inlined, ready to share or archive.
 
 ### Editor (`/admin/`)
@@ -155,6 +161,9 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 - Mark stages (named frames with a short description) that appear on the scrubber, and capture any frame as the gallery thumbnail.
 - Full-window preview with floating side panels that slide out of the way (press Tab to hide them).
 - Export a finished timelapse as one self-contained `.html`, with the viewer, frames, and assets all inlined, that opens offline straight from disk.
+- **Record reel**: export the timelapse or a turntable spin (2–8 s, either direction) as MP4 (H.264, where the browser has WebCodecs) or GIF, at 1080p/720p (or 480p/360p GIF), with a choice of aspect.
+- A **Settings** block renames the project, sets its playback FPS (1–30), and switches it between a timelapse and a single-frame model.
+- The project list at `/admin/` shows every project with its thumbnail; from there you open the editor or the live viewer, or delete a project (uploaded meshes included).
 
 ### Platform
 
@@ -174,10 +183,10 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 | `F` | Focus (frame the model) |
 | Double-click *(double-tap on touch)* | Set focus point (tap-to-focus) |
 | `1` | Lit (PBR) |
-| `2`… | Matcaps |
+| `2`–`5` | Matcaps |
 | `S` | Smooth / flat shading |
 | `W` | Wireframe overlay |
-| `G` | Ground shadow |
+| `G` | Cycle ground (shadow / floor / pedestal / off) |
 | `Tab` | Show / hide panels |
 | `H` | Hotkey guide |
 
@@ -188,24 +197,31 @@ A single mesh works too: drop one file and you get a shareable 3D model on one H
 | Drag on the mesh | Sculpt (`Alt` carves, `Shift` smooths) |
 | Drag off the mesh | Orbit (around your last stroke; `F` re-frames) |
 | Two-finger drag / pinch | Pan / zoom — always, even on the model |
-| `Ctrl` + drag | Paint mask (`+Alt` unmasks); off the mesh: zoom |
+| `Ctrl` + drag | Paint mask (`+Alt` unmasks); off the mesh: drag zooms, tap inverts the whole mask |
 | `Ctrl` + `C` / `I` / `H` / `E` | Clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes (Crease … Polish, Paint) |
 | `B` / `S` (hold + drag) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `X` | Mirror symmetry |
 | `E` / `R` / `T`, `Q` | Move / rotate / scale gizmo · back to sculpting |
 | `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |
+| `←` `→` | Turntable (repeats accelerate; wheel-friendly) |
+| `G` | Cycle the stage (floor / pedestal / off) |
 | `L` (hold + drag) | Move the key light (across / up) |
 | `Shift`+`S` | Shadows on / off |
 | `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z` | Undo / redo |
 | Double-click a Scene row | Rename the object |
-| `Tab` / `Esc` | Close panels, hide the interface / bring it back |
+| `Tab` | First press closes panels, second hides the interface; `Tab` or `Esc` brings it back |
 
 A few URL switches help when debugging the renderer: `?dev` reveals a developer section in the control panel, and `?q=low|medium|high` forces a quality tier.
 
 ## Getting started
 
 Requires Node 18 or newer.
+
+### Gallery
+
+- The landing page lists published projects as thumbnail cards (badged *timelapse* or *model*, with a frame count), and leads with a **New sculpt** tile — plus your own "In progress" sculpt when one is waiting.
+- The top row keeps **Install** (for visitors who haven't added the app yet), **Upload timelapse**, and **Log in** — which becomes **Projects** for the signed-in owner.
 
 ### Viewer only (no backend)
 
@@ -310,7 +326,7 @@ src/
     Controls.ts            OrbitControls with a DCC button mapping
     FrameStreamer.ts       fetch / prefetch / cache / dispose of frames
     Timeline.ts            playback clock, fps, stage jumps, scrub
-    quality.ts, pcss.ts    device tiers + optional PCSS shadows
+    quality.ts             device quality tiers
   ui/                      Panel, Transport, Help, FpsMeter, theme, shortcuts, Landing
   embed/main.ts            entry for the self-contained single-file export
   export/singleFile.js     pure bundler core shared by the editor and CLI

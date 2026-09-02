@@ -27,7 +27,7 @@ const GUIDE_HTML = `
     <div class="help-row"><kbd>2</kbd>–<kbd>5</kbd><span>Matcaps</span></div>
     <div class="help-row"><kbd>S</kbd><span>Smooth / flat shading</span></div>
     <div class="help-row"><kbd>W</kbd><span>Wireframe overlay</span></div>
-    <div class="help-row"><kbd>G</kbd><span>Ground shadow</span></div>
+    <div class="help-row"><kbd>G</kbd><span>Cycle ground (shadow / floor / pedestal / off)</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">Interface</div>

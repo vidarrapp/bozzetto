@@ -15,9 +15,9 @@ export interface ShortcutHandlers {
 /**
  * Global keyboard shortcuts, shared by the viewer and the editor preview:
  *   space      play / pause            ← / a · → / d   step
- *   f          focus (frame model)     r              reset view
+ *   f          focus (frame model)
  *   s          smooth ↔ flat shading   w              wireframe overlay
- *   g          ground shadow
+ *   g          cycle ground (shadow / floor / pedestal / off)
  *   1          Lit (PBR)               2..n           matcaps (interface order)
  *   dbl-click  set focus point (tap-to-focus; double-tap on touch)
  *   tab        toggle side panel       h              hotkey guide
