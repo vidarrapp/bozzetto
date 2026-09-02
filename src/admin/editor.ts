@@ -54,7 +54,7 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
   }
 }
 
-/** The Save look / Save thumbnail actions, pinned to the top of the Look dev panel. */
+/** The Save look / Save thumbnail actions, pinned to the top of the Render panel. */
 function buildLookActions(p: Viewer, id: string): HTMLElement {
   const sec = document.createElement('section');
   sec.className = 'section panel__actions';
@@ -329,7 +329,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   });
 
   // --- preview + lighting -------------------------------------------------
-  // Save look / Save thumbnail live at the top of the right-hand Look dev panel
+  // Save look / Save thumbnail live at the top of the right-hand Render panel
   // (built in mountPreview, where the live preview exists).
   const exportHtml = $<HTMLButtonElement>('#export-html');
   exportHtml.addEventListener('click', () => {

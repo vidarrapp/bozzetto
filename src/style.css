@@ -335,7 +335,7 @@ h1,
   color: var(--text);
 }
 
-/* Save look / thumbnail row pinned at the top of the Look dev panel. */
+/* Save look / thumbnail row pinned at the top of the Render panel. */
 .panel__actions {
   padding-top: 4px;
 }
@@ -1554,6 +1554,14 @@ html.is-page body {
   top: 200px;
   max-height: calc(100vh - 290px);
   z-index: 11; /* over the Render panel above it, whose tab it can cover */
+}
+
+/* Third right-edge tab: Render (52) + Tool (200) + Model, same 116px tab +
+   32px gap rhythm. */
+.panel--model {
+  top: 348px;
+  max-height: calc(100vh - 380px);
+  z-index: 12;
 }
 
 /* Left-docked panel variant: mirrors the right panel. Left panels cover the

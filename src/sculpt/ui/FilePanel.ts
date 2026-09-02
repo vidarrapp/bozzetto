@@ -30,6 +30,8 @@ export class FilePanel extends SidePanel {
   decorate: ((scene: SavedScene) => void) | null = null;
   adopt: ((scene: SavedScene) => void) | null = null;
   private readonly openInput: HTMLInputElement;
+  private importInput!: HTMLInputElement;
+  private importZUp = false;
   private recordCheckbox!: HTMLInputElement;
   private captureReadout!: HTMLDivElement;
   private captureStopReason = '';
@@ -81,6 +83,28 @@ export class FilePanel extends SidePanel {
       }),
     );
     filesCol.appendChild(this.openInput);
+    // Import an OBJ as a new object in the scene. The toggle covers Z-up
+    // DCC exports (Blender and friends): checked, the axes rotate to Y-up
+    // on the way in (the same convention the timelapse uploader uses).
+    this.importInput = document.createElement('input');
+    this.importInput.type = 'file';
+    this.importInput.accept = '.obj';
+    this.importInput.hidden = true;
+    this.importInput.addEventListener('change', () => {
+      const file = this.importInput.files?.[0];
+      this.importInput.value = '';
+      if (file) void this.importObjFile(file);
+    });
+    filesCol.appendChild(
+      this.fileButton('Import OBJ...', null, async () => {
+        this.importInput.click();
+      }),
+    );
+    filesCol.appendChild(this.importInput);
+    const zup = checkbox('Z-up source (rotate to Y-up)', false, (on) => {
+      this.importZUp = on;
+    });
+    filesCol.appendChild(zup);
     filesCol.appendChild(
       this.fileButton('Export OBJ', 'Exported', async () => {
         downloadBlob(new Blob([sceneToOBJ(this.session)], { type: 'text/plain' }), stampName('obj'));
@@ -164,6 +188,17 @@ export class FilePanel extends SidePanel {
         });
     });
     return b;
+  }
+
+  /** Import an OBJ as a new scene object (errors surface as alerts). */
+  private async importObjFile(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      const name = file.name.replace(/\.obj$/i, '').trim() || 'Imported';
+      this.session.importOBJ(text, this.importZUp, name);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
   }
 
   private async openFile(file: File): Promise<void> {

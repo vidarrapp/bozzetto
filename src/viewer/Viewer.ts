@@ -246,10 +246,10 @@ export class Viewer {
    */
   private pipeline: RenderPipeline | null = null;
   private aoNode: ReturnType<typeof ao> | null = null;
-  /** Sculpt-mode output: scene colour x screen-space cavity, no GTAO, no DoF. */
-  private sculptOut: Node | null = null;
-  /** Sculpt-mode output with no AO at all (the picker's Off). */
-  private sculptPlain: Node | null = null;
+  /** Sculpt-mode composite: scene colour x cavity x GTAO, uniform-gated. */
+  private sculptComposite: Node | null = null;
+  /** The DoF gather over the sculpt composite (owner call: DoF in sculpt). */
+  private sculptDofNode: Node | null = null;
   /** `?aodebug` in sculpt: R = view distance/400, G = raw occlusion, B = factor. */
   private sculptAoDebugNode: Node | null = null;
   /** `?dofdebug` in viewer: the DoF chain's viewZ as distance/400 greyscale. */
@@ -671,8 +671,6 @@ export class Viewer {
   /** Sculpt SSAO knobs (WS4 palette): cavity strength and tap radius (px). */
   setSculptAO(state: { strength?: number; radius?: number }): void {
     if (typeof state.strength === 'number') this.cavityStrengthU.value = state.strength;
-    // Which sculpt output applies depends on whether cavity is live.
-    if (this.sculptShading) this.rebuildOutput();
     if (typeof state.radius === 'number') this.sculptAoRadiusU.value = state.radius;
   }
 
@@ -910,10 +908,9 @@ export class Viewer {
       this.aoRadiusFraction = state.radius;
       this.applyAoRadius();
     }
-    // AO stays in the graph; enabling/strength just drive the effective-strength
-    // uniform (0 when disabled), so no recompile is needed. Except in sculpt
-    // mode, where enabling GTAO changes which output graph is selected.
-    if (this.sculptShading) this.rebuildOutput();
+    // AO stays in the graph everywhere now; enabling/strength just drive the
+    // effective-strength uniform (0 when disabled), sculpt included - the
+    // sculpt composite gates GTAO through the same uniform.
     this.applyAoStrength();
   }
 
@@ -1563,10 +1560,24 @@ export class Viewer {
     const sculptAo = float(1)
       .sub((occlusion as ReturnType<typeof float>).div(axes.length).mul(this.cavityStrengthU))
       .clamp(0.35, 1);
-    this.sculptOut = scenePass
+    // ONE uniform-gated sculpt composite replaces the old three-way output
+    // swap (cavity / GTAO / plain): the cavity factor gates itself through
+    // cavityStrengthU (1.0 at strength 0) and GTAO through the effective
+    // aoStrengthU (1.0 when disabled), so the AO picker's three models are
+    // all this node with different uniform values - no recompile per
+    // change, and a DoF gather can finally wrap sculpt output without
+    // three prebuilt variants (owner call: full look parity in sculpt).
+    const sculptComposite = scenePass
       .getTextureNode('output')
-      .mul(vec4(vec3(sculptAo), float(1)));
-    this.sculptPlain = scenePass.getTextureNode('output') as unknown as Node;
+      .mul(vec4(vec3(sculptAo.mul(aoFactor as never) as unknown as ReturnType<typeof float>), float(1)));
+    this.sculptComposite = sculptComposite as unknown as Node;
+    this.sculptDofNode = dof(
+      sculptComposite,
+      scenePass.getViewZNode(),
+      this.dofFocusU,
+      this.dofRangeU,
+      this.dofBokehU,
+    ) as unknown as Node;
     // Diagnostic view for ?aodebug in sculpt: channels expose each stage so a
     // dead cavity can be blamed on depth, ramp or composite in one frame.
     this.sculptAoDebugNode = vec4(
@@ -1621,20 +1632,17 @@ export class Viewer {
    */
   private rebuildOutput(): void {
     if (!this.pipeline || !this.aoColor || !this.dofNode || !this.aoNode) return;
-    if (this.sculptShading && this.sculptOut) {
+    if (this.sculptShading && this.sculptComposite) {
       if (this.aoDebug && this.sculptAoDebugNode) {
         this.pipeline.outputNode = this.sculptAoDebugNode;
         this.pipeline.needsUpdate = true;
         return;
       }
-      // The AO picker's three models, honest at last: Cavity is the sculpt
-      // composite, GTAO is the same AO-composited colour the viewer uses
-      // (the picker offered it here for months while this branch ignored
-      // the AO node entirely - it could never have worked), and Off is the
-      // plain scene colour. DoF stays out of sculpt either way.
-      if (this.cavityStrengthU.value > 0) this.pipeline.outputNode = this.sculptOut;
-      else if (this.aoEnabled) this.pipeline.outputNode = this.aoColor;
-      else this.pipeline.outputNode = this.sculptPlain ?? this.sculptOut;
+      // Off / Cavity / GTAO all live inside the one composite now, gated by
+      // uniforms (see buildPipeline), so the only structural choice left is
+      // whether the DoF gather wraps it.
+      this.pipeline.outputNode =
+        this.dofEnabled && this.sculptDofNode ? this.sculptDofNode : this.sculptComposite;
       this.pipeline.needsUpdate = true;
       return;
     }

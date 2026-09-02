@@ -37,8 +37,6 @@ export class Panel {
   private groundSelect: HTMLSelectElement | null = null;
   /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
   private dofCheckbox?: HTMLInputElement;
-  /** DoF section wrapper: hidden while sculpt mode is active. */
-  private dofSection?: HTMLDivElement;
   /** Look-dev sections built for the viewer, revealed only while sculpting. */
   private lookDevSections: HTMLElement[] = [];
   private aoMode = 'cavity';
@@ -90,8 +88,8 @@ export class Panel {
    */
   private applySculptVisibility(): void {
     const active = this.sculpting;
-    // DoF is reserved for the view/render mode; sculpt hides its controls.
-    if (this.dofSection) this.dofSection.hidden = active;
+    // DoF shows in sculpt too (owner call: full look parity - a look set
+    // while sculpting should carry everything the editor could set).
     // Sculpt mode gets look-dev parity with the editor: the full light rig,
     // camera, environment and AO, which the plain viewer has no use for.
     for (const sec of this.lookDevSections) sec.hidden = !active;
@@ -134,7 +132,7 @@ export class Panel {
     this.handleArrow.className = 'handle__arrow';
     const handleLabel = document.createElement('span');
     handleLabel.className = 'handle__label';
-    handleLabel.textContent = this.editor ? 'Look dev' : 'Render';
+    handleLabel.textContent = 'Render'; // one name across viewer, sculpt and editor
     this.collapseBtn.replaceChildren(handleLabel, this.handleArrow);
     this.root.appendChild(this.collapseBtn);
 
@@ -146,7 +144,7 @@ export class Panel {
     // swaps it for the panel's own name, since the synthetic sculpt
     // manifest is titled "Sculpt" and would sit right above the Sculpt
     // palette (onSculptMode below).
-    title.textContent = this.editor ? 'Look dev' : viewer.manifest.title || 'Bozzetto';
+    title.textContent = this.editor ? 'Render' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
       this.setCollapsed(true);
@@ -154,7 +152,7 @@ export class Panel {
     });
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
-    closeBtn.setAttribute('aria-label', this.editor ? 'Hide look dev panel' : 'Hide render panel');
+    closeBtn.setAttribute('aria-label', 'Hide render panel');
     header.append(title, closeBtn);
     this.root.appendChild(header);
 
@@ -425,7 +423,10 @@ export class Panel {
     const mats = this.viewer.materials;
     const state = mats.getMaterialState();
 
-    if (this.viewer.getMaterial() === 'lit') {
+    if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
+      // In sculpt mode these three are PER-OBJECT material values and live
+      // in the Model panel; here they would edit whichever object happens
+      // to be selected while dressed as scene-wide controls.
       // The shared HSV picker, not <input type="color">: the same control
       // the paint brush uses, so albedo and paint are picked the same way.
       // REUSED across rebuilds, never recreated: the picker's own slider
@@ -728,7 +729,6 @@ export class Panel {
   private buildDoF(body: HTMLElement): void {
     if (!this.viewer.dofAvailable()) return;
     const sec = section(body, 'Depth of field');
-    this.dofSection = sec;
     const dof = this.viewer.getDoFState();
     const toggle = checkbox('Enabled', dof.enabled, (on) => this.viewer.setDoF({ enabled: on }));
     this.dofCheckbox = toggle.querySelector('input')!;

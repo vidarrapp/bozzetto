@@ -2,7 +2,7 @@ import type { Panel } from './Panel';
 
 /**
  * Coordinates the editor's two slide-out panels — the left "Project settings"
- * sidebar and the right "Look dev" control panel — so they behave on small
+ * sidebar and the right "Render" control panel — so they behave on small
  * screens. It remembers the last open/closed state, and on a narrow screen the
  * two are mutually exclusive (opening one closes the other) so they never
  * overlap. First run with no saved state opens just the panel on mobile.
@@ -72,7 +72,7 @@ export class EditorLayout {
       this.setSidebar(saved.sidebar, false);
       panel.setCollapsed(!saved.panel || (isNarrow() && saved.sidebar));
     } else {
-      // First run: on a narrow screen show only the Look dev panel.
+      // First run: on a narrow screen show only the Render panel.
       this.setSidebar(!isNarrow(), false);
       panel.setCollapsed(false);
     }

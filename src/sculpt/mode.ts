@@ -31,6 +31,7 @@ import { ScenePanel } from './ui/ScenePanel';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { FilePanel } from './ui/FilePanel';
+import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
@@ -259,6 +260,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       syncingPanel = false;
     }
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    modelPanel?.refreshMaterial();
   };
   viewer.materials.onPbrChange = () => {
     if (syncingPanel) return;
@@ -295,6 +297,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let scenePanel: ScenePanel | null = null;
   let filePanel: FilePanel | null = null;
   let sculptPanel: SculptPanel | null = null;
+  let modelPanel: ModelPanel | null = null;
   let sliders: BrushSliders | null = null;
   const extras = new Map<
     SculptMesh,
@@ -349,6 +352,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     reconcile();
     scenePanel?.refresh();
     sculptPanel?.refreshState();
+    modelPanel?.refreshState();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
   };
@@ -360,7 +364,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const levelToast = makeLevelToast();
   session.onLevelChange = (sel, levels) => {
     levelToast.show(sel + 1, levels);
-    sculptPanel?.refreshTopology();
+    modelPanel?.refreshTopology();
   };
 
   // Top-left stats: active object name + live triangle count (the name
@@ -750,6 +754,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.render();
   };
   sculptPanel = new SculptPanel(session, input, viewer);
+  modelPanel = new ModelPanel(session, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
   // each rather than replacing it.
@@ -859,6 +864,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel,
     filePanel,
     sculptPanel,
+    modelPanel,
     tablet: Tablet,
     library,
     // File pipeline, callable from the console/tests without the buttons.
@@ -938,6 +944,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();
+    modelPanel?.dispose();
     scenePanel?.dispose();
     filePanel?.dispose();
     for (const [, e] of extras) {

@@ -1,4 +1,5 @@
-import { CylinderGeometry, TorusGeometry, type BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry, CylinderGeometry, TorusGeometry } from 'three';
+import { parseObj } from '../../admin/glb';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Utils from '@sculpt-vendor/misc/Utils';
@@ -502,6 +503,25 @@ export class SculptSession {
 
   isDynamicTopology(): boolean {
     return !!this.mesh?.isDynamic;
+  }
+
+  /**
+   * Import an OBJ as a new scene object (File panel). The repo's own
+   * dependency-free parser handles triangulation and the Z-up flip; the
+   * result goes through the same weld/normalize/adopt path as the
+   * primitives, so an import sculpts, persists and undoes like anything
+   * else. NOTE normalizeSize rescales to the canonical sculpt size - an
+   * import is a base mesh to work on, not a measured part.
+   */
+  importOBJ(text: string, zUp: boolean, name: string): Multimesh {
+    const parsed = parseObj(text, zUp);
+    if (!parsed.positions.length || !parsed.indices.length) {
+      throw new Error('No geometry found in that OBJ file.');
+    }
+    const geom = new BufferGeometry();
+    geom.setAttribute('position', new BufferAttribute(parsed.positions, 3));
+    geom.setIndex(new BufferAttribute(parsed.indices, 1));
+    return this.meshFromTriGeometry(geom, name);
   }
 
   /** Scene menu: add a primitive as a new object (WS4 outliner plus). */
