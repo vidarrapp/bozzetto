@@ -31,6 +31,14 @@ export class FilePanel extends SidePanel {
   adopt: ((scene: SavedScene) => void) | null = null;
   /** Runs before the scene is replaced (the library holds its fills). */
   prepare: (() => void) | null = null;
+  /**
+   * Whether replacing the scene would cost the user something: work that
+   * lives nowhere but this browser, edits since the last save or open, or
+   * captured frames. mode.ts owns the answer; Open asks before replacing.
+   */
+  hasWork: (() => boolean) | null = null;
+  /** The scene now matches a file on disk (a save, or a completed open). */
+  onSceneClean: (() => void) | null = null;
   private readonly openInput: HTMLInputElement;
   private importInput!: HTMLInputElement;
   private importZUp = false;
@@ -63,6 +71,7 @@ export class FilePanel extends SidePanel {
       this.fileButton('Save file', 'Saved', async () => {
         const scene = this.session.serializeScene();
         if (!scene) throw new Error('Nothing to save');
+        this.onSceneClean?.(); // this scene now exists outside the browser
         // The look travels with the file: reopening it puts the work back
         // under the lighting, material and camera it was saved in.
         if (this.look) scene.look = this.look.get();
@@ -207,11 +216,28 @@ export class FilePanel extends SidePanel {
 
   private async openFile(file: File): Promise<void> {
     try {
+      // Unpack FIRST: a corrupt file then costs nothing, because neither
+      // the confirmation nor the frame clear has happened yet.
       const scene = await unpackScene(await file.arrayBuffer());
+      // Opening replaces everything, and the autosave overwrites the old
+      // scene seconds later - so a mis-picked file used to be the end of
+      // unsaved work (owner call: ask, but only when there is something
+      // to lose; opening into an untouched sphere stays instant).
+      const frames = this.recorder.frameCount();
+      if (this.hasWork?.()) {
+        const extra =
+          frames > 0 ? ` and ${frames} captured frame${frames === 1 ? '' : 's'}` : '';
+        if (!confirm(`Open this file? The current objects${extra} will be replaced.`)) return;
+      }
+      // A timelapse belongs to the scene it recorded (owner call): frames
+      // from the old one must not ride along into the newly opened work,
+      // where publishing would mix two scenes' geometry.
+      if (frames > 0) await this.recorder.clear();
       this.prepare?.(); // the library must not fill meshes mid-restore
       this.session.replaceScene(scene);
       this.adopt?.(scene); // materials, before anything reads them back
       if (scene.look && this.look) this.look.apply(scene.look);
+      this.onSceneClean?.(); // what is on screen is what is in that file
     } catch (err) {
       alert((err as Error).message);
     }

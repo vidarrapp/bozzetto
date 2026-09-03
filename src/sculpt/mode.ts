@@ -746,6 +746,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     library.saveInto(scene);
     scene.settings = collectSettings();
   };
+  // "Is there work to lose?" - asked by Open before it replaces the scene.
+  // A session restored from the autosave counts: it exists nowhere else.
+  // Otherwise it is edits since the last clean point (a save, or an open),
+  // compared by the undo stack's TOP ENTRY rather than its index, because a
+  // full stack shifts and leaves the index standing.
+  let sceneOnDisk = !saved;
+  let cleanState: unknown = session.getStateManager().getCurrentState();
+  filePanel.onSceneClean = () => {
+    sceneOnDisk = true;
+    cleanState = session.getStateManager().getCurrentState();
+  };
+  filePanel.hasWork = () =>
+    !sceneOnDisk ||
+    session.getStateManager().getCurrentState() !== cleanState ||
+    recorder.frameCount() > 0;
   filePanel.prepare = () => library.beginRestore();
   filePanel.adopt = (scene) => {
     library.loadFrom(scene);
