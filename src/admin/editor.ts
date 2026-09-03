@@ -131,8 +131,13 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   try {
     project = (await api.get(id)) as EditorProject;
   } catch (err) {
+    // The id comes straight off the URL (?p=) and the message off the wire:
+    // neither may reach innerHTML, or a crafted link runs script in the
+    // admin origin with the Access session behind it.
     host.innerHTML = `<div class="admin"><div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div>
-      <p>Could not load “${id}”: ${(err as Error).message}</p></div>`;
+      <p class="admin__error"></p></div>`;
+    host.querySelector<HTMLElement>('.admin__error')!.textContent =
+      `Could not load “${id}”: ${(err as Error).message}`;
     return;
   }
 

@@ -358,7 +358,7 @@ The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through 
 - Build command is `npm run build` and the output directory is `dist`.
 - The `prebuild` step generates the demo timelapse, so those assets ship in `dist/` without being committed.
 - Bindings (Pages, then Settings, then Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`.
-- Admin auth: put a Cloudflare Access application in front of the admin surface (`/admin*`, including `/admin/api/*`). Add every hostname you edit from, both the `*.pages.dev` domain and any custom domain, or writes from an uncovered host will return 403. You can also set an `ADMIN_EMAILS` var to limit which identities may write.
+- Admin auth: put a Cloudflare Access application in front of the admin surface (`/admin*`, including `/admin/api/*`). Add every hostname you edit from, both the `*.pages.dev` domain and any custom domain, or writes from an uncovered host will return 403. You can also set an `ADMIN_EMAILS` var to limit which identities may write. **Recommended**: also set `ACCESS_TEAM_DOMAIN` (your `<team>.cloudflareaccess.com` host) and `ACCESS_AUD` (the application's audience tag) — with both present the admin routes verify the Access JWT itself (signature, audience, issuer, expiry) rather than trusting the injected email header, which is only unforgeable while an Access application actually fronts every admin hostname.
 - Production is served at `bozzetto.vidarrapp.se`, attached as a custom domain on the Pages project.
 
 `wrangler.toml` is gitignored; the committed `wrangler.toml.example` is the template. Production bindings live in the dashboard rather than the repo.

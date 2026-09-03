@@ -2,6 +2,9 @@ import type { Env, ProjectData, ProjectMode, ProjectRow } from './types';
 import { HttpError } from './http';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const MAX_TITLE = 200;
+const MAX_FRAMES = 10000;
+const MAX_STAGES = 500;
 
 const frameKey = (id: string, index: number) =>
   `projects/${id}/frames/sd/${String(index).padStart(4, '0')}.glb`;
@@ -74,9 +77,41 @@ export async function createProject(env: Env, input: CreateInput): Promise<Proje
   await env.DB.prepare(
     'INSERT INTO projects (id, title, mode, fps, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(id, input.title?.trim() || id, mode, fps, JSON.stringify(defaultData()), now, now)
+    .bind(id, (input.title?.trim() || id).slice(0, MAX_TITLE), mode, fps, JSON.stringify(defaultData()), now, now)
     .run();
   return (await getProjectRow(env, id))!;
+}
+
+/**
+ * The pieces of a patch that the viewer later reads back through
+ * validateManifest: a bad shape stored here would make the project
+ * unloadable, so it is refused at the door instead.
+ */
+function validFrames(v: unknown): ProjectData['frames'] {
+  if (!Array.isArray(v) || v.length > MAX_FRAMES) throw new HttpError('frames: expected an array');
+  return v.map((f) => {
+    const o = f as { index?: unknown; tris?: unknown };
+    const index = Number(o?.index);
+    const tris = Number(o?.tris ?? 0);
+    if (!Number.isInteger(index) || index < 0 || !Number.isFinite(tris) || tris < 0) {
+      throw new HttpError('frames: each entry needs a non-negative integer index and tris');
+    }
+    return { index, tris };
+  });
+}
+
+function validStages(v: unknown): ProjectData['stages'] {
+  if (!Array.isArray(v) || v.length > MAX_STAGES) throw new HttpError('stages: expected an array');
+  return v.map((s) => {
+    const o = s as { name?: unknown; frame?: unknown; desc?: unknown };
+    const frame = Number(o?.frame);
+    if (!Number.isInteger(frame) || frame < 0) throw new HttpError('stages: frame must be a non-negative integer');
+    return {
+      name: String(o?.name ?? '').slice(0, MAX_TITLE),
+      frame,
+      desc: String(o?.desc ?? '').slice(0, 2000),
+    };
+  });
 }
 
 export async function updateProject(env: Env, id: string, patch: Record<string, unknown>): Promise<ProjectRow> {
@@ -92,15 +127,18 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
     environment: 'environment' in patch ? patch.environment : data.environment,
     ao: 'ao' in patch ? patch.ao : data.ao,
     presentation: 'presentation' in patch ? patch.presentation : data.presentation,
-    stages: Array.isArray(patch.stages) ? (patch.stages as ProjectData['stages']) : data.stages,
-    frames: Array.isArray(patch.frames) ? (patch.frames as ProjectData['frames']) : data.frames,
+    stages: 'stages' in patch ? validStages(patch.stages) : data.stages,
+    frames: 'frames' in patch ? validFrames(patch.frames) : data.frames,
   };
-  const title = typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim() : row.title;
+  const title =
+    typeof patch.title === 'string' && patch.title.trim()
+      ? patch.title.trim().slice(0, MAX_TITLE)
+      : row.title;
   const mode: ProjectMode = patch.mode === 'model' || patch.mode === 'timelapse' ? patch.mode : row.mode;
   const fps = Number(patch.fps ?? row.fps) || row.fps;
 
   // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
-  if (Array.isArray(patch.frames)) {
+  if ('frames' in patch) {
     const keep = new Set(next.frames.map((f) => f.index));
     const orphans = data.frames.filter((f) => !keep.has(f.index)).map((f) => frameKey(id, f.index));
     if (orphans.length > 0) {

@@ -8,6 +8,6 @@ import { adminEmail, error, handle, json } from '../../_shared/http';
 // applies.
 export const onRequestGet: PagesFunction<Env> = ({ env, request }) =>
   handle(async () => {
-    const email = adminEmail(request, env);
+    const email = await adminEmail(request, env);
     return email ? json({ email }) : error('Unauthorized', 403);
   });

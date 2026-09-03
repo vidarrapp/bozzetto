@@ -30,3 +30,7 @@ bucket_name = "bozzetto-assets"
 # DEV_ADMIN = "true"                 # LOCAL ONLY: bypass Access so the /admin
 #                                    # editor works in `npm run cf:dev`. Never
 #                                    # set this in the production dashboard.
+# ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"  # with ACCESS_AUD, admin
+# ACCESS_AUD = "<application audience tag>"             # routes verify the Access
+#                                    # JWT instead of trusting the email header
+#                                    # (recommended in production).

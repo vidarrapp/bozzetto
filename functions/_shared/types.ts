@@ -5,6 +5,15 @@ export interface Env {
   ADMIN_EMAILS?: string;
   /** Local-dev only: when "true", treats every request as an authed admin. */
   DEV_ADMIN?: string;
+  /**
+   * Optional hardening: when both are set, admin routes verify the Access
+   * JWT (`Cf-Access-Jwt-Assertion`) against the team's public keys instead
+   * of trusting the email header - which is only unforgeable while an
+   * Access application actually fronts the route. TEAM_DOMAIN is the
+   * `<team>.cloudflareaccess.com` host; AUD is the application audience tag.
+   */
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 }
 
 export type ProjectMode = 'timelapse' | 'model';
