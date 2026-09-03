@@ -209,6 +209,22 @@ export async function saveSculptSnapshot(snap: SculptSnapshot): Promise<void> {
   }
 }
 
+/**
+ * Is there a saved scene at all? The snapshot beside it is only written on
+ * the way out through the gallery link, so a reload, a closed tab or iOS
+ * evicting the page leaves the scene with no picture - and gating on the
+ * snapshot alone let "New sculpt" quietly resume that work instead of
+ * replacing it. count(), not get(): the record is megabytes of vertex
+ * arrays and this only needs to know it is there.
+ */
+export async function hasSavedScene(): Promise<boolean> {
+  try {
+    return (await withStore('readonly', (s) => s.count(KEY))) > 0;
+  } catch {
+    return false; // storage blocked: nothing to resume, nothing to clear
+  }
+}
+
 export async function loadSculptSnapshot(): Promise<SculptSnapshot | null> {
   try {
     const rec = (await withStore('readonly', (s) => s.get(SNAPSHOT_KEY))) as
@@ -231,6 +247,17 @@ const SKIP_SAVE_TRIS = 8000000;
 const FAST_SAVE_GAP_MS = 1500;
 /** Big-mesh cadence: at most one multi-ten-MB put every five minutes. */
 const SLOW_SAVE_GAP_MS = 5 * 60 * 1000;
+/**
+ * Consecutive failed writes before autosave gives up on the session. One
+ * failure is usually weather, not climate: an iPad app switch freezes the
+ * tab and aborts the put the hide flush just started, and the frame
+ * recorder can trip the quota between two of its own writes. Giving up on
+ * the first one meant sculpting for hours with nothing being saved and
+ * only a console line to show for it.
+ */
+const MAX_WRITE_FAILURES = 3;
+/** First retry gap after a failed write; doubles per consecutive failure. */
+const RETRY_GAP_MS = 5000;
 
 /** One DB for all sculpt persistence; v2 adds the capture frame stores. */
 export function openDb(): Promise<IDBDatabase> {
@@ -406,6 +433,12 @@ export async function clearSavedScene(): Promise<void> {
 export class ScenePersist {
   private dirty = false;
   private disabled = false;
+  private failures = 0;
+  /** Earliest a retry may run, after a failed write backed off. */
+  private retryAt = 0;
+
+  /** Autosave stopped ITSELF (a full store, or writes that kept failing). */
+  onStopped: ((reason: 'quota' | 'error') => void) | null = null;
   private cancelScheduled: (() => void) | null = null;
   private lastSave = 0;
   private saving = false;
@@ -471,7 +504,7 @@ export class ScenePersist {
     if (this.cancelScheduled) return;
     const run = (): void => {
       this.cancelScheduled = null;
-      const wait = this.lastSave + this.minGapMs() - Date.now();
+      const wait = Math.max(this.lastSave + this.minGapMs(), this.retryAt) - Date.now();
       if (wait > 0) {
         const t = window.setTimeout(run, wait);
         this.cancelScheduled = () => clearTimeout(t);
@@ -507,10 +540,23 @@ export class ScenePersist {
     try {
       await withStore('readwrite', (s) => s.put(scene, KEY));
       this.lastSave = Date.now();
+      this.failures = 0;
     } catch (err) {
-      // Quota or storage failure: stop trying quietly (sculpting continues).
-      this.disabled = true;
-      console.warn('sculpt autosave disabled:', err);
+      // The record never landed, so stay dirty and come back to it. A FULL
+      // store is different - retrying a tens-of-MB put against one just
+      // burns battery - so that stops at once, and either way the panel is
+      // told, because silent loss of autosave is the worst outcome here.
+      this.dirty = true;
+      this.failures++;
+      const quota = (err as DOMException | null)?.name === 'QuotaExceededError';
+      if (quota || this.failures >= MAX_WRITE_FAILURES) {
+        this.disabled = true;
+        console.warn('sculpt autosave disabled:', err);
+        this.onStopped?.(quota ? 'quota' : 'error');
+      } else {
+        this.retryAt = Date.now() + RETRY_GAP_MS * 2 ** (this.failures - 1);
+        console.warn('sculpt autosave write failed, retrying:', err);
+      }
     } finally {
       this.saving = false;
       // An edit that landed WHILE this put was in flight found flush()

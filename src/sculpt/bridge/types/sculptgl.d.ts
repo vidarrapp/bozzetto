@@ -117,6 +117,13 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getNbTriangles(): number;
     getNbFaces(): number;
     getMatrix(): Float32Array;
+    /**
+     * The octree's local AABB transformed by the mesh matrix, as
+     * [minX, minY, minZ, maxX, maxY, maxZ], written into the mesh's own
+     * scratch array (copy before keeping it). O(1) - the octree maintains
+     * the bound as strokes grow it.
+     */
+    computeWorldBound(): number[];
     getSymmetryOrigin(): number[];
     getSymmetryNormal(): number[];
     getVerticesProxy(): Float32Array;

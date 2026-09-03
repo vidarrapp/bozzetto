@@ -12,6 +12,15 @@ import type { LookState } from '../../viewer/Viewer';
  */
 
 /** Matches the server's slug rule so failures happen before any upload. */
+/**
+ * The server's frames cap (functions/_shared/projects.ts MAX_FRAMES). It is
+ * enforced on the metadata PUT, which lands AFTER every frame is already in
+ * R2 - so it is checked here, before a single byte goes up, or a long reel
+ * would upload for minutes and then fail with an orphaned project left
+ * behind.
+ */
+export const MAX_GALLERY_FRAMES = 10000;
+
 export const PROJECT_SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 export interface GalleryHooks {
@@ -51,6 +60,12 @@ export async function saveTimelapseToGallery(
   // must not stretch the walk.
   const metas = [...recorder.frameMetas()];
   if (metas.length === 0) throw new Error('No captured frames yet');
+  if (metas.length > MAX_GALLERY_FRAMES) {
+    throw new Error(
+      `Too many frames (${metas.length}); the gallery takes at most ${MAX_GALLERY_FRAMES}. ` +
+        'Clear frames and re-record.',
+    );
+  }
   if (!PROJECT_SLUG.test(id)) throw new Error('Id must be a-z, 0-9, hyphens');
   onProgress('Creating project...');
   await api.create({ id, title: title || id, mode: 'timelapse', fps: 4 });

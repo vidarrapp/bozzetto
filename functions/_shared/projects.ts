@@ -88,7 +88,8 @@ export async function createProject(env: Env, input: CreateInput): Promise<Proje
  * unloadable, so it is refused at the door instead.
  */
 function validFrames(v: unknown): ProjectData['frames'] {
-  if (!Array.isArray(v) || v.length > MAX_FRAMES) throw new HttpError('frames: expected an array');
+  if (!Array.isArray(v)) throw new HttpError('frames: expected an array');
+  if (v.length > MAX_FRAMES) throw new HttpError(`frames: at most ${MAX_FRAMES} frames`);
   return v.map((f) => {
     const o = f as { index?: unknown; tris?: unknown };
     const index = Number(o?.index);

@@ -45,6 +45,7 @@ export class FilePanel extends SidePanel {
   private recordCheckbox!: HTMLInputElement;
   private captureReadout!: HTMLDivElement;
   private captureStopReason = '';
+  private autosaveNote?: HTMLDivElement;
 
   constructor(
     private readonly session: SculptSession,
@@ -54,6 +55,10 @@ export class FilePanel extends SidePanel {
     super({ id: 'file', title: 'File', side: 'left', variant: 'panel--file' });
 
     const files = section(this.body, 'File');
+    // Empty until it has something to say (autosave stopping itself).
+    this.autosaveNote = div('sculpt-panel__hint sculpt-panel__warn');
+    this.autosaveNote.hidden = true;
+    files.appendChild(this.autosaveNote);
     const filesCol = div('outliner__files');
     files.appendChild(filesCol);
     filesCol.appendChild(
@@ -127,6 +132,20 @@ export class FilePanel extends SidePanel {
     filesCol.appendChild(this.filesSlot);
 
     this.buildCapture(this.body);
+  }
+
+  /**
+   * Autosave stopped itself. Saying so where the file buttons are is the
+   * point: the way out of a full store is Save file (or clearing frames),
+   * and both are right here.
+   */
+  showAutosaveStopped(reason: 'quota' | 'error'): void {
+    if (!this.autosaveNote) return;
+    this.autosaveNote.textContent =
+      reason === 'quota'
+        ? 'Autosave stopped: this device is out of storage. Save a file, and clear captured frames to free space.'
+        : 'Autosave stopped: this browser refused to store the scene. Save a file to keep this work.';
+    this.autosaveNote.hidden = false;
   }
 
   // --- Capture (the sculpt-to-timelapse recorder) -------------------------

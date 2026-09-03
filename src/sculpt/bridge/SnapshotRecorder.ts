@@ -28,6 +28,12 @@ export interface CapturedFrameMeta {
 
 /** Stop capturing past this much stored gzipped GLB (iPad-safe headroom). */
 const BUDGET_BYTES = 500 * 1024 * 1024;
+/**
+ * And this many frames: the gallery's metadata PUT refuses more (see
+ * GallerySave's MAX_GALLERY_FRAMES), so a longer reel could never be
+ * published anyway.
+ */
+const MAX_FRAMES = 10000;
 /** rIC ceiling: capture at most this stale even on a busy main thread. */
 const IDLE_TIMEOUT_MS = 3000;
 /** Re-check cadence when the idle slot lands mid-action. */
@@ -228,7 +234,7 @@ export class SnapshotRecorder {
       this.totalBytes += glb.byteLength;
       this.lastSig = sig;
       this.onChange?.();
-      if (this.totalBytes > BUDGET_BYTES) {
+      if (this.totalBytes > BUDGET_BYTES || this.metas.length >= MAX_FRAMES) {
         this.enabled = false;
         this.onStopped?.('budget');
       }

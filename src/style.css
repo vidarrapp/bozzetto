@@ -1963,6 +1963,12 @@ html.is-page body {
   font-size: 11px;
 }
 
+/* Autosave stopped itself: the one panel line the user must not miss. */
+.sculpt-panel__warn {
+  color: var(--accent);
+  padding: 6px 0;
+}
+
 .sculpt-panel__slot {
   display: flex;
   flex-direction: column;

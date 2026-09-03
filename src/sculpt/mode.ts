@@ -850,6 +850,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Autosave from here on; if a session was restored, say so and offer a
   // way back to a clean sphere.
   const persist = new ScenePersist(session);
+  // Autosave giving up must be visible: it used to disable itself on the
+  // first storage hiccup with only a console line, and sculpting carried on
+  // for hours saving nothing into a scene the user believed was safe.
+  persist.onStopped = (reason) => filePanel.showAutosaveStopped(reason);
   persist.decorate = (scene) => {
     library.saveInto(scene);
     scene.settings = collectSettings();
@@ -1092,12 +1096,15 @@ function restoredToast(onFresh: () => void): HTMLDivElement {
 
 /** World-space box of the live vertex region (over-allocated tail excluded). */
 function liveWorldBox(mesh: SculptMesh): Box3 {
-  const v = mesh.getVertices();
-  const n = mesh.getNbVertices() * 3;
-  const box = new Box3();
-  const p = new Vector3();
-  for (let i = 0; i < n; i += 3) {
-    box.expandByPoint(p.set(v[i], v[i + 1], v[i + 2]));
-  }
-  return box.applyMatrix4(new Matrix4().fromArray(mesh.getMatrix()));
+  // The bound the vendor already maintains, not a fresh scan of every
+  // vertex: the octree keeps a local AABB that strokes grow, and
+  // computeWorldBound transforms it by the mesh matrix. This is called
+  // three to six times per pointer event by the world-scale brush unit
+  // (the size slider, a hold-b drag, the bracket keys) and once per
+  // turntable tick, where an O(vertices) scan cost about a millisecond a
+  // call on a subdivided sphere. The octree bound is LOOSE - it grows with
+  // the geometry at once but only tightens on a full octree rebuild -
+  // which is the right trade for a brush unit and a framing box.
+  const b = mesh.computeWorldBound(); // the mesh's own scratch array
+  return new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
 }

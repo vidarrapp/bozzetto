@@ -90,14 +90,18 @@ function newSculptCard(): HTMLElement {
     e.preventDefault();
     void (async () => {
       const store = await import('../sculpt/bridge/ScenePersist');
-      const snap = await store.loadSculptSnapshot().catch(() => null);
+      // The scene itself, not its snapshot: the picture is only written on
+      // the way out through the gallery link, so a reload, a closed tab or
+      // iOS evicting the page left saved work that this silently RESUMED
+      // instead of replacing - the one thing this tile promises not to do.
+      const hasWork = await store.hasSavedScene().catch(() => false);
       if (
-        snap &&
+        hasWork &&
         !confirm('Start a new sculpt? The work in progress on this device will be replaced.')
       ) {
         return;
       }
-      if (snap) {
+      if (hasWork) {
         await store.clearSavedScene();
         await store.clearSculptFrames();
         // The look too: "new" has to mean new. Leaving it behind is how a
@@ -112,9 +116,14 @@ function newSculptCard(): HTMLElement {
 }
 
 /**
- * The unfinished sculpt sitting in this browser's storage, as a card. The
- * picture is the snapshot taken when sculpt mode was last left; clicking
- * goes straight back in, where the autosave restores the geometry.
+ * The unfinished sculpt sitting in this browser's storage, as a card.
+ * Clicking goes straight back in, where the autosave restores the geometry.
+ *
+ * The SCENE decides whether there is a card; the snapshot only decides
+ * whether it has a picture and a caption. The snapshot is written on the
+ * way out through the gallery link, so every other exit - a reload, a
+ * closed tab, iOS evicting the page - left work with no way back to it
+ * from here.
  */
 async function sculptCard(): Promise<HTMLElement | null> {
   let snap: Awaited<ReturnType<typeof import('../sculpt/bridge/ScenePersist').loadSculptSnapshot>>;
@@ -122,29 +131,36 @@ async function sculptCard(): Promise<HTMLElement | null> {
     // Imported lazily: the landing page should not pull in sculpt code just
     // to discover there is nothing saved.
     const store = await import('../sculpt/bridge/ScenePersist');
+    if (!(await store.hasSavedScene())) return null;
     snap = await store.loadSculptSnapshot();
   } catch {
     return null; // storage blocked, or the module failed to load
   }
-  if (!snap) return null;
 
   const a = document.createElement('a');
   a.className = 'card card--sculpt';
   a.href = '/?sculpt=1';
-  const url = URL.createObjectURL(snap.thumb);
+  const url = snap ? URL.createObjectURL(snap.thumb) : null;
+  const picture = url
+    ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
+      <img class="card__img" alt="" src="${url}" />`
+    : ''; // no snapshot: the gradient placeholder stands in
   a.innerHTML = `
     <div class="card__thumb">
-      <img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
-      <img class="card__img" alt="" src="${url}" />
+      ${picture}
       <span class="card__badge">In progress</span>
     </div>
     <div class="card__body">
       <span class="card__title">Your sculpt</span>
       <span class="card__meta"></span>
     </div>`;
-  const objects = `${snap.objects} object${snap.objects === 1 ? '' : 's'}`;
-  a.querySelector<HTMLElement>('.card__meta')!.textContent =
-    `${objects} · ${snap.tris.toLocaleString('en-US')} tris · ${ago(snap.savedAt)}`;
+  const meta = a.querySelector<HTMLElement>('.card__meta')!;
+  if (snap) {
+    const objects = `${snap.objects} object${snap.objects === 1 ? '' : 's'}`;
+    meta.textContent = `${objects} · ${snap.tris.toLocaleString('en-US')} tris · ${ago(snap.savedAt)}`;
+  } else {
+    meta.textContent = 'Saved on this device';
+  }
   return a;
 }
 
