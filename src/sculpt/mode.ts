@@ -1055,7 +1055,23 @@ function restoredToast(onFresh: () => void): HTMLDivElement {
   fresh.addEventListener('click', onFresh);
   toast.append(label, fresh);
   document.body.appendChild(toast);
-  window.setTimeout(() => toast.remove(), 10000);
+  // Ten seconds of being SEEN, not ten seconds from mount: the boot
+  // overlay is still up when this is built, and on a slow device (or a
+  // big restored scene) it could cover most of the toast's life - the
+  // "Start fresh" escape hatch expiring before anyone laid eyes on it.
+  const arm = (): void => {
+    window.setTimeout(() => toast.remove(), 10000);
+  };
+  if (!document.getElementById('overlay')) {
+    arm();
+  } else {
+    const watch = new MutationObserver(() => {
+      if (document.getElementById('overlay')) return;
+      watch.disconnect();
+      arm();
+    });
+    watch.observe(document.documentElement, { childList: true, subtree: true });
+  }
   return toast;
 }
 
