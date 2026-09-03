@@ -105,12 +105,4 @@ export async function buildExportHtml(manifest: ExportManifest, source: AssetSou
   });
 }
 
-/** Trigger a browser download of an in-memory blob. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+export { downloadBlob } from '../ui/download';

@@ -158,14 +158,4 @@ export function reelFilename(title: string, aspect: AspectId, format: ReelFormat
   return `${slug}_${aspect.replace(':', 'x')}.${format}`;
 }
 
-/** Trigger a browser download for a generated blob. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
+export { downloadBlob } from '../../ui/download';
