@@ -1956,8 +1956,11 @@ class Mesh {
   updateColorBuffer() {
     // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook
     // (Masking/Paint strokes and their undo states call this directly).
+    // 'color' names the attribute that actually changed: a mask stroke
+    // moves materials only, a paint stroke colours only, and uploading
+    // both doubled the bytes on every stroke step.
     if (!this._renderData) {
-      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this);
+      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this, 'color');
       return;
     }
     var colors = this.isUsingDrawArrays() ? this.getColorsDrawArrays() : this.getColors();
@@ -1967,7 +1970,7 @@ class Mesh {
   updateMaterialBuffer() {
     // BOZZETTO EDIT: route GPU updates through the GeometrySync bridge hook.
     if (!this._renderData) {
-      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this);
+      if (this._bridgeSync) this._bridgeSync.onColorsMaterials(this, 'materialsPBR');
       return;
     }
     var materials = this.isUsingDrawArrays() ? this.getMaterialsDrawArrays() : this.getMaterials();

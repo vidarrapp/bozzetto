@@ -628,7 +628,11 @@ export class SculptSession {
    */
   hoverSurface(pick = true): HoverSurface | null {
     if (!this.mesh) return null;
-    if (pick && !this.picking.intersectionMouseMesh()) return null;
+    // Every visible mesh, like the stroke path: picking the ACTIVE mesh
+    // alone drew the ring through an object in front of it, and kept
+    // drawing it on an object hidden with the eye - in both cases showing
+    // a target the press would not edit (review finding).
+    if (pick && !this.picking.intersectionMouseMeshes()) return null;
     const mesh = this.picking.getMesh();
     if (!mesh) return null;
 

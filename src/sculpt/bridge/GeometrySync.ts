@@ -121,16 +121,25 @@ export class GeometrySync {
     this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
   }
 
-  /** Vendor hook: per-vertex colors/materials changed (mask and paint). */
-  onColorsMaterials(mesh: SculptMesh): void {
+  /**
+   * Vendor hook: per-vertex colors/materials changed (mask and paint).
+   * `which` names the attribute the caller actually wrote; without it both
+   * were re-uploaded per stroke step, so a mask stroke pushed a colour
+   * array it had not touched (18 MB a step on a 1.5M-vertex level).
+   */
+  onColorsMaterials(mesh: SculptMesh, which?: 'color' | 'materialsPBR'): void {
     if (mesh !== this.mesh) return;
     if (this.arraysChanged(mesh)) {
       this.rebuild();
       this.resetDirty();
       return;
     }
-    (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
-    (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
+    if (which !== 'materialsPBR') {
+      (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
+    }
+    if (which !== 'color') {
+      (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
+    }
   }
 
   /** Vendor hook: everything changed (topology ops, resolution switches). */

@@ -57,7 +57,11 @@ class Paint extends SculptBase {
       mesh.updateBuffers();
     } else {
       mesh.updateColorBuffer();
-      mesh.updateMaterialBuffer();
+      // BOZZETTO EDIT: only when the stroke actually wrote the PBR
+      // channels. Bozzetto's paint owns colour alone (the shiny-paint
+      // fix cleared both flags), so this was re-uploading an untouched
+      // materials array on every stroke step.
+      if (this._writeRoughness || this._writeMetalness) mesh.updateMaterialBuffer();
     }
   }
 
