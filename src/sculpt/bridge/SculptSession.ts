@@ -14,8 +14,15 @@ import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
 import { mat3, mat4, vec3 } from 'gl-matrix';
-import { ClayStripsBrush, PolishBrush, RakeBrush, StableSmooth, VolumetricMove } from './tools';
-import { loadRakeAlphas } from './alphas';
+import {
+  ClayStripsBrush,
+  CreaseBrush,
+  PolishBrush,
+  RakeBrush,
+  StableSmooth,
+  VolumetricMove,
+} from './tools';
+import { loadBrushAlphas } from './alphas';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -105,7 +112,10 @@ export class SculptSession {
     // holding shift still swaps to it mid-stroke. Its stencils decode in
     // the background - until they land a rake stroke is plain clay.
     this.sculptManager._tools[Enums.Tools.RAKE] = new RakeBrush(this) as unknown as SculptTool;
-    void loadRakeAlphas();
+    // Crease with its pinch and crest exposed; upstream's numbers are the
+    // defaults, so it feels the same until a slider moves.
+    this.sculptManager._tools[Enums.Tools.CREASE] = new CreaseBrush(this) as unknown as SculptTool;
+    void loadBrushAlphas();
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
     this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(

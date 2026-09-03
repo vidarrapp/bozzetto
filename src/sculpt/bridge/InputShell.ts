@@ -2,6 +2,7 @@ import { Color } from 'three';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
+import { ALPHA_SETS, type AlphaSet } from './alphas';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
@@ -395,17 +396,76 @@ export class InputShell {
     }
   }
 
-  /** The rake's stencil (the Tool panel's alpha row), or null off the rake. */
-  getRakeAlpha(): string | null {
-    const tool = this.session.getSculptManager().getTool(Enums.Tools.RAKE);
-    return tool?._idAlpha ?? null;
+  /**
+   * Brush stencils, per tool. Which tools offer one is declared in
+   * ALPHA_SETS; a tool with no entry gets no alpha row and never carries
+   * an _idAlpha, so nothing changes for the brushes that don't want one.
+   */
+  alphaSetFor(tool?: number): AlphaSet | null {
+    return ALPHA_SETS[tool ?? this.currentToolIndex()] ?? null;
   }
 
-  setRakeAlpha(id: string): void {
-    const tool = this.session.getSculptManager().getTool(Enums.Tools.RAKE);
-    if (!tool) return;
-    tool._idAlpha = id;
-    this.onBrushSettingsChange?.();
+  /**
+   * The tool's stencil, or null for "no stencil" - a plain brush.
+   *
+   * The vendored constructors set _idAlpha to the NUMBER 0, left over from
+   * when the registry was indexed rather than named. Picking.ALPHAS[0] is
+   * undefined so it already behaves as "none", but it is not null, and a
+   * picker comparing ids would find neither the off swatch nor a stencil
+   * selected. Anything that is not a registered name reads as none.
+   */
+  getToolAlpha(tool?: number): string | null {
+    const idx = tool ?? this.currentToolIndex();
+    if (!ALPHA_SETS[idx]) return null;
+    const id = this.session.getSculptManager().getTool(idx)?._idAlpha;
+    return typeof id === 'string' ? id : null;
+  }
+
+  setToolAlpha(id: string | null, tool?: number): void {
+    if (this.applyToolAlpha(id, tool ?? this.currentToolIndex())) {
+      this.onBrushSettingsChange?.();
+    }
+  }
+
+  /**
+   * The write itself, without announcing it. Refuses a stencil the tool
+   * does not offer, and refuses "off" where the stencil is the point of
+   * the tool - both arrive from restored scenes as readily as from the
+   * panel, and a scene saved against a stencil since retired should leave
+   * the tool on its default rather than on a dead id.
+   */
+  private applyToolAlpha(id: string | null, idx: number): boolean {
+    const set = ALPHA_SETS[idx];
+    if (!set) return false;
+    if (id === null ? !set.allowNone : !set.alphas.some((a) => a.id === id)) return false;
+    const brush = this.session.getSculptManager().getTool(idx);
+    if (!brush) return false;
+    brush._idAlpha = id;
+    return true;
+  }
+
+  /** Every alpha-capable tool's choice, for the scene record. */
+  serializeAlphas(): Record<number, string | null> {
+    const out: Record<number, string | null> = {};
+    for (const idx of Object.keys(ALPHA_SETS)) out[Number(idx)] = this.getToolAlpha(Number(idx));
+    return out;
+  }
+
+  /**
+   * Restore the per-tool choices. `legacy` carries the single rake stencil
+   * from scenes saved before alphas went per-tool. setToolAlpha drops
+   * anything the tool no longer offers, so a retired stencil leaves that
+   * tool on its default rather than on a dead id.
+   */
+  loadAlphas(table: Record<number, string | null> | undefined, legacy?: string): void {
+    // Silently, like loadSpacing and dynamics.load: restoring a scene is
+    // not a change to it, and announcing it would schedule an autosave of
+    // what was just read back.
+    if (!table) {
+      if (legacy) this.applyToolAlpha(legacy, Enums.Tools.RAKE);
+      return;
+    }
+    for (const [idx, id] of Object.entries(table)) this.applyToolAlpha(id ?? null, Number(idx));
   }
 
   hasBrushIntensity(): boolean {

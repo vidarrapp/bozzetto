@@ -3,6 +3,7 @@ import Move from '@sculpt-vendor/editing/tools/Move';
 import Brush from '@sculpt-vendor/editing/tools/Brush';
 import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 import Smooth from '@sculpt-vendor/editing/tools/Smooth';
+import Crease from '@sculpt-vendor/editing/tools/Crease';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
@@ -30,6 +31,14 @@ const MOVE_GRAB_FACTOR = 1.0;
  */
 /** A rake's default dab spacing: close enough for the tines to comb. */
 const RAKE_SPACING = 0.06;
+
+/**
+ * Crease defaults, matching upstream so the brush feels unchanged until a
+ * slider is touched: the vendored crease raised the crest by
+ * pow(falloff, 5) and pulled sideways at the plain falloff.
+ */
+const CREASE_PROFILE = 5;
+const CREASE_PINCH = 1;
 
 const STRIPS_PLATEAU = 0.8;
 const STRIPS_LAYER = 0.05;
@@ -542,6 +551,9 @@ export class ClayStripsBrush extends Brush {
 
   constructor(session: SculptSession) {
     super(session);
+    // No stencil until one is picked. Upstream leaves the NUMBER 0 here,
+    // which behaves as none but is not none - see InputShell.getToolAlpha.
+    this._idAlpha = null;
   }
 
   /**
@@ -724,5 +736,85 @@ export class RakeBrush extends ClayStripsBrush {
 
   set alphaId(id: string) {
     this._idAlpha = id;
+  }
+}
+
+
+/**
+ * Crease with its two defining knobs exposed.
+ *
+ * Upstream's crease does two things at once and hardcodes the balance:
+ * it pulls vertices sideways TOWARD the stroke (the pinch, which is what
+ * gathers a ridge into an edge) and pushes them along the normal by
+ * pow(falloff, 5) (the crest, whose exponent is what makes the cut narrow
+ * rather than a dent). Both numbers are the brush's character, and both
+ * are worth having a hand on:
+ *
+ *   Profile - the crest exponent. 1 is the plain brush falloff, a soft
+ *     round trough; 5 is upstream's crease; higher narrows the cut toward
+ *     a knife line that leaves its shoulders alone.
+ *   Pinch - how hard the sideways gather pulls. 0 carves without gathering
+ *     (a groove, not a crease); 1 is upstream; above that the surface
+ *     draws into the cut and the edge sharpens as it deepens.
+ */
+export class CreaseBrush extends Crease {
+  /** Crest exponent: low is a broad trough, high is a knife line. */
+  profile = CREASE_PROFILE;
+  /** Sideways gather toward the stroke; 0 carves without pinching. */
+  pinch = CREASE_PINCH;
+
+  constructor(session: SculptSession) {
+    super(session);
+    this._idAlpha = null; // as above: upstream leaves a numeric 0 here
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Crease.crease (vendor Crease.js): the same
+   * loop, with the hardcoded pow(fallOff, 5) and the implicit pinch weight
+   * of 1 replaced by the two fields above.
+   */
+  override crease(
+    iVertsInRadius: Uint32Array,
+    aNormal: number[],
+    center: number[],
+    radiusSquared: number,
+    intensity: number,
+    picking: Picking,
+  ): void {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const mAr = mesh.getMaterials();
+    const vProxy = mesh.getVerticesProxy();
+    const radius = Math.sqrt(radiusSquared);
+    const cx = center[0];
+    const cy = center[1];
+    const cz = center[2];
+    const anx = aNormal[0];
+    const any = aNormal[1];
+    const anz = aNormal[2];
+    const deformIntensity = intensity * 0.07;
+    let brushFactor = deformIntensity * radius;
+    if (this._negative) brushFactor = -brushFactor;
+    const pinch = deformIntensity * this.pinch; // CHANGED (upstream: deformIntensity)
+    for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
+      const ind = iVertsInRadius[i] * 3;
+      const dx = cx - vProxy[ind];
+      const dy = cy - vProxy[ind + 1];
+      const dz = cz - vProxy[ind + 2];
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist >= 1.0) continue;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      let fallOff = dist * dist;
+      fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * dist + 1.0;
+      fallOff *= mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      // CHANGED (upstream: Math.pow(fallOff, 5))
+      const brushModifier = Math.pow(fallOff, this.profile) * brushFactor;
+      const gather = fallOff * pinch;
+      vAr[ind] = vx + dx * gather + anx * brushModifier;
+      vAr[ind + 1] = vy + dy * gather + any * brushModifier;
+      vAr[ind + 2] = vz + dz * gather + anz * brushModifier;
+    }
   }
 }

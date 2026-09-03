@@ -424,24 +424,6 @@ h1,
   padding: 6px 0 2px;
 }
 
-/* The rake's stencils: square, because a rake alpha is a strip of tines,
-   not a sphere - a round crop would cut the ends off. Three across rather
-   than the matcaps' five: you are reading a tine pattern here, not
-   recognising a colour, and the difference between "bars" and "fine bars"
-   does not survive a 42px swatch. */
-.matcap-grid--alpha {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.matcap-swatch--square,
-.matcap-swatch--square img {
-  border-radius: var(--radius);
-}
-
-.matcap-swatch--square img {
-  background: #000;
-}
-
 .mcpick__trigger {
   width: 28px;
   height: 28px;
@@ -496,6 +478,47 @@ h1,
 .matcap-swatch--on,
 .matcap-swatch--on:hover {
   border-color: var(--accent);
+}
+
+/* The rake's stencils: square, because a rake alpha is a strip of tines,
+   not a sphere - a round crop would cut the ends off. Three across rather
+   than the matcaps' five: you are reading a tine pattern here, not
+   recognising a colour, and the difference between "bars" and "fine bars"
+   does not survive a 42px swatch. */
+.matcap-grid--alpha {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.matcap-swatch--square,
+.matcap-swatch--square img {
+  border-radius: var(--radius);
+}
+
+.matcap-swatch--square img {
+  background: #000;
+}
+
+/* The "off" swatch: a struck-through empty square, sitting in the grid
+   where a stencil would be. Drawn rather than lettered so it reads at
+   swatch size and in either theme. */
+.matcap-swatch--none {
+  position: relative;
+  aspect-ratio: 1;
+  background: #000;
+}
+.matcap-swatch--none::after {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  border: 1.5px solid rgb(255 255 255 / 45%);
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 1px),
+    rgb(255 255 255 / 45%) calc(50% - 1px),
+    rgb(255 255 255 / 45%) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
 }
 
 .section {

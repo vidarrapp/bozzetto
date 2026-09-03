@@ -20,7 +20,9 @@ export interface SculptSettings {
   paintColor?: string;
   /** Per-tool dab spacing (fraction of the radius), by vendor tool index. */
   spacing?: Record<number, number>;
-  /** The rake's chosen stencil. */
+  /** Per-tool stencil choice, by vendor tool index; null is "no stencil". */
+  alphas?: Record<number, string | null>;
+  /** The rake's stencil, from before alphas went per-tool. Read, not written. */
   rakeAlpha?: string;
 }
 

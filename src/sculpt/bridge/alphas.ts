@@ -1,4 +1,5 @@
 import Picking from '@sculpt-vendor/math3d/Picking';
+import Enums from '@sculpt-vendor/misc/Enums';
 
 /**
  * Brush alphas: greyscale stencils the stroke stamps through.
@@ -66,6 +67,46 @@ export const RAKE_ALPHAS: AlphaInfo[] = [
  */
 export const DEFAULT_RAKE_ALPHA = 'rake06';
 
+/**
+ * Which stencils a tool offers, and what it starts with.
+ *
+ * Any tool that stamps along a stroke can take an alpha - the vendored
+ * core samples picking.getAlpha() per vertex inside every tool's loop, so
+ * this is a question of what the panel offers, not of what the engine can
+ * do. Two tools declare a set today:
+ *
+ *   Rake  - the stencil IS the tool, so it always has one.
+ *   Clay  - off by default (owner call): Standard clay's job is a clean
+ *           ribbon, and an alpha turns it into a textured one. Worth
+ *           reaching for, not worth having to switch off.
+ *
+ * Clay shares the rake's images for now; a set of its own is the obvious
+ * next step and only needs a different list here. Note the fine stencils
+ * that read poorly on a rake (they comb below the vertex spacing) are the
+ * INTERESTING ones on clay, where the job is surface texture rather than
+ * separated grooves.
+ */
+export interface AlphaSet {
+  /** The stencils, in the order the picker shows them. */
+  alphas: AlphaInfo[];
+  /** What the tool starts with. null means no stencil - a plain brush. */
+  initial: string | null;
+  /** Whether the picker offers an "off" swatch. */
+  allowNone: boolean;
+}
+
+export const ALPHA_SETS: Record<number, AlphaSet> = {
+  [Enums.Tools.RAKE]: { alphas: RAKE_ALPHAS, initial: DEFAULT_RAKE_ALPHA, allowNone: false },
+  [Enums.Tools.BRUSH]: { alphas: RAKE_ALPHAS, initial: null, allowNone: true },
+};
+
+/** Every stencil any tool can ask for, deduplicated. */
+function allAlphaIds(): string[] {
+  const ids = new Set<string>();
+  for (const set of Object.values(ALPHA_SETS)) for (const a of set.alphas) ids.add(a.id);
+  return [...ids];
+}
+
 const loaded = new Set<string>();
 let loading: Promise<void> | null = null;
 
@@ -75,15 +116,20 @@ export function alphaThumbUrl(id: string): string {
 }
 
 /**
- * Decode and register every rake alpha, once. Runs in the background at
- * mount: until it resolves, a rake stroke simply has no alpha (getAlpha
- * returns 1), which is a plain clay dab rather than an error.
+ * Decode and register every stencil any tool offers, once. Runs in the
+ * background at mount: until it resolves a stroke simply has no alpha
+ * (getAlpha returns 1), which is a plain dab rather than an error.
+ *
+ * Registering once matters beyond the wasted work: Picking.addAlpha
+ * appends a suffix on a name collision rather than replacing, so a second
+ * registration of "rake06" silently becomes "rake061" and the id the
+ * panel hands out stops resolving.
  */
-export function loadRakeAlphas(): Promise<void> {
+export function loadBrushAlphas(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     await Promise.all(
-      RAKE_ALPHAS.map(async ({ id }) => {
+      allAlphaIds().map(async (id) => {
         if (loaded.has(id)) return;
         try {
           const res = await fetch(`/assets/alphas/${id}.png`);

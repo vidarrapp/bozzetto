@@ -728,14 +728,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     dynamics: input.dynamics.serialize(),
     paintColor: paintColorOf(),
     spacing: input.serializeSpacing(),
-    rakeAlpha: input.getRakeAlpha() ?? undefined,
+    alphas: input.serializeAlphas(),
   });
   const applySettings = (settings: SculptSettings | undefined): void => {
     if (!settings) return;
     worldScale.restore(settings.worldScale, settings.worldRadius);
     input.dynamics.load(settings.dynamics);
     input.loadSpacing(settings.spacing);
-    if (settings.rakeAlpha) input.setRakeAlpha(settings.rakeAlpha);
+    input.loadAlphas(settings.alphas, settings.rakeAlpha);
     if (settings.paintColor) setPaintColorOn(settings.paintColor);
     input.refreshBrushCursor();
     sculptPanel?.refreshBrush();

@@ -3,8 +3,8 @@ import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
-import { RAKE_ALPHAS, alphaThumbUrl } from '../bridge/alphas';
-import { ClayStripsBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
+import { alphaThumbUrl } from '../bridge/alphas';
+import { ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
 import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
 import type { SculptSession } from '../bridge/SculptSession';
@@ -204,30 +204,23 @@ export class SculptPanel extends SidePanel {
           strips.layer = v;
         }),
       );
-    } else if (tool === Enums.Tools.RAKE) {
-      // The rake's stencil, as pictures: the names mean nothing next to
-      // seeing the tines. Stamped through the stroke, turning with it.
-      const grid = div('matcap-grid matcap-grid--alpha');
-      const current = this.input.getRakeAlpha();
-      for (const alpha of RAKE_ALPHAS) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'matcap-swatch matcap-swatch--square';
-        if (alpha.id === current) btn.classList.add('matcap-swatch--on');
-        btn.title = alpha.label;
-        btn.setAttribute('aria-label', `Rake alpha ${alpha.label}`);
-        const img = document.createElement('img');
-        img.src = alphaThumbUrl(alpha.id);
-        img.alt = '';
-        img.draggable = false;
-        btn.appendChild(img);
-        btn.addEventListener('click', () => {
-          this.input.setRakeAlpha(alpha.id);
-          this.refreshBrush();
-        });
-        grid.appendChild(btn);
-      }
-      extras.appendChild(labelRow('Alpha', grid));
+    } else if (tool === Enums.Tools.CREASE) {
+      // A crease is a pinch and a crest, and upstream hardcoded the
+      // balance between them. Profile is the crest's exponent: 1 is a
+      // broad trough, 5 upstream's crease, higher a knife line. Pinch is
+      // the sideways gather - at 0 it carves a groove without drawing the
+      // surface in, which is a different tool entirely.
+      const crease = manager.getTool(tool) as unknown as CreaseBrush;
+      extras.appendChild(
+        compactRange('Profile (broad-sharp)', 1, 12, 0.5, crease.profile, (v) => {
+          crease.profile = v;
+        }),
+      );
+      extras.appendChild(
+        compactRange('Pinch', 0, 2.5, 0.1, crease.pinch, (v) => {
+          crease.pinch = v;
+        }),
+      );
     } else if (tool === Enums.Tools.TWIST) {
       // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
       // follow trade: locked planarizes chatter hardest, loose rides
@@ -238,6 +231,41 @@ export class SculptPanel extends SidePanel {
           polish.planeLock = v;
         }),
       );
+    }
+
+    // Brush stencils, for whichever tools declare a set: the rake, where
+    // the stencil is the tool, and clay, where it is off until you reach
+    // for it. Pictures rather than names - "bars" and "fine bars" mean
+    // nothing next to seeing the tines.
+    const alphaSet = this.input.alphaSetFor(tool);
+    if (alphaSet) {
+      const grid = div('matcap-grid matcap-grid--alpha');
+      const current = this.input.getToolAlpha(tool);
+      const swatch = (id: string | null, label: string): HTMLButtonElement => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'matcap-swatch matcap-swatch--square';
+        if (id === current) btn.classList.add('matcap-swatch--on');
+        btn.title = label;
+        btn.setAttribute('aria-label', `Brush alpha ${label}`);
+        if (id === null) {
+          btn.classList.add('matcap-swatch--none');
+        } else {
+          const img = document.createElement('img');
+          img.src = alphaThumbUrl(id);
+          img.alt = '';
+          img.draggable = false;
+          btn.appendChild(img);
+        }
+        btn.addEventListener('click', () => {
+          this.input.setToolAlpha(id, tool);
+          this.refreshBrush();
+        });
+        return btn;
+      };
+      if (alphaSet.allowNone) grid.appendChild(swatch(null, 'None'));
+      for (const alpha of alphaSet.alphas) grid.appendChild(swatch(alpha.id, alpha.label));
+      extras.appendChild(labelRow('Alpha', grid));
     }
   }
 

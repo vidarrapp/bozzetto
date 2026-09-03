@@ -436,6 +436,36 @@ declare module '@sculpt-vendor/editing/tools/Flatten' {
   export default Flatten;
 }
 
+declare module '@sculpt-vendor/editing/tools/Crease' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  class Crease {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _negative: boolean;
+    _culling: boolean;
+    /** A Picking.ALPHAS name (upstream keys the registry by name). */
+    _idAlpha: string | null;
+    /** BOZZETTO EDIT in SculptBase: dab spacing, a fraction of the radius. */
+    _spacing: number;
+    _lockPosition: boolean;
+    constructor(main: unknown);
+    getMesh(): SculptMesh;
+    stroke(picking: Picking): void;
+    /** The pinch+crest loop; Bozzetto's CreaseBrush overrides this. */
+    crease(
+      iVertsInRadius: Uint32Array,
+      aNormal: number[],
+      center: number[],
+      radiusSquared: number,
+      intensity: number,
+      picking: Picking,
+    ): void;
+  }
+  export default Crease;
+}
+
 declare module '@sculpt-vendor/editing/tools/Brush' {
   import type Picking from '@sculpt-vendor/math3d/Picking';
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
