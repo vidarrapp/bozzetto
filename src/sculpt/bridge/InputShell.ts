@@ -121,8 +121,11 @@ export class InputShell {
   private strokePointerType = '';
   /** When the current stroke began (gesture-grace: see the two-finger branch). */
   private strokeStartedAt = 0;
-  /** Undo depth just before the current stroke pushed its state. */
-  private undoDepthAtStroke = -1;
+  /**
+   * The undo entry on top just before the current stroke pushed its own.
+   * Identity, not depth: a full stack shifts and leaves the index put.
+   */
+  private undoStateAtStroke: unknown = undefined;
   /** Touch pointers currently on the glass (palms never appear; iPadOS eats them). */
   private readonly touchesDown = new Set<number>();
   /** True while re-dispatching a swallowed pointerdown to OrbitControls. */
@@ -204,6 +207,10 @@ export class InputShell {
     this.container.addEventListener('pointerleave', this.onPointerLeave, true);
     window.addEventListener('keydown', this.onKeyDown, true);
     window.addEventListener('keyup', this.onKeyUp, true);
+    // Losing the window eats the keyup: without this, cmd/alt+tab (or an
+    // iPad app switch) while b/s/l was held left the shell stuck in that
+    // mode for good - every move resizing the brush, every press swallowed.
+    window.addEventListener('blur', this.onWindowBlur);
     this.syncCursorBrush();
     // Review decision: invert the Crease default (upstream ships _negative
     // true, a carving valley; Bozzetto defaults to the raised ridge, and alt
@@ -223,6 +230,7 @@ export class InputShell {
     this.container.removeEventListener('pointerleave', this.onPointerLeave, true);
     window.removeEventListener('keydown', this.onKeyDown, true);
     window.removeEventListener('keyup', this.onKeyUp, true);
+    window.removeEventListener('blur', this.onWindowBlur);
     this.session.setCanvasCursor('default');
   }
 
@@ -394,9 +402,13 @@ export class InputShell {
         const fx = this.lastAbsX;
         const fy = this.lastAbsY;
         const young = performance.now() - this.strokeStartedAt < GESTURE_GRACE_MS;
-        const depthBefore = this.undoDepthAtStroke;
+        const stateBefore = this.undoStateAtStroke;
         this.abandonStroke();
-        if (young && depthBefore >= 0 && s.getStateManager()._curUndoIndex > depthBefore) {
+        // Identity, not stack depth: once the undo stack is full, pushState
+        // shifts the oldest entry and leaves _curUndoIndex unchanged, so a
+        // depth comparison silently stopped undoing the gesture's dab after
+        // ~64 edits - i.e. for most of a real session (review finding).
+        if (young && s.getStateManager().getCurrentState() !== stateBefore) {
           s.undo();
         }
         this.handToOrbit(firstId, fx, fy);
@@ -435,6 +447,11 @@ export class InputShell {
     // orbiting here would fight the drag). A press on an object selects it,
     // gizmo included. A press on nothing orbits, as always.
     if (this.transform?.isActive()) {
+      // Ask the gizmo to hit-test THIS press: its `axis` is set by hover
+      // moves, which a finger never sends, so on iPad every handle press
+      // fell through to "select under gizmo" and was swallowed - the
+      // handles could not be dragged by touch at all (review finding).
+      this.transform.hoverAt(e);
       if (this.transform.handleHovered() || this.transform.isDragging()) {
         this.verdict?.('gizmo takes the pointer');
         return;
@@ -483,7 +500,6 @@ export class InputShell {
       const paint = this.currentTool();
       paint._pickColor = e.altKey;
       this.pickedColor = e.altKey;
-      if (!e.altKey) this.hooks.markPainted();
     }
 
     // Stroke polarity: the sticky toolbar base XOR alt, per tool support
@@ -517,7 +533,7 @@ export class InputShell {
     this.feedPressure(e); // before start: the first dab already feels it
     // Snapshot BEFORE start() pushes the stroke's undo state, so the
     // two-finger branch can tell whether the stroke left one to cancel.
-    const undoDepthBefore = s.getStateManager()._curUndoIndex;
+    const undoStateBefore = s.getStateManager().getCurrentState();
     const canEdit = s.getSculptManager().start(false);
     if (!canEdit) {
       this.restoreStrokeTool();
@@ -546,11 +562,17 @@ export class InputShell {
     }
 
     s._action = Enums.Action.SCULPT_EDIT;
+    // Only a stroke that actually started counts as painting. Flagging on
+    // pointerdown marked the object painted even when the press missed the
+    // mesh and orbited, and the flag is permanent: the material colour
+    // stopped applying, and it rode the autosave and .bozz files (review
+    // finding).
+    if (painting && !e.altKey) this.hooks.markPainted();
     this.strokes++;
     this.pointerId = e.pointerId;
     this.strokePointerType = e.pointerType;
     this.strokeStartedAt = performance.now();
-    this.undoDepthAtStroke = undoDepthBefore;
+    this.undoStateAtStroke = undoStateBefore;
     // Seed the last-known position: moves keep it fresh, but a second
     // finger can arrive before the first ever moves, and the two-finger
     // handover replays the first finger's pointerdown from here.
@@ -891,6 +913,13 @@ export class InputShell {
       }
     }
 
+    // Everything below is a one-shot command, so auto-repeat must not
+    // re-fire it: holding ctrl+d subdivided level after level (50k ->
+    // 200k -> 800k...) and holding shift+s strobed the shadows. The wheel
+    // keys above are exempt - a held arrow SHOULD keep turning the model,
+    // and a held bracket keep growing the brush.
+    if (e.repeat) return this.claim(e);
+
     // ctrl chords first. The mask trio mirrors ZBrush; ctrl+c and ctrl+h
     // shadow browser Copy and History, so they are only claimed here where
     // the text-entry guard above has already let real typing through.
@@ -1030,6 +1059,16 @@ export class InputShell {
     this.cursor.setAnchored(false);
   }
 
+  /** Window lost focus: every held-key mode ends, since no keyup will come. */
+  private readonly onWindowBlur = (): void => {
+    if (this.adjust) this.endAdjust();
+    this.lKeyHeld = false;
+    if (this.shiftHeld) {
+      this.shiftHeld = false;
+      this.syncCursorBrush();
+    }
+  };
+
   private selectTool(index: number, e: KeyboardEvent, init?: (tool: SculptTool) => void): void {
     this.selectBrush(index, init);
     this.claim(e);
@@ -1037,6 +1076,11 @@ export class InputShell {
 
   /** Select a brush (digit keys and the touch toolbar share this path). */
   selectBrush(index: number, init?: (tool: SculptTool) => void): void {
+    // Never mid-stroke: on iPad a finger can tap the toolbar while the pen
+    // is still down, and the new tool would then run its update() from the
+    // old tool's stale coordinates while the old one never ends (the same
+    // hazard undo/redo guard against).
+    if (this.pointerId !== -1 || this.session._action !== Enums.Action.NOTHING) return;
     // A brush is a statement of intent: sculpting resumes, the gizmo goes.
     if (this.transform?.isActive()) this.hooks.transformExit();
     const manager = this.session.getSculptManager();

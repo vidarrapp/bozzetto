@@ -513,6 +513,11 @@ export class ScenePersist {
       console.warn('sculpt autosave disabled:', err);
     } finally {
       this.saving = false;
+      // An edit that landed WHILE this put was in flight found flush()
+      // returning early on `saving` and nothing scheduled behind it, so the
+      // last stroke before a pause stayed unsaved until some later edit
+      // happened to re-arm the debounce (review finding). Re-arm here.
+      if (this.dirty && !this.disabled) this.markDirty();
     }
   }
 

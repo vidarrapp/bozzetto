@@ -43,6 +43,10 @@ export class SnapshotRecorder {
   private storageOk = true;
   /** The stored on/off choice, or null when the user never touched it. */
   private pref: 'on' | 'off' | null = null;
+  /** install() has read the frame index; before that, seq/metas are blank. */
+  private ready = false;
+  /** A role default that arrived before the store was read. */
+  private pendingDefault: boolean | null = null;
   private pending = false;
   private scheduled = false;
   private busy = false;
@@ -89,6 +93,13 @@ export class SnapshotRecorder {
       // and no later default may wake it.
       this.enabled = false;
       this.storageOk = false;
+    }
+
+    this.ready = true;
+    if (this.pendingDefault !== null) {
+      const on = this.pendingDefault;
+      this.pendingDefault = null;
+      this.applyDefault(on);
     }
 
     const sm = this.session.getStateManager();
@@ -141,6 +152,12 @@ export class SnapshotRecorder {
    */
   applyDefault(on: boolean): void {
     if (this.pref !== null || !this.storageOk || this.disposed) return;
+    // Before install() has read the frame index, nextSeq is 0 and metas is
+    // empty: seeding now would write over the first stored frame.
+    if (!this.ready) {
+      this.pendingDefault = on;
+      return;
+    }
     if (this.enabled === on) return;
     this.enabled = on;
     if (on) this.edited();

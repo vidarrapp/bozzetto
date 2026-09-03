@@ -261,6 +261,8 @@ declare module '@sculpt-vendor/states/StateManager' {
     _undos: unknown[];
     _redos: unknown[];
     _curUndoIndex: number;
+    /** The entry the cursor points at (undefined when the stack is empty). */
+    getCurrentState(): unknown;
     /** Every undoable edit funnels through here (autosave hooks it). */
     pushState(state: unknown): void;
     /** Record touched vertices on the current state (stroke tools). */

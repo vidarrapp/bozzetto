@@ -838,12 +838,29 @@ export class SculptSession {
    * outliner, stats).
    */
   replaceScene(saved: SavedScene): Multimesh {
+    // A corrupt or hand-edited file used to cost the user everything: the
+    // live scene was cleared first, and a throw inside the rebuild left an
+    // empty viewport with no undo (review finding - and it reproduced by
+    // accident during that review). Hold the old scene until the new one
+    // is standing.
+    const prevMeshes = [...this.meshes];
+    const prevSelect = [...this.selectMeshes];
+    const prevActive = this.mesh;
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;
-    const active = this.restoreScene(saved);
-    this.clearHistory();
-    return active;
+    try {
+      const active = this.restoreScene(saved);
+      this.clearHistory();
+      return active;
+    } catch (err) {
+      this.meshes.length = 0;
+      this.meshes.push(...prevMeshes);
+      this.selectMeshes.length = 0;
+      this.selectMeshes.push(...prevSelect);
+      this.mesh = prevActive;
+      throw err;
+    }
   }
 
   /**

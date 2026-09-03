@@ -107,14 +107,32 @@ export function meshToGLB(
   const indexArray = smallIndex ? Uint16Array.from(indices) : indices;
   const indexType = smallIndex ? 5123 : 5125; // USHORT vs UINT
 
-  // Vertex colour, when a publish carries paint: normalized ubyte VEC3 -
-  // core glTF, one byte a channel, and the loader hands it back as the
-  // `color` attribute. The floats are LINEAR (the sculpt attribute is), and
-  // glTF's COLOR_0 is linear too, so this is a straight scale, not an sRGB
-  // encode.
+  // Vertex colour, when a publish carries paint: normalized ubyte VEC4 -
+  // core glTF, and the loader hands it back as the `color` attribute. The
+  // floats are LINEAR (the sculpt attribute is), and glTF's COLOR_0 is
+  // linear too, so this is a straight scale, not an sRGB encode.
+  //
+  // VEC4, not VEC3, because of the GPU: three maps a normalized ubyte
+  // attribute to a 4-component vertex format (there is no unorm8x3 in
+  // WebGPU) while the array stride stays itemSize * 1 byte. A VEC3 colour
+  // therefore asked WebGPU for stride 3 with a format needing 4, which the
+  // spec rejects - a painted published model failed pipeline validation on
+  // every WebGPU browser and rendered only on the WebGL2 fallback. The pad
+  // byte (alpha 255) costs one byte a vertex and makes the stride legal;
+  // the shader still reads it as vec3.
+  const vertCountForColor = positions.length / 3;
   const colorArray =
     colors && colors.length === positions.length
-      ? Uint8Array.from(colors, (v) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+      ? (() => {
+          const out = new Uint8Array(vertCountForColor * 4);
+          for (let i = 0; i < vertCountForColor; i++) {
+            for (let c = 0; c < 3; c++) {
+              out[i * 4 + c] = Math.round(Math.max(0, Math.min(1, colors[i * 3 + c])) * 255);
+            }
+            out[i * 4 + 3] = 255;
+          }
+          return out;
+        })()
       : null;
 
   const idxLen = indexArray.byteLength;
@@ -153,7 +171,7 @@ export function meshToGLB(
               componentType: 5121, // UBYTE
               normalized: true,
               count: vertCount,
-              type: 'VEC3',
+              type: 'VEC4', // see the colorArray note: 4-byte stride for the GPU
             },
           ]
         : []),

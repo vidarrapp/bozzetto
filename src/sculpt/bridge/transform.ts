@@ -82,6 +82,22 @@ export class TransformGizmo {
     return this.dragging;
   }
 
+  /**
+   * Re-run the gizmo's own hover hit test for a pointer event. Touch sends
+   * no hover moves, so without this the handles' `axis` is stale (null) at
+   * pointerdown and the shell cannot tell a handle press from a body press.
+   */
+  hoverAt(e: PointerEvent): void {
+    for (const tc of this.stack) {
+      if (!tc.enabled) continue;
+      const t = tc as unknown as {
+        _getPointer(ev: PointerEvent): { x: number; y: number; button: number };
+        pointerHover(p: { x: number; y: number; button: number }): void;
+      };
+      t.pointerHover(t._getPointer(e));
+    }
+  }
+
   /** Whether the pointer is over any handle (InputShell yields to it). */
   handleHovered(): boolean {
     return this.stack.some((tc) => tc.enabled && (tc as unknown as { axis: unknown }).axis);

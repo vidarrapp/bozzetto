@@ -88,6 +88,20 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
       if (typeof ref === 'number') {
         const e = parsed.buffers[ref];
         if (!e) throw new Error('Corrupt scene file (missing buffer)');
+        // Bounds before slice: a truncated or edited file would otherwise
+        // hand the restore a short/garbage array and fail much later, with
+        // the scene already torn down.
+        const end = e.off + e.len * 4;
+        if (
+          (e.t !== 'f32' && e.t !== 'u32') ||
+          !Number.isInteger(e.off) ||
+          !Number.isInteger(e.len) ||
+          e.off < 0 ||
+          e.len < 0 ||
+          blobBase + end > raw.buffer.byteLength
+        ) {
+          throw new Error('Corrupt scene file (bad buffer entry)');
+        }
         // Copy out of the file buffer so the scene owns its arrays.
         return e.t === 'f32'
           ? new Float32Array(raw.buffer.slice(blobBase + e.off, blobBase + e.off + e.len * 4))
@@ -163,7 +177,10 @@ export function mergeSceneArrays(
   tris: number;
   colors?: Float32Array;
 } | null {
-  const meshes = session.getMeshes();
+  // The eye means "not part of the picture": a hidden reference blockout
+  // was being merged into every timelapse frame and every published model
+  // (review finding).
+  const meshes = session.getMeshes().filter((m) => m.isVisible());
   if (meshes.length === 0) return null;
   let nbV = 0;
   let nbT = 0;
