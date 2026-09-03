@@ -38,7 +38,11 @@ export class SnapshotRecorder {
   private metas: CapturedFrameMeta[] = [];
   private totalBytes = 0;
   private nextSeq = 0;
-  private enabled = true;
+  private enabled = false;
+  /** Whether the frame store opened; a failed store is never re-enabled. */
+  private storageOk = true;
+  /** The stored on/off choice, or null when the user never touched it. */
+  private pref: 'on' | 'off' | null = null;
   private pending = false;
   private scheduled = false;
   private busy = false;
@@ -55,12 +59,20 @@ export class SnapshotRecorder {
 
   constructor(private readonly session: SculptSession) {}
 
+  /**
+   * Capture starts OFF for guests (owner call): they have no way to publish
+   * the frames, so recording only spends their storage. The admin probe
+   * calls applyDefault(true) once it confirms a session - and an explicit
+   * choice, stored by the File panel's checkbox, beats either default.
+   */
   async install(): Promise<void> {
     try {
-      this.enabled = localStorage.getItem(PREF_KEY) !== 'off';
+      const stored = localStorage.getItem(PREF_KEY);
+      this.pref = stored === 'on' || stored === 'off' ? stored : null;
     } catch {
-      /* storage-blocked contexts keep the default */
+      /* storage-blocked contexts have no stored choice */
     }
+    if (this.pref) this.enabled = this.pref === 'on';
     try {
       const keys = (await withNamedStore(FRAME_META_STORE, 'readonly', (s) =>
         s.getAllKeys(),
@@ -73,8 +85,10 @@ export class SnapshotRecorder {
       this.totalBytes = this.metas.reduce((sum, m) => sum + m.bytes, 0);
       this.nextSeq = keys.length > 0 ? keys[keys.length - 1] + 1 : 0;
     } catch {
-      // No frame storage (private window): capture quietly stands down.
+      // No frame storage (private window): capture quietly stands down,
+      // and no later default may wake it.
       this.enabled = false;
+      this.storageOk = false;
     }
 
     const sm = this.session.getStateManager();
@@ -110,13 +124,27 @@ export class SnapshotRecorder {
   }
 
   setEnabled(on: boolean): void {
-    this.enabled = on;
+    this.enabled = on && this.storageOk;
+    this.pref = on ? 'on' : 'off';
     try {
-      localStorage.setItem(PREF_KEY, on ? 'on' : 'off');
+      localStorage.setItem(PREF_KEY, this.pref);
     } catch {
       /* preference just won't stick */
     }
+    if (this.enabled) this.edited();
+  }
+
+  /**
+   * The role-based default (guests off, admins on), applied only when the
+   * user has never made a choice of their own. Arrives asynchronously from
+   * the admin probe, possibly before or after install() finished.
+   */
+  applyDefault(on: boolean): void {
+    if (this.pref !== null || !this.storageOk || this.disposed) return;
+    if (this.enabled === on) return;
+    this.enabled = on;
     if (on) this.edited();
+    this.onChange?.(); // the File panel's checkbox follows
   }
 
   frameCount(): number {

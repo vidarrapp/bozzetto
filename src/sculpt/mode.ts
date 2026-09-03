@@ -797,6 +797,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     void probeAdmin().then((email) => {
       tlForm.setAdmin(!!email);
       modelForm.setAdmin(!!email);
+      // Capture defaults follow the role: an admin can publish frames, a
+      // guest cannot - an explicit checkbox choice beats either.
+      recorder.applyDefault(!!email);
     });
   }
 
