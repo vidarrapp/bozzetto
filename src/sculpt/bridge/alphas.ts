@@ -18,23 +18,44 @@ export interface AlphaInfo {
   label: string;
 }
 
-/** The rake set (owner-supplied): coarse to fine, then a hand-drawn one. */
+/**
+ * The rake set, ordered as the picker shows it: broad tines first, finest
+ * last. rake06-09 came from ZBrush's stock alphas (owner-supplied, for
+ * testing until hand-authored ones land); the rest are the first batch.
+ *
+ * What separates the ones that cut from the ones that do not is the width
+ * of a tine relative to the brush, measured as (stencil fraction * 0.707,
+ * since the stencil covers the square inscribed in the brush disc):
+ *
+ *   rake06 10.7% of the brush | rake01 10.6% | rake07 6.7% | rake09 6.2%
+ *   rake08  6.0%              | rake02  3.6% | rake03 3.3% | rake04 2.5%
+ *   rake05  1.4%
+ *
+ * Below ~6% a tine is thinner than the gap between vertices on an
+ * unsubdivided sphere, so it lands between them and the stroke reads as a
+ * plain clay ribbon. The bottom of that list wants either a much larger
+ * brush or a subdivided mesh; they are kept because they do come alive
+ * there, not because they work everywhere.
+ */
 export const RAKE_ALPHAS: AlphaInfo[] = [
+  { id: 'rake06', label: 'Broad tines' },
   { id: 'rake01', label: 'Broad' },
-  { id: 'rake02', label: 'Dots' },
+  { id: 'rake07', label: 'Tines' },
   { id: 'rake03', label: 'Bars' },
   { id: 'rake04', label: 'Fine bars' },
+  { id: 'rake08', label: 'Graduated' },
+  { id: 'rake09', label: 'Beads' },
+  { id: 'rake02', label: 'Dots' },
   { id: 'rake05', label: 'Hand-drawn' },
 ];
 
 /**
- * The hand-drawn one, by measurement: with a stroke across the default
- * sphere it moved ~1100 vertices in a strongly bimodal profile (real
- * tines), where the machine-drawn bars moved 12-300 and read as a faint
- * smudge. The bar stencils are 2-3% white, so nearly every alpha sample
- * in a dab comes back zero; they want a much larger brush to read.
+ * The broadest tines, by measurement: widest tine relative to the brush
+ * (10.7%) and the most of the dab doing work (mean value 68/255 against
+ * 11-34 for the first batch), which is the combination that reads as a
+ * comb at a default brush on an unsubdivided sphere.
  */
-export const DEFAULT_RAKE_ALPHA = 'rake05';
+export const DEFAULT_RAKE_ALPHA = 'rake06';
 
 const loaded = new Set<string>();
 let loading: Promise<void> | null = null;

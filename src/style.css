@@ -425,9 +425,12 @@ h1,
 }
 
 /* The rake's stencils: square, because a rake alpha is a strip of tines,
-   not a sphere - a round crop would cut the ends off. */
+   not a sphere - a round crop would cut the ends off. Three across rather
+   than the matcaps' five: you are reading a tine pattern here, not
+   recognising a colour, and the difference between "bars" and "fine bars"
+   does not survive a 42px swatch. */
 .matcap-grid--alpha {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .matcap-swatch--square,
