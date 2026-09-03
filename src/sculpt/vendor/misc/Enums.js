@@ -28,7 +28,11 @@ Enums.Tools = {
   MOVE: 9,
   MASKING: 10,
   LOCALSCALE: 11,
-  TRANSFORM: 12
+  TRANSFORM: 12,
+  // BOZZETTO EDIT: the Rake brush (clay with a stroke-aligned alpha). The
+  // class lives in the bridge and is installed into SculptManager._tools
+  // like the other Bozzetto brushes, so Tools.js needs no entry for it.
+  RAKE: 13
 };
 
 // display shader type

@@ -36,6 +36,7 @@ export const TOOL_NAMES: Record<number, string> = {
   [Enums.Tools.PINCH]: 'Pinch',
   [Enums.Tools.FLATTEN]: 'Flatten',
   [Enums.Tools.SMOOTH]: 'Smooth',
+  [Enums.Tools.RAKE]: 'Rake',
   [Enums.Tools.DRAG]: 'Drag',
   [Enums.Tools.TWIST]: 'Polish',
   [Enums.Tools.PAINT]: 'Paint',
@@ -191,7 +192,9 @@ export class SculptToolbar {
       [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-expand-arrows-alt'],
       [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress'],
       [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line'],
-      [tools.SMOOTH, '7', 'Smooth', 'smooth', 'fi-ss-shredder'],
+      // Smooth lost the digit to the Rake (owner call) but not the tool:
+      // holding shift still smooths, from any brush.
+      [tools.RAKE, '7', 'Rake (shift still smooths)', 'smooth', 'fi-ss-shredder'],
       [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist'],
       [tools.TWIST, '9', 'Polish', 'polish', 'fi-ss-broom'],
       // Paint takes the tenth slot; the digit row was full at 1-9, and 0
@@ -208,7 +211,7 @@ export class SculptToolbar {
     // Transform is not a brush: it has letter keys (e/r/t, q leaves) and a
     // gizmo instead of strokes, so it keeps its own button and active state
     // rather than a digit slot.
-    this.transformBtn = toolButton('', 'Transform (e/r/t modes, q exits)', 'transform', 'fi-ss-transformation-block');
+    this.transformBtn = toolButton('', 'Transform (w/e/r modes, q exits)', 'transform', 'fi-ss-transformation-block');
     this.transformBtn.addEventListener('click', () => this.onToggleTransform?.());
     center.appendChild(this.transformBtn);
 

@@ -6,6 +6,7 @@ import Mesh from '@sculpt-vendor/mesh/Mesh';
 import MeshStatic from '@sculpt-vendor/mesh/meshStatic/MeshStatic';
 import MeshDynamic from '@sculpt-vendor/mesh/dynamic/MeshDynamic';
 import Multimesh from '@sculpt-vendor/mesh/multiresolution/Multimesh';
+import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Subdivision from '@sculpt-vendor/editing/Subdivision';
 import Remesh from '@sculpt-vendor/editing/Remesh';
 import SculptManager from '@sculpt-vendor/editing/SculptManager';
@@ -13,7 +14,8 @@ import StateManager from '@sculpt-vendor/states/StateManager';
 import StateMultiresolution from '@sculpt-vendor/states/StateMultiresolution';
 import Picking from '@sculpt-vendor/math3d/Picking';
 import { mat3, mat4, vec3 } from 'gl-matrix';
-import { ClayStripsBrush, PolishBrush, StableSmooth, VolumetricMove } from './tools';
+import { ClayStripsBrush, PolishBrush, RakeBrush, StableSmooth, VolumetricMove } from './tools';
+import { loadRakeAlphas } from './alphas';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -33,6 +35,13 @@ export interface HoverSurface {
   point: [number, number, number];
   normal: [number, number, number];
   worldRadius: number;
+  /**
+   * Where the mirrored half of this stroke would land, when symmetry is on
+   * (world space, same units). The cursor draws it as a faint second ring
+   * while hovering - which is also the only always-visible sign that
+   * symmetry is on at all.
+   */
+  mirror?: { point: [number, number, number]; normal: [number, number, number] };
 }
 
 /**
@@ -92,6 +101,11 @@ export class SculptSession {
       this,
     ) as unknown as SculptTool;
     this.sculptManager._tools[Enums.Tools.TWIST] = new PolishBrush(this) as unknown as SculptTool;
+    // Rake takes digit 7 (owner call); Smooth keeps its own slot because
+    // holding shift still swaps to it mid-stroke. Its stencils decode in
+    // the background - until they land a rake stroke is plain clay.
+    this.sculptManager._tools[Enums.Tools.RAKE] = new RakeBrush(this) as unknown as SculptTool;
+    void loadRakeAlphas();
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
     this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(
@@ -666,6 +680,40 @@ export class SculptSession {
       point: [point[0], point[1], point[2]],
       normal: [normal[0], normal[1], normal[2]],
       worldRadius,
+      mirror: this.mirrorOf(mesh, this.picking.getIntersectionPoint(), nx, ny, nz),
+    };
+  }
+
+  /**
+   * The mirror of a picked point and its face normal, in world space, or
+   * undefined when symmetry is off. Mirroring happens in LOCAL space, where
+   * the symmetry plane lives (the same plane the tools mirror strokes
+   * across), and the result is transformed out like the original.
+   */
+  private mirrorOf(
+    mesh: SculptMesh,
+    localPoint: number[],
+    nx: number,
+    ny: number,
+    nz: number,
+  ): HoverSurface['mirror'] {
+    if (!this.getSymmetry()) return undefined;
+    const org = mesh.getSymmetryOrigin();
+    const nrm = mesh.getSymmetryNormal();
+    const p = [localPoint[0], localPoint[1], localPoint[2]];
+    Geometry.mirrorPoint(p, org, nrm);
+    // A normal reflects across the plane through the origin: subtract twice
+    // its component along the plane normal (no translation term).
+    const dot = nx * nrm[0] + ny * nrm[1] + nz * nrm[2];
+    const mn = vec3.fromValues(nx - 2 * dot * nrm[0], ny - 2 * dot * nrm[1], nz - 2 * dot * nrm[2]);
+    const mp = vec3.create();
+    vec3.transformMat4(mp, p as unknown as vec3, mesh.getMatrix());
+    vec3.transformMat3(mn, mn, mat3.fromMat4(mat3.create(), mesh.getMatrix()));
+    if (vec3.length(mn) < 1e-8) return undefined;
+    vec3.normalize(mn, mn);
+    return {
+      point: [mp[0], mp[1], mp[2]],
+      normal: [mn[0], mn[1], mn[2]],
     };
   }
 

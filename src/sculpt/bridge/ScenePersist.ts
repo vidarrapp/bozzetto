@@ -18,6 +18,10 @@ export interface SculptSettings {
   dynamics?: Record<number, BrushDynamics>;
   /** The paint brush's colour, sRGB hex. */
   paintColor?: string;
+  /** Per-tool dab spacing (fraction of the radius), by vendor tool index. */
+  spacing?: Record<number, number>;
+  /** The rake's chosen stencil. */
+  rakeAlpha?: string;
 }
 
 /**

@@ -40,14 +40,11 @@ const MASK_DARKEN_DEFAULT = 0.45;
 // The project's matcaps: single-sphere PNGs loaded as-is. Each also has a
 // 64px thumbnail at /assets/matcaps/thumbs/<id>.png for the picker grid.
 const MATCAPS: MatcapConfig[] = [
-  { id: 'warm-clay', label: 'Warm clay', url: '/assets/matcaps/warm-clay.png' },
-  { id: 'blue-grey', label: 'Blue grey', url: '/assets/matcaps/blue-grey.png' },
-  { id: 'terracotta', label: 'Terracotta', url: '/assets/matcaps/terracotta.png' },
-  { id: 'silver', label: 'Silver', url: '/assets/matcaps/silver.png' },
-  // The VR pack (owner-supplied, Blender format). The source PNGs carry a
-  // transparent surround, flattened at import time by radial edge bleed
-  // (scratchpad matcap-flatten.py) so a grazing normal never samples
-  // white; labels keep the pack's own numbering (owner call).
+  // The VR pack (owner-supplied, Blender format) is the whole set now: the
+  // four house matcaps it replaced were retired as no longer valid. The
+  // source PNGs carry a transparent surround, flattened at import time by
+  // radial edge bleed (scratchpad matcap-flatten.py) so a grazing normal
+  // never samples white; labels keep the pack's own numbering.
   ...Array.from({ length: 10 }, (_, i) => {
     const n = String(i + 1).padStart(2, '0');
     return { id: `vr${n}`, label: `VR${n}`, url: `/assets/matcaps/vr${n}.png` };
@@ -235,7 +232,11 @@ export class Materials {
   }
 
   setMatcapIndex(index: number): void {
-    if (index < 0 || index >= this.matcapTextures.length) return;
+    // Clamp rather than ignore: a look saved before the house matcaps were
+    // retired carries an index past the end, and silently keeping whatever
+    // was showing made a restored look wrong in a way nothing explained.
+    index = Math.min(this.matcapTextures.length - 1, Math.max(0, Math.round(index)));
+    if (!Number.isFinite(index)) return;
     this.matcapIndex = index;
     const mat = this.registry.get('matcap') as MeshMatcapNodeMaterial;
     mat.matcap = this.matcapTextures[index];

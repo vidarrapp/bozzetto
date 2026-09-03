@@ -61,7 +61,9 @@ export class BrushSliders {
         this.history.canRedo(),
       ),
     };
-    hist.append(this.histBtns.undo, this.histBtns.redo);
+    // Redo above undo (owner call): undo is the one reached for in a
+    // hurry, so it sits closest to the thumb at the bottom of the column.
+    hist.append(this.histBtns.redo, this.histBtns.undo);
     this.root.append(size.el, strength.el, hist);
     document.body.appendChild(this.root);
 

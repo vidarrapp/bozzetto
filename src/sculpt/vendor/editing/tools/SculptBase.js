@@ -18,6 +18,12 @@ class SculptBase {
     this._cbContinuous = this.updateContinuous.bind(this); // callback continuous
     this._lastMouseX = 0.0;
     this._lastMouseY = 0.0;
+    // BOZZETTO EDIT: dab spacing as a fraction of the brush radius, per
+    // tool. Upstream hard-codes 0.15 inside sculptStroke; the Tool panel
+    // exposes it, because it is the difference between a clay ribbon and a
+    // row of stamps - and a rake alpha only reads as a rake at the right
+    // spacing.
+    this._spacing = 0.15;
   }
 
   setToolMesh(mesh) {
@@ -127,7 +133,8 @@ class SculptBase {
     var dx = main._mouseX - this._lastMouseX;
     var dy = main._mouseY - this._lastMouseY;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    var minSpacing = 0.15 * this._radius * main.getPixelRatio();
+    // BOZZETTO EDIT: per-tool spacing (see the constructor).
+    var minSpacing = (this._spacing > 0 ? this._spacing : 0.15) * this._radius * main.getPixelRatio();
 
     if (dist <= minSpacing)
       return;

@@ -727,11 +727,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     worldRadius: worldScale.isEnabled() ? worldScale.worldRadius() : undefined,
     dynamics: input.dynamics.serialize(),
     paintColor: paintColorOf(),
+    spacing: input.serializeSpacing(),
+    rakeAlpha: input.getRakeAlpha() ?? undefined,
   });
   const applySettings = (settings: SculptSettings | undefined): void => {
     if (!settings) return;
     worldScale.restore(settings.worldScale, settings.worldRadius);
     input.dynamics.load(settings.dynamics);
+    input.loadSpacing(settings.spacing);
+    if (settings.rakeAlpha) input.setRakeAlpha(settings.rakeAlpha);
     if (settings.paintColor) setPaintColorOn(settings.paintColor);
     input.refreshBrushCursor();
     sculptPanel?.refreshBrush();
@@ -897,6 +901,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel,
     tablet: Tablet,
     library,
+    gizmo, // transform modes, for the console and the tests
     // File pipeline, callable from the console/tests without the buttons.
     file: {
       pack: async () => {

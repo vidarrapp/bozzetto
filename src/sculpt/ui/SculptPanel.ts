@@ -3,6 +3,7 @@ import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
+import { RAKE_ALPHAS, alphaThumbUrl } from '../bridge/alphas';
 import { ClayStripsBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
 import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
@@ -169,6 +170,18 @@ export class SculptPanel extends SidePanel {
     );
     dyn.appendChild(strengthCurveRow);
 
+    // Dab spacing: how far the brush travels between stamps, as a fraction
+    // of its radius. Upstream fixed this at 0.15 for every tool; it is the
+    // difference between a clay ribbon and a row of separate dabs, and a
+    // rake only combs at all when its stamps overlap.
+    if (this.input.hasBrushSpacing()) {
+      dyn.appendChild(
+        compactRange('Spacing', 0.02, 0.6, 0.01, this.input.getBrushSpacing(), (v) =>
+          this.input.setBrushSpacing(v),
+        ),
+      );
+    }
+
     const extras = this.extrasBody;
     extras.replaceChildren();
     const manager = this.session.getSculptManager();
@@ -191,6 +204,30 @@ export class SculptPanel extends SidePanel {
           strips.layer = v;
         }),
       );
+    } else if (tool === Enums.Tools.RAKE) {
+      // The rake's stencil, as pictures: the names mean nothing next to
+      // seeing the tines. Stamped through the stroke, turning with it.
+      const grid = div('matcap-grid matcap-grid--alpha');
+      const current = this.input.getRakeAlpha();
+      for (const alpha of RAKE_ALPHAS) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'matcap-swatch matcap-swatch--square';
+        if (alpha.id === current) btn.classList.add('matcap-swatch--on');
+        btn.title = alpha.label;
+        btn.setAttribute('aria-label', `Rake alpha ${alpha.label}`);
+        const img = document.createElement('img');
+        img.src = alphaThumbUrl(alpha.id);
+        img.alt = '';
+        img.draggable = false;
+        btn.appendChild(img);
+        btn.addEventListener('click', () => {
+          this.input.setRakeAlpha(alpha.id);
+          this.refreshBrush();
+        });
+        grid.appendChild(btn);
+      }
+      extras.appendChild(labelRow('Alpha', grid));
     } else if (tool === Enums.Tools.TWIST) {
       // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
       // follow trade: locked planarizes chatter hardest, loose rides

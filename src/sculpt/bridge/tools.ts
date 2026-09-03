@@ -6,6 +6,7 @@ import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
+import { DEFAULT_RAKE_ALPHA } from './alphas';
 import type { SculptSession } from './SculptSession';
 
 /**
@@ -27,6 +28,9 @@ const MOVE_GRAB_FACTOR = 1.0;
  * at their slider extremes by review call - the widest flat top and the
  * thinnest layer, which is the flattest, most ribbon-like default.
  */
+/** A rake's default dab spacing: close enough for the tines to comb. */
+const RAKE_SPACING = 0.06;
+
 const STRIPS_PLATEAU = 0.8;
 const STRIPS_LAYER = 0.05;
 
@@ -684,5 +688,41 @@ export class ClayStripsBrush extends Brush {
       vAr[ind + 1] -= any * fallOff;
       vAr[ind + 2] -= anz * fallOff;
     }
+  }
+}
+
+/**
+ * Rake: the clay brush stamping through a stroke-aligned alpha.
+ *
+ * The alpha does all the work and the vendored core already knew how -
+ * Picking builds a lookAt from the stroke's own direction each step, so
+ * the stencil turns with the stroke, and Brush.stroke already multiplies
+ * its falloff by picking.getAlpha(). This subclass exists to own the
+ * choice of stencil (and its own dab spacing, since a rake reads as a
+ * rake only when the dabs sit close enough to comb).
+ */
+export class RakeBrush extends ClayStripsBrush {
+  constructor(session: SculptSession) {
+    super(session);
+    this._idAlpha = DEFAULT_RAKE_ALPHA;
+    // Tighter than the 0.15 default: at wider spacing the tines break into
+    // separate stamps instead of drawing continuous grooves.
+    this._spacing = RAKE_SPACING;
+    // Full strength by default, where clay sits lower. Measured on a
+    // stroke across the default sphere: these stencils are 2-8% white, so
+    // 98% of the alpha samples in a dab come back 0 and a rake moves a
+    // fraction of the clay it would otherwise - at clay's default strength
+    // the grooves are there but barely legible. The slider still runs the
+    // whole range; this is only where it starts.
+    this._intensity = 1;
+  }
+
+  /** Which stencil this rake stamps through (the Tool panel picks it). */
+  get alphaId(): string {
+    return this._idAlpha ?? DEFAULT_RAKE_ALPHA;
+  }
+
+  set alphaId(id: string) {
+    this._idAlpha = id;
   }
 }

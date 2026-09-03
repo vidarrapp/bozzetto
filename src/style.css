@@ -424,6 +424,21 @@ h1,
   padding: 6px 0 2px;
 }
 
+/* The rake's stencils: square, because a rake alpha is a strip of tines,
+   not a sphere - a round crop would cut the ends off. */
+.matcap-grid--alpha {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.matcap-swatch--square,
+.matcap-swatch--square img {
+  border-radius: var(--radius);
+}
+
+.matcap-swatch--square img {
+  background: #000;
+}
+
 .mcpick__trigger {
   width: 28px;
   height: 28px;
@@ -1575,6 +1590,14 @@ html.is-page body {
   z-index: 9;
 }
 
+/* The symmetry ghost: the mirrored brush ring, drawn on hover. Faint on
+   purpose - it says "this is where the other half lands", and must never
+   compete with the ring you are aiming. */
+.sculpt-cursor__ghost {
+  opacity: 0.35;
+  stroke-dasharray: 3 4;
+}
+
 .sculpt-cursor__ring {
   fill: none;
   stroke: var(--accent);
@@ -2073,10 +2096,15 @@ body.chrome-hidden .transport {
    just RIGHT of the collapsed panel tabs (which occupy x 0..36 once slid
    out) rather than under them, so the File and Scene tabs can stack down
    the edge without the two columns fighting for the same pixels. */
+/* Bottom-left, under the File/Scene tabs and clear of the toolbar (owner
+   layout call): the sliders and the history buttons are what a hand rests
+   near, so they sit by the corner rather than up beside the panels. The
+   bottom offset leaves a gap between undo and the Negative button below
+   it, which is otherwise an easy mis-tap. */
 .sculpt-sliders {
   position: fixed;
   left: 46px;
-  top: 258px;
+  bottom: 96px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2300,14 +2328,24 @@ body.chrome-hidden .transport {
   color: var(--bg);
 }
 
-.sculpt-toolbar__btn:hover {
-  background: var(--hover);
-}
-
+/* Hover brightens, in both states (owner report). Two things were wrong:
+   the active rule came after :hover and won, so pressing a button left it
+   looking unchanged until the pointer moved away; and --hover is a
+   translucent WHITE, which lifts the idle button but muddied the accent
+   one. A translucent white overlay on top of whichever background the
+   button already has does the same job in both cases - and :hover is
+   scoped to a real pointer so a tap on iPad does not leave a button stuck
+   looking hovered. */
 .sculpt-toolbar__btn--active {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg);
+}
+
+@media (hover: hover) {
+  .sculpt-toolbar__btn:hover {
+    background-image: linear-gradient(rgb(255 255 255 / 14%), rgb(255 255 255 / 14%));
+  }
 }
 
 /* iOS long-press hijack, found with ?inputdebug=1: a stationary finger on

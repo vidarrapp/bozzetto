@@ -349,6 +349,65 @@ export class InputShell {
     return typeof this.currentTool()._radius === 'number';
   }
 
+  /**
+   * Dab spacing for the active tool, as a fraction of the brush radius.
+   * Meaningless for the tools that hold their position for a whole stroke
+   * (Move and Drag deform from one anchor rather than stamping along), so
+   * the panel asks first.
+   */
+  hasBrushSpacing(): boolean {
+    const tool = this.currentTool();
+    const idx = this.currentToolIndex();
+    if (idx === Enums.Tools.MOVE || idx === Enums.Tools.DRAG) return false;
+    return typeof tool._spacing === 'number';
+  }
+
+  getBrushSpacing(): number {
+    return this.currentTool()._spacing ?? 0.15;
+  }
+
+  setBrushSpacing(v: number): void {
+    const tool = this.currentTool();
+    if (typeof tool._spacing !== 'number') return;
+    tool._spacing = Math.min(0.6, Math.max(0.02, v));
+    this.onBrushSettingsChange?.();
+  }
+
+  /** Every tool's spacing, for the scene record (only the ones that moved). */
+  serializeSpacing(): Record<number, number> {
+    const out: Record<number, number> = {};
+    const tools = this.session.getSculptManager()._tools;
+    for (let i = 0; i < tools.length; i++) {
+      const s = tools[i]?._spacing;
+      if (typeof s === 'number') out[i] = s;
+    }
+    return out;
+  }
+
+  loadSpacing(table: Record<number, number> | undefined): void {
+    if (!table) return;
+    const tools = this.session.getSculptManager()._tools;
+    for (const [idx, value] of Object.entries(table)) {
+      const tool = tools[Number(idx)];
+      if (tool && typeof tool._spacing === 'number' && Number.isFinite(value)) {
+        tool._spacing = Math.min(0.6, Math.max(0.02, value));
+      }
+    }
+  }
+
+  /** The rake's stencil (the Tool panel's alpha row), or null off the rake. */
+  getRakeAlpha(): string | null {
+    const tool = this.session.getSculptManager().getTool(Enums.Tools.RAKE);
+    return tool?._idAlpha ?? null;
+  }
+
+  setRakeAlpha(id: string): void {
+    const tool = this.session.getSculptManager().getTool(Enums.Tools.RAKE);
+    if (!tool) return;
+    tool._idAlpha = id;
+    this.onBrushSettingsChange?.();
+  }
+
   hasBrushIntensity(): boolean {
     return typeof this.currentTool()._intensity === 'number';
   }
@@ -685,7 +744,11 @@ export class InputShell {
       // there and deserves an aim ring (review policy).
       const surf = s.hoverSurface(true);
       if (surf) {
-        this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius);
+        // The mirror rides along on HOVER only: it shows where symmetry
+        // will put the other half (and is the one always-visible sign that
+        // symmetry is on), while a stroke keeps the single dot on the side
+        // being worked (owner call).
+        this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius, surf.mirror);
       } else if (this.currentToolIndex() === Enums.Tools.MOVE) {
         this.cursor.showScreen();
       } else {
@@ -979,21 +1042,21 @@ export class InputShell {
       case 'f':
         this.hooks.frameModel();
         return this.claim(e);
-      // The gizmo keys (owner design): e/r/t expose one transform each,
-      // q returns to sculpting. w stays reserved.
+      // The gizmo keys: w/e/r expose one transform each, the way every
+      // other 3D app binds them, and q returns to sculpting. T is left
+      // UNCLAIMED so it still reaches the viewer's FPS meter - taking it
+      // for scale had quietly cost the only way to open that.
       case 'q':
         this.hooks.transformExit();
         return this.claim(e);
-      case 'e':
+      case 'w':
         this.hooks.transformMode('translate');
         return this.claim(e);
-      case 'r':
+      case 'e':
         this.hooks.transformMode('rotate');
         return this.claim(e);
-      case 't':
+      case 'r':
         this.hooks.transformMode('scale');
-        return this.claim(e);
-      case 'w':
         return this.claim(e);
       case '1':
         return this.selectTool(Enums.Tools.CREASE, e);
@@ -1008,7 +1071,7 @@ export class InputShell {
       case '6':
         return this.selectTool(Enums.Tools.FLATTEN, e);
       case '7':
-        return this.selectTool(Enums.Tools.SMOOTH, e);
+        return this.selectTool(Enums.Tools.RAKE, e);
       case '8':
         return this.selectTool(Enums.Tools.DRAG, e);
       case '9':

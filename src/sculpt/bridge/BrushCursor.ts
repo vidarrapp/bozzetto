@@ -34,12 +34,16 @@ interface SurfaceState {
 export class BrushCursor {
   private readonly root: SVGSVGElement;
   private readonly ringPath: SVGPathElement;
+  private readonly ghostPath: SVGPathElement;
   private readonly screenRing: SVGCircleElement;
   private readonly dot: SVGCircleElement;
   private readonly strength: SVGLineElement;
 
   private projector: CursorProjector | null = null;
   private surface: SurfaceState | null = null;
+  /** The mirrored ring, or null: symmetry off, or a stroke is in progress. */
+  private mirror: { point: [number, number, number]; normal: [number, number, number] } | null =
+    null;
   private mode: 'hidden' | 'screen' | 'surface' = 'hidden';
   private anchored = false;
   private x = 0;
@@ -55,6 +59,10 @@ export class BrushCursor {
     this.root.setAttribute('class', 'sculpt-cursor');
     this.ringPath = document.createElementNS(NS, 'path');
     this.ringPath.setAttribute('class', 'sculpt-cursor__ring');
+    // The mirrored ring: where symmetry will put the other half of this
+    // stroke. Hover only - see setSurface.
+    this.ghostPath = document.createElementNS(NS, 'path');
+    this.ghostPath.setAttribute('class', 'sculpt-cursor__ring sculpt-cursor__ghost');
     this.screenRing = document.createElementNS(NS, 'circle');
     this.screenRing.setAttribute('class', 'sculpt-cursor__ring');
     this.dot = document.createElementNS(NS, 'circle');
@@ -62,7 +70,7 @@ export class BrushCursor {
     this.dot.setAttribute('r', '2.5');
     this.strength = document.createElementNS(NS, 'line');
     this.strength.setAttribute('class', 'sculpt-cursor__strength');
-    this.root.append(this.ringPath, this.screenRing, this.dot, this.strength);
+    this.root.append(this.ghostPath, this.ringPath, this.screenRing, this.dot, this.strength);
     container.appendChild(this.root);
     this.applyMode('hidden');
   }
@@ -88,8 +96,13 @@ export class BrushCursor {
     point: [number, number, number] | null,
     normal?: [number, number, number],
     worldRadius?: number,
+    mirror?: { point: [number, number, number]; normal: [number, number, number] } | null,
   ): void {
     if (this.anchored) return;
+    // Callers that pass no mirror get none: the stroke path leaves it out,
+    // which is what keeps the mirrored ring a HOVER affordance (owner
+    // call - mid-stroke you want the one dot on the side you are working).
+    this.mirror = mirror ?? null;
     if (!point || !normal || !worldRadius) {
       this.surface = null;
       if (this.mode === 'surface') this.applyMode('hidden');
@@ -198,6 +211,60 @@ export class BrushCursor {
   }
 
   /** Project the world-space ring/dot/strength line into the SVG. */
+  /**
+   * One ring in the tangent plane at `point`, as SVG path data. Shared by
+   * the brush ring and the symmetry ghost, which differ only in where they
+   * sit and how loudly they are drawn.
+   */
+  private ringPathData(
+    point: [number, number, number],
+    normal: [number, number, number],
+    r: number,
+  ): string {
+    const project = this.projector;
+    if (!project) return '';
+    const [px, py, pz] = point;
+    let [nx, ny, nz] = normal;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+    let ux: number;
+    let uy: number;
+    let uz: number;
+    if (Math.abs(ny) < 0.98) {
+      ux = nz;
+      uy = 0;
+      uz = -nx;
+    } else {
+      ux = 1;
+      uy = 0;
+      uz = 0;
+    }
+    const uLen = Math.hypot(ux, uy, uz) || 1;
+    ux /= uLen;
+    uy /= uLen;
+    uz /= uLen;
+    const vx = ny * uz - nz * uy;
+    const vy = nz * ux - nx * uz;
+    const vz = nx * uy - ny * ux;
+    let d = '';
+    let started = false;
+    for (let i = 0; i < RING_SEGMENTS; i++) {
+      const a = (i / RING_SEGMENTS) * Math.PI * 2;
+      const ca = Math.cos(a) * r;
+      const sa = Math.sin(a) * r;
+      const pt = project([px + ux * ca + vx * sa, py + uy * ca + vy * sa, pz + uz * ca + vz * sa]);
+      if (!pt) {
+        started = false;
+        continue;
+      }
+      d += `${started ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
+      started = true;
+    }
+    return d && started ? `${d}Z` : d;
+  }
+
   private renderSurface(): void {
     const s = this.surface;
     const project = this.projector;
@@ -214,56 +281,22 @@ export class BrushCursor {
     this.root.style.display = '';
     this.root.dataset.mode = 'surface';
 
-    // Tangent basis for the ring plane.
-    let [nx, ny, nz] = s.normal;
-    const nLen = Math.hypot(nx, ny, nz) || 1;
-    nx /= nLen;
-    ny /= nLen;
-    nz /= nLen;
-    let ux: number;
-    let uy: number;
-    let uz: number;
-    if (Math.abs(ny) < 0.98) {
-      // u = normalize(n x up)
-      ux = nz;
-      uy = 0;
-      uz = -nx;
-    } else {
-      ux = 1;
-      uy = 0;
-      uz = 0;
-    }
-    const uLen = Math.hypot(ux, uy, uz) || 1;
-    ux /= uLen;
-    uy /= uLen;
-    uz /= uLen;
-    const vx = ny * uz - nz * uy;
-    const vy = nz * ux - nx * uz;
-    const vz = nx * uy - ny * ux;
-
-    const r = s.worldRadius;
-    let d = '';
-    let started = false;
-    for (let i = 0; i < RING_SEGMENTS; i++) {
-      const a = (i / RING_SEGMENTS) * Math.PI * 2;
-      const ca = Math.cos(a) * r;
-      const sa = Math.sin(a) * r;
-      const pt = project([px + ux * ca + vx * sa, py + uy * ca + vy * sa, pz + uz * ca + vz * sa]);
-      if (!pt) {
-        started = false;
-        continue;
-      }
-      d += `${started ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
-      started = true;
-    }
-    if (d && started) d += 'Z';
-    this.ringPath.setAttribute('d', d);
+    this.ringPath.setAttribute('d', this.ringPathData(s.point, s.normal, s.worldRadius));
+    // The mirrored ring rides the same projection; an empty d hides it.
+    this.ghostPath.setAttribute(
+      'd',
+      this.mirror ? this.ringPathData(this.mirror.point, this.mirror.normal, s.worldRadius) : '',
+    );
 
     this.dot.setAttribute('cx', String(center[0]));
     this.dot.setAttribute('cy', String(center[1]));
 
-    const tipLen = r * this.intensity;
-    const tip = project([px + nx * tipLen, py + ny * tipLen, pz + nz * tipLen]);
+    // The strength line points along the surface normal, scaled by the
+    // brush intensity.
+    const [rawX, rawY, rawZ] = s.normal;
+    const nLen = Math.hypot(rawX, rawY, rawZ) || 1;
+    const tipLen = (s.worldRadius * this.intensity) / nLen;
+    const tip = project([px + rawX * tipLen, py + rawY * tipLen, pz + rawZ * tipLen]);
     if (tip) {
       this.strength.setAttribute('x1', String(center[0]));
       this.strength.setAttribute('y1', String(center[1]));

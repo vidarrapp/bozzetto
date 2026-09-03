@@ -31,6 +31,8 @@ declare module '@sculpt-vendor/misc/Enums' {
       MASKING: number;
       LOCALSCALE: number;
       TRANSFORM: number;
+      /** BOZZETTO EDIT: the Rake brush's slot (installed by the bridge). */
+      RAKE: number;
     };
   };
   export default Enums;
@@ -244,6 +246,10 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
      */
     _writeRoughness?: boolean;
     _writeMetalness?: boolean;
+    /** The brush alpha this tool stamps through (a Picking.ALPHAS name). */
+    _idAlpha?: string | null;
+    /** Dab spacing as a fraction of the radius (BOZZETTO EDIT in SculptBase). */
+    _spacing?: number;
     /** Paint tool only: called after an eyedropper pick with the sample. */
     setPickCallback?(cb: (color: Float32Array, roughness: number, metallic: number) => void): void;
   }
@@ -321,10 +327,19 @@ declare module '@sculpt-vendor/math3d/Picking' {
     unproject(mouseX: number, mouseY: number, z: number): number[];
     initAlpha(): void;
     updateAlpha(keepOrigin: boolean): void;
-    setIdAlpha(id: number): void;
+    /** The registered alpha's NAME (Picking.ALPHAS is keyed by it). */
+    setIdAlpha(id: string | number | null): void;
     getAlpha(x: number, y: number, z: number): number;
     getEyeDirection(): number[];
     getPickedNormal(): number[] | null;
+  }
+  namespace Picking {
+    /**
+     * Register a greyscale stencil the brushes can stamp through. `u8` is
+     * one byte per texel (255 = full effect); the name is the id tools set
+     * on their _idAlpha.
+     */
+    function addAlpha(u8: Uint8Array, width: number, height: number, name: string): unknown;
   }
   export default Picking;
 }
@@ -394,7 +409,10 @@ declare module '@sculpt-vendor/editing/tools/Flatten' {
     _negative: boolean;
     _culling: boolean;
     _accumulate: boolean;
-    _idAlpha: number;
+    /** A Picking.ALPHAS name (upstream keys the registry by name). */
+    _idAlpha: string | null;
+    /** BOZZETTO EDIT in SculptBase: dab spacing, a fraction of the radius. */
+    _spacing: number;
     _lockPosition: boolean;
     constructor(main: unknown);
     getMesh(): SculptMesh;
@@ -429,7 +447,10 @@ declare module '@sculpt-vendor/editing/tools/Brush' {
     _clay: boolean;
     _culling: boolean;
     _accumulate: boolean;
-    _idAlpha: number;
+    /** A Picking.ALPHAS name (upstream keys the registry by name). */
+    _idAlpha: string | null;
+    /** BOZZETTO EDIT in SculptBase: dab spacing, a fraction of the radius. */
+    _spacing: number;
     _lockPosition: boolean;
     constructor(main: unknown);
     getMesh(): SculptMesh;
