@@ -242,8 +242,12 @@ export class TransformGizmo {
     if (before.every((v, i) => Math.abs(v - after[i]) < 1e-9)) return;
     const write = (values: number[] | Float32Array): void => {
       mesh.getMatrix().set(values as Float32Array | number[]);
-      this.proxy.matrix.fromArray(mesh.getMatrix());
-      this.proxy.matrix.decompose(this.proxy.position, this.proxy.quaternion, this.proxy.scale);
+      // The proxy mirrors whichever object the gizmo is attached to NOW;
+      // an undo of another object's move must not load its transform in.
+      if (this.mesh === mesh) {
+        this.proxy.matrix.fromArray(mesh.getMatrix());
+        this.proxy.matrix.decompose(this.proxy.position, this.proxy.quaternion, this.proxy.scale);
+      }
       this.onTransform?.(mesh);
     };
     this.session

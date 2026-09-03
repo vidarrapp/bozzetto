@@ -346,6 +346,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
+  // Two quick dabs at one spot are strokes, not a focus request: the
+  // viewer's double-tap DoF lock stays off for the whole mode.
+  viewer.tapToFocus = false;
+
   session.onActiveMeshChange = () => {
     const active = session.getMesh();
     if (active) {
@@ -742,6 +746,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     library.saveInto(scene);
     scene.settings = collectSettings();
   };
+  filePanel.prepare = () => library.beginRestore();
   filePanel.adopt = (scene) => {
     library.loadFrom(scene);
     applySettings(scene.settings);
@@ -885,8 +890,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       },
       open: async (bytes: ArrayBuffer) => {
         const scene = await unpackScene(bytes);
+        library.beginRestore(); // same as the File panel's Open: no fills mid-restore
         session.replaceScene(scene);
-        library.loadFrom(scene); // same as the File panel's Open
+        library.loadFrom(scene);
         applySettings(scene.settings);
         if (scene.look) {
           await applyLookSafely(scene.look);
@@ -969,6 +975,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.dispose();
     cursor.dispose();
     session.onActiveMeshChange = null;
+    viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;
     viewer.materials.onAlbedoChange = null;

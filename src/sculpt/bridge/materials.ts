@@ -141,6 +141,12 @@ export class MaterialLibrary {
    * a multi-million-vertex scene for no change at all.
    */
   applyNew(): void {
+    // While a scene is being rebuilt from a file, the meshes arrive one by
+    // one - each firing the selection callback that lands here - before
+    // loadFrom has learned which of them are painted. Filling then wiped
+    // painted colours on every Open (review finding); loadFrom does the
+    // one correct pass itself.
+    if (this.restoring) return;
     for (const mesh of this.session.getMeshes()) {
       if (this.initialised.has(mesh.getID())) continue;
       this.applyTo(mesh);
@@ -169,7 +175,14 @@ export class MaterialLibrary {
    * materials, so the library keeps its default and every object points at
    * it - which is what those scenes already looked like.
    */
+  /** Call before session.replaceScene/restoreScene; loadFrom ends it. */
+  beginRestore(): void {
+    this.restoring = true;
+  }
+  private restoring = false;
+
   loadFrom(scene: SavedScene): void {
+    this.restoring = false;
     if (scene.materials?.length) {
       this.materials.length = 0;
       for (const m of scene.materials) this.materials.push({ ...m });

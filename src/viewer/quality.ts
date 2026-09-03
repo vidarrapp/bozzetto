@@ -41,5 +41,7 @@ export function detectQuality(): Quality {
 function isMobile(): boolean {
   const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
   if (uaData && typeof uaData.mobile === 'boolean') return uaData.mobile;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+  // iPadOS Safari reports a Macintosh UA; the touch points give it away.
+  return /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
 }

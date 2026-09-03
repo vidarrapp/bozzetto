@@ -179,6 +179,26 @@ export class VolumetricMove extends Move {
   }
 
   /**
+   * Upstream's Negative Move slides along the picked face normal; a
+   * volumetric grab has no picked face (the ray missed the surface), and
+   * computePickedNormal() came back empty - a TypeError on every pointer
+   * move, the stroke doing nothing (review finding). Off the silhouette,
+   * Negative means a plain move.
+   */
+  override updateMoveDir(picking: Picking, mouseX: number, mouseY: number, useSymmetry?: boolean): void {
+    if (!this.grabbedFromOutside || !this._negative) {
+      super.updateMoveDir(picking, mouseX, mouseY, useSymmetry);
+      return;
+    }
+    this._negative = false;
+    try {
+      super.updateMoveDir(picking, mouseX, mouseY, useSymmetry);
+    } finally {
+      this._negative = true;
+    }
+  }
+
+  /**
    * BOZZETTO EDIT of upstream Move.move (vendor Move.js): identical loop,
    * with the quartic falloff raised to MOVE_FALLOFF_POW for a broader bell.
    */
@@ -656,7 +676,10 @@ export class ClayStripsBrush extends Brush {
         fallOff = t * t;
         fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * t + 1.0;
       }
-      fallOff *= distToPlane * intensity * mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      // Past 1 the step overshoots the plane and flips dents into bumps that
+      // later dabs skip - the Smooth-explosion class; pen pressure reaches
+      // 1.75x here, so the flatten term is capped at exactly-on-plane.
+      fallOff *= distToPlane * Math.min(1, intensity) * mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
       vAr[ind] -= anx * fallOff;
       vAr[ind + 1] -= any * fallOff;
       vAr[ind + 2] -= anz * fallOff;

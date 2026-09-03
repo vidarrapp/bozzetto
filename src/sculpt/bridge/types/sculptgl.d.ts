@@ -331,6 +331,8 @@ declare module '@sculpt-vendor/math3d/Geometry' {
 declare module '@sculpt-vendor/editing/tools/Move' {
   import type Picking from '@sculpt-vendor/math3d/Picking';
   class Move {
+    /** Per-step direction: negative slides along the picked face normal. */
+    updateMoveDir(picking: Picking, mouseX: number, mouseY: number, useSymmetry?: boolean): void;
     _main: unknown;
     _radius: number;
     _intensity: number;

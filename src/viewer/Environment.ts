@@ -1,12 +1,5 @@
-import {
-  Color,
-  EquirectangularReflectionMapping,
-  PMREMGenerator,
-  type Scene,
-  type Texture,
-  type WebGLRenderer,
-} from 'three';
-import type { WebGPURenderer } from 'three/webgpu';
+import { Color, EquirectangularReflectionMapping, type Scene, type Texture } from 'three';
+import { PMREMGenerator, type WebGPURenderer } from 'three/webgpu';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { loadViaBlob, type AssetSource } from './AssetSource';
@@ -79,10 +72,12 @@ export class Environment {
     renderer: WebGPURenderer,
     private readonly source: AssetSource,
   ) {
-    // PMREMGenerator works with the WebGPU renderer at runtime; its @types
-    // signature still names WebGLRenderer, so cast through the shared base.
-    this.pmrem = new PMREMGenerator(renderer as unknown as WebGLRenderer);
-    this.pmrem.compileEquirectangularShader();
+    // The node renderer's own PMREM (three/webgpu), not the WebGL one from
+    // 'three': that one happened to work on the WebGL2 backend (measured -
+    // a Lit sphere lit by the HDRI alone), but it renders GLSL passes the
+    // WebGPU backend cannot run, so the two backends would not prefilter
+    // alike. The node generator is built for both.
+    this.pmrem = new PMREMGenerator(renderer);
     this.scene.environmentIntensity = this.intensity;
     this.scene.backgroundIntensity = this.intensity;
     this.updateBackground();
@@ -110,6 +105,7 @@ export class Environment {
     this.currentId = id;
     const myToken = ++this.token;
     this.disposeMaps();
+    this.scene.environment = null; // never point the scene at a disposed map
     if (this.bgMode === 'hdri') this.updateBackground(); // fall back until loaded
 
     const cfg = id ? ENVIRONMENTS.find((e) => e.id === id) : undefined;
@@ -191,7 +187,9 @@ export class Environment {
     if (typeof state.blur === 'number') this.blur = state.blur;
     this.applyRotation();
     if ('id' in state) await this.setEnvironment(state.id ?? null);
-    else this.updateBackground();
+    // Always: with no HDRI, setEnvironment returns before touching the
+    // background, and a saved solid colour came back as the theme.
+    this.updateBackground();
   }
 
   dispose(): void {

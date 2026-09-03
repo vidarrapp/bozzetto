@@ -29,6 +29,8 @@ export class FilePanel extends SidePanel {
   /** mode.ts hooks the material library onto save and open. */
   decorate: ((scene: SavedScene) => void) | null = null;
   adopt: ((scene: SavedScene) => void) | null = null;
+  /** Runs before the scene is replaced (the library holds its fills). */
+  prepare: (() => void) | null = null;
   private readonly openInput: HTMLInputElement;
   private importInput!: HTMLInputElement;
   private importZUp = false;
@@ -206,6 +208,7 @@ export class FilePanel extends SidePanel {
   private async openFile(file: File): Promise<void> {
     try {
       const scene = await unpackScene(await file.arrayBuffer());
+      this.prepare?.(); // the library must not fill meshes mid-restore
       this.session.replaceScene(scene);
       this.adopt?.(scene); // materials, before anything reads them back
       if (scene.look && this.look) this.look.apply(scene.look);

@@ -59,7 +59,13 @@ export class DynamicsStore {
   load(table: Record<number, BrushDynamics> | undefined): void {
     if (!table) return;
     for (const [tool, d] of Object.entries(table)) {
-      this.map.set(Number(tool), { ...this.get(Number(tool)), ...d });
+      const base = this.get(Number(tool));
+      // An unknown curve id (a hand-edited or foreign save) would make the
+      // pressure getter throw inside every stroke; fall back per field.
+      const merged = { ...base, ...d };
+      if (!(merged.sizeCurve in CURVES)) merged.sizeCurve = base.sizeCurve;
+      if (!(merged.strengthCurve in CURVES)) merged.strengthCurve = base.strengthCurve;
+      this.map.set(Number(tool), merged);
     }
   }
 

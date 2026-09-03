@@ -210,7 +210,8 @@ export class Lighting {
   /**
    * Master shadow switch (panel checkbox + sculpt shift+s): off suppresses
    * every light's shadow without touching the per-light config, so turning
-   * it back on restores the configured rig. Runtime-only, never persisted.
+   * it back on restores the configured rig. Saved with the look (serialize
+   * / applyState carry it), so a session comes back the way it was left.
    */
   setShadowsMaster(on: boolean): void {
     this.shadowsMaster = on;
@@ -349,10 +350,14 @@ export class Lighting {
   }
 
   private shadowsMaster = true;
+  /** Where the lights aim: the fitted subject centre, until the next fit. */
+  private readonly aimCenter = new Vector3();
 
   private refresh(center?: Vector3): void {
-    const target = center ?? this.rig.position; // rig sits at world origin
-    for (const id of ALL) this.apply(id, target);
+    // Every slider-driven refresh used to re-aim at the origin, throwing
+    // away the centre fitToBounds computed a moment earlier.
+    if (center) this.aimCenter.copy(center);
+    for (const id of ALL) this.apply(id, this.aimCenter);
   }
 
   private apply(id: LightId, target: Vector3): void {
@@ -375,9 +380,7 @@ export class Lighting {
     light.target.updateMatrixWorld();
 
     // A light casts only if the tier gives it a map, it's configured to, and
-    // it's on. Softness drives the VSM blur. Shadow-casting is never toggled at
-    // runtime: doing so rebuilds the WebGPU shadow-map targets and breaks the
-    // node pipeline, so the stage swaps the receiver instead.
+    // it's on. Softness drives the VSM blur.
     const canCast = this.sizes[id] > 0;
     light.castShadow = canCast && cfg.castShadow && cfg.enabled && this.shadowsMaster;
     if (canCast) light.shadow.radius = cfg.softness ?? DEFAULT_SOFTNESS;

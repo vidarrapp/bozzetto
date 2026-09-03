@@ -152,7 +152,12 @@ export class GeometrySync {
   /** Apply the accumulated dirty set to position + normal as update ranges. */
   private commitGeometry(pos: BufferAttribute, nrm: BufferAttribute): void {
     if (this.dirtyIsFull || this.dirty.length === 0) {
-      // No usable dirty set: full upload (needsUpdate with no ranges).
+      // No usable dirty set: full upload. Ranges from an earlier commit in
+      // the same frame would otherwise still be pending, and three uploads
+      // ONLY those - the full upload silently never reached the GPU
+      // (dyntopo: a ranged stroke step then a topology rebuild, every step).
+      pos.clearUpdateRanges();
+      nrm.clearUpdateRanges();
       pos.needsUpdate = true;
       nrm.needsUpdate = true;
       this.stats.fullCommits++;
@@ -163,6 +168,8 @@ export class GeometrySync {
 
     const ranges = coalesceVertexRanges(this.dirty);
     if (!ranges) {
+      pos.clearUpdateRanges();
+      nrm.clearUpdateRanges();
       pos.needsUpdate = true;
       nrm.needsUpdate = true;
       this.stats.fullCommits++;
@@ -203,8 +210,10 @@ export class GeometrySync {
  * when the spread defeats coalescing (more than RANGE_CAP ranges), which
  * callers treat as "do a full upload instead".
  */
-function coalesceVertexRanges(ids: number[]): Array<[number, number]> | null {
-  ids.sort((a, b) => a - b);
+function coalesceVertexRanges(dirty: number[]): Array<[number, number]> | null {
+  // A typed-array sort (no comparator) is several times faster than
+  // Array.sort with one, and this runs on every stroke step.
+  const ids = Int32Array.from(dirty).sort();
   const ranges: Array<[number, number]> = [];
   let start = -1;
   let end = -1; // inclusive vertex ids

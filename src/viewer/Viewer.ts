@@ -1485,24 +1485,6 @@ export class Viewer {
     this.controls.dollyBy(factor);
   }
 
-  /**
-   * Re-pivot the orbit around a world point WITHOUT moving the view: the
-   * point is projected onto the current view ray and the target takes that
-   * depth, so the camera's position and look direction are untouched and
-   * only the next rotation feels it. Sculpt mode calls this at stroke end,
-   * so orbiting turns around where you are working with no view jump.
-   */
-  orbitAt(point: [number, number, number]): void {
-    const s = this.controls.getState();
-    const pos = new Vector3(s.position[0], s.position[1], s.position[2]);
-    const dir = new Vector3(s.target[0], s.target[1], s.target[2]).sub(pos);
-    if (dir.lengthSq() < 1e-10) return;
-    dir.normalize();
-    const depth = new Vector3(point[0], point[1], point[2]).sub(pos).dot(dir);
-    if (!(depth > 1e-3)) return; // behind the camera: keep the current pivot
-    const target = pos.addScaledVector(dir, depth);
-    this.controls.setState(s.position, [target.x, target.y, target.z]);
-  }
 
   private logAoDebug(): void {
     if (this.aoDebug) {
@@ -1551,7 +1533,10 @@ export class Viewer {
     // depth-of-field gather over that colour. Both nodes stay built; rebuildOutput
     // selects whether DoF is in the output, and applyAoStrength()/applyDof() drive
     // the look through uniforms — so toggling never rebuilds the graph nodes.
-    const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU);
+    // Strength runs to 2 (it deepens the term past 1), so the blend can
+    // cross zero under heavy occlusion; floored, or the negative colour
+    // came out of the output transform as bright blotches.
+    const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU).max(0);
     const aoColor = scenePass.getTextureNode('output').mul(vec4(vec3(aoFactor), float(1)));
 
     // Sculpt-mode composite: instead of GTAO, a small depth-only SSAO (8 taps).
@@ -1893,8 +1878,15 @@ export class Viewer {
    * previous one completes a double-tap and sets focus; otherwise it's banked
    * as the first tap. A drifted lift (an orbit) breaks any pending sequence.
    */
+  /** Sculpt mode turns the double-tap focus off: two quick dabs are strokes. */
+  tapToFocus = true;
+
   private readonly onTapEnd = (e: PointerEvent): void => {
     this.activeTouches.delete(e.pointerId);
+    if (!this.tapToFocus) {
+      this.lastTapTime = -1;
+      return;
+    }
     if (e.pointerId !== this.tapPointerId) return;
     this.tapPointerId = -1;
     if (this.tapMoved) {
