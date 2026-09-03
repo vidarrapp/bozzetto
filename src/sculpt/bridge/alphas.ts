@@ -19,41 +19,50 @@ export interface AlphaInfo {
 }
 
 /**
- * The rake set, ordered as the picker shows it: broad tines first, finest
- * last. rake06-09 came from ZBrush's stock alphas (owner-supplied, for
- * testing until hand-authored ones land); the rest are the first batch.
+ * The rake set, ordered as the picker shows it: the ones that comb first,
+ * the ones that need a bigger brush or a subdivided mesh last. rake06-09
+ * are ZBrush stock rake alphas (owner-supplied, standing in until
+ * hand-authored ones land); the rest are the first batch.
  *
- * What separates the ones that cut from the ones that do not is the width
- * of a tine relative to the brush, measured as (stencil fraction * 0.707,
- * since the stencil covers the square inscribed in the brush disc):
+ * Which ones bite was measured, not guessed - a stroke rendered per
+ * stencil at a default brush on an unsubdivided sphere, against the tine
+ * width each one puts on the model. getAlpha maps the stencil onto the
+ * square inscribed in the brush disc, so that width is about 0.7x the
+ * tine's width in the image:
  *
- *   rake06 10.7% of the brush | rake01 10.6% | rake07 6.7% | rake09 6.2%
- *   rake08  6.0%              | rake02  3.6% | rake03 3.3% | rake04 2.5%
- *   rake05  1.4%
+ *   rake06 10.7% -> three clean grooves        rake01 10.6% -> broad, soft grooves
+ *   rake07  6.7% -> fine chattery tines        rake09  6.2% -> almost nothing
+ *   rake08  6.0% -> a faint band               rake02  3.6% -> a faint band
+ *   rake03  3.3% -> nothing                    rake04  2.5% -> nothing
+ *   rake05  1.4% -> irregular chatter, not grooves
  *
- * Below ~6% a tine is thinner than the gap between vertices on an
- * unsubdivided sphere, so it lands between them and the stroke reads as a
- * plain clay ribbon. The bottom of that list wants either a much larger
- * brush or a subdivided mesh; they are kept because they do come alive
- * there, not because they work everywhere.
+ * Two things decide it. Width first: below roughly 6% a tine is thinner
+ * than the gap between vertices, so it lands between them and the stroke
+ * comes out looking like plain clay. But SHAPE matters too, which is why
+ * rake08 and rake09 sit above that line and still barely register - their
+ * tines are dots rather than full-height bars, so little of the stroke's
+ * length is covered, while rake07's bars run the full height and comb at
+ * 6.7%. rake05 is the odd one out: its hand-drawn strands wander laterally
+ * as they run, so instead of grooves it lays down irregular chatter, which
+ * is a texture worth having even though it is not a comb.
  */
 export const RAKE_ALPHAS: AlphaInfo[] = [
   { id: 'rake06', label: 'Broad tines' },
   { id: 'rake01', label: 'Broad' },
   { id: 'rake07', label: 'Tines' },
-  { id: 'rake03', label: 'Bars' },
-  { id: 'rake04', label: 'Fine bars' },
+  { id: 'rake05', label: 'Chatter' },
   { id: 'rake08', label: 'Graduated' },
   { id: 'rake09', label: 'Beads' },
+  { id: 'rake03', label: 'Bars' },
   { id: 'rake02', label: 'Dots' },
-  { id: 'rake05', label: 'Hand-drawn' },
+  { id: 'rake04', label: 'Fine bars' },
 ];
 
 /**
- * The broadest tines, by measurement: widest tine relative to the brush
- * (10.7%) and the most of the dab doing work (mean value 68/255 against
- * 11-34 for the first batch), which is the combination that reads as a
- * comb at a default brush on an unsubdivided sphere.
+ * The widest tines in the set (10.7% of the brush) and the most of the dab
+ * doing work (mean value 68/255 against 11-34 for the first batch) - and
+ * the only one that laid down three clean, separated grooves at a default
+ * brush when every stencil was rendered side by side.
  */
 export const DEFAULT_RAKE_ALPHA = 'rake06';
 
