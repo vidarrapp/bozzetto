@@ -112,8 +112,9 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | Middle drag, or `Cmd` / `Shift` + drag *(two-finger drag on touch)* | Pan |
 | Right drag / scroll | Zoom |
 | `Space` | Play / pause |
-| `←` `A` / `→` `D` | Step frame |
-| `F` | Focus |
+| `←` / `→` `D` | Step frame |
+| `F` | Focus (frame the model) |
+| `A` | Frame the whole scene |
 | Double-click *(double-tap on touch)* | Set focus point |
 | `1` | Lit (PBR) |
 | `2`–`9` | Matcaps |
@@ -131,9 +132,10 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | Drag off the mesh | Orbit |
 | Two-finger drag / pinch | Pan / zoom, even on the model |
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |
-| `Ctrl` + `C` / `I` / `H` / `E` | Clear / invert / hide mask · extract masked region |
+| `Ctrl` + `A` / `C` / `I` / `H` / `E` | Mask all · clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes |
 | `B` / `S` (hold + drag) | Brush size / strength (`[` `]` and `;` `'` step them) |
+| `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry |
 | `W` / `E` / `R`, `Q` | Move / rotate / scale gizmo · back to sculpting |
 | `T` | Frame-rate meter |

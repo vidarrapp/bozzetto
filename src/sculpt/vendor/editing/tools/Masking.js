@@ -132,6 +132,25 @@ class Masking extends SculptBase {
     this.updateAndRenderMask();
   }
 
+  /**
+   * BOZZETTO EDIT: mask the whole object (ctrl+a) - the complement of
+   * clear(). The mask is the material array's third channel, 1 unmasked
+   * and 0 fully masked, so this is clear() writing the other value, with
+   * the same colour+material snapshot behind it for undo.
+   */
+  maskAll() {
+    var mesh = this.getMesh();
+    if (!mesh) return;
+
+    this.pushState();
+
+    var mAr = mesh.getMaterials();
+    for (var i = 0, nb = mesh.getNbVertices(); i < nb; ++i)
+      mAr[i * 3 + 2] = 0.0;
+
+    this.updateAndRenderMask();
+  }
+
   invert(isState, meshState) {
     var mesh = meshState;
     if (!mesh) mesh = this.getMesh();

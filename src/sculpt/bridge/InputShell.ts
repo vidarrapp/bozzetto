@@ -29,6 +29,8 @@ import type { BrushCursor } from './BrushCursor';
 export interface InputShellHooks {
   /** f: frame the whole current mesh. */
   frameModel(): void;
+  /** a: frame every visible object in the scene. */
+  frameAll(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -1049,7 +1051,14 @@ export class InputShell {
     // shadow browser Copy and History, so they are only claimed here where
     // the text-entry guard above has already let real typing through.
     if (e.ctrlKey || e.metaKey) {
-      if (key === 'z') {
+      if (key === 'a') {
+        // Mask the whole object. Ctrl+a is Select All everywhere else, and
+        // a mask IS the selection here; the text-entry guard above has
+        // already let real typing through.
+        this.maskTool()?.maskAll?.();
+        s.render();
+        this.claim(e);
+      } else if (key === 'z') {
         if (e.shiftKey) s.redo();
         else s.undo();
         this.claim(e);
@@ -1082,12 +1091,14 @@ export class InputShell {
     }
 
     switch (key) {
-      // The viewer's transport keys. Sculpt has no timeline to play or step,
-      // and both would otherwise fall through to it - harmless only until a
-      // scene carries a captured reel. Claimed here so they stay inert, and
-      // stay free for a sculpt binding later.
+      // Space would otherwise fall through to the viewer's transport, and
+      // sculpt has no timeline to play. Claimed so it stays inert.
       case ' ':
+        return this.claim(e);
+      // f frames the selection, a frames the scene - the pair every DCC
+      // binds them to, and the same two keys in the viewer.
       case 'a':
+        this.hooks.frameAll();
         return this.claim(e);
       case 'd':
         s.stepSubdivision(e.shiftKey ? -1 : 1);

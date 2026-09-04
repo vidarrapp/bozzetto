@@ -582,6 +582,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // around; otherwise the next drag would swing away from the framing.
       liveWorldBox(active).getCenter(pivot);
     },
+    frameAll: () => {
+      const meshes = session.getMeshes().filter((m) => m.isVisible());
+      if (meshes.length === 0) return;
+      const box = liveWorldBox(meshes[0]);
+      for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+      viewer.frameBounds(box);
+      box.getCenter(pivot);
+    },
     // Remember where the work was; do NOT move the view for it. The jump
     // after every stroke was the objectionable part, not the re-pivot.
     focusEdit: (point) => pivot.set(point[0], point[1], point[2]),

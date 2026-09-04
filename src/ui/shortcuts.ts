@@ -14,8 +14,9 @@ export interface ShortcutHandlers {
 
 /**
  * Global keyboard shortcuts, shared by the viewer and the editor preview:
- *   space      play / pause            ← / a · → / d   step
- *   f          focus (frame model)     g              cycle ground
+ *   space      play / pause            ← · → / d      step
+ *   f          focus (frame model)     a              frame the scene
+ *   g          cycle ground
  *   shift+w    wireframe overlay       shift+s        shadows on / off
  *   1          Lit (PBR)               2..n           matcaps (interface order)
  *   dbl-click  set focus point (tap-to-focus; double-tap on touch)
@@ -44,10 +45,15 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         viewer.step(1);
         return;
       case 'ArrowLeft':
-      case 'a':
         viewer.step(-1);
         return;
       case 'f':
+        viewer.focusSubject();
+        return;
+      case 'a':
+        // Frame the scene, as in sculpt mode. A viewer project is a single
+        // subject, so framing everything and framing the selection land in
+        // the same place - the key still means what it means everywhere.
         viewer.focusSubject();
         return;
       case 'g':

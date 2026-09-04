@@ -228,6 +228,8 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     /** Masking tool only: whole-mask operations (ctrl gestures + WS4 UI). */
     invert?(): void;
     clear?(): void;
+    /** BOZZETTO EDIT in Masking.js: mask every vertex of the object. */
+    maskAll?(): void;
     blur?(): void;
     sharpen?(): void;
     /** Masking tool only: shell extraction of the masked region (WS4). */
