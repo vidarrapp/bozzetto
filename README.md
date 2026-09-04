@@ -76,9 +76,24 @@ Each installer format has to be built on (or for) its own platform:
 | Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
 | macOS dmg | macOS only | Apple's tooling cannot be cross-run |
 
+### Releasing
+
+`.github/workflows/release.yml` builds all three platforms and attaches the
+installers to a GitHub Release:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Run it from the **Actions** tab instead to test a build without tagging; that
+path publishes nothing and leaves the installers as downloadable artifacts.
+No secrets to configure — it uses the token Actions provides.
+
 Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
 you add a Developer ID certificate and notarization (macOS) or a code-signing
-certificate (Windows).
+certificate (Windows). For signing in CI, set `CSC_LINK` and
+`CSC_KEY_PASSWORD` as repository secrets and drop the
+`CSC_IDENTITY_AUTO_DISCOVERY: false` line from the workflow.
 
 ## Make your own timelapse
 

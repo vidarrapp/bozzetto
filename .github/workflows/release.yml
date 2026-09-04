@@ -1,0 +1,74 @@
+# Desktop releases.
+#
+# Push a tag and this builds Bozzetto on all three platforms and attaches
+# the installers to a GitHub Release. macOS is the reason it is a matrix at
+# all: Apple's tooling cannot be cross-run, so the .dmg has to be built on
+# a mac. Linux and Windows could share a runner, but building each on its
+# own platform is what the installers are tested against.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Run it by hand from the Actions tab to test the build without tagging;
+# that path skips publishing and leaves the installers as artifacts.
+name: Release desktop
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# electron-builder creates the release and uploads to it.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One platform failing should not throw away the two that worked.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux AppImage
+          - os: windows-latest
+            target: --win nsis
+          - os: macos-latest
+            target: --mac dmg zip
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # build:desktop runs tsc, generates the bundled demo timelapse
+      # (prebuild:desktop) and builds dist-desktop. electron-builder then
+      # packages that, per package.json's build block.
+      - name: Build and package
+        run: npx electron-builder ${{ matrix.target }} --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
+        env:
+          # The token electron-builder uses to create and upload to the
+          # release. Provided by Actions; no secret to configure.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Without this, a mac runner with no certificate installed still
+          # tries to discover one and fails the build rather than producing
+          # an unsigned app. Remove it once a Developer ID is in place.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Manual runs publish nothing, so keep the output reachable.
+      - name: Upload installers
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bozzetto-${{ matrix.os }}
+          path: |
+            release/*.AppImage
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
