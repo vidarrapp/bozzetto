@@ -32,7 +32,7 @@ Sculpts autosave to browser storage whether installed or not. Nothing uploads un
 
 ## Sculpt
 
-Open [`/?sculpt=1`](https://bozzetto.vidarrapp.se/?sculpt=1) or click **Sculpt!** in the gallery. No sign-in, and everything stays on your device.
+Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush.
 - **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move grabs volumetrically, so you can pull a silhouette from outside the outline. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
