@@ -5,6 +5,7 @@ import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
 import { topChip, topbarLeft } from './ui/topbar';
+import { apiFetch, apiManifestUrl } from './net/origin';
 import { registerServiceWorker } from './ui/serviceWorker';
 
 /**
@@ -124,14 +125,20 @@ async function loadProject(
   id: string,
   base: string,
 ): Promise<{ manifest: Manifest; manifestUrl: string }> {
-  const apiUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, window.location.href).href;
-  const res = await fetch(apiUrl);
-  const servedHtml = (res.headers.get('content-type') ?? '').includes('text/html');
-  if (res.ok && !servedHtml) {
-    return { manifest: validateManifest(await res.json()), manifestUrl: apiUrl };
+  const apiPath = `/api/projects/${encodeURIComponent(id)}`;
+  const res = await apiFetch(apiPath);
+  const servedHtml = res.contentType.includes('text/html');
+  if (res.ok && !servedHtml && res.bytes) {
+    const manifest = validateManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
+    // Frame paths in an API manifest are root-absolute (/media/...), so they
+    // must resolve against the SERVER, not the app. apiBaseUrl is that
+    // origin on the desktop and the site's own on the web.
+    return { manifest, manifestUrl: await apiManifestUrl(apiPath) };
   }
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`Failed to load project (${res.status}) at ${apiUrl}`);
+  // status 0 is "no server configured" on the desktop - the same as a 404
+  // here: nothing is answering, so try the bundled copy.
+  if (!res.ok && res.status !== 404 && res.status !== 0) {
+    throw new Error(`Failed to load project (${res.status})`);
   }
 
   const staticUrl = new URL(`${base}timelapses/${id}/manifest.json`, window.location.href).href;

@@ -6,6 +6,7 @@
 
 import { div } from './dom';
 import { probeAdmin } from '../admin/api';
+import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 
@@ -51,13 +52,11 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // the owner - who otherwise had no link to the admin panel at all.
   bar.appendChild(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
 
-  let projects: ProjectSummary[] = [];
-  try {
-    const res = await fetch('/api/projects', { headers: { accept: 'application/json' } });
-    if (res.ok) projects = (await res.json()) as ProjectSummary[];
-  } catch {
-    /* API not reachable — fall through to demo-only. */
-  }
+  // Published projects come from whichever server is configured. On the web
+  // that is the site itself; in the desktop app it is nothing at all until
+  // someone points it at their own deployment, and an empty shelf is the
+  // right answer there rather than an error.
+  const projects: ProjectSummary[] = (await apiJson<ProjectSummary[]>('/api/projects')) ?? [];
 
   // The first tile starts a new sculpt, for everyone: it used to be a
   // guest's top-row "Sculpt" chip, and the tile read much clearer (owner
