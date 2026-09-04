@@ -6,6 +6,7 @@ import type { SnapshotRecorder } from '../bridge/SnapshotRecorder';
 import type { SavedScene } from '../bridge/ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { downloadBlob, packScene, sceneToOBJ, stampName, unpackScene } from '../bridge/SceneFile';
+import { saveToLibrary } from '../bridge/SceneLibrary';
 
 /** How the panel reaches the viewer's look, so .bozz files carry it. */
 export interface LookBridge {
@@ -47,6 +48,11 @@ export class FilePanel extends SidePanel {
   private captureStopReason = '';
   private autosaveNote?: HTMLDivElement;
 
+  /** Grab a JPEG of the viewport for a library card, if the host can. */
+  captureThumb: (() => Promise<Blob>) | null = null;
+  /** Something was added to the library; the gallery card count changed. */
+  onLibraryChange: (() => void) | null = null;
+
   constructor(
     private readonly session: SculptSession,
     private readonly recorder: SnapshotRecorder,
@@ -82,6 +88,26 @@ export class FilePanel extends SidePanel {
         if (this.look) scene.look = this.look.get();
         this.decorate?.(scene);
         downloadBlob(await packScene(scene), stampName('bozz'));
+      }),
+    );
+    filesCol.appendChild(
+      this.fileButton('Save to library', 'Saved', async () => {
+        const scene = this.session.serializeScene();
+        if (!scene) throw new Error('Nothing to save');
+        // Same bytes as Save file, kept on the device instead of handed to
+        // the download sheet - so a library entry can be exported later
+        // without converting anything.
+        if (this.look) scene.look = this.look.get();
+        this.decorate?.(scene);
+        const meshes = this.session.getMeshes();
+        await saveToLibrary(scene, {
+          thumb: await this.captureThumb?.(),
+          objects: meshes.length,
+          tris: meshes.reduce((n, m) => n + m.getNbTriangles(), 0),
+        });
+        // Unlike Save file this does NOT mark the scene clean: the work is
+        // still live in the browser, and the autosave still owns it.
+        this.onLibraryChange?.();
       }),
     );
     this.openInput = document.createElement('input');

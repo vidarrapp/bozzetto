@@ -2506,6 +2506,54 @@ body.chrome-hidden .transport {
 
 /* The gallery's "start a sculpt" tile: same footprint as a project card,
    but a plus over the default subject rather than a thumbnail. */
+/* Library cards carry their own controls, so they are a div with a link
+   inside rather than a link with buttons inside it. The thumb is the
+   navigation; renaming and deleting sit outside it. */
+.card--library {
+  position: relative;
+}
+
+.card--library .card__thumb {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card--library .card__title[contenteditable='true'] {
+  outline: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.card__trash {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 8px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  /* Visible on hover, and always on touch, where there is no hover to
+     reveal it - the same rule the toolbar uses. */
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.card--library:hover .card__trash,
+.card__trash:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .card__trash {
+    opacity: 1;
+  }
+}
+
 .card--new {
   display: grid;
   place-items: center;

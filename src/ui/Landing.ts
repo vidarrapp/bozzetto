@@ -4,6 +4,7 @@
  * has any projects (or when the API isn't reachable, e.g. plain `vite dev`).
  */
 
+import { div } from './dom';
 import { probeAdmin } from '../admin/api';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
@@ -70,6 +71,13 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // getting back to.
   const inProgress = await sculptCard();
   if (inProgress) grid.appendChild(inProgress);
+
+  // Then the shelf: scenes explicitly saved on this device, newest first.
+  // They sit before the published projects because they are yours and
+  // one tap from being opened.
+  for (const c of await libraryCards(() => void renderLanding(app), inProgress !== null)) {
+    grid.appendChild(c);
+  }
 
   // Only projects with frames are shown publicly; empties live in the editor.
   for (const p of projects.filter((p) => p.frameCount > 0)) grid.appendChild(card(p));
@@ -162,6 +170,100 @@ async function sculptCard(): Promise<HTMLElement | null> {
     meta.textContent = 'Saved on this device';
   }
   return a;
+}
+
+/**
+ * The local library: sculpts explicitly saved on this device. Unlike the
+ * in-progress card these are a shelf you put things on, so each one can be
+ * renamed and thrown away, which means the card cannot be a bare <a> - a
+ * link with buttons inside it is neither valid nor operable.
+ */
+async function libraryCards(
+  onChange: () => void,
+  hasUnsavedWork: boolean,
+): Promise<HTMLElement[]> {
+  let lib: typeof import('../sculpt/bridge/SceneLibrary');
+  let entries: Awaited<ReturnType<typeof import('../sculpt/bridge/SceneLibrary').listLibrary>>;
+  try {
+    lib = await import('../sculpt/bridge/SceneLibrary');
+    entries = await lib.listLibrary();
+  } catch {
+    return []; // storage blocked, or the module failed to load
+  }
+  return entries.map((e) => {
+    const card = div('card card--library');
+    const url = e.thumb ? URL.createObjectURL(e.thumb) : null;
+    const picture = url
+      ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
+        <img class="card__img" alt="" src="${url}" />`
+      : '';
+    card.innerHTML = `
+      <a class="card__thumb" href="/?sculpt=1&lib=${encodeURIComponent(e.id)}">
+        ${picture}
+        <span class="card__badge">Saved</span>
+      </a>
+      <div class="card__body">
+        <span class="card__title" tabindex="0" title="Double-click to rename"></span>
+        <span class="card__meta"></span>
+      </div>
+      <button class="card__trash" type="button" aria-label="Delete this scene">Delete</button>`;
+
+    // Opening replaces whatever is in the autosave slot, and the autosave
+    // overwrites it seconds later - the same trap Open file guards, so the
+    // same guard: ask, but only when there is unsaved work to lose.
+    card.querySelector<HTMLAnchorElement>('.card__thumb')!.addEventListener('click', (ev) => {
+      if (!hasUnsavedWork) return;
+      if (!confirm(`Open "${e.name}"? Your work in progress will be replaced.`)) ev.preventDefault();
+    });
+
+    const title = card.querySelector<HTMLElement>('.card__title')!;
+    title.textContent = e.name;
+    const objects = `${e.objects} object${e.objects === 1 ? '' : 's'}`;
+    card.querySelector<HTMLElement>('.card__meta')!.textContent =
+      `${objects} · ${e.tris.toLocaleString('en-US')} tris · ${mb(e.bytes)} · ${ago(e.savedAt)}`;
+
+    // Rename in place, the way the Scene panel renames an object.
+    const commit = (): void => {
+      title.contentEditable = 'false';
+      const name = (title.textContent ?? '').trim();
+      if (!name) {
+        title.textContent = e.name; // an empty name is a cancel, not a wipe
+        return;
+      }
+      if (name !== e.name) void lib.renameLibraryScene(e.id, name);
+    };
+    title.addEventListener('dblclick', () => {
+      title.contentEditable = 'true';
+      title.focus();
+      getSelection()?.selectAllChildren(title);
+    });
+    title.addEventListener('blur', commit);
+    title.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        title.blur();
+      } else if (ev.key === 'Escape') {
+        title.textContent = e.name;
+        title.blur();
+      }
+    });
+
+    card.querySelector<HTMLButtonElement>('.card__trash')!.addEventListener('click', () => {
+      if (!confirm(`Delete "${e.name}"? This cannot be undone.`)) return;
+      void lib.deleteLibraryScene(e.id).then(() => {
+        if (url) URL.revokeObjectURL(url);
+        card.remove();
+        onChange();
+      });
+    });
+    return card;
+  });
+}
+
+/** Packed size, at the precision the number is worth. */
+function mb(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** "just now" / "3 hours ago" - enough to recognise which session it was. */

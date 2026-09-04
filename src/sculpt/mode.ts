@@ -82,7 +82,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const camera = new CameraAdapter(viewer.camera, canvas);
   const session = new SculptSession(camera, canvas, () => {});
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
-  let saved = await loadSavedScene();
+  // A ?lib=<id> link from a gallery card outranks it - that is an explicit
+  // "open this one", where the autosave is only "carry on where I was".
+  // A missing or unreadable entry falls back rather than failing the boot.
+  const libId = new URLSearchParams(window.location.search).get('lib');
+  let saved = libId ? await (await import('./bridge/SceneLibrary')).loadFromLibrary(libId) : null;
+  if (!saved) saved = await loadSavedScene();
   let multimesh;
   try {
     multimesh = saved ? session.restoreScene(saved) : session.addSphere();
@@ -780,6 +785,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.getStateManager().getCurrentState() !== cleanState ||
     recorder.frameCount() > 0;
   filePanel.prepare = () => library.beginRestore();
+  // The library card wants the same picture the gallery's in-progress card
+  // gets, taken at the moment you press Save rather than on the way out.
+  filePanel.captureThumb = () => viewer.captureThumbnail(480);
   filePanel.adopt = (scene) => {
     library.loadFrom(scene);
     applySettings(scene.settings);

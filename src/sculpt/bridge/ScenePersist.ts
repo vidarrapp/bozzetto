@@ -149,6 +149,14 @@ const STORE = 'scene';
 export const FRAMES_STORE = 'frames';
 /** WS5 capture: small per-frame metadata ({tris, t, bytes}) by sequence. */
 export const FRAME_META_STORE = 'frameMeta';
+/**
+ * The local scene library. Split in two for the same reason the autosave
+ * splits its snapshot from its scene: the gallery lists every entry on
+ * load, and metadata carrying its own vertex arrays would cost tens of
+ * megabytes to draw a row of cards.
+ */
+export const LIBRARY_STORE = 'library';
+export const LIBRARY_DATA_STORE = 'libraryData';
 const KEY = 'current';
 /**
  * Small companion record to the saved scene: a thumbnail plus the counts the
@@ -265,12 +273,23 @@ const MAX_WRITE_FAILURES = 3;
 /** First retry gap after a failed write; doubles per consecutive failure. */
 const RETRY_GAP_MS = 5000;
 
-/** One DB for all sculpt persistence; v2 adds the capture frame stores. */
+/**
+ * One DB for all sculpt persistence. v2 added the capture frame stores, v3
+ * the scene library. Every version creates whatever is missing rather than
+ * branching on oldVersion, so a browser arriving from any earlier version
+ * ends up with the full set.
+ */
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
-      for (const store of [STORE, FRAMES_STORE, FRAME_META_STORE]) {
+      for (const store of [
+        STORE,
+        FRAMES_STORE,
+        FRAME_META_STORE,
+        LIBRARY_STORE,
+        LIBRARY_DATA_STORE,
+      ]) {
         if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store);
       }
     };
