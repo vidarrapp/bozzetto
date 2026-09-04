@@ -15,7 +15,7 @@
     "typecheck:functions": "tsc -p tsconfig.functions.json",
     "prebuild": "node scripts/generate-sample.mjs",
     "build": "tsc --noEmit && vite build && vite build --config vite.embed.config.ts",
-    "build:test": "BOZZ_KEEP_DEMO=1 npm run build",
+    "build:test": "tsc --noEmit && vite build --mode test",
     "export": "node scripts/export-single-file.mjs",
     "preview": "vite preview",
     "cf:dev": "npm run build && wrangler pages dev",

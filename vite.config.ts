@@ -30,11 +30,12 @@ export default defineConfig(({ mode }) => {
     // gallery, and not on the live site, which has real work to show.
     //
     // The test suites boot through ?tl=demo, though: it is the only project
-    // they can open without a backend. BOZZ_KEEP_DEMO=1 keeps it, which is
-    // what `npm run build:test` sets. Vite copies public/ wholesale, so the
-    // fixture is removed after the bundle is written rather than filtered
-    // on the way in.
-    !process.env.BOZZ_KEEP_DEMO && {
+    // they can open without a backend. `--mode test` keeps it. A mode
+    // rather than an env var because FOO=1 npm run build is Unix-only
+    // syntax that fails outright on Windows, and this repo now builds
+    // there. Vite copies public/ wholesale, so the fixture is removed after
+    // the bundle is written rather than filtered on the way in.
+    mode !== 'test' && {
       name: 'bozzetto-drop-demo',
       closeBundle(): void {
         rmSync(`${root}${desktop ? 'dist-desktop' : 'dist'}/timelapses`, {
