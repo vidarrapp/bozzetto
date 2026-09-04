@@ -106,9 +106,17 @@ async function bootViewer(id: string): Promise<void> {
 }
 
 /**
- * Load a project's manifest. Tries the API first; a 404 falls back to a bundled
- * static timelapse (e.g. `?tl=demo`). Frame paths resolve against `manifestUrl`,
- * so API manifests (absolute `/media/...`) and static ones (relative) both work.
+ * Load a project's manifest. Tries the API first, and falls back to a bundled
+ * static timelapse (e.g. `?tl=demo`) when there is no API answering. Frame
+ * paths resolve against `manifestUrl`, so API manifests (absolute
+ * `/media/...`) and static ones (relative) both work.
+ *
+ * "No API answering" is not only a 404. A host that serves the app with an
+ * SPA fallback answers an unknown /api/ path with 200 and index.html, and
+ * parsing that as JSON fails with "Unexpected token '<'" - which is both
+ * useless to read and, worse, thrown before the static fallback is ever
+ * reached. An HTML answer means no API, so it falls through like a 404
+ * does. A JSON answer that will not parse is a real fault and still throws.
  */
 async function loadProject(
   id: string,
@@ -116,10 +124,11 @@ async function loadProject(
 ): Promise<{ manifest: Manifest; manifestUrl: string }> {
   const apiUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, window.location.href).href;
   const res = await fetch(apiUrl);
-  if (res.ok) {
+  const servedHtml = (res.headers.get('content-type') ?? '').includes('text/html');
+  if (res.ok && !servedHtml) {
     return { manifest: validateManifest(await res.json()), manifestUrl: apiUrl };
   }
-  if (res.status !== 404) {
+  if (!res.ok && res.status !== 404) {
     throw new Error(`Failed to load project (${res.status}) at ${apiUrl}`);
   }
 
