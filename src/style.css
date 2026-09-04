@@ -2797,3 +2797,78 @@ body.chrome-hidden .transport {
 .install-close:hover {
   background: var(--hover);
 }
+
+/* Desktop server settings. A panel, not a prompt: window.prompt blocks the
+   renderer, and a blocked renderer in a desktop app reads as a hang. */
+.dsettings {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.dsettings__card {
+  width: min(460px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+}
+
+.dsettings__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.dsettings__blurb,
+.dsettings__hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dsettings__label {
+  display: block;
+  margin: 14px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dsettings__input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.dsettings__status {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dsettings__error {
+  margin-top: 12px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.dsettings__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dsettings__primary {
+  margin-left: auto;
+}

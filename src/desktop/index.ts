@@ -12,6 +12,7 @@
  * the OS edited-dot, what Save writes to, and what Cmd+S means.
  */
 import { isDesktop } from '../net/origin';
+import { serverSettings } from './ServerSettings';
 
 export interface DesktopBridge {
   version: string;
@@ -285,31 +286,18 @@ export async function offerRecovery(load: (bytes: ArrayBuffer) => Promise<void>)
 }
 
 /**
- * Server settings: the address of a Cloudflare deployment to publish to,
- * and its sign-in state. Nothing here is required to use the app - with no
- * server set, Bozzetto is entirely local, which is the default.
+ * Server settings, as a panel rather than a prompt. Mounted once and
+ * reopened, so the input keeps focus behaviour and the panel does not
+ * accumulate in the DOM.
  */
+let settingsPanel: ReturnType<typeof serverSettings> | null = null;
+
 export async function showServerSettings(): Promise<void> {
   const bridge = desktop();
   if (!bridge) return;
-  const { url, signedIn } = await bridge.getServer();
-
-  const next = window.prompt(
-    'Publish to your own Cloudflare deployment.\n\n' +
-      'Enter the site root - https://example.com - or leave blank to stay fully local.\n' +
-      (url ? `Currently: ${url} (${signedIn ? 'signed in' : 'not signed in'})` : 'No server set.'),
-    url ?? '',
-  );
-  if (next === null) return; // cancelled
-
-  try {
-    const saved = await bridge.setServer(next.trim() || null);
-    if (!saved.url) return;
-    if (window.confirm(`Server set to ${saved.url}.\n\nSign in now?`)) {
-      const after = await bridge.signIn();
-      window.alert(after.signedIn ? 'Signed in.' : 'Not signed in - publishing will not work yet.');
-    }
-  } catch (err) {
-    window.alert(err instanceof Error ? err.message : String(err));
+  if (!settingsPanel) {
+    settingsPanel = serverSettings(bridge);
+    document.body.appendChild(settingsPanel.root);
   }
+  await settingsPanel.open();
 }

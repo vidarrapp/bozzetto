@@ -59,18 +59,22 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "icon": "public/icons/icon-512.png"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "public/icons/icon-512.png"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
-      "category": "Graphics"
+      "category": "Graphics",
+      "icon": "public/icons/icon-512.png",
+      "executableName": "bozzetto"
     },
     "fileAssociations": [
       {
@@ -78,6 +82,7 @@
         "name": "Bozzetto scene",
         "role": "Editor"
       }
-    ]
+    ],
+    "icon": "public/icons/icon-512.png"
   }
 }

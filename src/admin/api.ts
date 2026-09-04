@@ -4,6 +4,8 @@
  * identity in production; the local `DEV_ADMIN` var stands in for it in dev).
  */
 
+import { apiFetch } from '../net/origin';
+
 export interface ProjectSummary {
   id: string;
   title: string;
@@ -20,39 +22,54 @@ export interface CreateInput {
   fps?: number;
 }
 
-async function unwrap<T>(res: Response): Promise<T> {
+/**
+ * Every admin call goes through here, so the browser's same-origin fetch and
+ * the desktop's main-process proxy stay one code path. The proxy exists
+ * because a renderer on bozzetto://app cannot reach a deployment at all: no
+ * CORS headers, no OPTIONS handler, and an auth header that Cloudflare
+ * Access injects only after a cookie login.
+ */
+async function call<T>(
+  pathname: string,
+  init?: { method?: string; body?: ArrayBuffer; contentType?: string },
+): Promise<T> {
+  const res = await apiFetch(pathname, init);
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      /* non-JSON error body */
+    if (res.bytes) {
+      try {
+        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: string };
+        if (body.error) message = body.error;
+      } catch {
+        /* non-JSON error body */
+      }
     }
     if (res.status === 403) message = 'Not authorized — sign in via Cloudflare Access.';
+    // The desktop reports "no server configured" as status 0; saying that is
+    // more use than a generic failure.
+    if (res.status === 0) message = res.error ?? 'No server configured.';
     throw new Error(message);
   }
-  return (await res.json()) as T;
+  return (res.bytes ? JSON.parse(new TextDecoder().decode(res.bytes)) : null) as T;
 }
 
-const jsonInit = (method: string, body: unknown): RequestInit => ({
-  method,
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(body),
+const asJson = (body: unknown): { body: ArrayBuffer; contentType: string } => ({
+  body: new TextEncoder().encode(JSON.stringify(body)).buffer as ArrayBuffer,
+  contentType: 'application/json',
 });
 
 /**
- * Whether this browser holds an admin session, and for whom. Returns null
- * for guests. Cloudflare Access answers for unauthenticated visitors with
- * a redirect to its login page (or an HTML interstitial), never JSON - so
- * anything but a JSON 200 reads as "guest", and network errors do too.
+ * Whether this session holds an admin identity, and for whom. Null for
+ * guests. Cloudflare Access answers unauthenticated callers with a redirect
+ * to its login page or an HTML interstitial, never JSON - so anything but a
+ * JSON 200 reads as "guest", and so do transport failures.
  */
 export async function probeAdmin(): Promise<string | null> {
   try {
-    const res = await fetch('/admin/api/whoami', { redirect: 'manual' });
-    if (!res.ok) return null;
-    if (!(res.headers.get('content-type') ?? '').includes('application/json')) return null;
-    const body = (await res.json()) as { email?: string };
+    const res = await apiFetch('/admin/api/whoami');
+    if (!res.ok || !res.bytes) return null;
+    if (!res.contentType.includes('application/json')) return null;
+    const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { email?: string };
     return typeof body.email === 'string' ? body.email : null;
   } catch {
     return null;
@@ -60,32 +77,27 @@ export async function probeAdmin(): Promise<string | null> {
 }
 
 export const api = {
-  list: () => fetch('/api/projects').then((r) => unwrap<ProjectSummary[]>(r)),
+  list: () => call<ProjectSummary[]>('/api/projects'),
 
-  get: (id: string) => fetch(`/api/projects/${encodeURIComponent(id)}`).then((r) => unwrap(r)),
+  get: (id: string) => call(`/api/projects/${encodeURIComponent(id)}`),
 
-  create: (input: CreateInput) =>
-    fetch('/admin/api/projects', jsonInit('POST', input)).then((r) => unwrap(r)),
+  create: (input: CreateInput) => call('/admin/api/projects', { method: 'POST', ...asJson(input) }),
 
   update: (id: string, patch: unknown) =>
-    fetch(`/admin/api/projects/${encodeURIComponent(id)}`, jsonInit('PUT', patch)).then((r) =>
-      unwrap(r),
-    ),
+    call(`/admin/api/projects/${encodeURIComponent(id)}`, { method: 'PUT', ...asJson(patch) }),
 
-  remove: (id: string) =>
-    fetch(`/admin/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((r) =>
-      unwrap(r),
-    ),
+  remove: (id: string) => call(`/admin/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   uploadFrame: (id: string, index: number, glb: ArrayBuffer) =>
-    fetch(`/admin/api/projects/${encodeURIComponent(id)}/frames?index=${index}`, {
-      method: 'POST',
-      body: glb,
-    }).then((r) => unwrap<{ key: string; index: number; size: number }>(r)),
+    call<{ key: string; index: number; size: number }>(
+      `/admin/api/projects/${encodeURIComponent(id)}/frames?index=${index}`,
+      { method: 'POST', body: glb },
+    ),
 
-  uploadThumb: (id: string, blob: Blob) =>
-    fetch(`/admin/api/projects/${encodeURIComponent(id)}/thumb`, {
+  uploadThumb: async (id: string, blob: Blob) =>
+    call<{ ok: boolean }>(`/admin/api/projects/${encodeURIComponent(id)}/thumb`, {
       method: 'POST',
-      body: blob,
-    }).then((r) => unwrap<{ ok: boolean }>(r)),
+      body: await blob.arrayBuffer(),
+      contentType: blob.type || 'image/jpeg',
+    }),
 };

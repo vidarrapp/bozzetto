@@ -52,6 +52,25 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 - **Made for iPad**: two fingers always navigate, a resting palm never blocks the Pencil, and the touch toolbar covers keyboard-less use.
 - **Reload-safe**: every edit autosaves to IndexedDB. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library.
 
+## Desktop app
+
+A packaged build for macOS, Windows and Linux, for when you want Bozzetto as a
+real application: native **Open** and **Save** over `.bozz` files, a window
+title that names the open document, recent files, and crash recovery.
+
+It is local by default and makes no network requests at all. Point it at your
+own Cloudflare deployment under **Server → Server Settings** if you want to
+publish from it; signing in opens Cloudflare Access in a real window.
+
+```bash
+npm run desktop        # build and run
+npm run dist:desktop   # package into release/
+```
+
+Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
+you add a Developer ID certificate and notarization (macOS) or a code-signing
+certificate (Windows).
+
 ## Make your own timelapse
 
 The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
@@ -107,6 +126,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
 - A service worker precaches the ~3.5 MB app shell; HDRIs and the gallery list are cached as they are used. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
+- The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Controls
 
