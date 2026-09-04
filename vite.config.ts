@@ -24,14 +24,23 @@ export default defineConfig(({ mode }) => {
   return {
   base: '/',
   plugins: [
-    // The demo timelapse is a synthetic test fixture, not content, and a
-    // bust nobody sculpted has no business sitting in a desktop user's own
-    // gallery. Vite copies public/ wholesale, so it is removed after the
-    // bundle is written rather than filtered on the way in.
-    desktop && {
+    // The demo timelapse is a synthetic test fixture - an icosphere
+    // displaced by noise - and it ships nowhere: not in the desktop app,
+    // where a bust nobody sculpted has no business in the user's own
+    // gallery, and not on the live site, which has real work to show.
+    //
+    // The test suites boot through ?tl=demo, though: it is the only project
+    // they can open without a backend. BOZZ_KEEP_DEMO=1 keeps it, which is
+    // what `npm run build:test` sets. Vite copies public/ wholesale, so the
+    // fixture is removed after the bundle is written rather than filtered
+    // on the way in.
+    !process.env.BOZZ_KEEP_DEMO && {
       name: 'bozzetto-drop-demo',
       closeBundle(): void {
-        rmSync(`${root}dist-desktop/timelapses`, { recursive: true, force: true });
+        rmSync(`${root}${desktop ? 'dist-desktop' : 'dist'}/timelapses`, {
+          recursive: true,
+          force: true,
+        });
       },
     },
     VitePWA({

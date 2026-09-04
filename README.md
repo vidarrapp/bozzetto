@@ -250,7 +250,10 @@ npm install
 npm run dev      # generates a demo timelapse, then starts Vite
 ```
 
-With no backend running, the viewer falls back to a bundled synthetic bust at `?tl=demo`.
+With no backend running, the viewer falls back to a synthetic bust at `?tl=demo`.
+It is a test fixture and ships in neither the live site nor the desktop app;
+`npm run build:test` is the build that keeps it, which is what the test suites
+need.
 
 ### Full stack (viewer, editor, and API)
 
@@ -268,6 +271,7 @@ Set `DEV_ADMIN = "true"` in the `[vars]` block of `wrangler.toml` to use the edi
 
 ```bash
 npm run build               # type-check + static production build into dist/
+npm run build:test          # the same, keeping the demo timelapse the suites need
 npm run preview             # serve the production build
 npm run export <id>         # bundle a timelapse into <id>.html
 npm run typecheck           # app types
@@ -279,7 +283,7 @@ npm run db:migrate          # apply D1 migrations to the remote database
 
 From a blank project to a published timelapse.
 
-1. **Look at the viewer first.** Open `/?tl=demo` and get a feel for it. Drag to orbit, `Space` to play, `H` for hotkeys.
+1. **Look at the viewer first.** Run `npm run dev` and open `/?tl=demo` for a synthetic sample. Drag to orbit, `Space` to play, `H` for hotkeys.
 2. **Prepare your frames.** Export each stage as `.obj` or `.glb`, named so they sort in order (`sculpt_001.obj`, `sculpt_002.obj`). A few thousand to a few hundred thousand triangles per frame plays back comfortably.
 3. **Create a project.** Open `/admin/` and create from a title. The id is slugged from it.
 4. **Add your frames.** Drop the sequence on the dropzone. Tick **OBJ files are Z-up** for Blender and most DCC exports. They convert and upload together.
