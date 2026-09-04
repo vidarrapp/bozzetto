@@ -128,6 +128,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 - Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **New sculpt** tile and your own in-progress sculpt.
 - **Install**, **Upload timelapse**, and **Log in**, which becomes **Projects** once signed in.
+- The **Install** card also offers the desktop app, reading the latest GitHub release so the links never point at a stale version, and leading with the build for the visitor's platform.
 
 ### Public editor (`/create/`)
 

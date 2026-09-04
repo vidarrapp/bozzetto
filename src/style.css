@@ -2872,3 +2872,52 @@ body.chrome-hidden .transport {
 .dsettings__primary {
   margin-left: auto;
 }
+
+/* Desktop downloads inside the Install card. */
+.install-desktop {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.install-desktop h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.install-dl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.install-dl {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+
+.install-dl:hover {
+  border-color: var(--accent);
+}
+
+/* The build for the platform you appear to be on, led with rather than
+   hidden behind a picker - the guess can be wrong, so the others stay. */
+.install-dl--yours {
+  border-color: var(--accent);
+}
+
+.install-dl-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}

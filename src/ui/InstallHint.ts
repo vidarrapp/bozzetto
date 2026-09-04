@@ -8,6 +8,7 @@
  */
 
 import { topChip } from './topbar';
+import { desktopDownloads } from './desktopDownloads';
 import { isInstalled } from './launch';
 
 /** The iOS share glyph, so "the Share button" is recognisable at a glance. */
@@ -44,6 +45,12 @@ function openInstallCard(): void {
         like any app. On Android, Chrome offers the same under
         <strong>Add to Home screen</strong> in its menu.</p>
     </div>`;
+  // Downloads go in after the home-screen steps, and fetch on open rather
+  // than on page load: the rest of the app makes no requests, and this
+  // should not quietly become the exception.
+  const downloads = desktopDownloads();
+  if (downloads) overlay.querySelector('.install-card')?.appendChild(downloads);
+
   const close = (): void => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
