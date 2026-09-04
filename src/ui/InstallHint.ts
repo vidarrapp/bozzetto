@@ -8,6 +8,7 @@
  */
 
 import { topChip } from './topbar';
+import { isInstalled } from './launch';
 
 /** The iOS share glyph, so "the Share button" is recognisable at a glance. */
 const SHARE_SVG =
@@ -16,20 +17,9 @@ const SHARE_SVG =
   '<path d="M12 3v12" /><path d="M8 6l4 -3.5 4 3.5" />' +
   '<path d="M7 10h-2v10h14v-10h-2" /></svg>';
 
-/** True when launched from a home-screen icon (nothing left to install). */
-function runningStandalone(): boolean {
-  try {
-    if (window.matchMedia('(display-mode: standalone)').matches) return true;
-    // iOS Safari's pre-standard flag, still what iPadOS sets.
-    return (navigator as { standalone?: boolean }).standalone === true;
-  } catch {
-    return false;
-  }
-}
-
 /** The top-row chip, or null when already installed. */
 export function installChip(): HTMLElement | null {
-  if (runningStandalone()) return null;
+  if (isInstalled()) return null;
   const chip = topChip('Install');
   chip.addEventListener('click', () => openInstallCard());
   return chip;

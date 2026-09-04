@@ -1,4 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
+import { launchSummary } from './launch';
 
 /**
  * Debug overlay, toggled by the hotkey "t". Shows FPS plus live renderer
@@ -24,8 +25,15 @@ export class FpsMeter {
 
   private render(): void {
     if (this.el.hidden) return;
+    // How the app was opened rides along with the renderer's own numbers:
+    // installed-vs-site and cached-vs-network are the two things you cannot
+    // tell by looking at the screen, and both change how it behaves.
+    const rows: [string, string][] = [
+      ...this.viewer.debugInfo(),
+      ['launch', launchSummary()],
+    ];
     this.el.replaceChildren(
-      ...this.viewer.debugInfo().map(([label, value]) => {
+      ...rows.map(([label, value]) => {
         const row = document.createElement('div');
         row.className = 'fps-meter__row';
         const k = document.createElement('span');
