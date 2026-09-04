@@ -28,7 +28,9 @@ Bozzetto installs to the home screen and launches fullscreen. That is the way to
 
 **Android (Chrome):** **⋮** menu → **Add to Home screen** → confirm.
 
-Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish.
+**Installed, Bozzetto works offline.** A service worker precaches the app, so it opens and sculpts with no network at all. The gallery still shows your work in progress and the projects you saw last time; environments download once and are kept. Only opening a timelapse you have never played needs a connection.
+
+Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data.
 
 ## Sculpt
 
@@ -103,6 +105,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - Serverless on Cloudflare: metadata in D1, meshes in R2, every API route a Pages Function.
 - Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
+- A service worker precaches the ~3.5 MB app shell; HDRIs and the gallery list are cached as they are used. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
 
 ## Controls
 

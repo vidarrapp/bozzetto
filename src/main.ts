@@ -5,6 +5,7 @@ import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
 import { topChip, topbarLeft } from './ui/topbar';
+import { registerServiceWorker } from './ui/serviceWorker';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -14,6 +15,7 @@ import { topChip, topbarLeft } from './ui/topbar';
 async function main(): Promise<void> {
   initTheme();
   mountThemeToggle();
+  registerServiceWorker();
   const app = document.getElementById('app');
   if (!app) throw new Error('#app element not found');
 
