@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { rmSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Served at the site root on Cloudflare Pages, alongside Functions at /api,
@@ -23,6 +24,16 @@ export default defineConfig(({ mode }) => {
   return {
   base: '/',
   plugins: [
+    // The demo timelapse is a synthetic test fixture, not content, and a
+    // bust nobody sculpted has no business sitting in a desktop user's own
+    // gallery. Vite copies public/ wholesale, so it is removed after the
+    // bundle is written rather than filtered on the way in.
+    desktop && {
+      name: 'bozzetto-drop-demo',
+      closeBundle(): void {
+        rmSync(`${root}dist-desktop/timelapses`, { recursive: true, force: true });
+      },
+    },
     VitePWA({
       disable: desktop,
       // The manifest is hand-written in public/ and linked from every entry

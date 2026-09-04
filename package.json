@@ -23,8 +23,7 @@
     "build:desktop": "tsc --noEmit && vite build --mode desktop",
     "desktop": "npm run build:desktop && electron .",
     "desktop:run": "electron .",
-    "dist:desktop": "npm run build:desktop && electron-builder",
-    "prebuild:desktop": "node scripts/generate-sample.mjs"
+    "dist:desktop": "npm run build:desktop && electron-builder"
   },
   "dependencies": {
     "@flaticon/flaticon-uicons": "^3.3.1",
