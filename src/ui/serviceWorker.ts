@@ -57,6 +57,10 @@ async function unregisterAll(): Promise<void> {
 
 export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
+  // The desktop shell serves the app off a custom protocol, which cannot
+  // host a worker - and does not need one, since it already ships its
+  // bytes on disk. Attempting it only logs a failure at every launch.
+  if ((window as { bozzettoDesktop?: unknown }).bozzettoDesktop) return;
   const params = new URLSearchParams(window.location.search);
 
   if (params.has('nosw')) {

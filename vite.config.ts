@@ -7,10 +7,24 @@ import { VitePWA } from 'vite-plugin-pwa';
 // nested entries like /admin resolve their bundles properly.
 const root = fileURLToPath(new URL('.', import.meta.url));
 
-export default defineConfig({
+/**
+ * `--mode desktop` builds for the Electron shell. Three differences, all
+ * forced by the shell rather than chosen:
+ *   - No service worker. bozzetto://app IS a secure context, so the worker
+ *     would happily register and then serve a stale precache inside an app
+ *     that already ships its bytes on disk.
+ *   - No sourcemaps: 8.5 MB of a 26 MB dist, for a build nobody debugs
+ *     through devtools-over-the-wire.
+ *   - No /admin entry. The desktop app has no editor; the publish flow
+ *     imports src/admin/api.ts directly, which is unaffected.
+ */
+export default defineConfig(({ mode }) => {
+  const desktop = mode === 'desktop';
+  return {
   base: '/',
   plugins: [
     VitePWA({
+      disable: desktop,
       // The manifest is hand-written in public/ and linked from every entry
       // html, so the plugin only supplies the service worker.
       injectRegister: null,
@@ -90,13 +104,17 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
-    sourcemap: true,
+    sourcemap: !desktop,
+    outDir: desktop ? 'dist-desktop' : 'dist',
     rollupOptions: {
-      input: {
-        main: `${root}index.html`,
-        admin: `${root}admin/index.html`,
-        create: `${root}create/index.html`,
-      },
+      input: desktop
+        ? { main: `${root}index.html`, create: `${root}create/index.html` }
+        : {
+            main: `${root}index.html`,
+            admin: `${root}admin/index.html`,
+            create: `${root}create/index.html`,
+          },
     },
   },
+  };
 });

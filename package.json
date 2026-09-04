@@ -19,7 +19,11 @@
     "preview": "vite preview",
     "cf:dev": "npm run build && wrangler pages dev",
     "db:migrate:local": "wrangler d1 migrations apply bozzetto --local",
-    "db:migrate": "wrangler d1 migrations apply bozzetto --remote"
+    "db:migrate": "wrangler d1 migrations apply bozzetto --remote",
+    "build:desktop": "tsc --noEmit && vite build --mode desktop",
+    "desktop": "npm run build:desktop && electron .",
+    "desktop:run": "electron .",
+    "dist:desktop": "npm run build:desktop && electron-builder"
   },
   "dependencies": {
     "@flaticon/flaticon-uicons": "^3.3.1",
@@ -31,9 +35,49 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241106.0",
     "@types/three": "^0.184.0",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.3.0",
     "vite": "^5.0.0",
     "vite-plugin-pwa": "^1.3.0",
     "wrangler": "^3.84.0"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "se.vidarrapp.bozzetto",
+    "productName": "Bozzetto",
+    "files": [
+      "electron/**/*",
+      "dist-desktop/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Graphics"
+    },
+    "fileAssociations": [
+      {
+        "ext": "bozz",
+        "name": "Bozzetto scene",
+        "role": "Editor"
+      }
+    ]
   }
 }

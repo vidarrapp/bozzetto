@@ -434,29 +434,17 @@ class Picking {
   }
 }
 
-// TODO update i18n strings in a dynamic way
-Picking.INIT_ALPHAS_NAMES = [TR('alphaSquare'), TR('alphaSkin')];
-Picking.INIT_ALPHAS_PATHS = ['square.jpg', 'skin.jpg'];
-
-var readAlphas = function () {
-  // check nodejs
-  if (!window.module || !window.module.exports) return;
-  var fs = eval('require')('fs');
-  var path = eval('require')('path');
-
-  var directoryPath = path.join(window.__filename, '../resources/alpha');
-  fs.readdir(directoryPath, function (err, files) {
-    if (err) return;
-    for (var i = 0; i < files.length; ++i) {
-      var fname = files[i];
-      if (fname == 'square.jpg' || fname == 'skin.jpg') continue;
-      Picking.INIT_ALPHAS_NAMES.push(fname);
-      Picking.INIT_ALPHAS_PATHS.push(fname);
-    }
-  });
-};
-
-readAlphas();
+/**
+ * BOZZETTO EDIT: upstream's node-only alpha loader is removed.
+ *
+ * It ran at module load, and behind a `window.module` guard did
+ * eval('require')('fs') to read alphas out of a resources directory - dead
+ * on the web, but live inside an Electron renderer with nodeIntegration
+ * on, where a stray filesystem read is exactly what should not be in the
+ * bundle. Bozzetto registers its own stencils through Picking.addAlpha
+ * (src/sculpt/bridge/alphas.ts) and never reads INIT_ALPHAS_*, so this was
+ * only ever dead weight with a sharp edge on it.
+ */
 
 var none = TR('alphaNone');
 Picking.ALPHAS_NAMES = {};

@@ -12,3 +12,5 @@ wrangler.toml
 # before dev/build). Kept out of git so binaries don't live in history.
 public/timelapses/demo/
 public/assets/matcaps/clay.png
+dist-desktop/
+release/
