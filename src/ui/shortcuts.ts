@@ -14,7 +14,7 @@ export interface ShortcutHandlers {
 
 /**
  * Global keyboard shortcuts, shared by the viewer and the editor preview:
- *   space      play / pause            ← · → / d      step
+ *   space      play / pause            ← · →          step
  *   f          focus (frame model)     a              frame the scene
  *   g          cycle ground
  *   shift+w    wireframe overlay       shift+s        shadows on / off
@@ -41,7 +41,6 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         viewer.togglePlay();
         return;
       case 'ArrowRight':
-      case 'd':
         viewer.step(1);
         return;
       case 'ArrowLeft':

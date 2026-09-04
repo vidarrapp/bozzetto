@@ -112,7 +112,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | Middle drag, or `Cmd` / `Shift` + drag *(two-finger drag on touch)* | Pan |
 | Right drag / scroll | Zoom |
 | `Space` | Play / pause |
-| `←` / `→` `D` | Step frame |
+| `←` / `→` | Step frame |
 | `F` | Focus (frame the model) |
 | `A` | Frame the whole scene |
 | Double-click *(double-tap on touch)* | Set focus point |

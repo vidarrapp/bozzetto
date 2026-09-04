@@ -10,8 +10,8 @@ const GUIDE_HTML = `
   <div class="help-guide__group">
     <div class="help-guide__title">Playback</div>
     <div class="help-row"><kbd>Space</kbd><span>Play / pause</span></div>
-    <div class="help-row"><kbd>←</kbd><kbd>A</kbd><span>Step back</span></div>
-    <div class="help-row"><kbd>→</kbd><kbd>D</kbd><span>Step forward</span></div>
+    <div class="help-row"><kbd>←</kbd><span>Step back</span></div>
+    <div class="help-row"><kbd>→</kbd><span>Step forward</span></div>
   </div>
   <div class="help-guide__group">
     <div class="help-guide__title">View</div>
