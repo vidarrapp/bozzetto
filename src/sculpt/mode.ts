@@ -603,6 +603,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleShadows: () => {
       lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },
+    // Like toggleShadows above: sculpt mode does not hold the Render panel
+    // (mountViewer owns it), and the panel re-reads its controls when it
+    // opens, so the checkbox catches up there.
+    toggleWireframe: () => {
+      viewer.toggleWireframe();
+    },
     // Sideways swings the key light around the model, up/down raises it.
     // Elevation is clamped just shy of the poles, where azimuth stops
     // meaning anything and the light would appear to stick.

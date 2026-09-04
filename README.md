@@ -117,8 +117,8 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | Double-click *(double-tap on touch)* | Set focus point |
 | `1` | Lit (PBR) |
 | `2`–`9` | Matcaps |
-| `S` | Smooth / flat shading |
-| `W` | Wireframe overlay |
+| `Shift`+`W` | Wireframe overlay |
+| `Shift`+`S` | Shadows on / off |
 | `G` | Cycle ground |
 | `Tab` | Show / hide panels |
 | `H` | Hotkey guide |
@@ -142,6 +142,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | `G` | Cycle the stage |
 | `L` (hold + drag) | Move the key light |
 | `Shift`+`S` | Shadows on / off |
+| `Shift`+`W` | Wireframe overlay |
 | `Ctrl`+`Z` / `Ctrl`+`Shift`+`Z` | Undo / redo |
 | Double-click a Scene row | Rename the object |
 | `Tab` | Closes panels, then hides the interface. `Tab` or `Esc` returns |

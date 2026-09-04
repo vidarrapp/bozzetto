@@ -15,12 +15,16 @@ export interface ShortcutHandlers {
 /**
  * Global keyboard shortcuts, shared by the viewer and the editor preview:
  *   space      play / pause            ← / a · → / d   step
- *   f          focus (frame model)
- *   s          smooth ↔ flat shading   w              wireframe overlay
- *   g          cycle ground (shadow / floor / pedestal / off)
+ *   f          focus (frame model)     g              cycle ground
+ *   shift+w    wireframe overlay       shift+s        shadows on / off
  *   1          Lit (PBR)               2..n           matcaps (interface order)
  *   dbl-click  set focus point (tap-to-focus; double-tap on touch)
  *   tab        toggle side panel       h              hotkey guide
+ *
+ * Wireframe and shadows are chords rather than plain keys so the same
+ * binding works while sculpting, where plain w and s already mean the
+ * translate gizmo and the brush-strength drag. Flat shading has no key in
+ * either mode; it lives in the Render panel.
  * Returns a disposer that detaches the listener.
  */
 export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}): () => void {
@@ -50,12 +54,12 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         viewer.cycleGround();
         handlers.refresh?.();
         return;
-      case 'w':
+      case 'W':
         viewer.toggleWireframe();
         handlers.refresh?.();
         return;
-      case 's':
-        viewer.materials.toggleFlatShading();
+      case 'S':
+        viewer.lighting.setShadowsMaster(!viewer.lighting.getShadowsMaster());
         handlers.refresh?.();
         return;
       case 'Tab':

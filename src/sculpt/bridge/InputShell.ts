@@ -42,6 +42,8 @@ export interface InputShellHooks {
   orbitEnd(): void;
   /** shift+s: toggle shadows; returns the new state (unused, for parity). */
   toggleShadows(): void;
+  /** shift+w: toggle the wireframe overlay, as in the viewer. */
+  toggleWireframe(): void;
   /** l + drag: move the key light by azimuth/elevation degree deltas. */
   moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
@@ -1080,6 +1082,13 @@ export class InputShell {
     }
 
     switch (key) {
+      // The viewer's transport keys. Sculpt has no timeline to play or step,
+      // and both would otherwise fall through to it - harmless only until a
+      // scene carries a captured reel. Claimed here so they stay inert, and
+      // stay free for a sculpt binding later.
+      case ' ':
+      case 'a':
+        return this.claim(e);
       case 'd':
         s.stepSubdivision(e.shiftKey ? -1 : 1);
         return this.claim(e);
@@ -1110,7 +1119,11 @@ export class InputShell {
         this.hooks.transformExit();
         return this.claim(e);
       case 'w':
-        this.hooks.transformMode('translate');
+        // Shift+w is the wireframe, the same chord the viewer uses. Plain w
+        // is the translate gizmo, which is why the shared binding had to be
+        // a chord in both modes rather than the viewer's old plain w.
+        if (e.shiftKey) this.hooks.toggleWireframe();
+        else this.hooks.transformMode('translate');
         return this.claim(e);
       case 'e':
         this.hooks.transformMode('rotate');
