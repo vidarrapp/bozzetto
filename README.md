@@ -64,8 +64,17 @@ publish from it; signing in opens Cloudflare Access in a real window.
 
 ```bash
 npm run desktop        # build and run
-npm run dist:desktop   # package into release/
+npm run dist:desktop   # package for the host platform, into release/
 ```
+
+Each installer format has to be built on (or for) its own platform:
+
+| Target | Where it builds | Notes |
+| --- | --- | --- |
+| Linux AppImage | anywhere | `npx electron-builder --linux AppImage` |
+| Windows portable | anywhere | `npx electron-builder --win --dir` gives `release/win-unpacked` with `Bozzetto.exe` — zip and ship |
+| Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
+| macOS dmg | macOS only | Apple's tooling cannot be cross-run |
 
 Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
 you add a Developer ID certificate and notarization (macOS) or a code-signing
