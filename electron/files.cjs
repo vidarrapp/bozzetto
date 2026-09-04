@@ -122,14 +122,35 @@ function registerFileIpc(win, origin) {
   ipcMain.handle('file:recents', readRecents);
 
   // The title bar is the document: the name, and the OS dirty marker.
-  ipcMain.on('file:document', (_e, doc) => {
-    const w = BrowserWindow.fromWebContents(_e.sender) ?? win;
+  ipcMain.on('file:document', (event, doc) => {
+    const w = BrowserWindow.fromWebContents(event.sender) ?? win;
     if (!w) return;
-    w.setTitle(doc?.name ? `${doc.dirty ? '• ' : ''}${doc.name} - Bozzetto` : 'Bozzetto');
+    const title = doc?.name ? `${doc.dirty ? '• ' : ''}${doc.name} - Bozzetto` : 'Bozzetto';
+    w.setTitle(title);
     if (process.platform === 'darwin') {
       w.setRepresentedFilename(doc?.path ?? '');
       w.setDocumentEdited(!!doc?.dirty);
     }
+  });
+
+  // Native dialogs. The renderer must not use window.confirm/prompt: they
+  // block its event loop, and the recovery question is asked during boot -
+  // so a blocking prompt there freezes the app before it finishes starting.
+  ipcMain.handle('ui:confirm', async (_e, { message, detail, confirmLabel }) => {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: [confirmLabel || 'OK', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message,
+      detail,
+    });
+    return response === 0;
+  });
+
+  ipcMain.handle('ui:message', async (_e, { message, detail, type }) => {
+    await dialog.showMessageBox(win, { type: type || 'info', message, detail, buttons: ['OK'] });
+    return true;
   });
 
   // --- crash recovery ---------------------------------------------------

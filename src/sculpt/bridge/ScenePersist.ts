@@ -464,6 +464,12 @@ export class ScenePersist {
 
   /** Autosave stopped ITSELF (a full store, or writes that kept failing). */
   onStopped: ((reason: 'quota' | 'error') => void) | null = null;
+  /**
+   * A write landed. The desktop shell listens so the window title can show
+   * unsaved changes, and so it can mirror the scene into its crash-recovery
+   * sidecar - which is a copy under userData, never the user's own file.
+   */
+  onWrote: ((scene: SavedScene) => void) | null = null;
   private cancelScheduled: (() => void) | null = null;
   private lastSave = 0;
   private saving = false;
@@ -566,6 +572,7 @@ export class ScenePersist {
       await withStore('readwrite', (s) => s.put(scene, KEY));
       this.lastSave = Date.now();
       this.failures = 0;
+      this.onWrote?.(scene);
     } catch (err) {
       // The record never landed, so stay dirty and come back to it. A FULL
       // store is different - retrying a tens-of-MB put against one just

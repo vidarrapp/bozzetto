@@ -25,6 +25,13 @@ import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave
 import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { probeAdmin } from '../admin/api';
+import {
+  mountDesktop,
+  markDocumentDirty,
+  offerRecovery,
+  showServerSettings,
+  writeRecovery,
+} from '../desktop';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
@@ -909,7 +916,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
-  (window as unknown as { __sculpt?: object }).__sculpt = {
+  const handle = {
     session,
     sync,
     input,
@@ -950,6 +957,51 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       toOBJ: () => sceneToOBJ(session),
     },
   };
+  (window as unknown as { __sculpt?: object }).__sculpt = handle;
+
+  // --- the desktop shell -------------------------------------------------
+  // Native File menu, window title and crash recovery, when running inside
+  // Electron. Inert in a browser: mountDesktop returns null and nothing
+  // below it runs. It reuses the same file pipeline the panel buttons and
+  // the tests use, so there is one packing path, not two.
+  const desktopHandle = mountDesktop({
+    pack: () => handle.file.pack(),
+    load: async (bytes) => {
+      await handle.file.open(bytes);
+      // Opening replaces the scene, so the pre-open work is gone either
+      // way; matching the panel's Open, the old reel goes with it.
+      if (recorder.frameCount() > 0) await recorder.clear();
+      sceneOnDisk = true;
+      cleanState = session.getStateManager().getCurrentState();
+    },
+    reset: async () => {
+      if (recorder.frameCount() > 0) await recorder.clear();
+      session.newScene();
+      sceneOnDisk = true;
+      cleanState = session.getStateManager().getCurrentState();
+    },
+    objText: () => handle.file.toOBJ(),
+    undo: () => session.undo(),
+    redo: () => session.redo(),
+    showServerSettings: () => void showServerSettings(),
+  });
+  if (desktopHandle) {
+    // The title's dirty dot follows the same signal the Open guard uses,
+    // rather than a second notion of "changed" that could drift from it.
+    persist.onWrote = (scene) => {
+      if (filePanel?.hasWork?.()) markDocumentDirty();
+      // Mirror to the crash sidecar. Same bytes as a .bozz file, written
+      // atomically under userData - never through to the open document,
+      // which would make Save meaningless and quitting-without-saving
+      // impossible.
+      void packScene(scene)
+        .then((b) => b.arrayBuffer())
+        .then(writeRecovery)
+        .catch(() => undefined);
+    };
+    // A crash left a sidecar: offer it rather than resuming it silently.
+    void offerRecovery(handle.file.open);
+  }
 
   // Leaving for the gallery: remember what the work looked like, so the
   // landing page can offer it back as a card. The autosave already keeps the

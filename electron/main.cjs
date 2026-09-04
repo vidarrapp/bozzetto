@@ -68,6 +68,11 @@ function createWindow() {
     },
   });
 
+  // The document owns the title. Without this the page's own <title>
+  // overwrites whatever setTitle() put there, so the file name and the
+  // unsaved-changes dot appear for an instant and are then wiped by the
+  // renderer - which looks exactly like the title never worked.
+  win.on('page-title-updated', (e) => e.preventDefault());
   win.once('ready-to-show', () => win.show());
   void win.loadURL(`${ORIGIN}/?sculpt=1`);
 

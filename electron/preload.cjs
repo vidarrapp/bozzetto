@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('bozzettoDesktop', {
   /** Reflect the document into the window title and the OS dirty dot. */
   setDocument: (doc) => ipcRenderer.send('file:document', doc),
 
+  // Native dialogs, because window.confirm/prompt block the renderer.
+  confirm: (opts) => ipcRenderer.invoke('ui:confirm', opts),
+  message: (opts) => ipcRenderer.invoke('ui:message', opts),
+
   // --- crash recovery ---------------------------------------------------
   /** Autosave to a sidecar under userData - never over the user's file. */
   writeRecovery: (bytes) => ipcRenderer.invoke('recovery:write', bytes),
