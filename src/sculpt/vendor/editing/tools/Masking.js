@@ -141,11 +141,19 @@ class Masking extends SculptBase {
   maskAll() {
     var mesh = this.getMesh();
     if (!mesh) return;
+    var nb = mesh.getNbVertices();
 
+    // pushState() only OPENS a colour+material state - StateColorAndMaterial
+    // starts empty and snapshots nothing until it is handed the vertices to
+    // remember, which is what clear()'s pushVertices call below it is for.
+    // Every vertex changes here, so every vertex goes in.
     this.pushState();
+    var iVerts = new Uint32Array(nb);
+    for (var v = 0; v < nb; ++v) iVerts[v] = v;
+    this._main.getStateManager().pushVertices(iVerts);
 
     var mAr = mesh.getMaterials();
-    for (var i = 0, nb = mesh.getNbVertices(); i < nb; ++i)
+    for (var i = 0; i < nb; ++i)
       mAr[i * 3 + 2] = 0.0;
 
     this.updateAndRenderMask();
