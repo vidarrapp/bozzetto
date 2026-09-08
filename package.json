@@ -1,7 +1,7 @@
 {
   "name": "bozzetto",
   "version": "0.1.0",
-  "description": "Web-based 3D viewer for sculpt timelapses: per-frame decimated meshes with real relighting, shadows, material modes, and DCC-style camera control.",
+  "description": "Sculpt, paint and timelapses.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -98,7 +98,8 @@
       {
         "ext": "bozz",
         "name": "Bozzetto scene",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/x-bozzetto"
       }
     ],
     "icon": "public/icons/icon-512.png"
