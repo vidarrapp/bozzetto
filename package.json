@@ -46,6 +46,12 @@
   "main": "electron/main.cjs",
   "build": {
     "appId": "se.vidarrapp.bozzetto",
+    "publish": {
+      "provider": "github",
+      "owner": "vidarrapp",
+      "repo": "bozzetto",
+      "releaseType": "draft"
+    },
     "productName": "Bozzetto",
     "files": [
       "electron/**/*",

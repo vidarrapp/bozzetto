@@ -80,15 +80,24 @@ Each installer format has to be built on (or for) its own platform:
 ### Releasing
 
 `.github/workflows/release.yml` builds all three platforms and attaches the
-installers to a GitHub Release:
+installers to a GitHub Release. The version comes from `package.json`, and the
+tag must match it:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+npm version 0.1.0        # bumps package.json and commits and tags v0.1.0
+git push --follow-tags   # the tag push starts the release build
 ```
 
-Run it from the **Actions** tab instead to test a build without tagging; that
-path publishes nothing and leaves the installers as downloadable artifacts.
-No secrets to configure — it uses the token Actions provides.
+The workflow leaves the release as a **draft** with the six files attached
+(three installers, three auto-update manifests). Check that all three
+platforms arrived, write the notes, and press **Publish release**. The
+site's Install card reads the latest published release, so it picks the new
+version up on its own.
+
+Run the workflow from the **Actions** tab instead to test a build without
+tagging; that path publishes nothing and leaves the installers as
+downloadable artifacts. No secrets to configure — it uses the token Actions
+provides.
 
 Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
 you add a Developer ID certificate and notarization (macOS) or a code-signing
