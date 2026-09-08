@@ -179,6 +179,14 @@ export class MaterialLibrary {
   beginRestore(): void {
     this.restoring = true;
   }
+  /**
+   * The restore threw before loadFrom could run (a corrupt file that the
+   * session rolled back). Without this the hold outlived the failure, and
+   * every object created afterwards went without its material fill.
+   */
+  endRestore(): void {
+    this.restoring = false;
+  }
   private restoring = false;
 
   loadFrom(scene: SavedScene): void {

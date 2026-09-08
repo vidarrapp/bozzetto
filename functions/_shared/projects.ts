@@ -5,6 +5,23 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MAX_TITLE = 200;
 const MAX_FRAMES = 10000;
 const MAX_STAGES = 500;
+/**
+ * The serialised `data` column. D1 refuses a row past 2,000,000 bytes with
+ * a bare 500; this refuses earlier, with a reason, and leaves room for
+ * the other columns. 10,000 frames and 500 full-length stages fit.
+ */
+export const MAX_DATA_BYTES = 1_500_000;
+const MAX_FPS = 240;
+
+/** Playback rate: the viewer refuses a manifest whose fps is not positive. */
+function validFps(v: unknown, fallback: number): number {
+  if (v === undefined || v === null || v === '') return fallback;
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_FPS) {
+    throw new HttpError(`fps: expected a number between 0 and ${MAX_FPS}`);
+  }
+  return n;
+}
 
 const frameKey = (id: string, index: number) =>
   `projects/${id}/frames/sd/${String(index).padStart(4, '0')}.glb`;
@@ -73,7 +90,7 @@ export async function createProject(env: Env, input: CreateInput): Promise<Proje
 
   const now = Date.now();
   const mode: ProjectMode = input.mode === 'model' ? 'model' : 'timelapse';
-  const fps = Number(input.fps ?? 4) || 4;
+  const fps = validFps(input.fps, 4);
   await env.DB.prepare(
     'INSERT INTO projects (id, title, mode, fps, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
   )
@@ -90,13 +107,28 @@ export async function createProject(env: Env, input: CreateInput): Promise<Proje
 function validFrames(v: unknown): ProjectData['frames'] {
   if (!Array.isArray(v)) throw new HttpError('frames: expected an array');
   if (v.length > MAX_FRAMES) throw new HttpError(`frames: at most ${MAX_FRAMES} frames`);
+  const seen = new Set<number>();
   return v.map((f) => {
     const o = f as { index?: unknown; tris?: unknown };
-    const index = Number(o?.index);
-    const tris = Number(o?.tris ?? 0);
-    if (!Number.isInteger(index) || index < 0 || !Number.isFinite(tris) || tris < 0) {
+    const index = o?.index;
+    const tris = o?.tris ?? 0;
+    // Numbers, not things Number() would coerce: null, [] and true all
+    // became a valid-looking 0 or 1 and pointed the manifest at a frame
+    // that was never uploaded.
+    if (
+      typeof index !== 'number' ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      typeof tris !== 'number' ||
+      !Number.isFinite(tris) ||
+      tris < 0
+    ) {
       throw new HttpError('frames: each entry needs a non-negative integer index and tris');
     }
+    // Two entries for one index would make frameCount overstate the reel
+    // and the viewer fetch the same file twice under different positions.
+    if (seen.has(index)) throw new HttpError(`frames: index ${index} appears twice`);
+    seen.add(index);
     return { index, tris };
   });
 }
@@ -136,7 +168,11 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
       ? patch.title.trim().slice(0, MAX_TITLE)
       : row.title;
   const mode: ProjectMode = patch.mode === 'model' || patch.mode === 'timelapse' ? patch.mode : row.mode;
-  const fps = Number(patch.fps ?? row.fps) || row.fps;
+  const fps = validFps(patch.fps, row.fps);
+  // The look blocks (lighting, environment, ...) are stored as sent, so
+  // the row as a whole is what gets bounded.
+  const serialised = JSON.stringify(next);
+  if (serialised.length > MAX_DATA_BYTES) throw new HttpError('project data too large', 413);
 
   // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
   if ('frames' in patch) {
@@ -152,7 +188,7 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
   }
 
   await env.DB.prepare('UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, updated_at = ? WHERE id = ?')
-    .bind(title, mode, fps, JSON.stringify(next), Date.now(), id)
+    .bind(title, mode, fps, serialised, Date.now(), id)
     .run();
   return (await getProjectRow(env, id))!;
 }

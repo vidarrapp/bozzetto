@@ -95,6 +95,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // A missing or unreadable entry falls back rather than failing the boot.
   const libId = new URLSearchParams(window.location.search).get('lib');
   let saved = libId ? await (await import('./bridge/SceneLibrary')).loadFromLibrary(libId) : null;
+  if (libId) {
+    // The link has done its job. Left in the address bar, a reload - or
+    // iOS relaunching the tab with the same URL - would open the untouched
+    // shelf copy again and hide every autosaved edit made since behind it.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('lib');
+    history.replaceState(history.state, '', url);
+  }
   if (!saved) saved = await loadSavedScene();
   let multimesh;
   try {
@@ -794,6 +802,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.getStateManager().getCurrentState() !== cleanState ||
     recorder.frameCount() > 0;
   filePanel.prepare = () => library.beginRestore();
+  filePanel.abandon = () => library.endRestore();
   // The library card wants the same picture the gallery's in-progress card
   // gets, taken at the moment you press Save rather than on the way out.
   filePanel.captureThumb = () => viewer.captureThumbnail(480);
@@ -835,27 +844,34 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
   {
     const hooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
+    // One answer for everything that follows the role: both forms and the
+    // capture default (an admin can publish frames, a guest cannot - an
+    // explicit checkbox choice beats either). The forms' "re-check
+    // sign-in" runs the same probe, so an admin whose Access session had
+    // lapsed at boot gets capture back when they sign in, not only the
+    // publish button.
+    const probeRole = async (): Promise<string | null> => {
+      const email = await probeAdmin();
+      tlForm.setAdmin(!!email);
+      modelForm.setAdmin(!!email);
+      recorder.applyDefault(!!email);
+      return email;
+    };
     const tlForm = galleryForm({
       buttonLabel: 'Publish timelapse',
       onSave: (id, title, progress) =>
         saveTimelapseToGallery(recorder, hooks, id, title, progress),
-      recheck: probeAdmin,
+      recheck: probeRole,
     });
     const modelForm = galleryForm({
       buttonLabel: 'Publish model',
       onSave: (id, title, progress) =>
         saveModelToGallery(session, recorder, hooks, id, title, progress),
-      recheck: probeAdmin,
+      recheck: probeRole,
     });
     filePanel.captureSlot.appendChild(tlForm.root);
     filePanel.filesSlot.appendChild(modelForm.root);
-    void probeAdmin().then((email) => {
-      tlForm.setAdmin(!!email);
-      modelForm.setAdmin(!!email);
-      // Capture defaults follow the role: an admin can publish frames, a
-      // guest cannot - an explicit checkbox choice beats either.
-      recorder.applyDefault(!!email);
-    });
+    void probeRole();
   }
 
   /**
@@ -950,7 +966,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       open: async (bytes: ArrayBuffer) => {
         const scene = await unpackScene(bytes);
         library.beginRestore(); // same as the File panel's Open: no fills mid-restore
-        session.replaceScene(scene);
+        try {
+          session.replaceScene(scene);
+        } catch (err) {
+          library.endRestore(); // the session rolled back; the hold must not outlive it
+          throw err;
+        }
         library.loadFrom(scene);
         applySettings(scene.settings);
         if (scene.look) {

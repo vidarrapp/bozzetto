@@ -32,6 +32,8 @@ export class FilePanel extends SidePanel {
   adopt: ((scene: SavedScene) => void) | null = null;
   /** Runs before the scene is replaced (the library holds its fills). */
   prepare: (() => void) | null = null;
+  /** The replace threw after prepare(): undo whatever prepare() set up. */
+  abandon: (() => void) | null = null;
   /**
    * Whether replacing the scene would cost the user something: work that
    * lives nowhere but this browser, edits since the last save or open, or
@@ -279,7 +281,12 @@ export class FilePanel extends SidePanel {
       // where publishing would mix two scenes' geometry.
       if (frames > 0) await this.recorder.clear();
       this.prepare?.(); // the library must not fill meshes mid-restore
-      this.session.replaceScene(scene);
+      try {
+        this.session.replaceScene(scene);
+      } catch (err) {
+        this.abandon?.(); // the session rolled the old scene back; so do we
+        throw err;
+      }
       this.adopt?.(scene); // materials, before anything reads them back
       if (scene.look && this.look) this.look.apply(scene.look);
       this.onSceneClean?.(); // what is on screen is what is in that file

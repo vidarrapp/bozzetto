@@ -11,6 +11,19 @@ export function error(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
+/**
+ * Refuse a body the client declares as larger than `max` before a byte of
+ * it is read, and - for the binary uploads - insist on the declaration:
+ * without it a chunked upload is buffered whole before any cap applies.
+ */
+export function bodyLimit(request: Request, max: number, required = false): Response | null {
+  const raw = request.headers.get('content-length');
+  if (raw === null) return required ? error('Content-Length required', 411) : null;
+  const declared = Number(raw);
+  if (!Number.isFinite(declared) || declared > max) return error('body too large', 413);
+  return null;
+}
+
 export class HttpError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message);

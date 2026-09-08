@@ -1040,6 +1040,15 @@ export class InputShell {
       }
     }
 
+    // Undo and redo DO repeat: holding ctrl+z to walk back through a run of
+    // strokes is how every sculpting app behaves, and each step is cheap
+    // and reversible - unlike the one-shot commands guarded below.
+    if ((e.ctrlKey || e.metaKey) && key === 'z') {
+      if (e.shiftKey) s.redo();
+      else s.undo();
+      return this.claim(e);
+    }
+
     // Everything below is a one-shot command, so auto-repeat must not
     // re-fire it: holding ctrl+d subdivided level after level (50k ->
     // 200k -> 800k...) and holding shift+s strobed the shadows. The wheel
@@ -1057,10 +1066,6 @@ export class InputShell {
         // already let real typing through.
         this.maskTool()?.maskAll?.();
         s.render();
-        this.claim(e);
-      } else if (key === 'z') {
-        if (e.shiftKey) s.redo();
-        else s.undo();
         this.claim(e);
       } else if (key === 'd') {
         s.subdivide();

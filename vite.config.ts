@@ -50,7 +50,15 @@ export default defineConfig(({ mode }) => {
       // html, so the plugin only supplies the service worker.
       injectRegister: null,
       manifest: false,
-      registerType: 'autoUpdate',
+      // A new worker WAITS rather than taking over the pages that are open.
+      // Taking over (skipWaiting + clientsClaim) swaps the precache under a
+      // running page, and this app loads sculpt mode and the library by
+      // dynamic import: the old page's next import() asks for a chunk hash
+      // the new cache no longer holds and Pages no longer serves, and the
+      // feature simply fails until a reload. serviceWorker.ts promotes the
+      // waiting worker itself, on the gallery page, where a reload costs
+      // nothing; a sculpt session keeps its worker to the end.
+      registerType: 'prompt',
       workbox: {
         // The shell, and only the shell: ~3 MB of JS, CSS and the small
         // PNGs (matcaps, brush stencils, icons). Source maps and the demo

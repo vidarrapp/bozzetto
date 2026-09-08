@@ -1,5 +1,5 @@
 import type { Env } from '../../../../_shared/types';
-import { error, handle, json, requireAdmin } from '../../../../_shared/http';
+import { bodyLimit, error, handle, json, requireAdmin } from '../../../../_shared/http';
 import { putThumb } from '../../../../_shared/projects';
 
 // POST /admin/api/projects/:id/thumb — store the project's gallery thumbnail.
@@ -9,8 +9,8 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
     const denied = await requireAdmin(request, env);
     if (denied) return denied;
 
-    const declared = Number(request.headers.get('content-length') ?? 0);
-    if (declared > MAX_THUMB_BYTES) return error('thumbnail too large', 413);
+    const tooBig = bodyLimit(request, MAX_THUMB_BYTES, true);
+    if (tooBig) return tooBig;
     const body = await request.arrayBuffer();
     if (body.byteLength === 0) return error('empty body', 400);
     if (body.byteLength > MAX_THUMB_BYTES) return error('thumbnail too large', 413);

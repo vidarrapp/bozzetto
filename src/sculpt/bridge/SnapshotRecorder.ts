@@ -24,6 +24,12 @@ export interface CapturedFrameMeta {
   /** Wall-clock capture time (future pacing modes read this). */
   t: number;
   bytes: number;
+  /**
+   * The geometry fingerprint the frame was captured at, so a reload can
+   * pick up the duplicate check where it left off. Absent on frames from
+   * before it was stored.
+   */
+  sig?: string;
 }
 
 /** Stop capturing past this much stored gzipped GLB (iPad-safe headroom). */
@@ -94,6 +100,10 @@ export class SnapshotRecorder {
       this.metas = recs.map((m, i) => ({ ...m, seq: keys[i] }));
       this.totalBytes = this.metas.reduce((sum, m) => sum + m.bytes, 0);
       this.nextSeq = keys.length > 0 ? keys[keys.length - 1] + 1 : 0;
+      // Resume the duplicate check from the last stored frame: the role
+      // default and the checkbox both seed a frame on switching on, and
+      // after a reload that was a copy of the frame already on disk.
+      this.lastSig = this.metas.length > 0 ? (this.metas[this.metas.length - 1].sig ?? '') : '';
     } catch {
       // No frame storage (private window): capture quietly stands down,
       // and no later default may wake it.
@@ -115,6 +125,9 @@ export class SnapshotRecorder {
     // Seed frame 0 with the starting state so playback opens on the raw
     // subject rather than the first stroke's result.
     if (this.enabled && this.metas.length === 0) this.edited();
+    // The checkbox was painted from the pre-install default; now that the
+    // stored choice and the frame count are in, let the panel catch up.
+    this.onChange?.();
   }
 
   private wrap(target: object, method: string): void {
@@ -227,7 +240,7 @@ export class SnapshotRecorder {
     try {
       const glb = await this.encodeFrame(merged.positions, merged.indices);
       await withNamedStore(FRAMES_STORE, 'readwrite', (s) => s.put(glb, this.nextSeq));
-      const meta = { tris: merged.tris, t: Date.now(), bytes: glb.byteLength };
+      const meta = { tris: merged.tris, t: Date.now(), bytes: glb.byteLength, sig };
       await withNamedStore(FRAME_META_STORE, 'readwrite', (s) => s.put(meta, this.nextSeq));
       this.metas.push({ seq: this.nextSeq, ...meta });
       this.nextSeq++;

@@ -1,5 +1,5 @@
 import type { Env } from '../../../../_shared/types';
-import { error, handle, json, requireAdmin } from '../../../../_shared/http';
+import { bodyLimit, error, handle, json, requireAdmin } from '../../../../_shared/http';
 import { putFrame } from '../../../../_shared/projects';
 
 // POST /admin/api/projects/:id/frames?index=N — upload one frame's .glb bytes.
@@ -14,8 +14,8 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
     if (!Number.isInteger(index) || index < 0) return error('?index=<n> required', 400);
 
     // Cap before buffering: a runaway upload should fail fast, not fill R2.
-    const declared = Number(request.headers.get('content-length') ?? 0);
-    if (declared > MAX_FRAME_BYTES) return error('frame too large', 413);
+    const tooBig = bodyLimit(request, MAX_FRAME_BYTES, true);
+    if (tooBig) return tooBig;
     const body = await request.arrayBuffer();
     if (body.byteLength === 0) return error('empty body', 400);
     if (body.byteLength > MAX_FRAME_BYTES) return error('frame too large', 413);
