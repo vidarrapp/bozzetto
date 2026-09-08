@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('bozzettoDesktop', {
   exportBytes: (bytes, suggested, filters) =>
     ipcRenderer.invoke('file:export', { bytes, suggested, filters }),
   recentFiles: () => ipcRenderer.invoke('file:recents'),
+  /** Pick an .obj and read its text, for File > Import OBJ. null when cancelled. */
+  openObj: () => ipcRenderer.invoke('file:openObj'),
   /** Reflect the document into the window title and the OS dirty dot. */
   setDocument: (doc) => ipcRenderer.send('file:document', doc),
 

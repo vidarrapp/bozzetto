@@ -228,7 +228,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - Multiresolution, dynamic topology and voxel remesh.
 - Vertex painting, per-object named materials, and an HSV colour picker shared across the app.
 - Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner.
-- Five docked panels: File and Scene left, Render, Tool and Model right.
+- A **File** menu in the top row (new, open, save, save to library, OBJ import and export), and five docked panels: Capture and Scene left; Render, Model and Tool right.
 - Ten new matcaps in a gallery popout, and selectable tone mapping.
 - Timelapse capture from sculpt sessions, publishable to the gallery.
 - `.bozz` scene files, OBJ import and export.
@@ -339,7 +339,7 @@ src/
   sculpt/
     mode.ts                sculpt entry: mounts the session, panels, autosave
     bridge/                the Bozzetto side: input, tools, alphas, persistence
-    ui/                    toolbar, Tool/Model/Scene/File panels, sliders
+    ui/                    toolbar, File menu, Tool/Model/Scene/Capture panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing
   embed/main.ts            entry for the self-contained single-file export

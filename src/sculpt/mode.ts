@@ -22,9 +22,10 @@ import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
-import { packScene, sceneToOBJ, unpackScene } from './bridge/SceneFile';
+import { packScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { probeAdmin } from '../admin/api';
+import { isDesktop } from '../net/origin';
 import {
   mountDesktop,
   setDocumentDirty,
@@ -38,7 +39,9 @@ import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
-import { FilePanel } from './ui/FilePanel';
+import { CapturePanel } from './ui/CapturePanel';
+import { FileMenu } from './ui/FileMenu';
+import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
@@ -320,7 +323,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // sync + extra display mesh sharing the primary's material. Reconciled on
   // every mesh-list or selection change (extract, add, dyntopo, undo).
   let scenePanel: ScenePanel | null = null;
-  let filePanel: FilePanel | null = null;
+  let capturePanel: CapturePanel | null = null;
+  let fileMenu: FileMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   const extras = new Map<
@@ -743,15 +747,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
   });
-  filePanel = new FilePanel(session, recorder, {
+  capturePanel = new CapturePanel(recorder);
+  // How the file actions reach the viewer's look, so .bozz files carry it.
+  const lookBridge: LookBridge = {
     get: () => viewer.getLook(),
-    apply: (look) => {
-      void applyLookSafely(look).then(() => {
-        sculptPanel?.refreshBrush();
-        window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
-      });
+    apply: async (look) => {
+      await applyLookSafely(look);
+      sculptPanel?.refreshBrush();
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     },
-  });
+  };
   /**
    * Brush workspace settings ride every saved scene: how the brushes are
    * set up is part of coming back to work, and a .bozz opened elsewhere
@@ -781,11 +786,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // scale and dynamics they describe exist to be written into.
   if (saved) applySettings(saved.settings);
 
-  filePanel.decorate = (scene) => {
-    library.saveInto(scene);
-    scene.settings = collectSettings();
-  };
-  // "Is there work to lose?" - asked by Open before it replaces the scene.
+  // "Is there work to lose?" - asked before anything replaces the scene.
   // A session restored from the autosave counts: it exists nowhere else.
   // Otherwise it is edits since the last clean point (a save, or an open),
   // compared by the undo stack's TOP ENTRY rather than its index, because a
@@ -796,21 +797,34 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sceneOnDisk = true;
     cleanState = session.getStateManager().getCurrentState();
   };
-  filePanel.onSceneClean = markSceneClean;
-  filePanel.hasWork = () =>
+  const hasWork = (): boolean =>
     !sceneOnDisk ||
     session.getStateManager().getCurrentState() !== cleanState ||
     recorder.frameCount() > 0;
-  filePanel.prepare = () => library.beginRestore();
-  filePanel.abandon = () => library.endRestore();
-  // The library card wants the same picture the gallery's in-progress card
-  // gets, taken at the moment you press Save rather than on the way out.
-  filePanel.captureThumb = () => viewer.captureThumbnail(480);
-  filePanel.adopt = (scene) => {
-    library.loadFrom(scene);
-    applySettings(scene.settings);
-    session.render();
-  };
+  // One implementation of File, behind the web menu, the desktop app's
+  // native menu and the console handle alike.
+  const fileActions = new FileActions(session, recorder, {
+    look: lookBridge,
+    decorate: (scene) => {
+      library.saveInto(scene);
+      scene.settings = collectSettings();
+    },
+    prepare: () => library.beginRestore(),
+    abandon: () => library.endRestore(),
+    adopt: (scene) => {
+      library.loadFrom(scene);
+      applySettings(scene.settings);
+      session.render();
+    },
+    hasWork,
+    onSceneClean: markSceneClean,
+    // The library card wants the same picture the gallery's in-progress
+    // card gets, taken at the moment you press Save rather than on the way out.
+    captureThumb: () => viewer.captureThumbnail(480),
+  });
+  // The top row's File menu. The desktop app has a native one over the
+  // same actions, so it goes without.
+  if (!isDesktop()) fileMenu = new FileMenu(fileActions);
   scenePanel = new ScenePanel(session, library);
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
@@ -869,8 +883,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         saveModelToGallery(session, recorder, hooks, id, title, progress),
       recheck: probeRole,
     });
-    filePanel.captureSlot.appendChild(tlForm.root);
-    filePanel.filesSlot.appendChild(modelForm.root);
+    capturePanel.captureSlot.appendChild(tlForm.root);
+    capturePanel.publishSlot.appendChild(modelForm.root);
     void probeRole();
   }
 
@@ -904,7 +918,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Autosave giving up must be visible: it used to disable itself on the
   // first storage hiccup with only a console line, and sculpting carried on
   // for hours saving nothing into a scene the user believed was safe.
-  persist.onStopped = (reason) => filePanel.showAutosaveStopped(reason);
+  persist.onStopped = (reason) => capturePanel?.showAutosaveStopped(reason);
   persist.decorate = (scene) => {
     library.saveInto(scene);
     scene.settings = collectSettings();
@@ -947,41 +961,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cursor,
     chrome,
     scenePanel,
-    filePanel,
+    capturePanel,
+    fileMenu,
+    fileActions,
     sculptPanel,
     modelPanel,
     tablet: Tablet,
     library,
     gizmo, // transform modes, for the console and the tests
-    // File pipeline, callable from the console/tests without the buttons.
+    // File pipeline, callable from the console/tests without the menu.
     file: {
-      pack: async () => {
-        const scene = session.serializeScene();
-        if (!scene) throw new Error('nothing to pack');
-        scene.look = viewer.getLook(); // same payload the Save file button writes
-        library.saveInto(scene); // ...and the same materials
-        scene.settings = collectSettings();
-        return (await packScene(scene)).arrayBuffer();
-      },
+      pack: async () => (await fileActions.pack()).arrayBuffer(),
       open: async (bytes: ArrayBuffer) => {
-        const scene = await unpackScene(bytes);
-        library.beginRestore(); // same as the File panel's Open: no fills mid-restore
-        try {
-          session.replaceScene(scene);
-        } catch (err) {
-          library.endRestore(); // the session rolled back; the hold must not outlive it
-          throw err;
-        }
-        library.loadFrom(scene);
-        applySettings(scene.settings);
-        if (scene.look) {
-          await applyLookSafely(scene.look);
-          window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
-        }
+        await fileActions.replaceWith(bytes);
       },
       /** Unpack without applying, for tests that inspect a record. */
-      unpack: (bytes: ArrayBuffer) => unpackScene(bytes),
-      toOBJ: () => sceneToOBJ(session),
+      unpack: (bytes: ArrayBuffer) => fileActions.unpack(bytes),
+      toOBJ: () => fileActions.objText(),
     },
   };
   (window as unknown as { __sculpt?: object }).__sculpt = handle;
@@ -991,24 +987,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Electron. Inert in a browser: mountDesktop returns null and nothing
   // below it runs. It reuses the same file pipeline the panel buttons and
   // the tests use, so there is one packing path, not two.
-  const hasWork = (): boolean => filePanel?.hasWork?.() ?? false;
   const desktopHandle = mountDesktop({
-    pack: () => handle.file.pack(),
+    pack: () => fileActions.pack().then((b) => b.arrayBuffer()),
     load: async (bytes) => {
-      await handle.file.open(bytes);
-      // Opening replaces the scene, so the pre-open work is gone either
-      // way; matching the panel's Open, the old reel goes with it.
-      if (recorder.frameCount() > 0) await recorder.clear();
-      markSceneClean();
+      await fileActions.replaceWith(bytes);
     },
-    reset: async () => {
-      if (recorder.frameCount() > 0) await recorder.clear();
-      session.newScene();
-      markSceneClean();
-    },
+    reset: () => fileActions.newScene(),
     hasWork,
     markClean: markSceneClean,
-    objText: () => handle.file.toOBJ(),
+    saveToLibrary: () => fileActions.saveToLibrary(),
+    importObj: (text, zUp, name) => fileActions.importObj(text, zUp, name),
+    objText: () => fileActions.objText(),
     undo: () => session.undo(),
     redo: () => session.redo(),
     showServerSettings: () => void showServerSettings(),
@@ -1090,7 +1079,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.dispose();
     modelPanel?.dispose();
     scenePanel?.dispose();
-    filePanel?.dispose();
+    capturePanel?.dispose();
+    fileMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();

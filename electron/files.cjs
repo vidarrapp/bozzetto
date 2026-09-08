@@ -239,6 +239,17 @@ function registerFileIpc() {
 
   ipcMain.handle('file:read', (_e, filePath) => readScene(filePath));
 
+  // An OBJ to import as a new object: text, not bytes, and not a recent.
+  ipcMain.handle('file:openObj', async (event) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(windowFor(event), {
+      properties: ['openFile'],
+      filters: [{ name: 'Wavefront OBJ', extensions: ['obj'] }],
+    });
+    if (canceled || !filePaths[0]) return null;
+    const filePath = filePaths[0];
+    return { path: filePath, name: path.basename(filePath), text: await fs.readFile(filePath, 'utf8') };
+  });
+
   ipcMain.handle('file:save', async (event, { bytes, filePath }) => {
     let target = filePath;
     if (!target) {
@@ -390,8 +401,12 @@ function fileMenu(isMac) {
       { type: 'separator' },
       { label: 'Save', accelerator: 'CmdOrCtrl+S', click: cmd('file:save') },
       { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('file:saveAs') },
+      { label: 'Save to Library', click: cmd('file:saveToLibrary') },
       { type: 'separator' },
       { label: 'Export OBJ...', click: cmd('file:exportObj') },
+      { label: 'Import OBJ...', click: cmd('file:importObj') },
+      // Blender and most DCC exports are Z-up; this one rotates them.
+      { label: 'Import OBJ (Z-up)...', click: cmd('file:importObjZUp') },
       { type: 'separator' },
       isMac ? { role: 'close' } : { role: 'quit' },
     ],

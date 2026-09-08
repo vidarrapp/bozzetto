@@ -703,23 +703,9 @@ html.is-page body {
   position: static;
 }
 
-.viewer-back {
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-  text-decoration: none;
-  backdrop-filter: blur(8px);
-}
-
-.viewer-back:hover {
-  background: var(--hover);
-}
+/* The gallery chip lives in the top row with the other chips (.topchip);
+   it used to be pinned to the corner itself, which put it on top of any
+   chip the row placed first. */
 
 .landing,
 .admin {
@@ -1731,16 +1717,17 @@ html.is-page body {
 }
 
 /* --- sculpt panels (WS4): right palette + left scene outliner --- */
-/* The sculpt palette docks below the Render tab on the right edge. */
-.panel--sculpt {
+/* The right edge, top to bottom: Render (52), Model (200), Tool (348) -
+   the same 116px tab + 32px gap rhythm. Tool sits lowest because it is
+   the one reached for most, and the bottom of the stack is closest to a
+   resting hand (owner call). */
+.panel--model {
   top: 200px;
   max-height: calc(100vh - 290px);
   z-index: 11; /* over the Render panel above it, whose tab it can cover */
 }
 
-/* Third right-edge tab: Render (52) + Tool (200) + Model, same 116px tab +
-   32px gap rhythm. */
-.panel--model {
+.panel--sculpt {
   top: 348px;
   max-height: calc(100vh - 380px);
   z-index: 12;
@@ -1761,10 +1748,10 @@ html.is-page body {
   z-index: 14; /* over the brush sliders while open */
 }
 
-/* The left edge stacks File over Scene, mirroring Render over Sculpt on the
-   right; the tops are one collapsed-tab height apart so both tabs show at
-   once, and both panels stop just above the brush toolbar. */
-.panel--file {
+/* The left edge stacks Capture over Scene, mirroring the right edge; the
+   tops are one collapsed-tab height apart so both tabs show at once, and
+   both panels stop just above the brush toolbar. */
+.panel--capture {
   top: 132px;
   max-height: calc(100vh - 222px);
 }
@@ -2039,6 +2026,8 @@ html.is-page body {
 body.chrome-hidden .panel,
 body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden .viewer-back,
+body.chrome-hidden .file-menu__chip,
+body.chrome-hidden .file-menu,
 body.chrome-hidden .theme-toggle,
 body.chrome-hidden .help-toggle,
 body.chrome-hidden .transport {
@@ -2502,6 +2491,82 @@ body.chrome-hidden .transport {
 .topchip--accent {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* The File menu: a chip in the top row and the list that drops from it.
+   Same surface as the matcap popout; the items are full-width buttons at
+   a size a finger can hit, since the menu replaces a panel of buttons. */
+.topchip--open {
+  background: var(--hover);
+}
+
+.file-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 190px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.file-menu__item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-menu__item:hover,
+.file-menu__item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+/* The checkbox item draws its own box, on the left where a native menu
+   puts its tick, so on and off read at a glance. */
+.file-menu__item--toggle {
+  padding-left: 32px;
+  position: relative;
+}
+
+.file-menu__item--toggle::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateY(-50%);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+}
+
+.file-menu__item--toggle[aria-checked='true']::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.file-menu__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--panel-border);
+}
+
+.file-menu__note {
+  bottom: auto;
+  top: 52px;
 }
 
 /* The gallery's "start a sculpt" tile: same footprint as a project card,

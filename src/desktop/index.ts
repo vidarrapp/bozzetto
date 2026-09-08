@@ -27,6 +27,8 @@ export interface DesktopBridge {
     filters?: { name: string; extensions: string[] }[],
   ): Promise<SavedAt | null>;
   recentFiles(): Promise<string[]>;
+  /** Pick an OBJ file and read it. null when cancelled. */
+  openObj(): Promise<{ path: string; name: string; text: string } | null>;
   setDocument(doc: { path: string | null; name: string | null; dirty: boolean }): void;
   /** Answer a save the main process asked for (see 'file:saveForClose'). */
   saveDone(saved: boolean): void;
@@ -84,6 +86,10 @@ export interface DocumentHost {
   hasWork(): boolean;
   /** What is on screen is now what is in the file: a save just happened. */
   markClean(): void;
+  /** Keep the scene on this device's shelf (File > Save to Library). */
+  saveToLibrary(): Promise<void>;
+  /** Bring an OBJ in as a new object (File > Import OBJ). */
+  importObj(text: string, zUp: boolean, name: string): Promise<void>;
   /** OBJ text, for File > Export OBJ. */
   objText(): string | null;
   /** Undo/redo, so the menu items work without owning the keys. */
@@ -209,6 +215,13 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
     await bridge.clearRecovery();
   };
 
+  const importObj = async (zUp: boolean): Promise<void> => {
+    const picked = await bridge.openObj();
+    if (!picked) return;
+    const name = picked.name.replace(/\.obj$/i, '').trim() || 'Imported';
+    await host.importObj(picked.text, zUp, name);
+  };
+
   const commands: Record<string, () => void | Promise<void>> = {
     'file:new': async () => {
       if (!(await settle('starting a new sculpt'))) return;
@@ -237,6 +250,9 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
         bridge.saveDone(saved);
       }
     },
+    'file:saveToLibrary': () => host.saveToLibrary(),
+    'file:importObj': () => importObj(false),
+    'file:importObjZUp': () => importObj(true),
     'file:exportObj': async () => {
       const text = host.objText();
       if (!text) return;
