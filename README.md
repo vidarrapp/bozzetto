@@ -88,11 +88,12 @@ npm version 0.1.0        # bumps package.json and commits and tags v0.1.0
 git push --follow-tags   # the tag push starts the release build
 ```
 
-The workflow leaves the release as a **draft** with the six files attached
-(three installers, three auto-update manifests). Check that all three
-platforms arrived, write the notes, and press **Publish release**. The
-site's Install card reads the latest published release, so it picks the new
-version up on its own.
+The workflow opens a draft release, builds on all three platforms, and
+publishes the release once every installer is on it (a failed platform leaves
+it a draft to look at). The macOS build is universal, one app for Apple
+Silicon and Intel. The site's Install card reads the latest published
+release, so it picks the new version up on its own; edit the generated notes
+on GitHub whenever you like.
 
 Run the workflow from the **Actions** tab instead to test a build without
 tagging; that path publishes nothing and leaves the installers as

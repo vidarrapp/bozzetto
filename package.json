@@ -65,8 +65,18 @@
     "mac": {
       "category": "public.app-category.graphics-design",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "icon": "public/icons/icon-512.png"
     },
