@@ -1,51 +1,84 @@
 # Desktop releases.
 #
-# Push a tag and this builds Bozzetto on all three platforms, attaches the
-# installers to a GitHub Release, and publishes it once all three are on
-# it. macOS is the reason it is a matrix at all: Apple's tooling cannot be
-# cross-run, so the .dmg has to be built on a mac. Linux and Windows could
-# share a runner, but building each on its own platform is what the
-# installers are tested against.
+# This builds Bozzetto on all three platforms, attaches the installers to
+# a GitHub Release, and publishes it once all three are on it. macOS is
+# the reason it is a matrix at all: Apple's tooling cannot be cross-run,
+# so the .dmg has to be built on a mac. Linux and Windows could share a
+# runner, but building each on its own platform is what the installers
+# are tested against.
+#
+# Two ways to release, both ending in the same published release:
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 #
-# Run it by hand from the Actions tab to test the build without tagging;
-# that path publishes nothing and leaves the installers as artifacts.
+# or run it from the Actions tab with the version filled in, and the
+# workflow tags main itself. Run it there with the version left empty to
+# test the build: that path publishes nothing and leaves the installers
+# as artifacts.
 name: Release desktop
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Version to release (e.g. 0.1.0; must match package.json). Leave empty for a test build.'
+        required: false
+        default: ''
 
 # The release is created, uploaded to, and published with this token.
 permissions:
   contents: write
 
 jobs:
-  # A tag push opens the draft first, so the three builders find one
+  # A release opens its draft first, so the three builders find one
   # release to upload to instead of racing to create three. Skipped on a
-  # manual run, which publishes nothing.
+  # test build, which publishes nothing.
   draft:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || inputs.release != ''
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.open.outputs.tag }}
     steps:
-      - name: Open the draft release
+      - uses: actions/checkout@v5
+
+      - name: Tag, and open the draft release
+        id: open
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_INPUT: ${{ inputs.release }}
         run: |
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq "map(select(.tag_name == \"$GITHUB_REF_NAME\")) | length")
-          if [ "$existing" = "0" ]; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --draft --title "Bozzetto $GITHUB_REF_NAME" --generate-notes
-          else
-            echo "a release for $GITHUB_REF_NAME already exists; uploading to it"
+          set -e
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then tag="$GITHUB_REF_NAME"; else tag="v$RELEASE_INPUT"; fi
+          # electron-builder names the files and looks the release up by
+          # package.json's version, so a tag that says otherwise would
+          # upload to a release nobody asked for.
+          version=$(node -p "require('./package.json').version")
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::$tag does not match package.json version $version"
+            exit 1
           fi
+          # From the Actions tab there is no tag yet: make one at this commit.
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+              gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+              echo "tagged $GITHUB_SHA as $tag"
+            fi
+          fi
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq "map(select(.tag_name == \"$tag\")) | length")
+          if [ "$existing" = "0" ]; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "Bozzetto $tag" --generate-notes
+          else
+            echo "a release for $tag already exists; uploading to it"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   build:
     needs: draft
-    # A manual run skips the draft job; the build must still happen.
+    # A test build skips the draft job; the build must still happen.
     if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
     strategy:
       # One platform failing should not throw away the two that worked.
@@ -85,7 +118,7 @@ jobs:
         run: npm run build:desktop
 
       - name: Package
-        run: npx electron-builder ${{ matrix.target }} --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
+        run: npx electron-builder ${{ matrix.target }} --publish ${{ needs.draft.result == 'success' && 'always' || 'never' }}
         env:
           # The token electron-builder uses to upload to the draft release.
           # Provided by Actions; no secret to configure.
@@ -95,9 +128,9 @@ jobs:
           # an unsigned app. Remove it once a Developer ID is in place.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # Manual runs publish nothing, so keep the output reachable.
+      # Test builds publish nothing, so keep the output reachable.
       - name: Upload installers
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.draft.result == 'skipped'
         uses: actions/upload-artifact@v6
         with:
           name: bozzetto-${{ matrix.os }}
@@ -113,16 +146,17 @@ jobs:
   # then publish it. The site's Install card reads the latest published
   # release, so this is the moment the downloads go live.
   publish:
-    if: github.event_name == 'push'
-    needs: build
+    needs: [draft, build]
+    if: needs.draft.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag }}
         run: |
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq "map(select(.tag_name == \"$GITHUB_REF_NAME\"))[0]")
+            --jq "map(select(.tag_name == \"$TAG\"))[0]")
           id=$(echo "$release" | jq -r .id)
           names=$(echo "$release" | jq -r '.assets[].name')
           echo "$names"
