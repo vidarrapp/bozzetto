@@ -36,12 +36,17 @@ jobs:
             target: --mac dmg zip
     runs-on: ${{ matrix.os }}
 
+    # Action majors built for Node 24: the runners have deprecated the
+    # Node 20 runtime and annotate every step that still targets it.
+    # (upload-artifact's v5 still declares node20; v6 is the node24 one.)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          # The build's own Node. 20 reached end of life in April 2026;
+          # 22 is what the desktop build is verified on.
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -67,7 +72,7 @@ jobs:
       # Manual runs publish nothing, so keep the output reachable.
       - name: Upload installers
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bozzetto-${{ matrix.os }}
           path: |
