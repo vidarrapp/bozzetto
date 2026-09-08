@@ -33,8 +33,17 @@ contextBridge.exposeInMainWorld('bozzettoDesktop', {
   /** Reflect the document into the window title and the OS dirty dot. */
   setDocument: (doc) => ipcRenderer.send('file:document', doc),
 
+  /**
+   * The answer to a save the main process asked for (a window closing
+   * with unsaved work): true when the file was written, false when the
+   * user cancelled at the dialog or the save failed.
+   */
+  saveDone: (saved) => ipcRenderer.send('file:saveDone', { saved: !!saved }),
+
   // Native dialogs, because window.confirm/prompt block the renderer.
   confirm: (opts) => ipcRenderer.invoke('ui:confirm', opts),
+  /** A multi-button question; resolves to the index of the button pressed. */
+  ask: (opts) => ipcRenderer.invoke('ui:ask', opts),
   message: (opts) => ipcRenderer.invoke('ui:message', opts),
 
   // --- crash recovery ---------------------------------------------------

@@ -470,6 +470,14 @@ export class ScenePersist {
    * sidecar - which is a copy under userData, never the user's own file.
    */
   onWrote: ((scene: SavedScene) => void) | null = null;
+  /**
+   * An edit happened - every source of one funnels through markDirty().
+   * Fires before the debounce, so a listener learns about the change the
+   * moment it is made rather than when the write lands seconds later; the
+   * desktop shell's close guard needs the former. Fires even after the
+   * autosave has disabled itself: the edit is no less real for that.
+   */
+  onDirty: (() => void) | null = null;
   private cancelScheduled: (() => void) | null = null;
   private lastSave = 0;
   private saving = false;
@@ -530,6 +538,7 @@ export class ScenePersist {
 
   /** Note an edit; the write happens later, in idle time. */
   markDirty(): void {
+    this.onDirty?.();
     if (this.disabled) return;
     this.dirty = true;
     if (this.cancelScheduled) return;

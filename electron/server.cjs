@@ -14,10 +14,10 @@
  * cookie, set by a real login window pointed at the deployment. The
  * server needs no changes whatsoever - not one line in functions/.
  */
-const { ipcMain, session, BrowserWindow, net, app } = require('electron');
+const { ipcMain, session, BrowserWindow, app } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { atomicWrite } = require('./files.cjs');
+const { atomicWrite, windowFor } = require('./files.cjs');
 
 /** Its own cookie jar, so the login is not shared with anything else. */
 const PARTITION = 'persist:bozzetto-server';
@@ -56,7 +56,8 @@ function normalise(raw) {
   return u.origin;
 }
 
-function registerServerIpc(win) {
+/** Registered once per process; windows are found per call, never held. */
+function registerServerIpc() {
   ipcMain.handle('server:get', async () => {
     const cfg = await readConfig();
     if (!cfg.url) return { url: null, signedIn: false };
@@ -77,14 +78,14 @@ function registerServerIpc(win) {
    * by email, whatever the policy says - and leaves its cookie in the jar
    * that the proxied requests below use. Nothing here handles credentials.
    */
-  ipcMain.handle('server:signIn', async () => {
+  ipcMain.handle('server:signIn', async (event) => {
     const { url } = await readConfig();
     if (!url) throw new Error('Set a server first.');
     const jar = session.fromPartition(PARTITION);
     const w = new BrowserWindow({
       width: 520,
       height: 700,
-      parent: win,
+      parent: windowFor(event) ?? undefined,
       title: 'Sign in',
       webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false },
     });
@@ -124,12 +125,22 @@ function registerServerIpc(win) {
   ipcMain.handle('server:fetch', async (_e, { pathname, method, body, contentType }) => {
     const { url } = await readConfig();
     if (!url) return { ok: false, status: 0, error: 'No server configured' };
-    if (typeof pathname !== 'string' || !ALLOWED.test(pathname)) {
+    // Resolve first, check what it resolved to. Testing the raw string
+    // would pass '/api/../admin/x' (dot segments) and '//other.host/api/x'
+    // (a protocol-relative URL, which resolves to another origin), and the
+    // check is only worth having if it holds against both.
+    let target;
+    try {
+      target = typeof pathname === 'string' ? new URL(pathname, url) : null;
+    } catch {
+      target = null;
+    }
+    if (!target || target.origin !== url || !ALLOWED.test(target.pathname)) {
       return { ok: false, status: 0, error: 'Blocked path' };
     }
     const jar = session.fromPartition(PARTITION);
     try {
-      const res = await jar.fetch(new URL(pathname, url).href, {
+      const res = await jar.fetch(target.href, {
         method: method || 'GET',
         headers: contentType ? { 'content-type': contentType } : undefined,
         body: body ? Buffer.from(body) : undefined,
@@ -148,12 +159,11 @@ function registerServerIpc(win) {
       return { ok: false, status: 0, error: String(err && err.message ? err.message : err) };
     }
   });
-
-  void net;
 }
 
-function serverMenu(win) {
-  const cmd = (c) => () => win.webContents.send('menu:command', c);
+function serverMenu() {
+  // Resolved at click time, so the menu outlives the first window.
+  const cmd = (c) => () => windowFor(null)?.webContents.send('menu:command', c);
   return {
     label: 'Server',
     submenu: [

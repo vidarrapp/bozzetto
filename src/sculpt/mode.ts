@@ -27,8 +27,9 @@ import { galleryForm } from './ui/galleryForm';
 import { probeAdmin } from '../admin/api';
 import {
   mountDesktop,
-  markDocumentDirty,
+  setDocumentDirty,
   offerRecovery,
+  clearRecovery as clearDesktopRecovery,
   showServerSettings,
   writeRecovery,
 } from '../desktop';
@@ -783,10 +784,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // full stack shifts and leaves the index standing.
   let sceneOnDisk = !saved;
   let cleanState: unknown = session.getStateManager().getCurrentState();
-  filePanel.onSceneClean = () => {
+  const markSceneClean = (): void => {
     sceneOnDisk = true;
     cleanState = session.getStateManager().getCurrentState();
   };
+  filePanel.onSceneClean = markSceneClean;
   filePanel.hasWork = () =>
     !sceneOnDisk ||
     session.getStateManager().getCurrentState() !== cleanState ||
@@ -910,7 +912,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const toast = saved
     ? restoredToast(() => {
         persist.disable();
-        void clearSavedScene().then(() => location.reload());
+        // The desktop sidecar mirrors the autosave; a fresh start that left
+        // it behind would offer the abandoned scene back at the reload.
+        void Promise.all([clearSavedScene(), clearDesktopRecovery()]).then(() =>
+          location.reload(),
+        );
       })
     : null;
 
@@ -964,6 +970,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Electron. Inert in a browser: mountDesktop returns null and nothing
   // below it runs. It reuses the same file pipeline the panel buttons and
   // the tests use, so there is one packing path, not two.
+  const hasWork = (): boolean => filePanel?.hasWork?.() ?? false;
   const desktopHandle = mountDesktop({
     pack: () => handle.file.pack(),
     load: async (bytes) => {
@@ -971,36 +978,41 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // Opening replaces the scene, so the pre-open work is gone either
       // way; matching the panel's Open, the old reel goes with it.
       if (recorder.frameCount() > 0) await recorder.clear();
-      sceneOnDisk = true;
-      cleanState = session.getStateManager().getCurrentState();
+      markSceneClean();
     },
     reset: async () => {
       if (recorder.frameCount() > 0) await recorder.clear();
       session.newScene();
-      sceneOnDisk = true;
-      cleanState = session.getStateManager().getCurrentState();
+      markSceneClean();
     },
+    hasWork,
+    markClean: markSceneClean,
     objText: () => handle.file.toOBJ(),
     undo: () => session.undo(),
     redo: () => session.redo(),
     showServerSettings: () => void showServerSettings(),
   });
   if (desktopHandle) {
-    // The title's dirty dot follows the same signal the Open guard uses,
-    // rather than a second notion of "changed" that could drift from it.
+    // The title's dirty dot and the close guard follow the same signal the
+    // Open guard uses, sampled at every edit - not at the autosave write,
+    // which lands seconds later and would leave a window closable with a
+    // stroke it never asked about. Undo back to the clean point clears it.
+    persist.onDirty = () => setDocumentDirty(hasWork());
+    // Mirror each autosave to the crash sidecar. Same bytes as a .bozz
+    // file, written atomically under userData - never through to the open
+    // document, which would make Save meaningless and quitting-without-
+    // saving impossible.
     persist.onWrote = (scene) => {
-      if (filePanel?.hasWork?.()) markDocumentDirty();
-      // Mirror to the crash sidecar. Same bytes as a .bozz file, written
-      // atomically under userData - never through to the open document,
-      // which would make Save meaningless and quitting-without-saving
-      // impossible.
       void packScene(scene)
         .then((b) => b.arrayBuffer())
         .then(writeRecovery)
         .catch(() => undefined);
     };
-    // A crash left a sidecar: offer it rather than resuming it silently.
-    void offerRecovery(handle.file.open);
+    // A crash left a sidecar. It mirrors the autosave, so when IndexedDB
+    // has just restored the same session there is nothing newer in it and
+    // no question to ask; it is offered only when the autosave came back
+    // empty - a cleared profile, or a store that could not be read.
+    if (!saved) void offerRecovery(handle.file.open);
   }
 
   // Leaving for the gallery: remember what the work looked like, so the
@@ -1045,6 +1057,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('visibilitychange', onLookHide);
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
+    desktopHandle?.(); // menu commands and OS opens stop reaching a dead scene
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
     session.onLevelChange = null;

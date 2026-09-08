@@ -46,10 +46,14 @@ jobs:
 
       - run: npm ci
 
-      # build:desktop runs tsc, generates the bundled demo timelapse
-      # (prebuild:desktop) and builds dist-desktop. electron-builder then
-      # packages that, per package.json's build block.
-      - name: Build and package
+      # electron-builder packages dist-desktop; it does not build it. This
+      # step is what makes dist-desktop exist on a fresh runner - without
+      # it the files glob matches nothing and every platform ships an app
+      # with no web content in it.
+      - name: Build the web app for the desktop shell
+        run: npm run build:desktop
+
+      - name: Package
         run: npx electron-builder ${{ matrix.target }} --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
         env:
           # The token electron-builder uses to create and upload to the

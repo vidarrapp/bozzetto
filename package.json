@@ -50,7 +50,8 @@
     "files": [
       "electron/**/*",
       "dist-desktop/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules"
     ],
     "directories": {
       "output": "release"

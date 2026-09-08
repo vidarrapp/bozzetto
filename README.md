@@ -55,8 +55,9 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 ## Desktop app
 
 A packaged build for macOS, Windows and Linux, for when you want Bozzetto as a
-real application: native **Open** and **Save** over `.bozz` files, a window
-title that names the open document, recent files, and crash recovery.
+real application: native **Open** and **Save** over `.bozz` files (double-click
+one to open it), a window title that names the open document and marks unsaved
+changes, a save prompt before closing, recent files, and crash recovery.
 
 It is local by default and makes no network requests at all. Point it at your
 own Cloudflare deployment under **Server → Server Settings** if you want to

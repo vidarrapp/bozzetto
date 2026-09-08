@@ -28,6 +28,8 @@ export interface DesktopBridge {
   ): Promise<SavedAt | null>;
   recentFiles(): Promise<string[]>;
   setDocument(doc: { path: string | null; name: string | null; dirty: boolean }): void;
+  /** Answer a save the main process asked for (see 'file:saveForClose'). */
+  saveDone(saved: boolean): void;
   writeRecovery(bytes: ArrayBuffer): Promise<boolean>;
   readRecovery(): Promise<ArrayBuffer | null>;
   clearRecovery(): Promise<boolean>;
@@ -42,6 +44,8 @@ export interface DesktopBridge {
     contentType?: string;
   }): Promise<{ ok: boolean; status: number; contentType?: string; bytes?: ArrayBuffer; error?: string }>;
   confirm(opts: { message: string; detail?: string; confirmLabel?: string }): Promise<boolean>;
+  /** A multi-button question; resolves to the index of the button pressed. */
+  ask(opts: { message: string; detail?: string; buttons: string[] }): Promise<number>;
   message(opts: { message: string; detail?: string; type?: string }): Promise<boolean>;
   onCommand(fn: (command: string) => void): () => void;
   onOpenPath(fn: (payload: SceneFilePayload) => void): () => void;
@@ -72,6 +76,14 @@ export interface DocumentHost {
   load(bytes: ArrayBuffer): Promise<void>;
   /** Start over, as File > New would. */
   reset(): Promise<void>;
+  /**
+   * Is there work that exists nowhere else? The same answer the File
+   * panel's own Open gives, so the menu and the panel agree on what is
+   * worth a question.
+   */
+  hasWork(): boolean;
+  /** What is on screen is now what is in the file: a save just happened. */
+  markClean(): void;
   /** OBJ text, for File > Export OBJ. */
   objText(): string | null;
   /** Undo/redo, so the menu items work without owning the keys. */
@@ -97,6 +109,10 @@ class DocumentModel {
     return this.path;
   }
 
+  get fileName(): string | null {
+    return this.name;
+  }
+
   setFile(at: SavedAt | null): void {
     this.path = at?.path ?? null;
     this.name = at?.name ?? null;
@@ -104,16 +120,26 @@ class DocumentModel {
     this.sync();
   }
 
-  markDirty(): void {
-    if (this.dirty) return;
-    this.dirty = true;
+  setDirty(dirty: boolean): void {
+    if (this.held || this.dirty === dirty) return;
+    this.dirty = dirty;
     this.sync();
   }
 
-  markClean(): void {
-    if (!this.dirty) return;
-    this.dirty = false;
-    this.sync();
+  /**
+   * Replacing the scene (New, Open) fires the same edit signals a stroke
+   * does, so without this the dot flickers on for the moment between the
+   * old scene going and the new clean point being set. The caller sets
+   * the document itself when it is done.
+   */
+  private held = false;
+  async whileReplacing<T>(fn: () => Promise<T>): Promise<T> {
+    this.held = true;
+    try {
+      return await fn();
+    } finally {
+      this.held = false;
+    }
   }
 
   private sync(): void {
@@ -124,12 +150,13 @@ class DocumentModel {
 let liveDoc: DocumentModel | null = null;
 
 /**
- * The open scene has unsaved changes. Drives the title's bullet and the
- * macOS edited dot; called from the same signal the Open guard uses, so
- * the two cannot drift into disagreeing about what "changed" means.
+ * Does the open scene have unsaved changes? Drives the title's bullet, the
+ * macOS edited dot and the close-window guard. Called on every edit with
+ * the File panel's own "is there work?" answer, so the title, the guard
+ * and the panel's Open cannot disagree about what "changed" means.
  */
-export function markDocumentDirty(): void {
-  liveDoc?.markDirty();
+export function setDocumentDirty(dirty: boolean): void {
+  liveDoc?.setDirty(dirty);
 }
 
 /** Wire the desktop menu, document model and recovery sidecar to the app. */
@@ -141,37 +168,75 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
   liveDoc = doc;
   doc.setFile(null);
 
+  /** Save to the current path, or ask for one. True when a file was written. */
+  const save = async (forceDialog: boolean): Promise<boolean> => {
+    const bytes = await host.pack();
+    if (!bytes) return false;
+    const at = forceDialog
+      ? await bridge.saveSceneAs(bytes, doc.filePath ?? 'sculpt.bozz')
+      : await bridge.saveScene(bytes, doc.filePath);
+    if (!at) return false; // cancelled: the document is untouched, still dirty
+    doc.setFile(at);
+    host.markClean();
+    await bridge.clearRecovery();
+    return true;
+  };
+
+  /**
+   * Before the scene is replaced: Save / Don't Save / Cancel when there is
+   * work to lose, nothing at all when there is not. Resolves true when it
+   * is fine to go ahead.
+   */
+  const settle = async (before: string): Promise<boolean> => {
+    if (!host.hasWork()) return true;
+    const choice = await bridge.ask({
+      message: `Save changes before ${before}?`,
+      detail: doc.fileName
+        ? `${doc.fileName} on disk will not have your latest changes otherwise.`
+        : 'This sculpt has not been saved to a file.',
+      buttons: ['Save', "Don't Save", 'Cancel'],
+    });
+    if (choice === 2) return false;
+    if (choice === 0) return save(false);
+    return true;
+  };
+
   const openPayload = async (p: SceneFilePayload): Promise<void> => {
-    await host.load(p.bytes);
+    await doc.whileReplacing(() => host.load(p.bytes));
     doc.setFile({ path: p.path, name: p.name });
     // The file on disk IS the work now, so the recovery copy of whatever
     // came before it is not just stale, it is misleading.
     await bridge.clearRecovery();
   };
 
-  const save = async (forceDialog: boolean): Promise<void> => {
-    const bytes = await host.pack();
-    if (!bytes) return;
-    const at = forceDialog
-      ? await bridge.saveSceneAs(bytes, doc.filePath ?? 'sculpt.bozz')
-      : await bridge.saveScene(bytes, doc.filePath);
-    if (!at) return; // cancelled: the document is untouched, still dirty
-    doc.setFile(at);
-    await bridge.clearRecovery();
-  };
-
   const commands: Record<string, () => void | Promise<void>> = {
     'file:new': async () => {
-      await host.reset();
+      if (!(await settle('starting a new sculpt'))) return;
+      await doc.whileReplacing(() => host.reset());
       doc.setFile(null);
       await bridge.clearRecovery();
     },
     'file:open': async () => {
+      // The question first, the picker second: a picker that had already
+      // read a file into memory and then asked would be work for nothing
+      // when the answer is Cancel.
+      if (!(await settle('opening another sculpt'))) return;
       const p = await bridge.openScene();
       if (p) await openPayload(p);
     },
-    'file:save': () => save(false),
-    'file:saveAs': () => save(true),
+    'file:save': () => void save(false),
+    'file:saveAs': () => void save(true),
+    // The window is closing with unsaved work and the user chose Save. The
+    // main process is waiting on the answer, so it MUST get one even when
+    // the save throws - or the window can never close.
+    'file:saveForClose': async () => {
+      let saved = false;
+      try {
+        saved = await save(false);
+      } finally {
+        bridge.saveDone(saved);
+      }
+    },
     'file:exportObj': async () => {
       const text = host.objText();
       if (!text) return;
@@ -210,7 +275,19 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
       });
     });
   });
-  const offOpen = bridge.onOpenPath((p) => void openPayload(p));
+  // A file from the OS: a double-click, a recent, a drag onto the icon.
+  const offOpen = bridge.onOpenPath((p) => {
+    settle(`opening ${p.name}`)
+      .then((go) => (go ? openPayload(p) : undefined))
+      .catch((err) => {
+        console.error('bozzetto desktop: open failed', p.name, err);
+        void bridge.message({
+          type: 'error',
+          message: `Could not open ${p.name}.`,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      });
+  });
 
   return () => {
     offCommand();
@@ -249,6 +326,17 @@ export async function readRecovery(): Promise<ArrayBuffer | null> {
     return await bridge.readRecovery();
   } catch {
     return null;
+  }
+}
+
+/** Drop the sidecar: the user asked for a clean start, so nothing to offer. */
+export async function clearRecovery(): Promise<void> {
+  const bridge = desktop();
+  if (!bridge) return;
+  try {
+    await bridge.clearRecovery();
+  } catch {
+    // Not worth blocking a fresh start over.
   }
 }
 

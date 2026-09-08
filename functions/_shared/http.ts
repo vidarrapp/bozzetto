@@ -38,6 +38,8 @@ export function handle(fn: () => Promise<Response>): Promise<Response> {
  * the team's published keys, audience, issuer and expiry, and the email
  * claim must match the header. Without them the header is trusted as
  * before, so an existing deployment keeps working until the vars land.
+ * With only ONE of them set the gate fails closed: a half-finished
+ * configuration must not silently fall back to trusting a forgeable header.
  */
 export async function adminEmail(request: Request, env: Env): Promise<string | null> {
   // Local-dev escape hatch. Set DEV_ADMIN="true" only in a local wrangler.toml
@@ -46,7 +48,10 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
 
   const email = request.headers.get('Cf-Access-Authenticated-User-Email');
   if (!email) return null;
-  if (env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) {
+  if (env.ACCESS_TEAM_DOMAIN || env.ACCESS_AUD) {
+    if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) {
+      throw new HttpError('Access verification is half-configured: set both ACCESS_TEAM_DOMAIN and ACCESS_AUD', 503);
+    }
     const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
     if (!jwt) return null;
     const claimed = await verifyAccessJwt(jwt, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD);
@@ -71,17 +76,38 @@ interface Jwk extends JsonWebKey {
 /** Team public keys, cached per isolate (Access rotates them rarely). */
 let jwksCache: { host: string; keys: Jwk[]; fetchedAt: number } | null = null;
 const JWKS_TTL_MS = 60 * 60 * 1000;
+/**
+ * How often an UNKNOWN kid may force a refetch inside the TTL. Access
+ * rotates its signing keys, and the first token signed by a new key must
+ * not be refused for an hour because the old set is cached - but an
+ * attacker sending made-up kids must not be able to turn every request
+ * into a fetch either.
+ */
+const JWKS_MISS_REFETCH_MS = 60 * 1000;
 
-async function accessKeys(teamDomain: string): Promise<Jwk[]> {
-  const host = teamDomain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  if (jwksCache && jwksCache.host === host && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) {
-    return jwksCache.keys;
-  }
+function teamHost(teamDomain: string): string {
+  return teamDomain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+}
+
+async function fetchAccessKeys(host: string): Promise<Jwk[]> {
   const res = await fetch(`https://${host}/cdn-cgi/access/certs`);
   if (!res.ok) throw new HttpError('Access keys unavailable', 503);
   const body = (await res.json()) as { keys?: Jwk[] };
   jwksCache = { host, keys: body.keys ?? [], fetchedAt: Date.now() };
   return jwksCache.keys;
+}
+
+/** The key with this kid: from the cache, or after one refetch on a miss. */
+async function accessKey(teamDomain: string, kid: string): Promise<Jwk | null> {
+  const host = teamHost(teamDomain);
+  const fresh = jwksCache && jwksCache.host === host && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS;
+  let keys = fresh ? jwksCache!.keys : await fetchAccessKeys(host);
+  let key = keys.find((k) => k.kid === kid);
+  if (!key && fresh && Date.now() - jwksCache!.fetchedAt > JWKS_MISS_REFETCH_MS) {
+    keys = await fetchAccessKeys(host);
+    key = keys.find((k) => k.kid === kid);
+  }
+  return key ?? null;
 }
 
 function b64url(s: string): Uint8Array {
@@ -95,16 +121,17 @@ function b64url(s: string): Uint8Array {
 /**
  * Verify an Access application token and return its email claim, or null.
  * Any malformed input is a null, never a throw: the caller turns null into
- * a 403 and an attacker learns nothing about which check failed.
+ * a 403 and an attacker learns nothing about which check failed. The one
+ * exception is the key set being unreachable, which is an outage on our
+ * side and reports as a 503 rather than masquerading as a refusal.
  */
 async function verifyAccessJwt(token: string, teamDomain: string, aud: string): Promise<string | null> {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const header = JSON.parse(new TextDecoder().decode(b64url(parts[0]))) as { alg?: string; kid?: string };
-    if (header.alg !== 'RS256' || !header.kid) return null;
-    const keys = await accessKeys(teamDomain);
-    const jwk = keys.find((k) => k.kid === header.kid);
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) return null;
+    const jwk = await accessKey(teamDomain, header.kid);
     if (!jwk) return null;
     const key = await crypto.subtle.importKey(
       'jwk',
@@ -129,13 +156,13 @@ async function verifyAccessJwt(token: string, teamDomain: string, aud: string): 
     };
     const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!auds.includes(aud)) return null;
-    const host = teamDomain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    if (claims.iss !== `https://${host}`) return null;
+    if (claims.iss !== `https://${teamHost(teamDomain)}`) return null;
     const now = Math.floor(Date.now() / 1000);
     if (typeof claims.exp !== 'number' || claims.exp < now) return null;
     if (typeof claims.nbf === 'number' && claims.nbf > now + 60) return null;
     return typeof claims.email === 'string' && claims.email ? claims.email : null;
-  } catch {
+  } catch (err) {
+    if (err instanceof HttpError) throw err; // the key set is down: say so
     return null;
   }
 }
