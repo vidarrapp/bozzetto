@@ -20,50 +20,44 @@ export interface AlphaInfo {
 }
 
 /**
- * The rake set, ordered as the picker shows it: the ones that comb first,
- * the ones that need a bigger brush or a subdivided mesh last. rake06-09
- * are ZBrush stock rake alphas (owner-supplied, standing in until
- * hand-authored ones land); the rest are the first batch.
+ * The rake set: the two ZBrush stock rake alphas that comb at a default
+ * brush on an unsubdivided sphere (owner call: the rest of the first batch
+ * is set aside until hand-authored stencils replace it).
  *
- * Which ones bite was measured, not guessed - a stroke rendered per
- * stencil at a default brush on an unsubdivided sphere, against the tine
- * width each one puts on the model. getAlpha maps the stencil onto the
- * square inscribed in the brush disc, so that width is about 0.7x the
- * tine's width in the image:
+ * What made these two the keepers was measured, not guessed - a stroke
+ * rendered per stencil against the tine width each one puts on the model.
+ * getAlpha maps the stencil onto the square inscribed in the brush disc,
+ * so that width is about 0.7x the tine's width in the image:
  *
- *   rake06 10.7% -> three clean grooves        rake01 10.6% -> broad, soft grooves
- *   rake07  6.7% -> fine chattery tines        rake09  6.2% -> almost nothing
- *   rake08  6.0% -> a faint band               rake02  3.6% -> a faint band
- *   rake03  3.3% -> nothing                    rake04  2.5% -> nothing
- *   rake05  1.4% -> irregular chatter, not grooves
+ *   rake06 10.7% -> three clean grooves
+ *   rake07  6.7% -> fine chattery tines
  *
- * Two things decide it. Width first: below roughly 6% a tine is thinner
- * than the gap between vertices, so it lands between them and the stroke
- * comes out looking like plain clay. But SHAPE matters too, which is why
- * rake08 and rake09 sit above that line and still barely register - their
- * tines are dots rather than full-height bars, so little of the stroke's
- * length is covered, while rake07's bars run the full height and comb at
- * 6.7%. rake05 is the odd one out: its hand-drawn strands wander laterally
- * as they run, so instead of grooves it lays down irregular chatter, which
- * is a texture worth having even though it is not a comb.
+ * Below roughly 6% a tine is thinner than the gap between vertices, so it
+ * lands between them and the stroke comes out looking like plain clay;
+ * and shape matters too - dots cover little of the stroke's length, where
+ * full-height bars comb. The retired stencils' PNGs stay in
+ * public/assets/alphas for when the set is revisited.
  */
 export const RAKE_ALPHAS: AlphaInfo[] = [
   { id: 'rake06', label: 'Broad tines' },
-  { id: 'rake01', label: 'Broad' },
   { id: 'rake07', label: 'Tines' },
-  { id: 'rake05', label: 'Chatter' },
-  { id: 'rake08', label: 'Graduated' },
-  { id: 'rake09', label: 'Beads' },
-  { id: 'rake03', label: 'Bars' },
-  { id: 'rake02', label: 'Dots' },
-  { id: 'rake04', label: 'Fine bars' },
 ];
 
 /**
+ * The clay set: one stencil for now (owner call), the hand-drawn one whose
+ * strands wander laterally as they run. On a rake that reads as chatter
+ * rather than grooves; on clay, where the job is surface texture rather
+ * than separated tines, that is exactly the point. Its own list, so the
+ * clay stencils the owner is authoring slot in here without touching the
+ * rake's.
+ */
+export const CLAY_ALPHAS: AlphaInfo[] = [{ id: 'rake05', label: 'Chatter' }];
+
+/**
  * The widest tines in the set (10.7% of the brush) and the most of the dab
- * doing work (mean value 68/255 against 11-34 for the first batch) - and
- * the only one that laid down three clean, separated grooves at a default
- * brush when every stencil was rendered side by side.
+ * doing work (mean value 68/255) - the one that laid down three clean,
+ * separated grooves at a default brush when every stencil was rendered
+ * side by side.
  */
 export const DEFAULT_RAKE_ALPHA = 'rake06';
 
@@ -80,11 +74,8 @@ export const DEFAULT_RAKE_ALPHA = 'rake06';
  *           ribbon, and an alpha turns it into a textured one. Worth
  *           reaching for, not worth having to switch off.
  *
- * Clay shares the rake's images for now; a set of its own is the obvious
- * next step and only needs a different list here. Note the fine stencils
- * that read poorly on a rake (they comb below the vertex spacing) are the
- * INTERESTING ones on clay, where the job is surface texture rather than
- * separated grooves.
+ * Each has its own list, so the stencils being authored for clay slot in
+ * without touching the rake's.
  */
 export interface AlphaSet {
   /** The stencils, in the order the picker shows them. */
@@ -97,7 +88,7 @@ export interface AlphaSet {
 
 export const ALPHA_SETS: Record<number, AlphaSet> = {
   [Enums.Tools.RAKE]: { alphas: RAKE_ALPHAS, initial: DEFAULT_RAKE_ALPHA, allowNone: false },
-  [Enums.Tools.BRUSH]: { alphas: RAKE_ALPHAS, initial: null, allowNone: true },
+  [Enums.Tools.BRUSH]: { alphas: CLAY_ALPHAS, initial: null, allowNone: true },
 };
 
 /** Every stencil any tool can ask for, deduplicated. */
