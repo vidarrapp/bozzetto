@@ -168,6 +168,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     endCapture();
     root.hidden = true;
     document.body.classList.remove('has-modal');
+    window.removeEventListener('keydown', onWindowKey, true);
   };
   close.addEventListener('click', hide);
   resetAll.addEventListener('click', () => {
@@ -183,13 +184,16 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     }
     if (e.target === root) hide();
   });
-  root.addEventListener('keydown', (e) => {
+  // Escape closes the window from wherever focus sits (a re-rendered list
+  // drops it on the body), so the listener is on the window, and only
+  // while the window is up.
+  const onWindowKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && !capturing) {
       hide();
       e.preventDefault();
       e.stopPropagation();
     }
-  });
+  };
 
   return {
     root,
@@ -198,6 +202,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       render();
       root.hidden = false;
       document.body.classList.add('has-modal');
+      window.addEventListener('keydown', onWindowKey, true);
       close.focus();
     },
   };

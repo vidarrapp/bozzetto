@@ -1016,8 +1016,9 @@ export class InputShell {
         return;
       }
       // The gizmo owns the view while it is up: a brush ring over the
-      // handles reads as "you can sculpt", which is exactly wrong.
-      if (this.transform?.isActive()) {
+      // handles reads as "you can sculpt", which is exactly wrong. The
+      // Select tool has no brush either: its pointer is a picker.
+      if (this.transform?.isActive() || this.selectMode) {
         this.cursor.hide();
         return;
       }
