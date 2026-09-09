@@ -38,13 +38,13 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush.
 - **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move grabs volumetrically, so you can pull a silhouette from outside the outline. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
-- **Stencils.** The Rake combs grooves through a stroke-aligned stencil, nine to choose from. Clay can take one too, off by default. A Spacing slider sets how far the brush travels between stamps.
+- **Stencils.** The Rake combs grooves through a stroke-aligned stencil. Clay can take one too, off by default. A Spacing slider sets how far the brush travels between stamps.
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
 - **Masking** with `Ctrl`, plus blur, sharpen, invert, clear, and **Extract** to turn a masked region into a new object.
 - **Mirror symmetry** with a per-object axis. Hovering shows the mirrored brush ring.
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
-- **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample. Named materials per object, each with albedo, roughness and metalness.
-- **Object transforms**: a unified move/rotate/scale gizmo, single modes on `W`/`E`/`R`. Multi-object scenes with an outliner.
+- **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
+- **Object transforms**: a unified move/rotate/scale gizmo, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, duplicate, mirror and radial copies.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
@@ -206,7 +206,7 @@ guide (`H`) shows whatever keys are set.
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry |
 | `T` | Transform gizmo (all handles) |
-| `W` / `E` / `R`, `Q` | Move / rotate / scale gizmo · back to sculpting |
+| `W` / `E` / `R` | Move / rotate / scale gizmo (`T` again, or a brush key, returns to sculpting) |
 | `P` | Frame-rate meter |
 | `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |
 | `←` `→` | Turntable |
@@ -227,13 +227,14 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 **Sculpt mode (alpha).** Bozzetto can now sculpt, not just play back. Built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core, ported onto Bozzetto's WebGPU/WebGL2 pipeline with one canvas, one camera and one look.
 
 - Ten brushes with per-tool settings, pen pressure with response curves, and 64-deep undo.
-- Rake brush with nine stroke-aligned stencils. Clay takes stencils too, off by default. Per-brush dab spacing.
+- Rake brush with stroke-aligned stencils. Clay takes stencils too, off by default. Per-brush dab spacing.
 - Crease Profile and Pinch sliders, from a broad trough to a knife line.
 - Polish brush replacing Twist, flattening surfaces while keeping edges crisp.
 - Masking, Extract, mirror symmetry with a mirrored hover ring.
 - Multiresolution, dynamic topology and voxel remesh.
 - Vertex painting, per-object named materials, and an HSV colour picker shared across the app.
-- Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner.
+- Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner, a Select tool with marquee, mirror and radial copies.
+- Every hotkey editable under Edit → Preferences, on the web and in the desktop app.
 - A **File** menu in the top row (new, open, save, save to library, OBJ import and export), and five docked panels: Capture and Scene left; Render, Model and Tool right.
 - Ten new matcaps in a gallery popout, and selectable tone mapping.
 - Timelapse capture from sculpt sessions, publishable to the gallery.
