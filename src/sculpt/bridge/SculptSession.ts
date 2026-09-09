@@ -221,6 +221,46 @@ export class SculptSession {
     return this.setOrUnsetMesh(mesh);
   }
 
+  /** The selection list changed (the outliner and the highlights follow). */
+  onSelectionChange: (() => void) | null = null;
+
+  /**
+   * The Select tool's edits to the selection. Selection and the ACTIVE
+   * object are two things: the active one is what the brushes and the
+   * gizmo work on and is always the last object picked, while the
+   * selection is what Delete and the highlights take. Setting an empty
+   * selection leaves the active object where it is - a sculpt needs one.
+   */
+  selectSet(meshes: SculptMesh[]): void {
+    this.selectMeshes.length = 0;
+    this.selectMeshes.push(...meshes);
+    this.activate(meshes.length ? meshes[meshes.length - 1] : this.mesh);
+  }
+
+  selectAdd(meshes: SculptMesh[]): void {
+    for (const m of meshes) if (!this.selectMeshes.includes(m)) this.selectMeshes.push(m);
+    this.activate(meshes.length ? meshes[meshes.length - 1] : this.mesh);
+  }
+
+  selectRemove(meshes: SculptMesh[]): void {
+    for (const m of meshes) {
+      const i = this.selectMeshes.indexOf(m);
+      if (i >= 0) this.selectMeshes.splice(i, 1);
+    }
+    const active = this.mesh && meshes.includes(this.mesh) && this.selectMeshes.length
+      ? this.selectMeshes[this.selectMeshes.length - 1]
+      : this.mesh;
+    this.activate(active);
+  }
+
+  private activate(mesh: SculptMesh | null): void {
+    const changed = this.mesh !== mesh;
+    this.mesh = mesh;
+    if (changed) this.onActiveMeshChange?.();
+    this.onSelectionChange?.();
+    this.render();
+  }
+
   /** Ported from Scene.setOrUnsetMesh, minus the GUI refresh. */
   setOrUnsetMesh(mesh: SculptMesh | null, multiSelect = false): SculptMesh | null {
     if (!mesh) {
@@ -242,6 +282,7 @@ export class SculptSession {
     const changed = this.mesh !== mesh;
     this.mesh = mesh;
     if (changed) this.onActiveMeshChange?.();
+    this.onSelectionChange?.();
     this.render();
     return mesh;
   }
@@ -562,14 +603,55 @@ export class SculptSession {
    * same record a file would carry, so a duplicate is exactly what a save
    * and reopen would give back; one undo removes it like any add.
    */
-  duplicateMesh(mesh: SculptMesh): Multimesh | null {
+  duplicateMesh(
+    mesh: SculptMesh,
+    name = `${this.getMeshName(mesh)} copy`,
+    adjust?: (matrix: Float32Array) => void,
+  ): Multimesh | null {
     const saved = this.serializeMesh(mesh);
     if (!saved) return null;
-    saved.name = this.uniqueMeshName(`${this.getMeshName(mesh)} copy`);
+    saved.name = this.uniqueMeshName(name);
+    // The transform is set BEFORE the copy joins the scene, so the display
+    // picks it up on the same reconcile that shows the copy at all.
+    adjust?.(saved.matrix);
     const copy = this.buildRestoredMesh(saved);
     if (saved.visible === false) copy.setVisible(false);
     this.requestRender();
     return copy;
+  }
+
+  /**
+   * Scene menu: a mirrored copy across a WORLD axis plane through the
+   * origin. The reflection rides the copy's matrix (S * M) rather than its
+   * geometry: the mesh stays right-handed for sculpting, three flips the
+   * front faces of a negative-determinant matrix by itself, and the
+   * export paths reverse the winding when they bake it (SceneFile).
+   */
+  mirrorMesh(mesh: SculptMesh, axis: 'x' | 'y' | 'z'): Multimesh | null {
+    const row = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+    return this.duplicateMesh(mesh, `${this.getMeshName(mesh)} mirror`, (m) => {
+      // S * M negates one row of M (column-major: row r sits at c * 4 + r).
+      for (let c = 0; c < 4; c++) m[c * 4 + row] = -m[c * 4 + row];
+    });
+  }
+
+  /**
+   * Scene menu: copies turned around a world axis through the origin, the
+   * object being one of `count` evenly spaced. Returns the new ones.
+   */
+  radialCopies(mesh: SculptMesh, count: number, axis: 'x' | 'y' | 'z'): Multimesh[] {
+    const copies: Multimesh[] = [];
+    const dir = vec3.fromValues(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0);
+    const base = this.getMeshName(mesh);
+    for (let k = 1; k < count; k++) {
+      const angle = (Math.PI * 2 * k) / count;
+      const copy = this.duplicateMesh(mesh, `${base} ${k + 1}`, (m) => {
+        const r = mat4.fromRotation(mat4.create(), angle, dir);
+        mat4.multiply(m as unknown as mat4, r, m as unknown as mat4);
+      });
+      if (copy) copies.push(copy);
+    }
+    return copies;
   }
 
   /** Scene menu: add a primitive as a new object (WS4 outliner plus). */

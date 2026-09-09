@@ -1926,6 +1926,12 @@ html.is-page body {
   display: none;
 }
 
+.outliner__menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--panel-border);
+}
+
 .outliner__menu-item {
   text-align: left;
   padding: 8px 12px;
@@ -2386,6 +2392,15 @@ body.chrome-hidden .transport {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
   }
+}
+
+/* The Select tool's marquee: a thin accent rectangle over the view. */
+.select-marquee {
+  position: fixed;
+  z-index: 25;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
 }
 
 /* Dragging the paint swatch over the view: a crosshair says "pick". */

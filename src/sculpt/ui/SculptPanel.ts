@@ -7,6 +7,7 @@ import { alphaThumbUrl } from '../bridge/alphas';
 import { ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
 import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
+import type { GizmoParts } from '../bridge/transform';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
 import { SidePanel } from './SidePanel';
@@ -83,20 +84,33 @@ export class SculptPanel extends SidePanel {
   /** Rebuild the per-brush rows for the ACTIVE tool (tool switches). */
   refreshBrush(): void {
     const tool = this.input.currentToolIndex();
-    if (this.brushHeading) this.brushHeading.textContent = TOOL_NAMES[tool] ?? 'Brush';
-    const d = this.input.dynamics.get(tool);
     const dyn = this.dynamicsBody;
     dyn.replaceChildren();
-    // The old inputs are detached by replaceChildren; drop the handles too,
-    // or refreshBrushValues writes into orphans (and, for a tool with no
-    // strength at all, into nothing).
+    this.paintPicker?.dispose();
+    this.paintPicker = undefined;
     this.sizeInput = undefined;
     this.strengthInput = undefined;
+    // The two tools that are not brushes get their own settings here
+    // (owner request): the Select tool its modifiers and mode, the
+    // transform gizmo which of its handles to show.
+    const uiMode = this.input.uiMode();
+    if (uiMode === 'select') {
+      if (this.brushHeading) this.brushHeading.textContent = 'Select';
+      this.extrasBody.replaceChildren();
+      this.buildSelectSettings(dyn);
+      return;
+    }
+    if (uiMode === 'transform') {
+      if (this.brushHeading) this.brushHeading.textContent = 'Transform';
+      this.extrasBody.replaceChildren();
+      this.buildTransformSettings(dyn);
+      return;
+    }
+    if (this.brushHeading) this.brushHeading.textContent = TOOL_NAMES[tool] ?? 'Brush';
+    const d = this.input.dynamics.get(tool);
     // The paint brush leads with its colour: the same HSV picker the Render
     // panel uses for albedo, so a colour is chosen the same way wherever
     // you are. Alt + click on the model samples one off the surface.
-    this.paintPicker?.dispose();
-    this.paintPicker = undefined;
     if (this.input.isPainting()) {
       this.paintPicker = colorPicker(this.input.getPaintColor(), (hex) =>
         this.input.setPaintColor(hex),
@@ -313,6 +327,58 @@ export class SculptPanel extends SidePanel {
       extras.appendChild(labelRow('Alpha', grid));
     }
   }
+
+  /** The Select tool's settings: its modifiers, and the mode (lasso later). */
+  private buildSelectSettings(body: HTMLElement): void {
+    const mode = selectEl(
+      [
+        ['marquee', 'Marquee'],
+        ['lasso', 'Lasso (soon)'],
+      ],
+      'marquee',
+    );
+    mode.disabled = true; // one mode today; the row says where the lasso will go
+    body.appendChild(labelRow('Mode', mode));
+    for (const [what, how] of [
+      ['Select', 'Click an object'],
+      ['Add', 'Shift + click / drag'],
+      ['Remove', 'Ctrl + click / drag'],
+      ['Add', 'Ctrl + Shift + drag'],
+      ['Marquee', 'Drag on the view'],
+      ['Orbit', 'Alt + drag'],
+    ]) {
+      const row = div('sculpt-panel__hint');
+      row.textContent = `${how} — ${what.toLowerCase()}`;
+      body.appendChild(row);
+    }
+  }
+
+  /** The transform gizmo's settings: which handles it shows. */
+  private buildTransformSettings(body: HTMLElement): void {
+    const gizmo = this.input.transform;
+    if (!gizmo) return;
+    const parts = gizmo.getParts();
+    for (const [key, label] of [
+      ['arrows', 'Move arrows'],
+      ['planes', 'Move planes'],
+      ['rotate', 'Rotate rings'],
+      ['scale', 'Scale boxes'],
+      ['uniform', 'Uniform scale (centre)'],
+    ] as const) {
+      body.appendChild(
+        checkbox(label, parts[key], (on) => {
+          gizmo.setParts({ [key]: on });
+          this.onGizmoParts?.(gizmo.getParts());
+        }),
+      );
+    }
+    const hint = div('sculpt-panel__hint muted');
+    hint.textContent = 'W / E / R show one kind at a time; T shows what is ticked here.';
+    body.appendChild(hint);
+  }
+
+  /** The gizmo's parts changed (mode.ts remembers them for next time). */
+  onGizmoParts: ((parts: GizmoParts) => void) | null = null;
 
   /**
    * Drag the paint swatch out over the view and let go: the colour under

@@ -22,8 +22,10 @@ export interface ActionDef {
   group: string;
   /** Which mode's handler answers to it; 'both' is shared. */
   mode: KeyMode | 'both';
-  /** The default chord, or null for a gesture row that only the guide shows. */
+  /** The default chord, or null: unbound until the user binds it (or a gesture). */
   chord: string | null;
+  /** A gesture row (drag, scroll, double-click): the guide shows its note; it has no key to edit. */
+  gesture?: boolean;
   /** A held key (b, s, l): keydown begins, keyup ends. */
   hold?: boolean;
   /** Auto-repeat re-fires it (steps, turntable, undo). */
@@ -38,9 +40,9 @@ export interface ActionDef {
  */
 export const ACTIONS: ActionDef[] = [
   // --- sculpt: sculpting ---
-  { id: 'gesture.sculpt', label: 'Sculpt', group: 'Sculpting', mode: 'sculpt', chord: null, note: 'Drag on mesh' },
-  { id: 'gesture.negative', label: 'Negative (carve)', group: 'Sculpting', mode: 'sculpt', chord: null, note: 'Alt + drag' },
-  { id: 'gesture.smooth', label: 'Smooth', group: 'Sculpting', mode: 'sculpt', chord: null, note: 'Shift + drag' },
+  { id: 'gesture.sculpt', label: 'Sculpt', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
+  { id: 'gesture.negative', label: 'Negative (carve)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag' },
+  { id: 'gesture.smooth', label: 'Smooth', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Shift + drag' },
   { id: 'brush.size', label: 'Brush size (hold, then drag with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 'b', hold: true },
   { id: 'brush.strength', label: 'Brush strength (hold, then drag up/down with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 's', hold: true },
   { id: 'brush.sizeDown', label: 'Brush size step down', group: 'Sculpting', mode: 'sculpt', chord: '[', repeat: true },
@@ -52,27 +54,28 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gizmo.translate', label: 'Move the object (gizmo)', group: 'Sculpting', mode: 'sculpt', chord: 'w' },
   { id: 'gizmo.rotate', label: 'Rotate the object (gizmo)', group: 'Sculpting', mode: 'sculpt', chord: 'e' },
   { id: 'gizmo.scale', label: 'Scale the object (gizmo)', group: 'Sculpting', mode: 'sculpt', chord: 'r' },
-  { id: 'gizmo.exit', label: 'Back to sculpting', group: 'Sculpting', mode: 'sculpt', chord: 'q' },
+  { id: 'gizmo.exit', label: 'Back to sculpting (put the gizmo away)', group: 'Sculpting', mode: 'sculpt', chord: null },
   { id: 'edit.undo', label: 'Undo', group: 'Sculpting', mode: 'sculpt', chord: 'ctrl+z', repeat: true },
   { id: 'edit.redo', label: 'Redo', group: 'Sculpting', mode: 'sculpt', chord: 'ctrl+shift+z', repeat: true },
   // --- sculpt: masking ---
-  { id: 'gesture.mask', label: 'Paint mask (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, note: 'Ctrl + drag' },
-  { id: 'gesture.maskInvertClick', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: null, note: 'Ctrl + click off mesh' },
+  { id: 'gesture.mask', label: 'Paint mask (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag' },
+  { id: 'gesture.maskInvertClick', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click off mesh' },
   { id: 'mask.all', label: 'Mask the whole object', group: 'Masking', mode: 'sculpt', chord: 'ctrl+a' },
   { id: 'mask.clear', label: 'Clear mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+c' },
   { id: 'mask.invert', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+i' },
   { id: 'mask.tint', label: 'Show / hide mask tint', group: 'Masking', mode: 'sculpt', chord: 'ctrl+h' },
   { id: 'mask.extract', label: 'Extract masked region', group: 'Masking', mode: 'sculpt', chord: 'ctrl+e' },
   // --- sculpt: navigation ---
-  { id: 'gesture.orbit', label: 'Orbit (around your last stroke)', group: 'Navigation', mode: 'sculpt', chord: null, note: 'Drag off mesh' },
-  { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, note: 'Cmd / Shift + drag' },
-  { id: 'gesture.zoomDrag', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, note: 'Ctrl + drag off mesh' },
-  { id: 'gesture.zoom', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, note: 'Scroll / pinch' },
+  { id: 'gesture.orbit', label: 'Orbit (around your last stroke)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Drag off mesh' },
+  { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
+  { id: 'gesture.zoomDrag', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag off mesh' },
+  { id: 'gesture.zoom', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Scroll / pinch' },
   { id: 'view.frame', label: 'Frame the model', group: 'Navigation', mode: 'both', chord: 'f' },
   { id: 'view.frameAll', label: 'Frame the whole scene', group: 'Navigation', mode: 'both', chord: 'a' },
   { id: 'view.turnLeft', label: 'Turntable left (accelerates with the wheel)', group: 'Navigation', mode: 'sculpt', chord: 'arrowleft', repeat: true },
   { id: 'view.turnRight', label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
   // --- sculpt: brushes ---
+  { id: 'tool.select', label: 'Select tool (click; Shift adds, Ctrl+drag removes, Ctrl+Shift+drag adds; drag a marquee)', group: 'Brushes', mode: 'sculpt', chord: 'q' },
   { id: 'tool.crease', label: 'Crease', group: 'Brushes', mode: 'sculpt', chord: '1' },
   { id: 'tool.move', label: 'Move', group: 'Brushes', mode: 'sculpt', chord: '2' },
   { id: 'tool.clay', label: 'Standard (clay)', group: 'Brushes', mode: 'sculpt', chord: '3' },
@@ -89,6 +92,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'subdiv.down', label: 'Subdivision level down', group: 'Subdivision', mode: 'sculpt', chord: 'shift+d' },
   // --- sculpt: scene ---
   { id: 'scene.delete', label: 'Delete the selected objects', group: 'Scene', mode: 'sculpt', chord: 'delete' },
+  { id: 'scene.mirror', label: 'Mirror the object across its symmetry axis', group: 'Scene', mode: 'sculpt', chord: 'ctrl+m' },
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
@@ -98,10 +102,10 @@ export const ACTIONS: ActionDef[] = [
   { id: 'play.back', label: 'Step back', group: 'Playback', mode: 'view', chord: 'arrowleft', repeat: true },
   { id: 'play.forward', label: 'Step forward', group: 'Playback', mode: 'view', chord: 'arrowright', repeat: true },
   // --- viewer: view gestures ---
-  { id: 'gesture.viewOrbit', label: 'Orbit', group: 'View', mode: 'view', chord: null, note: 'Drag' },
-  { id: 'gesture.viewPan', label: 'Pan (two-finger drag on touch)', group: 'View', mode: 'view', chord: null, note: 'Cmd / Shift + drag' },
-  { id: 'gesture.viewZoom', label: 'Zoom', group: 'View', mode: 'view', chord: null, note: 'Scroll' },
-  { id: 'gesture.focusPoint', label: 'Set focus point (double-tap on touch)', group: 'View', mode: 'view', chord: null, note: 'Double-click' },
+  { id: 'gesture.viewOrbit', label: 'Orbit', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Drag' },
+  { id: 'gesture.viewPan', label: 'Pan (two-finger drag on touch)', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
+  { id: 'gesture.viewZoom', label: 'Zoom', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Scroll' },
+  { id: 'gesture.focusPoint', label: 'Set focus point (double-tap on touch)', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Double-click' },
   // --- viewer: material ---
   { id: 'material.lit', label: 'Lit (PBR)', group: 'Material', mode: 'view', chord: '1' },
   { id: 'material.matcap1', label: 'Matcap 1', group: 'Material', mode: 'view', chord: '2' },
@@ -227,7 +231,7 @@ export class Keymap {
   /** The action a chord means in a mode, or null. */
   actionForChord(chord: string, mode: KeyMode): ActionDef | null {
     for (const a of this.actionsFor(mode)) {
-      if (a.chord === null && !this.overrides.has(a.id)) continue;
+      if (a.gesture) continue;
       if (this.chordFor(a.id) === chord) return a;
     }
     return null;

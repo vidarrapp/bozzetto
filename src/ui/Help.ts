@@ -23,7 +23,7 @@ function guideHtml(mode: KeyMode): string {
   let open = false;
   for (const a of keymap.actionsFor(mode)) {
     const chord = keymap.chordFor(a.id);
-    const gesture = a.chord === null && !keymap.isOverridden(a.id);
+    const gesture = !!a.gesture;
     if (!gesture && !chord) continue; // unbound: nothing to press
     if (a.group !== group) {
       if (open) html += '</div>';

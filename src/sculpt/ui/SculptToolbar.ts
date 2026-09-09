@@ -66,9 +66,19 @@ export class SculptToolbar {
   /** Toolbar transform toggle (mode.ts owns the gizmo). */
   onToggleTransform: (() => void) | null = null;
   private transformBtn!: HTMLButtonElement;
+  /** Toolbar select toggle (the shell owns the mode). */
+  onToggleSelect: (() => void) | null = null;
+  private selectBtn!: HTMLButtonElement;
+  private selectOn = false;
 
   setTransformActive(on: boolean): void {
     this.transformBtn.classList.toggle('sculpt-toolbar__btn--active', on);
+  }
+
+  setSelectActive(on: boolean): void {
+    this.selectOn = on;
+    this.selectBtn.classList.toggle('sculpt-toolbar__btn--active', on);
+    this.refresh();
   }
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
@@ -202,6 +212,11 @@ export class SculptToolbar {
       // sits next to 9 on every keyboard.
       [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-palette'],
     ];
+    // Select at the far left, Transform at the far right (owner call): the
+    // two tools that are not brushes bracket the row.
+    this.selectBtn = toolButton('q', 'Select (q): click, shift adds, ctrl+drag removes, drag a marquee', 'select', 'fi-ss-cursor');
+    this.selectBtn.addEventListener('click', () => this.onToggleSelect?.());
+    center.appendChild(this.selectBtn);
     for (const [id, key, name, slot, icon] of brushes) {
       const btn = toolButton(key, name, slot, icon);
       btn.addEventListener('click', () => this.input.selectBrush(id));
@@ -236,7 +251,9 @@ export class SculptToolbar {
   private refresh(): void {
     const active = this.input.currentToolIndex();
     for (const [id, btn] of this.brushBtns) {
-      btn.classList.toggle('sculpt-toolbar__btn--active', id === active);
+      // With the Select tool up no brush is the active one, whatever the
+      // vendor's current tool index still says.
+      btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn);
     }
     this.negativeBtn.classList.toggle(
       'sculpt-toolbar__btn--active',

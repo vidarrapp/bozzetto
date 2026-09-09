@@ -27,9 +27,15 @@ export class ScenePanel extends SidePanel {
    */
   onSceneEdit: (() => void) | null = null;
 
+  private mirrorMenu!: HTMLDivElement;
+
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
-    if (!this.addMenu.hidden && !this.addMenu.contains(e.target as Node)) this.closeAddMenu();
+    const t = e.target as Node;
+    const inside =
+      (!this.addMenu.hidden && this.addMenu.contains(t)) ||
+      (!this.mirrorMenu.hidden && this.mirrorMenu.contains(t));
+    if (!inside) this.closeMenus();
   };
 
   constructor(
@@ -66,7 +72,7 @@ export class ScenePanel extends SidePanel {
       item.className = 'outliner__menu-item';
       item.textContent = label;
       item.addEventListener('click', () => {
-        this.closeAddMenu();
+        this.closeMenus();
         this.session.addPrimitive(kind);
       });
       this.addMenu.appendChild(item);
@@ -74,8 +80,8 @@ export class ScenePanel extends SidePanel {
     document.body.appendChild(this.addMenu);
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (this.addMenu.hidden) this.openAddMenu(addBtn);
-      else this.closeAddMenu();
+      if (this.addMenu.hidden) this.openMenu(this.addMenu, addBtn);
+      else this.closeMenus();
     });
     footer.append(addBtn);
     // Duplicate and Delete under Create (owner call): the three things you
@@ -91,7 +97,25 @@ export class ScenePanel extends SidePanel {
     delBtn.className = 'outliner__btn';
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', () => this.deleteSelected());
-    row.append(dupBtn, delBtn);
+    // Mirror: a copy across a world axis, or a ring of copies around one
+    // (owner call). Its own popup, the way Create has one.
+    const mirrorBtn = document.createElement('button');
+    mirrorBtn.type = 'button';
+    mirrorBtn.className = 'outliner__btn';
+    mirrorBtn.textContent = 'Mirror';
+    this.mirrorMenu = div('outliner__menu');
+    this.mirrorMenu.hidden = true;
+    document.body.appendChild(this.mirrorMenu);
+    mirrorBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.mirrorMenu.hidden) {
+        this.buildMirrorMenu();
+        this.openMenu(this.mirrorMenu, mirrorBtn);
+      } else {
+        this.closeMenus();
+      }
+    });
+    row.append(dupBtn, delBtn, mirrorBtn);
     footer.appendChild(row);
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
@@ -99,34 +123,95 @@ export class ScenePanel extends SidePanel {
 
     // A collapsing panel must not leave its popup menu armed.
     this.onCollapsedChange = (collapsed) => {
-      if (collapsed) this.closeAddMenu();
+      if (collapsed) this.closeMenus();
     };
     this.refresh();
   }
 
-  private openAddMenu(anchor: HTMLElement): void {
+  private openMenu(menu: HTMLDivElement, anchor: HTMLElement): void {
+    this.closeMenus();
     const btn = anchor.getBoundingClientRect();
     const panel = this.root.getBoundingClientRect();
-    this.addMenu.hidden = false;
+    menu.hidden = false;
     // Measured after unhiding so the height is real. Opens BESIDE the panel
     // rather than over it - the object list is the thing you are adding to,
     // so covering it while choosing reads badly - and falls back to above
     // the button if there is no room to the right.
-    const h = this.addMenu.offsetHeight;
-    const w = this.addMenu.offsetWidth;
+    const h = menu.offsetHeight;
+    const w = menu.offsetWidth;
     const right = panel.right + 6;
     const fitsRight = right + w <= window.innerWidth - 8;
     const left = fitsRight ? right : Math.max(8, btn.left);
     const wanted = fitsRight ? btn.bottom - h : btn.top - 6 - h;
     const top = Math.min(window.innerHeight - h - 8, Math.max(8, wanted));
-    this.addMenu.style.left = `${Math.round(left)}px`;
-    this.addMenu.style.top = `${Math.round(top)}px`;
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
     document.addEventListener('pointerdown', this.onDocPointerDown, true);
   }
 
-  private closeAddMenu(): void {
+  private closeMenus(): void {
     this.addMenu.hidden = true;
+    this.mirrorMenu.hidden = true;
     document.removeEventListener('pointerdown', this.onDocPointerDown, true);
+  }
+
+  /**
+   * The Mirror menu, rebuilt on open because the radial entries name the
+   * object's symmetry axis, which the Tool panel can change between opens.
+   */
+  private buildMirrorMenu(): void {
+    this.mirrorMenu.replaceChildren();
+    const item = (label: string, onPick: () => void): void => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'outliner__menu-item';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        this.closeMenus();
+        onPick();
+      });
+      this.mirrorMenu.appendChild(b);
+    };
+    for (const axis of ['x', 'y', 'z'] as const) {
+      item(`Mirror ${axis.toUpperCase()}`, () => this.mirrorActive(axis));
+    }
+    const sep = div('outliner__menu-sep');
+    this.mirrorMenu.appendChild(sep);
+    const axis = this.session.getSymmetryAxis().toUpperCase();
+    for (const count of [3, 4, 5, 6, 8, 12]) {
+      item(`Radial ×${count} around ${axis}`, () => this.radialActive(count));
+    }
+  }
+
+  /** A mirrored copy across a world axis; the copy takes the object's material. */
+  mirrorActive(axis: 'x' | 'y' | 'z'): void {
+    const mesh = this.session.getMesh();
+    if (!mesh) return;
+    this.library?.beginRestore();
+    let copy: SculptMesh | null;
+    try {
+      copy = this.session.mirrorMesh(mesh, axis) as unknown as SculptMesh | null;
+    } finally {
+      this.library?.endRestore();
+    }
+    if (!copy) return;
+    this.library?.adoptCopy(copy, mesh);
+    this.refresh();
+  }
+
+  /** Copies turned around the object's symmetry axis, the object one of `count`. */
+  radialActive(count: number): void {
+    const mesh = this.session.getMesh();
+    if (!mesh) return;
+    this.library?.beginRestore();
+    let copies: SculptMesh[];
+    try {
+      copies = this.session.radialCopies(mesh, count, this.session.getSymmetryAxis()) as unknown as SculptMesh[];
+    } finally {
+      this.library?.endRestore();
+    }
+    for (const c of copies) this.library?.adoptCopy(c, mesh);
+    this.refresh();
   }
 
   /** Duplicate: a copy of the active object, at its transform, with its material. */
@@ -349,7 +434,8 @@ export class ScenePanel extends SidePanel {
   }
 
   override dispose(): void {
-    this.closeAddMenu();
+    this.closeMenus();
+    this.mirrorMenu.remove();
     this.addMenu.remove();
     super.dispose();
   }

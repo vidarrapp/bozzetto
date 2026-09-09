@@ -16,10 +16,9 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3,
-} from 'three';
-import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ } from 'three/tsl';
+  Vector3, BackSide } from 'three';
+import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import type { BufferGeometry, Matrix4, Texture } from 'three';
@@ -703,7 +702,54 @@ export class Viewer {
   removeSculptExtra(mesh: Mesh): void {
     const i = this.sculptExtras.indexOf(mesh);
     if (i >= 0) this.sculptExtras.splice(i, 1);
+    this.highlightSculpt(mesh, false);
     this.scene.remove(mesh);
+  }
+
+  /**
+   * Selection highlight for a sculpt object: an inverted-hull outline in
+   * the accent colour, a child of the object's display mesh so it follows
+   * the matrix for free and shares the geometry. 'primary' is the active
+   * object's own display; the others are the extras' handles.
+   */
+  private readonly sculptOutlines = new Map<Mesh, Mesh>();
+  private outlineMaterial: MeshBasicNodeMaterial | null = null;
+
+  highlightSculpt(target: Mesh | 'primary', on: boolean): void {
+    const host = target === 'primary' ? this.display : target;
+    const existing = this.sculptOutlines.get(host);
+    if (!on) {
+      if (existing) {
+        host.remove(existing);
+        this.sculptOutlines.delete(host);
+      }
+      return;
+    }
+    if (existing) return;
+    if (!this.outlineMaterial) {
+      const m = new MeshBasicNodeMaterial();
+      m.color.set('#c87049');
+      m.side = BackSide;
+      m.transparent = true;
+      m.opacity = 0.9;
+      m.depthWrite = false;
+      // Pushed out along the normal, not scaled about the origin: the
+      // outline is the same width everywhere, whatever shape the object.
+      m.positionNode = positionLocal.add(normalLocal.mul(float(0.012)));
+      this.outlineMaterial = m;
+    }
+    const outline = new Mesh(host.geometry, this.outlineMaterial);
+    outline.frustumCulled = false;
+    outline.castShadow = false;
+    outline.receiveShadow = false;
+    outline.name = 'sculpt-outline';
+    host.add(outline);
+    this.sculptOutlines.set(host, outline);
+  }
+
+  /** Whether an object carries the selection outline (tests read this). */
+  isSculptHighlighted(target: Mesh | 'primary'): boolean {
+    return this.sculptOutlines.has(target === 'primary' ? this.display : target);
   }
 
   /**

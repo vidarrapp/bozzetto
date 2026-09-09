@@ -121,7 +121,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     let group = '';
     for (const a of keymap.actionsFor(mode)) {
       // Gesture rows have no key to edit; they live in the guide.
-      if (a.chord === null && !keymap.isOverridden(a.id)) continue;
+      if (a.gesture) continue;
       if (a.group !== group) {
         group = a.group;
         const h = div('prefs__group');

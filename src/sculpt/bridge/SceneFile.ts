@@ -131,6 +131,10 @@ export function sceneToOBJ(session: SculptSession): string {
     const name = session.getMeshName(mesh).replace(/\s+/g, '_');
     out.push(`o ${name}`);
     const m = mesh.getMatrix();
+    // A mirrored object (Scene > Mirror) carries its reflection in the
+    // matrix; baked, that turns the triangles inside out unless their
+    // winding is reversed with it.
+    const flip = mirrors(m);
     const v = mesh.getVertices();
     const nb = mesh.getNbVertices();
     for (let i = 0; i < nb; i++) {
@@ -148,12 +152,21 @@ export function sceneToOBJ(session: SculptSession): string {
       const a = tris[i * 3] + 1 + offset;
       const b = tris[i * 3 + 1] + 1 + offset;
       const c = tris[i * 3 + 2] + 1 + offset;
-      out.push(`f ${a} ${b} ${c}`);
+      out.push(flip ? `f ${a} ${c} ${b}` : `f ${a} ${b} ${c}`);
     }
     offset += nb;
   }
   out.push('');
   return out.join('\n');
+}
+
+/** True when a mesh matrix reflects (a negative determinant): Scene > Mirror. */
+export function mirrors(m: Float32Array | number[]): boolean {
+  const det =
+    m[0] * (m[5] * m[10] - m[9] * m[6]) -
+    m[4] * (m[1] * m[10] - m[9] * m[2]) +
+    m[8] * (m[1] * m[6] - m[5] * m[2]);
+  return det < 0;
 }
 
 /** Six significant digits: plenty at normalized sculpt scale, half the bytes. */
@@ -210,7 +223,17 @@ export function mergeSceneArrays(
     if (colors) colors.set(mesh.getColors().subarray(0, nb * 3), vOff * 3);
     const tris = mesh.getTriangles();
     const nbTris = mesh.getNbTriangles();
-    for (let i = 0; i < nbTris * 3; i++) indices[iOff + i] = tris[i] + vOff;
+    if (mirrors(m)) {
+      // The reflection in the matrix would turn the baked triangles inside
+      // out; reversing the winding keeps them facing the way they render.
+      for (let i = 0; i < nbTris; i++) {
+        indices[iOff + i * 3] = tris[i * 3] + vOff;
+        indices[iOff + i * 3 + 1] = tris[i * 3 + 2] + vOff;
+        indices[iOff + i * 3 + 2] = tris[i * 3 + 1] + vOff;
+      }
+    } else {
+      for (let i = 0; i < nbTris * 3; i++) indices[iOff + i] = tris[i] + vOff;
+    }
     vOff += nb;
     iOff += nbTris * 3;
   }

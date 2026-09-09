@@ -20,7 +20,7 @@ import {
 } from './bridge/ScenePersist';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
-import { TransformGizmo, type GizmoMode } from './bridge/transform';
+import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene } from './bridge/SceneFile';
@@ -375,7 +375,25 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.setSculptVisible(active ? active.isVisible() : true);
     // A newly added object still has SculptGL's white vertex colours.
     library.applyNew();
+    syncHighlights();
   };
+  /**
+   * Selection outlines: on every selected object while the Select tool or
+   * the gizmo is up, off while a brush is - a halo under the pen would
+   * only get in the way of reading the surface.
+   */
+  const syncHighlights = (): void => {
+    const show = input.isSelecting() || gizmo.isActive();
+    const selected = new Set(session.getSelectedMeshes());
+    const active = session.getMesh();
+    viewer.highlightSculpt('primary', show && !!active && selected.has(active));
+    for (const [mesh, e] of extras) viewer.highlightSculpt(e.handle, show && selected.has(mesh));
+  };
+  session.onSelectionChange = () => {
+    scenePanel?.refresh();
+    syncHighlights();
+  };
+
   // The gizmo refuses hidden and locked objects: moving what you cannot see
   // (or deliberately froze) is never what a press meant.
   const gizmoTarget = (): SculptMesh | null => {
@@ -620,7 +638,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // around; otherwise the next drag would swing away from the framing.
       liveWorldBox(active).getCenter(pivot);
     },
+    selectModeChanged: (on) => {
+      toolbar.setSelectActive(on);
+      sculptPanel?.refreshBrush();
+      syncHighlights();
+    },
+    selectInRect: (rect) => {
+      // An object is in the marquee when its projected world bound meets
+      // the rectangle: the eight corners of the bound, through the camera,
+      // in container pixels.
+      const r = container.getBoundingClientRect();
+      const hits: SculptMesh[] = [];
+      for (const mesh of session.getMeshes()) {
+        if (!mesh.isVisible()) continue;
+        const b = mesh.computeWorldBound();
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, infront = false;
+        for (let i = 0; i < 8; i++) {
+          const p = new Vector3(b[i & 1 ? 3 : 0], b[i & 2 ? 4 : 1], b[i & 4 ? 5 : 2]).project(viewer.camera);
+          if (p.z > 1) continue; // behind the camera
+          infront = true;
+          const sx = ((p.x + 1) / 2) * r.width;
+          const sy = ((1 - p.y) / 2) * r.height;
+          minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+          minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+        }
+        if (!infront) continue;
+        if (maxX >= rect.x0 && minX <= rect.x1 && maxY >= rect.y0 && minY <= rect.y1) hits.push(mesh);
+      }
+      return hits;
+    },
     deleteSelected: () => scenePanel?.deleteSelected(),
+    mirrorSelected: () => scenePanel?.mirrorActive(session.getSymmetryAxis()),
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;
@@ -729,15 +777,27 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   const enterTransform = (mode: GizmoMode): void => {
     if (gizmo.isActive() && mode !== 'all' && gizmo.getMode() === mode) return;
+    input.exitSelect();
     gizmo.enter(mode, gizmoTarget());
     cursor.hide();
     toolbar.setTransformActive(true);
+    sculptPanel?.refreshBrush();
+    syncHighlights();
   };
   const exitTransform = (): void => {
     if (!gizmo.isActive()) return;
     gizmo.exit();
     toolbar.setTransformActive(false);
+    sculptPanel?.refreshBrush();
+    syncHighlights();
   };
+  // Which handles the gizmo shows is a workspace preference, kept per browser.
+  try {
+    const stored = localStorage.getItem('bozzetto-gizmo-parts');
+    if (stored) gizmo.setParts(JSON.parse(stored) as Partial<GizmoParts>);
+  } catch {
+    // A blocked or corrupt store: every handle shows.
+  }
   // On by default: a brush you can rely on is worth more than one that
   // rescales with the camera, and the screen-pixel behaviour is a tick away.
   // Enabled here (not by a field default) so the pinned world radius is
@@ -754,6 +814,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (gizmo.isActive()) exitTransform();
     else enterTransform('all');
   };
+  toolbar.onToggleSelect = () => input.toggleSelect();
   toolbar.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => toolbar.setChromeHidden(hidden);
   sliders = new BrushSliders(input, {
@@ -862,6 +923,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.render();
   };
   sculptPanel = new SculptPanel(session, input, viewer);
+  sculptPanel.onGizmoParts = (parts) => {
+    try {
+      localStorage.setItem('bozzetto-gizmo-parts', JSON.stringify(parts));
+    } catch {
+      // Not worth failing the tick over.
+    }
+  };
   modelPanel = new ModelPanel(session, viewer);
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
@@ -1127,6 +1195,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.dispose();
     cursor.dispose();
     session.onActiveMeshChange = null;
+    session.onSelectionChange = null;
+    input.exitSelect();
     viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;

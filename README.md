@@ -200,6 +200,8 @@ guide (`H`) shows whatever keys are set.
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |
 | `Ctrl` + `A` / `C` / `I` / `H` / `E` | Mask all · clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes |
+| `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee, `Alt`+drag orbits |
+| `Ctrl`+`M` | Mirror the object across its symmetry axis (the Scene panel's Mirror button offers X/Y/Z and radial copies) |
 | `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry |

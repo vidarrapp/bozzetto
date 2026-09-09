@@ -7,6 +7,7 @@ import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import { keymap } from '../../ui/keymap';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -34,6 +35,8 @@ export interface InputShellHooks {
   frameAll(): void;
   /** Delete: the selected objects go (the Scene panel asks first). */
   deleteSelected(): void;
+  /** Ctrl+m: a mirrored copy of the object across its symmetry axis. */
+  mirrorSelected(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -42,6 +45,10 @@ export interface InputShellHooks {
   transformMode(mode: 'all' | 'translate' | 'rotate' | 'scale'): void;
   /** t: the whole gizmo on, or off if it is up (the toolbar button's twin). */
   transformToggle(): void;
+  /** The Select tool came or went (toolbar, panel and highlights follow). */
+  selectModeChanged(on: boolean): void;
+  /** The visible objects whose screen bounds meet a marquee (container px). */
+  selectInRect(rect: { x0: number; y0: number; x1: number; y1: number }): SculptMesh[];
   /** q (or picking a brush): leave the gizmo and go back to sculpting. */
   transformExit(): void;
   /** A drag that missed the mesh is about to orbit / has finished. */
@@ -64,6 +71,9 @@ export interface InputShellHooks {
   /** ctrl+e: extract the masked region at the palette's thickness. */
   extractMasked(): void;
 }
+
+/** A select-tool press that travels past this is a marquee, not a click. */
+const MARQUEE_SLOP = 5;
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
 type AdjustMode = 'radius' | 'intensity' | null;
@@ -157,6 +167,24 @@ export class InputShell {
   private negativeOverride: { tool: SculptTool; prev: boolean } | null = null;
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
+  /**
+   * The Select tool (q): a mode of the shell rather than a vendor tool.
+   * Presses pick and marquee-select objects instead of stroking; the
+   * brushes and the gizmo are one key away.
+   */
+  private selectMode = false;
+  private marquee: {
+    pointerId: number;
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+    dragging: boolean;
+    shift: boolean;
+    ctrl: boolean;
+    hit: SculptMesh | null;
+    el: HTMLDivElement | null;
+  } | null = null;
   private adjust: AdjustMode = null;
   /**
    * The pointer whose press is driving the current b/s adjust, or -1 while
@@ -487,6 +515,114 @@ export class InputShell {
     for (const [idx, id] of Object.entries(table)) this.applyToolAlpha(id ?? null, Number(idx));
   }
 
+  // --- the Select tool -----------------------------------------------------
+
+  isSelecting(): boolean {
+    return this.selectMode;
+  }
+
+  /** What the Tool panel shows settings for. */
+  uiMode(): 'brush' | 'select' | 'transform' {
+    if (this.selectMode) return 'select';
+    if (this.transform?.isActive()) return 'transform';
+    return 'brush';
+  }
+
+  enterSelect(): void {
+    if (this.selectMode) return;
+    if (this.pointerId !== -1 || this.session._action !== Enums.Action.NOTHING) return;
+    if (this.transform?.isActive()) this.hooks.transformExit();
+    this.selectMode = true;
+    this.cursor.hide();
+    this.session.setCanvasCursor('default');
+    this.hooks.selectModeChanged(true);
+  }
+
+  exitSelect(): void {
+    if (!this.selectMode) return;
+    this.selectMode = false;
+    this.endMarquee();
+    this.syncCursorBrush();
+    this.hooks.selectModeChanged(false);
+  }
+
+  toggleSelect(): void {
+    if (this.selectMode) this.exitSelect();
+    else this.enterSelect();
+  }
+
+  /** A press in select mode: a click picks, a drag draws the marquee. */
+  private beginSelectPress(e: PointerEvent): void {
+    const s = this.session;
+    this.setMouse(e);
+    const hit = s.getPicking().intersectionMouseMeshes() ? s.getPicking().getMesh() : null;
+    this.marquee = {
+      pointerId: e.pointerId,
+      x0: e.clientX,
+      y0: e.clientY,
+      x1: e.clientX,
+      y1: e.clientY,
+      dragging: false,
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+      hit,
+      el: null,
+    };
+  }
+
+  private moveSelectPress(e: PointerEvent): void {
+    const m = this.marquee;
+    if (!m || e.pointerId !== m.pointerId) return;
+    m.x1 = e.clientX;
+    m.y1 = e.clientY;
+    if (!m.dragging && Math.hypot(m.x1 - m.x0, m.y1 - m.y0) > MARQUEE_SLOP) {
+      m.dragging = true;
+      m.el = document.createElement('div');
+      m.el.className = 'select-marquee';
+      document.body.appendChild(m.el);
+    }
+    if (m.el) {
+      const left = Math.min(m.x0, m.x1);
+      const top = Math.min(m.y0, m.y1);
+      m.el.style.left = `${left}px`;
+      m.el.style.top = `${top}px`;
+      m.el.style.width = `${Math.abs(m.x1 - m.x0)}px`;
+      m.el.style.height = `${Math.abs(m.y1 - m.y0)}px`;
+    }
+  }
+
+  private endSelectPress(e: PointerEvent): void {
+    const m = this.marquee;
+    if (!m || e.pointerId !== m.pointerId) return;
+    const cancelled = e.type === 'pointercancel';
+    let hits: SculptMesh[] = [];
+    if (!cancelled) {
+      if (m.dragging) {
+        const r = this.container.getBoundingClientRect();
+        hits = this.hooks.selectInRect({
+          x0: Math.min(m.x0, m.x1) - r.left,
+          y0: Math.min(m.y0, m.y1) - r.top,
+          x1: Math.max(m.x0, m.x1) - r.left,
+          y1: Math.max(m.y0, m.y1) - r.top,
+        });
+      } else if (m.hit) {
+        hits = [m.hit];
+      }
+      // Maya's modifiers (owner call): shift adds, ctrl removes, ctrl+shift
+      // adds; nothing held replaces the selection with what was hit.
+      const s = this.session;
+      if (m.ctrl && !m.shift) s.selectRemove(hits);
+      else if (m.shift) s.selectAdd(hits);
+      else s.selectSet(hits);
+    }
+    this.endMarquee();
+  }
+
+  private endMarquee(): void {
+    this.marquee?.el?.remove();
+    this.marquee = null;
+  }
+
   /**
    * Flood the active object with the paint colour (the Tool panel's fill
    * button): every unmasked vertex, one undo entry, and the object counts
@@ -602,6 +738,16 @@ export class InputShell {
     }
     const s = this.session;
     this.setMouse(e);
+
+    // The Select tool: a press picks or marquees; alt keeps the orbit.
+    if (this.selectMode) {
+      if (e.altKey) return; // unclaimed: OrbitControls takes it
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      this.beginSelectPress(e);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     // With the gizmo up there is no sculpting. A press on a handle belongs
     // to TransformControls (its own listeners run after ours; claiming or
@@ -804,6 +950,11 @@ export class InputShell {
       return;
     }
 
+    if (this.marquee) {
+      this.moveSelectPress(e);
+      return;
+    }
+
     // Hold-b / hold-s adjust on the anchored brush: size is a horizontal
     // drag, strength a vertical one (up = stronger) - while the pen or
     // button is down. A hover with the key held moves nothing.
@@ -916,6 +1067,10 @@ export class InputShell {
     // The b/s drag ends with the press; the key stays armed for the next.
     if (this.adjustPointer === e.pointerId) {
       this.adjustPointer = -1;
+      return;
+    }
+    if (this.marquee && this.marquee.pointerId === e.pointerId) {
+      this.endSelectPress(e);
       return;
     }
 
@@ -1154,6 +1309,9 @@ export class InputShell {
       case 'scene.delete':
         this.hooks.deleteSelected();
         return this.claim(e);
+      case 'scene.mirror':
+        this.hooks.mirrorSelected();
+        return this.claim(e);
       case 'view.frameAll':
         this.hooks.frameAll();
         return this.claim(e);
@@ -1192,6 +1350,9 @@ export class InputShell {
         return this.claim(e);
       case 'gizmo.scale':
         this.hooks.transformMode('scale');
+        return this.claim(e);
+      case 'tool.select':
+        this.toggleSelect();
         return this.claim(e);
       case 'tool.crease':
         return this.selectTool(Enums.Tools.CREASE, e);
@@ -1267,6 +1428,7 @@ export class InputShell {
   /** Window lost focus: every held-key mode ends, since no keyup will come. */
   private readonly onWindowBlur = (): void => {
     if (this.adjust) this.endAdjust();
+    this.endMarquee();
     this.lKeyHeld = false;
     if (this.shiftHeld) {
       this.shiftHeld = false;
@@ -1286,8 +1448,10 @@ export class InputShell {
     // old tool's stale coordinates while the old one never ends (the same
     // hazard undo/redo guard against).
     if (this.pointerId !== -1 || this.session._action !== Enums.Action.NOTHING) return;
-    // A brush is a statement of intent: sculpting resumes, the gizmo goes.
+    // A brush is a statement of intent: sculpting resumes, the gizmo goes,
+    // and so does the Select tool.
     if (this.transform?.isActive()) this.hooks.transformExit();
+    if (this.selectMode) this.exitSelect();
     const manager = this.session.getSculptManager();
     manager.setToolIndex(index);
     const tool = manager.getCurrentTool();

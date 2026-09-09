@@ -11,6 +11,17 @@ type GizmoInternals = {
 
 export type GizmoMode = 'all' | 'translate' | 'rotate' | 'scale';
 
+/** Which handles the gizmo shows (the Tool panel's Transform settings). */
+export interface GizmoParts {
+  arrows: boolean;
+  planes: boolean;
+  rotate: boolean;
+  scale: boolean;
+  uniform: boolean;
+}
+
+export const ALL_PARTS: GizmoParts = { arrows: true, planes: true, rotate: true, scale: true, uniform: true };
+
 /** Drag distance, as a fraction of the camera distance, that scales by e. */
 const UNIFORM_SCALE_TRAVEL = 0.35;
 
@@ -52,6 +63,17 @@ export class TransformGizmo {
 
   /** The proxy's scale when the current drag began (uniform scale reads it). */
   private readonly scaleStart = new Vector3(1, 1, 1);
+  private parts: GizmoParts = { ...ALL_PARTS };
+
+  /** Choose the handles (owner request): what is off is detached, not just hidden. */
+  setParts(parts: Partial<GizmoParts>): void {
+    this.parts = { ...this.parts, ...parts };
+    if (this.active) this.applyMode();
+  }
+
+  getParts(): GizmoParts {
+    return { ...this.parts };
+  }
 
   constructor(
     private readonly session: SculptSession,
@@ -172,7 +194,14 @@ export class TransformGizmo {
   private applyMode(): void {
     this.applyUnifiedTrim(this.mode === 'all');
     for (const tc of this.stack) {
-      const on = this.mode === 'all' || tc.mode === this.mode;
+      // A control whose every part is switched off stays out entirely.
+      const wanted =
+        tc.mode === 'rotate'
+          ? this.parts.rotate
+          : tc.mode === 'scale'
+            ? this.parts.scale || this.parts.uniform
+            : this.parts.arrows || this.parts.planes;
+      const on = (this.mode === 'all' || tc.mode === this.mode) && wanted;
       tc.enabled = on && !!this.mesh;
       tc.getHelper().visible = on && !!this.mesh;
       if (on && this.mesh) tc.attach(this.proxy);
@@ -230,7 +259,6 @@ export class TransformGizmo {
       cubeP.geometry = want.picker;
     }
 
-    if (!unified) return;
     const detach = (group: Object3D, names: string[]): void => {
       for (const child of [...group.children]) {
         if (names.includes(child.name)) {
@@ -239,10 +267,31 @@ export class TransformGizmo {
         }
       }
     };
-    detach(translate.gizmo.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
-    detach(translate.picker.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
-    detach(scale.gizmo.scale, ['XY', 'YZ', 'XZ']);
-    detach(scale.picker.scale, ['XY', 'YZ', 'XZ']);
+    if (unified) {
+      detach(translate.gizmo.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
+      detach(translate.picker.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
+      detach(scale.gizmo.scale, ['XY', 'YZ', 'XZ']);
+      detach(scale.picker.scale, ['XY', 'YZ', 'XZ']);
+    }
+    // The user's own trim (Tool panel > Transform): each part off is
+    // detached the same way, in every mode.
+    const p = this.parts;
+    if (!p.arrows) {
+      detach(translate.gizmo.translate, ['X', 'Y', 'Z']);
+      detach(translate.picker.translate, ['X', 'Y', 'Z']);
+    }
+    if (!p.planes) {
+      detach(translate.gizmo.translate, ['XY', 'YZ', 'XZ']);
+      detach(translate.picker.translate, ['XY', 'YZ', 'XZ']);
+    }
+    if (!p.scale) {
+      detach(scale.gizmo.scale, ['X', 'Y', 'Z', 'XY', 'YZ', 'XZ']);
+      detach(scale.picker.scale, ['X', 'Y', 'Z', 'XY', 'YZ', 'XZ']);
+    }
+    if (!p.uniform) {
+      detach(scale.gizmo.scale, ['XYZ']);
+      detach(scale.picker.scale, ['XYZ']);
+    }
   }
 
   private beginDrag(winner: TransformControls): void {
