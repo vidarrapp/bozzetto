@@ -382,8 +382,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * the gizmo is up, off while a brush is - a halo under the pen would
    * only get in the way of reading the surface.
    */
+  // The shell and the gizmo are built after the first reconcile runs, so
+  // the sync reads them through holders that start out saying "no".
+  let highlightSources = { selecting: (): boolean => false, gizmoActive: (): boolean => false };
   const syncHighlights = (): void => {
-    const show = input.isSelecting() || gizmo.isActive();
+    const show = highlightSources.selecting() || highlightSources.gizmoActive();
     const selected = new Set(session.getSelectedMeshes());
     const active = session.getMesh();
     viewer.highlightSculpt('primary', show && !!active && selected.has(active));
@@ -758,6 +761,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let lightSyncTimer = 0;
   const gizmo = new TransformGizmo(session, viewer.camera, canvas, viewer.scene);
   input.transform = gizmo;
+  highlightSources = { selecting: () => input.isSelecting(), gizmoActive: () => gizmo.isActive() };
   gizmo.onTransform = (mesh) => {
     const m = new Matrix4().fromArray(mesh.getMatrix());
     if (mesh === session.getMesh()) viewer.setSculptMatrix(m);

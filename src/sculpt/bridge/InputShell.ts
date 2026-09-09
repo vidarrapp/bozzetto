@@ -744,6 +744,15 @@ export class InputShell {
       if (e.altKey) return; // unclaimed: OrbitControls takes it
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       this.beginSelectPress(e);
+      // A marquee dragged past the canvas edge must still end on release
+      // (the same capture the strokes take, and for the same touch caveat).
+      if (e.pointerType !== 'touch') {
+        try {
+          s.getCanvas().setPointerCapture(e.pointerId);
+        } catch {
+          // Synthetic events carry no active pointer; capture is best-effort.
+        }
+      }
       e.preventDefault();
       e.stopPropagation();
       return;

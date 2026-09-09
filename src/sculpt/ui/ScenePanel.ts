@@ -319,6 +319,7 @@ export class ScenePanel extends SidePanel {
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();
+    const selected = new Set(this.session.getSelectedMeshes());
     const many = this.session.getMeshes().length > 1;
     // The object under rename can vanish mid-edit (undo, delete elsewhere);
     // a stale flag would wait forever for an input that no longer exists.
@@ -329,6 +330,8 @@ export class ScenePanel extends SidePanel {
         const visible = mesh.isVisible();
         const locked = this.session.isLocked(mesh);
         if (mesh === active) row.classList.add('outliner__row--active');
+        // The Select tool's selection, beside the active object's row.
+        else if (selected.has(mesh)) row.classList.add('outliner__row--selected');
         if (!visible) row.classList.add('outliner__row--hidden');
 
         row.appendChild(

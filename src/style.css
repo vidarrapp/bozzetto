@@ -1814,6 +1814,11 @@ html.is-page body {
   color: var(--accent-hover);
 }
 
+/* In the selection (the Select tool), but not the active object. */
+.outliner__row--selected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 /* A hidden object stays listed but reads as absent. */
 .outliner__row--hidden .outliner__name {
   opacity: 0.45;
