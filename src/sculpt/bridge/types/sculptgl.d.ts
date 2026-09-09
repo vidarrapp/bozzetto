@@ -33,6 +33,8 @@ declare module '@sculpt-vendor/misc/Enums' {
       TRANSFORM: number;
       /** BOZZETTO EDIT: the Rake brush's slot (installed by the bridge). */
       RAKE: number;
+      /** BOZZETTO EDIT: the paint blur's slot (shift over the paint brush). */
+      PAINT_BLUR: number;
     };
   };
   export default Enums;
@@ -109,6 +111,9 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getMaterials(): Float32Array;
     /** Re-fan colours/materials into the duplicated render vertices. */
     updateDuplicateColorsAndMaterials(iVerts?: Uint32Array): void;
+    /** Non-indexed (draw-arrays) rendering, which upstream never uses here. */
+    isUsingDrawArrays(): boolean;
+    updateDrawArrays(faces: Uint32Array): void;
     /** Re-upload the vertex colour buffer after a bulk write (paint fill). */
     updateColorBuffer(): void;
     /** Re-upload the roughness/metalness/mask buffer after a bulk write. */
@@ -230,6 +235,8 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     clear?(): void;
     /** BOZZETTO EDIT in Masking.js: mask every vertex of the object. */
     maskAll?(): void;
+    /** Paint tool only: fill every unmasked vertex with the paint colour. */
+    paintAll?(): void;
     blur?(): void;
     sharpen?(): void;
     /** Masking tool only: shell extraction of the masked region (WS4). */
@@ -466,6 +473,37 @@ declare module '@sculpt-vendor/editing/tools/Crease' {
     ): void;
   }
   export default Crease;
+}
+
+declare module '@sculpt-vendor/editing/tools/Paint' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  class Paint {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    /** Falloff hardness: 1 a hard-edged stamp, 0 fading from the centre. */
+    _hardness: number;
+    _culling: boolean;
+    _color: Float32Array;
+    _idAlpha: string | number | null;
+    _lockPosition: boolean;
+    /** BOZZETTO EDIT in SculptBase: dab spacing, a fraction of the radius. */
+    _spacing: number;
+    _writeAlbedo: boolean;
+    _writeRoughness: boolean;
+    _writeMetalness: boolean;
+    constructor(main: unknown);
+    getMesh(): SculptMesh;
+    stroke(picking: Picking): void;
+    /** Fill every unmasked vertex with the paint colour (one undo entry). */
+    paintAll(): void;
+    dynamicTopology(picking: Picking): Uint32Array;
+    getFrontVertices(iVerts: Uint32Array, eyeDir: number[]): Uint32Array;
+    /** Ring-average `values` (3 per vertex) over iVerts into `out`. */
+    laplacianSmooth(iVerts: Uint32Array, out: Float32Array, values: Float32Array): void;
+  }
+  export default Paint;
 }
 
 declare module '@sculpt-vendor/editing/tools/Brush' {

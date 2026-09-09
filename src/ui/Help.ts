@@ -1,124 +1,77 @@
 import { topbarRight } from './topbar';
+import { chordLabel, chordParts, keymap, type KeyMode } from './keymap';
+import { showPreferences } from './Preferences';
 
 /**
  * Hotkey guide for the viewer: a dismissible top-left hint ("Press H …") that
  * fades after a few seconds, plus a left-side overlay listing every shortcut,
  * toggled by H (or by clicking it).
  */
-const GUIDE_HTML = `
-  <div class="help-guide__head">Hotkeys &amp; navigation <span class="help-guide__close">H to close</span></div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Playback</div>
-    <div class="help-row"><kbd>Space</kbd><span>Play / pause</span></div>
-    <div class="help-row"><kbd>←</kbd><span>Step back</span></div>
-    <div class="help-row"><kbd>→</kbd><span>Step forward</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">View</div>
-    <div class="help-row"><span class="help-key">Drag</span><span>Orbit</span></div>
-    <div class="help-row"><span class="help-key">Cmd / Shift + drag</span><span>Pan (two-finger drag on touch)</span></div>
-    <div class="help-row"><span class="help-key">Scroll</span><span>Zoom</span></div>
-    <div class="help-row"><kbd>F</kbd><span>Focus / frame model</span></div>
-    <div class="help-row"><kbd>A</kbd><span>Frame the whole scene</span></div>
-    <div class="help-row"><span class="help-key">Double-click</span><span>Set focus point (double-tap on touch)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Material</div>
-    <div class="help-row"><kbd>1</kbd><span>Lit (PBR)</span></div>
-    <div class="help-row"><kbd>2</kbd>–<kbd>9</kbd><span>Matcaps</span></div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>W</kbd><span>Wireframe overlay</span></div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
-    <div class="help-row"><kbd>G</kbd><span>Cycle ground (shadow / floor / pedestal / off)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Interface</div>
-    <div class="help-row"><kbd>Tab</kbd><span>Toggle panel</span></div>
-    <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
-    <div class="help-row"><kbd>P</kbd><span>Frame-rate meter</span></div>
-  </div>`;
-
-const SCULPT_HTML = `
-  <div class="help-guide__head">Sculpt hotkeys <span class="help-guide__close">H to close</span></div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Sculpting</div>
-    <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt</span></div>
-    <div class="help-row"><span class="help-key">Alt + drag</span><span>Negative (carve)</span></div>
-    <div class="help-row"><span class="help-key">Shift + drag</span><span>Smooth</span></div>
-    <div class="help-row"><kbd>B</kbd><span>Brush size (hold, then drag with the pen down)</span></div>
-    <div class="help-row"><kbd>S</kbd><span>Brush strength (hold, then drag up/down with the pen down)</span></div>
-    <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Brush size step (wheel-friendly)</span></div>
-    <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
-    <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
-    <div class="help-row"><kbd>T</kbd><span>Transform gizmo (all handles)</span></div>
-    <div class="help-row"><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><span>Move / rotate / scale the object (gizmo); <kbd>Q</kbd> back to sculpting</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Masking</div>
-    <div class="help-row"><span class="help-key">Ctrl + drag</span><span>Paint mask (+ Alt to unmask)</span></div>
-    <div class="help-row"><span class="help-key">Ctrl + click off mesh</span><span>Invert mask</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>A</kbd><span>Mask the whole object</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Clear mask</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>I</kbd><span>Invert mask</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>H</kbd><span>Show / hide mask tint</span></div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>E</kbd><span>Extract masked region</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Navigation</div>
-    <div class="help-row"><span class="help-key">Drag off mesh</span><span>Orbit (around your last stroke)</span></div>
-    <div class="help-row"><span class="help-key">Cmd / Shift + drag</span><span>Pan (two fingers always navigate, even on the model)</span></div>
-    <div class="help-row"><span class="help-key">Ctrl + drag off mesh</span><span>Zoom</span></div>
-    <div class="help-row"><span class="help-key">Scroll / pinch</span><span>Zoom</span></div>
-    <div class="help-row"><kbd>F</kbd><span>Frame model (orbit follows your strokes)</span></div>
-    <div class="help-row"><kbd>A</kbd><span>Frame the whole scene</span></div>
-    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Turntable (accelerates with the wheel)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Brushes</div>
-    <div class="help-row"><kbd>1</kbd><span>Crease</span></div>
-    <div class="help-row"><kbd>2</kbd><span>Move</span></div>
-    <div class="help-row"><kbd>3</kbd><span>Standard (clay)</span></div>
-    <div class="help-row"><kbd>4</kbd><span>Inflate</span></div>
-    <div class="help-row"><kbd>5</kbd><span>Pinch</span></div>
-    <div class="help-row"><kbd>6</kbd><span>Flatten</span></div>
-    <div class="help-row"><kbd>7</kbd><span>Smooth</span></div>
-    <div class="help-row"><kbd>8</kbd><span>Drag</span></div>
-    <div class="help-row"><kbd>9</kbd><span>Polish (flattens, keeps edges sharp)</span></div>
-    <div class="help-row"><kbd>0</kbd><span>Paint (Alt + click samples a colour)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Subdiv</div>
-    <div class="help-row"><kbd>Ctrl</kbd>+<kbd>D</kbd><span>Subdivide</span></div>
-    <div class="help-row"><kbd>D</kbd><span>Subdivision level up</span></div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>D</kbd><span>Subdivision level down</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Lighting</div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>S</kbd><span>Shadows on / off</span></div>
-    <div class="help-row"><kbd>Shift</kbd>+<kbd>W</kbd><span>Wireframe overlay</span></div>
-    <div class="help-row"><kbd>L</kbd><span>Move the key light (hold + drag: across / up)</span></div>
-  </div>
-  <div class="help-guide__group">
-    <div class="help-guide__title">Interface</div>
-    <div class="help-row"><kbd>Tab</kbd><span>Close panels, then hide the interface</span></div>
-    <div class="help-row"><kbd>Esc</kbd><span>Show the interface</span></div>
-    <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
-  </div>`;
+/**
+ * The guide is drawn from the keymap, so a rebind shows up here the way it
+ * shows up under the fingers. Gesture rows (drag, scroll, double-click)
+ * come from the same table with a note instead of a chord.
+ */
+function guideHtml(mode: KeyMode): string {
+  const esc = (t: string): string =>
+    t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const closeKey = keymap.chordFor('ui.help');
+  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : 'Hotkeys &amp; navigation';
+  const closer = closeKey ? `${esc(chordLabel(closeKey))} to close` : 'click to close';
+  let html = `<div class="help-guide__head">${head} <span class="help-guide__close">${closer}</span></div>`;
+  let group = '';
+  let open = false;
+  for (const a of keymap.actionsFor(mode)) {
+    const chord = keymap.chordFor(a.id);
+    const gesture = a.chord === null && !keymap.isOverridden(a.id);
+    if (!gesture && !chord) continue; // unbound: nothing to press
+    if (a.group !== group) {
+      if (open) html += '</div>';
+      group = a.group;
+      html += `<div class="help-guide__group"><div class="help-guide__title">${esc(group)}</div>`;
+      open = true;
+    }
+    const key = gesture
+      ? `<span class="help-key">${esc(a.note ?? '')}</span>`
+      : chordParts(chord!)
+          .map((p) => `<kbd>${esc(p)}</kbd>`)
+          .join('+');
+    html += `<div class="help-row">${key}<span>${esc(a.label)}</span></div>`;
+  }
+  if (open) html += '</div>';
+  html += `<div class="help-guide__foot"><button type="button" class="help-guide__prefs">Customise hotkeys…</button></div>`;
+  return html;
+}
 
 export class Help {
   private readonly hint: HTMLDivElement;
   private readonly guide: HTMLDivElement;
   private readonly button: HTMLButtonElement;
   private hintTimer: number | undefined;
+  private mode: KeyMode = 'view';
+  private readonly offKeymap: () => void;
   private readonly onSculptMode = (e: Event): void => {
     const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
-    this.guide.innerHTML = active ? SCULPT_HTML : GUIDE_HTML;
+    this.mode = active ? 'sculpt' : 'view';
+    this.render();
   };
+
+  private render(): void {
+    this.guide.innerHTML = guideHtml(this.mode);
+    // The way into the editor from the guide, for anyone reading it and
+    // wanting a different key. Its click must not close the guide.
+    this.guide.querySelector<HTMLButtonElement>('.help-guide__prefs')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.guide.hidden = true;
+      showPreferences(this.mode);
+    });
+  }
 
   constructor() {
     this.hint = document.createElement('div');
     this.hint.className = 'help-hint';
-    this.hint.textContent = 'Press H for hotkey guide';
+    const helpKey = keymap.chordFor('ui.help');
+    this.hint.textContent = helpKey ? `Press ${chordLabel(helpKey)} for hotkey guide` : 'Hotkey guide: the ? button';
     document.body.appendChild(this.hint);
     this.hintTimer = window.setTimeout(() => this.hint.classList.add('is-hidden'), 8000);
 
@@ -128,7 +81,7 @@ export class Help {
     this.button.type = 'button';
     this.button.className = 'topchip help-toggle';
     this.button.textContent = '?';
-    this.button.title = 'Hotkey guide (H)';
+    this.button.title = helpKey ? `Hotkey guide (${chordLabel(helpKey)})` : 'Hotkey guide';
     this.button.setAttribute('aria-label', 'Hotkey guide');
     this.button.addEventListener('click', () => this.toggle());
     topbarRight().appendChild(this.button);
@@ -136,11 +89,13 @@ export class Help {
     this.guide = document.createElement('div');
     this.guide.className = 'help-guide';
     this.guide.hidden = true;
-    this.guide.innerHTML = GUIDE_HTML;
     this.guide.addEventListener('click', () => this.toggle());
     document.body.appendChild(this.guide);
-    // Sculpt mode swaps the guide content while active (and back on exit).
+    this.render();
+    // Sculpt mode swaps the guide content while active (and back on exit),
+    // and a rebind redraws it.
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    this.offKeymap = keymap.onChange(() => this.render());
   }
 
   toggle(): void {
@@ -159,6 +114,7 @@ export class Help {
   dispose(): void {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    this.offKeymap();
     this.hint.remove();
     this.button.remove();
     this.guide.remove();

@@ -97,6 +97,8 @@ export interface DocumentHost {
   redo(): void;
   /** Open the server settings UI. */
   showServerSettings(): void;
+  /** Open Preferences (the hotkey editor). */
+  showPreferences(): void;
 }
 
 /**
@@ -262,6 +264,7 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
     },
     'edit:undo': () => host.undo(),
     'edit:redo': () => host.redo(),
+    'edit:preferences': () => host.showPreferences(),
     'server:settings': () => host.showServerSettings(),
     'server:signIn': async () => {
       await bridge.signIn();

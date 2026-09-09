@@ -1948,6 +1948,23 @@ html.is-page body {
   margin-top: 6px;
 }
 
+/* A control with a small button beside it (the paint swatch and its fill). */
+.sculpt-panel__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sculpt-panel__btn--icon {
+  padding: 4px 7px;
+  line-height: 1;
+}
+
+.sculpt-panel__btn--icon .fi {
+  font-size: 14px;
+  display: block;
+}
+
 .sculpt-panel__btn {
   padding: 6px 10px;
   border: 1px solid var(--panel-border);
@@ -2581,6 +2598,141 @@ body.is-sampling * {
 .file-menu__note {
   bottom: auto;
   top: 52px;
+}
+
+/* Preferences: the hotkey editor, on the server-settings card. */
+.prefs__card {
+  position: relative;
+  width: min(560px, 92vw);
+}
+
+.prefs__tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.prefs__tab {
+  padding: 5px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.prefs__tab--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.prefs__list {
+  max-height: 55vh;
+  overflow: auto;
+  margin: 4px 0 10px;
+  padding-right: 4px;
+}
+
+.prefs__group {
+  margin: 12px 0 4px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted, #9a8f85);
+}
+
+.prefs__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.prefs__label {
+  flex: 1;
+  font-size: 12px;
+}
+
+.prefs__key {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.prefs__key:hover {
+  border-color: var(--accent);
+}
+
+.prefs__key kbd {
+  font: inherit;
+  font-size: 11px;
+}
+
+.prefs__key--none {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.prefs__reset {
+  width: 26px;
+  padding: 3px 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.prefs__capture {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: inherit;
+  background: var(--panel-bg);
+}
+
+.prefs__capture-text {
+  font-size: 15px;
+}
+
+/* The way from the guide into the editor. */
+.help-guide__foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.help-guide__prefs {
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.help-guide__prefs:hover {
+  border-color: var(--accent);
 }
 
 /* The gallery's "start a sculpt" tile: same footprint as a project card,

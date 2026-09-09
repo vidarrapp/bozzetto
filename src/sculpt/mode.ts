@@ -42,6 +42,8 @@ import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { CapturePanel } from './ui/CapturePanel';
 import { FileMenu } from './ui/FileMenu';
+import { TopMenu } from './ui/TopMenu';
+import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -335,6 +337,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let scenePanel: ScenePanel | null = null;
   let capturePanel: CapturePanel | null = null;
   let fileMenu: FileMenu | null = null;
+  let editMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   const extras = new Map<
@@ -617,6 +620,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // around; otherwise the next drag would swing away from the framing.
       liveWorldBox(active).getCenter(pivot);
     },
+    deleteSelected: () => scenePanel?.deleteSelected(),
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;
@@ -833,9 +837,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // card gets, taken at the moment you press Save rather than on the way out.
     captureThumb: () => viewer.captureThumbnail(480),
   });
-  // The top row's File menu. The desktop app has a native one over the
-  // same actions, so it goes without.
-  if (!isDesktop()) fileMenu = new FileMenu(fileActions);
+  // The top row's File and Edit menus. The desktop app has native ones
+  // over the same actions, so it goes without.
+  if (!isDesktop()) {
+    fileMenu = new FileMenu(fileActions);
+    editMenu = new TopMenu(
+      'Edit',
+      [
+        { label: 'Undo', action: () => session.undo() },
+        { label: 'Redo', action: () => session.redo() },
+        { separator: true },
+        { label: 'Preferences…', action: () => showPreferences('sculpt') },
+      ],
+      'file-menu--edit',
+    );
+  }
   scenePanel = new ScenePanel(session, library);
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
@@ -974,6 +990,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel,
     capturePanel,
     fileMenu,
+    editMenu,
     fileActions,
     sculptPanel,
     modelPanel,
@@ -1012,6 +1029,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     undo: () => session.undo(),
     redo: () => session.redo(),
     showServerSettings: () => void showServerSettings(),
+    showPreferences: () => showPreferences('sculpt'),
   });
   if (desktopHandle) {
     // The title's dirty dot and the close guard follow the same signal the
@@ -1092,6 +1110,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel?.dispose();
     capturePanel?.dispose();
     fileMenu?.dispose();
+    editMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();

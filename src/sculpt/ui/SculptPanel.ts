@@ -101,7 +101,21 @@ export class SculptPanel extends SidePanel {
       this.paintPicker = colorPicker(this.input.getPaintColor(), (hex) =>
         this.input.setPaintColor(hex),
       );
-      dyn.appendChild(labelRow('Colour', this.paintPicker.root));
+      // The fill sits beside the swatch (owner call): the whole object in
+      // this colour, in one undo step.
+      const colourRow = div('sculpt-panel__inline');
+      const fill = document.createElement('button');
+      fill.type = 'button';
+      fill.className = 'sculpt-panel__btn sculpt-panel__btn--icon';
+      fill.title = 'Fill the object with this colour';
+      fill.setAttribute('aria-label', 'Fill the object with the paint colour');
+      const icon = document.createElement('i');
+      icon.className = 'fi fi-ss-fill';
+      icon.setAttribute('aria-hidden', 'true');
+      fill.appendChild(icon);
+      fill.addEventListener('click', () => this.input.fillPaint());
+      colourRow.append(this.paintPicker.root, fill);
+      dyn.appendChild(labelRow('Colour', colourRow));
       this.installSwatchDrag(this.paintPicker);
       const hint = div('sculpt-panel__hint muted');
       hint.textContent =

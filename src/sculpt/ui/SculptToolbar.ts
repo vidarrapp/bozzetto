@@ -37,6 +37,7 @@ export const TOOL_NAMES: Record<number, string> = {
   [Enums.Tools.FLATTEN]: 'Flatten',
   [Enums.Tools.SMOOTH]: 'Smooth',
   [Enums.Tools.RAKE]: 'Rake',
+  [Enums.Tools.PAINT_BLUR]: 'Paint blur',
   [Enums.Tools.DRAG]: 'Drag',
   [Enums.Tools.TWIST]: 'Polish',
   [Enums.Tools.PAINT]: 'Paint',

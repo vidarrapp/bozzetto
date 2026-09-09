@@ -6,6 +6,7 @@ import { ALPHA_SETS, type AlphaSet } from './alphas';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
+import { keymap } from '../../ui/keymap';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
@@ -31,6 +32,8 @@ export interface InputShellHooks {
   frameModel(): void;
   /** a: frame every visible object in the scene. */
   frameAll(): void;
+  /** Delete: the selected objects go (the Scene panel asks first). */
+  deleteSelected(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -305,7 +308,7 @@ export class InputShell {
     const tool = this.currentTool();
     this.cursor.setBrush(tool._radius, typeof tool._intensity === 'number' ? tool._intensity : null);
     const idx = this.session.getSculptManager().getToolIndex();
-    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
+    this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld);
     this.onBrushChange?.();
   }
 
@@ -484,6 +487,19 @@ export class InputShell {
     for (const [idx, id] of Object.entries(table)) this.applyToolAlpha(id ?? null, Number(idx));
   }
 
+  /**
+   * Flood the active object with the paint colour (the Tool panel's fill
+   * button): every unmasked vertex, one undo entry, and the object counts
+   * as painted from here on.
+   */
+  fillPaint(): void {
+    const paint = this.session.getSculptManager().getTool(Enums.Tools.PAINT);
+    if (!paint.paintAll) return;
+    paint.paintAll();
+    this.hooks.markPainted();
+    this.session.render();
+  }
+
   hasBrushIntensity(): boolean {
     return typeof this.currentTool()._intensity === 'number';
   }
@@ -629,8 +645,21 @@ export class InputShell {
       this.maskPrevTool = s.getSculptManager().getToolIndex();
       s.getSculptManager().setToolIndex(tools.MASKING);
     } else if (e.shiftKey) {
-      this.maskPrevTool = s.getSculptManager().getToolIndex();
-      s.getSculptManager().setToolIndex(tools.SMOOTH);
+      // Over the paint brush, shift blurs the paint instead of smoothing
+      // the surface (owner call); the blur takes the paint brush's size,
+      // strength and profile so the ring under the pen means what it says.
+      const current = s.getSculptManager().getToolIndex();
+      this.maskPrevTool = current;
+      if (current === tools.PAINT) {
+        const paint = s.getSculptManager().getTool(tools.PAINT);
+        const blur = s.getSculptManager().getTool(tools.PAINT_BLUR);
+        blur._radius = paint._radius;
+        blur._intensity = paint._intensity ?? 0.75;
+        blur._hardness = paint._hardness ?? 0.75;
+        s.getSculptManager().setToolIndex(tools.PAINT_BLUR);
+      } else {
+        s.getSculptManager().setToolIndex(tools.SMOOTH);
+      }
     }
     // The ring reflects the tool actually stroking (radius and the blue
     // smoothing tint for shift strokes); restored on release.
@@ -728,7 +757,10 @@ export class InputShell {
     // brushes keep the center dot only; Smooth keeps a dimmed ring. The
     // reduction waits a beat so hover-less pencils see the outline land.
     const strokeTool = s.getSculptManager().getToolIndex();
-    const strokeStyle = strokeTool === Enums.Tools.SMOOTH ? ('dim' as const) : ('dot' as const);
+    const strokeStyle =
+      strokeTool === Enums.Tools.SMOOTH || strokeTool === Enums.Tools.PAINT_BLUR
+        ? ('dim' as const)
+        : ('dot' as const);
     clearTimeout(this.strokeReduceTimer);
     this.strokeReduceTimer = window.setTimeout(() => {
       // A Move grab begun outside the outline keeps its full ring: it is the
@@ -1011,23 +1043,14 @@ export class InputShell {
   // --- keyboard (plan 7.4) ------------------------------------------------
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
+    // A modal (Preferences, its key capture) owns every key while it is up.
+    if (document.body.classList.contains('has-modal')) return;
     if (isTextEntryTarget(e)) return;
     // A focused checkbox/slider/select keeps its PLAIN keys (space toggles,
     // arrows slide), but modifier chords stay hotkeys: after clicking a
     // panel checkbox, ctrl+z must still undo rather than go quietly dead.
     if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey) return;
     const s = this.session;
-    const key = e.key.toLowerCase();
-
-    // Tab clears the screen for focused work. Claimed here in the capture
-    // phase so it shadows the viewer's Tab (which toggles the Render panel)
-    // exactly the way the digit and w/s/f/d bindings are shadowed - but
-    // only when Tab is not busy being Tab (see tabShouldMoveFocus).
-    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (tabShouldMoveFocus(e)) return;
-      this.hooks.toggleChrome();
-      return this.claim(e);
-    }
 
     // Keep Firefox from opening the menu bar on the negative modifier.
     if (e.key === 'Alt') {
@@ -1041,22 +1064,42 @@ export class InputShell {
       this.syncCursorBrush();
     }
 
-    // Wheel-mappable keys (TourBox review request), bound by PHYSICAL code
-    // so controller macros and non-US layouts agree: brackets step brush
-    // size, the row below (; and ') steps strength - modifier-free, since
-    // shift belongs to the smooth override - and arrows turn the model a
-    // degree per tick.
-    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
-        if (!e.shiftKey) this.nudgeRadius(e.code === 'BracketRight' ? 1 : -1);
+    // The keymap says what this chord means here; the table is the user's
+    // to edit (Preferences), so nothing below names a key.
+    const action = keymap.actionFor(e, 'sculpt');
+    if (!action) {
+      // Space would otherwise fall through to the viewer's transport, and
+      // sculpt has no timeline to play. Claimed so it stays inert.
+      if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
+      if (e.altKey && e.key.toLowerCase() === 'q') return this.claim(e); // isolate: reserved
+      return;
+    }
+
+    // Tab clears the screen for focused work - but only when Tab is not
+    // busy being Tab (see tabShouldMoveFocus).
+    if (action.id === 'ui.chrome' && e.key === 'Tab' && tabShouldMoveFocus(e)) return;
+
+    // Undo, the steps and the turntable DO repeat; everything else is a
+    // one-shot command, and auto-repeat must not re-fire it: holding
+    // ctrl+d subdivided level after level, holding shift+s strobed the
+    // shadows.
+    if (e.repeat && !action.repeat) return this.claim(e);
+
+    switch (action.id) {
+      case 'ui.chrome':
+        this.hooks.toggleChrome();
         return this.claim(e);
-      }
-      if (e.code === 'Semicolon' || e.code === 'Quote') {
-        this.nudgeIntensity((e.code === 'Quote' ? 1 : -1) * INTENSITY_STEP);
+      case 'brush.sizeDown':
+      case 'brush.sizeUp':
+        this.nudgeRadius(action.id === 'brush.sizeUp' ? 1 : -1);
         return this.claim(e);
-      }
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-        const dir = e.code === 'ArrowLeft' ? -1 : 1;
+      case 'brush.strengthDown':
+      case 'brush.strengthUp':
+        this.nudgeIntensity((action.id === 'brush.strengthUp' ? 1 : -1) * INTENSITY_STEP);
+        return this.claim(e);
+      case 'view.turnLeft':
+      case 'view.turnRight': {
+        const dir = action.id === 'view.turnLeft' ? -1 : 1;
         const now = performance.now();
         const gap = now - this.lastOrbitTime;
         // Same-direction ticks accelerate by their rate; a direction change
@@ -1070,151 +1113,125 @@ export class InputShell {
         this.hooks.orbitY(dir * ORBIT_STEP_DEG * mult);
         return this.claim(e);
       }
-    }
-
-    // Undo and redo DO repeat: holding ctrl+z to walk back through a run of
-    // strokes is how every sculpting app behaves, and each step is cheap
-    // and reversible - unlike the one-shot commands guarded below.
-    if ((e.ctrlKey || e.metaKey) && key === 'z') {
-      if (e.shiftKey) s.redo();
-      else s.undo();
-      return this.claim(e);
-    }
-
-    // Everything below is a one-shot command, so auto-repeat must not
-    // re-fire it: holding ctrl+d subdivided level after level (50k ->
-    // 200k -> 800k...) and holding shift+s strobed the shadows. The wheel
-    // keys above are exempt - a held arrow SHOULD keep turning the model,
-    // and a held bracket keep growing the brush.
-    if (e.repeat) return this.claim(e);
-
-    // ctrl chords first. The mask trio mirrors ZBrush; ctrl+c and ctrl+h
-    // shadow browser Copy and History, so they are only claimed here where
-    // the text-entry guard above has already let real typing through.
-    if (e.ctrlKey || e.metaKey) {
-      if (key === 'a') {
-        // Mask the whole object. Ctrl+a is Select All everywhere else, and
-        // a mask IS the selection here; the text-entry guard above has
-        // already let real typing through.
+      case 'edit.undo':
+        s.undo();
+        return this.claim(e);
+      case 'edit.redo':
+        s.redo();
+        return this.claim(e);
+      // The mask trio mirrors ZBrush; ctrl+c and ctrl+h shadow browser Copy
+      // and History, so they are only claimed here where the text-entry
+      // guard above has already let real typing through.
+      case 'mask.all':
         this.maskTool()?.maskAll?.();
         s.render();
-        this.claim(e);
-      } else if (key === 'd') {
-        s.subdivide();
-        this.claim(e);
-      } else if (key === 'c') {
+        return this.claim(e);
+      case 'mask.clear':
         this.maskTool()?.clear?.();
         s.render();
-        this.claim(e);
-      } else if (key === 'i') {
+        return this.claim(e);
+      case 'mask.invert':
         this.maskTool()?.invert?.();
         s.render();
-        this.claim(e);
-      } else if (key === 'e') {
-        this.hooks.extractMasked();
-        this.claim(e);
-      } else if (key === 'h') {
+        return this.claim(e);
+      case 'mask.tint':
         // Hides the mask's darkening, not the mask: strokes keep respecting
         // it, you just stop looking at it.
         this.hooks.toggleMaskTint();
-        this.claim(e);
-      }
-      return;
-    }
-
-    if (e.altKey) {
-      if (key === 'q') this.claim(e); // isolate: reserved for multi-mesh
-      return;
-    }
-
-    switch (key) {
-      // Space would otherwise fall through to the viewer's transport, and
-      // sculpt has no timeline to play. Claimed so it stays inert.
-      case ' ':
         return this.claim(e);
-      // f frames the selection, a frames the scene - the pair every DCC
-      // binds them to, and the same two keys in the viewer.
-      case 'a':
+      case 'mask.extract':
+        this.hooks.extractMasked();
+        return this.claim(e);
+      case 'subdiv.add':
+        s.subdivide();
+        return this.claim(e);
+      case 'subdiv.up':
+        s.stepSubdivision(1);
+        return this.claim(e);
+      case 'subdiv.down':
+        s.stepSubdivision(-1);
+        return this.claim(e);
+      case 'scene.delete':
+        this.hooks.deleteSelected();
+        return this.claim(e);
+      case 'view.frameAll':
         this.hooks.frameAll();
         return this.claim(e);
-      case 'd':
-        s.stepSubdivision(e.shiftKey ? -1 : 1);
-        return this.claim(e);
-      case 'b':
-        if (!this.adjust) this.beginAdjust('radius');
-        return this.claim(e);
-      case 's':
-        if (e.shiftKey) {
-          this.hooks.toggleShadows();
-        } else if (!this.adjust) {
-          this.beginAdjust('intensity');
-        }
-        return this.claim(e);
-      case 'x':
-        s.toggleSymmetry();
-        return this.claim(e);
-      case 'l':
-        this.lKeyHeld = true;
-        return this.claim(e);
-      case 'f':
+      case 'view.frame':
         this.hooks.frameModel();
         return this.claim(e);
-      // The gizmo keys: w/e/r expose one transform each, the way every
-      // other 3D app binds them, t is the whole gizmo (the toolbar button's
-      // key), and q returns to sculpting. The frame-rate meter moved to p
-      // to make room (owner call).
-      case 'q':
+      case 'view.shadows':
+        this.hooks.toggleShadows();
+        return this.claim(e);
+      case 'view.wireframe':
+        this.hooks.toggleWireframe();
+        return this.claim(e);
+      case 'brush.size':
+        if (!this.adjust) this.beginAdjust('radius');
+        return this.claim(e);
+      case 'brush.strength':
+        if (!this.adjust) this.beginAdjust('intensity');
+        return this.claim(e);
+      case 'brush.symmetry':
+        s.toggleSymmetry();
+        return this.claim(e);
+      case 'light.move':
+        this.lKeyHeld = true;
+        return this.claim(e);
+      case 'gizmo.exit':
         this.hooks.transformExit();
         return this.claim(e);
-      case 't':
+      case 'gizmo.toggle':
         this.hooks.transformToggle();
         return this.claim(e);
-      case 'w':
-        // Shift+w is the wireframe, the same chord the viewer uses. Plain w
-        // is the translate gizmo, which is why the shared binding had to be
-        // a chord in both modes rather than the viewer's old plain w.
-        if (e.shiftKey) this.hooks.toggleWireframe();
-        else this.hooks.transformMode('translate');
+      case 'gizmo.translate':
+        this.hooks.transformMode('translate');
         return this.claim(e);
-      case 'e':
+      case 'gizmo.rotate':
         this.hooks.transformMode('rotate');
         return this.claim(e);
-      case 'r':
+      case 'gizmo.scale':
         this.hooks.transformMode('scale');
         return this.claim(e);
-      case '1':
+      case 'tool.crease':
         return this.selectTool(Enums.Tools.CREASE, e);
-      case '2':
+      case 'tool.move':
         return this.selectTool(Enums.Tools.MOVE, e);
-      case '3':
+      case 'tool.clay':
         return this.selectTool(Enums.Tools.BRUSH, e);
-      case '4':
+      case 'tool.inflate':
         return this.selectTool(Enums.Tools.INFLATE, e);
-      case '5':
+      case 'tool.pinch':
         return this.selectTool(Enums.Tools.PINCH, e);
-      case '6':
+      case 'tool.flatten':
         return this.selectTool(Enums.Tools.FLATTEN, e);
-      case '7':
+      case 'tool.rake':
         return this.selectTool(Enums.Tools.RAKE, e);
-      case '8':
+      case 'tool.drag':
         return this.selectTool(Enums.Tools.DRAG, e);
-      case '9':
+      case 'tool.polish':
         return this.selectTool(Enums.Tools.TWIST, e);
-      case '0':
+      case 'tool.paint':
         return this.selectTool(Enums.Tools.PAINT, e);
+      default:
+        // A shared action this shell does not act on (the guide, the
+        // frame-rate meter, the ground) falls through to the viewer's
+        // handler, unclaimed.
+        return;
     }
   };
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
-    const key = e.key.toLowerCase();
     if (e.key === 'Alt') e.preventDefault();
     if (e.key === 'Shift' && this.shiftHeld) {
       this.shiftHeld = false;
       this.syncCursorBrush();
     }
-    if (key === 'b' && this.adjust === 'radius') this.endAdjust();
-    if (key === 's' && this.adjust === 'intensity') this.endAdjust();
-    if (key === 'l') this.lKeyHeld = false;
+    // Held keys end on their own key, whatever the modifiers are doing now.
+    const held = keymap.holdActionForKeyUp(e, 'sculpt');
+    if (held?.id === 'brush.size' && this.adjust === 'radius') this.endAdjust();
+    if (held?.id === 'brush.strength' && this.adjust === 'intensity') this.endAdjust();
+    if (held?.id === 'light.move') this.lKeyHeld = false;
   };
 
   /** One wheel tick of brush size: ~6 percent, at least 2px, clamped. */

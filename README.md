@@ -169,6 +169,9 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 ## Controls
 
+Every key below can be changed under **Edit → Preferences** (`Ctrl`+`,`). The
+guide (`H`) shows whatever keys are set.
+
 | Input | Action |
 | --- | --- |
 | Left drag | Orbit |
@@ -191,7 +194,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 | Input | Action |
 | --- | --- |
-| Drag on the mesh | Sculpt (`Alt` carves, `Shift` smooths) |
+| Drag on the mesh | Sculpt (`Alt` carves, `Shift` smooths; with the paint brush, `Shift` blurs the paint) |
 | Drag off the mesh | Orbit |
 | Two-finger drag / pinch | Pan / zoom, even on the model |
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |

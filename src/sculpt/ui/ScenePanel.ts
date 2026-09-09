@@ -149,7 +149,7 @@ export class ScenePanel extends SidePanel {
   }
 
   /** Delete: every selected object (the active one when nothing else is), after asking. */
-  private deleteSelected(): void {
+  deleteSelected(): void {
     // A copy: deleteMesh edits the selection list while this walks it.
     const selected = [...this.session.getSelectedMeshes()];
     const targets = selected.length > 0 ? selected : this.session.getMesh() ? [this.session.getMesh()!] : [];

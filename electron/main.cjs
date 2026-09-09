@@ -276,6 +276,8 @@ function buildMenu() {
           { role: 'cut' },
           { role: 'copy', accelerator: '' },
           { role: 'paste' },
+          { type: 'separator' },
+          { label: 'Preferences...', accelerator: 'CmdOrCtrl+,', click: cmd('edit:preferences') },
         ],
       },
       {

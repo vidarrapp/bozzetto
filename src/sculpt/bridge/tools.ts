@@ -4,6 +4,7 @@ import Brush from '@sculpt-vendor/editing/tools/Brush';
 import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 import Crease from '@sculpt-vendor/editing/tools/Crease';
+import Paint from '@sculpt-vendor/editing/tools/Paint';
 import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
@@ -837,5 +838,63 @@ export class CreaseBrush extends Crease {
       vAr[ind + 1] = vy + dy * gather + any * brushModifier;
       vAr[ind + 2] = vz + dz * gather + anz * brushModifier;
     }
+  }
+}
+
+
+/**
+ * The paint brush's blur: what shift does over the paint brush, the way
+ * it smooths over the sculpting brushes (owner call). Each dab pulls the
+ * colours under it toward their ring average - the paint's own falloff,
+ * pressure and mask still shape it - so a hard edge between two colours
+ * softens the more it is stroked. Geometry is not touched.
+ */
+export class PaintBlurBrush extends Paint {
+  constructor(session: SculptSession) {
+    super(session);
+    this._idAlpha = null;
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Paint.stroke: the same flow, the paint loop
+   * replaced by a blend toward the Laplacian of the colours.
+   */
+  override stroke(picking: Picking): void {
+    let iVerts = picking.getPickedVertices();
+    const intensity = this._intensity * Tablet.getPressureIntensity();
+    (this._main as SculptSession).getStateManager().pushVertices(iVerts);
+    iVerts = this.dynamicTopology(picking);
+    if (this._culling) iVerts = this.getFrontVertices(iVerts, picking.getEyeDirection());
+    picking.updateAlpha(this._lockPosition);
+    picking.setIdAlpha(this._idAlpha);
+
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const cAr = mesh.getColors();
+    const mAr = mesh.getMaterials();
+    const smooth = new Float32Array(iVerts.length * 3);
+    this.laplacianSmooth(iVerts, smooth, cAr);
+    const center = picking.getIntersectionPoint();
+    const radius = Math.sqrt(picking.getLocalRadius2());
+    const softness = 2 * (1 - this._hardness);
+    for (let i = 0, l = iVerts.length; i < l; ++i) {
+      const ind = iVerts[i] * 3;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      const dx = vx - center[0];
+      const dy = vy - center[1];
+      const dz = vz - center[2];
+      let dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist > 1) dist = 1;
+      let f = Math.pow(1 - dist, softness) * intensity * mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      if (f > 1) f = 1;
+      const g = 1 - f;
+      cAr[ind] = cAr[ind] * g + smooth[i * 3] * f;
+      cAr[ind + 1] = cAr[ind + 1] * g + smooth[i * 3 + 1] * f;
+      cAr[ind + 2] = cAr[ind + 2] * g + smooth[i * 3 + 2] * f;
+    }
+    mesh.updateDuplicateColorsAndMaterials(iVerts);
+    if (mesh.isUsingDrawArrays()) mesh.updateDrawArrays(mesh.getFacesFromVertices(iVerts));
   }
 }

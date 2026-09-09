@@ -17,6 +17,7 @@ import { mat3, mat4, vec3 } from 'gl-matrix';
 import {
   ClayStripsBrush,
   CreaseBrush,
+  PaintBlurBrush,
   PolishBrush,
   RakeBrush,
   StableSmooth,
@@ -117,6 +118,9 @@ export class SculptSession {
     this.sculptManager._tools[Enums.Tools.CREASE] = new CreaseBrush(this) as unknown as SculptTool;
     // Paint dabs close together (owner call): a brush stroke, not a row of stamps.
     this.sculptManager.getTool(Enums.Tools.PAINT)._spacing = 0.05;
+    // Shift over the paint brush blurs the paint, the way it smooths
+    // elsewhere; the swap lives in InputShell beside the smooth one.
+    this.sculptManager._tools[Enums.Tools.PAINT_BLUR] = new PaintBlurBrush(this) as unknown as SculptTool;
     void loadBrushAlphas();
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
