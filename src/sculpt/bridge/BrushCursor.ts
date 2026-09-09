@@ -50,6 +50,8 @@ export class BrushCursor {
   private y = 0;
   private radiusCss = 50;
   private intensity = 0.5;
+  /** False for tools without a strength (Drag): no line to draw. */
+  private hasStrength = true;
   private lastAnchorCss = 0;
   private anchorWorldRadius = 0;
 
@@ -171,9 +173,14 @@ export class BrushCursor {
     this.anchorWorldRadius = this.surface ? this.surface.worldRadius : 0;
   }
 
-  /** Update to the tool's screen radius (CSS px) and strength (0..1). */
-  setBrush(radiusCss: number, intensity: number): void {
-    this.intensity = Math.min(1, Math.max(0, intensity));
+  /**
+   * Update to the tool's screen radius (CSS px) and strength (0..1). A
+   * null strength is a tool with none (Drag moves as far as the pointer
+   * goes): the strength line is not drawn at all rather than drawn wrong.
+   */
+  setBrush(radiusCss: number, intensity: number | null): void {
+    this.hasStrength = intensity !== null;
+    this.intensity = Math.min(1, Math.max(0, intensity ?? 0));
     this.radiusCss = Math.max(2, radiusCss);
     if (this.anchored && this.surface && this.lastAnchorCss > 0 && this.anchorWorldRadius > 0) {
       this.surface.worldRadius = this.anchorWorldRadius * (this.radiusCss / this.lastAnchorCss);
@@ -297,7 +304,7 @@ export class BrushCursor {
     const nLen = Math.hypot(rawX, rawY, rawZ) || 1;
     const tipLen = (s.worldRadius * this.intensity) / nLen;
     const tip = project([px + rawX * tipLen, py + rawY * tipLen, pz + rawZ * tipLen]);
-    if (tip) {
+    if (tip && this.hasStrength) {
       this.strength.setAttribute('x1', String(center[0]));
       this.strength.setAttribute('y1', String(center[1]));
       this.strength.setAttribute('x2', String(tip[0]));

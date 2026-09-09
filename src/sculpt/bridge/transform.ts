@@ -1,4 +1,4 @@
-import { BoxGeometry, Matrix4, Object3D, type BufferGeometry, type Mesh, type PerspectiveCamera, type Scene } from 'three';
+import { BoxGeometry, Matrix4, Object3D, Vector3, type BufferGeometry, type Mesh, type PerspectiveCamera, type Scene } from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
@@ -10,6 +10,9 @@ type GizmoInternals = {
 };
 
 export type GizmoMode = 'all' | 'translate' | 'rotate' | 'scale';
+
+/** Drag distance, as a fraction of the camera distance, that scales by e. */
+const UNIFORM_SCALE_TRAVEL = 0.35;
 
 /**
  * Object transforms (owner design).
@@ -47,9 +50,12 @@ export class TransformGizmo {
   /** A drag committed: one undo entry pushed, autosave should learn. */
   onCommit: (() => void) | null = null;
 
+  /** The proxy's scale when the current drag began (uniform scale reads it). */
+  private readonly scaleStart = new Vector3(1, 1, 1);
+
   constructor(
     private readonly session: SculptSession,
-    camera: PerspectiveCamera,
+    private readonly camera: PerspectiveCamera,
     dom: HTMLElement,
     private readonly scene: Scene,
   ) {
@@ -65,7 +71,10 @@ export class TransformGizmo {
         if (on) this.beginDrag(tc);
         else this.endDrag();
       });
-      tc.addEventListener('objectChange', () => this.writeBack());
+      tc.addEventListener('objectChange', () => {
+        this.tameUniformScale(tc);
+        this.writeBack();
+      });
       const helper = tc.getHelper();
       helper.visible = false;
       this.scene.add(helper);
@@ -238,6 +247,7 @@ export class TransformGizmo {
 
   private beginDrag(winner: TransformControls): void {
     this.dragging = true;
+    this.scaleStart.copy(this.proxy.scale);
     this.before.fromArray(this.mesh ? this.mesh.getMatrix() : this.proxy.matrix.elements);
     // One drag at a time: the winner keeps its input, the rest go quiet so
     // an overlapping handle cannot apply a second transform to the same
@@ -274,6 +284,27 @@ export class TransformGizmo {
         false,
       );
     this.onCommit?.();
+  }
+
+  /**
+   * The uniform-scale handle sits AT the object's centre, and three's
+   * TransformControls scales by the ratio of the pointer's distance from
+   * that centre now to what it was at the press. A press on a handle a
+   * few pixels wide makes that starting distance tiny, so the first few
+   * pixels of drag were already a multiple (owner report: far too
+   * sensitive). Rewritten as a travel: the pointer's distance from where
+   * it pressed, in units of the camera distance, through an exponential -
+   * a third of the view's depth of drag doubles or halves, a small nudge
+   * is a small change, and it never blows up.
+   */
+  private tameUniformScale(tc: TransformControls): void {
+    if (!this.dragging || tc.mode !== 'scale' || tc.axis !== 'XYZ') return;
+    const t = tc as unknown as { pointStart: Vector3; pointEnd: Vector3 };
+    const travel = t.pointEnd.distanceTo(t.pointStart);
+    const depth = Math.max(1e-6, this.camera.position.distanceTo(this.proxy.position));
+    const grow = t.pointEnd.length() >= t.pointStart.length() ? 1 : -1;
+    const factor = Math.exp((grow * travel) / (depth * UNIFORM_SCALE_TRAVEL));
+    this.proxy.scale.copy(this.scaleStart).multiplyScalar(factor);
   }
 
   /** Live during a drag: proxy TRS -> matrix -> the vendor mesh. */

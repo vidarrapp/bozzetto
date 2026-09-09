@@ -34,7 +34,7 @@ const GUIDE_HTML = `
     <div class="help-guide__title">Interface</div>
     <div class="help-row"><kbd>Tab</kbd><span>Toggle panel</span></div>
     <div class="help-row"><kbd>H</kbd><span>This guide</span></div>
-    <div class="help-row"><kbd>T</kbd><span>Frame-rate meter</span></div>
+    <div class="help-row"><kbd>P</kbd><span>Frame-rate meter</span></div>
   </div>`;
 
 const SCULPT_HTML = `
@@ -44,11 +44,12 @@ const SCULPT_HTML = `
     <div class="help-row"><span class="help-key">Drag on mesh</span><span>Sculpt</span></div>
     <div class="help-row"><span class="help-key">Alt + drag</span><span>Negative (carve)</span></div>
     <div class="help-row"><span class="help-key">Shift + drag</span><span>Smooth</span></div>
-    <div class="help-row"><kbd>B</kbd><span>Brush size (hold + drag)</span></div>
-    <div class="help-row"><kbd>S</kbd><span>Brush strength (hold + drag up/down)</span></div>
+    <div class="help-row"><kbd>B</kbd><span>Brush size (hold, then drag with the pen down)</span></div>
+    <div class="help-row"><kbd>S</kbd><span>Brush strength (hold, then drag up/down with the pen down)</span></div>
     <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Brush size step (wheel-friendly)</span></div>
     <div class="help-row"><kbd>;</kbd><kbd>'</kbd><span>Brush strength step (row below)</span></div>
     <div class="help-row"><kbd>X</kbd><span>Symmetry</span></div>
+    <div class="help-row"><kbd>T</kbd><span>Transform gizmo (all handles)</span></div>
     <div class="help-row"><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><span>Move / rotate / scale the object (gizmo); <kbd>Q</kbd> back to sculpting</span></div>
     <div class="help-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo (Shift: redo)</span></div>
   </div>

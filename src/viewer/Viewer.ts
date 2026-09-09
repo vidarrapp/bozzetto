@@ -1317,6 +1317,33 @@ export class Viewer {
     });
   }
 
+  /**
+   * The colour under a screen point, read from the rendered frame, as a
+   * hex string - or null when the point is off the canvas. The paint
+   * brush's swatch drag samples with this: the FRAME, so a background, an
+   * environment and (one day) a reference board all count, not only the
+   * model's own vertex colours.
+   */
+  async samplePixel(clientX: number, clientY: number): Promise<string | null> {
+    const src = this.renderer.domElement;
+    const rect = src.getBoundingClientRect();
+    if (clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) {
+      return null;
+    }
+    await this.renderForReadback();
+    const sx = Math.floor(((clientX - rect.left) / rect.width) * src.width);
+    const sy = Math.floor(((clientY - rect.top) / rect.height) * src.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(src, sx, sy, 1, 1, 0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    const hex = (v: number): string => v.toString(16).padStart(2, '0');
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  }
+
   dispose(): void {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.adaptTimer);

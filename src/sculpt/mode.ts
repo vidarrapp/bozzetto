@@ -11,6 +11,7 @@ import {
   ScenePersist,
   type SculptSettings,
   clearSavedScene,
+  clearSculptFrames,
   loadSavedScene,
   clearSculptLook,
   loadSculptLook,
@@ -106,7 +107,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     url.searchParams.delete('lib');
     history.replaceState(history.state, '', url);
   }
-  if (!saved) saved = await loadSavedScene();
+  // The desktop app starts clean (owner call): its work lives in files,
+  // and a scene that was saved to one has no business coming back on its
+  // own. The slot and the reel are cleared so the gallery's in-progress
+  // card does not offer them either; a crash still leaves the recovery
+  // sidecar, which is offered below as before.
+  if (isDesktop() && !libId) {
+    await Promise.all([clearSavedScene(), clearSculptFrames()]);
+  } else if (!saved) {
+    saved = await loadSavedScene();
+  }
   let multimesh;
   try {
     multimesh = saved ? session.restoreScene(saved) : session.addSphere();
@@ -621,6 +631,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Once painted, an object owns its vertex colours: recolouring the
     // material must not wipe the strokes.
     transformMode: (mode) => enterTransform(mode),
+    transformToggle: () => toolbar.onToggleTransform?.(),
     transformExit: () => exitTransform(),
     markPainted: () => {
       const active = session.getMesh();

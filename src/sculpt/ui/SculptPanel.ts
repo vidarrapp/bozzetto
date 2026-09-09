@@ -102,8 +102,10 @@ export class SculptPanel extends SidePanel {
         this.input.setPaintColor(hex),
       );
       dyn.appendChild(labelRow('Colour', this.paintPicker.root));
+      this.installSwatchDrag(this.paintPicker);
       const hint = div('sculpt-panel__hint muted');
-      hint.textContent = 'Alt + click picks a colour off the model';
+      hint.textContent =
+        'Alt + click picks a colour off the model. Drag the swatch onto the view to pick from the screen.';
       dyn.appendChild(hint);
     }
     // Radius and strength are per-tool in the vendored core, so these are
@@ -121,9 +123,10 @@ export class SculptPanel extends SidePanel {
       this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(sizeRow);
     }
-    // The curve shapes the pressure response, so it means nothing while
-    // its pressure checkbox is off - the row folds away with it (same
-    // rule as the Render panel's lights/DoF/ground and dyntopo's sliders).
+    // Pressure is an amount, not a switch (owner call): the bottom of the
+    // slider is off, the top the full range. The curve shapes the response
+    // and means nothing at zero, so its row folds away there (same rule as
+    // the Render panel's lights/DoF/ground and dyntopo's sliders).
     const sizeCurveRow = labelRow(
       'Size curve',
       this.curveSelect(d.sizeCurve, (c) => {
@@ -131,16 +134,17 @@ export class SculptPanel extends SidePanel {
         this.input.onBrushSettingsChange?.();
       }),
     );
-    sizeCurveRow.hidden = !d.sizeOn;
+    sizeCurveRow.hidden = d.size <= 0;
     dyn.appendChild(
-      checkbox('Pen pressure size', d.sizeOn, (on) => {
-        d.sizeOn = on;
-        sizeCurveRow.hidden = !on;
+      compactRange('Pressure: size', 0, 1, 0.05, d.size, (v) => {
+        d.size = v;
+        sizeCurveRow.hidden = v <= 0;
         this.input.onBrushSettingsChange?.();
       }),
     );
     dyn.appendChild(sizeCurveRow);
-    // Drag has no strength at all; a slider for it would be a lie.
+    // Drag has no strength at all: no slider for it, and no pressure to
+    // drive it with either.
     if (this.input.hasBrushIntensity()) {
       const strengthRow = compactRange(
         'Strength',
@@ -152,23 +156,23 @@ export class SculptPanel extends SidePanel {
       );
       this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(strengthRow);
+      const strengthCurveRow = labelRow(
+        'Strength curve',
+        this.curveSelect(d.strengthCurve, (c) => {
+          d.strengthCurve = c;
+          this.input.onBrushSettingsChange?.();
+        }),
+      );
+      strengthCurveRow.hidden = d.strength <= 0;
+      dyn.appendChild(
+        compactRange('Pressure: strength', 0, 1, 0.05, d.strength, (v) => {
+          d.strength = v;
+          strengthCurveRow.hidden = v <= 0;
+          this.input.onBrushSettingsChange?.();
+        }),
+      );
+      dyn.appendChild(strengthCurveRow);
     }
-    const strengthCurveRow = labelRow(
-      'Strength curve',
-      this.curveSelect(d.strengthCurve, (c) => {
-        d.strengthCurve = c;
-        this.input.onBrushSettingsChange?.();
-      }),
-    );
-    strengthCurveRow.hidden = !d.strengthOn;
-    dyn.appendChild(
-      checkbox('Pen pressure strength', d.strengthOn, (on) => {
-        d.strengthOn = on;
-        strengthCurveRow.hidden = !on;
-        this.input.onBrushSettingsChange?.();
-      }),
-    );
-    dyn.appendChild(strengthCurveRow);
 
     // Dab spacing: how far the brush travels between stamps, as a fraction
     // of its radius. Upstream fixed this at 0.15 for every tool; it is the
@@ -185,10 +189,14 @@ export class SculptPanel extends SidePanel {
     const extras = this.extrasBody;
     extras.replaceChildren();
     const manager = this.session.getSculptManager();
+    // Every profile slider reads sharp on the left and soft on the right
+    // (owner call), whatever the number underneath runs.
     if (tool === Enums.Tools.MOVE) {
+      // The quartic's power: a low power flattens the bell's top and
+      // drops it at the rim (sharp), 1 is the plain gradual bell (soft).
       const move = manager.getTool(tool) as unknown as VolumetricMove;
       extras.appendChild(
-        compactRange('Falloff (soft-sharp)', 0.3, 1, 0.05, move.falloffPow, (v) => {
+        compactRange('Falloff (sharp-soft)', 0.3, 1, 0.05, move.falloffPow, (v) => {
           move.falloffPow = v;
         }),
       );
@@ -200,20 +208,21 @@ export class SculptPanel extends SidePanel {
         }),
       );
       extras.appendChild(
-        compactRange('Strip layer', 0.05, 0.5, 0.05, strips.layer, (v) => {
+        compactRange('Strip layer', 0.01, 0.5, 0.01, strips.layer, (v) => {
           strips.layer = v;
         }),
       );
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
-      // balance between them. Profile is the crest's exponent: 1 is a
-      // broad trough, 5 upstream's crease, higher a knife line. Pinch is
-      // the sideways gather - at 0 it carves a groove without drawing the
+      // balance between them. Profile is the crest's exponent - a knife
+      // line at 12, a broad trough at 1 - shown sharp-to-soft like the
+      // Move falloff, so the slider runs the exponent backwards. Pinch is
+      // the sideways gather; at 0 it carves a groove without drawing the
       // surface in, which is a different tool entirely.
       const crease = manager.getTool(tool) as unknown as CreaseBrush;
       extras.appendChild(
-        compactRange('Profile (broad-sharp)', 1, 12, 0.5, crease.profile, (v) => {
-          crease.profile = v;
+        compactRange('Profile (sharp-soft)', 1, 12, 0.5, 13 - crease.profile, (v) => {
+          crease.profile = 13 - v;
         }),
       );
       extras.appendChild(
@@ -224,11 +233,33 @@ export class SculptPanel extends SidePanel {
     } else if (tool === Enums.Tools.TWIST) {
       // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
       // follow trade: locked planarizes chatter hardest, loose rides
-      // gentle curvature without flattening it (owner-tuned by feel).
+      // gentle curvature without flattening it. Plateau and build-up shape
+      // how a stroke lays its polish down: a small plateau and a low
+      // build-up smooth the effect across the stroke instead of stepping
+      // it (owner feedback).
       const polish = manager.getTool(tool) as unknown as PolishBrush;
       extras.appendChild(
         compactRange('Plane lock (follow-flatten)', 0, 0.95, 0.05, polish.planeLock, (v) => {
           polish.planeLock = v;
+        }),
+      );
+      extras.appendChild(
+        compactRange('Plateau', 0, 0.8, 0.05, polish.plateau, (v) => {
+          polish.plateau = v;
+        }),
+      );
+      extras.appendChild(
+        compactRange('Build-up', 0.2, 2, 0.1, polish.gain, (v) => {
+          polish.gain = v;
+        }),
+      );
+    } else if (tool === Enums.Tools.PAINT) {
+      // The paint falloff, from the vendor's hardness: 1 is a hard-edged
+      // stamp, 0 fades from the centre. Shown sharp-to-soft like the rest.
+      const paint = manager.getTool(tool);
+      extras.appendChild(
+        compactRange('Profile (sharp-soft)', 0, 1, 0.05, 1 - (paint._hardness ?? 0.75), (v) => {
+          paint._hardness = 1 - v;
         }),
       );
     }
@@ -267,6 +298,52 @@ export class SculptPanel extends SidePanel {
       for (const alpha of alphaSet.alphas) grid.appendChild(swatch(alpha.id, alpha.label));
       extras.appendChild(labelRow('Alpha', grid));
     }
+  }
+
+  /**
+   * Drag the paint swatch out over the view and let go: the colour under
+   * the pointer, read from the rendered frame (owner request). The frame,
+   * not the model: a background, an environment, and one day a reference
+   * board are all fair game. A tap still opens the picker as before - the
+   * drag only takes over once the pointer has clearly left the swatch.
+   */
+  private installSwatchDrag(picker: ColorPickerHandle): void {
+    const swatch = picker.root.querySelector<HTMLElement>('.cpick__swatch');
+    if (!swatch) return;
+    let startX = 0;
+    let startY = 0;
+    let sampling = false;
+    const move = (e: PointerEvent): void => {
+      if (sampling) return;
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < 8) return;
+      sampling = true;
+      swatch.setPointerCapture(e.pointerId);
+      document.body.classList.add('is-sampling');
+    };
+    const end = (e: PointerEvent): void => {
+      swatch.removeEventListener('pointermove', move);
+      swatch.removeEventListener('pointerup', end);
+      swatch.removeEventListener('pointercancel', end);
+      if (!sampling) return;
+      sampling = false;
+      document.body.classList.remove('is-sampling');
+      if (swatch.hasPointerCapture(e.pointerId)) swatch.releasePointerCapture(e.pointerId);
+      // Cancel or a release over the panel itself: no pick.
+      if (e.type === 'pointercancel') return;
+      void this.viewer.samplePixel(e.clientX, e.clientY).then((hex) => {
+        if (!hex) return;
+        this.input.setPaintColor(hex);
+        picker.set(hex);
+      });
+    };
+    swatch.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      swatch.addEventListener('pointermove', move);
+      swatch.addEventListener('pointerup', end);
+      swatch.addEventListener('pointercancel', end);
+    });
   }
 
   private curveSelect(value: CurveId, onChange: (c: CurveId) => void): HTMLSelectElement {

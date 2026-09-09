@@ -115,6 +115,8 @@ export class SculptSession {
     // Crease with its pinch and crest exposed; upstream's numbers are the
     // defaults, so it feels the same until a slider moves.
     this.sculptManager._tools[Enums.Tools.CREASE] = new CreaseBrush(this) as unknown as SculptTool;
+    // Paint dabs close together (owner call): a brush stroke, not a row of stamps.
+    this.sculptManager.getTool(Enums.Tools.PAINT)._spacing = 0.05;
     void loadBrushAlphas();
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
@@ -548,6 +550,22 @@ export class SculptSession {
     geom.setAttribute('position', new BufferAttribute(parsed.positions, 3));
     geom.setIndex(new BufferAttribute(parsed.indices, 1));
     return this.meshFromTriGeometry(geom, name);
+  }
+
+  /**
+   * Scene menu: a copy of an object - every level, its colours and mask,
+   * its transform - as a new object beside it, selected. Goes through the
+   * same record a file would carry, so a duplicate is exactly what a save
+   * and reopen would give back; one undo removes it like any add.
+   */
+  duplicateMesh(mesh: SculptMesh): Multimesh | null {
+    const saved = this.serializeMesh(mesh);
+    if (!saved) return null;
+    saved.name = this.uniqueMeshName(`${this.getMeshName(mesh)} copy`);
+    const copy = this.buildRestoredMesh(saved);
+    if (saved.visible === false) copy.setVisible(false);
+    this.requestRender();
+    return copy;
   }
 
   /** Scene menu: add a primitive as a new object (WS4 outliner plus). */

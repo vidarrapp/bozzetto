@@ -197,11 +197,12 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |
 | `Ctrl` + `A` / `C` / `I` / `H` / `E` | Mask all · clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes |
-| `B` / `S` (hold + drag) | Brush size / strength (`[` `]` and `;` `'` step them) |
+| `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry |
+| `T` | Transform gizmo (all handles) |
 | `W` / `E` / `R`, `Q` | Move / rotate / scale gizmo · back to sculpting |
-| `T` | Frame-rate meter |
+| `P` | Frame-rate meter |
 | `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |
 | `←` `→` | Turntable |
 | `G` | Cycle the stage |

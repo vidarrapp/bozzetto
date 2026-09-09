@@ -37,6 +37,8 @@ export interface InputShellHooks {
   markPainted(): void;
   /** e/r/t/toolbar: enter the transform gizmo, or switch its mode. */
   transformMode(mode: 'all' | 'translate' | 'rotate' | 'scale'): void;
+  /** t: the whole gizmo on, or off if it is up (the toolbar button's twin). */
+  transformToggle(): void;
   /** q (or picking a brush): leave the gizmo and go back to sculpting. */
   transformExit(): void;
   /** A drag that missed the mesh is about to orbit / has finished. */
@@ -153,6 +155,16 @@ export class InputShell {
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
   private maskPrevTool = -1;
   private adjust: AdjustMode = null;
+  /**
+   * The pointer whose press is driving the current b/s adjust, or -1 while
+   * the key is held but nothing is pressed. Holding the key only ARMS the
+   * adjust (owner call): the value moves while the pen or button is down
+   * and stops the moment it lifts, so the hover jump a lifting pen sends
+   * cannot throw the size across the screen.
+   */
+  private adjustPointer = -1;
+  private adjustLastX = 0;
+  private adjustLastY = 0;
   /**
    * ctrl+press that missed the mesh. Which gesture it is stays undecided
    * until the pointer either travels (zoom) or lifts in place (invert the
@@ -291,7 +303,7 @@ export class InputShell {
     // _radius (dab spacing especially) have to see the current value.
     this.worldScale?.sync();
     const tool = this.currentTool();
-    this.cursor.setBrush(tool._radius, tool._intensity);
+    this.cursor.setBrush(tool._radius, typeof tool._intensity === 'number' ? tool._intensity : null);
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || this.shiftHeld);
     this.onBrushChange?.();
@@ -556,8 +568,18 @@ export class InputShell {
     }
     // While adjusting brush size/strength (b/s) or dragging the light rig
     // (l), the press belongs to that gesture: never let it start an orbit.
+    // For b/s the press is also what STARTS the change; the key alone only
+    // arms it, and the drag measures from here rather than from wherever
+    // the pointer last hovered.
     if (this.adjust || this.lKeyHeld) {
-      this.verdict?.(`drop ${e.pointerType}: ${this.adjust ?? 'light'} drag owns it`);
+      if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
+        this.adjustPointer = e.pointerId;
+        this.adjustLastX = e.clientX;
+        this.adjustLastY = e.clientY;
+        this.verdict?.(`${this.adjust} drag begins`);
+      } else {
+        this.verdict?.(`drop ${e.pointerType}: ${this.adjust ?? 'light'} drag owns it`);
+      }
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -751,10 +773,14 @@ export class InputShell {
     }
 
     // Hold-b / hold-s adjust on the anchored brush: size is a horizontal
-    // drag, strength a vertical one (up = stronger).
+    // drag, strength a vertical one (up = stronger) - while the pen or
+    // button is down. A hover with the key held moves nothing.
     if (this.adjust) {
-      const dx = e.clientX - prevAbsX;
-      const dy = prevAbsY - e.clientY;
+      if (e.pointerId !== this.adjustPointer) return;
+      const dx = e.clientX - this.adjustLastX;
+      const dy = this.adjustLastY - e.clientY;
+      this.adjustLastX = e.clientX;
+      this.adjustLastY = e.clientY;
       const tool = this.currentTool();
       if (this.adjust === 'radius') {
         this.setBrushRadius(this.getBrushRadius() + dx);
@@ -854,6 +880,12 @@ export class InputShell {
   private readonly onPointerUp = (e: PointerEvent): void => {
     const s = this.session;
     if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
+
+    // The b/s drag ends with the press; the key stays armed for the next.
+    if (this.adjustPointer === e.pointerId) {
+      this.adjustPointer = -1;
+      return;
+    }
 
     // An eyedropper stroke changed the paint colour under the palette's
     // feet; tell it so the swatch stops showing the old one.
@@ -1128,11 +1160,14 @@ export class InputShell {
         this.hooks.frameModel();
         return this.claim(e);
       // The gizmo keys: w/e/r expose one transform each, the way every
-      // other 3D app binds them, and q returns to sculpting. T is left
-      // UNCLAIMED so it still reaches the viewer's FPS meter - taking it
-      // for scale had quietly cost the only way to open that.
+      // other 3D app binds them, t is the whole gizmo (the toolbar button's
+      // key), and q returns to sculpting. The frame-rate meter moved to p
+      // to make room (owner call).
       case 'q':
         this.hooks.transformExit();
+        return this.claim(e);
+      case 't':
+        this.hooks.transformToggle();
         return this.claim(e);
       case 'w':
         // Shift+w is the wireframe, the same chord the viewer uses. Plain w
@@ -1208,6 +1243,7 @@ export class InputShell {
 
   private endAdjust(): void {
     this.adjust = null;
+    this.adjustPointer = -1;
     this.cursor.setAnchored(false);
   }
 

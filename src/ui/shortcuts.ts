@@ -21,6 +21,7 @@ export interface ShortcutHandlers {
  *   1          Lit (PBR)               2..n           matcaps (interface order)
  *   dbl-click  set focus point (tap-to-focus; double-tap on touch)
  *   tab        toggle side panel       h              hotkey guide
+ *   p          frame-rate meter
  *
  * Wireframe and shadows are chords rather than plain keys so the same
  * binding works while sculpting, where plain w and s already mean the
@@ -79,7 +80,8 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
       case 'H':
         handlers.toggleHelp?.();
         return;
-      case 't':
+      case 'p':
+        // P for performance. T belongs to the sculpt gizmo now.
         handlers.toggleFps?.();
         return;
       default:

@@ -97,6 +97,19 @@ export class MaterialLibrary {
     this.onChange?.();
   }
 
+  /**
+   * A duplicate of `source`: the same material, and the same claim on its
+   * colours. The copy already carries the source's vertex colours; the
+   * point is that a painted source's copy counts as painted too, or the
+   * next fill would paint over them with the material's albedo.
+   */
+  adoptCopy(copy: SculptMesh, source: SculptMesh): void {
+    this.assigned.set(copy.getID(), this.materialFor(source).id);
+    if (this.painted.has(source.getID())) this.painted.add(copy.getID());
+    this.applyTo(copy);
+    this.onChange?.();
+  }
+
   /** Note that a paint stroke has taken ownership of a mesh's colours. */
   markPainted(mesh: SculptMesh): void {
     this.painted.add(mesh.getID());

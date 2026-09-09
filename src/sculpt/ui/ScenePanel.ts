@@ -78,6 +78,21 @@ export class ScenePanel extends SidePanel {
       else this.closeAddMenu();
     });
     footer.append(addBtn);
+    // Duplicate and Delete under Create (owner call): the three things you
+    // do to the list, in one place. Delete takes the whole selection.
+    const row = div('outliner__actions');
+    const dupBtn = document.createElement('button');
+    dupBtn.type = 'button';
+    dupBtn.className = 'outliner__btn';
+    dupBtn.textContent = 'Duplicate';
+    dupBtn.addEventListener('click', () => this.duplicateActive());
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'outliner__btn';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', () => this.deleteSelected());
+    row.append(dupBtn, delBtn);
+    footer.appendChild(row);
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
@@ -112,6 +127,46 @@ export class ScenePanel extends SidePanel {
   private closeAddMenu(): void {
     this.addMenu.hidden = true;
     document.removeEventListener('pointerdown', this.onDocPointerDown, true);
+  }
+
+  /** Duplicate: a copy of the active object, at its transform, with its material. */
+  private duplicateActive(): void {
+    const mesh = this.session.getMesh();
+    if (!mesh) return;
+    // The library fills a new object's colours with its material the moment
+    // it is selected; held off here, so a painted source's copy keeps its
+    // paint and is then adopted with the same material and the same claim.
+    this.library?.beginRestore();
+    let copy: SculptMesh | null;
+    try {
+      copy = this.session.duplicateMesh(mesh) as unknown as SculptMesh | null;
+    } finally {
+      this.library?.endRestore();
+    }
+    if (!copy) return;
+    this.library?.adoptCopy(copy, mesh);
+    this.refresh();
+  }
+
+  /** Delete: every selected object (the active one when nothing else is), after asking. */
+  private deleteSelected(): void {
+    // A copy: deleteMesh edits the selection list while this walks it.
+    const selected = [...this.session.getSelectedMeshes()];
+    const targets = selected.length > 0 ? selected : this.session.getMesh() ? [this.session.getMesh()!] : [];
+    if (targets.length === 0) return;
+    const remaining = this.session.getMeshes().length - targets.length;
+    if (remaining < 1) {
+      alert('The scene needs at least one object. Use New sculpt to start over.');
+      return;
+    }
+    const what =
+      targets.length === 1
+        ? `"${this.session.getMeshName(targets[0])}"`
+        : `${targets.length} objects`;
+    // Ctrl+z brings them back, so the prompt does not threaten permanence.
+    if (!confirm(`Delete ${what}?`)) return;
+    for (const m of targets) this.session.deleteMesh(m);
+    this.refresh();
   }
 
   /** Trash can: drop the selected object, once, after asking. */

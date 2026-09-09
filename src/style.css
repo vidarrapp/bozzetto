@@ -2361,6 +2361,20 @@ body.chrome-hidden .transport {
   .sculpt-toolbar__btn:hover {
     background-image: linear-gradient(rgb(255 255 255 / 14%), rgb(255 255 255 / 14%));
   }
+
+  /* A pressed button is rust; a white wash on rust read as grey (owner
+     report). It brightens toward the lighter rust instead. */
+  .sculpt-toolbar__btn--active:hover {
+    background-image: none;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+}
+
+/* Dragging the paint swatch over the view: a crosshair says "pick". */
+body.is-sampling,
+body.is-sampling * {
+  cursor: crosshair !important;
 }
 
 /* iOS long-press hijack, found with ?inputdebug=1: a stationary finger on
@@ -2785,6 +2799,17 @@ body.chrome-hidden .transport {
   gap: 6px;
   padding: 4px 8px 10px;
   border-top: 1px solid var(--panel-border);
+}
+
+/* Duplicate and Delete share the row under Create. */
+.outliner__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.outliner__actions .outliner__btn {
+  flex: 1;
 }
 
 .outliner__btn--wide {

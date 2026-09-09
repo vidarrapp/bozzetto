@@ -211,7 +211,7 @@ export class SculptToolbar {
     // Transform is not a brush: it has letter keys (e/r/t, q leaves) and a
     // gizmo instead of strokes, so it keeps its own button and active state
     // rather than a digit slot.
-    this.transformBtn = toolButton('', 'Transform (w/e/r modes, q exits)', 'transform', 'fi-ss-transformation-block');
+    this.transformBtn = toolButton('', 'Transform (t; w/e/r modes, q exits)', 'transform', 'fi-ss-transformation-block');
     this.transformBtn.addEventListener('click', () => this.onToggleTransform?.());
     center.appendChild(this.transformBtn);
 

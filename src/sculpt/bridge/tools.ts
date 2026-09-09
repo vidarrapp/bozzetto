@@ -18,8 +18,12 @@ import type { SculptSession } from './SculptSession';
  * called out.
  */
 
-/** Softer Move falloff: hold strength longer toward the rim (ZBrush feel). */
-const MOVE_FALLOFF_POW = 0.55;
+/**
+ * Move falloff (quartic pow). 1 is the plain bell, the softest, most
+ * gradual edge the slider offers; lower powers flatten the middle and
+ * drop it sharply at the rim. Owner call: start soft.
+ */
+const MOVE_FALLOFF_POW = 1.0;
 /** Volumetric grab reach: how far past the silhouette a press still grabs. */
 const MOVE_GRAB_FACTOR = 1.0;
 
@@ -33,15 +37,17 @@ const MOVE_GRAB_FACTOR = 1.0;
 const RAKE_SPACING = 0.06;
 
 /**
- * Crease defaults, matching upstream so the brush feels unchanged until a
- * slider is touched: the vendored crease raised the crest by
- * pow(falloff, 5) and pulled sideways at the plain falloff.
+ * Crease defaults (owner-tuned): the sharpest crest the slider offers and
+ * a light pinch, where upstream shipped pow(falloff, 5) and a full pinch.
  */
-const CREASE_PROFILE = 5;
-const CREASE_PINCH = 1;
+const CREASE_PROFILE = 12; // the sharpest the slider offers (owner call)
+const CREASE_PINCH = 0.625; // a quarter of the slider's 0-2.5 (owner call)
+/** Crease dab spacing: close, so a cut reads as one line (owner call). */
+const CREASE_SPACING = 0.05;
 
 const STRIPS_PLATEAU = 0.8;
-const STRIPS_LAYER = 0.05;
+/** The thinnest layer the slider offers (owner call: start there). */
+const STRIPS_LAYER = 0.01;
 
 /**
  * Polish (hPolish-inspired, replaces Twist on 9):
@@ -62,10 +68,18 @@ const STRIPS_LAYER = 0.05;
  * - Grip floor: a dab whose band catches almost nothing (the stroke has
  *   left its plane) does nothing at all rather than acting on garbage.
  */
-const POLISH_PLATEAU = 0.7;
+/**
+ * Polish falloff plateau and gain. The plateau is where the dab moves
+ * vertices all the way onto the plane; past it the quartic tail takes
+ * over. Lower than the clay brush's, and with a gentler gain (owner
+ * feedback: the polish built up in steps within one stroke, a plateau
+ * effect, where a smoother approach was wanted). Both are sliders now.
+ */
+const POLISH_PLATEAU = 0.35;
 const POLISH_CLIP = 0.25;
-const POLISH_STICK = 0.6;
-const POLISH_GAIN = 1.5;
+/** Plane lock off by default (owner call): the stroke follows the surface. */
+const POLISH_STICK = 0;
+const POLISH_GAIN = 0.8;
 const POLISH_MIN_GRIP = 8;
 /**
  * Normal agreement (v2 edge-test finding): the clip band is a spatial
@@ -90,7 +104,7 @@ const POLISH_NORMAL_COS = 0.5;
  *   more of the ball rides along (upstream felt sharp in review).
  */
 export class VolumetricMove extends Move {
-  /** Falloff softness (quartic pow): lower = broader bell (WS4 slider). */
+  /** Falloff (quartic pow): 1 the soft plain bell, lower a flat top with a sharp rim. */
   falloffPow = MOVE_FALLOFF_POW;
   /**
    * True when the last start() grabbed from OUTSIDE the silhouette. The
@@ -102,6 +116,7 @@ export class VolumetricMove extends Move {
 
   constructor(private readonly session: SculptSession) {
     super(session);
+    this._intensity = 0.25; // owner call: a gentle move by default
   }
 
   override start(ctrl: boolean): boolean {
@@ -316,6 +331,10 @@ export class PolishBrush extends Flatten {
    * chatter flattens more slowly). Owner-tuned by feel.
    */
   planeLock = POLISH_STICK;
+  /** Flat-top fraction of the radius that moves fully onto the plane (slider). */
+  plateau = POLISH_PLATEAU;
+  /** How much of the way to the plane one dab travels at full strength (slider). */
+  gain = POLISH_GAIN;
 
   /**
    * Held plane normals, one per symmetry side: the vendor runs the same
@@ -519,16 +538,16 @@ export class PolishBrush extends Flatten {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
       if (dist >= 1.0) continue;
       let fallOff: number;
-      if (dist <= POLISH_PLATEAU) {
+      if (dist <= this.plateau) {
         fallOff = 1.0;
       } else {
-        const t = (dist - POLISH_PLATEAU) / (1.0 - POLISH_PLATEAU);
+        const t = (dist - this.plateau) / (1.0 - this.plateau);
         fallOff = t * t;
         fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * t + 1.0;
       }
       const frac = Math.min(
         1.0,
-        POLISH_GAIN * intensity * fallOff * mAr[ind + 2] * picking.getAlpha(vx, vy, vz),
+        this.gain * intensity * fallOff * mAr[ind + 2] * picking.getAlpha(vx, vy, vz),
       );
       vAr[ind] -= anx * distToPlane * frac;
       vAr[ind + 1] -= any * distToPlane * frac;
@@ -766,6 +785,8 @@ export class CreaseBrush extends Crease {
   constructor(session: SculptSession) {
     super(session);
     this._idAlpha = null; // as above: upstream leaves a numeric 0 here
+    this._intensity = 0.5;
+    this._spacing = CREASE_SPACING;
   }
 
   /**
