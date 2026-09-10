@@ -28,6 +28,7 @@ import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
+import { SymmetryStore, type SymmetryAxis } from './symmetry';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -60,6 +61,74 @@ export interface HoverSurface {
  * at the pinned commit (18 methods, 6 fields); everything else was GUI or
  * renderer glue and is intentionally absent.
  */
+
+/** Reverse every face's winding in place: [a b c d] -> [a d c b], [a b c] -> [a c b]. */
+function reverseWinding(faces: Uint32Array): void {
+  for (let j = 0; j + 3 < faces.length; j += 4) {
+    if (faces[j + 3] === Utils.TRI_INDEX) {
+      const b = faces[j + 1];
+      faces[j + 1] = faces[j + 2];
+      faces[j + 2] = b;
+    } else {
+      const b = faces[j + 1];
+      faces[j + 1] = faces[j + 3];
+      faces[j + 3] = b;
+    }
+  }
+}
+
+/**
+ * What each vertex a subdivision added IS, independent of the number it
+ * was given: an edge vertex is named by the two lower-level vertices it
+ * sits between, a face centre by the lower-level corners of the face it
+ * sits in (the subdivision emits four sub-faces per face, in face order,
+ * so a centre's parent is its sub-face index / 4; the face's own index is
+ * no name, since the sub-face order itself follows the winding). Lower-
+ * level indices go through `lowMap` when the level below was itself
+ * renumbered. Returns one key per added vertex, from index `nbLow` up.
+ */
+function subdivisionKeys(
+  faces: Uint32Array | Int32Array,
+  nbFaces: number,
+  nbLow: number,
+  lowMap: Uint32Array | null,
+): string[] {
+  const neighbours = new Map<number, Set<number>>();
+  const parent = new Map<number, number>();
+  const corners = new Map<number, Set<number>>();
+  for (let f = 0; f < nbFaces; f++) {
+    const j = f * 4;
+    const n = faces[j + 3] === Utils.TRI_INDEX ? 3 : 4;
+    const p = f >> 2;
+    let cs = corners.get(p);
+    if (!cs) corners.set(p, (cs = new Set()));
+    for (let e = 0; e < n; e++) {
+      const a = faces[j + e];
+      const b = faces[j + ((e + 1) % n)];
+      const aNew = a >= nbLow;
+      const bNew = b >= nbLow;
+      if (!aNew) cs.add(lowMap ? lowMap[a] : a);
+      if (aNew && !parent.has(a)) parent.set(a, p);
+      if (bNew && !parent.has(b)) parent.set(b, p);
+      if (aNew === bNew) continue;
+      const added = aNew ? a : b;
+      const low = aNew ? b : a;
+      let set = neighbours.get(added);
+      if (!set) neighbours.set(added, (set = new Set()));
+      set.add(lowMap ? lowMap[low] : low);
+    }
+  }
+  const keys: string[] = [];
+  for (const [added, p] of parent) {
+    const low = [...(neighbours.get(added) ?? [])].sort((x, y) => x - y);
+    keys[added - nbLow] =
+      low.length === 2
+        ? `e${low[0]}:${low[1]}`
+        : `c${[...(corners.get(p) ?? [])].sort((x, y) => x - y).join(':')}`;
+  }
+  return keys;
+}
+
 export class SculptSession {
   // Pointer/action state the vendored tools and picking read directly.
   _mouseX = 0;
@@ -295,6 +364,7 @@ export class SculptSession {
   }
 
   addNewMesh(mesh: SculptMesh): SculptMesh {
+    this.writeSymmetryAxis(this.getSymmetryAxis(), [mesh]);
     this.meshes.push(mesh);
     this.stateManager.pushStateAdd(mesh);
     this.setMesh(mesh);
@@ -398,42 +468,64 @@ export class SculptSession {
     }
   }
 
-  /** Mirror-sculpting toggle (x). Returns the new state. */
+  /**
+   * Mirror sculpting is a PER-BRUSH setting (owner call): each brush keeps
+   * its own on/off and axis, and picking a brush installs them into the
+   * vendor's one live flag and every object's mirror plane. The shell
+   * names the brush on each pick; the momentary Smooth/Mask swaps never
+   * do, so they sculpt with the brush's symmetry, not their own.
+   */
+  readonly symmetry = new SymmetryStore();
+  private symmetryTool = Enums.Tools.BRUSH;
+
+  /** Install a brush's symmetry as the live one (the shell, on each pick). */
+  applyBrushSymmetry(tool: number): void {
+    this.symmetryTool = tool;
+    const s = this.symmetry.get(tool);
+    const changed = this.sculptManager._symmetry !== s.on;
+    this.sculptManager._symmetry = s.on;
+    this.writeSymmetryAxis(s.axis);
+    if (changed) this.onSymmetryChange?.(s.on);
+  }
+
+  /** Mirror-sculpting toggle (x), for the current brush. Returns the new state. */
   toggleSymmetry(): boolean {
-    this.sculptManager._symmetry = !this.sculptManager._symmetry;
-    this.onSymmetryChange?.(this.sculptManager._symmetry);
-    return this.sculptManager._symmetry;
+    const s = this.symmetry.get(this.symmetryTool);
+    s.on = !s.on;
+    this.sculptManager._symmetry = s.on;
+    this.onSymmetryChange?.(s.on);
+    return s.on;
   }
 
   getSymmetry(): boolean {
     return this.sculptManager._symmetry;
   }
 
-  /**
-   * Mirror-plane axis of the ACTIVE mesh, read back as the dominant
-   * component (the normal is always axis-aligned when set through here).
-   */
-  getSymmetryAxis(): 'x' | 'y' | 'z' {
-    const n = this.mesh?.getSymmetryNormal();
-    if (!n) return 'x';
-    const ax = Math.abs(n[0]);
-    const ay = Math.abs(n[1]);
-    const az = Math.abs(n[2]);
-    return ay > ax && ay >= az ? 'y' : az > ax ? 'z' : 'x';
+  /** The current brush's mirror axis (also what Mirror and Radial use). */
+  getSymmetryAxis(): SymmetryAxis {
+    return this.symmetry.get(this.symmetryTool).axis;
+  }
+
+  /** Point the current brush's mirror plane down an axis. */
+  setSymmetryAxis(axis: SymmetryAxis): void {
+    this.symmetry.get(this.symmetryTool).axis = axis;
+    this.writeSymmetryAxis(axis);
+    this.render();
   }
 
   /**
-   * Point the active mesh's mirror plane down an axis (local space). One
-   * in-place write covers everything: the Multimesh wrapper, every level,
-   * and dyntopo conversions all share a single TransformData.
+   * The vendor reads the mirror plane off each mesh (local space), so the
+   * brush's axis is written into every object. One in-place write per
+   * object covers everything: the Multimesh wrapper, every level, and
+   * dyntopo conversions all share a single TransformData.
    */
-  setSymmetryAxis(axis: 'x' | 'y' | 'z'): void {
-    const n = this.mesh?.getSymmetryNormal();
-    if (!n) return;
-    n[0] = axis === 'x' ? 1 : 0;
-    n[1] = axis === 'y' ? 1 : 0;
-    n[2] = axis === 'z' ? 1 : 0;
-    this.render();
+  private writeSymmetryAxis(axis: SymmetryAxis, meshes: SculptMesh[] = this.meshes): void {
+    for (const mesh of meshes) {
+      const n = mesh.getSymmetryNormal();
+      n[0] = axis === 'x' ? 1 : 0;
+      n[1] = axis === 'y' ? 1 : 0;
+      n[2] = axis === 'z' ? 1 : 0;
+    }
   }
 
   /** The active mesh as a Multimesh, or null (e.g. while dyntopo is active). */
@@ -622,10 +714,13 @@ export class SculptSession {
 
   /**
    * Scene menu: a mirrored copy across a WORLD axis plane through the
-   * origin. The reflection rides the copy's matrix (S * M) rather than its
-   * geometry: the mesh stays right-handed for sculpting, three flips the
-   * front faces of a negative-determinant matrix by itself, and the
-   * export paths reverse the winding when they bake it (SceneFile).
+   * origin. The reflection is asked for through the copy's matrix (S * M)
+   * and BAKED into its geometry on the way in (buildRestoredMesh), so the
+   * copy is an ordinary right-handed object: faces wound outward, a
+   * positive-determinant matrix, nothing downstream to know about. Owner
+   * report: left on the matrix, the copy rendered inside out on WebGPU,
+   * whose per-object pipeline keeps the front-face winding it was first
+   * built with and never notices the sign change.
    */
   mirrorMesh(mesh: SculptMesh, axis: 'x' | 'y' | 'z'): Multimesh | null {
     const row = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
@@ -931,7 +1026,8 @@ export class SculptSession {
       if (savedMesh.locked) this.setLocked(mesh as unknown as SculptMesh, true);
       built.push(mesh);
     }
-    this.sculptManager._symmetry = saved.symmetry;
+    // The scene-wide flag is legacy now (symmetry is per brush); the mount
+    // seeds the brushes from it when the record carries no per-brush table.
     const active = built[Math.min(saved.active, built.length - 1)];
     this.setMesh(active);
     return active;
@@ -1030,15 +1126,40 @@ export class SculptSession {
   }
 
   /**
-   * One saved object back to a live multimesh. The base level uses the
-   * proven convertToStaticMesh construction (no normalize: the saved matrix
-   * carries the scale); each higher level re-derives its topology through
-   * addLevel, then every array is overwritten with the saved bytes.
+   * One saved object back to a live multimesh, in the scene. A reflected
+   * transform (a mirror copy asking for one, or an object a 0.2 file saved
+   * with a negative scale) is first folded into the record's geometry, so
+   * what gets built is an ordinary right-handed object.
+   */
+  private buildRestoredMesh(saved: SavedMesh): Multimesh {
+    const sel = saved.sel;
+    if (mat3.determinant(mat3.fromMat4(mat3.create(), saved.matrix as unknown as mat4)) < 0) {
+      saved = this.reflectRecord(saved);
+    }
+    const mesh = this.buildLevels(saved);
+    // A reflected record comes back on its top level; walk down to where
+    // the object was (analysis, which also rebuilds the detail vectors).
+    if (mesh._sel !== sel) {
+      mesh.selectResolution(Math.min(sel, mesh._meshes.length - 1));
+      mesh.updateBuffers();
+    }
+    // The saved per-object axis is legacy: symmetry is per brush now, and
+    // addNewMesh writes the brush's axis in.
+    this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
+    this.addNewMesh(mesh);
+    return mesh;
+  }
+
+  /**
+   * The stack of a saved object, not yet in the scene. The base level uses
+   * the proven convertToStaticMesh construction (no normalize: the saved
+   * matrix carries the scale); each higher level re-derives its topology
+   * through addLevel, then every array is overwritten with the saved bytes.
    * setSelection is a plain pointer swap (no analysis or synthesis
    * recompute), so the restored stack, its detail vectors, and a stale top
    * all come back exactly as saved.
    */
-  private buildRestoredMesh(saved: SavedMesh): Multimesh {
+  private buildLevels(saved: SavedMesh): Multimesh {
     const l0 = saved.levels[0];
     const base = new MeshStatic(null);
     base.setVertices(l0.vertices);
@@ -1086,15 +1207,102 @@ export class SculptSession {
     mesh.updateBuffers();
 
     mat4.copy(mesh.getMatrix() as unknown as mat4, saved.matrix as unknown as mat4);
-    if (Array.isArray(saved.sym) && saved.sym.length === 3) {
-      const n = mesh.getSymmetryNormal();
-      n[0] = saved.sym[0];
-      n[1] = saved.sym[1];
-      n[2] = saved.sym[2];
-    }
-    this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
-    this.addNewMesh(mesh);
     return mesh;
+  }
+
+  /**
+   * Fold a reflection out of a saved object's matrix and into its
+   * geometry: every level's positions and normals mirrored across local X,
+   * the base faces wound the other way so the surface still faces outward,
+   * and the matrix multiplied by the same reflection, so the object stays
+   * exactly where it was in the world with a positive determinant.
+   *
+   * The higher levels are not stored; a restore re-derives them by
+   * subdividing the base, and the subdivision numbers its new vertices in
+   * the order it walks each face's edges - reverse the winding and that
+   * order changes. So the reversed base is subdivided once here to learn
+   * the numbering it produces, and each level's arrays are permuted into
+   * it: edge vertices are matched by the two base vertices they sit
+   * between, face centres by their face. The detail vectors live in frames
+   * built from vertex rings, which the reversal reorders too; rather than
+   * transform them, the stack is first synthesised to an exact top level,
+   * and the caller walks back down, which rebuilds them - the same walk
+   * the app takes on any level change.
+   */
+  private reflectRecord(saved: SavedMesh): SavedMesh {
+    // 1. An exact top level, with the object as it was.
+    const temp = this.buildLevels(saved);
+    const top = temp._meshes.length - 1;
+    if (temp._sel < top) temp.selectResolution(top);
+    const exact = this.serializeMesh(temp);
+    if (!exact) throw new Error('sculpt restore: reflected object has no geometry');
+
+    // 2. The base wound the other way, and its subdivision's numbering.
+    const baseFaces = new Uint32Array(exact.baseFaces);
+    reverseWinding(baseFaces);
+    const scratchBase = new MeshStatic(null);
+    scratchBase.setVertices(new Float32Array(exact.levels[0].vertices));
+    scratchBase.setColors(new Float32Array(exact.levels[0].colors));
+    scratchBase.setMaterials(new Float32Array(exact.levels[0].materials));
+    scratchBase.setFaces(baseFaces);
+    Mesh.OPTIMIZE = false;
+    scratchBase.init();
+    Mesh.OPTIMIZE = true;
+    const scratch = new Multimesh(scratchBase);
+    for (let i = 1; i < exact.levels.length; i++) scratch.addLevel();
+
+    // 3. Each level's arrays, mirrored and in the new numbering.
+    let perm: Uint32Array | null = null; // old index -> new index, the level below
+    const levels: SavedLevel[] = exact.levels.map((level, k) => {
+      const nbV = level.nbVertices;
+      let map: Uint32Array;
+      if (k === 0) {
+        map = new Uint32Array(nbV);
+        for (let i = 0; i < nbV; i++) map[i] = i;
+      } else {
+        const nbLow = exact.levels[k - 1].nbVertices;
+        const oldKeys = subdivisionKeys(temp._meshes[k].getFaces(), temp._meshes[k].getNbFaces(), nbLow, perm!);
+        const newKeys = subdivisionKeys(scratch._meshes[k].getFaces(), scratch._meshes[k].getNbFaces(), nbLow, null);
+        const newByKey = new Map<string, number>();
+        for (let i = nbLow; i < nbV; i++) newByKey.set(newKeys[i - nbLow], i);
+        map = new Uint32Array(nbV);
+        for (let i = 0; i < nbLow; i++) map[i] = perm![i];
+        for (let i = nbLow; i < nbV; i++) {
+          const to = newByKey.get(oldKeys[i - nbLow]);
+          if (to === undefined) throw new Error(`sculpt restore: level ${k} vertex ${i} has no place in the reflected stack`);
+          map[i] = to;
+        }
+      }
+      perm = map;
+      const permute = (src: Float32Array, mirror: boolean): Float32Array => {
+        const out = new Float32Array(nbV * 3);
+        for (let i = 0; i < nbV; i++) {
+          const j = map[i] * 3;
+          out[j] = mirror ? -src[i * 3] : src[i * 3];
+          out[j + 1] = src[i * 3 + 1];
+          out[j + 2] = src[i * 3 + 2];
+        }
+        return out;
+      };
+      return {
+        nbVertices: nbV,
+        vertices: permute(level.vertices, true),
+        normals: level.normals ? permute(level.normals, true) : null,
+        colors: permute(level.colors, false),
+        materials: permute(level.materials, false),
+        // Rebuilt by the walk back down (their frames changed with the rings).
+        detailsXYZ: null,
+        detailsRGB: null,
+        detailsPBR: null,
+      };
+    });
+
+    // 4. M' = M * S(x): the first column of M changes sign.
+    const matrix = new Float32Array(exact.matrix);
+    matrix[0] = -matrix[0];
+    matrix[1] = -matrix[1];
+    matrix[2] = -matrix[2];
+    return { ...saved, nbBaseFaces: exact.nbBaseFaces, baseFaces, levels, sel: top, matrix };
   }
 
   // --- primitives (ported from Scene.js + drawables/Primitives.js) --------

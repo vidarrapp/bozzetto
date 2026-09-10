@@ -18,6 +18,8 @@ import {
   saveSculptLook,
   saveSculptSnapshot,
 } from './bridge/ScenePersist';
+import type { SavedScene } from './bridge/ScenePersist';
+import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
@@ -360,6 +362,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       if (existing) {
         viewer.setSculptExtraMatrix(existing.handle, new Matrix4().fromArray(mesh.getMatrix()));
         existing.handle.visible = mesh.isVisible();
+        viewer.setSculptLocked(existing.handle, session.isLocked(mesh));
         continue;
       }
       const extraSync = new GeometrySync();
@@ -369,10 +372,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         new Matrix4().fromArray(mesh.getMatrix()),
       );
       handle.visible = mesh.isVisible();
+      viewer.setSculptLocked(handle, session.isLocked(mesh));
       extras.set(mesh, { sync: extraSync, handle });
     }
-    // The outliner eye: the vendor flag is the truth, the display follows.
+    // The outliner eye and padlock: the vendor flag and the session's lock
+    // set are the truth, the display follows (a locked object draws as if
+    // fully masked).
     viewer.setSculptVisible(active ? active.isVisible() : true);
+    viewer.setSculptLocked('primary', !!active && session.isLocked(active));
     // A newly added object still has SculptGL's white vertex colours.
     library.applyNew();
     syncHighlights();
@@ -775,6 +782,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The gizmo and the orbit share a pointer; only one may listen.
     viewer.setOrbitEnabled(!dragging);
   };
+  // The rest of the selection moves with the active object (owner
+  // request); hidden and locked objects stay put, as the active one would.
+  gizmo.getCompanions = () =>
+    session.getSelectedMeshes().filter((m) => m.isVisible() && !session.isLocked(m));
   gizmo.onCommit = () => {
     persist.markDirty();
     sliders?.refreshHistory();
@@ -849,8 +860,32 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     paintColor: paintColorOf(),
     spacing: input.serializeSpacing(),
     alphas: input.serializeAlphas(),
+    symmetry: session.symmetry.serialize(),
   });
-  const applySettings = (settings: SculptSettings | undefined): void => {
+  /**
+   * What a scene from before per-brush symmetry sculpted with: its one
+   * flag and the active object's mirror plane. Every brush starts from it.
+   */
+  const legacySymmetry = (scene: SavedScene): BrushSymmetry => {
+    const n = scene.meshes[scene.active]?.sym;
+    const axis: SymmetryAxis =
+      Array.isArray(n) && n.length === 3
+        ? Math.abs(n[1]) > Math.abs(n[0]) && Math.abs(n[1]) >= Math.abs(n[2])
+          ? 'y'
+          : Math.abs(n[2]) > Math.abs(n[0])
+            ? 'z'
+            : 'x'
+        : 'x';
+    return { on: scene.symmetry !== false, axis };
+  };
+  const applySettings = (scene: SavedScene | null): void => {
+    const settings = scene?.settings;
+    // Symmetry is per brush and always applied: with no settings at all
+    // (a fresh scene, or a bare legacy record) the brushes take their
+    // defaults, or the legacy scene's one flag and axis.
+    session.symmetry.load(settings?.symmetry, scene ? legacySymmetry(scene) : undefined);
+    session.applyBrushSymmetry(input.currentToolIndex());
+    sculptPanel?.refreshState();
     if (!settings) return;
     worldScale.restore(settings.worldScale, settings.worldRadius);
     input.dynamics.load(settings.dynamics);
@@ -864,7 +899,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The mount restore: materials were applied when the library loaded (the
   // panels need them first); settings wait until here, where the world
   // scale and dynamics they describe exist to be written into.
-  if (saved) applySettings(saved.settings);
+  applySettings(saved);
 
   // "Is there work to lose?" - asked before anything replaces the scene.
   // A session restored from the autosave counts: it exists nowhere else.
@@ -893,7 +928,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     abandon: () => library.endRestore(),
     adopt: (scene) => {
       library.loadFrom(scene);
-      applySettings(scene.settings);
+      applySettings(scene);
       session.render();
     },
     hasWork,

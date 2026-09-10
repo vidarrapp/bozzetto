@@ -16,7 +16,7 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, BackSide } from 'three';
+  Vector3, BackSide, FrontSide } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
 import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
@@ -685,6 +685,7 @@ export class Viewer {
     const mesh = new Mesh(geometry, this.display.material);
     mesh.castShadow = this.display.castShadow;
     mesh.receiveShadow = this.display.receiveShadow;
+    mesh.userData.locked = 0; // the shared material reads it; never undefined
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(matrix);
     mesh.matrixWorldNeedsUpdate = true;
@@ -707,13 +708,16 @@ export class Viewer {
   }
 
   /**
-   * Selection highlight for a sculpt object: an inverted-hull outline in
-   * the accent colour, a child of the object's display mesh so it follows
-   * the matrix for free and shares the geometry. 'primary' is the active
-   * object's own display; the others are the extras' handles.
+   * Selection highlight for a sculpt object (owner call: the thin outline
+   * disappeared on a big smooth shape): a translucent wash of the accent
+   * colour over the whole visible surface, plus a wider inverted-hull rim
+   * around the silhouette. Both are children of the object's display mesh,
+   * so they follow its matrix for free and share its geometry. 'primary'
+   * is the active object's own display; the others are the extras' handles.
    */
   private readonly sculptOutlines = new Map<Mesh, Mesh>();
   private outlineMaterial: MeshBasicNodeMaterial | null = null;
+  private washMaterial: MeshBasicNodeMaterial | null = null;
 
   highlightSculpt(target: Mesh | 'primary', on: boolean): void {
     const host = target === 'primary' ? this.display : target;
@@ -726,30 +730,60 @@ export class Viewer {
       return;
     }
     if (existing) return;
-    if (!this.outlineMaterial) {
-      const m = new MeshBasicNodeMaterial();
-      m.color.set('#c87049');
-      m.side = BackSide;
-      m.transparent = true;
-      m.opacity = 0.9;
-      m.depthWrite = false;
-      // Pushed out along the normal, not scaled about the origin: the
-      // outline is the same width everywhere, whatever shape the object.
-      m.positionNode = positionLocal.add(normalLocal.mul(float(0.012)));
-      this.outlineMaterial = m;
+    if (!this.outlineMaterial || !this.washMaterial) {
+      const rim = new MeshBasicNodeMaterial();
+      rim.color.set('#c87049');
+      rim.side = BackSide;
+      rim.transparent = true;
+      rim.opacity = 0.95;
+      rim.depthWrite = false;
+      // Pushed out along the normal, not scaled about the origin: the rim
+      // is the same width everywhere, whatever shape the object.
+      rim.positionNode = positionLocal.add(normalLocal.mul(float(0.028)));
+      this.outlineMaterial = rim;
+      // The wash sits a hair above the surface so it wins the depth test
+      // against the object it covers, and only where that surface faces
+      // the camera - the hidden side never bleeds through.
+      const wash = new MeshBasicNodeMaterial();
+      wash.color.set('#c87049');
+      wash.side = FrontSide;
+      wash.transparent = true;
+      wash.opacity = 0.28;
+      wash.depthWrite = false;
+      wash.positionNode = positionLocal.add(normalLocal.mul(float(0.004)));
+      this.washMaterial = wash;
     }
     const outline = new Mesh(host.geometry, this.outlineMaterial);
     outline.frustumCulled = false;
     outline.castShadow = false;
     outline.receiveShadow = false;
     outline.name = 'sculpt-outline';
+    const wash = new Mesh(host.geometry, this.washMaterial);
+    wash.frustumCulled = false;
+    wash.castShadow = false;
+    wash.receiveShadow = false;
+    wash.name = 'sculpt-wash';
+    // The wash draws after the rim so the rim never tints through it.
+    outline.renderOrder = 1;
+    wash.renderOrder = 2;
+    outline.add(wash);
     host.add(outline);
     this.sculptOutlines.set(host, outline);
   }
 
-  /** Whether an object carries the selection outline (tests read this). */
+  /** Whether an object carries the selection highlight (tests read this). */
   isSculptHighlighted(target: Mesh | 'primary'): boolean {
     return this.sculptOutlines.has(target === 'primary' ? this.display : target);
+  }
+
+  /**
+   * A locked object draws as if fully masked (the darken the mask uses),
+   * so the outliner padlock can be seen in the viewport. Per object, read
+   * by the shared sculpt material off each display mesh's userData.
+   */
+  setSculptLocked(target: Mesh | 'primary', locked: boolean): void {
+    const host = target === 'primary' ? this.display : target;
+    host.userData.locked = locked ? 1 : 0;
   }
 
   /**
@@ -1480,6 +1514,8 @@ export class Viewer {
     this.wireframe.matrixAutoUpdate = false;
     // Sculpt backing arrays are over-allocated; their bounds are meaningless.
     this.display.frustumCulled = false;
+    // The shared sculpt material reads the lock off userData; never undefined.
+    this.display.userData.locked = 0;
     this.wireframe.frustumCulled = false;
     this.setSculptMatrix(matrix);
     this.fitSubjectBounds(worldBox, true);

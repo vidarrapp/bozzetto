@@ -1887,6 +1887,7 @@ html.is-page body {
 
 .outliner__footer {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 6px 8px 10px;
   border-top: 1px solid var(--panel-border);
@@ -2973,15 +2974,17 @@ body.is-sampling * {
   border-top: 1px solid var(--panel-border);
 }
 
-/* Duplicate and Delete share the row under Create. */
+/* Duplicate, Delete and Mirror stack under Create, one per row (owner
+   call: squeezed into one row the labels clipped and Mirror fell off the
+   end). */
 .outliner__actions {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  margin-top: 6px;
 }
 
 .outliner__actions .outliner__btn {
-  flex: 1;
+  width: 100%;
 }
 
 .outliner__btn--wide {

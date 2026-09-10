@@ -1,6 +1,6 @@
 import { Color, Material, SRGBColorSpace, Texture } from 'three';
 import { MeshMatcapNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
-import { attribute, float, materialColor, mix, uniform, vec3 } from 'three/tsl';
+import { attribute, float, materialColor, mix, uniform, userData, vec3 } from 'three/tsl';
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
 
@@ -190,11 +190,24 @@ export class Materials {
       // masks must stay visible while sculpting.
       let node: unknown =
         this.sculptVertexColor && id === 'lit' ? attribute('color', 'vec3') : null;
+      // How much of the surface counts as masked: the vertex mask when the
+      // tint is on, and the whole object when it is locked (owner call: a
+      // locked object draws as if fully masked, so the padlock shows in
+      // the viewport). The lock is per object, read off the display
+      // mesh's userData - the one material serves every sculpt object.
+      type FloatNode = ReturnType<typeof float>;
+      let covered: FloatNode | null = null;
       if (this.maskTintOn) {
         const materialsPBR = attribute('materialsPBR', 'vec3') as unknown as Vec3Node;
-        const masked = materialsPBR.z.clamp(0, 1).oneMinus();
+        covered = materialsPBR.z.clamp(0, 1).oneMinus() as unknown as FloatNode;
+      }
+      if (this.sculptVertexPBR) {
+        const locked = userData('locked', 'float') as unknown as FloatNode;
+        covered = (covered ? covered.max(locked) : locked) as unknown as FloatNode;
+      }
+      if (covered) {
         const base = (node ?? materialColor) as unknown as Vec3Node;
-        node = base.mul(mix(float(1), this.maskDarkenU, masked));
+        node = base.mul(mix(float(1), this.maskDarkenU, covered));
       }
       // Same cast rationale as above: the published node typings are
       // narrower than what the TSL runtime actually accepts here.

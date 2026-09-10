@@ -1467,6 +1467,10 @@ export class InputShell {
     const tool = manager.getCurrentTool();
     if (index === Enums.Tools.BRUSH) tool._clay = true; // standard = clay on
     init?.(tool);
+    // Symmetry is a per-brush setting (owner call): the brush brings its
+    // own on/off and axis. The momentary swaps - shift for Smooth, ctrl for
+    // Mask - do not pass through here, so they keep the brush's symmetry.
+    this.session.applyBrushSymmetry(index);
     this.syncCursorBrush();
     this.onToolChange?.();
   }

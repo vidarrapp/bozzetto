@@ -137,6 +137,9 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getFacesFromVertices(iVerts: Uint32Array): Uint32Array;
     normalizeSize(): void;
     updateGeometry(iFaces?: Uint32Array, iVerts?: Uint32Array): void;
+    /** Rebuild rings, edges and render triangles from the faces (no reorder with Mesh.OPTIMIZE off). */
+    initTopology(): void;
+    updateCenter(): void;
     updateFacesAabbAndNormal(iFaces?: Uint32Array): void;
     updateOctree(iFaces?: Uint32Array): void;
     updateGeometryBuffers(): void;

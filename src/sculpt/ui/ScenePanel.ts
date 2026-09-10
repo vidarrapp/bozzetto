@@ -7,11 +7,12 @@ import type { MaterialLibrary } from '../bridge/materials';
 /**
  * Scene outliner: the lower-left docked panel, and only the objects. Each
  * row is an eye (visibility), a padlock (edit lock), the name - click
- * selects, double-click renames in place - and, on the selected row, a
- * trash can. The wide Create button sits right under the list, and the
- * selection's material row under that; new materials are made from the
- * dropdown's own trailing "New*" entry rather than a separate button.
- * Saving, exporting and capture live next door in the File panel.
+ * selects, ctrl+click adds or removes, shift+click takes the range,
+ * double-click renames in place - and, on the active row, a trash can.
+ * Create, Duplicate, Delete and Mirror stack under the list, one per row,
+ * and act on the whole selection; the material row sits under them. New
+ * materials are made from the dropdown's own trailing "New*" entry rather
+ * than a separate button. Saving, exporting and capture live next door.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
@@ -84,14 +85,15 @@ export class ScenePanel extends SidePanel {
       else this.closeMenus();
     });
     footer.append(addBtn);
-    // Duplicate and Delete under Create (owner call): the three things you
-    // do to the list, in one place. Delete takes the whole selection.
+    // Duplicate, Delete and Mirror under Create (owner call): the things
+    // you do to the list, in one place, one per row. Each takes the whole
+    // selection.
     const row = div('outliner__actions');
     const dupBtn = document.createElement('button');
     dupBtn.type = 'button';
     dupBtn.className = 'outliner__btn';
     dupBtn.textContent = 'Duplicate';
-    dupBtn.addEventListener('click', () => this.duplicateActive());
+    dupBtn.addEventListener('click', () => this.duplicateSelected());
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'outliner__btn';
@@ -183,54 +185,64 @@ export class ScenePanel extends SidePanel {
     }
   }
 
-  /** A mirrored copy across a world axis; the copy takes the object's material. */
+  /** What an action applies to: the selection, or the active object alone. */
+  private targets(): SculptMesh[] {
+    // A copy: the copy operations edit the selection while this is walked.
+    const selected = [...this.session.getSelectedMeshes()];
+    if (selected.length > 0) return selected;
+    const active = this.session.getMesh();
+    return active ? [active] : [];
+  }
+
+  /**
+   * Run a copy operation over the targets and select what it made. The
+   * library fills a new object's colours with its material the moment it
+   * is selected; held off here, so a painted source's copy keeps its paint
+   * and is then adopted with the same material and the same claim.
+   */
+  private copyEach(make: (source: SculptMesh) => SculptMesh[]): void {
+    const sources = this.targets();
+    if (sources.length === 0) return;
+    const made: SculptMesh[] = [];
+    this.library?.beginRestore();
+    try {
+      for (const source of sources) {
+        for (const copy of make(source)) {
+          this.library?.adoptCopy(copy, source);
+          made.push(copy);
+        }
+      }
+    } finally {
+      this.library?.endRestore();
+    }
+    // The copies are the selection now (the last one active), as they
+    // would be in Maya: the next move or mirror works on what was made.
+    if (made.length > 0) this.session.selectSet(made);
+    this.refresh();
+  }
+
+  /** A mirrored copy of each selected object across a world axis. */
   mirrorActive(axis: 'x' | 'y' | 'z'): void {
-    const mesh = this.session.getMesh();
-    if (!mesh) return;
-    this.library?.beginRestore();
-    let copy: SculptMesh | null;
-    try {
-      copy = this.session.mirrorMesh(mesh, axis) as unknown as SculptMesh | null;
-    } finally {
-      this.library?.endRestore();
-    }
-    if (!copy) return;
-    this.library?.adoptCopy(copy, mesh);
-    this.refresh();
+    this.copyEach((source) => {
+      const copy = this.session.mirrorMesh(source, axis) as unknown as SculptMesh | null;
+      return copy ? [copy] : [];
+    });
   }
 
-  /** Copies turned around the object's symmetry axis, the object one of `count`. */
+  /** Copies of each selected object turned around the brush's symmetry axis. */
   radialActive(count: number): void {
-    const mesh = this.session.getMesh();
-    if (!mesh) return;
-    this.library?.beginRestore();
-    let copies: SculptMesh[];
-    try {
-      copies = this.session.radialCopies(mesh, count, this.session.getSymmetryAxis()) as unknown as SculptMesh[];
-    } finally {
-      this.library?.endRestore();
-    }
-    for (const c of copies) this.library?.adoptCopy(c, mesh);
-    this.refresh();
+    const axis = this.session.getSymmetryAxis();
+    this.copyEach(
+      (source) => this.session.radialCopies(source, count, axis) as unknown as SculptMesh[],
+    );
   }
 
-  /** Duplicate: a copy of the active object, at its transform, with its material. */
-  private duplicateActive(): void {
-    const mesh = this.session.getMesh();
-    if (!mesh) return;
-    // The library fills a new object's colours with its material the moment
-    // it is selected; held off here, so a painted source's copy keeps its
-    // paint and is then adopted with the same material and the same claim.
-    this.library?.beginRestore();
-    let copy: SculptMesh | null;
-    try {
-      copy = this.session.duplicateMesh(mesh) as unknown as SculptMesh | null;
-    } finally {
-      this.library?.endRestore();
-    }
-    if (!copy) return;
-    this.library?.adoptCopy(copy, mesh);
-    this.refresh();
+  /** Duplicate: a copy of each selected object, at its transform, with its material. */
+  duplicateSelected(): void {
+    this.copyEach((source) => {
+      const copy = this.session.duplicateMesh(source) as unknown as SculptMesh | null;
+      return copy ? [copy] : [];
+    });
   }
 
   /** Delete: every selected object (the active one when nothing else is), after asking. */
@@ -376,8 +388,29 @@ export class ScenePanel extends SidePanel {
           row.appendChild(del);
         }
 
-        row.addEventListener('click', () => {
-          if (mesh !== this.session.getMesh()) this.session.setMesh(mesh);
+        // Multi-select in the list the way a file list does it (owner
+        // request): a plain click selects just this one, ctrl (cmd on a
+        // Mac) adds or removes it, shift takes everything from the active
+        // object to here.
+        row.addEventListener('click', (e) => {
+          const list = this.session.getMeshes();
+          if (e.shiftKey) {
+            const from = list.indexOf(this.session.getMesh() as SculptMesh);
+            const to = list.indexOf(mesh);
+            const lo = from < 0 ? to : Math.min(from, to);
+            const hi = from < 0 ? to : Math.max(from, to);
+            // The clicked one last, so it becomes the active object.
+            const range = list.slice(lo, hi + 1).filter((m) => m !== mesh);
+            this.session.selectAdd([...range, mesh]);
+          } else if (e.ctrlKey || e.metaKey) {
+            if (this.session.getSelectedMeshes().includes(mesh)) this.session.selectRemove([mesh]);
+            else this.session.selectAdd([mesh]);
+          } else if (
+            mesh !== this.session.getMesh() ||
+            this.session.getSelectedMeshes().length !== 1
+          ) {
+            this.session.selectSet([mesh]);
+          }
         });
         return row;
       }),

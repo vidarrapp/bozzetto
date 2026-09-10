@@ -94,6 +94,10 @@ export class SculptPanel extends SidePanel {
     // (owner request): the Select tool its modifiers and mode, the
     // transform gizmo which of its handles to show.
     const uiMode = this.input.uiMode();
+    // Symmetry is a brush setting: neither the Select tool nor the gizmo
+    // mirrors anything (a mirrored selection is a maybe for later), so
+    // the section shows for brushes only, with the active brush's values.
+    if (this.symSection) this.symSection.hidden = uiMode !== 'brush';
     if (uiMode === 'select') {
       if (this.brushHeading) this.brushHeading.textContent = 'Select';
       this.extrasBody.replaceChildren();
@@ -106,6 +110,7 @@ export class SculptPanel extends SidePanel {
       this.buildTransformSettings(dyn);
       return;
     }
+    this.refreshState();
     if (this.brushHeading) this.brushHeading.textContent = TOOL_NAMES[tool] ?? 'Brush';
     const d = this.input.dynamics.get(tool);
     // The paint brush leads with its colour: the same HSV picker the Render
@@ -434,8 +439,11 @@ export class SculptPanel extends SidePanel {
 
   // --- Symmetry -----------------------------------------------------------
 
+  private symSection: HTMLElement | null = null;
+
   private buildSymmetry(body: HTMLElement): void {
     const sec = section(body, 'Symmetry');
+    this.symSection = sec;
     const box = checkbox('Mirror sculpting (x)', this.session.getSymmetry(), () =>
       this.session.toggleSymmetry(),
     );
@@ -460,7 +468,7 @@ export class SculptPanel extends SidePanel {
     this.paintAxis();
   }
 
-  /** Highlight the active mesh's mirror axis (per-object state). */
+  /** Highlight the active brush's mirror axis (per-brush state). */
   private paintAxis(): void {
     const axis = this.session.getSymmetryAxis();
     for (const b of this.axisButtons) {
@@ -516,8 +524,9 @@ export class SculptPanel extends SidePanel {
     return this.extractThickness;
   }
 
-  /** Re-sync stateful controls after engine-side changes (undo, dyntopo). */
+  /** Re-sync stateful controls after engine-side changes (undo, dyntopo, a brush pick). */
   refreshState(): void {
+    if (!this.symCheckbox) return; // called before the section is built
     this.symCheckbox.checked = this.session.getSymmetry();
     this.paintAxis();
   }

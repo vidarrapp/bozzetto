@@ -3,6 +3,7 @@ import type { SculptSession } from './SculptSession';
 import type { LookState } from '../../viewer/Viewer';
 import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
+import type { BrushSymmetry } from './symmetry';
 
 /**
  * Workspace preferences that ride with a scene: how the brushes are set up,
@@ -24,6 +25,12 @@ export interface SculptSettings {
   alphas?: Record<number, string | null>;
   /** The rake's stencil, from before alphas went per-tool. Read, not written. */
   rakeAlpha?: string;
+  /**
+   * Per-brush mirror sculpting: on/off and the axis, by vendor tool index.
+   * Absent in scenes from before symmetry went per-brush; the scene-wide
+   * flag and the active object's axis seed every brush then.
+   */
+  symmetry?: Record<number, BrushSymmetry>;
 }
 
 /**

@@ -41,10 +41,10 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 - **Stencils.** The Rake combs grooves through a stroke-aligned stencil. Clay can take one too, off by default. A Spacing slider sets how far the brush travels between stamps.
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
 - **Masking** with `Ctrl`, plus blur, sharpen, invert, clear, and **Extract** to turn a masked region into a new object.
-- **Mirror symmetry** with a per-object axis. Hovering shows the mirrored brush ring.
+- **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
-- **Object transforms**: a unified move/rotate/scale gizmo, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, duplicate, mirror and radial copies.
+- **Object transforms**: a unified move/rotate/scale gizmo, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies and the gizmo all working on the whole selection. Locked objects draw as if masked.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
@@ -200,11 +200,11 @@ guide (`H`) shows whatever keys are set.
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |
 | `Ctrl` + `A` / `C` / `I` / `H` / `E` | Mask all · clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes |
-| `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee, `Alt`+drag orbits |
-| `Ctrl`+`M` | Mirror the object across its symmetry axis (the Scene panel's Mirror button offers X/Y/Z and radial copies) |
+| `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee, `Alt`+drag orbits. In the Scene list, `Ctrl`+click toggles and `Shift`+click takes a range |
+| `Ctrl`+`M` | Mirror the selected objects across the brush's symmetry axis (the Scene panel's Mirror button offers X/Y/Z and radial copies) |
 | `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
-| `X` | Mirror symmetry |
+| `X` | Mirror symmetry for the current brush |
 | `T` | Transform gizmo (all handles) |
 | `W` / `E` / `R` | Move / rotate / scale gizmo (`T` again, or a brush key, returns to sculpting) |
 | `P` | Frame-rate meter |
@@ -230,7 +230,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - Rake brush with stroke-aligned stencils. Clay takes stencils too, off by default. Per-brush dab spacing.
 - Crease Profile and Pinch sliders, from a broad trough to a knife line.
 - Polish brush replacing Twist, flattening surfaces while keeping edges crisp.
-- Masking, Extract, mirror symmetry with a mirrored hover ring.
+- Masking, Extract, per-brush mirror symmetry with a mirrored hover ring.
 - Multiresolution, dynamic topology and voxel remesh.
 - Vertex painting, per-object named materials, and an HSV colour picker shared across the app.
 - Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner, a Select tool with marquee, mirror and radial copies.
