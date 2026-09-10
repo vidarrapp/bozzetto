@@ -131,6 +131,7 @@ export class ModelPanel extends SidePanel {
     const remesh = section(body, 'Remesh');
     const res = this.numberedRange('Resolution', 16, 300, 2, this.remeshResolution, (v) => {
       this.remeshResolution = v;
+      this.session.setRemeshResolution(v); // Merge in the Scene panel reads it too
       return String(Math.round(v));
     });
     remesh.appendChild(res.row);

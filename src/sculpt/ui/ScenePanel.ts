@@ -29,6 +29,7 @@ export class ScenePanel extends SidePanel {
   onSceneEdit: (() => void) | null = null;
 
   private mirrorMenu!: HTMLDivElement;
+  private mergeBtn!: HTMLButtonElement;
 
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
@@ -117,7 +118,16 @@ export class ScenePanel extends SidePanel {
         this.closeMenus();
       }
     });
-    row.append(dupBtn, delBtn, mirrorBtn);
+    // Merge: the selection into one object, through voxel space (owner
+    // request). Needs two objects, so it greys out until there are.
+    const mergeBtn = document.createElement('button');
+    mergeBtn.type = 'button';
+    mergeBtn.className = 'outliner__btn';
+    mergeBtn.textContent = 'Merge';
+    mergeBtn.title = 'Merge the selected objects into one (ctrl+j)';
+    mergeBtn.addEventListener('click', () => this.mergeSelected());
+    this.mergeBtn = mergeBtn;
+    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn);
     footer.appendChild(row);
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
@@ -235,6 +245,29 @@ export class ScenePanel extends SidePanel {
     this.copyEach(
       (source) => this.session.radialCopies(source, count, axis) as unknown as SculptMesh[],
     );
+  }
+
+  /**
+   * Merge: the selected objects become one, through a shared voxel grid at
+   * the Model panel's remesh resolution. The active object is the base:
+   * the result takes its place in the list, its name and its material.
+   * Ctrl+z brings the originals back.
+   */
+  mergeSelected(): void {
+    const sources = this.targets();
+    if (sources.length < 2) return;
+    const base = this.session.getMesh() && sources.includes(this.session.getMesh()!) ? this.session.getMesh()! : sources[0];
+    this.library?.beginRestore();
+    let merged: SculptMesh | null;
+    try {
+      merged = this.session.mergeMeshes(sources, base) as unknown as SculptMesh | null;
+    } finally {
+      this.library?.endRestore();
+    }
+    if (!merged) return;
+    this.library?.adoptCopy(merged, base);
+    this.session.render();
+    this.refresh();
   }
 
   /** Duplicate: a copy of each selected object, at its transform, with its material. */
@@ -415,6 +448,8 @@ export class ScenePanel extends SidePanel {
         return row;
       }),
     );
+    // Merge wants two or more; one object has nothing to merge with.
+    if (this.mergeBtn) this.mergeBtn.disabled = this.targets().length < 2;
     this.refreshMaterial();
   }
 

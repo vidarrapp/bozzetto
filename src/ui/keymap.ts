@@ -92,7 +92,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'subdiv.down', label: 'Subdivision level down', group: 'Subdivision', mode: 'sculpt', chord: 'shift+d' },
   // --- sculpt: scene ---
   { id: 'scene.delete', label: 'Delete the selected objects', group: 'Scene', mode: 'sculpt', chord: 'delete' },
-  { id: 'scene.mirror', label: 'Mirror the object across its symmetry axis', group: 'Scene', mode: 'sculpt', chord: 'ctrl+m' },
+  { id: 'scene.mirror', label: 'Mirror the selected objects across the symmetry axis', group: 'Scene', mode: 'sculpt', chord: 'ctrl+m' },
+  { id: 'scene.merge', label: 'Merge the selected objects into one', group: 'Scene', mode: 'sculpt', chord: 'ctrl+j' },
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },

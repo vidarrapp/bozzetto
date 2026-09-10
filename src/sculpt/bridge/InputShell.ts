@@ -37,6 +37,8 @@ export interface InputShellHooks {
   deleteSelected(): void;
   /** Ctrl+m: a mirrored copy of the object across its symmetry axis. */
   mirrorSelected(): void;
+  /** Ctrl+j: the selected objects become one, through voxel space. */
+  mergeSelected(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -1321,6 +1323,9 @@ export class InputShell {
         return this.claim(e);
       case 'scene.mirror':
         this.hooks.mirrorSelected();
+        return this.claim(e);
+      case 'scene.merge':
+        this.hooks.mergeSelected();
         return this.claim(e);
       case 'view.frameAll':
         this.hooks.frameAll();

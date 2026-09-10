@@ -679,6 +679,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     deleteSelected: () => scenePanel?.deleteSelected(),
     mirrorSelected: () => scenePanel?.mirrorActive(session.getSymmetryAxis()),
+    mergeSelected: () => scenePanel?.mergeSelected(),
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;

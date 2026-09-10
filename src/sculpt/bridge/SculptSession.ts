@@ -632,11 +632,27 @@ export class SculptSession {
     return added;
   }
 
+  /**
+   * The voxel grid's resolution along the longest side of what is being
+   * remeshed (the Model panel's slider). Shared by the remesh of one object
+   * and the merge of several, so both read the one setting.
+   */
+  private remeshResolution = 150;
+
+  getRemeshResolution(): number {
+    return this.remeshResolution;
+  }
+
+  setRemeshResolution(resolution: number): void {
+    this.remeshResolution = Math.min(400, Math.max(8, Math.round(resolution)));
+  }
+
   /** Voxel remesh of the active mesh (upstream GuiTopology; new topology). */
-  voxelRemesh(resolution: number): boolean {
+  voxelRemesh(resolution = this.remeshResolution): boolean {
     const mesh = this.mesh;
     if (!mesh) return false;
-    Remesh.RESOLUTION = Math.min(400, Math.max(8, Math.round(resolution)));
+    this.setRemeshResolution(resolution);
+    Remesh.RESOLUTION = this.remeshResolution;
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
     const newMesh = new Multimesh(Remesh.remesh([mesh], mesh)) as unknown as SculptMesh;
     const name = this.meshNames.get(mesh);
@@ -644,6 +660,37 @@ export class SculptSession {
     this.stateManager.pushStateAddRemove(newMesh, mesh);
     this.replaceMesh(mesh, newMesh);
     return true;
+  }
+
+  /**
+   * Merge several objects into one (owner request): every one of them is
+   * carried into the same voxel grid in WORLD space, at the remesh
+   * resolution, and the union comes out as one new object where the base
+   * object was in the list; the sources go, in one undo step. The vendored
+   * remesh already voxelises a list of meshes, transforms included, so the
+   * merge is that with the bookkeeping around it: the result takes the
+   * base object's name, the caller gives it the base's material.
+   */
+  mergeMeshes(meshes: SculptMesh[], base: SculptMesh): Multimesh | null {
+    const sources = meshes.filter((m) => this.meshes.includes(m));
+    if (sources.length < 2) return null;
+    if (!sources.includes(base)) base = sources[0];
+    Remesh.RESOLUTION = this.remeshResolution;
+    const merged = new Multimesh(Remesh.remesh(sources, base));
+    this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
+    this.writeSymmetryAxis(this.getSymmetryAxis(), [merged as unknown as SculptMesh]);
+    this.stateManager.pushStateAddRemove(merged, sources);
+    // The merged object takes the base's slot in the list, so the outliner
+    // does not shuffle; the other sources leave from wherever they were.
+    const at = this.meshes.indexOf(base);
+    this.meshes.splice(at, 1, merged as unknown as SculptMesh);
+    for (const m of sources) {
+      if (m === base) continue;
+      const i = this.meshes.indexOf(m);
+      if (i >= 0) this.meshes.splice(i, 1);
+    }
+    this.selectSet([merged as unknown as SculptMesh]);
+    return merged;
   }
 
   /** Stroke-time dynamic-topology aggressiveness (0..100 each). */
