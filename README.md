@@ -77,6 +77,41 @@ Each installer format has to be built on (or for) its own platform:
 | Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
 | macOS dmg | macOS only | Apple's tooling cannot be cross-run |
 
+## Armature mode
+
+A posable block figure of its own, for reference or as the start of a
+sculpt. Signed-in only for now: pick **Create → New armature** in the gallery
+(or open `/?armature=1`); guests see the plain New sculpt tile.
+The figure is a placeholder of boxes for now; the low-poly planar presets
+replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
+
+- **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
+  that joint's limits: hinges (elbows, knees) show one ring plus a little
+  twist, ball joints three. Symmetry (`X`, on by default) mirrors every edit
+  to the other side through the pelvis's own frame. The pelvis is the root:
+  its gizmo moves and turns the whole figure (`W` selects it).
+- **Proportions.** Per part, *size* scales the cross-section and *length*
+  stretches the part along its bone and moves the child joints with it.
+  Mirrored while symmetry is on.
+- **Files.** The figure autosaves on this device and shows as a card in the
+  gallery. **File → Save** writes an `.armature` file (plain JSON: preset,
+  pose, proportions and the lighting), **File → Open** reads one back.
+- **Send to Sculpt** voxelises the posed figure into one closed object at
+  the chosen resolution and opens Sculpt mode with it; a sculpt with work in
+  it gets the figure as an extra object instead.
+
+| Input | Action |
+| --- | --- |
+| Click a part | Select it (rotate gizmo at its joint) |
+| Drag off the figure | Orbit |
+| `X` | Symmetry on / off |
+| `W` | Select the pelvis (move and turn the figure) |
+| `Shift`+`R` | Reset the pose |
+| `Esc` | Deselect |
+| `Ctrl`+`Z`, `Ctrl`+`Shift`+`Z` | Undo, redo |
+| `Ctrl`+`Enter` | Send to Sculpt |
+| `F` / `A` | Frame the figure |
+
 ### Releasing
 
 `.github/workflows/release.yml` builds all three platforms and attaches the

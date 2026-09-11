@@ -1733,6 +1733,62 @@ html.is-page body {
   z-index: 12;
 }
 
+/* Armature mode: its one panel sits where Model does under Render. */
+.panel--armature {
+  top: 200px;
+  max-height: calc(100vh - 290px);
+  z-index: 11;
+}
+
+.sculpt-panel__btn--wide {
+  width: 100%;
+}
+
+/* The Create chooser: two big choices in the install card's frame. */
+.create-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.create-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.create-choice:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.create-choice__title {
+  font-family: var(--font-spec);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.create-choice__hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .create-choices {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Left-docked panel variant: mirrors the right panel. Left panels cover the
    brush sliders while open (z-index), so they may run down to just shy of
    the toolbar. */

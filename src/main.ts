@@ -26,6 +26,10 @@ async function main(): Promise<void> {
     await bootSculpt();
     return;
   }
+  if (!id && params.get('armature') === '1') {
+    await bootArmature();
+    return;
+  }
   if (!id) {
     await renderLanding(app);
     return;
@@ -145,6 +149,47 @@ async function loadProject(
   const sres = await fetch(staticUrl);
   if (!sres.ok) throw new Error(`Project "${id}" not found`);
   return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
+}
+
+/**
+ * Armature entry (/?armature=1): the same viewer boot as sculpt, with the
+ * armature mode mounted over it instead.
+ */
+async function bootArmature(): Promise<void> {
+  const viewport = document.getElementById('viewport');
+  const overlay = document.getElementById('overlay');
+  if (!viewport) throw new Error('#viewport element not found');
+  const setStatus = (msg: string): void => {
+    const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
+    if (box) box.textContent = msg;
+  };
+  // The owner's mode for now: anyone else lands back on the gallery.
+  const { probeAdmin } = await import('./admin/api');
+  const { armatureAllowed } = await import('./armature/gate');
+  if (!armatureAllowed(await probeAdmin().catch(() => null))) {
+    window.location.replace('/');
+    return;
+  }
+  const { mountSculptSplash } = await import('./ui/SculptSplash');
+  const splash = mountSculptSplash(overlay);
+  try {
+    setStatus('Entering armature mode…');
+    const { sculptStandaloneProject } = await import('./sculpt/standalone');
+    const { manifest, source } = sculptStandaloneProject();
+    const viewer = await mountViewer(viewport, manifest, source, setStatus);
+    addGalleryLink();
+    const { mountArmatureMode } = await import('./armature/mode');
+    await mountArmatureMode(viewer);
+    await splash.finished;
+    if (overlay) {
+      overlay.classList.add('overlay--done');
+      window.setTimeout(() => overlay.remove(), 450);
+    }
+  } catch (err) {
+    console.error(err);
+    splash.dispose();
+    showError(overlay, err);
+  }
 }
 
 function addGalleryLink(): void {

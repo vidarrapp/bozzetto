@@ -14,7 +14,7 @@
  * table - a habit the bracket and quote keys already had.
  */
 
-export type KeyMode = 'sculpt' | 'view';
+export type KeyMode = 'sculpt' | 'view' | 'armature';
 
 export interface ActionDef {
   id: string;
@@ -122,6 +122,16 @@ export const ACTIONS: ActionDef[] = [
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'sculpt', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'sculpt', chord: 'escape' },
   { id: 'ui.panel', label: 'Toggle the panel', group: 'Interface', mode: 'view', chord: 'tab' },
+  // --- armature mode ------------------------------------------------------
+  { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },
+  { id: 'arm.move', label: 'Move the figure (the pelvis gizmo)', group: 'Armature', mode: 'armature', chord: 'w' },
+  { id: 'arm.resetPose', label: 'Reset the pose', group: 'Armature', mode: 'armature', chord: 'shift+r' },
+  { id: 'arm.deselect', label: 'Deselect the joint', group: 'Armature', mode: 'armature', chord: 'escape' },
+  { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true },
+  { id: 'arm.redo', label: 'Redo', group: 'Armature', mode: 'armature', chord: 'ctrl+shift+z', repeat: true },
+  { id: 'arm.send', label: 'Send to Sculpt', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
+  { id: 'gesture.armPick', label: 'Select a part (its gizmo appears)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
+  { id: 'gesture.armOrbit', label: 'Orbit', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag off the figure' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame-rate meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },

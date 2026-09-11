@@ -6,6 +6,7 @@
 
 import { div } from './dom';
 import { probeAdmin } from '../admin/api';
+import { armatureAllowed } from '../armature/gate';
 import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
@@ -63,13 +64,18 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // call before showing the app around). It doubles as the empty state -
   // a gallery with nothing in it still leads with the way to make
   // something.
-  grid.appendChild(newSculptCard());
+  // Guests get the plain New sculpt tile; the owner's Create tile chooses
+  // between a sculpt and an armature (the armature is theirs alone for now).
+  const armature = armatureAllowed(admin);
+  grid.appendChild(armature ? createCard() : newSculptCard());
 
   // Then work in progress: the sculpt autosave lives in this browser, so it
   // is not a project the API knows about, but it is the thing most worth
-  // getting back to.
+  // getting back to. An armature in progress sits beside it.
   const inProgress = await sculptCard();
   if (inProgress) grid.appendChild(inProgress);
+  const armatureInProgress = armature ? await armatureCard() : null;
+  if (armatureInProgress) grid.appendChild(armatureInProgress);
 
   // Then the shelf: scenes explicitly saved on this device, newest first.
   // They sit before the published projects because they are yours and
@@ -82,7 +88,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   for (const p of projects.filter((p) => p.frameCount > 0)) grid.appendChild(card(p));
 }
 
-/** Start a fresh sculpt: a plus over the default subject. */
+/** Start a fresh sculpt: a plus over the default subject (the guest tile). */
 function newSculptCard(): HTMLElement {
   const a = document.createElement('a');
   a.className = 'card card--new';
@@ -90,35 +96,129 @@ function newSculptCard(): HTMLElement {
   a.innerHTML =
     '<div><div class="card--new__plus">+</div>' +
     '<div class="card--new__label">New sculpt</div></div>';
-  // Sculpt mode restores the autosave on entry, so without this the tile
-  // quietly RESUMED the work in progress instead of starting anything new.
-  // Ask, then clear the scene and its recording before going in.
   a.addEventListener('click', (e) => {
     e.preventDefault();
-    void (async () => {
-      const store = await import('../sculpt/bridge/ScenePersist');
-      // The scene itself, not its snapshot: the picture is only written on
-      // the way out through the gallery link, so a reload, a closed tab or
-      // iOS evicting the page left saved work that this silently RESUMED
-      // instead of replacing - the one thing this tile promises not to do.
-      const hasWork = await store.hasSavedScene().catch(() => false);
-      if (
-        hasWork &&
-        !confirm('Start a new sculpt? The work in progress on this device will be replaced.')
-      ) {
-        return;
-      }
-      if (hasWork) {
-        await store.clearSavedScene();
-        await store.clearSculptFrames();
-        // The look too: "new" has to mean new. Leaving it behind is how a
-        // light set flat in one session kept arriving in the next one, with
-        // a fresh sphere lit by it and no obvious cause.
-        await store.clearSculptLook();
-      }
-      window.location.href = a.href;
-    })();
+    void startSculpt();
   });
+  return a;
+}
+
+/**
+ * The Create tile: a plus that opens the choice between a new sculpt and a
+ * new armature (owner call: two kinds of work start here now).
+ */
+function createCard(): HTMLElement {
+  const a = document.createElement('a');
+  a.className = 'card card--new';
+  a.href = '/?sculpt=1';
+  a.innerHTML =
+    '<div><div class="card--new__plus">+</div>' +
+    '<div class="card--new__label">Create</div></div>';
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    openCreateChooser();
+  });
+  return a;
+}
+
+/** The two ways to start, in a small dialog over the gallery. */
+function openCreateChooser(): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'install-overlay create-overlay';
+  overlay.innerHTML = `
+    <div class="install-card create-card" role="dialog" aria-modal="true" aria-label="Create">
+      <button type="button" class="install-close" aria-label="Close">×</button>
+      <h2>Create</h2>
+      <div class="create-choices">
+        <button type="button" class="create-choice" data-kind="sculpt">
+          <span class="create-choice__title">New sculpt</span>
+          <span class="create-choice__hint">A sphere of clay, brushes and paint.</span>
+        </button>
+        <button type="button" class="create-choice" data-kind="armature">
+          <span class="create-choice__title">New armature</span>
+          <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
+        </button>
+      </div>
+    </div>`;
+  const close = (): void => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') close();
+  };
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.querySelector('.install-close')?.addEventListener('click', close);
+  overlay.querySelector('[data-kind="sculpt"]')?.addEventListener('click', () => void startSculpt());
+  overlay.querySelector('[data-kind="armature"]')?.addEventListener('click', () => void startArmature());
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+}
+
+/**
+ * Start a fresh sculpt. Sculpt mode restores the autosave on entry, so
+ * without this the tile quietly RESUMED the work in progress instead of
+ * starting anything new. Ask, then clear the scene and its recording
+ * before going in.
+ */
+async function startSculpt(): Promise<void> {
+  const store = await import('../sculpt/bridge/ScenePersist');
+  // The scene itself, not its snapshot: the picture is only written on
+  // the way out through the gallery link, so a reload, a closed tab or
+  // iOS evicting the page left saved work that this silently RESUMED
+  // instead of replacing - the one thing this tile promises not to do.
+  const hasWork = await store.hasSavedScene().catch(() => false);
+  if (hasWork && !confirm('Start a new sculpt? The work in progress on this device will be replaced.')) {
+    return;
+  }
+  if (hasWork) {
+    await store.clearSavedScene();
+    await store.clearSculptFrames();
+    // The look too: "new" has to mean new. Leaving it behind is how a
+    // light set flat in one session kept arriving in the next one, with
+    // a fresh sphere lit by it and no obvious cause.
+    await store.clearSculptLook();
+  }
+  window.location.href = '/?sculpt=1';
+}
+
+/** Start a fresh armature, replacing the one in progress after asking. */
+async function startArmature(): Promise<void> {
+  const store = await import('../armature/persist');
+  const hasWork = await store.hasArmature().catch(() => false);
+  if (hasWork && !confirm('Start a new armature? The one in progress on this device will be replaced.')) {
+    return;
+  }
+  if (hasWork) await store.clearArmature();
+  window.location.href = '/?armature=1';
+}
+
+/** The armature in progress on this device, if there is one. */
+async function armatureCard(): Promise<HTMLElement | null> {
+  let file: Awaited<ReturnType<typeof import('../armature/persist').loadArmature>>;
+  try {
+    const store = await import('../armature/persist');
+    file = await store.loadArmature();
+  } catch {
+    return null;
+  }
+  if (!file) return null;
+  const a = document.createElement('a');
+  a.className = 'card card--sculpt card--armature';
+  a.href = '/?armature=1';
+  a.innerHTML = `
+    <div class="card__thumb">
+      <span class="card__badge">In progress</span>
+    </div>
+    <div class="card__body">
+      <span class="card__title">Your armature</span>
+      <span class="card__meta"></span>
+    </div>`;
+  const meta = a.querySelector<HTMLElement>('.card__meta')!;
+  const posed = Object.keys(file.state.pose ?? {}).length;
+  meta.textContent = `${posed} joint${posed === 1 ? '' : 's'} posed · ${ago(file.savedAt)}`;
   return a;
 }
 

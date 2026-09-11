@@ -24,12 +24,13 @@ export function showPreferences(mode: KeyMode = currentMode()): void {
 }
 
 /** Sculpt mode announces itself on the window; the editor opens on that tab. */
-let sculptActive = false;
+let announced: KeyMode = 'view';
 window.addEventListener('bozzetto:sculptmode', (e) => {
-  sculptActive = !!(e as CustomEvent<{ active: boolean }>).detail?.active;
+  const detail = (e as CustomEvent<{ active?: boolean; mode?: KeyMode }>).detail;
+  announced = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
 });
 function currentMode(): KeyMode {
-  return sculptActive ? 'sculpt' : 'view';
+  return announced;
 }
 
 function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {

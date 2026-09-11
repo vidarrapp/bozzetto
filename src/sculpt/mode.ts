@@ -1087,6 +1087,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
+  // A figure sent over from the Armature mode (?handoff=1): voxelised here,
+  // where the remesher lives, and added as an object. A scene with nothing
+  // done to it yet (the default sphere) makes way for the figure.
+  if (new URLSearchParams(window.location.search).get('handoff') === '1') {
+    const { takeHandoff } = await import('../armature/persist');
+    const handoff = await takeHandoff();
+    if (handoff) {
+      const untouched = !fileActions.hasWork();
+      const added = session.addVoxelised(handoff.name, handoff.positions, handoff.indices, handoff.resolution);
+      if (untouched) {
+        for (const m of [...session.getMeshes()]) if (m !== added) session.deleteMesh(m);
+      }
+      persist.markDirty();
+      viewer.frameBounds(liveWorldBox(added as unknown as SculptMesh));
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('handoff');
+    history.replaceState(null, '', url);
+  }
+
   const handle = {
     session,
     sync,

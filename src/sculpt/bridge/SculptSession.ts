@@ -663,6 +663,47 @@ export class SculptSession {
   }
 
   /**
+   * A new object from world-space triangles, through the voxel remesh at
+   * the given resolution: the Armature mode's Send to Sculpt. The blocks
+   * arrive as they were posed, overlapping and open at the joints; the
+   * voxel pass (with the remesher's own hole filling) turns them into one
+   * closed surface, which is the whole point of the trip.
+   */
+  addVoxelised(name: string, positions: Float32Array, indices: Uint32Array, resolution: number): Multimesh {
+    // Welded first: the parts arrive as render geometry, a vertex per face
+    // corner, and the voxeliser needs each block to be a closed shell to
+    // know its inside from its outside (unwelded, every edge is a hole).
+    const geom = new BufferGeometry();
+    geom.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+    geom.setIndex(new BufferAttribute(new Uint32Array(indices), 1));
+    const welded = mergeVertices(geom);
+    const pos = welded.getAttribute('position');
+    const index = welded.getIndex()!;
+    const nbTris = Math.floor(index.count / 3);
+    const faces = new Uint32Array(nbTris * 4);
+    for (let i = 0; i < nbTris; i++) {
+      faces[i * 4] = index.getX(i * 3);
+      faces[i * 4 + 1] = index.getX(i * 3 + 1);
+      faces[i * 4 + 2] = index.getX(i * 3 + 2);
+      faces[i * 4 + 3] = Utils.TRI_INDEX;
+    }
+    const v = new Float32Array(pos.count * 3);
+    v.set(pos.array as Float32Array);
+    geom.dispose();
+    welded.dispose();
+    const base = new MeshStatic(null);
+    base.setVertices(v);
+    base.setFaces(faces);
+    base.init();
+    this.setRemeshResolution(resolution);
+    Remesh.RESOLUTION = this.remeshResolution;
+    const mesh = new Multimesh(Remesh.remesh([base], base));
+    this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
+    this.addNewMesh(mesh as unknown as SculptMesh);
+    return mesh;
+  }
+
+  /**
    * Merge several objects into one (owner request): every one of them is
    * carried into the same voxel grid in WORLD space, at the remesh
    * resolution, and the union comes out as one new object where the base

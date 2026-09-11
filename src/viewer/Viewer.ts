@@ -695,6 +695,20 @@ export class Viewer {
     return mesh;
   }
 
+  /**
+   * Take in a mesh built elsewhere (the armature's skinned figure): it
+   * draws with the current material and follows every material swap like
+   * the sculpt extras do, and removeSculptExtra takes it out again.
+   */
+  adoptMesh(mesh: Mesh): void {
+    mesh.material = this.display.material;
+    mesh.castShadow = this.display.castShadow;
+    mesh.receiveShadow = this.display.receiveShadow;
+    if (mesh.userData.locked === undefined) mesh.userData.locked = 0;
+    this.sculptExtras.push(mesh);
+    this.scene.add(mesh);
+  }
+
   setSculptExtraMatrix(mesh: Mesh, matrix: Matrix4): void {
     mesh.matrix.copy(matrix);
     mesh.matrixWorldNeedsUpdate = true;

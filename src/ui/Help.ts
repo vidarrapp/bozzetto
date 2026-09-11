@@ -16,7 +16,7 @@ function guideHtml(mode: KeyMode): string {
   const esc = (t: string): string =>
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const closeKey = keymap.chordFor('ui.help');
-  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : 'Hotkeys &amp; navigation';
+  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'armature' ? 'Armature hotkeys' : 'Hotkeys &amp; navigation';
   const closer = closeKey ? `${esc(chordLabel(closeKey))} to close` : 'click to close';
   let html = `<div class="help-guide__head">${head} <span class="help-guide__close">${closer}</span></div>`;
   let group = '';
@@ -51,8 +51,8 @@ export class Help {
   private mode: KeyMode = 'view';
   private readonly offKeymap: () => void;
   private readonly onSculptMode = (e: Event): void => {
-    const active = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
-    this.mode = active ? 'sculpt' : 'view';
+    const detail = (e as CustomEvent<{ active?: boolean; mode?: KeyMode }>).detail;
+    this.mode = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
     this.render();
   };
 
