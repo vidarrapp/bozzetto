@@ -326,7 +326,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   window.addEventListener('pagehide', onHidden);
 
   // --- the figure: presets and files ----------------------------------------------
-  const replaceFigure = (preset: string, state?: ArmatureState): void => {
+  /**
+   * Swap the figure: a different preset, a file being opened, or a fresh
+   * start. Without a state the new figure keeps where the old one stood -
+   * changing preset should not move it - unless `fresh`, which leaves it
+   * standing on the rig's own rest position, feet on the ground.
+   */
+  const replaceFigure = (preset: string, state?: ArmatureState, fresh = false): void => {
     select(null);
     viewer.removeSculptExtra(armature.mesh);
     const root = { position: armature.root.position.clone(), quaternion: armature.root.quaternion.clone() };
@@ -335,7 +341,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     armature = buildArmature(preset, viewer.materials.get(viewer.getMaterial()));
     armature.symmetry = symmetry;
     if (state) armature.restore(state);
-    else {
+    else if (!fresh) {
       armature.root.position.copy(root.position);
       armature.root.quaternion.copy(root.quaternion);
     }
@@ -446,9 +452,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         action: () => {
           if (history.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
           name = 'Armature';
-          replaceFigure(armature.rig.id, { v: 1, preset: armature.rig.id, root: { position: [0, 0, 0], quaternion: [0, 0, 0, 1] }, pose: {}, proportions: {} });
-          // A fresh figure stands on its rest position; restore() moved it to the origin.
-          replaceFigure(armature.rig.id);
+          replaceFigure(armature.rig.id, undefined, true);
           frame();
         },
       },
