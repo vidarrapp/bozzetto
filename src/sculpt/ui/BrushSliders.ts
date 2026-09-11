@@ -1,4 +1,5 @@
 import type { InputShell } from '../bridge/InputShell';
+import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
 
 /**
  * Minimal Procreate-style left rail (WS2h review request + undo round): two
@@ -91,6 +92,12 @@ export class BrushSliders {
       const t = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top) / rect.height));
       if (kind === 'size') this.input.setBrushRadius(Math.exp(LOG_MIN + t * LOG_SPAN));
       else this.input.setBrushIntensity(t);
+      // The value beside the nub while it is dragged (owner rule for sliders).
+      const text =
+        kind === 'size'
+          ? `${Math.round(this.input.getBrushRadius())} px`
+          : `${Math.round(this.input.getBrushIntensity() * 100)}%`;
+      showSliderBubble(rect.right, rect.bottom - t * rect.height, text, 'right');
     };
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -104,6 +111,8 @@ export class BrushSliders {
     el.addEventListener('pointermove', (e) => {
       if (e.buttons !== 0) apply(e);
     });
+    el.addEventListener('pointerup', hideSliderBubble);
+    el.addEventListener('pointercancel', hideSliderBubble);
     return { el, nub };
   }
 

@@ -1,4 +1,4 @@
-import { Box3, Raycaster, Vector2, type Mesh } from 'three';
+import { Box3, Group, Mesh, Plane, Raycaster, SphereGeometry, Vector2, Vector3 } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -91,6 +91,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     });
     tc.addEventListener('objectChange', () => {
       if (selected && armature.def(selected)?.kind !== 'root') armature.clampPose(selected);
+      // Pinned hands and feet hold their ground while the rest moves; this
+      // is what lets the pelvis drop into a crouch with the feet planted.
+      armature.applyPins();
+      syncHandles();
       panel.refresh(selected);
       scheduleSave();
     });
@@ -130,11 +134,71 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       highlight = armature.partHighlight(selected, wash);
       if (highlight) armature.partBones.get(selected)!.add(highlight);
     }
+    syncHandles();
     panel.refresh(selected);
   };
 
+  // --- IK handles ------------------------------------------------------------
+  // A ball at each chain's far end. Drag one and the limb reaches for it;
+  // pin one and it holds its ground while the rest of the figure moves.
+  // Drawn over everything (depth test off): a handle you cannot click
+  // because the figure's own arm is in front of it is no handle at all.
+  const handleGroup = new Group();
+  handleGroup.name = 'ik-handles';
+  viewer.scene.add(handleGroup);
+  const handleGeometry = new SphereGeometry(1, 16, 12);
+  const freeMat = new MeshBasicNodeMaterial();
+  freeMat.color.set('#c87049');
+  freeMat.depthTest = false;
+  freeMat.depthWrite = false;
+  freeMat.transparent = true;
+  freeMat.opacity = 0.85;
+  const pinnedMat = new MeshBasicNodeMaterial();
+  pinnedMat.color.set('#f0d9a8');
+  pinnedMat.depthTest = false;
+  pinnedMat.depthWrite = false;
+  const HANDLE_RADIUS = 1.9;
+  let handlesOn = true;
+  const handles = new Map<string, Mesh>();
+  const buildHandles = (): void => {
+    for (const m of handles.values()) m.removeFromParent();
+    handles.clear();
+    for (const c of armature.chains()) {
+      const m = new Mesh(handleGeometry, freeMat);
+      m.name = `ik:${c.id}`;
+      m.scale.setScalar(HANDLE_RADIUS);
+      m.renderOrder = 30;
+      m.frustumCulled = false;
+      handleGroup.add(m);
+      handles.set(c.id, m);
+    }
+  };
+  const syncHandles = (): void => {
+    handleGroup.visible = handlesOn;
+    if (!handlesOn) return;
+    const at = new Vector3();
+    for (const [id, m] of handles) {
+      const c = armature.chain(id);
+      if (!c) continue;
+      armature.effectorWorld(c.effector, at);
+      m.position.copy(at);
+      m.material = armature.isPinned(id) ? pinnedMat : freeMat;
+    }
+  };
+  buildHandles();
+
   const raycaster = new Raycaster();
   const pointer = new Vector2();
+  const aim = (e: PointerEvent): void => {
+    const r = canvas.getBoundingClientRect();
+    pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(pointer, viewer.camera);
+  };
+  // The handle being dragged, and the plane it slides on: through where it
+  // was grabbed, facing the camera, so the drag follows the pointer.
+  let reaching: string | null = null;
+  const dragPlane = new Plane();
+  const dragPoint = new Vector3();
   const onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0 || dragging) return;
     // A press on a gizmo handle belongs to the gizmo (its hover set `axis`).
@@ -148,13 +212,60 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       t.pointerHover(t._getPointer(e));
       if (t.axis) return;
     }
-    const r = canvas.getBoundingClientRect();
-    pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    raycaster.setFromCamera(pointer, viewer.camera);
+    aim(e);
+    // The IK balls come first: they are drawn over the figure, so they
+    // must be picked over it too.
+    if (handlesOn) {
+      const ball = raycaster.intersectObjects([...handles.values()], false)[0];
+      if (ball) {
+        reaching = ball.object.name.slice(3);
+        dragPlane.setFromNormalAndCoplanarPoint(
+          viewer.camera.getWorldDirection(dragPoint).clone(),
+          ball.object.position,
+        );
+        viewer.setOrbitEnabled(false);
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          // Synthetic events carry no active pointer; capture is best-effort.
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
     const hit = raycaster.intersectObject(armature.mesh, false)[0];
     select(hit ? armature.boneAt(hit) : null);
   };
+  const onPointerMove = (e: PointerEvent): void => {
+    if (!reaching) return;
+    aim(e);
+    if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+    armature.reach(reaching, dragPoint);
+    armature.repin(reaching);
+    armature.applyPins(reaching);
+    syncHandles();
+    placeControls();
+    panel.refresh(selected);
+    scheduleSave();
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onPointerUp = (e: PointerEvent): void => {
+    if (!reaching) return;
+    reaching = null;
+    viewer.setOrbitEnabled(true);
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      // Never captured (synthetic events): nothing to release.
+    }
+    commit();
+  };
   canvas.addEventListener('pointerdown', onPointerDown, true);
+  canvas.addEventListener('pointermove', onPointerMove, true);
+  window.addEventListener('pointerup', onPointerUp, true);
+  window.addEventListener('pointercancel', onPointerUp, true);
 
   // --- history + autosave ----------------------------------------------------
   const history: string[] = [];
@@ -172,7 +283,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const applyState = (json: string): void => {
     armature.restore(JSON.parse(json) as ArmatureState);
     last = json;
-    select(selected);
+    select(selected); // also syncs the handles and the panel
     scheduleSave();
   };
   const undo = (): void => {
@@ -229,6 +340,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       armature.root.quaternion.copy(root.quaternion);
     }
     viewer.adoptMesh(armature.mesh);
+    buildHandles();
+    syncHandles();
     panel.syncFigure();
     commit();
   };
@@ -276,22 +389,38 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       },
       mirror: (from) => {
         armature.mirrorPose(from);
+        armature.applyPins();
         select(selected);
         commit();
       },
       joint: (bone, xyz) => {
         armature.setPoseEuler(bone, xyz[0], xyz[1], xyz[2]);
+        armature.applyPins();
         placeControls();
+        syncHandles();
         commit();
       },
       proportions: (bone, p) => {
         armature.setProportions(bone, p);
+        armature.applyPins();
         placeControls();
+        syncHandles();
+        commit();
+      },
+      handles: (on) => {
+        handlesOn = on;
+        syncHandles();
+      },
+      pin: (id, on) => {
+        armature.setPinned(id, on);
+        syncHandles();
         commit();
       },
       resetProportions: () => {
         for (const bone of armature.boneNames()) armature.setProportions(bone, { size: 1, length: 1 }, false);
+        armature.applyPins();
         placeControls();
+        syncHandles();
         commit();
       },
       send: (resolution) => void send(resolution),
@@ -389,6 +518,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     get armature() {
       return armature;
     },
+    /** Drag an IK handle to a world point (tests and the console). */
+    reach: (id: string, x: number, y: number, z: number) => {
+      armature.reach(id, new Vector3(x, y, z));
+      armature.repin(id);
+      armature.applyPins(id);
+      syncHandles();
+      commit();
+    },
+    handlePosition: (id: string) => {
+      const c = armature.chain(id);
+      return c ? armature.effectorWorld(c.effector, new Vector3()).toArray() : null;
+    },
     select,
     selected: () => selected,
     state: () => armature.serialize(),
@@ -407,6 +548,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     void flushSave();
     window.removeEventListener('keydown', onKey, true);
     canvas.removeEventListener('pointerdown', onPointerDown, true);
+    canvas.removeEventListener('pointermove', onPointerMove, true);
+    window.removeEventListener('pointerup', onPointerUp, true);
+    window.removeEventListener('pointercancel', onPointerUp, true);
     document.removeEventListener('input', onLookEdit);
     document.removeEventListener('change', onLookEdit);
     window.removeEventListener('pagehide', onHidden);
@@ -417,6 +561,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     viewer.removeSculptExtra(armature.mesh);
     armature.dispose();
+    viewer.scene.remove(handleGroup);
+    handleGeometry.dispose();
     panel.dispose();
     fileMenu.dispose();
     editMenu.dispose();

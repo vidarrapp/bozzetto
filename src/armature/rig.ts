@@ -45,12 +45,27 @@ export interface BoneDef {
   kind: 'root' | 'ball' | 'hinge';
 }
 
+/**
+ * An IK handle: a point you drag, the bone whose far end follows it, and
+ * the bones that bend to get it there (nearest the handle first). The
+ * effector itself is not a link - the hand's own rotation is yours to set.
+ */
+export interface IKChainDef {
+  id: string;
+  label: string;
+  effector: string;
+  links: string[];
+  mirror: string | null;
+}
+
 export interface RigDefinition {
   id: string;
   label: string;
   /** Overall height, metres, for framing and the scene scale. */
   height: number;
   bones: BoneDef[];
+  /** The handles this rig offers; absent means posing by joint only. */
+  ik: IKChainDef[];
 }
 
 /** The presets on offer; the owner's own figures join this list. */
@@ -274,10 +289,19 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
   side(1);
   side(-1);
 
+  const ik: IKChainDef[] = [
+    { id: 'hand.L', label: 'Left hand', effector: 'hand.L', links: ['forearm.L', 'upperarm.L', 'clavicle.L'], mirror: 'hand.R' },
+    { id: 'hand.R', label: 'Right hand', effector: 'hand.R', links: ['forearm.R', 'upperarm.R', 'clavicle.R'], mirror: 'hand.L' },
+    { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R' },
+    { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L' },
+    { id: 'head', label: 'Head', effector: 'head', links: ['neck', 'chest'], mirror: null },
+  ];
+
   return {
     id: sex === 'male' ? 'placeholder-male' : 'placeholder-female',
     label: sex === 'male' ? 'Male (placeholder blocks)' : 'Female (placeholder blocks)',
     height: b.height,
     bones,
+    ik,
   };
 }

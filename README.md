@@ -90,6 +90,11 @@ replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
   twist, ball joints three. Symmetry (`X`, on by default) mirrors every edit
   to the other side through the pelvis's own frame. The pelvis is the root:
   its gizmo moves and turns the whole figure (`W` selects it).
+- **Reach.** A ball sits at each hand, foot and the top of the head. Drag
+  one and the limb reaches for it, inside the same joint limits. **Pin** a
+  ball and it holds its place in the world while the rest of the figure
+  moves, so the pelvis can drop into a crouch with the feet planted or the
+  body can lean away from a hand that stays put.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
   stretches the part along its bone and moves the child joints with it.
   Mirrored while symmetry is on.
@@ -97,12 +102,13 @@ replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
   gallery. **File → Save** writes an `.armature` file (plain JSON: preset,
   pose, proportions and the lighting), **File → Open** reads one back.
 - **Send to Sculpt** voxelises the posed figure into one closed object at
-  the chosen resolution and opens Sculpt mode with it; a sculpt with work in
+  the resolution on the slider and opens Sculpt mode with it; a sculpt with work in
   it gets the figure as an extra object instead.
 
 | Input | Action |
 | --- | --- |
 | Click a part | Select it (rotate gizmo at its joint) |
+| Drag a ball | Reach that hand, foot or head towards it |
 | Drag off the figure | Orbit |
 | `X` | Symmetry on / off |
 | `W` | Select the pelvis (move and turn the figure) |
@@ -203,6 +209,9 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Controls
+
+Every slider shows the value it is set to while you drag it, in a bubble
+under the handle.
 
 Every key below can be changed under **Edit → Preferences** (`Ctrl`+`,`). The
 guide (`H`) shows whatever keys are set.

@@ -7,6 +7,7 @@ import { EditorLayout } from '../ui/editorLayout';
 import { FpsMeter } from '../ui/FpsMeter';
 import { installShortcuts } from '../ui/shortcuts';
 import { initTheme, mountThemeToggle } from '../ui/theme';
+import { installSliderBubble } from '../ui/sliderBubble';
 import { validateManifest, type Manifest } from '../types/manifest';
 import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
 
@@ -58,6 +59,7 @@ async function runAction(btn: HTMLButtonElement, fn: () => Promise<void>): Promi
 function main(): void {
   initTheme();
   mountThemeToggle();
+  installSliderBubble();
 
   const host = document.getElementById('create');
   if (!host) throw new Error('#create element not found');

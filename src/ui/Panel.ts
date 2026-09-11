@@ -991,6 +991,36 @@ export function compactRange(
   return wrap;
 }
 
+/**
+ * A compact slider with its value printed at the right: `format` turns a
+ * value into that text (and is also called on every input). `unit` and
+ * `scale` ride on the input for the drag bubble, which prints the same
+ * number the readout does.
+ */
+export function numberedRange(
+  label: string,
+  min: number,
+  max: number,
+  step: number,
+  value: number,
+  onInput: (v: number) => string,
+  opts: { unit?: string; scale?: number } = {},
+): { row: HTMLLabelElement; input: HTMLInputElement; val: HTMLSpanElement } {
+  const row = compactRange(label, min, max, step, value, (v) => {
+    val.textContent = onInput(v);
+  });
+  const val = document.createElement('span');
+  val.className = 'sculpt-panel__val';
+  row.appendChild(val);
+  const input = row.querySelector('input') as HTMLInputElement;
+  if (opts.unit) input.dataset.unit = opts.unit;
+  if (opts.scale) input.dataset.scale = String(opts.scale);
+  // The readout's text is the format's, for the initial value too.
+  const step0 = step >= 1 ? 0 : Math.min(4, (String(step).split('.')[1] ?? '').length);
+  val.textContent = `${((opts.scale ?? 1) * value).toFixed(step0)}${opts.unit ?? ''}`;
+  return { row, input, val };
+}
+
 function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {
   return labelRow(label, build());
 }

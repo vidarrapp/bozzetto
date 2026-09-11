@@ -1,5 +1,5 @@
 import { div } from '../../ui/dom';
-import { checkbox, compactRange, section } from '../../ui/Panel';
+import { checkbox, compactRange, section, numberedRange } from '../../ui/Panel';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
@@ -144,7 +144,7 @@ export class ModelPanel extends SidePanel {
     remesh.appendChild(row);
   }
 
-  /** A compact slider with the current value printed at its right. */
+  /** The shared numbered slider (src/ui/Panel), kept as a method for the callers here. */
   private numberedRange(
     label: string,
     min: number,
@@ -153,15 +153,7 @@ export class ModelPanel extends SidePanel {
     value: number,
     onInput: (v: number) => string,
   ): { row: HTMLLabelElement; input: HTMLInputElement; val: HTMLSpanElement } {
-    const row = compactRange(label, min, max, step, value, (v) => {
-      val.textContent = onInput(v);
-    });
-    const val = document.createElement('span');
-    val.className = 'sculpt-panel__val';
-    val.textContent = String(Math.round(value));
-    row.appendChild(val);
-    const input = row.querySelector('input') as HTMLInputElement;
-    return { row, input, val };
+    return numberedRange(label, min, max, step, value, onInput);
   }
 
   private opButton(label: string, onClick: () => void): HTMLButtonElement {

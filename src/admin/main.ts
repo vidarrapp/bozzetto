@@ -2,6 +2,7 @@ import { api } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
+import { installSliderBubble } from '../ui/sliderBubble';
 
 /**
  * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
@@ -147,6 +148,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
 initTheme();
 mountThemeToggle();
+  installSliderBubble();
 const projectId = new URLSearchParams(window.location.search).get('p');
 if (projectId) void renderEditor(root, projectId);
 else void renderList(root);

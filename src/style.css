@@ -1744,6 +1744,27 @@ html.is-page body {
   width: 100%;
 }
 
+/* The value under a slider's thumb while it is dragged. */
+.slider-bubble {
+  position: fixed;
+  z-index: 60;
+  padding: 3px 7px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+}
+
+.slider-bubble[hidden] {
+  display: none;
+}
+
 /* The Create chooser: two big choices in the install card's frame. */
 .create-choices {
   display: grid;

@@ -16,7 +16,7 @@ import {
   type Intersection,
   type Material,
 } from 'three';
-import { rigById, type BoneDef, type JointLimits, type RigDefinition } from './rig';
+import { rigById, type BoneDef, type IKChainDef, type JointLimits, type RigDefinition } from './rig';
 
 /** Metres to scene units: the default sculpt sphere is about 48 across. */
 export const SCENE_SCALE = 50;
@@ -29,6 +29,8 @@ export interface ArmatureState {
   pose: Record<string, [number, number, number]>;
   /** Per-part size (cross-section) and length; absent = 1. */
   proportions: Record<string, { size: number; length: number }>;
+  /** IK handles held in place, and where: world position per chain id. */
+  pins?: Record<string, [number, number, number]>;
 }
 
 export interface Proportions {
@@ -339,6 +341,174 @@ export class Armature {
     if (mirror && def.mirror) this.setProportions(def.mirror, { ...cur }, false);
   }
 
+  // --- inverse kinematics ------------------------------------------------------------
+
+  /**
+   * Handles held in place: chain id -> world position. A pinned hand or
+   * foot stays where it is while the pelvis moves, which is what makes a
+   * figure lean, crouch or reach without its feet sliding.
+   */
+  private readonly pins = new Map<string, Vector3>();
+
+  chains(): IKChainDef[] {
+    return this.rig.ik;
+  }
+
+  chain(id: string): IKChainDef | undefined {
+    return this.rig.ik.find((c) => c.id === id);
+  }
+
+  isPinned(id: string): boolean {
+    return this.pins.has(id);
+  }
+
+  /** Pin a handle where it stands now, or let it go. */
+  setPinned(id: string, on: boolean): void {
+    if (!on) {
+      this.pins.delete(id);
+      return;
+    }
+    const c = this.chain(id);
+    if (!c) return;
+    this.pins.set(id, this.effectorWorld(c.effector, new Vector3()));
+  }
+
+  /** Where a bone's far end is in the world (the point a handle sits on). */
+  effectorWorld(bone: string, out: Vector3): Vector3 {
+    const b = this.bones.get(bone);
+    const rest = this.rest.get(bone);
+    if (!b || !rest) return out.set(0, 0, 0);
+    this.mesh.updateMatrixWorld(true);
+    const p = this.props.get(bone) ?? { size: 1, length: 1 };
+    return out.set(0, rest.length * p.length, 0).applyMatrix4(b.matrixWorld);
+  }
+
+  /**
+   * Reach a handle towards a world point, by cyclic coordinate descent:
+   * each link in turn swings so the effector points from that joint at the
+   * target instead of at itself, and the swing is written back THROUGH the
+   * pose clamp, so a knee cannot bend backwards to get there and a
+   * symmetric figure mirrors as it reaches.
+   *
+   * three ships a CCD solver, and it is not usable here: it clamps
+   * `link.rotation`, the bone's whole local rotation, while a limit in this
+   * rig is a range on the POSE - what the joint has been turned by, on top
+   * of a rest orientation that is not the identity. Feeding it these limits
+   * would clamp the rest away. The loop below is the same algorithm over
+   * the representation that has the limits in it.
+   */
+  reach(chainId: string, target: Vector3, iterations = 12, mirror = this.symmetry): void {
+    const c = this.chain(chainId);
+    if (!c || !this.bones.has(c.effector)) return;
+    const tip = new Vector3();
+    const toTip = new Vector3();
+    const toTarget = new Vector3();
+    const joint = new Vector3();
+    const swing = new Quaternion();
+    const parentQ = new Quaternion();
+    const linkQ = new Quaternion();
+    // The hinge in the chain - the elbow or the knee - is not left to the
+    // descent: a straight limb is where CCD fails. With the effector,
+    // the target and the joints all on one line the swing axis is
+    // undefined, and worse, the descent's measure is the ANGLE between
+    // "where the hand is" and "where it should be", which a straight arm
+    // pointing right at a nearer target already scores perfectly. A
+    // planted foot under a dropping pelvis is exactly that case, and the
+    // leg would stay poker-straight forever. The hinge is solved instead:
+    // the triangle of the two bones and the distance to the target has one
+    // answer, and the law of cosines gives it directly, every pass.
+    const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
+    const twoBone = hingeIndex >= 0 && hingeIndex + 1 < c.links.length;
+    for (let i = 0; i < iterations; i++) {
+      if (twoBone) this.bendHinge(c, hingeIndex, target, mirror);
+      let moved = false;
+      for (const name of c.links) {
+        // The hinge is the triangle's, not the descent's.
+        if (twoBone && this.defs.get(name)?.kind === 'hinge') continue;
+        const link = this.bones.get(name);
+        const rest = this.rest.get(name);
+        if (!link || !rest) continue;
+        this.root.updateMatrixWorld(true);
+        this.effectorWorld(c.effector, tip);
+        joint.setFromMatrixPosition(link.matrixWorld);
+        toTip.subVectors(tip, joint);
+        toTarget.subVectors(target, joint);
+        if (toTip.lengthSq() < 1e-10 || toTarget.lengthSq() < 1e-10) continue;
+        toTip.normalize();
+        toTarget.normalize();
+        if (toTip.dot(toTarget) > 0.999999) continue; // already pointing there
+        swing.setFromUnitVectors(toTip, toTarget);
+        // The swing is in world space: take it round to the link's own pose.
+        link.getWorldQuaternion(linkQ);
+        linkQ.premultiply(swing);
+        if (link.parent) (link.parent as Bone).getWorldQuaternion(parentQ);
+        else parentQ.identity();
+        linkQ.premultiply(parentQ.invert());
+        linkQ.premultiply(_q2.copy(rest.local).invert());
+        _e.setFromQuaternion(linkQ, 'XYZ');
+        this.setPoseEuler(name, _e.x / RAD, _e.y / RAD, _e.z / RAD, mirror);
+        moved = true;
+      }
+      if (!moved) break;
+      this.root.updateMatrixWorld(true);
+      this.effectorWorld(c.effector, tip);
+      if (tip.distanceToSquared(target) < 1e-4) break;
+    }
+  }
+
+  /**
+   * The hinge angle that makes the limb span the distance to the target:
+   * two bone lengths and the distance are a triangle, and the interior
+   * angle at the hinge follows from the law of cosines. Bends the way the
+   * joint is allowed to bend, and straightens out for anything further
+   * away than the limb is long.
+   */
+  private bendHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
+    const hinge = c.links[hingeIndex];
+    const base = this.bones.get(c.links[hingeIndex + 1]);
+    const knee = this.bones.get(hinge);
+    if (!base || !knee) return;
+    this.root.updateMatrixWorld(true);
+    const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
+    const kneePos = new Vector3().setFromMatrixPosition(knee.matrixWorld);
+    const tip = this.effectorWorld(c.effector, new Vector3());
+    const a = basePos.distanceTo(kneePos);
+    // The hinge-to-tip distance is fixed: nothing between them bends.
+    const b = kneePos.distanceTo(tip);
+    if (a < 1e-6 || b < 1e-6) return;
+    const d = Math.min(a + b - 1e-3, Math.max(Math.abs(a - b) + 1e-3, basePos.distanceTo(target)));
+    const cos = Math.min(1, Math.max(-1, (a * a + b * b - d * d) / (2 * a * b)));
+    const wanted = (Math.acos(cos) * 180) / Math.PI;
+    // What the joint measures NOW, and the change from it - not an absolute
+    // angle. A foot is not on the line of its shin (nor a hand of its
+    // forearm), so a straight leg does not read 180 degrees at the knee,
+    // and setting the angle outright would fold it by that error on every
+    // solve. The difference is exact whatever the shape below the joint.
+    const toBase = basePos.sub(kneePos).normalize();
+    const toTip = tip.sub(kneePos).normalize();
+    const now = (Math.acos(Math.min(1, Math.max(-1, toBase.dot(toTip)))) * 180) / Math.PI;
+    const l = this.limitsOf(hinge);
+    const cur = this.getPoseEuler(hinge);
+    const sign = l.x[1] > 0.5 ? 1 : -1;
+    this.setPoseEuler(hinge, cur[0] + sign * (now - wanted), cur[1], cur[2], mirror);
+  }
+
+  /**
+   * Put every pinned handle back on its mark. Run after anything that moves
+   * a pinned limb without meaning to - the pelvis being dragged, a joint
+   * further up the chain being turned, a part getting longer.
+   */
+  applyPins(except?: string): void {
+    for (const [id, target] of this.pins) {
+      if (id !== except) this.reach(id, target, 10, false);
+    }
+  }
+
+  /** Move a pin to where its handle stands now (it was just dragged). */
+  repin(id: string): void {
+    if (this.pins.has(id)) this.setPinned(id, true);
+  }
+
   // --- picking, bounds, export ----------------------------------------------------
 
   /** The bone whose part a raycast hit, from the face's skin indices. */
@@ -396,12 +566,15 @@ export class Armature {
     for (const [name, p] of this.props) {
       if (p.size !== 1 || p.length !== 1) proportions[name] = { ...p };
     }
+    const pins: NonNullable<ArmatureState['pins']> = {};
+    for (const [id, p] of this.pins) pins[id] = [p.x, p.y, p.z];
     return {
       v: 1,
       preset: this.rig.id,
       root: { position: this.root.position.toArray() as [number, number, number], quaternion: this.root.quaternion.toArray() as [number, number, number, number] },
       pose,
       proportions,
+      pins,
     };
   }
 
@@ -418,6 +591,10 @@ export class Armature {
     }
     for (const [name, e] of Object.entries(state.pose ?? {})) {
       if (this.pose.has(name) && Array.isArray(e)) this.setPoseEuler(name, e[0], e[1], e[2], false);
+    }
+    this.pins.clear();
+    for (const [id, p] of Object.entries(state.pins ?? {})) {
+      if (this.chain(id) && Array.isArray(p) && p.length === 3) this.pins.set(id, new Vector3(p[0], p[1], p[2]));
     }
     this.mesh.updateMatrixWorld(true);
   }

@@ -1,5 +1,5 @@
 import { div, labelRow, selectEl } from '../ui/dom';
-import { checkbox, compactRange, section } from '../ui/Panel';
+import { checkbox, numberedRange, section } from '../ui/Panel';
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { RIG_PRESETS } from './rig';
 import type { Armature } from './Armature';
@@ -13,6 +13,10 @@ export interface ArmaturePanelHooks {
   joint(name: string, xyz: [number, number, number]): void;
   proportions(name: string, p: { size?: number; length?: number }): void;
   resetProportions(): void;
+  /** The IK handles came or went. */
+  handles(on: boolean): void;
+  /** A handle was pinned in place, or let go. */
+  pin(id: string, on: boolean): void;
   send(resolution: number): void;
 }
 
@@ -27,6 +31,7 @@ export class ArmaturePanel extends SidePanel {
   private readonly symBox: HTMLInputElement;
   private readonly jointBody: HTMLDivElement;
   private readonly partBody: HTMLDivElement;
+  private readonly pinBoxes = new Map<string, HTMLInputElement>();
   private selected: string | null = null;
   /** Voxel resolution for Send to Sculpt (the Model panel's range). */
   resolution = 120;
@@ -69,11 +74,26 @@ export class ArmaturePanel extends SidePanel {
     resetRow.appendChild(this.opButton('Reset all proportions', () => this.hooks.resetProportions()));
     part.appendChild(resetRow);
 
+    // The handles, and which of them hold their ground while the figure moves.
+    const reach = section(this.body, 'Reach');
+    reach.appendChild(
+      checkbox('IK handles', true, (on) => this.hooks.handles(on)),
+    );
+    const pinHint = div('sculpt-panel__hint muted');
+    pinHint.textContent = 'Drag a handle and the limb reaches for it. A pinned handle stays put while the pelvis moves.';
+    reach.appendChild(pinHint);
+    for (const c of figure().chains()) {
+      const box = checkbox(`Pin ${c.label.toLowerCase()}`, false, (on) => this.hooks.pin(c.id, on));
+      this.pinBoxes.set(c.id, box.querySelector('input') as HTMLInputElement);
+      reach.appendChild(box);
+    }
+
     const send = section(this.body, 'Send to Sculpt');
     send.appendChild(
-      compactRange('Resolution', 16, 300, 2, this.resolution, (v) => {
+      numberedRange('Resolution', 16, 300, 2, this.resolution, (v) => {
         this.resolution = v;
-      }),
+        return String(Math.round(v));
+      }).row,
     );
     const sendRow = div('sculpt-panel__row');
     const sendBtn = this.opButton('Send to Sculpt', () => this.hooks.send(this.resolution));
@@ -98,6 +118,7 @@ export class ArmaturePanel extends SidePanel {
   refresh(selected: string | null): void {
     this.selected = selected;
     this.symBox.checked = this.figure().symmetry;
+    for (const [id, box] of this.pinBoxes) box.checked = this.figure().isPinned(id);
     this.jointBody.replaceChildren();
     this.partBody.replaceChildren();
     const armature = this.figure();
@@ -131,11 +152,20 @@ export class ArmaturePanel extends SidePanel {
         if (hi <= lo) continue; // a locked axis has no slider
         const i = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
         this.jointBody.appendChild(
-          compactRange(`${label} (${axis})`, lo, hi, 1, Math.round(angles[i]), (v) => {
-            const next = armature.getPoseEuler(selected);
-            next[i] = v;
-            this.hooks.joint(selected, next);
-          }),
+          numberedRange(
+            label,
+            lo,
+            hi,
+            1,
+            Math.round(angles[i]),
+            (v) => {
+              const next = armature.getPoseEuler(selected);
+              next[i] = v;
+              this.hooks.joint(selected, next);
+              return `${Math.round(v)}°`;
+            },
+            { unit: '°' },
+          ).row,
         );
       }
       const row = div('sculpt-panel__row');
@@ -143,11 +173,34 @@ export class ArmaturePanel extends SidePanel {
       this.jointBody.appendChild(row);
     }
     const p = armature.getProportions(selected);
+    const pct = (v: number): string => `${Math.round(v * 100)}%`;
     this.partBody.appendChild(
-      compactRange('Size', 0.5, 2, 0.02, p.size, (v) => this.hooks.proportions(selected, { size: v })),
+      numberedRange(
+        'Size',
+        0.5,
+        2,
+        0.02,
+        p.size,
+        (v) => {
+          this.hooks.proportions(selected, { size: v });
+          return pct(v);
+        },
+        { unit: '%', scale: 100 },
+      ).row,
     );
     this.partBody.appendChild(
-      compactRange('Length', 0.5, 2, 0.02, p.length, (v) => this.hooks.proportions(selected, { length: v })),
+      numberedRange(
+        'Length',
+        0.5,
+        2,
+        0.02,
+        p.length,
+        (v) => {
+          this.hooks.proportions(selected, { length: v });
+          return pct(v);
+        },
+        { unit: '%', scale: 100 },
+      ).row,
     );
   }
 
