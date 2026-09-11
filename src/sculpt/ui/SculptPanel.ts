@@ -380,6 +380,9 @@ export class SculptPanel extends SidePanel {
     const hint = div('sculpt-panel__hint muted');
     hint.textContent = 'W / E / R show one kind at a time; T shows what is ticked here.';
     body.appendChild(hint);
+    const pick = div('sculpt-panel__hint muted');
+    pick.textContent = 'Click an object to move the gizmo to it; Shift + click adds it to the selection, Ctrl + click removes it. The selection moves together.';
+    body.appendChild(pick);
   }
 
   /** The gizmo's parts changed (mode.ts remembers them for next time). */

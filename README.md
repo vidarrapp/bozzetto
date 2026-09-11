@@ -206,7 +206,7 @@ guide (`H`) shows whatever keys are set.
 | `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry for the current brush |
-| `T` | Transform gizmo (all handles) |
+| `T` | Transform gizmo (all handles). Click an object to move the gizmo to it, `Shift`+click adds it to the selection, `Ctrl`+click removes it; the selection moves together |
 | `W` / `E` / `R` | Move / rotate / scale gizmo (`T` again, or a brush key, returns to sculpting) |
 | `P` | Frame-rate meter |
 | `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |

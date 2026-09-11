@@ -775,8 +775,15 @@ export class InputShell {
         return;
       }
       if (s.getPicking().intersectionMouseMeshes()) {
-        const hit = s.getPicking().getMesh();
-        if (hit && hit !== s.getMesh()) s.setMesh(hit as never);
+        const hit = s.getPicking().getMesh() as SculptMesh | null;
+        if (hit) {
+          // The Select tool's modifiers work here too (owner request):
+          // shift adds to the selection, ctrl takes away, a plain press
+          // selects just this one. No marquee - a drag on nothing orbits.
+          if (e.shiftKey) s.selectAdd([hit]);
+          else if (e.ctrlKey || e.metaKey) s.selectRemove([hit]);
+          else if (hit !== s.getMesh() || s.getSelectedMeshes().length !== 1) s.selectSet([hit]);
+        }
         this.verdict?.('select under gizmo');
         e.preventDefault();
         e.stopPropagation();
