@@ -368,7 +368,8 @@ export class SculptPanel extends SidePanel {
       ['planes', 'Move planes'],
       ['rotate', 'Rotate rings'],
       ['scale', 'Scale boxes'],
-      ['uniform', 'Uniform scale (centre)'],
+      ['screen', 'Screen move (centre)'],
+      ['uniform', 'Uniform scale (in R)'],
     ] as const) {
       body.appendChild(
         checkbox(label, parts[key], (on) => {
@@ -378,7 +379,8 @@ export class SculptPanel extends SidePanel {
       );
     }
     const hint = div('sculpt-panel__hint muted');
-    hint.textContent = 'W / E / R show one kind at a time; T shows what is ticked here.';
+    hint.textContent =
+      'W / E / R show one kind at a time; T shows what is ticked here. The centre of the unified gizmo moves the object across the screen.';
     body.appendChild(hint);
     const pick = div('sculpt-panel__hint muted');
     pick.textContent = 'Click an object to move the gizmo to it; Shift + click adds it to the selection, Ctrl + click removes it. The selection moves together.';

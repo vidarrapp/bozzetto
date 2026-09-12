@@ -1,4 +1,4 @@
-import { BoxGeometry, CylinderGeometry, Matrix4, Object3D, Quaternion, Vector3, type BufferGeometry, type Mesh, type PerspectiveCamera, type Scene } from 'three';
+import { CylinderGeometry, Matrix4, Object3D, OctahedronGeometry, Quaternion, Vector3, type BufferGeometry, type Mesh, type PerspectiveCamera, type Scene } from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from './SculptSession';
@@ -17,10 +17,20 @@ export interface GizmoParts {
   planes: boolean;
   rotate: boolean;
   scale: boolean;
+  /** The unified gizmo's centre: move on the screen plane (owner default). */
+  screen: boolean;
+  /** The uniform-scale cube, which the single scale mode (R) keeps. */
   uniform: boolean;
 }
 
-export const ALL_PARTS: GizmoParts = { arrows: true, planes: true, rotate: true, scale: true, uniform: true };
+export const ALL_PARTS: GizmoParts = {
+  arrows: true,
+  planes: true,
+  rotate: true,
+  scale: true,
+  screen: true,
+  uniform: true,
+};
 
 /** Drag distance, as a fraction of the camera distance, that scales by e. */
 const UNIFORM_SCALE_TRAVEL = 0.35;
@@ -44,7 +54,8 @@ const SCALE_FLOOR = 0.01;
  *
  * The toolbar shows the UNIFIED gizmo: all three controls stacked on one
  * proxy, which is how the Maya-style view-plane handles come for free (the
- * rotate gizmo's outer screen ring, the uniform-scale centre cube). W/E/R
+ * rotate gizmo's outer screen ring, the centre's move-across-the-screen).
+ * W/E/R
  * expose a single mode; T toggles the unified one. Only one control may
  * drag at a time: whichever wins the pointer disables the others until
  * release, relying on listener order (translate registered first) so
@@ -227,8 +238,8 @@ export class TransformGizmo {
         tc.mode === 'rotate'
           ? this.parts.rotate
           : tc.mode === 'scale'
-            ? this.parts.scale || this.parts.uniform
-            : this.parts.arrows || this.parts.planes;
+            ? this.parts.scale || (this.mode === 'scale' && this.parts.uniform)
+            : this.parts.arrows || this.parts.planes || this.parts.screen;
       const on = (this.mode === 'all' || tc.mode === this.mode) && wanted;
       tc.enabled = on && !!this.mesh;
       tc.getHelper().visible = on && !!this.mesh;
@@ -248,6 +259,7 @@ export class TransformGizmo {
 
   /** Handles detached in unified mode, restored for the single modes. */
   private trimmed: Array<{ parent: Object3D; child: Object3D }> = [];
+  /** The centre move handle's stock geometry, and the bigger unified pair. */
   private centreStock: { gizmo: BufferGeometry; picker: BufferGeometry } | null = null;
   private centreBig: { gizmo: BufferGeometry; picker: BufferGeometry } | null = null;
   /** The translate arrows' stock pickers, and the head-only ones unified mode uses. */
@@ -305,22 +317,25 @@ export class TransformGizmo {
     const rotate = this.internalsOf('rotate');
     const scale = this.internalsOf('scale');
 
-    // Centre cube geometry: stock in single modes, chunkier in unified.
+    // The centre: in unified mode it is the translate control's view-plane
+    // handle - a move across the screen (owner call) - and it grows so it
+    // is an easy target. In the single modes it goes back to stock, where
+    // R's own centre cube is uniform scale.
     const centre = (group: Object3D): Mesh | undefined =>
       group.children.find((c) => c.name === 'XYZ' && (c as Mesh).isMesh) as Mesh | undefined;
-    const cubeG = centre(scale.gizmo.scale);
-    const cubeP = centre(scale.picker.scale);
-    if (cubeG && cubeP) {
+    const moveG = centre(translate.gizmo.translate);
+    const moveP = centre(translate.picker.translate);
+    if (moveG && moveP) {
       if (!this.centreStock) {
-        this.centreStock = { gizmo: cubeG.geometry, picker: cubeP.geometry };
+        this.centreStock = { gizmo: moveG.geometry, picker: moveP.geometry };
         this.centreBig = {
-          gizmo: new BoxGeometry(0.17, 0.17, 0.17),
-          picker: new BoxGeometry(0.32, 0.32, 0.32),
+          gizmo: new OctahedronGeometry(0.17, 0),
+          picker: new OctahedronGeometry(0.34, 0),
         };
       }
       const want = unified ? this.centreBig! : this.centreStock;
-      cubeG.geometry = want.gizmo;
-      cubeP.geometry = want.picker;
+      moveG.geometry = want.gizmo;
+      moveP.geometry = want.picker;
     }
 
     // Arrow pickers: head-only in unified mode, stock in the single modes.
@@ -334,6 +349,7 @@ export class TransformGizmo {
       picker.geometry = unified ? this.arrowHead.get(picker)! : this.arrowStock.get(picker)!;
     }
 
+    const p = this.parts;
     const detach = (group: Object3D, names: string[]): void => {
       for (const child of [...group.children]) {
         if (names.includes(child.name)) {
@@ -343,16 +359,23 @@ export class TransformGizmo {
       }
     };
     if (unified) {
-      detach(translate.gizmo.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
-      detach(translate.picker.translate, ['XYZ', 'XY', 'YZ', 'XZ']);
+      // The middle belongs to one handle. The rotate control's invisible
+      // free-rotate sphere and the uniform-scale cube both sat on top of
+      // the move handle there; they go, along with every two-axis plane
+      // (the translate planes sat on the scale planes).
+      detach(translate.gizmo.translate, ['XY', 'YZ', 'XZ']);
+      detach(translate.picker.translate, ['XY', 'YZ', 'XZ']);
       detach(rotate.gizmo.rotate, ['XYZE']);
       detach(rotate.picker.rotate, ['XYZE']);
-      detach(scale.gizmo.scale, ['XY', 'YZ', 'XZ']);
-      detach(scale.picker.scale, ['XY', 'YZ', 'XZ']);
+      detach(scale.gizmo.scale, ['XYZ', 'XY', 'YZ', 'XZ']);
+      detach(scale.picker.scale, ['XYZ', 'XY', 'YZ', 'XZ']);
+      if (!p.screen) {
+        detach(translate.gizmo.translate, ['XYZ']);
+        detach(translate.picker.translate, ['XYZ']);
+      }
     }
     // The user's own trim (Tool panel > Transform): each part off is
     // detached the same way, in every mode.
-    const p = this.parts;
     if (!p.arrows) {
       detach(translate.gizmo.translate, ['X', 'Y', 'Z']);
       detach(translate.picker.translate, ['X', 'Y', 'Z']);

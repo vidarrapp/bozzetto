@@ -56,6 +56,13 @@ export interface IKChainDef {
   effector: string;
   links: string[];
   mirror: string | null;
+  /**
+   * Where the hinge points when its aim is zero, as a world direction: a
+   * knee forward, an elbow back. The aim angle swings the bend around the
+   * limb from there, which is what keeps a solved leg from choosing its
+   * own plane (the "pole vector" of a rigged limb).
+   */
+  poleRef?: Vec3;
 }
 
 export interface RigDefinition {
@@ -289,11 +296,13 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
   side(1);
   side(-1);
 
+  const BACK: Vec3 = [0, 0, -1];
+  const FORWARD: Vec3 = [0, 0, 1];
   const ik: IKChainDef[] = [
-    { id: 'hand.L', label: 'Left hand', effector: 'hand.L', links: ['forearm.L', 'upperarm.L', 'clavicle.L'], mirror: 'hand.R' },
-    { id: 'hand.R', label: 'Right hand', effector: 'hand.R', links: ['forearm.R', 'upperarm.R', 'clavicle.R'], mirror: 'hand.L' },
-    { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R' },
-    { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L' },
+    { id: 'hand.L', label: 'Left hand', effector: 'hand.L', links: ['forearm.L', 'upperarm.L', 'clavicle.L'], mirror: 'hand.R', poleRef: BACK },
+    { id: 'hand.R', label: 'Right hand', effector: 'hand.R', links: ['forearm.R', 'upperarm.R', 'clavicle.R'], mirror: 'hand.L', poleRef: BACK },
+    { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R', poleRef: FORWARD },
+    { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L', poleRef: FORWARD },
     { id: 'head', label: 'Head', effector: 'head', links: ['neck', 'chest'], mirror: null },
   ];
 

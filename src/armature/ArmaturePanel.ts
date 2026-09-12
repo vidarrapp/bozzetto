@@ -17,6 +17,8 @@ export interface ArmaturePanelHooks {
   handles(on: boolean): void;
   /** A handle was pinned in place, or let go. */
   pin(id: string, on: boolean): void;
+  /** Where a chain's knee or elbow should point, degrees around the limb. */
+  aim(id: string, degrees: number): void;
   send(resolution: number): void;
 }
 
@@ -171,6 +173,25 @@ export class ArmaturePanel extends SidePanel {
       const row = div('sculpt-panel__row');
       row.appendChild(this.opButton('Reset joint', () => this.hooks.joint(selected, [0, 0, 0])));
       this.jointBody.appendChild(row);
+    }
+    // A knee or an elbow also has an aim: which way it points as the limb
+    // reaches. The small ball in the viewport is the same setting.
+    const bend = armature.chainOfHinge(selected);
+    if (bend) {
+      this.jointBody.appendChild(
+        numberedRange(
+          'Aim',
+          -180,
+          180,
+          1,
+          Math.round(armature.getAim(bend.id)),
+          (v) => {
+            this.hooks.aim(bend.id, v);
+            return `${Math.round(v)}°`;
+          },
+          { unit: '°' },
+        ).row,
+      );
     }
     const p = armature.getProportions(selected);
     const pct = (v: number): string => `${Math.round(v * 100)}%`;

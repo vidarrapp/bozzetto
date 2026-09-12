@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, Plane, Raycaster, SphereGeometry, Vector2, Vector3 } from 'three';
+import { Box3, Group, Mesh, Plane, Raycaster, SphereGeometry, Vector2, Vector3, type Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -46,11 +46,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   }
   viewer.adoptMesh(armature.mesh);
+  // The viewer boots on a synthetic one-frame manifest whose subject is a
+  // placeholder cube; sculpt mode swaps its geometry, this mode brings its
+  // own figure instead - so the cube has to be sent away, or it sits at the
+  // origin as a tiny box (owner report).
+  viewer.setSculptVisible(false);
   if (saved?.look) await viewer.applyLook(saved.look);
 
   const frame = (): void => {
     const box = armature.bounds();
-    if (!box.isEmpty()) viewer.frameBounds(box);
+    // Sizes the ground, the pedestal and the shadow to the figure as well,
+    // which the placeholder cube would otherwise still be setting.
+    if (!box.isEmpty()) viewer.fitSubject(box);
   };
   frame();
 
@@ -76,6 +83,34 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const controls = [rotateTc, moveTc];
   const attached = new Set<TransformControls>();
   let dragging = false;
+  /** Which handles the selection gets, as in sculpt mode: t, w, e. */
+  let gizmoMode: 'all' | 'translate' | 'rotate' = 'all';
+
+  /**
+   * With both controls on the pelvis, the middle belongs to the move
+   * control's screen-plane handle (owner call) - so the rotate control's
+   * invisible free-rotate sphere, which sits on top of it and is first in
+   * line for the pointer, comes off. A joint that only rotates keeps it.
+   */
+  const freeRotate: Array<{ parent: Object3D; child: Object3D }> = [];
+  const trimFreeRotate = (off: boolean): void => {
+    for (const { parent, child } of freeRotate) parent.add(child);
+    freeRotate.length = 0;
+    if (!off) return;
+    const internals = (
+      rotateTc as unknown as {
+        _gizmo: { gizmo: Record<string, Object3D>; picker: Record<string, Object3D> };
+      }
+    )._gizmo;
+    for (const group of [internals.gizmo.rotate, internals.picker.rotate]) {
+      for (const child of [...group.children]) {
+        if (child.name === 'XYZE') {
+          freeRotate.push({ parent: group, child });
+          group.remove(child);
+        }
+      }
+    }
+  };
   for (const tc of controls) {
     const helper = tc.getHelper();
     helper.visible = false;
@@ -123,7 +158,17 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       rotateTc.showX = def.kind === 'root' || l.x[1] > l.x[0];
       rotateTc.showY = def.kind === 'root' || l.y[1] > l.y[0];
       rotateTc.showZ = def.kind === 'root' || l.z[1] > l.z[0];
-      const use = def.kind === 'root' ? controls : [rotateTc];
+      // A bone rotates; the pelvis is the root, so it also moves.
+      const wanted =
+        def.kind === 'root'
+          ? gizmoMode === 'translate'
+            ? [moveTc]
+            : gizmoMode === 'rotate'
+              ? [rotateTc]
+              : controls
+          : [rotateTc];
+      trimFreeRotate(wanted.length > 1);
+      const use = wanted;
       for (const tc of use) {
         tc.attach(target);
         tc.enabled = true;
@@ -157,12 +202,23 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   pinnedMat.color.set('#f0d9a8');
   pinnedMat.depthTest = false;
   pinnedMat.depthWrite = false;
+  // The aim balls at the knees and elbows: smaller, and a cool grey so
+  // they read as a different job from the warm reach balls.
+  const aimMat = new MeshBasicNodeMaterial();
+  aimMat.color.set('#9ab6c8');
+  aimMat.depthTest = false;
+  aimMat.depthWrite = false;
+  aimMat.transparent = true;
+  aimMat.opacity = 0.85;
   const HANDLE_RADIUS = 1.9;
+  const AIM_RADIUS = 1.3;
   let handlesOn = true;
   const handles = new Map<string, Mesh>();
+  const aims = new Map<string, Mesh>();
   const buildHandles = (): void => {
-    for (const m of handles.values()) m.removeFromParent();
+    for (const m of [...handles.values(), ...aims.values()]) m.removeFromParent();
     handles.clear();
+    aims.clear();
     for (const c of armature.chains()) {
       const m = new Mesh(handleGeometry, freeMat);
       m.name = `ik:${c.id}`;
@@ -171,6 +227,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       m.frustumCulled = false;
       handleGroup.add(m);
       handles.set(c.id, m);
+      if (!c.poleRef) continue;
+      const a = new Mesh(handleGeometry, aimMat);
+      a.name = `aim:${c.id}`;
+      a.scale.setScalar(AIM_RADIUS);
+      a.renderOrder = 30;
+      a.frustumCulled = false;
+      handleGroup.add(a);
+      aims.set(c.id, a);
     }
   };
   const syncHandles = (): void => {
@@ -183,6 +247,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       armature.effectorWorld(c.effector, at);
       m.position.copy(at);
       m.material = armature.isPinned(id) ? pinnedMat : freeMat;
+    }
+    for (const [id, m] of aims) {
+      const where = armature.hingeWorld(id, at);
+      m.visible = !!where;
+      if (where) m.position.copy(where);
     }
   };
   buildHandles();
@@ -197,6 +266,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // The handle being dragged, and the plane it slides on: through where it
   // was grabbed, facing the camera, so the drag follows the pointer.
   let reaching: string | null = null;
+  /** The knee or elbow being aimed, if any. */
+  let aiming: string | null = null;
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
   const onPointerDown = (e: PointerEvent): void => {
@@ -214,8 +285,22 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     aim(e);
     // The IK balls come first: they are drawn over the figure, so they
-    // must be picked over it too.
+    // must be picked over it too. The small aim balls at the knees and
+    // elbows are picked ahead of the reach balls, being smaller.
     if (handlesOn) {
+      const small = raycaster.intersectObjects([...aims.values()], false)[0];
+      if (small) {
+        aiming = small.object.name.slice(4);
+        viewer.setOrbitEnabled(false);
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          // Synthetic events carry no active pointer; capture is best-effort.
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const ball = raycaster.intersectObjects([...handles.values()], false)[0];
       if (ball) {
         reaching = ball.object.name.slice(3);
@@ -238,6 +323,28 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     select(hit ? armature.boneAt(hit) : null);
   };
   const onPointerMove = (e: PointerEvent): void => {
+    if (aiming) {
+      // Where the pointer sits around the limb IS the aim. The plane it
+      // reads on cuts across the limb at the joint, so the angle is the
+      // one the solver wants and the hand or foot never moves.
+      aim(e);
+      const at = armature.hingeWorld(aiming, new Vector3());
+      if (!at) return;
+      dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragPoint).clone(), at);
+      if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+      const angle = armature.aimFromPoint(aiming, dragPoint);
+      if (angle !== null) {
+        armature.aimChain(aiming, angle);
+        armature.applyPins();
+        syncHandles();
+        placeControls();
+        panel.refresh(selected);
+        scheduleSave();
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (!reaching) return;
     aim(e);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
@@ -252,8 +359,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     e.stopPropagation();
   };
   const onPointerUp = (e: PointerEvent): void => {
-    if (!reaching) return;
+    if (!reaching && !aiming) return;
     reaching = null;
+    aiming = null;
     viewer.setOrbitEnabled(true);
     try {
       canvas.releasePointerCapture(e.pointerId);
@@ -422,6 +530,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         syncHandles();
         commit();
       },
+      aim: (id, degrees) => {
+        armature.aimChain(id, degrees);
+        armature.applyPins();
+        placeControls();
+        syncHandles();
+        commit();
+      },
       resetProportions: () => {
         for (const bone of armature.boneNames()) armature.setProportions(bone, { size: 1, length: 1 }, false);
         armature.applyPins();
@@ -486,7 +601,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         scheduleSave();
         break;
       case 'arm.move':
+        gizmoMode = 'translate';
         select(armature.root.name);
+        break;
+      case 'arm.rotate':
+        gizmoMode = 'rotate';
+        select(selected ?? armature.root.name);
+        break;
+      case 'arm.gizmo':
+        gizmoMode = 'all';
+        select(selected ?? armature.root.name);
         break;
       case 'arm.resetPose':
         armature.resetPose();
@@ -530,6 +654,23 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       syncHandles();
       commit();
     },
+    aim: (id: string, degrees: number) => {
+      armature.aimChain(id, degrees);
+      armature.applyPins();
+      syncHandles();
+      commit();
+    },
+    /** What the gizmo is showing, for the console and the tests. */
+    gizmo: () => ({
+      mode: gizmoMode,
+      attached: [...attached].map((tc) => tc.mode).sort(),
+      /** Whether the centre still carries the free-rotate sphere. */
+      freeRotateOn: freeRotate.length === 0,
+    }),
+    hingePosition: (id: string) => {
+      const at = armature.hingeWorld(id, new Vector3());
+      return at ? at.toArray() : null;
+    },
     handlePosition: (id: string) => {
       const c = armature.chain(id);
       return c ? armature.effectorWorld(c.effector, new Vector3()).toArray() : null;
@@ -559,6 +700,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('change', onLookEdit);
     window.removeEventListener('pagehide', onHidden);
     select(null);
+    viewer.setSculptVisible(true);
     for (const tc of controls) {
       viewer.scene.remove(tc.getHelper());
       tc.dispose();

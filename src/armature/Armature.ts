@@ -31,6 +31,8 @@ export interface ArmatureState {
   proportions: Record<string, { size: number; length: number }>;
   /** IK handles held in place, and where: world position per chain id. */
   pins?: Record<string, [number, number, number]>;
+  /** Where each chain's hinge aims, degrees around the limb; absent = 0. */
+  aims?: Record<string, number>;
 }
 
 export interface Proportions {
@@ -350,8 +352,35 @@ export class Armature {
    */
   private readonly pins = new Map<string, Vector3>();
 
+  /** Where each chain's knee or elbow points, degrees around the limb. */
+  private readonly aims = new Map<string, number>();
+
   chains(): IKChainDef[] {
     return this.rig.ik;
+  }
+
+  /** Which chain a bone bends for, if any (its hinge, or a link of it). */
+  chainOfHinge(bone: string): IKChainDef | undefined {
+    return this.rig.ik.find(
+      (c) => c.poleRef && c.links.some((n) => n === bone && this.defs.get(n)?.kind === 'hinge'),
+    );
+  }
+
+  getAim(id: string): number {
+    return this.aims.get(id) ?? 0;
+  }
+
+  /**
+   * Aim a chain's hinge: the knee or elbow swings around the line from the
+   * shoulder (or hip) to the hand (or foot), which leaves the hand where it
+   * is and turns the limb's bend plane. Mirrored to the other side with
+   * its sign flipped, since the reference direction is shared.
+   */
+  setAim(id: string, degrees: number, mirror = this.symmetry): void {
+    const c = this.chain(id);
+    if (!c?.poleRef) return;
+    this.aims.set(id, wrap180(degrees));
+    if (mirror && c.mirror) this.aims.set(c.mirror, wrap180(-degrees));
   }
 
   chain(id: string): IKChainDef | undefined {
@@ -371,6 +400,65 @@ export class Armature {
     const c = this.chain(id);
     if (!c) return;
     this.pins.set(id, this.effectorWorld(c.effector, new Vector3()));
+  }
+
+  /**
+   * Aim a chain's hinge AND keep the limb's end where it is: the aim turns
+   * the bend plane, the re-solve puts the hand or foot back on the mark it
+   * held before the turn (its pin, if it has one). Without the second step
+   * a joint limit met during the turn would drag the end along with it.
+   */
+  aimChain(id: string, degrees: number, mirror = this.symmetry): void {
+    const c = this.chain(id);
+    if (!c?.poleRef) return;
+    const holds: Array<{ id: string; at: Vector3 }> = [];
+    const hold = (chainId: string): void => {
+      const ch = this.chain(chainId);
+      if (!ch) return;
+      holds.push({ id: chainId, at: this.pins.get(chainId)?.clone() ?? this.effectorWorld(ch.effector, new Vector3()) });
+    };
+    hold(id);
+    if (mirror && c.mirror) hold(c.mirror);
+    this.setAim(id, degrees, mirror);
+    for (const h of holds) this.reach(h.id, h.at, 10, false);
+  }
+
+  /** Where a chain's hinge joint sits in the world (its aim handle's place). */
+  hingeWorld(chainId: string, out: Vector3): Vector3 | null {
+    const c = this.chain(chainId);
+    const hinge = c?.links.find((n) => this.defs.get(n)?.kind === 'hinge');
+    const bone = hinge ? this.bones.get(hinge) : undefined;
+    if (!c?.poleRef || !bone) return null;
+    this.mesh.updateMatrixWorld(true);
+    return out.setFromMatrixPosition(bone.matrixWorld);
+  }
+
+  /**
+   * The aim angle a world point asks for: where that point sits around the
+   * line from the limb's base joint to its far end. This is what a drag on
+   * the knee or elbow handle means.
+   */
+  aimFromPoint(chainId: string, point: Vector3): number | null {
+    const c = this.chain(chainId);
+    if (!c?.poleRef) return null;
+    const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
+    const base = hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex + 1]) : undefined;
+    if (!base) return null;
+    this.root.updateMatrixWorld(true);
+    const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
+    const axis = this.effectorWorld(c.effector, new Vector3()).sub(basePos);
+    if (axis.lengthSq() < 1e-8) return null;
+    axis.normalize();
+    const ref = new Vector3().fromArray(c.poleRef);
+    const zero = ref.clone().sub(axis.clone().multiplyScalar(ref.dot(axis)));
+    if (zero.lengthSq() < 1e-6) return null;
+    zero.normalize();
+    const want = point.clone().sub(basePos);
+    want.sub(axis.clone().multiplyScalar(want.dot(axis)));
+    if (want.lengthSq() < 1e-6) return null;
+    want.normalize();
+    const side = new Vector3().crossVectors(zero, want).dot(axis);
+    return (Math.atan2(side, zero.dot(want)) * 180) / Math.PI;
   }
 
   /** Where a bone's far end is in the world (the point a handle sits on). */
@@ -421,6 +509,11 @@ export class Armature {
     const twoBone = hingeIndex >= 0 && hingeIndex + 1 < c.links.length;
     for (let i = 0; i < iterations; i++) {
       if (twoBone) this.bendHinge(c, hingeIndex, target, mirror);
+      // The aim gets the first passes; the rest belong to position. An aim
+      // the joint cannot twist to would otherwise push every pass while
+      // the descent pulls back, and the two would never settle - so the
+      // hand's place wins and the aim is honoured as far as it reaches.
+      if (twoBone && i < 2) this.aimHinge(c, hingeIndex, target, mirror);
       let moved = false;
       for (const name of c.links) {
         // The hinge is the triangle's, not the descent's.
@@ -454,6 +547,51 @@ export class Armature {
       this.effectorWorld(c.effector, tip);
       if (tip.distanceToSquared(target) < 1e-4) break;
     }
+  }
+
+  /**
+   * Turn the limb about the line from its base joint to the target until
+   * the hinge points where the aim says. That line runs through the
+   * effector, so this never moves the hand or the foot - only the plane
+   * the elbow or knee lives in. The step is the DIFFERENCE from where the
+   * hinge points now, so it converges instead of accumulating.
+   */
+  private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
+    const ref = c.poleRef;
+    const baseName = c.links[hingeIndex + 1];
+    const base = this.bones.get(baseName);
+    const hinge = this.bones.get(c.links[hingeIndex]);
+    const rest = this.rest.get(baseName);
+    if (!ref || !base || !hinge || !rest) return;
+    this.root.updateMatrixWorld(true);
+    const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
+    const axis = new Vector3().subVectors(target, basePos);
+    if (axis.lengthSq() < 1e-8) return;
+    axis.normalize();
+    // Zero aim is the rig's reference direction, squared up to the limb.
+    const zero = new Vector3().fromArray(ref).sub(axis.clone().multiplyScalar(new Vector3().fromArray(ref).dot(axis)));
+    if (zero.lengthSq() < 1e-6) zero.set(0, 1, 0).sub(axis.clone().multiplyScalar(axis.y));
+    if (zero.lengthSq() < 1e-6) return;
+    zero.normalize();
+    const knee = new Vector3().setFromMatrixPosition(hinge.matrixWorld).sub(basePos);
+    knee.sub(axis.clone().multiplyScalar(knee.dot(axis)));
+    if (knee.lengthSq() < 1e-6) return; // a straight limb has no bend plane
+    knee.normalize();
+    const side = new Vector3().crossVectors(zero, knee).dot(axis);
+    const now = (Math.atan2(side, zero.dot(knee)) * 180) / Math.PI;
+    const delta = wrap180(this.getAim(c.id) - now);
+    if (Math.abs(delta) < 0.05) return;
+    const swing = new Quaternion().setFromAxisAngle(axis, (delta * Math.PI) / 180);
+    const linkQ = new Quaternion();
+    base.getWorldQuaternion(linkQ);
+    linkQ.premultiply(swing);
+    const parentQ = new Quaternion();
+    if (base.parent) (base.parent as Bone).getWorldQuaternion(parentQ);
+    else parentQ.identity();
+    linkQ.premultiply(parentQ.invert());
+    linkQ.premultiply(_q2.copy(rest.local).invert());
+    _e.setFromQuaternion(linkQ, 'XYZ');
+    this.setPoseEuler(baseName, _e.x / RAD, _e.y / RAD, _e.z / RAD, mirror);
   }
 
   /**
@@ -568,6 +706,8 @@ export class Armature {
     }
     const pins: NonNullable<ArmatureState['pins']> = {};
     for (const [id, p] of this.pins) pins[id] = [p.x, p.y, p.z];
+    const aims: NonNullable<ArmatureState['aims']> = {};
+    for (const [id, a] of this.aims) if (a) aims[id] = +a.toFixed(2);
     return {
       v: 1,
       preset: this.rig.id,
@@ -575,6 +715,7 @@ export class Armature {
       pose,
       proportions,
       pins,
+      aims,
     };
   }
 
@@ -592,6 +733,10 @@ export class Armature {
     for (const [name, e] of Object.entries(state.pose ?? {})) {
       if (this.pose.has(name) && Array.isArray(e)) this.setPoseEuler(name, e[0], e[1], e[2], false);
     }
+    this.aims.clear();
+    for (const [id, a] of Object.entries(state.aims ?? {})) {
+      if (this.chain(id) && typeof a === 'number' && Number.isFinite(a)) this.aims.set(id, wrap180(a));
+    }
     this.pins.clear();
     for (const [id, p] of Object.entries(state.pins ?? {})) {
       if (this.chain(id) && Array.isArray(p) && p.length === 3) this.pins.set(id, new Vector3(p[0], p[1], p[2]));
@@ -608,6 +753,13 @@ export class Armature {
 
 function clamp(v: number, r: [number, number]): number {
   return Math.min(r[1], Math.max(r[0], v));
+}
+
+/** Degrees into (-180, 180], so an aim difference takes the short way round. */
+function wrap180(deg: number): number {
+  let d = ((deg + 180) % 360 + 360) % 360 - 180;
+  if (d === -180) d = 180;
+  return d;
 }
 
 /** A fresh figure of a preset, sharing the given material. */

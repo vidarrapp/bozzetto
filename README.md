@@ -44,7 +44,7 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 - **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
-- **Object transforms**: a unified move/rotate/scale gizmo, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked.
+- **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
@@ -95,6 +95,10 @@ replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
   ball and it holds its place in the world while the rest of the figure
   moves, so the pelvis can drop into a crouch with the feet planted or the
   body can lean away from a hand that stays put.
+- **Aim.** A smaller ball sits at each knee and elbow. Drag it and the bend
+  swings around the limb without moving the hand or the foot: a knee points
+  forward by default, an elbow back. The Tool panel has the same as an
+  **Aim** slider when a knee or elbow is selected.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
   stretches the part along its bone and moves the child joints with it.
   Mirrored while symmetry is on.
@@ -110,8 +114,9 @@ replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
 | Click a part | Select it (rotate gizmo at its joint) |
 | Drag a ball | Reach that hand, foot or head towards it |
 | Drag off the figure | Orbit |
+| Drag a small ball | Aim that knee or elbow around the limb |
 | `X` | Symmetry on / off |
-| `W` | Select the pelvis (move and turn the figure) |
+| `W` / `E` / `T` | Move the pelvis · rotate the selection · both at once |
 | `Shift`+`R` | Reset the pose |
 | `Esc` | Deselect |
 | `Ctrl`+`Z`, `Ctrl`+`Shift`+`Z` | Undo, redo |
@@ -250,7 +255,7 @@ guide (`H`) shows whatever keys are set.
 | `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry for the current brush |
-| `T` | Transform gizmo (all handles). Click an object to move the gizmo to it, `Shift`+click adds it to the selection, `Ctrl`+click removes it; the selection moves together |
+| `T` | Transform gizmo (all handles; its centre moves the object across the screen). Click an object to move the gizmo to it, `Shift`+click adds it to the selection, `Ctrl`+click removes it; the selection moves together |
 | `W` / `E` / `R` | Move / rotate / scale gizmo (`T` again, or a brush key, returns to sculpting) |
 | `P` | Frame-rate meter |
 | `Ctrl`+`D`, `D` / `Shift`+`D` | Subdivide · step subdivision level |

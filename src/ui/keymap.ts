@@ -124,7 +124,10 @@ export const ACTIONS: ActionDef[] = [
   { id: 'ui.panel', label: 'Toggle the panel', group: 'Interface', mode: 'view', chord: 'tab' },
   // --- armature mode ------------------------------------------------------
   { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },
-  { id: 'arm.move', label: 'Move the figure (the pelvis gizmo)', group: 'Armature', mode: 'armature', chord: 'w' },
+  { id: 'arm.move', label: 'Move the figure (the pelvis, screen-plane centre)', group: 'Armature', mode: 'armature', chord: 'w' },
+  { id: 'arm.rotate', label: 'Rotate what is selected', group: 'Armature', mode: 'armature', chord: 'e' },
+  { id: 'arm.gizmo', label: 'Move and rotate together', group: 'Armature', mode: 'armature', chord: 't' },
+  { id: 'arm.aim', label: 'Aim the knee or elbow of the selected limb', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the small ball' },
   { id: 'arm.resetPose', label: 'Reset the pose', group: 'Armature', mode: 'armature', chord: 'shift+r' },
   { id: 'arm.deselect', label: 'Deselect the joint', group: 'Armature', mode: 'armature', chord: 'escape' },
   { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true },

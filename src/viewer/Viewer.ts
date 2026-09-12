@@ -809,6 +809,16 @@ export class Viewer {
     this.display.visible = visible;
   }
 
+  /**
+   * Size the stage - ground, pedestal, shadow, AO radius - to a world box,
+   * and frame it. enterSculpt does this for sculpt mode; a mode that brings
+   * its own subject (the armature's figure) calls it directly, or the stage
+   * stays sized to whatever the boot manifest's placeholder was.
+   */
+  fitSubject(box: Box3, frame = true): void {
+    this.fitSubjectBounds(box, frame);
+  }
+
   /** Sculpt SSAO knobs (WS4 palette): cavity strength and tap radius (px). */
   setSculptAO(state: { strength?: number; radius?: number }): void {
     if (typeof state.strength === 'number') this.cavityStrengthU.value = state.strength;
