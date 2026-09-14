@@ -19,6 +19,70 @@
 
 export type Vec3 = [number, number, number];
 
+/**
+ * The neutral pose is not a mannequin's straight line (owner call): a
+ * relaxed arm keeps a few degrees at the elbow, a leg a few at the knee.
+ * It reads as alive rather than assembled, and it hands the reach solver a
+ * bend plane from the first drag - a limb straight to the millimetre has
+ * none, and has to be given one.
+ *
+ * The joint limits below are written the anatomical way, measured from
+ * STRAIGHT, and shifted onto the rest by `fromRest`: an elbow that rests
+ * seven degrees in can still straighten by seven, and bends by the rest.
+ */
+const ELBOW_REST = 7;
+/** How far forward the knee sits at rest, in metres on a 1.80 m figure. */
+const KNEE_FORWARD = 0.015;
+
+/** An anatomical range, in degrees from straight, as seen from the rest pose. */
+function fromRest(range: [number, number], restBend: number): [number, number] {
+  const round = (v: number): number => Math.round(v * 10) / 10;
+  return [round(range[0] - restBend), round(range[1] - restBend)];
+}
+
+/** How far a child bone turns from its parent, signed about the hinge axis. */
+function bendBetween(parent: Vec3, child: Vec3, axis: Vec3): number {
+  const u = unit(parent);
+  const v = unit(child);
+  const k = unit(axis);
+  const cross: Vec3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const side = cross[0] * k[0] + cross[1] * k[1] + cross[2] * k[2];
+  const along = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  return (Math.atan2(side, along) * 180) / Math.PI;
+}
+
+function unit(v: Vec3): Vec3 {
+  const n = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / n, v[1] / n, v[2] / n];
+}
+
+/** Turn a direction about an axis (Rodrigues), for a joint that rests bent. */
+function turn(v: Vec3, axis: Vec3, degrees: number): Vec3 {
+  const a = (degrees * Math.PI) / 180;
+  const n = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  const [kx, ky, kz] = [axis[0] / n, axis[1] / n, axis[2] / n];
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const dot = kx * v[0] + ky * v[1] + kz * v[2];
+  const cross: Vec3 = [ky * v[2] - kz * v[1], kz * v[0] - kx * v[2], kx * v[1] - ky * v[0]];
+  return [
+    v[0] * c + cross[0] * s + kx * dot * (1 - c),
+    v[1] * c + cross[1] * s + ky * dot * (1 - c),
+    v[2] * c + cross[2] * s + kz * dot * (1 - c),
+  ];
+}
+
+/**
+ * A bone's local X the way the app derives it: the hinted world axis,
+ * squared up to the bone. The joint that rests bent turns about this.
+ */
+function localX(dir: Vec3, hint: Vec3): Vec3 {
+  const d = dir[0] * hint[0] + dir[1] * hint[1] + dir[2] * hint[2];
+  const x: Vec3 = [hint[0] - dir[0] * d, hint[1] - dir[1] * d, hint[2] - dir[2] * d];
+  const n = Math.hypot(x[0], x[1], x[2]) || 1;
+  return [x[0] / n, x[1] / n, x[2] / n];
+}
+
 /** Euler ranges in degrees, [min, max] per local axis; [0, 0] locks an axis. */
 export interface JointLimits {
   x: [number, number];
@@ -122,9 +186,10 @@ const FEMALE: Body = {
 };
 
 /**
- * A placeholder human: boxes on an eight-head canon in an A-pose (arms
- * 40 degrees below horizontal). Left is +X. The right side is the mirror
- * of the left, built by the same code with x negated.
+ * A placeholder human: boxes on an eight-head canon in an A-pose - arms 40
+ * degrees below horizontal, and neither the elbows nor the knees locked
+ * straight. Left is +X. The right side is the mirror of the left, built by
+ * the same code with x negated.
  */
 export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
   const b = sex === 'male' ? MALE : FEMALE;
@@ -197,16 +262,23 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     const sfx = sign > 0 ? '.L' : '.R';
     const other = sign > 0 ? '.R' : '.L';
     const X = (v: number): number => sign * s(v);
-    const armDir: Vec3 = [Math.cos((40 * Math.PI) / 180), -Math.sin((40 * Math.PI) / 180), 0];
-    const along = (from: Vec3, len: number): Vec3 => [
-      from[0] + sign * armDir[0] * s(len),
-      from[1] + armDir[1] * s(len),
-      from[2],
+    // The upper arm runs 40 degrees below horizontal; the forearm carries
+    // on from the elbow, a few degrees into its bend.
+    const armDir: Vec3 = [
+      sign * Math.cos((40 * Math.PI) / 180),
+      -Math.sin((40 * Math.PI) / 180),
+      0,
+    ];
+    const foreDir = turn(armDir, localX(armDir, [1, 0, 0]), -ELBOW_REST);
+    const step = (from: Vec3, dir: Vec3, len: number): Vec3 => [
+      from[0] + dir[0] * s(len),
+      from[1] + dir[1] * s(len),
+      from[2] + dir[2] * s(len),
     ];
     const shoulder: Vec3 = [X(b.shoulderHalf + 0.02), s(1.48), 0];
-    const elbow = along(shoulder, 0.3);
-    const wrist = along(elbow, 0.27);
-    const fingertip = along(wrist, 0.18);
+    const elbow = step(shoulder, armDir, 0.3);
+    const wrist = step(elbow, foreDir, 0.27);
+    const fingertip = step(wrist, foreDir, 0.18);
     add({
       name: 'clavicle' + sfx,
       parent: 'chest',
@@ -235,8 +307,9 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: elbow,
       tail: wrist,
       hint: 'x',
-      // A hinge: bends forward, with a little twist.
-      limits: { x: deg(-150, 0), y: deg(-45, 45), z: NONE },
+      // A hinge: bends forward, with a little twist. It rests bent, so the
+      // range it can still reach is measured from there.
+      limits: { x: fromRest(deg(-150, 0), -ELBOW_REST), y: deg(-45, 45), z: NONE },
       part: { width: b.armThick * 0.85 * h, depth: b.armThick * 0.85 * h },
       mirror: 'forearm' + other,
       kind: 'hinge',
@@ -253,10 +326,20 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       kind: 'ball',
     });
 
+    // The leg rests with its knee a little forward rather than locked
+    // straight. Turning the shin would have swung the foot backwards
+    // instead, so the hip and the ankle stay where the figure stands and
+    // the KNEE is the thing that moves - which is also what a relaxed leg
+    // does. A centimetre and a half of it is about four degrees; the exact
+    // angle is measured below rather than assumed, since it follows from
+    // the proportions.
     const hip: Vec3 = [X(b.hipHalf), s(0.98), 0];
-    const knee: Vec3 = [X(b.hipHalf + 0.03), s(0.52), 0];
+    const knee: Vec3 = [X(b.hipHalf + 0.03), s(0.52), s(KNEE_FORWARD)];
     const ankle: Vec3 = [X(b.hipHalf + 0.04), s(0.1), 0];
     const toe: Vec3 = [X(b.hipHalf + 0.04), s(0.03), s(0.2)];
+    const thighDir: Vec3 = [knee[0] - hip[0], knee[1] - hip[1], knee[2] - hip[2]];
+    const shinDir: Vec3 = [ankle[0] - knee[0], ankle[1] - knee[1], ankle[2] - knee[2]];
+    const kneeBend = bendBetween(thighDir, shinDir, localX(shinDir, [1, 0, 0]));
     add({
       name: 'thigh' + sfx,
       parent: 'pelvis',
@@ -275,8 +358,9 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: knee,
       tail: ankle,
       hint: 'x',
-      // A hinge: the foot swings back, with a little twist.
-      limits: { x: deg(0, 150), y: deg(-15, 15), z: NONE },
+      // A hinge: the foot swings back, with a little twist, from a knee
+      // that already rests a few degrees in.
+      limits: { x: fromRest(deg(0, 150), kneeBend), y: deg(-15, 15), z: NONE },
       part: { width: b.legThick * 0.7 * h, depth: b.legThick * 0.7 * h },
       mirror: 'shin' + other,
       kind: 'hinge',

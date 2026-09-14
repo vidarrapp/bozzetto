@@ -627,7 +627,11 @@ export class Armature {
     const now = (Math.acos(Math.min(1, Math.max(-1, toBase.dot(toTip)))) * 180) / Math.PI;
     const l = this.limitsOf(hinge);
     const cur = this.getPoseEuler(hinge);
-    const sign = l.x[1] > 0.5 ? 1 : -1;
+    // Which way the joint bends: toward the end of its range with the room
+    // in it. Not "whichever end is positive" - an elbow that rests a few
+    // degrees bent has a little positive range for straightening, and that
+    // is not the way it folds.
+    const sign = Math.abs(l.x[0]) > Math.abs(l.x[1]) ? -1 : 1;
     this.setPoseEuler(hinge, cur[0] + sign * (now - wanted), cur[1], cur[2], mirror);
   }
 

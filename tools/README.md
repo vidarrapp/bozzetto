@@ -53,8 +53,14 @@ or a scapula weights in **both** groups, around 50/50, and linear skinning
 turns it half-way with the joint, which is what makes the seam read.
 
 Keep to the rest pose the rig is built in: an A-pose, arms 40° below
-horizontal. The app poses from there, and its joint limits are measured
-from there.
+horizontal, with the elbows and the knees a few degrees short of straight
+rather than locked. The app poses from there, and its joint limits are
+measured from there - the elbow's range reads `[-143, 7]` rather than
+`[-150, 0]` because it starts seven degrees in and can still straighten by
+seven.
+
+That bend is not only for looks. A limb straight to the millimetre gives
+the reach solver no plane to bend in, and it has to be handed one.
 
 You may move a joint (a longer forearm, a wider pelvis) - the app reads the
 rest positions out of the file. Adding or renaming a bone is a code change
