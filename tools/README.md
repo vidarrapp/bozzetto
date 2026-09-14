@@ -5,16 +5,31 @@ own numbers, so a figure modelled against it drops straight into Armature
 mode. `rig.json` holds those numbers and is generated from the app source
 (`npm run rig:json`); nothing here retypes them.
 
-```bash
-# a .blend to work in
-blender --background --python tools/blender_armature.py -- \
-    --preset placeholder-male --out ~/bozzetto-male.blend
+**In Blender**: open the script in the Text editor and press Run Script.
+There is no command line there, so the options are the block at the top of
+the file - edit and run again:
 
-# or open Blender, load the script in the Text editor and press Run Script
+```python
+PRESET = "placeholder-male"   # or "placeholder-female"
+WITH_BLOCKS = True            # False for the skeleton on its own
+SAVE_BLEND = ""               # a path here and the run saves a .blend
+EXPORT_GLB = ""               # a path here and the run exports a .glb
+REPLACE_PREVIOUS = True       # a re-run clears what the last one made
 ```
 
-Options: `--preset placeholder-male|placeholder-female`, `--out <.blend>`,
-`--glb <.glb>`, `--no-blocks` for the skeleton on its own.
+Re-running replaces what the previous run made, so tweak-and-run does not
+pile up `BZ_Armature.001`. Only objects this script created are cleared;
+anything you modelled yourself stays.
+
+**From a terminal**, the same options are flags:
+
+```bash
+blender --background --python tools/blender_armature.py -- \
+    --preset placeholder-female --out ~/bozzetto-female.blend
+```
+
+`--preset placeholder-male|placeholder-female`, `--out <.blend>`,
+`--glb <.glb>`, `--no-blocks`, `--keep` to leave an earlier run in place.
 
 ## What you get
 

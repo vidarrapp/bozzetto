@@ -1,16 +1,22 @@
 """
 Build Bozzetto's armature in Blender, from the app's own numbers.
 
-    blender --background --python tools/blender_armature.py -- \
-        --preset placeholder-male --out ~/bozzetto-male.blend
+TWO WAYS TO RUN IT, and the options work differently in each.
 
-Or open it in Blender's Text editor and press Run Script (it builds the
-male preset into the current file).
+1. Blender's Text editor: edit the OPTIONS block a few lines below, then
+   press Run Script. There is no command line there, so that block is the
+   dial. Re-running replaces what the last run made.
 
-    --preset  placeholder-male | placeholder-female   (default: male)
-    --out     path to save a .blend
-    --glb     path to export a .glb straight away
-    --no-blocks   the skeleton only, no placeholder boxes
+2. A terminal:
+
+       blender --background --python tools/blender_armature.py -- \
+           --preset placeholder-female --out ~/bozzetto-female.blend
+
+   --preset  placeholder-male | placeholder-female   (default: male)
+   --out     path to save a .blend
+   --glb     path to export a .glb straight away
+   --no-blocks   the skeleton only, no placeholder boxes
+   --keep    leave anything an earlier run made in place
 
 What it makes:
 
@@ -47,7 +53,52 @@ import sys
 import bpy
 from mathutils import Matrix, Vector
 
-RIG_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rig.json")
+# --- OPTIONS (for the Text editor; the command line overrides them) --------
+# Which figure to build.
+PRESET = "placeholder-male"  # or "placeholder-female"
+# The placeholder boxes, or the bare skeleton.
+WITH_BLOCKS = True
+# Where to save, if you want the run to write a file. "" means don't.
+SAVE_BLEND = ""  # e.g. "/home/you/bozzetto-male.blend"
+EXPORT_GLB = ""  # e.g. "/home/you/bozzetto-male.glb"
+# Re-running the script clears what the last run made, so a tweak-and-run
+# loop does not pile up BZ_Armature.001, .002, ... Turn this off to keep
+# several figures in one file.
+REPLACE_PREVIOUS = True
+# Where rig.json is. Left empty it is looked for beside this script, which
+# is right whenever the two travel together. Fill it in if you pasted the
+# script into a new text block rather than opening the file.
+RIG_JSON = ""
+# ---------------------------------------------------------------------------
+
+
+def find_rig_json():
+    """
+    rig.json lives beside this script. Blender can run a script from a file
+    (where __file__ points at it) or from a pasted text block (where it does
+    not), so try the likely places and say plainly which were tried.
+    """
+    tried = []
+    if RIG_JSON:
+        tried.append(bpy.path.abspath(RIG_JSON))
+    try:
+        tried.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "rig.json"))
+    except NameError:
+        pass
+    # A text block opened from disk knows its own path.
+    for text in bpy.data.texts:
+        if text.filepath:
+            tried.append(os.path.join(os.path.dirname(bpy.path.abspath(text.filepath)), "rig.json"))
+    cwd = os.getcwd()
+    tried.append(os.path.join(cwd, "rig.json"))
+    tried.append(os.path.join(cwd, "tools", "rig.json"))
+    for path in tried:
+        if os.path.isfile(path):
+            return path
+    raise SystemExit(
+        "rig.json not found. Set RIG_JSON at the top of the script to its "
+        "full path. Looked in:\n  " + "\n  ".join(tried)
+    )
 
 
 # --- the app's world, in Blender's ------------------------------------------
@@ -84,9 +135,28 @@ def bone_frame(bone):
     return head, tail, length, x, y, z
 
 
+def clear_previous():
+    """
+    Remove what an earlier run made, and only that: everything this script
+    creates is stamped, so a hand-made object of the same name survives.
+    """
+    doomed = [o for o in bpy.data.objects if o.get("bz_generated")]
+    for obj in doomed:
+        data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        # The mesh or armature behind it goes too, unless something else
+        # is still using it.
+        if data is not None and data.users == 0:
+            if isinstance(data, bpy.types.Mesh):
+                bpy.data.meshes.remove(data)
+            elif isinstance(data, bpy.types.Armature):
+                bpy.data.armatures.remove(data)
+    return len(doomed)
+
+
 def build(preset_id, with_blocks=True):
     rig = None
-    with open(RIG_JSON, "r", encoding="utf-8") as fh:
+    with open(find_rig_json(), "r", encoding="utf-8") as fh:
         data = json.load(fh)
     for p in data["presets"]:
         if p["id"] == preset_id:
@@ -101,6 +171,7 @@ def build(preset_id, with_blocks=True):
 
     arm_data = bpy.data.armatures.new("BZ_Armature")
     arm_obj = bpy.data.objects.new("BZ_Armature", arm_data)
+    arm_obj["bz_generated"] = True
     bpy.context.scene.collection.objects.link(arm_obj)
     bpy.context.view_layer.objects.active = arm_obj
     arm_obj.show_in_front = True
@@ -185,6 +256,7 @@ def build(preset_id, with_blocks=True):
         mesh.from_pydata(verts, [], faces)
         mesh.update()
         obj = bpy.data.objects.new("part_%s" % bone["name"], mesh)
+        obj["bz_generated"] = True
         bpy.context.scene.collection.objects.link(obj)
         # Into the bone's rest frame: the box is built with Y along the bone.
         obj.matrix_world = Matrix((
@@ -205,10 +277,12 @@ def build(preset_id, with_blocks=True):
 def main():
     argv = sys.argv
     argv = argv[argv.index("--") + 1:] if "--" in argv else []
-    preset = "placeholder-male"
-    out = None
-    glb = None
-    blocks = True
+    # The OPTIONS block is the default; a flag on the command line wins.
+    preset = PRESET
+    out = SAVE_BLEND or None
+    glb = EXPORT_GLB or None
+    blocks = WITH_BLOCKS
+    replace = REPLACE_PREVIOUS
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -223,10 +297,19 @@ def main():
             i += 1
         elif a == "--no-blocks":
             blocks = False
+        elif a == "--keep":
+            replace = False
         i += 1
 
+    if replace:
+        gone = clear_previous()
+        if gone:
+            print("cleared %d object(s) from an earlier run" % gone)
     arm = build(preset, blocks)
-    print("built %s: %d bones" % (preset, len(arm.data.bones)))
+    print(
+        "built %s: %d bones%s"
+        % (preset, len(arm.data.bones), "" if blocks else " (skeleton only)")
+    )
     if out:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(out))
         print("saved %s" % out)
