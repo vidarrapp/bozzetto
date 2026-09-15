@@ -93,3 +93,57 @@ The app will read the bone hierarchy and rest transforms, the skinned
 meshes and their weights, and the custom properties. Until that loader
 lands the placeholder boxes stand in, and the rig they stand on is this
 one.
+
+## Handing the app a model
+
+Armature mode reads a rigged `.glb` through **File → Load model…**. The
+file becomes the figure: its bones become the rig, its skin becomes the
+shape, and it is kept with the pose so it comes back on the next visit.
+
+Check a file before you wire it up:
+
+```bash
+npm run rig:check -- path/to/model.glb
+```
+
+It runs the app's own reader and prints the rig it got - every bone and
+what kind of joint it is, the reach chains, and, at the end, everything the
+file did not say that had to be worked out.
+
+### What is read, and what is worked out
+
+A glTF carries the bone tree, the rest transforms and the skin weights by
+construction, and those alone are enough to pose a figure. Everything else
+is read from the custom properties when they are there and inferred when
+they are not:
+
+| | from the file | worked out |
+| --- | --- | --- |
+| bones, rest pose, weights | always | - |
+| joint limits | `bz_limit_x/y/z` | a hinge keeps bending the way it already bends; a ball gets a sensible range |
+| hinge or ball | `bz_kind` | forearms, shins and calves are hinges by name |
+| reach chains | `bz_rig` | hands, feet and the head, up two or three bones |
+| aim zero | `bz_rig` | the way the knee or elbow already points |
+
+So a model exported without the properties works; it is just stiffer and
+less certain than one exported with them. The panel says which it got.
+
+This is the other reason the neutral pose keeps a bend in the elbows and
+knees: a straight hinge tells the reader nothing about which way it folds.
+
+### Names
+
+three sanitises node names coming in and going out, because animation
+binding paths reserve some characters - a bone called `clavicle.L` in
+Blender arrives in the app as `clavicleL`. The reader puts the name back
+into `clavicle.L` before anything matches on it, and handles the other
+common forms too (`LeftForeArm`, `mixamorig:LeftForeArm`, `forearm_L`).
+Bone names you invent will pass through unchanged, and the parts they
+drive will simply not be recognised as arms or legs.
+
+### Fixtures
+
+`npm run rig:fixture` writes two `.glb` files next to this README, built
+from the same rig numbers: `test-figure.glb` with the custom properties and
+`test-figure-bare.glb` without any. They are what the loader's test runs
+against, and what to compare a real model to when something looks wrong.

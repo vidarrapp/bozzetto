@@ -102,9 +102,13 @@ replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
   stretches the part along its bone and moves the child joints with it.
   Mirrored while symmetry is on.
-- **Rig.** `tools/blender_armature.py` builds the same rig inside Blender,
-  from the same numbers, so a figure modelled against it drops straight in.
-  See `tools/README.md`.
+- **Your own figure.** **File → Load model…** takes a rigged `.glb`: its
+  bones become the rig, its skin becomes the shape. Joint limits and reach
+  chains are read from the file's custom properties where they exist and
+  worked out from the bones where they do not, and the panel says which it
+  got. `tools/blender_armature.py` builds the same rig inside Blender, from
+  the same numbers, so a figure modelled against it drops straight in; see
+  `tools/README.md`.
 - **Files.** The figure autosaves on this device and shows as a card in the
   gallery. **File → Save** writes an `.armature` file (plain JSON: preset,
   pose, proportions and the lighting), **File → Open** reads one back.

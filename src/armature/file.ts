@@ -6,7 +6,12 @@ import type { ArmatureFile } from './persist';
  * one a person can read, diff and fix.
  */
 export function packArmature(file: ArmatureFile): Blob {
-  return new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
+  // The model itself does not travel in the text file - it is megabytes of
+  // binary and JSON is the wrong envelope for it. What travels is the pose
+  // and which model it was struck on; the file opens against whichever
+  // model is loaded, and says so when they disagree.
+  const { model: _model, ...rest } = file;
+  return new Blob([JSON.stringify(rest, null, 1)], { type: 'application/json' });
 }
 
 export function unpackArmature(text: string): ArmatureFile {

@@ -34,6 +34,7 @@ export class ArmaturePanel extends SidePanel {
   private readonly jointBody: HTMLDivElement;
   private readonly partBody: HTMLDivElement;
   private readonly pinBoxes = new Map<string, HTMLInputElement>();
+  private readonly note: HTMLDivElement;
   private selected: string | null = null;
   /** Voxel resolution for Send to Sculpt (the Model panel's range). */
   resolution = 120;
@@ -64,6 +65,11 @@ export class ArmaturePanel extends SidePanel {
     const hint = div('sculpt-panel__hint muted');
     hint.textContent = 'Click a part to pose its joint; the pelvis moves the whole figure (w).';
     fig.appendChild(hint);
+    // What a loaded model turned out to be, and what had to be guessed
+    // about it. Empty, and invisible, until one is loaded.
+    this.note = div('sculpt-panel__hint sculpt-panel__note muted');
+    this.note.hidden = true;
+    fig.appendChild(this.note);
 
     const joint = section(this.body, 'Joint');
     this.jointBody = div('sculpt-panel__dynamics');
@@ -109,9 +115,25 @@ export class ArmaturePanel extends SidePanel {
     this.refresh(null);
   }
 
+  /** What a loaded model was read as; empty clears the line. */
+  setNote(text: string): void {
+    this.note.textContent = text;
+    this.note.hidden = !text;
+  }
+
   /** Reflect the figure (a preset swap, a file opened). */
   syncFigure(): void {
-    this.presetSel.value = this.figure().rig.id;
+    const id = this.figure().rig.id;
+    // A figure read from a file is a preset like any other, once it is in
+    // the list - without this the dropdown would silently show something
+    // the viewport is not.
+    if (!RIG_PRESETS.some((p) => p.id === id) && !this.presetSel.querySelector(`option[value="${id}"]`)) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = this.figure().rig.label;
+      this.presetSel.appendChild(opt);
+    }
+    this.presetSel.value = id;
     this.symBox.checked = this.figure().symmetry;
     this.refresh(this.selected);
   }

@@ -17,6 +17,14 @@ import {
   type Material,
 } from 'three';
 import { rigById, type BoneDef, type IKChainDef, type JointLimits, type RigDefinition } from './rig';
+import { canonicalName, retargetGeometry, type ReadRig } from './glbRig';
+
+/** A figure whose geometry and weights come from a file, not from boxes. */
+export interface ImportedFigure {
+  geometry: BufferGeometry;
+  /** The file's skeleton order, as the app's bone names. */
+  boneOrder: string[];
+}
 
 /** Metres to scene units: the default sculpt sphere is about 48 across. */
 export const SCENE_SCALE = 50;
@@ -83,7 +91,11 @@ export class Armature {
   /** Skeleton index of a part bone -> the bone it belongs to. */
   private readonly partOwner = new Map<number, string>();
 
-  constructor(rig: RigDefinition, material: Material) {
+  /** Metres to scene units for this figure (the app's, or 1 for an export). */
+  readonly scale: number;
+
+  constructor(rig: RigDefinition, material: Material, scale = SCENE_SCALE, imported?: ImportedFigure) {
+    this.scale = scale;
     this.rig = rig;
     const worldQ = new Map<string, Quaternion>();
     const worldP = new Map<string, Vector3>();
@@ -94,8 +106,8 @@ export class Armature {
     // in which a single limit table can serve both sides (see limitsFor).
     for (const def of rig.bones) {
       this.defs.set(def.name, def);
-      const head = new Vector3().fromArray(def.head).multiplyScalar(SCENE_SCALE);
-      const tail = new Vector3().fromArray(def.tail).multiplyScalar(SCENE_SCALE);
+      const head = new Vector3().fromArray(def.head).multiplyScalar(scale);
+      const tail = new Vector3().fromArray(def.tail).multiplyScalar(scale);
       const y = tail.clone().sub(head);
       const length = y.length();
       y.normalize();
@@ -138,6 +150,32 @@ export class Armature {
       skeletonBones.push(this.partBones.get(def.name)!);
     }
     this.root.updateMatrixWorld(true);
+
+    // A figure read from a file brings its own geometry and its own
+    // weights. Every weight moves from a bone to that bone's PART bone,
+    // which is where proportions live; a part bone sits on its bone with
+    // no transform of its own, so the bind pose is unchanged and a vertex
+    // split between two bones stays split between their two parts.
+    if (imported) {
+      const partIndex = new Map<string, number>();
+      for (const def of rig.bones) {
+        partIndex.set(def.name, skeletonBones.indexOf(this.partBones.get(def.name)!));
+      }
+      const geometry = retargetGeometry(imported.geometry, scale, (i) => {
+        const name = imported.boneOrder[i];
+        return (name !== undefined ? partIndex.get(name) : undefined) ?? 0;
+      });
+      this.mesh = new SkinnedMesh(geometry, material);
+      this.mesh.name = 'armature';
+      this.mesh.frustumCulled = false;
+      this.mesh.userData.locked = 0;
+      this.mesh.add(this.root);
+      this.skeleton = new Skeleton(skeletonBones);
+      this.mesh.bind(this.skeleton);
+      this.measureImportedParts();
+      return;
+    }
+
     const positions: number[] = [];
     const normals: number[] = [];
     const indices: number[] = [];
@@ -146,8 +184,8 @@ export class Armature {
     for (const def of rig.bones) {
       if (!def.part) continue;
       const restLen = this.rest.get(def.name)!.length;
-      const len = (def.part.length ?? restLen / SCENE_SCALE) * SCENE_SCALE;
-      const box = new BoxGeometry(def.part.width * SCENE_SCALE, len, def.part.depth * SCENE_SCALE);
+      const len = (def.part.length ?? restLen / scale) * scale;
+      const box = new BoxGeometry(def.part.width * scale, len, def.part.depth * scale);
       // Parts with their own length sit centred on the bone; the others
       // run from the joint to the tail so length scaling starts there.
       box.translate(0, def.part.length ? restLen / 2 : len / 2, 0);
@@ -192,6 +230,53 @@ export class Armature {
     this.mesh.add(this.root);
     this.skeleton = new Skeleton(skeletonBones);
     this.mesh.bind(this.skeleton); // bind matrix = the identity, inverses from the rest pose
+  }
+
+  /**
+   * A figure from a file has no boxes to highlight, so each part's shape
+   * is measured instead: the vertices that belong mostly to a bone, in
+   * that bone's own frame. A part with nothing weighted to it gets
+   * nothing, and simply does not light up.
+   */
+  private measureImportedParts(): void {
+    const pos = this.mesh.geometry.getAttribute('position');
+    const skin = this.mesh.geometry.getAttribute('skinIndex');
+    const weight = this.mesh.geometry.getAttribute('skinWeight');
+    if (!pos || !skin || !weight) return;
+    const partOf = new Map<number, string>();
+    for (const [index, name] of this.partOwner) partOf.set(index, name);
+    const boxes = new Map<string, Box3>();
+    const v = new Vector3();
+    const local = new Matrix4();
+    const inverse = new Map<string, Matrix4>();
+    this.root.updateMatrixWorld(true);
+    for (const [name, bone] of this.bones) inverse.set(name, bone.matrixWorld.clone().invert());
+    for (let i = 0; i < pos.count; i++) {
+      let best = -1;
+      let bestW = 0;
+      for (const axis of ['x', 'y', 'z', 'w'] as const) {
+        const w = weight[`get${axis.toUpperCase() as 'X' | 'Y' | 'Z' | 'W'}`](i);
+        if (w > bestW) {
+          bestW = w;
+          best = skin[`get${axis.toUpperCase() as 'X' | 'Y' | 'Z' | 'W'}`](i);
+        }
+      }
+      const name = best >= 0 ? partOf.get(best) : undefined;
+      if (!name) continue;
+      local.copy(inverse.get(name)!);
+      v.fromBufferAttribute(pos, i).applyMatrix4(local);
+      const box = boxes.get(name) ?? new Box3().makeEmpty();
+      box.expandByPoint(v);
+      boxes.set(name, box);
+    }
+    for (const [name, box] of boxes) {
+      if (box.isEmpty()) continue;
+      const size = box.getSize(new Vector3());
+      const centre = box.getCenter(new Vector3());
+      const g = new BoxGeometry(Math.max(size.x, 1e-3), Math.max(size.y, 1e-3), Math.max(size.z, 1e-3));
+      g.translate(centre.x, centre.y, centre.z);
+      this.partGeometry.set(name, g);
+    }
   }
 
   /**
@@ -657,7 +742,26 @@ export class Armature {
   boneAt(hit: Intersection): string | null {
     if (!hit.face) return null;
     const skin = this.mesh.geometry.getAttribute('skinIndex');
-    return this.partOwner.get(skin.getX(hit.face.a)) ?? null;
+    const weight = this.mesh.geometry.getAttribute('skinWeight');
+    const i = hit.face.a;
+    // The heaviest joint on the vertex, not the first: a piece that spans
+    // a joint is split between two of them, and the first is arbitrary.
+    let best = skin.getX(i);
+    if (weight) {
+      let bestW = weight.getX(i);
+      const rest: Array<['Y' | 'Z' | 'W', number]> = [
+        ['Y', weight.getY(i)],
+        ['Z', weight.getZ(i)],
+        ['W', weight.getW(i)],
+      ];
+      for (const [axis, w] of rest) {
+        if (w > bestW) {
+          bestW = w;
+          best = skin[`get${axis}`](i);
+        }
+      }
+    }
+    return this.partOwner.get(best) ?? null;
   }
 
   /** World-space bounds of the posed figure. */
@@ -769,4 +873,14 @@ function wrap180(deg: number): number {
 /** A fresh figure of a preset, sharing the given material. */
 export function buildArmature(preset: string, material: Material): Armature {
   return new Armature(rigById(preset), material);
+}
+
+/** A figure read from a rigged file, sharing the given material. */
+export function importArmature(read: ReadRig, material: Material): Armature {
+  return new Armature(read.rig, material, SCENE_SCALE, {
+    geometry: read.mesh.geometry,
+    boneOrder: read.mesh.skeleton.bones.map((b) => read.sourceNames
+      ? Object.keys(read.sourceNames).find((k) => read.sourceNames[k] === b.name) ?? canonicalName(b.name)
+      : canonicalName(b.name)),
+  });
 }

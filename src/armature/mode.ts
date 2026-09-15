@@ -8,13 +8,43 @@ import { isTextEntryTarget } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
-import { Armature, buildArmature, type ArmatureState } from './Armature';
+import { Armature, buildArmature, importArmature, type ArmatureState } from './Armature';
+import { rigFromGLTF } from './glbRig';
+import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel } from './ArmaturePanel';
 import { armatureStamp, packArmature, unpackArmature } from './file';
 import { loadArmature, saveArmature, saveHandoff, type ArmatureFile } from './persist';
 
 const HISTORY_LIMIT = 64;
 const SAVE_GAP_MS = 400;
+/** The preset id a figure read from a file goes under. */
+const IMPORTED = 'imported';
+
+/** The rig of a model already parsed once this session, by its bytes. */
+const parsed = new WeakMap<ArrayBuffer, ReturnType<typeof rigFromGLTF>>();
+let pending: { bytes: ArrayBuffer; read: ReturnType<typeof rigFromGLTF> } | null = null;
+
+/**
+ * The rig of a loaded model. Parsing a glTF is asynchronous and building a
+ * figure is not, so the bytes are read once, up front, and the result is
+ * kept for the rebuilds that follow.
+ */
+function readModel(bytes: ArrayBuffer): ReturnType<typeof rigFromGLTF> {
+  const held = parsed.get(bytes) ?? (pending?.bytes === bytes ? pending.read : null);
+  if (!held) throw new Error('that model has not been read yet');
+  parsed.set(bytes, held);
+  return held;
+}
+
+/** Parse a .glb and derive its rig, before anything is built from it. */
+async function parseModel(bytes: ArrayBuffer): Promise<ReturnType<typeof rigFromGLTF>> {
+  const gltf = await getGLTFLoader().parseAsync(bytes.slice(0), '');
+  const read = rigFromGLTF(gltf, IMPORTED, 'Model');
+  read.rig.id = IMPORTED;
+  pending = { bytes, read };
+  parsed.set(bytes, read);
+  return read;
+}
 
 /**
  * Armature mode (owner design): a posable block figure as a subject of
@@ -36,8 +66,31 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   viewer.tapToFocus = false;
 
   const saved = await loadArmature();
+  if (saved?.model) {
+    try {
+      await parseModel(saved.model);
+    } catch (err) {
+      console.warn('armature: the saved model could not be read', err);
+      saved.model = undefined;
+      saved.state.preset = 'placeholder-male';
+    }
+  }
   let name = saved?.name ?? 'Armature';
-  let armature = buildArmature(saved?.state.preset ?? 'placeholder-male', viewer.materials.get(viewer.getMaterial()));
+  /**
+   * A figure read from a rigged file: its bytes, so it can be built again
+   * on the next visit, and the rig derived from them. The built-in presets
+   * are code and need none of this.
+   */
+  let model: { bytes: ArrayBuffer; name: string } | null =
+    saved?.model ? { bytes: saved.model, name: saved.modelName ?? 'Model' } : null;
+  const figureFor = (preset: string): Armature => {
+    const material = viewer.materials.get(viewer.getMaterial());
+    if (preset === IMPORTED && model) {
+      return importArmature(readModel(model.bytes), material);
+    }
+    return buildArmature(preset === IMPORTED ? 'placeholder-male' : preset, material);
+  };
+  let armature = figureFor(saved?.state.preset ?? 'placeholder-male');
   if (saved) {
     try {
       armature.restore(saved.state);
@@ -414,6 +467,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     state: armature.serialize(),
     look: viewer.getLook(),
     savedAt: Date.now(),
+    ...(model ? { model: model.bytes, modelName: model.name } : {}),
   });
   let saveTimer = 0;
   const flushSave = async (): Promise<void> => {
@@ -446,7 +500,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     const root = { position: armature.root.position.clone(), quaternion: armature.root.quaternion.clone() };
     const symmetry = armature.symmetry;
     armature.dispose();
-    armature = buildArmature(preset, viewer.materials.get(viewer.getMaterial()));
+    armature = figureFor(preset);
     armature.symmetry = symmetry;
     if (state) armature.restore(state);
     else if (!fresh) {
@@ -472,6 +526,35 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (parsed.look) await viewer.applyLook(parsed.look);
     frame();
   };
+  /**
+   * Take a rigged .glb as the figure: the bones become the rig, the skin
+   * becomes the shape. What the file does not say - a joint's limits, which
+   * bones a hand reaches on - is worked out and reported, so a model
+   * exported without the custom properties is stiff rather than broken.
+   */
+  const loadModel = async (file: File): Promise<void> => {
+    const bytes = await file.arrayBuffer();
+    let read: ReturnType<typeof rigFromGLTF>;
+    try {
+      read = await parseModel(bytes);
+    } catch (err) {
+      alert(`That model could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    model = { bytes, name: file.name };
+    name = file.name.replace(/\.(glb|gltf)$/i, '') || 'Model';
+    replaceFigure(IMPORTED, undefined, true);
+    frame();
+    if (read.inferred.length) {
+      console.info(`armature: ${read.inferred.join('; ')}`);
+    }
+    panel.setNote(
+      read.inferred.length
+        ? `${file.name}: ${read.inferred.join('; ')}.`
+        : `${file.name}: ${read.rig.bones.length} bones, ${read.rig.ik.length} reach chains.`,
+    );
+  };
+
   const send = async (resolution: number): Promise<void> => {
     const bake = armature.bakeWorld();
     await saveHandoff({
@@ -559,6 +642,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (f) void openFile(f);
   });
   document.body.appendChild(openInput);
+  const modelInput = document.createElement('input');
+  modelInput.type = 'file';
+  modelInput.accept = '.glb,.gltf,model/gltf-binary';
+  modelInput.hidden = true;
+  modelInput.addEventListener('change', () => {
+    const f = modelInput.files?.[0];
+    modelInput.value = '';
+    if (f) void loadModel(f);
+  });
+  document.body.appendChild(modelInput);
   const fileMenu = new TopMenu(
     'File',
     [
@@ -572,6 +665,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         },
       },
       { label: 'Open…', action: () => openInput.click() },
+      { label: 'Load model…', action: () => modelInput.click() },
       { label: 'Save', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
       { separator: true },
       { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
@@ -660,6 +754,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       syncHandles();
       commit();
     },
+    /** Load a rigged .glb as the figure (the console and the tests). */
+    loadModel,
+    modelName: () => model?.name ?? null,
     /** What the gizmo is showing, for the console and the tests. */
     gizmo: () => ({
       mode: gizmoMode,
@@ -713,6 +810,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     fileMenu.dispose();
     editMenu.dispose();
     openInput.remove();
+    modelInput.remove();
     delete (window as unknown as { __armature?: object }).__armature;
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false, mode: 'view' } }));
   };

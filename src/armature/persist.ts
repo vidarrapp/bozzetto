@@ -15,6 +15,13 @@ export interface ArmatureFile {
   state: ArmatureState;
   look?: LookState;
   savedAt: number;
+  /**
+   * A figure read from a rigged file keeps the file: its rig is derived
+   * from the bones, so without the bytes there is nothing to derive from
+   * on the next visit. Absent for the built-in presets, which are code.
+   */
+  model?: ArrayBuffer;
+  modelName?: string;
 }
 
 /**
