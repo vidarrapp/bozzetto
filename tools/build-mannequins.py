@@ -7,6 +7,11 @@ the app reads like any rigged model.
     blender -b --python tools/build-mannequins.py -- --bundle <dir> [--out <dir>] [--only <id,...>]
     python tools/build-mannequins.py --bundle <dir>          # with the bpy wheel
 
+Or inside Blender: open the bundle's human_base_meshes_bundle.blend, open
+this file in the Text editor (Text > Open), set the OPTIONS below if the
+defaults do not suit, and Run Script. The rigged figures appear in the
+scene, spaced out along X, and the .glb files are written.
+
 Each lump belongs to one bone (a thigh lump to thigh.L, every toe to
 foot.L, the ears and eyes to the head) and follows it rigidly, which is
 how the app's box figure works too. The bones themselves are the rig from
@@ -33,6 +38,31 @@ import sys
 
 import bpy
 from mathutils import Vector
+
+# --- OPTIONS (for the Text editor; the command line overrides them) --------
+# The unpacked bundle folder, the one holding human_base_meshes_bundle.blend.
+# Left empty, the file open in Blender is taken to be the bundle.
+BUNDLE = ""
+# Where the .glb files go. Left empty: the repository's public/assets/armature
+# when this script was opened from the repository, else beside the bundle.
+OUT = ""
+# Which figures to build: "" for all four, or ids separated by commas, e.g.
+# "mannequin-male-realistic".
+ONLY = ""
+# Where rig.json is (the app's rig). Left empty it is looked for beside this
+# script, then beside any text block opened from disk, then in the working
+# folder. Fill it in if you pasted the script rather than opening the file.
+RIG_JSON = ""
+# Whether to write the .glb files. Off, the figures are only built in the
+# scene, to look at and edit; export by hand from File > Export > glTF 2.0
+# with Custom Properties on, the armature and its mesh selected.
+EXPORT = True
+# Re-running clears the figures the last run made, so a tweak-and-run loop
+# does not pile up copies.
+REPLACE_PREVIOUS = True
+# ---------------------------------------------------------------------------
+
+BUNDLE_BLEND = 'human_base_meshes_bundle.blend'
 
 FIGURES = [
     dict(id='mannequin-male-realistic', label='Realistic male', src='Body Male - Primitve (Realistic)', rig='placeholder-male'),
@@ -65,28 +95,117 @@ PRIMARY = {
 INFER_LIMITS = ('forearm', 'shin')
 
 
+def script_dir():
+    """Where this script lives, when that can be known: run from a file
+    (__file__ is set) or from a text block opened from disk."""
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        pass
+    for text in bpy.data.texts:
+        if text.filepath and 'mannequin' in os.path.basename(text.filepath):
+            return os.path.dirname(bpy.path.abspath(text.filepath))
+    return None
+
+
+def find_rig_json(given):
+    tried = []
+    if given:
+        tried.append(bpy.path.abspath(given))
+    here = script_dir()
+    if here:
+        tried.append(os.path.join(here, 'rig.json'))
+    for text in bpy.data.texts:
+        if text.filepath:
+            tried.append(os.path.join(os.path.dirname(bpy.path.abspath(text.filepath)), 'rig.json'))
+    tried.append(os.path.join(os.getcwd(), 'rig.json'))
+    tried.append(os.path.join(os.getcwd(), 'tools', 'rig.json'))
+    for path in tried:
+        if os.path.isfile(path):
+            return path
+    raise SystemExit('rig.json not found. Set RIG_JSON at the top of the script to its full path. '
+                     'Looked in:\n  ' + '\n  '.join(tried))
+
+
 def parse_args():
+    """The command line after `--`, else the OPTIONS block."""
+    opts = {'bundle': BUNDLE, 'out': OUT, 'only': set(ONLY.split(',')) if ONLY else None,
+            'rig': RIG_JSON, 'export': EXPORT, 'replace': REPLACE_PREVIOUS}
     argv = sys.argv
-    argv = argv[argv.index('--') + 1:] if '--' in argv else argv[1:]
-    here = os.path.dirname(os.path.abspath(__file__))
-    opts = {'bundle': None, 'out': os.path.join(here, '..', 'public', 'assets', 'armature'), 'only': None,
-            'rig': os.path.join(here, 'rig.json')}
-    i = 0
-    while i < len(argv):
-        a = argv[i]
-        if a == '--bundle':
-            opts['bundle'] = argv[i + 1]; i += 2
-        elif a == '--out':
-            opts['out'] = argv[i + 1]; i += 2
-        elif a == '--only':
-            opts['only'] = set(argv[i + 1].split(',')); i += 2
-        elif a == '--rig':
-            opts['rig'] = argv[i + 1]; i += 2
-        else:
-            raise SystemExit(f'unknown argument {a!r}')
-    if not opts['bundle']:
-        raise SystemExit('--bundle <unpacked bundle folder> is required')
+    # Blender passes the script's own arguments after `--`; the bpy wheel
+    # runs the file as a plain Python script, where they follow it directly.
+    if '--' in argv:
+        argv = argv[argv.index('--') + 1:]
+    elif argv and os.path.basename(argv[0]).startswith('build-mannequins'):
+        argv = argv[1:]
+    else:
+        argv = []
+    if argv:
+        i = 0
+        while i < len(argv):
+            a = argv[i]
+            if a == '--bundle':
+                opts['bundle'] = argv[i + 1]; i += 2
+            elif a == '--out':
+                opts['out'] = argv[i + 1]; i += 2
+            elif a == '--only':
+                opts['only'] = set(argv[i + 1].split(',')); i += 2
+            elif a == '--rig':
+                opts['rig'] = argv[i + 1]; i += 2
+            elif a == '--no-export':
+                opts['export'] = False; i += 1
+            else:
+                raise SystemExit(f'unknown argument {a!r}')
     return opts
+
+
+def open_bundle(bundle):
+    """Have the bundle open: already open in Blender, or opened from the
+    folder given. Interactively, another file stays put - replacing the file
+    you are looking at (and the Text editor with it) is not this script's
+    call - so the message says what to open instead."""
+    current = bpy.data.filepath
+    if bundle:
+        blend = os.path.abspath(os.path.join(bpy.path.abspath(bundle), BUNDLE_BLEND))
+        if not os.path.exists(blend):
+            raise SystemExit(f'{blend} not found')
+        if current and os.path.abspath(current) == blend:
+            return blend
+        if current and not bpy.app.background:
+            raise SystemExit(f'Open {blend} in Blender first, then run the script (BUNDLE points at a '
+                             f'different file from the one that is open).')
+        bpy.ops.wm.open_mainfile(filepath=blend)
+        return blend
+    if not current or os.path.basename(current) != BUNDLE_BLEND:
+        raise SystemExit(f'Open the bundle\'s {BUNDLE_BLEND} in Blender first, or set BUNDLE at the top of '
+                         f'the script (or pass --bundle) to the unpacked bundle folder.')
+    return current
+
+
+def output_dir(given, blend):
+    if given:
+        return os.path.abspath(bpy.path.abspath(given))
+    here = script_dir()
+    if here:
+        repo = os.path.abspath(os.path.join(here, '..', 'public', 'assets', 'armature'))
+        if os.path.isdir(os.path.dirname(repo)):
+            return repo
+    return os.path.join(os.path.dirname(blend), 'mannequins')
+
+
+def clear_previous():
+    """Remove what an earlier run made, and only that: everything this
+    script creates is stamped, so nothing hand-made is touched."""
+    doomed = [o for o in bpy.data.objects if o.get('bz_generated')]
+    for ob in doomed:
+        data = ob.data
+        bpy.data.objects.remove(ob, do_unlink=True)
+        if data is not None and data.users == 0:
+            if isinstance(data, bpy.types.Mesh):
+                bpy.data.meshes.remove(data)
+            elif isinstance(data, bpy.types.Armature):
+                bpy.data.armatures.remove(data)
+    return len(doomed)
 
 
 # --- the bundle's lumps ---------------------------------------------------
@@ -416,26 +535,39 @@ def export_glb(arm_obj, ob, path):
 
 def main():
     opts = parse_args()
-    blend = os.path.join(opts['bundle'], 'human_base_meshes_bundle.blend')
-    if not os.path.exists(blend):
-        raise SystemExit(f'{blend} not found')
-    out = os.path.abspath(opts['out'])
-    os.makedirs(out, exist_ok=True)
-    bpy.ops.wm.open_mainfile(filepath=os.path.abspath(blend))
+    blend = open_bundle(opts['bundle'])
+    rig_path = find_rig_json(opts['rig'])
+    out = output_dir(opts['out'], blend)
+    if opts['export']:
+        os.makedirs(out, exist_ok=True)
+    if opts['replace']:
+        gone = clear_previous()
+        if gone:
+            print(f'cleared {gone} object(s) from the previous run')
     dg = bpy.context.evaluated_depsgraph_get()
+    built = []
     for fig in FIGURES:
         if opts['only'] and fig['id'] not in opts['only']:
             continue
-        rig = load_rig(opts['rig'], fig['rig'])
+        rig = load_rig(rig_path, fig['rig'])
         lumps = lumps_of(fig['src'], dg)
         arm_obj, ob, heads, tails, height = build_figure(fig, rig, lumps)
-        path = os.path.join(out, f"{fig['id']}.glb")
-        export_glb(arm_obj, ob, path)
+        note = ''
+        if opts['export']:
+            path = os.path.join(out, f"{fig['id']}.glb")
+            export_glb(arm_obj, ob, path)
+            note = f", {os.path.getsize(path) / 1024:.0f} KB to {path}"
+        built.append(arm_obj)
         print(f"{fig['id']}: {len(lumps)} lumps, {len(ob.data.vertices)} verts, {len(ob.data.polygons)} faces, "
-              f"{height:.2f} m, {os.path.getsize(path) / 1024:.0f} KB")
+              f"{height:.2f} m{note}")
         for name in ('pelvis', 'spine', 'chest', 'neck', 'head', 'clavicle.L', 'upperarm.L', 'forearm.L', 'hand.L', 'thigh.L', 'shin.L', 'foot.L'):
             h, t = heads[name], tails[name]
             print(f"    {name:12s} head=({h.x:6.3f},{h.y:6.3f},{h.z:6.3f}) tail=({t.x:6.3f},{t.y:6.3f},{t.z:6.3f}) len={(t - h).length:.3f}")
+    # Every figure is built and exported standing at the origin; in the
+    # scene they are then spaced out along X to be looked at side by side.
+    # Put an armature back at X = 0 before exporting it by hand.
+    for k, arm_obj in enumerate(built):
+        arm_obj.location.x = 1.5 * k
 
 
 main()

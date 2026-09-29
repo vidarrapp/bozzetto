@@ -184,10 +184,28 @@ blender -b --python tools/build-mannequins.py -- --bundle path/to/human-base-mes
 ```
 
 or `python tools/build-mannequins.py --bundle ...` with the `bpy` wheel.
-Run it inside Blender with the bundle open and the rigged figures appear in
-the scene, ready to edit - a planar-study version is a matter of reshaping
-the lumps and exporting again with Custom Properties on, as described
-under "Exporting for the app".
+
+Inside Blender (4.2 or newer):
+
+1. Download the Human Base Meshes bundle from blender.org's demo files
+   page (Asset Bundles) and unzip it.
+2. Open its `human_base_meshes_bundle.blend`.
+3. In a Text editor, Text > Open this file, `tools/build-mannequins.py`,
+   from the repository. Opening it from the repository is how the script
+   finds `rig.json` and the output folder; a pasted copy needs `RIG_JSON`
+   and `OUT` filled in at the top.
+4. Run Script (Alt+P). The four rigged figures appear in the scene as
+   `BZ_mannequin-...`, spaced out along X, and the `.glb` files land in
+   `public/assets/armature`. Set `ONLY` at the top for one figure, or
+   `EXPORT = False` to build without writing. Running again replaces the
+   figures of the last run.
+
+Each figure was exported standing at the origin before being moved along
+X, so to export one by hand after editing, put its armature back at X = 0,
+select the armature and its mesh, and File > Export > glTF 2.0 with Custom
+Properties on, as under "Exporting for the app". A planar-study version is
+that: reshape the lumps, export, drop the file over the one in
+`public/assets/armature`.
 
 The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
 chains); only their positions come from the lumps: a chain joint sits
