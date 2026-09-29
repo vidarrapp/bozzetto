@@ -9,8 +9,9 @@ export function packArmature(file: ArmatureFile): Blob {
   // The model itself does not travel in the text file - it is megabytes of
   // binary and JSON is the wrong envelope for it. What travels is the pose
   // and which model it was struck on; the file opens against whichever
-  // model is loaded, and says so when they disagree.
-  const { model: _model, ...rest } = file;
+  // model is loaded, and says so when they disagree. Nor does the gallery
+  // card's picture, which is binary too and belongs to this device.
+  const { model: _model, thumb: _thumb, ...rest } = file;
   return new Blob([JSON.stringify(rest, null, 1)], { type: 'application/json' });
 }
 

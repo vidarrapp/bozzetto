@@ -18,6 +18,8 @@ export interface ArmaturePanelHooks {
   handles(on: boolean): void;
   /** A handle was pinned in place, or let go. */
   pin(id: string, on: boolean): void;
+  /** Feet on the ground stand flat, or are left to their shins. */
+  plant(on: boolean): void;
   /** Where a chain's knee or elbow should point, degrees around the limb. */
   aim(id: string, degrees: number): void;
   send(resolution: number): void;
@@ -32,6 +34,7 @@ export interface ArmaturePanelHooks {
 export class ArmaturePanel extends SidePanel {
   private readonly presetSel: HTMLSelectElement;
   private readonly symBox: HTMLInputElement;
+  private readonly plantBox: HTMLInputElement;
   private readonly jointBody: HTMLDivElement;
   private readonly partBody: HTMLDivElement;
   private readonly pinBoxes = new Map<string, HTMLInputElement>();
@@ -91,8 +94,12 @@ export class ArmaturePanel extends SidePanel {
     reach.appendChild(
       checkbox('IK handles', true, (on) => this.hooks.handles(on)),
     );
+    const plant = checkbox('Plant feet', figure().plantFeet, (on) => this.hooks.plant(on));
+    this.plantBox = plant.querySelector('input') as HTMLInputElement;
+    reach.appendChild(plant);
     const pinHint = div('sculpt-panel__hint muted');
-    pinHint.textContent = 'Drag a handle and the limb reaches for it. A pinned handle stays put while the pelvis moves.';
+    pinHint.textContent =
+      'Drag a handle and the limb reaches for it. A pinned handle stays put while the pelvis moves; with Plant feet on, a foot on the ground stands flat.';
     reach.appendChild(pinHint);
     for (const c of figure().chains()) {
       const box = checkbox(`Pin ${c.label.toLowerCase()}`, false, (on) => this.hooks.pin(c.id, on));
@@ -146,6 +153,7 @@ export class ArmaturePanel extends SidePanel {
   refresh(selected: string | null): void {
     this.selected = selected;
     this.symBox.checked = this.figure().symmetry;
+    this.plantBox.checked = this.figure().plantFeet;
     for (const [id, box] of this.pinBoxes) box.checked = this.figure().isPinned(id);
     this.jointBody.replaceChildren();
     this.partBody.replaceChildren();

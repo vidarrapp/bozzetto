@@ -22,6 +22,11 @@ export interface ArmatureFile {
    */
   model?: ArrayBuffer;
   modelName?: string;
+  /**
+   * The gallery card's picture: a small JPEG of the viewport, taken on the
+   * way out. Only the autosave keeps it; the .armature file leaves it out.
+   */
+  thumb?: Blob;
 }
 
 /**

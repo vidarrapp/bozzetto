@@ -132,13 +132,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   }
   let armature = figureFor(wanted);
+  let restored = false;
   if (saved) {
     try {
       armature.restore(saved.state);
+      restored = true;
     } catch (err) {
       console.warn('armature: saved state ignored', err);
     }
   }
+  // A new armature starts with its feet pinned (owner call), taken where
+  // they stand once the figure is placed: pins captured on a pose that is
+  // then replaced would hold the feet somewhere they are not.
+  if (!restored) armature.pinFeet();
   viewer.adoptMesh(armature.mesh);
   // The viewer boots on a synthetic one-frame manifest whose subject is a
   // placeholder cube; sculpt mode swaps its geometry, this mode brings its
@@ -219,15 +225,28 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       if (!on) commit();
     });
     tc.addEventListener('objectChange', () => {
-      if (selected && armature.def(selected)?.kind !== 'root') armature.clampPose(selected);
-      // Pinned hands and feet hold their ground while the rest moves; this
-      // is what lets the pelvis drop into a crouch with the feet planted.
-      armature.applyPins();
-      syncHandles();
-      panel.refresh(selected);
-      scheduleSave();
+      afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
     });
   }
+  /**
+   * After a gizmo moved something: the root, or `joint` turned by hand. A
+   * joint is clamped to its limits and becomes its limb's aim, so the pin
+   * re-solve that follows keeps the knee or elbow where it was turned to.
+   */
+  const afterGizmo = (joint: string | null): void => {
+    if (joint) {
+      armature.clampPose(joint);
+      armature.followAims(joint);
+    }
+    // Pinned hands and feet hold their ground while the rest moves; this
+    // is what lets the pelvis drop into a crouch with the feet planted. A
+    // foot being turned by hand is not stood flat again under the gizmo,
+    // or no drag of it would show.
+    armature.applyPins(undefined, armature.plantFeet && !(joint && armature.isFoot(joint)));
+    syncHandles();
+    panel.refresh(selected);
+    scheduleSave();
+  };
   // Attached pickers need their matrices before the first hover.
   const placeControls = (): void => {
     for (const tc of controls) if (tc.enabled) tc.getHelper().updateMatrixWorld(true);
@@ -349,6 +368,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   };
   buildHandles();
+  // Placed now, not on the first interaction: until then every ball sat at
+  // the origin, between the feet, where a press could take the wrong one.
+  syncHandles();
 
   const raycaster = new Raycaster();
   const pointer = new Vector2();
@@ -364,6 +386,49 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   let aiming: string | null = null;
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
+  /** What the last press took: 'ik:<chain>', 'aim:<chain>', a part's bone, or nothing. */
+  let picked: string | null = null;
+  /** How near a ball's centre a press has to land to take it, in CSS pixels. */
+  const PICK_RADIUS = 18;
+  const projected = new Vector3();
+  /** Where a world point falls on the page, in CSS pixels; null behind the camera. */
+  const toPage = (world: Vector3): [number, number] | null => {
+    projected.copy(world).project(viewer.camera);
+    if (projected.z < -1 || projected.z > 1) return null;
+    const r = canvas.getBoundingClientRect();
+    return [r.left + ((projected.x + 1) / 2) * r.width, r.top + ((1 - projected.y) / 2) * r.height];
+  };
+  const ballOnScreen = (ball: Mesh): [number, number] | null => toPage(ball.getWorldPosition(new Vector3()));
+  /**
+   * The ball a press takes: the nearest visible one whose centre lands
+   * within PICK_RADIUS of the pointer on screen, however deep it sits
+   * (owner call: the handles win over the parts). A ball is a few pixels
+   * across, and a press that had to land on the ball itself, with a part
+   * right behind it taking every near miss, made the knees and elbows the
+   * hardest things on the figure to grab. On a tie the aim ball wins,
+   * being the smaller.
+   */
+  const ballUnder = (e: PointerEvent): { kind: 'ik' | 'aim'; id: string; ball: Mesh } | null => {
+    if (!handlesOn) return null;
+    let best: { kind: 'ik' | 'aim'; id: string; ball: Mesh } | null = null;
+    let nearest = Infinity;
+    const sets: Array<['ik' | 'aim', Map<string, Mesh>]> = [
+      ['aim', aims],
+      ['ik', handles],
+    ];
+    for (const [kind, balls] of sets) {
+      for (const [id, ball] of balls) {
+        const at = ball.visible ? ballOnScreen(ball) : null;
+        if (!at) continue;
+        const d = Math.hypot(at[0] - e.clientX, at[1] - e.clientY);
+        if (d <= PICK_RADIUS && d < nearest) {
+          nearest = d;
+          best = { kind, id, ball };
+        }
+      }
+    }
+    return best;
+  };
   const onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0 || dragging) return;
     // A press on a gizmo handle belongs to the gizmo (its hover set `axis`).
@@ -375,46 +440,39 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         axis: string | null;
       };
       t.pointerHover(t._getPointer(e));
-      if (t.axis) return;
+      if (t.axis) {
+        picked = null;
+        return;
+      }
     }
     aim(e);
-    // The IK balls come first: they are drawn over the figure, so they
-    // must be picked over it too. The small aim balls at the knees and
-    // elbows are picked ahead of the reach balls, being smaller.
-    if (handlesOn) {
-      const small = raycaster.intersectObjects([...aims.values()], false)[0];
-      if (small) {
-        aiming = small.object.name.slice(4);
-        viewer.setOrbitEnabled(false);
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {
-          // Synthetic events carry no active pointer; capture is best-effort.
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      const ball = raycaster.intersectObjects([...handles.values()], false)[0];
-      if (ball) {
-        reaching = ball.object.name.slice(3);
+    // The balls come before the parts: they are drawn over the figure, so
+    // they are picked over it too, near misses included.
+    const ball = ballUnder(e);
+    if (ball) {
+      picked = `${ball.kind}:${ball.id}`;
+      if (ball.kind === 'aim') {
+        aiming = ball.id;
+      } else {
+        reaching = ball.id;
         dragPlane.setFromNormalAndCoplanarPoint(
           viewer.camera.getWorldDirection(dragPoint).clone(),
-          ball.object.position,
+          ball.ball.position,
         );
-        viewer.setOrbitEnabled(false);
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {
-          // Synthetic events carry no active pointer; capture is best-effort.
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        return;
       }
+      viewer.setOrbitEnabled(false);
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
     }
     const hit = raycaster.intersectObject(armature.mesh, false)[0];
-    select(hit ? armature.boneAt(hit) : null);
+    picked = hit ? armature.boneAt(hit) : null;
+    select(picked);
   };
   const onPointerMove = (e: PointerEvent): void => {
     if (aiming) {
@@ -501,6 +559,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     applyState(next);
   };
 
+  /**
+   * The gallery card's picture. It is taken on the way out, and carried by
+   * every save in between: the autosave writes its record whole, and a
+   * record written without it would leave the card blank again.
+   */
+  let thumb: Blob | null = saved?.thumb instanceof Blob ? saved.thumb : null;
   const currentFile = (): ArmatureFile => ({
     kind: 'bozzetto-armature',
     v: 1,
@@ -509,6 +573,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     look: viewer.getLook(),
     savedAt: Date.now(),
     ...(model ? { model: model.bytes, modelName: model.name } : {}),
+    ...(thumb ? { thumb } : {}),
   });
   let saveTimer = 0;
   const flushSave = async (): Promise<void> => {
@@ -522,11 +587,45 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => void flushSave(), SAVE_GAP_MS);
   };
+  /**
+   * Picture the figure for the gallery card, as sculpt mode does its work,
+   * and save it with the rest. The balls, the gizmo and the selection wash
+   * stay out of the picture: they are the tool, not the figure.
+   */
+  const snapshot = async (): Promise<void> => {
+    const overlays: Object3D[] = [handleGroup, ...controls.map((tc) => tc.getHelper())];
+    if (highlight) overlays.push(highlight);
+    const shown = overlays.map((o) => o.visible);
+    for (const o of overlays) o.visible = false;
+    try {
+      thumb = await viewer.captureThumbnail(320);
+    } catch {
+      // Never block leaving the page over a picture.
+    } finally {
+      overlays.forEach((o, i) => (o.visible = shown[i]));
+    }
+    await flushSave();
+  };
   const onLookEdit = (): void => scheduleSave();
   document.addEventListener('input', onLookEdit);
   document.addEventListener('change', onLookEdit);
-  const onHidden = (): void => void flushSave();
+  // Leaving some other way - a reload, a closed tab: the record is saved at
+  // once, and the picture follows if the page lives long enough to take it
+  // (a page on its way out may never draw another frame).
+  const onHidden = (): void => {
+    void flushSave();
+    void snapshot();
+  };
   window.addEventListener('pagehide', onHidden);
+  const galleryLink = document.querySelector<HTMLAnchorElement>('.viewer-back');
+  const onLeave = (e: MouseEvent): void => {
+    if (!galleryLink || e.defaultPrevented || e.button !== 0) return;
+    e.preventDefault();
+    void snapshot().finally(() => {
+      window.location.href = galleryLink.href;
+    });
+  };
+  galleryLink?.addEventListener('click', onLeave);
 
   // --- the figure: presets and files ----------------------------------------------
   /**
@@ -556,11 +655,23 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.removeSculptExtra(armature.mesh);
     const placement = armature.placement();
     const symmetry = armature.symmetry;
+    const plant = armature.plantFeet;
+    const pinned = armature.chains().filter((c) => armature.isPinned(c.id)).map((c) => c.id);
     armature.dispose();
     armature = figureFor(preset);
     armature.symmetry = symmetry;
-    if (state) armature.restore(state);
-    else if (!fresh) armature.setPlacement(placement);
+    if (state) {
+      armature.restore(state);
+    } else if (fresh) {
+      armature.pinFeet();
+    } else {
+      // The new figure stands where the old one stood, with the same
+      // handles pinned - each taken where the new figure's hand or foot is,
+      // now that it has been placed - and planting as it was.
+      armature.setPlacement(placement);
+      armature.plantFeet = plant;
+      for (const id of pinned) armature.setPinned(id, true);
+    }
     viewer.adoptMesh(armature.mesh);
     buildHandles();
     syncHandles();
@@ -624,6 +735,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     window.location.href = '/?sculpt=1&handoff=1';
   };
 
+  /**
+   * Turn a joint by hand, as its sliders do: clamped, taken as its limb's
+   * aim, the pins re-solved around it - all but a foot's own planting,
+   * since standing it flat again would undo the turn.
+   */
+  const turnJoint = (bone: string, xyz: [number, number, number]): void => {
+    armature.setPoseEuler(bone, xyz[0], xyz[1], xyz[2]);
+    armature.followAims(bone);
+    armature.applyPins(undefined, armature.plantFeet && !armature.isFoot(bone));
+    placeControls();
+    syncHandles();
+    commit();
+  };
+
   // --- the panel --------------------------------------------------------------------
   const panel = new ArmaturePanel(
     () => armature,
@@ -644,13 +769,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         select(selected);
         commit();
       },
-      joint: (bone, xyz) => {
-        armature.setPoseEuler(bone, xyz[0], xyz[1], xyz[2]);
-        armature.applyPins();
-        placeControls();
-        syncHandles();
-        commit();
-      },
+      joint: turnJoint,
       proportions: (bone, p) => {
         armature.setProportions(bone, p);
         armature.applyPins();
@@ -664,6 +783,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       },
       pin: (id, on) => {
         armature.setPinned(id, on);
+        syncHandles();
+        commit();
+      },
+      plant: (on) => {
+        armature.plantFeet = on;
+        // On, it takes hold at once: the feet on the ground stand flat, the
+        // pinned ones keeping their marks. Off, nothing moves.
+        if (on) armature.applyPins();
+        placeControls();
         syncHandles();
         commit();
       },
@@ -808,6 +936,21 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       syncHandles();
       commit();
     },
+    /** Turn a joint to pose Euler degrees, as its sliders do. */
+    turn: (bone: string, x: number, y: number, z: number) => turnJoint(bone, [x, y, z]),
+    /**
+     * Move the pelvis by an offset, as a drag of its move gizmo does: in
+     * `steps` equal moves, each followed by what the gizmo's own change
+     * runs, and one undo step at the end.
+     */
+    moveRoot: (dx: number, dy: number, dz: number, steps = 1) => {
+      const n = Math.max(1, Math.round(steps));
+      for (let i = 0; i < n; i++) {
+        armature.root.position.add(new Vector3(dx / n, dy / n, dz / n));
+        afterGizmo(null);
+      }
+      commit();
+    },
     /** Load a rigged .glb as the figure (the console and the tests). */
     loadModel,
     /** Swap to a preset or a mannequin by id, fetched if need be. */
@@ -828,6 +971,21 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const c = armature.chain(id);
       return c ? armature.effectorWorld(c.effector, new Vector3()).toArray() : null;
     },
+    /**
+     * Where a ball ('ik:<chain>' or 'aim:<chain>') sits on the page: its
+     * centre and its drawn radius, in CSS pixels; null when it is not shown.
+     */
+    ballOnScreen: (name: string): [number, number, number] | null => {
+      const [kind, id] = [name.slice(0, name.indexOf(':')), name.slice(name.indexOf(':') + 1)];
+      const ball = (kind === 'aim' ? aims : kind === 'ik' ? handles : null)?.get(id);
+      const at = ball?.visible && handlesOn ? ballOnScreen(ball) : null;
+      if (!ball || !at) return null;
+      const up = new Vector3().setFromMatrixColumn(viewer.camera.matrixWorld, 1).normalize();
+      const rim = toPage(ball.getWorldPosition(new Vector3()).addScaledVector(up, ball.scale.x));
+      return [at[0], at[1], rim ? Math.hypot(rim[0] - at[0], rim[1] - at[1]) : 0];
+    },
+    /** What the last press on the figure took: 'ik:<chain>', 'aim:<chain>', a bone, or null. */
+    picked: () => picked,
     select,
     selected: () => selected,
     state: () => armature.serialize(),
@@ -836,6 +994,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     commit,
     send,
     save: flushSave,
+    /** Picture the figure for the gallery card and save, as leaving does. */
+    snapshot,
+    /** The .armature file File > Save would write, as text. */
+    pack: () => packArmature(currentFile()).text(),
     open: openFile,
     panel,
     file: currentFile,
@@ -852,6 +1014,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('input', onLookEdit);
     document.removeEventListener('change', onLookEdit);
     window.removeEventListener('pagehide', onHidden);
+    galleryLink?.removeEventListener('click', onLeave);
     select(null);
     viewer.setSculptVisible(true);
     for (const tc of controls) {

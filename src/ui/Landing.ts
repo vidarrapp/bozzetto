@@ -208,8 +208,16 @@ async function armatureCard(): Promise<HTMLElement | null> {
   const a = document.createElement('a');
   a.className = 'card card--sculpt card--armature';
   a.href = '/?armature=1';
+  // The picture is taken on the way out of the mode, as the sculpt card's
+  // is; an armature not yet left that way has none.
+  const url = file.thumb instanceof Blob ? URL.createObjectURL(file.thumb) : null;
+  const picture = url
+    ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
+      <img class="card__img" alt="" src="${url}" />`
+    : ''; // no picture: the gradient placeholder stands in
   a.innerHTML = `
     <div class="card__thumb">
+      ${picture}
       <span class="card__badge">In progress</span>
     </div>
     <div class="card__body">

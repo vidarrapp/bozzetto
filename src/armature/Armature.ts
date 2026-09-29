@@ -41,6 +41,8 @@ export interface ArmatureState {
   pins?: Record<string, [number, number, number]>;
   /** Where each chain's hinge aims, degrees around the limb; absent = 0. */
   aims?: Record<string, number>;
+  /** Feet on the ground stand flat (the Reach section's box); absent = on. */
+  plant?: boolean;
 }
 
 export interface Proportions {
@@ -53,6 +55,15 @@ const _q2 = new Quaternion();
 const _v = new Vector3();
 const _e = new Euler();
 const RAD = Math.PI / 180;
+
+/** The bones that stand on the ground: the name every rig here gives a foot. */
+const FOOT = /^foot(\.[LR])?$/;
+/**
+ * How near its rest height an ankle must be for the foot to count as on
+ * the ground, in metres: a centimetre and a half, so a foot put down by
+ * hand lands, and one lifted by any visible amount is off.
+ */
+const GROUND_BAND = 0.015;
 
 /**
  * A posable figure: the rig's bones as a three.js Bone tree, every block
@@ -80,11 +91,26 @@ export class Armature {
   readonly partBones = new Map<string, Bone>();
   /** Each part's box in its bone's frame, for highlights and pickers. */
   readonly partGeometry = new Map<string, BufferGeometry>();
-  /** Mirror pose edits onto the other side (the Armature panel's box). */
-  symmetry = true;
+  /**
+   * Mirror pose edits onto the other side (the Armature panel's box). Off
+   * to begin with (owner call): a figure is posed a limb at a time far more
+   * often than both at once.
+   */
+  symmetry = false;
+  /**
+   * Stand a foot flat whenever its sole is at the ground (the Reach
+   * section's box): after a reach, a pin re-solve, a pose reset.
+   */
+  plantFeet = true;
 
   private readonly defs = new Map<string, BoneDef>();
   private readonly rest = new Map<string, { local: Quaternion; offset: Vector3; length: number }>();
+  /** Each bone's rest frame in the world: its orientation and its head. */
+  private readonly restWorld = new Map<string, { q: Quaternion; head: Vector3 }>();
+  /** How far along its bone each chain's effector point sits, 0 head to 1 tail. */
+  private readonly effectorAt = new Map<string, number>();
+  /** The rig's feet, the bones planting stands on the ground. */
+  private readonly feet: string[] = [];
   private readonly pose = new Map<string, Quaternion>();
   private readonly props = new Map<string, Proportions>();
   private readonly limits = new Map<string, JointLimits>();
@@ -119,6 +145,8 @@ export class Armature {
       const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
       worldQ.set(def.name, q);
       worldP.set(def.name, head);
+      this.restWorld.set(def.name, { q: q.clone(), head: head.clone() });
+      if (FOOT.test(def.name)) this.feet.push(def.name);
       const bone = new Bone();
       bone.name = def.name;
       this.bones.set(def.name, bone);
@@ -140,6 +168,11 @@ export class Armature {
     const rootDef = rig.bones.find((b) => !b.parent)!;
     this.root = this.bones.get(rootDef.name)!;
     for (const def of rig.bones) this.limits.set(def.name, this.limitsFor(def, worldQ));
+    for (const c of rig.ik) {
+      const at = c.effectorAt;
+      if (typeof at === 'number' && Number.isFinite(at)) this.effectorAt.set(c.effector, Math.min(1, Math.max(0, at)));
+    }
+    this.restAims();
 
     // 2. The parts, one box each, in bind space (the rest pose), skinned to
     // their part bone. Built after the tree so rest world matrices exist.
@@ -390,16 +423,36 @@ export class Armature {
     this.setPoseEuler(def.mirror, _e.x / RAD, _e.y / RAD, _e.z / RAD, false);
   }
 
-  /** Every joint back to the rest pose (the root stays where it is). */
+  /**
+   * Every joint back to the rest pose (the root stays where it is). The
+   * feet on the ground stand flat, and every pin moves to where its handle
+   * now is: a pin left behind would pull the figure straight back into the
+   * pose it came from on the next move of the pelvis.
+   */
   resetPose(): void {
+    this.clearPose();
+    this.restAims();
+    if (this.plantFeet) this.plantGrounded();
+    for (const id of [...this.pins.keys()]) this.setPinned(id, true);
+  }
+
+  /** Every joint's pose back to rest, and nothing else. */
+  private clearPose(): void {
     for (const name of this.pose.keys()) this.setPoseEuler(name, 0, 0, 0, false);
   }
 
-  /** The left side's pose onto the right, or the other way round. */
+  /**
+   * The left side's pose onto the right, or the other way round, and the
+   * copied limbs' aims with it, read from where their knees and elbows now
+   * point: left at their old values, the next solve would turn the copied
+   * limbs back.
+   */
   mirrorPose(from: 'L' | 'R'): void {
     for (const def of this.rig.bones) {
       if (def.mirror && def.name.endsWith(`.${from}`)) this.mirrorPoseFrom(def.name);
     }
+    const to = from === 'L' ? '.R' : '.L';
+    for (const c of this.rig.ik) if (c.effector.endsWith(to)) this.readAim(c);
   }
 
   // --- proportions ------------------------------------------------------------
@@ -476,6 +529,46 @@ export class Armature {
   }
 
   /**
+   * Take the aim of every chain a joint belongs to from where its knee or
+   * elbow now points: for a joint turned by hand (and its mirror, when
+   * symmetry turned that too), so the next solve keeps the limb where the
+   * hand put it. Left alone, the aim swung it straight back on the first
+   * move of the pelvis - a snap.
+   */
+  followAims(bone: string, mirror = this.symmetry): void {
+    const other = mirror ? this.defs.get(bone)?.mirror : null;
+    for (const c of this.rig.ik) {
+      if (c.links.includes(bone) || (other && c.links.includes(other))) this.readAim(c);
+    }
+  }
+
+  /** A chain's aim, from where its knee or elbow points now; a straight limb keeps the one it had. */
+  private readAim(c: IKChainDef): void {
+    const knee = this.hingeWorld(c.id, new Vector3());
+    const a = knee ? this.aimFromPoint(c.id, knee) : null;
+    if (a !== null) this.aims.set(c.id, wrap180(a));
+  }
+
+  /**
+   * Every aim back to where its hinge points at rest. A rig's knees rest
+   * turned in or out of straight forward and its elbows off straight back -
+   * by twelve to thirty-seven degrees on the figures here - and an aim of
+   * zero swung a fresh or reset limb round by that much on its first solve.
+   */
+  private restAims(): void {
+    this.aims.clear();
+    for (const c of this.rig.ik) {
+      const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
+      const base = hingeIndex >= 0 ? this.restWorld.get(c.links[hingeIndex + 1] ?? '') : undefined;
+      const hinge = hingeIndex >= 0 ? this.restWorld.get(c.links[hingeIndex]) : undefined;
+      const end = this.restWorld.get(c.effector);
+      if (!c.poleRef || !base || !hinge || !end) continue;
+      const a = this.aroundLimb(c, base.head, end.head, hinge.head, new Quaternion());
+      if (a) this.aims.set(c.id, wrap180(a));
+    }
+  }
+
+  /**
    * Aim a chain's hinge: the knee or elbow swings around the line from the
    * shoulder (or hip) to the hand (or foot), which leaves the hand where it
    * is and turns the limb's bend plane. Mirrored to the other side with
@@ -505,6 +598,20 @@ export class Armature {
     const c = this.chain(id);
     if (!c) return;
     this.pins.set(id, this.effectorWorld(c.effector, new Vector3()));
+  }
+
+  /**
+   * Pin both feet where they stand, which is how a new figure starts
+   * (owner call): the pelvis can move from the first drag without taking
+   * the feet off the ground.
+   */
+  pinFeet(): void {
+    for (const c of this.rig.ik) if (FOOT.test(c.effector)) this.setPinned(c.id, true);
+  }
+
+  /** Whether a bone is one of the feet planting stands on the ground. */
+  isFoot(bone: string): boolean {
+    return this.feet.includes(bone);
   }
 
   /**
@@ -540,25 +647,53 @@ export class Armature {
 
   /**
    * The aim angle a world point asks for: where that point sits around the
-   * line from the limb's base joint to its far end. This is what a drag on
-   * the knee or elbow handle means.
+   * limb's own line, from its base joint to the joint at its end (the hip
+   * to the ankle, the shoulder to the wrist). This is what a drag on the
+   * knee or elbow handle means, and how the solver reads a hinge.
    */
   aimFromPoint(chainId: string, point: Vector3): number | null {
     const c = this.chain(chainId);
-    if (!c?.poleRef) return null;
-    const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
-    const base = hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex + 1]) : undefined;
-    if (!base) return null;
+    const hingeIndex = c ? c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge') : -1;
+    const base = c && hingeIndex >= 0 ? this.bones.get(c.links[hingeIndex + 1]) : undefined;
+    const end = c ? this.bones.get(c.effector) : undefined;
+    if (!c?.poleRef || !base || !end) return null;
     this.root.updateMatrixWorld(true);
-    const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
-    const axis = this.effectorWorld(c.effector, new Vector3()).sub(basePos);
+    const from = new Vector3().setFromMatrixPosition(base.matrixWorld);
+    const to = new Vector3().setFromMatrixPosition(end.matrixWorld);
+    return this.aroundLimb(c, from, to, point);
+  }
+
+  /**
+   * A point's angle around the line from `from` to `to`, in degrees from the
+   * rig's reference direction squared up to that line; null where the line
+   * is too short or the point sits on it.
+   *
+   * The reference turns with the bone the limb hangs from, the pelvis for
+   * a leg and the chest for an arm: "forward" is the figure's forward. Read
+   * as a fixed world direction, a figure turned by its pelvis had every
+   * knee swung back to face the old way on the next solve.
+   */
+  private aroundLimb(
+    c: IKChainDef,
+    from: Vector3,
+    to: Vector3,
+    point: Vector3,
+    frame = this.limbFrame(c, new Quaternion()),
+  ): number | null {
+    if (!c.poleRef) return null;
+    const axis = new Vector3().subVectors(to, from);
     if (axis.lengthSq() < 1e-8) return null;
     axis.normalize();
-    const ref = new Vector3().fromArray(c.poleRef);
+    // Zero aim is the rig's reference direction, squared up to the limb.
+    const ref = new Vector3().fromArray(c.poleRef).applyQuaternion(frame);
     const zero = ref.clone().sub(axis.clone().multiplyScalar(ref.dot(axis)));
+    if (zero.lengthSq() < 1e-6) {
+      const up = new Vector3(0, 1, 0).applyQuaternion(frame);
+      zero.copy(up).sub(axis.clone().multiplyScalar(up.dot(axis)));
+    }
     if (zero.lengthSq() < 1e-6) return null;
     zero.normalize();
-    const want = point.clone().sub(basePos);
+    const want = new Vector3().subVectors(point, from);
     want.sub(axis.clone().multiplyScalar(want.dot(axis)));
     if (want.lengthSq() < 1e-6) return null;
     want.normalize();
@@ -566,14 +701,32 @@ export class Armature {
     return (Math.atan2(side, zero.dot(want)) * 180) / Math.PI;
   }
 
-  /** Where a bone's far end is in the world (the point a handle sits on). */
-  effectorWorld(bone: string, out: Vector3): Vector3 {
+  /**
+   * How far the bone a chain hangs from - the parent of its last link - has
+   * turned from its rest, in the world. The chain's own links are no use
+   * for this: the solve turns them.
+   */
+  private limbFrame(c: IKChainDef, out: Quaternion): Quaternion {
+    const top = this.bones.get(c.links[c.links.length - 1]);
+    const anchor = top?.parent;
+    const rest = anchor ? this.restWorld.get(anchor.name) : undefined;
+    if (!anchor || !rest || this.bones.get(anchor.name) !== anchor) return out.identity();
+    return anchor.getWorldQuaternion(out).multiply(_q2.copy(rest.q).invert());
+  }
+
+  /**
+   * Where a chain's handle sits on its effector bone, in the world: the
+   * point `effectorAt` of the way from the bone's head to its tail, which
+   * is the tail unless the chain says otherwise (a foot says its middle).
+   * `at` asks for another point along the bone.
+   */
+  effectorWorld(bone: string, out: Vector3, at = this.effectorAt.get(bone) ?? 1): Vector3 {
     const b = this.bones.get(bone);
     const rest = this.rest.get(bone);
     if (!b || !rest) return out.set(0, 0, 0);
     this.mesh.updateMatrixWorld(true);
     const p = this.props.get(bone) ?? { size: 1, length: 1 };
-    return out.set(0, rest.length * p.length, 0).applyMatrix4(b.matrixWorld);
+    return out.set(0, rest.length * p.length * at, 0).applyMatrix4(b.matrixWorld);
   }
 
   /** Where a bone's joint, its head, is in the world. */
@@ -585,11 +738,140 @@ export class Armature {
   }
 
   /**
-   * Reach a handle towards a world point, by cyclic coordinate descent:
-   * each link in turn swings so the effector points from that joint at the
-   * target instead of at itself, and the swing is written back THROUGH the
-   * pose clamp, so a knee cannot bend backwards to get there and a
-   * symmetric figure mirrors as it reaches.
+   * Reach a handle towards a world point. A foot that would stand on the
+   * ground there is planted on it (see plantOn); anything else reaches as
+   * a limb always has, a foot following its shin. After a foot's reach the
+   * other feet on the ground stand flat too, since a mirrored reach moves
+   * the other leg as well.
+   */
+  reach(chainId: string, target: Vector3, iterations = 12, mirror = this.symmetry, plant = this.plantFeet): void {
+    const c = this.chain(chainId);
+    if (!c || !this.bones.has(c.effector)) return;
+    this.reachChain(c, target, iterations, mirror, plant);
+    if (plant && this.isFoot(c.effector)) this.plantGrounded(this.heldFeet(c.effector));
+  }
+
+  /** One chain's reach, planted where the ground is and planting is on. */
+  private reachChain(c: IKChainDef, target: Vector3, iterations: number, mirror: boolean, plant: boolean): void {
+    if (plant && this.isFoot(c.effector) && this.plantOn(c, target, iterations, mirror)) return;
+    this.solve(c, target, iterations, mirror, this.effectorAt.get(c.effector) ?? 1);
+  }
+
+  /**
+   * Plant a foot with its handle on `target`, if a flat foot there stands
+   * on the ground: the ankle is solved for the place a flat foot puts it,
+   * then the foot is stood flat on it. Solving for the ankle rather than
+   * the handle is what keeps a pinned foot on its pin: flattening a foot
+   * after the leg has reached turns it about the ankle and carries the
+   * handle off the mark by the whole of the correction.
+   *
+   * The ankle's limits can stop a foot short of flat - a deep crouch
+   * folds the ankle further than it goes - and then the handle misses by
+   * what the foot still leans, so the ankle is aimed again for the foot as
+   * it stands, a round or two more. False, with the leg wherever the solve
+   * left it, when the ankle does not end on the ground: the point is out of
+   * reach of a flat foot, or the lean has lifted the heel; the caller then
+   * reaches as for a foot in the air.
+   */
+  private plantOn(c: IKChainDef, target: Vector3, iterations: number, mirror: boolean): boolean {
+    const foot = c.effector;
+    const rest = this.rest.get(foot);
+    if (!rest) return false;
+    const p = this.props.get(foot) ?? { size: 1, length: 1 };
+    const along = new Vector3(0, rest.length * p.length * (this.effectorAt.get(foot) ?? 1), 0);
+    const ankle = along.applyQuaternion(this.flatQuaternion(foot, new Quaternion())).negate().add(target);
+    if (!this.onGround(foot, ankle.y)) return false;
+    const now = new Vector3();
+    const tip = new Vector3();
+    const next = new Vector3();
+    for (let round = 0; round < 3; round++) {
+      this.solve(c, ankle, iterations, mirror, 0);
+      this.jointWorld(foot, now);
+      if (!this.onGround(foot, now.y)) return false;
+      this.setFlat(foot);
+      this.effectorWorld(foot, tip);
+      next.copy(now).add(target).sub(tip);
+      if (next.distanceToSquared(ankle) < 1e-4) break;
+      ankle.copy(next);
+    }
+    return true;
+  }
+
+  /**
+   * Where the figure faces: its placement's turn about world Y, without
+   * any lean or roll (the twist part of a swing-twist split, which is the
+   * same whichever order the lean was put on in).
+   */
+  private heading(out: Quaternion): Quaternion {
+    const rest = this.rest.get(this.root.name)!;
+    out.copy(this.root.quaternion).multiply(_q2.copy(rest.local).invert());
+    out.set(0, out.y, 0, out.w);
+    return out.lengthSq() < 1e-12 ? out.identity() : out.normalize();
+  }
+
+  /** A foot's world orientation standing flat: as it rests, turned the way the figure faces. */
+  private flatQuaternion(foot: string, out: Quaternion): Quaternion {
+    this.heading(out);
+    const restQ = this.restWorld.get(foot)?.q;
+    return restQ ? out.multiply(restQ) : out;
+  }
+
+  /**
+   * Stand a foot flat on the ground: the pose that gives it its flat
+   * orientation under the shin as the shin now stands, clamped to the
+   * ankle's limits like any pose. It turns about the ankle, so nothing
+   * above the foot moves.
+   */
+  private setFlat(foot: string): void {
+    const bone = this.bones.get(foot);
+    const rest = this.rest.get(foot);
+    if (!bone?.parent || !rest) return;
+    this.root.updateMatrixWorld(true);
+    const want = this.flatQuaternion(foot, new Quaternion());
+    const parentQ = bone.parent.getWorldQuaternion(new Quaternion());
+    // pose = restLocal^-1 * parentWorld^-1 * wantedWorld
+    want.premultiply(parentQ.invert()).premultiply(parentQ.copy(rest.local).invert());
+    _e.setFromQuaternion(want, 'XYZ');
+    this.setPoseEuler(foot, _e.x / RAD, _e.y / RAD, _e.z / RAD, false);
+  }
+
+  /** Whether an ankle at height `y` has its foot on the ground: near the height it rests at. */
+  private onGround(foot: string, y: number): boolean {
+    const rest = this.restWorld.get(foot);
+    return !!rest && Math.abs(y - rest.head.y) <= GROUND_BAND * this.scale;
+  }
+
+  /** Stand flat every foot whose ankle is on the ground, but those in `skip`. */
+  private plantGrounded(skip?: Set<string>): void {
+    const ankle = new Vector3();
+    for (const foot of this.feet) {
+      if (skip?.has(foot) || !this.jointWorld(foot, ankle)) continue;
+      if (this.onGround(foot, ankle.y)) this.setFlat(foot);
+    }
+  }
+
+  /**
+   * The feet whose planting their own solve decides: every pinned one, and
+   * `also`, a foot just reached. Flattening one of those about its ankle
+   * afterwards would carry its handle off the mark it was solved for.
+   */
+  private heldFeet(also?: string): Set<string> {
+    const out = new Set<string>();
+    if (also) out.add(also);
+    for (const id of this.pins.keys()) {
+      const foot = this.chain(id)?.effector;
+      if (foot) out.add(foot);
+    }
+    return out;
+  }
+
+  /**
+   * Bring a point on the chain's effector bone - `at` of the way from its
+   * head to its tail - to a world point, by cyclic coordinate descent:
+   * each link in turn swings so the point sits, seen from that joint, on
+   * the target instead of where it is, and the swing is written back
+   * THROUGH the pose clamp, so a knee cannot bend backwards to get there
+   * and a symmetric figure mirrors as it reaches.
    *
    * three ships a CCD solver, and it is not usable here: it clamps
    * `link.rotation`, the bone's whole local rotation, while a limit in this
@@ -598,9 +880,7 @@ export class Armature {
    * would clamp the rest away. The loop below is the same algorithm over
    * the representation that has the limits in it.
    */
-  reach(chainId: string, target: Vector3, iterations = 12, mirror = this.symmetry): void {
-    const c = this.chain(chainId);
-    if (!c || !this.bones.has(c.effector)) return;
+  private solve(c: IKChainDef, target: Vector3, iterations: number, mirror: boolean, at: number): void {
     const tip = new Vector3();
     const toTip = new Vector3();
     const toTarget = new Vector3();
@@ -621,7 +901,7 @@ export class Armature {
     const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
     const twoBone = hingeIndex >= 0 && hingeIndex + 1 < c.links.length;
     for (let i = 0; i < iterations; i++) {
-      if (twoBone) this.bendHinge(c, hingeIndex, target, mirror);
+      if (twoBone) this.bendHinge(c, hingeIndex, target, mirror, at);
       // The aim gets the first passes; the rest belong to position. An aim
       // the joint cannot twist to would otherwise push every pass while
       // the descent pulls back, and the two would never settle - so the
@@ -635,7 +915,7 @@ export class Armature {
         const rest = this.rest.get(name);
         if (!link || !rest) continue;
         this.root.updateMatrixWorld(true);
-        this.effectorWorld(c.effector, tip);
+        this.effectorWorld(c.effector, tip, at);
         joint.setFromMatrixPosition(link.matrixWorld);
         toTip.subVectors(tip, joint);
         toTarget.subVectors(target, joint);
@@ -657,7 +937,7 @@ export class Armature {
       }
       if (!moved) break;
       this.root.updateMatrixWorld(true);
-      this.effectorWorld(c.effector, tip);
+      this.effectorWorld(c.effector, tip, at);
       if (tip.distanceToSquared(target) < 1e-4) break;
     }
   }
@@ -668,30 +948,34 @@ export class Armature {
    * effector, so this never moves the hand or the foot - only the plane
    * the elbow or knee lives in. The step is the DIFFERENCE from where the
    * hinge points now, so it converges instead of accumulating.
+   *
+   * Where it points now is read against the limb's own line, to the ankle
+   * or the wrist, not against the line to the handle. A foot held by its
+   * middle, or by its toe as it used to be, sits well ahead of the ankle,
+   * and against the line to it the knee of a nearly straight leg reads as
+   * pointing backwards: the first solve after the pelvis moved turned the
+   * whole leg half round to "fix" it, which is how pinned feet snapped
+   * round when the hips were dragged (owner report).
    */
   private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
-    const ref = c.poleRef;
     const baseName = c.links[hingeIndex + 1];
     const base = this.bones.get(baseName);
     const hinge = this.bones.get(c.links[hingeIndex]);
+    const end = this.bones.get(c.effector);
     const rest = this.rest.get(baseName);
-    if (!ref || !base || !hinge || !rest) return;
+    if (!c.poleRef || !base || !hinge || !end || !rest) return;
     this.root.updateMatrixWorld(true);
     const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
     const axis = new Vector3().subVectors(target, basePos);
     if (axis.lengthSq() < 1e-8) return;
     axis.normalize();
-    // Zero aim is the rig's reference direction, squared up to the limb.
-    const zero = new Vector3().fromArray(ref).sub(axis.clone().multiplyScalar(new Vector3().fromArray(ref).dot(axis)));
-    if (zero.lengthSq() < 1e-6) zero.set(0, 1, 0).sub(axis.clone().multiplyScalar(axis.y));
-    if (zero.lengthSq() < 1e-6) return;
-    zero.normalize();
-    const knee = new Vector3().setFromMatrixPosition(hinge.matrixWorld).sub(basePos);
-    knee.sub(axis.clone().multiplyScalar(knee.dot(axis)));
-    if (knee.lengthSq() < 1e-6) return; // a straight limb has no bend plane
-    knee.normalize();
-    const side = new Vector3().crossVectors(zero, knee).dot(axis);
-    const now = (Math.atan2(side, zero.dot(knee)) * 180) / Math.PI;
+    const now = this.aroundLimb(
+      c,
+      basePos,
+      new Vector3().setFromMatrixPosition(end.matrixWorld),
+      new Vector3().setFromMatrixPosition(hinge.matrixWorld),
+    );
+    if (now === null) return; // a straight limb has no bend plane
     const delta = wrap180(this.getAim(c.id) - now);
     if (Math.abs(delta) < 0.05) return;
     const swing = new Quaternion().setFromAxisAngle(axis, (delta * Math.PI) / 180);
@@ -714,7 +998,7 @@ export class Armature {
    * joint is allowed to bend, and straightens out for anything further
    * away than the limb is long.
    */
-  private bendHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
+  private bendHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean, at: number): void {
     const hinge = c.links[hingeIndex];
     const base = this.bones.get(c.links[hingeIndex + 1]);
     const knee = this.bones.get(hinge);
@@ -722,7 +1006,7 @@ export class Armature {
     this.root.updateMatrixWorld(true);
     const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
     const kneePos = new Vector3().setFromMatrixPosition(knee.matrixWorld);
-    const tip = this.effectorWorld(c.effector, new Vector3());
+    const tip = this.effectorWorld(c.effector, new Vector3(), at);
     const a = basePos.distanceTo(kneePos);
     // The hinge-to-tip distance is fixed: nothing between them bends.
     const b = kneePos.distanceTo(tip);
@@ -749,14 +1033,19 @@ export class Armature {
   }
 
   /**
-   * Put every pinned handle back on its mark. Run after anything that moves
-   * a pinned limb without meaning to - the pelvis being dragged, a joint
-   * further up the chain being turned, a part getting longer.
+   * Put every pinned handle back on its mark, then stand flat whichever
+   * other feet are on the ground. Run after anything that moves a pinned
+   * limb without meaning to - the pelvis being dragged, a joint further up
+   * the chain being turned, a part getting longer. `except` is a chain
+   * just reached, left as that reach put it; `plant` false leaves every
+   * foot's turn as it is, for a foot being turned by hand.
    */
-  applyPins(except?: string): void {
+  applyPins(except?: string, plant = this.plantFeet): void {
     for (const [id, target] of this.pins) {
-      if (id !== except) this.reach(id, target, 10, false);
+      const c = this.chain(id);
+      if (c && id !== except) this.reachChain(c, target, 10, false, plant);
     }
+    if (plant) this.plantGrounded(this.heldFeet(except ? this.chain(except)?.effector : undefined));
   }
 
   /** Move a pin to where its handle stands now (it was just dragged). */
@@ -857,16 +1146,34 @@ export class Armature {
       proportions,
       pins,
       aims,
+      plant: this.plantFeet,
     };
   }
 
-  /** Apply a saved state (same preset). Unknown bones are ignored. */
+  /**
+   * Apply a saved state (same preset). Unknown bones are ignored.
+   *
+   * A state written before feet were planted (it has no `plant`) is brought
+   * up to date on the way in: its feet on the ground stand flat, and its
+   * foot pins move to the middle of the foot, where the reach takes hold
+   * now. They were held at the toe, and the first move of the pelvis would
+   * have pulled each foot forward by half its length to put its middle
+   * there. Its aims are read from its pose: they were measured another way
+   * then, and the first solve would have turned each limb to match. One
+   * older still, saved before pins were, is a new figure as far as pins
+   * go, and gets its feet pinned.
+   *
+   * A state written since was planted as it was made, so it is taken as it
+   * stands: planting it again would undo a foot turned by hand on the
+   * ground, and undo, redo and a reload would each show something other
+   * than what was saved.
+   */
   restore(state: ArmatureState): void {
     if (state.root) {
       this.root.position.fromArray(state.root.position);
       this.root.quaternion.fromArray(state.root.quaternion);
     }
-    this.resetPose();
+    this.clearPose();
     for (const name of this.props.keys()) this.setProportions(name, { size: 1, length: 1 }, false);
     for (const [name, p] of Object.entries(state.proportions ?? {})) {
       if (this.props.has(name)) this.setProportions(name, p, false);
@@ -878,11 +1185,21 @@ export class Armature {
     for (const [id, a] of Object.entries(state.aims ?? {})) {
       if (this.chain(id) && typeof a === 'number' && Number.isFinite(a)) this.aims.set(id, wrap180(a));
     }
+    this.plantFeet = state.plant !== false;
     this.pins.clear();
     for (const [id, p] of Object.entries(state.pins ?? {})) {
       if (this.chain(id) && Array.isArray(p) && p.length === 3) this.pins.set(id, new Vector3(p[0], p[1], p[2]));
     }
     this.mesh.updateMatrixWorld(true);
+    if (state.plant === undefined) {
+      for (const c of this.rig.ik) this.readAim(c);
+      if (this.plantFeet) this.plantGrounded();
+      for (const id of [...this.pins.keys()]) {
+        const c = this.chain(id);
+        if (c && (this.effectorAt.get(c.effector) ?? 1) !== 1) this.setPinned(id, true);
+      }
+    }
+    if (state.pins === undefined) this.pinFeet();
   }
 
   dispose(): void {

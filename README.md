@@ -98,18 +98,30 @@ open `/?armature=1`); guests see the plain New sculpt tile.
 
 - **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
   that joint's limits: hinges (elbows, knees) show one ring plus a little
-  twist, ball joints three. Symmetry (`X`, on by default) mirrors every edit
-  to the other side through the pelvis's own frame. The pelvis is the root:
-  its gizmo moves and turns the whole figure (`W` selects it).
-- **Reach.** A ball sits at each hand, foot and the top of the head. Drag
-  one and the limb reaches for it, inside the same joint limits. **Pin** a
-  ball and it holds its place in the world while the rest of the figure
-  moves, so the pelvis can drop into a crouch with the feet planted or the
-  body can lean away from a hand that stays put.
+  twist, ball joints three. Symmetry (`X`, off to begin with) mirrors every
+  edit to the other side through the pelvis's own frame. The pelvis is the
+  root: its gizmo moves and turns the whole figure (`W` selects it).
+- **Reach.** A ball sits at each hand, the middle of each foot and the top
+  of the head. Drag one and the limb reaches for it, inside the same joint
+  limits; a foot is held by its middle, so it pivots there rather than
+  swinging round its toe. **Pin** a ball and it holds its place in the world
+  while the rest of the figure moves, so the pelvis can drop into a crouch
+  with the feet planted or the body can lean away from a hand that stays
+  put. Both feet start pinned where they stand, and **Reset pose** moves
+  every pin to where the reset leaves its hand or foot. With **Plant feet**
+  on (the Reach section's box, on by default), a foot on the ground stands
+  flat, facing the way the figure faces, after every reach, pin and reset:
+  in a deep crouch it stays as flat as the ankle bends, then the heel lifts.
+  A foot off the ground follows its shin; one on the ground can still be
+  turned by hand, until the next reach or move of the pelvis stands it flat
+  again. The balls take the click over the parts: a press within 18 pixels
+  of one takes it, even where a part is in front.
 - **Aim.** A smaller ball sits at each knee and elbow. Drag it and the bend
   swings around the limb without moving the hand or the foot: a knee points
-  forward by default, an elbow back. The Tool panel has the same as an
-  **Aim** slider when a knee or elbow is selected.
+  forward, an elbow back, as the figure faces, and each starts where it
+  points at rest. A knee or elbow turned by hand keeps its new direction.
+  The Tool panel has the same as an **Aim** slider when a knee or elbow is
+  selected.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
   stretches the part along its bone and moves the child joints with it.
   Mirrored while symmetry is on.
@@ -121,8 +133,10 @@ open `/?armature=1`); guests see the plain New sculpt tile.
   the same numbers, so a figure modelled against it drops straight in; see
   `tools/README.md`.
 - **Files.** The figure autosaves on this device and shows as a card in the
-  gallery. **File → Save** writes an `.armature` file (plain JSON: preset,
-  pose, proportions and the lighting), **File → Open** reads one back.
+  gallery, with a picture of it taken as you leave through the Gallery
+  link. **File → Save** writes an `.armature` file (plain JSON: preset,
+  pose, proportions, pins and the lighting; not the picture), **File → Open**
+  reads one back.
 - **Send to Sculpt** voxelises the posed figure into one closed object at
   the resolution on the slider and opens Sculpt mode with it; a sculpt with work in
   it gets the figure as an extra object instead.
@@ -298,6 +312,13 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **The deltoid moves with the arm.** The shoulder lump now rides on the upper arm rather than the clavicle, and the shoulder joint sits in its middle, so a raised arm turns the shoulder cap about its own centre, as on a wooden mannequin, instead of swinging out from under it.
 - **Knees fold forward and elbows back on every mannequin.** The stylized male's knees bent backwards: the files carried no knee or elbow limits, and the app took the fold direction from the bend each joint rests with, which on that figure was a fraction of a degree past straight. The mannequins now carry their own knee and elbow limits, folding the anatomical way through a range sized from each figure's rest bend.
 - **The head reaches through the spine.** Dragging the head's ball bends the neck, the chest and now the spine too, so a head drawn forward or aside takes the back with it.
+- **Symmetry starts off** in Armature mode. A figure is posed a limb at a time far more often than both at once; `X` and the panel's box still turn it on.
+- **Both feet start pinned**, where the new figure stands, so the pelvis can drop into a crouch or lean from the first drag without the feet leaving the ground. A file from before pins were saved opens the same way, and **Reset pose** now moves every pin to where the reset leaves its hand or foot instead of pulling the figure back into the old pose on the next move.
+- **Pinned feet no longer snap round when the pelvis moves.** A knee's aim was read around the line from the hip to the foot's ball, which sits well ahead of the ankle, and against that line the knee of a nearly straight leg reads as pointing backwards: the first solve after the pelvis moved turned each leg half round to put it right, on every figure. It is read around the hip-to-ankle line now, and three smaller snaps of the same kind went with it: the aim's forward turns with the figure rather than staying world forward, each knee and elbow starts from where it points at rest rather than being swung to straight forward or back on its first solve (by up to 37° on the mannequins), and one turned by hand keeps its new direction. A pin beyond the leg's reach leaves the foot as near as the leg gets.
+- **The feet reach from their middle.** A foot's ball and its pin sit halfway along the foot rather than at the toe, so a pinned foot pivots about its middle instead of swinging round its toe; the hands and the head are held by their tips as before. Files saved earlier have their foot pins moved to the middle of the foot as they open.
+- **Plant feet.** A foot on the ground stands flat, facing the way the figure faces, after a reach, a pinned foot's re-solve or a pose reset; in a deep crouch it stays as flat as the ankle bends, then the heel lifts. A foot off the ground follows its shin as before. On by default, with a box in the Reach section, and kept with the figure.
+- **The balls win the click.** A press within 18 pixels of a reach or aim ball takes it, even where a part is in front of the ball; the knee and elbow balls used to lose most presses to the limb around them. The balls are also in place from the start, where they used to wait at the figure's feet until the first click.
+- **The armature's gallery card has a picture.** The figure is photographed without its balls and gizmo as you leave through the Gallery link, and as the page closes where there is time, and the picture is kept with the autosave; the `.armature` file leaves it out.
 
 ### v1.2
 
