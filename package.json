@@ -27,7 +27,9 @@
     "dist:desktop": "npm run build:desktop && electron-builder",
     "rig:json": "node tools/dump-rig.mjs",
     "rig:fixture": "node tools/make-test-glb.mjs && node tools/make-test-glb.mjs --bare",
-    "rig:check": "node tools/inspect-glb.mjs"
+    "rig:check": "node tools/inspect-glb.mjs",
+    "e2e": "node tests/e2e/run.mjs",
+    "e2e:build": "npm run build:test && node tests/e2e/run.mjs"
   },
   "dependencies": {
     "@flaticon/flaticon-uicons": "^3.3.1",
