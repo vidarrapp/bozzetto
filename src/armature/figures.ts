@@ -1,3 +1,5 @@
+import { MODEL_REVISION } from '../viewer/assetVersion';
+
 /**
  * The mannequins: Blender Studio's "primitive" figures from the Human Base
  * Meshes bundle (CC0), rigged onto the app's own bones by
@@ -27,7 +29,7 @@ export function figureById(id: string): FigureInfo | undefined {
 }
 
 export function figureUrl(id: string): string {
-  return `/assets/armature/${id}.glb`;
+  return `/assets/armature/${id}.glb?r=${MODEL_REVISION}`;
 }
 
 const inflight = new Map<string, Promise<ArrayBuffer>>();

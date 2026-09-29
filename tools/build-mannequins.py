@@ -240,7 +240,19 @@ class Lump:
             mw = ev.matrix_world
             self.local = [v.co.copy() for v in me.vertices]
             self.world = [mw @ v for v in self.local]
+            # The bundle's right-hand lumps are the left ones mirrored, with
+            # a negative scale: a matrix with a negative determinant. A
+            # reflection turns every polygon's corners the other way round,
+            # so baked into world space as authored its faces would wind
+            # inward and its normals point into the lump. Blender allows for
+            # that when it draws an object through its matrix; baked, the
+            # corners have to be put back in order here. The first corner
+            # stays first, so a quad split into triangles from it is cut
+            # along the diagonal that mirrors the left lump's.
+            self.mirrored = mw.determinant() < 0
             self.polys = [tuple(p.vertices) for p in me.polygons]
+            if self.mirrored:
+                self.polys = [(q[0],) + q[:0:-1] for q in self.polys]
         finally:
             ev.to_mesh_clear()
         self.matrix = ev.matrix_world.copy()
@@ -279,6 +291,35 @@ def lumps_of(colname, dg):
     lumps = [Lump(o, dg) for o in objs]
     recentre(lumps)
     return lumps
+
+
+def signed_volume(points, polys):
+    """The volume a closed mesh encloses, positive when its faces wind
+    outward: each face fanned into triangles, each triangle the signed
+    volume a . (b x c) / 6 of the tetrahedron it makes with the origin."""
+    total = 0.0
+    for poly in polys:
+        a = points[poly[0]]
+        for k in range(1, len(poly) - 1):
+            total += a.dot(points[poly[k]].cross(points[poly[k + 1]])) / 6
+    return total
+
+
+def check_outward(fig, lumps):
+    """Every lump that goes into the figure is closed, so its signed
+    volume says which way it faces: a negative one would render inside
+    out. Printed for each, and the build stops on one that faces inward."""
+    inward = []
+    for l in lumps:
+        if l.bone() is None:
+            continue
+        vol = signed_volume(l.world, l.polys)
+        note = '  (mirrored, winding reversed)' if l.mirrored else ''
+        print(f"    {l.ob.name:48s} {vol * 1e6:+10.1f} cm3{note}")
+        if vol < 0:
+            inward.append(l.ob.name)
+    if inward:
+        raise SystemExit(f"{fig['id']}: faces wind inward (negative volume) on " + ', '.join(inward))
 
 
 def primary(lumps, bone):
@@ -551,6 +592,8 @@ def main():
             continue
         rig = load_rig(rig_path, fig['rig'])
         lumps = lumps_of(fig['src'], dg)
+        print(f"{fig['id']}: lump volumes")
+        check_outward(fig, lumps)
         arm_obj, ob, heads, tails, height = build_figure(fig, rig, lumps)
         note = ''
         if opts['export']:

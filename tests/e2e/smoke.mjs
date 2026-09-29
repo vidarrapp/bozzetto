@@ -6,6 +6,77 @@ import { openArmature, openSculpt } from './lib.mjs';
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
 const names = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
 
+// The signed volume of each of the last `n` objects, over its top level's
+// triangles: positive where the faces wind outward, negative for a part
+// baked inside out. Keyed by name without the number a repeated name gets.
+const lastVolumes = (page, n) =>
+  page.evaluate((k) => {
+    const s = window.__sculpt.session;
+    const out = {};
+    for (const m of s.getMeshes().slice(-k)) {
+      const v = m.getVertices();
+      const tri = m.getTriangles();
+      let vol = 0;
+      for (let i = 0; i < m.getNbTriangles() * 3; i += 3) {
+        const a = tri[i] * 3;
+        const b = tri[i + 1] * 3;
+        const c = tri[i + 2] * 3;
+        vol +=
+          v[a] * (v[b + 1] * v[c + 2] - v[b + 2] * v[c + 1]) +
+          v[a + 1] * (v[b + 2] * v[c] - v[b] * v[c + 2]) +
+          v[a + 2] * (v[b] * v[c + 1] - v[b + 1] * v[c]);
+      }
+      out[s.getMeshName(m).replace(/ \d+$/, '')] = vol / 6;
+    }
+    return out;
+  }, n);
+
+// The same for the armature's figure, per bone: the triangles whose three
+// corners follow that bone, in bind space (a mannequin's lumps are rigid).
+const boneVolumes = (page) =>
+  page.evaluate(() => {
+    const arm = window.__armature.armature;
+    const geo = arm.mesh.geometry;
+    const pos = geo.getAttribute('position');
+    const skin = geo.getAttribute('skinIndex');
+    const weight = geo.getAttribute('skinWeight');
+    const index = geo.getIndex();
+    const owner = [];
+    for (let i = 0; i < pos.count; i++) {
+      let best = skin.getX(i);
+      let most = weight.getX(i);
+      for (const k of ['Y', 'Z', 'W']) {
+        if (weight[`get${k}`](i) > most) {
+          most = weight[`get${k}`](i);
+          best = skin[`get${k}`](i);
+        }
+      }
+      owner.push(arm.boneOfSkinIndex(best));
+    }
+    const out = {};
+    for (let i = 0; i < index.count; i += 3) {
+      const [a, b, c] = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+      const bone = owner[a];
+      if (!bone || owner[b] !== bone || owner[c] !== bone) continue;
+      const [ax, ay, az] = [pos.getX(a), pos.getY(a), pos.getZ(a)];
+      const [bx, by, bz] = [pos.getX(b), pos.getY(b), pos.getZ(b)];
+      const [cx, cy, cz] = [pos.getX(c), pos.getY(c), pos.getZ(c)];
+      out[bone] = (out[bone] ?? 0) + (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    }
+    return out;
+  });
+
+// A left part and its mirror image: both facing outward, and the same size
+// to within a few percent. Only signs and ratios mean anything here; the
+// positions are in whatever units the object keeps them.
+const mirrored = (t, left, right, what) => {
+  const show = (v) => (typeof v === 'number' ? v.toPrecision(4) : String(v));
+  t.ok(
+    left > 0 && right > 0 && Math.abs(left - right) <= 0.03 * Math.max(left, right),
+    `${what} face outward and match (volumes ${show(left)} and ${show(right)})`,
+  );
+};
+
 export const suites = {
   async boot(page, base, t) {
     await openSculpt(page, base);
@@ -93,6 +164,8 @@ export const suites = {
     t.ok(head.parts[1].z > 5 && head.parts[2].z > 5, `head: eyes sit in front (z ${head.parts[1].z.toFixed(1)})`);
     t.ok(head.parts[1].x > 0 && head.parts[2].x < 0, 'head: eye L on +X, eye R on -X');
     t.ok(head.parts[1].faces < 20000, `head: an eye stops early (${head.parts[1].faces} faces)`);
+    const eyes = await lastVolumes(page, 3);
+    mirrored(t, eyes['Eye L'], eyes['Eye R'], 'head: the eyes');
     await page.evaluate(() => window.__sculpt.session.undo());
     t.eq(await count(page), before, 'head: one undo removes all three');
     await page.evaluate(() => window.__sculpt.session.redo());
@@ -144,6 +217,18 @@ export const suites = {
     t.eq(await count(page), before, 'blockout parts: one undo removes them all');
     const pills = await page.evaluate(() => [...document.querySelectorAll('.outliner__menu-pill')].map((p) => `${p.textContent}:${p.getAttribute('aria-pressed')}`));
     t.eq(pills.join(' '), 'one object:true parts:false', 'the switch defaults to one object');
+
+    // A figure's right-hand lumps are its left ones mirrored in the bundle,
+    // a negative scale that turns their faces inward unless the exporter
+    // reverses them.
+    before = await count(page);
+    await page.evaluate(() => window.__sculpt.session.addBaseMesh('blockout-male-realistic', { parts: true }));
+    const lumps = await lastVolumes(page, (await count(page)) - before);
+    mirrored(t, lumps['Thigh L'], lumps['Thigh R'], 'blockout body as parts: the thighs');
+    mirrored(t, lumps['Eye L'], lumps['Eye R'], 'blockout body as parts: the eyes');
+    mirrored(t, lumps['Ear L'], lumps['Ear R'], 'blockout body as parts: the ears');
+    await page.evaluate(() => window.__sculpt.session.undo());
+    t.eq(await count(page), before, 'blockout body parts: one undo removes them all');
 
     // An unknown id rejects rather than adding.
     const unknown = await page.evaluate(() => window.__sculpt.session.addBaseMesh('no-such-mesh').then(() => 'added', (e) => String(e.message)));
@@ -261,6 +346,14 @@ export const suites = {
     await openArmature(page, base);
     const ok = await page.evaluate(() => !!window.__armature.armature && typeof window.__armature.reach === 'function');
     t.ok(ok, 'armature mode boots with its handle');
+    // Nothing saved yet: a new armature starts on the realistic male
+    // mannequin, and the Figure list says so.
+    const fresh = await page.evaluate(() => ({
+      id: window.__armature.armature.rig.id,
+      listed: document.querySelector('.panel--armature select')?.value ?? '',
+    }));
+    t.eq(fresh.id, 'mannequin-male-realistic', 'a new armature starts on the realistic male mannequin');
+    t.eq(fresh.listed, 'mannequin-male-realistic', 'and the Figure list shows it');
 
     // The four mannequins: fetched, read as rigged models, posable.
     const ids = ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized'];
@@ -295,6 +388,12 @@ export const suites = {
       t.ok(r.moved > 5, `${id}: the left hand reaches (${r.moved.toFixed(1)})`);
       t.eq(r.preset, id, `${id}: the state names it`);
       t.ok(/mannequin/i.test(r.option), `${id}: listed in the Figure select as "${r.option}"`);
+      // The right-hand lumps are the left ones mirrored in the bundle, a
+      // negative scale that turns their faces inward unless the builder
+      // reverses them.
+      const vol = await boneVolumes(page);
+      mirrored(t, vol['upperarm.L'], vol['upperarm.R'], `${id}: the upper arms`);
+      mirrored(t, vol['hand.L'], vol['hand.R'], `${id}: the hands`);
     }
 
     // The autosave brings a mannequin back on reload, fetched again.
@@ -303,5 +402,20 @@ export const suites = {
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), ids[3], 'the mannequin survives a reload');
     await page.evaluate(() => window.__armature.figure('placeholder-male'));
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'and the blocks come back on request');
+
+    // Offline with no mannequin kept, a new armature falls back to the
+    // blocks, which are code: a fresh browser whose figure fetches fail.
+    const offline = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      const cut = await offline.newPage();
+      const errors = [];
+      cut.on('pageerror', (e) => errors.push(String(e)));
+      await cut.route(/\/assets\/armature\/[^?]*\.glb(\?|$)/, (r) => r.abort());
+      await openArmature(cut, base);
+      t.eq(await cut.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'offline, a new armature falls back to the blocks');
+      t.ok(!errors.length, `and boots without page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await offline.close();
+    }
   },
 };

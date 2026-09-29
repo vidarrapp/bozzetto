@@ -120,7 +120,9 @@ export default defineConfig(({ mode }) => {
             // The base-mesh library: 8 MB over twenty-odd files, fetched the
             // first time a tile is picked and kept, like the HDRIs. The
             // thumbnails are PNGs under assets/ and precache with the shell.
-            urlPattern: /\/assets\/basemeshes\/.*\.bzm$/,
+            // The URLs carry MODEL_REVISION (src/viewer/assetVersion.ts) as
+            // ?r=, so a re-exported file is a new entry rather than a stale one.
+            urlPattern: /\/assets\/basemeshes\/[^?]*\.bzm(\?.*)?$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'bozzetto-basemeshes',
@@ -130,8 +132,9 @@ export default defineConfig(({ mode }) => {
           },
           {
             // The Armature mode's mannequins: four skinned .glb files of a
-            // megabyte each, fetched when picked and kept.
-            urlPattern: /\/assets\/armature\/.*\.glb$/,
+            // megabyte each, fetched when picked or, for the default figure,
+            // at boot, and kept. Versioned the same way as the base meshes.
+            urlPattern: /\/assets\/armature\/[^?]*\.glb(\?.*)?$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'bozzetto-figures',

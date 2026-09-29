@@ -1,4 +1,5 @@
 import Utils from '@sculpt-vendor/misc/Utils';
+import { MODEL_REVISION } from '../../viewer/assetVersion';
 
 /**
  * The base-mesh library: Blender Studio's Human Base Meshes (CC0), exported
@@ -112,9 +113,10 @@ export function baseMeshById(id: string): BaseMeshInfo | undefined {
 }
 
 export function baseMeshUrl(id: string): string {
-  return `/assets/basemeshes/${id}.bzm`;
+  return `/assets/basemeshes/${id}.bzm?r=${MODEL_REVISION}`;
 }
 
+/** Unversioned: the thumbnails precache with the shell under these URLs. */
 export function baseMeshThumbUrl(id: string): string {
   return `/assets/basemeshes/thumbs/${id}.png`;
 }

@@ -164,7 +164,10 @@ installed. `--out` changes the output folder, `--only id,id` re-exports a
 few entries. Which assets ship, and at which Multires or Subdivision level,
 is the `ASSETS` table at the top of the script; the app's catalogue (names,
 groups, face counts for the tooltips) is `src/sculpt/bridge/basemeshes.ts`,
-and the file layout is described in both.
+and the file layout is described in both. A file that changes keeps its
+name, so bump `MODEL_REVISION` in `src/viewer/assetVersion.ts` with it:
+the service worker keeps these files cache-first by URL, and the revision
+is part of the URL.
 
 The exporter keeps quads, turns Blender's Z up into Y up facing +Z, centres
 every part on itself and records the offset that puts a figure's eyes back
@@ -205,7 +208,8 @@ X, so to export one by hand after editing, put its armature back at X = 0,
 select the armature and its mesh, and File > Export > glTF 2.0 with Custom
 Properties on, as under "Exporting for the app". A planar-study version is
 that: reshape the lumps, export, drop the file over the one in
-`public/assets/armature`.
+`public/assets/armature`, and bump `MODEL_REVISION` as for the base
+meshes, or a browser that has the old file keeps it.
 
 The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
 chains); only their positions come from the lumps: a chain joint sits
@@ -214,4 +218,10 @@ or shoulder at the tip of its own lump. Every lump is weighted fully to
 one bone (`BONE_OF` in the script says which); the forearm and shin carry
 no limits in the file so the app infers them from the rest bend, which is
 the bundle's own A-pose.
+
+The right-hand lumps are mirrored objects, their matrices with a negative
+determinant, so both exporters (this one and `export-basemeshes.py`)
+reverse their winding when they bake the matrix into the positions, which
+keeps their normals outward; each prints every part's signed volume and
+stops on a negative one.
 

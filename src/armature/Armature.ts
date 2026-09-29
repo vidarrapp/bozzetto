@@ -784,6 +784,11 @@ export class Armature {
     return this.partOwner.get(best) ?? null;
   }
 
+  /** The bone a skin index (a part bone's place in the skeleton) belongs to. */
+  boneOfSkinIndex(i: number): string | null {
+    return this.partOwner.get(i) ?? null;
+  }
+
   /** World-space bounds of the posed figure. */
   bounds(): Box3 {
     this.mesh.updateMatrixWorld(true);

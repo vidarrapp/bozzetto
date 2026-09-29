@@ -150,7 +150,18 @@ def evaluated_geometry(ob, dg):
         for v in me.vertices:
             p = mw @ v.co
             verts.append((p.x, p.z, -p.y))
+        # The primitive figures' right-hand parts are the left ones mirrored,
+        # with a negative scale: a matrix with a negative determinant. A
+        # reflection turns every polygon's corners the other way round, so
+        # baked into world space as authored its faces would wind inward and
+        # its normals point into the part. Blender allows for that when it
+        # draws an object through its matrix; baked, the corners have to be
+        # put back in order here. The first corner stays first, so a quad
+        # split into triangles from it is cut along the same diagonal as its
+        # mirror image. (The Y-up swap is a rotation and changes nothing.)
         polys = [tuple(p.vertices) for p in me.polygons]
+        if mw.determinant() < 0:
+            polys = [(q[0],) + q[:0:-1] for q in polys]
     finally:
         ev.to_mesh_clear()
     return verts, polys
@@ -272,6 +283,39 @@ def bbox(verts):
     return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
 
 
+def signed_volume(verts, quads):
+    """The volume a closed part encloses, positive when its faces wind
+    outward: each face fanned into triangles, each triangle the signed
+    volume a . (b x c) / 6 of the tetrahedron it makes with the part's
+    centre. (Taken about the centre, as the file stores the part, so an
+    open shell - the stylized jaw - still reads sensibly.)"""
+    lo, hi = bbox(verts)
+    c = tuple((lo[i] + hi[i]) / 2 for i in range(3))
+    p = [(v[0] - c[0], v[1] - c[1], v[2] - c[2]) for v in verts]
+    total = 0.0
+    for q in quads:
+        corners = [i for i in q if i is not None]
+        ax, ay, az = p[corners[0]]
+        for k in range(1, len(corners) - 1):
+            bx, by, bz = p[corners[k]]
+            cx, cy, cz = p[corners[k + 1]]
+            total += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
+    return total
+
+
+def check_outward(file_id, parts):
+    """Each part's signed volume, printed; a negative one faces inward
+    (it would render inside out) and stops the export before the file is
+    written. Returns the volumes, in the parts' order."""
+    vols = [signed_volume(verts, quads) for _, verts, quads in parts]
+    inward = [name for (name, _, _), v in zip(parts, vols) if v < 0]
+    if inward:
+        for (name, _, _), v in zip(parts, vols):
+            print(f'    {name}: vol={v * 1e6:+.1f} cm3')
+        raise SystemExit(f'{file_id}: faces wind inward (negative volume) on ' + ', '.join(inward))
+    return vols
+
+
 def write_bzm(path, parts):
     """parts: list of (name, verts, quads) in the shared asset frame."""
     allv = [v for _, verts, _ in parts for v in verts]
@@ -353,16 +397,20 @@ def main():
                 verts, polys = evaluated_geometry(ob, dg)
                 parts.append((part_name(ob, entry['id']), verts, quads_of(polys)))
         path = os.path.join(out, f"{entry['id']}.bzm")
+        vols = check_outward(entry['id'], parts)
         size, stats, dims = write_bzm(path, parts)
         if entry.get('parts'):
             split = []
             for ob in hierarchy_order(objs):
                 verts, polys = evaluated_geometry(ob, dg)
                 split.append((readable_name(ob), verts, quads_of(polys)))
+            pvols = check_outward(f"{entry['id']}-parts", split)
             psize, pstats, _ = write_bzm(os.path.join(out, f"{entry['id']}-parts.bzm"), split)
             print(f"{entry['id']}-parts: {len(split)} parts verts={sum(x[1] for x in pstats)} "
                   f"faces={sum(x[2] for x in pstats)} {psize / 1024:.0f} KB: "
                   + ', '.join(x[0] for x in pstats))
+            for x, v in zip(pstats, pvols):
+                print(f'    {x[0]}: vol={v * 1e6:+.1f} cm3')
         idblock = bpy.data.objects.get(entry['src']) or bpy.data.collections.get(entry['src'])
         write_thumb(idblock, os.path.join(out, 'thumbs', f"{entry['id']}.png"))
         faces = sum(s[2] for s in stats)
@@ -371,8 +419,8 @@ def main():
         print(f"{entry['id']}: {len(parts)} part(s) verts={verts} faces={faces} "
               f"dims=({dims[0]:.2f}, {dims[1]:.2f}, {dims[2]:.2f}) m {size / 1024:.0f} KB  "
               f"author={ad.author!r}")
-        for s in stats:
-            print(f'    {s[0]}: v={s[1]} f={s[2]} tris={s[3]}')
+        for s, v in zip(stats, vols):
+            print(f'    {s[0]}: v={s[1]} f={s[2]} tris={s[3]} vol={v * 1e6:+.1f} cm3')
         manifest.append(dict(id=entry['id'], parts=len(parts), verts=verts, faces=faces, bytes=size, author=ad.author))
     print('MANIFEST', manifest)
 

@@ -84,14 +84,17 @@ A posable figure of its own, for reference or as the start of a sculpt.
 Signed-in only for now: pick **Create → New armature** in the gallery (or
 open `/?armature=1`); guests see the plain New sculpt tile.
 
-- **Figures.** The Figure list offers the block placeholders (male and
-  female) and four mannequins: Blender Studio's CC0 "primitive" base
-  meshes, male and female in realistic and stylized proportions, rigged
-  onto the same bones by `tools/build-mannequins.py`. Each lump follows
-  its bone rigidly, so a mannequin poses, reaches and sends to Sculpt
-  exactly like the blocks. A mannequin is fetched the first time it is
-  picked (about a megabyte) and kept for offline use; the autosave and
-  `.armature` files only name it.
+- **Figures.** A new armature starts on the realistic male mannequin,
+  one of four: Blender Studio's CC0 "primitive" base meshes, male and
+  female in realistic and stylized proportions, rigged onto the app's
+  bones by `tools/build-mannequins.py`. The Figure list also offers the
+  block placeholders (male and female); each lump follows its bone
+  rigidly, so a mannequin poses, reaches and sends to Sculpt exactly like
+  the blocks. A mannequin is fetched the first time it is used (about a
+  megabyte) and kept for offline use; the autosave and `.armature` files
+  only name it. The blocks are code and always there, so they are the
+  fallback when a mannequin cannot be fetched (offline, never seen) or a
+  saved model cannot be read.
 
 - **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
   that joint's limits: hinges (elbows, knees) show one ring plus a little
@@ -286,6 +289,11 @@ guide (`H`) shows whatever keys are set.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier.
 
 ## Changelog
+
+### Unreleased
+
+- **A new armature starts on the realistic male mannequin** rather than the block placeholders. The blocks stay in the Figure list and stand in whenever a mannequin cannot be fetched (offline, never seen) or a saved model cannot be read.
+- **Mirrored parts face outward.** The bundle's right-hand lumps are its left ones mirrored with a negative scale, and baking that into the exported positions turned their faces inward: the mannequins' right limbs, eyes and ears rendered inside out. The exporters now reverse the winding of mirrored parts and check every part's signed volume. The blockouts added as parts had the same fault on their right-hand lumps, the right eye and ear among them. The one-object blockouts, voxel-remeshed from those lumps, come out unchanged, as do the other base meshes, whose eyes were never mirrored; so does Send to Sculpt, whose voxel pass tells inside from outside without reading the winding.
 
 ### v1.2
 

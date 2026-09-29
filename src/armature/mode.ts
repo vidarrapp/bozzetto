@@ -20,6 +20,13 @@ const HISTORY_LIMIT = 64;
 const SAVE_GAP_MS = 400;
 /** The preset id a figure read from a file goes under. */
 const IMPORTED = 'imported';
+/** The figure a new armature starts on (owner call): a mannequin, fetched on first use. */
+const DEFAULT_FIGURE = 'mannequin-male-realistic';
+/**
+ * What stands in when a mannequin cannot be fetched or a saved model
+ * cannot be read: the blocks are code, so they are always there.
+ */
+const FALLBACK_FIGURE = 'placeholder-male';
 
 /** The rig of a model already parsed once this session, by its bytes. */
 const parsed = new WeakMap<ArrayBuffer, ReturnType<typeof rigFromGLTF>>();
@@ -91,7 +98,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     } catch (err) {
       console.warn('armature: the saved model could not be read', err);
       saved.model = undefined;
-      saved.state.preset = 'placeholder-male';
+      saved.state.preset = FALLBACK_FIGURE;
     }
   }
   let name = saved?.name ?? 'Armature';
@@ -109,18 +116,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (preset === IMPORTED && model) {
       return importArmature(readModel(model.bytes), material);
     }
-    return buildArmature(preset === IMPORTED ? 'placeholder-male' : preset, material);
+    return buildArmature(preset === IMPORTED ? FALLBACK_FIGURE : preset, material);
   };
-  // A saved mannequin is fetched before anything is built; if that fails
-  // (offline, never seen) the blocks stand in and the pose still applies,
-  // since every figure shares the bone names.
-  let wanted = saved?.state.preset ?? 'placeholder-male';
+  // A mannequin - the saved one, or the one a new armature starts on - is
+  // fetched before anything is built; if that fails (offline, never seen)
+  // the blocks stand in and a saved pose still applies, since every figure
+  // shares the bone names.
+  let wanted = saved?.state.preset ?? DEFAULT_FIGURE;
   if (figureById(wanted)) {
     try {
       await ensureFigure(wanted);
     } catch (err) {
-      console.warn('armature: the saved mannequin could not be fetched', err);
-      wanted = 'placeholder-male';
+      console.warn(`armature: the mannequin "${wanted}" could not be fetched`, err);
+      wanted = FALLBACK_FIGURE;
     }
   }
   let armature = figureFor(wanted);
