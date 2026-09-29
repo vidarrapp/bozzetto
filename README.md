@@ -287,6 +287,18 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
+### v1.2
+
+**Base meshes, mannequins and a quad wireframe.** Desktop app 0.4.0.
+
+- A **base-mesh library** in the Scene panel's Create menu: Blender Studio's CC0 Human Base Meshes as thumbnail tiles. Male and female figures in realistic and stylized topology, each with its eyes as separate objects; voxel-remeshed blockout figures, which can also arrive as their fifty separate lumps; heads (realistic, stylized, planar, a low-poly cage, a blockout); hands, feet, eyes, jaws and skulls. Fetched on first use and kept for offline.
+- Three more primitives: cone, capsule and an upright plane.
+- **Mannequins in Armature mode**: the same bundle's primitive figures rigged onto the app's bones, male and female, realistic and stylized, beside the block placeholders. They pose, reach, pin, aim and send to Sculpt like the blocks. Built by `tools/build-mannequins.py`, which also runs inside Blender for editing.
+- The **wireframe overlay draws quads as quads** in sculpt mode, from the mesh's own edges rather than its triangles.
+- Clay takes two photographed stencils, Thumbed and Cracked; the hand-drawn one retires.
+- Offline: the UI fonts precache and the sign-in answer is kept, so an installed app keeps its owner features without a network.
+- Browser smoke tests live in the repository: `npm run e2e:build`.
+
 ### v1.1
 
 **Sculpt mode (alpha).** Bozzetto can now sculpt, not just play back. Built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core, ported onto Bozzetto's WebGPU/WebGL2 pipeline with one canvas, one camera and one look.
@@ -299,7 +311,6 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - Multiresolution, dynamic topology and voxel remesh.
 - Vertex painting, per-object named materials, and an HSV colour picker shared across the app.
 - Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner, a Select tool with marquee, mirror and radial copies.
-- A Create menu with seven primitives and a base-mesh library from Blender Studio's CC0 Human Base Meshes.
 - Every hotkey editable under Edit → Preferences, on the web and in the desktop app.
 - A **File** menu in the top row (new, open, save, save to library, OBJ import and export), and five docked panels: Capture and Scene left; Render, Model and Tool right.
 - Ten new matcaps in a gallery popout, and selectable tone mapping.
