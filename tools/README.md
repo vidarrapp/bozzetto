@@ -147,3 +147,28 @@ drive will simply not be recognised as arms or legs.
 from the same rig numbers: `test-figure.glb` with the custom properties and
 `test-figure-bare.glb` without any. They are what the loader's test runs
 against, and what to compare a real model to when something looks wrong.
+
+# Base meshes
+
+`public/assets/basemeshes/` holds the Create menu's base-mesh library:
+Blender Studio's [Human Base Meshes bundle](https://www.blender.org/download/demo-files/#asset-bundles)
+(CC0), one `.bzm` per entry plus the bundle's own preview as a 96 px
+thumbnail. `export-basemeshes.py` makes them from the unpacked bundle:
+
+```
+blender -b --python tools/export-basemeshes.py -- --bundle path/to/human-base-meshes-bundle-v1.4.1
+```
+
+or `python tools/export-basemeshes.py --bundle ...` with the `bpy` wheel
+installed. `--out` changes the output folder, `--only id,id` re-exports a
+few entries. Which assets ship, and at which Multires or Subdivision level,
+is the `ASSETS` table at the top of the script; the app's catalogue (names,
+groups, face counts for the tooltips) is `src/sculpt/bridge/basemeshes.ts`,
+and the file layout is described in both.
+
+The exporter keeps quads, turns Blender's Z up into Y up facing +Z, centres
+every part on itself and records the offset that puts a figure's eyes back
+in its sockets. The bundle's "primitive" figures - fifty subdivided lumps
+each - are voxel-remeshed into one shell (7 mm voxels, three smoothing
+passes) so the app gets a single blockout object.
+

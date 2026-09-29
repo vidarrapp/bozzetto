@@ -44,6 +44,7 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 - **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
+- **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive. Files fetch on first use and stay cached.
 - **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
@@ -217,7 +218,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - Serverless on Cloudflare: metadata in D1, meshes in R2, every API route a Pages Function.
 - Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
-- A service worker precaches the ~3.5 MB app shell; HDRIs and the gallery list are cached as they are used. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
+- A service worker precaches the ~4.4 MB app shell, fonts included; HDRIs, base meshes, the gallery list and the sign-in answer are cached as they are used, so an installed app keeps working offline, owner features included. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
 - The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Controls
@@ -291,6 +292,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - Multiresolution, dynamic topology and voxel remesh.
 - Vertex painting, per-object named materials, and an HSV colour picker shared across the app.
 - Unified transform gizmo with `W`/`E`/`R` modes and a multi-object outliner, a Select tool with marquee, mirror and radial copies.
+- A Create menu with seven primitives and a base-mesh library from Blender Studio's CC0 Human Base Meshes.
 - Every hotkey editable under Edit → Preferences, on the web and in the desktop app.
 - A **File** menu in the top row (new, open, save, save to library, OBJ import and export), and five docked panels: Capture and Scene left; Render, Model and Tool right.
 - Ten new matcaps in a gallery popout, and selectable tone mapping.
@@ -424,6 +426,10 @@ scripts/
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
   export-single-file.mjs   CLI: timelapse to a self-contained .html
+tools/
+  export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
+  blender_armature.py      Blender: the armature rig, to model against
+tests/e2e/                 browser smoke tests: npm run e2e:build (needs Playwright)
 ```
 
 ## Deployment
@@ -442,6 +448,7 @@ Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub i
 
 - Sculpt mode is built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core, MIT, by Stephane GINIER. The vendored source and its license live in `src/sculpt/vendor/`.
 - Toolbar icons: [Uicons by Flaticon](https://www.flaticon.com/uicons).
+- The base-mesh library is Blender Studio's [Human Base Meshes bundle](https://www.blender.org/download/demo-files/#asset-bundles) v1.4.1, CC0, by Dan Ulrich, Julien Kaspar, Paul Kotelevets and Tonatiuh de San Julián. Exported by `tools/export-basemeshes.py`; see `public/assets/basemeshes/LICENSE.txt`.
 
 ## License
 

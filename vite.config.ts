@@ -117,6 +117,18 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
+            // The base-mesh library: 8 MB over twenty-odd files, fetched the
+            // first time a tile is picked and kept, like the HDRIs. The
+            // thumbnails are PNGs under assets/ and precache with the shell.
+            urlPattern: /\/assets\/basemeshes\/.*\.bzm$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'bozzetto-basemeshes',
+              expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // The gallery list and each project's manifest. Stale-while-
             // revalidate so the gallery still renders its cards offline from
             // the last visit, and refreshes the moment there is a network.

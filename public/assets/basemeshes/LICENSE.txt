@@ -1,0 +1,21 @@
+Base meshes
+===========
+
+The .bzm files in this folder are exported from the Human Base Meshes
+bundle (v1.4.1) published by Blender Studio:
+
+    https://www.blender.org/download/demo-files/#asset-bundles
+    https://developer.blender.org/docs/features/asset_system/asset_bundles/human_base_meshes/
+
+The bundle is released under CC0 1.0 (public domain dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Made by Dan Ulrich (realistic bodies, heads, hands, feet, eyes, jaws),
+Julien Kaspar (stylized figures and parts), Paul Kotelevets (planar and
+generic heads, primitive figures, realistic skull) and Tonatiuh de San
+Julián (skulls). Thank you.
+
+The export (tools/export-basemeshes.py in the Bozzetto repository) keeps
+the meshes as authored at one chosen subdivision level, turns Blender's Z
+up into Y up, and voxel-remeshes the primitive figures into single shells.
+The thumbnails are the bundle's own asset previews.

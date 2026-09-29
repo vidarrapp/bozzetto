@@ -2030,6 +2030,98 @@ html.is-page body {
   background: var(--hover);
 }
 
+/* The Create popup: a wider menu with the primitives as a grid of words
+   and the base-mesh library as thumbnail tiles. Capped in height and
+   scrolling within, since twenty-odd tiles outgrow a phone. */
+.outliner__menu--create {
+  width: 296px;
+  max-height: min(82vh, 720px);
+  overflow-y: auto;
+  padding-bottom: 6px;
+}
+
+.outliner__menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 4px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.outliner__menu-aside {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.85;
+}
+
+.outliner__menu-sub {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.outliner__menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+
+.outliner__menu-grid--words .outliner__menu-item {
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+
+.outliner__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 5px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.outliner__tile:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.outliner__tile:disabled {
+  cursor: progress;
+}
+
+.outliner__tile img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.outliner__tile.is-loading img {
+  opacity: 0.45;
+}
+
+.outliner__tile-name {
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.outliner__tile-note {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
 .sculpt-panel__row {
   display: flex;
   flex-wrap: wrap;

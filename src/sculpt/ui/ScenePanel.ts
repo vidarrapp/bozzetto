@@ -1,6 +1,7 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { SidePanel } from './SidePanel';
-import type { SculptSession } from '../bridge/SculptSession';
+import type { PrimitiveKind, SculptSession } from '../bridge/SculptSession';
+import { BASE_MESHES, BASE_MESH_GROUPS, baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 
@@ -61,24 +62,9 @@ export class ScenePanel extends SidePanel {
     // and clips, and with only the default sphere in the list the panel is
     // shorter than the menu, so an in-flow popup was simply invisible.
     // Fixed positioning against the button's own rect sidesteps both.
-    this.addMenu = div('outliner__menu');
+    this.addMenu = div('outliner__menu outliner__menu--create');
     this.addMenu.hidden = true;
-    for (const [kind, label] of [
-      ['sphere', 'Sphere'],
-      ['cube', 'Cube'],
-      ['cylinder', 'Cylinder'],
-      ['torus', 'Torus'],
-    ] as const) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'outliner__menu-item';
-      item.textContent = label;
-      item.addEventListener('click', () => {
-        this.closeMenus();
-        this.session.addPrimitive(kind);
-      });
-      this.addMenu.appendChild(item);
-    }
+    this.buildCreateMenu();
     document.body.appendChild(this.addMenu);
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -138,6 +124,117 @@ export class ScenePanel extends SidePanel {
       if (collapsed) this.closeMenus();
     };
     this.refresh();
+  }
+
+  /**
+   * The Create popup: the procedural primitives as a row of words, then the
+   * base-mesh library as thumbnail tiles by group. A tile fetches its file
+   * when picked - the library is 8 MB and a session touches one or two
+   * entries - and says so on the tile until the objects are in the scene.
+   */
+  private buildCreateMenu(): void {
+    const menu = this.addMenu;
+    const head = (text: string, aside?: string): void => {
+      const h = div('outliner__menu-head');
+      h.textContent = text;
+      if (aside) {
+        const a = document.createElement('span');
+        a.className = 'outliner__menu-aside';
+        a.textContent = aside;
+        h.appendChild(a);
+      }
+      menu.appendChild(h);
+    };
+    head('Primitives');
+    const words = div('outliner__menu-grid outliner__menu-grid--words');
+    const primitives: [PrimitiveKind, string][] = [
+      ['sphere', 'Sphere'],
+      ['cube', 'Cube'],
+      ['cylinder', 'Cylinder'],
+      ['torus', 'Torus'],
+      ['cone', 'Cone'],
+      ['capsule', 'Capsule'],
+      ['plane', 'Plane'],
+    ];
+    for (const [kind, label] of primitives) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'outliner__menu-item';
+      item.textContent = label;
+      item.addEventListener('click', () => {
+        this.closeMenus();
+        this.session.addPrimitive(kind);
+      });
+      words.appendChild(item);
+    }
+    menu.appendChild(words);
+    head('Base meshes', 'Blender Studio · CC0');
+    for (const { group, title } of BASE_MESH_GROUPS) {
+      const sub = div('outliner__menu-sub');
+      sub.textContent = title;
+      menu.appendChild(sub);
+      const grid = div('outliner__menu-grid');
+      for (const info of BASE_MESHES) if (info.group === group) grid.appendChild(this.baseMeshTile(info));
+      menu.appendChild(grid);
+    }
+  }
+
+  private baseMeshTile(info: BaseMeshInfo): HTMLButtonElement {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'outliner__tile';
+    tile.dataset.id = info.id;
+    const faces = info.faces >= 1000 ? `${Math.round(info.faces / 1000)}k` : `${info.faces}`;
+    const size = info.kb >= 1000 ? `${(info.kb / 1024).toFixed(1)} MB` : `${info.kb} KB`;
+    tile.title = `${info.label}, ${info.note} · ${faces} faces, ${size} · by ${info.by}`;
+    const img = document.createElement('img');
+    img.src = baseMeshThumbUrl(info.id);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.draggable = false;
+    const name = document.createElement('span');
+    name.className = 'outliner__tile-name';
+    name.textContent = info.label;
+    const note = document.createElement('span');
+    note.className = 'outliner__tile-note';
+    note.textContent = info.note;
+    tile.append(img, name, note);
+    tile.addEventListener('click', () => void this.addBaseMesh(info.id, tile));
+    return tile;
+  }
+
+  /**
+   * Fetch a base mesh and add it. The tile reports on its own note line:
+   * "Loading…" while the file comes in, "Failed" for a moment if it did not
+   * (offline and never fetched, most likely). The menu closes on success,
+   * the way a primitive's does; a failure leaves it open to try another.
+   */
+  async addBaseMesh(id: string, tile?: HTMLButtonElement): Promise<void> {
+    if (tile?.disabled) return;
+    const note = tile?.querySelector<HTMLElement>('.outliner__tile-note');
+    const was = note?.textContent ?? '';
+    if (tile) {
+      tile.disabled = true;
+      tile.classList.add('is-loading');
+    }
+    if (note) note.textContent = 'Loading…';
+    let failed = false;
+    try {
+      await this.session.addBaseMesh(id);
+      this.closeMenus();
+    } catch (err) {
+      console.error(err);
+      failed = true;
+    } finally {
+      if (tile) {
+        tile.disabled = false;
+        tile.classList.remove('is-loading');
+      }
+      if (note) {
+        note.textContent = failed ? 'Failed' : was;
+        if (failed) setTimeout(() => (note.textContent = was), 2500);
+      }
+    }
   }
 
   private openMenu(menu: HTMLDivElement, anchor: HTMLElement): void {

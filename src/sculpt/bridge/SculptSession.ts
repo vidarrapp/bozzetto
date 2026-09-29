@@ -1,4 +1,13 @@
-import { BufferAttribute, BufferGeometry, CylinderGeometry, TorusGeometry } from 'three';
+import {
+  BufferAttribute,
+  BufferGeometry,
+  CapsuleGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  PlaneGeometry,
+  TorusGeometry,
+} from 'three';
+import { baseMeshById, loadBaseMesh, type BaseMeshFile, type BaseMeshInfo } from './basemeshes';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Utils from '@sculpt-vendor/misc/Utils';
@@ -128,6 +137,9 @@ function subdivisionKeys(
   }
   return keys;
 }
+
+/** What the Scene panel's Create menu can make without a file. */
+export type PrimitiveKind = 'sphere' | 'cube' | 'cylinder' | 'torus' | 'cone' | 'capsule' | 'plane';
 
 export class SculptSession {
   // Pointer/action state the vendored tools and picking read directly.
@@ -838,15 +850,86 @@ export class SculptSession {
   }
 
   /** Scene menu: add a primitive as a new object (WS4 outliner plus). */
-  addPrimitive(kind: 'sphere' | 'cube' | 'cylinder' | 'torus'): Multimesh {
+  addPrimitive(kind: PrimitiveKind): Multimesh {
     if (kind === 'sphere') return this.addSphere();
     if (kind === 'cube') return this.addCubePrimitive();
-    const geom =
+    // The plane stands upright, facing the default camera, so a relief has
+    // its face to you the moment it is added.
+    const [geom, name]: [BufferGeometry, string] =
       kind === 'cylinder'
-        ? new CylinderGeometry(0.75, 0.75, 1.6, 32, 6)
-        : new TorusGeometry(0.62, 0.26, 18, 36);
-    const name = kind === 'cylinder' ? 'Cylinder' : 'Torus';
+        ? [new CylinderGeometry(0.75, 0.75, 1.6, 32, 6), 'Cylinder']
+        : kind === 'torus'
+          ? [new TorusGeometry(0.62, 0.26, 18, 36), 'Torus']
+          : kind === 'cone'
+            ? [new ConeGeometry(0.8, 1.6, 32, 6), 'Cone']
+            : kind === 'capsule'
+              ? [new CapsuleGeometry(0.5, 1.0, 8, 24, 4), 'Capsule']
+              : [new PlaneGeometry(1.6, 1.6, 24, 24), 'Plane'];
     return this.meshFromTriGeometry(geom, name);
+  }
+
+  /**
+   * Scene menu: a figure or part from the base-mesh library, fetched on
+   * demand. Resolves once the objects are in the scene and selected.
+   */
+  async addBaseMesh(id: string): Promise<Multimesh> {
+    const info = baseMeshById(id);
+    if (!info) throw new Error(`Unknown base mesh "${id}"`);
+    return this.adoptBaseMesh(info, await loadBaseMesh(id));
+  }
+
+  /**
+   * The parts of a base-mesh file as objects: the figure first, then its
+   * eyes, each pivoting on its own centre, all in ONE undo step. One scale
+   * for all of them, from the whole figure's bound - normalizeSize per part
+   * would blow each eye up to body size - and the parts' offsets carried
+   * on their matrices, so the eyes sit in the sockets and the figure lands
+   * at the canonical sculpt size the primitives use.
+   *
+   * The quads come straight through: the multires stack subdivides them the
+   * way Blender's Multires would. The figure gets the primitives' ~20k-face
+   * floor; a companion stops at 2k, an eye needs no more.
+   */
+  adoptBaseMesh(info: BaseMeshInfo, file: BaseMeshFile): Multimesh {
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (const part of file.parts) {
+      const p = part.positions;
+      for (let i = 0; i < p.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          const v = p[i + k] + part.offset[k];
+          if (v < lo[k]) lo[k] = v;
+          if (v > hi[k]) hi[k] = v;
+        }
+      }
+    }
+    const radius = 0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    const scale = Utils.SCALE / (2 * (radius || 1));
+    const meshes: Multimesh[] = [];
+    file.parts.forEach((part, k) => {
+      const base = new MeshStatic(null);
+      base.setVertices(new Float32Array(part.positions));
+      base.setFaces(new Uint32Array(part.faces));
+      base.init();
+      const mesh = new Multimesh(base);
+      const m = mesh.getMatrix() as unknown as mat4;
+      mat4.fromTranslation(m, [part.offset[0] * scale, part.offset[1] * scale, part.offset[2] * scale]);
+      mat4.scale(m, m, [scale, scale, scale]);
+      this.subdivideClamp(mesh, info.smooth === false, k === 0 ? 20000 : 2000);
+      const name = k === 0 ? info.label : part.name;
+      this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
+      meshes.push(mesh);
+    });
+    this.addNewMeshes(meshes as unknown as SculptMesh[]);
+    return meshes[0];
+  }
+
+  /** Several objects at once, as one undo step; the first is selected. */
+  private addNewMeshes(meshes: SculptMesh[]): void {
+    this.writeSymmetryAxis(this.getSymmetryAxis(), meshes);
+    for (const mesh of meshes) this.meshes.push(mesh);
+    this.stateManager.pushStateAdd(meshes);
+    this.setMesh(meshes[0]);
   }
 
   /** The sphere's quad-cube base with LINEAR subdivision keeps cube corners. */
@@ -1435,9 +1518,9 @@ export class SculptSession {
   }
 
   /** Ported from Scene.subdivideClamp with a ~50k-tri clamp; keeps 4 levels. */
-  private subdivideClamp(mesh: Multimesh, linear = false): void {
+  private subdivideClamp(mesh: Multimesh, linear = false, minFaces = 20000): void {
     Subdivision.LINEAR = !!linear;
-    while (mesh.getNbFaces() < 20000) mesh.addLevel();
+    while (mesh.getNbFaces() < minFaces) mesh.addLevel();
     mesh._meshes.splice(0, Math.min(mesh._meshes.length - 4, 4));
     mesh._sel = mesh._meshes.length - 1;
     Subdivision.LINEAR = false;
