@@ -165,13 +165,6 @@ async function bootArmature(): Promise<void> {
     const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
     if (box) box.textContent = msg;
   };
-  // The owner's mode for now: anyone else lands back on the gallery.
-  const { probeAdmin } = await import('./admin/api');
-  const { armatureAllowed } = await import('./armature/gate');
-  if (!armatureAllowed(await probeAdmin().catch(() => null))) {
-    window.location.replace('/');
-    return;
-  }
   const { mountSculptSplash } = await import('./ui/SculptSplash');
   const splash = mountSculptSplash(overlay);
   try {

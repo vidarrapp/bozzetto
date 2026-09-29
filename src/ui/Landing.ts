@@ -6,7 +6,6 @@
 
 import { div } from './dom';
 import { probeAdmin } from '../admin/api';
-import { armatureAllowed } from '../armature/gate';
 import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
@@ -59,22 +58,20 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // right answer there rather than an error.
   const projects: ProjectSummary[] = (await apiJson<ProjectSummary[]>('/api/projects')) ?? [];
 
-  // The first tile starts a new sculpt, for everyone: it used to be a
-  // guest's top-row "Sculpt" chip, and the tile read much clearer (owner
-  // call before showing the app around). It doubles as the empty state -
-  // a gallery with nothing in it still leads with the way to make
-  // something.
-  // Guests get the plain New sculpt tile; the owner's Create tile chooses
-  // between a sculpt and an armature (the armature is theirs alone for now).
-  const armature = armatureAllowed(admin);
-  grid.appendChild(armature ? createCard() : newSculptCard());
+  // The first tile starts new work, for everyone: it used to be a guest's
+  // top-row "Sculpt" chip, and the tile read much clearer (owner call
+  // before showing the app around). It doubles as the empty state - a
+  // gallery with nothing in it still leads with the way to make
+  // something. Armature mode is everyone's too now (owner call), so the
+  // tile asks which of the two to start rather than going straight in.
+  grid.appendChild(createCard());
 
   // Then work in progress: the sculpt autosave lives in this browser, so it
   // is not a project the API knows about, but it is the thing most worth
   // getting back to. An armature in progress sits beside it.
   const inProgress = await sculptCard();
   if (inProgress) grid.appendChild(inProgress);
-  const armatureInProgress = armature ? await armatureCard() : null;
+  const armatureInProgress = await armatureCard();
   if (armatureInProgress) grid.appendChild(armatureInProgress);
 
   // Then the shelf: scenes explicitly saved on this device, newest first.
@@ -86,21 +83,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 
   // Only projects with frames are shown publicly; empties live in the editor.
   for (const p of projects.filter((p) => p.frameCount > 0)) grid.appendChild(card(p));
-}
-
-/** Start a fresh sculpt: a plus over the default subject (the guest tile). */
-function newSculptCard(): HTMLElement {
-  const a = document.createElement('a');
-  a.className = 'card card--new';
-  a.href = '/?sculpt=1';
-  a.innerHTML =
-    '<div><div class="card--new__plus">+</div>' +
-    '<div class="card--new__label">New sculpt</div></div>';
-  a.addEventListener('click', (e) => {
-    e.preventDefault();
-    void startSculpt();
-  });
-  return a;
 }
 
 /**

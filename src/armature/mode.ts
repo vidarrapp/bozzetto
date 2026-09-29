@@ -20,7 +20,7 @@ const HISTORY_LIMIT = 64;
 const SAVE_GAP_MS = 400;
 /** The preset id a figure read from a file goes under. */
 const IMPORTED = 'imported';
-/** The figure a new armature starts on (owner call): a mannequin, fetched on first use. */
+/** The figure a new armature starts on (owner call): a mannequin, fetched at boot. */
 const DEFAULT_FIGURE = 'mannequin-male-realistic';
 /**
  * What stands in when a mannequin cannot be fetched or a saved model
@@ -119,9 +119,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     return buildArmature(preset === IMPORTED ? FALLBACK_FIGURE : preset, material);
   };
   // A mannequin - the saved one, or the one a new armature starts on - is
-  // fetched before anything is built; if that fails (offline, never seen)
-  // the blocks stand in and a saved pose still applies, since every figure
-  // shares the bone names.
+  // fetched before anything is built; if that fails (offline before the
+  // service worker has precached it, or with no worker at all) the blocks
+  // stand in and a saved pose still applies, since every figure shares the
+  // bone names.
   let wanted = saved?.state.preset ?? DEFAULT_FIGURE;
   if (figureById(wanted)) {
     try {

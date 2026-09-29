@@ -1,6 +1,7 @@
 // The smoke suites: boot, the Create menu's primitives and base meshes,
-// the scene-file round trip, and the Armature boot. Each gets (page, base,
-// t) - a fresh page, the server's origin, and the check collector.
+// the scene-file round trip, and Armature mode from the gallery's Create
+// tile on. Each gets (page, base, t) - a fresh page, the server's origin,
+// and the check collector.
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -588,7 +589,30 @@ export const suites = {
   },
 
   async armature(page, base, t) {
-    await openArmature(page, base);
+    // Armature mode is everyone's (owner call), so the way in is the one a
+    // visitor takes: a plain visit to the gallery, signed out - the test
+    // server has no whoami to answer - gets the Create tile, and its New
+    // armature boots the mode where a guest used to be sent back to /.
+    await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#landing-grid .card', { timeout: 30_000 });
+    const gallery = await page.evaluate(() => ({
+      chips: [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()),
+      first: document.querySelector('#landing-grid .card')?.classList.contains('card--new') ?? false,
+      label: document.querySelector('#landing-grid .card--new .card--new__label')?.textContent ?? '',
+    }));
+    t.ok(gallery.chips.includes('Log in') && !gallery.chips.includes('Projects'), `the visit is a guest's (the top row: ${gallery.chips.join(', ')})`);
+    t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
+    await page.click('#landing-grid .card--new');
+    const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
+    t.eq(choices.join(', '), 'New sculpt, New armature', 'which offers a new sculpt or a new armature');
+    await Promise.all([
+      page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),
+      page.click('.create-overlay [data-kind="armature"]'),
+    ]);
+    await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+    await page.waitForTimeout(250);
+    const at = new URL(page.url());
+    t.eq(`${at.pathname}${at.search}`, '/?armature=1', 'New armature boots /?armature=1 and stays there');
     const ok = await page.evaluate(() => !!window.__armature.armature && typeof window.__armature.reach === 'function');
     t.ok(ok, 'armature mode boots with its handle');
     // Nothing saved yet: a new armature starts on the realistic male

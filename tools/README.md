@@ -165,9 +165,9 @@ few entries. Which assets ship, and at which Multires or Subdivision level,
 is the `ASSETS` table at the top of the script; the app's catalogue (names,
 groups, face counts for the tooltips) is `src/sculpt/bridge/basemeshes.ts`,
 and the file layout is described in both. A file that changes keeps its
-name, so bump `MODEL_REVISION` in `src/viewer/assetVersion.ts` with it:
-the service worker keeps these files cache-first by URL, and the revision
-is part of the URL.
+name, and nothing else needs touching: the service worker precaches these
+files and revisions each by its content, so the next build carries the
+change to every installed copy with its next update.
 
 The exporter keeps quads, turns Blender's Z up into Y up facing +Z, centres
 every part on itself and records the offset that puts a figure's eyes back
@@ -207,9 +207,9 @@ Each figure was exported standing at the origin before being moved along
 X, so to export one by hand after editing, put its armature back at X = 0,
 select the armature and its mesh, and File > Export > glTF 2.0 with Custom
 Properties on, as under "Exporting for the app". A planar-study version is
-that: reshape the lumps, export, drop the file over the one in
-`public/assets/armature`, and bump `MODEL_REVISION` as for the base
-meshes, or a browser that has the old file keeps it.
+that: reshape the lumps, export, and drop the file over the one in
+`public/assets/armature`; as with the base meshes, the next build carries
+it to every installed copy.
 
 The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
 chains); only their positions come from the lumps: a chain joint sits

@@ -60,10 +60,10 @@ export default defineConfig(({ mode }) => {
       // nothing; a sculpt session keeps its worker to the end.
       registerType: 'prompt',
       workbox: {
-        // The shell, and only the shell: ~3.5 MB of JS, CSS, fonts and the
-        // small PNGs (matcaps, brush stencils, icons). Source maps and the
-        // demo timelapse are deliberately out - precaching either would
-        // triple the install for bytes nobody needs offline.
+        // The shell - JS, CSS, fonts and the small PNGs (matcaps, brush
+        // stencils, base-mesh thumbnails, icons) - and what new work starts
+        // from. Source maps and the demo timelapse stay out: precaching
+        // either is bytes nobody needs offline.
         globPatterns: [
           '**/*.{js,css,html,svg,woff2}',
           'icons/**/*.png',
@@ -73,8 +73,37 @@ export default defineConfig(({ mode }) => {
           // still hold them - the one visible difference between the
           // installed app online and offline.
           'assets/fonts/*.ttf',
+          // The models and the default environment, from the first install
+          // (owner request): the base-mesh library (about 9.5 MB over 28
+          // files), the four mannequins (4 MB) and the Neutral studio HDRI
+          // (1.5 MB). Kept only once used, they left an offline session
+          // whose Create menu tiles failed and whose new armature came up
+          // as blocks, its mannequin never fetched. The install grows from
+          // about 4.6 MB to about 20 MB for it; the other five HDRIs stay
+          // on demand (below).
+          'assets/basemeshes/*.bzm',
+          'assets/armature/*.glb',
+          'assets/env/studio-neutral.hdr',
         ],
         globIgnores: ['**/*.map', 'timelapses/**'],
+        // The plugin's default leaves everything under assets/ without a
+        // revision, as if every name there carried a content hash, and
+        // Workbox never fetches an unrevisioned entry again once it has
+        // it. Vite's output does (name-hash.ext, flat in assets/); the
+        // files public/ puts under assets/ keep their names through every
+        // change, so a re-exported model would never have reached an
+        // install that already had it. Only hashed names go without a
+        // revision now. Everything else carries its content hash, so a
+        // changed file changes the worker and every install fetches it
+        // with the next update - which is what lets the models' URLs go
+        // without a version of their own.
+        dontCacheBustURLsMatching: /^assets\/[^/]+-[\w-]{8}\.\w+$/,
+        // A request finds its precache entry by URL, and Workbox's defaults
+        // ignore only utm_ and fbclid. The matcaps are asked for with a ?v=
+        // cache-buster (ASSET_VERSION), so every one missed its entry and
+        // went to the network - and offline, failed to load. Any precached
+        // file requested with ?v= now finds its entry; the defaults stay.
+        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^v$/],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
@@ -86,8 +115,8 @@ export default defineConfig(({ mode }) => {
         navigateFallbackDenylist: [/^\/api\//, /^\/admin\//, /^\/media\//],
         runtimeCaching: [
           {
-            // The sign-in probe. Everything owner-only (the Create chooser,
-            // Armature mode, publishing) asks /admin/api/whoami at boot, and
+            // The sign-in probe. Everything owner-only (the gallery's
+            // Projects chip, publishing) asks /admin/api/whoami at boot, and
             // offline the fetch throws, so the owner's own installed app
             // demoted them to a guest. Network first: online the answer is
             // always the live one (a 403 or the Access login page passes
@@ -106,40 +135,15 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
-            // HDRIs are 1.5 MB each and there are six. Fetched on demand and
-            // kept once seen, so an offline session has the environments you
-            // actually used without a 9 MB install.
+            // The other five HDRIs, 1.5 to 1.7 MB each: fetched on demand
+            // and kept once seen, so an offline session has the environments
+            // you actually used without another 8 MB on the install. The
+            // default one is precached, and the precache answers first.
             urlPattern: /\/assets\/env\/.*\.hdr$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'bozzetto-env',
               expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 90 },
-            },
-          },
-          {
-            // The base-mesh library: 8 MB over twenty-odd files, fetched the
-            // first time a tile is picked and kept, like the HDRIs. The
-            // thumbnails are PNGs under assets/ and precache with the shell.
-            // The URLs carry MODEL_REVISION (src/viewer/assetVersion.ts) as
-            // ?r=, so a re-exported file is a new entry rather than a stale one.
-            urlPattern: /\/assets\/basemeshes\/[^?]*\.bzm(\?.*)?$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'bozzetto-basemeshes',
-              expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 180 },
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
-            // The Armature mode's mannequins: four skinned .glb files of a
-            // megabyte each, fetched when picked or, for the default figure,
-            // at boot, and kept. Versioned the same way as the base meshes.
-            urlPattern: /\/assets\/armature\/[^?]*\.glb(\?.*)?$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'bozzetto-figures',
-              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 180 },
-              cacheableResponse: { statuses: [200] },
             },
           },
           {

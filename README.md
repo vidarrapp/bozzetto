@@ -14,6 +14,7 @@ Built as a study and teaching tool, and as a way to render out content. Shared u
 | --- | --- |
 | `/` | Gallery |
 | `/?sculpt=1` | Sculpt mode |
+| `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
 | `/create/` | Public editor, no sign-in |
 | `/admin/` | Full editor, publishes to the gallery |
@@ -28,13 +29,13 @@ Bozzetto installs to the home screen and launches fullscreen. That is the way to
 
 **Android (Chrome):** **⋮** menu → **Add to Home screen** → confirm.
 
-**Installed, Bozzetto works offline.** A service worker precaches the app, so it opens and sculpts with no network at all. The gallery still shows your work in progress and the projects you saw last time; environments download once and are kept. Only opening a timelapse you have never played needs a connection.
+**Installed, Bozzetto works offline.** A service worker precaches the app with its base meshes, mannequins and default environment, so it opens, sculpts and poses with no network at all. The gallery still shows your work in progress and the projects you saw last time; the other environments download once and are kept. Only opening a timelapse you have never played needs a connection.
 
 Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data.
 
 ## Sculpt
 
-Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
+Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush.
 - **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move grabs volumetrically, so you can pull a silhouette from outside the outline. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
@@ -44,7 +45,7 @@ Click **New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in
 - **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
-- **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. Files fetch on first use and stay cached.
+- **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. The files are precached with the app, so the whole library works offline.
 - **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
@@ -81,8 +82,8 @@ Each installer format has to be built on (or for) its own platform:
 ## Armature mode
 
 A posable figure of its own, for reference or as the start of a sculpt.
-Signed-in only for now: pick **Create → New armature** in the gallery (or
-open `/?armature=1`); guests see the plain New sculpt tile.
+Pick **Create → New armature** in the gallery (or open `/?armature=1`). No
+sign-in, and everything stays on your device.
 
 - **Figures.** A new armature starts on the realistic male mannequin,
   one of four: Blender Studio's CC0 "primitive" base meshes, male and
@@ -90,11 +91,11 @@ open `/?armature=1`); guests see the plain New sculpt tile.
   bones by `tools/build-mannequins.py`. The Figure list also offers the
   block placeholders (male and female); each lump follows its bone
   rigidly, so a mannequin poses, reaches and sends to Sculpt exactly like
-  the blocks. A mannequin is fetched the first time it is used (about a
-  megabyte) and kept for offline use; the autosave and `.armature` files
-  only name it. The blocks are code and always there, so they are the
-  fallback when a mannequin cannot be fetched (offline, never seen) or a
-  saved model cannot be read.
+  the blocks. The mannequins, about a megabyte each, are precached with
+  the app, so all four are there offline; the autosave and `.armature`
+  files only name them. The blocks are code and always there, so they are
+  the fallback when a mannequin cannot be fetched (offline before the
+  service worker has precached it) or a saved model cannot be read.
 
 - **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
   that joint's limits: hinges (elbows, knees) show one ring plus a little
@@ -218,7 +219,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 ### Gallery
 
-- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **New sculpt** tile and your own in-progress sculpt.
+- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature, and your own sculpt and armature in progress.
 - **Install**, **Upload timelapse**, and **Log in**, which becomes **Projects** once signed in.
 - The **Install** card also offers the desktop app, reading the latest GitHub release so the links never point at a stale version, and leading with the build for the visitor's platform.
 
@@ -242,7 +243,7 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - Serverless on Cloudflare: metadata in D1, meshes in R2, every API route a Pages Function.
 - Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
-- A service worker precaches the ~4.4 MB app shell, fonts included; HDRIs, base meshes, the gallery list and the sign-in answer are cached as they are used, so an installed app keeps working offline, owner features included. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
+- A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. The other HDRIs, the gallery list and the sign-in answer are cached as they are used, so an installed app keeps working offline, owner features included. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
 - The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Controls
@@ -304,22 +305,26 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.3
 
-- **A new armature starts on the realistic male mannequin** rather than the block placeholders. The blocks stay in the Figure list and stand in whenever a mannequin cannot be fetched (offline, never seen) or a saved model cannot be read.
-- **Mirrored parts face outward.** The bundle's right-hand lumps are its left ones mirrored with a negative scale, and baking that into the exported positions turned their faces inward: the mannequins' right limbs, eyes and ears rendered inside out. The exporters now reverse the winding of mirrored parts and check every part's signed volume. The blockouts added as parts had the same fault on their right-hand lumps, the right eye and ear among them. The one-object blockouts, voxel-remeshed from those lumps, come out unchanged, as do the other base meshes, whose eyes were never mirrored; so does Send to Sculpt, whose voxel pass tells inside from outside without reading the winding.
-- **The mannequins' hips sit lower**, in the middle of each half of the pelvis. They were placed at the top of the thigh lump, which reaches up past the joint, and sat 2.5 to 4.5 cm too high.
-- **The deltoid moves with the arm.** The shoulder lump now rides on the upper arm rather than the clavicle, and the shoulder joint sits in its middle, so a raised arm turns the shoulder cap about its own centre, as on a wooden mannequin, instead of swinging out from under it.
-- **Knees fold forward and elbows back on every mannequin.** The stylized male's knees bent backwards: the files carried no knee or elbow limits, and the app took the fold direction from the bend each joint rests with, which on that figure was a fraction of a degree past straight. The mannequins now carry their own knee and elbow limits, folding the anatomical way through a range sized from each figure's rest bend.
-- **The hips open outward, as they should.** A leg taken out to the side stopped at 20° and one taken across went on to 60°, by its foot's ball or the thigh's Side slider alike: the hips' side limits were the wrong way round. A leg now opens 60° and crosses 20°, on the mannequins and the blocks. The shoulders had the same fault and now lift 30° and drop 20°, where they lifted 20° and dropped 30°.
+**Armature mode for everyone, planted feet and the models offline.** Desktop app 0.5.0.
+
+- **Armature mode for everyone.** Every visitor's gallery now leads with the **Create** tile, which starts a new sculpt or a new armature, and shows an armature in progress as a card; `/?armature=1` opens for anyone, and the desktop app, which hid the mode for want of a sign-in, has it too. Publishing and the Projects chip stay the owner's. An update to the app no longer reloads the mode under you: as in Sculpt, it waits for the gallery.
+- **The base meshes, the mannequins and the default environment are precached**, so they work offline from the first visit rather than once used; before, a new armature offline came up as blocks when its mannequin had never been fetched. The install grows from about 4.6 MB to about 20 MB, and the other five environments still download on first use. The precache revisions each file by its content, so a re-exported model reaches every installed copy with its next update, and the caches the models were kept in before are cleared. The matcaps load offline too: they were precached all along but asked for under a versioned address the precache did not match, so offline they only appeared while the browser's own cache still held them.
+- **A new armature starts on the realistic male mannequin** rather than the blocks, which stay in the Figure list and stand in whenever a mannequin cannot be fetched or a saved model cannot be read.
+- **Mirrored parts face outward.** The bundle's right-hand lumps are its left ones mirrored with a negative scale, which the export baked in with their faces turned inward: the mannequins' right limbs, eyes and ears, and the right-hand lumps of a blockout added as parts, rendered inside out. The exporters now reverse mirrored parts' winding and check every part's signed volume. The one-object blockouts, the other base meshes and Send to Sculpt come out as before.
+- **The mannequins' hips sit lower**, in the middle of each half of the pelvis; placed at the top of the thigh lump, which reaches up past the joint, they sat 2.5 to 4.5 cm too high.
+- **The deltoid moves with the arm.** The shoulder lump rides on the upper arm rather than the clavicle, with the joint in its middle, so a raised arm turns the shoulder cap about its own centre, as on a wooden mannequin, instead of swinging out from under it.
+- **Knees fold forward and elbows back on every mannequin.** With no limits in the files, the app took each hinge's fold from the bend it rests with, and the stylized male's knees rest a fraction of a degree past straight, so they bent backwards. The mannequins now carry their own knee and elbow limits, sized from each figure's rest bend.
+- **The hips open outward.** Their side limits were the wrong way round: a leg stopped 20° out to the side and crossed 60°, by its foot's ball or the Side slider alike. It now opens 60° and crosses 20°, on the mannequins and the blocks, and the shoulders, which had the same fault, lift 30° and drop 20° rather than the reverse.
 - **The head reaches through the spine.** Dragging the head's ball bends the neck, the chest and now the spine too, so a head drawn forward or aside takes the back with it.
 - **Symmetry starts off** in Armature mode. A figure is posed a limb at a time far more often than both at once; `X` and the panel's box still turn it on.
-- **Both feet start pinned**, where the new figure stands, so the pelvis can drop into a crouch or lean from the first drag without the feet leaving the ground. A file from before pins were saved opens the same way, and **Reset pose** now moves every pin to where the reset leaves its hand or foot instead of pulling the figure back into the old pose on the next move.
-- **Pinned feet no longer snap round when the pelvis moves.** A knee's aim was read around the line from the hip to the foot's ball, which sits well ahead of the ankle, and against that line the knee of a nearly straight leg reads as pointing backwards: the first solve after the pelvis moved turned each leg half round to put it right, on every figure. It is read around the hip-to-ankle line now, and three smaller snaps of the same kind went with it: the aim's forward turns with the figure rather than staying world forward, each knee and elbow starts from where it points at rest rather than being swung to straight forward or back on its first solve (by up to 37° on the mannequins), and one turned by hand keeps its new direction. A pin beyond the leg's reach leaves the foot as near as the leg gets.
-- **The feet reach from their middle.** A foot's ball and its pin sit halfway along the foot rather than at the toe, so a pinned foot pivots about its middle instead of swinging round its toe; the hands and the head are held by their tips as before. Files saved earlier have their foot pins moved to the middle of the foot as they open.
-- **Plant feet.** A foot on the ground stands flat, facing the way the figure faces, after a reach, a pinned foot's re-solve or a pose reset; in a deep crouch it stays as flat as the ankle bends, then the heel lifts. A foot off the ground follows its shin as before. On by default, with a box in the Reach section, and kept with the figure.
-- **The balls win the click.** A press within 18 pixels of a reach or aim ball takes it, even where a part is in front of the ball; the knee and elbow balls used to lose most presses to the limb around them. The balls are also in place from the start, where they used to wait at the figure's feet until the first click.
-- **The armature's gallery card has a picture.** The figure is photographed without its balls and gizmo as you leave through the Gallery link, and as the page closes where there is time, and the picture is kept with the autosave; the `.armature` file leaves it out.
+- **Both feet start pinned** where the figure stands, so the pelvis can crouch or lean from the first drag with the feet on the ground; a file from before pins were saved opens the same way. **Reset pose** moves every pin to where the reset leaves its hand or foot, rather than pulling the figure back into the old pose on the next move.
+- **Pinned feet no longer snap round when the pelvis moves.** A knee's aim was read around the line from the hip to the foot's ball, which sits well ahead of the ankle; against that line a nearly straight leg's knee reads as pointing backwards, so the first solve after the pelvis moved turned each leg half round, on every figure. It is read around the hip-to-ankle line now. Three smaller snaps went with it: the aim's forward turns with the figure instead of staying world forward, each knee and elbow starts from where it points at rest instead of being swung round on its first solve (by up to 37° on the mannequins), and one turned by hand keeps its direction. A pin beyond the leg's reach leaves the foot as near as the leg gets.
+- **The feet reach from their middle.** A foot's ball and pin sit halfway along the foot rather than at the toe, so a pinned foot pivots about its middle instead of swinging round its toe; the hands and the head are still held by their tips. Files saved earlier have their foot pins moved to mid-foot as they open.
+- **Plant feet.** A foot on the ground stands flat, facing the way the figure faces, after a reach, a pinned foot's re-solve or a pose reset; in a deep crouch it stays as flat as the ankle bends, then the heel lifts. A foot off the ground follows its shin as before. On by default, with a box in the Reach section, and saved with the figure.
+- **The balls win the click.** A press within 18 pixels of a reach or aim ball takes it, even with a part in front; the knee and elbow balls used to lose most presses to the limb around them. They are also in place from the start, where they waited at the figure's feet until the first click.
+- **The armature's gallery card has a picture**: the figure, photographed without its balls and gizmo as you leave through the Gallery link and, where there is time, as the page closes. It is kept with the autosave; the `.armature` file leaves it out.
 
 ### v1.2
 

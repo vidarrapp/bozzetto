@@ -1,5 +1,3 @@
-import { MODEL_REVISION } from '../viewer/assetVersion';
-
 /**
  * The mannequins: Blender Studio's "primitive" figures from the Human Base
  * Meshes bundle (CC0), rigged onto the app's own bones by
@@ -7,8 +5,8 @@ import { MODEL_REVISION } from '../viewer/assetVersion';
  * public/assets/armature. The app reads one exactly as it reads a rigged
  * model you load yourself (glbRig.ts), so a mannequin is a preset in the
  * Figure list and nothing more: no bytes in the autosave, no special case
- * in the file format. Fetched on first use, a megabyte each, and kept by
- * the service worker.
+ * in the file format. A megabyte each, fetched when picked and precached
+ * by the service worker with the app, so all four are there offline.
  */
 export interface FigureInfo {
   id: string;
@@ -29,7 +27,7 @@ export function figureById(id: string): FigureInfo | undefined {
 }
 
 export function figureUrl(id: string): string {
-  return `/assets/armature/${id}.glb?r=${MODEL_REVISION}`;
+  return `/assets/armature/${id}.glb`;
 }
 
 const inflight = new Map<string, Promise<ArrayBuffer>>();

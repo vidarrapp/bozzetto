@@ -107,7 +107,7 @@ export async function openSculpt(page, base, query = '') {
   await page.waitForTimeout(250);
 }
 
-/** Boot armature mode (allowed to everyone in the test build). */
+/** Boot armature mode on a fresh page and wait for its console handle. */
 export async function openArmature(page, base) {
   await page.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });

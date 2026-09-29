@@ -1,11 +1,12 @@
 /**
  * Service worker registration.
  *
- * The worker precaches the app shell so an installed Bozzetto opens with no
- * network at all - which is the point of installing it on an iPad. Assets
- * too big or too rarely wanted to precache (the HDRIs) are cached the first
- * time they are used, and the gallery's project list is stale-while-
- * revalidate so its cards still draw offline.
+ * The worker precaches the app shell, the base-mesh library, the mannequins
+ * and the default environment, so an installed Bozzetto opens, sculpts and
+ * poses with no network at all - which is the point of installing it on an
+ * iPad. The other HDRIs, too big to precache for how rarely each is wanted,
+ * are cached the first time they are used, and the gallery's project list
+ * is stale-while-revalidate so its cards still draw offline.
  *
  * Registration is deliberately late and deliberately escapable. A service
  * worker is the one piece of a web app that can outlive a bad deploy: a
@@ -26,6 +27,13 @@
 
 const SW_URL = '/sw.js';
 const OPT_OUT = 'bozzetto-no-sw';
+/**
+ * Runtime caches no route writes to any more. Only a route's own expiry
+ * ever empties one, so they would sit in storage for good: the base meshes
+ * and mannequins were kept in these until they moved into the precache
+ * (0.5.0), and an install that had used them would hold them twice.
+ */
+const RETIRED_CACHES = ['bozzetto-basemeshes', 'bozzetto-figures'];
 
 /** localStorage throws in some privacy modes; an unreadable flag is "off". */
 function optedOut(): boolean {
@@ -87,18 +95,29 @@ export function registerServiceWorker(): void {
         // before: online-only.
         console.warn('service worker registration failed:', err);
       });
+    // The worker serving this bundle has no route for them; a tab still on
+    // the worker before it only misses and fetches afresh.
+    if ('caches' in window) {
+      for (const name of RETIRED_CACHES) void caches.delete(name).catch(() => {});
+    }
   });
 }
 
 /**
- * Where a reload costs nothing: the gallery. Sculpt mode and the viewer
- * are left alone - a page mid-stroke or mid-playback is not reloaded
- * under anyone, and it keeps the worker it started with (whose precache
- * still holds every chunk it might yet import) until it is closed.
+ * Where a reload costs nothing: the gallery. Sculpt mode, Armature mode and
+ * the viewer are left alone - a page mid-stroke, mid-pose or mid-playback
+ * is not reloaded under anyone, and it keeps the worker it started with
+ * (whose precache still holds every chunk it might yet import) until it is
+ * closed. Armature mode lives at / too, and was taken for the gallery.
  */
 function reloadIsFree(): boolean {
   const params = new URLSearchParams(window.location.search);
-  return window.location.pathname === '/' && !params.has('sculpt') && !params.has('tl');
+  return (
+    window.location.pathname === '/' &&
+    !params.has('sculpt') &&
+    !params.has('armature') &&
+    !params.has('tl')
+  );
 }
 
 /**

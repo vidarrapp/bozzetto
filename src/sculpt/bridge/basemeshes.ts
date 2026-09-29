@@ -1,5 +1,4 @@
 import Utils from '@sculpt-vendor/misc/Utils';
-import { MODEL_REVISION } from '../../viewer/assetVersion';
 
 /**
  * The base-mesh library: Blender Studio's Human Base Meshes (CC0), exported
@@ -12,10 +11,9 @@ import { MODEL_REVISION } from '../../viewer/assetVersion';
  * step (SculptSession.adoptBaseMesh), scaled together so the figure lands
  * at the canonical sculpt size the primitives use.
  *
- * Files are fetched when a tile is picked, not with the shell: the library
- * is 8 MB and a session touches one or two of them. The service worker
- * keeps what was fetched (vite.config.ts), so a figure used once is there
- * offline.
+ * Files are fetched when a tile is picked, and the service worker precaches
+ * the whole library with the app (vite.config.ts), about 9.5 MB, so every
+ * tile works offline from the first install, not only the ones used before.
  *
  * Format (little-endian; tools/export-basemeshes.py writes it):
  *   'BZM1' u32 version=1 u32 partCount u32 reserved
@@ -113,10 +111,9 @@ export function baseMeshById(id: string): BaseMeshInfo | undefined {
 }
 
 export function baseMeshUrl(id: string): string {
-  return `/assets/basemeshes/${id}.bzm?r=${MODEL_REVISION}`;
+  return `/assets/basemeshes/${id}.bzm`;
 }
 
-/** Unversioned: the thumbnails precache with the shell under these URLs. */
 export function baseMeshThumbUrl(id: string): string {
   return `/assets/basemeshes/thumbs/${id}.png`;
 }
