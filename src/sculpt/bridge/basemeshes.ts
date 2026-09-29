@@ -40,6 +40,11 @@ export interface BaseMeshInfo {
    * smooth subdivision would round every one of them off.
    */
   smooth?: boolean;
+  /**
+   * A blockout's other file: the same figure as its separate lumps, one
+   * part per body segment in hierarchy order, for adding "as parts".
+   */
+  parts?: string;
   /** Who made it, for the tile's tooltip; the bundle is CC0 regardless. */
   by: string;
 }
@@ -70,10 +75,10 @@ export const BASE_MESHES: BaseMeshInfo[] = [
   { id: 'body-female-realistic', label: 'Female body', note: 'realistic', group: 'body', faces: 43428, kb: 848, by: DAN },
   { id: 'body-male-stylized', label: 'Male body', note: 'stylized', group: 'body', faces: 14164, kb: 276, by: JULIEN },
   { id: 'body-female-stylized', label: 'Female body', note: 'stylized', group: 'body', faces: 14164, kb: 276, by: JULIEN },
-  { id: 'blockout-male-realistic', label: 'Male blockout', note: 'realistic', group: 'body', faces: 50672, kb: 990, by: `${PAUL}, ${JULIEN}` },
-  { id: 'blockout-female-realistic', label: 'Female blockout', note: 'realistic', group: 'body', faces: 42224, kb: 825, by: `${PAUL}, ${JULIEN}` },
-  { id: 'blockout-male-stylized', label: 'Male blockout', note: 'stylized', group: 'body', faces: 52344, kb: 1022, by: PAUL },
-  { id: 'blockout-female-stylized', label: 'Female blockout', note: 'stylized', group: 'body', faces: 39040, kb: 763, by: PAUL },
+  { id: 'blockout-male-realistic', label: 'Male blockout', note: 'realistic', group: 'body', faces: 50672, kb: 990, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-male-realistic-parts' },
+  { id: 'blockout-female-realistic', label: 'Female blockout', note: 'realistic', group: 'body', faces: 42224, kb: 825, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-female-realistic-parts' },
+  { id: 'blockout-male-stylized', label: 'Male blockout', note: 'stylized', group: 'body', faces: 52344, kb: 1022, by: PAUL, parts: 'blockout-male-stylized-parts' },
+  { id: 'blockout-female-stylized', label: 'Female blockout', note: 'stylized', group: 'body', faces: 39040, kb: 763, by: PAUL, parts: 'blockout-female-stylized-parts' },
   // Heads. Realistic is the sculpting-topology scan with its eyes; planar
   // is the "planes of the head" study at multires level 2; generic is a
   // 316-face cage, the one to start a head from scratch on.
@@ -81,7 +86,7 @@ export const BASE_MESHES: BaseMeshInfo[] = [
   { id: 'head-stylized', label: 'Head', note: 'stylized', group: 'head', faces: 5798, kb: 112, by: JULIEN },
   { id: 'head-planar', label: 'Head', note: 'planar', group: 'head', faces: 5056, kb: 99, by: PAUL },
   { id: 'head-generic', label: 'Head', note: 'low poly', group: 'head', faces: 316, kb: 6, by: PAUL },
-  { id: 'head-blockout', label: 'Head', note: 'blockout', group: 'head', faces: 44264, kb: 865, by: `${PAUL}, ${JULIEN}` },
+  { id: 'head-blockout', label: 'Head', note: 'blockout', group: 'head', faces: 44264, kb: 865, by: `${PAUL}, ${JULIEN}`, parts: 'head-blockout-parts' },
   // Parts. One hand and one foot each; Mirror in the Scene panel makes the
   // other side.
   { id: 'hand-realistic', label: 'Hand', note: 'realistic', group: 'part', faces: 3298, kb: 64, by: DAN },
@@ -95,6 +100,12 @@ export const BASE_MESHES: BaseMeshInfo[] = [
   { id: 'skull-realistic', label: 'Skull', note: 'realistic', group: 'part', faces: 11634, kb: 228, by: `${PAUL}, ${TONATIUH}` },
   { id: 'skull-planar', label: 'Skull', note: 'planar', group: 'part', faces: 898, kb: 18, smooth: false, by: TONATIUH },
 ];
+
+/** How a base mesh is added; only a blockout with a parts file honours it. */
+export interface AddBaseMeshOptions {
+  /** Every lump as its own object, rather than the one remeshed shell. */
+  parts?: boolean;
+}
 
 export function baseMeshById(id: string): BaseMeshInfo | undefined {
   return BASE_MESHES.find((b) => b.id === id);

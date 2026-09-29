@@ -31,6 +31,8 @@ export class ScenePanel extends SidePanel {
 
   private mirrorMenu!: HTMLDivElement;
   private mergeBtn!: HTMLButtonElement;
+  /** Blockouts arrive as their separate lumps rather than one shell. */
+  private blockoutParts = readBlockoutParts();
 
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
@@ -169,6 +171,31 @@ export class ScenePanel extends SidePanel {
     }
     menu.appendChild(words);
     head('Base meshes', 'Blender Studio · CC0');
+    // The blockouts' one choice (owner request): the remeshed shell, or
+    // every lump as its own object, the way the Armature keeps them.
+    const row = div('outliner__menu-switch');
+    const lead = document.createElement('span');
+    lead.textContent = 'Blockouts as';
+    row.appendChild(lead);
+    const pills: HTMLButtonElement[] = [];
+    for (const [parts, label] of [
+      [false, 'one object'],
+      [true, 'parts'],
+    ] as const) {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'outliner__menu-pill';
+      pill.textContent = label;
+      pill.setAttribute('aria-pressed', String(parts === this.blockoutParts));
+      pill.addEventListener('click', () => {
+        this.blockoutParts = parts;
+        writeBlockoutParts(parts);
+        for (const p of pills) p.setAttribute('aria-pressed', String(p === pill));
+      });
+      pills.push(pill);
+      row.appendChild(pill);
+    }
+    menu.appendChild(row);
     for (const { group, title } of BASE_MESH_GROUPS) {
       const sub = div('outliner__menu-sub');
       sub.textContent = title;
@@ -220,7 +247,7 @@ export class ScenePanel extends SidePanel {
     if (note) note.textContent = 'Loading…';
     let failed = false;
     try {
-      await this.session.addBaseMesh(id);
+      await this.session.addBaseMesh(id, { parts: this.blockoutParts });
       this.closeMenus();
     } catch (err) {
       console.error(err);
@@ -608,3 +635,23 @@ export class ScenePanel extends SidePanel {
     super.dispose();
   }
 }
+
+const BLOCKOUT_PARTS_KEY = 'bozzetto:blockout-parts';
+
+/** The switch's last setting, per browser; storage may be unavailable. */
+function readBlockoutParts(): boolean {
+  try {
+    return localStorage.getItem(BLOCKOUT_PARTS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeBlockoutParts(parts: boolean): void {
+  try {
+    localStorage.setItem(BLOCKOUT_PARTS_KEY, parts ? '1' : '0');
+  } catch {
+    /* private mode, or storage full: the setting lasts the session */
+  }
+}
+

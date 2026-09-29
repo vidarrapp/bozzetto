@@ -2077,6 +2077,35 @@ html.is-page body {
   border-radius: 6px;
 }
 
+.outliner__menu-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.outliner__menu-pill {
+  padding: 3px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.outliner__menu-pill:hover {
+  background: var(--hover);
+}
+
+.outliner__menu-pill[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--text);
+}
+
 .outliner__tile {
   display: flex;
   flex-direction: column;

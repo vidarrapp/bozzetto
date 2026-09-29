@@ -118,6 +118,33 @@ export const suites = {
     t.ok(drift.planar < 1e-6, `planar skull: base vertices stay put (drift ${drift.planar})`);
     t.ok(drift.hand > 1e-3, `hand: smooth subdivision moves them (drift ${drift.hand.toFixed(4)})`);
 
+    // A blockout: the one remeshed shell by default, or every lump as its
+    // own object, hierarchy order, one undo step.
+    before = await count(page);
+    await page.evaluate(() => window.__sculpt.session.addBaseMesh('head-blockout'));
+    t.eq(await count(page), before + 1, 'blockout head: one object by default');
+    before = await count(page);
+    const split = await page.evaluate(async () => {
+      const s = window.__sculpt.session;
+      const m = await s.addBaseMesh('head-blockout', { parts: true });
+      const all = s.getMeshes();
+      const mine = all.slice(all.length - 11);
+      return {
+        n: all.length,
+        first: s.getMeshName(m),
+        names: mine.map((x) => s.getMeshName(x)),
+        faces: mine.map((x) => x.getNbFaces()),
+      };
+    });
+    t.eq(split.n, before + 11, 'blockout head as parts: eleven objects');
+    t.ok(/^Head( \d+)?$/.test(split.first), `the head part leads and is selected (${split.first})`);
+    t.ok(split.names.includes('Nose') && split.names.includes('Ear L'), `parts named: ${split.names.join(', ')}`);
+    t.ok(split.faces.every((f) => f >= 1000 && f < 20000), `parts subdivided modestly (${Math.min(...split.faces)}–${Math.max(...split.faces)} faces)`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    t.eq(await count(page), before, 'blockout parts: one undo removes them all');
+    const pills = await page.evaluate(() => [...document.querySelectorAll('.outliner__menu-pill')].map((p) => `${p.textContent}:${p.getAttribute('aria-pressed')}`));
+    t.eq(pills.join(' '), 'one object:true parts:false', 'the switch defaults to one object');
+
     // An unknown id rejects rather than adding.
     const unknown = await page.evaluate(() => window.__sculpt.session.addBaseMesh('no-such-mesh').then(() => 'added', (e) => String(e.message)));
     t.ok(/Unknown base mesh/.test(unknown), `unknown id rejects (${unknown})`);
@@ -185,5 +212,24 @@ export const suites = {
     await openArmature(page, base);
     const ok = await page.evaluate(() => !!window.__armature.armature && typeof window.__armature.reach === 'function');
     t.ok(ok, 'armature mode boots with its handle');
+  },
+};
+      }, id);
+      t.eq(r.id, id, `${id}: is the figure`);
+      t.eq(r.bones, 19, `${id}: nineteen bones`);
+      t.eq(r.chains, 5, `${id}: five reach chains`);
+      t.ok(r.skinned && r.verts > 10000, `${id}: a skinned mesh of ${r.verts} vertices`);
+      t.ok(r.height > 60 && r.height < 100, `${id}: head handle ${r.height.toFixed(1)} scene units above the foot`);
+      t.ok(r.moved > 5, `${id}: the left hand reaches (${r.moved.toFixed(1)})`);
+      t.eq(r.preset, id, `${id}: the state names it`);
+      t.ok(/mannequin/i.test(r.option), `${id}: listed in the Figure select as "${r.option}"`);
+    }
+
+    // The autosave brings a mannequin back on reload, fetched again.
+    await page.evaluate(() => window.__armature.save());
+    await openArmature(page, base);
+    t.eq(await page.evaluate(() => window.__armature.armature.rig.id), ids[3], 'the mannequin survives a reload');
+    await page.evaluate(() => window.__armature.figure('placeholder-male'));
+    t.eq(await page.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'and the blocks come back on request');
   },
 };

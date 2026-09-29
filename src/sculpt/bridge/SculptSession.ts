@@ -7,7 +7,13 @@ import {
   PlaneGeometry,
   TorusGeometry,
 } from 'three';
-import { baseMeshById, loadBaseMesh, type BaseMeshFile, type BaseMeshInfo } from './basemeshes';
+import {
+  baseMeshById,
+  loadBaseMesh,
+  type AddBaseMeshOptions,
+  type BaseMeshFile,
+  type BaseMeshInfo,
+} from './basemeshes';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Utils from '@sculpt-vendor/misc/Utils';
@@ -870,12 +876,15 @@ export class SculptSession {
 
   /**
    * Scene menu: a figure or part from the base-mesh library, fetched on
-   * demand. Resolves once the objects are in the scene and selected.
+   * demand. Resolves once the objects are in the scene and selected. A
+   * blockout can come as its separate lumps instead of the one shell
+   * (owner request): the parts file, every part treated alike.
    */
-  async addBaseMesh(id: string): Promise<Multimesh> {
+  async addBaseMesh(id: string, opts: AddBaseMeshOptions = {}): Promise<Multimesh> {
     const info = baseMeshById(id);
     if (!info) throw new Error(`Unknown base mesh "${id}"`);
-    return this.adoptBaseMesh(info, await loadBaseMesh(id));
+    const split = !!(opts.parts && info.parts);
+    return this.adoptBaseMesh(info, await loadBaseMesh(split ? info.parts! : id), split);
   }
 
   /**
@@ -888,9 +897,11 @@ export class SculptSession {
    *
    * The quads come straight through: the multires stack subdivides them the
    * way Blender's Multires would. The figure gets the primitives' ~20k-face
-   * floor; a companion stops at 2k, an eye needs no more.
+   * floor; a companion stops at 2k, an eye needs no more. With `even` there
+   * is no figure, only parts - a blockout's fifty lumps - and each stops at
+   * 1k, which is one level for most of them and a whole figure of ~70k.
    */
-  adoptBaseMesh(info: BaseMeshInfo, file: BaseMeshFile): Multimesh {
+  adoptBaseMesh(info: BaseMeshInfo, file: BaseMeshFile, even = false): Multimesh {
     const lo = [Infinity, Infinity, Infinity];
     const hi = [-Infinity, -Infinity, -Infinity];
     for (const part of file.parts) {
@@ -915,8 +926,8 @@ export class SculptSession {
       const m = mesh.getMatrix() as unknown as mat4;
       mat4.fromTranslation(m, [part.offset[0] * scale, part.offset[1] * scale, part.offset[2] * scale]);
       mat4.scale(m, m, [scale, scale, scale]);
-      this.subdivideClamp(mesh, info.smooth === false, k === 0 ? 20000 : 2000);
-      const name = k === 0 ? info.label : part.name;
+      this.subdivideClamp(mesh, info.smooth === false, even ? 1000 : k === 0 ? 20000 : 2000);
+      const name = !even && k === 0 ? info.label : part.name;
       this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
       meshes.push(mesh);
     });

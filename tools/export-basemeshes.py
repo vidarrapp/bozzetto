@@ -34,7 +34,10 @@ Which level of each asset ships is decided per entry: `level` is the
 Multires or Subdivision Surface level to evaluate at (0 = the base mesh).
 The 'blockout' figures - Blender's "primitive" bodies, which are 50 separate
 subdivided lumps - are voxel-remeshed here into one closed shell so the app
-gets a single sculptable object; `voxel` is the voxel size in metres.
+gets a single sculptable object; `voxel` is the voxel size in metres. With
+`parts=True` a second file, <id>-parts.bzm, keeps every lump as its own
+part, hierarchy order (pelvis first), named for people ("Upper arm L"), for
+the app's "as parts" option and as the mannequin's segments.
 
 Blender warns about invalid drivers on the primitive bodies' mask
 modifiers when the file opens; harmless, and those modifiers are switched
@@ -57,16 +60,16 @@ ASSETS = [
     dict(id='body-female-realistic', src='Body Female - Realistic', level=1),
     dict(id='body-male-stylized', src='Body Male - Stylized', level=0),
     dict(id='body-female-stylized', src='Body Female - Stylized', level=0),
-    dict(id='blockout-male-realistic', src='Body Male - Primitve (Realistic)', level=1, voxel=0.007),
-    dict(id='blockout-female-realistic', src='Body Female - Primitve (Realistic)', level=1, voxel=0.007),
-    dict(id='blockout-male-stylized', src='Body Male - Primitve (Stylized)', level=1, voxel=0.007),
-    dict(id='blockout-female-stylized', src='Body Female - Primitive (Stylized)', level=1, voxel=0.007),
+    dict(id='blockout-male-realistic', src='Body Male - Primitve (Realistic)', level=1, voxel=0.007, parts=True),
+    dict(id='blockout-female-realistic', src='Body Female - Primitve (Realistic)', level=1, voxel=0.007, parts=True),
+    dict(id='blockout-male-stylized', src='Body Male - Primitve (Stylized)', level=1, voxel=0.007, parts=True),
+    dict(id='blockout-female-stylized', src='Body Female - Primitive (Stylized)', level=1, voxel=0.007, parts=True),
     # --- heads ----------------------------------------------------------
     dict(id='head-realistic', src='Head (Sculpting) - Realistic', level=1),
     dict(id='head-stylized', src='Head - Stylized', level=0),
     dict(id='head-planar', src='Head - Planar', level=2),
     dict(id='head-generic', src='Head - Generic Topology', level=0),
-    dict(id='head-blockout', src='Head - Primitives', level=1, voxel=0.002),
+    dict(id='head-blockout', src='Head - Primitives', level=1, voxel=0.002, parts=True),
     # --- parts ----------------------------------------------------------
     dict(id='hand-realistic', src='Hand  - Realistic', level=1),
     dict(id='hand-stylized', src='Hand - Stylized ', level=0),
@@ -183,6 +186,63 @@ def remeshed(parts, voxel, dg):
     return out
 
 
+# The bundle's part names, made readable: 'GEO-arm_upper_male_primitive_realistic.L'
+# is "Upper arm L". Tokens not listed are title-cased as they are.
+PART_LABELS = {
+    'pelvis': 'Pelvis', 'belly': 'Belly', 'chest': 'Chest', 'neck': 'Neck', 'head': 'Head',
+    'breast': 'Breast', 'breasts': 'Breasts',
+    'shoulder': 'Shoulder', 'arm_upper': 'Upper arm', 'arm_lower': 'Forearm', 'hand': 'Hand',
+    'finger_index': 'Index finger', 'finger_middle': 'Middle finger', 'finger_ring': 'Ring finger',
+    'finger_pinky': 'Little finger', 'thumb': 'Thumb',
+    'leg_upper': 'Thigh', 'leg_lower': 'Shin', 'foot': 'Foot',
+    'toe_big': 'Big toe', 'toe_index': 'Second toe', 'toe_middle': 'Middle toe',
+    'toe_ring': 'Fourth toe', 'toe_pinky': 'Little toe',
+    'ear': 'Ear', 'eye': 'Eye', 'eyelid_upper': 'Upper eyelid', 'eyelid_lower': 'Lower eyelid',
+    'nose': 'Nose', 'nose_bridge': 'Nose bridge',
+}
+
+
+def part_token(ob):
+    """The bare body-part token of a bundle part ('arm_upper') and its side
+    ('L', 'R' or ''), with the sex, style and Blender's numbering stripped."""
+    import re
+    n = ob.name.lower()
+    n = re.sub(r'^geo-', '', n)
+    side = ''
+    m = re.search(r'\.(l|r)$', n)
+    if m:
+        side = m.group(1).upper()
+        n = n[:m.start()]
+    n = re.sub(r'\.\d+', '', n)
+    # 'primitive', and the bundle's 'primitve' where it is spelt that way
+    n = re.sub(r'_(male|female)_primiti?ve_(realistic|stylized)$', '', n)
+    n = re.sub(r'_primiti?ve_(male|female)_(realistic|stylized)$', '', n)
+    n = re.sub(r'_primiti?ve$', '', n)
+    n = n.replace('teo_', 'toe_')
+    return n, side
+
+
+def readable_name(ob):
+    token, side = part_token(ob)
+    label = PART_LABELS.get(token) or token.replace('_', ' ').capitalize()
+    return f'{label} {side}' if side else label
+
+
+def hierarchy_order(objs):
+    """Parents before children, the root first, so the app selects the
+    pelvis (or the head) after adding a figure's parts."""
+    names = {o.name for o in objs}
+
+    def depth(o):
+        d = 0
+        while o.parent is not None and o.parent.name in names:
+            o = o.parent
+            d += 1
+        return d
+
+    return sorted(objs, key=lambda o: (depth(o), o.name))
+
+
 def part_name(ob, asset_id):
     """The main part is named after the asset (the app labels it); a companion
     takes its suffix: 'GEO-body_male_realistic.eye.L' -> 'Eye L', and the
@@ -294,6 +354,15 @@ def main():
                 parts.append((part_name(ob, entry['id']), verts, quads_of(polys)))
         path = os.path.join(out, f"{entry['id']}.bzm")
         size, stats, dims = write_bzm(path, parts)
+        if entry.get('parts'):
+            split = []
+            for ob in hierarchy_order(objs):
+                verts, polys = evaluated_geometry(ob, dg)
+                split.append((readable_name(ob), verts, quads_of(polys)))
+            psize, pstats, _ = write_bzm(os.path.join(out, f"{entry['id']}-parts.bzm"), split)
+            print(f"{entry['id']}-parts: {len(split)} parts verts={sum(x[1] for x in pstats)} "
+                  f"faces={sum(x[2] for x in pstats)} {psize / 1024:.0f} KB: "
+                  + ', '.join(x[0] for x in pstats))
         idblock = bpy.data.objects.get(entry['src']) or bpy.data.collections.get(entry['src'])
         write_thumb(idblock, os.path.join(out, 'thumbs', f"{entry['id']}.png"))
         faces = sum(s[2] for s in stats)
