@@ -2,6 +2,7 @@ import { div, labelRow, selectEl } from '../ui/dom';
 import { checkbox, numberedRange, section } from '../ui/Panel';
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { RIG_PRESETS } from './rig';
+import { FIGURES } from './figures';
 import type { Armature } from './Armature';
 
 export interface ArmaturePanelHooks {
@@ -46,8 +47,11 @@ export class ArmaturePanel extends SidePanel {
     super({ id: 'armature', title: 'Armature', side: 'right', variant: 'panel--armature' });
 
     const fig = section(this.body, 'Figure');
+    // The block figures, then the mannequins (Blender Studio's CC0 base
+    // meshes on the same bones); a model loaded from a file joins the list
+    // when it does.
     this.presetSel = selectEl(
-      RIG_PRESETS.map((p) => [p.id, p.label] as [string, string]),
+      [...RIG_PRESETS, ...FIGURES].map((p) => [p.id, p.label] as [string, string]),
       figure().rig.id,
     );
     this.presetSel.addEventListener('change', () => this.hooks.preset(this.presetSel.value));

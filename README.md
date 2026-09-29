@@ -80,11 +80,18 @@ Each installer format has to be built on (or for) its own platform:
 
 ## Armature mode
 
-A posable block figure of its own, for reference or as the start of a
-sculpt. Signed-in only for now: pick **Create → New armature** in the gallery
-(or open `/?armature=1`); guests see the plain New sculpt tile.
-The figure is a placeholder of boxes for now; the low-poly planar presets
-replace the parts, not the rig, when they land as Blender-rigged `.glb` files.
+A posable figure of its own, for reference or as the start of a sculpt.
+Signed-in only for now: pick **Create → New armature** in the gallery (or
+open `/?armature=1`); guests see the plain New sculpt tile.
+
+- **Figures.** The Figure list offers the block placeholders (male and
+  female) and four mannequins: Blender Studio's CC0 "primitive" base
+  meshes, male and female in realistic and stylized proportions, rigged
+  onto the same bones by `tools/build-mannequins.py`. Each lump follows
+  its bone rigidly, so a mannequin poses, reaches and sends to Sculpt
+  exactly like the blocks. A mannequin is fetched the first time it is
+  picked (about a megabyte) and kept for offline use; the autosave and
+  `.armature` files only name it.
 
 - **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
   that joint's limits: hinges (elbows, knees) show one ring plus a little

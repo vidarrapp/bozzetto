@@ -409,6 +409,26 @@ export class Armature {
   }
 
   /**
+   * Where the figure stands, as the root's offset from its own rest: the
+   * one thing that carries over when the figure changes. Copying the root's
+   * raw transform instead would hand a mannequin the blocks' pelvis frame,
+   * and the two figures' pelvis bones need not rest the same way.
+   */
+  placement(): { position: Vector3; quaternion: Quaternion } {
+    const rest = this.rest.get(this.root.name)!;
+    return {
+      quaternion: this.root.quaternion.clone().multiply(rest.local.clone().invert()),
+      position: this.root.position.clone().sub(rest.offset),
+    };
+  }
+
+  setPlacement(p: { position: Vector3; quaternion: Quaternion }): void {
+    const rest = this.rest.get(this.root.name)!;
+    this.root.quaternion.copy(p.quaternion).multiply(rest.local);
+    this.root.position.copy(rest.offset).add(p.position);
+  }
+
+  /**
    * Size scales the part's cross-section, length the part along its bone
    * and moves the child joints out with it. Mirrored to the other side
    * when symmetry is on.

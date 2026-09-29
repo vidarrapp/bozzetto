@@ -129,6 +129,17 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
+            // The Armature mode's mannequins: four skinned .glb files of a
+            // megabyte each, fetched when picked and kept.
+            urlPattern: /\/assets\/armature\/.*\.glb$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'bozzetto-figures',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // The gallery list and each project's manifest. Stale-while-
             // revalidate so the gallery still renders its cards offline from
             // the last visit, and refreshes the moment there is a network.

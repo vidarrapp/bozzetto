@@ -172,3 +172,28 @@ in its sockets. The bundle's "primitive" figures - fifty subdivided lumps
 each - are voxel-remeshed into one shell (7 mm voxels, three smoothing
 passes) so the app gets a single blockout object.
 
+# Mannequins
+
+`public/assets/armature/` holds the Armature mode's mannequins: the
+bundle's "primitive" figures (fifty lumps each) rigged onto the app's own
+bones and exported as skinned `.glb` files, which the app reads exactly
+like a rigged model you load yourself. `build-mannequins.py` makes them:
+
+```
+blender -b --python tools/build-mannequins.py -- --bundle path/to/human-base-meshes-bundle-v1.4.1
+```
+
+or `python tools/build-mannequins.py --bundle ...` with the `bpy` wheel.
+Run it inside Blender with the bundle open and the rigged figures appear in
+the scene, ready to edit - a planar-study version is a matter of reshaping
+the lumps and exporting again with Custom Properties on, as described
+under "Exporting for the app".
+
+The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
+chains); only their positions come from the lumps: a chain joint sits
+between the centre of two lumps' overlap and the parent lump's end, a hip
+or shoulder at the tip of its own lump. Every lump is weighted fully to
+one bone (`BONE_OF` in the script says which); the forearm and shin carry
+no limits in the file so the app infers them from the rest bend, which is
+the bundle's own A-pose.
+

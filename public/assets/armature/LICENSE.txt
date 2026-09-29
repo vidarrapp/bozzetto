@@ -1,0 +1,14 @@
+Mannequins
+==========
+
+The .glb files in this folder are the "primitive" figures of the Human
+Base Meshes bundle (v1.4.1) published by Blender Studio, rigged onto
+Bozzetto's own bones by tools/build-mannequins.py in the Bozzetto
+repository:
+
+    https://www.blender.org/download/demo-files/#asset-bundles
+
+The bundle is released under CC0 1.0 (public domain dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The figures were made by Paul Kotelevets and Julien Kaspar. Thank you.

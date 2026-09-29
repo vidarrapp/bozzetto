@@ -9,6 +9,7 @@ import { showPreferences } from '../ui/Preferences';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { Armature, buildArmature, importArmature, type ArmatureState } from './Armature';
+import { fetchFigure, figureById } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel } from './ArmaturePanel';
@@ -44,6 +45,24 @@ async function parseModel(bytes: ArrayBuffer): Promise<ReturnType<typeof rigFrom
   pending = { bytes, read };
   parsed.set(bytes, read);
   return read;
+}
+
+/**
+ * The mannequins' rigs, read once per session as they are picked. A
+ * mannequin is a rigged .glb like any the owner loads, only fetched from
+ * the app's own assets and named by its preset id, so the autosave and the
+ * .armature file carry the id and nothing else.
+ */
+const figureReads = new Map<string, ReturnType<typeof rigFromGLTF>>();
+async function ensureFigure(id: string): Promise<void> {
+  if (figureReads.has(id)) return;
+  const info = figureById(id);
+  if (!info) throw new Error(`Unknown figure "${id}"`);
+  const bytes = await fetchFigure(id);
+  const gltf = await getGLTFLoader().parseAsync(bytes.slice(0), '');
+  const read = rigFromGLTF(gltf, id, info.label);
+  read.rig.id = id;
+  figureReads.set(id, read);
 }
 
 /**
@@ -85,12 +104,26 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     saved?.model ? { bytes: saved.model, name: saved.modelName ?? 'Model' } : null;
   const figureFor = (preset: string): Armature => {
     const material = viewer.materials.get(viewer.getMaterial());
+    const mannequin = figureReads.get(preset);
+    if (mannequin) return importArmature(mannequin, material);
     if (preset === IMPORTED && model) {
       return importArmature(readModel(model.bytes), material);
     }
     return buildArmature(preset === IMPORTED ? 'placeholder-male' : preset, material);
   };
-  let armature = figureFor(saved?.state.preset ?? 'placeholder-male');
+  // A saved mannequin is fetched before anything is built; if that fails
+  // (offline, never seen) the blocks stand in and the pose still applies,
+  // since every figure shares the bone names.
+  let wanted = saved?.state.preset ?? 'placeholder-male';
+  if (figureById(wanted)) {
+    try {
+      await ensureFigure(wanted);
+    } catch (err) {
+      console.warn('armature: the saved mannequin could not be fetched', err);
+      wanted = 'placeholder-male';
+    }
+  }
+  let armature = figureFor(wanted);
   if (saved) {
     try {
       armature.restore(saved.state);
@@ -494,19 +527,32 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * changing preset should not move it - unless `fresh`, which leaves it
    * standing on the rig's own rest position, feet on the ground.
    */
-  const replaceFigure = (preset: string, state?: ArmatureState, fresh = false): void => {
+  const replaceFigure = async (preset: string, state?: ArmatureState, fresh = false): Promise<void> => {
+    // A mannequin not yet seen this session is fetched first; the figure
+    // on screen stays until it has arrived, and stays for good if it
+    // cannot.
+    const info = figureById(preset);
+    if (info && !figureReads.has(preset)) {
+      panel.setNote(`Fetching the ${info.label.toLowerCase()}…`);
+      try {
+        await ensureFigure(preset);
+      } catch (err) {
+        console.warn(err);
+        panel.setNote(`The ${info.label.toLowerCase()} could not be fetched. Offline, perhaps; a mannequin is kept once seen.`);
+        panel.syncFigure();
+        return;
+      }
+      panel.setNote('');
+    }
     select(null);
     viewer.removeSculptExtra(armature.mesh);
-    const root = { position: armature.root.position.clone(), quaternion: armature.root.quaternion.clone() };
+    const placement = armature.placement();
     const symmetry = armature.symmetry;
     armature.dispose();
     armature = figureFor(preset);
     armature.symmetry = symmetry;
     if (state) armature.restore(state);
-    else if (!fresh) {
-      armature.root.position.copy(root.position);
-      armature.root.quaternion.copy(root.quaternion);
-    }
+    else if (!fresh) armature.setPlacement(placement);
     viewer.adoptMesh(armature.mesh);
     buildHandles();
     syncHandles();
@@ -522,7 +568,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       return;
     }
     name = parsed.name;
-    replaceFigure(parsed.state.preset, parsed.state);
+    await replaceFigure(parsed.state.preset, parsed.state);
     if (parsed.look) await viewer.applyLook(parsed.look);
     frame();
   };
@@ -543,7 +589,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     model = { bytes, name: file.name };
     name = file.name.replace(/\.(glb|gltf)$/i, '') || 'Model';
-    replaceFigure(IMPORTED, undefined, true);
+    await replaceFigure(IMPORTED, undefined, true);
     frame();
     if (read.inferred.length) {
       console.info(`armature: ${read.inferred.join('; ')}`);
@@ -574,7 +620,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const panel = new ArmaturePanel(
     () => armature,
     {
-      preset: (id) => replaceFigure(id),
+      preset: (id) => void replaceFigure(id),
       symmetry: (on) => {
         armature.symmetry = on;
         scheduleSave();
@@ -660,7 +706,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         action: () => {
           if (history.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
           name = 'Armature';
-          replaceFigure(armature.rig.id, undefined, true);
+          void replaceFigure(armature.rig.id, undefined, true);
           frame();
         },
       },
@@ -756,6 +802,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     },
     /** Load a rigged .glb as the figure (the console and the tests). */
     loadModel,
+    /** Swap to a preset or a mannequin by id, fetched if need be. */
+    figure: (id: string) => replaceFigure(id),
     modelName: () => model?.name ?? null,
     /** What the gizmo is showing, for the console and the tests. */
     gizmo: () => ({

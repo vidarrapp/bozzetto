@@ -212,8 +212,31 @@ export const suites = {
     await openArmature(page, base);
     const ok = await page.evaluate(() => !!window.__armature.armature && typeof window.__armature.reach === 'function');
     t.ok(ok, 'armature mode boots with its handle');
-  },
-};
+
+    // The four mannequins: fetched, read as rigged models, posable.
+    const ids = ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized'];
+    for (const id of ids) {
+      const r = await page.evaluate(async (fid) => {
+        const a = window.__armature;
+        await a.figure(fid);
+        const arm = a.armature;
+        const geo = arm.mesh.geometry;
+        const before = a.handlePosition('hand.L');
+        a.reach('hand.L', before[0] + 15, before[1] + 25, before[2] + 15);
+        const after = a.handlePosition('hand.L');
+        const top = a.handlePosition('head');
+        const sole = a.handlePosition('foot.R');
+        return {
+          id: arm.rig.id,
+          bones: arm.rig.bones.length,
+          chains: arm.rig.ik.length,
+          verts: geo.getAttribute('position').count,
+          skinned: !!geo.getAttribute('skinIndex'),
+          height: top[1] - sole[1],
+          moved: Math.hypot(after[0] - before[0], after[1] - before[1], after[2] - before[2]),
+          preset: a.state().preset,
+          option: document.querySelector(`.panel--armature select option[value="${fid}"]`)?.textContent ?? '',
+        };
       }, id);
       t.eq(r.id, id, `${id}: is the figure`);
       t.eq(r.bones, 19, `${id}: nineteen bones`);
