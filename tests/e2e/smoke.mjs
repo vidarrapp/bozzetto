@@ -126,6 +126,64 @@ const limbFolds = (page) =>
     return out;
   });
 
+// The hips open wide and cross a little, and the shoulders lift further
+// than they drop (owner report: the hips did the reverse, their side
+// limits the wrong way round, and the clavicles' with them). The left foot
+// swings 22 units out to the side, then 22 across towards the other foot,
+// each time to a point on the arc its own leg sweeps about the hip: the
+// ball keeps its distance from the hip and its height follows, since a leg
+// cannot carry its foot sideways along the ground while the pelvis stays
+// put. Either way asks the hip for 30 to 35 degrees. The foot's pin is let
+// go meanwhile and put back after, and symmetry is off, so the other leg
+// stays where it stands. The shoulder is turned by its Side slider as far
+// as it goes each way, and how far the clavicle then points up or down is
+// measured, whichever sign does which.
+const hipsAndShoulders = (page) =>
+  page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    const symmetry = arm.symmetry;
+    const pinned = arm.isPinned('foot.L');
+    arm.symmetry = false;
+    arm.resetPose();
+    arm.setPinned('foot.L', false);
+    const hip = arm.jointWorld('thigh.L').toArray();
+    const ball = a.handlePosition('foot.L');
+    const other = a.handlePosition('foot.R');
+    const r = dist(hip, ball);
+    const swing = (dx) => {
+      arm.resetPose();
+      const x = ball[0] + dx;
+      const to = [x, hip[1] - Math.sqrt(r * r - (x - hip[0]) ** 2 - (ball[2] - hip[2]) ** 2), ball[2]];
+      a.reach('foot.L', ...to);
+      return {
+        miss: dist(a.handlePosition('foot.L'), to),
+        side: arm.getPoseEuler('thigh.L')[2],
+        limits: arm.limitsOf('thigh.L').z,
+        other: dist(a.handlePosition('foot.R'), other),
+      };
+    };
+    const out = swing(22);
+    const across = swing(-22);
+    const pitch = () => {
+      const head = arm.jointWorld('clavicle.L');
+      return (Math.asin(arm.jointWorld('upperarm.L').sub(head).normalize().y) * 180) / Math.PI;
+    };
+    arm.resetPose();
+    const rest = pitch();
+    const shoulder = [-90, 90].map((z) => {
+      a.turn('clavicle.L', 0, 0, z);
+      const turned = pitch() - rest;
+      arm.resetPose();
+      return turned;
+    });
+    arm.setPinned('foot.L', pinned);
+    arm.symmetry = symmetry;
+    a.commit();
+    return { out, across, lift: Math.max(...shoulder), drop: -Math.min(...shoulder) };
+  });
+
 // Pinned feet under a moving pelvis (owner report: they snapped round).
 // Each scenario poses the figure, pins both feet where they stand and drags
 // the pelvis as its move gizmo does - thirty small steps, each through the
@@ -742,6 +800,25 @@ export const suites = {
         const inPelvis = (hip - pelvisLow) / (pelvisHigh - pelvisLow);
         t.ok(up > 0.5 && up < 0.57 && hip < parts.restY.spine, `${id}: hip ${s} ${(100 * up).toFixed(1)}% of the height up, under the spine`);
         t.ok(Math.abs(inPelvis - 0.5) < 1 / 6, `${id}: hip ${s} in the middle third of the pelvis (${(100 * inPelvis).toFixed(0)}% of its height)`);
+      }
+
+      // And they open wide and cross a little, on the figure a new
+      // armature starts on and on a stylized one; the shoulders lift
+      // further than they drop.
+      if (id === ids[0] || id === ids[3]) {
+        const { out, across, lift, drop } = await hipsAndShoulders(page);
+        const deg = (v) => `${Math.abs(v).toFixed(0)}°`;
+        const wide = out.limits[out.side < 0 ? 0 : 1];
+        const narrow = across.limits.reduce((p, q) => (Math.abs(p) < Math.abs(q) ? p : q));
+        t.ok(
+          out.miss <= 1.5 && out.other < 1e-3,
+          `${id}: swung 22 out to the side the left foot gets there (${out.miss.toFixed(2)} off), the hip open ${deg(out.side)} of its ${deg(wide)}, the right foot where it stood`,
+        );
+        t.ok(
+          across.miss >= 3 && Math.abs(across.side - narrow) < 0.5 && across.other < 1e-3,
+          `${id}: swung 22 across it stops ${across.miss.toFixed(1)} short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
+        );
+        t.ok(lift > drop + 5, `${id}: the left shoulder lifts ${lift.toFixed(0)}° and drops ${drop.toFixed(0)}°`);
       }
 
       // Knees fold forward and elbows back, on every figure: the stylized

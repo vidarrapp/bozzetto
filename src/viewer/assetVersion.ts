@@ -24,5 +24,7 @@ export const ASSET_VERSION = '2';
  *   2 - the mirrored right-hand lumps turned right side out
  *   3 - the mannequins' hips and shoulders moved, their knee and elbow
  *       limits written out, the head's reach down the spine
+ *   4 - the hips' and clavicles' side limits the right way round: legs
+ *       open wide and cross a little, shoulders lift more than they drop
  */
-export const MODEL_REVISION = 3;
+export const MODEL_REVISION = 4;

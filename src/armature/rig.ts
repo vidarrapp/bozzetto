@@ -297,7 +297,10 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: [X(0.02), s(1.48), 0],
       tail: [X(b.shoulderHalf + 0.02), s(1.49), 0],
       hint: 'y',
-      limits: { x: deg(-15, 15), y: deg(-10, 10), z: deg(-20, 30) },
+      // Up further than down. A turn the positive way about Z drops the
+      // shoulder (on the left, X is the hinted up and Y runs out to the
+      // shoulder, so Z points back): the shrug is the negative side.
+      limits: { x: deg(-15, 15), y: deg(-10, 10), z: deg(-30, 20) },
       part: { width: s(0.05), depth: s(0.05) },
       mirror: 'clavicle' + other,
       kind: 'ball',
@@ -358,8 +361,12 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
       head: hip,
       tail: knee,
       hint: 'x',
-      // Forward a long way, back a little, out to the side more than in.
-      limits: { x: deg(-120, 30), y: deg(-45, 45), z: deg(-20, 60) },
+      // Forward a long way, back a little; out to the side a long way,
+      // across a little. A turn the positive way about Z swings the left
+      // knee in, towards the middle (the thigh hangs down, so its Z points
+      // back): the side that opens the leg is the negative one, and the
+      // right's range is this one reflected.
+      limits: { x: deg(-120, 30), y: deg(-45, 45), z: deg(-60, 20) },
       part: { width: b.legThick * h, depth: b.legThick * h },
       mirror: 'thigh' + other,
       kind: 'ball',
