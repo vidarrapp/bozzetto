@@ -146,6 +146,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sync.geometry,
     new Matrix4().fromArray(multimesh.getMatrix()),
     liveWorldBox(multimesh as unknown as SculptMesh),
+    () => sync.wireGeometry(),
   );
 
   // View-follow lighting (review decision): the rig rides the camera orbit
@@ -370,6 +371,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const handle = viewer.addSculptExtra(
         extraSync.geometry,
         new Matrix4().fromArray(mesh.getMatrix()),
+        () => extraSync.wireGeometry(),
       );
       handle.visible = mesh.isVisible();
       viewer.setSculptLocked(handle, session.isLocked(mesh));
@@ -1108,6 +1110,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   }
 
   const handle = {
+    viewer,
     session,
     sync,
     input,

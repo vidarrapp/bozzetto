@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+import { faceEdges } from './edges';
 
 /**
  * Replaces SculptGL's RenderData: one THREE.BufferGeometry wrapping the
@@ -49,6 +50,9 @@ export class GeometrySync {
   /** Sorted-later dirty vertex ids accumulated since the last commit. */
   private dirty: number[] = [];
   private dirtyIsFull = false;
+  /** The wireframe's edge lines; see wireGeometry. */
+  private wire: BufferGeometry | null = null;
+  private wireStale = true;
 
   /** Wrap `mesh` and install the buffer-update hooks on it. */
   bind(mesh: SculptMesh): void {
@@ -73,7 +77,31 @@ export class GeometrySync {
     this.geometry.setAttribute('materialsPBR', new BufferAttribute(mesh.getMaterials(), 3));
     this.geometry.setIndex(new BufferAttribute(mesh.getTriangles(), 1));
     this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
+    this.wireStale = true;
     this.stats.rebuilds++;
+  }
+
+  /**
+   * The mesh's edges as a LineSegments geometry - a quad as four edges, not
+   * the five of its triangles - for the viewer's wireframe overlay. It
+   * SHARES the surface geometry's position attribute, so the lines follow
+   * every stroke with no upload of their own; only the edge index is
+   * rebuilt, after a topology change, and only when asked for (the viewer
+   * asks before each render while the overlay is on). The object stays the
+   * same across rebuilds, so a holder never needs to swap it.
+   */
+  wireGeometry(): BufferGeometry {
+    if (!this.wire) this.wire = new BufferGeometry();
+    const mesh = this.mesh;
+    const pos = this.geometry.getAttribute('position');
+    if (mesh && pos && (this.wireStale || this.wire.getAttribute('position') !== pos)) {
+      this.wire.setAttribute('position', pos);
+      const edges = faceEdges(mesh.getFaces(), mesh.getNbFaces(), mesh.getNbVertices());
+      this.wire.setIndex(new BufferAttribute(edges, 1));
+      this.wire.setDrawRange(0, edges.length);
+      this.wireStale = false;
+    }
+    return this.wire;
   }
 
   /** True when any backing array was swapped out from under an attribute. */
@@ -151,6 +179,7 @@ export class GeometrySync {
       return;
     }
     this.dirtyIsFull = true; // colors/materials/index have no dirty feed
+    this.wireStale = true; // the faces may have changed under the same arrays
     this.onGeometryBuffers(mesh);
     (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
     (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
@@ -209,6 +238,8 @@ export class GeometrySync {
     if (this.mesh && this.mesh._bridgeSync === this) this.mesh._bridgeSync = null;
     this.mesh = null;
     this.geometry.dispose();
+    this.wire?.dispose();
+    this.wire = null;
   }
 }
 

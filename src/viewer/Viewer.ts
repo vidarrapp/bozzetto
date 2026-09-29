@@ -8,6 +8,9 @@ import {
   BoxGeometry,
   Timer,
   Mesh,
+  BufferGeometry,
+  LineBasicMaterial,
+  LineSegments,
   MeshBasicMaterial,
   PerspectiveCamera,
   PlaneGeometry,
@@ -21,7 +24,7 @@ import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, Me
 import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
-import type { BufferGeometry, Matrix4, Texture } from 'three';
+import type { Matrix4, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -235,6 +238,24 @@ export class Viewer {
   /** Wireframe panel-slider value (0..1); mapped to material opacity per colour. */
   private wireOpacity = 0.3;
   private wireIsWhite = true;
+  /**
+   * Sculpt mode's wireframe: the mesh's own edges as line segments, so a
+   * quad reads as a quad (owner request) where the triangle wireframe above
+   * would cut every one in two. One per sculpt object, a child of the
+   * object's display mesh so it follows the matrix and the visibility for
+   * free. Its geometry comes from a provider (GeometrySync.wireGeometry)
+   * that shares the surface's positions and rebuilds only the edge index,
+   * lazily, after topology changes; asked before each render while the
+   * overlay is on, which costs nothing when nothing changed.
+   */
+  private readonly wireLineMaterial = new LineBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.05,
+    depthWrite: false,
+  });
+  private readonly sculptWires = new Map<Mesh, { lines: LineSegments; provider: () => BufferGeometry }>();
+  private inSculpt = false;
 
   private currentMode = 'lit';
   /** Lens focal length (35mm-equivalent mm); drives the camera FOV. */
@@ -680,8 +701,12 @@ export class Viewer {
 
   private readonly sculptExtras: Mesh[] = [];
 
-  /** Add a secondary sculpt mesh sharing the primary's material and flags. */
-  addSculptExtra(geometry: BufferGeometry, matrix: Matrix4): Mesh {
+  /**
+   * Add a secondary sculpt mesh sharing the primary's material and flags.
+   * `wire` supplies its edge lines for the wireframe overlay (see
+   * sculptWires); without it the object simply has no wireframe.
+   */
+  addSculptExtra(geometry: BufferGeometry, matrix: Matrix4, wire?: () => BufferGeometry): Mesh {
     const mesh = new Mesh(geometry, this.display.material);
     mesh.castShadow = this.display.castShadow;
     mesh.receiveShadow = this.display.receiveShadow;
@@ -692,7 +717,36 @@ export class Viewer {
     mesh.frustumCulled = false; // over-allocated sculpt arrays: bounds lie
     this.sculptExtras.push(mesh);
     this.scene.add(mesh);
+    if (wire) this.attachWire(mesh, wire);
     return mesh;
+  }
+
+  /** Hang a sculpt object's edge lines under its display mesh. */
+  private attachWire(host: Mesh, provider: () => BufferGeometry): void {
+    this.detachWire(host);
+    const lines = new LineSegments(new BufferGeometry(), this.wireLineMaterial);
+    lines.name = 'sculpt-wire';
+    lines.frustumCulled = false;
+    lines.visible = this.wireframeOn;
+    host.add(lines);
+    this.sculptWires.set(host, { lines, provider });
+  }
+
+  private detachWire(host: Mesh): void {
+    const w = this.sculptWires.get(host);
+    if (!w) return;
+    host.remove(w.lines);
+    // The geometry is the provider's (it shares the surface's positions),
+    // so it is not disposed here.
+    this.sculptWires.delete(host);
+  }
+
+  /** Give every sculpt wire its current edge lines, before a render. */
+  private refreshSculptWires(): void {
+    for (const w of this.sculptWires.values()) {
+      const g = w.provider();
+      if (w.lines.geometry !== g) w.lines.geometry = g;
+    }
   }
 
   /**
@@ -718,6 +772,7 @@ export class Viewer {
     const i = this.sculptExtras.indexOf(mesh);
     if (i >= 0) this.sculptExtras.splice(i, 1);
     this.highlightSculpt(mesh, false);
+    this.detachWire(mesh);
     this.scene.remove(mesh);
   }
 
@@ -1235,7 +1290,10 @@ export class Viewer {
 
   setWireframe(on: boolean): void {
     this.wireframeOn = on;
-    this.wireframe.visible = on;
+    // Sculpt mode draws its objects' own edges instead of the triangle
+    // wireframe; the streamed frames have only triangles to show.
+    this.wireframe.visible = on && !this.inSculpt;
+    for (const w of this.sculptWires.values()) w.lines.visible = on;
     if (on) this.updateWireColor();
   }
 
@@ -1260,12 +1318,14 @@ export class Viewer {
   private applyWireOpacity(): void {
     const max = this.wireIsWhite ? WIRE_MAX_OPACITY_WHITE : WIRE_MAX_OPACITY_BLACK;
     this.wireMaterial.opacity = this.wireOpacity * max;
+    this.wireLineMaterial.opacity = this.wireOpacity * max;
   }
 
   /** Light wires on a dark albedo, dark wires on a light one. */
   private updateWireColor(): void {
     this.wireIsWhite = this.materials.albedoLuminance() <= 0.5;
     this.wireMaterial.color.set(this.wireIsWhite ? 0xffffff : 0x000000);
+    this.wireLineMaterial.color.copy(this.wireMaterial.color);
     this.applyWireOpacity(); // re-scale: white and black saturate at different opacities
   }
 
@@ -1525,7 +1585,7 @@ export class Viewer {
    * overlay - drives the sculpt subject with no extra wiring. exitSculpt
    * restores the streamed frame. Framing/stage/lighting refit to worldBox.
    */
-  enterSculpt(geometry: BufferGeometry, matrix: Matrix4, worldBox: Box3): void {
+  enterSculpt(geometry: BufferGeometry, matrix: Matrix4, worldBox: Box3, wire?: () => BufferGeometry): void {
     this.timeline.pause();
     this.onPlayStateChange?.(false);
     this.sculptSaved = {
@@ -1534,6 +1594,9 @@ export class Viewer {
     };
     this.display.geometry = geometry;
     this.wireframe.geometry = geometry;
+    this.inSculpt = true;
+    if (wire) this.attachWire(this.display, wire);
+    this.wireframe.visible = false; // the sculpt wires take over (setWireframe)
     this.display.matrixAutoUpdate = false;
     this.wireframe.matrixAutoUpdate = false;
     // Sculpt backing arrays are over-allocated; their bounds are meaningless.
@@ -1557,6 +1620,9 @@ export class Viewer {
     const saved = this.sculptSaved;
     if (!saved) return;
     this.sculptSaved = null;
+    this.detachWire(this.display);
+    this.inSculpt = false;
+    this.wireframe.visible = this.wireframeOn;
     this.display.geometry = saved.geometry;
     this.wireframe.geometry = saved.geometry;
     this.display.matrixAutoUpdate = true;
@@ -1871,6 +1937,7 @@ export class Viewer {
    */
   private renderOnce(): void {
     if (this.dofEnabled) this.updateDofFocus(); // focus plane tracks the orbit target
+    if (this.wireframeOn && this.sculptWires.size) this.refreshSculptWires();
     if (this.pipeline) this.pipeline.render();
     else this.renderer.render(this.scene, this.camera);
   }

@@ -191,6 +191,55 @@ export const suites = {
     t.ok(sizes.clay01 === '512x512' && sizes.clay02 === '512x512', 'the clay stencils are 512 px');
   },
 
+  async wireframe(page, base, t) {
+    await openSculpt(page, base);
+    // The overlay draws the mesh's own edges: a closed quad mesh has two
+    // edges per face, where its triangles would have three.
+    const r = await page.evaluate(async () => {
+      const { viewer, sync, session } = window.__sculpt;
+      viewer.setWireframe(true);
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const g = sync.wireGeometry();
+      const lines = [];
+      viewer.scene.traverse((o) => {
+        if (o.isLineSegments && o.name === 'sculpt-wire') lines.push(o);
+      });
+      return {
+        faces: session.getMesh().getNbFaces(),
+        edges: g.index.count / 2,
+        shared: g.getAttribute('position') === sync.geometry.getAttribute('position'),
+        drawn: lines.filter((l) => l.visible && l.geometry === g).length,
+        triWire: viewer.isWireframe() && lines.length > 0,
+      };
+    });
+    t.eq(r.edges, 2 * r.faces, `the sphere's ${r.faces} quads give two edges each`);
+    t.ok(r.shared, 'the lines share the surface positions');
+    t.eq(r.drawn, 1, 'one visible line object carries them');
+
+    // A second object gets its own lines; a topology change (undoing the add
+    // swaps the active mesh back) leaves the counts right; off hides them.
+    const r2 = await page.evaluate(async () => {
+      const { viewer, session } = window.__sculpt;
+      session.addPrimitive('cube');
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const visible = [];
+      viewer.scene.traverse((o) => {
+        if (o.isLineSegments && o.name === 'sculpt-wire' && o.visible) visible.push(o.geometry.index.count / 2);
+      });
+      const cube = session.getMesh().getNbFaces();
+      viewer.setWireframe(false);
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      let shown = 0;
+      viewer.scene.traverse((o) => {
+        if (o.isLineSegments && o.name === 'sculpt-wire' && o.visible) shown++;
+      });
+      return { visible: visible.sort((a, b) => a - b), cube, shown };
+    });
+    t.eq(r2.visible.length, 2, 'two objects, two line sets');
+    t.ok(r2.visible.includes(2 * r2.cube), `the cube's ${r2.cube} quads give ${2 * r2.cube} edges`);
+    t.eq(r2.shown, 0, 'off hides every line set');
+  },
+
   async roundtrip(page, base, t) {
     await openSculpt(page, base);
     await page.evaluate(async () => {
