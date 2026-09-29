@@ -12,14 +12,16 @@ this file in the Text editor (Text > Open), set the OPTIONS below if the
 defaults do not suit, and Run Script. The rigged figures appear in the
 scene, spaced out along X, and the .glb files are written.
 
-Each lump belongs to one bone (a thigh lump to thigh.L, every toe to
-foot.L, the ears and eyes to the head) and follows it rigidly, which is
-how the app's box figure works too. The bones themselves are the rig from
-tools/rig.json (the app's placeholder figure: names, kinds, hints, limits,
-mirrors, reach chains); only their positions come from the lumps, worked
-out from where each lump overlaps the one it hangs off. Hinges (forearm,
-shin) carry no limits in the file on purpose: the app infers them from the
-bend the figure rests with, which is the bundle's own A-pose.
+Each lump belongs to one bone (a thigh lump to thigh.L, the deltoid to
+upperarm.L, every toe to foot.L, the ears and eyes to the head) and
+follows it rigidly, which is how the app's box figure works too. The bones
+themselves are the rig from tools/rig.json (the app's placeholder figure:
+names, kinds, hints, limits, mirrors, reach chains); only their positions
+come from the lumps: a joint in a chain from where a lump overlaps the one
+it hangs off, a hip from the middle of its half of the pelvis, a shoulder
+from the middle of the deltoid. The hinges (forearm, shin) get limits of
+their own, folding the anatomical way through a range sized from the bend
+the figure rests with, which is the bundle's own A-pose.
 
 What the app reads: bone names with .L/.R, bz_kind / bz_hint / bz_mirror
 and bz_limit_x/y/z on the bones (Custom Properties, exported as extras),
@@ -71,14 +73,16 @@ FIGURES = [
     dict(id='mannequin-female-stylized', label='Stylized female', src='Body Female - Primitive (Stylized)', rig='placeholder-female'),
 ]
 
-# Which bone a lump follows, by the lump's bare name (see part_token).
+# Which bone a lump follows, by the lump's bare name (see part_token). The
+# shoulder lump, the deltoid, rides on the upper arm: on the clavicle it
+# stayed put while a raised arm swung out from under it (owner report).
 BONE_OF = {
     'pelvis': 'pelvis', 'belly': 'spine',
     'chest': 'chest', 'breast': 'chest', 'breasts': 'chest',
     'neck': 'neck',
     'head': 'head', 'ear': 'head', 'eye': 'head', 'eyelid_upper': 'head', 'eyelid_lower': 'head',
     'nose': 'head', 'nose_bridge': 'head',
-    'shoulder': 'clavicle', 'arm_upper': 'upperarm', 'arm_lower': 'forearm',
+    'shoulder': 'upperarm', 'arm_upper': 'upperarm', 'arm_lower': 'forearm',
     'hand': 'hand', 'finger_index': 'hand', 'finger_middle': 'hand', 'finger_ring': 'hand',
     'finger_pinky': 'hand', 'thumb': 'hand',
     'leg_upper': 'thigh', 'leg_lower': 'shin',
@@ -86,13 +90,26 @@ BONE_OF = {
     'toe_pinky': 'foot',
 }
 # The lump that IS the segment, for placing the joint; the rest ride along.
+# The clavicle owns no lump now, but its head is still where the shoulder
+# lump meets the chest.
 PRIMARY = {
     'pelvis': 'pelvis', 'spine': 'belly', 'chest': 'chest', 'neck': 'neck', 'head': 'head',
     'clavicle': 'shoulder', 'upperarm': 'arm_upper', 'forearm': 'arm_lower', 'hand': 'hand',
     'thigh': 'leg_upper', 'shin': 'leg_lower', 'foot': 'foot',
 }
-# Bones whose limits the app should infer from the rest bend instead.
-INFER_LIMITS = ('forearm', 'shin')
+# Which way each hinge folds, as the sign of a pose rotation about the
+# bone's own X: the knee swings the ankle back (+), the elbow swings the
+# hand forward (-). The placeholder rig in rig.ts folds them the same way;
+# hinge_limits checks that it still does.
+HINGE_FOLD = {'shin': 1, 'forearm': -1}
+# How far a hinge folds from straight, how far it opens past straight, and
+# the twist it keeps, in degrees.
+HINGE_RANGE = 150
+HINGE_OPEN = 5
+HINGE_TWIST = [-20, 20]
+# Vertices this close to the centre plane (metres) are on it: they belong
+# to neither half of a lump that straddles it.
+CENTRE_BAND = 1e-3
 
 
 def script_dir():
@@ -322,13 +339,16 @@ def check_outward(fig, lumps):
         raise SystemExit(f"{fig['id']}: faces wind inward (negative volume) on " + ', '.join(inward))
 
 
-def primary(lumps, bone):
-    base, _, side = bone.partition('.')
-    token = PRIMARY[base]
+def lump(lumps, token, side=''):
     for l in lumps:
         if l.token == token and l.side == side:
             return l
-    raise SystemExit(f'no {token} lump for {bone}')
+    raise SystemExit(f'no {token} lump' + (f' on the {side} side' if side else ''))
+
+
+def primary(lumps, bone):
+    base, _, side = bone.partition('.')
+    return lump(lumps, PRIMARY[base], side)
 
 
 def centroid(points):
@@ -336,6 +356,15 @@ def centroid(points):
     for p in points:
         c += p
     return c / len(points)
+
+
+def half_centroid(l, side):
+    """The middle of one side of a lump that straddles the centre line
+    (x > 0 is the figure's left). A few of the realistic male's pelvis
+    vertices sit a hair off the centre plane; counted on one side, they
+    would pull that hip 3 mm in and 4 mm down from its mirror image."""
+    sign = 1 if side == 'L' else -1
+    return centroid([p for p in l.world if sign * p.x > CENTRE_BAND])
 
 
 def tip(child, parent):
@@ -349,15 +378,11 @@ def tip(child, parent):
     return centroid(ranked[: max(8, len(ranked) // 10)])
 
 
-def joint(child, parent, at='overlap'):
+def joint(child, parent):
     """Where a lump hangs off the one above it. Lumps overlap at every
-    joint in these figures: a joint in a chain sits between the centre of
-    that overlap and the parent lump's end, while a ball joint buried in a
-    bigger lump - the hip in the pelvis, the shoulder in the deltoid - sits
-    at the child's own tip, where the bone's head would be. Where lumps
-    barely touch, the tip stands in."""
-    if at == 'tip':
-        return tip(child, parent)
+    joint in these figures, and a joint in a chain sits between the centre
+    of that overlap and the parent lump's end. Where lumps barely touch,
+    the child's tip stands in."""
     inside = [p for p in child.world if parent.contains(p)]
     if len(inside) < 8:
         return tip(child, parent)
@@ -405,20 +430,76 @@ def hint_axis(name):
     return {'x': Vector((1.0, 0.0, 0.0)), 'y': Vector((0.0, 1.0, 0.0)), 'z': Vector((0.0, 0.0, 1.0))}[name]
 
 
-def frame_z(head, tail, hint):
+def frame_x(head, tail, hint):
     """The app's bone frame - Y head to tail, X the hinted world axis
-    squared up to Y - and the Z that align_roll needs, in Blender space."""
-    y = tail - head
-    y.normalize()
+    squared up to Y - as its X, in Blender space."""
+    y = (tail - head).normalized()
     h = to_blender(list(hint_axis(hint)))
     x = h - y * h.dot(y)
     if x.length < 1e-6:
         fb = to_blender([0.0, 0.0, 1.0])
         x = fb - y * fb.dot(y)
-    x.normalize()
-    z = x.cross(y)
-    z.normalize()
-    return z
+    return x.normalized()
+
+
+def frame_z(head, tail, hint):
+    """The Z that align_roll needs for the app's frame, in Blender space."""
+    return frame_x(head, tail, hint).cross((tail - head).normalized()).normalized()
+
+
+def rest_bend(heads, tails, bone, parent, hint):
+    """How far a bone turns from its parent at rest, in degrees about its
+    own X: the angle from the parent's direction to its own, which is what
+    a pose rotation about X adds to. The app's signedBend (glbRig.ts)
+    measures the same on the exported file: Blender space and the app's
+    differ by a rotation, which changes neither the angle nor its sign."""
+    u = (tails[parent] - heads[parent]).normalized()
+    v = (tails[bone] - heads[bone]).normalized()
+    k = frame_x(heads[bone], tails[bone], hint)
+    return math.degrees(math.atan2(u.cross(v).dot(k), u.dot(v)))
+
+
+def fold_of(x):
+    """Which way the app folds a hinge with these X limits: toward the end
+    of the range with the room in it (bendHinge in Armature.ts)."""
+    return -1 if abs(x[0]) > abs(x[1]) else 1
+
+
+def hinge_limits(rig, heads, tails):
+    """Limits for the hinges, and the bend each one rests with.
+
+    Left to the app, a hinge's fold direction is read off its rest bend,
+    and a knee that rests all but straight is a coin toss: the stylized
+    male's, a fraction of a degree past straight while its hips sat
+    higher, was read as folding backwards (owner report). So the direction
+    here is the anatomical one, HINGE_FOLD, and only the size of the range
+    comes from the rest: with r the rest bend measured the way the joint
+    folds (below zero for a joint that rests a little past straight), it
+    folds HINGE_RANGE - r further and opens r + HINGE_OPEN, to HINGE_OPEN
+    past straight. A shin gets [-r - 5, 150 - r], a forearm
+    [-(150 - r), r + 5]. Both sides are written, as rig.json has them; the
+    app takes the right's from the left."""
+    limits, bends = {}, {}
+    for bone in rig['bones']:
+        if bone['kind'] != 'hinge':
+            continue
+        name = bone['name']
+        fold = HINGE_FOLD.get(name.partition('.')[0])
+        if fold is None:
+            raise SystemExit(f'{name} is a hinge with no fold direction in HINGE_FOLD')
+        if fold_of(bone['limits']['x']) != fold:
+            raise SystemExit(f"{name} folds the other way in rig.json ({bone['limits']['x']}); HINGE_FOLD is out of step")
+        bend = rest_bend(heads, tails, name, bone['parent'], bone['hint'])
+        r = fold * bend
+        lo, hi = sorted((fold * (HINGE_RANGE - r), -fold * (r + HINGE_OPEN)))
+        # A rest further past straight than HINGE_OPEN is still a pose the
+        # joint has to be able to hold.
+        x = [round(min(lo, 0.0), 1), round(max(hi, 0.0), 1)]
+        if fold_of(x) != fold:
+            raise SystemExit(f'{name} rests {r:.1f} degrees folded: the app would read {x} as folding the other way')
+        limits[name] = {'x': x, 'y': list(HINGE_TWIST), 'z': [0, 0]}
+        bends[name] = bend
+    return limits, bends
 
 
 def place_bones(rig, lumps):
@@ -434,10 +515,16 @@ def place_bones(rig, lumps):
     heads['head'] = joint(P('head'), P('neck'))
     for s in ('L', 'R'):
         heads[f'clavicle.{s}'] = joint(P(f'clavicle.{s}'), P('chest'))
-        heads[f'upperarm.{s}'] = joint(P(f'upperarm.{s}'), P(f'clavicle.{s}'), 'tip')
+        # The shoulder turns about the middle of the deltoid, which moves
+        # with the arm, the way a wooden mannequin's shoulder cap does.
+        heads[f'upperarm.{s}'] = centroid(lump(lumps, 'shoulder', s).world)
         heads[f'forearm.{s}'] = joint(P(f'forearm.{s}'), P(f'upperarm.{s}'))
         heads[f'hand.{s}'] = joint(P(f'hand.{s}'), P(f'forearm.{s}'))
-        heads[f'thigh.{s}'] = joint(P(f'thigh.{s}'), P('pelvis'), 'tip')
+        # A hip sits in the middle of its half of the pelvis. The top of
+        # the thigh lump, which placed it before, reaches up past the joint
+        # and put the hips 2.5 to 4.5 cm too high (owner report, most
+        # visible on the female figures).
+        heads[f'thigh.{s}'] = half_centroid(lump(lumps, 'pelvis'), s)
         heads[f'shin.{s}'] = joint(P(f'shin.{s}'), P(f'thigh.{s}'))
         heads[f'foot.{s}'] = joint(P(f'foot.{s}'), P(f'shin.{s}'))
     # The root sits between the hips, on the centre line (x = 0 once the
@@ -482,6 +569,7 @@ def place_bones(rig, lumps):
 
 def build_figure(fig, rig, lumps):
     heads, tails = place_bones(rig, lumps)
+    hinges, bends = hinge_limits(rig, heads, tails)
     if bpy.context.object is not None and bpy.context.object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -510,11 +598,10 @@ def build_figure(fig, rig, lumps):
         b['bz_hint'] = bone['hint']
         if bone.get('mirror'):
             b['bz_mirror'] = bone['mirror']
-        base = bone['name'].partition('.')[0]
-        if base not in INFER_LIMITS:
-            b['bz_limit_x'] = list(bone['limits']['x'])
-            b['bz_limit_y'] = list(bone['limits']['y'])
-            b['bz_limit_z'] = list(bone['limits']['z'])
+        limits = hinges.get(bone['name'], bone['limits'])
+        b['bz_limit_x'] = list(limits['x'])
+        b['bz_limit_y'] = list(limits['y'])
+        b['bz_limit_z'] = list(limits['z'])
         pb = arm_obj.pose.bones[bone['name']]
         pb.rotation_mode = 'XYZ'
     height = max(p.z for l in lumps for p in l.world) - min(p.z for l in lumps for p in l.world)
@@ -549,7 +636,7 @@ def build_figure(fig, rig, lumps):
     ob.parent = arm_obj
     mod = ob.modifiers.new('Armature', 'ARMATURE')
     mod.object = arm_obj
-    return arm_obj, ob, heads, tails, height
+    return arm_obj, ob, heads, tails, height, hinges, bends
 
 
 def export_glb(arm_obj, ob, path):
@@ -594,7 +681,7 @@ def main():
         lumps = lumps_of(fig['src'], dg)
         print(f"{fig['id']}: lump volumes")
         check_outward(fig, lumps)
-        arm_obj, ob, heads, tails, height = build_figure(fig, rig, lumps)
+        arm_obj, ob, heads, tails, height, hinges, bends = build_figure(fig, rig, lumps)
         note = ''
         if opts['export']:
             path = os.path.join(out, f"{fig['id']}.glb")
@@ -606,6 +693,11 @@ def main():
         for name in ('pelvis', 'spine', 'chest', 'neck', 'head', 'clavicle.L', 'upperarm.L', 'forearm.L', 'hand.L', 'thigh.L', 'shin.L', 'foot.L'):
             h, t = heads[name], tails[name]
             print(f"    {name:12s} head=({h.x:6.3f},{h.y:6.3f},{h.z:6.3f}) tail=({t.x:6.3f},{t.y:6.3f},{t.z:6.3f}) len={(t - h).length:.3f}")
+        for s in ('L', 'R'):
+            hip, shoulder = heads[f'thigh.{s}'], heads[f'upperarm.{s}']
+            print(f"    {s}: hip at z {hip.z:.3f} ({100 * hip.z / height:.1f}% of the height), shoulder at z {shoulder.z:.3f}; "
+                  f"rest bend knee {bends[f'shin.{s}']:+.2f}, elbow {bends[f'forearm.{s}']:+.2f} degrees about X "
+                  f"-> shin x {hinges[f'shin.{s}']['x']}, forearm x {hinges[f'forearm.{s}']['x']}")
     # Every figure is built and exported standing at the origin; in the
     # scene they are then spaced out along X to be looked at side by side.
     # Put an armature back at X = 0 before exporting it by hand.

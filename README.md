@@ -294,6 +294,10 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 - **A new armature starts on the realistic male mannequin** rather than the block placeholders. The blocks stay in the Figure list and stand in whenever a mannequin cannot be fetched (offline, never seen) or a saved model cannot be read.
 - **Mirrored parts face outward.** The bundle's right-hand lumps are its left ones mirrored with a negative scale, and baking that into the exported positions turned their faces inward: the mannequins' right limbs, eyes and ears rendered inside out. The exporters now reverse the winding of mirrored parts and check every part's signed volume. The blockouts added as parts had the same fault on their right-hand lumps, the right eye and ear among them. The one-object blockouts, voxel-remeshed from those lumps, come out unchanged, as do the other base meshes, whose eyes were never mirrored; so does Send to Sculpt, whose voxel pass tells inside from outside without reading the winding.
+- **The mannequins' hips sit lower**, in the middle of each half of the pelvis. They were placed at the top of the thigh lump, which reaches up past the joint, and sat 2.5 to 4.5 cm too high.
+- **The deltoid moves with the arm.** The shoulder lump now rides on the upper arm rather than the clavicle, and the shoulder joint sits in its middle, so a raised arm turns the shoulder cap about its own centre, as on a wooden mannequin, instead of swinging out from under it.
+- **Knees fold forward and elbows back on every mannequin.** The stylized male's knees bent backwards: the files carried no knee or elbow limits, and the app took the fold direction from the bend each joint rests with, which on that figure was a fraction of a degree past straight. The mannequins now carry their own knee and elbow limits, folding the anatomical way through a range sized from each figure's rest bend.
+- **The head reaches through the spine.** Dragging the head's ball bends the neck, the chest and now the spine too, so a head drawn forward or aside takes the back with it.
 
 ### v1.2
 

@@ -1,6 +1,6 @@
 import { Box3, Matrix4, Quaternion, Vector3, type Bone, type BufferGeometry, type Object3D, type SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { BoneDef, IKChainDef, JointLimits, RigDefinition, Vec3 } from './rig';
+import { FOOT_EFFECTOR_AT, type BoneDef, type IKChainDef, type JointLimits, type RigDefinition, type Vec3 } from './rig';
 
 /**
  * Read a rig out of a rigged .glb - the bones, what each joint is and how
@@ -261,12 +261,13 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
   let ik: IKChainDef[] = [];
   if (declared?.ik?.length) {
     ik = declared.ik
-      .map((c) => ({
+      .map(({ effectorAt, ...c }) => ({
         ...c,
         id: canonicalName(c.id),
         effector: canonicalName(c.effector),
         links: c.links.map(canonicalName),
         mirror: c.mirror ? canonicalName(c.mirror) : null,
+        ...pointAlong(effectorAt),
       }))
       .filter((c) => byName.has(c.effector) && c.links.every((l) => byName.has(l)));
     if (ik.length !== declared.ik.length) {
@@ -304,6 +305,7 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
         mirror: mirrorOf(name),
         // A knee points the way it already bends; an elbow the other way.
         poleRef: poleFor(links),
+        ...(isFoot ? { effectorAt: FOOT_EFFECTOR_AT } : {}),
       });
     }
     return out;
@@ -346,6 +348,15 @@ export function rigFromGLTF(gltf: GLTF, id = 'imported', label = 'Imported figur
 
 function round(v: number): number {
   return Math.round(v * 1000) / 1000;
+}
+
+/**
+ * A chain's `effectorAt` as the file gives it: kept when it is a number,
+ * held to the bone, and dropped otherwise, so the default (the tail)
+ * applies rather than a point the solver cannot place.
+ */
+function pointAlong(v: unknown): { effectorAt?: number } {
+  return typeof v === 'number' && Number.isFinite(v) ? { effectorAt: Math.min(1, Math.max(0, v)) } : {};
 }
 
 /**

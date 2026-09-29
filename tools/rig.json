@@ -721,7 +721,8 @@
       0,
       0,
       1
-     ]
+     ],
+     "effectorAt": 0.5
     },
     {
      "id": "foot.R",
@@ -736,7 +737,8 @@
       0,
       0,
       1
-     ]
+     ],
+     "effectorAt": 0.5
     },
     {
      "id": "head",
@@ -744,7 +746,8 @@
      "effector": "head",
      "links": [
       "neck",
-      "chest"
+      "chest",
+      "spine"
      ],
      "mirror": null
     }
@@ -1469,7 +1472,8 @@
       0,
       0,
       1
-     ]
+     ],
+     "effectorAt": 0.5
     },
     {
      "id": "foot.R",
@@ -1484,7 +1488,8 @@
       0,
       0,
       1
-     ]
+     ],
+     "effectorAt": 0.5
     },
     {
      "id": "head",
@@ -1492,7 +1497,8 @@
      "effector": "head",
      "links": [
       "neck",
-      "chest"
+      "chest",
+      "spine"
      ],
      "mirror": null
     }

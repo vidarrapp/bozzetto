@@ -110,9 +110,10 @@ export interface BoneDef {
 }
 
 /**
- * An IK handle: a point you drag, the bone whose far end follows it, and
- * the bones that bend to get it there (nearest the handle first). The
- * effector itself is not a link - the hand's own rotation is yours to set.
+ * An IK handle: a point you drag, the bone that follows it (at the point
+ * `effectorAt` names), and the bones that bend to get it there (nearest
+ * the handle first). The effector itself is not a link - the hand's own
+ * rotation is yours to set.
  */
 export interface IKChainDef {
   id: string;
@@ -127,7 +128,18 @@ export interface IKChainDef {
    * own plane (the "pole vector" of a rigged limb).
    */
   poleRef?: Vec3;
+  /**
+   * The point along the effector bone that the chain reaches for and that
+   * a pin holds: 0 is the bone's head, 1 its tail (the default).
+   */
+  effectorAt?: number;
 }
+
+/**
+ * A foot reaches from its middle: held by its tip, a pinned foot swung
+ * round its ankle whenever the leg above it moved.
+ */
+export const FOOT_EFFECTOR_AT = 0.5;
 
 export interface RigDefinition {
   id: string;
@@ -385,9 +397,12 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
   const ik: IKChainDef[] = [
     { id: 'hand.L', label: 'Left hand', effector: 'hand.L', links: ['forearm.L', 'upperarm.L', 'clavicle.L'], mirror: 'hand.R', poleRef: BACK },
     { id: 'hand.R', label: 'Right hand', effector: 'hand.R', links: ['forearm.R', 'upperarm.R', 'clavicle.R'], mirror: 'hand.L', poleRef: BACK },
-    { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R', poleRef: FORWARD },
-    { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L', poleRef: FORWARD },
-    { id: 'head', label: 'Head', effector: 'head', links: ['neck', 'chest'], mirror: null },
+    { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R', poleRef: FORWARD, effectorAt: FOOT_EFFECTOR_AT },
+    { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L', poleRef: FORWARD, effectorAt: FOOT_EFFECTOR_AT },
+    // The head reaches through the whole back (owner call): a head drawn
+    // forward or aside takes the spine with it, as a body does, rather
+    // than bending at the neck and chest alone.
+    { id: 'head', label: 'Head', effector: 'head', links: ['neck', 'chest', 'spine'], mirror: null },
   ];
 
   return {

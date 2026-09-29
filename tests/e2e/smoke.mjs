@@ -31,9 +31,13 @@ const lastVolumes = (page, n) =>
     return out;
   }, n);
 
-// The same for the armature's figure, per bone: the triangles whose three
-// corners follow that bone, in bind space (a mannequin's lumps are rigid).
-const boneVolumes = (page) =>
+// The armature's figure part by part, in bind space (a mannequin's lumps
+// are rigid): which bone each vertex follows (its heaviest joint), and per
+// bone how many vertices, how high they reach (y, lowest and highest) and
+// the signed volume of the triangles whose three corners follow it. With
+// the figure's own floor and top, and the rest height of the joints the
+// hip checks need, all in the same units.
+const boneParts = (page) =>
   page.evaluate(() => {
     const arm = window.__armature.armature;
     const geo = arm.mesh.geometry;
@@ -42,6 +46,10 @@ const boneVolumes = (page) =>
     const weight = geo.getAttribute('skinWeight');
     const index = geo.getIndex();
     const owner = [];
+    const verts = {};
+    const span = {};
+    let floor = Infinity;
+    let top = -Infinity;
     for (let i = 0; i < pos.count; i++) {
       let best = skin.getX(i);
       let most = weight.getX(i);
@@ -51,9 +59,15 @@ const boneVolumes = (page) =>
           best = skin[`get${k}`](i);
         }
       }
-      owner.push(arm.boneOfSkinIndex(best));
+      const bone = arm.boneOfSkinIndex(best);
+      owner.push(bone);
+      const y = pos.getY(i);
+      verts[bone] = (verts[bone] ?? 0) + 1;
+      span[bone] = [Math.min(span[bone]?.[0] ?? y, y), Math.max(span[bone]?.[1] ?? y, y)];
+      floor = Math.min(floor, y);
+      top = Math.max(top, y);
     }
-    const out = {};
+    const volume = {};
     for (let i = 0; i < index.count; i += 3) {
       const [a, b, c] = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
       const bone = owner[a];
@@ -61,8 +75,54 @@ const boneVolumes = (page) =>
       const [ax, ay, az] = [pos.getX(a), pos.getY(a), pos.getZ(a)];
       const [bx, by, bz] = [pos.getX(b), pos.getY(b), pos.getZ(b)];
       const [cx, cy, cz] = [pos.getX(c), pos.getY(c), pos.getZ(c)];
-      out[bone] = (out[bone] ?? 0) + (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+      volume[bone] = (volume[bone] ?? 0) + (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
     }
+    const restY = {};
+    for (const name of ['thigh.L', 'thigh.R', 'spine']) restY[name] = arm.def(name).head[1] * arm.scale;
+    return { verts, span, volume, floor, top, restY };
+  });
+
+// Reach each foot straight up from rest by 35% of the leg, and each hand
+// up and forward by 30% of the arm, and see which way the hinge went: how
+// far the knee ends up in front of the hip-to-ankle line at the knee's
+// height, and the elbow in front of the shoulder-to-wrist line at its own
+// (scene units, forward positive). Pins and symmetry are off meanwhile,
+// so each limb answers to its own joint limits and nothing else; how far
+// the handle ended from its mark says whether the reach got there at all.
+const limbFolds = (page) =>
+  page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const joint = (name) => arm.jointWorld(name).toArray();
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    const ahead = (p, from, to) => p[2] - (from[2] + ((p[1] - from[1]) / (to[1] - from[1])) * (to[2] - from[2]));
+    const rest = () => {
+      arm.resetPose();
+      for (const c of arm.chains()) arm.setPinned(c.id, false);
+    };
+    const reach = (id, to) => {
+      a.reach(id, ...to);
+      return dist(a.handlePosition(id), to);
+    };
+    const symmetry = arm.symmetry;
+    arm.symmetry = false;
+    const out = {};
+    for (const s of ['L', 'R']) {
+      rest();
+      const foot = a.handlePosition(`foot.${s}`);
+      const leg = dist(joint(`thigh.${s}`), foot);
+      const footMiss = reach(`foot.${s}`, [foot[0], foot[1] + 0.35 * leg, foot[2]]);
+      out[`knee.${s}`] = { ahead: ahead(a.hingePosition(`foot.${s}`), joint(`thigh.${s}`), joint(`foot.${s}`)), miss: footMiss, limb: leg };
+      rest();
+      const hand = a.handlePosition(`hand.${s}`);
+      const reachOut = dist(joint(`upperarm.${s}`), hand);
+      const step = (0.3 * reachOut) / Math.SQRT2;
+      const handMiss = reach(`hand.${s}`, [hand[0], hand[1] + step, hand[2] + step]);
+      out[`elbow.${s}`] = { ahead: ahead(a.hingePosition(`hand.${s}`), joint(`upperarm.${s}`), joint(`hand.${s}`)), miss: handMiss, limb: reachOut };
+    }
+    rest();
+    arm.symmetry = symmetry;
+    a.commit();
     return out;
   });
 
@@ -391,9 +451,60 @@ export const suites = {
       // The right-hand lumps are the left ones mirrored in the bundle, a
       // negative scale that turns their faces inward unless the builder
       // reverses them.
-      const vol = await boneVolumes(page);
-      mirrored(t, vol['upperarm.L'], vol['upperarm.R'], `${id}: the upper arms`);
-      mirrored(t, vol['hand.L'], vol['hand.R'], `${id}: the hands`);
+      const parts = await boneParts(page);
+      mirrored(t, parts.volume['upperarm.L'], parts.volume['upperarm.R'], `${id}: the upper arms`);
+      mirrored(t, parts.volume['hand.L'], parts.volume['hand.R'], `${id}: the hands`);
+
+      // The deltoid rides on the upper arm, so it moves when the arm is
+      // raised (owner report): the clavicles carry no vertices, and an
+      // upper arm with its shoulder cap outweighs the forearm below it.
+      for (const s of ['L', 'R']) {
+        const [clavicle, upper, fore] = [`clavicle.${s}`, `upperarm.${s}`, `forearm.${s}`].map((n) => parts.verts[n] ?? 0);
+        t.ok(clavicle === 0 && upper > fore, `${id}: the ${s} deltoid is on the upper arm (clavicle ${clavicle}, upper arm ${upper}, forearm ${fore} vertices)`);
+      }
+
+      // The hips sit in the middle of each half of the pelvis (owner
+      // report: they were too high): about half the figure's height up,
+      // under the spine, and in the middle third of the pelvis's own
+      // height, where the tip of the thigh lump had them near its top.
+      const height = parts.top - parts.floor;
+      const [pelvisLow, pelvisHigh] = parts.span.pelvis;
+      for (const s of ['L', 'R']) {
+        const hip = parts.restY[`thigh.${s}`];
+        const up = (hip - parts.floor) / height;
+        const inPelvis = (hip - pelvisLow) / (pelvisHigh - pelvisLow);
+        t.ok(up > 0.5 && up < 0.57 && hip < parts.restY.spine, `${id}: hip ${s} ${(100 * up).toFixed(1)}% of the height up, under the spine`);
+        t.ok(Math.abs(inPelvis - 0.5) < 1 / 6, `${id}: hip ${s} in the middle third of the pelvis (${(100 * inPelvis).toFixed(0)}% of its height)`);
+      }
+
+      // Knees fold forward and elbows back, on every figure: the stylized
+      // male's knees used to fold backwards, the app having guessed their
+      // direction from knees that rested a fraction of a degree past
+      // straight. Clear of the line by a tenth of the limb, not just on
+      // the right side of it: the aim swings an elbow that folds the wrong
+      // way round until it sits a hair behind its line all the same, where
+      // one that folds the right way ends a fifth of the arm behind.
+      const folds = await limbFolds(page);
+      for (const s of ['L', 'R']) {
+        const knee = folds[`knee.${s}`];
+        const elbow = folds[`elbow.${s}`];
+        const pct = (v, of) => `${((100 * v) / of).toFixed(0)}%`;
+        t.ok(
+          knee.ahead > 0.1 * knee.limb && knee.miss < 0.01 * knee.limb,
+          `${id}: knee ${s} folds forward (${knee.ahead.toFixed(1)}, ${pct(knee.ahead, knee.limb)} of the leg, in front of the hip-to-ankle line; the foot ${knee.miss.toFixed(2)} off its mark)`,
+        );
+        t.ok(
+          elbow.ahead < -0.1 * elbow.limb && elbow.miss < 0.01 * elbow.limb,
+          `${id}: elbow ${s} folds back (${(-elbow.ahead).toFixed(1)}, ${pct(-elbow.ahead, elbow.limb)} of the arm, behind the shoulder-to-wrist line; the hand ${elbow.miss.toFixed(2)} off its mark)`,
+        );
+      }
+
+      // The head reaches through the whole back, and the feet from their
+      // middle, as rig.ts declares and the file carries.
+      const ik = await page.evaluate(() => window.__armature.armature.rig.ik.map((c) => ({ id: c.id, links: c.links.join(','), at: c.effectorAt })));
+      const chain = (cid) => ik.find((c) => c.id === cid) ?? {};
+      t.eq(chain('head').links, 'neck,chest,spine', `${id}: the head chain bends the neck, chest and spine`);
+      t.ok(chain('foot.L').at === 0.5 && chain('foot.R').at === 0.5, `${id}: the feet reach from mid-foot (effectorAt ${chain('foot.L').at}, ${chain('foot.R').at})`);
     }
 
     // The autosave brings a mannequin back on reload, fetched again.

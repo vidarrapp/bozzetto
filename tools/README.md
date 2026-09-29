@@ -214,10 +214,21 @@ meshes, or a browser that has the old file keeps it.
 The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
 chains); only their positions come from the lumps: a chain joint sits
 between the centre of two lumps' overlap and the parent lump's end, a hip
-or shoulder at the tip of its own lump. Every lump is weighted fully to
-one bone (`BONE_OF` in the script says which); the forearm and shin carry
-no limits in the file so the app infers them from the rest bend, which is
-the bundle's own A-pose.
+in the middle of its half of the pelvis, and a shoulder in the middle of
+the shoulder lump. That lump, the deltoid, rides on the upper arm, so a
+raised arm turns it about its own centre like a wooden mannequin's
+shoulder cap; the clavicle carries no lump of its own and still lifts the
+whole shoulder. Every lump is weighted fully to one bone (`BONE_OF` in the
+script says which).
+
+The forearm and shin get limits of their own rather than the placeholder
+figure's: the anatomical fold (the ankle swings back, the hand forward),
+up to 150° from straight and 5° past straight the other way. The ranges
+count from the bend each figure rests with in the bundle's A-pose, as the
+app counts a pose from the rest. Left without limits, the app would take
+the fold direction from that rest bend, and a knee that rests all but
+straight can be read as folding backwards. The build prints every
+figure's hip and shoulder heights and its knee and elbow rest bends.
 
 The right-hand lumps are mirrored objects, their matrices with a negative
 determinant, so both exporters (this one and `export-basemeshes.py`)

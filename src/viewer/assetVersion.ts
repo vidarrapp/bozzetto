@@ -22,5 +22,7 @@ export const ASSET_VERSION = '2';
  *
  *   1 - unversioned URLs
  *   2 - the mirrored right-hand lumps turned right side out
+ *   3 - the mannequins' hips and shoulders moved, their knee and elbow
+ *       limits written out, the head's reach down the spine
  */
-export const MODEL_REVISION = 2;
+export const MODEL_REVISION = 3;

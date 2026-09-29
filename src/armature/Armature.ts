@@ -576,6 +576,14 @@ export class Armature {
     return out.set(0, rest.length * p.length, 0).applyMatrix4(b.matrixWorld);
   }
 
+  /** Where a bone's joint, its head, is in the world. */
+  jointWorld(bone: string, out = new Vector3()): Vector3 | null {
+    const b = this.bones.get(bone);
+    if (!b) return null;
+    this.mesh.updateMatrixWorld(true);
+    return out.setFromMatrixPosition(b.matrixWorld);
+  }
+
   /**
    * Reach a handle towards a world point, by cyclic coordinate descent:
    * each link in turn swings so the effector points from that joint at the
