@@ -60,11 +60,20 @@ export default defineConfig(({ mode }) => {
       // nothing; a sculpt session keeps its worker to the end.
       registerType: 'prompt',
       workbox: {
-        // The shell, and only the shell: ~3 MB of JS, CSS and the small
-        // PNGs (matcaps, brush stencils, icons). Source maps and the demo
-        // timelapse are deliberately out - precaching either would triple
-        // the install for bytes nobody needs offline.
-        globPatterns: ['**/*.{js,css,html,svg,woff2}', 'icons/**/*.png', 'assets/**/*.png'],
+        // The shell, and only the shell: ~3.5 MB of JS, CSS, fonts and the
+        // small PNGs (matcaps, brush stencils, icons). Source maps and the
+        // demo timelapse are deliberately out - precaching either would
+        // triple the install for bytes nobody needs offline.
+        globPatterns: [
+          '**/*.{js,css,html,svg,woff2}',
+          'icons/**/*.png',
+          'assets/**/*.png',
+          // The four UI typefaces (~0.5 MB). Without them an offline open
+          // falls back to system fonts unless the HTTP cache happens to
+          // still hold them - the one visible difference between the
+          // installed app online and offline.
+          'assets/fonts/*.ttf',
+        ],
         globIgnores: ['**/*.map', 'timelapses/**'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         cleanupOutdatedCaches: true,
@@ -76,6 +85,26 @@ export default defineConfig(({ mode }) => {
         // editor are denied explicitly rather than by assumption.
         navigateFallbackDenylist: [/^\/api\//, /^\/admin\//, /^\/media\//],
         runtimeCaching: [
+          {
+            // The sign-in probe. Everything owner-only (the Create chooser,
+            // Armature mode, publishing) asks /admin/api/whoami at boot, and
+            // offline the fetch throws, so the owner's own installed app
+            // demoted them to a guest. Network first: online the answer is
+            // always the live one (a 403 or the Access login page passes
+            // straight through and is never stored - only a 200 JSON is);
+            // offline, or on a network slower than the timeout, the last
+            // stored answer stands in. Logging out therefore takes effect
+            // immediately online, and an offline session keeps whichever
+            // state the last online one had.
+            urlPattern: /\/admin\/api\/whoami$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-whoami',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             // HDRIs are 1.5 MB each and there are six. Fetched on demand and
             // kept once seen, so an offline session has the environments you
