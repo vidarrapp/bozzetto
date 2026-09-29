@@ -123,6 +123,47 @@ export const suites = {
     t.ok(/Unknown base mesh/.test(unknown), `unknown id rejects (${unknown})`);
   },
 
+  async alphas(page, base, t) {
+    await openSculpt(page, base);
+    // Every stencil any tool offers: the picker's image and thumbnail are
+    // served, and the loader registered it under its own id (a collision
+    // would have renamed it rake061-style and broken the picker).
+    const sets = await page.evaluate(() => {
+      const input = window.__sculpt.input;
+      const out = {};
+      for (let tool = 0; tool < 24; tool++) {
+        const set = input.alphaSetFor(tool);
+        if (set) out[tool] = set.alphas.map((a) => a.id);
+      }
+      return out;
+    });
+    const ids = [...new Set(Object.values(sets).flat())];
+    t.ok(ids.length >= 4, `stencils on offer: ${ids.join(', ')}`);
+    t.ok(ids.includes('clay01') && ids.includes('clay02') && !ids.includes('rake05'), 'the clay set is the two clay stencils');
+    for (const id of ids) {
+      const status = await page.evaluate(async (i) => {
+        const a = await fetch(`/assets/alphas/${i}.png`);
+        const b = await fetch(`/assets/alphas/thumbs/${i}.png`);
+        return `${a.status}/${b.status}`;
+      }, id);
+      t.eq(status, '200/200', `${id}: image and thumbnail served`);
+    }
+    await page.waitForFunction(
+      (want) => {
+        const all = window.__sculpt.session.getPicking().constructor.ALPHAS;
+        return want.every((i) => !!all[i]);
+      },
+      ids,
+      { timeout: 30_000 },
+    );
+    const sizes = await page.evaluate((want) => {
+      const all = window.__sculpt.session.getPicking().constructor.ALPHAS;
+      return Object.fromEntries(want.map((i) => [i, `${all[i]._width}x${all[i]._height}`]));
+    }, ids);
+    t.ok(Object.values(sizes).every((s) => /^[1-9]\d+x[1-9]\d+$/.test(s)), `every stencil registered with a size: ${JSON.stringify(sizes)}`);
+    t.ok(sizes.clay01 === '512x512' && sizes.clay02 === '512x512', 'the clay stencils are 512 px');
+  },
+
   async roundtrip(page, base, t) {
     await openSculpt(page, base);
     await page.evaluate(async () => {

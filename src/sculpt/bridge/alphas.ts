@@ -44,14 +44,18 @@ export const RAKE_ALPHAS: AlphaInfo[] = [
 ];
 
 /**
- * The clay set: one stencil for now (owner call), the hand-drawn one whose
- * strands wander laterally as they run. On a rake that reads as chatter
- * rather than grooves; on clay, where the job is surface texture rather
- * than separated tines, that is exactly the point. Its own list, so the
- * clay stencils the owner is authoring slot in here without touching the
- * rake's.
+ * The clay set: two stencils photographed off real clay by the owner, both
+ * vignetted to black so a dab never shows an edge. "Thumbed" is soft clay
+ * pushed around with thumbs, fingerprints and all; "Cracked" is rough,
+ * smeared clay with a few dry cracks. Each was stretched to the full range
+ * on the way in (the photographs peaked well under white) and resized to
+ * 512 px. The first clay stencil, the hand-drawn "Chatter" (rake05),
+ * retired when these arrived; its PNG stays in public/assets/alphas.
  */
-export const CLAY_ALPHAS: AlphaInfo[] = [{ id: 'rake05', label: 'Chatter' }];
+export const CLAY_ALPHAS: AlphaInfo[] = [
+  { id: 'clay01', label: 'Thumbed' },
+  { id: 'clay02', label: 'Cracked' },
+];
 
 /**
  * The widest tines in the set (10.7% of the brush) and the most of the dab
