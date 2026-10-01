@@ -738,6 +738,16 @@ export class Armature {
   }
 
   /**
+   * Where the root's ball sits in the world: halfway along the pelvis bone,
+   * which is the middle of the blocks' pelvis and inside the mannequins'
+   * hips. The root's own joint is at the bottom of the blocks' pelvis, and
+   * under the centre of its gizmo.
+   */
+  rootHandleWorld(out: Vector3): Vector3 {
+    return this.effectorWorld(this.root.name, out, 0.5);
+  }
+
+  /**
    * Reach a handle towards a world point. A foot that would stand on the
    * ground there is planted on it (see plantOn); anything else reaches as
    * a limb always has, a foot following its shin. After a foot's reach the

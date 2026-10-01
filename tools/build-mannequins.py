@@ -19,9 +19,10 @@ themselves are the rig from tools/rig.json (the app's placeholder figure:
 names, kinds, hints, limits, mirrors, reach chains); only their positions
 come from the lumps: a joint in a chain from where a lump overlaps the one
 it hangs off, a hip from the middle of its half of the pelvis, a shoulder
-from the middle of the deltoid. The hinges (forearm, shin) get limits of
-their own, folding the anatomical way through a range sized from the bend
-the figure rests with, which is the bundle's own A-pose.
+from the middle of the deltoid and the neck from its lump's centre line,
+a third of the way up. The hinges (forearm, shin) get limits of their
+own, folding the anatomical way through a range sized from the bend the
+figure rests with, which is the bundle's own A-pose.
 
 What the app reads: bone names with .L/.R, bz_kind / bz_hint / bz_mirror
 and bz_limit_x/y/z on the bones (Custom Properties, exported as extras),
@@ -110,6 +111,17 @@ HINGE_TWIST = [-20, 20]
 # Vertices this close to the centre plane (metres) are on it: they belong
 # to neither half of a lump that straddles it.
 CENTRE_BAND = 1e-3
+# Where the neck turns: on the neck lump's centre line, this fraction of
+# the lump's height up from its lowest vertex. That is where the lump
+# leaves the chest at the back on the realistic male, and a little above
+# that line on the other three, so the joint sits clearly inside the neck
+# at rest. A full 30 degree forward bend still lifts a lip at the back of
+# the neck, a little smaller than from higher up: turned about the lump's
+# middle, the neck lifted a shelf out of the back under that bend, a rigid
+# lump swinging its lower half the other way. Where the lump meets the
+# chest, the chain rule's joint, kept the base seated but sat down inside
+# the chest and read as off (owner report).
+NECK_JOINT_AT = 0.32
 
 
 def script_dir():
@@ -511,7 +523,12 @@ def place_bones(rig, lumps):
     # Joints down each chain: where the child lump meets its parent lump.
     heads['spine'] = joint(P('spine'), P('pelvis'))
     heads['chest'] = joint(P('chest'), P('spine'))
-    heads['neck'] = joint(P('neck'), P('chest'))
+    # The neck turns part way up its lump (NECK_JOINT_AT); the head still
+    # turns where it meets the neck, at the base of the skull.
+    neck = P('neck').world
+    low, high = min(p.z for p in neck), max(p.z for p in neck)
+    middle = centroid(neck)
+    heads['neck'] = Vector((middle.x, middle.y, low + NECK_JOINT_AT * (high - low)))
     heads['head'] = joint(P('head'), P('neck'))
     for s in ('L', 'R'):
         heads[f'clavicle.{s}'] = joint(P(f'clavicle.{s}'), P('chest'))

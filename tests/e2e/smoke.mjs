@@ -312,6 +312,51 @@ const plantingRun = (page) =>
     return out;
   });
 
+// The root's ball against the pelvis it sits in: the ball on the page, the
+// page rectangle of every vertex that follows the pelvis as posed, and how
+// far the ball is in the world from the middle of the pelvis bone.
+const rootBall = (page) =>
+  page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const geo = arm.mesh.geometry;
+    const skin = geo.getAttribute('skinIndex');
+    const weight = geo.getAttribute('skinWeight');
+    const { positions } = arm.bakeWorld();
+    const rect = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < skin.count; i++) {
+      let best = skin.getX(i);
+      let most = weight.getX(i);
+      for (const k of ['Y', 'Z', 'W']) {
+        if (weight[`get${k}`](i) > most) {
+          most = weight[`get${k}`](i);
+          best = skin[`get${k}`](i);
+        }
+      }
+      if (arm.boneOfSkinIndex(best) !== 'pelvis') continue;
+      const at = a.onScreen(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
+      if (!at) continue;
+      rect[0] = Math.min(rect[0], at[0]);
+      rect[1] = Math.min(rect[1], at[1]);
+      rect[2] = Math.max(rect[2], at[0]);
+      rect[3] = Math.max(rect[3], at[1]);
+    }
+    const mid = arm.jointWorld('pelvis').add(arm.effectorWorld('pelvis', new V(), 1)).multiplyScalar(0.5);
+    const ball = a.ballOnScreen('root');
+    const world = a.handlePosition('root');
+    return {
+      ball,
+      rect,
+      inside: !!ball && ball[0] > rect[0] && ball[0] < rect[2] && ball[1] > rect[1] && ball[1] < rect[3],
+      offMid: Math.hypot(world[0] - mid.x, world[1] - mid.y, world[2] - mid.z),
+    };
+  });
+const showRoot = (r) =>
+  `ball at (${r.ball ? r.ball.slice(0, 2).map((v) => v.toFixed(0)).join(', ') : 'none'}), the pelvis across ` +
+  `(${r.rect[0].toFixed(0)}, ${r.rect[1].toFixed(0)})-(${r.rect[2].toFixed(0)}, ${r.rect[3].toFixed(0)}), ` +
+  `${r.offMid.toExponential(1)} off the bone's middle`;
+
 // A left part and its mirror image: both facing outward, and the same size
 // to within a few percent. Only signs and ratios mean anything here; the
 // positions are in whatever units the object keeps them.
@@ -701,6 +746,102 @@ export const suites = {
     );
     t.ok(/^(shin|thigh)\.L$/.test(clicks.hidden ?? ''), `with the balls hidden the same press lands on the leg (${clicks.hidden})`);
 
+    // A ball in the hips for the root (owner call): the size of a reach
+    // ball in a colour of its own, taking a press like the others but
+    // bringing up no gizmo, and hidden with them.
+    const hips = await rootBall(page);
+    const look = await page.evaluate(() => {
+      const find = (name) => {
+        let hit = null;
+        window.__armature.armature.mesh.parent.traverse((o) => {
+          if (o.name === name) hit = o;
+        });
+        return hit;
+      };
+      const [root, reach, aim] = ['root', 'ik:hand.L', 'aim:hand.L'].map(find);
+      return {
+        size: root?.scale.x,
+        reachSize: reach.scale.x,
+        colour: root?.material.color.getHexString(),
+        others: [reach.material.color.getHexString(), aim.material.color.getHexString()],
+      };
+    });
+    t.ok(hips.inside && hips.offMid < 1e-6, `the root's ball sits in the hips: ${showRoot(hips)}`);
+    t.ok(look.size === look.reachSize && !look.others.includes(look.colour), `it is a reach ball's size (${look.size}) in a colour of its own (#${look.colour})`);
+    const rootPress = { picked: await press(hips.ball) };
+    rootPress.gizmo = await page.evaluate(() => ({ selected: window.__armature.selected(), attached: window.__armature.gizmo().attached.length }));
+    await handlesBox(false);
+    rootPress.hiddenBall = await page.evaluate(() => window.__armature.ballOnScreen('root'));
+    rootPress.hidden = await press(hips.ball);
+    await handlesBox(true);
+    await page.evaluate(() => window.__armature.select(null));
+    t.eq(rootPress.picked, 'root', "a press on the root's ball takes it");
+    t.ok(
+      rootPress.gizmo.selected === null && rootPress.gizmo.attached === 0,
+      `and selects nothing, so no gizmo comes up (selected ${rootPress.gizmo.selected}, ${rootPress.gizmo.attached} controls attached)`,
+    );
+    t.ok(
+      rootPress.hiddenBall === null && !!rootPress.hidden && rootPress.hidden !== 'root',
+      `with the balls hidden it is off the page, and the same press lands on the figure (${rootPress.hidden})`,
+    );
+
+    // Dragged, it moves the root in the plane facing the camera, as the
+    // pelvis gizmo's centre does, so the ball stays under the pointer: up
+    // the screen the figure rises, down it crouches with both pinned feet
+    // on their marks. Each drag is one undo step.
+    const dragRoot = async (dy) => {
+      const before = await page.evaluate(() => {
+        const a = window.__armature;
+        a.commit();
+        return { state: a.state(), ball: a.ballOnScreen('root') };
+      });
+      const [x, y] = before.ball;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + dy, { steps: 12 });
+      await page.mouse.up();
+      return page.evaluate(
+        ([was, end]) => {
+          const a = window.__armature;
+          const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+          const feet = () => ['foot.L', 'foot.R'].map((id) => dist(a.handlePosition(id), was.pins[id]));
+          const after = a.state();
+          const ball = a.ballOnScreen('root');
+          const out = {
+            picked: a.picked(),
+            rise: after.root.position[1] - was.root.position[1],
+            moved: dist(after.root.position, was.root.position),
+            underPointer: Math.hypot(ball[0] - end[0], ball[1] - end[1]),
+            feet: feet(),
+            pinsKept: ['foot.L', 'foot.R'].every((id) => dist(after.pins[id], was.pins[id]) < 1e-9),
+          };
+          a.undo();
+          out.undone = dist(a.state().root.position, was.root.position);
+          out.feetBack = feet();
+          return out;
+        },
+        [before.state, [x, y + dy]],
+      );
+    };
+    const rise = await dragRoot(-40);
+    const crouch = await dragRoot(60);
+    t.ok(
+      rise.picked === 'root' && rise.rise > 2 && rise.rise > 0.8 * rise.moved && rise.underPointer < 1.5,
+      `dragged 40 px up the screen the figure rises ${rise.rise.toFixed(2)} (of ${rise.moved.toFixed(2)} moved), the ball ${rise.underPointer.toFixed(2)} px from the pointer`,
+    );
+    t.ok(
+      crouch.rise < -2 && -crouch.rise > 0.8 * crouch.moved && crouch.underPointer < 1.5,
+      `dragged 60 px down it drops ${(-crouch.rise).toFixed(2)} (of ${crouch.moved.toFixed(2)} moved), the ball ${crouch.underPointer.toFixed(2)} px from the pointer`,
+    );
+    t.ok(
+      Math.max(...crouch.feet) <= 1 && crouch.pinsKept,
+      `and both pinned feet stay on their pins (${crouch.feet.map((v) => v.toFixed(2)).join(' and ')} off)`,
+    );
+    t.ok(
+      rise.undone < 1e-6 && crouch.undone < 1e-6 && Math.max(...rise.feetBack, ...crouch.feetBack) < 0.01,
+      `one undo after each drag puts the root back (${rise.undone.toExponential(1)}, ${crouch.undone.toExponential(1)} off), and the feet on their pins`,
+    );
+
     // Pinned feet hold their ground as the pelvis is dragged, with no snap.
     // A foot on the ground stays on its pin and never turns more than a few
     // degrees in a step of the drag; one pinned in the air stays on its pin
@@ -803,6 +944,8 @@ export const suites = {
       const parts = await boneParts(page);
       mirrored(t, parts.volume['upperarm.L'], parts.volume['upperarm.R'], `${id}: the upper arms`);
       mirrored(t, parts.volume['hand.L'], parts.volume['hand.R'], `${id}: the hands`);
+      const hip = await rootBall(page);
+      t.ok(hip.inside && hip.offMid < 1e-6, `${id}: the root's ball sits in the hips: ${showRoot(hip)}`);
 
       // The deltoid rides on the upper arm, so it moves when the arm is
       // raised (owner report): the clavicles carry no vertices, and an
@@ -881,21 +1024,8 @@ export const suites = {
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), ids[3], 'the mannequin survives a reload');
     await page.evaluate(() => window.__armature.figure('placeholder-male'));
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'and the blocks come back on request');
-
-    // Offline with no mannequin kept, a new armature falls back to the
-    // blocks, which are code: a fresh browser whose figure fetches fail.
-    const offline = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
-    try {
-      const cut = await offline.newPage();
-      const errors = [];
-      cut.on('pageerror', (e) => errors.push(String(e)));
-      await cut.route(/\/assets\/armature\/[^?]*\.glb(\?|$)/, (r) => r.abort());
-      await openArmature(cut, base);
-      t.eq(await cut.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'offline, a new armature falls back to the blocks');
-      t.ok(!errors.length, `and boots without page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
-    } finally {
-      await offline.close();
-    }
+    const blockHips = await rootBall(page);
+    t.ok(blockHips.inside && blockHips.offMid < 1e-6, `the blocks' root ball sits in their pelvis: ${showRoot(blockHips)}`);
 
     // The gallery card shows the figure (owner report: no thumbnail). The
     // picture taken on the way out rides in the autosave record; the
@@ -930,5 +1060,23 @@ export const suites = {
     });
     t.ok(!!card && /^blob:/.test(card.src) && card.blur === card.src, `the armature card shows its picture, sharp and blurred (${card?.src ?? 'none'})`);
     t.ok(!!card && card.type === 'image/jpeg' && card.width > 0 && card.width <= 320 && card.spread > 10, `a JPEG of the figure, ${card?.width} px wide, not an empty frame (spread ${card?.spread?.toFixed(0)})`);
+
+    // Offline with no mannequin kept, a new armature falls back to the
+    // blocks, which are code: a fresh browser whose figure fetches fail.
+    // Last, with the first page on the gallery: while that page still drew
+    // its figure every frame, this boot shared the software renderer with it
+    // and took 70 to 130 seconds, against openArmature's 90.
+    const offline = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      const cut = await offline.newPage();
+      const errors = [];
+      cut.on('pageerror', (e) => errors.push(String(e)));
+      await cut.route(/\/assets\/armature\/[^?]*\.glb(\?|$)/, (r) => r.abort());
+      await openArmature(cut, base);
+      t.eq(await cut.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'offline, a new armature falls back to the blocks');
+      t.ok(!errors.length, `and boots without page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await offline.close();
+    }
   },
 };

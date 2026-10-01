@@ -27,6 +27,8 @@ const DEFAULT_FIGURE = 'mannequin-male-realistic';
  * cannot be read: the blocks are code, so they are always there.
  */
 const FALLBACK_FIGURE = 'placeholder-male';
+/** What a press on the root's ball records, and the ball's name in the scene. */
+const ROOT_BALL = 'root';
 
 /** The rig of a model already parsed once this session, by its bytes. */
 const parsed = new WeakMap<ArrayBuffer, ReturnType<typeof rigFromGLTF>>();
@@ -300,6 +302,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // --- IK handles ------------------------------------------------------------
   // A ball at each chain's far end. Drag one and the limb reaches for it;
   // pin one and it holds its ground while the rest of the figure moves.
+  // One more sits in the hips for the root: drag it and the whole figure
+  // moves, as the pelvis gizmo's centre moves it, without the gizmo.
   // Drawn over everything (depth test off): a handle you cannot click
   // because the figure's own arm is in front of it is no handle at all.
   const handleGroup = new Group();
@@ -324,11 +328,28 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   aimMat.depthWrite = false;
   aimMat.transparent = true;
   aimMat.opacity = 0.85;
+  // The root's ball: a deep violet, apart from the warm reach balls and the
+  // pale aim balls for everyone. A green, the obvious colour for the
+  // ground, is the rust's twin to red-green colour blindness.
+  const rootMat = new MeshBasicNodeMaterial();
+  rootMat.color.set('#7a5cc0');
+  rootMat.depthTest = false;
+  rootMat.depthWrite = false;
+  rootMat.transparent = true;
+  rootMat.opacity = 0.85;
   const HANDLE_RADIUS = 1.9;
   const AIM_RADIUS = 1.3;
   let handlesOn = true;
   const handles = new Map<string, Mesh>();
   const aims = new Map<string, Mesh>();
+  // Every figure has one root, so one ball serves them all and is kept
+  // through a change of figure.
+  const rootBall = new Mesh(handleGeometry, rootMat);
+  rootBall.name = ROOT_BALL;
+  rootBall.scale.setScalar(HANDLE_RADIUS);
+  rootBall.renderOrder = 30;
+  rootBall.frustumCulled = false;
+  handleGroup.add(rootBall);
   const buildHandles = (): void => {
     for (const m of [...handles.values(), ...aims.values()]) m.removeFromParent();
     handles.clear();
@@ -367,6 +388,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       m.visible = !!where;
       if (where) m.position.copy(where);
     }
+    rootBall.position.copy(armature.rootHandleWorld(at));
   };
   buildHandles();
   // Placed now, not on the first interaction: until then every ball sat at
@@ -385,9 +407,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   let reaching: string | null = null;
   /** The knee or elbow being aimed, if any. */
   let aiming: string | null = null;
+  /**
+   * The root being moved by its ball: where the press met the ball's plane
+   * and where the root stood then, in the world. The root goes by what the
+   * pointer has moved since, as the gizmo's centre moves it, so a press
+   * that landed off the ball's centre does not make the figure jump.
+   */
+  let moving: { from: Vector3; root: Vector3 } | null = null;
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
-  /** What the last press took: 'ik:<chain>', 'aim:<chain>', a part's bone, or nothing. */
+  /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'root', a part's bone, or nothing. */
   let picked: string | null = null;
   /** How near a ball's centre a press has to land to take it, in CSS pixels. */
   const PICK_RADIUS = 18;
@@ -400,6 +429,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     return [r.left + ((projected.x + 1) / 2) * r.width, r.top + ((1 - projected.y) / 2) * r.height];
   };
   const ballOnScreen = (ball: Mesh): [number, number] | null => toPage(ball.getWorldPosition(new Vector3()));
+  interface Ball {
+    kind: 'ik' | 'aim' | 'root';
+    /** The chain, or for the root its bone. */
+    id: string;
+    ball: Mesh;
+  }
+  /** Every ball, the aim balls first and the root's last. */
+  const balls = (): Ball[] => [
+    ...[...aims].map(([id, ball]): Ball => ({ kind: 'aim', id, ball })),
+    ...[...handles].map(([id, ball]): Ball => ({ kind: 'ik', id, ball })),
+    { kind: 'root', id: armature.root.name, ball: rootBall },
+  ];
+  /** What a press on a ball records: 'aim:<chain>', 'ik:<chain>' or 'root'. */
+  const ballName = (b: Ball): string => (b.kind === 'root' ? ROOT_BALL : `${b.kind}:${b.id}`);
   /**
    * The ball a press takes: the nearest visible one whose centre lands
    * within PICK_RADIUS of the pointer on screen, however deep it sits
@@ -407,25 +450,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * across, and a press that had to land on the ball itself, with a part
    * right behind it taking every near miss, made the knees and elbows the
    * hardest things on the figure to grab. On a tie the aim ball wins,
-   * being the smaller.
+   * being the smaller, and the root's loses, being the one that moves
+   * everything.
    */
-  const ballUnder = (e: PointerEvent): { kind: 'ik' | 'aim'; id: string; ball: Mesh } | null => {
+  const ballUnder = (e: PointerEvent): Ball | null => {
     if (!handlesOn) return null;
-    let best: { kind: 'ik' | 'aim'; id: string; ball: Mesh } | null = null;
+    let best: Ball | null = null;
     let nearest = Infinity;
-    const sets: Array<['ik' | 'aim', Map<string, Mesh>]> = [
-      ['aim', aims],
-      ['ik', handles],
-    ];
-    for (const [kind, balls] of sets) {
-      for (const [id, ball] of balls) {
-        const at = ball.visible ? ballOnScreen(ball) : null;
-        if (!at) continue;
-        const d = Math.hypot(at[0] - e.clientX, at[1] - e.clientY);
-        if (d <= PICK_RADIUS && d < nearest) {
-          nearest = d;
-          best = { kind, id, ball };
-        }
+    for (const b of balls()) {
+      const at = b.ball.visible ? ballOnScreen(b.ball) : null;
+      if (!at) continue;
+      const d = Math.hypot(at[0] - e.clientX, at[1] - e.clientY);
+      if (d <= PICK_RADIUS && d < nearest) {
+        nearest = d;
+        best = b;
       }
     }
     return best;
@@ -451,15 +489,24 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // they are picked over it too, near misses included.
     const ball = ballUnder(e);
     if (ball) {
-      picked = `${ball.kind}:${ball.id}`;
+      picked = ballName(ball);
       if (ball.kind === 'aim') {
         aiming = ball.id;
       } else {
-        reaching = ball.id;
         dragPlane.setFromNormalAndCoplanarPoint(
           viewer.camera.getWorldDirection(dragPoint).clone(),
           ball.ball.position,
         );
+        // No selection, and so no gizmo: attached under this press, the
+        // pelvis gizmo would hear it too and could start a drag of its own.
+        if (ball.kind === 'root') {
+          moving = {
+            from: raycaster.ray.intersectPlane(dragPlane, new Vector3()) ?? ball.ball.position.clone(),
+            root: armature.root.getWorldPosition(new Vector3()),
+          };
+        } else {
+          reaching = ball.id;
+        }
       }
       viewer.setOrbitEnabled(false);
       try {
@@ -498,6 +545,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       e.stopPropagation();
       return;
     }
+    if (moving) {
+      aim(e);
+      if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+      const to = dragPoint.sub(moving.from).add(moving.root);
+      armature.root.position.copy(armature.root.parent ? armature.root.parent.worldToLocal(to) : to);
+      // As the gizmo's own change does: the pins re-solved, the feet
+      // planted when planting is on.
+      afterGizmo(null);
+      placeControls();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (!reaching) return;
     aim(e);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
@@ -512,9 +572,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     e.stopPropagation();
   };
   const onPointerUp = (e: PointerEvent): void => {
-    if (!reaching && !aiming) return;
+    if (!reaching && !aiming && !moving) return;
     reaching = null;
     aiming = null;
+    moving = null;
     viewer.setOrbitEnabled(true);
     try {
       canvas.releasePointerCapture(e.pointerId);
@@ -968,24 +1029,28 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const at = armature.hingeWorld(id, new Vector3());
       return at ? at.toArray() : null;
     },
+    /** Where a chain's ball, or with 'root' the root's, sits in the world. */
     handlePosition: (id: string) => {
+      if (id === ROOT_BALL) return armature.rootHandleWorld(new Vector3()).toArray();
       const c = armature.chain(id);
       return c ? armature.effectorWorld(c.effector, new Vector3()).toArray() : null;
     },
     /**
-     * Where a ball ('ik:<chain>' or 'aim:<chain>') sits on the page: its
-     * centre and its drawn radius, in CSS pixels; null when it is not shown.
+     * Where a ball ('ik:<chain>', 'aim:<chain>' or 'root') sits on the page:
+     * its centre and its drawn radius, in CSS pixels; null when it is not
+     * shown.
      */
     ballOnScreen: (name: string): [number, number, number] | null => {
-      const [kind, id] = [name.slice(0, name.indexOf(':')), name.slice(name.indexOf(':') + 1)];
-      const ball = (kind === 'aim' ? aims : kind === 'ik' ? handles : null)?.get(id);
+      const ball = balls().find((b) => ballName(b) === name)?.ball;
       const at = ball?.visible && handlesOn ? ballOnScreen(ball) : null;
       if (!ball || !at) return null;
       const up = new Vector3().setFromMatrixColumn(viewer.camera.matrixWorld, 1).normalize();
       const rim = toPage(ball.getWorldPosition(new Vector3()).addScaledVector(up, ball.scale.x));
       return [at[0], at[1], rim ? Math.hypot(rim[0] - at[0], rim[1] - at[1]) : 0];
     },
-    /** What the last press on the figure took: 'ik:<chain>', 'aim:<chain>', a bone, or null. */
+    /** Where a world point falls on the page, in CSS pixels; null behind the camera. */
+    onScreen: (x: number, y: number, z: number) => toPage(new Vector3(x, y, z)),
+    /** What the last press on the figure took: 'ik:<chain>', 'aim:<chain>', 'root', a bone, or null. */
     picked: () => picked,
     select,
     selected: () => selected,

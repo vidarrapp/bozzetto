@@ -108,7 +108,10 @@ sign-in, and everything stays on your device.
   swinging round its toe. **Pin** a ball and it holds its place in the world
   while the rest of the figure moves, so the pelvis can drop into a crouch
   with the feet planted or the body can lean away from a hand that stays
-  put. Both feet start pinned where they stand, and **Reset pose** moves
+  put. The violet ball in the hips moves the whole figure: drag it and the
+  figure follows the pointer across the view, as the pelvis gizmo's centre
+  moves it, the pinned balls holding their places, and the drag is one undo
+  step. Both feet start pinned where they stand, and **Reset pose** moves
   every pin to where the reset leaves its hand or foot. With **Plant feet**
   on (the Reach section's box, on by default), a foot on the ground stands
   flat, facing the way the figure faces, after every reach, pin and reset:
@@ -148,6 +151,7 @@ sign-in, and everything stays on your device.
 | Drag a ball | Reach that hand, foot or head towards it |
 | Drag off the figure | Orbit |
 | Drag a small ball | Aim that knee or elbow around the limb |
+| Drag the ball in the hips | Move the whole figure, pinned hands and feet staying put |
 | `X` | Symmetry on / off |
 | `W` / `E` / `T` | Move the pelvis · rotate the selection · both at once |
 | `Shift`+`R` | Reset the pose |
@@ -304,6 +308,11 @@ guide (`H`) shows whatever keys are set.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier.
 
 ## Changelog
+
+### Unreleased
+
+- **The mannequins' necks turn higher up.** The neck joint sat where the neck lump meets the chest, down inside the chest; it now sits on the lump's centre line a third of the way up, on all four mannequins, so the neck's gizmo and its turn are in the neck. It stops short of the lump's middle, which lifted a shelf out of the back of the chest when the neck bent; bent 30° forward, a neck still lifts a lip there, smaller than that shelf. The head still turns at the base of the skull.
+- **A ball in the hips moves the figure.** A violet ball the size of the reach balls sits halfway along the pelvis, on the mannequins and the blocks alike. Drag it and the whole figure follows the pointer in the plane facing the camera, as the pelvis gizmo's centre moves it, the pinned balls holding their places all the way; the drag is one undo step, and no gizmo comes up. It hides with the IK handles and takes a press within 18 pixels, like the other balls.
 
 ### v1.3
 

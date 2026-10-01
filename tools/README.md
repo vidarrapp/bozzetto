@@ -214,12 +214,17 @@ it to every installed copy.
 The bones are `rig.json`'s (names, kinds, hints, limits, mirrors, reach
 chains); only their positions come from the lumps: a chain joint sits
 between the centre of two lumps' overlap and the parent lump's end, a hip
-in the middle of its half of the pelvis, and a shoulder in the middle of
-the shoulder lump. That lump, the deltoid, rides on the upper arm, so a
-raised arm turns it about its own centre like a wooden mannequin's
-shoulder cap; the clavicle carries no lump of its own and still lifts the
-whole shoulder. Every lump is weighted fully to one bone (`BONE_OF` in the
-script says which).
+in the middle of its half of the pelvis, a shoulder in the middle of the
+shoulder lump and the neck on the neck lump's centre line, a third of the
+way up it (`NECK_JOINT_AT`). The shoulder lump, the deltoid, rides on the
+upper arm, so a raised arm turns it about its own centre like a wooden
+mannequin's shoulder cap; the clavicle carries no lump of its own and
+still lifts the whole shoulder. Where the neck lump meets the chest is
+down inside the chest, and a neck turned about its middle swings its base
+out of the chest on a bend, so the neck joint sits between the two; the
+head still turns where its lump meets the neck's, at the base of the
+skull. Every lump is weighted fully to one bone (`BONE_OF` in the script
+says which).
 
 The forearm and shin get limits of their own rather than the placeholder
 figure's: the anatomical fold (the ankle swings back, the hand forward),
