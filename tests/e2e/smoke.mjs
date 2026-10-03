@@ -368,6 +368,49 @@ const mirrored = (t, left, right, what) => {
   );
 };
 
+// Sculpt's objects by name as the solo suite sees them: the vendor flag
+// (what picking and the brush obey), the eye the session keeps for a save,
+// and what is drawn - every display in the viewer's scene over the object's
+// own vertex array (the active object's primary display, or its extra
+// handle), as "shown", "hidden", "none" or "mixed". The selection outlines
+// and the viewer's own wireframe mesh, which sculpt keeps hidden, share
+// that array too and are left out. With the Scene panel's solo sign, the
+// record a save would write, and the undo stack's depth.
+const soloState = (page) =>
+  page.evaluate(() => {
+    const { session, viewer } = window.__sculpt;
+    const drawn = (m) => {
+      const seen = [];
+      viewer.scene.traverse((o) => {
+        if (!o.isMesh || o.name.startsWith('sculpt-') || o.material?.wireframe) return;
+        if (o.geometry?.getAttribute?.('position')?.array === m.getVertices()) seen.push(o.visible);
+      });
+      if (!seen.length) return 'none';
+      return seen.every((v) => v) ? 'shown' : seen.every((v) => !v) ? 'hidden' : 'mixed';
+    };
+    const objects = {};
+    for (const m of session.getMeshes()) {
+      objects[session.getMeshName(m)] = { flag: m.isVisible(), eye: session.eyeVisible(m), drawn: drawn(m) };
+    }
+    const panel = document.querySelector('.panel--scene');
+    const sm = session.getStateManager();
+    return {
+      solo: session.isSolo(),
+      active: session.activeName(),
+      objects,
+      sign: panel.classList.contains('panel--solo'),
+      chip: getComputedStyle(panel.querySelector('.outliner__solo')).display,
+      tab: getComputedStyle(panel.querySelector('.handle__note')).display,
+      saved: session.serializeScene().meshes.map((r) => `${r.name}:${r.visible}`).join(' '),
+      history: `${sm._undos.length}/${sm._curUndoIndex}`,
+    };
+  });
+// "Sphere:hidden Cube:shown ...": flag and display agreeing, else both.
+const showSolo = (s) =>
+  Object.entries(s.objects)
+    .map(([n, o]) => `${n}:${o.flag === (o.drawn === 'shown') ? o.drawn : `flag ${o.flag}/${o.drawn}`}`)
+    .join(' ');
+
 export const suites = {
   async boot(page, base, t) {
     await openSculpt(page, base);
@@ -631,6 +674,188 @@ export const suites = {
       return s.getMeshes().map((m) => s.getMeshName(m));
     });
     t.eq(after.join(','), before.join(','), 'scene file keeps the objects');
+  },
+
+  async solo(page, base, t) {
+    await openSculpt(page, base);
+    // Three objects: the boot sphere, a cube set off to one side so a press
+    // can aim at it alone, and a torus, active as the last one added. The
+    // sphere is hidden with its eye in the Scene panel, as a user would.
+    await page.evaluate(async () => {
+      const { session, input } = window.__sculpt;
+      session.addPrimitive('cube').getMatrix()[12] = 110;
+      session.addPrimitive('torus');
+      const row = [...document.querySelectorAll('.panel--scene .outliner__row')].find(
+        (r) => r.querySelector('.outliner__name')?.textContent === 'Sphere',
+      );
+      row.querySelector('.outliner__icon').click();
+      input.hooks.frameAll();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    });
+    const altQ = () => page.keyboard.press('Alt+q');
+    // A press over the cube's middle, as picking and the brush ring see it.
+    const aimAtCube = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const cube = session.getMeshes().find((m) => session.getMeshName(m) === 'Cube');
+        const b = cube.computeWorldBound();
+        const [x, y] = session.getCamera().project([(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2]);
+        session._mouseX = x;
+        session._mouseY = y;
+        const picking = session.getPicking();
+        const hit = picking.intersectionMouseMeshes() ? session.getMeshName(picking.getMesh()) : null;
+        return { hit, ring: !!session.hoverSurface() };
+      });
+    const activate = (name) =>
+      page.evaluate((n) => {
+        const { session } = window.__sculpt;
+        session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === n));
+      }, name);
+    // The Scene panel's eye on an object's row: its title, then a click.
+    const eye = (name) =>
+      page.evaluate((n) => {
+        const row = [...document.querySelectorAll('.panel--scene .outliner__row')].find(
+          (r) => r.querySelector('.outliner__name')?.textContent === n,
+        );
+        const btn = row.querySelector('.outliner__icon');
+        const title = btn.title;
+        btn.click();
+        return title;
+      }, name);
+
+    const before = await soloState(page);
+    t.eq(showSolo(before), 'Sphere:hidden Cube:shown Torus:shown', 'the eye hides the sphere; the cube and the torus show');
+    t.ok(!before.solo && !before.sign && before.tab === 'none', `solo starts off, with no sign of it on the Scene panel (tab ${before.tab})`);
+    const aimed = await aimAtCube();
+    t.ok(aimed.hit === 'Cube' && aimed.ring, `a press over the cube picks it and rings it (${aimed.hit})`);
+
+    // Alt+Q: the active torus alone, for the display, picking and the brush
+    // alike, and the docked panel says so on its tab.
+    await altQ();
+    const on = await soloState(page);
+    t.ok(on.solo, 'Alt+Q turns solo on');
+    t.eq(showSolo(on), 'Sphere:hidden Cube:hidden Torus:shown', 'only the active torus shows; the others are hidden, flag and display');
+    t.ok(on.sign && on.tab === 'block' && on.chip !== 'none', `the Scene panel says Solo, docked on its tab (tab ${on.tab}, chip ${on.chip})`);
+    const missed = await aimAtCube();
+    t.ok(missed.hit === null && !missed.ring, `the same press finds nothing to pick or ring (${missed.hit})`);
+    t.eq(on.saved, 'Sphere:false Cube:true Torus:true', 'a save writes the eyes, not solo');
+    t.eq(on.history, before.history, 'and solo put nothing on the undo stack');
+    // Where the chip sits in the title bar, measured against its neighbours
+    // rather than the screen: the panel's slide-in is a CSS transition,
+    // which a headless browser may never run.
+    const chip = await page.evaluate(() => {
+      const panel = document.querySelector('.panel--scene');
+      const box = (sel) => panel.querySelector(sel).getBoundingClientRect();
+      const [c, title, close] = ['.outliner__solo', '.panel__title', '.panel__close'].map(box);
+      const el = panel.querySelector('.outliner__solo');
+      return { text: el.textContent, tip: el.title, placed: c.width > 0 && c.left > title.right && c.right < close.left };
+    });
+    t.ok(chip.text === 'Solo' && chip.placed, `and in the title bar, a Solo chip after the name ("${chip.tip}")`);
+    const guide = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.help-guide .help-row')].find((r) => r.textContent.includes('Solo'));
+      return row ? [...row.querySelectorAll('kbd')].map((k) => k.textContent).join('+') : null;
+    });
+    t.eq(guide, 'Alt+Q', 'the hotkey guide lists it');
+
+    // The solo follows the active object, to the eye-hidden sphere too.
+    await activate('Cube');
+    t.eq(showSolo(await soloState(page)), 'Sphere:hidden Cube:shown Torus:hidden', 'a new active object takes the solo: the cube');
+    await activate('Sphere');
+    const sphere = await soloState(page);
+    t.eq(showSolo(sphere), 'Sphere:shown Cube:hidden Torus:hidden', 'and the sphere, whose eye is shut');
+    t.ok(!sphere.objects.Sphere.eye && sphere.saved === 'Sphere:false Cube:true Torus:true', 'whose eye stays shut underneath');
+    // An add takes the solo; undoing it hands it back.
+    await page.evaluate(() => window.__sculpt.session.addPrimitive('cone'));
+    t.eq(showSolo(await soloState(page)), 'Sphere:hidden Cube:hidden Torus:hidden Cone:shown', 'an added cone takes the solo');
+    await page.evaluate(() => window.__sculpt.session.undo());
+    const undone = await soloState(page);
+    t.ok(undone.active === 'Sphere' && showSolo(undone) === 'Sphere:shown Cube:hidden Torus:hidden', `undo swaps the sphere back in, alone (${showSolo(undone)})`);
+
+    // Alt+Q again: everything as it was, the eye-hidden sphere included.
+    await altQ();
+    const off = await soloState(page);
+    t.ok(!off.solo, 'Alt+Q again ends solo');
+    t.eq(showSolo(off), 'Sphere:hidden Cube:shown Torus:shown', 'the sphere stays hidden, the cube and the torus are back');
+    t.ok(!off.sign && off.tab === 'none' && off.chip === 'none', 'and the sign is gone');
+
+    // An add undone while another object is active leaves nothing drawn (it
+    // left its display behind once), and under solo a redo that brings it
+    // back without moving the active object finds it hidden.
+    const leftover = await page.evaluate(() => {
+      const { session, viewer } = window.__sculpt;
+      const cube = session.getMeshes().find((m) => session.getMeshName(m) === 'Cube');
+      session.setMesh(cube);
+      const cone = session.addPrimitive('cone');
+      session.setMesh(cube);
+      session.undo();
+      let displays = 0;
+      viewer.scene.traverse((o) => {
+        if (o.isMesh && !o.name.startsWith('sculpt-') && o.geometry?.getAttribute?.('position')?.array === cone.getVertices()) displays++;
+      });
+      return { gone: !session.getMeshes().includes(cone), displays, active: session.activeName() };
+    });
+    t.ok(leftover.gone && leftover.active === 'Cube' && leftover.displays === 0, `undoing an add under another active object leaves no display (${leftover.displays})`);
+    await altQ();
+    await page.evaluate(() => window.__sculpt.session.redo());
+    const redone = await soloState(page);
+    t.eq(showSolo(redone), 'Sphere:hidden Cube:shown Torus:hidden Cone:hidden', 'under solo, a redo brings the cone back hidden');
+    t.eq(redone.saved, 'Sphere:false Cube:true Torus:true Cone:true', 'with its own eye open for the save');
+    await page.evaluate(() => window.__sculpt.session.undo());
+
+    // The chip ends solo; so does an eye, then does what it says.
+    await page.evaluate(() => document.querySelector('.panel--scene .outliner__solo').click());
+    const chipped = await soloState(page);
+    t.ok(!chipped.solo && showSolo(chipped) === 'Sphere:hidden Cube:shown Torus:shown', `the Solo chip ends it (${showSolo(chipped)})`);
+    await altQ();
+    const showTitle = await eye('Torus');
+    const shown = await soloState(page);
+    t.eq(showTitle, 'Show (ends solo)', 'under solo the eye says it ends solo');
+    t.ok(!shown.solo && showSolo(shown) === 'Sphere:hidden Cube:shown Torus:shown', `an eye on a solo-hidden object ends solo and shows it (${showSolo(shown)})`);
+    await altQ();
+    const hideTitle = await eye('Cube');
+    const hidden = await soloState(page);
+    t.ok(
+      hideTitle === 'Hide (ends solo)' && !hidden.solo && showSolo(hidden) === 'Sphere:hidden Cube:hidden Torus:shown',
+      `an eye on the solo object ends solo and hides it (${showSolo(hidden)})`,
+    );
+    t.eq(hidden.saved, 'Sphere:false Cube:false Torus:true', 'and that eye is what a save keeps');
+
+    // The Scene panel's Solo button, the way in without a keyboard: it
+    // toggles, stays pressed while solo is on, names the key, and greys out
+    // with nothing active. The active cube's eye is shut, so solo shows it.
+    const soloButton = (click) =>
+      page.evaluate((press) => {
+        const b = [...document.querySelectorAll('.panel--scene .outliner__actions .outliner__btn')].find((x) => x.textContent === 'Solo');
+        if (press) b.click();
+        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title };
+      }, click);
+    const idle = await soloButton(false);
+    t.ok(
+      idle.pressed === 'false' && !idle.disabled && idle.title.includes('Alt + Q'),
+      `the Scene panel has a Solo button, not pressed, naming its key ("${idle.title}")`,
+    );
+    const pressed = await soloButton(true);
+    const viaButton = await soloState(page);
+    t.ok(
+      viaButton.solo && pressed.pressed === 'true' && showSolo(viaButton) === 'Sphere:hidden Cube:shown Torus:hidden',
+      `clicked, it turns solo on and stays pressed (${showSolo(viaButton)}, "${pressed.title}")`,
+    );
+    const released = await soloButton(true);
+    const viaButtonOff = await soloState(page);
+    t.ok(
+      !viaButtonOff.solo && released.pressed === 'false' && !viaButtonOff.sign && showSolo(viaButtonOff) === 'Sphere:hidden Cube:hidden Torus:shown',
+      `clicked again, it turns solo off and lets go (${showSolo(viaButtonOff)})`,
+    );
+    const greyed = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const cube = session.getMesh();
+      session.setMesh(null);
+      const b = [...document.querySelectorAll('.panel--scene .outliner__actions .outliner__btn')].find((x) => x.textContent === 'Solo');
+      const disabled = b.disabled;
+      session.setMesh(cube);
+      return { disabled, back: !b.disabled };
+    });
+    t.ok(greyed.disabled && greyed.back, 'with nothing active the button is disabled, and enabled again after');
   },
 
   async armature(page, base, t) {

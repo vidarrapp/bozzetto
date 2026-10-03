@@ -413,6 +413,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     return active && active.isVisible() && !session.isLocked(active) ? active : null;
   };
 
+  /**
+   * Solo (alt+q, or the Scene panel's Solo button and chip): the session
+   * hides the other objects and keeps their eyes; the display, the gizmo
+   * and the panel follow here. View state, so the autosave is not told.
+   */
+  const setSolo = (on: boolean): void => {
+    if (on === session.isSolo()) return;
+    session.setSolo(on);
+    reconcile();
+    if (gizmo.isActive()) gizmo.attach(gizmoTarget());
+    scenePanel?.refresh();
+  };
+
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
   // Two quick dabs at one spot are strokes, not a focus request: the
   // viewer's double-tap DoF lock stays off for the whole mode.
@@ -682,6 +695,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     deleteSelected: () => scenePanel?.deleteSelected(),
     mirrorSelected: () => scenePanel?.mirrorActive(session.getSymmetryAxis()),
     mergeSelected: () => scenePanel?.mergeSelected(),
+    toggleSolo: () => setSolo(!session.isSolo()),
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;
@@ -964,6 +978,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.markDirty();
     session.render();
   };
+  scenePanel.onSolo = (on) => setSolo(on);
   sculptPanel = new SculptPanel(session, input, viewer);
   sculptPanel.onGizmoParts = (parts) => {
     try {
@@ -1234,6 +1249,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     levelToast.dispose();
     stats.dispose();
     gizmo.dispose();
+    // Solo belongs to this visit, not to the scene: every object gets its
+    // own eye back before the last autosave and the recorder let go.
+    session.setSolo(false);
     recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();

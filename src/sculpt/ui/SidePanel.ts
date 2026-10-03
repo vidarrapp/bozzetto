@@ -39,6 +39,9 @@ export interface SidePanelOptions {
 export class SidePanel {
   protected readonly root: HTMLDivElement;
   protected readonly body: HTMLDivElement;
+  /** The name on the title bar and on the docked tab, for a panel that marks a state beside them. */
+  protected readonly title: HTMLSpanElement;
+  protected readonly tabLabel: HTMLSpanElement;
   private readonly handleArrow: HTMLSpanElement;
   private readonly side: PanelSide;
   private readonly id: string;
@@ -98,26 +101,26 @@ export class SidePanel {
     const handle = document.createElement('button');
     handle.type = 'button';
     handle.className = `panel__handle${opts.side === 'left' ? ' panel__handle--left' : ''}`;
-    const label = document.createElement('span');
-    label.className = 'handle__label';
-    label.textContent = opts.title;
+    this.tabLabel = document.createElement('span');
+    this.tabLabel.className = 'handle__label';
+    this.tabLabel.textContent = opts.title;
     this.handleArrow = document.createElement('span');
     this.handleArrow.className = 'handle__arrow';
-    handle.append(label, this.handleArrow);
+    handle.append(this.tabLabel, this.handleArrow);
     handle.addEventListener('click', () => this.setCollapsed(!this.collapsed));
     this.root.appendChild(handle);
 
     const header = div('panel__header');
-    const title = document.createElement('span');
-    title.className = 'panel__title';
-    title.textContent = opts.title;
+    this.title = document.createElement('span');
+    this.title.className = 'panel__title';
+    this.title.textContent = opts.title;
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'panel__close';
     close.textContent = opts.side === 'left' ? '‹' : '›';
     close.setAttribute('aria-label', `Hide ${opts.title.toLowerCase()} panel`);
     close.addEventListener('click', () => this.setCollapsed(true));
-    header.append(title, close);
+    header.append(this.title, close);
     this.root.appendChild(header);
 
     this.body = div('panel__body');

@@ -46,7 +46,7 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
 - **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. The files are precached with the app, so the whole library works offline.
-- **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked.
+- **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked. **Solo** (`Alt`+`Q`, or the Scene panel's **Solo** button) shows the active object alone until you press it again.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
@@ -289,6 +289,7 @@ guide (`H`) shows whatever keys are set.
 | `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee, `Alt`+drag orbits. In the Scene list, `Ctrl`+click toggles and `Shift`+click takes a range |
 | `Ctrl`+`M` | Mirror the selected objects across the brush's symmetry axis (the Scene panel's Mirror button offers X/Y/Z and radial copies) |
 | `Ctrl`+`J` | Merge the selected objects into one, through voxel space at the Model panel's remesh resolution |
+| `Alt`+`Q` | Solo: only the active object shows, and the solo follows when another becomes active. Again brings the others back as they were. The Scene panel's **Solo** button does the same without a keyboard; the panel says **Solo** while it is on, and a click on that or on any eye ends it |
 | `B` / `S` (hold, then drag with the pen down) | Brush size / strength (`[` `]` and `;` `'` step them) |
 | `F` / `A` | Frame the model / the whole scene |
 | `X` | Mirror symmetry for the current brush |
@@ -309,10 +310,14 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.3.1
+
+**A drag handle in the hips and solo mode.** Desktop app 0.5.1.
 
 - **The mannequins' necks turn higher up.** The neck joint sat where the neck lump meets the chest, down inside the chest; it now sits on the lump's centre line a third of the way up, on all four mannequins, so the neck's gizmo and its turn are in the neck. It stops short of the lump's middle, which lifted a shelf out of the back of the chest when the neck bent; bent 30° forward, a neck still lifts a lip there, smaller than that shelf. The head still turns at the base of the skull.
 - **A ball in the hips moves the figure.** A violet ball the size of the reach balls sits halfway along the pelvis, on the mannequins and the blocks alike. Drag it and the whole figure follows the pointer in the plane facing the camera, as the pelvis gizmo's centre moves it, the pinned balls holding their places all the way; the drag is one undo step, and no gizmo comes up. It hides with the IK handles and takes a press within 18 pixels, like the other balls.
+- **Solo in Sculpt.** `Alt`+`Q`, or on a touch screen the **Solo** button under the Scene panel's object list, shows the active object alone: every other object is hidden from the brush and from picking as well as from view. Make another object active, from the Scene panel, with the Select tool or by an undo, and the solo moves to it. Press either again and the others come back as they were, anything hidden with the outliner's eye staying hidden. While it is on, the button stays pressed and the Scene panel says **Solo** on its tab and beside its title, where a click ends it, as does a click on any eye. It is a view, not an edit: nothing goes on the undo stack or into a saved scene, and saves, timelapse frames and published models still carry every object the eye shows.
+- **Undoing an add while another object is active** no longer leaves the undone object drawn in the viewport.
 
 ### v1.3
 

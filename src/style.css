@@ -1857,6 +1857,49 @@ html.is-page body {
   border-radius: 0 var(--radius) var(--radius) 0;
 }
 
+/* Solo (alt+q) marks the Scene panel, open or docked: every other object
+   has just left the view, and this is where to look for why. The chip by
+   the title ends it; the word under the docked tab's name says it from
+   the screen edge, where the panel usually is. */
+.outliner__solo {
+  display: none;
+  margin: 0 auto 0 8px;
+  padding: 3px 7px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-family: var(--font-spec);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.outliner__solo:hover {
+  background: var(--hover);
+}
+
+.panel--solo .outliner__solo {
+  display: inline-block;
+}
+
+.handle__note {
+  display: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-hover);
+}
+
+.panel--solo.panel--collapsed .handle__note {
+  display: block;
+}
+
 .outliner {
   display: flex;
   flex-direction: column;
@@ -1989,6 +2032,14 @@ html.is-page body {
 .outliner__btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* Solo while it is on: held down, in the accent, matching the panel's
+   other solo signs. */
+.outliner__btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 
 .outliner__menu {
@@ -3172,9 +3223,9 @@ body.is-sampling * {
   border-top: 1px solid var(--panel-border);
 }
 
-/* Duplicate, Delete and Mirror stack under Create, one per row (owner
-   call: squeezed into one row the labels clipped and Mirror fell off the
-   end). */
+/* Duplicate, Delete, Mirror, Merge and Solo stack under Create, one per
+   row (owner call: squeezed into one row the labels clipped and Mirror
+   fell off the end). */
 .outliner__actions {
   display: flex;
   flex-direction: column;

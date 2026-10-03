@@ -39,6 +39,8 @@ export interface InputShellHooks {
   mirrorSelected(): void;
   /** Ctrl+j: the selected objects become one, through voxel space. */
   mergeSelected(): void;
+  /** Alt+q: show the active object alone, or bring the others back. */
+  toggleSolo(): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -1245,7 +1247,6 @@ export class InputShell {
       // Space would otherwise fall through to the viewer's transport, and
       // sculpt has no timeline to play. Claimed so it stays inert.
       if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
-      if (e.altKey && e.key.toLowerCase() === 'q') return this.claim(e); // isolate: reserved
       return;
     }
 
@@ -1333,6 +1334,9 @@ export class InputShell {
         return this.claim(e);
       case 'scene.merge':
         this.hooks.mergeSelected();
+        return this.claim(e);
+      case 'view.solo':
+        this.hooks.toggleSolo();
         return this.claim(e);
       case 'view.frameAll':
         this.hooks.frameAll();

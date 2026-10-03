@@ -192,8 +192,9 @@ export function mergeSceneArrays(
 } | null {
   // The eye means "not part of the picture": a hidden reference blockout
   // was being merged into every timelapse frame and every published model
-  // (review finding).
-  const meshes = session.getMeshes().filter((m) => m.isVisible());
+  // (review finding). The eye, not the flag: solo hides the other objects
+  // only from the view, and a frame recorded under it is still the scene.
+  const meshes = session.getMeshes().filter((m) => session.eyeVisible(m));
   if (meshes.length === 0) return null;
   let nbV = 0;
   let nbT = 0;

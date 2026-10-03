@@ -343,7 +343,7 @@ export class SculptSession {
   private activate(mesh: SculptMesh | null): void {
     const changed = this.mesh !== mesh;
     this.mesh = mesh;
-    if (changed) this.onActiveMeshChange?.();
+    if (changed) this.activeChanged();
     this.onSelectionChange?.();
     this.render();
   }
@@ -368,7 +368,7 @@ export class SculptSession {
     }
     const changed = this.mesh !== mesh;
     this.mesh = mesh;
-    if (changed) this.onActiveMeshChange?.();
+    if (changed) this.activeChanged();
     this.onSelectionChange?.();
     this.render();
     return mesh;
@@ -378,6 +378,11 @@ export class SculptSession {
   replaceMesh(mesh: SculptMesh, newMesh: SculptMesh): void {
     const index = this.getIndexMesh(mesh);
     if (index >= 0) this.meshes[index] = newMesh;
+    // The same object to the user, so under solo it keeps the eye the old
+    // instance had: ending solo must not show a remeshed object that the
+    // eye had hidden.
+    const eye = this.soloEyes?.get(mesh);
+    if (eye !== undefined) this.soloEyes!.set(newMesh, eye);
     if (this.mesh === mesh) this.setMesh(newMesh);
   }
 
@@ -438,16 +443,29 @@ export class SculptSession {
     // the pen is still drawing; undoing the state the stroke is writing into
     // would corrupt it. (The keyboard path gets the same protection.)
     if (this._action !== Enums.Action.NOTHING) return;
-    const before = this.levelSignature();
-    this.stateManager.undo();
-    this.render();
-    this.fireLevelChangeIfMoved(before);
+    this.historyStep(() => this.stateManager.undo());
   }
 
   redo(): void {
     if (this._action !== Enums.Action.NOTHING) return;
+    this.historyStep(() => this.stateManager.redo());
+  }
+
+  /**
+   * One undo or redo, with the notices it owes. The vendor's add/remove
+   * state only re-selects, so a step that changed the object list but left
+   * the active object where it was (an add undone while another object
+   * was active) told nobody: the undone object stayed drawn, and solo
+   * never heard of an object a redo brought back.
+   */
+  private historyStep(step: () => void): void {
     const before = this.levelSignature();
-    this.stateManager.redo();
+    const active = this.mesh;
+    const list = [...this.meshes];
+    step();
+    const listMoved =
+      list.length !== this.meshes.length || list.some((m, i) => m !== this.meshes[i]);
+    if (listMoved && this.mesh === active) this.activeChanged();
     this.render();
     this.fireLevelChangeIfMoved(before);
   }
@@ -645,7 +663,7 @@ export class SculptSession {
     const added = this.meshes.length > before;
     if (added) {
       this.meshNames.set(this.meshes[this.meshes.length - 1], this.uniqueMeshName('Extracted'));
-      this.onActiveMeshChange?.(); // mesh list changed even if selection kept
+      this.activeChanged(); // mesh list changed even if selection kept
     }
     return added;
   }
@@ -813,7 +831,7 @@ export class SculptSession {
     // picks it up on the same reconcile that shows the copy at all.
     adjust?.(saved.matrix);
     const copy = this.buildRestoredMesh(saved);
-    if (saved.visible === false) copy.setVisible(false);
+    if (saved.visible === false) this.setEye(copy, false);
     this.requestRender();
     return copy;
   }
@@ -1183,7 +1201,7 @@ export class SculptSession {
 
     return {
       name: this.getMeshName(mesh),
-      visible: mesh.isVisible(),
+      visible: this.eyeVisible(mesh),
       locked: this.isLocked(mesh),
       nbBaseFaces,
       baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
@@ -1204,7 +1222,7 @@ export class SculptSession {
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);
-      if (savedMesh.visible === false) mesh.setVisible(false);
+      if (savedMesh.visible === false) this.setEye(mesh, false);
       if (savedMesh.locked) this.setLocked(mesh as unknown as SculptMesh, true);
       built.push(mesh);
     }
@@ -1237,10 +1255,86 @@ export class SculptSession {
     else this.lockedIds.delete(mesh.getID());
   }
 
-  /** Visibility (outliner eye). The vendor flag also gates its picking. */
+  /**
+   * Visibility (outliner eye). The vendor flag also gates its picking.
+   * While solo is on, the eye ends it first: the eye is the user's own say
+   * over what shows and solo would only fight it, so everything goes back
+   * as it was, and then the click does what it says.
+   */
   setMeshVisible(mesh: SculptMesh, visible: boolean): void {
+    this.setSolo(false);
     mesh.setVisible(visible);
     this.render();
+  }
+
+  /**
+   * Solo (alt+q): the active object alone on screen, following it when it
+   * changes. The others are hidden with the vendor flag the eye uses, so
+   * picking, the brush ring, the marquee and the display all skip them
+   * with nothing new to check, and this map keeps what each one's eye
+   * said, which is what ending solo puts back. Null while solo is off.
+   *
+   * View state only: nothing here touches the history, and a save, a copy
+   * or a timelapse frame reads the eye (eyeVisible), never the flag solo
+   * set, so neither the autosave nor a .bozz file ever records solo.
+   */
+  private soloEyes: Map<SculptMesh, boolean> | null = null;
+
+  isSolo(): boolean {
+    return this.soloEyes !== null;
+  }
+
+  setSolo(on: boolean): void {
+    if (on === this.isSolo()) return;
+    if (on) {
+      if (!this.mesh) return; // nothing active, nothing to show alone
+      this.soloEyes = new Map();
+      this.holdSolo();
+    } else {
+      const eyes = this.soloEyes!;
+      this.soloEyes = null;
+      // Every object solo saw, including any deleted since: an undo can
+      // bring one back, and it has to come back with its own eye.
+      for (const [mesh, visible] of eyes) mesh.setVisible(visible);
+    }
+    this.render();
+  }
+
+  /** Whether an object's eye is open, solo aside: what a save keeps. */
+  eyeVisible(mesh: SculptMesh): boolean {
+    return this.soloEyes?.get(mesh) ?? mesh.isVisible();
+  }
+
+  /** Set an object's eye; under solo it waits for solo to end. */
+  private setEye(mesh: SculptMesh, visible: boolean): void {
+    if (this.soloEyes) this.soloEyes.set(mesh, visible);
+    else mesh.setVisible(visible);
+  }
+
+  /** Point solo at the active object again, after any active or list change. */
+  private holdSolo(): void {
+    const eyes = this.soloEyes;
+    if (!eyes) return;
+    // An undo can leave nothing active, and an empty view offers nothing
+    // to pick: solo ends rather than strand the user there.
+    if (!this.mesh) {
+      this.setSolo(false);
+      return;
+    }
+    for (const mesh of this.meshes) {
+      // An object new since solo began brings its eye with it.
+      if (!eyes.has(mesh)) eyes.set(mesh, mesh.isVisible());
+      mesh.setVisible(mesh === this.mesh);
+    }
+  }
+
+  /**
+   * The active object or the object list moved. Solo follows first, so
+   * the mount reconciles the display against flags that are already right.
+   */
+  private activeChanged(): void {
+    this.holdSolo();
+    this.onActiveMeshChange?.();
   }
 
   deleteMesh(mesh: SculptMesh): boolean {
@@ -1256,7 +1350,7 @@ export class SculptSession {
     } else {
       // Selection is unchanged, but the mesh LIST moved: the display pool
       // and the outliner both key off this callback.
-      this.onActiveMeshChange?.();
+      this.activeChanged();
     }
     this.render();
     return true;
@@ -1267,6 +1361,7 @@ export class SculptSession {
    * history floor, so undo cannot resurrect what was just discarded.
    */
   newScene(): Multimesh {
+    this.setSolo(false); // a new scene is not the one that was soloed
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;
@@ -1282,6 +1377,9 @@ export class SculptSession {
    * outliner, stats).
    */
   replaceScene(saved: SavedScene): Multimesh {
+    // Solo ends first: it was about one of the old objects, and the new
+    // ones must arrive with the eyes their file gives them.
+    this.setSolo(false);
     // A corrupt or hand-edited file used to cost the user everything: the
     // live scene was cleared first, and a throw inside the rebuild left an
     // empty viewport with no undo (review finding - and it reproduced by

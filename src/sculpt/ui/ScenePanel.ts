@@ -1,4 +1,5 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
+import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
 import type { PrimitiveKind, SculptSession } from '../bridge/SculptSession';
 import { BASE_MESHES, BASE_MESH_GROUPS, baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
@@ -10,10 +11,13 @@ import type { MaterialLibrary } from '../bridge/materials';
  * row is an eye (visibility), a padlock (edit lock), the name - click
  * selects, ctrl+click adds or removes, shift+click takes the range,
  * double-click renames in place - and, on the active row, a trash can.
- * Create, Duplicate, Delete and Mirror stack under the list, one per row,
- * and act on the whole selection; the material row sits under them. New
- * materials are made from the dropdown's own trailing "New*" entry rather
- * than a separate button. Saving, exporting and capture live next door.
+ * Create, Duplicate, Delete, Mirror and Merge stack under the list, one per
+ * row, and act on the whole selection; Solo, last in the stack, shows the
+ * active object alone (alt+q's twin for a touch screen), and the panel
+ * says so on its tab and title bar while it is on. The material row sits
+ * under them all. New materials are made from the dropdown's own trailing
+ * "New*" entry rather than a separate button. Saving, exporting and
+ * capture live next door.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
@@ -28,9 +32,19 @@ export class ScenePanel extends SidePanel {
    * autosave. Selection and history-backed edits announce themselves.
    */
   onSceneEdit: (() => void) | null = null;
+  /**
+   * The Solo button or chip was pressed: the mount turns solo on or off
+   * and syncs the display. Not an edit (solo is view state), so not
+   * onSceneEdit.
+   */
+  onSolo: ((on: boolean) => void) | null = null;
 
+  private readonly soloChip: HTMLButtonElement;
   private mirrorMenu!: HTMLDivElement;
   private mergeBtn!: HTMLButtonElement;
+  private soloBtn!: HTMLButtonElement;
+  /** A rebind in Preferences re-titles the Solo button and chip at once. */
+  private readonly offKeymap: () => void;
   /** Blockouts arrive as their separate lumps rather than one shell. */
   private blockoutParts = readBlockoutParts();
 
@@ -48,6 +62,21 @@ export class ScenePanel extends SidePanel {
     private readonly library?: MaterialLibrary,
   ) {
     super({ id: 'scene', title: 'Scene', side: 'left', variant: 'panel--scene' });
+
+    // Solo's sign, open or docked: every other object has just left the
+    // view, and this panel is where to look for why. The chip by the title
+    // is also the way out, for a press made by accident by someone who does
+    // not know the key. Both show only while solo is on (panel--solo).
+    this.soloChip = document.createElement('button');
+    this.soloChip.type = 'button';
+    this.soloChip.className = 'outliner__solo';
+    this.soloChip.textContent = 'Solo';
+    this.soloChip.addEventListener('click', () => this.onSolo?.(false));
+    this.title.after(this.soloChip);
+    const tabNote = document.createElement('span');
+    tabNote.className = 'handle__note';
+    tabNote.textContent = 'Solo';
+    this.tabLabel.after(tabNote);
 
     this.listEl = div('outliner');
     this.body.appendChild(this.listEl);
@@ -115,7 +144,15 @@ export class ScenePanel extends SidePanel {
     mergeBtn.title = 'Merge the selected objects into one (ctrl+j)';
     mergeBtn.addEventListener('click', () => this.mergeSelected());
     this.mergeBtn = mergeBtn;
-    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn);
+    // Solo: alt+q for a touch screen (owner request: sculpting is on an
+    // iPad). It stays pressed while solo is on and greys out with nothing
+    // active, since there is then nothing to show alone.
+    this.soloBtn = document.createElement('button');
+    this.soloBtn.type = 'button';
+    this.soloBtn.className = 'outliner__btn';
+    this.soloBtn.textContent = 'Solo';
+    this.soloBtn.addEventListener('click', () => this.onSolo?.(!this.session.isSolo()));
+    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn, this.soloBtn);
     footer.appendChild(row);
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
@@ -125,6 +162,7 @@ export class ScenePanel extends SidePanel {
     this.onCollapsedChange = (collapsed) => {
       if (collapsed) this.closeMenus();
     };
+    this.offKeymap = keymap.onChange(() => this.refresh());
     this.refresh();
   }
 
@@ -490,6 +528,18 @@ export class ScenePanel extends SidePanel {
     const active = this.session.getMesh();
     const selected = new Set(this.session.getSelectedMeshes());
     const many = this.session.getMeshes().length > 1;
+    const solo = this.session.isSolo();
+    const chord = keymap.chordFor('view.solo');
+    const key = chord ? chordLabel(chord) : null;
+    this.root.classList.toggle('panel--solo', solo);
+    this.soloBtn.disabled = !active;
+    this.soloBtn.setAttribute('aria-pressed', String(solo));
+    this.soloBtn.title = solo
+      ? `Show the other objects again${key ? ` (${key})` : ''}`
+      : `Solo: show the active object alone${key ? ` (${key})` : ''}`;
+    this.soloChip.title =
+      `Solo: only the active object is showing. Click${key ? ` or press ${key}` : ''} ` +
+      'to show the others again.';
     // The object under rename can vanish mid-edit (undo, delete elsewhere);
     // a stale flag would wait forever for an input that no longer exists.
     if (this.renaming && !this.session.getMeshes().includes(this.renaming)) this.renaming = null;
@@ -503,10 +553,13 @@ export class ScenePanel extends SidePanel {
         else if (selected.has(mesh)) row.classList.add('outliner__row--selected');
         if (!visible) row.classList.add('outliner__row--hidden');
 
+        // Under solo the eye shows what is on screen, and a click on it
+        // ends solo before it applies (SculptSession.setMeshVisible).
+        const eyeTitle = visible ? 'Hide' : 'Show';
         row.appendChild(
           this.iconBtn(
             visible ? 'fi-ss-eye' : 'fi-ss-eye-crossed',
-            visible ? 'Hide' : 'Show',
+            solo ? `${eyeTitle} (ends solo)` : eyeTitle,
             () => {
               this.session.setMeshVisible(mesh, !visible);
               this.onSceneEdit?.();
@@ -629,6 +682,7 @@ export class ScenePanel extends SidePanel {
   }
 
   override dispose(): void {
+    this.offKeymap();
     this.closeMenus();
     this.mirrorMenu.remove();
     this.addMenu.remove();
