@@ -187,10 +187,10 @@ export class SculptSession {
     StateManager.STACK_LENGTH = 64;
     this.sculptManager = new SculptManager(this);
     // WS2f review pass: ZBrush-flavored overrides ride the vendor registry
-    // (volumetric silhouette-grab Move with a softer falloff; the Standard
-    // slot becomes a clay-strips brush; the Twist slot becomes the
-    // hPolish-style Polish brush - Twist is retired by owner call, and
-    // reusing its enum keeps the digit, undo enum and dynamics table).
+    // (Move with a softer falloff; the Standard slot becomes a clay-strips
+    // brush; the Twist slot becomes the hPolish-style Polish brush - Twist
+    // is retired by owner call, and reusing its enum keeps the digit, undo
+    // enum and dynamics table).
     this.sculptManager._tools[Enums.Tools.MOVE] = new VolumetricMove(this) as unknown as SculptTool;
     this.sculptManager._tools[Enums.Tools.BRUSH] = new ClayStripsBrush(
       this,

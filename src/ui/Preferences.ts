@@ -1,11 +1,13 @@
 import { div } from './dom';
 import { ACTIONS, chordOf, chordParts, keymap, type ActionDef, type KeyMode } from './keymap';
+import { settings, type SettingsValues } from './settings';
 
 /**
- * Preferences: the hotkey editor. Every keyed action in both modes, with
- * its current chord; click one, press the new key. The keymap is the
- * single source the handlers and the guide read, so a change is live at
- * once and shows up in the guide.
+ * Preferences: what a finger does, then the hotkey editor. Every keyed
+ * action in both modes, with its current chord; click one, press the new
+ * key. The keymap is the single source the handlers and the guide read,
+ * so a change is live at once and shows up in the guide; the settings
+ * store is read the same way, at the next press.
  *
  * A modal, like the server settings: while it is up the body carries
  * `has-modal` and the key handlers stand down, which is also what lets
@@ -45,8 +47,33 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   title.className = 'dsettings__title';
   title.textContent = 'Preferences';
   const blurb = div('dsettings__blurb');
-  blurb.textContent =
-    'Hotkeys. Click a key to change it, then press the new one; Esc cancels. Saved in this browser.';
+  blurb.textContent = 'Saved in this browser.';
+
+  // Fingers first: on an iPad it is the choice that decides whether the
+  // app is usable at all, and it has no key to find it by.
+  const touchHead = div('prefs__group');
+  touchHead.textContent = 'Touch (Sculpt)';
+  const fingers = choiceGroup<SettingsValues['fingers']>(
+    'fingers',
+    [
+      [
+        'navigate',
+        'Fingers: navigate only',
+        'One finger orbits and two pan and zoom, in every tool. Only the pen and the mouse sculpt, select and move objects.',
+      ],
+      [
+        'sculpt',
+        'Fingers sculpt too',
+        'For working without a pen: a finger on the model sculpts as the mouse does. Two fingers still pan and zoom.',
+      ],
+    ],
+    (v) => settings.set('fingers', v),
+  );
+
+  const keysHead = div('prefs__group');
+  keysHead.textContent = 'Hotkeys';
+  const keysBlurb = div('dsettings__hint');
+  keysBlurb.textContent = 'Click a key to change it, then press the new one; Esc cancels.';
 
   const tabs = div('prefs__tabs');
   const list = div('prefs__list');
@@ -72,7 +99,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   const resetAll = button('Reset all', 'sculpt-panel__btn');
   const close = button('Close', 'sculpt-panel__btn dsettings__primary');
   row.append(resetAll, close);
-  card.append(title, blurb, tabs, list, row);
+  card.append(title, blurb, touchHead, fingers.root, keysHead, keysBlurb, tabs, list, row);
   root.appendChild(card);
 
   // --- the capture step -------------------------------------------------
@@ -200,11 +227,52 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     root,
     open: (m) => {
       mode = m;
+      fingers.set(settings.get('fingers'));
       render();
       root.hidden = false;
       document.body.classList.add('has-modal');
       window.addEventListener('keydown', onWindowKey, true);
       close.focus();
+    },
+  };
+}
+
+/**
+ * A set of radio rows, each a title over a line of explanation. `set`
+ * re-reads the stored value into the buttons when the window opens.
+ */
+function choiceGroup<V extends string>(
+  name: string,
+  options: ReadonlyArray<readonly [V, string, string]>,
+  onPick: (value: V) => void,
+): { root: HTMLElement; set: (value: V) => void } {
+  const root = div('prefs__choices');
+  root.setAttribute('role', 'radiogroup');
+  const inputs = new Map<V, HTMLInputElement>();
+  for (const [value, label, hint] of options) {
+    const row = document.createElement('label');
+    row.className = 'prefs__choice';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = `prefs-${name}`;
+    input.value = value;
+    input.addEventListener('change', () => {
+      if (input.checked) onPick(value);
+    });
+    const text = div('prefs__choice-text');
+    const head = div('prefs__choice-title');
+    head.textContent = label;
+    const note = div('prefs__choice-hint');
+    note.textContent = hint;
+    text.append(head, note);
+    row.append(input, text);
+    root.appendChild(row);
+    inputs.set(value, input);
+  }
+  return {
+    root,
+    set: (value) => {
+      for (const [v, input] of inputs) input.checked = v === value;
     },
   };
 }

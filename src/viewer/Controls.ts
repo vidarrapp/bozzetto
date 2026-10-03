@@ -3,9 +3,34 @@ import {
   MOUSE,
   PerspectiveCamera,
   Sphere,
+  Spherical,
   Vector3,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+/**
+ * The closest the camera may come to its orbit target, in subject radii.
+ * Low enough to work on an eyelid with the head as the subject: it was 0.4
+ * after a frame, which stopped a pinch dead about a quarter of a head from
+ * the last stroke (owner report), and 0.1 of whatever distance a restored
+ * camera or a lens change happened to leave.
+ */
+const MIN_DISTANCE = 0.02;
+/**
+ * The farthest, in subject radii - or twice the framing distance, which a
+ * long lens needs (at 135mm a frame alone sits beyond ten radii).
+ */
+const MAX_DISTANCE = 10;
+const MAX_OF_FIT = 2;
+/**
+ * The near plane follows the camera in: never more than this fraction of
+ * the target distance, so a surface the camera has come right up to is
+ * not clipped away, and never more than NEAR_OF_RADIUS, which is what it
+ * always was at framing distances, where depth precision wants it large.
+ */
+const NEAR_OF_DISTANCE = 1 / 50;
+const NEAR_OF_RADIUS = 1 / 100;
+const FAR_OF_RADIUS = 100;
 
 /**
  * DCC-style camera navigation (design doc §7).
@@ -24,6 +49,11 @@ export class Controls {
 
   /** Default viewing direction (camera offset from target), normalised. */
   private readonly viewDir = new Vector3(0.9, 0.55, 1).normalize();
+  /**
+   * The subject's radius, which the dolly limits and the clip planes scale
+   * with; null until a subject is known, when the camera is left unbounded.
+   */
+  private radius: number | null = null;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -62,27 +92,76 @@ export class Controls {
     const sphere = box.getBoundingSphere(new Sphere());
 
     const r = Math.max(sphere.radius, 1e-4);
+    this.radius = r;
+    // A frame is a reset: an orbit still coasting would carry the view
+    // straight off the framing it was asked for.
+    this.halt();
+    this.controls.target.copy(sphere.center);
+    this.camera.position.copy(sphere.center).addScaledVector(dir, this.fitDistance(r));
+    this.syncLimits();
+    this.controls.update();
+  }
+
+  /**
+   * How far back a sphere of radius r fits the view: into the vertical FOV,
+   * then accounting for aspect so wide-but-short subjects still fit
+   * horizontally, with a small margin.
+   */
+  private fitDistance(r: number): number {
     const vFov = (this.camera.fov * Math.PI) / 180;
-    // Fit the bounding sphere into the vertical FOV, then account for aspect so
-    // wide-but-short subjects still fit horizontally, with a small margin.
     const fitHeight = r / Math.sin(vFov / 2);
     const fitWidth = fitHeight / Math.min(1, this.camera.aspect);
-    const distance = Math.max(fitHeight, fitWidth) * 1.15;
+    return Math.max(fitHeight, fitWidth) * 1.15;
+  }
 
-    this.camera.near = Math.max(r / 100, 1e-3);
-    this.camera.far = r * 100;
-    this.camera.updateProjectionMatrix();
+  /**
+   * The subject the limits scale with (every fit of the subject's bounds
+   * sets it, framing or not). Set before a camera is restored, or the
+   * restore is clamped to the old subject's limits.
+   */
+  setSubjectRadius(r: number): void {
+    this.radius = Math.max(r, 1e-4);
+    this.syncLimits();
+  }
 
-    this.controls.target.copy(sphere.center);
-    this.camera.position.copy(sphere.center).addScaledVector(dir, distance);
-
-    this.controls.minDistance = r * 0.4;
-    this.controls.maxDistance = r * 10;
-    this.controls.update();
+  /**
+   * Re-derive the dolly limits from the subject and the lens, and the clip
+   * planes from where the camera now is. Every route that moves the camera
+   * (the wheel and the pinch inside OrbitControls, dollyBy, a fit, a
+   * restore, a lens change) is clamped to the same floor and ceiling; the
+   * viewer calls this once a frame, after everything has moved the camera
+   * and before it renders, so the near plane always follows the distance.
+   */
+  syncLimits(): void {
+    const r = this.radius;
+    if (r === null) return;
+    const c = this.controls;
+    c.minDistance = r * MIN_DISTANCE;
+    c.maxDistance = Math.max(r * MAX_DISTANCE, this.fitDistance(r) * MAX_OF_FIT);
+    const dist = this.camera.position.distanceTo(c.target);
+    const near = Math.max(Math.min(r * NEAR_OF_RADIUS, dist * NEAR_OF_DISTANCE), 1e-6);
+    const far = Math.max(r * FAR_OF_RADIUS, c.maxDistance + 2 * r);
+    if (near !== this.camera.near || far !== this.camera.far) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   update(): void {
     this.controls.update();
+  }
+
+  /**
+   * Drop whatever the damping still owes the view (the pen took over from
+   * fingers mid-orbit): the camera stops where it is, rather than drifting
+   * on under the first stroke.
+   */
+  halt(): void {
+    const c = this.controls as unknown as { _sphericalDelta: Spherical; _panOffset: Vector3; _scale: number };
+    c._sphericalDelta.set(0, 0, 0);
+    c._panOffset.set(0, 0, 0);
+    c._scale = 1;
   }
 
   /**
@@ -142,8 +221,11 @@ export class Controls {
 
   /**
    * Dolly by a multiplier along the view ray (>1 pulls back, <1 moves in),
-   * clamped to the same min/max the wheel obeys. Drives the sculpt ctrl-drag
-   * zoom, which exists so a Pencil can zoom without a pinch gesture.
+   * clamped to the same min/max the wheel and the pinch obey. Drives the
+   * sculpt ctrl-drag zoom, which exists so a Pencil can zoom without a pinch
+   * gesture. A step is a proportion of the distance, as the wheel's is, so
+   * it magnifies by the same amount at any distance; it does not shrink to
+   * nothing near the floor, it stops at it.
    */
   dollyBy(factor: number): void {
     const offset = new Vector3().subVectors(this.camera.position, this.controls.target);
@@ -154,6 +236,7 @@ export class Controls {
       Math.max(this.controls.minDistance, dist * factor),
     );
     this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), next);
+    this.syncLimits();
     this.controls.update();
   }
 
@@ -175,11 +258,9 @@ export class Controls {
     const ratio = Math.tan((oldFov * Math.PI) / 360) / Math.tan((newFov * Math.PI) / 360);
     const newDist = dist * ratio;
     this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), newDist);
-    this.camera.near = Math.max(newDist / 100, 1e-3);
-    this.camera.far = newDist * 100;
-    this.camera.updateProjectionMatrix();
-    this.controls.minDistance = newDist * 0.1;
-    this.controls.maxDistance = newDist * 10;
+    // The ceiling grows with the lens (twice its framing distance), so the
+    // dolly that keeps the subject's size is not cut short at long lenses.
+    this.syncLimits();
     this.controls.update();
   }
 
@@ -192,12 +273,10 @@ export class Controls {
   setState(position: number[], target: number[]): void {
     this.camera.position.set(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0);
     this.controls.target.set(target[0] ?? 0, target[1] ?? 0, target[2] ?? 0);
-    const dist = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-3);
-    this.camera.near = Math.max(dist / 100, 1e-3);
-    this.camera.far = dist * 100;
-    this.camera.updateProjectionMatrix();
-    this.controls.minDistance = dist * 0.1;
-    this.controls.maxDistance = dist * 10;
+    // The subject's limits, not ones made up from wherever this camera was
+    // saved: a session left close in used to come back unable to zoom out
+    // past ten times that distance.
+    this.syncLimits();
     this.controls.update();
   }
 

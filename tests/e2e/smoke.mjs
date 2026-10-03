@@ -1,7 +1,8 @@
 // The smoke suites: boot, the Create menu's primitives and base meshes,
-// the scene-file round trip, and Armature mode from the gallery's Create
-// tile on. Each gets (page, base, t) - a fresh page, the server's origin,
-// and the check collector.
+// the scene-file round trip, Armature mode from the gallery's Create tile
+// on, and Sculpt's input under fingers, the pen and the zoom. Each gets
+// (page, base, t) - a fresh page, the server's origin, and the check
+// collector.
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -410,6 +411,190 @@ const showSolo = (s) =>
   Object.entries(s.objects)
     .map(([n, o]) => `${n}:${o.flag === (o.drawn === 'shown') ? o.drawn : `flag ${o.flag}/${o.drawn}`}`)
     .join(' ');
+
+// --- touch and pen ---------------------------------------------------------
+// Real device input, as the browser delivers it from the protocol: CDP's
+// touch events (with touch emulation on) arrive as pointerType 'touch'
+// pointers, and its mouse events with pointerType 'pen' as pen pointers
+// whose pressure is the force passed. Trusted events with live pointer ids,
+// so pointer capture, OrbitControls and the gizmo all see what they would
+// on a tablet - which dispatchEvent copies cannot give (setPointerCapture
+// throws on a pointer the browser never saw).
+async function devices(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  // Fingers are numbered by their place in `points`, so a finger keeps its
+  // id from start to end.
+  const touch = (type, points) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1 })) });
+  const pen = (type, [x, y], down) =>
+    cdp.send('Input.dispatchMouseEvent', {
+      type,
+      x,
+      y,
+      button: type === 'mouseMoved' && !down ? 'none' : 'left',
+      buttons: down ? 1 : 0,
+      clickCount: type === 'mouseMoved' ? 0 : 1,
+      pointerType: 'pen',
+      force: down ? 0.6 : 0,
+    });
+  const mid = (path) => Math.floor(path.length / 2);
+  return {
+    touch,
+    pen,
+    /** One finger along a path; `during` runs halfway and its answer is returned. */
+    async finger(path, during) {
+      let seen;
+      await touch('touchStart', [path[0]]);
+      for (let i = 1; i < path.length; i++) {
+        await touch('touchMove', [path[i]]);
+        if (during && i === mid(path)) seen = await during();
+      }
+      await touch('touchEnd', []);
+      return seen;
+    },
+    /** Two fingers together, each along its own path: a pinch or a two-finger pan. */
+    async pair(a, b) {
+      await touch('touchStart', [a[0], b[0]]);
+      for (let i = 1; i < a.length; i++) await touch('touchMove', [a[i], b[i]]);
+      await touch('touchEnd', []);
+    },
+    async tap(at) {
+      await touch('touchStart', [at]);
+      await touch('touchEnd', []);
+    },
+    /** The pen down along a path, hovering in first as a Pencil does. */
+    async penDrag(path, during) {
+      let seen;
+      await pen('mouseMoved', path[0], false);
+      await pen('mousePressed', path[0], true);
+      for (let i = 1; i < path.length; i++) {
+        await pen('mouseMoved', path[i], true);
+        if (during && i === mid(path)) seen = await during();
+      }
+      await pen('mouseReleased', path[path.length - 1], false);
+      return seen;
+    },
+  };
+}
+
+/**
+ * Sculpt mode for the input suites, at the low quality tier (frames are the
+ * expensive part here) and with the boot splash gone: it lies over the
+ * canvas until its animation ends, and a press would land on it.
+ */
+async function openForInput(page, base) {
+  await openSculpt(page, base, '&q=low');
+  await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+}
+
+/**
+ * n + 1 points from a to b. Few: here a software renderer draws two or
+ * three frames a second, and the browser hands touch and pen moves over
+ * one frame at a time.
+ */
+const line = ([x0, y0], [x1, y1], n = 4) =>
+  Array.from({ length: n + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
+
+// The view, and stopping it: OrbitControls eases out of every drag, and at
+// two or three frames a second the tail would take a minute to run out.
+// Halted, the view keeps whatever the drag has turned it by so far.
+const camera = (page) =>
+  page.evaluate(() => {
+    const { viewer } = window.__sculpt;
+    const s = viewer.getCameraState();
+    return { position: s.position, target: s.target, distance: Math.hypot(...s.position.map((p, i) => p - s.target[i])) };
+  });
+const camMoved = (a, b) => Math.hypot(...a.position.map((p, i) => p - b.position[i]));
+const settle = (page) =>
+  page.evaluate(() => {
+    window.__sculpt.viewer.haltOrbit();
+    return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  });
+// Put the view back exactly: a frame first, which ends the orbit's settling
+// tail (it would read the jump as one more step of the drag), then the
+// recorded camera.
+const restoreCamera = async (page, cam) => {
+  await page.evaluate((c) => {
+    const { input, viewer } = window.__sculpt;
+    input.hooks.frameAll();
+    viewer.controls.setState(c.position, c.target);
+  }, cam);
+  await settle(page);
+};
+// Every vertex of every object, weighed by position in the array, so any
+// edit anywhere changes it.
+const meshSum = (page) =>
+  page.evaluate(() => {
+    let sum = 0;
+    for (const m of window.__sculpt.session.getMeshes()) {
+      const v = m.getVertices();
+      for (let i = 0; i < v.length; i++) sum += v[i] * ((i % 7) + 1);
+    }
+    return sum;
+  });
+const strokeCount = (page) => page.evaluate(() => window.__sculpt.input.strokeCount());
+const selected = (page) =>
+  page.evaluate(() => {
+    const s = window.__sculpt.session;
+    return s.getSelectedMeshes().map((m) => s.getMeshName(m)).sort().join(',');
+  });
+// An object's middle on the page, in client px.
+const screenOf = (page, name) =>
+  page.evaluate((n) => {
+    const { session, viewer } = window.__sculpt;
+    const m = session.getMeshes().find((x) => session.getMeshName(x) === n);
+    const b = m.computeWorldBound();
+    const [x, y] = session.getCamera().project([(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2]);
+    const r = viewer.captureCanvas.getBoundingClientRect();
+    const pr = session.getPixelRatio();
+    return [r.left + x / pr, r.top + y / pr];
+  }, name);
+// Whether a point is bare canvas (no panel or button over it), and whether
+// a press there would land on an object.
+const probe = (page, [x, y]) =>
+  page.evaluate(
+    ([px, py]) => {
+      const { session, viewer } = window.__sculpt;
+      const canvas = viewer.captureCanvas;
+      const r = canvas.getBoundingClientRect();
+      const pr = session.getPixelRatio();
+      session._mouseX = (px - r.left) * pr;
+      session._mouseY = (py - r.top) * pr;
+      return { canvas: document.elementFromPoint(px, py) === canvas, hit: session.getPicking().intersectionMouseMeshes() };
+    },
+    [x, y],
+  );
+// A point of bare canvas with nothing under it.
+const emptySpot = (page) =>
+  page.evaluate(() => {
+    const { session, viewer } = window.__sculpt;
+    const canvas = viewer.captureCanvas;
+    const r = canvas.getBoundingClientRect();
+    const pr = session.getPixelRatio();
+    for (let y = r.top + r.height * 0.3; y < r.bottom - 140; y += 23) {
+      for (let x = r.left + r.width * 0.3; x < r.right - r.width * 0.3; x += 29) {
+        if (document.elementFromPoint(x, y) !== canvas) continue;
+        session._mouseX = (x - r.left) * pr;
+        session._mouseY = (y - r.top) * pr;
+        if (!session.getPicking().intersectionMouseMeshes()) return [x, y];
+      }
+    }
+    return null;
+  });
+// The Preferences window's finger choice, set the way a user sets it.
+const setFingers = async (page, label) => {
+  await page.keyboard.press('Control+Comma');
+  await page.locator('.prefs__choice', { hasText: label }).click();
+  const checked = await page.evaluate(() =>
+    [...document.querySelectorAll('.prefs__choice')]
+      .filter((c) => c.querySelector('input').checked)
+      .map((c) => c.querySelector('.prefs__choice-title').textContent)
+      .join(','),
+  );
+  await page.keyboard.press('Escape');
+  return { checked, stored: await page.evaluate(() => localStorage.getItem('bozzetto-settings')) };
+};
 
 export const suites = {
   async boot(page, base, t) {
@@ -1303,5 +1488,516 @@ export const suites = {
     } finally {
       await offline.close();
     }
+  },
+  // Fingers navigate, the pen and the mouse sculpt (owner call), with the
+  // Preferences switch back to fingers that sculpt. Touch and pen input
+  // come from the devices() helper: protocol-level touch and pen pointers.
+  async fingers(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3'); // Standard clay
+    await page.keyboard.press('f');
+    await settle(page);
+    const home = await camera(page);
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    const path = line([cx - 90, cy - 20], [cx + 90, cy + 20]);
+    const ends = [await probe(page, path[0]), await probe(page, path[path.length - 1])];
+    t.ok(ends.every((p) => p.canvas && p.hit), 'the test stroke runs across bare canvas over the sphere');
+    const stored = await page.evaluate(() => localStorage.getItem('bozzetto-settings'));
+    t.eq(stored, null, 'nothing is stored for the finger choice until it is changed');
+
+    // A finger on the model: the view turns, the clay stays.
+    let sum = await meshSum(page);
+    let strokes = await strokeCount(page);
+    await dev.finger(path);
+    await settle(page);
+    const turned = await camera(page);
+    t.ok(camMoved(home, turned) > 20, `a finger drag across the model orbits (the camera moved ${camMoved(home, turned).toFixed(1)})`);
+    t.eq(await meshSum(page), sum, 'and leaves every vertex where it was');
+    t.eq(await strokeCount(page), strokes, 'no stroke began');
+
+    // The pen along the same path, from the same view: a stroke, no orbit.
+    await restoreCamera(page, home);
+    await dev.penDrag(path);
+    await settle(page);
+    t.ok((await meshSum(page)) !== sum && (await strokeCount(page)) === strokes + 1, 'the pen along the same path sculpts');
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and the view stays put');
+
+    // Two fingers still pan and zoom: spread apart, they dolly in.
+    await restoreCamera(page, home);
+    await dev.pair(line([cx - 30, cy + 60], [cx - 150, cy + 60], 3), line([cx + 30, cy + 60], [cx + 150, cy + 60], 3));
+    await settle(page);
+    const pinched = await camera(page);
+    t.ok(pinched.distance < home.distance * 0.5, `two fingers spread apart zoom in (distance ${home.distance.toFixed(1)} to ${pinched.distance.toFixed(1)})`);
+
+    // A resting hand, where a pen and a finger arrive together (Chrome here,
+    // as on a Surface or Android; iPadOS hides the Pencil while a fingertip
+    // is down): a finger turning the view when the pen lands gives the pen
+    // the stroke and stops turning the view, and its moves after that do
+    // nothing until it lifts. A finger that lands during a pen stroke does
+    // nothing at all.
+    await restoreCamera(page, home);
+    sum = await meshSum(page);
+    strokes = await strokeCount(page);
+    const rest = [cx - 260, cy + 170];
+    t.ok((await probe(page, rest)).canvas, 'the resting finger lands on bare canvas');
+    await dev.touch('touchStart', [rest]);
+    for (let i = 1; i <= 2; i++) await dev.touch('touchMove', [[rest[0] + i * 30, rest[1]]]);
+    await dev.pen('mouseMoved', path[0], false);
+    await dev.pen('mousePressed', path[0], true);
+    const atPen = await camera(page);
+    for (let i = 1; i < path.length; i++) {
+      await dev.pen('mouseMoved', path[i], true);
+      await dev.touch('touchMove', [[rest[0] + 60 + i * 30, rest[1] - i * 10]]);
+    }
+    await dev.pen('mouseReleased', path[path.length - 1], false);
+    await dev.touch('touchEnd', []);
+    await settle(page);
+    t.ok((await strokeCount(page)) === strokes + 1 && (await meshSum(page)) !== sum, 'a pen landing while a finger orbits takes the stroke');
+    t.ok(camMoved(atPen, await camera(page)) < 1e-3, `and from then on the finger cannot turn the view (moved ${camMoved(atPen, await camera(page)).toExponential(1)})`);
+    await restoreCamera(page, home);
+    strokes = await strokeCount(page);
+    await dev.pen('mouseMoved', path[0], false);
+    await dev.pen('mousePressed', path[0], true);
+    for (let i = 1; i < path.length; i++) {
+      await dev.pen('mouseMoved', path[i], true);
+      if (i === 1) await dev.touch('touchStart', [rest]);
+      if (i > 1) await dev.touch('touchMove', [[rest[0] + (i - 1) * 40, rest[1]]]);
+    }
+    await dev.pen('mouseReleased', path[path.length - 1], false);
+    await dev.touch('touchEnd', []);
+    await settle(page);
+    t.ok((await strokeCount(page)) === strokes + 1, 'a finger landing mid-stroke neither ends nor restarts it');
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'nor turns the view under the pen');
+
+    // Edit > Preferences: "Fingers sculpt too" brings the old routing back,
+    // live; "Fingers: navigate only" takes it away again.
+    const sculptToo = await setFingers(page, 'Fingers sculpt too');
+    t.eq(sculptToo.checked, 'Fingers sculpt too', 'Preferences offers the choice and takes it');
+    t.eq(sculptToo.stored, '{"fingers":"sculpt"}', 'stored in this browser, as the hotkeys are');
+    await restoreCamera(page, home);
+    sum = await meshSum(page);
+    strokes = await strokeCount(page);
+    await dev.finger(path);
+    await settle(page);
+    t.ok((await strokeCount(page)) === strokes + 1 && (await meshSum(page)) !== sum, 'with fingers sculpting, the finger drag sculpts');
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and does not orbit');
+    const navigate = await setFingers(page, 'Fingers: navigate only');
+    t.ok(navigate.checked === 'Fingers: navigate only' && navigate.stored === null, `back to navigate only, the stored choice is cleared (${navigate.stored})`);
+    await restoreCamera(page, home);
+    sum = await meshSum(page);
+    await dev.finger(path);
+    await settle(page);
+    t.ok((await meshSum(page)) === sum && camMoved(home, await camera(page)) > 20, 'and the finger orbits again');
+  },
+
+  // The Select tool and the gizmo under fingers: a finger drag orbits where
+  // the pen draws a marquee or drags a handle, and a finger tap picks as a
+  // click does.
+  async fingerSelect(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.evaluate(async () => {
+      const { session, input } = window.__sculpt;
+      session.addPrimitive('cube').getMatrix()[12] = 110;
+      input.hooks.frameAll();
+    });
+    await settle(page);
+    const home = await camera(page);
+    await page.keyboard.press('q');
+    t.ok(await page.evaluate(() => window.__sculpt.input.isSelecting()), 'q takes up the Select tool');
+    const sphere = await screenOf(page, 'Sphere');
+    const cube = await screenOf(page, 'Cube');
+    const from = [Math.min(sphere[0], cube[0]) - 130, Math.min(sphere[1], cube[1]) - 110];
+    const to = [Math.max(sphere[0], cube[0]) + 130, Math.max(sphere[1], cube[1]) + 110];
+    const sweep = line(from, to);
+    t.ok((await probe(page, from)).canvas && (await probe(page, to)).canvas, 'the marquee sweep runs over bare canvas');
+    const marquee = () => page.evaluate(() => !!document.querySelector('.select-marquee'));
+    const before = await selected(page);
+    t.eq(before, 'Cube', 'the cube, added last, is the selection');
+
+    const fingerMarquee = await dev.finger(sweep, marquee);
+    await settle(page);
+    t.eq(fingerMarquee, false, 'a finger dragged across both objects draws no marquee');
+    t.eq(await selected(page), before, 'and selects nothing new');
+    t.ok(camMoved(home, await camera(page)) > 20, 'it orbits instead');
+
+    await restoreCamera(page, home);
+    const penMarquee = await dev.penDrag(sweep, marquee);
+    await settle(page);
+    t.eq(penMarquee, true, 'the pen along the same sweep draws the marquee');
+    t.eq(await selected(page), 'Cube,Sphere', 'and selects both objects');
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'without moving the view');
+
+    const empty = await emptySpot(page);
+    t.ok(!!empty, `there is bare canvas to tap (${empty})`);
+    await dev.tap(empty);
+    await settle(page);
+    t.eq(await selected(page), '', 'a finger tap on nothing clears the selection, as a click does');
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and a tap does not nudge the view');
+    await dev.tap(await screenOf(page, 'Sphere'));
+    await settle(page);
+    t.eq(await selected(page), 'Sphere', 'a finger tap on the sphere selects it');
+
+    // The gizmo, on the sphere: a finger on its centre handle orbits; the
+    // pen on the same handle moves the object.
+    await page.keyboard.press('q');
+    await page.keyboard.press('t');
+    const gizmo = () =>
+      page.evaluate(() => {
+        const { session, gizmo: g, viewer } = window.__sculpt;
+        const m = session.getMesh().getMatrix();
+        const [x, y] = session.getCamera().project([m[12], m[13], m[14]]);
+        const r = viewer.captureCanvas.getBoundingClientRect();
+        const pr = session.getPixelRatio();
+        return { active: g.isActive(), at: [r.left + x / pr, r.top + y / pr], origin: [m[12], m[13], m[14]], name: session.activeName() };
+      });
+    const g0 = await gizmo();
+    t.ok(g0.active && g0.name === 'Sphere', `t brings up the gizmo on the sphere (${g0.name})`);
+    const handle = line(g0.at, [g0.at[0] + 160, g0.at[1]]);
+    await dev.finger(handle);
+    await settle(page);
+    const g1 = await gizmo();
+    t.ok(Math.hypot(...g1.origin.map((v, i) => v - g0.origin[i])) < 1e-6, 'a finger dragged from the gizmo centre leaves the object where it was');
+    t.ok(camMoved(home, await camera(page)) > 20, 'and orbits');
+    await restoreCamera(page, home);
+    const g2 = await gizmo();
+    await dev.penDrag(line(g2.at, [g2.at[0] + 160, g2.at[1]]));
+    await settle(page);
+    const g3 = await gizmo();
+    t.ok(Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])) > 5, `the pen on the same handle moves the object (by ${Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])).toFixed(1)})`);
+    t.ok(camMoved(home, await camera(page)) < 1e-3, 'without moving the view');
+    await dev.tap(await screenOf(page, 'Cube'));
+    await settle(page);
+    const g4 = await gizmo();
+    t.ok(g4.name === 'Cube' && (await selected(page)) === 'Cube', `a finger tap on the cube under the gizmo selects it, gizmo and all (${g4.name})`);
+  },
+
+  // The zoom floor (owner report: zoom stuck near the model). Every route -
+  // dollyBy, the wheel, a pinch - comes down to 2% of the subject's radius
+  // and back out to the same ceiling, the near plane following.
+  async zoomFloor(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('f');
+    await settle(page);
+    const fit = await camera(page);
+    const info = () =>
+      page.evaluate(() => {
+        const { viewer, session } = window.__sculpt;
+        const b = session.getMesh().computeWorldBound();
+        const r = Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / 2;
+        const c = viewer.controls.controls;
+        const s = viewer.getCameraState();
+        const dist = Math.hypot(...s.position.map((p, i) => p - s.target[i]));
+        return { r, dist, min: c.minDistance, max: c.maxDistance, near: viewer.camera.near, far: viewer.camera.far };
+      });
+    const i0 = await info();
+    t.near(i0.min / i0.r, 0.02, 1e-6, 'the floor is 2% of the subject radius');
+    t.ok(i0.max >= 10 * i0.r - 1e-6, `the ceiling is at least ten radii (${(i0.max / i0.r).toFixed(1)} r)`);
+    t.near(i0.near / i0.r, 0.01, 1e-6, 'at the framing distance the near plane is a hundredth of the radius, as it was');
+
+    // dollyBy (the Pencil's ctrl-drag zoom) towards a point on the surface,
+    // where a pinch about the last stroke heads: in to the floor a step at
+    // a time, the near plane following, the surface still drawn in front.
+    await page.evaluate(() => {
+      const { viewer, session } = window.__sculpt;
+      const b = session.getMesh().computeWorldBound();
+      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+      const s = viewer.getCameraState();
+      const d = s.position.map((p, i) => p - c[i]);
+      const len = Math.hypot(...d);
+      viewer.controls.setState(s.position, c.map((v, i) => v + (d[i] / len) * ((b[3] - b[0]) / 2)));
+    });
+    const pixel = () =>
+      page.evaluate(async () => {
+        const { viewer } = window.__sculpt;
+        const r = viewer.captureCanvas.getBoundingClientRect();
+        const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+        return {
+          middle: rgb(await viewer.samplePixel(r.left + r.width / 2, r.top + r.height / 2)),
+          corner: rgb(await viewer.samplePixel(r.left + 4, r.top + 4)),
+        };
+      });
+    const far = await pixel();
+    const steps = [];
+    for (let i = 0; i < 40; i++) {
+      steps.push((await info()).dist);
+      await page.evaluate(() => window.__sculpt.viewer.dolly(0.8));
+    }
+    const floor = await info();
+    t.near(floor.dist / floor.r, 0.02, 1e-4, `dolly in comes down to the floor (${(floor.dist / floor.r).toFixed(4)} r, from ${(steps[0] / floor.r).toFixed(2)} r)`);
+    t.ok(floor.near < floor.dist / 10, `with the near plane well inside the distance (near ${floor.near.toExponential(2)}, distance ${floor.dist.toExponential(2)})`);
+    const big = steps.filter((d) => d > floor.min * 1.25);
+    t.ok(big.slice(1).every((d, i) => Math.abs(d / big[i] - 0.8) < 1e-6), `each step is the same 20% of the distance all the way down (${big.length} steps)`);
+    const near = await pixel();
+    const gap = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
+    t.ok(
+      gap(near.middle, far.middle) < gap(near.middle, far.corner),
+      `the surface still fills the middle of the frame at the floor (${near.middle} against clay ${far.middle} and background ${far.corner})`,
+    );
+
+    // Back out: from the floor every step out works, up to the ceiling.
+    for (let i = 0; i < 40; i++) await page.evaluate(() => window.__sculpt.viewer.dolly(1.25));
+    const out = await info();
+    t.near(out.dist, out.max, out.max * 1e-6, `dolly out goes all the way back to the ceiling (${(out.dist / out.r).toFixed(1)} r)`);
+
+    // The wheel: same floor, a proportional step that never shrinks to
+    // nothing, and out again.
+    await page.keyboard.press('f');
+    await settle(page);
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    await page.mouse.move(cx, cy);
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -2000);
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    const wheelIn = await info();
+    t.near(wheelIn.dist / wheelIn.r, 0.02, 1e-4, `the wheel comes down to the same floor (${(wheelIn.dist / wheelIn.r).toFixed(4)} r)`);
+    await page.mouse.wheel(0, 100);
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(ok)));
+    const notch = await info();
+    t.ok(notch.dist / wheelIn.dist > 1.03, `one notch out from the floor moves the camera ${(100 * (notch.dist / wheelIn.dist - 1)).toFixed(1)}% of the distance`);
+    for (let i = 0; i < 9; i++) await page.mouse.wheel(0, 2000);
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(ok)));
+    const wheelOut = await info();
+    t.near(wheelOut.dist, wheelOut.max, wheelOut.max * 1e-6, 'and the wheel goes back out to the same ceiling');
+
+    // A pinch: spread fingers, a gesture at a time, to the same floor.
+    await page.keyboard.press('f');
+    await settle(page);
+    for (let g = 0; g < 4; g++) {
+      await dev.pair(line([cx - 20, cy], [cx - 220, cy], 3), line([cx + 20, cy], [cx + 220, cy], 3));
+      await settle(page);
+    }
+    const pinchIn = await info();
+    t.near(pinchIn.dist / pinchIn.r, 0.02, 1e-4, `a pinch comes down to the same floor (${(pinchIn.dist / pinchIn.r).toFixed(4)} r)`);
+    t.ok(pinchIn.near < pinchIn.dist / 10, 'with the near plane following it in');
+    await dev.pair(line([cx - 220, cy], [cx - 20, cy], 3), line([cx + 220, cy], [cx + 20, cy], 3));
+    await settle(page);
+    const pinchOut = await info();
+    t.ok(pinchOut.dist > pinchIn.dist * 5, `and pinching back out leaves it (${(pinchOut.dist / pinchOut.r).toFixed(3)} r)`);
+
+    // F frames again from wherever the zoom left off.
+    await page.keyboard.press('f');
+    await settle(page);
+    const reframed = await info();
+    t.near(reframed.dist, fit.distance, fit.distance * 1e-3, 'F puts the camera back at the framing distance');
+    t.ok(reframed.near === i0.near && reframed.min === i0.min, 'with the near plane and the floor where they started');
+
+    // A long lens frames from beyond ten radii: the ceiling makes room, so
+    // F frames the subject instead of being clamped short of it.
+    await page.evaluate(() => window.__sculpt.viewer.setFocalLength(135));
+    await page.keyboard.press('f');
+    await settle(page);
+    const tele = await page.evaluate(() => {
+      const { viewer, session } = window.__sculpt;
+      const cam = viewer.camera;
+      const b = session.getMesh().computeWorldBound();
+      const r = Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / 2;
+      const fit = (r / Math.sin((cam.fov * Math.PI) / 360) / Math.min(1, cam.aspect)) * 1.15;
+      const s = viewer.getCameraState();
+      return { r, fit, dist: Math.hypot(...s.position.map((p, i) => p - s.target[i])) };
+    });
+    await page.evaluate(() => window.__sculpt.viewer.setFocalLength(50));
+    t.ok(tele.fit > 10 * tele.r && Math.abs(tele.dist - tele.fit) < tele.fit * 1e-3, `at 135mm F frames from ${(tele.dist / tele.r).toFixed(1)} r, past the old ten-radius ceiling (fit ${(tele.fit / tele.r).toFixed(1)} r)`);
+
+    // A camera restored from close in (a saved look) keeps the subject's
+    // limits rather than ones made from that distance: it used to come back
+    // unable to zoom out past ten times it.
+    await page.evaluate((r) => {
+      const { viewer } = window.__sculpt;
+      const s = viewer.getCameraState();
+      const dir = s.position.map((p, i) => p - s.target[i]);
+      const len = Math.hypot(...dir);
+      viewer.controls.setState(s.target.map((v, i) => v + (dir[i] / len) * 0.05 * r), s.target);
+    }, reframed.r);
+    const restored = await info();
+    t.near(restored.dist / restored.r, 0.05, 1e-4, 'a camera restored at 0.05 r stays there');
+    for (let i = 0; i < 40; i++) await page.evaluate(() => window.__sculpt.viewer.dolly(1.25));
+    const restoredOut = await info();
+    t.near(restoredOut.dist, restoredOut.max, restoredOut.max * 1e-6, `and zooms out to the subject's ceiling (${(restoredOut.dist / restoredOut.r).toFixed(1)} r)`);
+  },
+
+  // Move starts on the model only (owner call): a press just outside the
+  // outline, where it used to grab the silhouette, now does what a press off
+  // the model does with any brush.
+  async moveOnModel(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('2'); // Move
+    await page.keyboard.press('f');
+    await settle(page);
+    const home = await camera(page);
+    const geo = await page.evaluate(() => {
+      const { session, viewer, input } = window.__sculpt;
+      const b = session.getMesh().computeWorldBound();
+      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+      const radius = (b[3] - b[0]) / 2;
+      // The silhouette's edge, to the right of the middle on screen.
+      const right = [viewer.camera.matrixWorld.elements[0], viewer.camera.matrixWorld.elements[1], viewer.camera.matrixWorld.elements[2]];
+      const edge = c.map((v, i) => v + right[i] * radius);
+      const pr = session.getPixelRatio();
+      const r = viewer.captureCanvas.getBoundingClientRect();
+      const toPage = (p) => {
+        const [x, y] = session.getCamera().project(p);
+        return [r.left + x / pr, r.top + y / pr];
+      };
+      return { mid: toPage(c), edge: toPage(edge), brush: session.getSculptManager().getCurrentTool()._radius, tool: input.currentToolIndex() };
+    });
+    // A few pixels outside the outline: well within the brush's reach,
+    // which is where the old grab began.
+    const off = [geo.edge[0] + 14, geo.edge[1]];
+    const offProbe = await probe(page, off);
+    t.ok(offProbe.canvas && !offProbe.hit, `the press point is bare canvas just outside the sphere (${(off[0] - geo.edge[0]).toFixed(0)} px out, brush ${geo.brush.toFixed(0)} px)`);
+    t.ok(geo.brush > 14, 'within the brush radius of the outline, where Move used to grab');
+
+    const sum = await meshSum(page);
+    const strokes = await strokeCount(page);
+    const undo = await page.evaluate(() => window.__sculpt.session.getStateManager().getCurrentState());
+    await dev.penDrag(line(off, [off[0] + 60, off[1] - 20]));
+    await settle(page);
+    t.eq(await meshSum(page), sum, 'a pen drag with Move from just outside the outline moves no vertex');
+    t.eq(await strokeCount(page), strokes, 'and starts no stroke');
+    t.ok(await page.evaluate((u) => window.__sculpt.session.getStateManager().getCurrentState() === u, undo), 'nor leaves an undo step');
+    t.ok(camMoved(home, await camera(page)) > 1, 'it orbits instead, as a pen off the model does with any brush');
+
+    await restoreCamera(page, home);
+    await page.mouse.move(off[0], off[1]);
+    await page.mouse.down();
+    await page.mouse.move(off[0] + 60, off[1] - 20, { steps: 4 });
+    await page.mouse.up();
+    await settle(page);
+    t.ok((await meshSum(page)) === sum && (await strokeCount(page)) === strokes, 'the mouse from there leaves the mesh alone too');
+    await restoreCamera(page, home);
+    await page.mouse.move(off[0], off[1]);
+    await page.mouse.move(off[0] + 2, off[1]);
+    const ring = await page.evaluate(() => document.querySelector('.sculpt-cursor')?.dataset.mode ?? null);
+    t.eq(ring, 'hidden', 'hovering there shows no brush ring, as for any brush off the model');
+
+    // On the surface Move still grabs.
+    await dev.penDrag(line(geo.mid, [geo.mid[0] + 50, geo.mid[1] - 30]));
+    await settle(page);
+    t.ok((await meshSum(page)) !== sum && (await strokeCount(page)) === strokes + 1, 'a pen drag with Move on the sphere moves it');
+  },
+  // Nothing from the OS (owner report: Siri dictation, Safari's long press).
+  // Safari's own gestures cannot run in this browser, so the suite checks
+  // what keeps them out: the touch defaults the app cancels, the context
+  // menu, page zoom and image drags it refuses, the styles it sets, and the
+  // text field it lets go of when a press lands elsewhere - and that the
+  // buttons it moved from click to tap still work every way.
+  async osGuards(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    // A real touch's default, as the window sees it once every listener on
+    // the way down has run.
+    await page.evaluate(() => {
+      window.__touchDefaults = [];
+      window.addEventListener('touchstart', (e) => window.__touchDefaults.push(e.defaultPrevented));
+    });
+    const touchDefault = async (at) => {
+      await page.evaluate(() => (window.__touchDefaults.length = 0));
+      await dev.tap(at);
+      return page.evaluate(() => window.__touchDefaults[0] ?? null);
+    };
+    const centre = (sel) =>
+      page.evaluate((q) => {
+        const r = document.querySelector(q).getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2];
+      }, sel);
+    const empty = await emptySpot(page);
+    t.eq(await touchDefault(empty), true, 'a touch on the canvas cannot arm a long press (its touchstart default is cancelled)');
+    // A stroke first, so the undo button is live.
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    await dev.penDrag(line([cx - 40, cy], [cx + 40, cy], 2));
+    const canUndo = await page.evaluate(() => window.__sculpt.session.canUndo());
+    t.ok(canUndo, 'a pen stroke leaves something to undo');
+    const undoBtn = await centre('.sculpt-histbtn:last-child');
+    t.eq(await touchDefault(undoBtn), true, 'nor can a touch held on the undo button, which repeats while held');
+    t.ok(!(await page.evaluate(() => window.__sculpt.session.canUndo())), 'and the touch still undid the stroke');
+    t.eq(await touchDefault(await centre('.sculpt-slider')), true, 'nor one on a brush slider');
+
+    // The toolbar and the panels' edge tabs act on a tap now; a tap, a
+    // click and the keyboard each act once.
+    const tool = () => page.evaluate(() => window.__sculpt.input.currentToolIndex());
+    const moveBtn = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.sculpt-toolbar__btn')].find((x) => x.querySelector('.sculpt-toolbar__key')?.textContent === '2');
+      const r = b.getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    });
+    t.eq(await touchDefault(moveBtn), true, 'a touch on a toolbar button cannot arm a long press either');
+    t.eq(await tool(), 9, 'and the tap still picks the brush (Move)');
+    const selectBtn = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.sculpt-toolbar__btn')].find((x) => x.querySelector('.sculpt-toolbar__key')?.textContent === 'q');
+      const r = b.getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    });
+    await page.mouse.click(...selectBtn);
+    const selecting = await page.evaluate(() => window.__sculpt.input.isSelecting());
+    await page.mouse.click(...selectBtn);
+    const after = await page.evaluate(() => window.__sculpt.input.isSelecting());
+    t.ok(selecting && !after, 'a mouse click on the Select toggle switches it once, on and then off');
+    const focusLeft = await page.evaluate(() => document.activeElement?.className ?? '');
+    t.ok(!/sculpt-toolbar/.test(focusLeft), `and leaves no focus on the button for Tab or Space (${focusLeft || 'body'})`);
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.sculpt-toolbar__btn')].find((x) => x.querySelector('.sculpt-toolbar__key')?.textContent === '3');
+      b.focus();
+    });
+    await page.keyboard.press('Enter');
+    t.eq(await tool(), 0, 'Enter on a focused toolbar button still picks its brush (Standard clay)');
+    const tab = await centre('.panel--scene .panel__handle');
+    const collapsed = () => page.evaluate(() => document.querySelector('.panel--scene').classList.contains('panel--collapsed'));
+    const wasCollapsed = await collapsed();
+    t.eq(await touchDefault(tab), true, "a touch on a panel's edge tab cannot arm a long press");
+    t.eq(await collapsed(), !wasCollapsed, 'and the tap still opens the panel');
+    await page.evaluate(() => document.querySelector('.panel--scene .panel__handle').click());
+    t.eq(await collapsed(), wasCollapsed, 'a click closes it again');
+
+    // The context menu: nowhere but text fields and links.
+    const menu = (sel) =>
+      page.evaluate((q) => !document.querySelector(q).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })), sel);
+    t.ok(await menu('#viewport canvas'), 'no context menu on the canvas');
+    t.ok(await menu('.sculpt-toolbar__btn'), 'nor on a toolbar button');
+    t.ok(await menu('.panel--scene .panel__title'), 'nor on a panel label');
+    t.ok(await menu('img'), 'nor on an image');
+    t.ok(!(await menu('a[href]')), 'a link keeps its menu');
+    t.ok(await page.evaluate(() => !document.dispatchEvent(new Event('gesturestart', { cancelable: true }))), "Safari's page pinch (gesturestart) is cancelled");
+    t.ok(
+      await page.evaluate(() => !document.querySelector('img').dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true }))),
+      'an image cannot be dragged out of the app',
+    );
+    const styles = await page.evaluate(() => {
+      const css = (el) => getComputedStyle(el);
+      const img = document.querySelector('img');
+      return {
+        root: css(document.documentElement).touchAction,
+        canvas: css(window.__sculpt.viewer.captureCanvas).touchAction,
+        select: css(document.body).userSelect,
+        overscroll: css(document.documentElement).overscrollBehaviorY,
+        drag: css(img).getPropertyValue('-webkit-user-drag'),
+        meta: document.querySelector('meta[name=viewport]').content,
+      };
+    });
+    t.eq(styles.root, 'pan-x pan-y', 'the page pans but never pinch- or double-tap-zooms');
+    t.eq(styles.canvas, 'none', 'the canvas takes no browser gesture at all');
+    t.eq(styles.select, 'none', 'labels never start a text selection');
+    t.eq(styles.overscroll, 'none', 'and the page never rubber-bands');
+    t.eq(styles.drag, 'none', 'images are not draggable');
+    t.ok(/user-scalable=no/.test(styles.meta), 'the viewport meta still asks for no zoom');
+
+    // A text field left focused keeps the keyboard, and its dictation key,
+    // up: a press anywhere else lets go of it, the pen's or a finger's.
+    const rename = () =>
+      page.evaluate(() => {
+        document.querySelector('.panel--scene .outliner__name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        const input = document.querySelector('.panel--scene .outliner__rename');
+        return { focused: document.activeElement === input, select: getComputedStyle(input).userSelect };
+      });
+    const field = await rename();
+    t.ok(field.focused && field.select === 'text', 'renaming an object focuses a real text field, which keeps text selection');
+    t.ok(!(await menu('.panel--scene .outliner__rename')), 'and its own context menu');
+    await dev.penDrag([empty, empty]);
+    t.ok(await page.evaluate(() => !document.querySelector('.outliner__rename') && document.activeElement === document.body), 'a pen press on the canvas blurs it (and the rename commits)');
+    await rename();
+    await dev.tap(empty);
+    t.ok(await page.evaluate(() => !document.querySelector('.outliner__rename') && document.activeElement === document.body), 'so does a finger tap');
   },
 };

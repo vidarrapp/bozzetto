@@ -38,7 +38,7 @@ Sculpts autosave to browser storage whether installed or not. Nothing uploads un
 Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush.
-- **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move grabs volumetrically, so you can pull a silhouette from outside the outline. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
+- **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move starts on the model, like every brush, and drags a soft ball of it, with a Falloff slider from soft to sharp. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
 - **Stencils.** The Rake combs grooves through a stroke-aligned stencil. Clay can take one too, off by default. A Spacing slider sets how far the brush travels between stamps.
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
 - **Masking** with `Ctrl`, plus blur, sharpen, invert, clear, and **Extract** to turn a masked region into a new object.
@@ -51,7 +51,7 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
 - **Scene library**: **Save to library** keeps a sculpt on the device. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. Separate from the autosave, which still resumes your work in progress.
-- **Made for iPad**: two fingers always navigate, a resting palm never blocks the Pencil, and the touch toolbar covers keyboard-less use.
+- **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use.
 - **Reload-safe**: every edit autosaves to IndexedDB. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library.
 
 ## Desktop app
@@ -280,13 +280,14 @@ guide (`H`) shows whatever keys are set.
 
 | Input | Action |
 | --- | --- |
-| Drag on the mesh | Sculpt (`Alt` carves, `Shift` smooths; with the paint brush, `Shift` blurs the paint) |
-| Drag off the mesh | Orbit |
+| Drag on the mesh, with the pen or the mouse | Sculpt (`Alt` carves, `Shift` smooths; with the paint brush, `Shift` blurs the paint) |
+| Drag off the mesh, or one finger anywhere in any tool | Orbit |
 | Two-finger drag / pinch | Pan / zoom, even on the model |
+| Finger tap | In the Select tool, select what is under it (on nothing, clear the selection); under the gizmo, select the object tapped. **Edit → Preferences → Fingers sculpt too** makes a finger work like the mouse instead |
 | `Ctrl` + drag | Paint mask (`+Alt` unmasks) |
 | `Ctrl` + `A` / `C` / `I` / `H` / `E` | Mask all · clear / invert / hide mask · extract masked region |
 | `1`–`9`, `0` | Brushes |
-| `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee, `Alt`+drag orbits. In the Scene list, `Ctrl`+click toggles and `Shift`+click takes a range |
+| `Q` | Select tool: click selects, `Shift` adds, `Ctrl`+drag removes, `Ctrl`+`Shift`+drag adds, drag a marquee (pen or mouse; a finger orbits), `Alt`+drag orbits. In the Scene list, `Ctrl`+click toggles and `Shift`+click takes a range |
 | `Ctrl`+`M` | Mirror the selected objects across the brush's symmetry axis (the Scene panel's Mirror button offers X/Y/Z and radial copies) |
 | `Ctrl`+`J` | Merge the selected objects into one, through voxel space at the Model panel's remesh resolution |
 | `Alt`+`Q` | Solo: only the active object shows, and the solo follows when another becomes active. Again brings the others back as they were. The Scene panel's **Solo** button does the same without a keyboard; the panel says **Solo** while it is on, and a click on that or on any eye ends it |
@@ -309,6 +310,15 @@ guide (`H`) shows whatever keys are set.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier.
 
 ## Changelog
+
+### Unreleased
+
+**Fingers navigate, and the iPad keeps out of the way.**
+
+- **Fingers navigate; the Pencil and the mouse sculpt.** In every tool, brushes, Select and the gizmo alike, one finger orbits and two pan and zoom, and a finger never starts a stroke, a marquee, a gizmo drag or a colour sample. The Select tool no longer loses its navigation to the marquee. A finger tap does what a click does where a tap means something: in the Select tool it selects what is under it, or clears the selection on nothing, and under the gizmo it selects the object tapped, without nudging the view first. Where the system delivers a pen and a finger together (Surface, Android), a pen landing while a finger turns the view takes over and the view stops where it is, and a finger that lands during a stroke does nothing until it lifts; on an iPad a fingertip on the glass still hides the Pencil until it lifts, below anything a web page can reach (a palm does not). **Edit → Preferences** has the choice, **Fingers: navigate only** (the default) or **Fingers sculpt too**, the old behaviour, for sculpting without a pen; it is kept in the browser with the hotkeys.
+- **Nothing from the OS on a long press.** A finger or Pencil held still on the canvas (an armature ball included), the toolbar, the brush sliders, undo and redo, or a panel's edge tab no longer arms Safari's long press, which cancels the touch at about half a second: a held undo could stop repeating, a paused slider or ball drag could let go, and a slow tap on a button could come to nothing. The toolbar buttons and the panel tabs act on the lift of a tap now, which is what lets them refuse it. There is no context menu outside text fields and links, no long-press callout or loupe, no page pinch or double-tap zoom, no rubber-banding, no text selection on labels, and no image drags out of the app. A press anywhere outside a text field (an object being renamed, say) lets go of it, so the keyboard and its dictation key go away. What iPadOS keeps for itself, the system edge swipes, the Pencil's corner swipes and dictation inside a field you are typing in, a web page cannot turn off.
+- **Zoom all the way in.** The camera comes within 2% of the subject's radius of where it is looking, by pinch, wheel or `Ctrl`+drag, where it stopped at 40% after a frame, and the near plane follows it in so nothing close is clipped. Every route stops at the same floor and the same ceiling, ten radii or twice the framing distance for a long lens, and a step is the same proportion of the distance however close you are, so zooming back out always works. A camera restored from a saved scene used to take its limits from wherever it was saved and could come back unable to zoom out; `F` and `A` now also stop an orbit still easing out instead of drifting off the framing.
+- **Move starts on the model.** A press just outside the outline used to grab the silhouette; now a Move stroke starts on the surface like every other brush, and a press off the model does what it does with any brush (the mouse and the pen orbit, a finger navigates). The grab keeps its soft ball falloff and the Falloff slider.
 
 ### v1.3.1
 
@@ -478,7 +488,8 @@ src/
     bridge/                the Bozzetto side: input, tools, alphas, persistence
     ui/                    toolbar, File menu, Tool/Model/Scene/Capture panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
-  ui/                      Panel, Transport, Help, FpsMeter, theme, Landing
+  ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
+                           Preferences and its settings, touch guards
   embed/main.ts            entry for the self-contained single-file export
   export/singleFile.js     pure bundler core shared by the editor and CLI
   admin/

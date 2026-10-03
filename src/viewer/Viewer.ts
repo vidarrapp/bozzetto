@@ -494,6 +494,14 @@ export class Viewer {
     this.container.addEventListener('pointermove', this.onTapMove, true);
     this.container.addEventListener('pointerup', this.onTapEnd, true);
     this.container.addEventListener('pointercancel', this.onTapCancel, true);
+    // No touch on the canvas may start one of iOS's own gestures. A finger
+    // or Pencil held still arms the long press (callout, loupe, drag lift)
+    // at about 450ms whatever the CSS says, and Safari then cancels the
+    // touch - which ends a press held on the model, or on an armature ball
+    // before it is dragged, as if it had lifted (implementation notes,
+    // WS6 round 6). Only the default goes: pointer events still arrive,
+    // and nothing here relies on the click a touch would have synthesised.
+    this.renderer.domElement.addEventListener('touchstart', preventTouchDefault, { passive: false });
   }
 
   /** Load the first frame, frame the subject, then start the render loop. */
@@ -1517,6 +1525,7 @@ export class Viewer {
     this.container.removeEventListener('pointerdown', this.onPickPointer, true);
     this.container.removeEventListener('pointermove', this.onTapMove, true);
     this.container.removeEventListener('pointerup', this.onTapEnd, true);
+    this.renderer.domElement.removeEventListener('touchstart', preventTouchDefault);
     this.container.removeEventListener('pointercancel', this.onTapCancel, true);
     this.reticle.remove();
     this.envLoadingEl.remove();
@@ -1541,8 +1550,10 @@ export class Viewer {
     geom.computeBoundingBox();
     const cam = this.manifest.camera;
     if (cam.position && cam.target) {
-      this.controls.setState(cam.position, cam.target);
+      // Bounds first: the restored camera is clamped to this subject's
+      // dolly limits, so they have to be this subject's already.
       this.fitSubjectBounds(geom.boundingBox ?? new Box3(), false);
+      this.controls.setState(cam.position, cam.target);
     } else {
       this.fitSubjectBounds(geom.boundingBox ?? new Box3(), !!cam.autoFrame);
     }
@@ -1561,6 +1572,8 @@ export class Viewer {
 
     const sphere = this.subjectBox.getBoundingSphere(new Sphere());
     this.subjectRadius = Math.max(sphere.radius, 1e-3);
+    // The dolly floor and ceiling and the clip planes scale with it.
+    this.controls.setSubjectRadius(this.subjectRadius);
     this.applyAoRadius();
     this.applyDof(); // focus-band range scales with the subject
 
@@ -1682,6 +1695,11 @@ export class Viewer {
   /** Dolly by a multiplier (>1 out, <1 in); see Controls.dollyBy. */
   dolly(factor: number): void {
     this.controls.dollyBy(factor);
+  }
+
+  /** Stop the orbit's damped drift where it is; see Controls.halt. */
+  haltOrbit(): void {
+    this.controls.halt();
   }
 
 
@@ -2027,6 +2045,9 @@ export class Viewer {
 
     this.controls.update();
     this.onPostControls?.();
+    // After everything that moves the camera this frame: the near plane
+    // follows the distance it ended at.
+    this.controls.syncLimits();
     this.renderOnce();
   };
 
@@ -2118,6 +2139,10 @@ export class Viewer {
     if (e.pointerId === this.tapPointerId) this.tapPointerId = -1;
     this.lastTapTime = -1;
   };
+}
+
+function preventTouchDefault(e: TouchEvent): void {
+  e.preventDefault();
 }
 
 function clampOrdinal(value: number, count: number): number {

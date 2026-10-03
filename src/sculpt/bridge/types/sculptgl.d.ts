@@ -320,7 +320,7 @@ declare module '@sculpt-vendor/states/StateMultiresolution' {
 declare module '@sculpt-vendor/math3d/Picking' {
   import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
   class Picking {
-    /** Written directly by the volumetric Move start (no raycast hit). */
+    /** The picked mesh, as getMesh() returns it. */
     _mesh: SculptMesh | null;
     constructor(main: unknown, xSym?: boolean);
     intersectionMouseMeshes(): boolean;

@@ -7,6 +7,7 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import '@flaticon/flaticon-uicons/css/solid/straight.css';
 import '@flaticon/flaticon-uicons/css/thin/straight.css';
 import type { InputShell } from '../bridge/InputShell';
+import { onTap } from '../../ui/dom';
 
 // Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
 // or negative.svg) replaces that button's font glyph at build time. This is
@@ -140,6 +141,9 @@ export class SculptToolbar {
     // No setPointerCapture: capturing a touch pointer and then putting a
     // second one down makes Safari cancel the captured one.
     this.negativeBtn.addEventListener('pointerdown', (e) => {
+      // Driven by the press itself, so nothing else the press would do is
+      // wanted: no focus left on the button for Tab or Space to land on.
+      e.preventDefault();
       if (this.input.getNegativeBase()) {
         // Already carving, from a tap or from a hold whose lift went
         // missing: this press turns it off. That is what stops the button
@@ -183,8 +187,8 @@ export class SculptToolbar {
       'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
       '</svg></span>';
     // The button is a plain switch, unlike Tab, which first tidies open
-    // panels. Assigned by mode.ts; read at click time so ordering is free.
-    hideBtn.addEventListener('click', () => this.onToggleChrome?.());
+    // panels. Assigned by mode.ts; read at tap time so ordering is free.
+    onTap(hideBtn, () => this.onToggleChrome?.());
     this.hideBtn = hideBtn;
     const right = document.createElement('div');
     right.className = 'sculpt-toolbar__corner sculpt-toolbar__right';
@@ -215,11 +219,11 @@ export class SculptToolbar {
     // Select at the far left, Transform at the far right (owner call): the
     // two tools that are not brushes bracket the row.
     this.selectBtn = toolButton('q', 'Select (q): click, shift adds, ctrl+drag removes, drag a marquee', 'select', 'fi-ss-cursor');
-    this.selectBtn.addEventListener('click', () => this.onToggleSelect?.());
+    onTap(this.selectBtn, () => this.onToggleSelect?.());
     center.appendChild(this.selectBtn);
     for (const [id, key, name, slot, icon] of brushes) {
       const btn = toolButton(key, name, slot, icon);
-      btn.addEventListener('click', () => this.input.selectBrush(id));
+      onTap(btn, () => this.input.selectBrush(id));
       this.brushBtns.set(id, btn);
       center.appendChild(btn);
     }
@@ -229,7 +233,7 @@ export class SculptToolbar {
     // button and active state rather than a digit slot. Its key shows as a
     // badge like every other tool's (owner request).
     this.transformBtn = toolButton('t', 'Transform (t): move, rotate and scale; w/e/r show one kind', 'transform', 'fi-ss-transformation-block');
-    this.transformBtn.addEventListener('click', () => this.onToggleTransform?.());
+    onTap(this.transformBtn, () => this.onToggleTransform?.());
     center.appendChild(this.transformBtn);
 
     this.root.append(left, center, right);

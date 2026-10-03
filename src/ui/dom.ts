@@ -12,7 +12,16 @@
  */
 export function isTextEntryTarget(e: KeyboardEvent): boolean {
   if (e.isComposing) return true;
-  const el = e.target as HTMLElement | null;
+  return isTextField(e.target as Element | null);
+}
+
+/**
+ * A field you type into: a text-like input, a textarea or contenteditable.
+ * On a tablet it is also what brings up the on-screen keyboard, and with
+ * it the dictation key.
+ */
+export function isTextField(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;
   if (el.tagName === 'TEXTAREA' || el.isContentEditable === true) return true;
   if (el.tagName !== 'INPUT') return false;
@@ -48,6 +57,51 @@ export function tabShouldMoveFocus(e: KeyboardEvent): boolean {
   const a = document.activeElement;
   return !!a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS';
 }
+
+/**
+ * A button that acts on a tap, for the ones a hand rests on or lingers
+ * over (the sculpt toolbar, the docked panels' edge tabs). On iPadOS a
+ * finger held still on a button arms the long press at about 450ms, and
+ * Safari then cancels the touch (the Negative button's on-device log): a
+ * slow tap never became a click, and the press could lift the button for
+ * drag and drop. Cancelling the touchstart default stops that, and with
+ * it the click a touch would synthesise, so the lift on the button is the
+ * tap instead. The click still serves the keyboard and assistive tech,
+ * and is skipped when it follows a lift that already acted.
+ */
+export function onTap(btn: HTMLElement, action: () => void): void {
+  let pressed = -1;
+  let actedAt = -Infinity;
+  btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    pressed = e.pointerId;
+    // No focus left behind on the button for Tab or Space to land on.
+    e.preventDefault();
+  });
+  btn.addEventListener('pointercancel', (e) => {
+    if (e.pointerId === pressed) pressed = -1;
+  });
+  btn.addEventListener('pointerup', (e) => {
+    if (e.pointerId !== pressed) return;
+    pressed = -1;
+    // A touch stays with the button it landed on; a finger slid off before
+    // lifting has changed its mind, as it would on a native button.
+    const r = btn.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    actedAt = performance.now();
+    action();
+  });
+  btn.addEventListener('click', (e) => {
+    // A pointer's own click (detail counts its presses; a key's and a
+    // script's click carry 0) after a lift that already acted.
+    if (e.detail > 0 && performance.now() - actedAt < TAP_CLICK_MS) return;
+    action();
+  });
+}
+
+/** A pointer click this soon after a lift that acted is that lift's own click. */
+const TAP_CLICK_MS = 500;
 
 export function div(className: string): HTMLDivElement {
   const d = document.createElement('div');

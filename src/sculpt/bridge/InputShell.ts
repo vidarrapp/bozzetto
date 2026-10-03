@@ -7,6 +7,7 @@ import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import { keymap } from '../../ui/keymap';
+import { settings } from '../../ui/settings';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
@@ -25,6 +26,12 @@ import type { BrushCursor } from './BrushCursor';
  * tools that support it; ctrl paints mask, ctrl+alt unmasks (the Masking
  * tool is swapped in just for the stroke). Alt keydown is preventDefaulted
  * so Firefox's menu bar never steals the modifier.
+ *
+ * Fingers navigate (Preferences, on by default): with that choice a touch
+ * never reaches the stroke, marquee or gizmo code below - one finger
+ * orbits and two pan and zoom in every tool, and only the pen and the
+ * mouse work on the scene. "Fingers sculpt too" keeps the older routing,
+ * where a finger on the model strokes like the mouse.
  */
 
 /** Environment hooks the shell drives outside the vendored core. */
@@ -58,6 +65,8 @@ export interface InputShellHooks {
   /** A drag that missed the mesh is about to orbit / has finished. */
   orbitBegin(): void;
   orbitEnd(): void;
+  /** The pen took over from navigating fingers: the view stops drifting where it is. */
+  orbitHalt(): void;
   /** shift+s: toggle shadows; returns the new state (unused, for parity). */
   toggleShadows(): void;
   /** shift+w: toggle the wireframe overlay, as in the viewer. */
@@ -78,6 +87,13 @@ export interface InputShellHooks {
 
 /** A select-tool press that travels past this is a marquee, not a click. */
 const MARQUEE_SLOP = 5;
+/**
+ * How far a finger may wander and still be a tap, when fingers navigate:
+ * in the Select tool and under the gizmo a tap picks, as a click does,
+ * and anything that travels farther orbits. A finger never lands as
+ * still as a mouse, hence more room than the marquee's.
+ */
+const TAP_SLOP = 10;
 
 /** Hold-key adjust modes for brush size (b) and strength (s). */
 type AdjustMode = 'radius' | 'intensity' | null;
@@ -152,8 +168,38 @@ export class InputShell {
   private undoStateAtStroke: unknown = undefined;
   /** Touch pointers currently on the glass (palms never appear; iPadOS eats them). */
   private readonly touchesDown = new Set<number>();
-  /** True while re-dispatching a swallowed pointerdown to OrbitControls. */
+  /** True while re-dispatching a pointer event of ours to OrbitControls. */
   private handingToOrbit = false;
+  /**
+   * Fingers navigate: the fingers of the navigation gesture in progress,
+   * whether OrbitControls has them already or one is still held back as
+   * a possible tap (pendingFinger).
+   */
+  private readonly navTouches = new Set<number>();
+  /**
+   * Fingers that are down and do nothing: they landed while the pen or the
+   * mouse was at work, or the pen took over from them (where the platform
+   * delivers both; see takeOverFromFingers). Their moves and lifts are
+   * swallowed, because OrbitControls follows every pointer that moves on
+   * the page while it tracks any, and would read one of these as the
+   * finger it is turning the view with.
+   */
+  private readonly inertTouches = new Set<number>();
+  /**
+   * The first finger of a gesture in the Select tool or under the gizmo,
+   * held back from OrbitControls until it travels: lifted within TAP_SLOP
+   * it is a tap, which picks as a click does; past it, it is handed on to
+   * the orbit from where it has got to.
+   */
+  private pendingFinger: {
+    pointerId: number;
+    x: number;
+    y: number;
+    lastX: number;
+    lastY: number;
+    shift: boolean;
+    ctrl: boolean;
+  } | null = null;
   /**
    * Why the last pointerdown was accepted or dropped. The finger-blocks-the-
    * Pencil report has survived three fixes, each aimed at a different guess;
@@ -312,14 +358,18 @@ export class InputShell {
 
   /** Mirror upstream setMousePosition: device pixels relative to the canvas. */
   private setMouse(e: PointerEvent): void {
+    this.setMouseAt(e.clientX, e.clientY);
+  }
+
+  private setMouseAt(clientX: number, clientY: number): void {
     const s = this.session;
     const canvas = s.getCanvas();
     const rect = canvas.getBoundingClientRect();
     const ratio = s.getPixelRatio();
-    s._mouseX = (e.clientX - rect.left) * ratio;
-    s._mouseY = (e.clientY - rect.top) * ratio;
-    this.lastClientX = e.clientX - rect.left;
-    this.lastClientY = e.clientY - rect.top;
+    s._mouseX = (clientX - rect.left) * ratio;
+    s._mouseY = (clientY - rect.top) * ratio;
+    this.lastClientX = clientX - rect.left;
+    this.lastClientY = clientY - rect.top;
   }
 
   private currentTool(): SculptTool {
@@ -612,14 +662,32 @@ export class InputShell {
       } else if (m.hit) {
         hits = [m.hit];
       }
-      // Maya's modifiers (owner call): shift adds, ctrl removes, ctrl+shift
-      // adds; nothing held replaces the selection with what was hit.
-      const s = this.session;
-      if (m.ctrl && !m.shift) s.selectRemove(hits);
-      else if (m.shift) s.selectAdd(hits);
-      else s.selectSet(hits);
+      this.applySelection(hits, m.shift, m.ctrl);
     }
     this.endMarquee();
+  }
+
+  /**
+   * Maya's modifiers (owner call): shift adds, ctrl removes, ctrl+shift
+   * adds; nothing held replaces the selection with what was hit.
+   */
+  private applySelection(hits: SculptMesh[], shift: boolean, ctrl: boolean): void {
+    const s = this.session;
+    if (ctrl && !shift) s.selectRemove(hits);
+    else if (shift) s.selectAdd(hits);
+    else s.selectSet(hits);
+  }
+
+  /**
+   * A press on an object with the gizmo up selects it, gizmo included.
+   * The Select tool's modifiers work here too (owner request): shift adds
+   * to the selection, ctrl takes away, a plain press selects just this one.
+   */
+  private selectUnderGizmo(hit: SculptMesh, shift: boolean, ctrl: boolean): void {
+    const s = this.session;
+    if (shift) s.selectAdd([hit]);
+    else if (ctrl) s.selectRemove([hit]);
+    else if (hit !== s.getMesh() || s.getSelectedMeshes().length !== 1) s.selectSet([hit]);
   }
 
   private endMarquee(): void {
@@ -670,7 +738,17 @@ export class InputShell {
     // Our own re-dispatch on its way to OrbitControls; let it through.
     if (this.handingToOrbit) return;
     if (e.button !== 0) return; // middle/right stay with OrbitControls
-    if (e.pointerType === 'touch') this.touchesDown.add(e.pointerId);
+    if (e.pointerType === 'touch') {
+      this.touchesDown.add(e.pointerId);
+      // Fingers navigate (the default): a finger is routed here, before
+      // anything below can make a stroke, a marquee or a gizmo drag of it.
+      if (this.fingersNavigate()) {
+        this.fingerDown(e);
+        return;
+      }
+    } else if (this.navTouches.size > 0) {
+      this.takeOverFromFingers();
+    }
     // One stroke at a time: a finger landing mid-stroke (to hold a modifier
     // button, or just resting) must not restart or steal the pen's stroke.
     // A Pencil is the exception and outranks a finger, because on an iPad
@@ -722,22 +800,8 @@ export class InputShell {
       this.verdict?.('touch joins the gesture: navigation');
       return;
     }
-    // While adjusting brush size/strength (b/s) or dragging the light rig
-    // (l), the press belongs to that gesture: never let it start an orbit.
-    // For b/s the press is also what STARTS the change; the key alone only
-    // arms it, and the drag measures from here rather than from wherever
-    // the pointer last hovered.
     if (this.adjust || this.lKeyHeld) {
-      if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
-        this.adjustPointer = e.pointerId;
-        this.adjustLastX = e.clientX;
-        this.adjustLastY = e.clientY;
-        this.verdict?.(`${this.adjust} drag begins`);
-      } else {
-        this.verdict?.(`drop ${e.pointerType}: ${this.adjust ?? 'light'} drag owns it`);
-      }
-      e.preventDefault();
-      e.stopPropagation();
+      this.heldKeyPress(e);
       return;
     }
     const s = this.session;
@@ -778,14 +842,8 @@ export class InputShell {
       }
       if (s.getPicking().intersectionMouseMeshes()) {
         const hit = s.getPicking().getMesh() as SculptMesh | null;
-        if (hit) {
-          // The Select tool's modifiers work here too (owner request):
-          // shift adds to the selection, ctrl takes away, a plain press
-          // selects just this one. No marquee - a drag on nothing orbits.
-          if (e.shiftKey) s.selectAdd([hit]);
-          else if (e.ctrlKey || e.metaKey) s.selectRemove([hit]);
-          else if (hit !== s.getMesh() || s.getSelectedMeshes().length !== 1) s.selectSet([hit]);
-        }
+        // No marquee here - a drag on nothing orbits.
+        if (hit) this.selectUnderGizmo(hit, e.shiftKey, e.ctrlKey || e.metaKey);
         this.verdict?.('select under gizmo');
         e.preventDefault();
         e.stopPropagation();
@@ -929,12 +987,7 @@ export class InputShell {
         : ('dot' as const);
     clearTimeout(this.strokeReduceTimer);
     this.strokeReduceTimer = window.setTimeout(() => {
-      // A Move grab begun outside the outline keeps its full ring: it is the
-      // only thing showing where the grab reaches, and reducing it to a dot
-      // leaves the pen with no indication it is affecting anything.
-      if (this.pointerId !== -1 && !this.grabbingFromOutside()) {
-        this.cursor.setStrokeStyle(strokeStyle);
-      }
+      if (this.pointerId !== -1) this.cursor.setStrokeStyle(strokeStyle);
     }, STROKE_REDUCE_DELAY_MS);
     // NOT for touch. Capturing a touch pointer is what Safari punishes: the
     // moment a second pointer arrives it cancels the captured one, and on
@@ -954,7 +1007,29 @@ export class InputShell {
     s._lastMouseY = s._mouseY;
   };
 
+  /**
+   * While adjusting brush size/strength (b/s) or dragging the light rig
+   * (l), the press belongs to that gesture: never let it start an orbit.
+   * For b/s the press is also what STARTS the change; the key alone only
+   * arms it, and the drag measures from here rather than from wherever
+   * the pointer last hovered. A finger counts too, even when fingers only
+   * navigate: holding the key is the deliberate part.
+   */
+  private heldKeyPress(e: PointerEvent): void {
+    if (this.adjust && this.adjustPointer === -1 && (e.pointerType !== 'mouse' || e.button === 0)) {
+      this.adjustPointer = e.pointerId;
+      this.adjustLastX = e.clientX;
+      this.adjustLastY = e.clientY;
+      this.verdict?.(`${this.adjust} drag begins`);
+    } else {
+      this.verdict?.(`drop ${e.pointerType}: ${this.adjust ?? 'light'} drag owns it`);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && this.fingerMove(e)) return;
     const s = this.session;
     const prevAbsX = this.lastAbsX;
     const prevAbsY = this.lastAbsY;
@@ -1034,8 +1109,7 @@ export class InputShell {
         return;
       }
       // Hover: ring on the surface under the cursor. Off the mesh, no
-      // cursor at all - except Move, whose volumetric grab can start out
-      // there and deserves an aim ring (review policy).
+      // cursor at all, Move included: every brush starts on the surface.
       const surf = s.hoverSurface(true);
       if (surf) {
         // The mirror rides along on HOVER only: it shows where symmetry
@@ -1043,8 +1117,6 @@ export class InputShell {
         // symmetry is on), while a stroke keeps the single dot on the side
         // being worked (owner call).
         this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius, surf.mirror);
-      } else if (this.currentToolIndex() === Enums.Tools.MOVE) {
-        this.cursor.showScreen();
       } else {
         this.cursor.hide();
       }
@@ -1062,28 +1134,25 @@ export class InputShell {
     s.getSculptManager().update();
 
     // The stroke just refreshed picking; reuse it for the ring (no re-pick).
-    // Except for a volumetric Move grab begun outside the silhouette: there
-    // the picked point sits on the mesh while the pen is off it, so the
-    // ring would abandon the pointer entirely. Keep it under the pen.
-    if (this.grabbingFromOutside()) {
-      this.cursor.moveTo(this.lastClientX, this.lastClientY);
-      this.cursor.showScreen();
-    } else {
-      const strokeSurf = s.hoverSurface(false);
-      this.cursor.setSurface(
-        strokeSurf ? strokeSurf.point : null,
-        strokeSurf?.normal,
-        strokeSurf?.worldRadius,
-      );
-    }
+    const strokeSurf = s.hoverSurface(false);
+    this.cursor.setSurface(
+      strokeSurf ? strokeSurf.point : null,
+      strokeSurf?.normal,
+      strokeSurf?.worldRadius,
+    );
 
     s._lastMouseX = s._mouseX;
     s._lastMouseY = s._mouseY;
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    // Our own cancel, on its way to OrbitControls (the pen took over).
+    if (this.handingToOrbit) return;
     const s = this.session;
-    if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
+    if (e.pointerType === 'touch') {
+      this.touchesDown.delete(e.pointerId);
+      if (this.fingerUp(e)) return;
+    }
 
     // The b/s drag ends with the press; the key stays armed for the next.
     if (this.adjustPointer === e.pointerId) {
@@ -1149,17 +1218,224 @@ export class InputShell {
     if (e.target === this.container) this.cursor.hide();
   };
 
+  // --- fingers navigate ----------------------------------------------------
+
+  /** Whether a finger press navigates (the Preferences choice, read live). */
+  private fingersNavigate(): boolean {
+    return settings.get('fingers') === 'navigate';
+  }
+
   /**
-   * Close out the stroke a finger had started, so the Pencil can begin its
-   * own: the same tidy-up a lift does (octree rebalance, drop a no-op undo
-   * entry, pivot follows the work), minus the event bookkeeping.
+   * The pen or the mouse is at work: a stroke, a marquee, a ctrl zoom, a
+   * b/s drag, a gizmo drag or an orbit of its own.
    */
+  private penBusy(): boolean {
+    return (
+      this.pointerId !== -1 ||
+      this.marquee !== null ||
+      this.ctrlEmpty !== null ||
+      this.adjustPointer !== -1 ||
+      this.orbitPointer !== -1 ||
+      !!this.transform?.isDragging()
+    );
+  }
+
   /**
-   * Replay a stroke-swallowed pointerdown at OrbitControls (two-finger
-   * handover): the canvas dispatch runs our container capture listener
-   * again, so a flag routes the copy straight past it. Synthetic events
-   * carry no trust flags OrbitControls cares about; id and position are
-   * all it reads.
+   * A finger, with fingers set to navigate: it never strokes, draws a
+   * marquee, drags the gizmo or samples paint. One finger orbits and two
+   * pan and zoom, whatever the tool, and the press goes on to
+   * OrbitControls untouched. In the Select tool and under the gizmo the
+   * first finger is held back until it travels, so that a tap can pick
+   * the way a click does without nudging the view first.
+   */
+  private fingerDown(e: PointerEvent): void {
+    // A finger landing while the pen or the mouse is at work is a resting
+    // hand: it must neither end that work nor turn the camera under it.
+    // (A mouse and a finger, or a Surface pen and a finger, coexist; an
+    // iPad's Pencil hides any finger that comes after it.)
+    if (this.penBusy()) {
+      this.inertTouches.add(e.pointerId);
+      this.verdict?.('drop touch: the pen is at work');
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (this.adjust || this.lKeyHeld) {
+      this.heldKeyPress(e);
+      return;
+    }
+    // The gizmo's handles go deaf for the whole gesture: a finger that
+    // lands on one orbits like a finger anywhere else.
+    this.transform?.setSuspended(true);
+    const first = this.navTouches.size === 0;
+    this.navTouches.add(e.pointerId);
+    if (first) {
+      this.hooks.orbitBegin();
+      if (this.selectMode || this.transform?.isActive()) {
+        this.pendingFinger = {
+          pointerId: e.pointerId,
+          x: e.clientX,
+          y: e.clientY,
+          lastX: e.clientX,
+          lastY: e.clientY,
+          shift: e.shiftKey,
+          ctrl: e.ctrlKey || e.metaKey,
+        };
+        this.verdict?.('touch: a tap, or an orbit if it travels');
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      this.verdict?.('touch: orbit');
+      return; // unclaimed: OrbitControls takes the finger
+    }
+    // A second finger: two fingers pan and zoom. A first finger still held
+    // back for a tap has to reach OrbitControls before this one does, or
+    // it would see a single finger and rotate instead of pinching.
+    this.releasePendingFinger();
+    this.verdict?.('touch: two fingers navigate');
+    // unclaimed: OrbitControls takes this one as the second finger
+  }
+
+  /** A finger's move, when fingers navigate; true when dealt with here. */
+  private fingerMove(e: PointerEvent): boolean {
+    if (this.inertTouches.has(e.pointerId)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    }
+    const p = this.pendingFinger;
+    if (p && p.pointerId === e.pointerId) {
+      p.lastX = e.clientX;
+      p.lastY = e.clientY;
+      if (Math.hypot(e.clientX - p.x, e.clientY - p.y) <= TAP_SLOP) {
+        // Still a tap: OrbitControls has not heard of this finger yet.
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }
+      // It travelled, so it orbits after all - from here, not from where
+      // it landed, so the view does not jump by the slop. This move then
+      // goes on to OrbitControls as the first one it follows.
+      this.releasePendingFinger();
+      this.verdict?.('touch: orbit');
+    }
+    if (!this.navTouches.has(e.pointerId)) return false;
+    this.cursor.hide();
+    return true; // unclaimed: OrbitControls follows the finger
+  }
+
+  /** A finger's lift or cancel, when fingers navigate; true when dealt with here. */
+  private fingerUp(e: PointerEvent): boolean {
+    const id = e.pointerId;
+    if (this.inertTouches.delete(id)) {
+      e.stopPropagation(); // OrbitControls never knew it
+      return true;
+    }
+    if (!this.navTouches.has(id)) return false;
+    this.navTouches.delete(id);
+    const p = this.pendingFinger;
+    if (p && p.pointerId === id) {
+      this.pendingFinger = null;
+      e.stopPropagation(); // never handed to OrbitControls
+      if (e.type !== 'pointercancel') this.fingerTap(p);
+    }
+    if (this.navTouches.size === 0) this.endFingerNav();
+    return true;
+  }
+
+  /**
+   * A finger tap, when fingers navigate: what a click does there. In the
+   * Select tool it picks the object under the finger (a tap on nothing
+   * clears, as a click does), with the keyboard's modifiers when there is
+   * one; under the gizmo it selects the object tapped, and a tap on
+   * nothing changes nothing, as a click on nothing only orbits. Picked
+   * where the finger landed, as a click picks where it pressed.
+   */
+  private fingerTap(p: NonNullable<InputShell['pendingFinger']>): void {
+    const s = this.session;
+    this.setMouseAt(p.x, p.y);
+    const hit = s.getPicking().intersectionMouseMeshes()
+      ? (s.getPicking().getMesh() as SculptMesh | null)
+      : null;
+    if (this.selectMode) this.applySelection(hit ? [hit] : [], p.shift, p.ctrl);
+    else if (this.transform?.isActive() && hit) this.selectUnderGizmo(hit, p.shift, p.ctrl);
+    this.verdict?.(`touch: tap ${hit ? 'picks' : 'finds nothing'}`);
+  }
+
+  /** Hand a finger held back for a tap on to OrbitControls, where it is now. */
+  private releasePendingFinger(): void {
+    const p = this.pendingFinger;
+    if (!p) return;
+    this.pendingFinger = null;
+    this.handToOrbit(p.pointerId, p.lastX, p.lastY);
+  }
+
+  /**
+   * The pen (or the mouse) lands while fingers navigate, and outranks them
+   * as it outranks a finger stroke. This is for Surface and Android, where
+   * a stylus and a touch arrive together; on iPadOS a fingertip on the
+   * glass hides the Pencil from the page altogether until it lifts, and a
+   * palm never reaches it (implementation notes, 6.6e). The fingers leave
+   * OrbitControls, so the view stops turning under the pen, and stay
+   * inert until they lift.
+   */
+  private takeOverFromFingers(): void {
+    const pending = this.pendingFinger?.pointerId;
+    this.pendingFinger = null;
+    for (const id of this.navTouches) {
+      this.inertTouches.add(id);
+      if (id !== pending) this.cancelAtOrbit(id);
+    }
+    this.navTouches.clear();
+    this.hooks.orbitHalt();
+    this.endFingerNav();
+    this.verdict?.('pen takes over from the fingers');
+  }
+
+  /** The gesture's last finger lifted: the gizmo listens again, the orbit settles. */
+  private endFingerNav(): void {
+    this.transform?.setSuspended(false);
+    this.hooks.orbitEnd();
+  }
+
+  /** Forget every finger: the window lost focus, and their lifts with it. */
+  private resetFingers(): void {
+    const navigating = this.navTouches.size > 0;
+    this.navTouches.clear();
+    this.inertTouches.clear();
+    this.pendingFinger = null;
+    this.touchesDown.clear();
+    if (navigating) this.endFingerNav();
+  }
+
+  /**
+   * Tell OrbitControls a finger is gone (the pen took over): a cancel is
+   * what it already understands from Safari, and the flag keeps our own
+   * listeners from reading it as a real lift.
+   */
+  private cancelAtOrbit(pointerId: number): void {
+    this.handingToOrbit = true;
+    try {
+      this.session.getCanvas().dispatchEvent(
+        new PointerEvent('pointercancel', {
+          pointerId,
+          pointerType: 'touch',
+          isPrimary: false,
+          bubbles: true,
+        }),
+      );
+    } finally {
+      this.handingToOrbit = false;
+    }
+  }
+
+  /**
+   * Replay a swallowed pointerdown at OrbitControls (the two-finger
+   * handover, and a held-back finger that turned out to be an orbit): the
+   * canvas dispatch runs our container capture listener again, so a flag
+   * routes the copy straight past it. Synthetic events carry no trust
+   * flags OrbitControls cares about; id and position are all it reads.
    */
   private handToOrbit(pointerId: number, clientX: number, clientY: number): void {
     this.handingToOrbit = true;
@@ -1182,6 +1458,11 @@ export class InputShell {
     }
   }
 
+  /**
+   * Close out the stroke a finger had started, so the Pencil can begin its
+   * own: the same tidy-up a lift does (octree rebalance, drop a no-op undo
+   * entry, pivot follows the work), minus the event bookkeeping.
+   */
   private abandonStroke(): void {
     const s = this.session;
     if (s._action === Enums.Action.SCULPT_EDIT) {
@@ -1455,6 +1736,7 @@ export class InputShell {
   private readonly onWindowBlur = (): void => {
     if (this.adjust) this.endAdjust();
     this.endMarquee();
+    this.resetFingers();
     this.lKeyHeld = false;
     if (this.shiftHeld) {
       this.shiftHeld = false;
@@ -1507,12 +1789,6 @@ export class InputShell {
 
   getNegativeBase(): boolean {
     return this.negativeBase;
-  }
-
-  /** True mid-stroke when Move grabbed the mesh from outside its outline. */
-  private grabbingFromOutside(): boolean {
-    const tool = this.currentTool() as unknown as { grabbedFromOutside?: boolean };
-    return tool.grabbedFromOutside === true;
   }
 
   /** The masking tool carries the whole-mask operations (clear/invert). */

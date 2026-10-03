@@ -1,4 +1,4 @@
-import { div } from '../../ui/dom';
+import { div, onTap } from '../../ui/dom';
 import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
 
 /**
@@ -107,7 +107,9 @@ export class SidePanel {
     this.handleArrow = document.createElement('span');
     this.handleArrow.className = 'handle__arrow';
     handle.append(this.tabLabel, this.handleArrow);
-    handle.addEventListener('click', () => this.setCollapsed(!this.collapsed));
+    // A tap, not a click: the tab sits on the screen's edge, where a hand
+    // rests, and a slow tap there must not become iOS's long press (onTap).
+    onTap(handle, () => this.setCollapsed(!this.collapsed));
     this.root.appendChild(handle);
 
     const header = div('panel__header');

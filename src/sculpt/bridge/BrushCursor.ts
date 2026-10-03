@@ -6,8 +6,8 @@
  * - On a surface hit: a ring around the picked point in the tangent plane,
  *   at the true world brush radius, plus a center dot and a strength line
  *   along the normal (length = radius x intensity).
- * - Off the mesh (only when the caller asks: Move's volumetric aim, b/s
- *   size adjustment): a screen-space ring at the pointer.
+ * - Off the mesh (only when the caller asks: the b/s size adjustment and
+ *   the slider and keyboard nudges): a screen-space ring at the pointer.
  *
  * Projection replaced the old scene-side Line ring deliberately: WebGPU
  * caps GL lines at one device pixel, which vanished on high-resolution
@@ -115,14 +115,6 @@ export class BrushCursor {
     this.renderSurface();
   }
 
-  /** Screen-space ring at the pointer (Move's off-model aim, b/s adjust). */
-  showScreen(): void {
-    if (this.anchored) return;
-    this.surface = null;
-    this.applyMode('screen');
-    this.renderScreen();
-  }
-
   hide(): void {
     if (this.anchored) return;
     this.surface = null;
@@ -141,7 +133,7 @@ export class BrushCursor {
    * Brief screen-ring feedback for keyboard size/strength nudges when
    * nothing else is showing (iPad pencils without hover never see the
    * ring otherwise). A visible surface ring already shows the change;
-   * an existing screen ring (Move aim) just re-renders and stays.
+   * an existing screen ring (an earlier flash) just re-renders and stays.
    */
   flashScreen(ms: number): void {
     if (this.anchored || this.mode === 'surface') return;

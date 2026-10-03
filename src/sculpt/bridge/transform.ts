@@ -76,6 +76,7 @@ export class TransformGizmo {
   private mode: GizmoMode = 'all';
   private active = false;
   private dragging = false;
+  private suspended = false;
   private readonly before = new Matrix4();
 
   /** The display side moved (live during a drag); update its matrices. */
@@ -170,6 +171,20 @@ export class TransformGizmo {
     return this.stack.some((tc) => tc.enabled && (tc as unknown as { axis: unknown }).axis);
   }
 
+  /**
+   * Deaf while fingers navigate (InputShell, fingers navigate only). The
+   * controls listen on the canvas, after the shell, and take any press
+   * that lands on a handle; the shell cannot route a finger past them to
+   * the orbit, so they stop listening until the fingers lift. Nothing
+   * changes on screen.
+   */
+  setSuspended(on: boolean): void {
+    if (this.suspended === on) return;
+    this.suspended = on;
+    if (on) for (const tc of this.stack) tc.enabled = false;
+    else if (this.active && !this.dragging) this.applyMode();
+  }
+
   getMode(): GizmoMode {
     return this.mode;
   }
@@ -241,7 +256,7 @@ export class TransformGizmo {
             ? this.parts.scale || (this.mode === 'scale' && this.parts.uniform)
             : this.parts.arrows || this.parts.planes || this.parts.screen;
       const on = (this.mode === 'all' || tc.mode === this.mode) && wanted;
-      tc.enabled = on && !!this.mesh;
+      tc.enabled = on && !!this.mesh && !this.suspended;
       tc.getHelper().visible = on && !!this.mesh;
       if (on && this.mesh) {
         tc.attach(this.proxy);

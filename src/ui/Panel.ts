@@ -1,6 +1,6 @@
 import type { Viewer, GroundMode, ToneMappingId } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
-import { div, labelRow, selectEl } from './dom';
+import { div, labelRow, onTap, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 
@@ -136,7 +136,11 @@ export class Panel {
     // Edge handle: always visible, doubles as the collapse/expand toggle so the
     // panel can slide fully off the side and still be pulled back in. When
     // collapsed it shows the panel's name (a larger, labelled touch target).
-    this.collapseBtn = button('', () => {
+    // A tap, not a click: the tab sits on the screen's edge, where a hand
+    // rests, and a slow tap there must not become iOS's long press (onTap).
+    this.collapseBtn = document.createElement('button');
+    this.collapseBtn.type = 'button';
+    onTap(this.collapseBtn, () => {
       this.toggleCollapsed();
       this.onToggle?.(this.collapsed);
     });

@@ -40,7 +40,7 @@ export interface ActionDef {
  */
 export const ACTIONS: ActionDef[] = [
   // --- sculpt: sculpting ---
-  { id: 'gesture.sculpt', label: 'Sculpt', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
+  { id: 'gesture.sculpt', label: 'Sculpt (pen or mouse; a finger orbits unless Preferences lets it sculpt)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
   { id: 'gesture.negative', label: 'Negative (carve)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag' },
   { id: 'gesture.smooth', label: 'Smooth', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Shift + drag' },
   { id: 'brush.size', label: 'Brush size (hold, then drag with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 'b', hold: true },
@@ -66,7 +66,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'mask.tint', label: 'Show / hide mask tint', group: 'Masking', mode: 'sculpt', chord: 'ctrl+h' },
   { id: 'mask.extract', label: 'Extract masked region', group: 'Masking', mode: 'sculpt', chord: 'ctrl+e' },
   // --- sculpt: navigation ---
-  { id: 'gesture.orbit', label: 'Orbit (around your last stroke)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Drag off mesh' },
+  { id: 'gesture.orbit', label: 'Orbit (around your last stroke; a finger orbits anywhere)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Drag off mesh' },
   { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
   { id: 'gesture.zoomDrag', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag off mesh' },
   { id: 'gesture.zoom', label: 'Zoom', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Scroll / pinch' },
@@ -139,7 +139,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gesture.armOrbit', label: 'Orbit', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag off the figure' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame-rate meter', group: 'Interface', mode: 'both', chord: 'p' },
-  { id: 'ui.preferences', label: 'Preferences (hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
+  { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
 ];
 
 const STORAGE_KEY = 'bozzetto-keymap';

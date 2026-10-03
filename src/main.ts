@@ -5,6 +5,7 @@ import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme, mountThemeToggle } from './ui/theme';
 import { installSliderBubble } from './ui/sliderBubble';
+import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
 import { registerServiceWorker } from './ui/serviceWorker';
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
   initTheme();
   mountThemeToggle();
   installSliderBubble();
+  installTouchGuards();
   registerServiceWorker();
   const app = document.getElementById('app');
   if (!app) throw new Error('#app element not found');

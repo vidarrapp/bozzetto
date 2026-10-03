@@ -585,6 +585,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     return true;
   };
 
+  /**
+   * A frame is a reset: the orbit's settling tail must not read the jump
+   * to the framing as one more increment of the drag and re-apply it
+   * about the old pivot, which left an F pressed just after an orbit or a
+   * pinch off-centre.
+   */
+  const endPivotOrbit = (): void => {
+    prev = null;
+    orbitUntil = 0;
+  };
+
   const beginPivotOrbit = (): void => {
     orbitUntil = 0;
     const st = viewer.getCameraState();
@@ -658,6 +669,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     frameModel: () => {
       const active = session.getMesh();
       if (!active) return;
+      endPivotOrbit();
       viewer.frameBounds(liveWorldBox(active));
       // Framing re-centres deliberately, so it also resets what you orbit
       // around; otherwise the next drag would swing away from the framing.
@@ -701,6 +713,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       if (meshes.length === 0) return;
       const box = liveWorldBox(meshes[0]);
       for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+      endPivotOrbit();
       viewer.frameBounds(box);
       box.getCenter(pivot);
     },
@@ -723,6 +736,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitEnd: () => {
       orbitUntil = performance.now() + ORBIT_SETTLE_MS;
     },
+    orbitHalt: () => viewer.haltOrbit(),
     toggleShadows: () => {
       lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },

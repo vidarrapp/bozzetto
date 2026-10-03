@@ -194,8 +194,8 @@ async function armatureCard(): Promise<HTMLElement | null> {
   // is; an armature not yet left that way has none.
   const url = file.thumb instanceof Blob ? URL.createObjectURL(file.thumb) : null;
   const picture = url
-    ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
-      <img class="card__img" alt="" src="${url}" />`
+    ? `<img class="card__img-blur" aria-hidden="true" alt="" draggable="false" src="${url}" />
+      <img class="card__img" alt="" draggable="false" src="${url}" />`
     : ''; // no picture: the gradient placeholder stands in
   a.innerHTML = `
     <div class="card__thumb">
@@ -239,8 +239,8 @@ async function sculptCard(): Promise<HTMLElement | null> {
   a.href = '/?sculpt=1';
   const url = snap ? URL.createObjectURL(snap.thumb) : null;
   const picture = url
-    ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
-      <img class="card__img" alt="" src="${url}" />`
+    ? `<img class="card__img-blur" aria-hidden="true" alt="" draggable="false" src="${url}" />
+      <img class="card__img" alt="" draggable="false" src="${url}" />`
     : ''; // no snapshot: the gradient placeholder stands in
   a.innerHTML = `
     <div class="card__thumb">
@@ -283,8 +283,8 @@ async function libraryCards(
     const card = div('card card--library');
     const url = e.thumb ? URL.createObjectURL(e.thumb) : null;
     const picture = url
-      ? `<img class="card__img-blur" aria-hidden="true" alt="" src="${url}" />
-        <img class="card__img" alt="" src="${url}" />`
+      ? `<img class="card__img-blur" aria-hidden="true" alt="" draggable="false" src="${url}" />
+        <img class="card__img" alt="" draggable="false" src="${url}" />`
       : '';
     card.innerHTML = `
       <a class="card__thumb" href="/?sculpt=1&lib=${encodeURIComponent(e.id)}">
@@ -377,8 +377,8 @@ function card(p: ProjectSummary): HTMLElement {
   const thumb = `/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}`;
   a.innerHTML = `
     <div class="card__thumb">
-      <img class="card__img-blur" aria-hidden="true" alt="" loading="lazy" src="${thumb}" />
-      <img class="card__img" alt="" loading="lazy" src="${thumb}" />
+      <img class="card__img-blur" aria-hidden="true" alt="" draggable="false" loading="lazy" src="${thumb}" />
+      <img class="card__img" alt="" draggable="false" loading="lazy" src="${thumb}" />
     </div>
     <div class="card__body">
       <span class="card__title"></span>

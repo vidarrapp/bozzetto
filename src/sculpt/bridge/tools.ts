@@ -1,11 +1,10 @@
-import { mat4, vec3 } from 'gl-matrix';
+import { vec3 } from 'gl-matrix';
 import Move from '@sculpt-vendor/editing/tools/Move';
 import Brush from '@sculpt-vendor/editing/tools/Brush';
 import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 import Crease from '@sculpt-vendor/editing/tools/Crease';
 import Paint from '@sculpt-vendor/editing/tools/Paint';
-import Geometry from '@sculpt-vendor/math3d/Geometry';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
 import { DEFAULT_RAKE_ALPHA } from './alphas';
@@ -25,8 +24,6 @@ import type { SculptSession } from './SculptSession';
  * drop it sharply at the rim. Owner call: start soft.
  */
 const MOVE_FALLOFF_POW = 1.0;
-/** Volumetric grab reach: how far past the silhouette a press still grabs. */
-const MOVE_GRAB_FACTOR = 1.0;
 
 /**
  * Clay strips: plateau fraction of the radius at full strength, and the
@@ -96,135 +93,24 @@ const POLISH_NORMAL_COS = 0.5;
 /**
  * Move, ZBrush-flavored:
  *
- * - Volumetric start: a press that misses the mesh still grabs when the
- *   pick ray passes within the brush radius of the surface. The grab
- *   sphere centers on the ray at the depth of the nearest vertex, so
- *   pulling a silhouette from just outside the outline works, symmetry
- *   included (the sphere is mirrored through the symmetry plane).
+ * - Starts on the surface, like every other brush (owner call). It used to
+ *   grab from just outside the outline too, when the pick ray passed
+ *   within the brush radius of the silhouette; that start is gone, and a
+ *   press off the model falls through to whatever a press there does
+ *   with any brush.
  * - Softer falloff: the upstream quartic raised to MOVE_FALLOFF_POW, so
- *   more of the ball rides along (upstream felt sharp in review).
+ *   more of the ball rides along (upstream felt sharp in review). The
+ *   ball is still a ball - each vertex weighed by its straight-line
+ *   distance from the grabbed point - over upstream's pick: the vertices
+ *   inside the brush radius that connect to the press across the surface.
  */
 export class VolumetricMove extends Move {
   /** Falloff (quartic pow): 1 the soft plain bell, lower a flat top with a sharp rim. */
   falloffPow = MOVE_FALLOFF_POW;
-  /**
-   * True when the last start() grabbed from OUTSIDE the silhouette. The
-   * cursor reads it: the grabbed point is on the mesh, but the pointer is
-   * not, and drawing the ring on the mesh leaves the pen with no cursor
-   * at all - which is what "the circle only shows on the model" meant.
-   */
-  grabbedFromOutside = false;
 
-  constructor(private readonly session: SculptSession) {
+  constructor(session: SculptSession) {
     super(session);
     this._intensity = 0.25; // owner call: a gentle move by default
-  }
-
-  override start(ctrl: boolean): boolean {
-    if (super.start(ctrl)) {
-      this.grabbedFromOutside = false;
-      return true;
-    }
-    this.grabbedFromOutside = this.startVolumetric(ctrl);
-    return this.grabbedFromOutside;
-  }
-
-  private startVolumetric(ctrl: boolean): boolean {
-    const session = this.session;
-    const mesh = session.getMesh();
-    if (!mesh) return false;
-    const picking = session.getPicking();
-
-    // Pick ray in the mesh's local space.
-    const vNear = picking.unproject(session._mouseX, session._mouseY, 0.0) as unknown as vec3;
-    const vFar = picking.unproject(session._mouseX, session._mouseY, 0.1) as unknown as vec3;
-    const inv = mat4.create();
-    mat4.invert(inv, mesh.getMatrix() as unknown as mat4);
-    vec3.transformMat4(vNear, vNear, inv);
-    vec3.transformMat4(vFar, vFar, inv);
-    const dir = vec3.create();
-    vec3.sub(dir, vFar, vNear);
-    vec3.normalize(dir, dir);
-
-    // Nearest live vertex to the ray (in front of the near plane).
-    const vAr = mesh.getVertices();
-    const nbV = mesh.getNbVertices();
-    let bestPerp2 = Infinity;
-    let bestT = 0;
-    for (let i = 0; i < nbV; i++) {
-      const j = i * 3;
-      const wx = vAr[j] - vNear[0];
-      const wy = vAr[j + 1] - vNear[1];
-      const wz = vAr[j + 2] - vNear[2];
-      const t = wx * dir[0] + wy * dir[1] + wz * dir[2];
-      if (t <= 0) continue;
-      const perp2 = wx * wx + wy * wy + wz * wz - t * t;
-      if (perp2 < bestPerp2) {
-        bestPerp2 = perp2;
-        bestT = t;
-      }
-    }
-    if (!Number.isFinite(bestPerp2)) return false;
-
-    // Grab sphere on the ray at silhouette depth; reject when the ray
-    // passes farther from the surface than the brush radius.
-    const center = vec3.create();
-    vec3.scaleAndAdd(center, vNear, dir, bestT);
-    const prevMesh = picking._mesh;
-    picking._mesh = mesh;
-    picking.setIntersectionPoint([center[0], center[1], center[2]]);
-    picking.updateLocalAndWorldRadius2();
-    const r2 = picking.getLocalRadius2();
-    if (bestPerp2 > r2 * MOVE_GRAB_FACTOR * MOVE_GRAB_FACTOR) {
-      picking._mesh = prevMesh;
-      return false;
-    }
-
-    session.setOrUnsetMesh(mesh, ctrl);
-    picking.initAlpha();
-    this.pushState();
-    this._lastMouseX = session._mouseX;
-    this._lastMouseY = session._mouseY;
-
-    // Volumetric sphere pick: plain radius query, no topology walk (there
-    // is no seed face off-surface).
-    const prevTopo = this._topoCheck;
-    this._topoCheck = false;
-    this.initMoveData(picking, this._moveData);
-
-    const manager = session.getSculptManager();
-    if (manager.getSymmetry()) {
-      const pickingSym = session.getPickingSymmetry();
-      const centerSym = [center[0], center[1], center[2]];
-      Geometry.mirrorPoint(centerSym, mesh.getSymmetryOrigin(), mesh.getSymmetryNormal());
-      pickingSym._mesh = mesh;
-      pickingSym.setIntersectionPoint(centerSym);
-      pickingSym.setLocalRadius2(r2);
-      pickingSym.initAlpha();
-      this.initMoveData(pickingSym, this._moveDataSym);
-    }
-    this._topoCheck = prevTopo;
-    return true;
-  }
-
-  /**
-   * Upstream's Negative Move slides along the picked face normal; a
-   * volumetric grab has no picked face (the ray missed the surface), and
-   * computePickedNormal() came back empty - a TypeError on every pointer
-   * move, the stroke doing nothing (review finding). Off the silhouette,
-   * Negative means a plain move.
-   */
-  override updateMoveDir(picking: Picking, mouseX: number, mouseY: number, useSymmetry?: boolean): void {
-    if (!this.grabbedFromOutside || !this._negative) {
-      super.updateMoveDir(picking, mouseX, mouseY, useSymmetry);
-      return;
-    }
-    this._negative = false;
-    try {
-      super.updateMoveDir(picking, mouseX, mouseY, useSymmetry);
-    } finally {
-      this._negative = true;
-    }
   }
 
   /**

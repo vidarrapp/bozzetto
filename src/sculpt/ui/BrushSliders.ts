@@ -113,6 +113,7 @@ export class BrushSliders {
     });
     el.addEventListener('pointerup', hideSliderBubble);
     el.addEventListener('pointercancel', hideSliderBubble);
+    holdable(el);
     return { el, nub };
   }
 
@@ -153,6 +154,7 @@ export class BrushSliders {
     const stop = (): void => this.stopRepeat();
     btn.addEventListener('pointerup', stop);
     btn.addEventListener('pointercancel', stop);
+    holdable(btn);
     return btn;
   }
 
@@ -190,4 +192,16 @@ export class BrushSliders {
     this.input.onBrushChange = null;
     this.root.remove();
   }
+}
+
+/**
+ * A control that is held, not tapped: the rails are dragged slowly and the
+ * history buttons repeat while held. On iPadOS a finger held still arms
+ * the long press at about 450ms and Safari then cancels the touch, which
+ * stops a repeat (it starts at 400ms) and lets go of a paused drag.
+ * Cancelling the touchstart default stops it arming; both are driven by
+ * pointer events, which still arrive, and use no click.
+ */
+function holdable(el: HTMLElement): void {
+  el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
 }

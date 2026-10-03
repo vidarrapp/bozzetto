@@ -89,6 +89,19 @@ body {
      never start selecting button/link text. Real text entry re-enables. */
   user-select: none;
   -webkit-user-select: none;
+  /* Nor may a long press on it bring up iOS's callout (copy, share, look
+     up, the link and image previews); inherited, so it covers every
+     label, chip and image. */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Pan, for the panels that scroll; no pinch-zoom of the page and no
+     double-tap zoom anywhere. Safari ignores the viewport meta's
+     user-scalable=no, but honours this (and touchGuards.ts cancels its
+     gesture events as well). The canvas and the held controls narrow it
+     to none. */
+  touch-action: pan-x pan-y;
+  /* No rubber-band of the whole page when a panel scrolls past its end. */
+  overscroll-behavior: none;
 }
 
 input,
@@ -97,12 +110,22 @@ select,
 [contenteditable='true'] {
   user-select: text;
   -webkit-user-select: text;
+  /* Real text entry keeps its loupe and its paste menu. */
+  -webkit-touch-callout: default;
 }
 
-/* Error text stays copyable for bug reports. */
+/* Nothing in the app is meant to be dragged out of it: on iPadOS a long
+   press lifts an image or a link for drag and drop. */
+img,
+a {
+  -webkit-user-drag: none;
+}
+
+/* Error text stays copyable for bug reports, by long press too. */
 .overlay--error .overlay__msg {
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* Display serif for titles; mono for spec labels. */
@@ -2900,10 +2923,40 @@ body.is-sampling * {
 }
 
 .prefs__list {
-  max-height: 55vh;
+  /* The Touch rows sit above the list now; leave them, the title and the
+     buttons on screen on a landscape iPad. */
+  max-height: max(160px, min(55vh, calc(100vh - 400px)));
   overflow: auto;
   margin: 4px 0 10px;
   padding-right: 4px;
+}
+
+.prefs__choices {
+  margin: 2px 0 6px;
+}
+
+.prefs__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.prefs__choice input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.prefs__choice-title {
+  font-size: 12px;
+}
+
+.prefs__choice-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .prefs__group {
