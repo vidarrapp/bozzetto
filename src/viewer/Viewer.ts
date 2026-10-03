@@ -38,6 +38,7 @@ import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
+import { formatMs, perfLog, STALL_MS } from './perfLog';
 
 /** Output grade choices (Render panel > Camera > Tone mapping). */
 export type ToneMappingId = 'none' | 'neutral' | 'agx' | 'cinematic';
@@ -273,6 +274,13 @@ export class Viewer {
   private readonly turntableCenter = new Vector3();
   /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
   private fps = 60;
+  /**
+   * The stall watchdog's clock: when the last frame began (0 when there is
+   * no frame to measure from, after a hidden tab or a capture) and how long
+   * that frame's own work took.
+   */
+  private frameStart = 0;
+  private frameWork = 0;
 
   /**
    * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
@@ -474,6 +482,7 @@ export class Viewer {
     this.buildPipeline();
 
     window.addEventListener('resize', this.onResize);
+    document.addEventListener('visibilitychange', this.onVisibility);
     // iOS standalone (home-screen) apps settle their viewport AFTER load and
     // often skip the window resize event entirely, leaving a stale canvas
     // size (the render centre then sits at the visible bottom edge). A
@@ -1374,6 +1383,8 @@ export class Viewer {
     this.capturing = true;
     cancelAnimationFrame(this.rafId);
     this.rafId = 0;
+    // A paused loop is not a stalled one.
+    this.frameStart = 0;
     clearTimeout(this.adaptTimer);
     this.captureSaved = {
       pixelRatio: this.renderer.getPixelRatio(),
@@ -1462,6 +1473,7 @@ export class Viewer {
    * matches the framing used for the reel.
    */
   async captureThumbnail(maxWidth = 640): Promise<Blob> {
+    const t0 = performance.now();
     await this.renderForReadback();
     const srcCanvas = this.renderer.domElement;
     const crop = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
@@ -1479,14 +1491,20 @@ export class Viewer {
     if (!ctx) throw new Error('2D context unavailable for capture');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    // Timed on its own: drawing the WebGPU canvas into a 2D one can wait
+    // on the GPU, and it waits on the main thread.
+    const d0 = performance.now();
     ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, w, h);
-    return new Promise<Blob>((resolve, reject) => {
+    const draw = performance.now() - d0;
+    const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('thumbnail capture failed'))),
+        (b) => (b ? resolve(b) : reject(new Error('thumbnail capture failed'))),
         'image/jpeg',
         0.82,
       );
     });
+    perfLog.record('thumbnail', performance.now() - t0, `read-back ${formatMs(draw)}`);
+    return blob;
   }
 
   /**
@@ -1520,6 +1538,7 @@ export class Viewer {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.adaptTimer);
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     this.containerObserver?.disconnect();
     this.containerObserver = null;
     this.container.removeEventListener('pointerdown', this.onPickPointer, true);
@@ -2002,6 +2021,15 @@ export class Viewer {
   onPostControls: (() => void) | null = null;
 
   private readonly loop = (): void => {
+    const now = performance.now();
+    // The stall watchdog (perfLog): frames this far apart mean the main
+    // thread was held up, which is what a freeze on the device is. The note
+    // is the previous frame's own share (tick, controls, render); the rest
+    // of the gap went to something outside the loop.
+    if (this.frameStart > 0 && now - this.frameStart > STALL_MS) {
+      perfLog.record('stall', now - this.frameStart, `frame ${formatMs(this.frameWork)}`);
+    }
+    this.frameStart = now;
     this.rafId = requestAnimationFrame(this.loop);
     this.onTick?.();
     this.timer.update();
@@ -2049,6 +2077,15 @@ export class Viewer {
     // follows the distance it ended at.
     this.controls.syncLimits();
     this.renderOnce();
+    this.frameWork = performance.now() - now;
+  };
+
+  /**
+   * A hidden tab gets no frames at all; coming back is not a stall, so the
+   * watchdog starts over from the next one.
+   */
+  private readonly onVisibility = (): void => {
+    this.frameStart = 0;
   };
 
   private readonly onResize = (): void => {

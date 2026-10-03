@@ -1,9 +1,10 @@
 // The smoke suites: boot, the Create menu's primitives and base meshes,
 // the scene-file round trip, Armature mode from the gallery's Create tile
 // on, Sculpt's input under fingers, the pen, the zoom and the Negative
-// button, the arrow keys in the Scene list and each brush's own size. Each
-// gets (page, base, t) - a fresh page, the server's origin, and the check
-// collector.
+// button, the arrow keys in the Scene list, each brush's own size and the
+// World-scale box after an open, capture's default, the autosave's cadence,
+// and the two diagnostic overlays. Each gets (page, base, t) - a fresh
+// page, the server's origin, and the check collector.
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -490,8 +491,8 @@ async function devices(page) {
  * expensive part here) and with the boot splash gone: it lies over the
  * canvas until its animation ends, and a press would land on it.
  */
-async function openForInput(page, base) {
-  await openSculpt(page, base, '&q=low');
+async function openForInput(page, base, extra = '') {
+  await openSculpt(page, base, `&q=low${extra}`);
   await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
 }
 
@@ -2630,5 +2631,358 @@ export const suites = {
     await page.keyboard.press('4');
     const inflateWorld = (await size()).held;
     t.ok(near(clayWorld / inflateWorld, 80 / 30, 0.01), `with each brush still the size it looks (${clayWorld.toFixed(2)} and ${inflateWorld.toFixed(2)})`);
+  },
+
+  // The Tool panel's World-scale box follows the scene that was opened,
+  // with a brush in hand or the Select tool up. It was read once, when the
+  // panel was built, and went on showing the old state after an open had
+  // turned world scale the other way.
+  async worldScaleBox(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    const state = () =>
+      page.evaluate(() => {
+        const box = [...document.querySelectorAll('.panel--sculpt label.checkbox')].find((l) => l.textContent.includes('World-scale size')).querySelector('input');
+        return { box: box.checked, on: window.__sculpt.input.worldScale.isEnabled() };
+      });
+    const show = (s) => `box ${s.box ? 'ticked' : 'clear'}, world scale ${s.on ? 'on' : 'off'}`;
+    const click = () =>
+      page.evaluate(() => {
+        [...document.querySelectorAll('.panel--sculpt label.checkbox')].find((l) => l.textContent.includes('World-scale size')).querySelector('input').click();
+        document.activeElement?.blur?.();
+      });
+    const pack = (name) =>
+      page.evaluate(async (n) => {
+        window[n] = await window.__sculpt.file.pack();
+      }, name);
+    const open = (name) => page.evaluate((n) => window.__sculpt.file.open(window[n]), name);
+
+    let s = await state();
+    t.ok(s.box && s.on, `world scale starts on, and ticked (${show(s)})`);
+    await pack('__world');
+    await click();
+    s = await state();
+    t.ok(!s.box && !s.on, `the box turns it off (${show(s)})`);
+    await pack('__screen');
+    await click();
+    await open('__screen');
+    s = await state();
+    t.ok(!s.box && !s.on, `a scene saved in screen scale opens in it, and the box follows (${show(s)})`);
+    await open('__world');
+    s = await state();
+    t.ok(s.box && s.on, `one saved in world scale ticks it again (${show(s)})`);
+    // The Select tool shows no brush rows, and the box still has to follow.
+    await page.keyboard.press('q');
+    await open('__screen');
+    s = await state();
+    const selecting = await page.evaluate(() => window.__sculpt.input.isSelecting());
+    t.ok(selecting && !s.box && !s.on, `with the Select tool up as well (${show(s)}, selecting ${selecting})`);
+    await page.keyboard.press('q');
+    // At entry the box is built from what the autosave restored.
+    await page.evaluate(async () => {
+      const { persist } = window.__sculpt;
+      persist.markDirty();
+      await persist.flush();
+    });
+    await openSculpt(page, base, '&q=low');
+    s = await state();
+    t.ok(!s.box && !s.on, `a reload brings screen scale back, and the box shows it (${show(s)})`);
+  },
+
+  // Timelapse capture starts off for everyone, the signed-in owner included
+  // (owner call). The admin probe answers as the owner here - the test
+  // server has no whoami of its own, so every other suite is a guest - in a
+  // context without a service worker, so the answer reaches every load. A
+  // choice made with the checkbox still stands across a reload, either way.
+  async captureOff(page, base, t) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      const owner = await ctx.newPage();
+      const errors = [];
+      owner.on('pageerror', (e) => errors.push(String(e)));
+      await ctx.route('**/admin/api/whoami', (r) =>
+        r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
+      );
+      // Sculpt mode once the probe has answered (the publish forms show
+      // their fields then), with time for the recorder's install - an
+      // IndexedDB read - to finish and for any default to act.
+      const boot = async () => {
+        await openSculpt(owner, base, '&q=low');
+        await owner.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 });
+        await owner.waitForTimeout(1500);
+      };
+      const state = () =>
+        owner.evaluate(() => {
+          const { recorder } = window.__sculpt;
+          const box = [...document.querySelectorAll('.panel--capture label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input');
+          return { on: recorder.isEnabled(), box: box.checked, stored: localStorage.getItem('bozzetto-sculpt-record'), frames: recorder.frameCount() };
+        });
+      const show = (s) => `recording ${s.on ? 'on' : 'off'}, box ${s.box ? 'ticked' : 'clear'}, stored ${s.stored}, ${s.frames} frames`;
+      const tick = () =>
+        owner.evaluate(() => {
+          [...document.querySelectorAll('.panel--capture label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
+        });
+
+      await boot();
+      let s = await state();
+      t.ok(!s.on && !s.box && s.stored === null && s.frames === 0, `signed in as the owner, capture starts off and records nothing (${show(s)})`);
+      const defaulted = await owner.evaluate(() => {
+        const { recorder } = window.__sculpt;
+        recorder.applyDefault(true);
+        return recorder.isEnabled();
+      });
+      t.eq(defaulted, false, "the probe's owner answer, given again, still leaves it off");
+
+      // Ticked, it records: the starting frame first, handed to the worker
+      // and written, which the perf log times.
+      await tick();
+      await owner.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 });
+      s = await state();
+      t.ok(s.on && s.box && s.stored === 'on' && s.frames > 0, `the box turns it on, and it records (${show(s)})`);
+      const timed = await owner.evaluate(() => window.__bozzettoPerf.recent().filter((e) => e.what.startsWith('capture')).map((e) => `${e.what} ${e.ms.toFixed(1)} ms${e.note ? ` (${e.note})` : ''}`));
+      t.ok(timed.some((x) => x.startsWith('capture hand-off')) && timed.some((x) => x.startsWith('capture write')), `the hand-off and the write are in the perf log (${timed.join('; ')})`);
+
+      await boot();
+      s = await state();
+      t.ok(s.on && s.box && s.stored === 'on' && s.frames > 0, `the choice survives a reload (${show(s)})`);
+      await tick();
+      await boot();
+      s = await state();
+      t.ok(!s.on && !s.box && s.stored === 'off', `and so does turning it off again, owner or not (${show(s)})`);
+      t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+    }
+  },
+
+  // The autosave is a throttle: while anything is unsaved, one write a
+  // minute at most. The first change after a quiet spell waits out a short
+  // grace, later ones the interval since the last write, and an edit never
+  // pushes a due write back; leaving the page still writes at once. The
+  // real cadence is 5 s and 60 s; the suite runs it at 2 s and 6 s.
+  async autosave(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    const real = await page.evaluate(() => ({ ...window.__sculpt.persist.cadence }));
+    t.ok(real.grace === 5000 && real.interval === 60000, `the cadence is a ${real.grace / 1000} s grace and a ${real.interval / 1000} s interval`);
+    const GRACE = 2000;
+    const INTERVAL = 6000;
+    // Every write, when it landed (page time) and what it carried: the
+    // symmetry flag, which the edits below toggle.
+    const flushed = await page.evaluate(
+      async ([grace, interval]) => {
+        const { persist } = window.__sculpt;
+        Object.assign(persist.cadence, { grace, interval });
+        window.__writes = [];
+        persist.onWrote = (scene) => window.__writes.push({ t: performance.now(), sym: scene.symmetry });
+        // Whatever the boot left unsaved goes now, so the test starts quiet.
+        await persist.flush();
+        return window.__writes.length;
+      },
+      [GRACE, INTERVAL],
+    );
+    if (flushed) await page.waitForTimeout(INTERVAL + 500);
+    const edit = () =>
+      page.evaluate(() => {
+        window.__sculpt.session.toggleSymmetry();
+        return { t: performance.now(), sym: window.__sculpt.session.getSymmetry() };
+      });
+    const writes = () => page.evaluate(() => window.__writes.slice());
+    const until = async (pageTime) => {
+      const now = await page.evaluate(() => performance.now());
+      if (pageTime > now) await page.waitForTimeout(pageTime - now);
+    };
+    const waitWrites = (n, ms) =>
+      page.waitForFunction((k) => window.__writes.length >= k, n, { timeout: ms }).catch(() => {});
+
+    await page.evaluate(() => {
+      window.__writes.length = 0;
+    });
+    const e1 = await edit();
+    await page.waitForTimeout(1000);
+    const e2 = await edit();
+    const early = (await writes()).length;
+    t.eq(early, 0, 'a second after the first change, nothing is written yet (the grace holds it)');
+    await waitWrites(1, GRACE + 10_000);
+    // The third change comes straight after that write.
+    const e3 = await edit();
+    let w = await writes();
+    t.ok(
+      w.length === 1 && w[0].t - e1.t >= GRACE && w[0].sym === e2.sym,
+      `two changes a second apart make one write, after the grace, carrying both (${w.length} writes, ${w[0] ? `${Math.round(w[0].t - e1.t)} ms after the first change` : 'none'})`,
+    );
+    await until((w[0]?.t ?? e3.t) + INTERVAL - 1000);
+    t.eq((await writes()).length, 1, 'a third change straight after it is not written within the interval');
+    await waitWrites(2, INTERVAL + 10_000);
+    w = await writes();
+    t.ok(
+      w.length === 2 && w[1].t - w[0].t >= INTERVAL - 50 && w[1].sym === e3.sym,
+      `it is written once the interval is out (${w[1] ? `${Math.round(w[1].t - w[0].t)} ms after the first write` : 'never'})`,
+    );
+
+    // Leaving the page writes at once, whatever the throttle says, and
+    // nothing armed for that change writes it a second time.
+    const e4 = await edit();
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await waitWrites(3, 5000);
+    w = await writes();
+    t.ok(w.length === 3 && w[2].t - e4.t < GRACE && w[2].sym === e4.sym, `a pagehide writes straight away (${w[2] ? `${Math.round(w[2].t - e4.t)} ms after the change` : 'not at all'})`);
+    await page.waitForTimeout(GRACE + 3500);
+    t.eq((await writes()).length, 3, 'and no write is left armed behind it');
+    const logged = await page.evaluate(() => window.__bozzettoPerf.recent().filter((e) => e.what.startsWith('autosave')).map((e) => e.what));
+    t.ok(logged.includes('autosave serialise') && logged.includes('autosave write'), `each write's serialise and write are in the perf log (${[...new Set(logged)].join(', ')})`);
+  },
+
+  // The perf log: the render loop's stalls and the heavy jobs, kept on
+  // window for the console and drawn by ?perfdebug=1. A serialise made
+  // deliberately slow has to show twice - as its own entry and as the stall
+  // it caused, since no frame is drawn while the main thread is held - and
+  // each of the other jobs leaves an entry when it runs. The input log is
+  // up too: the two overlays share the screen.
+  async perfLog(page, base, t) {
+    await openSculpt(page, base, '&q=low&perfdebug=1&inputdebug=1');
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    const boxes = await page.evaluate(() => {
+      const rect = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) };
+      };
+      return { perf: rect('.perf-debug'), input: rect('.input-debug') };
+    });
+    const { perf: a, input: b } = boxes;
+    t.ok(!!a && !!b && (a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t), `both overlays are up, apart (${JSON.stringify(boxes)})`);
+
+    // The ring: 64 entries, newest first, the oldest overwritten.
+    const ring = await page.evaluate(() => {
+      const log = window.__bozzettoPerf;
+      log.clear();
+      for (let i = 0; i < 100; i++) log.record(i % 2 ? 'odd' : 'even', i);
+      const r = log.recent();
+      log.clear();
+      return { n: r.length, first: r[0].ms, last: r[r.length - 1].ms };
+    });
+    t.ok(ring.n === 64 && ring.first === 99 && ring.last === 36, `the log keeps the last 64, newest first (${ring.n}: ${ring.first} .. ${ring.last})`);
+    // A run of one job folds into one entry, counted: a dynamic-topology
+    // stroke queues a full upload every step.
+    const folded = await page.evaluate(() => {
+      const { sync, session } = window.__sculpt;
+      const log = window.__bozzettoPerf;
+      log.clear();
+      for (let i = 0; i < 5; i++) sync.onAllBuffers(session.getMesh());
+      const r = log.recent();
+      return r.map((e) => `${e.what} x${e.n}`).join(', ');
+    });
+    t.eq(folded, 'topology upload x5', 'five full uploads in a row are one entry');
+
+    // A serialise that holds the main thread for 1.2 s.
+    const HOLD = 1200;
+    const tris = await page.evaluate(async (hold) => {
+      const { session, persist } = window.__sculpt;
+      const serialize = session.serializeScene;
+      session.serializeScene = function (...args) {
+        const end = performance.now() + hold;
+        while (performance.now() < end) {
+          // held
+        }
+        return serialize.apply(this, args);
+      };
+      try {
+        persist.markDirty();
+        await persist.flush();
+      } finally {
+        session.serializeScene = serialize;
+      }
+      return session.getMesh().getNbTriangles();
+    }, HOLD);
+    // The stall is noted by the first frame after it.
+    await page.waitForFunction((hold) => window.__bozzettoPerf.recent().some((e) => e.what === 'stall' && e.ms >= hold), HOLD, { timeout: 30_000 }).catch(() => {});
+    const entries = await page.evaluate(() => window.__bozzettoPerf.recent());
+    const serialise = entries.find((e) => e.what === 'autosave serialise');
+    const write = entries.find((e) => e.what === 'autosave write');
+    const stall = entries.find((e) => e.what === 'stall' && e.ms >= HOLD);
+    t.ok(!!serialise && serialise.ms >= HOLD && serialise.tris === tris, `the slow serialise is logged with its time and the model's size (${serialise ? `${Math.round(serialise.ms)} ms, ${serialise.tris} tris` : 'missing'}; ${tris} tris)`);
+    t.ok(!!write && /^put \d/.test(write.note), `the write after it, with the put's own share (${write ? `${write.ms.toFixed(1)} ms, ${write.note}` : 'missing'})`);
+    t.ok(!!stall && stall.tris === tris && /^frame \d/.test(stall.note) && Math.abs(stall.at - Date.now()) < 120_000, `the render loop logged the stall it caused, with a time of day (${stall ? `${Math.round(stall.ms)} ms, ${stall.note}, at ${new Date(stall.at).toISOString()}` : 'missing'})`);
+    t.ok(entries.every((e, i) => i === 0 || entries[i - 1].t >= e.t), 'the console list is newest first');
+    // The overlay shows both within a redraw, in the words of the log.
+    await page.waitForFunction(() => /autosave serialise/.test(document.querySelector('.perf-debug')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => {});
+    const text = await page.evaluate(() => document.querySelector('.perf-debug')?.textContent ?? '');
+    const longest = (what) =>
+      Math.max(0, ...[...text.matchAll(new RegExp(`${what}(?: ×\\d+)?\\s+([\\d.]+) (ms|s)\\b`, 'g'))].map((m) => Number(m[1]) * (m[2] === 's' ? 1000 : 1)));
+    const lineOf = (what) => text.split('\n').find((l) => l.includes(what))?.trim() ?? 'missing';
+    t.ok(longest('autosave serialise') >= HOLD - 10, `the overlay lists the serialise: "${lineOf('autosave serialise')}"`);
+    t.ok(longest('stall') >= HOLD - 10, `and the stall: "${text.split('\n').find((l) => /stall/.test(l) && /\d s\b/.test(l))?.trim() ?? lineOf('stall')}"`);
+
+    // Each of the other jobs leaves its entry: the wireframe's edges, a
+    // level step (with the full upload it queues), a thumbnail and a voxel
+    // remesh.
+    const ran = await page.evaluate(async () => {
+      const { viewer, session } = window.__sculpt;
+      const frames = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      window.__bozzettoPerf.clear();
+      viewer.setWireframe(true);
+      await frames();
+      viewer.setWireframe(false);
+      session.stepSubdivision(-1);
+      session.stepSubdivision(1);
+      await viewer.captureThumbnail(160);
+      session.voxelRemesh(24);
+      await frames();
+      return window.__bozzettoPerf.recent();
+    });
+    for (const what of ['wire rebuild', 'subdivision', 'topology upload', 'thumbnail', 'voxel remesh']) {
+      const e = ran.find((x) => x.what === what);
+      t.ok(!!e && e.ms >= 0 && e.tris > 0, `${what} is logged (${e ? `${e.ms.toFixed(1)} ms, ${e.tris} tris${e.note ? `, ${e.note}` : ''}` : 'missing'})`);
+    }
+  },
+
+  // ?inputdebug=1's status line: what the input shell believes between
+  // events, read through its accessors. A pen drag reads as a stroke in
+  // progress, with the pen, while it is down and as none once it lifts; a
+  // finger on the glass counts as a touch down until it lifts.
+  async inputStatus(page, base, t) {
+    await openForInput(page, base, '&inputdebug=1');
+    const dev = await devices(page);
+    await page.keyboard.press('3'); // Standard clay
+    await page.keyboard.press('f');
+    await settle(page);
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    const path = line([cx - 80, cy - 10], [cx + 80, cy + 10]);
+    const ends = [await probe(page, path[0]), await probe(page, path[path.length - 1])];
+    t.ok(ends.every((p) => p.canvas && p.hit), 'the test stroke runs across bare canvas over the sphere');
+    const status = () => page.evaluate(() => document.querySelector('.input-debug__status')?.textContent ?? '');
+    // The line redraws every frame, and frames are slow here: wait for it.
+    const says = async (re) => {
+      await page
+        .waitForFunction((src) => new RegExp(src).test(document.querySelector('.input-debug__status')?.textContent ?? ''), re.source, { timeout: 10_000 })
+        .catch(() => {});
+      return status();
+    };
+    const shell = () =>
+      page.evaluate(() => {
+        const { input } = window.__sculpt;
+        const at = input.lastPenEventAt();
+        return { device: input.strokeDevice(), touches: input.touchCount(), penAge: at < 0 ? null : performance.now() - at };
+      });
+
+    const before = await says(/no stroke/);
+    t.ok(/no stroke/.test(before) && /touches 0/.test(before) && /pen never/.test(before), `before any input: "${before}"`);
+    const strokes = await strokeCount(page);
+    const during = await dev.penDrag(path, async () => ({ text: await says(/stroke \(pen\)/), shell: await shell() }));
+    t.eq(await strokeCount(page), strokes + 1, 'the drag is one stroke');
+    t.ok(/stroke \(pen\)/.test(during.text) && /touches 0/.test(during.text), `mid-drag the status line reads a pen stroke: "${during.text}"`);
+    t.ok(
+      during.shell.device === 'pen' && during.shell.touches === 0 && during.shell.penAge !== null && during.shell.penAge < 10_000,
+      `as do the shell's accessors (${JSON.stringify(during.shell)})`,
+    );
+    const after = await says(/no stroke/);
+    t.ok(/no stroke/.test(after) && /pen \d+\.\ds ago/.test(after), `lifted, no stroke, and the pen's last word dated: "${after}"`);
+
+    // A finger, which navigates: no stroke, one touch down while it is.
+    const spot = (await emptySpot(page)) ?? [cx, cy];
+    const finger = await dev.finger(line(spot, [spot[0] + 30, spot[1]], 2), async () => ({ text: await says(/touches 1/), shell: await shell() }));
+    t.ok(/no stroke/.test(finger.text) && /touches 1/.test(finger.text) && finger.shell.touches === 1, `a finger down reads as one touch: "${finger.text}"`);
+    const lifted = await says(/touches 0/);
+    t.ok(/touches 0/.test(lifted), `and none once it lifts: "${lifted}"`);
   },
 };

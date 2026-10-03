@@ -175,6 +175,8 @@ export class InputShell {
   private undoStateAtStroke: unknown = undefined;
   /** Touch pointers currently on the glass (palms never appear; iPadOS eats them). */
   private readonly touchesDown = new Set<number>();
+  /** performance.now() of the last pen event the shell saw, or -1 before any. */
+  private lastPenAt = -1;
   /** True while re-dispatching a pointer event of ours to OrbitControls. */
   private handingToOrbit = false;
   /**
@@ -760,6 +762,7 @@ export class InputShell {
   // --- pointer machine ----------------------------------------------------
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     // Our own re-dispatch on its way to OrbitControls; let it through.
     if (this.handingToOrbit) return;
     if (e.button !== 0) return; // middle/right stay with OrbitControls
@@ -1068,6 +1071,7 @@ export class InputShell {
   }
 
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     if (e.pointerType === 'touch' && this.fingerMove(e)) return;
     const s = this.session;
     const prevAbsX = this.lastAbsX;
@@ -1185,6 +1189,7 @@ export class InputShell {
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     // Our own cancel, on its way to OrbitControls (the pen took over).
     if (this.handingToOrbit) return;
     const s = this.session;
@@ -1523,6 +1528,25 @@ export class InputShell {
   /** Route pointerdown decisions to the on-device log (?inputdebug=1). */
   setVerdictSink(sink: ((text: string) => void) | null): void {
     this.verdict = sink;
+  }
+
+  // What the shell believes, read-only, for the on-device log's status
+  // line: a stroke that never saw its end, or a touch count that never
+  // came back to zero, is exactly the kind of state a lost event leaves.
+
+  /** The device that owns the stroke under way ('pen', 'touch', 'mouse'), or null. */
+  strokeDevice(): string | null {
+    return this.pointerId === -1 ? null : this.strokePointerType || 'unknown';
+  }
+
+  /** How many touches the shell believes are on the glass. */
+  touchCount(): number {
+    return this.touchesDown.size;
+  }
+
+  /** performance.now() of the last pen event that reached the shell, or -1 for none yet. */
+  lastPenEventAt(): number {
+    return this.lastPenAt;
   }
 
   /** The stroke the arm inverted has ended: the arm is spent. */

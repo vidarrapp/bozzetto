@@ -42,6 +42,8 @@ import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
+import { PerfDebug } from './ui/PerfDebug';
+import { perfLog } from '../viewer/perfLog';
 import { CapturePanel } from './ui/CapturePanel';
 import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
@@ -134,6 +136,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The boot scene is the floor of history: its add-states must not be
   // undoable (ctrl+z or the rail buttons would delete restored objects).
   session.clearHistory();
+
+  // The perf log's entries carry the active object's size, so a slow write
+  // or a stall can be read against how heavy the model was at the time.
+  perfLog.triangles = () => session.getMesh()?.getNbTriangles() ?? 0;
 
   const sync = new GeometrySync();
   sync.bind(multimesh as unknown as SculptMesh);
@@ -459,9 +465,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // column becomes the scene graph/outliner entry point later).
   const stats = makeStatsCorner(session);
 
-  // Opt-in hardware input log, for bugs that only exist on a real tablet.
+  // Opt-in hardware input log, for bugs that only exist on a real tablet,
+  // and the perf log's overlay, for freezes that only happen on one.
   const inputDebug = new URLSearchParams(location.search).get('inputdebug') === '1'
     ? new InputDebug()
+    : null;
+  const perfDebug = new URLSearchParams(location.search).get('perfdebug') === '1'
+    ? new PerfDebug()
     : null;
 
   // Tab clears the interface for focused work; the toggle owns the ways back.
@@ -856,6 +866,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // that one arrived: the two together tell a dropped Pencil event apart
   // from one we received and then discarded.
   input.setVerdictSink(inputDebug ? inputDebug.verdict : null);
+  // And what the shell believes between events: a stroke still open, the
+  // touches it counts as down, how long since the pen last spoke.
+  inputDebug?.watch(input);
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   toolbar.onToggleTransform = () => {
@@ -919,16 +932,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // defaults, or the legacy scene's one flag and axis.
     session.symmetry.load(settings?.symmetry, scene ? legacySymmetry(scene) : undefined);
     session.applyBrushSymmetry(input.currentToolIndex());
+    if (settings) {
+      worldScale.restore(settings.worldScale, settings.worldRadius);
+      worldScale.loadSizes(settings.radius);
+      input.dynamics.load(settings.dynamics);
+      input.loadSpacing(settings.spacing);
+      input.loadAlphas(settings.alphas, settings.rakeAlpha);
+      if (settings.paintColor) setPaintColorOn(settings.paintColor);
+      input.refreshBrushCursor();
+      sculptPanel?.refreshBrush();
+    }
+    // After the settings, and whatever the tool: the World-scale box has to
+    // show the scale the scene came back in, and refreshBrush only re-reads
+    // it while a brush is up, not the Select tool or the gizmo.
     sculptPanel?.refreshState();
-    if (!settings) return;
-    worldScale.restore(settings.worldScale, settings.worldRadius);
-    worldScale.loadSizes(settings.radius);
-    input.dynamics.load(settings.dynamics);
-    input.loadSpacing(settings.spacing);
-    input.loadAlphas(settings.alphas, settings.rakeAlpha);
-    if (settings.paintColor) setPaintColorOn(settings.paintColor);
-    input.refreshBrushCursor();
-    sculptPanel?.refreshBrush();
   };
 
   // The mount restore: materials were applied when the library loaded (the
@@ -1028,12 +1045,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
   {
     const hooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
-    // One answer for everything that follows the role: both forms and the
-    // capture default (an admin can publish frames, a guest cannot - an
-    // explicit checkbox choice beats either). The forms' "re-check
-    // sign-in" runs the same probe, so an admin whose Access session had
-    // lapsed at boot gets capture back when they sign in, not only the
-    // publish button.
+    // One answer for everything that follows the role: both forms. The
+    // forms' "re-check sign-in" runs the same probe, so an admin whose
+    // Access session had lapsed at boot gets the publish buttons when they
+    // sign in. The recorder still hears the answer, but capture no longer
+    // follows it: it starts off for everyone until the checkbox turns it
+    // on (owner call; see SnapshotRecorder.install).
     const probeRole = async (): Promise<string | null> => {
       const email = await probeAdmin();
       tlForm.setAdmin(!!email);
@@ -1260,6 +1277,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('visibilitychange', onLookHide);
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
+    perfLog.triangles = null; // the session is going; the log keeps its entries
     desktopHandle?.(); // menu commands and OS opens stop reaching a dead scene
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
@@ -1288,6 +1306,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.setSculptVisible(true);
     galleryLink?.removeEventListener('click', onLeave);
     inputDebug?.dispose();
+    perfDebug?.dispose();
     chrome.dispose();
     sliders?.dispose();
     toolbar.dispose();

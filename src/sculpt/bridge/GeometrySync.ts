@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { faceEdges } from './edges';
+import { perfLog } from '../../viewer/perfLog';
 
 /**
  * Replaces SculptGL's RenderData: one THREE.BufferGeometry wrapping the
@@ -95,11 +96,13 @@ export class GeometrySync {
     const mesh = this.mesh;
     const pos = this.geometry.getAttribute('position');
     if (mesh && pos && (this.wireStale || this.wire.getAttribute('position') !== pos)) {
+      const t0 = performance.now();
       this.wire.setAttribute('position', pos);
       const edges = faceEdges(mesh.getFaces(), mesh.getNbFaces(), mesh.getNbVertices());
       this.wire.setIndex(new BufferAttribute(edges, 1));
       this.wire.setDrawRange(0, edges.length);
       this.wireStale = false;
+      perfLog.record('wire rebuild', performance.now() - t0);
     }
     return this.wire;
   }
@@ -170,9 +173,20 @@ export class GeometrySync {
     }
   }
 
-  /** Vendor hook: everything changed (topology ops, resolution switches). */
+  /**
+   * Vendor hook: everything changed (topology ops, resolution switches, and
+   * every step of a dynamic-topology stroke). Timed for the perf log, though
+   * the bytes themselves cross in the next frame's render: a slow transfer
+   * shows as the stall straight after this entry.
+   */
   onAllBuffers(mesh: SculptMesh): void {
     if (mesh !== this.mesh) return;
+    const t0 = performance.now();
+    this.queueAllBuffers(mesh);
+    perfLog.record('topology upload', performance.now() - t0);
+  }
+
+  private queueAllBuffers(mesh: SculptMesh): void {
     if (this.arraysChanged(mesh)) {
       this.rebuild();
       this.resetDirty();

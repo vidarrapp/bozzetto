@@ -10,15 +10,30 @@
  * which ids, whether a cancel arrives, and whether the stylus shows up in
  * the touch list at all.
  *
- * Off unless asked for, and it only ever reads events.
+ * Off unless asked for, and it only ever reads events. A status line on top
+ * says what the shell believes right now - a stroke under way, the touches
+ * down, how long since the pen was last heard from - so a stroke that never
+ * saw its end shows as one, rather than as an app that stopped listening.
  */
 
 const MAX_LINES = 26;
 
+/** What the status line reads off the input shell (InputShell provides it). */
+export interface InputStatus {
+  strokeDevice(): string | null;
+  touchCount(): number;
+  lastPenEventAt(): number;
+}
+
 export class InputDebug {
   private readonly root: HTMLDivElement;
+  private readonly status: HTMLDivElement;
+  private readonly log: HTMLDivElement;
   private readonly lines: string[] = [];
   private readonly t0 = performance.now();
+  private source: InputStatus | null = null;
+  private statusText = '';
+  private raf = 0;
 
   private readonly onPointer = (e: PointerEvent): void => {
     const el = e.target as HTMLElement | null;
@@ -43,6 +58,10 @@ export class InputDebug {
   constructor() {
     this.root = document.createElement('div');
     this.root.className = 'input-debug';
+    this.status = document.createElement('div');
+    this.status.className = 'input-debug__status';
+    this.log = document.createElement('div');
+    this.root.append(this.status, this.log);
     document.body.appendChild(this.root);
     this.push('input log ready - tap Negative to arm one stroke, or long-press to latch, then draw');
     for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
@@ -57,10 +76,33 @@ export class InputDebug {
     const t = ((performance.now() - this.t0) / 1000).toFixed(2).padStart(6);
     this.lines.push(`${t} ${text}`);
     if (this.lines.length > MAX_LINES) this.lines.shift();
-    this.root.textContent = this.lines.join('\n');
+    this.log.textContent = this.lines.join('\n');
   }
 
+  /** Show what `source` believes on the status line, refreshed every frame. */
+  watch(source: InputStatus): void {
+    this.source = source;
+    if (!this.raf) this.raf = requestAnimationFrame(this.refresh);
+  }
+
+  private readonly refresh = (): void => {
+    this.raf = requestAnimationFrame(this.refresh);
+    const s = this.source;
+    if (!s) return;
+    const device = s.strokeDevice();
+    const pen = s.lastPenEventAt();
+    const penAge = pen < 0 ? 'never' : `${((performance.now() - pen) / 1000).toFixed(1)}s ago`;
+    const stroke = device ? `stroke (${device})` : 'no stroke';
+    const text = `shell: ${stroke} | touches ${s.touchCount()} | pen ${penAge}`;
+    // Only on a change: the age moves a tenth at a time, not every frame.
+    if (text === this.statusText) return;
+    this.statusText = text;
+    this.status.textContent = text;
+  };
+
   dispose(): void {
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
     for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
       window.removeEventListener(type, this.onPointer as EventListener, true);
     }

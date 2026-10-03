@@ -2,17 +2,19 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import { FRAMES_STORE, FRAME_META_STORE, withNamedStore } from './ScenePersist';
 import { mergeSceneArrays } from './SceneFile';
 import type { SculptSession } from './SculptSession';
+import { formatMs, perfLog } from '../../viewer/perfLog';
 
 /**
  * Sculpt-to-timelapse capture (WS5, plan 6.6/6.6b): a Procreate-style
- * always-on recorder. Edits mark it pending (the same pushState/stroke-end
- * seams the autosave uses); an idle callback then snapshots the visible
- * scene (merged, matrix-baked - bounded copies only), ships it to the
- * convert worker for the standard quantize+gzip GLB encode, and appends
- * the finished bytes to IndexedDB, so the timelapse survives reloads like
- * the scene does. Nothing runs during a stroke; when sculpting outruns
- * idle time, consecutive strokes coalesce into one frame (the plan's
- * accepted degradation; interval capture is a later option).
+ * recorder, off until the Capture panel's checkbox turns it on. Edits mark
+ * it pending (the same pushState/stroke-end seams the autosave uses); an
+ * idle callback then snapshots the visible scene (merged, matrix-baked -
+ * bounded copies only), ships it to the convert worker for the standard
+ * quantize+gzip GLB encode, and appends the finished bytes to IndexedDB, so
+ * the timelapse survives reloads like the scene does. Nothing runs during a
+ * stroke; when sculpting outruns idle time, consecutive strokes coalesce
+ * into one frame (the plan's accepted degradation; interval capture is a
+ * later option).
  *
  * The stored bytes are exactly what the gallery upload endpoint takes, so
  * "save to gallery" is a straight walk of the store.
@@ -55,10 +57,6 @@ export class SnapshotRecorder {
   private storageOk = true;
   /** The stored on/off choice, or null when the user never touched it. */
   private pref: 'on' | 'off' | null = null;
-  /** install() has read the frame index; before that, seq/metas are blank. */
-  private ready = false;
-  /** A role default that arrived before the store was read. */
-  private pendingDefault: boolean | null = null;
   private pending = false;
   private scheduled = false;
   private busy = false;
@@ -76,10 +74,12 @@ export class SnapshotRecorder {
   constructor(private readonly session: SculptSession) {}
 
   /**
-   * Capture starts OFF for guests (owner call): they have no way to publish
-   * the frames, so recording only spends their storage. The admin probe
-   * calls applyDefault(true) once it confirms a session - and an explicit
-   * choice, stored by the File panel's checkbox, beats either default.
+   * Capture starts OFF for everyone, the signed-in owner included (owner
+   * call). It used to start on for the owner, but a frame per stroke is a
+   * merge on the main thread and an IndexedDB write every time, and those
+   * writes are a suspect in the iPad freezes; a timelapse is now something
+   * you ask for. The Capture panel's Record timelapse box stores that
+   * choice, on or off, and only a stored "on" turns capture on here.
    */
   async install(): Promise<void> {
     try {
@@ -100,22 +100,15 @@ export class SnapshotRecorder {
       this.metas = recs.map((m, i) => ({ ...m, seq: keys[i] }));
       this.totalBytes = this.metas.reduce((sum, m) => sum + m.bytes, 0);
       this.nextSeq = keys.length > 0 ? keys[keys.length - 1] + 1 : 0;
-      // Resume the duplicate check from the last stored frame: the role
-      // default and the checkbox both seed a frame on switching on, and
-      // after a reload that was a copy of the frame already on disk.
+      // Resume the duplicate check from the last stored frame: the
+      // checkbox seeds a frame on switching on, and after a reload that was
+      // a copy of the frame already on disk.
       this.lastSig = this.metas.length > 0 ? (this.metas[this.metas.length - 1].sig ?? '') : '';
     } catch {
       // No frame storage (private window): capture quietly stands down,
-      // and no later default may wake it.
+      // and the checkbox cannot wake it.
       this.enabled = false;
       this.storageOk = false;
-    }
-
-    this.ready = true;
-    if (this.pendingDefault !== null) {
-      const on = this.pendingDefault;
-      this.pendingDefault = null;
-      this.applyDefault(on);
     }
 
     const sm = this.session.getStateManager();
@@ -125,8 +118,8 @@ export class SnapshotRecorder {
     // Seed frame 0 with the starting state so playback opens on the raw
     // subject rather than the first stroke's result.
     if (this.enabled && this.metas.length === 0) this.edited();
-    // The checkbox was painted from the pre-install default; now that the
-    // stored choice and the frame count are in, let the panel catch up.
+    // The checkbox was painted before the stored choice was read; now that
+    // it and the frame count are in, let the panel catch up.
     this.onChange?.();
   }
 
@@ -165,22 +158,14 @@ export class SnapshotRecorder {
   }
 
   /**
-   * The role-based default (guests off, admins on), applied only when the
-   * user has never made a choice of their own. Arrives asynchronously from
-   * the admin probe, possibly before or after install() finished.
+   * The admin probe's answer, which used to set the default (guests off,
+   * the owner on). The default is off for every role now, so nothing
+   * follows from it: capture stays off until the checkbox says otherwise,
+   * and a stored choice stands either way. The probe still reports in,
+   * before or after install(), and may go on doing so.
    */
-  applyDefault(on: boolean): void {
-    if (this.pref !== null || !this.storageOk || this.disposed) return;
-    // Before install() has read the frame index, nextSeq is 0 and metas is
-    // empty: seeding now would write over the first stored frame.
-    if (!this.ready) {
-      this.pendingDefault = on;
-      return;
-    }
-    if (this.enabled === on) return;
-    this.enabled = on;
-    if (on) this.edited();
-    this.onChange?.(); // the File panel's checkbox follows
+  applyDefault(_isAdmin: boolean): void {
+    // Deliberately nothing; see above.
   }
 
   frameCount(): number {
@@ -231,17 +216,36 @@ export class SnapshotRecorder {
       setTimeout(() => this.schedule(), RETRY_MS);
       return;
     }
+    // The main thread's share of a frame, for the perf log: the merged
+    // copy, its fingerprint and the transfer to the worker.
+    const t0 = performance.now();
     const merged = mergeSceneArrays(this.session);
     this.pending = false;
     if (!merged) return;
     const sig = this.signature(merged.positions, merged.tris);
-    if (sig === this.lastSig) return; // mask-only or no-op edit: no new frame
+    if (sig === this.lastSig) {
+      // Mask-only or no-op edit: no new frame, though the merge was paid.
+      perfLog.record('capture hand-off', performance.now() - t0, 'unchanged, not sent');
+      return;
+    }
     this.busy = true;
     try {
-      const glb = await this.encodeFrame(merged.positions, merged.indices);
-      await withNamedStore(FRAMES_STORE, 'readwrite', (s) => s.put(glb, this.nextSeq));
+      const encoding = this.encodeFrame(merged.positions, merged.indices);
+      perfLog.record('capture hand-off', performance.now() - t0);
+      const glb = await encoding;
+      // As with the autosave, put() clones on the main thread; the entry
+      // keeps that apart from the browser's share of the write.
+      const w0 = performance.now();
+      let put = 0;
+      await withNamedStore(FRAMES_STORE, 'readwrite', (s) => {
+        const p0 = performance.now();
+        const req = s.put(glb, this.nextSeq);
+        put = performance.now() - p0;
+        return req;
+      });
       const meta = { tris: merged.tris, t: Date.now(), bytes: glb.byteLength, sig };
       await withNamedStore(FRAME_META_STORE, 'readwrite', (s) => s.put(meta, this.nextSeq));
+      perfLog.record('capture write', performance.now() - w0, `put ${formatMs(put)}`);
       this.metas.push({ seq: this.nextSeq, ...meta });
       this.nextSeq++;
       this.totalBytes += glb.byteLength;

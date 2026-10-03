@@ -2732,8 +2732,11 @@ body.is-sampling * {
 }
 
 /* Opt-in hardware input log (?inputdebug=1): raw pointer/touch traffic,
-   for input bugs that cannot be reproduced in a headless browser. */
-.input-debug {
+   for input bugs that cannot be reproduced in a headless browser. The perf
+   log (?perfdebug=1) wears the same look on the other side of the view, so
+   the two can be read together. */
+.input-debug,
+.perf-debug {
   position: fixed;
   top: 60px;
   right: 12px;
@@ -2750,6 +2753,23 @@ body.is-sampling * {
   border-radius: var(--radius);
   pointer-events: none;
   user-select: text;
+}
+
+/* What the shell believes, above the event log: set apart so a stuck
+   stroke reads at a glance. */
+.input-debug__status {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--accent);
+}
+
+/* Under the stats corner, clear of the input log on the right. */
+.perf-debug {
+  top: 132px;
+  right: auto;
+  left: 12px;
+  max-width: 64ch;
 }
 
 /* Guest state of the publish form: one line that re-checks, rather than

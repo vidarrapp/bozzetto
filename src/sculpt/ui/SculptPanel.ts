@@ -30,6 +30,7 @@ export class SculptPanel extends SidePanel {
   private paintPicker?: ColorPickerHandle;
   private extrasBody!: HTMLDivElement;
   private symCheckbox!: HTMLInputElement;
+  private worldScaleBox: HTMLInputElement | null = null;
   private axisButtons: HTMLButtonElement[] = [];
   private sizeInput?: HTMLInputElement;
   private strengthInput?: HTMLInputElement;
@@ -66,13 +67,13 @@ export class SculptPanel extends SidePanel {
     // thing wherever the camera is.
     const ws = this.input.worldScale;
     if (ws) {
-      sec.appendChild(
-        checkbox('World-scale size', ws.isEnabled(), (on) => {
-          ws.setEnabled(on);
-          this.input.refreshBrushCursor();
-          this.refreshBrushValues();
-        }),
-      );
+      const box = checkbox('World-scale size', ws.isEnabled(), (on) => {
+        ws.setEnabled(on);
+        this.input.refreshBrushCursor();
+        this.refreshBrushValues();
+      });
+      this.worldScaleBox = box.querySelector('input');
+      sec.appendChild(box);
     }
     this.dynamicsBody = div('sculpt-panel__dynamics');
     sec.appendChild(this.dynamicsBody);
@@ -530,8 +531,15 @@ export class SculptPanel extends SidePanel {
     return this.extractThickness;
   }
 
-  /** Re-sync stateful controls after engine-side changes (undo, dyntopo, a brush pick). */
+  /**
+   * Re-sync stateful controls after engine-side changes (undo, dyntopo, a
+   * brush pick, a scene opened with settings of its own).
+   */
   refreshState(): void {
+    // World scale rides the scene record: an opened file can turn it either
+    // way, and the box was only ever read when the panel was built.
+    const ws = this.input.worldScale;
+    if (this.worldScaleBox && ws) this.worldScaleBox.checked = ws.isEnabled();
     if (!this.symCheckbox) return; // called before the section is built
     this.symCheckbox.checked = this.session.getSymmetry();
     this.paintAxis();

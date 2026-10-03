@@ -44,6 +44,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
+import { perfLog } from '../../viewer/perfLog';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -459,6 +460,7 @@ export class SculptSession {
    * never heard of an object a redo brought back.
    */
   private historyStep(step: () => void): void {
+    const t0 = performance.now();
     const before = this.levelSignature();
     const active = this.mesh;
     const list = [...this.meshes];
@@ -467,7 +469,7 @@ export class SculptSession {
       list.length !== this.meshes.length || list.some((m, i) => m !== this.meshes[i]);
     if (listMoved && this.mesh === active) this.activeChanged();
     this.render();
-    this.fireLevelChangeIfMoved(before);
+    this.fireLevelChangeIfMoved(before, t0);
   }
 
   /**
@@ -497,9 +499,11 @@ export class SculptSession {
     return mul ? [mul._sel, mul._meshes.length] : null;
   }
 
-  private fireLevelChangeIfMoved(before: [number, number] | null): void {
+  /** `since` is when the step began: a level moved by history is timed too. */
+  private fireLevelChangeIfMoved(before: [number, number] | null, since: number): void {
     const after = this.levelSignature();
     if (before && after && (before[0] !== after[0] || before[1] !== after[1])) {
+      perfLog.record('subdivision', performance.now() - since, 'undo or redo');
       this.onLevelChange?.(after[0], after[1]);
     }
   }
@@ -587,9 +591,11 @@ export class SculptSession {
       );
       if (!ok) return false;
     }
+    const t0 = performance.now();
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SUBDIVISION);
     mul.addLevel();
     this.setMesh(mul);
+    perfLog.record('subdivision', performance.now() - t0, 'a level added');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -600,10 +606,12 @@ export class SculptSession {
     if (!mul) return false;
     const target = mul._sel + dir;
     if (target < 0 || target >= mul._meshes.length) return false;
+    const t0 = performance.now();
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SELECTION);
     if (dir > 0) mul.higherLevel();
     else mul.lowerLevel();
     this.render();
+    perfLog.record('subdivision', performance.now() - t0, dir > 0 ? 'a level up' : 'a level down');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -620,9 +628,11 @@ export class SculptSession {
     if (!mul) return false;
     const target = Math.max(0, Math.min(mul._meshes.length - 1, Math.round(sel)));
     if (target === mul._sel) return false;
+    const t0 = performance.now();
     this.stateManager.pushStateMultiresolution(mul, StateMultiresolution.SELECTION);
     mul.selectResolution(target);
     this.render();
+    perfLog.record('subdivision', performance.now() - t0, `to level ${target + 1}`);
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -638,11 +648,13 @@ export class SculptSession {
   reverse(): boolean {
     const mul = this.asMultimesh();
     if (!mul || mul._sel !== 0) return false;
+    const t0 = performance.now();
     const state = new StateMultiresolution(this, mul, StateMultiresolution.REVERSION);
     const created = mul.computeReverse();
     if (!created) return false;
     this.stateManager.pushState(state);
     this.setMesh(mul);
+    perfLog.record('subdivision', performance.now() - t0, 'a level reversed in below');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -687,6 +699,7 @@ export class SculptSession {
   voxelRemesh(resolution = this.remeshResolution): boolean {
     const mesh = this.mesh;
     if (!mesh) return false;
+    const t0 = performance.now();
     this.setRemeshResolution(resolution);
     Remesh.RESOLUTION = this.remeshResolution;
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
@@ -695,6 +708,7 @@ export class SculptSession {
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
     this.replaceMesh(mesh, newMesh);
+    perfLog.record('voxel remesh', performance.now() - t0, `resolution ${this.remeshResolution}`);
     return true;
   }
 
@@ -752,6 +766,7 @@ export class SculptSession {
     const sources = meshes.filter((m) => this.meshes.includes(m));
     if (sources.length < 2) return null;
     if (!sources.includes(base)) base = sources[0];
+    const t0 = performance.now();
     Remesh.RESOLUTION = this.remeshResolution;
     const merged = new Multimesh(Remesh.remesh(sources, base));
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
@@ -767,6 +782,7 @@ export class SculptSession {
       if (i >= 0) this.meshes.splice(i, 1);
     }
     this.selectSet([merged as unknown as SculptMesh]);
+    perfLog.record('voxel merge', performance.now() - t0, `${sources.length} objects`);
     return merged;
   }
 

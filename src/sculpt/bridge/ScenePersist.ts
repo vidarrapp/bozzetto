@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import type { SculptSession } from './SculptSession';
 import type { LookState } from '../../viewer/Viewer';
+import { formatMs, perfLog } from '../../viewer/perfLog';
 import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
@@ -56,10 +57,11 @@ export interface SculptSettings {
  * Performance contract (same spirit as the capture design, plan 6.6b):
  * nothing runs during a stroke. Edits only mark a dirty flag via wrapped
  * StateManager entry points; the actual serialize + write happens in idle
- * time, debounced, plus a best-effort flush when the tab goes hidden. Big
- * meshes (past FAST_SAVE_TRIS at the top level) stretch the debounce to a
- * five-minute cadence instead of skipping autosave, since their puts are
- * tens of megabytes.
+ * time, throttled to once a minute at most (see SAVE_INTERVAL_MS), plus a
+ * best-effort flush when the tab goes hidden and when the mode is left. Big
+ * meshes (past FAST_SAVE_TRIS at the top level) stretch the interval to
+ * five minutes instead of skipping autosave, since their puts are tens of
+ * megabytes.
  */
 
 export interface SavedLevel {
@@ -274,10 +276,25 @@ const FAST_SAVE_TRIS = 1600000;
  * the store). The last in-budget save stays in place for restore.
  */
 const SKIP_SAVE_TRIS = 8000000;
-/** Idle debounce: coalesce a burst of strokes into one write. */
-const FAST_SAVE_GAP_MS = 1500;
+/**
+ * At most one write a minute while there are unsaved changes (owner call).
+ * Every write serialises the whole scene on the main thread and hands it to
+ * IndexedDB, whose larger puts Safari is known to block the page on, and
+ * saving a second and a half after every burst of strokes was a suspect in
+ * the iPad freezes. A crash now costs up to a minute of work, which the
+ * owner accepts; leaving the page or the mode still flushes at once.
+ */
+const SAVE_INTERVAL_MS = 60 * 1000;
+/**
+ * The first change after a quiet spell (no write for a minute) waits only
+ * this long, so a single edit made just before the tab is killed is kept
+ * even where no hide event arrives to flush it.
+ */
+const FIRST_SAVE_GRACE_MS = 5000;
 /** Big-mesh cadence: at most one multi-ten-MB put every five minutes. */
-const SLOW_SAVE_GAP_MS = 5 * 60 * 1000;
+const SLOW_SAVE_INTERVAL_MS = 5 * 60 * 1000;
+/** How long a due write may wait for an idle moment. */
+const IDLE_TIMEOUT_MS = 3000;
 /**
  * Consecutive failed writes before autosave gives up on the session. One
  * failure is usually weather, not climate: an iPad app switch freezes the
@@ -474,10 +491,22 @@ export async function clearSavedScene(): Promise<void> {
 
 export class ScenePersist {
   private dirty = false;
+  /** When the oldest unsaved change was made (meaningful while dirty). */
+  private dirtySince = 0;
   private disabled = false;
   private failures = 0;
   /** Earliest a retry may run, after a failed write backed off. */
   private retryAt = 0;
+  /**
+   * The write cadence. A field rather than the constants alone only so the
+   * e2e suite can run the throttle in seconds instead of minutes; nothing in
+   * the app changes it.
+   */
+  readonly cadence = {
+    grace: FIRST_SAVE_GRACE_MS,
+    interval: SAVE_INTERVAL_MS,
+    bigInterval: SLOW_SAVE_INTERVAL_MS,
+  };
 
   /** Autosave stopped ITSELF (a full store, or writes that kept failing). */
   onStopped: ((reason: 'quota' | 'error') => void) | null = null;
@@ -489,10 +518,11 @@ export class ScenePersist {
   onWrote: ((scene: SavedScene) => void) | null = null;
   /**
    * An edit happened - every source of one funnels through markDirty().
-   * Fires before the debounce, so a listener learns about the change the
-   * moment it is made rather than when the write lands seconds later; the
-   * desktop shell's close guard needs the former. Fires even after the
-   * autosave has disabled itself: the edit is no less real for that.
+   * Fires before the throttle, so a listener learns about the change the
+   * moment it is made rather than when the write lands up to a minute
+   * later; the desktop shell's close guard needs the former. Fires even
+   * after the autosave has disabled itself: the edit is no less real for
+   * that.
    */
   onDirty: (() => void) | null = null;
   private cancelScheduled: (() => void) | null = null;
@@ -542,69 +572,109 @@ export class ScenePersist {
   }
 
   /**
-   * The debounce gap for the current subject: burst-coalescing for normal
-   * meshes, a five-minute cadence once the top level passes FAST_SAVE_TRIS
-   * (those puts are tens of megabytes). Event flushes (hidden, pagehide,
-   * dispose) bypass the gap either way.
+   * The minimum time between two writes for the current subject: a minute,
+   * or five once the top level passes FAST_SAVE_TRIS (those puts are tens
+   * of megabytes). Event flushes (hidden, pagehide, leaving the mode)
+   * bypass it either way.
    */
-  private minGapMs(): number {
+  private intervalMs(): number {
     return this.session.topLevelTriangles() > FAST_SAVE_TRIS
-      ? SLOW_SAVE_GAP_MS
-      : FAST_SAVE_GAP_MS;
+      ? this.cadence.bigInterval
+      : this.cadence.interval;
   }
 
   /** Note an edit; the write happens later, in idle time. */
   markDirty(): void {
     this.onDirty?.();
     if (this.disabled) return;
-    this.dirty = true;
-    if (this.cancelScheduled) return;
-    const run = (): void => {
-      this.cancelScheduled = null;
-      const wait = Math.max(this.lastSave + this.minGapMs(), this.retryAt) - Date.now();
-      if (wait > 0) {
-        const t = window.setTimeout(run, wait);
-        this.cancelScheduled = () => clearTimeout(t);
-        return;
-      }
-      void this.flush();
-    };
-    const w = window as unknown as {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-    if (w.requestIdleCallback && w.cancelIdleCallback) {
-      const id = w.requestIdleCallback(run, { timeout: 3000 });
-      this.cancelScheduled = () => w.cancelIdleCallback?.(id);
-    } else {
-      const t = window.setTimeout(run, 600);
-      this.cancelScheduled = () => clearTimeout(t);
+    if (!this.dirty) {
+      this.dirty = true;
+      this.dirtySince = Date.now();
     }
+    this.schedule();
   }
 
-  /** Serialize and write now (used by the idle pass, hide events, tests). */
+  /**
+   * Arm the next write, unless one is armed already or in flight (that one
+   * re-arms when it lands): an interval after the last write, but not
+   * before the grace has passed since the oldest unsaved change, nor before
+   * a failed write's back-off. A throttle, not a debounce - edits made
+   * while it is armed ride along instead of pushing it back, so steady
+   * sculpting still saves once a minute. When it comes due it waits for an
+   * idle moment where the browser offers one, since the serialise runs on
+   * the main thread.
+   */
+  private schedule(): void {
+    if (this.cancelScheduled || this.saving) return;
+    const due = Math.max(
+      this.lastSave + this.intervalMs(),
+      this.dirtySince + this.cadence.grace,
+      this.retryAt,
+    );
+    const timer = window.setTimeout(() => {
+      const w = window as unknown as {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      if (w.requestIdleCallback && w.cancelIdleCallback) {
+        const id = w.requestIdleCallback(this.runScheduled, { timeout: IDLE_TIMEOUT_MS });
+        this.cancelScheduled = () => w.cancelIdleCallback?.(id);
+      } else {
+        this.runScheduled();
+      }
+    }, Math.max(0, due - Date.now()));
+    this.cancelScheduled = () => clearTimeout(timer);
+  }
+
+  private readonly runScheduled = (): void => {
+    this.cancelScheduled = null;
+    void this.flush();
+  };
+
+  /** Serialize and write now (used by the throttle, hide events, tests). */
   async flush(): Promise<void> {
     if (!this.dirty || this.saving || this.disabled) return;
     // Never serialize a half-finished stroke: stay dirty and let the
-    // stroke-end wrap reschedule.
+    // stroke-end wrap reschedule. The change is overdue by then, so the
+    // write follows the stroke rather than waiting out another grace.
     if (this.session._action === Enums.Action.SCULPT_EDIT) return;
     if (this.session.topLevelTriangles() > SKIP_SAVE_TRIS) return;
+    const t0 = performance.now();
     const scene = this.session.serializeScene();
     if (!scene) return;
     this.decorate?.(scene);
+    perfLog.record('autosave serialise', performance.now() - t0);
+    // This write takes everything there is. A write still armed (an event
+    // flush got here first) would only repeat it inside the interval; the
+    // next one is armed when this one lands, if anything changed meanwhile.
+    this.cancelScheduled?.();
+    this.cancelScheduled = null;
+    const since = this.dirtySince;
     this.dirty = false;
     this.saving = true;
+    const w0 = performance.now();
+    // put() clones the record synchronously, on the main thread; the rest
+    // of the write is the browser's. The entry keeps the two apart.
+    let put = 0;
     try {
-      await withStore('readwrite', (s) => s.put(scene, KEY));
+      await withStore('readwrite', (s) => {
+        const p0 = performance.now();
+        const req = s.put(scene, KEY);
+        put = performance.now() - p0;
+        return req;
+      });
+      perfLog.record('autosave write', performance.now() - w0, `put ${formatMs(put)}`);
       this.lastSave = Date.now();
       this.failures = 0;
       this.onWrote?.(scene);
     } catch (err) {
+      perfLog.record('autosave write', performance.now() - w0, 'failed');
       // The record never landed, so stay dirty and come back to it. A FULL
       // store is different - retrying a tens-of-MB put against one just
       // burns battery - so that stops at once, and either way the panel is
       // told, because silent loss of autosave is the worst outcome here.
       this.dirty = true;
+      this.dirtySince = since; // the oldest change is still the oldest unsaved
       this.failures++;
       const quota = (err as DOMException | null)?.name === 'QuotaExceededError';
       if (quota || this.failures >= MAX_WRITE_FAILURES) {
@@ -617,11 +687,12 @@ export class ScenePersist {
       }
     } finally {
       this.saving = false;
-      // An edit that landed WHILE this put was in flight found flush()
-      // returning early on `saving` and nothing scheduled behind it, so the
-      // last stroke before a pause stayed unsaved until some later edit
-      // happened to re-arm the debounce (review finding). Re-arm here.
-      if (this.dirty && !this.disabled) this.markDirty();
+      // An edit that landed WHILE this put was in flight found nothing to
+      // arm (the write in flight owns the next one), so the last stroke
+      // before a pause would stay unsaved until some later edit happened
+      // to re-arm the throttle (review finding). Re-arm here, now that
+      // lastSave says when the interval runs from.
+      if (this.dirty && !this.disabled) this.schedule();
     }
   }
 
