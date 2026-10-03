@@ -1,8 +1,9 @@
 // The smoke suites: boot, the Create menu's primitives and base meshes,
 // the scene-file round trip, Armature mode from the gallery's Create tile
-// on, and Sculpt's input under fingers, the pen, the zoom and the Negative
-// button. Each gets (page, base, t) - a fresh page, the server's origin,
-// and the check collector.
+// on, Sculpt's input under fingers, the pen, the zoom and the Negative
+// button, the arrow keys in the Scene list and each brush's own size. Each
+// gets (page, base, t) - a fresh page, the server's origin, and the check
+// collector.
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -2268,5 +2269,366 @@ export const suites = {
       return row ? row.textContent : null;
     });
     t.ok(!!guide && /Alt \+ drag/.test(guide) && /button/.test(guide), `the hotkey guide's Negative row names Alt and the button (${guide})`);
+  },
+
+  async outliner(page, base, t) {
+    await openSculpt(page, base);
+    // Three objects, the torus active as the last one added, and the Scene
+    // panel open, where the rows are.
+    await page.evaluate(() => {
+      const { session, scenePanel } = window.__sculpt;
+      session.addPrimitive('cube');
+      session.addPrimitive('torus');
+      scenePanel.setCollapsed(false);
+    });
+    // The rows top to bottom, the active object and the selection, and the
+    // row the panel marks active.
+    const scene = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const panel = document.querySelector('.panel--scene');
+        return {
+          rows: [...panel.querySelectorAll('.outliner__row')].map((r) => r.querySelector('.outliner__name')?.textContent ?? '(renaming)').join(','),
+          active: session.activeName(),
+          selected: session.getSelectedMeshes().map((m) => session.getMeshName(m)).sort().join(','),
+          row: panel.querySelector('.outliner__row--active .outliner__name')?.textContent ?? null,
+        };
+      });
+    const show = (s) => `${s.active}; selected ${s.selected || 'none'}; row ${s.row}`;
+    // A key with focus nowhere in particular, where a press on the canvas
+    // leaves it, and what is active after it.
+    const press = async (key) => {
+      await page.keyboard.press(key);
+      return (await scene()).active;
+    };
+    const start = await scene();
+    t.eq(start.rows, 'Sphere,Cube,Torus', 'the Scene list shows the three objects in scene order');
+    await page.evaluate(() => document.activeElement?.blur?.());
+
+    // Plain steps, round the ends both ways.
+    const down = [];
+    for (let i = 0; i < 3; i++) down.push(await press('ArrowDown'));
+    t.eq(down.join(' '), 'Sphere Cube Torus', 'ArrowDown steps down the rows from the torus, round from the last to the first');
+    const up = [];
+    for (let i = 0; i < 3; i++) up.push(await press('ArrowUp'));
+    t.eq(up.join(' '), 'Cube Sphere Torus', 'ArrowUp steps up them, round from the first to the last');
+    let s = await scene();
+    t.ok(s.selected === 'Torus' && s.row === 'Torus', `a step selects that object alone, and the panel marks its row (${show(s)})`);
+
+    // Shift extends, the way a Shift+click on the row does.
+    await page.keyboard.press('Shift+ArrowUp');
+    const extended = await scene();
+    t.ok(extended.active === 'Cube' && extended.selected === 'Cube,Torus', `Shift+ArrowUp extends the selection to the cube (${show(extended)})`);
+    await page.keyboard.press('Shift+ArrowUp');
+    s = await scene();
+    t.ok(s.active === 'Sphere' && s.selected === 'Cube,Sphere,Torus', `and again to the sphere (${show(s)})`);
+    const clicked = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const row = (n) => [...document.querySelectorAll('.panel--scene .outliner__row')].find((r) => r.querySelector('.outliner__name')?.textContent === n);
+      row('Torus').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      row('Cube').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+      return { active: session.activeName(), selected: session.getSelectedMeshes().map((m) => session.getMeshName(m)).sort().join(',') };
+    });
+    t.ok(clicked.active === extended.active && clicked.selected === extended.selected, `a click on the torus, then Shift+click on the cube, gives the same (${clicked.active}; ${clicked.selected})`);
+    t.eq(await press('ArrowUp'), 'Sphere', 'a plain step from there goes on to the sphere');
+    s = await scene();
+    t.eq(s.selected, 'Sphere', 'and selects it alone again');
+    await page.keyboard.press('Shift+ArrowUp');
+    s = await scene();
+    t.ok(s.active === 'Torus' && s.selected === 'Cube,Sphere,Torus', `a Shift step round the top is a Shift+click on the last row: the whole list (${show(s)})`);
+    await press('ArrowDown');
+
+    // The Select tool follows as it does a click: its highlights are the
+    // selection, one object after a plain step and two after a Shift one.
+    const lit = () => page.evaluate(() => {
+      const { viewer } = window.__sculpt;
+      return { count: viewer.sculptOutlines.size, active: viewer.sculptOutlines.has(viewer.display) };
+    });
+    await page.keyboard.press('q');
+    t.eq(await press('ArrowDown'), 'Cube', 'in the Select tool, ArrowDown still steps');
+    const one = await lit();
+    await page.keyboard.press('Shift+ArrowDown');
+    const two = await lit();
+    const selecting = await page.evaluate(() => window.__sculpt.input.isSelecting());
+    t.ok(selecting && one.count === 1 && one.active && two.count === 2 && two.active, `and the highlights follow: ${one.count} then ${two.count}, the active object's among them`);
+    await page.keyboard.press('q');
+
+    // Hidden and locked objects are rows like any other. With the gizmo up
+    // a step moves it to the new object, or lets go of it for one it may
+    // not move, as a click on the row does.
+    await page.evaluate(() => {
+      const row = (n) => [...document.querySelectorAll('.panel--scene .outliner__row')].find((r) => r.querySelector('.outliner__name')?.textContent === n);
+      row('Sphere').querySelectorAll('.outliner__icon')[0].click(); // the eye
+      row('Cube').querySelectorAll('.outliner__icon')[1].click(); // the padlock
+    });
+    await page.keyboard.press('w');
+    const walk = [];
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press('ArrowDown');
+      walk.push(
+        await page.evaluate(() => {
+          const { session, gizmo } = window.__sculpt;
+          return `${session.activeName()}:${gizmo.isActive() ? (gizmo.mesh ? session.getMeshName(gizmo.mesh) : 'let go') : 'gizmo gone'}`;
+        }),
+      );
+    }
+    t.eq(walk.join(' '), 'Sphere:let go Cube:let go Torus:Torus', 'under the gizmo, steps land on the hidden sphere and the locked cube, and the gizmo takes the torus');
+    await page.keyboard.press('t');
+
+    // The hotkey guide lists the four keys.
+    const guide = await page.evaluate(() =>
+      [...document.querySelectorAll('.help-guide .help-row')]
+        .filter((r) => /Scene list|Extend the selection/.test(r.textContent))
+        .map((r) => [...r.querySelectorAll('kbd')].map((k) => k.textContent).join('+'))
+        .join(' '),
+    );
+    t.eq(guide, '↑ ↓ Shift+↑ Shift+↓', 'the hotkey guide lists the keys');
+
+    // A name being edited keeps the keys: nothing steps, and the field
+    // stays open.
+    const before = await scene();
+    const editing = await page.evaluate(() => {
+      document.querySelector('.panel--scene .outliner__row--active .outliner__name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      return document.activeElement?.className;
+    });
+    t.eq(editing, 'outliner__rename', 'a double-click on the active row opens its name for editing');
+    for (const key of ['ArrowDown', 'ArrowUp', 'Shift+ArrowDown']) await page.keyboard.press(key);
+    const during = await scene();
+    const field = await page.evaluate(() => ({ cls: document.activeElement?.className, value: document.activeElement?.value }));
+    t.ok(
+      during.active === before.active && during.selected === before.selected && field.cls === 'outliner__rename' && field.value === before.active,
+      `the arrows while renaming change nothing, and the field stays (${show(during)}; "${field.value}")`,
+    );
+    await page.keyboard.press('Escape');
+    t.eq((await scene()).rows, 'Sphere,Cube,Torus', 'Escape leaves the name as it was');
+
+    // An open menu keeps its own arrows: the Edit menu walks its items.
+    const menu = await page.evaluate(() => {
+      window.__sculpt.editMenu.open();
+      return document.activeElement?.textContent;
+    });
+    await page.keyboard.press('ArrowDown');
+    const item = await page.evaluate(() => document.activeElement?.textContent);
+    t.ok(menu === 'Undo' && item === 'Redo' && (await scene()).active === before.active, `in the open Edit menu ArrowDown moves from ${menu} to ${item}, and the active object stays`);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => document.activeElement?.blur?.());
+
+    // In view: a short window, so the panel's body scrolls; scrolled to its
+    // foot, the rows are out of sight, and a step brings the active one in.
+    await page.setViewportSize({ width: 1280, height: 600 });
+    const where = () =>
+      page.evaluate(() => {
+        const body = document.querySelector('.panel--scene .panel__body');
+        const view = body.getBoundingClientRect();
+        const r = document.querySelector('.panel--scene .outliner__row--active').getBoundingClientRect();
+        return {
+          scrolls: body.scrollHeight > body.clientHeight + 1,
+          inside: r.top >= view.top - 0.5 && r.bottom <= view.bottom + 0.5,
+          scrollTop: Math.round(body.scrollTop),
+        };
+      });
+    await page.evaluate(() => {
+      const body = document.querySelector('.panel--scene .panel__body');
+      body.scrollTop = body.scrollHeight;
+    });
+    const hidden = await where();
+    t.ok(hidden.scrolls && !hidden.inside, `scrolled to its foot, the panel hides the active row (scrollTop ${hidden.scrollTop})`);
+    const next = await press('ArrowDown');
+    const shown = await where();
+    t.ok(shown.inside && shown.scrollTop < hidden.scrollTop, `a step to the ${next} scrolls its row into view (scrollTop ${shown.scrollTop})`);
+  },
+
+  async brushSize(page, base, t) {
+    await openForInput(page, base);
+    // The brush in hand: its index, the size the shell holds for it, the
+    // Tool panel's Size slider (null where there is none) and the rail's
+    // nub height in percent.
+    const size = () =>
+      page.evaluate(() => {
+        const { input } = window.__sculpt;
+        const row = [...document.querySelectorAll('.panel--sculpt label.compact')].find((l) => l.firstElementChild?.textContent === 'Size');
+        const nub = document.querySelector('.sculpt-slider[data-kind="size"] .sculpt-slider__nub');
+        return {
+          tool: input.currentToolIndex(),
+          held: input.getBrushRadius(),
+          slider: row ? Number(row.querySelector('input').value) : null,
+          rail: parseFloat(nub.style.bottom),
+        };
+      });
+    // The Size slider moved, as a drag moves it.
+    const setSize = (px) =>
+      page.evaluate((v) => {
+        const row = [...document.querySelectorAll('.panel--sculpt label.compact')].find((l) => l.firstElementChild?.textContent === 'Size');
+        const input = row.querySelector('input');
+        input.value = String(v);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }, px);
+    // Where the rail's nub sits for a size: log-mapped over 5..500.
+    const railAt = (v) => (Math.log(v / 5) / Math.log(100)) * 100;
+    const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    // Every brush's size, by its key.
+    const every = async () => {
+      const out = {};
+      for (const k of keys) {
+        await page.keyboard.press(k);
+        out[k] = Math.round((await size()).held * 100) / 100;
+      }
+      return out;
+    };
+    await page.evaluate(() => document.activeElement?.blur?.());
+
+    // Every brush starts at the one size they all shared.
+    const start = await every();
+    const first = start['1'];
+    t.ok(Object.values(start).every((v) => v === first), `every brush starts at the same size (${JSON.stringify(start)})`);
+
+    // Clay sized, then Inflate: each keeps its own.
+    await page.keyboard.press('3');
+    await setSize(120);
+    await page.keyboard.press('4');
+    let s = await size();
+    t.ok(near(s.held, first) && s.slider === Math.round(first), `Inflate is still at the starting size after clay was sized (${s.held.toFixed(2)}, slider ${s.slider})`);
+    await setSize(200);
+    await page.keyboard.press('3');
+    s = await size();
+    t.ok(near(s.held, 120) && s.slider === 120 && near(s.rail, railAt(120), 0.1), `back on clay by its key, 120 comes back, on the slider and the rail (${s.held.toFixed(2)}, slider ${s.slider}, rail ${s.rail}%)`);
+    await page.locator('.sculpt-toolbar__brushes .sculpt-toolbar__btn', { hasText: '4' }).click();
+    s = await size();
+    t.ok(s.tool === 1 && near(s.held, 200) && s.slider === 200 && near(s.rail, railAt(200), 0.1), `Inflate from the toolbar comes back at 200, on the slider and the rail (${s.held.toFixed(2)}, slider ${s.slider}, rail ${s.rail}%)`);
+    // Paint keeps its own size like any brush; the others are untouched.
+    await page.keyboard.press('0');
+    await setSize(90);
+    const sized = await every();
+    t.ok(
+      sized['3'] === 120 && sized['4'] === 200 && sized['0'] === 90 && keys.filter((k) => !'340'.includes(k)).every((k) => sized[k] === first),
+      `clay, Inflate and Paint keep their sizes and the rest the starting one (${JSON.stringify(sized)})`,
+    );
+
+    // Select and the gizmo have no size: no Size row, and the rail keeps
+    // the brush they go back to.
+    await page.keyboard.press('3');
+    await page.keyboard.press('q');
+    const selecting = await size();
+    await page.keyboard.press('q');
+    await page.keyboard.press('t');
+    const gizmo = await size();
+    await page.keyboard.press('t');
+    s = await size();
+    t.ok(
+      selecting.slider === null && gizmo.slider === null && near(selecting.held, 120) && near(gizmo.held, 120) && near(s.held, 120) && s.slider === 120,
+      `Select and the gizmo show no Size and leave clay at 120 (${selecting.held.toFixed(2)}, ${gizmo.held.toFixed(2)}, back ${s.held.toFixed(2)})`,
+    );
+
+    // Saved with the scene: a size per brush, the stand-ins (Smooth 3,
+    // Mask 10, the paint blur 14) left out.
+    const record = await page.evaluate(async () => {
+      const { file } = window.__sculpt;
+      window.__bozz = await file.pack();
+      return (await file.unpack(window.__bozz)).settings;
+    });
+    const table = record.radius ?? {};
+    t.ok(
+      record.worldScale === true && ['0', '1', '8'].every((k) => table[k] > 0) && !['3', '10', '14'].some((k) => k in table),
+      `the record carries a size per brush (${Object.keys(table).join(',')})`,
+    );
+    t.ok(near(table[0] / table[1], 120 / 200, 1e-6) && near(table[8] / table[1], 90 / 200, 1e-6), 'in world units, clay, Paint and Inflate in the ratio they were set');
+    // Changed after the save, so it is the open that brings them back, and
+    // the open says nothing to the autosave on their behalf.
+    await page.keyboard.press('3');
+    await setSize(60);
+    const told = await page.evaluate(async () => {
+      const { file, input } = window.__sculpt;
+      const ws = input.worldScale;
+      const was = [ws.onChange, input.onBrushSettingsChange];
+      let calls = 0;
+      ws.onChange = () => {
+        calls++;
+        was[0]?.();
+      };
+      input.onBrushSettingsChange = () => {
+        calls++;
+        was[1]?.();
+      };
+      try {
+        await file.open(window.__bozz);
+      } finally {
+        [ws.onChange, input.onBrushSettingsChange] = was;
+      }
+      return calls;
+    });
+    t.eq(told, 0, 'opening the file restores them silently');
+    const opened = await every();
+    t.ok(
+      opened['3'] === 120 && opened['4'] === 200 && opened['0'] === 90 && opened['1'] === first,
+      `and every brush comes back at its own size (${JSON.stringify(opened)})`,
+    );
+
+    // A scene from before: one radius and no table, written here by
+    // leaving the table out. Inflate is in hand, so it carries 200, and
+    // every brush takes that.
+    await page.keyboard.press('4');
+    const old = await page.evaluate(async () => {
+      const { file, input } = window.__sculpt;
+      const ws = input.worldScale;
+      const sizes = ws.serializeSizes;
+      ws.serializeSizes = () => undefined;
+      try {
+        window.__old = await file.pack();
+      } finally {
+        ws.serializeSizes = sizes;
+      }
+      const settings = (await file.unpack(window.__old)).settings;
+      return { table: 'radius' in settings, worldRadius: settings.worldRadius };
+    });
+    t.ok(!old.table && old.worldRadius > 0, `an old-style record has one world radius and no table (${old.worldRadius})`);
+    await page.keyboard.press('3');
+    await setSize(60);
+    await page.evaluate(() => window.__sculpt.file.open(window.__old));
+    const legacy = await every();
+    t.ok(Object.values(legacy).every((v) => v === 200), `opened, every brush is on the radius it carried (${JSON.stringify(legacy)})`);
+
+    // Screen scale: switching keeps each brush the size it looks, and the
+    // pixel sizes ride the file the same way.
+    const worldScale = () =>
+      page.evaluate(() => {
+        const box = [...document.querySelectorAll('.panel--sculpt label.checkbox')].find((l) => l.textContent.includes('World-scale size')).querySelector('input');
+        box.click();
+        return box.checked;
+      });
+    await page.keyboard.press('3');
+    await setSize(120);
+    await page.keyboard.press('4');
+    await setSize(40);
+    t.eq(await worldScale(), false, 'the World-scale box turns world scale off');
+    await page.keyboard.press('3');
+    const clayPx = (await size()).held;
+    await page.keyboard.press('4');
+    const inflatePx = (await size()).held;
+    t.ok(near(clayPx / inflatePx, 3, 0.01), `in screen scale clay and Inflate keep their sizes, as they look (${clayPx.toFixed(1)} and ${inflatePx.toFixed(1)} px)`);
+    await page.keyboard.press('3');
+    await setSize(80);
+    await page.keyboard.press('4');
+    await setSize(30);
+    const screen = await page.evaluate(async () => {
+      const { file } = window.__sculpt;
+      window.__screen = await file.pack();
+      return (await file.unpack(window.__screen)).settings;
+    });
+    t.ok(screen.worldScale === false && screen.radius?.[0] === 80 && screen.radius?.[1] === 30, `a screen-scale record carries pixels (${screen.radius?.[0]}, ${screen.radius?.[1]})`);
+    await page.keyboard.press('3');
+    await setSize(150);
+    await page.evaluate(() => window.__sculpt.file.open(window.__screen));
+    await page.keyboard.press('3');
+    const clayBack = (await size()).held;
+    await page.keyboard.press('4');
+    const inflateBack = (await size()).held;
+    t.ok(clayBack === 80 && inflateBack === 30, `opened, clay is 80 px again and Inflate 30 (${clayBack}, ${inflateBack})`);
+    t.eq(await worldScale(), true, 'and world scale turns back on');
+    await page.keyboard.press('3');
+    const clayWorld = (await size()).held;
+    await page.keyboard.press('4');
+    const inflateWorld = (await size()).held;
+    t.ok(near(clayWorld / inflateWorld, 80 / 30, 0.01), `with each brush still the size it looks (${clayWorld.toFixed(2)} and ${inflateWorld.toFixed(2)})`);
   },
 };

@@ -12,9 +12,19 @@ import type { BrushSymmetry } from './symmetry';
  * made.
  */
 export interface SculptSettings {
-  /** World-scale brush sizing, and the pinned radius when it is on. */
+  /**
+   * World-scale brush sizing, and the pinned radius when it is on. Since
+   * sizes went per brush, that is the brush in hand's, still written so an
+   * older build opens the scene at the size the work was left at; in a
+   * scene from before (no `radius`), every brush takes it.
+   */
   worldScale: boolean;
   worldRadius?: number;
+  /**
+   * Per-brush size, by vendor tool index: the pinned radius in world units
+   * while worldScale is on, screen pixels otherwise.
+   */
+  radius?: Record<number, number>;
   /** Per-brush pressure dynamics, keyed by the vendor tool index. */
   dynamics?: Record<number, BrushDynamics>;
   /** The paint brush's colour, sRGB hex. */

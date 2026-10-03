@@ -44,7 +44,7 @@ export class InputDebug {
     this.root = document.createElement('div');
     this.root.className = 'input-debug';
     document.body.appendChild(this.root);
-    this.push('input log ready - hold Negative, then draw');
+    this.push('input log ready - tap Negative to arm one stroke, or long-press to latch, then draw');
     for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
       window.addEventListener(type, this.onPointer as EventListener, true);
     }

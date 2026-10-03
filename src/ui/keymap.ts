@@ -95,6 +95,13 @@ export const ACTIONS: ActionDef[] = [
   { id: 'scene.mirror', label: 'Mirror the selected objects across the symmetry axis', group: 'Scene', mode: 'sculpt', chord: 'ctrl+m' },
   { id: 'scene.merge', label: 'Merge the selected objects into one', group: 'Scene', mode: 'sculpt', chord: 'ctrl+j' },
   { id: 'view.solo', label: 'Solo: show the active object alone (again brings the rest back)', group: 'Scene', mode: 'sculpt', chord: 'alt+q' },
+  // Separate actions rather than a Shift read inside two: a chord here is
+  // matched whole, so Shift+arrow is a chord of its own, and as one it can
+  // be rebound like any other.
+  { id: 'scene.prev', label: 'Previous object in the Scene list (wraps round)', group: 'Scene', mode: 'sculpt', chord: 'arrowup', repeat: true },
+  { id: 'scene.next', label: 'Next object in the Scene list (wraps round)', group: 'Scene', mode: 'sculpt', chord: 'arrowdown', repeat: true },
+  { id: 'scene.prevExtend', label: 'Extend the selection to the previous object', group: 'Scene', mode: 'sculpt', chord: 'shift+arrowup', repeat: true },
+  { id: 'scene.nextExtend', label: 'Extend the selection to the next object', group: 'Scene', mode: 'sculpt', chord: 'shift+arrowdown', repeat: true },
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },

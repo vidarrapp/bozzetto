@@ -11,6 +11,8 @@ import type { MaterialLibrary } from '../bridge/materials';
  * row is an eye (visibility), a padlock (edit lock), the name - click
  * selects, ctrl+click adds or removes, shift+click takes the range,
  * double-click renames in place - and, on the active row, a trash can.
+ * The up and down arrows walk the rows, wrapping at the ends, and pick
+ * each as a click would (with Shift, as a shift+click would).
  * Create, Duplicate, Delete, Mirror and Merge stack under the list, one per
  * row, and act on the whole selection; Solo, last in the stack, shows the
  * active object alone (alt+q's twin for a touch screen), and the panel
@@ -523,6 +525,67 @@ export class ScenePanel extends SidePanel {
     input.select();
   }
 
+  /**
+   * A row picked, the way a file list does it (owner request): a plain
+   * pick selects just this one, ctrl (cmd on a Mac) adds or removes it,
+   * shift takes everything from the active object to here. The row click
+   * and the arrow keys both come through here, so a step is a click on the
+   * row it lands on, and the gizmo and the highlights follow it alike.
+   */
+  private pick(mesh: SculptMesh, shift: boolean, ctrl: boolean): void {
+    const list = this.session.getMeshes();
+    if (shift) {
+      const from = list.indexOf(this.session.getMesh() as SculptMesh);
+      const to = list.indexOf(mesh);
+      const lo = from < 0 ? to : Math.min(from, to);
+      const hi = from < 0 ? to : Math.max(from, to);
+      // The picked one last, so it becomes the active object.
+      const range = list.slice(lo, hi + 1).filter((m) => m !== mesh);
+      this.session.selectAdd([...range, mesh]);
+    } else if (ctrl) {
+      if (this.session.getSelectedMeshes().includes(mesh)) this.session.selectRemove([mesh]);
+      else this.session.selectAdd([mesh]);
+    } else if (mesh !== this.session.getMesh() || this.session.getSelectedMeshes().length !== 1) {
+      this.session.selectSet([mesh]);
+    }
+  }
+
+  /**
+   * The up and down arrows: the row above or below the active one, round
+   * from the last to the first and back, picked as a click on it would be
+   * (`extend`: as a shift+click), then scrolled into view. Hidden and
+   * locked objects are rows like any other; the gizmo declines them as it
+   * does a click. A shift step that wraps is a shift+click on the far end,
+   * so it takes the whole list.
+   */
+  step(dir: 1 | -1, extend: boolean): void {
+    // A name being edited keeps the keys: the shell leaves a text field's
+    // keys alone, and a step from anywhere else would rebuild the rows,
+    // the field with them, under it.
+    if (this.renaming) return;
+    const list = this.session.getMeshes();
+    if (list.length === 0) return;
+    const at = list.indexOf(this.session.getMesh() as SculptMesh);
+    // With nothing active, down starts at the top and up at the bottom.
+    const to = at < 0 ? (dir > 0 ? 0 : list.length - 1) : (at + dir + list.length) % list.length;
+    this.pick(list[to], extend, false);
+    this.revealActive();
+  }
+
+  /**
+   * Scroll the panel's own body until the active row shows. Not
+   * scrollIntoView: that also scrolls whatever holds the panel, and a
+   * docked panel sits off the edge of the screen.
+   */
+  private revealActive(): void {
+    const row = this.listEl.querySelector<HTMLElement>('.outliner__row--active');
+    if (!row) return;
+    const view = this.body.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    if (r.top < view.top) this.body.scrollTop -= view.top - r.top;
+    else if (r.bottom > view.bottom) this.body.scrollTop += r.bottom - view.bottom;
+  }
+
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();
@@ -598,30 +661,7 @@ export class ScenePanel extends SidePanel {
           row.appendChild(del);
         }
 
-        // Multi-select in the list the way a file list does it (owner
-        // request): a plain click selects just this one, ctrl (cmd on a
-        // Mac) adds or removes it, shift takes everything from the active
-        // object to here.
-        row.addEventListener('click', (e) => {
-          const list = this.session.getMeshes();
-          if (e.shiftKey) {
-            const from = list.indexOf(this.session.getMesh() as SculptMesh);
-            const to = list.indexOf(mesh);
-            const lo = from < 0 ? to : Math.min(from, to);
-            const hi = from < 0 ? to : Math.max(from, to);
-            // The clicked one last, so it becomes the active object.
-            const range = list.slice(lo, hi + 1).filter((m) => m !== mesh);
-            this.session.selectAdd([...range, mesh]);
-          } else if (e.ctrlKey || e.metaKey) {
-            if (this.session.getSelectedMeshes().includes(mesh)) this.session.selectRemove([mesh]);
-            else this.session.selectAdd([mesh]);
-          } else if (
-            mesh !== this.session.getMesh() ||
-            this.session.getSelectedMeshes().length !== 1
-          ) {
-            this.session.selectSet([mesh]);
-          }
-        });
+        row.addEventListener('click', (e) => this.pick(mesh, e.shiftKey, e.ctrlKey || e.metaKey));
         return row;
       }),
     );

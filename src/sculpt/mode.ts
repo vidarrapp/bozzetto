@@ -708,6 +708,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     mirrorSelected: () => scenePanel?.mirrorActive(session.getSymmetryAxis()),
     mergeSelected: () => scenePanel?.mergeSelected(),
     toggleSolo: () => setSolo(!session.isSolo()),
+    stepObject: (dir, extend) => scenePanel?.step(dir, extend),
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;
@@ -788,6 +789,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       if (!active) return 1;
       return Math.max(1e-3, liveWorldBox(active).getBoundingSphere(new Sphere()).radius);
     },
+    () => input.brushInHand(),
   );
   input.worldScale = worldScale;
 
@@ -846,9 +848,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   }
   // On by default: a brush you can rely on is worth more than one that
   // rescales with the camera, and the screen-pixel behaviour is a tick away.
-  // Enabled here (not by a field default) so the pinned world radius is
+  // Begun here (not by a field default) so the pinned world radius is
   // converted from the tool's starting pixel size at the entry distance.
-  worldScale.setEnabled(true);
+  worldScale.begin();
   input.install();
   // The log wants to know what the shell did with each pointer, not just
   // that one arrived: the two together tell a dropped Pencil event apart
@@ -887,6 +889,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const collectSettings = (): SculptSettings => ({
     worldScale: worldScale.isEnabled(),
     worldRadius: worldScale.isEnabled() ? worldScale.worldRadius() : undefined,
+    radius: worldScale.serializeSizes(),
     dynamics: input.dynamics.serialize(),
     paintColor: paintColorOf(),
     spacing: input.serializeSpacing(),
@@ -919,6 +922,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.refreshState();
     if (!settings) return;
     worldScale.restore(settings.worldScale, settings.worldRadius);
+    worldScale.loadSizes(settings.radius);
     input.dynamics.load(settings.dynamics);
     input.loadSpacing(settings.spacing);
     input.loadAlphas(settings.alphas, settings.rakeAlpha);

@@ -48,6 +48,11 @@ export interface InputShellHooks {
   mergeSelected(): void;
   /** Alt+q: show the active object alone, or bring the others back. */
   toggleSolo(): void;
+  /**
+   * Up / down arrows: the next or previous row of the Scene list becomes
+   * the active object, as a click on it would (extend: as a shift+click).
+   */
+  stepObject(dir: 1 | -1, extend: boolean): void;
   /** Stroke end: remember where the work was, WITHOUT moving the view. */
   focusEdit(point: [number, number, number]): void;
   /** A paint stroke began: the active object owns its vertex colours now. */
@@ -724,10 +729,18 @@ export class InputShell {
     return typeof this.currentTool()._intensity === 'number';
   }
 
-  /** Set radius directly (slider drags); flashes a centered preview ring. */
+  /**
+   * Set radius directly (slider drags); flashes a centered preview ring.
+   * Every brush keeps its own, so this sizes the brush in hand alone.
+   */
   setBrushRadius(px: number): void {
-    if (this.worldScale?.isEnabled()) this.worldScale.setSliderValue(px);
-    else this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
+    if (this.worldScale?.isEnabled()) {
+      this.worldScale.setSliderValue(px); // which tells the autosave itself
+    } else {
+      this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
+      // The pixel sizes ride the scene record too.
+      this.onBrushSettingsChange?.();
+    }
     this.syncCursorBrush();
     this.centerFlash();
   }
@@ -1655,6 +1668,21 @@ export class InputShell {
       case 'view.solo':
         this.hooks.toggleSolo();
         return this.claim(e);
+      case 'scene.prev':
+      case 'scene.next':
+      case 'scene.prevExtend':
+      case 'scene.nextExtend':
+        // An open File or Edit menu walks its items on these keys, and its
+        // listener comes after this one.
+        if ((e.target as Element | null)?.closest?.('[role="menu"]')) return;
+        // Not while a stroke or a gizmo drag holds the active object: the
+        // stroke would carry on into the next object, and the drag would
+        // move it.
+        if (this.pointerId === -1 && s._action === Enums.Action.NOTHING && !this.transform?.isDragging()) {
+          const down = action.id === 'scene.next' || action.id === 'scene.nextExtend';
+          this.hooks.stepObject(down ? 1 : -1, action.id.endsWith('Extend'));
+        }
+        return this.claim(e);
       case 'view.frameAll':
         this.hooks.frameAll();
         return this.claim(e);
@@ -1811,6 +1839,15 @@ export class InputShell {
 
   currentToolIndex(): number {
     return this.session.getSculptManager().getToolIndex();
+  }
+
+  /**
+   * The brush whose size is in play: the current tool, except while Shift
+   * or Ctrl has swapped Smooth or Mask in for a stroke, when it is the
+   * brush they stand in for.
+   */
+  brushInHand(): number {
+    return this.maskPrevTool >= 0 ? this.maskPrevTool : this.currentToolIndex();
   }
 
   /** How many strokes have started (monotonic). */

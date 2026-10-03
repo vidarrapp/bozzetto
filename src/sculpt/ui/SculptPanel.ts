@@ -141,9 +141,10 @@ export class SculptPanel extends SidePanel {
         'Alt + click picks a colour off the model. Drag the swatch onto the view to pick from the screen.';
       dyn.appendChild(hint);
     }
-    // Radius and strength are per-tool in the vendored core, so these are
-    // rebuilt with the rest of the row set when the brush changes, and
-    // re-synced by refreshBrushValues when the rail or a hotkey moves them.
+    // Radius and strength are per tool (the vendored core keeps both, and
+    // world scale a radius per brush), so these are rebuilt with the rest
+    // of the row set when the brush changes, and re-synced by
+    // refreshBrushValues when the rail or a hotkey moves them.
     if (this.input.hasBrushRadius()) {
       const sizeRow = compactRange(
         'Size',
