@@ -312,7 +312,10 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.3.3
+
+**Carve by tap, arrows through the outliner, size per brush, and a stall log.** Desktop app 0.5.3.
+
 
 - **Timelapse capture starts off, for everyone.** It used to start on for the signed-in owner; now nobody records until they tick **Record timelapse** in the Capture panel, and the choice, on or off, is remembered on the device as before. A frame per stroke is a merge of the scene and an IndexedDB write after every stroke, and those writes are one suspect in the freezes seen on an iPad.
 - **The autosave writes at most once a minute.** It wrote a second and a half after every burst of strokes, and each write serialises the whole scene and hands it to IndexedDB, which Safari can hold the page up on. Now the first change after a quiet spell is saved five seconds later and anything after that once a minute at most, however steadily you sculpt (every five minutes for very large meshes, as before). Leaving sculpt mode or the page, or the app going to the background, still saves at once; a crash can cost up to a minute of work.
