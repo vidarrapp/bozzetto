@@ -311,9 +311,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.3.2
 
-**Fingers navigate, and the iPad keeps out of the way.**
+**Fingers navigate, and the iPad keeps out of the way.** Desktop app 0.5.2.
 
 - **Fingers navigate; the Pencil and the mouse sculpt.** In every tool, brushes, Select and the gizmo alike, one finger orbits and two pan and zoom, and a finger never starts a stroke, a marquee, a gizmo drag or a colour sample. The Select tool no longer loses its navigation to the marquee. A finger tap does what a click does where a tap means something: in the Select tool it selects what is under it, or clears the selection on nothing, and under the gizmo it selects the object tapped, without nudging the view first. Where the system delivers a pen and a finger together (Surface, Android), a pen landing while a finger turns the view takes over and the view stops where it is, and a finger that lands during a stroke does nothing until it lifts; on an iPad a fingertip on the glass still hides the Pencil until it lifts, below anything a web page can reach (a palm does not). **Edit → Preferences** has the choice, **Fingers: navigate only** (the default) or **Fingers sculpt too**, the old behaviour, for sculpting without a pen; it is kept in the browser with the hotkeys.
 - **Nothing from the OS on a long press.** A finger or Pencil held still on the canvas (an armature ball included), the toolbar, the brush sliders, undo and redo, or a panel's edge tab no longer arms Safari's long press, which cancels the touch at about half a second: a held undo could stop repeating, a paused slider or ball drag could let go, and a slow tap on a button could come to nothing. The toolbar buttons and the panel tabs act on the lift of a tap now, which is what lets them refuse it. There is no context menu outside text fields and links, no long-press callout or loupe, no page pinch or double-tap zoom, no rubber-banding, no text selection on labels, and no image drags out of the app. A press anywhere outside a text field (an object being renamed, say) lets go of it, so the keyboard and its dictation key go away. What iPadOS keeps for itself, the system edge swipes, the Pencil's corner swipes and dictation inside a field you are typing in, a web page cannot turn off.
