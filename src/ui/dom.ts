@@ -85,10 +85,7 @@ export function onTap(btn: HTMLElement, action: () => void): void {
   btn.addEventListener('pointerup', (e) => {
     if (e.pointerId !== pressed) return;
     pressed = -1;
-    // A touch stays with the button it landed on; a finger slid off before
-    // lifting has changed its mind, as it would on a native button.
-    const r = btn.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    if (!liftedOn(btn, e)) return;
     actedAt = performance.now();
     action();
   });
@@ -100,8 +97,18 @@ export function onTap(btn: HTMLElement, action: () => void): void {
   });
 }
 
+/**
+ * Whether a lift landed on the button it pressed. A touch stays with the
+ * button it landed on; a finger slid off before lifting has changed its
+ * mind, as it would on a native button.
+ */
+export function liftedOn(btn: HTMLElement, e: PointerEvent): boolean {
+  const r = btn.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
 /** A pointer click this soon after a lift that acted is that lift's own click. */
-const TAP_CLICK_MS = 500;
+export const TAP_CLICK_MS = 500;
 
 export function div(className: string): HTMLDivElement {
   const d = document.createElement('div');

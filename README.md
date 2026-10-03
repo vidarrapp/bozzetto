@@ -37,7 +37,7 @@ Sculpts autosave to browser storage whether installed or not. Nothing uploads un
 
 Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
 
-- **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush.
+- **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush. Without a keyboard, tap the toolbar's **Negative** button to carve the next stroke, or long-press it to carve every stroke until you tap it again.
 - **Brush character** is tunable per tool. Clay lays ribbon-like strips. Move starts on the model, like every brush, and drags a soft ball of it, with a Falloff slider from soft to sharp. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
 - **Stencils.** The Rake combs grooves through a stroke-aligned stencil. Clay can take one too, off by default. A Spacing slider sets how far the brush travels between stamps.
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
@@ -51,7 +51,7 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
 - **Scene library**: **Save to library** keeps a sculpt on the device. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. Separate from the autosave, which still resumes your work in progress.
-- **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use.
+- **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use. Carving is a tap on **Negative** rather than a finger held on it while you draw, because a fingertip on the glass hides the Pencil from the page until it lifts.
 - **Reload-safe**: every edit autosaves to IndexedDB. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library.
 
 ## Desktop app
@@ -310,6 +310,10 @@ guide (`H`) shows whatever keys are set.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier.
 
 ## Changelog
+
+### Unreleased
+
+- **Negative carves the next stroke on a tap.** A tap on the toolbar's **Negative** button arms carving for one stroke, with the Pencil or the mouse, and the arm clears when that stroke ends; you can orbit first, a stroke that cannot carve (a smooth, a mask) leaves it armed, and a second tap disarms it. Armed, the button is outlined in rust. A long press, just over half a second, latches carving on for every stroke, as a tap did before, and fills the button; a tap lets it go. `Alt` does the opposite of whatever the button says, so an `Alt` stroke while it is armed raises, and spends the arm. There is no hold-to-carve on an iPad, and a web page cannot offer one: a fingertip on the glass hides the Pencil from the page until the finger lifts, so a finger held on the button would stop the very stroke it was meant to carve.
 
 ### v1.3.2
 

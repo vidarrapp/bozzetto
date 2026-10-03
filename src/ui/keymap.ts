@@ -41,7 +41,7 @@ export interface ActionDef {
 export const ACTIONS: ActionDef[] = [
   // --- sculpt: sculpting ---
   { id: 'gesture.sculpt', label: 'Sculpt (pen or mouse; a finger orbits unless Preferences lets it sculpt)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
-  { id: 'gesture.negative', label: 'Negative (carve)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag' },
+  { id: 'gesture.negative', label: 'Negative (carve; a tap on the toolbar button carves the next stroke, a long press every stroke until a tap)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag, or the button' },
   { id: 'gesture.smooth', label: 'Smooth', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Shift + drag' },
   { id: 'brush.size', label: 'Brush size (hold, then drag with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 'b', hold: true },
   { id: 'brush.strength', label: 'Brush strength (hold, then drag up/down with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 's', hold: true },

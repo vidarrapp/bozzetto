@@ -1,8 +1,8 @@
 // The smoke suites: boot, the Create menu's primitives and base meshes,
 // the scene-file round trip, Armature mode from the gallery's Create tile
-// on, and Sculpt's input under fingers, the pen and the zoom. Each gets
-// (page, base, t) - a fresh page, the server's origin, and the check
-// collector.
+// on, and Sculpt's input under fingers, the pen, the zoom and the Negative
+// button. Each gets (page, base, t) - a fresh page, the server's origin,
+// and the check collector.
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -424,10 +424,14 @@ async function devices(page) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   // Fingers are numbered by their place in `points`, so a finger keeps its
-  // id from start to end.
-  const touch = (type, points) =>
-    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1 })) });
-  const pen = (type, [x, y], down) =>
+  // id from start to end. `timestamp` (seconds since the epoch) stamps an
+  // event as the platform would; left out, the browser stamps it on arrival.
+  const touch = (type, points, timestamp) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1 })), timestamp });
+  const mouse = (type, [x, y], timestamp) =>
+    cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1, timestamp });
+  // `modifiers` is the protocol's bit set: 1 Alt, 2 Ctrl, 4 Meta, 8 Shift.
+  const pen = (type, [x, y], down, modifiers = 0) =>
     cdp.send('Input.dispatchMouseEvent', {
       type,
       x,
@@ -437,11 +441,13 @@ async function devices(page) {
       clickCount: type === 'mouseMoved' ? 0 : 1,
       pointerType: 'pen',
       force: down ? 0.6 : 0,
+      modifiers,
     });
   const mid = (path) => Math.floor(path.length / 2);
   return {
     touch,
     pen,
+    mouse,
     /** One finger along a path; `during` runs halfway and its answer is returned. */
     async finger(path, during) {
       let seen;
@@ -463,16 +469,16 @@ async function devices(page) {
       await touch('touchStart', [at]);
       await touch('touchEnd', []);
     },
-    /** The pen down along a path, hovering in first as a Pencil does. */
-    async penDrag(path, during) {
+    /** The pen down along a path, hovering in first as a Pencil does; modifier keys held throughout. */
+    async penDrag(path, during, modifiers = 0) {
       let seen;
-      await pen('mouseMoved', path[0], false);
-      await pen('mousePressed', path[0], true);
+      await pen('mouseMoved', path[0], false, modifiers);
+      await pen('mousePressed', path[0], true, modifiers);
       for (let i = 1; i < path.length; i++) {
-        await pen('mouseMoved', path[i], true);
+        await pen('mouseMoved', path[i], true, modifiers);
         if (during && i === mid(path)) seen = await during();
       }
-      await pen('mouseReleased', path[path.length - 1], false);
+      await pen('mouseReleased', path[path.length - 1], false, modifiers);
       return seen;
     },
   };
@@ -1999,5 +2005,268 @@ export const suites = {
     await rename();
     await dev.tap(empty);
     t.ok(await page.evaluate(() => !document.querySelector('.outliner__rename') && document.activeElement === document.body), 'so does a finger tap');
+  },
+
+  // The Negative button (owner request): a tap carves the next stroke and
+  // no more, a long press carves every stroke until a tap, and Alt does the
+  // opposite of whatever the button says. Judged on the clay itself: which
+  // way the vertices a pen stroke moved went along their own normals, in
+  // (carved) or out (raised). The clay brush only ever moves vertices from
+  // one side of its plane, so the sign is clean.
+  //
+  // The presses on the button carry the platform's timestamps, as a real
+  // finger's do: the button times a press by its events' own clocks, and
+  // software GL here can spend most of a second on a frame, which without
+  // them would stretch a tap into a long press.
+  async carve(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3'); // Standard clay
+    await page.keyboard.press('f');
+    await settle(page);
+    const home = await camera(page);
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    const path = line([cx - 90, cy - 20], [cx + 90, cy + 20]);
+    const ends = [await probe(page, path[0]), await probe(page, path[path.length - 1])];
+    t.ok(ends.every((p) => p.canvas && p.hit), 'the test stroke runs across bare canvas over the sphere');
+    const ALT = 1;
+    const SHIFT = 8;
+    const button = await page.evaluate(() => {
+      const r = document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    });
+    // What the shell will do with the next stroke, and what the button shows.
+    const state = () =>
+      page.evaluate(() => {
+        const { input } = window.__sculpt;
+        const b = document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn');
+        const look = b.classList.contains('sculpt-toolbar__btn--active')
+          ? 'latched'
+          : b.classList.contains('sculpt-toolbar__btn--armed')
+            ? 'armed'
+            : 'off';
+        return { armed: input.getNegativeArmed(), latched: input.getNegativeBase(), look };
+      });
+    const show = (s) => `${s.look}; armed ${s.armed}, latched ${s.latched}`;
+    const isOff = (s) => !s.armed && !s.latched && s.look === 'off';
+    const isArmed = (s) => s.armed && !s.latched && s.look === 'armed';
+    const isLatched = (s) => s.latched && !s.armed && s.look === 'latched';
+    const now = () => Date.now() / 1000;
+    const tap = async () => {
+      const t0 = now();
+      await dev.touch('touchStart', [button], t0);
+      await dev.touch('touchEnd', [], t0 + 0.05);
+    };
+    // A finger held on the button until the latch shows while it is still
+    // down, then lifted at least 700 ms after it landed.
+    const longPress = async () => {
+      const t0 = now();
+      await dev.touch('touchStart', [button], t0);
+      await page.waitForFunction(() => window.__sculpt.input.getNegativeBase(), null, { timeout: 10_000, polling: 50 });
+      const held = await state();
+      await dev.touch('touchEnd', [], Math.max(now(), t0 + 0.7));
+      return held;
+    };
+    // One pen stroke along the path: how many vertices it moved, and their
+    // mean travel along the normals they had before it (negative = in).
+    const stroke = async (modifiers = 0) => {
+      const before = await strokeCount(page);
+      await page.evaluate(() => {
+        const m = window.__sculpt.session.getMesh();
+        const n = m.getNbVertices() * 3;
+        window.__carveFrom = { v: m.getVertices().slice(0, n), n: m.getNormals().slice(0, n) };
+      });
+      await dev.penDrag(path, undefined, modifiers);
+      await settle(page);
+      const r = await page.evaluate(() => {
+        const m = window.__sculpt.session.getMesh();
+        const v = m.getVertices();
+        const { v: v0, n } = window.__carveFrom;
+        if (m.getNbVertices() * 3 !== v0.length) return { moved: -1, along: 0 };
+        let moved = 0;
+        let along = 0;
+        for (let i = 0; i < v0.length; i += 3) {
+          const dx = v[i] - v0[i];
+          const dy = v[i + 1] - v0[i + 1];
+          const dz = v[i + 2] - v0[i + 2];
+          if (dx * dx + dy * dy + dz * dz < 1e-14) continue;
+          moved++;
+          along += dx * n[i] + dy * n[i + 1] + dz * n[i + 2];
+        }
+        return { moved, along: moved ? along / moved : 0 };
+      });
+      return { ...r, began: (await strokeCount(page)) - before };
+    };
+    const showStroke = (r) => `${r.moved} vertices moved, ${r.along.toExponential(2)} along the normal`;
+    const carved = (r) => r.began === 1 && r.moved > 0 && r.along < 0;
+    const raised = (r) => r.began === 1 && r.moved > 0 && r.along > 0;
+
+    let s = await state();
+    t.ok(isOff(s), `Negative starts off (${show(s)})`);
+    let r = await stroke();
+    t.ok(raised(r), `a plain pen stroke raises the clay (${showStroke(r)})`);
+
+    // (1) A tap arms one stroke: that stroke carves, spends the arm, and
+    // the next one raises again.
+    await tap();
+    s = await state();
+    t.ok(isArmed(s), `a tap on Negative arms it, with the lighter look (${show(s)})`);
+    r = await stroke();
+    t.ok(carved(r), `the next pen stroke carves (${showStroke(r)})`);
+    s = await state();
+    t.ok(isOff(s), `and spends the arm as it ends (${show(s)})`);
+    r = await stroke();
+    t.ok(raised(r), `so the stroke after it raises (${showStroke(r)})`);
+
+    // (2) A second tap disarms.
+    await tap();
+    await tap();
+    s = await state();
+    t.ok(isOff(s), `a tap then a second tap leaves nothing armed (${show(s)})`);
+    r = await stroke();
+    t.ok(raised(r), `and the next stroke raises (${showStroke(r)})`);
+
+    // The arm waits: no timeout, a pen orbit off the model does not spend
+    // it, nor does a stroke that cannot carve (Shift smooths).
+    await tap();
+    const empty = await emptySpot(page);
+    t.ok(!!empty, 'there is bare canvas off the sphere to orbit from');
+    const strokes = await strokeCount(page);
+    await dev.penDrag(line(empty, [empty[0] + 60, empty[1] + 20], 2));
+    await settle(page);
+    t.ok(camMoved(home, await camera(page)) > 1 && (await strokeCount(page)) === strokes, 'a pen drag off the model orbits, with no stroke');
+    s = await state();
+    t.ok(isArmed(s), `and leaves the arm set (${show(s)})`);
+    await restoreCamera(page, home);
+    r = await stroke(SHIFT);
+    s = await state();
+    t.ok(r.began === 1 && isArmed(s), `a Shift (smooth) stroke leaves it armed too (${show(s)})`);
+    r = await stroke();
+    s = await state();
+    t.ok(carved(r) && isOff(s), `the next clay stroke carves and spends it (${showStroke(r)}; ${show(s)})`);
+
+    // Alt with the arm set inverts the inverted stroke, as it does a
+    // latched one, and the stroke still spends the arm.
+    await tap();
+    r = await stroke(ALT);
+    s = await state();
+    t.ok(raised(r), `armed, an Alt stroke raises (${showStroke(r)})`);
+    t.ok(isOff(s), `and spends the arm (${show(s)})`);
+
+    // (3) A long press latches: every stroke carves until a tap. Nothing
+    // is decided at the press itself (read in the event's own task, after
+    // the button's handler).
+    await page.evaluate(() =>
+      window.addEventListener(
+        'pointerdown',
+        () => {
+          const { input } = window.__sculpt;
+          window.__atDown = { armed: input.getNegativeArmed(), latched: input.getNegativeBase() };
+        },
+        { once: true },
+      ),
+    );
+    const held = await longPress();
+    const atDown = await page.evaluate(() => window.__atDown);
+    s = await state();
+    t.ok(!!atDown && !atDown.armed && !atDown.latched, `a press decides nothing as it lands (${JSON.stringify(atDown)})`);
+    t.ok(isLatched(held), `held, it latches while still down, with the filled look (${show(held)})`);
+    t.ok(isLatched(s), `and the lift, 700 ms after the press, changes nothing (${show(s)})`);
+    r = await stroke();
+    const second = await stroke();
+    t.ok(carved(r) && carved(second), `latched, two strokes in a row both carve (${showStroke(r)}; ${showStroke(second)})`);
+    s = await state();
+    t.ok(isLatched(s), `and it is still latched after them (${show(s)})`);
+
+    // (4) Alt with the latch inverts as before.
+    r = await stroke(ALT);
+    t.ok(raised(r), `latched, an Alt stroke raises (${showStroke(r)})`);
+    s = await state();
+    t.ok(isLatched(s), `and leaves the latch on (${show(s)})`);
+    await tap();
+    s = await state();
+    t.ok(isOff(s), `a tap lets go of the latch (${show(s)})`);
+    r = await stroke();
+    t.ok(raised(r), `and strokes raise again (${showStroke(r)})`);
+
+    // A long press over an arm latches and drops the arm, which would
+    // otherwise turn the first latched stroke back over.
+    await tap();
+    s = await longPress();
+    t.ok(isLatched(s), `a long press while armed latches, arm dropped (${show(s)})`);
+    await tap();
+    t.ok(isOff(await state()), 'and a tap clears it');
+
+    // A busy page: the lift, stamped 50 ms after its press as the platform
+    // stamps it, only gets through after the timer has shown the latch.
+    // It is still a tap.
+    let t0 = now();
+    await dev.touch('touchStart', [button], t0);
+    await page.waitForFunction(() => window.__sculpt.input.getNegativeBase(), null, { timeout: 10_000, polling: 50 });
+    await dev.touch('touchEnd', [], t0 + 0.05);
+    s = await state();
+    t.ok(isArmed(s), `a tap whose lift reaches a busy page after the timer ran is still a tap (${show(s)})`);
+    await tap();
+
+    // The press itself: the mouse, the keyboard, a slid-off finger, a
+    // cancelled touch and a lost window.
+    const click = async (ms) => {
+      const t1 = now();
+      await dev.mouse('mousePressed', button, t1);
+      if (ms > 100) await page.waitForFunction(() => window.__sculpt.input.getNegativeBase(), null, { timeout: 10_000, polling: 50 });
+      await dev.mouse('mouseReleased', button, Math.max(now(), t1 + ms / 1000));
+    };
+    await click(50);
+    s = await state();
+    t.ok(isArmed(s), `a mouse click arms it once, its click event not counted again (${show(s)})`);
+    await click(50);
+    t.ok(isOff(await state()), 'a second click disarms it');
+    await click(700);
+    s = await state();
+    t.ok(isLatched(s), `a mouse held 700 ms latches, and the click after the lift does not undo it (${show(s)})`);
+    const focusLeft = await page.evaluate(() => document.activeElement?.className ?? '');
+    t.ok(!/sculpt-toolbar/.test(focusLeft), `the press leaves no focus on the button (${focusLeft || 'body'})`);
+    await click(50);
+    t.ok(isOff(await state()), 'a mouse click lets go of the latch');
+    await page.evaluate(() => document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').focus());
+    await page.keyboard.press('Enter');
+    s = await state();
+    t.ok(isArmed(s), `Enter on the focused button arms it, as a tap does (${show(s)})`);
+    await page.keyboard.press('Enter');
+    t.ok(isOff(await state()), 'and Enter again disarms it');
+    await page.evaluate(() => document.activeElement?.blur());
+    t0 = now();
+    await dev.touch('touchStart', [button], t0);
+    await dev.touch('touchMove', [[button[0] + 120, button[1] - 90]], t0 + 0.04);
+    await dev.touch('touchEnd', [], t0 + 0.08);
+    s = await state();
+    t.ok(isOff(s), `a finger slid off the button before lifting changes nothing, as on any toolbar button (${show(s)})`);
+    t0 = now();
+    await dev.touch('touchStart', [button], t0);
+    await dev.touch('touchCancel', [], t0 + 0.05);
+    s = await state();
+    t.ok(isArmed(s), `a touch cancelled before the long press counts as the tap (${show(s)})`);
+    await tap();
+    await page.evaluate(() => window.addEventListener('pointerdown', () => window.dispatchEvent(new Event('blur')), { once: true }));
+    t0 = now();
+    await dev.touch('touchStart', [button], t0);
+    await page.waitForTimeout(800);
+    const blurred = await state();
+    await dev.touch('touchEnd', [], Math.max(now(), t0 + 0.8));
+    s = await state();
+    t.ok(isOff(blurred) && isOff(s), `a press the window loses focus during is neither a long press nor a tap (${show(blurred)}, then ${show(s)})`);
+    t.ok(
+      await page.evaluate(
+        () => !document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+      ),
+      'and the button still refuses the context menu',
+    );
+
+    // The hotkey guide says the button too.
+    const guide = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.help-guide .help-row')].find((x) => /^Negative/.test(x.lastElementChild?.textContent ?? ''));
+      return row ? row.textContent : null;
+    });
+    t.ok(!!guide && /Alt \+ drag/.test(guide) && /button/.test(guide), `the hotkey guide's Negative row names Alt and the button (${guide})`);
   },
 };

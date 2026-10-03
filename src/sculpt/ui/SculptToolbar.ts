@@ -7,7 +7,7 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import '@flaticon/flaticon-uicons/css/solid/straight.css';
 import '@flaticon/flaticon-uicons/css/thin/straight.css';
 import type { InputShell } from '../bridge/InputShell';
-import { onTap } from '../../ui/dom';
+import { liftedOn, onTap, TAP_CLICK_MS } from '../../ui/dom';
 
 // Inline-SVG overrides: an ./icons/<slot>.svg (slots below, e.g. flatten.svg
 // or negative.svg) replaces that button's font glyph at build time. This is
@@ -20,6 +20,22 @@ const svgIcons = import.meta.glob('./icons/*.svg', {
 
 function svgFor(slot: string): string | null {
   return svgIcons[`./icons/${slot}.svg`] ?? null;
+}
+
+/**
+ * How long a press on Negative lasts before it latches carving instead of
+ * arming one stroke: well past the slowest deliberate tap, and still quick
+ * to reach on purpose.
+ */
+const LATCH_MS = 600;
+
+/**
+ * When an input event happened, by the platform's own clock, so a press
+ * lasts as long as it was held however late a busy page got to its
+ * events. A browser that leaves the stamp out is read at arrival instead.
+ */
+function eventTime(e: Event): number {
+  return e.timeStamp > 0 ? e.timeStamp : performance.now();
 }
 
 /**
@@ -53,15 +69,13 @@ export const TOOL_NAMES: Record<number, string> = {
  * this is the native way to invert strokes and swap brushes; buttons and
  * hotkeys stay in sync.
  *
- * Negative is a toggle you can also hold. Holding it while you draw mirrors
- * alt, and it took an on-device input log to make it work: a STATIONARY
- * finger on a control makes iOS arm its callout/drag gesture at about
- * 450ms, at which point Safari cancels the touch and then ignores the
- * Pencil for the rest of the interaction. Suppressing that gesture is the
- * fix (see the touchstart handler and the CSS beside it); the toggle
- * remains the guaranteed path underneath, since a press decides on its own
- * and never needs a release to arrive. alt still flips relative to whatever
- * the button says, so keyboard users lose nothing either way.
+ * Negative carves two ways, and neither keeps a finger on the glass while
+ * the Pencil draws: on an iPad a fingertip anywhere in the page hides the
+ * Pencil from it until the finger lifts, below anything a web page can
+ * reach (plan 6.6e), so hold-to-carve cannot be offered there at all. A
+ * TAP arms carving for the next stroke, which spends it; a LONG PRESS
+ * latches carving on until a tap lets go. Alt does the opposite of
+ * whatever the button says, so keyboard users lose nothing either way.
  */
 export class SculptToolbar {
   /** Toolbar transform toggle (mode.ts owns the gizmo). */
@@ -87,33 +101,109 @@ export class SculptToolbar {
   /** Set by mode.ts: a direct hide/show switch for the toolbar button. */
   onToggleChrome: (() => void) | null = null;
   private hideBtn!: HTMLButtonElement;
-  /** Pointer currently holding Negative down, or -1. */
-  private negHoldId = -1;
-  /** Stroke count when the press landed: tells a hold-and-draw from a tap. */
-  private negDownStrokes = 0;
+  /**
+   * The press on Negative, from its pointerdown to its lift: its pointer,
+   * when it went down by the event's clock, and, once the timer has
+   * latched, what the button said before, for a lift that turns out to
+   * have come in time.
+   */
+  private negPress: {
+    pointerId: number;
+    downAt: number;
+    before: { latched: boolean; armed: boolean } | null;
+  } | null = null;
+  private negTimer = 0;
+  /** When the last press on Negative ended; a mouse's click right after it is that press's own. */
+  private negPressEndedAt = -Infinity;
 
   /**
-   * The lift is watched on the WINDOW rather than the button, because once
-   * the button stops capturing, the release can land anywhere - and on a
-   * touch device it routinely does.
-   *
-   * Correctness does not DEPEND on this arriving, which is what kept the
-   * button usable through three rounds of chasing the iOS gesture bug: a
-   * press while carving is already on turns it OFF, so the button is a
-   * toggle that cannot get stuck whatever happens to the release, and this
-   * handler only adds the momentary behaviour on top.
+   * The timer is ours, not the OS's: the press starts it, and running out
+   * with the press still down is the long press, which latches there and
+   * then, under the finger. A lift before LATCH_MS is a tap; the lift's
+   * own timestamp says which it was (see onNegativeUp). No
+   * setPointerCapture: capturing a touch pointer and then putting a second
+   * one down makes Safari cancel the captured one.
    */
-  private readonly onWindowPointerUp = (e: PointerEvent): void => {
-    if (e.pointerId !== this.negHoldId) return;
-    this.negHoldId = -1;
-    // Drew while holding: that was a modifier press, so it ends with the
-    // lift. Lifted without drawing: that was a tap, and a tap toggles on
-    // and stays on.
-    if (this.input.strokeCount() > this.negDownStrokes) this.setNegative(false);
+  private readonly onNegativeDown = (e: PointerEvent): void => {
+    // The press onTap counts: the primary button only, and no focus left
+    // on the button for Tab or Space to land on.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    clearTimeout(this.negTimer);
+    this.negPress = { pointerId: e.pointerId, downAt: eventTime(e), before: null };
+    this.negTimer = window.setTimeout(this.onNegativeHeld, LATCH_MS);
   };
 
-  private setNegative(on: boolean): void {
-    this.input.setNegativeBase(on);
+  /** Still down when the timer ran out: the long press shows, and latches. */
+  private readonly onNegativeHeld = (): void => {
+    this.negTimer = 0;
+    const press = this.negPress;
+    if (!press) return;
+    press.before = { latched: this.input.getNegativeBase(), armed: this.input.getNegativeArmed() };
+    this.latchNegative();
+  };
+
+  /**
+   * The lift is watched on the WINDOW, because a mouse released off the
+   * button never tells the button, and the timer must stop all the same.
+   */
+  private readonly onNegativeUp = (e: PointerEvent): void => {
+    const press = this.negPress;
+    if (!press || e.pointerId !== press.pointerId) return;
+    this.endNegativePress();
+    // The events' own times decide; the timer only shows a long press while
+    // it is held. A main thread busy past LATCH_MS (a heavy frame, an
+    // autosave) gets to the lift after the timer has run, and a tap must
+    // not latch for that, nor a long press arm.
+    if (eventTime(e) - press.downAt >= LATCH_MS) {
+      if (!press.before) this.latchNegative();
+      return; // a long press: its lift changes nothing
+    }
+    if (press.before) {
+      // The timer ran first on a busy page; this was a tap all along.
+      this.input.setNegativeBase(press.before.latched);
+      this.input.setNegativeArmed(press.before.armed);
+    }
+    // A tap, unless the pointer slid off the button before lifting, which
+    // is a change of mind here as it is for onTap. A cancel counts as the
+    // tap (owner call): the press was made, and the OS ending it early
+    // does not make it a long one.
+    if (e.type === 'pointerup' && !liftedOn(this.negativeBtn, e)) {
+      this.refresh();
+      return;
+    }
+    this.tapNegative();
+  };
+
+  /** The window lost focus mid-press: neither a tap nor a long press. */
+  private readonly onNegativeBlur = (): void => {
+    if (this.negPress) this.endNegativePress();
+  };
+
+  private endNegativePress(): void {
+    clearTimeout(this.negTimer);
+    this.negTimer = 0;
+    this.negPress = null;
+    this.negPressEndedAt = performance.now();
+  }
+
+  /** A long press: carving latched on, for every stroke until a tap. */
+  private latchNegative(): void {
+    // The arm and the latch each turn a stroke over, so an arm left set
+    // would make the first latched stroke raise instead of carve.
+    this.input.setNegativeArmed(false);
+    this.input.setNegativeBase(true);
+    this.refresh();
+  }
+
+  /** A tap lets go of the latch, or else arms the next stroke or disarms it. */
+  private tapNegative(): void {
+    if (this.input.getNegativeBase()) {
+      this.input.setNegativeBase(false);
+      this.input.setNegativeArmed(false);
+    } else {
+      this.input.setNegativeArmed(!this.input.getNegativeArmed());
+    }
     this.refresh();
   }
 
@@ -127,42 +217,30 @@ export class SculptToolbar {
     // them (review call) - they are single icons, not a cluster.
     const left = document.createElement('div');
     left.className = 'sculpt-toolbar__corner sculpt-toolbar__left';
-    // Carve, two ways, because on iPadOS only one of them can be relied
-    // on. TAP toggles carving on and leaves it on; tap again to turn it
-    // off. HOLD while you draw is momentary, like holding alt - it works
-    // when the browser reports the lift, and when it does not, the state
-    // simply stays on and the next tap clears it.
+    // Carve: a tap for the next stroke, a long press for every stroke
+    // until a tap (see the class comment for why there is no hold).
     this.negativeBtn = toolButton(
       '',
-      'Carve (negative): tap to keep it on, or hold while you draw',
+      'Carve (negative): tap to carve the next stroke, long-press to keep carving until a tap. Alt + drag does the opposite of the button',
       'negative',
       'fi-ts-reflect-vertical',
     );
-    // No setPointerCapture: capturing a touch pointer and then putting a
-    // second one down makes Safari cancel the captured one.
-    this.negativeBtn.addEventListener('pointerdown', (e) => {
-      // Driven by the press itself, so nothing else the press would do is
-      // wanted: no focus left on the button for Tab or Space to land on.
-      e.preventDefault();
-      if (this.input.getNegativeBase()) {
-        // Already carving, from a tap or from a hold whose lift went
-        // missing: this press turns it off. That is what stops the button
-        // ever getting stuck, whatever the browser does with the release.
-        this.negHoldId = -1;
-        this.setNegative(false);
-        return;
-      }
-      this.negHoldId = e.pointerId;
-      this.negDownStrokes = this.input.strokeCount();
-      this.setNegative(true);
+    this.negativeBtn.addEventListener('pointerdown', this.onNegativeDown);
+    // The keyboard's and assistive tech's press, as for onTap. A pointer's
+    // own click lands just after its press ended, which already acted as a
+    // tap or a long press (or, slid off, chose not to).
+    this.negativeBtn.addEventListener('click', (e) => {
+      if (e.detail > 0 && performance.now() - this.negPressEndedAt < TAP_CLICK_MS) return;
+      this.tapNegative();
     });
     this.negativeBtn.addEventListener('contextmenu', (e) => e.preventDefault());
     // The belt to the CSS braces. On iOS a stationary press starts a
-    // callout/drag gesture at ~450ms and Safari cancels the touch - then
-    // ignores the Pencil for the rest of the interaction, which is exactly
-    // what made hold-to-carve impossible. Cancelling the default on
-    // touchstart is what actually stops that gesture from ever arming.
-    // Safe here because this button is driven by pointerdown, not click.
+    // callout/drag gesture at ~450ms and Safari cancels the touch, before
+    // the long press at LATCH_MS could ever run out: every press would end
+    // as a tap. Cancelling the default on touchstart is what actually stops
+    // that gesture from arming. It also stops the click a touch would
+    // synthesise, which this button does not need: its pointer events
+    // drive it, and the click is left to the keyboard.
     this.negativeBtn.addEventListener(
       'touchstart',
       (e) => e.preventDefault(),
@@ -239,8 +317,12 @@ export class SculptToolbar {
     this.root.append(left, center, right);
     document.body.appendChild(this.root);
 
-    window.addEventListener('pointerup', this.onWindowPointerUp, true);
+    window.addEventListener('pointerup', this.onNegativeUp, true);
+    window.addEventListener('pointercancel', this.onNegativeUp, true);
+    window.addEventListener('blur', this.onNegativeBlur);
     this.input.onToolChange = () => this.refresh();
+    // The arm clears when its stroke ends, which the shell sees first.
+    this.input.onNegativeChange = () => this.refresh();
     this.refresh();
   }
 
@@ -252,7 +334,7 @@ export class SculptToolbar {
     this.hideBtn.setAttribute('aria-label', hidden ? 'Show the interface' : 'Hide the interface');
   }
 
-  /** Reflect the active brush and the negative base on the buttons. */
+  /** Reflect the active brush, and Negative's arm or latch, on the buttons. */
   private refresh(): void {
     const active = this.input.currentToolIndex();
     for (const [id, btn] of this.brushBtns) {
@@ -260,15 +342,20 @@ export class SculptToolbar {
       // vendor's current tool index still says.
       btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn);
     }
-    this.negativeBtn.classList.toggle(
-      'sculpt-toolbar__btn--active',
-      this.input.getNegativeBase(),
-    );
+    // Latched fills the button like any active tool; armed is the lighter
+    // look, since it lasts one stroke.
+    const latched = this.input.getNegativeBase();
+    this.negativeBtn.classList.toggle('sculpt-toolbar__btn--active', latched);
+    this.negativeBtn.classList.toggle('sculpt-toolbar__btn--armed', !latched && this.input.getNegativeArmed());
   }
 
   dispose(): void {
-    window.removeEventListener('pointerup', this.onWindowPointerUp, true);
+    clearTimeout(this.negTimer);
+    window.removeEventListener('pointerup', this.onNegativeUp, true);
+    window.removeEventListener('pointercancel', this.onNegativeUp, true);
+    window.removeEventListener('blur', this.onNegativeBlur);
     this.input.onToolChange = null;
+    this.input.onNegativeChange = null;
     this.root.remove();
   }
 }

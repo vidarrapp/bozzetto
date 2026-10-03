@@ -1724,9 +1724,9 @@ html.is-page body {
   line-height: 1;
   cursor: pointer;
   /* none, not manipulation: `manipulation` still lets the browser claim a
-     held finger for panning, and the resulting pointercancel released
-     hold-to-carve the instant the Pencil touched down - so Negative could
-     be latched but never held. The brush rail already uses none. */
+     held finger for panning, and the pointercancel that follows ends the
+     press - Negative's long press would come out as a tap. The brush rail
+     already uses none. */
   touch-action: none;
 }
 
@@ -2658,9 +2658,26 @@ body.chrome-hidden .transport {
   color: var(--bg);
 }
 
+/* Negative armed by a tap, for one stroke: the accent outline and a rust
+   wash over the usual face, lighter than the filled latch a long press
+   gives so the two read apart at a glance. The face stays opaque, since
+   this button sits bare over the model. */
+.sculpt-toolbar__btn--armed {
+  border-color: var(--accent);
+  background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
+  color: var(--accent-hover);
+}
+
 @media (hover: hover) {
   .sculpt-toolbar__btn:hover {
     background-image: linear-gradient(rgb(255 255 255 / 14%), rgb(255 255 255 / 14%));
+  }
+
+  /* The hover wash goes over the armed one rather than replacing it. */
+  .sculpt-toolbar__btn--armed:hover {
+    background-image:
+      linear-gradient(rgb(255 255 255 / 14%), rgb(255 255 255 / 14%)),
+      linear-gradient(var(--accent-soft), var(--accent-soft));
   }
 
   /* A pressed button is rust; a white wash on rust read as grey (owner
@@ -2694,7 +2711,8 @@ body.is-sampling * {
    #viewport already opted out; every held control outside it needs the
    same, plus user-drag off because an inline SVG icon is itself draggable.
    A moving finger escapes this (the drag cancels the long-press timer),
-   which is why the brush sliders never showed it. */
+   which is why the brush sliders never showed it. Negative's own long
+   press (600ms) runs past that point, so it depends on this too. */
 .sculpt-toolbar__btn,
 .sculpt-slider,
 .sculpt-histbtn,

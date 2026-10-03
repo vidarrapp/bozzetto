@@ -155,6 +155,8 @@ export class InputShell {
   onToolChange: (() => void) | null = null;
   /** Fired whenever brush radius/strength/selection may have moved. */
   onBrushChange: (() => void) | null = null;
+  /** Fired when a stroke has spent the Negative arm, so the toolbar can show it. */
+  onNegativeChange: (() => void) | null = null;
 
   private pointerId = -1;
   /** Device that owns the current stroke, so a Pencil can outrank a finger. */
@@ -207,12 +209,22 @@ export class InputShell {
    * instead of "nothing happens".
    */
   private verdict: ((text: string) => void) | null = null;
-  /** Strokes begun since mount; the toolbar reads it to tell a hold from a tap. */
+  /** Strokes begun since mount (the e2e suites count them). */
   private strokes = 0;
   /** Pointer that fell through to an orbit, or -1. */
   private orbitPointer = -1;
-  /** Sticky negative base (toolbar toggle); alt inverts relative to it. */
+  /** The Negative latch (a long press on the toolbar button): every stroke inverts until a tap. */
   private negativeBase = false;
+  /**
+   * The Negative arm (a tap on the toolbar button): the next stroke that
+   * can invert does, relative to the latch, and the arm clears when that
+   * stroke ends. It waits as long as it takes - a press that misses the
+   * model and orbits, or a stroke with a tool that has no negative, leaves
+   * it set.
+   */
+  private negativeArmed = false;
+  /** The stroke under way is the one the arm inverted; its end spends the arm. */
+  private armedStroke = false;
   /** Tool whose _negative was overridden for the current stroke, if any. */
   private negativeOverride: { tool: SculptTool; prev: boolean } | null = null;
   /** Tool index swapped out for a ctrl-mask stroke, if any. */
@@ -772,6 +784,9 @@ export class InputShell {
         const fy = this.lastAbsY;
         const young = performance.now() - this.strokeStartedAt < GESTURE_GRACE_MS;
         const stateBefore = this.undoStateAtStroke;
+        // A young stroke was the gesture's start, not sculpting: its dab is
+        // undone below, and the Negative arm stays for the stroke to come.
+        if (young) this.armedStroke = false;
         this.abandonStroke();
         // Identity, not stack depth: once the undo stack is full, pushState
         // shifts the oldest entry and leaves _curUndoIndex unchanged, so a
@@ -791,6 +806,9 @@ export class InputShell {
         return;
       }
       this.verdict?.(`pen takes over from ${this.strokePointerType}`);
+      // The Negative arm is the pen's: the touch that got in first was a
+      // resting hand, not the stroke the arm was waiting for.
+      this.armedStroke = false;
       this.abandonStroke();
     }
     // A touch landing while other touches are already down (mid-gesture
@@ -900,12 +918,17 @@ export class InputShell {
       this.pickedColor = e.altKey;
     }
 
-    // Stroke polarity: the sticky toolbar base XOR alt, per tool support
-    // (mask: alt = unmask, base ignored).
+    // Stroke polarity, per tool support: the toolbar's latch, turned over
+    // once more by its arm, then alt on top of both. Alt does the opposite
+    // of whatever the button says, so with the arm set it inverts the
+    // inverted stroke, as it does a latched one. (Mask: alt = unmask, latch
+    // and arm ignored; the arm waits for a stroke it can turn over.)
     const tool = this.currentTool();
+    let usesArm = false;
     if ('_negative' in tool) {
       const prev = !!tool._negative;
-      const base = this.negativeBase ? !prev : prev;
+      usesArm = this.negativeArmed && !e.ctrlKey;
+      const base = this.negativeBase !== usesArm ? !prev : prev;
       tool._negative = e.ctrlKey ? !e.altKey : e.altKey ? !base : base;
       this.negativeOverride = { tool, prev };
     }
@@ -967,6 +990,9 @@ export class InputShell {
     // finding).
     if (painting && !e.altKey) this.hooks.markPainted();
     this.strokes++;
+    // Only now is the arm committed: a press that missed the mesh, or hit
+    // a locked object, has orbited instead and left it set.
+    this.armedStroke = usesArm;
     this.pointerId = e.pointerId;
     this.strokePointerType = e.pointerType;
     this.strokeStartedAt = performance.now();
@@ -1206,6 +1232,7 @@ export class InputShell {
       if (edit) this.hooks.focusEdit(edit);
     }
     this.restoreStrokeTool();
+    this.spendArm();
     Tablet.pressure = 0.5; // neutral, so hover picking never sees stale pressure
     s._action = Enums.Action.NOTHING;
     s.render();
@@ -1474,6 +1501,7 @@ export class InputShell {
     clearTimeout(this.strokeReduceTimer);
     this.cursor.setStrokeStyle(null);
     this.restoreStrokeTool();
+    this.spendArm();
     this.pointerId = -1;
     this.strokePointerType = '';
     s._action = Enums.Action.NOTHING;
@@ -1482,6 +1510,14 @@ export class InputShell {
   /** Route pointerdown decisions to the on-device log (?inputdebug=1). */
   setVerdictSink(sink: ((text: string) => void) | null): void {
     this.verdict = sink;
+  }
+
+  /** The stroke the arm inverted has ended: the arm is spent. */
+  private spendArm(): void {
+    if (!this.armedStroke) return;
+    this.armedStroke = false;
+    this.negativeArmed = false;
+    this.onNegativeChange?.();
   }
 
   /** Undo the per-stroke negative override and mask tool swap. */
@@ -1777,18 +1813,31 @@ export class InputShell {
     return this.session.getSculptManager().getToolIndex();
   }
 
-  /** Sticky stroke inversion (the toolbar's Negative toggle). */
   /** How many strokes have started (monotonic). */
   strokeCount(): number {
     return this.strokes;
   }
 
+  /** The Negative latch: every stroke inverts while it is on. */
   setNegativeBase(on: boolean): void {
     this.negativeBase = on;
   }
 
   getNegativeBase(): boolean {
     return this.negativeBase;
+  }
+
+  /** The Negative arm: the next stroke that can invert does, once. */
+  setNegativeArmed(on: boolean): void {
+    this.negativeArmed = on;
+    // Set or cleared mid-stroke (a finger on the button while the pen
+    // draws, where the platform delivers both), the change is for the next
+    // stroke: the one under way keeps its sign, and its end leaves this be.
+    this.armedStroke = false;
+  }
+
+  getNegativeArmed(): boolean {
+    return this.negativeArmed;
   }
 
   /** The masking tool carries the whole-mask operations (clear/invert). */
