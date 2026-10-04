@@ -86,7 +86,10 @@ export interface DocumentHost {
   hasWork(): boolean;
   /** What is on screen is now what is in the file: a save just happened. */
   markClean(): void;
-  /** Keep the scene on this device's shelf (File > Save to Library). */
+  /**
+   * File > Save to Library: to Projects on the configured server when
+   * signed in to it, otherwise onto this device's shelf.
+   */
   saveToLibrary(): Promise<void>;
   /** Bring an OBJ in as a new object (File > Import OBJ). */
   importObj(text: string, zUp: boolean, name: string): Promise<void>;

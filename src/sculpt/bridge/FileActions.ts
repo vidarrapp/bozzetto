@@ -1,9 +1,10 @@
 import type { SculptSession } from './SculptSession';
 import type { SnapshotRecorder } from './SnapshotRecorder';
-import type { SavedScene } from './ScenePersist';
+import type { SavedScene, SceneLink } from './ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { packScene, sceneToOBJ, unpackScene } from './SceneFile';
-import { saveToLibrary } from './SceneLibrary';
+import { cacheProjectScene, defaultSceneName, saveToLibrary, type LibraryEntry } from './SceneLibrary';
+import { uploadScene } from './SceneProjects';
 
 /** How the file actions reach the viewer's look, so .bozz files carry it. */
 export interface LookBridge {
@@ -28,10 +29,18 @@ export interface FileActionHooks {
    * autosave, edits since the last save or open, or captured frames.
    */
   hasWork(): boolean;
-  /** What is on screen now matches a file: a save, a completed open, a fresh start. */
-  onSceneClean(): void;
+  /** The scene as it stands, as a token onSceneClean can be handed later. */
+  cleanPoint(): unknown;
+  /**
+   * What is on screen now matches a file: a save, a completed open, a fresh
+   * start. `at` is a cleanPoint() taken earlier: an upload that took a
+   * while marks clean only what it sent, not strokes made while it ran.
+   */
+  onSceneClean(at?: unknown): void;
   /** A picture of the viewport, for a library card. */
   captureThumb(): Promise<Blob>;
+  /** The project link changed, so the autosave record has to learn it. */
+  onLinkChange?(link: SceneLink | null): void;
 }
 
 /**
@@ -44,6 +53,22 @@ export interface FileActionHooks {
  * file dialog); what happens to the scene is decided here, once.
  */
 export class FileActions {
+  /**
+   * The server project this scene was opened from or last saved to, which
+   * is where Save to library writes when signed in - the web's counterpart
+   * of the desktop document's path. Kept in memory here and in the
+   * autosave record (SavedScene.project), never in a .bozz file.
+   */
+  private linked: SceneLink | null = null;
+  private uploading = false;
+  /**
+   * Bumped whenever the scene is replaced (New, Open). An upload started
+   * before that must not, when it lands, link the scene now on screen to
+   * the project it uploaded - the next save would overwrite that project
+   * with unrelated work.
+   */
+  private generation = 0;
+
   constructor(
     private readonly session: SculptSession,
     private readonly recorder: SnapshotRecorder,
@@ -52,6 +77,31 @@ export class FileActions {
 
   hasWork(): boolean {
     return this.hooks.hasWork();
+  }
+
+  get link(): SceneLink | null {
+    return this.linked;
+  }
+
+  /** True while an upload to Projects is running. */
+  isUploading(): boolean {
+    return this.uploading;
+  }
+
+  /** Point the scene at a project (or at none), and tell the autosave. */
+  setLink(link: SceneLink | null): void {
+    if (link?.id === this.linked?.id && link?.title === this.linked?.title) return;
+    this.linked = link ? { id: link.id, title: link.title } : null;
+    this.hooks.onLinkChange?.(this.linked);
+  }
+
+  /**
+   * The link the boot scene came with (the autosave's, a library copy's, an
+   * opened project's), taken without telling anyone: the record it came
+   * from already says so.
+   */
+  adoptLink(link: SceneLink | null): void {
+    this.linked = link ? { id: link.id, title: link.title } : null;
   }
 
   /** "The current objects and 3 captured frames": what a replace would cost. */
@@ -75,6 +125,9 @@ export class FileActions {
   async newScene(): Promise<void> {
     if (this.recorder.frameCount() > 0) await this.recorder.clear();
     this.session.newScene();
+    this.generation++;
+    // A new scene is nobody's project: saving it must not overwrite one.
+    this.setLink(null);
     this.hooks.onSceneClean();
   }
 
@@ -104,9 +157,14 @@ export class FileActions {
    * FIRST, so a corrupt one costs nothing - not the question, not the
    * frames. `ask` runs after that and before anything is touched: the
    * front's "are you sure?", when it has one. Resolves false when it said
-   * no.
+   * no. `link` is the project the bytes came from; a file has none, so it
+   * is saved as a project of its own rather than over the last one.
    */
-  async replaceWith(bytes: ArrayBuffer, ask?: () => boolean | Promise<boolean>): Promise<boolean> {
+  async replaceWith(
+    bytes: ArrayBuffer,
+    ask?: () => boolean | Promise<boolean>,
+    link: SceneLink | null = null,
+  ): Promise<boolean> {
     const scene = await unpackScene(bytes);
     if (ask && !(await ask())) return false;
     // A timelapse belongs to the scene it recorded: frames from the old
@@ -120,9 +178,26 @@ export class FileActions {
       throw err;
     }
     this.hooks.adopt(scene);
+    this.generation++;
+    this.setLink(link);
     if (scene.look && this.hooks.look) await this.hooks.look.apply(scene.look);
     this.hooks.onSceneClean();
     return true;
+  }
+
+  /** Objects and triangles, as a library card or a scene project counts them. */
+  private counts(): { objects: number; tris: number } {
+    const meshes = this.session.getMeshes();
+    return { objects: meshes.length, tris: meshes.reduce((n, m) => n + m.getNbTriangles(), 0) };
+  }
+
+  /** The card's picture; a card without one beats no entry. */
+  private async thumb(): Promise<Blob | undefined> {
+    try {
+      return await this.hooks.captureThumb();
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -131,20 +206,50 @@ export class FileActions {
    * Unlike a save this does NOT mark the scene clean: the work is still
    * live in the browser, and the autosave still owns it.
    */
-  async saveToLibrary(): Promise<void> {
+  async keepOnDevice(): Promise<LibraryEntry> {
     const scene = this.serialize();
-    const meshes = this.session.getMeshes();
-    let thumb: Blob | undefined;
+    const counts = this.counts();
+    return saveToLibrary(scene, { thumb: await this.thumb(), ...counts });
+  }
+
+  /**
+   * Save to library for the signed-in owner: upload the scene as a project
+   * (or re-save the one it came from, in place), then keep a device copy
+   * under the project's id - what an offline open falls back to. The scene
+   * now exists off the device, so like a saved file it is marked clean, as
+   * of the moment it was packed.
+   */
+  async uploadToProjects(onProgress?: (text: string) => void): Promise<SceneLink> {
+    if (this.uploading) throw new Error('Already saving to Projects');
+    this.uploading = true;
     try {
-      thumb = await this.hooks.captureThumb();
-    } catch {
-      thumb = undefined; // a card without a picture beats no entry
+      const generation = this.generation;
+      const at = this.hooks.cleanPoint();
+      const scene = this.serialize();
+      const counts = this.counts();
+      const thumb = await this.thumb();
+      onProgress?.('Packing the scene...');
+      const bytes = await (await packScene(scene)).arrayBuffer();
+      const link = await uploadScene(
+        {
+          bytes,
+          thumb,
+          title: this.linked?.title ?? defaultSceneName(),
+          projectId: this.linked?.id,
+          ...counts,
+        },
+        onProgress,
+      );
+      // A full device is no reason to report a save the server has as failed.
+      await cacheProjectScene(link.id, { name: link.title, bytes, thumb, ...counts }).catch(() => undefined);
+      if (generation === this.generation) {
+        this.setLink(link);
+        this.hooks.onSceneClean(at);
+      }
+      return link;
+    } finally {
+      this.uploading = false;
     }
-    await saveToLibrary(scene, {
-      thumb,
-      objects: meshes.length,
-      tris: meshes.reduce((n, m) => n + m.getNbTriangles(), 0),
-    });
   }
 
   /** The visible scene as Wavefront OBJ text. */

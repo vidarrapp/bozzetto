@@ -137,7 +137,7 @@ async function loadProject(
   const res = await apiFetch(apiPath);
   const servedHtml = res.contentType.includes('text/html');
   if (res.ok && !servedHtml && res.bytes) {
-    const manifest = validateManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
+    const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
     // Frame paths in an API manifest are root-absolute (/media/...), so they
     // must resolve against the SERVER, not the app. apiBaseUrl is that
     // origin on the desktop and the site's own on the web.
@@ -148,11 +148,49 @@ async function loadProject(
   if (!res.ok && res.status !== 404 && res.status !== 0) {
     throw new Error(`Failed to load project (${res.status})`);
   }
+  // A private project is a 404 publicly. Its owner, signed in, reads it
+  // through the Access-gated route, whose manifest points the frames at
+  // the gated media route as well.
+  const owned = await ownerManifest(id);
+  if (owned) return owned;
 
   const staticUrl = new URL(`${base}timelapses/${id}/manifest.json`, window.location.href).href;
   const sres = await fetch(staticUrl);
   if (!sres.ok) throw new Error(`Project "${id}" not found`);
   return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
+}
+
+/**
+ * The owner's manifest for a project the public API does not show, or null.
+ * For anyone else Access answers with its login page (a redirect the fetch
+ * refuses to follow cross-origin, or HTML), all of which read as "not
+ * here" so the bundled fallback still gets its turn.
+ */
+async function ownerManifest(id: string): Promise<{ manifest: Manifest; manifestUrl: string } | null> {
+  const path = `/admin/api/projects/${encodeURIComponent(id)}`;
+  try {
+    const res = await apiFetch(path);
+    if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
+    const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
+    return { manifest, manifestUrl: await apiManifestUrl(path) };
+  } catch (err) {
+    if (err instanceof SceneProjectError) throw err;
+    return null;
+  }
+}
+
+class SceneProjectError extends Error {}
+
+/**
+ * A manifest the viewer can play. A scene project has a file and no frames:
+ * it opens in Sculpt, and saying so beats "frames must be a non-empty array".
+ */
+function viewerManifest(raw: unknown): Manifest {
+  const r = raw as { mode?: string; title?: string };
+  if (r?.mode === 'scene') {
+    throw new SceneProjectError(`"${r.title ?? 'This'}" is a scene saved from Sculpt: open it from the gallery`);
+  }
+  return validateManifest(raw);
 }
 
 /**

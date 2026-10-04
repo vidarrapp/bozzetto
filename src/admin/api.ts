@@ -1,25 +1,62 @@
 /**
- * Editor API client. Reads go through the public endpoints; writes go through
- * the Access-gated `/admin/api/*` routes (Cloudflare Access supplies the
- * identity in production; the local `DEV_ADMIN` var stands in for it in dev).
+ * Editor API client. Writes, and every read of the owner's own projects, go
+ * through the Access-gated `/admin/api/*` routes (Cloudflare Access supplies
+ * the identity in production; the local `DEV_ADMIN` var stands in for it in
+ * dev); the public list stays on `/api/projects`.
  */
 
 import { apiFetch } from '../net/origin';
 
+export type Visibility = 'public' | 'private';
+
+/** What a scene card shows: recorded by the server when the file landed. */
+export interface SceneMeta {
+  objects: number;
+  tris: number;
+  bytes: number;
+}
+
 export interface ProjectSummary {
   id: string;
   title: string;
+  /** 'timelapse' | 'model' | 'scene' - a string, so a newer mode is still listed. */
   mode: string;
   fps: number;
   updated_at: number;
   frameCount: number;
+  /** Absent from a server older than the visibility migration, where all was public. */
+  visibility?: Visibility;
+  /** A scene's counts and size; null until its first upload has completed. */
+  scene?: SceneMeta | null;
+}
+
+/** The owner's manifest of a scene project, as GET /admin/api/projects/:id returns it. */
+export interface SceneProject {
+  id: string;
+  title: string;
+  mode: string;
+  visibility?: Visibility;
+  updated_at: number;
+  scene?: (SceneMeta & { file: string }) | null;
 }
 
 export interface CreateInput {
-  id: string;
+  /** Optional for a scene, whose id the server picks. */
+  id?: string;
   title?: string;
   mode?: string;
   fps?: number;
+  visibility?: Visibility;
+}
+
+/**
+ * Where one of a project's files is read from. A private project's files
+ * are only served through the Access-gated mount; a public one's come off
+ * the open route, which anyone may cache.
+ */
+export function mediaPath(p: Pick<ProjectSummary, 'id' | 'visibility'>, file: string): string {
+  const base = p.visibility === 'private' ? '/admin/api/media' : '/media';
+  return `${base}/${encodeURIComponent(p.id)}/${file}`;
 }
 
 /**
@@ -48,9 +85,22 @@ async function call<T>(
     // The desktop reports "no server configured" as status 0; saying that is
     // more use than a generic failure.
     if (res.status === 0) message = res.error ?? 'No server configured.';
-    throw new Error(message);
+    throw new ApiError(message, res.status);
   }
+  // An Access login page answering in the API's place is a sign-in problem,
+  // not a reply: parsing it would throw "Unexpected token '<'".
+  if (res.contentType.includes('text/html')) throw new ApiError('Not signed in', 401);
   return (res.bytes ? JSON.parse(new TextDecoder().decode(res.bytes)) : null) as T;
+}
+
+/** A refused call, with the status kept for callers that branch on it. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 const asJson = (body: unknown): { body: ArrayBuffer; contentType: string } => ({
@@ -76,28 +126,61 @@ export async function probeAdmin(): Promise<string | null> {
   }
 }
 
+const project = (id: string): string => `/admin/api/projects/${encodeURIComponent(id)}`;
+
 export const api = {
+  /** The public list: what a guest's gallery shows. */
   list: () => call<ProjectSummary[]>('/api/projects'),
 
-  get: (id: string) => call(`/api/projects/${encodeURIComponent(id)}`),
+  /** Every project, private ones and scenes included, each with its visibility. */
+  adminList: () => call<ProjectSummary[]>('/admin/api/projects'),
 
-  create: (input: CreateInput) => call('/admin/api/projects', { method: 'POST', ...asJson(input) }),
+  /** The owner's manifest: any project, with paths to where its files are served to the owner. */
+  get: (id: string) => call(project(id)),
 
-  update: (id: string, patch: unknown) =>
-    call(`/admin/api/projects/${encodeURIComponent(id)}`, { method: 'PUT', ...asJson(patch) }),
+  create: (input: CreateInput) => call<ProjectSummary>('/admin/api/projects', { method: 'POST', ...asJson(input) }),
 
-  remove: (id: string) => call(`/admin/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  update: (id: string, patch: unknown) => call<ProjectSummary>(project(id), { method: 'PUT', ...asJson(patch) }),
+
+  setVisibility: (id: string, visibility: Visibility) => api.update(id, { visibility }),
+
+  rename: (id: string, title: string) => api.update(id, { title }),
+
+  remove: (id: string) => call(project(id), { method: 'DELETE' }),
 
   uploadFrame: (id: string, index: number, glb: ArrayBuffer) =>
-    call<{ key: string; index: number; size: number }>(
-      `/admin/api/projects/${encodeURIComponent(id)}/frames?index=${index}`,
-      { method: 'POST', body: glb },
-    ),
+    call<{ key: string; index: number; size: number }>(`${project(id)}/frames?index=${index}`, {
+      method: 'POST',
+      body: glb,
+    }),
 
   uploadThumb: async (id: string, blob: Blob) =>
-    call<{ ok: boolean }>(`/admin/api/projects/${encodeURIComponent(id)}/thumb`, {
+    call<{ ok: boolean }>(`${project(id)}/thumb`, {
       method: 'POST',
       body: await blob.arrayBuffer(),
       contentType: blob.type || 'image/jpeg',
     }),
+
+  /** Begin a scene file upload; the server says how big each part should be. */
+  sceneStart: (id: string) =>
+    call<{ uploadId: string; partSize: number }>(`${project(id)}/scene`, { method: 'POST' }),
+
+  scenePart: (id: string, uploadId: string, part: number, bytes: ArrayBuffer) =>
+    call<{ part: number; etag: string }>(
+      `${project(id)}/scene?upload=${encodeURIComponent(uploadId)}&part=${part}`,
+      { method: 'PUT', body: bytes, contentType: 'application/octet-stream' },
+    ),
+
+  sceneComplete: (
+    id: string,
+    uploadId: string,
+    body: { parts: { part: number; etag: string }[]; objects: number; tris: number },
+  ) =>
+    call<SceneProject>(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, {
+      method: 'POST',
+      ...asJson(body),
+    }),
+
+  sceneAbort: (id: string, uploadId: string) =>
+    call(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, { method: 'DELETE' }),
 };

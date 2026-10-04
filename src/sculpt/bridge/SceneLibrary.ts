@@ -15,6 +15,12 @@ import type { SavedScene } from './ScenePersist';
  * the autosave splits its snapshot from its scene. The gallery lists every
  * entry on load, and a list that dragged each scene's vertex arrays along
  * would cost tens of megabytes to draw a row of cards.
+ *
+ * Signed in, Save to library puts a scene on the server instead (see
+ * SceneProjects), and the shelf keeps that project's latest bytes as its
+ * device copy, under the project's id, for opening offline. Those entries
+ * carry projectId; an entry without one exists on this device only, which
+ * browser storage cannot promise to keep through a reinstall.
  */
 
 /** A card's worth of information: everything but the geometry. */
@@ -28,6 +34,13 @@ export interface LibraryEntry {
   bytes: number;
   /** JPEG of the viewport when it was saved; absent if the capture failed. */
   thumb?: Blob;
+  /**
+   * The server project this entry is a copy of. Set, the entry is that
+   * project's device cache - stored under the project's id, so there is
+   * one per project, and what an offline open of it falls back to. Absent,
+   * the scene exists on this device and nowhere else.
+   */
+  projectId?: string;
 }
 
 const meta = <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
@@ -81,6 +94,68 @@ export async function saveToLibrary(
   return entry;
 }
 
+/**
+ * Keep the device copy of a server project, under the project's id: what
+ * an offline open of it falls back to. Replaces the previous copy; a save
+ * that could not take a picture keeps the picture the copy had.
+ */
+export async function cacheProjectScene(
+  projectId: string,
+  info: { name: string; bytes: ArrayBuffer; objects: number; tris: number; thumb?: Blob },
+): Promise<LibraryEntry> {
+  const prior = await getLibraryEntry(projectId);
+  const thumb = info.thumb ?? prior?.thumb;
+  const entry: LibraryEntry = {
+    id: projectId,
+    projectId,
+    name: info.name,
+    savedAt: Date.now(),
+    objects: info.objects,
+    tris: info.tris,
+    bytes: info.bytes.byteLength,
+    ...(thumb ? { thumb } : {}),
+  };
+  await data('readwrite', (s) => s.put(info.bytes, projectId));
+  await meta('readwrite', (s) => s.put(entry, projectId));
+  return entry;
+}
+
+/**
+ * A device-only entry has just been uploaded as `projectId`: it becomes
+ * that project's device copy. Moved, not copied, to the project's key, so
+ * there is never a second card for the same scene - a later save from
+ * Sculpt writes to the same key. Written first and removed second, so an
+ * interruption leaves two copies rather than none.
+ */
+export async function markUploaded(id: string, projectId: string, name?: string): Promise<LibraryEntry | null> {
+  const entry = await getLibraryEntry(id);
+  const bytes = await loadLibraryBytes(id);
+  if (!entry || !bytes) return null;
+  const moved: LibraryEntry = { ...entry, id: projectId, projectId, ...(name ? { name } : {}) };
+  await data('readwrite', (s) => s.put(bytes, projectId));
+  await meta('readwrite', (s) => s.put(moved, projectId));
+  if (id !== projectId) await deleteLibraryScene(id);
+  return moved;
+}
+
+/** One entry's card information, or null. */
+export async function getLibraryEntry(id: string): Promise<LibraryEntry | null> {
+  try {
+    return ((await meta('readonly', (s) => s.get(id))) as LibraryEntry | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** An entry's packed .bozz bytes as stored, for uploading it as it is. */
+export async function loadLibraryBytes(id: string): Promise<ArrayBuffer | null> {
+  try {
+    return ((await data('readonly', (s) => s.get(id))) as ArrayBuffer | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Every entry, newest first. Metadata only - no geometry is read. */
 export async function listLibrary(): Promise<LibraryEntry[]> {
   try {
@@ -94,7 +169,7 @@ export async function listLibrary(): Promise<LibraryEntry[]> {
 /** The scene behind an entry, or null when the geometry has gone missing. */
 export async function loadFromLibrary(id: string): Promise<SavedScene | null> {
   try {
-    const bytes = (await data('readonly', (s) => s.get(id))) as ArrayBuffer | undefined;
+    const bytes = await loadLibraryBytes(id);
     if (!bytes) return null;
     return await unpackScene(bytes);
   } catch {

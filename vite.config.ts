@@ -147,6 +147,24 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
+            // The owner's list and manifests, private projects and scenes
+            // included. Network first, unlike the public list below (whose
+            // unanchored pattern would match these too, so this rule comes
+            // first): a scene saved a moment ago in Sculpt must be on the
+            // gallery when you get there, or its device copy would show in
+            // its place as if it had never been uploaded. Offline, the last
+            // list stands in, so the owner's cards still draw. GET only, as
+            // every runtime route is by default.
+            urlPattern: /\/admin\/api\/projects/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-owner-projects',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // The gallery list and each project's manifest. Stale-while-
             // revalidate so the gallery still renders its cards offline from
             // the last visit, and refreshes the moment there is a network.

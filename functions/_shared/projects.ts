@@ -1,4 +1,4 @@
-import type { Env, ProjectData, ProjectMode, ProjectRow } from './types';
+import type { Env, ProjectData, ProjectMode, ProjectRow, SceneMeta, Visibility } from './types';
 import { HttpError } from './http';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -12,6 +12,13 @@ const MAX_STAGES = 500;
  */
 export const MAX_DATA_BYTES = 1_500_000;
 const MAX_FPS = 240;
+
+/** Who may see a project; absent means the caller's default, anything else is refused. */
+function validVisibility(v: unknown, fallback: Visibility): Visibility {
+  if (v === undefined || v === null) return fallback;
+  if (v === 'public' || v === 'private') return v;
+  throw new HttpError("visibility: expected 'public' or 'private'");
+}
 
 /** Playback rate: the viewer refuses a manifest whose fps is not positive. */
 function validFps(v: unknown, fallback: number): number {
@@ -33,30 +40,73 @@ const defaultData = (): ProjectData => ({
   frames: [],
 });
 
-export async function listProjects(env: Env): Promise<unknown[]> {
+/** One gallery card's worth of a project. */
+export interface ProjectSummary {
+  id: string;
+  title: string;
+  mode: ProjectMode;
+  fps: number;
+  updated_at: number;
+  frameCount: number;
+  visibility: Visibility;
+  /** A scene's counts and size; null for other modes and for a scene still uploading. */
+  scene: SceneMeta | null;
+}
+
+/**
+ * The gallery's list. `all` is the owner's view, private projects
+ * included. Without it the filter is in the query, not the page: a private
+ * project is never sent to a guest's browser to be hidden there.
+ */
+export async function listProjects(env: Env, opts: { all?: boolean } = {}): Promise<ProjectSummary[]> {
   const { results } = await env.DB.prepare(
     // Sort by creation date so the gallery order is stable — editing a project
     // (which bumps updated_at) no longer reshuffles the grid. updated_at is still
     // selected for the thumbnail cache-buster.
-    `SELECT id, title, mode, fps, updated_at,
-            COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount
-     FROM projects ORDER BY created_at DESC`,
-  ).all();
-  return results;
+    `SELECT id, title, mode, fps, updated_at, visibility,
+            COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount,
+            json_extract(data, '$.scene') AS scene
+     FROM projects ${opts.all ? '' : "WHERE visibility = 'public'"}
+     ORDER BY created_at DESC`,
+  ).all<Omit<ProjectSummary, 'scene'> & { scene: string | null }>();
+  return results.map((r) => ({ ...r, scene: parseScene(r.scene) }));
+}
+
+/** json_extract hands an object back as JSON text. */
+function parseScene(raw: string | null): SceneMeta | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as SceneMeta;
+  } catch {
+    return null;
+  }
 }
 
 export function getProjectRow(env: Env, id: string): Promise<ProjectRow | null> {
   return env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<ProjectRow>();
 }
 
+/**
+ * Where a project's files are read from. A public project's come off the
+ * open /media route, cacheable by anyone. A private project's come only
+ * through /admin/api/media, which Cloudflare Access fronts, so its manifest
+ * points there - and only the owner is ever handed that manifest.
+ */
+export function mediaBase(row: { id: string; visibility: Visibility }): string {
+  return `${row.visibility === 'private' ? '/admin/api/media' : '/media'}/${row.id}`;
+}
+
 /** Shape a row into the manifest the viewer consumes (design doc §11). */
 export function toManifest(row: ProjectRow): unknown {
   const data = JSON.parse(row.data) as ProjectData;
   const frames = [...data.frames].sort((a, b) => a.index - b.index);
+  const base = mediaBase(row);
   return {
     id: row.id,
     title: row.title,
     mode: row.mode,
+    visibility: row.visibility,
+    updated_at: row.updated_at,
     config: { frameCount: frames.length, fps: row.fps, ext: 'glb', tiers: ['sd'], frameStartIndex: 0 },
     defaults: data.defaults,
     camera: data.camera,
@@ -68,11 +118,20 @@ export function toManifest(row: ProjectRow): unknown {
     frames: frames.map((f) => ({
       index: f.index,
       // ?v busts the immutable CDN cache when the project is re-saved/re-uploaded.
-      sd: `/media/${row.id}/frames/sd/${String(f.index).padStart(4, '0')}.glb?v=${row.updated_at}`,
+      sd: `${base}/frames/sd/${String(f.index).padStart(4, '0')}.glb?v=${row.updated_at}`,
       hd: null,
       tris: f.tris,
     })),
     stages: data.stages,
+    // A scene is a file to open in Sculpt, not frames to play: what is in
+    // it and where it is. Null until its first upload has completed.
+    ...(row.mode === 'scene'
+      ? {
+          scene: data.scene
+            ? { ...data.scene, file: `${base}/scene.bozz?v=${row.updated_at}` }
+            : null,
+        }
+      : {}),
   };
 }
 
@@ -81,20 +140,44 @@ export interface CreateInput {
   title?: string;
   mode?: ProjectMode;
   fps?: number;
+  visibility?: Visibility;
+}
+
+/**
+ * An id for a scene. Nobody types one: a scene is saved from a menu, not
+ * published under a chosen slug, so the server picks it.
+ */
+function newSceneId(): string {
+  const rand = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => (b % 36).toString(36)).join('');
+  return `scene-${Date.now().toString(36)}-${rand}`;
 }
 
 export async function createProject(env: Env, input: CreateInput): Promise<ProjectRow> {
-  const id = String(input.id ?? '').trim().toLowerCase();
+  const mode: ProjectMode = input.mode === 'model' || input.mode === 'scene' ? input.mode : 'timelapse';
+  const given = String(input.id ?? '').trim().toLowerCase();
+  const id = mode === 'scene' && !given ? newSceneId() : given;
   if (!SLUG.test(id)) throw new HttpError('Invalid id (use a-z, 0-9, hyphen; max 63 chars)');
   if (await getProjectRow(env, id)) throw new HttpError('A project with that id already exists', 409);
 
   const now = Date.now();
-  const mode: ProjectMode = input.mode === 'model' ? 'model' : 'timelapse';
   const fps = validFps(input.fps, 4);
+  // Publishing has always been public and stays so by default; a scene is
+  // work kept for yourself, so it starts private.
+  const visibility = validVisibility(input.visibility, mode === 'scene' ? 'private' : 'public');
+  const title = (typeof input.title === 'string' && input.title.trim()) || id;
   await env.DB.prepare(
-    'INSERT INTO projects (id, title, mode, fps, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO projects (id, title, mode, fps, data, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(id, (input.title?.trim() || id).slice(0, MAX_TITLE), mode, fps, JSON.stringify(defaultData()), now, now)
+    .bind(
+      id,
+      title.slice(0, MAX_TITLE),
+      mode,
+      fps,
+      JSON.stringify(defaultData()),
+      visibility,
+      now,
+      now,
+    )
     .run();
   return (await getProjectRow(env, id))!;
 }
@@ -162,13 +245,20 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
     presentation: 'presentation' in patch ? patch.presentation : data.presentation,
     stages: 'stages' in patch ? validStages(patch.stages) : data.stages,
     frames: 'frames' in patch ? validFrames(patch.frames) : data.frames,
+    // Written by a completed upload only, never by a patch.
+    ...(data.scene ? { scene: data.scene } : {}),
   };
   const title =
     typeof patch.title === 'string' && patch.title.trim()
       ? patch.title.trim().slice(0, MAX_TITLE)
       : row.title;
-  const mode: ProjectMode = patch.mode === 'model' || patch.mode === 'timelapse' ? patch.mode : row.mode;
+  // A scene stays a scene and nothing else becomes one: the one has a
+  // file and no frames, the others frames and no file, and the editor's
+  // mode switch must not turn either into a project nothing can open.
+  const mode: ProjectMode =
+    row.mode !== 'scene' && (patch.mode === 'model' || patch.mode === 'timelapse') ? patch.mode : row.mode;
   const fps = validFps(patch.fps, row.fps);
+  const visibility = validVisibility(patch.visibility, row.visibility);
   // The look blocks (lighting, environment, ...) are stored as sent, so
   // the row as a whole is what gets bounded.
   const serialised = JSON.stringify(next);
@@ -187,8 +277,10 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
     }
   }
 
-  await env.DB.prepare('UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, updated_at = ? WHERE id = ?')
-    .bind(title, mode, fps, serialised, Date.now(), id)
+  await env.DB.prepare(
+    'UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, visibility = ?, updated_at = ? WHERE id = ?',
+  )
+    .bind(title, mode, fps, serialised, visibility, Date.now(), id)
     .run();
   return (await getProjectRow(env, id))!;
 }
@@ -225,4 +317,121 @@ export async function putThumb(env: Env, id: string, body: ArrayBuffer): Promise
   });
   // Bump updated_at so the gallery's ?v cache-buster picks up the new thumbnail.
   await env.DB.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
+}
+
+// --- scene files --------------------------------------------------------
+
+const sceneKey = (id: string) => `projects/${id}/scene.bozz`;
+const SCENE_TYPE = 'application/x-bozzetto';
+/**
+ * The part size clients are asked to send. R2 wants every part but the
+ * last at least 5 MiB and all of them the same size; 8 MiB keeps a small
+ * scene to one request and a large one to a few dozen.
+ */
+export const SCENE_PART_BYTES = 8 * 1024 * 1024;
+/** A part as received: comfortably over the size asked for, well under the 100 MB request cap. */
+export const MAX_SCENE_PART_BYTES = 32 * 1024 * 1024;
+/** R2's own limit on parts per upload. */
+const MAX_SCENE_PARTS = 10000;
+
+async function sceneRow(env: Env, id: string): Promise<ProjectRow> {
+  const row = await getProjectRow(env, id);
+  if (!row) throw new HttpError('Not found', 404);
+  if (row.mode !== 'scene') throw new HttpError('Not a scene project');
+  return row;
+}
+
+/**
+ * R2 reports an upload it no longer has (aborted, completed, expired) as
+ * error 10024; that is the client's stale id, not an outage, and says so.
+ * Anything else stays a 500.
+ */
+function uploadError(err: unknown): never {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/\(10024\)|NoSuchUpload|upload does not exist/i.test(message)) throw new HttpError('Unknown upload', 404);
+  throw err;
+}
+
+/** Begin replacing a scene's file. The old one stays readable until complete. */
+export async function startSceneUpload(env: Env, id: string): Promise<{ uploadId: string; partSize: number }> {
+  await sceneRow(env, id);
+  const upload = await env.BUCKET.createMultipartUpload(sceneKey(id), {
+    httpMetadata: { contentType: SCENE_TYPE },
+  });
+  return { uploadId: upload.uploadId, partSize: SCENE_PART_BYTES };
+}
+
+export async function putScenePart(
+  env: Env,
+  id: string,
+  uploadId: string,
+  part: number,
+  body: ArrayBuffer,
+): Promise<{ part: number; etag: string }> {
+  await sceneRow(env, id);
+  if (!Number.isInteger(part) || part < 1 || part > MAX_SCENE_PARTS) {
+    throw new HttpError(`part: expected an integer from 1 to ${MAX_SCENE_PARTS}`);
+  }
+  try {
+    const done = await env.BUCKET.resumeMultipartUpload(sceneKey(id), uploadId).uploadPart(part, body);
+    return { part: done.partNumber, etag: done.etag };
+  } catch (err) {
+    uploadError(err);
+  }
+}
+
+function validCount(v: unknown, name: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+    throw new HttpError(`${name}: expected a non-negative integer`);
+  }
+  return v;
+}
+
+/**
+ * Finish an upload: the parts become the scene's file in one step, and the
+ * row records what is in it. The size is R2's measure of what landed, not
+ * the client's claim, since it is what the gallery reports the scene costs.
+ */
+export async function completeSceneUpload(
+  env: Env,
+  id: string,
+  uploadId: string,
+  body: { parts?: unknown; objects?: unknown; tris?: unknown },
+): Promise<ProjectRow> {
+  const row = await sceneRow(env, id);
+  if (!Array.isArray(body.parts) || body.parts.length === 0 || body.parts.length > MAX_SCENE_PARTS) {
+    throw new HttpError('parts: expected a non-empty array');
+  }
+  const parts = body.parts.map((p) => {
+    const o = p as { part?: unknown; etag?: unknown };
+    if (typeof o?.part !== 'number' || !Number.isInteger(o.part) || typeof o.etag !== 'string' || !o.etag) {
+      throw new HttpError('parts: each entry needs a part number and its etag');
+    }
+    return { partNumber: o.part, etag: o.etag };
+  });
+  const objects = validCount(body.objects, 'objects');
+  const tris = validCount(body.tris, 'tris');
+  let stored: R2Object;
+  try {
+    stored = await env.BUCKET.resumeMultipartUpload(sceneKey(id), uploadId).complete(parts);
+  } catch (err) {
+    uploadError(err);
+  }
+  const data = JSON.parse(row.data) as ProjectData;
+  data.scene = { objects, tris, bytes: stored.size };
+  // updated_at is the file's ?v=, so a re-save reaches every reader.
+  await env.DB.prepare('UPDATE projects SET data = ?, updated_at = ? WHERE id = ?')
+    .bind(JSON.stringify(data), Date.now(), id)
+    .run();
+  return (await getProjectRow(env, id))!;
+}
+
+/** Drop an unfinished upload. Best effort: R2 expires abandoned ones on its own. */
+export async function abortSceneUpload(env: Env, id: string, uploadId: string): Promise<void> {
+  await sceneRow(env, id);
+  try {
+    await env.BUCKET.resumeMultipartUpload(sceneKey(id), uploadId).abort();
+  } catch {
+    // Already completed, aborted or expired: nothing left to drop.
+  }
 }

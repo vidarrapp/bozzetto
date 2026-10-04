@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, type Visibility } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
@@ -16,15 +16,24 @@ interface Stage {
   desc: string;
 }
 
-/** The manifest-shaped fields the editor reads from /api/projects/:id. */
+/** The manifest-shaped fields the editor reads from /admin/api/projects/:id. */
 interface EditorProject {
   id: string;
   title: string;
   mode: string;
+  visibility?: Visibility;
   config: { fps: number; frameCount: number };
   frames: { index: number; tris: number }[];
   stages: Stage[];
 }
+
+/**
+ * The owner's manifest URL. Frame paths in it are root-absolute (/media or,
+ * for a private project, /admin/api/media), so this is only what they
+ * resolve against - but it has to be the route the manifest came from.
+ */
+const manifestUrl = (id: string): string =>
+  new URL(`/admin/api/projects/${encodeURIComponent(id)}`, location.href).href;
 
 const naturalSort = (a: string, b: string): number =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -141,6 +150,20 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     return;
   }
 
+  // A scene saved from Sculpt has a file, not frames: it is edited where it
+  // was made, and the Projects list opens it there.
+  if (project.mode === 'scene') {
+    host.innerHTML = `<div class="admin"><div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div>
+      <h1 class="admin__scene-title"></h1>
+      <p class="muted">A scene saved from Sculpt. It opens there, not in the editor.</p>
+      <p><a class="btn btn--primary admin__scene-open">Open in Sculpt</a></p></div>`;
+    host.querySelector<HTMLElement>('.admin__scene-title')!.textContent = project.title || id;
+    host
+      .querySelector<HTMLAnchorElement>('.admin__scene-open')!
+      .setAttribute('href', `/?sculpt=1&project=${encodeURIComponent(id)}`);
+    return;
+  }
+
   host.innerHTML = `
     <div class="editor">
       <div id="preview" class="editor__preview"></div>
@@ -163,6 +186,12 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
                 </select>
               </label>
               <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
+              <label>Visibility
+                <select id="f-visibility">
+                  <option value="public">Public: in the gallery</option>
+                  <option value="private">Private: only you, signed in</option>
+                </select>
+              </label>
               <button id="save" class="btn btn--primary" type="button">Save settings</button>
             </div>
           </section>
@@ -208,6 +237,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   const titleInput = $<HTMLInputElement>('#f-title');
   const modeSelect = $<HTMLSelectElement>('#f-mode');
   const fpsInput = $<HTMLInputElement>('#f-fps');
+  const visibilitySelect = $<HTMLSelectElement>('#f-visibility');
   const frameCountEl = $('#frame-count');
   const reelMount = $('#reel-mount');
 
@@ -220,6 +250,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   titleInput.value = project.title || id;
   modeSelect.value = project.mode === 'model' ? 'model' : 'timelapse';
   fpsInput.value = String(project.config?.fps ?? 4);
+  visibilitySelect.value = project.visibility === 'private' ? 'private' : 'public';
 
   const setFrameCount = (n: number): void => {
     frameCountEl.textContent = n > 0 ? `· ${n} frame${n === 1 ? '' : 's'}` : '· none yet';
@@ -230,6 +261,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     title: titleInput.value.trim(),
     mode: modeSelect.value,
     fps: Number(fpsInput.value) || 4,
+    visibility: (visibilitySelect.value === 'private' ? 'private' : 'public') as Visibility,
   });
 
   $<HTMLButtonElement>('#save').addEventListener('click', (e) => {
@@ -375,8 +407,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       return;
     }
     const manifest = validateManifest(raw);
-    const manifestUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-    preview = await Viewer.create(box, manifest, new HttpSource(manifestUrl), {
+    preview = await Viewer.create(box, manifest, new HttpSource(manifestUrl(id)), {
       preserveDrawingBuffer: true,
     });
     await preview.boot();
@@ -404,7 +435,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 async function exportSingleFile(id: string, p: Viewer): Promise<void> {
   const raw = (await api.get(id)) as Record<string, unknown> & { frames: { sd: string }[] };
   const manifest = buildExportManifest(raw, p);
-  const apiUrl = new URL(`/api/projects/${encodeURIComponent(id)}`, location.href).href;
-  const html = await buildExportHtml(manifest, new HttpSource(apiUrl));
+  const html = await buildExportHtml(manifest, new HttpSource(manifestUrl(id)));
   downloadBlob(new Blob([html], { type: 'text/html' }), `${id}.html`);
 }

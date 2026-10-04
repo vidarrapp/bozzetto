@@ -2,10 +2,15 @@ import { div } from '../../ui/dom';
 import { topbarLeft, topChip } from '../../ui/topbar';
 import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
 
+/** Text that may depend on state: read again each time the menu opens. */
+type MenuText = string | (() => string);
+
 export type MenuItem =
-  | { label: string; action: () => void | Promise<void> }
+  | { label: MenuText; hint?: MenuText; action: () => void | Promise<void> }
   | { label: string; checked: () => boolean; toggle: (on: boolean) => void }
   | { separator: true };
+
+const read = (t: MenuText | undefined): string => (typeof t === 'function' ? t() : (t ?? ''));
 
 /**
  * A top-row menu: a chip beside the gallery link that drops a list of
@@ -20,6 +25,8 @@ export class TopMenu {
   readonly chip: HTMLButtonElement;
   readonly pop: HTMLDivElement;
   private opened = false;
+  /** Re-reads each item's label and hint, run whenever the menu opens. */
+  private readonly painters: Array<() => void> = [];
 
   constructor(label: string, items: MenuItem[], cls: string) {
     this.chip = topChip(label) as HTMLButtonElement;
@@ -48,6 +55,7 @@ export class TopMenu {
   open(): void {
     if (this.opened) return;
     this.opened = true;
+    for (const paint of this.painters) paint();
     this.pop.hidden = false;
     this.place();
     this.chip.setAttribute('aria-expanded', 'true');
@@ -90,8 +98,8 @@ export class TopMenu {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'file-menu__item';
-    b.textContent = item.label;
     if ('toggle' in item) {
+      b.textContent = item.label;
       b.classList.add('file-menu__item--toggle');
       b.setAttribute('role', 'menuitemcheckbox');
       const paint = (): void => b.setAttribute('aria-checked', item.checked() ? 'true' : 'false');
@@ -102,6 +110,25 @@ export class TopMenu {
       paint();
       return b;
     }
+    // A hint is a second, quieter line saying what the command will do
+    // where that depends on more than its name (signed in or not). Items
+    // without one stay plain text.
+    const paint = (): void => {
+      const hint = read(item.hint);
+      if (!hint) {
+        b.textContent = read(item.label);
+        return;
+      }
+      const label = document.createElement('span');
+      label.className = 'file-menu__label';
+      label.textContent = read(item.label);
+      const note = document.createElement('span');
+      note.className = 'file-menu__hint';
+      note.textContent = hint;
+      b.replaceChildren(label, note);
+    };
+    paint();
+    this.painters.push(paint);
     b.setAttribute('role', 'menuitem');
     b.addEventListener('click', () => {
       this.close();

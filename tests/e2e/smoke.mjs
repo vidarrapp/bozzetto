@@ -3,8 +3,10 @@
 // on, Sculpt's input under fingers, the pen, the zoom and the Negative
 // button, the arrow keys in the Scene list, each brush's own size and the
 // World-scale box after an open, capture's default, the autosave's cadence,
-// and the two diagnostic overlays. Each gets (page, base, t) - a fresh
+// the two diagnostic overlays, and Save to library signed out and signed in
+// (scenes in Projects, visibility). Each gets (page, base, t) - a fresh
 // page, the server's origin, and the check collector.
+import { readFileSync } from 'node:fs';
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -686,6 +688,220 @@ const setFingers = async (page, label) => {
   await page.keyboard.press('Escape');
   return { checked, stored: await page.evaluate(() => localStorage.getItem('bozzetto-settings')) };
 };
+
+// --- the library: a file signed out, Projects signed in -------------------
+
+const DEVICE_NOTE = 'On this device only. A reinstall or clearing the browser loses it.';
+
+/** The File menu's items, each as its label and the hint under it. */
+const fileItems = (page) =>
+  page.evaluate(() => {
+    window.__sculpt.fileMenu.open();
+    const out = [...document.querySelectorAll('.file-menu--file .file-menu__item')].map((b) => ({
+      label: b.querySelector('.file-menu__label')?.textContent ?? b.textContent,
+      hint: b.querySelector('.file-menu__hint')?.textContent ?? '',
+    }));
+    window.__sculpt.fileMenu.close();
+    return out;
+  });
+
+/** Choose a File menu item by its label, the way a tap on it would. */
+const chooseFile = (page, label) =>
+  page.evaluate((l) => {
+    window.__sculpt.fileMenu.open();
+    const item = [...document.querySelectorAll('.file-menu--file .file-menu__item')].find(
+      (b) => (b.querySelector('.file-menu__label')?.textContent ?? b.textContent) === l,
+    );
+    if (!item) throw new Error(`no File menu item "${l}"`);
+    item.click();
+  }, label);
+
+/** The device shelf as IndexedDB holds it: each record's key, name, project and object count. */
+const shelf = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((ok, fail) => {
+        const req = indexedDB.open('bozzetto-sculpt');
+        req.onerror = () => fail(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('library');
+          const keys = tx.objectStore('library').getAllKeys();
+          const rows = tx.objectStore('library').getAll();
+          tx.oncomplete = () => {
+            db.close();
+            ok(keys.result.map((key, i) => ({ key, name: rows.result[i].name, projectId: rows.result[i].projectId ?? null, objects: rows.result[i].objects })));
+          };
+        };
+      }),
+  );
+
+/** .bozz bytes, unpacked in the page: how many objects, and whether the header text mentions `needle`. */
+const readBozz = (page, bytes, needle = '') =>
+  page.evaluate(
+    async ([b64, n]) => {
+      const u8 = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const scene = await window.__sculpt.file.unpack(u8.buffer.slice(0));
+      const raw = u8[0] === 0x1f && u8[1] === 0x8b ? new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()) : u8;
+      const header = new TextDecoder().decode(raw.subarray(8, 8 + new DataView(raw.buffer).getUint32(4, true)));
+      return { objects: scene.meshes.length, mentions: !!n && header.includes(n) };
+    },
+    [Buffer.from(bytes).toString('base64'), needle],
+  );
+
+/** The last progress toast once it has finished: its state and words. */
+const savedToast = (page) =>
+  page
+    .waitForFunction(
+      () => {
+        const el = [...document.querySelectorAll('.file-menu__progress')].pop();
+        return el && el.dataset.state !== 'running' ? { state: el.dataset.state, text: el.textContent } : null;
+      },
+      null,
+      { timeout: 60_000 },
+    )
+    .then((h) => h.jsonValue())
+    .catch(() => ({ state: 'none', text: '' }));
+
+/** How many captured frames IndexedDB holds. */
+const storedFrames = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((ok, fail) => {
+        const req = indexedDB.open('bozzetto-sculpt');
+        req.onerror = () => fail(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('frameMeta');
+          const n = tx.objectStore('frameMeta').count();
+          tx.oncomplete = () => {
+            db.close();
+            ok(n.result);
+          };
+        };
+      }),
+  );
+
+/** What the boot opened: object count, link, the address, and the toast's words. */
+const bootState = (page) =>
+  page.evaluate(() => ({
+    objects: window.__sculpt.session.getMeshes().length,
+    link: window.__sculpt.fileActions.link,
+    search: location.search,
+    toast: document.querySelector('.sculpt-toast:not(.file-menu__note) > span')?.textContent ?? '',
+    failed: [...document.querySelectorAll('.file-menu__progress[data-state="failed"]')].map((e) => e.textContent),
+  }));
+
+/**
+ * A stand-in for the Functions, enough for the owner's side of the library:
+ * the lists and manifests, create, update, delete, a scene's upload in
+ * parts, frames and thumbnails, and both media routes - the open one
+ * refusing private projects, as the real one does. Every call is kept for
+ * the checks; `offline` makes every one of them fail as a dropped network
+ * would.
+ */
+function fakeProjects() {
+  const projects = new Map();
+  const uploads = new Map();
+  const calls = [];
+  const opts = { partSize: 256 * 1024, partDelay: 0, offline: false };
+  let made = 0;
+  let clock = 1_790_000_000_000;
+  const tick = () => (clock += 1000);
+  const summary = (p) => ({ id: p.id, title: p.title, mode: p.mode, fps: 4, updated_at: p.updated_at, frameCount: p.frameCount, visibility: p.visibility, scene: p.scene });
+  const media = (p) => `${p.visibility === 'private' ? '/admin/api/media' : '/media'}/${p.id}`;
+  const manifest = (p) => ({
+    ...summary(p),
+    ...(p.mode === 'scene' ? { scene: p.scene ? { ...p.scene, file: `${media(p)}/scene.bozz?v=${p.updated_at}` } : null } : {}),
+  });
+  const add = (p) => projects.set(p.id, { frameCount: 0, scene: null, file: null, thumb: null, updated_at: tick(), ...p });
+  const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const body = (raw) => JSON.parse(raw.toString());
+
+  async function handle(route) {
+    const req = route.request();
+    const u = new URL(req.url());
+    const { pathname: path } = u;
+    const method = req.method();
+    const raw = req.postDataBuffer() ?? Buffer.alloc(0);
+    calls.push({ method, path, search: u.search, type: req.headers()['content-type'] ?? '', body: raw });
+    if (opts.offline) return route.abort('internetdisconnected');
+    if (path === '/admin/api/whoami') return json(route, 200, { email: 'owner@example.com' });
+    const project = (id) => projects.get(decodeURIComponent(id));
+    let m;
+    if (path === '/admin/api/projects') {
+      if (method === 'GET') return json(route, 200, [...projects.values()].map(summary));
+      const b = body(raw);
+      const id = b.id || `scene-test${++made}`;
+      add({ id, title: b.title || id, mode: b.mode ?? 'timelapse', visibility: b.visibility ?? (b.mode === 'scene' ? 'private' : 'public') });
+      return json(route, 201, summary(projects.get(id)));
+    }
+    if ((m = path.match(/^\/admin\/api\/projects\/([^/]+)$/))) {
+      const p = project(m[1]);
+      if (!p) return json(route, 404, { error: 'Not found' });
+      if (method === 'GET') return json(route, 200, manifest(p));
+      if (method === 'DELETE') {
+        projects.delete(p.id);
+        return json(route, 200, { deleted: true });
+      }
+      const patch = body(raw);
+      if (typeof patch.title === 'string') p.title = patch.title;
+      if (patch.visibility) p.visibility = patch.visibility;
+      if (Array.isArray(patch.frames)) p.frameCount = patch.frames.length;
+      p.updated_at = tick();
+      return json(route, 200, summary(p));
+    }
+    if ((m = path.match(/^\/admin\/api\/projects\/([^/]+)\/scene$/))) {
+      const p = project(m[1]);
+      if (!p) return json(route, 404, { error: 'Not found' });
+      const id = u.searchParams.get('upload');
+      if (method === 'POST' && !id) {
+        const uploadId = `up-${calls.length}`;
+        uploads.set(uploadId, new Map());
+        return json(route, 201, { uploadId, partSize: opts.partSize });
+      }
+      const parts = uploads.get(id);
+      if (!parts) return json(route, 404, { error: 'Unknown upload' });
+      if (method === 'PUT') {
+        if (opts.partDelay) await new Promise((r) => setTimeout(r, opts.partDelay));
+        const part = Number(u.searchParams.get('part'));
+        parts.set(part, raw);
+        return json(route, 201, { part, etag: `etag-${part}` });
+      }
+      if (method === 'DELETE') {
+        uploads.delete(id);
+        return json(route, 200, { aborted: true });
+      }
+      const b = body(raw);
+      p.file = Buffer.concat(b.parts.map((x) => parts.get(x.part)));
+      p.scene = { objects: b.objects, tris: b.tris, bytes: p.file.length };
+      p.updated_at = tick();
+      uploads.delete(id);
+      return json(route, 200, manifest(p));
+    }
+    if ((m = path.match(/^\/admin\/api\/projects\/([^/]+)\/(thumb|frames)$/))) {
+      const p = project(m[1]);
+      if (!p) return json(route, 404, { error: 'Not found' });
+      if (m[2] === 'thumb') p.thumb = raw;
+      p.updated_at = tick();
+      return json(route, 201, m[2] === 'thumb' ? { ok: true } : { key: 'k', index: 0, size: raw.length });
+    }
+    if ((m = path.match(/^\/(admin\/api\/)?media\/([^/]+)\/(.+)$/))) {
+      const p = project(m[2]);
+      const file = m[3] === 'scene.bozz' ? p?.file : m[3] === 'thumb.jpg' ? p?.thumb : null;
+      if (!p || !file || (!m[1] && p.visibility === 'private')) return route.fulfill({ status: 404, body: 'Not found' });
+      return route.fulfill({ status: 200, contentType: m[3] === 'thumb.jpg' ? 'image/jpeg' : 'application/x-bozzetto', body: file });
+    }
+    if (path === '/api/projects') return json(route, 200, [...projects.values()].filter((p) => p.visibility === 'public').map(summary));
+    if ((m = path.match(/^\/api\/projects\/([^/]+)$/))) {
+      const p = project(m[1]);
+      return p && p.visibility === 'public' ? json(route, 200, manifest(p)) : json(route, 404, { error: 'Not found' });
+    }
+    return json(route, 404, { error: 'Not found' });
+  }
+  const serves = (url) => /^\/(admin\/api\/|api\/projects|media\/)/.test(url.pathname);
+  return { projects, calls, opts, add, handle, serves, body };
+}
 
 export const suites = {
   async boot(page, base, t) {
@@ -3079,5 +3295,276 @@ export const suites = {
     t.ok(/no stroke/.test(finger.text) && /touches 1/.test(finger.text) && finger.shell.touches === 1, `a finger down reads as one touch: "${finger.text}"`);
     const lifted = await says(/touches 0/);
     t.ok(/touches 0/.test(lifted), `and none once it lifts: "${lifted}"`);
+  },
+
+  // Signed out, Save to library is a .bozz download (owner call: browser
+  // storage does not survive an iPad reinstall), and the menu says so; the
+  // device shelf is still one item down. Every copy that lives only in this
+  // browser - a kept scene, the work in progress - says what that means.
+  // Nothing goes to the server: the probe found no session.
+  async libraryGuest(page, base, t) {
+    const sent = [];
+    page.on('request', (r) => {
+      const { pathname } = new URL(r.url());
+      if (/^\/(admin\/api\/projects|admin\/api\/media)/.test(pathname) || (r.method() !== 'GET' && /^\/(admin|api)\//.test(pathname))) {
+        sent.push(`${r.method()} ${pathname}`);
+      }
+    });
+    await openSculpt(page, base, '&q=low');
+    // The probe has answered once the publish forms show their sign-in line.
+    await page.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
+    const items = await fileItems(page);
+    const lib = items.find((i) => i.label === 'Save to library');
+    const keep = items.find((i) => i.label === 'Keep on this device');
+    t.ok(!!lib && /\.bozz file/.test(lib.hint), `signed out, Save to library says it downloads a .bozz file ("${lib?.hint}")`);
+    t.ok(!!keep && keep.hint === DEVICE_NOTE, `and Keep on this device is still offered, saying what it risks ("${keep?.hint}")`);
+
+    await page.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
+    t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), true, 'a capsule added is work that exists nowhere else');
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), chooseFile(page, 'Save to library')]);
+    const name = download.suggestedFilename();
+    const file = readFileSync(await download.path());
+    const read = await readBozz(page, file);
+    t.ok(/^sculpt-\d{8}-\d{4}\.bozz$/.test(name) && read.objects === 2, `Save to library downloads the scene as ${name}, both objects in it`);
+    t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and the downloaded scene counts as saved');
+
+    await chooseFile(page, 'Keep on this device');
+    await page.waitForFunction(() => [...document.querySelectorAll('.file-menu__note')].some((n) => n.textContent === 'Kept on this device'), null, { timeout: 30_000 });
+    const kept = await shelf(page);
+    t.ok(kept.length === 1 && kept[0].projectId === null && kept[0].objects === 2, `Keep on this device puts it on the device shelf (${JSON.stringify(kept)})`);
+
+    await page.evaluate(() => window.__sculpt.persist.flush());
+    await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#landing-grid .card--library', { timeout: 30_000 });
+    const cards = await page.evaluate(() => ({
+      progress: document.querySelector('.card--sculpt:not(.card--armature) .card__note')?.textContent ?? null,
+      device: [...document.querySelectorAll('.card--library')].map((c) => ({ note: c.querySelector('.card__note')?.textContent ?? null, upload: !!c.querySelector('.card__upload'), badge: c.querySelector('.card__badge')?.textContent })),
+      toggles: document.querySelectorAll('.card__vis').length,
+    }));
+    t.eq(cards.progress, DEVICE_NOTE, 'the In progress card says it is on this device only');
+    t.ok(cards.device.length === 1 && cards.device[0].note === DEVICE_NOTE && cards.device[0].badge === 'Saved', `so does the kept scene's card (${JSON.stringify(cards.device)})`);
+    t.ok(!cards.device[0]?.upload && cards.toggles === 0, 'a guest is offered no upload and no visibility switch');
+    t.eq(sent.join(', '), '', 'and nothing was sent to the server');
+  },
+
+  // Signed in (the probe and the Functions faked, as captureOff fakes the
+  // probe), Save to library uploads the scene as a private project in parts,
+  // showing its progress, keeps a device copy under the project's id, and
+  // remembers the project through a reload, so the next save updates it in
+  // place. The gallery shows the project with its Private badge and switch,
+  // offers Upload to Projects on a scene kept only on the device, and opens
+  // ?project= from the server - or, offline, from the device copy. The
+  // Projects page and the publish forms carry visibility too.
+  async libraryOwner(page, base, t) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const fake = fakeProjects();
+    try {
+      fake.add({ id: 'pub-reel', title: 'Public reel', mode: 'timelapse', visibility: 'public', frameCount: 3 });
+      fake.add({ id: 'priv-reel', title: 'Private reel', mode: 'timelapse', visibility: 'private', frameCount: 2 });
+      await ctx.route(fake.serves, fake.handle);
+      const owner = await ctx.newPage();
+      const errors = [];
+      owner.on('pageerror', (e) => errors.push(String(e)));
+      const boot = async (query = '') => {
+        await openSculpt(owner, base, `&q=low${query}`);
+        if (!fake.opts.offline) {
+          await owner.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 });
+        }
+      };
+      await boot();
+      let lib = (await fileItems(owner)).find((i) => i.label === 'Save to library');
+      t.eq(lib?.hint, 'Uploads to Projects, as a private scene', 'signed in, Save to library says it uploads to Projects');
+
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
+      const tris = await owner.evaluate(() => window.__sculpt.session.getMeshes().reduce((n, m) => n + m.getNbTriangles(), 0));
+      fake.opts.partDelay = 400;
+      await chooseFile(owner, 'Save to library');
+      const progress = await owner
+        .waitForFunction(() => {
+          const el = [...document.querySelectorAll('.file-menu__progress')].pop();
+          return el && /^Uploading .* MB\.\.\.$/.test(el.textContent) ? el.textContent : null;
+        }, null, { timeout: 30_000 })
+        .then((h) => h.jsonValue())
+        .catch(() => null);
+      t.ok(!!progress, `while it uploads, the toast shows how far it has got ("${progress}")`);
+      let end = await savedToast(owner);
+      fake.opts.partDelay = 0;
+      t.ok(end.state === 'done' && /^Saved to Projects: Sculpt /.test(end.text), `and then that it is saved ("${end.text}")`);
+
+      const id = 'scene-test1';
+      const creates = fake.calls.filter((c) => c.method === 'POST' && c.path === '/admin/api/projects').map((c) => fake.body(c.body));
+      t.ok(
+        creates.length === 1 && creates[0].mode === 'scene' && /^Sculpt /.test(creates[0].title) && !('id' in creates[0]) && !('visibility' in creates[0]),
+        `it creates a scene project named like a shelf entry, leaving the id and the private default to the server (${JSON.stringify(creates)})`,
+      );
+      const parts = fake.calls.filter((c) => c.method === 'PUT' && c.path === `/admin/api/projects/${id}/scene`);
+      const sizes = parts.map((c) => c.body.length);
+      t.ok(
+        parts.length >= 2 && parts.every((c) => c.type === 'application/octet-stream') && sizes.slice(0, -1).every((n) => n === fake.opts.partSize),
+        `the file goes up in parts of the size the server asked for (${sizes.join(', ')} bytes)`,
+      );
+      const finish = fake.calls.find((c) => c.method === 'POST' && c.path === `/admin/api/projects/${id}/scene` && c.search.includes('upload='));
+      const done = finish ? fake.body(finish.body) : null;
+      t.ok(
+        done?.objects === 2 && done.tris === tris && done.parts.length === parts.length && done.parts.every((p, i) => p.part === i + 1 && p.etag === `etag-${i + 1}`),
+        `completing names every part with its etag, and the counts (${done?.objects} objects, ${done?.tris} tris)`,
+      );
+      const uploaded = await readBozz(owner, fake.projects.get(id).file, id);
+      t.eq(uploaded.objects, 2, 'the parts put back together are the scene, both objects');
+      t.ok(!uploaded.mentions, 'and the file carries no project link');
+      const thumb = fake.calls.find((c) => c.method === 'POST' && c.path === `/admin/api/projects/${id}/thumb`);
+      t.ok(thumb?.type === 'image/jpeg' && thumb.body.length > 0, `a thumbnail follows (${thumb?.body.length ?? 0} bytes)`);
+      const link = await owner.evaluate(() => window.__sculpt.fileActions.link);
+      t.ok(link?.id === id && link.title === fake.projects.get(id).title, `the scene now belongs to the project (${JSON.stringify(link)})`);
+      let copies = await shelf(owner);
+      t.ok(copies.length === 1 && copies[0].key === id && copies[0].projectId === id && copies[0].objects === 2, `a device copy is kept under the project's id (${JSON.stringify(copies)})`);
+      t.eq(await owner.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and the scene counts as saved');
+
+      // Again, after an edit: the same project, updated in place.
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
+      lib = (await fileItems(owner)).find((i) => i.label === 'Save to library');
+      t.eq(lib?.hint, `Updates "${link?.title}" in Projects`, 'the menu now says which project a save updates');
+      let mark = fake.calls.length;
+      await chooseFile(owner, 'Save to library');
+      end = await savedToast(owner);
+      const again = fake.calls.slice(mark);
+      const reFinish = again.find((c) => c.method === 'POST' && c.path === `/admin/api/projects/${id}/scene` && c.search.includes('upload='));
+      t.ok(
+        end.state === 'done' && !again.some((c) => c.method === 'POST' && c.path === '/admin/api/projects') && fake.body(reFinish?.body ?? Buffer.from('{}')).objects === 3,
+        `saving again updates the same project in place, three objects now (${end.text})`,
+      );
+      t.eq(fake.projects.get(id).scene?.objects, 3, 'and the server has the new scene');
+
+      // The link lives in the autosave record, not in any file.
+      const named = await owner.evaluate(async (sid) => {
+        const u8 = new Uint8Array(await window.__sculpt.file.pack());
+        const raw = u8[0] === 0x1f && u8[1] === 0x8b ? new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()) : u8;
+        return new TextDecoder().decode(raw.subarray(8, 8 + new DataView(raw.buffer).getUint32(4, true))).includes(sid);
+      }, id);
+      t.ok(!named, 'a .bozz file saved now names no project');
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      await boot();
+      t.eq(await owner.evaluate(() => window.__sculpt.fileActions.link?.id ?? null), id, 'after a reload the scene still belongs to the project');
+
+      await chooseFile(owner, 'Keep on this device');
+      await owner.waitForFunction(() => [...document.querySelectorAll('.file-menu__note')].some((n) => n.textContent === 'Kept on this device'), null, { timeout: 30_000 });
+
+      // The publish forms: public unless chosen otherwise.
+      const published = await owner.evaluate(() => {
+        const form = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
+        const pick = form.querySelector('.gallery-form__visibility');
+        const was = pick.value;
+        const options = [...pick.options].map((o) => o.value).join();
+        form.querySelector('.gallery-form__input[placeholder="project-id"]').value = 'model-one';
+        pick.value = 'private';
+        [...form.querySelectorAll('button')].find((b) => b.textContent === 'Publish model').click();
+        return { was, options };
+      });
+      await owner.waitForFunction(() => /^Saved/.test(document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form__status')?.textContent ?? ''), null, { timeout: 60_000 }).catch(() => {});
+      const model = fake.calls.filter((c) => c.method === 'POST' && c.path === '/admin/api/projects').map((c) => fake.body(c.body)).find((b) => b.id === 'model-one');
+      t.ok(published.was === 'public' && published.options === 'public,private', `the publish form offers public or private, public chosen (${published.options})`);
+      t.ok(model?.mode === 'model' && model.visibility === 'private', `a model published as private is created private (${JSON.stringify(model)})`);
+
+      // A reel recorded on this scene, kept with recording switched off
+      // again: an opened scene must not inherit it (checked below).
+      await owner.evaluate(() => window.__sculpt.recorder.setEnabled(true));
+      await owner.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
+      await owner.evaluate(() => window.__sculpt.recorder.setEnabled(false));
+      const reel = await storedFrames(owner);
+      t.ok(reel > 0, `a frame is recorded and kept with recording off again (${reel} stored)`);
+
+      // The gallery, as the owner sees it.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await owner.waitForSelector(`.card--scene[data-project="${id}"]`, { timeout: 30_000 });
+      await owner.waitForFunction((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__img`)?.complete, id, { timeout: 10_000 }).catch(() => {});
+      const g = await owner.evaluate((sid) => {
+        const scene = document.querySelector(`.card--scene[data-project="${sid}"]`);
+        const badges = (el) => [...(el?.querySelectorAll('.card__badge') ?? [])].map((b) => b.textContent).join();
+        const img = scene.querySelector('.card__img');
+        return {
+          badges: badges(scene),
+          meta: scene.querySelector('.card__meta').textContent,
+          href: scene.querySelector('.card__thumb').getAttribute('href'),
+          img: img ? { src: img.getAttribute('src'), width: img.naturalWidth } : null,
+          toggle: scene.querySelector('.card__vis input')?.checked ?? null,
+          device: [...document.querySelectorAll('.card--library:not(.card--scene):not(.card--owned)')].map((c) => ({ note: c.querySelector('.card__note')?.textContent ?? null, upload: !!c.querySelector('.card__upload') })),
+          progress: document.querySelector('.card--sculpt:not(.card--armature) .card__note')?.textContent ?? null,
+          privReel: badges(document.querySelector('.card--owned[data-project="priv-reel"]')),
+          pubReel: badges(document.querySelector('.card--owned[data-project="pub-reel"]')),
+          model: !!document.querySelector('[data-project="model-one"]'),
+        };
+      }, id);
+      t.ok(g.badges === 'Scene,Private' && /^3 objects · [\d,]+ tris · /.test(g.meta), `the scene shows in the gallery, badged Private (${g.badges}; ${g.meta})`);
+      t.ok(g.href === `/?sculpt=1&project=${id}` && g.toggle === true, `it opens in Sculpt, and its switch says private (${g.href})`);
+      t.ok(!!g.img && g.img.src.startsWith(`/admin/api/media/${id}/thumb.jpg?v=`) && g.img.width > 0, `its picture comes through the gated media route (${g.img?.src})`);
+      t.ok(g.device.length === 1 && g.device[0].note === DEVICE_NOTE && g.device[0].upload, `the scene kept on the device alone is labelled, with Upload to Projects; the project's own copy has no card of its own (${JSON.stringify(g.device)})`);
+      t.eq(g.progress, DEVICE_NOTE, 'the In progress card carries the label for the owner too');
+      t.ok(g.privReel === 'Private' && g.pubReel === '' && g.model, `published work shows with its visibility: private "${g.privReel}", public "${g.pubReel}"`);
+
+      mark = fake.calls.length;
+      await owner.click(`.card--scene[data-project="${id}"] .card__vis input`);
+      await owner.waitForFunction((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__badges`)?.textContent === 'Scene', id, { timeout: 10_000 }).catch(() => {});
+      const put = fake.calls.slice(mark).find((c) => c.method === 'PUT' && c.path === `/admin/api/projects/${id}`);
+      t.ok(!!put && fake.body(put.body).visibility === 'public' && fake.projects.get(id).visibility === 'public', `the switch makes the scene public through the update route (${put ? put.body : 'no call'})`);
+      t.eq(await owner.evaluate((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__badges`).textContent, id), 'Scene', 'and the Private badge goes');
+
+      mark = fake.calls.length;
+      await owner.click('.card--library:not(.card--scene):not(.card--owned) .card__upload');
+      await owner.waitForSelector('.card--library.card--uploaded', { timeout: 30_000 }).catch(() => {});
+      const newId = [...fake.projects.keys()].find((k) => k.startsWith('scene-test') && k !== id);
+      const card = await owner.evaluate(() => {
+        const c = document.querySelector('.card--library.card--uploaded');
+        return c && { badge: c.querySelector('.card__badge').textContent, note: !!c.querySelector('.card__note'), upload: !!c.querySelector('.card__upload'), href: c.querySelector('.card__thumb').getAttribute('href') };
+      });
+      t.ok(!!newId && fake.projects.get(newId).scene?.objects === 3, `Upload to Projects makes a project of the kept scene (${newId})`);
+      t.ok(card?.badge === 'In Projects' && !card.note && !card.upload && card.href === `/?sculpt=1&project=${newId}`, `and the card is marked uploaded (${JSON.stringify(card)})`);
+      copies = await shelf(owner);
+      t.ok(copies.length === 2 && copies.every((c) => c.projectId === c.key) && copies.some((c) => c.key === newId), `the kept scene is now that project's device copy (${copies.map((c) => c.key).join(', ')})`);
+
+      // The Projects page: who sees each, and scenes open in Sculpt.
+      await owner.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
+      await owner.waitForSelector(`.admin-row[data-project="${id}"]`, { timeout: 30_000 });
+      const rows = await owner.evaluate(() =>
+        Object.fromEntries([...document.querySelectorAll('.admin-row')].map((r) => [r.dataset.project, { open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null, edit: !!r.querySelector('.admin-row__edit'), priv: r.querySelector('.admin-row__vis input').checked }])),
+      );
+      t.ok(rows[id]?.open === `/?sculpt=1&project=${id}` && !rows[id].edit && rows['pub-reel']?.edit, 'the Projects page lists the scenes, opening in Sculpt, and the published work, opening in the editor');
+      t.ok(rows['priv-reel']?.priv === true && rows['pub-reel']?.priv === false && rows[id]?.priv === false, `with each one's visibility (${JSON.stringify(rows)})`);
+      mark = fake.calls.length;
+      await owner.click('.admin-row[data-project="priv-reel"] .admin-row__vis input');
+      await owner.waitForFunction(() => !document.querySelector('.admin-row[data-project="priv-reel"] .admin-row__vis input').disabled, null, { timeout: 10_000 }).catch(() => {});
+      const rowPut = fake.calls.slice(mark).find((c) => c.method === 'PUT' && c.path === '/admin/api/projects/priv-reel');
+      t.ok(!!rowPut && fake.body(rowPut.body).visibility === 'public' && fake.projects.get('priv-reel').visibility === 'public', 'a row\'s switch sets its visibility');
+
+      // Opening by ?project=: fetched through the media route, linked.
+      mark = fake.calls.length;
+      await boot(`&project=${id}`);
+      let opened = await bootState(owner);
+      const got = fake.calls.slice(mark).filter((c) => c.method === 'GET' && c.path.endsWith('/scene.bozz')).map((c) => c.path);
+      t.ok(opened.objects === 3 && opened.link?.id === id && !/project=/.test(opened.search), `?project= opens the scene, linked to its project, and leaves the address (${opened.objects} objects, ${opened.search})`);
+      t.ok(got.length === 1 && got[0] === `/media/${id}/scene.bozz`, `the file came from the media route (${got.join(', ')})`);
+      t.ok(/^Opened ".+" from Projects$/.test(opened.toast), `and says where it came from ("${opened.toast}")`);
+      t.eq(await storedFrames(owner), 0, 'and starts a reel of its own, as File > Open does: the frames recorded before are gone');
+      mark = fake.calls.length;
+      await boot(`&project=${newId}`);
+      opened = await bootState(owner);
+      const gated = fake.calls.slice(mark).filter((c) => c.method === 'GET' && c.path.endsWith('/scene.bozz')).map((c) => c.path);
+      t.ok(opened.objects === 3 && opened.link?.id === newId && gated[0] === `/admin/api/media/${newId}/scene.bozz`, `a private scene's file comes through the Access-gated media route (${gated.join(', ')})`);
+
+      // Offline: the device copy stands in, still linked to the project.
+      fake.opts.offline = true;
+      await boot(`&project=${id}`);
+      opened = await bootState(owner);
+      t.ok(opened.objects === 3 && opened.link?.id === id, `offline, this device's copy opens instead, still the project's (${opened.objects} objects)`);
+      t.ok(/^Opened this device's copy of ".+": the server could not be reached$/.test(opened.toast), `and says so, and why ("${opened.toast}")`);
+      await boot('&project=no-such-scene');
+      opened = await bootState(owner);
+      t.ok(opened.failed.includes('Could not open that project: the server could not be reached') && !/project=/.test(opened.search), `with no copy to fall back on, it says it could not open it and carries on (${opened.failed.join(' | ')})`);
+      fake.opts.offline = false;
+
+      t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+    }
   },
 };

@@ -14,6 +14,7 @@ Built as a study and teaching tool, and as a way to render out content. Shared u
 | --- | --- |
 | `/` | Gallery |
 | `/?sculpt=1` | Sculpt mode |
+| `/?sculpt=1&project=<id>` | A scene from Projects, open in Sculpt |
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
 | `/create/` | Public editor, no sign-in |
@@ -31,7 +32,7 @@ Bozzetto installs to the home screen and launches fullscreen. That is the way to
 
 **Installed, Bozzetto works offline.** A service worker precaches the app with its base meshes, mannequins and default environment, so it opens, sculpts and poses with no network at all. The gallery still shows your work in progress and the projects you saw last time; the other environments download once and are kept. Only opening a timelapse you have never played needs a connection.
 
-Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data.
+Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish or save to the library. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data. Deleting the app still takes it, which is why a guest's **Save to library** downloads a file.
 
 ## Sculpt
 
@@ -50,9 +51,9 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery. Off until you tick **Record timelapse** in the Capture panel, signed in or not; the device remembers the choice.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
-- **Scene library**: **Save to library** keeps a sculpt on the device. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. Separate from the autosave, which still resumes your work in progress.
+- **Scene library**: signed in, **Save to library** stores the scene in Projects on the server, private until you make it public, with its progress shown while it uploads; saving again updates the same project in place, and a copy stays on the device so the scene still opens offline. Signed out it downloads a `.bozz` file (the share sheet, on an iPad), because browser storage does not survive a reinstall, and **Keep on this device** still puts a scene on the device's own shelf. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. A card for a scene kept only on the device says so, and signed in it offers **Upload to Projects**. Separate from the autosave, which still resumes your work in progress.
 - **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use. Carving is a tap on **Negative** rather than a finger held on it while you draw, because a fingertip on the glass hides the Pencil from the page until it lifts.
-- **Reload-safe**: your work autosaves to IndexedDB, a few seconds after the first change and then at most once a minute while you keep working, and straight away when you leave sculpt mode or the page or the app goes to the background. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library.
+- **Reload-safe**: your work autosaves to IndexedDB, a few seconds after the first change and then at most once a minute while you keep working, and straight away when you leave sculpt mode or the page or the app goes to the background. The autosave also remembers which project in Projects the scene came from, so after a reload **Save to library** still updates it; a `.bozz` file never carries that link. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library, labelled as what it is: on this device only, lost with a reinstall or a cleared browser.
 
 ## Desktop app
 
@@ -63,7 +64,9 @@ changes, a save prompt before closing, recent files, and crash recovery.
 
 It is local by default and makes no network requests at all. Point it at your
 own Cloudflare deployment under **Server → Server Settings** if you want to
-publish from it; signing in opens Cloudflare Access in a real window.
+publish from it; signing in opens Cloudflare Access in a real window. Signed
+in there, **File → Save to Library** saves to Projects on that server, as it
+does on the web; without a server it keeps the scene on this machine.
 
 ```bash
 npm run desktop        # build and run
@@ -227,6 +230,8 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 ### Gallery
 
 - Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature, and your own sculpt and armature in progress.
+- Signed in, the gallery is your whole list: private projects carry a **Private** badge and every card a switch to change it, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see public projects only.
+- Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
 - **Install**, **Upload timelapse**, and **Log in**, which becomes **Projects** once signed in.
 - The **Install** card also offers the desktop app, reading the latest GitHub release so the links never point at a stale version, and leading with the build for the visitor's platform.
 
@@ -242,13 +247,14 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 - OBJ to glTF-binary conversion runs in a Web Worker, overlapped with upload.
 - Set up the look in the preview and press **Save look** to store the opening state.
 - Mark stages, capture any frame as the gallery thumbnail, and rename or re-configure from **Settings**.
+- Every project is public or private: **Settings** has the choice, and so does each row of the project list. Publishing from Sculpt asks too, public unless you choose otherwise. Scenes saved from Sculpt are listed as well, and open there.
 - **Record reel** exports the timelapse or a turntable spin as MP4 or GIF, up to 1080p, with a choice of aspect.
 - Export a self-contained `.html` that opens offline.
 
 ### Platform
 
-- Serverless on Cloudflare: metadata in D1, meshes in R2, every API route a Pages Function.
-- Admin writes sit behind Cloudflare Access. Public reads and the viewer are open.
+- Serverless on Cloudflare: metadata in D1, meshes and scene files in R2, every API route a Pages Function. A scene saved from Sculpt is a `.bozz` file in R2 beside its thumbnail, uploaded in parts.
+- Admin writes sit behind Cloudflare Access, and so does every read of a private project: the public list, manifests and `/media` serve public projects only, and a private project's files come through `/admin/api/media`, so one cannot be fetched by guessing its id. Public reads and the viewer are open.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
 - A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. The other HDRIs, the gallery list and the sign-in answer are cached as they are used, so an installed app keeps working offline, owner features included. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
 - The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
@@ -317,6 +323,11 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **Scenes saved to the library go to Projects.** Signed in, **File → Save to library** uploads the scene to the server as a private project, in parts with its progress shown, and keeps a copy on the device; saving again updates the same project in place, and the autosave remembers which project that is across reloads (a `.bozz` file never carries it). Your gallery and the Projects page list these scenes with a thumbnail, object and triangle counts and size, to open in Sculpt, rename, delete or make public. `/?sculpt=1&project=<id>` opens one; offline, the copy on the device opens instead.
+- **Signed out, Save to library downloads a file.** Browser storage goes with a reinstall (owner report: a sculpt saved on an iPad was gone with the app), so a guest's **Save to library** saves a `.bozz` file, the share sheet on an iPad, and the menu says so. **Keep on this device** still puts a scene on the device's shelf, so nothing a guest could do before is gone.
+- **Work kept only on the device says so.** The "In progress" cards and every scene kept on the device carry a note: on this device only, a reinstall or clearing the browser loses it. Signed in, such a card offers **Upload to Projects**, which makes it a project and marks the card as uploaded.
+- **A scene opened from a gallery card opens as File → Open would.** It comes back under the look it was saved with, and starts a timelapse of its own rather than continuing the reel recorded on the scene it replaces, since a publish must never mix two scenes. This holds for the device's own cards too.
+- **Projects are public or private.** A private project is left out of the public gallery, list and manifests, and `/media` will not serve its files to anyone: its owner reads them through `/admin/api/media`, behind Cloudflare Access. Your gallery shows a **Private** badge and a switch on each card; the editor's **Settings** and each row of the project list have the choice too, and the publish forms in Sculpt ask, public unless you choose otherwise. Everything published before stays public. Apply migration `0002_visibility.sql` (`npm run db:migrate`) before this deploys: the API reads its new column.
 - **A reach past a joint's limits settles.** A hand or foot asked to go further than its joints can turn, a pinned foot the pelvis has been dragged away from, say, now comes to rest at the nearest pose the limits allow and stays there from one move to the next. The reach used to swing each joint as if it had no limits and then clamp the swing axis by axis, which could land on a pose nothing like the nearest: a foot pinned past the hip's reach ended 40 units off its pin on the realistic male where the leg can get within 8, and on the stylized female the next move flipped the thigh 22° and threw the foot further off. Reaches the limits allow go as they did.
 
 ### v1.3.3
@@ -459,6 +470,7 @@ npm run preview             # serve the production build
 npm run export <id>         # bundle a timelapse into <id>.html
 npm run typecheck           # app types
 npm run typecheck:functions # Pages Functions types
+npm run check:functions     # the Functions against a local wrangler pages dev (D1, R2)
 npm run db:migrate          # apply D1 migrations to the remote database
 ```
 
@@ -520,9 +532,11 @@ src/
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
 functions/
-  api/                     public read API (project list + manifest)
-  admin/api/               Access-gated write API (projects, frames, thumb)
-  media/[[path]].ts        streams frame meshes from R2
+  api/                     public read API (project list + manifest), public projects only
+  admin/api/               Access-gated API: the owner's list and manifests, writes
+                           (projects, frames, thumb, scene uploads), and media/ for
+                           private projects' files
+  media/[[path]].ts        streams public projects' files from R2
   _shared/                 D1/R2 helpers, manifest shaping, auth
 migrations/                D1 schema
 scripts/
@@ -533,6 +547,7 @@ tools/
   export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
   blender_armature.py      Blender: the armature rig, to model against
 tests/e2e/                 browser smoke tests: npm run e2e:build (needs Playwright)
+tests/functions/           the Functions against wrangler pages dev: npm run check:functions
 ```
 
 ## Deployment
@@ -541,7 +556,7 @@ Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub i
 
 - Build command `npm run build`, output directory `dist`.
 - The `prebuild` step generates the demo timelapse, so those assets ship without being committed.
-- Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`.
+- Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column.
 - Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. Set `ADMIN_EMAILS` to limit which identities may write. Also set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` so the admin routes verify the Access JWT directly.
 - Production is served at `bozzetto.vidarrapp.se` as a custom domain on the Pages project.
 

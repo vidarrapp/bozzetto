@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, mediaPath } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
@@ -85,7 +85,8 @@ async function refresh(listEl: HTMLElement): Promise<void> {
   listEl.textContent = 'Loading…';
   let projects: ProjectSummary[];
   try {
-    projects = await api.list();
+    // The owner's list: private projects and scenes saved from Sculpt too.
+    projects = await api.adminList();
   } catch (err) {
     listEl.textContent = `Failed to load projects: ${(err as Error).message}`;
     return;
@@ -98,6 +99,12 @@ async function refresh(listEl: HTMLElement): Promise<void> {
   }
 
   for (const p of projects) {
+    const scene = p.mode === 'scene';
+    // A scene is a file to open in Sculpt; the editor is for frames.
+    const actions = scene
+      ? '<a class="btn btn--primary admin-row__open">Open in Sculpt</a>'
+      : `<a class="btn btn--primary admin-row__edit">Edit</a>
+          <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>`;
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
@@ -108,33 +115,83 @@ async function refresh(listEl: HTMLElement): Promise<void> {
           <span class="admin-row__meta"></span>
         </div>
         <div class="admin-row__actions">
-          <a class="btn btn--primary admin-row__edit">Edit</a>
-          <a class="btn" target="_blank" rel="noopener">Open</a>
-          <button class="btn btn--danger" type="button">Delete</button>
+          <label class="admin-row__vis" title="Private projects show only to you, signed in">
+            <input type="checkbox" /> Private
+          </label>
+          ${actions}
+          <button class="btn btn--danger admin-row__delete" type="button">Delete</button>
         </div>
       </div>`);
 
+    row.dataset.project = p.id;
     const img = row.querySelector<HTMLImageElement>('.admin-row__img')!;
-    img.src = `/media/${encodeURIComponent(p.id)}/thumb.jpg?v=${p.updated_at}`;
+    img.src = mediaPath(p, `thumb.jpg?v=${p.updated_at}`);
     // No thumbnail yet (e.g. before any frames) → drop the <img>, show the placeholder.
     img.addEventListener('error', () => img.remove());
 
     row.querySelector<HTMLElement>('.admin-row__title')!.textContent = p.title || p.id;
-    row.querySelector<HTMLElement>('.admin-row__meta')!.textContent =
-      `${p.id} · ${p.mode} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
-    row
-      .querySelector<HTMLAnchorElement>('.admin-row__edit')!
-      .setAttribute('href', `?p=${encodeURIComponent(p.id)}`);
-    row
-      .querySelector<HTMLAnchorElement>('a:not(.admin-row__edit)')!
-      .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
+    row.querySelector<HTMLElement>('.admin-row__meta')!.textContent = scene
+      ? `${p.id} · scene · ${
+          p.scene
+            ? `${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'} · ` +
+              `${p.scene.tris.toLocaleString('en-US')} tris · ${(p.scene.bytes / (1024 * 1024)).toFixed(1)} MB`
+            : 'upload did not finish'
+        }`
+      : `${p.id} · ${p.mode} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
 
-    const del = row.querySelector<HTMLButtonElement>('button')!;
+    if (scene) {
+      const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
+      open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}`;
+      // Opening replaces the sculpt in progress on this device, as a
+      // gallery card does - so the same question, when there is one.
+      open.addEventListener('click', (e) => {
+        e.preventDefault();
+        void (async () => {
+          const store = await import('../sculpt/bridge/ScenePersist').catch(() => null);
+          const busy = store ? await store.hasSavedScene() : false;
+          if (busy && !confirm(`Open "${p.title}"? Your work in progress in Sculpt will be replaced.`)) return;
+          window.location.href = open.href;
+        })();
+      });
+    } else {
+      row
+        .querySelector<HTMLAnchorElement>('.admin-row__edit')!
+        .setAttribute('href', `?p=${encodeURIComponent(p.id)}`);
+      row
+        .querySelector<HTMLAnchorElement>('.admin-row__view')!
+        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
+    }
+
+    const vis = row.querySelector<HTMLInputElement>('.admin-row__vis input')!;
+    vis.checked = p.visibility === 'private';
+    vis.addEventListener('change', async () => {
+      vis.disabled = true;
+      try {
+        const updated = await api.setVisibility(p.id, vis.checked ? 'private' : 'public');
+        p.visibility = updated.visibility;
+      } catch (err) {
+        vis.checked = p.visibility === 'private';
+        alert(`Could not change who sees "${p.title || p.id}": ${(err as Error).message}`);
+      } finally {
+        vis.disabled = false;
+      }
+    });
+
+    const del = row.querySelector<HTMLButtonElement>('.admin-row__delete')!;
     del.addEventListener('click', async () => {
-      if (!confirm(`Delete "${p.id}"? This also removes its uploaded meshes.`)) return;
+      const question = scene
+        ? `Delete "${p.title || p.id}"? It goes from Projects and from this device.`
+        : `Delete "${p.id}"? This also removes its uploaded meshes.`;
+      if (!confirm(question)) return;
       del.disabled = true;
       try {
         await api.remove(p.id);
+        if (scene) {
+          // Its device copy too, or it would come back in the gallery as a
+          // scene kept only on this device.
+          const lib = await import('../sculpt/bridge/SceneLibrary').catch(() => null);
+          await lib?.deleteLibraryScene(p.id);
+        }
         await refresh(listEl);
       } catch (err) {
         alert(`Delete failed: ${(err as Error).message}`);

@@ -47,7 +47,11 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
     return v;
   };
 
-  const header = new TextEncoder().encode(JSON.stringify({ scene: strip(scene), buffers: table }));
+  // The project link is the autosave's business (see SavedScene.project):
+  // a file leaves the device, and must not carry a pointer to the owner's
+  // server project with it.
+  const { project: _link, ...portable } = scene;
+  const header = new TextEncoder().encode(JSON.stringify({ scene: strip(portable), buffers: table }));
   const headPad = (header.length + 3) & ~3;
   const raw = new Uint8Array(8 + headPad + cursor);
   const dv = new DataView(raw.buffer);
@@ -116,6 +120,9 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
   };
   const scene = revive(parsed.scene);
   if (!validSavedScene(scene)) throw new Error('Scene file failed validation');
+  // Nor is a link taken from one: which project a scene belongs to is
+  // decided by how it was opened, never by what a file claims.
+  delete scene.project;
   return scene;
 }
 

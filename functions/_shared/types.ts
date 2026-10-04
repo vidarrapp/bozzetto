@@ -16,7 +16,22 @@ export interface Env {
   ACCESS_AUD?: string;
 }
 
-export type ProjectMode = 'timelapse' | 'model';
+/**
+ * 'scene' is a sculpt saved to the library: one .bozz file, opened in Sculpt
+ * rather than played in the viewer, so it has no frames.
+ */
+export type ProjectMode = 'timelapse' | 'model' | 'scene';
+
+/** Public projects are anyone's to see; private ones the owner's alone. */
+export type Visibility = 'public' | 'private';
+
+/** What a scene card shows, recorded when its file lands. */
+export interface SceneMeta {
+  objects: number;
+  tris: number;
+  /** Size of the stored .bozz file, as R2 measured it. */
+  bytes: number;
+}
 
 export interface FrameMeta {
   index: number;
@@ -50,6 +65,8 @@ export interface ProjectData {
   presentation?: unknown;
   stages: StageMeta[];
   frames: FrameMeta[];
+  /** A scene project's counts and size; absent until its first upload completes. */
+  scene?: SceneMeta;
 }
 
 export interface ProjectRow {
@@ -58,6 +75,7 @@ export interface ProjectRow {
   mode: ProjectMode;
   fps: number;
   data: string;
+  visibility: Visibility;
   created_at: number;
   updated_at: number;
 }

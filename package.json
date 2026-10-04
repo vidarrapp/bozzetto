@@ -13,6 +13,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "typecheck:functions": "tsc -p tsconfig.functions.json",
+    "check:functions": "node tests/functions/check.mjs",
     "prebuild": "node scripts/generate-sample.mjs",
     "build": "tsc --noEmit && vite build && vite build --config vite.embed.config.ts",
     "build:test": "tsc --noEmit && vite build --mode test",

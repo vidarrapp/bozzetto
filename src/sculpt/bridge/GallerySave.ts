@@ -1,4 +1,4 @@
-import { api } from '../../admin/api';
+import { api, type Visibility } from '../../admin/api';
 import { mergeSceneArrays } from './SceneFile';
 import type { SnapshotRecorder } from './SnapshotRecorder';
 import type { SculptSession } from './SculptSession';
@@ -54,6 +54,7 @@ export async function saveTimelapseToGallery(
   hooks: GalleryHooks,
   id: string,
   title: string,
+  visibility: Visibility,
   onProgress: (text: string) => void,
 ): Promise<string> {
   // Freeze the set: capture keeps running, and a frame landing mid-upload
@@ -68,7 +69,7 @@ export async function saveTimelapseToGallery(
   }
   if (!PROJECT_SLUG.test(id)) throw new Error('Id must be a-z, 0-9, hyphens');
   onProgress('Creating project...');
-  await api.create({ id, title: title || id, mode: 'timelapse', fps: 4 });
+  await api.create({ id, title: title || id, mode: 'timelapse', fps: 4, visibility });
   const frames: { index: number; tris: number }[] = [];
   for (let i = 0; i < metas.length; i++) {
     onProgress(`Uploading frame ${i + 1}/${metas.length}...`);
@@ -90,6 +91,7 @@ export async function saveModelToGallery(
   hooks: GalleryHooks,
   id: string,
   title: string,
+  visibility: Visibility,
   onProgress: (text: string) => void,
 ): Promise<string> {
   // With colours: a painted model publishes as painted (owner decision).
@@ -100,7 +102,7 @@ export async function saveModelToGallery(
   onProgress('Encoding model...');
   const glb = await recorder.encodeFrame(merged.positions, merged.indices, merged.colors);
   onProgress('Creating project...');
-  await api.create({ id, title: title || id, mode: 'model', fps: 4 });
+  await api.create({ id, title: title || id, mode: 'model', fps: 4, visibility });
   onProgress('Uploading...');
   await api.uploadFrame(id, 0, glb);
   await api.update(id, {

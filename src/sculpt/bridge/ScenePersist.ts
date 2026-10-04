@@ -133,6 +133,22 @@ export interface SavedScene {
   materials?: SculptMaterial[];
   /** Brush workspace settings (v4 addition; absent means the defaults). */
   settings?: SculptSettings;
+  /**
+   * The server project this scene was opened from or last saved to, which
+   * is where Save to library writes again. It rides the autosave record so
+   * a reload still knows - and rides it IN the record, written in the same
+   * put as the geometry, so the two can never disagree after a crash: a
+   * link written on its own could outlive the scene it belonged to and send
+   * an older scene over the project. packScene leaves it out, so a .bozz
+   * file handed to someone never points at the owner's project.
+   */
+  project?: SceneLink;
+}
+
+/** A scene project on the server, as the sculpt session refers to it. */
+export interface SceneLink {
+  id: string;
+  title: string;
 }
 
 /** The single-mesh v2 format, upgraded on read. */

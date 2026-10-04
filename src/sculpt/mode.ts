@@ -18,15 +18,16 @@ import {
   saveSculptLook,
   saveSculptSnapshot,
 } from './bridge/ScenePersist';
-import type { SavedScene } from './bridge/ScenePersist';
+import type { SavedScene, SceneLink } from './bridge/ScenePersist';
 import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
 import { SnapshotRecorder } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
-import { packScene } from './bridge/SceneFile';
+import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
+import { statusToast } from './ui/statusToast';
 import { probeAdmin } from '../admin/api';
 import { isDesktop } from '../net/origin';
 import {
@@ -100,28 +101,57 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const camera = new CameraAdapter(viewer.camera, canvas);
   const session = new SculptSession(camera, canvas, () => {});
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
-  // A ?lib=<id> link from a gallery card outranks it - that is an explicit
-  // "open this one", where the autosave is only "carry on where I was".
-  // A missing or unreadable entry falls back rather than failing the boot.
-  const libId = new URLSearchParams(window.location.search).get('lib');
-  let saved = libId ? await (await import('./bridge/SceneLibrary')).loadFromLibrary(libId) : null;
-  if (libId) {
+  // A ?lib=<id> link from a gallery card outranks it, and so does a
+  // ?project=<id> link to a scene in Projects - those are an explicit "open
+  // this one", where the autosave is only "carry on where I was". A missing
+  // or unreadable one falls back rather than failing the boot.
+  const query = new URLSearchParams(window.location.search);
+  const libId = query.get('lib');
+  const projectId = query.get('project');
+  let saved: SavedScene | null = null;
+  // The project the boot scene belongs to, if any: where Save to library
+  // writes again. Set by how the scene was opened, never read from a file.
+  let bootLink: SceneLink | null = null;
+  let opened: ProjectOpen | null = null;
+  if (projectId) {
+    opened = await openProjectAtBoot(projectId);
+    saved = opened.scene;
+    bootLink = opened.link;
+  } else if (libId) {
+    const lib = await import('./bridge/SceneLibrary');
+    saved = await lib.loadFromLibrary(libId);
+    // A device copy of a project opens linked to it, so a save from here
+    // updates that project rather than making a second one.
+    const entry = saved ? await lib.getLibraryEntry(libId) : null;
+    bootLink = entry?.projectId ? { id: entry.projectId, title: entry.name } : null;
+  }
+  if (libId || projectId) {
     // The link has done its job. Left in the address bar, a reload - or
     // iOS relaunching the tab with the same URL - would open the untouched
     // shelf copy again and hide every autosaved edit made since behind it.
     const url = new URL(window.location.href);
     url.searchParams.delete('lib');
+    url.searchParams.delete('project');
     history.replaceState(history.state, '', url);
   }
+  // Whether the boot scene is one that was asked for, rather than the
+  // autosave standing in for an open that failed.
+  let openedExplicitly = !!saved;
+  // An opened scene starts a reel of its own, as File > Open does: frames
+  // recorded on the scene it replaces would otherwise run on into it, and
+  // a publish must never mix two scenes' geometry. Cleared before the
+  // recorder reads its store at install.
+  if (openedExplicitly) await clearSculptFrames();
   // The desktop app starts clean (owner call): its work lives in files,
   // and a scene that was saved to one has no business coming back on its
   // own. The slot and the reel are cleared so the gallery's in-progress
   // card does not offer them either; a crash still leaves the recovery
   // sidecar, which is offered below as before.
-  if (isDesktop() && !libId) {
+  if (isDesktop() && !libId && !projectId) {
     await Promise.all([clearSavedScene(), clearSculptFrames()]);
   } else if (!saved) {
     saved = await loadSavedScene();
+    bootLink = saved?.project ?? null;
   }
   let multimesh;
   try {
@@ -131,6 +161,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     console.warn('sculpt restore failed, starting fresh:', err);
     void clearSavedScene();
     saved = null;
+    bootLink = null;
+    opened = null;
+    openedExplicitly = false;
     multimesh = session.addSphere();
   }
   // The boot scene is the floor of history: its add-states must not be
@@ -328,8 +361,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const defaultLook = viewer.getLook();
   // ...and then, on top of those defaults, whatever the last session set up.
   // Without this, leaving sculpt mode and coming back reset every look-dev
-  // control - the defaults above are only meant for a first visit.
-  await applyLookSafely(await loadSculptLook());
+  // control - the defaults above are only meant for a first visit. A scene
+  // opened from a card or from Projects brings the look it was saved under
+  // instead, as File > Open does with the same bytes.
+  await applyLookSafely(openedExplicitly && saved?.look ? saved.look : await loadSculptLook());
   const onLookReset = (): void => {
     void (async () => {
       await clearSculptLook();
@@ -958,11 +993,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Otherwise it is edits since the last clean point (a save, or an open),
   // compared by the undo stack's TOP ENTRY rather than its index, because a
   // full stack shifts and leaves the index standing.
-  let sceneOnDisk = !saved;
+  // A scene just opened from Projects exists there as it is: nothing to lose yet.
+  let sceneOnDisk = !saved || !!opened?.from;
   let cleanState: unknown = session.getStateManager().getCurrentState();
-  const markSceneClean = (): void => {
+  const markSceneClean = (at: unknown = session.getStateManager().getCurrentState()): void => {
     sceneOnDisk = true;
-    cleanState = session.getStateManager().getCurrentState();
+    cleanState = at;
   };
   const hasWork = (): boolean =>
     !sceneOnDisk ||
@@ -984,11 +1020,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       session.render();
     },
     hasWork,
+    cleanPoint: () => session.getStateManager().getCurrentState(),
     onSceneClean: markSceneClean,
     // The library card wants the same picture the gallery's in-progress
     // card gets, taken at the moment you press Save rather than on the way out.
     captureThumb: () => viewer.captureThumbnail(480),
+    // A new link must reach the autosave record (it rides the same put as
+    // the geometry), or a reload would forget where Save to library goes.
+    onLinkChange: () => persist.markDirty(),
   });
+  fileActions.adoptLink(bootLink);
   // The top row's File and Edit menus. The desktop app has native ones
   // over the same actions, so it goes without.
   if (!isDesktop()) {
@@ -1043,37 +1084,40 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Gallery publishing (WS5): built for everyone, revealed only when the
   // admin probe confirms a Cloudflare Access session. Guests keep the
   // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
-  {
-    const hooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
-    // One answer for everything that follows the role: both forms. The
-    // forms' "re-check sign-in" runs the same probe, so an admin whose
-    // Access session had lapsed at boot gets the publish buttons when they
-    // sign in. The recorder still hears the answer, but capture no longer
-    // follows it: it starts off for everyone until the checkbox turns it
-    // on (owner call; see SnapshotRecorder.install).
-    const probeRole = async (): Promise<string | null> => {
-      const email = await probeAdmin();
-      tlForm.setAdmin(!!email);
-      modelForm.setAdmin(!!email);
-      recorder.applyDefault(!!email);
-      return email;
-    };
-    const tlForm = galleryForm({
-      buttonLabel: 'Publish timelapse',
-      onSave: (id, title, progress) =>
-        saveTimelapseToGallery(recorder, hooks, id, title, progress),
-      recheck: probeRole,
-    });
-    const modelForm = galleryForm({
-      buttonLabel: 'Publish model',
-      onSave: (id, title, progress) =>
-        saveModelToGallery(session, recorder, hooks, id, title, progress),
-      recheck: probeRole,
-    });
-    capturePanel.captureSlot.appendChild(tlForm.root);
-    capturePanel.publishSlot.appendChild(modelForm.root);
-    void probeRole();
-  }
+  // The same answer decides what Save to library does.
+  let ownerNow: boolean | null = null;
+  const galleryHooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
+  // One answer for everything that follows the role: both forms and the
+  // File menu. The forms' "re-check sign-in" runs the same probe, so an
+  // admin whose Access session had lapsed at boot gets the publish buttons
+  // (and Save to library's upload) when they sign in. The recorder still
+  // hears the answer, but capture no longer follows it: it starts off for
+  // everyone until the checkbox turns it on (owner call; see
+  // SnapshotRecorder.install).
+  const probeRole = async (): Promise<string | null> => {
+    const email = await probeAdmin();
+    ownerNow = !!email;
+    tlForm.setAdmin(!!email);
+    modelForm.setAdmin(!!email);
+    fileMenu?.setOwner(!!email);
+    recorder.applyDefault(!!email);
+    return email;
+  };
+  const tlForm = galleryForm({
+    buttonLabel: 'Publish timelapse',
+    onSave: (id, title, visibility, progress) =>
+      saveTimelapseToGallery(recorder, galleryHooks, id, title, visibility, progress),
+    recheck: probeRole,
+  });
+  const modelForm = galleryForm({
+    buttonLabel: 'Publish model',
+    onSave: (id, title, visibility, progress) =>
+      saveModelToGallery(session, recorder, galleryHooks, id, title, visibility, progress),
+    recheck: probeRole,
+  });
+  capturePanel.captureSlot.appendChild(tlForm.root);
+  capturePanel.publishSlot.appendChild(modelForm.root);
+  void probeRole();
 
   /**
    * Keep the look with the session, so leaving sculpt mode and coming back
@@ -1109,8 +1153,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   persist.decorate = (scene) => {
     library.saveInto(scene);
     scene.settings = collectSettings();
+    // The project link rides the same put as the geometry, so the record
+    // can never pair one scene with another's project (SavedScene.project).
+    if (fileActions.link) scene.project = { ...fileActions.link };
   };
   persist.install();
+  // A scene opened from a library card or from Projects replaces the one in
+  // the autosave: write it, with its link, as soon as the grace allows, so
+  // a reload before the first stroke comes back to it and not to whatever
+  // the slot held before.
+  if (openedExplicitly) persist.markDirty();
   // Materials and workspace settings ride the scene record, but nothing
   // about them is an EDIT, so they never marked the autosave dirty: create
   // a material, reload, and it was gone unless a stroke happened to follow.
@@ -1134,8 +1186,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         void Promise.all([clearSavedScene(), clearDesktopRecovery()]).then(() =>
           location.reload(),
         );
-      })
+      }, openedLabel(opened))
     : null;
+  // Asked for a project and got neither it nor a device copy: say why,
+  // rather than leave the autosaved scene looking like the answer.
+  if (opened && !opened.scene) {
+    statusToast('Opening the project...').fail(`Could not open that project: ${opened.error}`);
+  }
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
@@ -1203,8 +1260,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     reset: () => fileActions.newScene(),
     hasWork,
-    markClean: markSceneClean,
-    saveToLibrary: () => fileActions.saveToLibrary(),
+    markClean: () => markSceneClean(),
+    // Signed in to a server, Save to Library uploads to Projects as it does
+    // on the web. Without one it keeps the scene on this device: the app's
+    // storage is its own profile, not a browser's, and File > Save is right
+    // beside it for a copy that leaves the machine.
+    saveToLibrary: async () => {
+      const owner = ownerNow ?? !!(await probeRole());
+      if (!owner) {
+        await fileActions.keepOnDevice();
+        statusToast('Keeping on this device...').done('Kept on this device');
+        return;
+      }
+      const status = statusToast('Saving to Projects...');
+      try {
+        const link = await fileActions.uploadToProjects((text) => status.set(text));
+        status.done(`Saved to Projects: ${link.title}`);
+      } catch (err) {
+        status.fail(`Not saved to Projects: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
     importObj: (text, zUp, name) => fileActions.importObj(text, zUp, name),
     objText: () => fileActions.objText(),
     undo: () => session.undo(),
@@ -1382,12 +1457,70 @@ function makeLevelToast(): { show(at: number, total: number): void; dispose(): v
   };
 }
 
+/** What a ?project= open came back with. */
+interface ProjectOpen {
+  scene: SavedScene | null;
+  link: SceneLink | null;
+  /** 'server' when fetched, 'device' for this device's copy, null for neither. */
+  from: 'server' | 'device' | null;
+  error?: string;
+}
+
+/**
+ * /?sculpt=1&project=<id>: the scene project's file, fetched through the
+ * media route with the Access session, and - for the owner - kept as this
+ * device's copy of the project. When it cannot be had - offline, signed
+ * out, deleted - the copy kept under the project's id by the last save or
+ * open opens instead.
+ */
+async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
+  const lib = await import('./bridge/SceneLibrary');
+  try {
+    const { fetchSceneProject } = await import('./bridge/SceneProjects');
+    const { bytes, project, owner } = await fetchSceneProject(id);
+    const scene = await unpackScene(bytes);
+    // The owner's copy follows the server, so offline opens the latest. A
+    // guest opening a public scene gets no copy: nothing lands in their
+    // storage that they did not put there. Best effort, and not awaited:
+    // the open must not wait on a write.
+    if (owner) {
+      void lib
+        .cacheProjectScene(project.id, {
+          name: project.title,
+          bytes,
+          objects: project.scene?.objects ?? scene.meshes.length,
+          tris: project.scene?.tris ?? 0,
+        })
+        .catch(() => undefined);
+    }
+    return { scene, link: { id: project.id, title: project.title }, from: 'server' };
+  } catch (err) {
+    console.warn('sculpt: could not open project', id, err);
+    const error = err instanceof Error ? err.message : String(err);
+    const entry = await lib.getLibraryEntry(id);
+    const scene = entry ? await lib.loadFromLibrary(id) : null;
+    if (entry && scene) return { scene, link: { id, title: entry.name }, from: 'device', error };
+    return { scene: null, link: null, from: null, error };
+  }
+}
+
+/** The boot toast's words for what was opened. */
+function openedLabel(opened: ProjectOpen | null): string {
+  if (opened?.from === 'server') return `Opened "${opened.link?.title}" from Projects`;
+  // The reason, not a guess at it: offline, signed out and deleted all
+  // land here, and each wants a different next step.
+  if (opened?.from === 'device') {
+    return `Opened this device's copy of "${opened.link?.title}": ${opened.error}`;
+  }
+  return 'Restored your last sculpt';
+}
+
 /** "Restored your sculpt" notice with a start-fresh escape hatch. */
-function restoredToast(onFresh: () => void): HTMLDivElement {
+function restoredToast(onFresh: () => void, text = 'Restored your last sculpt'): HTMLDivElement {
   const toast = document.createElement('div');
   toast.className = 'sculpt-toast';
   const label = document.createElement('span');
-  label.textContent = 'Restored your last sculpt';
+  label.textContent = text;
   const fresh = document.createElement('button');
   fresh.type = 'button';
   fresh.className = 'sculpt-toast__btn';

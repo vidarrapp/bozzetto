@@ -1,8 +1,26 @@
 import type { Env } from '../../../_shared/types';
-import { bodyLimit, handle, json, requireAdmin } from '../../../_shared/http';
-import { MAX_DATA_BYTES, deleteProject, updateProject } from '../../../_shared/projects';
+import { bodyLimit, error, handle, json, requireAdmin } from '../../../_shared/http';
+import {
+  MAX_DATA_BYTES,
+  deleteProject,
+  getProjectRow,
+  toManifest,
+  updateProject,
+} from '../../../_shared/projects';
 
-// PUT /admin/api/projects/:id — update metadata, lighting, stages, frames.
+// GET /admin/api/projects/:id — the owner's manifest: any project, private
+// included, with frame and scene paths on the media route that will serve
+// them to the owner.
+export const onRequestGet: PagesFunction<Env> = ({ env, request, params }) =>
+  handle(async () => {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const row = await getProjectRow(env, String(params.id));
+    return row ? json(toManifest(row)) : error('Not found', 404);
+  });
+
+// PUT /admin/api/projects/:id — update metadata (title, visibility, mode,
+// fps), lighting, stages, frames. Fields left out are kept.
 export const onRequestPut: PagesFunction<Env> = ({ env, request, params }) =>
   handle(async () => {
     const denied = await requireAdmin(request, env);

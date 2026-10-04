@@ -1,16 +1,23 @@
 import { div } from '../../ui/dom';
+import type { Visibility } from '../../admin/api';
 
 /**
- * Inline "save to gallery" mini-form: a slug + title pair, a go button, and
- * a status line that walks through the upload sequence and ends as a link to
- * the published project. The fields appear once the admin probe confirms a
- * Cloudflare Access session; without one there is a single line saying so,
- * which re-checks when tapped - the form used to be hidden outright, which
- * made a failed probe look identical to a feature that did not exist.
+ * Inline "save to gallery" mini-form: a slug + title pair, who may see it,
+ * a go button, and a status line that walks through the upload sequence
+ * and ends as a link to the published project. The fields appear once the
+ * admin probe confirms a Cloudflare Access session; without one there is a
+ * single line saying so, which re-checks when tapped - the form used to be
+ * hidden outright, which made a failed probe look identical to a feature
+ * that did not exist.
  */
 export function galleryForm(opts: {
   buttonLabel: string;
-  onSave: (id: string, title: string, progress: (text: string) => void) => Promise<string>;
+  onSave: (
+    id: string,
+    title: string,
+    visibility: Visibility,
+    progress: (text: string) => void,
+  ) => Promise<string>;
   /** Re-run the admin check; resolves to the email, or null for a guest. */
   recheck: () => Promise<string | null>;
 }): { root: HTMLDivElement; setAdmin: (isAdmin: boolean) => void } {
@@ -66,6 +73,22 @@ export function galleryForm(opts: {
   titleInput.placeholder = 'Title (optional)';
   titleInput.className = 'gallery-form__input';
 
+  // Public, as publishing has always been, unless chosen otherwise. A
+  // private project shows in the owner's gallery and editor only.
+  const visibility = document.createElement('select');
+  visibility.className = 'gallery-form__input gallery-form__visibility';
+  visibility.setAttribute('aria-label', 'Who can see it');
+  for (const [value, label] of [
+    ['public', 'Public: in the gallery'],
+    ['private', 'Private: only you'],
+  ]) {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = label;
+    visibility.appendChild(o);
+  }
+  visibility.value = 'public';
+
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'sculpt-panel__btn';
@@ -78,7 +101,7 @@ export function galleryForm(opts: {
     go.disabled = true;
     status.textContent = '';
     void opts
-      .onSave(id, titleInput.value.trim(), (text) => {
+      .onSave(id, titleInput.value.trim(), visibility.value === 'private' ? 'private' : 'public', (text) => {
         status.textContent = text;
       })
       .then((url) => {
@@ -98,7 +121,7 @@ export function galleryForm(opts: {
   });
 
   const fields = div('gallery-form__fields');
-  fields.append(idInput, titleInput, go, status);
+  fields.append(idInput, titleInput, visibility, go, status);
   fields.hidden = true;
 
   const setAdmin = (isAdmin: boolean): void => {
