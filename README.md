@@ -4,7 +4,7 @@
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
-Bozzetto poses, sculpts, renders and time-lapses, in the browser. Pose a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and capture every stage as real geometry to play back as a timelapse you can relight, orbit and scrub. Not a pre-rendered video.
+Bozzetto is a studio in the browser to pose, sculpt, render and timelapse. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and capture every stage as real geometry to play back as a timelapse you can relight, orbit and scrub. Not a pre-rendered video.
 
 It installs to an iPad's home screen and works offline, and there are desktop builds for macOS, Windows and Linux. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
 
@@ -17,7 +17,7 @@ It installs to an iPad's home screen and works offline, and there are desktop bu
 | `/?sculpt=1&project=<id>` | A scene from Projects, open in Sculpt |
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
-| `/create/` | Timelapse uploader (**Create → Upload time-lapse**), no sign-in |
+| `/create/` | Timelapse uploader (**Create → Upload timelapse**), no sign-in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
 Runs entirely on Cloudflare Pages, Functions, D1 and R2. No server to run yourself.
@@ -143,7 +143,7 @@ sign-in, and everything stays on your device.
 
 The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
 
-1. In the gallery, pick **Create → Upload time-lapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
+1. In the gallery, pick **Create → Upload timelapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
 2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
 3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
 4. Set up the look in the right-hand panel, then orbit to your angle.
@@ -233,7 +233,7 @@ certificate (Windows). For signing in CI, set `CSC_LINK` and
 
 ### Gallery
 
-- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature or opens the time-lapse uploader, and your own sculpt and armature in progress.
+- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature or opens the timelapse uploader, and your own sculpt and armature in progress.
 - Signed in, the gallery is your whole list: private projects carry a **Private** badge and every card a switch to change it, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see public projects only.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
 - **Install** and **Log in**, which becomes **Projects** once signed in.
@@ -329,7 +329,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 Live on the web; in the next desktop release.
 
-- **The gallery and the browser tab** read "Pose, sculpt, render and time-lapse", and **Upload time-lapse** moved from the top row into the Create tile's menu.
+- **The gallery and the browser tab** read "Pose, sculpt, render and timelapse", and **Upload timelapse** moved from the top row into the Create tile's menu.
 - **Scenes saved to the library go to Projects.** Signed in, **File → Save to library** uploads the scene to the server as a private project, in parts with its progress shown, and keeps a copy on the device; saving again updates the same project in place, and the autosave remembers which project that is across reloads (a `.bozz` file never carries it). Your gallery and the Projects page list these scenes with a thumbnail, object and triangle counts and size, to open in Sculpt, rename, delete or make public. `/?sculpt=1&project=<id>` opens one; offline, the copy on the device opens instead.
 - **Signed out, Save to library downloads a file.** Browser storage goes with a reinstall (owner report: a sculpt saved on an iPad was gone with the app), so a guest's **Save to library** saves a `.bozz` file, the share sheet on an iPad, and the menu says so. **Keep on this device** still puts a scene on the device's shelf, so nothing a guest could do before is gone.
 - **Work kept only on the device says so.** The "In progress" cards and every scene kept on the device carry a note: on this device only, a reinstall or clearing the browser loses it. Signed in, such a card offers **Upload to Projects**, which makes it a project and marks the card as uploaded.

@@ -24,7 +24,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
       <header class="landing__head">
         <div>
           <h1 class="landing__title">Bozzetto</h1>
-          <p class="landing__tagline">Pose, sculpt, render and time-lapse</p>
+          <p class="landing__tagline">Pose, sculpt, render and timelapse</p>
         </div>
 
       </header>
@@ -103,7 +103,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 
 /**
  * The Create tile: a plus that opens the choice between a new sculpt, a new
- * armature and the time-lapse uploader (owner calls: two kinds of work start
+ * armature and the timelapse uploader (owner calls: two kinds of work start
  * here, and the uploader moved in from the top row, which keeps to Install
  * and the sign-in).
  */
@@ -143,8 +143,8 @@ function openCreateChooser(): void {
           <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
         </button>
         <button type="button" class="create-choice create-choice--wide" data-kind="timelapse">
-          <span class="create-choice__title">Upload time-lapse</span>
-          <span class="create-choice__hint">OBJ or GLB frames from another app, played back as a time-lapse.</span>
+          <span class="create-choice__title">Upload timelapse</span>
+          <span class="create-choice__hint">OBJ or GLB frames from another app, played back as a timelapse.</span>
         </button>
       </div>
     </div>`;

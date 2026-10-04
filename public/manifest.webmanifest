@@ -1,7 +1,7 @@
 {
   "name": "Bozzetto",
   "short_name": "Bozzetto",
-  "description": "Pose, sculpt, render and time-lapse, in the browser.",
+  "description": "Pose, sculpt, render and timelapse, in the browser.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
