@@ -105,7 +105,10 @@ sign-in, and everything stays on your device.
 - **Reach.** A ball sits at each hand, the middle of each foot and the top
   of the head. Drag one and the limb reaches for it, inside the same joint
   limits; a foot is held by its middle, so it pivots there rather than
-  swinging round its toe. **Pin** a ball and it holds its place in the world
+  swinging round its toe. A target past a joint's reach, a ball dragged
+  too far or a pin the pelvis has left behind, settles the limb at the
+  nearest pose the limits allow, rather than flicking between poses as
+  the drag goes on. **Pin** a ball and it holds its place in the world
   while the rest of the figure moves, so the pelvis can drop into a crouch
   with the feet planted or the body can lean away from a hand that stays
   put. The violet ball in the hips moves the whole figure: drag it and the
@@ -311,6 +314,10 @@ guide (`H`) shows whatever keys are set.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. In sculpt mode, `?perfdebug=1` lists the last stalls and heavy operations with their times, and `?inputdebug=1` logs pen and touch input; both can be on at once.
 
 ## Changelog
+
+### Unreleased
+
+- **A reach past a joint's limits settles.** A hand or foot asked to go further than its joints can turn, a pinned foot the pelvis has been dragged away from, say, now comes to rest at the nearest pose the limits allow and stays there from one move to the next. The reach used to swing each joint as if it had no limits and then clamp the swing axis by axis, which could land on a pose nothing like the nearest: a foot pinned past the hip's reach ended 40 units off its pin on the realistic male where the leg can get within 8, and on the stylized female the next move flipped the thigh 22° and threw the foot further off. Reaches the limits allow go as they did.
 
 ### v1.3.3
 

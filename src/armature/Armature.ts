@@ -64,6 +64,11 @@ const FOOT = /^foot(\.[LR])?$/;
  * hand lands, and one lifted by any visible amount is off.
  */
 const GROUND_BAND = 0.015;
+/**
+ * How near its target a reach must bring its handle to be done, in scene
+ * units: a fifth of a millimetre on the figure.
+ */
+const REACHED = 0.01;
 
 /**
  * A posable figure: the rig's bones as a three.js Bone tree, every block
@@ -879,9 +884,20 @@ export class Armature {
    * Bring a point on the chain's effector bone - `at` of the way from its
    * head to its tail - to a world point, by cyclic coordinate descent:
    * each link in turn swings so the point sits, seen from that joint, on
-   * the target instead of where it is, and the swing is written back
-   * THROUGH the pose clamp, so a knee cannot bend backwards to get there
-   * and a symmetric figure mirrors as it reaches.
+   * the target instead of where it is, and the swing stays INSIDE the
+   * joint's limits, so a knee cannot bend backwards to get there and a
+   * symmetric figure mirrors as it reaches.
+   *
+   * Inside them, not clamped into them afterwards (see turnWithin): each
+   * Euler axis of a swing clamped on its own lands on a turn nothing like
+   * the nearest one the joint can make. A pinned foot past its reach ended
+   * forty units off its pin where the leg could get within eight, and the
+   * next solve flipped it somewhere else again (owner report: "pretty
+   * spazzy").
+   *
+   * A target past reach is then settled by descent (see settle): the
+   * nearest pose the limits allow, which a second solve of the same target
+   * leaves where it is.
    *
    * three ships a CCD solver, and it is not usable here: it clamps
    * `link.rotation`, the bone's whole local rotation, while a limit in this
@@ -891,13 +907,6 @@ export class Armature {
    * the representation that has the limits in it.
    */
   private solve(c: IKChainDef, target: Vector3, iterations: number, mirror: boolean, at: number): void {
-    const tip = new Vector3();
-    const toTip = new Vector3();
-    const toTarget = new Vector3();
-    const joint = new Vector3();
-    const swing = new Quaternion();
-    const parentQ = new Quaternion();
-    const linkQ = new Quaternion();
     // The hinge in the chain - the elbow or the knee - is not left to the
     // descent: a straight limb is where CCD fails. With the effector,
     // the target and the joints all on one line the swing axis is
@@ -910,6 +919,21 @@ export class Armature {
     // answer, and the law of cosines gives it directly, every pass.
     const hingeIndex = c.links.findIndex((n) => this.defs.get(n)?.kind === 'hinge');
     const twoBone = hingeIndex >= 0 && hingeIndex + 1 < c.links.length;
+    const hinge = twoBone ? c.links[hingeIndex] : null;
+    const tip = new Vector3();
+    const off = (): number => this.effectorWorld(c.effector, tip, at).distanceTo(target);
+    // The poses a solve can go back to: the links, and their mirrors when
+    // the other side follows.
+    const held = [...c.links];
+    for (const n of c.links) {
+      const m = mirror ? this.defs.get(n)?.mirror : null;
+      if (m) held.push(m);
+    }
+    const start = this.keepPoses(held);
+    const best = this.keepPoses(held);
+    let least = off();
+    let improved = false;
+    let stall = 0;
     for (let i = 0; i < iterations; i++) {
       if (twoBone) this.bendHinge(c, hingeIndex, target, mirror, at);
       // The aim gets the first passes; the rest belong to position. An aim
@@ -917,39 +941,190 @@ export class Armature {
       // the descent pulls back, and the two would never settle - so the
       // hand's place wins and the aim is honoured as far as it reaches.
       if (twoBone && i < 2) this.aimHinge(c, hingeIndex, target, mirror);
-      let moved = false;
-      for (const name of c.links) {
-        // The hinge is the triangle's, not the descent's.
-        if (twoBone && this.defs.get(name)?.kind === 'hinge') continue;
-        const link = this.bones.get(name);
-        const rest = this.rest.get(name);
-        if (!link || !rest) continue;
-        this.root.updateMatrixWorld(true);
-        this.effectorWorld(c.effector, tip, at);
-        joint.setFromMatrixPosition(link.matrixWorld);
-        toTip.subVectors(tip, joint);
-        toTarget.subVectors(target, joint);
-        if (toTip.lengthSq() < 1e-10 || toTarget.lengthSq() < 1e-10) continue;
-        toTip.normalize();
-        toTarget.normalize();
-        if (toTip.dot(toTarget) > 0.999999) continue; // already pointing there
-        swing.setFromUnitVectors(toTip, toTarget);
-        // The swing is in world space: take it round to the link's own pose.
-        link.getWorldQuaternion(linkQ);
-        linkQ.premultiply(swing);
-        if (link.parent) (link.parent as Bone).getWorldQuaternion(parentQ);
-        else parentQ.identity();
-        linkQ.premultiply(parentQ.invert());
-        linkQ.premultiply(_q2.copy(rest.local).invert());
-        _e.setFromQuaternion(linkQ, 'XYZ');
-        this.setPoseEuler(name, _e.x / RAD, _e.y / RAD, _e.z / RAD, mirror);
-        moved = true;
-      }
-      if (!moved) break;
-      this.root.updateMatrixWorld(true);
-      this.effectorWorld(c.effector, tip, at);
-      if (tip.distanceToSquared(target) < 1e-4) break;
+      this.turnLinks(c, target, at, mirror, hinge, null, 1);
+      const d = off();
+      if (d < REACHED) return;
+      // The pass that left the point nearest is the one kept. A pass can
+      // leave it further off on the way there - the triangle and the aim
+      // both move it, and the swings make up for that over the next pass
+      // or two - so only the passes after the aim's count as stalling.
+      if (d < least - 1e-6) {
+        least = d;
+        improved = true;
+        this.keepPoses(held, best);
+        stall = 0;
+      } else if ((!twoBone || i >= 2) && ++stall >= 2) break;
     }
+    this.restorePoses(held, best);
+    if (least >= REACHED) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+  }
+
+  /**
+   * The passes stopped short of the target: it is past reach, or nearly,
+   * and the nearest pose the limits allow is found by descent over every
+   * axis of every link (the hinge's twist apart, which no pass turns:
+   * free here, it swung the moment a target slipped past the passes'
+   * reach). The descent never moves the point further off, so it ends
+   * where a second solve would begin, and that solve leaves it there - a
+   * target just past reach no longer flickers from one answer to another
+   * on every move.
+   *
+   * Descent finds the nearest pose of the valley it starts in, and a leg
+   * swinging across past its hip has two: twisted one way at the hip with
+   * the knee bent, or the other way with it straight, the first nearly
+   * twice as near. So it starts from where the solve began, from the
+   * passes' best, and from the hip (or shoulder) twisted to each end of
+   * its range with the rest of the limb at rest; and the answer from where
+   * the solve began stands unless another lands clearly nearer. That keeps
+   * a dragged limb in its valley from one move to the next, rather than
+   * jumping to another for a hair's gain.
+   */
+  private settle(
+    c: IKChainDef,
+    target: Vector3,
+    at: number,
+    mirror: boolean,
+    hinge: string | null,
+    held: string[],
+    start: Quaternion[],
+    best: Quaternion[] | null,
+    off: () => number,
+  ): void {
+    const descend = (from: Quaternion[], seed?: (links: ChainLink[]) => void): number => {
+      this.restorePoses(held, from);
+      this.turnLinks(c, target, at, mirror, null, hinge, 256, seed);
+      return off();
+    };
+    const near = descend(start);
+    const kept = this.keepPoses(held);
+    let other = Infinity;
+    const otherPoses = this.keepPoses(held);
+    const tryFrom = (from: Quaternion[], seed?: (links: ChainLink[]) => void): void => {
+      const d = descend(from, seed);
+      if (d < other) {
+        other = d;
+        this.keepPoses(held, otherPoses);
+      }
+    };
+    if (best) tryFrom(best);
+    const base = hinge ? c.links[c.links.indexOf(hinge) + 1] : null;
+    for (const end of base ? [0, 1] : []) {
+      tryFrom(start, (links) => {
+        for (const l of links) {
+          if (!l.free) continue;
+          for (let k = 0; k < 3; k++) l.e[k] = Math.min(l.hi[k], Math.max(l.lo[k], 0));
+          if (l.name === base) l.e[1] = end ? l.hi[1] : l.lo[1];
+          l.moved = true;
+        }
+      });
+    }
+    let length = 0;
+    for (const n of c.links) length += (this.rest.get(n)?.length ?? 0) * (this.props.get(n)?.length ?? 1);
+    const clearly = Math.max(0.02 * near, 0.01 * length, 1e-3);
+    this.restorePoses(held, other < near - clearly ? otherPoses : kept);
+  }
+
+  /** The poses of `names`, kept to be put back; into `out` when given. */
+  private keepPoses(names: string[], out: Quaternion[] = names.map(() => new Quaternion())): Quaternion[] {
+    names.forEach((n, i) => out[i].copy(this.pose.get(n) ?? _q.identity()));
+    return out;
+  }
+
+  private restorePoses(names: string[], from: Quaternion[]): void {
+    names.forEach((n, i) => {
+      const q = this.pose.get(n);
+      const bone = this.bones.get(n);
+      const rest = this.rest.get(n);
+      if (!q || !bone || !rest) return;
+      q.copy(from[i]);
+      bone.quaternion.copy(rest.local).multiply(q);
+    });
+  }
+
+  /**
+   * Turn the chain's links, nearest the handle first, each as near the
+   * target as its limits let it bring the point: one round, or up to
+   * `rounds` while the point keeps coming nearer. `skip` is a link left as
+   * it is, `hold` one whose twist is; `seed` sets the links to start from.
+   * Worked on as numbers (see ChainPose) and written back once, from the
+   * top of the chain down, so a mirrored joint is copied onto a parent
+   * already turned.
+   */
+  private turnLinks(
+    c: IKChainDef,
+    target: Vector3,
+    at: number,
+    mirror: boolean,
+    skip: string | null,
+    hold: string | null,
+    rounds: number,
+    seed?: (links: ChainLink[]) => void,
+  ): void {
+    const chain = this.chainPose(c, target, at, hold);
+    if (!chain) return;
+    seed?.(chain.links);
+    chain.forward();
+    let d = chain.off();
+    for (let r = 0; r < rounds; r++) {
+      chain.sweep(skip);
+      const now = chain.off();
+      if (d - now < 1e-6) break;
+      d = now;
+      chain.forward();
+    }
+    for (const l of chain.links) {
+      if (l.free && l.moved) this.setPoseEuler(l.name, l.e[0] / RAD, l.e[1] / RAD, l.e[2] / RAD, mirror);
+    }
+  }
+
+  /**
+   * A chain as numbers, in the frame of the bone it hangs from: the bones
+   * from the top link down to the effector's parent, each with its place
+   * on its parent, its rest, its pose and its limits (`hold`'s twist
+   * pinned where it is); the handle point on the last of them; and the
+   * target. Null when the top link is not above the effector, which no
+   * chain here has.
+   */
+  private chainPose(c: IKChainDef, target: Vector3, at: number, hold: string | null): ChainPose | null {
+    const effector = this.bones.get(c.effector);
+    const top = this.bones.get(c.links[c.links.length - 1]);
+    const base = top?.parent;
+    const restE = this.rest.get(c.effector);
+    if (!effector || !top || !base || !restE) return null;
+    const path: Bone[] = [];
+    for (let b = effector.parent; b; b = b.parent) {
+      path.unshift(b as Bone);
+      if (b === top) break;
+    }
+    if (path[0] !== top) return null;
+    this.root.updateMatrixWorld(true);
+    const out = new ChainPose();
+    base.worldToLocal(out.target.copy(target));
+    for (const bone of path) {
+      const free = c.links.includes(bone.name);
+      const rest = this.rest.get(bone.name);
+      if (free && !rest) return null;
+      const e = free ? this.getPoseEuler(bone.name) : [0, 0, 0];
+      const l = free ? this.limitsOf(bone.name) : { x: [0, 0], y: [0, 0], z: [0, 0] };
+      const link: ChainLink = {
+        name: bone.name,
+        free,
+        offset: bone.position.clone(),
+        local: free ? rest!.local.clone() : bone.quaternion.clone(),
+        e: [e[0] * RAD, e[1] * RAD, e[2] * RAD],
+        lo: [l.x[0] * RAD, l.y[0] * RAD, l.z[0] * RAD],
+        hi: [l.x[1] * RAD, l.y[1] * RAD, l.z[1] * RAD],
+        moved: false,
+        head: new Vector3(),
+        frame: new Quaternion(),
+        turn: new Quaternion(),
+      };
+      if (bone.name === hold) link.lo[1] = link.hi[1] = link.e[1];
+      out.links.push(link);
+    }
+    const p = this.props.get(c.effector) ?? { size: 1, length: 1 };
+    out.point.set(0, restE.length * p.length * at, 0).applyQuaternion(effector.quaternion).add(effector.position);
+    return out;
   }
 
   /**
@@ -966,6 +1141,10 @@ export class Armature {
    * pointing backwards: the first solve after the pelvis moved turned the
    * whole leg half round to "fix" it, which is how pinned feet snapped
    * round when the hips were dragged (owner report).
+   *
+   * The limb turns as far towards the aim as its base joint's limits
+   * allow, and no further: the whole turn clamped axis by axis is some
+   * other turn, one that carries the hand or foot off its mark.
    */
   private aimHinge(c: IKChainDef, hingeIndex: number, target: Vector3, mirror: boolean): void {
     const baseName = c.links[hingeIndex + 1];
@@ -988,17 +1167,34 @@ export class Armature {
     if (now === null) return; // a straight limb has no bend plane
     const delta = wrap180(this.getAim(c.id) - now);
     if (Math.abs(delta) < 0.05) return;
-    const swing = new Quaternion().setFromAxisAngle(axis, (delta * Math.PI) / 180);
-    const linkQ = new Quaternion();
-    base.getWorldQuaternion(linkQ);
-    linkQ.premultiply(swing);
-    const parentQ = new Quaternion();
-    if (base.parent) (base.parent as Bone).getWorldQuaternion(parentQ);
-    else parentQ.identity();
-    linkQ.premultiply(parentQ.invert());
-    linkQ.premultiply(_q2.copy(rest.local).invert());
-    _e.setFromQuaternion(linkQ, 'XYZ');
-    this.setPoseEuler(baseName, _e.x / RAD, _e.y / RAD, _e.z / RAD, mirror);
+    const baseQ = base.getWorldQuaternion(new Quaternion());
+    // pose = restLocal^-1 * parentWorld^-1 * turnedWorld
+    const toPose = new Quaternion();
+    if (base.parent) (base.parent as Bone).getWorldQuaternion(toPose);
+    toPose.invert().premultiply(_q2.copy(rest.local).invert());
+    const swing = new Quaternion();
+    const turned = new Quaternion();
+    const l = this.limitsOf(baseName);
+    const poseFor = (degrees: number): Euler => {
+      swing.setFromAxisAngle(axis, degrees * RAD);
+      turned.copy(baseQ).premultiply(swing).premultiply(toPose);
+      return _e.setFromQuaternion(turned, 'XYZ');
+    };
+    const fits = (e: Euler): boolean => within(e.x / RAD, l.x) && within(e.y / RAD, l.y) && within(e.z / RAD, l.z);
+    let part = 1;
+    if (!fits(poseFor(delta))) {
+      let lo = 0;
+      let hi = 1;
+      for (let k = 0; k < 12; k++) {
+        const mid = (lo + hi) / 2;
+        if (fits(poseFor(delta * mid))) lo = mid;
+        else hi = mid;
+      }
+      part = lo;
+    }
+    if (Math.abs(delta * part) < 0.05) return;
+    const e = poseFor(delta * part);
+    this.setPoseEuler(baseName, e.x / RAD, e.y / RAD, e.z / RAD, mirror);
   }
 
   /**
@@ -1228,6 +1424,225 @@ function wrap180(deg: number): number {
   let d = ((deg + 180) % 360 + 360) % 360 - 180;
   if (d === -180) d = 180;
   return d;
+}
+
+/** Whether an angle is inside a range, to a ten-thousandth of a degree. */
+function within(v: number, r: [number, number]): boolean {
+  return v >= r[0] - 1e-4 && v <= r[1] + 1e-4;
+}
+
+/** One bone of a chain being solved, as numbers (see ChainPose). */
+interface ChainLink {
+  name: string;
+  /** A link of the chain, or a bone between two links, held as it is. */
+  free: boolean;
+  /** Its head, in its parent's frame. */
+  offset: Vector3;
+  /** Its rest turn, or for a held bone its whole turn. */
+  local: Quaternion;
+  /** Its pose, XYZ Euler radians, and the limits on that. */
+  e: [number, number, number];
+  lo: [number, number, number];
+  hi: [number, number, number];
+  moved: boolean;
+  /** From forward(): where its joint is, what its pose turns from, and its whole turn. */
+  head: Vector3;
+  frame: Quaternion;
+  turn: Quaternion;
+}
+
+/**
+ * A chain's bones as plain numbers, in the frame of the bone it hangs
+ * from, so a link can be turned and the handle point followed without the
+ * scene graph: a descent over every axis of every link would otherwise
+ * update the whole skeleton's matrices hundreds of times a solve.
+ */
+class ChainPose {
+  /** From the top link down to the effector's parent. */
+  readonly links: ChainLink[] = [];
+  /** The handle point, in the frame of the last of them. */
+  readonly point = new Vector3();
+  readonly target = new Vector3();
+  /** Where the handle point is now. */
+  readonly tip = new Vector3();
+
+  forward(): void {
+    let up: ChainLink | null = null;
+    for (const l of this.links) {
+      if (up) {
+        l.head.copy(l.offset).applyQuaternion(up.turn).add(up.head);
+        l.frame.copy(up.turn).multiply(l.local);
+      } else {
+        l.head.copy(l.offset);
+        l.frame.copy(l.local);
+      }
+      l.turn.copy(l.frame).multiply(poseTurn(l.e, _cq));
+      up = l;
+    }
+    if (up) this.tip.copy(this.point).applyQuaternion(up.turn).add(up.head);
+  }
+
+  off(): number {
+    return this.tip.distanceTo(this.target);
+  }
+
+  /**
+   * One round, nearest the handle first: each link turned within its
+   * limits to bring the point nearest the target, with the links below it
+   * as they now are. The joints below a turned link are stale until the
+   * next forward(), and nothing here reads them.
+   */
+  sweep(skip: string | null): void {
+    for (let k = this.links.length - 1; k >= 0; k--) {
+      const l = this.links[k];
+      if (!l.free || l.name === skip) continue;
+      _cu.subVectors(this.tip, l.head).applyQuaternion(_cq.copy(l.turn).invert());
+      _cw.subVectors(this.target, l.head).applyQuaternion(_cq.copy(l.frame).invert());
+      if (!turnWithin(l.e, _cu, _cw, l.lo, l.hi)) continue;
+      l.moved = true;
+      l.turn.copy(l.frame).multiply(poseTurn(l.e, _cq));
+      this.tip.copy(_cu).applyQuaternion(l.turn).add(l.head);
+    }
+  }
+}
+
+const _cq = new Quaternion();
+const _cu = new Vector3();
+const _cw = new Vector3();
+const _ta = new Vector3();
+const _tb = new Vector3();
+const _tq = new Quaternion();
+const _ts = new Quaternion();
+const _te = new Euler();
+/** How far past a limit a pose still counts as on it, in radians. */
+const EDGE = 1e-6;
+
+function poseTurn(e: [number, number, number], out: Quaternion): Quaternion {
+  return out.setFromEuler(_te.set(e[0], e[1], e[2], 'XYZ'));
+}
+
+/**
+ * Turn a joint so `u`, a point in its posed frame, comes as near as its
+ * limits allow to `w`, the target in its rest frame (a turn keeps the
+ * point's distance from the joint, so nearest is pointing most nearly at
+ * it). `e` is the pose, XYZ Euler radians in [lo, hi], changed in place;
+ * the return says whether it moved.
+ *
+ * The free swing comes first - the shortest turn that points the joint at
+ * the target, as CCD has always taken it, and the best this joint can do
+ * - and inside the limits it stands, so a reach the limits allow goes
+ * exactly as it always did. Past them the answer is not that swing
+ * clamped axis by axis, which can be a turn nothing like it, but a
+ * descent over the three axes inside their ranges, from whichever of the
+ * clamped swing and the pose as it is lies nearer. Each axis on its own
+ * has an exact answer (see bestAngle), so no step moves the point further
+ * off, and the same pose and target always give the same turn.
+ */
+function turnWithin(
+  e: [number, number, number],
+  u: Vector3,
+  w: Vector3,
+  lo: [number, number, number],
+  hi: [number, number, number],
+): boolean {
+  if (u.lengthSq() < 1e-12 || w.lengthSq() < 1e-12) return false;
+  const was = [e[0], e[1], e[2]];
+  _ta.copy(u).applyQuaternion(poseTurn(e, _tq)).normalize();
+  _tb.copy(w).normalize();
+  if (_ta.dot(_tb) > 0.999999) return false; // already pointing there
+  _te.setFromQuaternion(_tq.premultiply(_ts.setFromUnitVectors(_ta, _tb)), 'XYZ');
+  const swung: [number, number, number] = [_te.x, _te.y, _te.z];
+  let inside = true;
+  for (let k = 0; k < 3; k++) {
+    if (swung[k] < lo[k] - EDGE || swung[k] > hi[k] + EDGE) inside = false;
+    swung[k] = Math.min(hi[k], Math.max(lo[k], swung[k]));
+  }
+  if (inside || along(swung, u, w) > along(e, u, w)) {
+    e[0] = swung[0];
+    e[1] = swung[1];
+    e[2] = swung[2];
+  }
+  if (!inside) descend(e, u, w, lo, hi);
+  return Math.abs(e[0] - was[0]) + Math.abs(e[1] - was[1]) + Math.abs(e[2] - was[2]) > 1e-9;
+}
+
+/** How far along `w` the pose `e` carries `u`: three's XYZ order turns Z first, then Y, then X. */
+function along(e: [number, number, number], u: Vector3, w: Vector3): number {
+  const cz = Math.cos(e[2]);
+  const sz = Math.sin(e[2]);
+  const x1 = cz * u.x - sz * u.y;
+  const y1 = sz * u.x + cz * u.y;
+  const cy = Math.cos(e[1]);
+  const sy = Math.sin(e[1]);
+  const x2 = cy * x1 + sy * u.z;
+  const z2 = -sy * x1 + cy * u.z;
+  const cx = Math.cos(e[0]);
+  const sx = Math.sin(e[0]);
+  return x2 * w.x + (cx * y1 - sx * z2) * w.y + (sx * y1 + cx * z2) * w.z;
+}
+
+/**
+ * Coordinate descent over a pose's three Euler axes, each set in turn to
+ * the angle in its range that carries `u` furthest along `w` with the
+ * other two as they are.
+ */
+function descend(
+  e: [number, number, number],
+  u: Vector3,
+  w: Vector3,
+  lo: [number, number, number],
+  hi: [number, number, number],
+): void {
+  for (let round = 0; round < 32; round++) {
+    let change = 0;
+    // X turns last, so it sees u after Z and Y have: Ry Rz u.
+    const cz = Math.cos(e[2]);
+    const sz = Math.sin(e[2]);
+    const px = cz * u.x - sz * u.y;
+    const py = sz * u.x + cz * u.y;
+    const pz = u.z;
+    let cy = Math.cos(e[1]);
+    let sy = Math.sin(e[1]);
+    const qz = -sy * px + cy * pz;
+    change = Math.max(change, bestAngle(e, 0, py * w.y + qz * w.z, py * w.z - qz * w.y, lo, hi));
+    // Y sees Rz u, against w turned back through X.
+    const cx = Math.cos(e[0]);
+    const sx = Math.sin(e[0]);
+    const my = cx * w.y + sx * w.z;
+    const mz = -sx * w.y + cx * w.z;
+    change = Math.max(change, bestAngle(e, 1, px * w.x + pz * mz, pz * w.x - px * mz, lo, hi));
+    // Z sees u itself, against w turned back through X and then Y.
+    cy = Math.cos(e[1]);
+    sy = Math.sin(e[1]);
+    const nx = cy * w.x - sy * mz;
+    change = Math.max(change, bestAngle(e, 2, u.x * nx + u.y * my, u.x * my - u.y * nx, lo, hi));
+    if (change < 1e-9) break;
+  }
+}
+
+/**
+ * Set axis `k` of `e` to the angle in its range that maximises
+ * a cos t + b sin t, which is what a point turned about one axis projects
+ * to. The peak is at atan2(b, a); out of range, the better end is the
+ * answer, since within one turn a sinusoid rises to no other peak.
+ * Returns how far the axis moved.
+ */
+function bestAngle(
+  e: [number, number, number],
+  k: number,
+  a: number,
+  b: number,
+  lo: [number, number, number],
+  hi: [number, number, number],
+): number {
+  const was = e[k];
+  if (hi[k] - lo[k] < 1e-12) e[k] = lo[k];
+  else if (a * a + b * b > 1e-18) {
+    const peak = Math.atan2(b, a);
+    if (peak >= lo[k] && peak <= hi[k]) e[k] = peak;
+    else e[k] = a * Math.cos(lo[k]) + b * Math.sin(lo[k]) >= a * Math.cos(hi[k]) + b * Math.sin(hi[k]) ? lo[k] : hi[k];
+  }
+  return Math.abs(e[k] - was);
 }
 
 /** A fresh figure of a preset, sharing the given material. */

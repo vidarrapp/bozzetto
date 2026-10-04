@@ -270,6 +270,89 @@ const pinnedDrags = (page) =>
     return out;
   });
 
+// A foot pinned past its reach (owner report: the reach "pretty spazzy"
+// beyond the joint limits). The left thigh is turned by hand, both feet
+// pinned, and the pelvis dragged as pinnedDrags drags it, until the left
+// pin wants more crossing than the hip allows. How far the foot ends from
+// its pin, against the nearest a coarse grid over the leg's joint angles
+// gets within their limits - every axis of the hip and the knee in steps
+// of about 15 degrees, the pelvis where it is and the foot's own turn as
+// it is. Then the same pin solved again, as the next move of the pelvis
+// would, and the most any joint turns between the two solves: a target
+// past reach should settle, not flicker from one answer to another.
+const pastReach = (page) =>
+  page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    const symmetry = arm.symmetry;
+    const home = arm.root.position.clone();
+    arm.symmetry = false;
+    arm.resetPose();
+    for (const c of arm.chains()) arm.setPinned(c.id, false);
+    a.turn('thigh.L', -30, 0, 10);
+    arm.setPinned('foot.L', true);
+    arm.setPinned('foot.R', true);
+    a.commit();
+    const pin = a.state().pins['foot.L'];
+    a.moveRoot(10, -15, 0, 30);
+    a.moveRoot(12, 0, 0, 30);
+    const miss = dist(a.handlePosition('foot.L'), pin);
+    const names = arm.boneNames();
+    const was = names.map((n) => arm.bones.get(n).quaternion.clone());
+    a.moveRoot(0, 0, 0);
+    let moved = 0;
+    let movedBone = '';
+    names.forEach((n, i) => {
+      const d = (360 / Math.PI) * Math.acos(Math.min(1, Math.abs(was[i].dot(arm.bones.get(n).quaternion))));
+      if (d > moved) {
+        moved = d;
+        movedBone = n;
+      }
+    });
+    const again = dist(a.handlePosition('foot.L'), pin);
+    // The grid: the handle as a point on the foot bone, followed through
+    // the leg's own matrices for every setting of the hip and the knee.
+    const saved = JSON.stringify(a.state());
+    const c = arm.chain('foot.L');
+    const foot = arm.bones.get(c.effector);
+    const top = arm.bones.get(c.links[c.links.length - 1]);
+    arm.root.updateMatrixWorld(true);
+    const local = foot.worldToLocal(new V(...a.handlePosition('foot.L')));
+    const to = new V(...pin);
+    const at = new V();
+    const joints = [...c.links].reverse().map((n) => {
+      const l = arm.limitsOf(n);
+      const values = ['x', 'y', 'z'].map((k) => {
+        const [lo, hi] = l[k];
+        const steps = Math.ceil((hi - lo) / 15);
+        return steps ? Array.from({ length: steps + 1 }, (_, i) => lo + ((hi - lo) * i) / steps) : [lo];
+      });
+      return { n, values };
+    });
+    let grid = Infinity;
+    const search = (j) => {
+      if (j === joints.length) {
+        top.updateMatrixWorld(true);
+        grid = Math.min(grid, at.copy(local).applyMatrix4(foot.matrixWorld).distanceTo(to));
+        return;
+      }
+      const [xs, ys, zs] = joints[j].values;
+      for (const x of xs) for (const y of ys) for (const z of zs) {
+        arm.setPoseEuler(joints[j].n, x, y, z, false);
+        search(j + 1);
+      }
+    };
+    search(0);
+    arm.restore(JSON.parse(saved));
+    arm.root.position.copy(home);
+    arm.resetPose();
+    arm.symmetry = symmetry;
+    a.commit();
+    return { miss, again, grid, moved, movedBone };
+  });
+
 // Planting, on the left foot of a standing figure. Its tilt is how far its
 // rest up, carried through its world rotation, leans from world up; its
 // pose is the foot's own joint angles, untouched while it only follows its
@@ -1404,6 +1487,18 @@ export const suites = {
           `${id}: swung 22 across it stops ${across.miss.toFixed(1)} short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
         );
         t.ok(lift > drop + 5, `${id}: the left shoulder lifts ${lift.toFixed(0)}° and drops ${drop.toFixed(0)}°`);
+
+        // Past the hip's reach the foot settles on the nearest pose the
+        // limits allow, and stays there.
+        const past = await pastReach(page);
+        t.ok(
+          past.miss <= 1.3 * past.grid,
+          `${id}: a foot pinned past its reach, the hip turned by hand and the pelvis dragged across, ends ${past.miss.toFixed(2)} off its pin, the nearest a coarse grid over the leg's joint angles gets being ${past.grid.toFixed(2)}`,
+        );
+        t.ok(
+          past.moved <= 1,
+          `${id}: solved again, the same pin turns no joint more than a degree (at most ${past.moved.toFixed(3)}°${past.movedBone ? `, the ${past.movedBone}` : ''}; the foot then ${past.again.toFixed(2)} off)`,
+        );
       }
 
       // Knees fold forward and elbows back, on every figure: the stylized
