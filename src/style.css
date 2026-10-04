@@ -761,6 +761,24 @@ html.is-page body {
   color: var(--muted);
 }
 
+/* "Your sign-in has expired", said once under the tagline in its quiet
+   voice: the Log in chip carries the news from then on. */
+.landing__notice {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.landing__signin {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .landing__editor {
   color: var(--accent);
   text-decoration: none;
@@ -2466,6 +2484,11 @@ body.chrome-hidden .transport {
   color: var(--accent);
 }
 
+.gallery-form__status .gallery-form__signin {
+  display: block;
+  margin-top: 6px;
+}
+
 /* Procreate-style side sliders: brush size + strength, left edge. They sit
    just RIGHT of the collapsed panel tabs (which occupy x 0..36 once slid
    out) rather than under them, so the Scene and Model tabs can stack down
@@ -3012,6 +3035,16 @@ body.is-sampling * {
 .file-menu__progress[data-state='failed'] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* A failure that offers the next step (Sign in again) keeps its words in
+   one block beside the buttons, so they wrap as a sentence. */
+.file-menu__words {
+  flex: 1 1 auto;
+}
+
+.file-menu__dismiss {
+  padding: 4px 8px;
 }
 
 /* Preferences: the hotkey editor, on the server-settings card. */

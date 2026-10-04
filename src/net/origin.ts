@@ -33,6 +33,7 @@ interface DesktopBridge {
     error?: string;
   }>;
   getServer(): Promise<{ url: string | null; signedIn: boolean }>;
+  signIn(): Promise<{ url: string; signedIn: boolean }>;
 }
 
 interface DesktopWindow extends Window {
@@ -76,13 +77,41 @@ export async function isSignedIn(): Promise<boolean> {
   return b ? (await b.getServer()).signedIn : false;
 }
 
+/**
+ * The desktop app's own sign-in: a real window on the deployment, which
+ * leaves this page where it is (Server > Sign In does the same). False
+ * when there is no desktop bridge, or it came back without a session.
+ */
+export async function desktopSignIn(): Promise<boolean> {
+  const b = isDesktop() ? bridge() : null;
+  if (!b) return false;
+  return (await b.signIn()).signedIn;
+}
+
 export interface ApiResult {
   ok: boolean;
   status: number;
   contentType: string;
   bytes: ArrayBuffer | null;
   error?: string;
+  /**
+   * Cloudflare Access turned the request away to its login page: a server
+   * answered, and the answer is "sign in". A request that never reached a
+   * server is not this - on the web it rejects, as a fetch does.
+   */
+  signedOut?: boolean;
 }
+
+/** The routes Cloudflare Access fronts, as far as the API goes. */
+const isOwnerRoute = (pathname: string): boolean => pathname.startsWith('/admin/api/');
+
+/**
+ * Statuses that mean Access turned the request away: a redirect to its
+ * login, which is what it answers today, or a bare 401. None of the
+ * Functions under /admin/api answers with either - they refuse with a 403 -
+ * so on those routes these can only be Access.
+ */
+const SIGN_IN_STATUSES = new Set([301, 302, 303, 307, 308, 401]);
 
 /**
  * Call an API route.
@@ -109,13 +138,32 @@ export async function apiFetch(
       contentType: r.contentType ?? '',
       bytes: r.bytes ?? null,
       ...(r.error ? { error: r.error } : {}),
+      // The main process does not follow redirects either (server.cjs), and
+      // sees the real status where a page sees an opaque one.
+      ...(isOwnerRoute(pathname) && SIGN_IN_STATUSES.has(r.status) ? { signedOut: true } : {}),
     };
   }
+  // The owner's routes are fetched without following redirects. When the
+  // session cookie is missing or has expired, Cloudflare Access answers
+  // every /admin/api request with a redirect to its login page on another
+  // origin. Followed, that lands on a page with no CORS headers and the
+  // fetch rejects with the same TypeError as having no network at all,
+  // which is how an expired sign-in read as "the server could not be
+  // reached" - and how the service worker, taking the rejection for a
+  // dropped connection, answered the sign-in probe from its cache. Not
+  // followed, the redirect comes back as a response (an opaqueredirect,
+  // status 0), the worker passes it through as it does any network answer,
+  // and it can be read for what it is.
+  const owner = isOwnerRoute(pathname);
   const res = await fetch(pathname, {
     method: init.method ?? 'GET',
     headers: init.contentType ? { 'content-type': init.contentType } : undefined,
     body: init.body,
+    ...(owner ? { redirect: 'manual' as const } : {}),
   });
+  if (owner && (res.type === 'opaqueredirect' || SIGN_IN_STATUSES.has(res.status))) {
+    return { ok: false, status: res.status, contentType: '', bytes: null, signedOut: true };
+  }
   return {
     ok: res.ok,
     status: res.status,

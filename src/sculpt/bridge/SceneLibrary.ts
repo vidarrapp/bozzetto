@@ -20,7 +20,9 @@ import type { SavedScene } from './ScenePersist';
  * SceneProjects), and the shelf keeps that project's latest bytes as its
  * device copy, under the project's id, for opening offline. Those entries
  * carry projectId; an entry without one exists on this device only, which
- * browser storage cannot promise to keep through a reinstall.
+ * browser storage cannot promise to keep through a reinstall. A save that
+ * could not upload leaves one of those, marked unsent, so it can go up
+ * later from its card.
  */
 
 /** A card's worth of information: everything but the geometry. */
@@ -41,6 +43,26 @@ export interface LibraryEntry {
    * the scene exists on this device and nowhere else.
    */
   projectId?: string;
+  /**
+   * A Save to library that could not upload (the sign-in had expired, or
+   * there was no connection) kept the scene here instead. Its card says
+   * Not uploaded and offers Upload to Projects whoever is signed in,
+   * since the save was the owner's; the next save of the same scene that
+   * does upload takes this copy's place.
+   */
+  unsent?: boolean;
+  /**
+   * For an unsent re-save, the project that save was updating: Upload to
+   * Projects updates it in place rather than making a second one.
+   */
+  uploadTo?: string;
+  /**
+   * The unsent copy this project copy was uploaded from, by its id before
+   * the move. The scene in Sculpt that copy was kept for still knows it by
+   * that id, and finds its project through this rather than making a
+   * second project at its next save.
+   */
+  sentFrom?: string;
 }
 
 const meta = <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
@@ -121,6 +143,42 @@ export async function cacheProjectScene(
 }
 
 /**
+ * Keep a scene whose Save to library could not upload: the bytes that
+ * would have gone up, on the shelf, marked unsent. `id` is the copy an
+ * earlier failed save of the same scene left, which this one replaces -
+ * one card per scene, however many times the save is tried - keeping the
+ * name it may have been given since. `uploadTo` is the project the save was
+ * updating, if it was a re-save.
+ */
+export async function keepUnsent(info: {
+  id?: string | null;
+  name: string;
+  bytes: ArrayBuffer;
+  objects: number;
+  tris: number;
+  thumb?: Blob;
+  uploadTo?: string | null;
+}): Promise<LibraryEntry> {
+  const prior = info.id ? await getLibraryEntry(info.id) : null;
+  const thumb = info.thumb ?? prior?.thumb;
+  const entry: LibraryEntry = {
+    id: info.id || newId(),
+    name: prior?.name || info.name,
+    savedAt: Date.now(),
+    objects: info.objects,
+    tris: info.tris,
+    bytes: info.bytes.byteLength,
+    unsent: true,
+    ...(info.uploadTo ? { uploadTo: info.uploadTo } : {}),
+    ...(thumb ? { thumb } : {}),
+  };
+  // Geometry first, as saveToLibrary does: no card without a scene behind it.
+  await data('readwrite', (s) => s.put(info.bytes, entry.id));
+  await meta('readwrite', (s) => s.put(entry, entry.id));
+  return entry;
+}
+
+/**
  * A device-only entry has just been uploaded as `projectId`: it becomes
  * that project's device copy. Moved, not copied, to the project's key, so
  * there is never a second card for the same scene - a later save from
@@ -131,11 +189,25 @@ export async function markUploaded(id: string, projectId: string, name?: string)
   const entry = await getLibraryEntry(id);
   const bytes = await loadLibraryBytes(id);
   if (!entry || !bytes) return null;
-  const moved: LibraryEntry = { ...entry, id: projectId, projectId, ...(name ? { name } : {}) };
+  // Sent now: what the unsent marks said is no longer true of it, but
+  // where it came from is what the scene it was kept for will ask.
+  const { unsent, uploadTo: _uploadTo, ...kept } = entry;
+  const moved: LibraryEntry = {
+    ...kept,
+    id: projectId,
+    projectId,
+    ...(name ? { name } : {}),
+    ...(unsent ? { sentFrom: id } : {}),
+  };
   await data('readwrite', (s) => s.put(bytes, projectId));
   await meta('readwrite', (s) => s.put(moved, projectId));
   if (id !== projectId) await deleteLibraryScene(id);
   return moved;
+}
+
+/** The project copy an unsent copy became when its card uploaded it, or null. */
+export async function findSentCopy(unsentId: string): Promise<LibraryEntry | null> {
+  return (await listLibrary()).find((e) => e.sentFrom === unsentId && !!e.projectId) ?? null;
 }
 
 /** One entry's card information, or null. */

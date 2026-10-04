@@ -370,6 +370,37 @@ try {
   r = await call('GET', '/admin/api/projects', { headers: asOwner });
   t.ok(!ids(r.json).includes(scene), 'and it leaves the owner list');
   failed += t.report();
+
+  // --- signing in again ---------------------------------------------------
+  // /admin/login sits behind Access like the rest of /admin, so reaching it
+  // means the login has run; it only sends the browser back to `next`. The
+  // redirect is read, not followed, as the browser would follow it.
+  t = checks('functions: sign in again');
+  const login = async (query) => {
+    const res = await fetch(`${base}/admin/login${query}`, { redirect: 'manual' });
+    await res.arrayBuffer();
+    return { status: res.status, location: res.headers.get('location'), cache: res.headers.get('cache-control') };
+  };
+  const next = (path) => `?next=${encodeURIComponent(path)}`;
+  let l = await login(next('/?sculpt=1&q=low'));
+  t.ok(l.status === 302 && l.location === '/?sculpt=1&q=low', `back to the page it was sent from, query and all (${l.status} ${l.location})`);
+  t.eq(l.cache, 'no-store', 'and the redirect is never kept, so Access runs every time');
+  l = await login(next('/?armature=1#figure'));
+  t.eq(l.location, '/?armature=1#figure', 'another page of the app, with its fragment');
+  l = await login('');
+  t.ok(l.status === 302 && l.location === '/', `no next: the gallery (${l.status} ${l.location})`);
+  for (const [what, bad] of [
+    ['an absolute URL', 'https://evil.example/steal'],
+    ['a protocol-relative one', '//evil.example/steal'],
+    ['a backslash the browser reads as a slash', '/\\evil.example/steal'],
+    ['a tab the URL parser drops', '/\t/evil.example/steal'],
+    ['a script URL', 'javascript:alert(1)'],
+    ['a relative path', 'steal'],
+  ]) {
+    l = await login(next(bad));
+    t.ok(l.status === 302 && l.location === '/', `${what} is refused, and goes to / instead (${JSON.stringify(bad)} -> ${l.location})`);
+  }
+  failed += t.report();
 } finally {
   await stopServer();
   // What the server said is most of a diagnosis when something failed.

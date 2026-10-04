@@ -7,6 +7,7 @@ import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
+import { beforeSignIn } from '../ui/signIn';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { Armature, buildArmature, importArmature, type ArmatureState } from './Armature';
@@ -746,6 +747,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     });
   };
   galleryLink?.addEventListener('click', onLeave);
+  // Signing in again leaves the page and comes back (ui/signIn): the
+  // figure is saved and pictured first, as leaving for the gallery does.
+  const offSignIn = beforeSignIn(async () => {
+    await snapshot();
+    return true;
+  });
 
   // --- the figure: presets and files ----------------------------------------------
   /**
@@ -1158,6 +1165,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('input', onLookEdit);
     document.removeEventListener('change', onLookEdit);
     window.removeEventListener('pagehide', onHidden);
+    offSignIn();
     galleryLink?.removeEventListener('click', onLeave);
     select(null);
     viewer.setSculptVisible(true);

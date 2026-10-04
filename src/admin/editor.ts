@@ -1,4 +1,4 @@
-import { api, type Visibility } from './api';
+import { api, failureText, type Visibility } from './api';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
@@ -57,7 +57,7 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
       }, 1500),
     );
   } catch (err) {
-    alert(`${idle} failed: ${(err as Error).message}`);
+    alert(`${idle} failed: ${failureText(err)}`);
   } finally {
     btn.disabled = false;
   }
@@ -146,7 +146,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     host.innerHTML = `<div class="admin"><div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div>
       <p class="admin__error"></p></div>`;
     host.querySelector<HTMLElement>('.admin__error')!.textContent =
-      `Could not load “${id}”: ${(err as Error).message}`;
+      `Could not load “${id}”: ${failureText(err)}`;
     return;
   }
 
@@ -311,7 +311,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       await mountPreview();
       await captureDefaultThumb();
     } catch (err) {
-      progressLabel.textContent = `Failed: ${(err as Error).message}`;
+      progressLabel.textContent = `Failed: ${failureText(err)}`;
     }
   }
 

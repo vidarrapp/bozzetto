@@ -55,8 +55,9 @@ const PREF_KEY = 'bozzetto-sculpt-record';
  * gallery's sign-in, so a guest on the web would be spending the device's
  * storage, and a write per stroke, on frames nothing can take anywhere. A
  * signed-in session records, on the web and the iPad alike (the sign-in
- * probe answers offline too, from the service worker's copy), and so does
- * the desktop app, signed in or not.
+ * probe answers offline too, from the service worker's copy), so does the
+ * owner's device once that sign-in has expired (the reel waits for Sign
+ * in again), and so does the desktop app, signed in or not.
  */
 export function recordingAllowed(where: { desktop: boolean; signedIn: boolean }): boolean {
   return where.desktop || where.signedIn;
@@ -189,7 +190,8 @@ export class SnapshotRecorder {
   /**
    * Where recording can go somewhere, as the mount works it out: the
    * desktop app at once, the web once the sign-in probe answers with an
-   * email - at boot, or later from the publish forms' re-check. Called
+   * email, or says the owner's sign-in has expired - at boot, or later
+   * from the publish forms' re-check. Called
    * before or after install(), as often as the answer comes. Allowed with
    * the choice already on, recording starts as a tick on the box starts
    * it, from the scene as it stands; the duplicate check keeps a reload's

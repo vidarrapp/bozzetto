@@ -7,8 +7,10 @@ import { aoWithoutCavity, type LookState } from '../../viewer/Viewer';
 /**
  * Publishing sculpts to the gallery (WS5, admin only - Cloudflare Access
  * gates every endpoint used here, so a guest reaching these calls just gets
- * refusals). Both flows follow the editor's sequence exactly: create the
- * project, upload GLBs, patch the frame list, then a best-effort thumbnail.
+ * refusals, and an owner whose session ran out an AuthExpiredError, which
+ * the form answers with Sign in again). Both flows follow the editor's
+ * sequence exactly: create the project, upload GLBs, patch the frame list,
+ * then a best-effort thumbnail.
  */
 
 /** Matches the server's slug rule so failures happen before any upload. */

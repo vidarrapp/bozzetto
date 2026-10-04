@@ -162,9 +162,9 @@ async function loadProject(
 
 /**
  * The owner's manifest for a project the public API does not show, or null.
- * For anyone else Access answers with its login page (a redirect the fetch
- * refuses to follow cross-origin, or HTML), all of which read as "not
- * here" so the bundled fallback still gets its turn.
+ * For anyone else Access answers with its login page (a redirect, which
+ * apiFetch reports as signed out rather than following, or HTML), all of
+ * which read as "not here" so the bundled fallback still gets its turn.
  */
 async function ownerManifest(id: string): Promise<{ manifest: Manifest; manifestUrl: string } | null> {
   const path = `/admin/api/projects/${encodeURIComponent(id)}`;

@@ -1,5 +1,7 @@
 import { div } from '../../ui/dom';
-import type { Visibility } from '../../admin/api';
+import { AuthExpiredError, type Role, type Visibility } from '../../admin/api';
+import { isDesktop } from '../../net/origin';
+import { signInButton } from '../../ui/signIn';
 
 /**
  * Inline "save to gallery" mini-form: a slug + title pair, who may see it,
@@ -8,7 +10,9 @@ import type { Visibility } from '../../admin/api';
  * admin probe confirms a Cloudflare Access session; without one there is a
  * single line saying so, which re-checks when tapped - the form used to be
  * hidden outright, which made a failed probe look identical to a feature
- * that did not exist.
+ * that did not exist. When the session has expired, or a publish finds
+ * that it has, the line says so and offers Sign in again, which comes back
+ * to this page with the work on it.
  */
 export function galleryForm(opts: {
   buttonLabel: string;
@@ -20,9 +24,11 @@ export function galleryForm(opts: {
   ) => Promise<string>;
   /** Re-run the admin check; resolves to the email, or null for a guest. */
   recheck: () => Promise<string | null>;
-}): { root: HTMLDivElement; setAdmin: (isAdmin: boolean) => void } {
+}): { root: HTMLDivElement; setRole: (role: Role) => void } {
   const root = div('gallery-form');
   root.hidden = true;
+  /** The role the form was last told; null before the probe's first answer. */
+  let role: Role | null = null;
 
   // Guests get one line rather than nothing. Hiding the whole thing made a
   // failed admin probe indistinguishable from "this feature does not
@@ -38,23 +44,33 @@ export function galleryForm(opts: {
   // inside the same form made every "did it save?" selector ambiguous.
   const gateNote = div('gallery-form__gatenote');
   gateNote.textContent = 'Needs the admin sign-in.';
-  gate.append(gateBtn, gateNote);
+  // After the re-check button, so a tap on the gate's first button is
+  // still the re-check. A desktop sign-in that ended well checks again.
+  const signIn = signInButton('sculpt-panel__btn gallery-form__signin', (ok) => {
+    if (ok) void opts.recheck();
+  });
+  signIn.hidden = true;
+  gate.append(gateBtn, gateNote, signIn);
+  /** The gate's line, and whether it offers a way to sign in from here. */
+  const sayGate = (text: string, offer: boolean, label = 'Sign in again'): void => {
+    gateNote.textContent = text;
+    signIn.textContent = label;
+    signIn.hidden = !offer;
+  };
   gateBtn.addEventListener('click', () => {
     gateBtn.disabled = true;
     gateNote.textContent = 'Checking sign-in...';
     void opts
       .recheck()
       .then((email) => {
-        if (email) {
-          setAdmin(true);
-          return;
-        }
-        gateNote.replaceChildren('Not signed in - open ');
-        const a = document.createElement('a');
-        a.href = '/admin/';
-        a.textContent = '/admin/';
-        a.target = '_blank';
-        gateNote.append(a, ', then re-check.');
+        // The re-check set the role and its words; a guest is told how to
+        // sign in, since that is what was asked. Not in another tab: an
+        // installed app cannot reach one (it keeps cookies of its own), so
+        // the page is left and come back to, with the work kept. The
+        // desktop app signs in from its Server menu.
+        if (email || role !== 'guest') return;
+        if (isDesktop()) sayGate('Not signed in: Server > Sign In.', false);
+        else sayGate('Not signed in.', true, 'Sign in');
       })
       .finally(() => {
         gateBtn.disabled = false;
@@ -113,6 +129,17 @@ export function galleryForm(opts: {
         status.appendChild(a);
       })
       .catch((err: Error) => {
+        // Publishing has nothing to fall back on: the frames and the scene
+        // stay where they are, and it goes again once signed in.
+        if (err instanceof AuthExpiredError) {
+          status.replaceChildren('Your sign-in has expired, so publishing stopped.');
+          status.appendChild(
+            signInButton('sculpt-panel__btn gallery-form__signin', (ok) => {
+              if (ok) void opts.recheck();
+            }),
+          );
+          return;
+        }
         status.textContent = err.message;
       })
       .finally(() => {
@@ -124,12 +151,15 @@ export function galleryForm(opts: {
   fields.append(idInput, titleInput, visibility, go, status);
   fields.hidden = true;
 
-  const setAdmin = (isAdmin: boolean): void => {
+  const setRole = (next: Role): void => {
+    role = next;
     root.hidden = false;
-    gate.hidden = isAdmin;
-    fields.hidden = !isAdmin;
+    gate.hidden = next === 'owner';
+    fields.hidden = next !== 'owner';
+    if (next === 'expired') sayGate('Your sign-in has expired.', true);
+    else if (next === 'guest') sayGate('Needs the admin sign-in.', false);
   };
 
   root.append(gate, fields);
-  return { root, setAdmin };
+  return { root, setRole };
 }

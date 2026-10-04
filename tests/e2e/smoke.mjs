@@ -4,7 +4,8 @@
 // button, the arrow keys in the Scene list, each brush's own size and the
 // World-scale box after an open, capture's default, the autosave's cadence,
 // the two diagnostic overlays, Save to library signed out and signed in
-// (scenes in Projects, visibility), and the sliders: typed values in the
+// (scenes in Projects, visibility) and with the sign-in expired or no
+// network, the service worker on, and the sliders: typed values in the
 // Render, Tool and Armature panels and on the brush rail, the Render
 // panel's ranges and defaults, and ambient occlusion's. Then the Capture
 // window and where recording is allowed, the panels' sides on the iPad's
@@ -825,7 +826,16 @@ const shelf = (page) =>
           const rows = tx.objectStore('library').getAll();
           tx.oncomplete = () => {
             db.close();
-            ok(keys.result.map((key, i) => ({ key, name: rows.result[i].name, projectId: rows.result[i].projectId ?? null, objects: rows.result[i].objects })));
+            ok(
+              keys.result.map((key, i) => ({
+                key,
+                name: rows.result[i].name,
+                projectId: rows.result[i].projectId ?? null,
+                objects: rows.result[i].objects,
+                unsent: !!rows.result[i].unsent,
+                uploadTo: rows.result[i].uploadTo ?? null,
+              })),
+            );
           };
         };
       }),
@@ -843,6 +853,47 @@ const readBozz = (page, bytes, needle = '') =>
     },
     [Buffer.from(bytes).toString('base64'), needle],
   );
+
+/**
+ * Until the page's service worker has activated, by polling. Not
+ * waitForFunction: an async predicate returns a promise, which is truthy,
+ * so that resolves at once, long before the worker has installed.
+ */
+async function workerActivated(page, timeout = 120_000) {
+  const until = Date.now() + timeout;
+  while (Date.now() < until) {
+    const state = await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active?.state ?? null);
+    if (state === 'activated') return true;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}
+
+/** What the worker keeps for the sign-in probe: the cached answer's body, or null. */
+const cachedProbe = (page) =>
+  page.evaluate(async () => {
+    const hit = await (await caches.open('bozzetto-whoami')).match('/admin/api/whoami');
+    return hit ? await hit.text() : null;
+  });
+
+/** The last failure notice: its words and its buttons. Null when none comes. */
+const failedNotice = (page) =>
+  page
+    .waitForFunction(
+      () => {
+        const el = [...document.querySelectorAll('.file-menu__progress[data-state="failed"]')].pop();
+        return el
+          ? { text: (el.querySelector('.file-menu__words') ?? el).textContent, buttons: [...el.querySelectorAll('button')].map((b) => b.textContent) }
+          : null;
+      },
+      null,
+      { timeout: 60_000 },
+    )
+    .then((h) => h.jsonValue())
+    .catch(() => null);
+
+/** Clear every notice, so the next one read is the next one shown. */
+const clearNotices = (page) => page.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
 
 /** The last progress toast once it has finished: its state and words. */
 const savedToast = (page) =>
@@ -964,19 +1015,23 @@ const bootState = (page) =>
     failed: [...document.querySelectorAll('.file-menu__progress[data-state="failed"]')].map((e) => e.textContent),
   }));
 
+/** Where Access sends a request with no session: its login page, on its own origin. */
+const ACCESS_LOGIN = 'https://example.cloudflareaccess.com/cdn-cgi/access/login/127.0.0.1?kid=test&redirect_url=%2Fadmin%2Fapi%2Fwhoami';
+
 /**
  * A stand-in for the Functions, enough for the owner's side of the library:
  * the lists and manifests, create, update, delete, a scene's upload in
  * parts, frames and thumbnails, and both media routes - the open one
  * refusing private projects, as the real one does. Every call is kept for
  * the checks; `offline` makes every one of them fail as a dropped network
- * would.
+ * would, and `expired` answers the owner's routes as Access does once the
+ * session has run out.
  */
 function fakeProjects() {
   const projects = new Map();
   const uploads = new Map();
   const calls = [];
-  const opts = { partSize: 256 * 1024, partDelay: 0, offline: false };
+  const opts = { partSize: 256 * 1024, partDelay: 0, offline: false, expired: false };
   let made = 0;
   let clock = 1_790_000_000_000;
   const tick = () => (clock += 1000);
@@ -998,6 +1053,9 @@ function fakeProjects() {
     const raw = req.postDataBuffer() ?? Buffer.alloc(0);
     calls.push({ method, path, search: u.search, type: req.headers()['content-type'] ?? '', body: raw });
     if (opts.offline) return route.abort('internetdisconnected');
+    // An expired session, as Cloudflare Access answers one: every owner
+    // route redirects to its login page, on another origin.
+    if (opts.expired && path.startsWith('/admin/')) return route.fulfill({ status: 302, headers: { location: ACCESS_LOGIN } });
     if (path === '/admin/api/whoami') return json(route, 200, { email: 'owner@example.com' });
     const project = (id) => projects.get(decodeURIComponent(id));
     let m;
@@ -3761,6 +3819,211 @@ export const suites = {
       t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();
+    }
+  },
+
+  // An expired sign-in, told apart from no network (owner report: the
+  // installed iPad app said "the server could not be reached" from Save to
+  // library while the server was up). Once the session runs out, Access
+  // answers every owner route with a redirect to its login on another
+  // origin; here the service worker is on, holding a signed-in probe from
+  // earlier, which a followed redirect fell back to. Now the probe says
+  // signed out, the gallery says Log in (and once that the sign-in
+  // expired), Save to library keeps the scene on the device as Not
+  // uploaded with Sign in again on its notice, and Sign in again goes
+  // through /admin/login and back with the scene, its project link and the
+  // copy it left, which the next save replaces. Offline, the worker's
+  // answer still stands: the owner keeps the owner's things, and a save
+  // keeps the scene here with the no-connection notice.
+  async signInExpired(page, base, t) {
+    // The worker's own fetches reach the context's routes only with this,
+    // read whenever Playwright attaches to a worker (they restart).
+    const flag = 'PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS';
+    const flagWas = process.env[flag];
+    process.env[flag] = '1';
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 } });
+    const fake = fakeProjects();
+    const logins = [];
+    try {
+      fake.add({ id: 'pub-reel', title: 'Public reel', mode: 'timelapse', visibility: 'public', frameCount: 3 });
+      await ctx.route(fake.serves, fake.handle);
+      // The Function behind Access (functions/admin/login.ts): past the
+      // login, which renews the session, and back to `next`.
+      await ctx.route('**/admin/login*', (route) => {
+        const u = new URL(route.request().url());
+        logins.push(u.pathname + u.search);
+        const next = u.searchParams.get('next') ?? '/';
+        fake.opts.expired = false;
+        return route.fulfill({ status: 302, headers: { location: next.startsWith('/') && !next.startsWith('//') ? next : '/' } });
+      });
+      const owner = await ctx.newPage();
+      const errors = [];
+      owner.on('pageerror', (e) => errors.push(String(e)));
+      const dialogs = [];
+      owner.on('dialog', (d) => {
+        dialogs.push(d.message());
+        void d.accept();
+      });
+      const chips = () => owner.evaluate(() => [...document.querySelectorAll('.landing-chip')].map((c) => c.textContent).join(', '));
+      // The gallery once it has drawn: the public reel is the last card in.
+      const gallery = async () => {
+        await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+        await owner.waitForSelector('a.card[href="?tl=pub-reel"], .card--owned[data-project="pub-reel"]', { timeout: 30_000 });
+      };
+      // Sculpt, once the probe has answered: the fields for the owner, the
+      // gate's line otherwise.
+      const sculpt = async (answered) => {
+        await openSculpt(owner, base, '&q=low');
+        await owner.waitForFunction(answered, null, { timeout: 30_000 });
+      };
+      const asOwner = () => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden);
+      const asExpired = () => [...document.querySelectorAll('.gallery-form__gatenote')].some((n) => n.textContent === 'Your sign-in has expired.');
+      const scene = () =>
+        owner.evaluate(() => ({
+          objects: window.__sculpt.session.getMeshes().length,
+          link: window.__sculpt.fileActions.link?.id ?? null,
+          unsent: window.__sculpt.fileActions.unsentCopy,
+          work: window.__sculpt.fileActions.hasWork(),
+        }));
+      const projectCount = () => fake.projects.size;
+
+      // Signed in, the worker installed, and its copy of the probe's answer.
+      await owner.goto(`${base}/`, { waitUntil: 'load' });
+      const activated = await workerActivated(owner);
+      await gallery();
+      const controlled = await owner.evaluate(() => !!navigator.serviceWorker.controller);
+      await owner.waitForFunction(() => [...document.querySelectorAll('.landing-chip')].some((c) => c.textContent === 'Projects'), null, { timeout: 30_000 }).catch(() => {});
+      const held = await cachedProbe(owner);
+      t.ok(activated && controlled && /owner@example\.com/.test(held ?? ''), `the worker controls the gallery and holds a signed-in probe (${held})`);
+      t.ok((await chips()).includes('Projects'), `signed in, the top row has Projects (${await chips()})`);
+
+      // A scene saved to Projects while signed in: it has a project now.
+      await sculpt(asOwner);
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
+      await chooseFile(owner, 'Save to library');
+      let end = await savedToast(owner);
+      const id = 'scene-test1';
+      t.ok(end.state === 'done' && (await scene()).link === id, `signed in, Save to library uploads it as ${id} ("${end.text}")`);
+
+      // The session runs out.
+      fake.opts.expired = true;
+      const raw = await owner.evaluate(async () => ({
+        followed: await fetch('/admin/api/whoami').then(async (r) => `${r.status} ${await r.text()}`, (e) => `rejected: ${e}`),
+        manual: await fetch('/admin/api/whoami', { redirect: 'manual' }).then((r) => `${r.type} ${r.status}`, (e) => `rejected: ${e}`),
+      }));
+      t.ok(/owner@example\.com/.test(raw.followed), `a probe that follows the redirect still gets the worker's "signed in": the old fallback (${raw.followed})`);
+      t.eq(raw.manual, 'opaqueredirect 0', 'not followed, the redirect comes through the worker as what it is');
+
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      await sculpt(asExpired);
+      let s = await scene();
+      t.ok(s.objects === 2 && s.link === id, `the probe reports signed out, as expired; the autosave is back, still the project's (${JSON.stringify(s)})`);
+      const lib = (await fileItems(owner)).find((i) => i.label === 'Save to library');
+      t.eq(lib?.hint, 'Your sign-in has expired: keeps it on this device until you sign in again', 'Save to library says what it will do');
+      const gate = await owner.evaluate(() => ({
+        signIn: [...document.querySelectorAll('.gallery-form__gate .gallery-form__signin')].filter((b) => !b.hidden).map((b) => b.textContent),
+        fields: [...document.querySelectorAll('.gallery-form__fields')].filter((f) => !f.hidden).length,
+        recording: window.__sculpt.recorder.isAllowed(),
+        chip: !window.__sculpt.captureWindow.chip.hidden,
+      }));
+      t.ok(gate.signIn.length === 2 && gate.signIn.every((x) => x === 'Sign in again') && gate.fields === 0, `the publish forms say the sign-in expired and offer Sign in again (${JSON.stringify(gate)})`);
+      t.ok(gate.recording && gate.chip, 'and the owner\'s device still records: the reel waits for the sign-in');
+
+      // Save to library: kept on the device, and said so, with the way back in.
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
+      let made = projectCount();
+      await clearNotices(owner);
+      await chooseFile(owner, 'Save to library');
+      let notice = await failedNotice(owner);
+      t.ok(notice?.text === 'Your sign-in has expired. Saved on this device.' && notice.buttons.includes('Sign in again'), `the notice says the sign-in expired and the scene is on the device, with Sign in again (${JSON.stringify(notice)})`);
+      let copies = await shelf(owner);
+      const unsent = copies.filter((c) => c.unsent);
+      t.ok(unsent.length === 1 && unsent[0].projectId === null && unsent[0].uploadTo === id && unsent[0].objects === 3, `the scene is on the shelf, marked not uploaded, for the project it was re-saving (${JSON.stringify(copies)})`);
+      s = await scene();
+      t.ok(s.unsent === unsent[0]?.key && s.link === id && s.work, `the scene knows its copy, keeps its link, and still counts as unsaved (${JSON.stringify(s)})`);
+      t.ok(projectCount() === made && fake.projects.get(id).scene?.objects === 2, 'nothing reached the server');
+
+      // The gallery tells the truth: Log in, once a word on why, no owner's switches.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      await gallery();
+      const g = await owner.evaluate(() => ({
+        notice: document.querySelector('.landing__notice')?.textContent ?? null,
+        unsent: [...document.querySelectorAll('.card--library')].filter((c) => c.querySelector('.card__badge')?.textContent === 'Not uploaded').map((c) => ({ upload: !!c.querySelector('.card__upload'), note: c.querySelector('.card__note')?.textContent ?? null })),
+        toggles: document.querySelectorAll('.card__vis').length,
+      }));
+      t.ok((await chips()).includes('Log in') && !(await chips()).includes('Projects'), `the top row says Log in (${await chips()})`);
+      t.eq(g.notice, 'Your sign-in has expired. Sign in again', 'and a quiet line says why, with Sign in again');
+      t.ok(g.unsent.length === 1 && g.unsent[0].upload && g.unsent[0].note === DEVICE_NOTE && g.toggles === 0, `the kept scene's card says Not uploaded and offers Upload to Projects; no owner's switches (${JSON.stringify(g)})`);
+      await gallery();
+      t.eq(await owner.evaluate(() => document.querySelector('.landing__notice')?.textContent ?? null), null, 'the line is said once, not on every visit');
+      await clearNotices(owner);
+      await owner.click('.card--library .card__upload');
+      notice = await failedNotice(owner);
+      t.ok(notice?.text === 'Your sign-in has expired. The scene stays on this device.' && notice.buttons.includes('Sign in again'), `Upload to Projects on the card says the same, and leaves the card (${JSON.stringify(notice)})`);
+      t.eq(await owner.evaluate(() => document.querySelectorAll('.card__upload').length), 1, 'the card still offers the upload');
+
+      // Sign in again from Sculpt: through /admin/login and back, scene and all.
+      await sculpt(asExpired);
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('cube')); // newer than any autosave write
+      await clearNotices(owner);
+      await chooseFile(owner, 'Save to library');
+      notice = await failedNotice(owner);
+      copies = await shelf(owner);
+      t.ok(copies.filter((c) => c.unsent).length === 1 && copies.find((c) => c.unsent)?.objects === 4, `a second try replaces the copy rather than adding a card (${JSON.stringify(copies)})`);
+      await owner.evaluate(() => {
+        window.__beforeSignIn = true;
+        [...document.querySelectorAll('.file-menu__progress[data-state="failed"] button')].find((b) => b.textContent === 'Sign in again').click();
+      });
+      await owner.waitForFunction(() => !window.__beforeSignIn && !!window.__sculpt, null, { timeout: 90_000 });
+      await owner.waitForFunction(asOwner, null, { timeout: 30_000 }).catch(() => {});
+      t.eq(logins.join(', '), `/admin/login?next=${encodeURIComponent('/?sculpt=1&q=low')}`, 'Sign in again goes to /admin/login, told to come back here');
+      s = await scene();
+      t.ok(s.objects === 4 && s.link === id && s.unsent === copies.find((c) => c.unsent)?.key, `after the round trip the scene is back, the cube made just before included, with its link and its copy (${JSON.stringify(s)})`);
+      t.eq(dialogs.join(' | '), '', 'and nothing was asked on the way: the autosave held everything');
+      t.ok(await owner.evaluate(asOwner), 'signed in again, the publish forms are back');
+
+      made = projectCount();
+      await chooseFile(owner, 'Save to library');
+      end = await savedToast(owner);
+      copies = await shelf(owner);
+      s = await scene();
+      t.ok(end.state === 'done' && projectCount() === made && fake.projects.get(id).scene?.objects === 4, `the next save updates ${id} in place, four objects now ("${end.text}")`);
+      t.ok(copies.length === 1 && copies[0].key === id && !copies[0].unsent && s.unsent === null && !s.work, `and the copy left on the shelf is gone, its place taken by the project's (${JSON.stringify(copies)})`);
+
+      // No network at all: the worker's answer stands, and the save stays here.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      t.ok(/owner@example\.com/.test((await cachedProbe(owner)) ?? ''), 'the worker holds the renewed sign-in');
+      await ctx.setOffline(true);
+      fake.opts.offline = true;
+      const asked = fake.calls.length;
+      await sculpt(asOwner);
+      const probed = fake.calls.slice(asked).filter((c) => c.path === '/admin/api/whoami').length;
+      t.ok(probed > 0 && (await owner.evaluate(() => !!navigator.serviceWorker.controller)), `offline, the probe's request fails (${probed} tried) and the worker answers from its copy`);
+      const offline = await fileItems(owner);
+      t.eq(offline.find((i) => i.label === 'Save to library')?.hint, `Updates "${fake.projects.get(id).title}" in Projects`, 'offline, the cached sign-in keeps the owner\'s Save to library and the publish forms');
+      await owner.evaluate(() => window.__sculpt.session.addPrimitive('cylinder'));
+      await clearNotices(owner);
+      await chooseFile(owner, 'Save to library');
+      notice = await failedNotice(owner);
+      t.ok(notice?.text === 'No connection. Saved on this device; use Upload to Projects when you are online.' && !notice.buttons.includes('Sign in again'), `the notice says there is no connection and the scene is on the device (${JSON.stringify(notice)})`);
+      copies = await shelf(owner);
+      t.ok(copies.some((c) => c.unsent && c.objects === 5 && c.uploadTo === id), `kept as Not uploaded, for ${id} (${JSON.stringify(copies)})`);
+
+      // Back online, the card sends it to the project it was for.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      await ctx.setOffline(false);
+      fake.opts.offline = false;
+      await gallery();
+      made = projectCount();
+      await owner.click('.card--library:not(.card--scene) .card__upload');
+      await owner.waitForSelector('.card--library.card--uploaded', { timeout: 30_000 }).catch(() => {});
+      t.ok(projectCount() === made && fake.projects.get(id).scene?.objects === 5, `online again, Upload to Projects on the card updates ${id} in place (${fake.projects.get(id).scene?.objects} objects)`);
+      t.ok((await chips()).includes('Projects') && !(await owner.evaluate(() => document.querySelector('.landing__notice'))), `and the gallery is the owner's again (${await chips()})`);
+      t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+      if (flagWas === undefined) delete process.env[flag];
+      else process.env[flag] = flagWas;
     }
   },
 

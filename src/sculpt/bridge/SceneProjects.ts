@@ -1,4 +1,11 @@
-import { ApiError, api, type SceneProject } from '../../admin/api';
+import {
+  ApiError,
+  AuthExpiredError,
+  UnreachableError,
+  api,
+  signedInHereBefore,
+  type SceneProject,
+} from '../../admin/api';
 import { apiFetch } from '../../net/origin';
 import type { SceneLink } from './ScenePersist';
 
@@ -117,13 +124,9 @@ async function upload(u: SceneUpload, onProgress: (text: string) => void): Promi
   return { id: project, title };
 }
 
-/**
- * A fetch that threw never reached a server - offline, or a sign-in page
- * on another origin the browser would not follow to. "Failed to fetch"
- * says neither.
- */
+/** A fetch that threw never reached a server (UnreachableError says so). */
 function unreachable(err: unknown): unknown {
-  return err instanceof TypeError ? new Error('the server could not be reached') : err;
+  return err instanceof TypeError ? new UnreachableError() : err;
 }
 
 /**
@@ -144,6 +147,9 @@ async function sceneManifest(id: string): Promise<{ project: SceneProject; owner
     if (res.ok && res.bytes && !res.contentType.includes('text/html')) {
       return { project: JSON.parse(new TextDecoder().decode(res.bytes)) as SceneProject, owner: false };
     }
+    // Not public, and the owner's route wanted a sign-in: for the owner
+    // whose session ran out that is the whole story, and the thing to fix.
+    if (ownerErr instanceof AuthExpiredError && signedInHereBefore()) throw ownerErr;
     throw new Error(
       res.status === 404
         ? 'Not found. It may have been deleted, or be private while you are signed out.'
@@ -169,6 +175,7 @@ export async function fetchSceneProject(
   const res = await apiFetch(file).catch((err: unknown) => {
     throw unreachable(err);
   });
+  if (res.signedOut) throw new AuthExpiredError();
   if (!res.ok || !res.bytes || res.contentType.includes('text/html')) {
     throw new Error(`Could not download "${project.title}" (${res.status})`);
   }

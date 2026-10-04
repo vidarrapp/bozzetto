@@ -5,7 +5,7 @@
  * dev); the public list stays on `/api/projects`.
  */
 
-import { apiFetch } from '../net/origin';
+import { apiFetch, isDesktop, type ApiResult } from '../net/origin';
 
 export type Visibility = 'public' | 'private';
 
@@ -71,6 +71,7 @@ async function call<T>(
   init?: { method?: string; body?: ArrayBuffer; contentType?: string },
 ): Promise<T> {
   const res = await apiFetch(pathname, init);
+  if (res.signedOut) throw new AuthExpiredError();
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     if (res.bytes) {
@@ -103,28 +104,178 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Cloudflare Access sent the call to its login page: the session has run
+ * out (Access sessions expire, and an installed iPad app keeps a cookie jar
+ * of its own, apart from Safari's). Not a dropped connection, and not a
+ * refusal of what was asked: signing in again and repeating it works.
+ */
+export class AuthExpiredError extends ApiError {
+  constructor() {
+    super('Your sign-in has expired', 401);
+  }
+}
+
+/**
+ * A request that never reached a server: offline, or a connection that
+ * dropped. "Failed to fetch" says neither. An expired sign-in used to look
+ * like this too, Access's redirect to its login on another origin failing
+ * the fetch the same way; it is an AuthExpiredError now (see apiFetch).
+ */
+export class UnreachableError extends Error {
+  constructor() {
+    super('the server could not be reached');
+  }
+}
+
+/**
+ * Why an upload did not happen, which decides what the notice offers: a
+ * sign-in, a wait for the connection, or the server's own words.
+ */
+export type UploadFailure = 'expired' | 'offline' | 'refused';
+
+export function uploadFailure(err: unknown): UploadFailure {
+  if (err instanceof AuthExpiredError) return 'expired';
+  // A rejected fetch, or a lazy chunk that could not load, is a connection.
+  if (err instanceof UnreachableError || err instanceof TypeError) return 'offline';
+  // The desktop's proxy reports a connection it could not make as status 0.
+  if (err instanceof ApiError && err.status === 0) return 'offline';
+  return 'refused';
+}
+
+/**
+ * A failure as the editor says it. The editor is itself a page behind
+ * Access, so a session that expires while it is open is mended by loading
+ * the page again, which runs the login; saying so beats "failed".
+ */
+export function failureText(err: unknown): string {
+  if (err instanceof AuthExpiredError) return 'your sign-in has expired. Reload the page to sign in again';
+  return err instanceof Error ? err.message : String(err);
+}
+
 const asJson = (body: unknown): { body: ArrayBuffer; contentType: string } => ({
   body: new TextEncoder().encode(JSON.stringify(body)).buffer as ArrayBuffer,
   contentType: 'application/json',
 });
 
+/** What the sign-in probe found. */
+export interface SignIn {
+  /** The owner's email while the session holds (offline, the service worker's last answer). */
+  email: string | null;
+  /**
+   * Access turned the probe away on a device the owner has signed in on:
+   * the session ran out. Owner work stays reachable (Save to library keeps
+   * the scene here, recording goes on) and Sign in again is offered.
+   */
+  expired: boolean;
+}
+
 /**
- * Whether this session holds an admin identity, and for whom. Null for
- * guests. Cloudflare Access answers unauthenticated callers with a redirect
- * to its login page or an HTML interstitial, never JSON - so anything but a
- * JSON 200 reads as "guest", and so do transport failures.
+ * The last sign-in the probe confirmed on this device, so a signed-out
+ * answer can be told apart: Access answers a guest who never signed in and
+ * an owner whose session ran out in exactly the same way.
  */
-export async function probeAdmin(): Promise<string | null> {
+const SIGNED_IN_KEY = 'bozzetto-signed-in';
+/** Set once the gallery has said a sign-in expired; the next sign-in clears it. */
+const EXPIRY_TOLD_KEY = 'bozzetto-sign-in-expiry-told';
+/**
+ * How long a remembered sign-in makes a signed-out answer read as expired
+ * rather than as a guest: as long as the service worker keeps the probe's
+ * answer (vite.config.ts), which is how long an installed app went on
+ * treating its owner as signed in before.
+ */
+const REMEMBER_MS = 30 * 24 * 60 * 60 * 1000;
+
+function remember(email: string): void {
   try {
-    const res = await apiFetch('/admin/api/whoami');
-    if (!res.ok || !res.bytes) return null;
-    if (!res.contentType.includes('application/json')) return null;
-    const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { email?: string };
+    localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ email, at: Date.now() }));
+    localStorage.removeItem(EXPIRY_TOLD_KEY);
+  } catch {
+    // Storage refused: a later signed-out answer reads as a guest's.
+  }
+}
+
+function forget(): void {
+  try {
+    localStorage.removeItem(SIGNED_IN_KEY);
+  } catch {
+    // Nothing remembered that could be.
+  }
+}
+
+/**
+ * Whether the owner has signed in on this device lately. The desktop app
+ * keeps its sign-in in its own window and says so in Server Settings, so
+ * this is the web's question only.
+ */
+export function signedInHereBefore(): boolean {
+  if (isDesktop()) return false;
+  try {
+    const raw = localStorage.getItem(SIGNED_IN_KEY);
+    const at = raw ? (JSON.parse(raw) as { at?: unknown }).at : null;
+    return typeof at === 'number' && Date.now() - at < REMEMBER_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True the first time it is asked after a sign-in expired, false after
+ * that until the owner has signed in again: the gallery says it once.
+ */
+export function takeExpiryNotice(): boolean {
+  try {
+    if (localStorage.getItem(EXPIRY_TOLD_KEY)) return false;
+    localStorage.setItem(EXPIRY_TOLD_KEY, '1');
+    return true;
+  } catch {
+    return false; // could not record it was said, so it is not said at all
+  }
+}
+
+/**
+ * Whether this session holds an admin identity, and whether a signed-out
+ * answer is a sign-in that expired. Only a JSON 200 is the owner. Access's
+ * redirect to its login is "signed out": the owner's session expired when
+ * this device remembers a sign-in, a guest otherwise. A refusal from the
+ * API itself (403) is someone Access let through who is not the owner, so
+ * the memory goes. Anything else - no network and nothing cached, an HTML
+ * page where JSON belongs - reads as a guest, as it always has.
+ */
+export async function checkSignIn(): Promise<SignIn> {
+  let res: ApiResult;
+  try {
+    res = await apiFetch('/admin/api/whoami');
+  } catch {
+    return { email: null, expired: false };
+  }
+  if (res.signedOut) return { email: null, expired: signedInHereBefore() };
+  const email = whoamiEmail(res);
+  if (email) {
+    remember(email);
+    return { email, expired: false };
+  }
+  if (res.status === 403) forget();
+  return { email: null, expired: false };
+}
+
+function whoamiEmail(res: ApiResult): string | null {
+  if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
+  try {
+    const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { email?: unknown };
     return typeof body.email === 'string' ? body.email : null;
   } catch {
     return null;
   }
 }
+
+/**
+ * Who the page is for, as everything owner-only asks it: the owner signed
+ * in, the owner whose sign-in expired, or a guest.
+ */
+export type Role = 'owner' | 'expired' | 'guest';
+
+export const roleOf = (s: SignIn): Role => (s.email ? 'owner' : s.expired ? 'expired' : 'guest');
 
 const project = (id: string): string => `/admin/api/projects/${encodeURIComponent(id)}`;
 

@@ -49,8 +49,8 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
 
   // The project link is the autosave's business (see SavedScene.project):
   // a file leaves the device, and must not carry a pointer to the owner's
-  // server project with it.
-  const { project: _link, ...portable } = scene;
+  // server project with it, nor to a copy on this device's shelf.
+  const { project: _link, unsent: _unsent, ...portable } = scene;
   const header = new TextEncoder().encode(JSON.stringify({ scene: strip(portable), buffers: table }));
   const headPad = (header.length + 3) & ~3;
   const raw = new Uint8Array(8 + headPad + cursor);
@@ -123,6 +123,7 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
   // Nor is a link taken from one: which project a scene belongs to is
   // decided by how it was opened, never by what a file claims.
   delete scene.project;
+  delete scene.unsent;
   return scene;
 }
 

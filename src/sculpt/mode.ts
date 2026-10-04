@@ -28,8 +28,9 @@ import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave
 import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { statusToast } from './ui/statusToast';
-import { probeAdmin } from '../admin/api';
+import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { isDesktop } from '../net/origin';
+import { beforeSignIn } from '../ui/signIn';
 import {
   mountDesktop,
   setDocumentDirty,
@@ -46,7 +47,7 @@ import { InputDebug } from './ui/InputDebug';
 import { PerfDebug } from './ui/PerfDebug';
 import { perfLog } from '../viewer/perfLog';
 import { CaptureWindow } from './ui/CaptureWindow';
-import { FileMenu } from './ui/FileMenu';
+import { FileMenu, reportNotUploaded } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
@@ -112,6 +113,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The project the boot scene belongs to, if any: where Save to library
   // writes again. Set by how the scene was opened, never read from a file.
   let bootLink: SceneLink | null = null;
+  // The boot scene's unsent copy on the shelf (FileActions.unsentCopy): the
+  // autosave's, or the entry itself when that is what was opened.
+  let bootUnsent: string | null = null;
   let opened: ProjectOpen | null = null;
   if (projectId) {
     opened = await openProjectAtBoot(projectId);
@@ -121,9 +125,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const lib = await import('./bridge/SceneLibrary');
     saved = await lib.loadFromLibrary(libId);
     // A device copy of a project opens linked to it, so a save from here
-    // updates that project rather than making a second one.
+    // updates that project rather than making a second one. So does an
+    // unsent re-save, and a save that does upload takes its card's place.
     const entry = saved ? await lib.getLibraryEntry(libId) : null;
-    bootLink = entry?.projectId ? { id: entry.projectId, title: entry.name } : null;
+    const project = entry?.projectId ?? entry?.uploadTo;
+    bootLink = entry && project ? { id: project, title: entry.name } : null;
+    bootUnsent = entry?.unsent ? entry.id : null;
   }
   if (libId || projectId) {
     // The link has done its job. Left in the address bar, a reload - or
@@ -152,6 +159,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   } else if (!saved) {
     saved = await loadSavedScene();
     bootLink = saved?.project ?? null;
+    bootUnsent = saved?.unsent ?? null;
   }
   let multimesh;
   try {
@@ -162,6 +170,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     void clearSavedScene();
     saved = null;
     bootLink = null;
+    bootUnsent = null;
     opened = null;
     openedExplicitly = false;
     multimesh = session.addSphere();
@@ -1024,8 +1033,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // A new link must reach the autosave record (it rides the same put as
     // the geometry), or a reload would forget where Save to library goes.
     onLinkChange: () => persist.markDirty(),
+    onUnsentChange: () => persist.markDirty(),
   });
   fileActions.adoptLink(bootLink);
+  fileActions.adoptUnsent(bootUnsent);
   // The top row's File and Edit menus. The desktop app has native ones
   // over the same actions, so it goes without.
   if (!isDesktop()) {
@@ -1087,12 +1098,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The same answer decides what Save to library does.
   let ownerNow: boolean | null = null;
   const galleryHooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
+  /** Who the page is for, by the latest probe; null before its first answer. */
+  let role: Role | null = null;
   /**
    * Whether recording can go somewhere here (recordingAllowed), and so
    * whether the Capture chip shows: the desktop app from the start, the
-   * web once the probe has said "signed in" in this session. A later
-   * "guest" does not take it back - a lapsed Access session is signed in
-   * again from the window's own publish forms, and the reel waits for it.
+   * web once the probe has said "signed in" in this session - or "signed
+   * in, and the session has since expired", which is still the owner's
+   * device: the reel waits for the sign-in, as it waits for one that lapses
+   * mid-session. A later "guest" does not take it back.
    */
   let signedIn = false;
   const applyRecordingGate = (): void => {
@@ -1108,14 +1122,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // chip) when they sign in. Capture itself still starts off until the
   // checkbox turns it on (owner call; see SnapshotRecorder.install).
   const probeRole = async (): Promise<string | null> => {
-    const email = await probeAdmin();
-    ownerNow = !!email;
-    if (email) signedIn = true;
-    tlForm.setAdmin(!!email);
-    modelForm.setAdmin(!!email);
-    fileMenu?.setOwner(!!email);
+    const answer = await checkSignIn();
+    role = roleOf(answer);
+    ownerNow = !!answer.email;
+    if (role !== 'guest') signedIn = true;
+    tlForm.setRole(role);
+    modelForm.setRole(role);
+    fileMenu?.setRole(role);
     applyRecordingGate();
-    return email;
+    return answer.email;
   };
   const tlForm = galleryForm({
     buttonLabel: 'Publish timelapse',
@@ -1132,12 +1147,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   captureWindow.captureSlot.appendChild(tlForm.root);
   captureWindow.publishSlot.appendChild(modelForm.root);
   void probeRole();
+  // A save that found the sign-in expired, or one that went through after
+  // it had: the probe says which, for the forms and the menu alike.
+  if (fileMenu) fileMenu.onSignInChange = () => void probeRole();
   // A guest on the web cannot reach the forms' re-check: it lives in the
   // Capture window, whose chip they do not have. Signing in happens
   // elsewhere (the gallery's Log in, /admin/ in another tab or app), and
-  // the page is back in front afterwards, so that is when it asks again.
+  // the page is back in front afterwards, so that is when it asks again -
+  // and so does an owner whose sign-in had expired.
   const onReturn = (): void => {
-    if (document.visibilityState === 'visible' && !signedIn && !isDesktop()) void probeRole();
+    if (document.visibilityState === 'visible' && role !== 'owner' && !isDesktop()) void probeRole();
   };
   document.addEventListener('visibilitychange', onReturn);
 
@@ -1186,7 +1205,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scene.settings = collectSettings();
     // The project link rides the same put as the geometry, so the record
     // can never pair one scene with another's project (SavedScene.project).
+    // So does the unsent copy a failed save left (SavedScene.unsent).
     if (fileActions.link) scene.project = { ...fileActions.link };
+    if (fileActions.unsentCopy) scene.unsent = fileActions.unsentCopy;
   };
   persist.install();
   // A scene opened from a library card or from Projects replaces the one in
@@ -1308,7 +1329,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         const link = await fileActions.uploadToProjects((text) => status.set(text));
         status.done(`Saved to Projects: ${link.title}`);
       } catch (err) {
-        status.fail(`Not saved to Projects: ${err instanceof Error ? err.message : String(err)}`);
+        reportNotUploaded(status, err, () => void probeRole());
       }
     },
     importObj: (text, zUp, name) => fileActions.importObj(text, zUp, name),
@@ -1368,6 +1389,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     });
   };
   galleryLink?.addEventListener('click', onLeave);
+  // Signing in again leaves the page and comes back to it (ui/signIn): the
+  // scene goes as it goes to the gallery, written and pictured first, and
+  // the autosave brings it back, link and unsent copy included. A scene
+  // the store does not hold as it stands is said before the page goes.
+  const offSignIn = beforeSignIn(async () => {
+    await Promise.all([snapshot(), storeLook()]);
+    return persist.settle();
+  });
 
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
@@ -1382,6 +1411,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('change', onLookInput, true);
     document.removeEventListener('visibilitychange', onLookHide);
     document.removeEventListener('visibilitychange', onReturn);
+    offSignIn();
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     perfLog.triangles = null; // the session is going; the log keeps its entries
@@ -1529,7 +1559,9 @@ async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
     return { scene, link: { id: project.id, title: project.title }, from: 'server' };
   } catch (err) {
     console.warn('sculpt: could not open project', id, err);
-    const error = err instanceof Error ? err.message : String(err);
+    // Said after a colon, mid-sentence, where the error's own words start a notice.
+    const error =
+      err instanceof AuthExpiredError ? 'your sign-in has expired' : err instanceof Error ? err.message : String(err);
     const entry = await lib.getLibraryEntry(id);
     const scene = entry ? await lib.loadFromLibrary(id) : null;
     if (entry && scene) return { scene, link: { id, title: entry.name }, from: 'device', error };

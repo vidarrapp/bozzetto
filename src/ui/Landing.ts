@@ -6,15 +6,28 @@
  * For the owner (the Access probe answers) the list comes from
  * `/admin/api/projects` instead: private projects show with a Private badge
  * and a toggle, and scenes saved to the library from Sculpt sit beside the
- * device's own shelf, opening in Sculpt (`?sculpt=1&project=<id>`).
+ * device's own shelf, opening in Sculpt (`?sculpt=1&project=<id>`). An
+ * owner whose sign-in has expired gets a guest's gallery and Log in, as
+ * that is what the server will answer, told once that the sign-in expired.
  */
 
 import { div } from './dom';
-import { api, mediaPath, probeAdmin, type ProjectSummary, type Visibility } from '../admin/api';
+import {
+  AuthExpiredError,
+  api,
+  checkSignIn,
+  mediaPath,
+  takeExpiryNotice,
+  uploadFailure,
+  type ProjectSummary,
+  type Visibility,
+} from '../admin/api';
 import { apiFetch, apiJson, isDesktop } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
+import { signInButton } from './signIn';
+import { failNotice } from '../sculpt/ui/statusToast';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
@@ -36,7 +49,8 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 
   // Page actions live in the shared top row with the theme toggle, so the
   // same controls sit in the same place on every page and mode.
-  const admin = await probeAdmin().catch(() => null);
+  const signIn = await checkSignIn().catch(() => ({ email: null, expired: false }));
+  const admin = signIn.email;
   const bar = topbarRight();
   // A re-render (after a delete) must not stack a second set of chips
   // beside the first: the row outlives the grid it is rebuilt around.
@@ -47,13 +61,23 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   };
   // Guests get the install steps (owner call: the audience being shown the
   // app); the owner has it installed, and standalone hides it regardless.
-  if (!admin) {
+  if (!admin && !signIn.expired) {
     const install = installChip();
     if (install) chip(install);
   }
   // Same slot either way: the way in for a guest, the way to the editor for
-  // the owner - who otherwise had no link to the admin panel at all.
+  // the owner - who otherwise had no link to the admin panel at all. An
+  // expired sign-in is Log in, which is the truth of it: the service
+  // worker's last "signed in" used to stand in for an expired session, and
+  // the gallery went on offering the owner's things until each one failed.
   chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
+  if (signIn.expired && takeExpiryNotice()) {
+    // Once, in the heading's quiet voice: the chip says the rest.
+    const note = document.createElement('p');
+    note.className = 'landing__notice';
+    note.append('Your sign-in has expired. ', signInButton('landing__signin'));
+    app.querySelector('.landing__head > div')?.appendChild(note);
+  }
 
   // Published projects come from whichever server is configured. On the web
   // that is the site itself; in the desktop app it is nothing at all until
@@ -337,7 +361,9 @@ async function libraryCards(
     // leaves it out, which means it was deleted elsewhere. Then the copy is
     // all there is, and it is offered as what it now is: a scene on this
     // device only. (Missing from the public list proves nothing: it may
-    // simply be private.)
+    // simply be private.) A copy a failed save kept says that, and offers
+    // the upload again to whoever has the gallery, since it was the
+    // owner's save: an expired sign-in is told so when it is tapped.
     const inProjects = !!e.projectId && !opts.owner;
     // The key changes when an upload turns this card into a project's copy.
     let key = e.id;
@@ -370,16 +396,21 @@ async function libraryCards(
     if (inProjects) {
       markInProjects(e.projectId!);
     } else {
-      badge.textContent = 'Saved';
+      badge.textContent = e.unsent ? 'Not uploaded' : 'Saved';
       thumb.href = `/?sculpt=1&lib=${encodeURIComponent(e.id)}`;
       const note = document.createElement('span');
       note.className = 'card__note';
       note.textContent = DEVICE_ONLY_NOTE;
       body.appendChild(note);
-      if (opts.owner) body.appendChild(uploadButton());
+      if (opts.owner || e.unsent) body.appendChild(uploadButton());
     }
 
-    /** Upload to Projects: the stored bytes as they are, then this card becomes the project's copy. */
+    /**
+     * Upload to Projects: the stored bytes as they are, then this card
+     * becomes the project's copy. An unsent re-save updates its project.
+     * A failed upload leaves the card as it was - the scene is still here
+     * - and says what to do next.
+     */
     function uploadButton(): HTMLButtonElement {
       const b = document.createElement('button');
       b.type = 'button';
@@ -392,7 +423,7 @@ async function libraryCards(
           if (!bytes) throw new Error('This scene could not be read from the device');
           const { uploadScene } = await import('../sculpt/bridge/SceneProjects');
           const link = await uploadScene(
-            { bytes, title: e.name, objects: e.objects, tris: e.tris, thumb: e.thumb },
+            { bytes, title: e.name, objects: e.objects, tris: e.tris, thumb: e.thumb, projectId: e.uploadTo },
             (text) => {
               b.textContent = text;
             },
@@ -402,10 +433,17 @@ async function libraryCards(
           body.querySelector('.card__note')?.remove();
           b.remove();
           markInProjects(link.id);
-        })().catch((err: Error) => {
+        })().catch((err: unknown) => {
           b.disabled = false;
           b.textContent = 'Upload to Projects';
-          alert(`Upload failed: ${err.message}`);
+          const reason = uploadFailure(err);
+          if (reason === 'expired') {
+            failNotice('Your sign-in has expired. The scene stays on this device.', signInButton(''));
+          } else if (reason === 'offline') {
+            failNotice('No connection. The scene stays on this device; use Upload to Projects when you are online.');
+          } else {
+            failNotice(`Upload failed: ${err instanceof Error ? err.message : String(err)}. Nothing changed on this device.`);
+          }
         });
       });
       return b;
@@ -463,7 +501,7 @@ function editableTitle(title: HTMLElement, initial: string, save: (name: string)
     void save(name).catch((err: Error) => {
       current = before;
       title.textContent = before;
-      alert(`Rename failed: ${err.message}`);
+      actionFailed('Rename failed', err);
     });
   };
   title.addEventListener('dblclick', () => {
@@ -546,7 +584,7 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
       })
       .catch((err: Error) => {
         trash.disabled = false;
-        alert(`Delete failed: ${err.message}`);
+        actionFailed('Delete failed', err);
       });
   });
   card.appendChild(trash);
@@ -578,13 +616,26 @@ function visibilityToggle(p: ProjectSummary, repaint: () => void): HTMLLabelElem
       })
       .catch((err: Error) => {
         box.checked = p.visibility === 'private';
-        alert(`Could not change who sees "${p.title}": ${err.message}`);
+        actionFailed(`Could not change who sees "${p.title}"`, err);
       })
       .finally(() => {
         box.disabled = false;
       });
   });
   return label;
+}
+
+/**
+ * An owner's action on a card that the server did not take. The session
+ * having expired since the page drew is said as that, with the way back
+ * in; anything else is the server's own words, as before.
+ */
+function actionFailed(what: string, err: Error): void {
+  if (err instanceof AuthExpiredError) {
+    failNotice(`${what}: your sign-in has expired.`, signInButton(''));
+    return;
+  }
+  alert(`${what}: ${err.message}`);
 }
 
 function setBadges(host: HTMLElement, labels: string[]): void {

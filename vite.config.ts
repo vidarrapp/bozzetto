@@ -126,12 +126,15 @@ export default defineConfig(({ mode }) => {
             // Projects chip, publishing) asks /admin/api/whoami at boot, and
             // offline the fetch throws, so the owner's own installed app
             // demoted them to a guest. Network first: online the answer is
-            // always the live one (a 403 or the Access login page passes
-            // straight through and is never stored - only a 200 JSON is);
-            // offline, or on a network slower than the timeout, the last
-            // stored answer stands in. Logging out therefore takes effect
-            // immediately online, and an offline session keeps whichever
-            // state the last online one had.
+            // always the live one (a 403, or Access's redirect to its login,
+            // passes straight through and is never stored - only a 200 JSON
+            // is); offline, or on a network slower than the timeout, the
+            // last stored answer stands in. The redirect passes through only
+            // because the app asks with redirect: 'manual' (net/origin.ts):
+            // followed, it failed the fetch like a dropped connection, and
+            // this cache answered "signed in" for a session that had expired.
+            // Logging out therefore takes effect immediately online, and an
+            // offline session keeps whichever state the last online one had.
             urlPattern: /\/admin\/api\/whoami$/,
             handler: 'NetworkFirst',
             options: {

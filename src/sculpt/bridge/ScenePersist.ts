@@ -143,6 +143,13 @@ export interface SavedScene {
    * file handed to someone never points at the owner's project.
    */
   project?: SceneLink;
+  /**
+   * The shelf entry a Save to library that could not upload left for this
+   * scene (FileActions.unsentCopy), kept with the link and for the same
+   * reasons: a sign-in round trip or a reload still knows which copy the
+   * next save replaces. Never in a .bozz file either.
+   */
+  unsent?: string;
 }
 
 /** A scene project on the server, as the sculpt session refers to it. */
@@ -544,6 +551,8 @@ export class ScenePersist {
   private cancelScheduled: (() => void) | null = null;
   private lastSave = 0;
   private saving = false;
+  /** The write in flight, for settle() to wait on. */
+  private writing: Promise<void> | null = null;
   private readonly unwraps: Array<() => void> = [];
 
   /**
@@ -668,6 +677,8 @@ export class ScenePersist {
     const since = this.dirtySince;
     this.dirty = false;
     this.saving = true;
+    let landed = (): void => {};
+    this.writing = new Promise((resolve) => (landed = resolve));
     const w0 = performance.now();
     // put() clones the record synchronously, on the main thread; the rest
     // of the write is the browser's. The entry keeps the two apart.
@@ -703,6 +714,8 @@ export class ScenePersist {
       }
     } finally {
       this.saving = false;
+      this.writing = null;
+      landed();
       // An edit that landed WHILE this put was in flight found nothing to
       // arm (the write in flight owns the next one), so the last stroke
       // before a pause would stay unsaved until some later edit happened
@@ -710,6 +723,23 @@ export class ScenePersist {
       // lastSave says when the interval runs from.
       if (this.dirty && !this.disabled) this.schedule();
     }
+  }
+
+  /**
+   * Everything written that can be, before the page is left on purpose
+   * (the sign-in round trip): a write in flight lands - a navigation would
+   * cut it off - and whatever changed meanwhile follows it. Resolves false
+   * when the store does not hold the scene as it stands: the autosave has
+   * stopped, a write failed, or the model is past what it writes.
+   */
+  async settle(): Promise<boolean> {
+    // Bounded: a write that keeps failing must not hold the page forever.
+    for (let i = 0; i < 3 && (this.dirty || this.writing); i++) {
+      if (this.writing) await this.writing;
+      await this.flush();
+      if (this.disabled) break;
+    }
+    return !this.dirty;
   }
 
   /**

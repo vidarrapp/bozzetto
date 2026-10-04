@@ -1,4 +1,4 @@
-import { api, mediaPath } from './api';
+import { api, failureText, mediaPath } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
@@ -73,7 +73,7 @@ async function renderList(host: HTMLElement): Promise<void> {
       // Straight into the new project's editor to add frames.
       window.location.search = `?p=${encodeURIComponent(created.id)}`;
     } catch (err) {
-      alert(`Create failed: ${(err as Error).message}`);
+      alert(`Create failed: ${failureText(err)}`);
       submit.disabled = false;
     }
   });
@@ -88,7 +88,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // The owner's list: private projects and scenes saved from Sculpt too.
     projects = await api.adminList();
   } catch (err) {
-    listEl.textContent = `Failed to load projects: ${(err as Error).message}`;
+    listEl.textContent = `Failed to load projects: ${failureText(err)}`;
     return;
   }
 
@@ -171,7 +171,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         p.visibility = updated.visibility;
       } catch (err) {
         vis.checked = p.visibility === 'private';
-        alert(`Could not change who sees "${p.title || p.id}": ${(err as Error).message}`);
+        alert(`Could not change who sees "${p.title || p.id}": ${failureText(err)}`);
       } finally {
         vis.disabled = false;
       }
@@ -194,7 +194,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         }
         await refresh(listEl);
       } catch (err) {
-        alert(`Delete failed: ${(err as Error).message}`);
+        alert(`Delete failed: ${failureText(err)}`);
         del.disabled = false;
       }
     });
