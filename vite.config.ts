@@ -85,7 +85,14 @@ export default defineConfig(({ mode }) => {
           'assets/armature/*.glb',
           'assets/env/studio-neutral.hdr',
         ],
-        globIgnores: ['**/*.map', 'timelapses/**'],
+        // Nothing under /admin: Cloudflare Access answers a signed-out request
+        // there with a redirect to its login on another origin, which a
+        // precache fetch cannot follow, and one failed entry fails the whole
+        // install. So a guest's worker never installed (no offline at all),
+        // and an owner whose Access session had expired kept the last worker
+        // they installed while signed in, never taking an update. The editor
+        // needs the network for everything it does anyway.
+        globIgnores: ['**/*.map', 'timelapses/**', 'admin/**'],
         // The plugin's default leaves everything under assets/ without a
         // revision, as if every name there carried a content hash, and
         // Workbox never fetches an unrevisioned entry again once it has
