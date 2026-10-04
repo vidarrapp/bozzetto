@@ -106,6 +106,17 @@ export const DEFAULT_AO = { intensity: 1, radius: 0.3 } as const;
 /** The sculpt cavity's defaults: its strength, and its tap radius in pixels. */
 export const DEFAULT_CAVITY = { strength: 0.9, radius: 8 } as const;
 
+/**
+ * The AO a look comes to where the cavity does not draw - the viewer, the
+ * editors, a published project, Armature mode: only sculpt mode's own
+ * composite has it. A look made on the cavity (GTAO off, a cavity
+ * strength) asked for an AO, so it gets GTAO, at its own GTAO settings,
+ * rather than none; Off (neither) and GTAO stay as they were.
+ */
+export function aoWithoutCavity(look: { ao: AOState; sculptAO?: { strength: number } }): AOState {
+  return !look.ao.enabled && (look.sculptAO?.strength ?? 0) > 0 ? { ...look.ao, enabled: true } : look.ao;
+}
+
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
   enabled: boolean;
@@ -1296,8 +1307,16 @@ export class Viewer {
     if (look.lighting) this.lighting.applyState(look.lighting);
     if (look.material) this.materials.applyMaterialState(look.material);
     if (look.environment) await this.environment.applyState(look.environment);
-    if (look.ao) this.setAO(look.ao);
     if (look.sculptAO) this.setSculptAO(look.sculptAO);
+    if (look.ao) {
+      // Out of sculpt mode a look saved on the cavity comes back on GTAO -
+      // which is every armature saved while the Render panel was putting
+      // each look on the cavity - and from then on reads as GTAO (the
+      // cavity at zero, as a pick in the panel leaves it out here).
+      const ao = this.sculptShading ? look.ao : aoWithoutCavity({ ao: look.ao, sculptAO: look.sculptAO });
+      this.setAO(ao);
+      if (ao !== look.ao) this.setSculptAO({ strength: 0 });
+    }
     if (look.presentation) this.applyStageState(look.presentation);
     const cam = look.camera;
     if (cam) {

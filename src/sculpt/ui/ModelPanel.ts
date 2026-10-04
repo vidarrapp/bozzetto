@@ -1,9 +1,11 @@
+import Enums from '@sculpt-vendor/misc/Enums';
 import { div } from '../../ui/dom';
 import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 
 /** Typed-value limits (sliderEntry). */
 const FRACTION: Limits = { min: 0, max: 1 };
+const AMOUNT: Limits = { min: 0 };
 /** The voxel grid the remesher will build, as SculptSession holds it. */
 export const VOXEL_RESOLUTION: Limits = { min: 8, max: 400, integer: true };
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
@@ -13,12 +15,15 @@ import { SidePanel } from './SidePanel';
 
 /**
  * The Model panel (owner layout call): everything about the SELECTED
- * OBJECT's substance, on the right edge under Render and Tool. Material
+ * OBJECT's substance, on the left edge under Scene, the list it is the
+ * other half of (owner call: it sat on the right under Render). Material
  * values on top - the albedo/roughness/metalness that used to sit in the
  * Render panel's Material section, moved here because in sculpt mode they
  * are per-object properties, not scene-wide viewing choices (mode, matcap,
  * shading and wireframe stay in Render). Then Topology and Remesh, moved
- * out of the old Sculpt panel, which is per-tool and is now called Tool.
+ * out of the old Sculpt panel, which is per-tool and is now called Tool,
+ * and Mask, which followed them (owner call): its operations and Extract
+ * act on the active object's mask, not on how a brush behaves.
  */
 export class ModelPanel extends SidePanel {
   private albedoPicker: ColorPickerHandle | null = null;
@@ -26,6 +31,7 @@ export class ModelPanel extends SidePanel {
   private metalInput!: HTMLInputElement;
   private dyntopoCheckbox!: HTMLInputElement;
   private remeshResolution = 150;
+  private extractThickness = 1;
   private topoBody?: HTMLDivElement;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
 
@@ -33,7 +39,7 @@ export class ModelPanel extends SidePanel {
     private readonly session: SculptSession,
     private readonly viewer: Viewer,
   ) {
-    super({ id: 'model', title: 'Model', side: 'right', variant: 'panel--model' });
+    super({ id: 'model', title: 'Model', side: 'left', variant: 'panel--model' });
     // The albedo popover is body-mounted; collapsing the panel must take
     // it along or it floats on with its swatch off-screen.
     this.onCollapsedChange = (collapsed) => {
@@ -42,6 +48,7 @@ export class ModelPanel extends SidePanel {
     this.buildMaterial(this.body);
     this.buildTopology(this.body);
     this.buildRemesh(this.body);
+    this.buildMask(this.body);
     this.refreshTopology();
   }
 
@@ -174,6 +181,64 @@ export class ModelPanel extends SidePanel {
     remesh.appendChild(row);
   }
 
+  // --- Mask (moved from the Tool panel) -------------------------------------
+
+  /**
+   * The mask's darkening, its four operations and Extract, on the active
+   * object as they always were. Painting a mask is still the Mask brush's
+   * (Ctrl + drag), and the Ctrl + A / C / I / H / E keys are unchanged;
+   * Ctrl + E extracts at the thickness set here.
+   */
+  private buildMask(body: HTMLElement): void {
+    const sec = section(body, 'Mask');
+    sec.appendChild(
+      compactRange(
+        'Darken',
+        0.05,
+        1,
+        0.05,
+        this.viewer.materials.getMaskDarken(),
+        (v) => this.viewer.materials.setMaskDarken(v),
+        { limits: FRACTION },
+      ),
+    );
+    const ops = div('sculpt-panel__row');
+    const masking = () => this.session.getSculptManager().getTool(Enums.Tools.MASKING);
+    ops.append(
+      this.opButton('Blur', () => masking().blur?.()),
+      this.opButton('Sharpen', () => masking().sharpen?.()),
+      this.opButton('Invert', () => masking().invert?.()),
+      this.opButton('Clear', () => masking().clear?.()),
+    );
+    sec.appendChild(ops);
+
+    sec.appendChild(
+      compactRange(
+        'Extract thickness',
+        0,
+        6,
+        0.1,
+        this.extractThickness,
+        (v) => {
+          this.extractThickness = v;
+        },
+        { limits: AMOUNT },
+      ),
+    );
+    const extractRow = div('sculpt-panel__row');
+    extractRow.appendChild(
+      this.opButton('Extract masked', () => {
+        this.session.extractMasked(this.extractThickness);
+      }),
+    );
+    sec.appendChild(extractRow);
+  }
+
+  /** The Extract thickness the ctrl+e hotkey should use. */
+  getExtractThickness(): number {
+    return this.extractThickness;
+  }
+
   /** The shared numbered slider (src/ui/Panel), kept as a method for the callers here. */
   private numberedRange(
     label: string,
@@ -198,8 +263,9 @@ export class ModelPanel extends SidePanel {
 
   /**
    * Rebuild the multiresolution block: level slider + Lower/Higher/
-   * Subdivide/Rebuild. Levels exist only on static multimeshes; with
-   * dynamic topology on the block explains itself instead.
+   * Subdivide/Rebuild, and Delete highest level. Levels exist only on
+   * static multimeshes; with dynamic topology on the block explains itself
+   * instead.
    */
   refreshTopology(): void {
     if (!this.topoBody) return;
@@ -257,6 +323,16 @@ export class ModelPanel extends SidePanel {
     rebuild.title = 'Rebuild a coarser level under the lowest one (reversion)';
     ops.append(lower, higher, subdiv, rebuild);
     this.topoBody.appendChild(ops);
+
+    // The top of the stack goes, with its detail; one undo brings it back.
+    // A lone level is the object itself, so there is nothing to delete.
+    const drop = div('sculpt-panel__row');
+    const del = this.opButton('Delete highest level', () => void this.session.deleteHighestLevel());
+    del.classList.add('sculpt-panel__btn--wide');
+    del.disabled = lv.levels <= 1;
+    del.title = 'Remove the top subdivision level and its detail (Ctrl+Z brings it back)';
+    drop.appendChild(del);
+    this.topoBody.appendChild(drop);
   }
 
   /** Re-sync stateful controls after engine-side changes (undo, dyntopo). */

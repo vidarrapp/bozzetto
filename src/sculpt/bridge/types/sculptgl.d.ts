@@ -179,6 +179,8 @@ declare module '@sculpt-vendor/mesh/multiresolution/Multimesh' {
     computeReverse(): SculptMesh | undefined;
     /** Walk the selection to `sel` one level at a time (the level slider). */
     selectResolution(sel: number): void;
+    /** Drop every level above the selected one (their detail goes with them). */
+    deleteHigher(): void;
     getCurrentMesh(): SculptMesh;
     setSelection(sel: number): void;
   }
@@ -307,6 +309,8 @@ declare module '@sculpt-vendor/states/StateMultiresolution' {
     static SUBDIVISION: number;
     static REVERSION: number;
     static SELECTION: number;
+    /** The levels above the selected one, kept for undo (with the selected level's vertex mapping). */
+    static DELETE_HIGHER: number;
     /**
      * Captures the current level's arrays up front, so it can be built
      * BEFORE a fallible operation (reversion) and pushed only on success -

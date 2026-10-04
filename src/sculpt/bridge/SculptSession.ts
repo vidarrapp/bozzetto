@@ -638,6 +638,47 @@ export class SculptSession {
   }
 
   /**
+   * Delete the highest level of the active object's stack, with its
+   * detail (the Model panel's Delete highest level). The vendor's
+   * deleteHigher drops every level above the SELECTED one, so the
+   * selection is walked to the level under the top first, and back down
+   * to where it was afterwards when it sat lower still; when it was on the
+   * top it stays on the new top. Each step is the vendor's own undo state
+   * - a selection, the deletion, a selection - squashed into one undo
+   * entry, so Ctrl+Z puts the level back with its detail and the
+   * selection where it was, and a redo deletes it again. One level is the
+   * object itself, so it refuses.
+   */
+  deleteHighestLevel(): boolean {
+    const mul = this.asMultimesh();
+    if (!mul || mul._meshes.length <= 1) return false;
+    const t0 = performance.now();
+    const sm = this.stateManager;
+    const top = mul._meshes.length - 1;
+    const from = mul._sel;
+    let first = true;
+    const push = (type: number): void => {
+      sm.pushStateMultiresolution(mul, type);
+      if (!first) (sm.getCurrentState() as { squash?: boolean }).squash = true;
+      first = false;
+    };
+    if (from !== top - 1) {
+      push(StateMultiresolution.SELECTION);
+      mul.selectResolution(top - 1);
+    }
+    push(StateMultiresolution.DELETE_HIGHER);
+    mul.deleteHigher();
+    if (from < top - 1) {
+      push(StateMultiresolution.SELECTION);
+      mul.selectResolution(from);
+    }
+    this.render();
+    perfLog.record('subdivision', performance.now() - t0, 'the top level deleted');
+    this.onLevelChange?.(mul._sel, mul._meshes.length);
+    return true;
+  }
+
+  /**
    * Reversion (ported from GuiTopology.reverse): rebuild a LOWER level under
    * level 0 by reversing the subdivision, so an imported or remeshed model
    * gains a coarse level to block out on. Only from the bottom level; fails

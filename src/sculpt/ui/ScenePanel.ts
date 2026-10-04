@@ -7,7 +7,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 
 /**
- * Scene outliner: the lower-left docked panel, and only the objects. Each
+ * Scene outliner: the upper-left docked panel, and only the objects. Each
  * row is an eye (visibility), a padlock (edit lock), the name - click
  * selects, ctrl+click adds or removes, shift+click takes the range,
  * double-click renames in place - and, on the active row, a trash can.
@@ -18,8 +18,9 @@ import type { MaterialLibrary } from '../bridge/materials';
  * active object alone (alt+q's twin for a touch screen), and the panel
  * says so on its tab and title bar while it is on. The material row sits
  * under them all. New materials are made from the dropdown's own trailing
- * "New*" entry rather than a separate button. Saving, exporting and
- * capture live next door.
+ * "New*" entry rather than a separate button. The selected object's own
+ * material values, topology and mask are the Model panel's, docked under
+ * this one; saving, exporting and capture live in the top row.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;

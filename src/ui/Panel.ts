@@ -46,18 +46,20 @@ export class Panel {
   /** Look-dev sections built for the viewer, revealed only while sculpting. */
   private lookDevSections: HTMLElement[] = [];
   /**
-   * The AO model on show (off / cavity / gtao). The panel applies it on
-   * every build; it is read back from the viewer whenever a look lands
-   * under it (aoModeOfLook), or a saved GTAO look came back as Cavity.
+   * Whether the cavity is an AO model here: only in sculpt mode, whose
+   * composite is the one that draws it. Armature mode shows the look-dev
+   * sections too, but renders through the viewer's composite, as the
+   * viewer and the editors do.
    */
-  private aoMode = 'cavity';
+  private cavityOffered = false;
+  /** The cavity strength to come back to after another model (zero is its "off"). */
   private cavityStrength: number = DEFAULT_CAVITY.strength;
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
   private readonly onOtherPanelOpen = (e: Event): void => {
     const detail = (e as CustomEvent<{ id?: string; side?: string }>).detail;
     // Only panels sharing this one's edge contend for the space; the left
-    // stack (File, Scene) can be open alongside it.
+    // stack (Scene, Model) can be open alongside it.
     if (!detail?.id || detail.id === 'settings' || (detail.side ?? 'right') !== 'right') return;
     // Through setCollapsed, not straight to applyCollapsed: collapsing must
     // announce on 'bozzetto:panel-close' so tabs ducked under this panel
@@ -72,11 +74,13 @@ export class Panel {
 
   private sculpting = false;
   private readonly onSculptMode = (e: Event): void => {
-    this.sculpting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    const detail = (e as CustomEvent<{ active?: boolean; mode?: string }>).detail;
+    this.sculpting = !!detail?.active;
+    // Sculpt mode announces itself without a mode; Armature mode names its own.
+    this.cavityOffered = this.sculpting && (detail?.mode ?? 'sculpt') === 'sculpt';
     // Entering sculpt changes a pile of viewer state (ground, shading,
     // shadows, AO) and restores a saved look on top of it, all after this
     // panel was built - so rebuild rather than trying to re-sync by hand.
-    if (this.sculpting) this.aoMode = this.aoModeOfLook();
     this.buildBody();
     if (!this.editor) {
       this.titleEl.textContent = this.sculpting
@@ -87,19 +91,19 @@ export class Panel {
 
   /** A saved look was applied under us (opening a .bozz file). */
   private readonly onLookRestored = (): void => {
-    this.aoMode = this.aoModeOfLook();
     this.buildBody();
   };
 
   /**
-   * The AO model a look carries: GTAO when it is enabled, the cavity when
-   * that has a strength, else off. The modes set these explicitly before a
-   * look is read (sculpt mode starts on the cavity), and the panel writes
-   * the same two whenever the model is picked, so they always agree.
+   * The AO model the viewer is on: GTAO when it is enabled; else, in
+   * sculpt mode, the cavity when that has a strength; else off. Sculpt
+   * mode sets both before a look is read (it starts on the cavity), and
+   * a pick in the list writes both, so they always agree. Outside sculpt
+   * mode the cavity draws nothing and is not a model at all.
    */
   private aoModeOfLook(): string {
     if (this.viewer.aoAvailable() && this.viewer.getAOState().enabled) return 'gtao';
-    return this.viewer.getSculptAO().strength > 0 ? 'cavity' : 'off';
+    return this.cavityOffered && this.viewer.getSculptAO().strength > 0 ? 'cavity' : 'off';
   }
 
   /**
@@ -293,34 +297,47 @@ export class Panel {
   }
 
   /**
-   * Ambient occlusion, both models in one place. GTAO is the viewer's
-   * screen-space pass; Cavity is the cheap depth SSAO sculpt mode uses,
-   * which keeps creases readable on flat-shaded facets without gridding.
-   * Sculpt defaults to Cavity, the viewer to whatever the project saved.
+   * Ambient occlusion. GTAO is the viewer's screen-space pass, and the AO
+   * everywhere; Cavity is the cheap depth SSAO of sculpt mode's own
+   * composite, which keeps creases readable on flat-shaded facets without
+   * gridding, and is offered there alone - anywhere else it draws nothing.
+   * Sculpt mode starts on Cavity, everything else on whatever the project
+   * or the look saved, GTAO at its defaults when it saved nothing.
+   *
+   * Building the section shows the model the viewer is on and changes
+   * nothing; only a pick in the list writes. It used to apply its own
+   * starting model on every build, and that model was Cavity, so the
+   * viewer, the editors' previews, their single-file exports and Armature
+   * mode all lost their AO whatever had been saved.
    */
   private buildAOSection(body: HTMLElement): void {
     const sec = section(body, 'Ambient occlusion');
     const hasGtao = this.viewer.aoAvailable();
+    const hasCavity = this.cavityOffered;
 
     const gtaoRows = div('ao-rows');
     const cavityRows = div('ao-rows');
-
-    const apply = (mode: string): void => {
-      this.aoMode = mode;
-      if (hasGtao) this.viewer.setAO({ enabled: mode === 'gtao' });
-      // Cavity has no enable flag of its own; zero strength is "off", so the
-      // last real strength is remembered to switch back to.
-      const live = this.viewer.getSculptAO().strength;
-      if (live > 0) this.cavityStrength = live;
-      this.viewer.setSculptAO({ strength: mode === 'cavity' ? this.cavityStrength : 0 });
+    const show = (mode: string): void => {
       gtaoRows.hidden = mode !== 'gtao';
       cavityRows.hidden = mode !== 'cavity';
     };
 
+    const apply = (mode: string): void => {
+      if (hasGtao) this.viewer.setAO({ enabled: mode === 'gtao' });
+      // Cavity has no enable flag of its own; zero strength is "off", so the
+      // last real strength is remembered to switch back to. Outside sculpt
+      // mode it is zeroed too, which keeps a saved look saying which model
+      // was picked (see Viewer.applyLook).
+      const live = this.viewer.getSculptAO().strength;
+      if (live > 0) this.cavityStrength = live;
+      this.viewer.setSculptAO({ strength: mode === 'cavity' ? this.cavityStrength : 0 });
+      show(mode);
+    };
+
     const options: [string, string][] = [['off', 'Off']];
-    options.push(['cavity', 'Cavity (SSAO)']);
+    if (hasCavity) options.push(['cavity', 'Cavity (SSAO)']);
     if (hasGtao) options.push(['gtao', 'GTAO']);
-    const modeSel = selectEl(options, this.aoMode);
+    const modeSel = selectEl(options, this.aoModeOfLook());
     modeSel.addEventListener('change', () => apply(modeSel.value));
     sec.appendChild(labelRow('Model', modeSel));
 
@@ -343,38 +360,40 @@ export class Panel {
       sec.appendChild(gtaoRows);
     }
 
-    const cav = this.viewer.getSculptAO();
-    // While another model is on the cavity's strength is zero; the panel
-    // keeps the last real one to come back to.
-    if (cav.strength > 0) this.cavityStrength = cav.strength;
-    cavityRows.appendChild(
-      compactRange(
-        'Strength',
-        0,
-        CAVITY_STRENGTH_MAX,
-        0.05,
-        this.cavityStrength,
-        (v) => {
-          this.cavityStrength = v;
-          this.viewer.setSculptAO({ strength: v });
-        },
-        { limits: AMOUNT },
-      ),
-    );
-    cavityRows.appendChild(
-      compactRange(
-        'Radius',
-        CAVITY_RADIUS_MIN,
-        CAVITY_RADIUS_MAX,
-        1,
-        cav.radius,
-        (v) => this.viewer.setSculptAO({ radius: v }),
-        { limits: { min: 1 }, unit: ' px' },
-      ),
-    );
-    sec.appendChild(cavityRows);
+    if (hasCavity) {
+      const cav = this.viewer.getSculptAO();
+      // While another model is on the cavity's strength is zero; the panel
+      // keeps the last real one to come back to.
+      if (cav.strength > 0) this.cavityStrength = cav.strength;
+      cavityRows.appendChild(
+        compactRange(
+          'Strength',
+          0,
+          CAVITY_STRENGTH_MAX,
+          0.05,
+          this.cavityStrength,
+          (v) => {
+            this.cavityStrength = v;
+            this.viewer.setSculptAO({ strength: v });
+          },
+          { limits: AMOUNT },
+        ),
+      );
+      cavityRows.appendChild(
+        compactRange(
+          'Radius',
+          CAVITY_RADIUS_MIN,
+          CAVITY_RADIUS_MAX,
+          1,
+          cav.radius,
+          (v) => this.viewer.setSculptAO({ radius: v }),
+          { limits: { min: 1 }, unit: ' px' },
+        ),
+      );
+      sec.appendChild(cavityRows);
+    }
 
-    apply(this.aoMode);
+    show(modeSel.value);
   }
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */

@@ -1756,23 +1756,18 @@ html.is-page body {
 }
 
 /* --- sculpt panels (WS4): right palette + left scene outliner --- */
-/* The right edge, top to bottom: Render (52), Model (200), Tool (348) -
-   the same 116px tab + 32px gap rhythm. Tool sits lowest because it is
-   the one reached for most, and the bottom of the stack is closest to a
-   resting hand (owner call). */
-.panel--model {
+/* The right edge, top to bottom: Render (52), Tool (200) - a 116px tab and
+   a 32px gap apart. Tool sits lowest because it is the one reached for
+   most, and the bottom of the stack is closest to a resting hand (owner
+   call); Model, which sat between them, docks left under Scene now. Both
+   stop just above the brush toolbar. */
+.panel--sculpt {
   top: 200px;
   max-height: calc(100vh - 290px);
   z-index: 11; /* over the Render panel above it, whose tab it can cover */
 }
 
-.panel--sculpt {
-  top: 348px;
-  max-height: calc(100vh - 380px);
-  z-index: 12;
-}
-
-/* Armature mode: its one panel sits where Model does under Render. */
+/* Armature mode: its one panel sits where Tool does under Render. */
 .panel--armature {
   top: 200px;
   max-height: calc(100vh - 290px);
@@ -1869,21 +1864,24 @@ html.is-page body {
   z-index: 14; /* over the brush sliders while open */
 }
 
-/* The left edge stacks Capture over Scene, mirroring the right edge; the
-   tops are one collapsed-tab height apart so both tabs show at once, and
-   both panels stop just above the brush toolbar. */
-.panel--capture {
+/* The left edge stacks Scene over Model, mirroring the right edge; the
+   tops are one collapsed-tab height and a gap apart so both tabs show at
+   once, under the object stats in the corner, and both panels stop just
+   above the brush toolbar. */
+.panel--scene {
   top: 132px;
   max-height: calc(100vh - 222px);
 }
 
-/* An open upper panel grows down over the lower panel's docked tab, so the
-   lower one outranks it - otherwise the tab is only clickable because of
-   DOM construction order, which a refactor would silently flip. The same
-   reasoning puts the palette above the Render panel on the right edge. */
-.panel--scene {
+/* An open upper panel could grow down over the lower panel's docked tab,
+   so the lower one outranks it - otherwise the tab would be clickable only
+   because of DOM construction order, which a refactor would silently
+   flip. The same reasoning puts Tool above the Render panel on the right
+   edge. Model keeps the right edge's width: its slider rows need it. */
+.panel--model {
   top: 280px; /* 132 + 116 tab + 32 gap, the same rhythm as the right edge */
   max-height: calc(100vh - 370px);
+  width: min(268px, calc(100vw - 64px));
   z-index: 15;
 }
 
@@ -2290,7 +2288,7 @@ html.is-page body {
   color: var(--accent);
 }
 
-/* Button columns in the scene panel's File/Capture sections. */
+/* Button columns in the Capture window's sections. */
 .outliner__files {
   display: flex;
   flex-direction: column;
@@ -2302,7 +2300,8 @@ html.is-page body {
   text-align: left;
 }
 
-/* Small readout lines inside the sculpt panels (capture counter etc.). */
+/* Small readout lines inside the sculpt panels and the Capture window
+   (the frame counter etc.). */
 .sculpt-panel__hint {
   font-family: var(--font-spec);
   font-size: 10px;
@@ -2383,6 +2382,7 @@ html.is-page body {
    The zero-duration visibility delay lets the fade finish before the
    elements go inert. */
 body.chrome-hidden .panel,
+body.chrome-hidden .float-window,
 body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .file-menu__chip,
@@ -2468,9 +2468,9 @@ body.chrome-hidden .transport {
 
 /* Procreate-style side sliders: brush size + strength, left edge. They sit
    just RIGHT of the collapsed panel tabs (which occupy x 0..36 once slid
-   out) rather than under them, so the File and Scene tabs can stack down
+   out) rather than under them, so the Scene and Model tabs can stack down
    the edge without the two columns fighting for the same pixels. */
-/* Bottom-left, under the File/Scene tabs and clear of the toolbar (owner
+/* Bottom-left, under the Scene/Model tabs and clear of the toolbar (owner
    layout call): the sliders and the history buttons are what a hand rests
    near, so they sit by the corner rather than up beside the panels. The
    bottom offset leaves a gap between undo and the Negative button below
@@ -2776,6 +2776,7 @@ body.is-sampling * {
 .sculpt-histbtn,
 .outliner__btn,
 .panel__handle,
+.float-window__bar,
 .chrome-restore {
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
@@ -3566,6 +3567,86 @@ body.is-sampling * {
 
 .install-close:hover {
   background: var(--hover);
+}
+
+/* --- floating tool window (sculpt's Capture) ---------------------------- */
+
+/* The install card's surface, as a window over the work rather than a
+   dialog over a dimmed page: no backdrop, nothing behind it blocked. It
+   floats over the docked panels (15) and under the hotkey guide (25), the
+   top row (30) and the menus and toasts, and never runs off the screen,
+   scrolling its body instead. */
+.float-window {
+  position: fixed;
+  z-index: 20;
+  width: 268px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 54px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  color: var(--text);
+}
+
+.float-window:focus {
+  outline: none;
+}
+
+/* The title bar is the handle. It is held and dragged, so it takes no
+   browser gesture (touch-action here; its touchstart is cancelled too). */
+.float-window__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--panel-border);
+  cursor: grab;
+  touch-action: none;
+}
+
+.float-window--dragging .float-window__bar {
+  cursor: grabbing;
+}
+
+.float-window__title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.float-window__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.float-window__close:hover {
+  background: var(--hover);
+}
+
+.float-window__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-border) transparent;
 }
 
 /* Desktop server settings. A panel, not a prompt: window.prompt blocks the

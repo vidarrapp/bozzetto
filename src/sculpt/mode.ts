@@ -20,7 +20,7 @@ import {
 } from './bridge/ScenePersist';
 import type { SavedScene, SceneLink } from './bridge/ScenePersist';
 import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
-import { SnapshotRecorder } from './bridge/SnapshotRecorder';
+import { SnapshotRecorder, recordingAllowed } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
@@ -45,7 +45,7 @@ import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { PerfDebug } from './ui/PerfDebug';
 import { perfLog } from '../viewer/perfLog';
-import { CapturePanel } from './ui/CapturePanel';
+import { CaptureWindow } from './ui/CaptureWindow';
 import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
@@ -383,7 +383,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // sync + extra display mesh sharing the primary's material. Reconciled on
   // every mesh-list or selection change (extract, add, dyntopo, undo).
   let scenePanel: ScenePanel | null = null;
-  let capturePanel: CapturePanel | null = null;
+  let captureWindow: CaptureWindow | null = null;
   let fileMenu: FileMenu | null = null;
   let editMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
@@ -819,7 +819,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor) => viewer.dolly(factor),
     toggleChrome: () => chrome.handleTab(),
-    extractMasked: () => session.extractMasked(sculptPanel?.getExtractThickness() ?? 1),
+    extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? 1),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
@@ -923,7 +923,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
   });
-  capturePanel = new CapturePanel(recorder);
   // How the file actions reach the viewer's look, so .bozz files carry it.
   const lookBridge: LookBridge = {
     get: () => viewer.getLook(),
@@ -1049,6 +1048,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       'file-menu--edit',
     );
   }
+  // Built after File and Edit so its chip lands beside them in the row.
+  // The chip stays hidden until recording is known to be allowed here
+  // (the role probe below; the desktop app straight away).
+  captureWindow = new CaptureWindow(recorder);
   scenePanel = new ScenePanel(session, library);
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
@@ -1091,20 +1094,34 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The same answer decides what Save to library does.
   let ownerNow: boolean | null = null;
   const galleryHooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
-  // One answer for everything that follows the role: both forms and the
-  // File menu. The forms' "re-check sign-in" runs the same probe, so an
-  // admin whose Access session had lapsed at boot gets the publish buttons
-  // (and Save to library's upload) when they sign in. The recorder still
-  // hears the answer, but capture no longer follows it: it starts off for
-  // everyone until the checkbox turns it on (owner call; see
-  // SnapshotRecorder.install).
+  /**
+   * Whether recording can go somewhere here (recordingAllowed), and so
+   * whether the Capture chip shows: the desktop app from the start, the
+   * web once the probe has said "signed in" in this session. A later
+   * "guest" does not take it back - a lapsed Access session is signed in
+   * again from the window's own publish forms, and the reel waits for it.
+   */
+  let signedIn = false;
+  const applyRecordingGate = (): void => {
+    const allowed = recordingAllowed({ desktop: isDesktop(), signedIn });
+    recorder.setAllowed(allowed);
+    captureWindow?.setAvailable(allowed);
+  };
+  applyRecordingGate();
+  // One answer for everything that follows the role: both forms, the File
+  // menu and the recording gate. The forms' "re-check sign-in" runs the
+  // same probe, so an admin whose Access session had lapsed at boot gets
+  // the publish buttons (and Save to library's upload, and the Capture
+  // chip) when they sign in. Capture itself still starts off until the
+  // checkbox turns it on (owner call; see SnapshotRecorder.install).
   const probeRole = async (): Promise<string | null> => {
     const email = await probeAdmin();
     ownerNow = !!email;
+    if (email) signedIn = true;
     tlForm.setAdmin(!!email);
     modelForm.setAdmin(!!email);
     fileMenu?.setOwner(!!email);
-    recorder.applyDefault(!!email);
+    applyRecordingGate();
     return email;
   };
   const tlForm = galleryForm({
@@ -1119,9 +1136,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       saveModelToGallery(session, recorder, galleryHooks, id, title, visibility, progress),
     recheck: probeRole,
   });
-  capturePanel.captureSlot.appendChild(tlForm.root);
-  capturePanel.publishSlot.appendChild(modelForm.root);
+  captureWindow.captureSlot.appendChild(tlForm.root);
+  captureWindow.publishSlot.appendChild(modelForm.root);
   void probeRole();
+  // A guest on the web cannot reach the forms' re-check: it lives in the
+  // Capture window, whose chip they do not have. Signing in happens
+  // elsewhere (the gallery's Log in, /admin/ in another tab or app), and
+  // the page is back in front afterwards, so that is when it asks again.
+  const onReturn = (): void => {
+    if (document.visibilityState === 'visible' && !signedIn && !isDesktop()) void probeRole();
+  };
+  document.addEventListener('visibilitychange', onReturn);
 
   /**
    * Keep the look with the session, so leaving sculpt mode and coming back
@@ -1152,8 +1177,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const persist = new ScenePersist(session);
   // Autosave giving up must be visible: it used to disable itself on the
   // first storage hiccup with only a console line, and sculpting carried on
-  // for hours saving nothing into a scene the user believed was safe.
-  persist.onStopped = (reason) => capturePanel?.showAutosaveStopped(reason);
+  // for hours saving nothing into a scene the user believed was safe. Said
+  // on screen to everyone - a guest has no Capture window to read it in -
+  // and kept in the window, beside the frames that take the storage.
+  persist.onStopped = (reason) => {
+    captureWindow?.showAutosaveStopped(reason);
+    statusToast('Autosave stopped').fail(
+      reason === 'quota'
+        ? 'Autosave stopped: this device is out of storage. Save a file (File menu) to keep this work.'
+        : 'Autosave stopped: this browser refused to store the scene. Save a file (File menu) to keep this work.',
+    );
+  };
   persist.decorate = (scene) => {
     library.saveInto(scene);
     scene.settings = collectSettings();
@@ -1230,7 +1264,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cursor,
     chrome,
     scenePanel,
-    capturePanel,
+    captureWindow,
     fileMenu,
     editMenu,
     fileActions,
@@ -1354,6 +1388,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('input', onLookInput, true);
     document.removeEventListener('change', onLookInput, true);
     document.removeEventListener('visibilitychange', onLookHide);
+    document.removeEventListener('visibilitychange', onReturn);
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     perfLog.triangles = null; // the session is going; the log keeps its entries
@@ -1372,7 +1407,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.dispose();
     modelPanel?.dispose();
     scenePanel?.dispose();
-    capturePanel?.dispose();
+    captureWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
     for (const [, e] of extras) {

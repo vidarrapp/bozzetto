@@ -6,7 +6,8 @@ import { formatMs, perfLog } from '../../viewer/perfLog';
 
 /**
  * Sculpt-to-timelapse capture (WS5, plan 6.6/6.6b): a Procreate-style
- * recorder, off until the Capture panel's checkbox turns it on. Edits mark
+ * recorder, off until the Capture window's checkbox turns it on, and only
+ * where the recording can go somewhere (recordingAllowed). Edits mark
  * it pending (the same pushState/stroke-end seams the autosave uses); an
  * idle callback then snapshots the visible scene (merged, matrix-baked -
  * bounded copies only), ships it to the convert worker for the standard
@@ -48,11 +49,32 @@ const IDLE_TIMEOUT_MS = 3000;
 const RETRY_MS = 400;
 const PREF_KEY = 'bozzetto-sculpt-record';
 
+/**
+ * Whether a timelapse recorded here can go anywhere (owner call). A reel
+ * only ever leaves the device by publishing, and publishing needs the
+ * gallery's sign-in, so a guest on the web would be spending the device's
+ * storage, and a write per stroke, on frames nothing can take anywhere. A
+ * signed-in session records, on the web and the iPad alike (the sign-in
+ * probe answers offline too, from the service worker's copy), and so does
+ * the desktop app, signed in or not.
+ */
+export function recordingAllowed(where: { desktop: boolean; signedIn: boolean }): boolean {
+  return where.desktop || where.signedIn;
+}
+
 export class SnapshotRecorder {
   private metas: CapturedFrameMeta[] = [];
   private totalBytes = 0;
   private nextSeq = 0;
+  /** The choice in force: the box, or a stored "on" (capture records only while allowed too). */
   private enabled = false;
+  /**
+   * Whether recording can go anywhere here (recordingAllowed). The mount
+   * says so once it knows; until then, and for good for a guest on the
+   * web, nothing is recorded whatever the stored choice is - the choice
+   * itself is kept, and frames already stored are left alone.
+   */
+  private allowed = false;
   /** Whether the frame store opened; a failed store is never re-enabled. */
   private storageOk = true;
   /** The stored on/off choice, or null when the user never touched it. */
@@ -78,8 +100,9 @@ export class SnapshotRecorder {
    * call). It used to start on for the owner, but a frame per stroke is a
    * merge on the main thread and an IndexedDB write every time, and those
    * writes are a suspect in the iPad freezes; a timelapse is now something
-   * you ask for. The Capture panel's Record timelapse box stores that
-   * choice, on or off, and only a stored "on" turns capture on here.
+   * you ask for. The Capture window's Record timelapse box stores that
+   * choice, on or off, and only a stored "on" turns capture on here - and
+   * then only while recording is allowed (setAllowed).
    */
   async install(): Promise<void> {
     try {
@@ -117,7 +140,7 @@ export class SnapshotRecorder {
 
     // Seed frame 0 with the starting state so playback opens on the raw
     // subject rather than the first stroke's result.
-    if (this.enabled && this.metas.length === 0) this.edited();
+    if (this.isEnabled() && this.metas.length === 0) this.edited();
     // The checkbox was painted before the stored choice was read; now that
     // it and the frame count are in, let the panel catch up.
     this.onChange?.();
@@ -137,13 +160,19 @@ export class SnapshotRecorder {
   }
 
   private edited(): void {
-    if (!this.enabled || this.disposed) return;
+    if (!this.isEnabled() || this.disposed) return;
     this.pending = true;
     this.schedule();
   }
 
+  /** Whether capture is recording: switched on, and allowed here. */
   isEnabled(): boolean {
-    return this.enabled;
+    return this.enabled && this.allowed;
+  }
+
+  /** Whether recording can go anywhere here (see recordingAllowed). */
+  isAllowed(): boolean {
+    return this.allowed;
   }
 
   setEnabled(on: boolean): void {
@@ -154,18 +183,24 @@ export class SnapshotRecorder {
     } catch {
       /* preference just won't stick */
     }
-    if (this.enabled) this.edited();
+    if (this.isEnabled()) this.edited();
   }
 
   /**
-   * The admin probe's answer, which used to set the default (guests off,
-   * the owner on). The default is off for every role now, so nothing
-   * follows from it: capture stays off until the checkbox says otherwise,
-   * and a stored choice stands either way. The probe still reports in,
-   * before or after install(), and may go on doing so.
+   * Where recording can go somewhere, as the mount works it out: the
+   * desktop app at once, the web once the sign-in probe answers with an
+   * email - at boot, or later from the publish forms' re-check. Called
+   * before or after install(), as often as the answer comes. Allowed with
+   * the choice already on, recording starts as a tick on the box starts
+   * it, from the scene as it stands; the duplicate check keeps a reload's
+   * resumed reel from gaining a copy of its last frame.
    */
-  applyDefault(_isAdmin: boolean): void {
-    // Deliberately nothing; see above.
+  setAllowed(allowed: boolean): void {
+    if (allowed === this.allowed) return;
+    this.allowed = allowed;
+    if (this.isEnabled()) this.edited();
+    else this.pending = false;
+    this.onChange?.();
   }
 
   frameCount(): number {
@@ -192,7 +227,7 @@ export class SnapshotRecorder {
     this.nextSeq = 0;
     this.lastSig = '';
     this.onChange?.();
-    if (this.enabled) this.edited(); // re-seed the starting frame
+    if (this.isEnabled()) this.edited(); // re-seed the starting frame
   }
 
   private schedule(): void {
@@ -211,7 +246,7 @@ export class SnapshotRecorder {
   }
 
   private async tick(): Promise<void> {
-    if (this.disposed || !this.enabled || this.busy || !this.pending) return;
+    if (this.disposed || !this.isEnabled() || this.busy || !this.pending) return;
     if (this.session._action !== Enums.Action.NOTHING) {
       setTimeout(() => this.schedule(), RETRY_MS);
       return;

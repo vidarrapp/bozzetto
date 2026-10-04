@@ -28,11 +28,11 @@ const PLATEAU: Limits = { min: 0, max: 0.95 };
 /**
  * The Tool palette (WS4/WS5, renamed from Sculpt by owner call): everything
  * about HOW the active tool behaves. Sections: the tool-named brush block
- * (pressure dynamics + feel extras), Symmetry, Mask (darken, ops, extract).
- * Topology and Remesh moved to the Model panel - they are properties of the
- * OBJECT, not the tool. Files and capture live in the left File panel, the
- * object list in Scene. Opening this collapses the other right-edge panels
- * (see SidePanel's side-scoped protocol).
+ * (pressure dynamics + feel extras) and Symmetry. Topology, Remesh and Mask
+ * moved to the Model panel - they act on the OBJECT, not on the tool. Files
+ * live in the top row's File menu, capture in its Capture window, the
+ * object list in Scene. Opening this collapses Render, the other
+ * right-edge panel (see SidePanel's side-scoped protocol).
  */
 export class SculptPanel extends SidePanel {
   private dynamicsBody!: HTMLDivElement;
@@ -43,7 +43,6 @@ export class SculptPanel extends SidePanel {
   private axisButtons: HTMLButtonElement[] = [];
   private sizeInput?: HTMLInputElement;
   private strengthInput?: HTMLInputElement;
-  private extractThickness = 1;
   private brushHeading: HTMLHeadingElement | null = null;
 
   constructor(
@@ -59,7 +58,6 @@ export class SculptPanel extends SidePanel {
     };
     this.buildBrush(this.body);
     this.buildSymmetry(this.body);
-    this.buildMask(this.body);
   }
 
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
@@ -585,65 +583,11 @@ export class SculptPanel extends SidePanel {
     }
   }
 
-  // --- Mask ---------------------------------------------------------------
-
-  private buildMask(body: HTMLElement): void {
-    const sec = section(body, 'Mask');
-    sec.appendChild(
-      compactRange(
-        'Darken',
-        0.05,
-        1,
-        0.05,
-        this.viewer.materials.getMaskDarken(),
-        (v) => this.viewer.materials.setMaskDarken(v),
-        { limits: FRACTION },
-      ),
-    );
-    const ops = div('sculpt-panel__row');
-    const masking = () => this.session.getSculptManager().getTool(Enums.Tools.MASKING);
-    ops.append(
-      this.opButton('Blur', () => masking().blur?.()),
-      this.opButton('Sharpen', () => masking().sharpen?.()),
-      this.opButton('Invert', () => masking().invert?.()),
-      this.opButton('Clear', () => masking().clear?.()),
-    );
-    sec.appendChild(ops);
-
-    sec.appendChild(
-      compactRange(
-        'Extract thickness',
-        0,
-        6,
-        0.1,
-        this.extractThickness,
-        (v) => {
-          this.extractThickness = v;
-        },
-        { limits: AMOUNT },
-      ),
-    );
-    const extractRow = div('sculpt-panel__row');
-    extractRow.appendChild(
-      this.opButton('Extract masked', () => {
-        this.session.extractMasked(this.extractThickness);
-      }),
-    );
-    sec.appendChild(extractRow);
-  }
-
-  // --- Topology (dyntopo + voxel remesh) ----------------------------------
-
   /** Follow radius/strength changes made anywhere else (rail, keys, drags). */
   refreshBrushValues(): void {
     // Through the slider's own value, so a size typed past 500 reads as itself.
     if (this.sizeInput) setSliderValue(this.sizeInput, Math.round(this.input.getBrushRadius()));
     if (this.strengthInput) setSliderValue(this.strengthInput, Number(this.input.getBrushIntensity().toFixed(2)));
-  }
-
-  /** The Extract thickness the ctrl+e hotkey should use. */
-  getExtractThickness(): number {
-    return this.extractThickness;
   }
 
   /**

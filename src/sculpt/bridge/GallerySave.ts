@@ -2,7 +2,7 @@ import { api, type Visibility } from '../../admin/api';
 import { mergeSceneArrays } from './SceneFile';
 import type { SnapshotRecorder } from './SnapshotRecorder';
 import type { SculptSession } from './SculptSession';
-import type { LookState } from '../../viewer/Viewer';
+import { aoWithoutCavity, type LookState } from '../../viewer/Viewer';
 
 /**
  * Publishing sculpts to the gallery (WS5, admin only - Cloudflare Access
@@ -33,7 +33,9 @@ export interface GalleryHooks {
 /**
  * Publish the look alongside the frames, exactly as the editor's "Save look"
  * does. Without it a published sculpt opened under the viewer's defaults
- * rather than the lighting it was made in.
+ * rather than the lighting it was made in. The AO is the one the viewer
+ * can draw: a sculpt made on the cavity, which only sculpt mode has,
+ * publishes on GTAO - it went out with no AO at all.
  */
 function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
   const look = hooks.look();
@@ -41,7 +43,7 @@ function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
     lighting: look.lighting,
     material: look.material,
     environment: look.environment,
-    ao: look.ao,
+    ao: aoWithoutCavity(look),
     presentation: look.presentation,
     camera: look.camera,
     defaults: { material: look.materialMode },

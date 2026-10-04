@@ -6,9 +6,13 @@
 // the two diagnostic overlays, Save to library signed out and signed in
 // (scenes in Projects, visibility), and the sliders: typed values in the
 // Render, Tool and Armature panels and on the brush rail, the Render
-// panel's ranges and defaults, and ambient occlusion's. Each gets (page,
-// base, t) - a fresh page, the server's origin, and the check collector.
+// panel's ranges and defaults, and ambient occlusion's. Then the Capture
+// window and where recording is allowed, the panels' sides on the iPad's
+// screens, Mask and Extract in the Model panel, Delete highest level, and
+// ambient occlusion outside sculpt mode. Each gets (page, base, t) - a
+// fresh page, the server's origin, and the check collector.
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { openArmature, openSculpt } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -869,6 +873,83 @@ const storedFrames = (page) =>
         };
       }),
   );
+
+// --- capture: the window, and where recording is allowed -------------------
+
+/** The sign-in probe answering as the owner, for every page of a context. */
+const signInContext = (ctx) =>
+  ctx.route('**/admin/api/whoami', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
+  );
+
+/**
+ * The desktop app's bridge, stood in for before the page's own scripts
+ * run. isDesktop() asks only whether window.bozzettoDesktop is there, and
+ * this answers every call the way an app with no server configured, no
+ * recovery file and nothing picked in a dialog would.
+ */
+function desktopBridgeStub() {
+  const none = () => () => {};
+  const answers = {
+    version: 'test',
+    platform: 'linux',
+    getServer: async () => ({ url: null, signedIn: false }),
+    setServer: async () => ({ url: null, signedIn: false }),
+    api: async () => ({ ok: false, status: 0, error: 'No server' }),
+    recentFiles: async () => [],
+    readRecovery: async () => null,
+    writeRecovery: async () => true,
+    clearRecovery: async () => true,
+    confirm: async () => true,
+    ask: async () => 0,
+    message: async () => true,
+    setDocument: () => {},
+    saveDone: () => {},
+    onCommand: none,
+    onOpenPath: none,
+  };
+  window.bozzettoDesktop = new Proxy(answers, {
+    get: (o, k) => (k in o ? o[k] : k === 'then' ? undefined : async () => null),
+  });
+}
+
+/** The Capture window and its chip, as the page shows them. */
+const captureState = (page) =>
+  page.evaluate(() => {
+    const w = window.__sculpt.captureWindow;
+    const r = w.root.getBoundingClientRect();
+    const c = w.chip.getBoundingClientRect();
+    return {
+      open: w.isOpen(),
+      shown: getComputedStyle(w.root).display !== 'none',
+      visibility: getComputedStyle(w.root).visibility,
+      rect: { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) },
+      chip: {
+        shown: !w.chip.hidden && getComputedStyle(w.chip).display !== 'none',
+        l: Math.round(c.left),
+        b: Math.round(c.bottom),
+        expanded: w.chip.getAttribute('aria-expanded'),
+        lit: w.chip.classList.contains('topchip--open'),
+      },
+      focused: w.root.contains(document.activeElement),
+      stored: sessionStorage.getItem('bozzetto-capture-window'),
+    };
+  });
+const showRect = (r) => `${r.l},${r.t} to ${r.r},${r.b}`;
+
+/** The middle of the first element a selector finds, in client px. */
+const centreOf = (page, sel) =>
+  page.evaluate((q) => {
+    const r = document.querySelector(q).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];
+  }, sel);
+
+/** Everything the File menu offers and the hotkey guide lists, as one text. */
+const offeredText = async (page) => {
+  const items = await fileItems(page);
+  const guide = await page.evaluate(() => document.querySelector('.help-guide')?.textContent ?? '');
+  return `${items.map((i) => `${i.label} ${i.hint}`).join(' | ')} || ${guide}`;
+};
 
 /** What the boot opened: object count, link, the address, and the toast's words. */
 const bootState = (page) =>
@@ -3136,13 +3217,13 @@ export const suites = {
       const state = () =>
         owner.evaluate(() => {
           const { recorder } = window.__sculpt;
-          const box = [...document.querySelectorAll('.panel--capture label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input');
+          const box = [...document.querySelectorAll('.capture-window label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input');
           return { on: recorder.isEnabled(), box: box.checked, stored: localStorage.getItem('bozzetto-sculpt-record'), frames: recorder.frameCount() };
         });
       const show = (s) => `recording ${s.on ? 'on' : 'off'}, box ${s.box ? 'ticked' : 'clear'}, stored ${s.stored}, ${s.frames} frames`;
       const tick = () =>
         owner.evaluate(() => {
-          [...document.querySelectorAll('.panel--capture label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
+          [...document.querySelectorAll('.capture-window label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
         });
 
       await boot();
@@ -3150,10 +3231,10 @@ export const suites = {
       t.ok(!s.on && !s.box && s.stored === null && s.frames === 0, `signed in as the owner, capture starts off and records nothing (${show(s)})`);
       const defaulted = await owner.evaluate(() => {
         const { recorder } = window.__sculpt;
-        recorder.applyDefault(true);
-        return recorder.isEnabled();
+        recorder.setAllowed(true);
+        return { allowed: recorder.isAllowed(), on: recorder.isEnabled() };
       });
-      t.eq(defaulted, false, "the probe's owner answer, given again, still leaves it off");
+      t.ok(defaulted.allowed && !defaulted.on, "recording is allowed for the owner, and that alone leaves it off");
 
       // Ticked, it records: the starting frame first, handed to the worker
       // and written, which the perf log times.
@@ -4060,5 +4141,813 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.file.open(window.__aoLook));
     s = await state();
     t.ok(s.ao.enabled && s.out === 'gtao' && (await model()) === 'gtao', `a scene saved on GTAO opens on GTAO, and the panel says so (${await model()})`);
+  },
+
+  // The Capture window (owner request): a chip in the top row beside File
+  // and Edit, styled like them, opens the capture controls in a window
+  // that floats over the work and blocks none of it. The title bar drags
+  // it, the close button, the chip and Esc (while it has the focus) put
+  // it away, and a pen stroke on the model leaves it open. Where it was
+  // left lasts the session and stays on screen as the window changes
+  // size; it follows the theme, hides with the interface on Tab, and its
+  // title bar keeps the long press and the browser's gestures out. Signed
+  // in through the faked probe, as captureOff is, so the chip is offered.
+  async captureWindow(page, base, t) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      const owner = await ctx.newPage();
+      const errors = [];
+      owner.on('pageerror', (e) => errors.push(String(e)));
+      await signInContext(ctx);
+      const boot = async () => {
+        await openForInput(owner, base);
+        await owner.waitForFunction(() => window.__sculpt.captureWindow.isAvailable(), null, { timeout: 30_000 });
+      };
+      await boot();
+
+      const row = await owner.evaluate(() => {
+        const chips = [...document.querySelectorAll('.topbar--left > *')].filter((c) => !c.hidden).map((c) => c.textContent.trim());
+        const look = (el) => {
+          const s = getComputedStyle(el);
+          return [s.fontFamily, s.fontSize, s.letterSpacing, s.textTransform, s.paddingTop, s.paddingLeft, s.borderTopWidth, s.borderTopColor, s.borderRadius, s.backgroundColor, s.color].join('|');
+        };
+        const file = document.querySelector('.file-menu--file__chip');
+        const edit = document.querySelector('.file-menu--edit__chip');
+        const capture = window.__sculpt.captureWindow.chip;
+        return { chips, like: look(capture) === look(file) && look(capture) === look(edit) };
+      });
+      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Capture', 'signed in, the top row has a Capture chip beside File and Edit');
+      t.ok(row.like, 'styled as they are');
+      let s = await captureState(owner);
+      t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
+
+      // Opened from the chip: under it, the chip pressed, and everything the
+      // Capture panel held inside.
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      s = await captureState(owner);
+      t.ok(s.open && s.shown && s.chip.expanded === 'true' && s.chip.lit, `the chip opens it and shows it is open (expanded ${s.chip.expanded})`);
+      const column = await owner.evaluate(() => Math.max(...[...document.querySelectorAll('.panel--left')].map((p) => p.offsetLeft + p.offsetWidth)));
+      t.ok(
+        Math.abs(s.rect.t - (s.chip.b + 6)) <= 1 && s.rect.l >= s.chip.l && s.rect.l >= column && s.rect.l <= column + 10,
+        `the first time, under the chip and clear of where the left panels open (${showRect(s.rect)}; chip at ${s.chip.l}, panels to ${column})`,
+      );
+      const holds = await owner.evaluate(() => {
+        const root = window.__sculpt.captureWindow.root;
+        const buttons = [...root.querySelectorAll('button')].filter((b) => b.checkVisibility()).map((b) => b.textContent);
+        return {
+          record: [...root.querySelectorAll('label.checkbox')].some((l) => l.textContent.includes('Record timelapse')),
+          readout: root.querySelector('.capture__readout')?.textContent ?? '',
+          clear: buttons.includes('Clear frames'),
+          timelapse: !!root.querySelector('[data-slot="timelapse"] .gallery-form'),
+          model: !!root.querySelector('[data-slot="model"] .gallery-form'),
+          publish: buttons.filter((b) => /^Publish /.test(b)),
+          modal: root.getAttribute('aria-modal'),
+          docked: !!document.querySelector('.panel--capture'),
+        };
+      });
+      t.ok(
+        holds.record && holds.clear && /frames? - /.test(holds.readout) && holds.timelapse && holds.model && holds.publish.join(',') === 'Publish timelapse,Publish model',
+        `it holds Record timelapse, the readout ("${holds.readout}"), Clear frames and both publish forms (${holds.publish.join(', ')})`,
+      );
+      t.ok(holds.modal === 'false' && !holds.docked, 'it is a non-modal window, and the docked Capture panel is gone');
+
+      // The title bar drags it, by the mouse.
+      const title = () => centreOf(owner, '.capture-window .float-window__title');
+      let from = s.rect;
+      let at = await title();
+      await owner.mouse.move(...at);
+      await owner.mouse.down();
+      await owner.mouse.move(at[0] - 150, at[1] + 120, { steps: 5 });
+      await owner.mouse.up();
+      s = await captureState(owner);
+      t.ok(s.open && s.rect.l === from.l - 150 && s.rect.t === from.t + 120, `dragged by its title bar, it moves with the pointer (${showRect(from)} to ${showRect(s.rect)})`);
+      t.ok(s.focused, 'and has the focus');
+      const placed = s.rect;
+      t.eq(s.stored, JSON.stringify({ x: placed.l, y: placed.t }), 'where it was left is kept for the session');
+
+      // The chip toggles it; it comes back where it was.
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      s = await captureState(owner);
+      t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit && !s.focused, 'the chip closes it again, taking the focus with it');
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      s = await captureState(owner);
+      t.ok(s.open && s.rect.l === placed.l && s.rect.t === placed.t, `and opens it where it was left (${showRect(s.rect)})`);
+
+      // Esc closes it while it has the focus, and only then.
+      await owner.evaluate(() => document.activeElement?.blur?.());
+      await owner.keyboard.press('Escape');
+      t.ok((await captureState(owner)).open, 'Esc with the focus elsewhere leaves it open');
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window .section h3')));
+      s = await captureState(owner);
+      t.ok(s.focused, 'a press inside gives it the focus');
+      await owner.keyboard.press('Escape');
+      s = await captureState(owner);
+      t.ok(!s.open && !s.shown && !s.focused, 'and Esc then closes it');
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window .float-window__close')));
+      t.ok(!(await captureState(owner)).open, 'its close button closes it');
+
+      // Non-modal: open, a pen stroke on the sphere sculpts, and it stays.
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      const dev = await devices(owner);
+      await owner.keyboard.press('3'); // Standard clay
+      const [cx, cy] = await screenOf(owner, 'Sphere');
+      const path = line([cx - 70, cy], [cx + 70, cy + 10]);
+      const ends = [await probe(owner, path[0]), await probe(owner, path[path.length - 1])];
+      t.ok(ends.every((p) => p.canvas && p.hit), 'the test stroke runs over the sphere, clear of the window');
+      const sum = await meshSum(owner);
+      const strokes = await strokeCount(owner);
+      await dev.penDrag(path);
+      await settle(owner);
+      s = await captureState(owner);
+      t.ok((await strokeCount(owner)) === strokes + 1 && (await meshSum(owner)) !== sum, 'with the window open, a pen stroke sculpts');
+      t.ok(s.open && s.shown, 'and the window stays open');
+
+      // Long press and gestures: the title bar cancels its touches' default
+      // and takes no browser gesture, there is no context menu on it, and a
+      // finger drags it as the mouse does.
+      await owner.evaluate(() => {
+        window.__touchDefaults = [];
+        window.addEventListener('touchstart', (e) => window.__touchDefaults.push(e.defaultPrevented));
+      });
+      at = await title();
+      await dev.tap(at);
+      const guards = await owner.evaluate(() => {
+        const bar = document.querySelector('.capture-window .float-window__bar');
+        const css = getComputedStyle(bar);
+        return {
+          cancelled: window.__touchDefaults[0] ?? null,
+          touchAction: css.touchAction,
+          menu: !bar.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+          select: css.userSelect,
+        };
+      });
+      t.ok(guards.cancelled === true && guards.touchAction === 'none' && guards.select === 'none', `a touch on the title bar cannot arm a long press or a gesture (${JSON.stringify(guards)})`);
+      t.ok(guards.menu, 'nor bring up a context menu');
+      t.ok((await captureState(owner)).open, 'and a tap on it leaves the window open');
+      from = (await captureState(owner)).rect;
+      at = await title();
+      await dev.finger(line(at, [at[0] + 60, at[1] + 40], 4));
+      s = await captureState(owner);
+      t.ok(s.rect.l === from.l + 60 && s.rect.t === from.t + 40, `a finger drags it too (${showRect(from)} to ${showRect(s.rect)})`);
+      const kept = s.rect;
+
+      // On screen as the window changes size, and back in its place after.
+      // The resize reaches the page with its next frame, which under a
+      // software renderer can be seconds away.
+      const fits = (w, h) =>
+        owner
+          .waitForFunction(
+            ([ww, hh]) => {
+              const r = window.__sculpt.captureWindow.root.getBoundingClientRect();
+              return innerWidth === ww && innerHeight === hh && r.left >= 8 && r.top >= 8 && r.right <= ww - 8 && r.bottom <= hh - 8;
+            },
+            [w, h],
+            { timeout: 30_000 },
+          )
+          .catch(() => {});
+      await owner.setViewportSize({ width: 560, height: 420 });
+      await fits(560, 420);
+      s = await captureState(owner);
+      t.ok(s.rect.l >= 8 && s.rect.t >= 8 && s.rect.r <= 552 && s.rect.b <= 412, `a smaller window keeps it on screen (${showRect(s.rect)} in 560x420)`);
+      await owner.setViewportSize({ width: 1280, height: 800 });
+      await owner
+        .waitForFunction(([x, y]) => {
+          const r = window.__sculpt.captureWindow.root.getBoundingClientRect();
+          return Math.round(r.left) === x && Math.round(r.top) === y;
+        }, [kept.l, kept.t], { timeout: 30_000 })
+        .catch(() => {});
+      s = await captureState(owner);
+      t.ok(s.rect.l === kept.l && s.rect.t === kept.t, `back at full size it is where it was put (${showRect(s.rect)})`);
+
+      // The theme, and Tab.
+      const background = () => owner.evaluate(() => getComputedStyle(window.__sculpt.captureWindow.root).backgroundColor);
+      const ink = await background();
+      await owner.evaluate(() => document.querySelector('.theme-toggle').click());
+      const paper = await background();
+      await owner.evaluate(() => document.querySelector('.theme-toggle').click());
+      t.ok(ink !== paper && (await background()) === ink, `it follows the theme (${ink} in ink, ${paper} in paper)`);
+      await owner.evaluate(() => document.activeElement?.blur?.());
+      await owner.keyboard.press('Tab');
+      await owner.waitForFunction(() => getComputedStyle(window.__sculpt.captureWindow.root).visibility === 'hidden', null, { timeout: 5000 }).catch(() => {});
+      s = await captureState(owner);
+      const chromeHidden = await owner.evaluate(() => document.body.classList.contains('chrome-hidden'));
+      t.ok(chromeHidden && s.visibility === 'hidden' && s.open, `Tab hides it with the rest of the interface (visibility ${s.visibility})`);
+      await owner.keyboard.press('Tab');
+      s = await captureState(owner);
+      t.ok(s.visibility === 'visible' && s.open && s.rect.l === kept.l && s.rect.t === kept.t, 'and Tab again brings it back, open, where it was');
+
+      // A reload: the place is the session's.
+      await boot();
+      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      s = await captureState(owner);
+      t.ok(s.open && s.rect.l === kept.l && s.rect.t === kept.t, `after a reload it opens where it was left (${showRect(s.rect)})`);
+      t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+    }
+  },
+
+  // Recording only where it can go somewhere (owner call). A guest on the
+  // web gets no Capture chip, and nothing records whatever the stored
+  // choice says - the choice and the frames recorded before are left as
+  // they were, and New clears the frames as it always has; nothing about
+  // recording is offered elsewhere either. Signed in later in the session
+  // (the forms' re-check, or the page coming back to the front), the chip
+  // appears and a stored "on" records. The desktop app records signed in
+  // or not: its bridge is stood in for, since isDesktop() asks only
+  // whether window.bozzettoDesktop exists.
+  async captureGate(page, base, t) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const desk = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      const web = await ctx.newPage();
+      const errors = [];
+      web.on('pageerror', (e) => errors.push(String(e)));
+      web.on('dialog', (d) => void d.accept());
+      const recording = () =>
+        web.evaluate(() => {
+          const { recorder, captureWindow } = window.__sculpt;
+          return {
+            allowed: recorder.isAllowed(),
+            on: recorder.isEnabled(),
+            frames: recorder.frameCount(),
+            stored: localStorage.getItem('bozzetto-sculpt-record'),
+            chip: !captureWindow.chip.hidden && getComputedStyle(captureWindow.chip).display !== 'none',
+          };
+        });
+      const show = (r) => `allowed ${r.allowed}, recording ${r.on}, ${r.frames} frames, stored ${r.stored}, chip ${r.chip ? 'shown' : 'hidden'}`;
+
+      // Signed in first: a frame recorded, and the choice stored as "on".
+      await signInContext(ctx);
+      await openSculpt(web, base, '&q=low');
+      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 });
+      await web.evaluate(() => window.__sculpt.recorder.setEnabled(true));
+      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 });
+      let r = await recording();
+      t.ok(r.allowed && r.on && r.chip && r.frames > 0 && r.stored === 'on', `signed in, the chip shows and a stored "on" records (${show(r)})`);
+      const recorded = await storedFrames(web);
+
+      // A guest from here on: the probe finds no session.
+      await ctx.unroute('**/admin/api/whoami');
+      await openSculpt(web, base, '&q=low');
+      await web.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
+      await web.waitForTimeout(1500); // the recorder's install, and any frame it might wrongly seed
+      r = await recording();
+      t.ok(!r.allowed && !r.on && !r.chip, `a guest on the web gets no Capture chip, and nothing records (${show(r)})`);
+      t.ok(r.stored === 'on' && r.frames === recorded && (await storedFrames(web)) === recorded, `the stored choice and the ${recorded} frame(s) recorded before are left as they were`);
+      const opened = await web.evaluate(() => {
+        const w = window.__sculpt.captureWindow;
+        w.open();
+        return { open: w.isOpen(), shown: getComputedStyle(w.root).display !== 'none' };
+      });
+      t.ok(!opened.open && !opened.shown, 'and the window cannot be opened');
+      await web.evaluate(() => {
+        const { session } = window.__sculpt;
+        session.addPrimitive('cube');
+        session.toggleSymmetry();
+      });
+      await web.waitForTimeout(2500);
+      r = await recording();
+      t.ok(r.frames === recorded && (await storedFrames(web)) === recorded, `edits as a guest record nothing, whatever the stored "on" says (${show(r)})`);
+      const offered = await offeredText(web);
+      t.ok(!/record|timelapse|capture/i.test(offered), 'nothing about recording is offered in the File menu or the hotkey guide');
+
+      // New clears the old frames, as it always has.
+      await chooseFile(web, 'New sculpt');
+      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() === 0, null, { timeout: 30_000 }).catch(() => {});
+      t.eq(await storedFrames(web), 0, 'File > New clears the frames recorded before');
+
+      // Signed in later in the session, through the forms' re-check: the
+      // chip appears, and the stored "on" records.
+      await signInContext(ctx);
+      await web.evaluate(() => document.querySelector('.capture-window [data-slot="model"] .gallery-form__gate button').click());
+      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 }).catch(() => {});
+      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
+      r = await recording();
+      t.ok(r.allowed && r.on && r.chip && r.frames > 0, `signed in through the forms' re-check, the chip appears and recording starts (${show(r)})`);
+
+      // Or by coming back to the page after signing in elsewhere.
+      await ctx.unroute('**/admin/api/whoami');
+      await openSculpt(web, base, '&q=low');
+      await web.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
+      t.ok(!(await recording()).chip, 'signed out again, a reload has no chip');
+      await signInContext(ctx);
+      await web.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 }).catch(() => {});
+      r = await recording();
+      t.ok(r.allowed && r.chip, `back in front, signed in meanwhile, the page asks again and the chip appears (${show(r)})`);
+      t.ok(!errors.length, `no page errors on the web${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+
+      // The desktop app: no sign-in, no server, and the chip from the start.
+      await desk.addInitScript(desktopBridgeStub);
+      const app = await desk.newPage();
+      const appErrors = [];
+      app.on('pageerror', (e) => appErrors.push(String(e)));
+      await openSculpt(app, base, '&q=low');
+      const desktop = await app.evaluate(() => {
+        const { recorder, captureWindow, fileMenu } = window.__sculpt;
+        return {
+          desktop: !!window.bozzettoDesktop,
+          allowed: recorder.isAllowed(),
+          chip: !captureWindow.chip.hidden,
+          row: [...document.querySelectorAll('.topbar--left > *')].filter((c) => !c.hidden).map((c) => c.textContent.trim()).join(', '),
+          fileMenu: !!fileMenu,
+        };
+      });
+      t.ok(desktop.desktop && desktop.allowed && desktop.chip && !desktop.fileMenu, `in the desktop app recording is allowed and the chip shows, with no sign-in (row: ${desktop.row})`);
+      await app.evaluate(() => {
+        const { captureWindow } = window.__sculpt;
+        captureWindow.open();
+        [...captureWindow.root.querySelectorAll('label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
+      });
+      await app.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
+      t.ok(await app.evaluate(() => window.__sculpt.recorder.isEnabled() && window.__sculpt.recorder.frameCount() > 0), 'and the box records there');
+      t.ok(!appErrors.length, `no page errors in the desktop app${appErrors.length ? `: ${appErrors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+      await desk.close();
+    }
+  },
+
+  // The panels' sides (owner call): Scene then Model down the left edge,
+  // Render then Tool down the right. One panel per edge is open at a time
+  // and either edge's panel stays open when the other edge's opens. On the
+  // iPad's screens, in either orientation and under Safari's toolbars, no
+  // two tabs overlap or leave the screen or run into the brush rail, the
+  // stats or the toolbar, an open left panel covers neither tab on its
+  // edge, and an open Render ducks the Tool tab it covers, as it always has.
+  async panelSides(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    // The panels slide; the geometry under test is where they end up.
+    await page.addStyleTag({ content: '.panel { transition: none !important; }' });
+    const layout = () =>
+      page.evaluate(() => {
+        const panels = {
+          Scene: document.querySelector('.panel--scene'),
+          Model: document.querySelector('.panel--model'),
+          Render: [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render'),
+          Tool: document.querySelector('.panel--sculpt'),
+        };
+        const box = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+        };
+        const out = {};
+        for (const [name, p] of Object.entries(panels)) {
+          const handle = p.querySelector('.panel__handle');
+          const hs = getComputedStyle(handle);
+          out[name] = {
+            left: p.classList.contains('panel--left'),
+            open: !p.classList.contains('panel--collapsed'),
+            body: box(p),
+            tab: hs.display === 'none' || hs.visibility === 'hidden' ? null : box(handle),
+            ducked: p.classList.contains('panel--tab-hidden'),
+          };
+        }
+        out.extra = {
+          rail: box(document.querySelector('.sculpt-sliders')),
+          stats: box(document.querySelector('.sculpt-stats')),
+          toolbar: [...document.querySelectorAll('.sculpt-toolbar__corner, .sculpt-toolbar__group')].map(box),
+          topbar: [...document.querySelectorAll('.topbar .topchip')].filter((c) => !c.hidden).map(box),
+        };
+        return out;
+      });
+    const meets = (a, b) => !!a && !!b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+    const setOpen = (name, open) =>
+      page.evaluate(
+        ([n, o]) => {
+          const { scenePanel, modelPanel, sculptPanel } = window.__sculpt;
+          const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+          if (n === 'Render') {
+            if (render.classList.contains('panel--collapsed') === o) render.querySelector(o ? '.panel__handle' : '.panel__close').click();
+            return;
+          }
+          ({ Scene: scenePanel, Model: modelPanel, Tool: sculptPanel })[n].setCollapsed(!o);
+        },
+        [name, open],
+      );
+    const closeAll = async () => {
+      for (const n of ['Scene', 'Model', 'Render', 'Tool']) await setOpen(n, false);
+    };
+
+    let l = await layout();
+    t.ok(l.Scene.left && l.Model.left && !l.Render.left && !l.Tool.left, 'Scene and Model dock left, Render and Tool right');
+    // A docked tab tucks its outer border just past the screen's edge.
+    const atEdge = (tab, x) => Math.abs(tab.l - x) <= 1 || Math.abs(tab.r - x) <= 1;
+    t.ok(
+      l.Scene.tab.t < l.Model.tab.t && atEdge(l.Scene.tab, 0) && atEdge(l.Model.tab, 0),
+      `down the left edge, Scene then Model (tabs at ${Math.round(l.Scene.tab.t)} and ${Math.round(l.Model.tab.t)})`,
+    );
+    t.ok(l.Render.tab.t < l.Tool.tab.t, `down the right edge, Render then Tool (tabs at ${Math.round(l.Render.tab.t)} and ${Math.round(l.Tool.tab.t)})`);
+
+    // One open per edge; the other edge keeps what it had.
+    const opened = async () => {
+      const x = await layout();
+      return ['Scene', 'Model', 'Render', 'Tool'].filter((n) => x[n].open).join(',');
+    };
+    await setOpen('Scene', true);
+    await setOpen('Tool', true);
+    const a = await opened();
+    await setOpen('Model', true);
+    const b = await opened();
+    await setOpen('Render', true);
+    const c = await opened();
+    await setOpen('Model', false);
+    const d = await opened();
+    t.ok(a === 'Scene,Tool' && b === 'Model,Tool' && c === 'Model,Render' && d === 'Render', `one panel open per edge, each edge on its own (${[a, b, c, d].join(' | ')})`);
+    await closeAll();
+
+    const sizes = [
+      [1024, 768], [768, 1024], [1080, 810], [810, 1080], [1133, 744], [744, 1133],
+      [1180, 820], [820, 1180], [1194, 834], [834, 1194], [1366, 1024], [1024, 1366],
+      // In Safari rather than from the home screen: its toolbars take the top.
+      [1133, 670], [1024, 690], [744, 1060],
+    ];
+    const problems = [];
+    for (const [w, h] of sizes) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.waitForTimeout(60);
+      await closeAll();
+      l = await layout();
+      const names = ['Scene', 'Model', 'Render', 'Tool'];
+      const at = `${w}x${h}`;
+      for (const n of names) {
+        const tab = l[n].tab;
+        if (!tab) problems.push(`${at}: ${n} has no tab`);
+        else if (tab.t < 0 || tab.b > h || tab.l < -1 || tab.r > w + 1) problems.push(`${at}: ${n}'s tab leaves the screen`);
+      }
+      for (let i = 0; i < names.length; i++) {
+        for (let j = i + 1; j < names.length; j++) {
+          if (meets(l[names[i]].tab, l[names[j]].tab)) problems.push(`${at}: the ${names[i]} and ${names[j]} tabs overlap`);
+        }
+        const tab = l[names[i]].tab;
+        if (meets(tab, l.extra.rail)) problems.push(`${at}: ${names[i]}'s tab runs into the brush rail`);
+        if (meets(tab, l.extra.stats)) problems.push(`${at}: ${names[i]}'s tab runs into the stats`);
+        if (l.extra.toolbar.some((x) => meets(tab, x))) problems.push(`${at}: ${names[i]}'s tab runs into the toolbar`);
+        if (l.extra.topbar.some((x) => meets(tab, x))) problems.push(`${at}: ${names[i]}'s tab runs into the top row`);
+      }
+      // An open left panel covers neither left tab; Render ducks Tool's.
+      for (const [open, other] of [['Scene', 'Model'], ['Model', 'Scene']]) {
+        await setOpen(open, true);
+        const x = await layout();
+        if (!x[other].tab) problems.push(`${at}: open ${open} hides ${other}'s tab`);
+        else if (meets(x[open].body, x[other].tab)) problems.push(`${at}: open ${open} covers ${other}'s tab`);
+        await setOpen(open, false);
+      }
+      await setOpen('Render', true);
+      let x = await layout();
+      if (meets(x.Render.body, l.Tool.tab) && !x.Tool.ducked) problems.push(`${at}: open Render covers Tool's tab without ducking it`);
+      await setOpen('Tool', true);
+      x = await layout();
+      if (x.Render.tab && meets(x.Tool.body, x.Render.tab)) problems.push(`${at}: open Tool covers Render's tab`);
+      await closeAll();
+      x = await layout();
+      if (!x.Tool.tab || x.Tool.ducked) problems.push(`${at}: Tool's tab does not come back when Render closes`);
+    }
+    t.ok(!problems.length, `on ${sizes.length} iPad screens, no tab overlaps or leaves the screen, and no open panel covers a tab it should not${problems.length ? `: ${problems.join('; ')}` : ''}`);
+  },
+
+  // Mask and Extract live in the Model panel now, as its own section, and
+  // act on the active object as before; the Tool panel has no Mask section
+  // left. The mask keys (Ctrl + A / I / C / E) and the Mask brush (Ctrl +
+  // pen drag) are as they were, and Ctrl + E extracts at the Model panel's
+  // thickness.
+  async maskModel(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    // Masked share of the active object: 0 for none, 1 for all, and how
+    // many vertices sit part-way.
+    const mask = () =>
+      page.evaluate(() => {
+        const m = window.__sculpt.session.getMesh();
+        const mat = m.getMaterials();
+        const n = m.getNbVertices();
+        let masked = 0;
+        let partial = 0;
+        for (let i = 0; i < n; i++) {
+          const v = mat[i * 3 + 2];
+          masked += 1 - v;
+          if (v > 0.01 && v < 0.99) partial++;
+        }
+        return { masked: masked / n, partial };
+      });
+    const sections = await page.evaluate(() => {
+      const heads = (sel) => [...document.querySelectorAll(`${sel} .section h3`)].map((h) => h.textContent);
+      const model = document.querySelector('.panel--model');
+      const sec = [...model.querySelectorAll('.section')].find((s) => s.querySelector('h3')?.textContent === 'Mask');
+      return {
+        tool: heads('.panel--sculpt'),
+        model: heads('.panel--model'),
+        controls: sec ? [...sec.querySelectorAll('button, label.compact > span:first-child')].map((e) => e.textContent) : [],
+      };
+    });
+    t.ok(!sections.tool.includes('Mask'), `the Tool panel has no Mask section (${sections.tool.join(', ')})`);
+    t.ok(sections.model.includes('Mask'), `the Model panel has one (${sections.model.join(', ')})`);
+    t.eq(sections.controls.join(', '), 'Darken, Blur, Sharpen, Invert, Clear, Extract thickness, Extract masked', 'with the darkening, the four operations and Extract');
+    const press = (label) =>
+      page.evaluate((l) => {
+        const sec = [...document.querySelectorAll('.panel--model .section')].find((s) => s.querySelector('h3')?.textContent === 'Mask');
+        [...sec.querySelectorAll('button')].find((b) => b.textContent === l).click();
+      }, label);
+
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('Control+a');
+    let m = await mask();
+    t.near(m.masked, 1, 1e-6, 'Ctrl + A still masks the whole object');
+    await press('Invert');
+    m = await mask();
+    t.near(m.masked, 0, 1e-6, "the Model panel's Invert unmasks it all");
+    await page.keyboard.press('Control+i');
+    t.near((await mask()).masked, 1, 1e-6, 'Ctrl + I inverts it back');
+    await press('Clear');
+    t.near((await mask()).masked, 0, 1e-6, 'and Clear clears it');
+
+    // The Mask brush: Ctrl + a pen drag over the sphere paints a mask.
+    await page.keyboard.press('3');
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    await dev.penDrag(line([cx - 60, cy], [cx + 60, cy]), null, 2);
+    await settle(page);
+    m = await mask();
+    t.ok(m.masked > 0.001 && m.masked < 0.9, `the Mask brush (Ctrl + pen drag) still paints a mask (${(m.masked * 100).toFixed(1)}% masked)`);
+    const undoes = await page.evaluate(() => {
+      const s = window.__sculpt.session;
+      const before = s.getStateManager()._curUndoIndex;
+      s.undo();
+      return before - s.getStateManager()._curUndoIndex;
+    });
+    t.ok(undoes === 1 && (await mask()).masked < 1e-6, 'and one undo takes it off');
+
+    // Half the sphere masked: Blur feathers the edge, Sharpen firms it.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const mesh = session.getMesh();
+      const v = mesh.getVertices();
+      const mat = mesh.getMaterials();
+      for (let i = 0; i < mesh.getNbVertices(); i++) mat[i * 3 + 2] = v[i * 3] > 0 ? 0 : 1;
+      const masking = session.getSculptManager()._tools.find((tool) => tool && typeof tool.extract === 'function');
+      masking.updateAndRenderMask();
+    });
+    const half = await mask();
+    await press('Blur');
+    const blurred = await mask();
+    await press('Sharpen');
+    const sharpened = await mask();
+    t.ok(half.partial === 0 && blurred.partial > 0, `Blur feathers a hard mask edge (${half.partial} part-way vertices, then ${blurred.partial})`);
+    t.ok(sharpened.partial < blurred.partial, `and Sharpen firms it again (${sharpened.partial})`);
+
+    // Extract, at the panel's thickness, by the button and by Ctrl + E.
+    const extract = async (how, thickness) => {
+      await page.evaluate((v) => {
+        const row = [...document.querySelectorAll('.panel--model label.compact')].find((r) => r.firstElementChild?.textContent === 'Extract thickness');
+        const input = row.querySelector('input');
+        input.value = String(v);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }, thickness);
+      const before = await count(page);
+      if (how === 'button') await press('Extract masked');
+      else {
+        await page.evaluate(() => document.activeElement?.blur?.());
+        await page.keyboard.press('Control+e');
+      }
+      return page.evaluate(
+        ([b]) => {
+          const { session } = window.__sculpt;
+          const masking = session.getSculptManager()._tools.find((tool) => tool && typeof tool.extract === 'function');
+          const list = session.getMeshes();
+          return { added: list.length - b, last: session.getMeshName(list[list.length - 1]), active: session.activeName(), thickness: masking._thickness };
+        },
+        [before],
+      );
+    };
+    let e = await extract('button', 2);
+    t.ok(e.added === 1 && /^Extracted/.test(e.last) && e.active === 'Sphere' && e.thickness === 2, `Extract masked in the Model panel makes an object of the masked half at its thickness (${e.last}, ${e.thickness}; ${e.active} stays active)`);
+    e = await extract('key', 0.5);
+    t.ok(e.added === 1 && e.thickness === 0.5, `Ctrl + E extracts at the Model panel's thickness (${e.thickness})`);
+    const before = await count(page);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    t.eq(await count(page), before - 1, 'and an undo takes the extraction back');
+  },
+
+  // Delete highest level (owner request): the Model panel's Topology drops
+  // the top of the active object's stack. With the top selected the
+  // selection moves to the new top; from lower down it stays where it is.
+  // It is one undo step, which brings the level back with its detail, and
+  // redo deletes it again; the level slider and the triangle count follow,
+  // and with one level left the button is disabled.
+  async deleteLevel(page, base, t) {
+    page.on('dialog', (d) => void d.accept()); // a subdivision past the soft line asks first
+    await openSculpt(page, base, '&q=low');
+    await page.evaluate(() => window.__sculpt.modelPanel.setCollapsed(false));
+    const topo = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const panel = document.querySelector('.panel--model');
+        const slider = [...panel.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Level');
+        const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Delete highest level');
+        const lv = session.getLevels();
+        return {
+          sel: lv.sel,
+          levels: lv.levels,
+          max: slider ? Number(slider.querySelector('input').max) : null,
+          value: slider ? Number(slider.querySelector('input').value) : null,
+          readout: slider?.querySelector('.sculpt-panel__val')?.textContent ?? null,
+          tris: session.getMesh().getNbTriangles(),
+          button: btn ? { disabled: btn.disabled } : null,
+          history: session.getStateManager()._curUndoIndex,
+        };
+      });
+    const show = (s) => `level ${s.sel + 1}/${s.levels}, slider ${s.value} of ${s.max} reading ${s.readout}, ${s.tris} tris`;
+    const statsTris = (n) =>
+      page
+        .waitForFunction((k) => document.querySelector('.sculpt-stats__tris')?.textContent === `${k.toLocaleString('en-US')} tris`, n, { timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+    const del = () =>
+      page.evaluate(() => [...document.querySelectorAll('.panel--model button')].find((b) => b.textContent === 'Delete highest level').click());
+
+    // Three levels at least, and detail on the top one that only it has.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      while (session.getLevels().levels < 3) {
+        if (session.getLevels().sel !== session.getLevels().levels - 1) session.selectLevel(session.getLevels().levels - 1);
+        session.subdivide();
+      }
+      session.selectLevel(session.getLevels().levels - 1);
+      const m = session.getMesh();
+      const v = m.getVertices();
+      for (let i = 0; i < m.getNbVertices(); i++) v[i * 3 + 1] += 0.4 * Math.sin(i * 0.37);
+      window.__topDetail = Float32Array.from(v.subarray(0, m.getNbVertices() * 3));
+    });
+    const sameDetail = () =>
+      page.evaluate(() => {
+        const m = window.__sculpt.session.getMesh();
+        const v = m.getVertices();
+        const want = window.__topDetail;
+        if (m.getNbVertices() * 3 !== want.length) return Infinity;
+        let worst = 0;
+        for (let i = 0; i < want.length; i++) worst = Math.max(worst, Math.abs(v[i] - want[i]));
+        return worst;
+      });
+
+    let s = await topo();
+    const start = s;
+    t.ok(s.levels >= 3 && s.sel === s.levels - 1 && s.button && !s.button.disabled, `the button is there, enabled, with the top level selected (${show(s)})`);
+    const lowerTris = await page.evaluate(() => {
+      const mul = window.__sculpt.session.getMesh();
+      return mul._meshes[mul._meshes.length - 2].getNbTriangles();
+    });
+
+    // From the top: the selection moves to the new top.
+    await del();
+    s = await topo();
+    t.ok(s.levels === start.levels - 1 && s.sel === s.levels - 1, `with the top selected, the top level goes and the selection moves to the new top (${show(s)})`);
+    t.ok(s.max === s.levels && s.value === s.levels && s.readout === `${s.levels}/${s.levels}`, 'the level slider follows');
+    t.ok(s.tris === lowerTris && (await statsTris(s.tris)), `and the triangle count with it (${s.tris})`);
+    t.eq(s.history - start.history, 2, 'two vendor states pushed (the selection, then the deletion)');
+
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('Control+z');
+    s = await topo();
+    let off = await sameDetail();
+    t.ok(s.levels === start.levels && s.sel === start.sel && s.history === start.history, `one undo puts the level back, selected (${show(s)})`);
+    t.ok(off < 1e-4, `with its detail (worst vertex off by ${off.toExponential(1)})`);
+    t.ok(s.tris === start.tris && (await statsTris(s.tris)), 'and the triangle count back');
+    await page.keyboard.press('Control+Shift+z');
+    s = await topo();
+    t.ok(s.levels === start.levels - 1 && s.sel === s.levels - 1, `redo deletes it again (${show(s)})`);
+    await page.keyboard.press('Control+z');
+    s = await topo();
+    off = await sameDetail();
+    t.ok(s.levels === start.levels && s.sel === start.sel && off < 1e-4, `and undo restores it again, detail and all (off by ${off.toExponential(1)})`);
+
+    // From lower down: the selection stays where it is.
+    await page.evaluate(() => window.__sculpt.session.selectLevel(0));
+    const low = await topo();
+    await del();
+    s = await topo();
+    t.ok(s.levels === start.levels - 1 && s.sel === 0 && s.tris === low.tris, `from level 1 the top goes and the selection stays on level 1 (${show(s)})`);
+    t.ok(s.max === s.levels && s.readout === `1/${s.levels}`, 'the slider says so');
+    await page.evaluate(() => window.__sculpt.session.undo());
+    s = await topo();
+    t.ok(s.levels === start.levels && s.sel === 0 && s.history === low.history, `one undo brings it back, the selection still on level 1 (${show(s)})`);
+    await page.evaluate(() => window.__sculpt.session.redo());
+    s = await topo();
+    t.ok(s.levels === start.levels - 1 && s.sel === 0, `redo deletes it again from there (${show(s)})`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    // Stepping up is an edit of its own, so it comes after the redo.
+    await page.evaluate(() => window.__sculpt.session.selectLevel(window.__sculpt.session.getLevels().levels - 1));
+    off = await sameDetail();
+    t.ok(off < 1e-4, `undone again and stepped up to, the top level has its detail (off by ${off.toExponential(1)})`);
+    await page.evaluate(() => window.__sculpt.session.selectLevel(0));
+
+    // Down to one level: nothing left to delete.
+    for (let i = 0; i < 10 && (await topo()).levels > 1; i++) await del();
+    s = await topo();
+    const refused = await page.evaluate(() => window.__sculpt.session.deleteHighestLevel());
+    t.ok(s.levels === 1 && s.button?.disabled && !refused, `with one level the button is disabled and the delete refuses (${show(s)})`);
+  },
+
+  // Ambient occlusion outside sculpt mode (a regression the last change
+  // found): the Render panel used to apply its own starting model on every
+  // build, and it started on the cavity, which only sculpt mode's composite
+  // draws - so the viewer, the editors and Armature mode had no AO at all.
+  // Now GTAO is on by default at its calibrated values, a saved GTAO or Off
+  // comes back as saved, the panel offers GTAO and Off there (Cavity only
+  // in sculpt mode), and the uploader's preview and its single-file export
+  // keep it. An armature saved on the old forced cavity comes back on GTAO.
+  async aoViewer(page, base, t) {
+    const aoState = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        const out = v.pipeline.outputNode;
+        const sel = [...document.querySelectorAll('.panel label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
+        return {
+          ao: v.getAOState(),
+          out: out === v.composites.viewer.ao ? 'gtao' : out === v.composites.viewer.plain ? 'plain' : 'other',
+          options: sel ? [...sel.options].map((o) => o.value).join(',') : null,
+          model: sel?.value ?? null,
+        };
+      });
+    const pick = (value) =>
+      page.evaluate((m) => {
+        const sel = [...document.querySelectorAll('.panel label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion').querySelector('select');
+        sel.value = m;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }, value);
+    const viewer = async (ao) => {
+      await page.unroute('**/timelapses/demo/manifest.json');
+      if (ao) {
+        await page.route('**/timelapses/demo/manifest.json', async (route) => {
+          const res = await route.fetch();
+          const manifest = await res.json();
+          await route.fulfill({ response: res, json: { ...manifest, ao } });
+        });
+      }
+      await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
+      await page.waitForTimeout(250);
+    };
+
+    await viewer(null);
+    let s = await aoState();
+    t.ok(s.ao.enabled && s.out === 'gtao', `the viewer at ?tl=demo renders with GTAO (${s.out})`);
+    t.ok(s.ao.intensity === AO_DEFAULT.intensity && s.ao.radius === AO_DEFAULT.radius, `at its calibrated defaults (strength ${s.ao.intensity}, radius ${s.ao.radius})`);
+    t.ok(s.options === 'off,gtao' && s.model === 'gtao', `its Render panel offers GTAO and Off, not the cavity, and says GTAO (${s.options})`);
+    await viewer({ enabled: false, intensity: 1, radius: 0.3 });
+    s = await aoState();
+    t.ok(!s.ao.enabled && s.out === 'plain' && s.model === 'off', `a project saved with AO off opens with it off (${s.out}, ${s.model})`);
+    await viewer({ enabled: true, intensity: 1.5, radius: 0.45 });
+    s = await aoState();
+    t.ok(s.ao.enabled && s.out === 'gtao' && s.ao.intensity === 1.5 && s.ao.radius === 0.45, `one saved on GTAO opens on it, at its own values (${s.ao.intensity}, ${s.ao.radius})`);
+    await page.unroute('**/timelapses/demo/manifest.json');
+
+    // Armature mode: GTAO by default, a pick saved and restored.
+    const armature = async () => {
+      await openArmature(page, base);
+      await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    };
+    await armature();
+    s = await aoState();
+    t.ok(s.ao.enabled && s.out === 'gtao' && s.options === 'off,gtao' && s.model === 'gtao', `Armature mode renders with GTAO by default, its panel offering GTAO and Off (${s.out}, ${s.options})`);
+    await pick('off');
+    await page.evaluate(() => window.__armature.save());
+    await armature();
+    s = await aoState();
+    t.ok(!s.ao.enabled && s.out === 'plain' && s.model === 'off', `Off picked there comes back off (${s.model})`);
+    await pick('gtao');
+    await page.evaluate(() => window.__armature.save());
+    await armature();
+    s = await aoState();
+    t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `and GTAO comes back on (${s.model})`);
+    await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      v.setAO({ enabled: false });
+      v.setSculptAO({ strength: 0.9 });
+      await window.__armature.save();
+    });
+    await armature();
+    s = await aoState();
+    t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.model})`);
+
+    // The uploader's preview, and its single-file export.
+    await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
+    await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await page.waitForFunction(() => !document.querySelector('#export-html').disabled, null, { timeout: 90_000 });
+    const preview = await page.evaluate(() => {
+      const sel = [...document.querySelectorAll('.panel--editor label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
+      return { options: sel ? [...sel.options].map((o) => o.value).join(',') : null, model: sel?.value ?? null };
+    });
+    t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the uploader's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
+    // The embedded viewer's own bundle comes from the full build; the test
+    // build does not make it, and only the manifest matters here.
+    await page.route('**/embed/viewer.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* viewer */' }));
+    await page.route('**/embed/embed.css', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '/* css */' }));
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.click('#export-html')]);
+    const html = readFileSync(await download.path(), 'utf8');
+    const registry = JSON.parse(html.match(/window\.__BOZZETTO__=(.*?);<\/script>/s)?.[1] ?? 'null');
+    const exported = registry?.manifest?.ao;
+    t.ok(exported?.enabled === true && exported.intensity === AO_DEFAULT.intensity && exported.radius === AO_DEFAULT.radius, `and its single-file export carries GTAO on (${JSON.stringify(exported)})`);
   },
 };

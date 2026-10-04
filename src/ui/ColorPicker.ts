@@ -109,13 +109,21 @@ export function colorPicker(
 
   /** Fixed-position the popover against the swatch, on-screen whatever the
    * anchor's corner: beside it to the left when there is room (the panels
-   * hug the right edge), else to the right, clamped vertically. */
+   * hug the right edge), else to the right, clamped vertically. In a panel
+   * docked on the LEFT edge (the Model panel's albedo) it opens beside the
+   * whole panel, over the view, rather than across the rows under the
+   * swatch that it would otherwise cover. */
   const place = (): void => {
     const r = swatch.getBoundingClientRect();
     const w = pop.offsetWidth;
     const h = pop.offsetHeight;
+    const leftPanel = swatch.closest('.panel--left');
     const leftSide = r.left - w - 8;
-    const left = leftSide >= 8 ? leftSide : Math.min(window.innerWidth - w - 8, r.right + 8);
+    const left = leftPanel
+      ? Math.min(window.innerWidth - w - 8, leftPanel.getBoundingClientRect().right + 8)
+      : leftSide >= 8
+        ? leftSide
+        : Math.min(window.innerWidth - w - 8, r.right + 8);
     const top = Math.min(window.innerHeight - h - 8, Math.max(8, r.top - 4));
     pop.style.left = `${Math.round(left)}px`;
     pop.style.top = `${Math.round(top)}px`;

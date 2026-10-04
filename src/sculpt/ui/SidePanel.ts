@@ -7,7 +7,7 @@ import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
  * button, and the scrolling body.
  *
  * Mutual collapse is SIDE-SCOPED. Each edge holds a stack of panels (right:
- * Render, Sculpt; left: File, Scene) and only one per edge is open at a
+ * Render, Tool; left: Scene, Model) and only one per edge is open at a
  * time - but a left and a right panel can be open together, since they
  * never overlap. Panels announce themselves on 'bozzetto:panel-open' with
  * {id, side, top}; a panel collapses when a DIFFERENT id opens on the SAME
@@ -19,7 +19,8 @@ import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
  * float over the open body (the lower panels out-z-index the upper ones so
  * their tabs stay clickable). Such a tab hides until the panel that
  * covered it announces 'bozzetto:panel-close'. Left-edge panels open clear
- * of their tab column (see .panel--left) and never need this.
+ * of their tab column (see .panel--left), so an open Scene never covers
+ * Model's tab nor Model Scene's, and they never need this.
  */
 
 export type PanelSide = 'left' | 'right';
