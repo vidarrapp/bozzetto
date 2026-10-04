@@ -4,9 +4,9 @@
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
-Bozzetto is a sculpting and timelapse tool for the browser. Sculpt in 3D, capture every stage as real geometry, and play it back as a timelapse you can relight, orbit and scrub. Not a pre-rendered video.
+Bozzetto poses, sculpts, renders and time-lapses, in the browser. Pose a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and capture every stage as real geometry to play back as a timelapse you can relight, orbit and scrub. Not a pre-rendered video.
 
-Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
+It installs to an iPad's home screen and works offline, and there are desktop builds for macOS, Windows and Linux. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
 
 **Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se)**
 
@@ -17,8 +17,8 @@ Built as a study and teaching tool, and as a way to render out content. Shared u
 | `/?sculpt=1&project=<id>` | A scene from Projects, open in Sculpt |
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
-| `/create/` | Public editor, no sign-in |
-| `/admin/` | Full editor, publishes to the gallery |
+| `/create/` | Timelapse uploader (**Create → Upload time-lapse**), no sign-in |
+| `/admin/` | Projects and the full editor, publishes to the gallery |
 
 Runs entirely on Cloudflare Pages, Functions, D1 and R2. No server to run yourself.
 
@@ -36,7 +36,7 @@ Sculpts autosave to browser storage whether installed or not. Nothing uploads un
 
 ## Sculpt
 
-Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in, and everything stays on your device.
+Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in needed, and nothing leaves your device unless you sign in and save to the library or publish.
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush. Without a keyboard, tap the toolbar's **Negative** button to carve the next stroke, or long-press it to carve every stroke until you tap it again.
 - **Brush character** is tunable per tool, and every brush keeps its own size, so each comes back at the size you left it. Clay lays ribbon-like strips. Move starts on the model, like every brush, and drags a soft ball of it, with a Falloff slider from soft to sharp. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
@@ -54,33 +54,6 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Scene library**: signed in, **Save to library** stores the scene in Projects on the server, private until you make it public, with its progress shown while it uploads; saving again updates the same project in place, and a copy stays on the device so the scene still opens offline. Signed out it downloads a `.bozz` file (the share sheet, on an iPad), because browser storage does not survive a reinstall, and **Keep on this device** still puts a scene on the device's own shelf. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. A card for a scene kept only on the device says so, and signed in it offers **Upload to Projects**. Separate from the autosave, which still resumes your work in progress.
 - **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use. Carving is a tap on **Negative** rather than a finger held on it while you draw, because a fingertip on the glass hides the Pencil from the page until it lifts.
 - **Reload-safe**: your work autosaves to IndexedDB, a few seconds after the first change and then at most once a minute while you keep working, and straight away when you leave sculpt mode or the page or the app goes to the background. The autosave also remembers which project in Projects the scene came from, so after a reload **Save to library** still updates it; a `.bozz` file never carries that link. Unfinished work shows in the gallery as an "In progress" card, beside any scenes you saved to the library, labelled as what it is: on this device only, lost with a reinstall or a cleared browser.
-
-## Desktop app
-
-A packaged build for macOS, Windows and Linux, for when you want Bozzetto as a
-real application: native **Open** and **Save** over `.bozz` files (double-click
-one to open it), a window title that names the open document and marks unsaved
-changes, a save prompt before closing, recent files, and crash recovery.
-
-It is local by default and makes no network requests at all. Point it at your
-own Cloudflare deployment under **Server → Server Settings** if you want to
-publish from it; signing in opens Cloudflare Access in a real window. Signed
-in there, **File → Save to Library** saves to Projects on that server, as it
-does on the web; without a server it keeps the scene on this machine.
-
-```bash
-npm run desktop        # build and run
-npm run dist:desktop   # package for the host platform, into release/
-```
-
-Each installer format has to be built on (or for) its own platform:
-
-| Target | Where it builds | Notes |
-| --- | --- | --- |
-| Linux AppImage | anywhere | `npx electron-builder --linux AppImage` |
-| Windows portable | anywhere | `npx electron-builder --win --dir` gives `release/win-unpacked` with `Bozzetto.exe` — zip and ship |
-| Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
-| macOS dmg | macOS only | Apple's tooling cannot be cross-run |
 
 ## Armature mode
 
@@ -166,6 +139,51 @@ sign-in, and everything stays on your device.
 | `Ctrl`+`Enter` | Send to Sculpt |
 | `F` / `A` | Frame the figure |
 
+## Make your own timelapse
+
+The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
+
+1. In the gallery, pick **Create → Upload time-lapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
+2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
+3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
+4. Set up the look in the right-hand panel, then orbit to your angle.
+5. Optionally add **stages** to name key frames. They become scrubber markers.
+6. Press **Export .html** for one self-contained file that opens offline.
+7. Export MP4 or GIF from **Record reel**.
+
+A single mesh works too: drop one file and get a shareable 3D model on one page.
+
+## Desktop app
+
+A packaged build for macOS, Windows and Linux, for when you want Bozzetto as a
+real application: native **Open** and **Save** over `.bozz` files (double-click
+one to open it), a window title that names the open document and marks unsaved
+changes, a save prompt before closing, recent files, and crash recovery.
+
+Download it from the [latest release](https://github.com/vidarrapp/bozzetto/releases/latest),
+or from the gallery's **Install** card, which leads with the build for your
+platform. Every environment, base mesh and mannequin ships inside it.
+
+It is local by default and makes no network requests at all. Point it at your
+own Cloudflare deployment under **Server → Server Settings** if you want to
+publish from it; signing in opens Cloudflare Access in a real window. Signed
+in there, **File → Save to Library** saves to Projects on that server, as it
+does on the web; without a server it keeps the scene on this machine.
+
+```bash
+npm run desktop        # build and run
+npm run dist:desktop   # package for the host platform, into release/
+```
+
+Each installer format has to be built on (or for) its own platform:
+
+| Target | Where it builds | Notes |
+| --- | --- | --- |
+| Linux AppImage | anywhere | `npx electron-builder --linux AppImage` |
+| Windows portable | anywhere | `npx electron-builder --win --dir` gives `release/win-unpacked` with `Bozzetto.exe` — zip and ship |
+| Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
+| macOS dmg | macOS only | Apple's tooling cannot be cross-run |
+
 ### Releasing
 
 `.github/workflows/release.yml` builds all three platforms and attaches the
@@ -197,20 +215,6 @@ you add a Developer ID certificate and notarization (macOS) or a code-signing
 certificate (Windows). For signing in CI, set `CSC_LINK` and
 `CSC_KEY_PASSWORD` as repository secrets and drop the
 `CSC_IDENTITY_AUTO_DISCOVERY: false` line from the workflow.
-
-## Make your own timelapse
-
-The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
-
-1. Open [`/create`](https://bozzetto.vidarrapp.se/create/).
-2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
-3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
-4. Set up the look in the right-hand panel, then orbit to your angle.
-5. Optionally add **stages** to name key frames. They become scrubber markers.
-6. Press **Export .html** for one self-contained file that opens offline.
-7. Export MP4 or GIF from **Record reel**.
-
-A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 ## Features
 
@@ -323,7 +327,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
-- **The gallery** reads "Pose, sculpt, render and time-lapse", and **Upload time-lapse** moved from the top row into the Create tile's menu.
+Live on the web; in the next desktop release.
+
+- **The gallery and the browser tab** read "Pose, sculpt, render and time-lapse", and **Upload time-lapse** moved from the top row into the Create tile's menu.
 - **Scenes saved to the library go to Projects.** Signed in, **File → Save to library** uploads the scene to the server as a private project, in parts with its progress shown, and keeps a copy on the device; saving again updates the same project in place, and the autosave remembers which project that is across reloads (a `.bozz` file never carries it). Your gallery and the Projects page list these scenes with a thumbnail, object and triangle counts and size, to open in Sculpt, rename, delete or make public. `/?sculpt=1&project=<id>` opens one; offline, the copy on the device opens instead.
 - **Signed out, Save to library downloads a file.** Browser storage goes with a reinstall (owner report: a sculpt saved on an iPad was gone with the app), so a guest's **Save to library** saves a `.bozz` file, the share sheet on an iPad, and the menu says so. **Keep on this device** still puts a scene on the device's shelf, so nothing a guest could do before is gone.
 - **Work kept only on the device says so.** The "In progress" cards and every scene kept on the device carry a note: on this device only, a reinstall or clearing the browser loses it. Signed in, such a card offers **Upload to Projects**, which makes it a project and marks the card as uploaded.
@@ -334,7 +340,6 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 ### v1.3.3
 
 **Carve by tap, arrows through the outliner, size per brush, and a stall log.** Desktop app 0.5.3.
-
 
 - **Timelapse capture starts off, for everyone.** It used to start on for the signed-in owner; now nobody records until they tick **Record timelapse** in the Capture panel, and the choice, on or off, is remembered on the device as before. A frame per stroke is a merge of the scene and an IndexedDB write after every stroke, and those writes are one suspect in the freezes seen on an iPad.
 - **The autosave writes at most once a minute.** It wrote a second and a half after every burst of strokes, and each write serialises the whole scene and hands it to IndexedDB, which Safari can hold the page up on. Now the first change after a quiet spell is saved five seconds later and anything after that once a minute at most, however steadily you sculpt (every five minutes for very large meshes, as before). Leaving sculpt mode or the page, or the app going to the background, still saves at once; a crash can cost up to a minute of work.
@@ -473,7 +478,14 @@ npm run typecheck           # app types
 npm run typecheck:functions # Pages Functions types
 npm run check:functions     # the Functions against a local wrangler pages dev (D1, R2)
 npm run db:migrate          # apply D1 migrations to the remote database
+npm run e2e:build           # test build, then the browser smoke tests (needs Playwright)
+npm run e2e -- <suite ...>  # the smoke tests against the current test build
+npm run desktop             # build and run the desktop app
+npm run dist:desktop        # package the desktop app for this platform, into release/
 ```
+
+The Blender scripts behind the base meshes and the mannequins, and the
+`rig:*` scripts beside them, are described in `tools/README.md`.
 
 ## Tutorial
 
@@ -500,10 +512,12 @@ npm run export <id>          # writes a self-contained <id>.html
 ## Project layout
 
 ```
-index.html                 app shell (viewer)
+index.html                 app shell: gallery, viewer, sculpt and armature
 admin/index.html           app shell (editor)
+create/index.html          app shell (timelapse uploader)
 src/
-  main.ts                  viewer entry: reads ?tl=<id>, boots the viewer
+  main.ts                  entry: ?tl=<id> boots the viewer, ?sculpt=1 and
+                           ?armature=1 their modes, anything else the gallery
   types/manifest.ts        the manifest data contract (+ validation)
   loaders/gltf.ts          shared GLTFLoader setup
   viewer/
@@ -517,6 +531,11 @@ src/
     FrameStreamer.ts       fetch / prefetch / cache / dispose of frames
     Timeline.ts            playback clock, fps, stage jumps, scrub
     quality.ts             device quality tiers
+  armature/
+    mode.ts                armature entry: figure, handles, gizmo, files, Send to Sculpt
+    Armature.ts            the posable figure: bones, limits, IK, pins, planting
+    rig.ts, glbRig.ts      the built-in rigs, and the reader for a rigged .glb
+    figures.ts             the mannequins
   sculpt/
     mode.ts                sculpt entry: mounts the session, panels, autosave
     bridge/                the Bozzetto side: input, tools, alphas, persistence
@@ -524,6 +543,8 @@ src/
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
                            Preferences and its settings, touch guards
+  create/                  the timelapse uploader's entry
+  desktop/, net/           the desktop shell's renderer side, and where API calls go
   embed/main.ts            entry for the self-contained single-file export
   export/singleFile.js     pure bundler core shared by the editor and CLI
   admin/
@@ -532,6 +553,8 @@ src/
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
+electron/                  the desktop app: main process, bozzetto:// protocol, server bridge
+public/assets/             matcaps, environments, fonts, brush stencils, base meshes, mannequins
 functions/
   api/                     public read API (project list + manifest), public projects only
   admin/api/               Access-gated API: the owner's list and manifests, writes
@@ -546,7 +569,9 @@ scripts/
   export-single-file.mjs   CLI: timelapse to a self-contained .html
 tools/
   export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
+  build-mannequins.py      Blender: the bundle's figures rigged into public/assets/armature
   blender_armature.py      Blender: the armature rig, to model against
+  rig.json, *.mjs          the rig for the Blender scripts, and test figures
 tests/e2e/                 browser smoke tests: npm run e2e:build (needs Playwright)
 tests/functions/           the Functions against wrangler pages dev: npm run check:functions
 ```
@@ -561,6 +586,20 @@ Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub i
 - Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. Set `ADMIN_EMAILS` to limit which identities may write. Also set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` so the admin routes verify the Access JWT directly.
 - Production is served at `bozzetto.vidarrapp.se` as a custom domain on the Pages project.
 
+Without Wrangler at hand, a migration can go in through the D1 dashboard's
+**Console**: run the file's statements one at a time, then record it so a later
+`npm run db:migrate` skips it. A database first set up without `db:migrate`
+has no bookkeeping table yet, so create it as Wrangler would:
+
+```sql
+CREATE TABLE IF NOT EXISTS d1_migrations(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+INSERT INTO d1_migrations (name) VALUES ('0001_init.sql'), ('0002_visibility.sql');
+```
+
 `wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template.
 
 ## Credits
@@ -568,6 +607,7 @@ Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub i
 - Sculpt mode is built on [SculptGL](https://github.com/stephomi/sculptgl)'s editing core, MIT, by Stephane GINIER. The vendored source and its license live in `src/sculpt/vendor/`.
 - Toolbar icons: [Uicons by Flaticon](https://www.flaticon.com/uicons).
 - The base-mesh library is Blender Studio's [Human Base Meshes bundle](https://www.blender.org/download/demo-files/#asset-bundles) v1.4.1, CC0, by Dan Ulrich, Julien Kaspar, Paul Kotelevets and Tonatiuh de San Julián. Exported by `tools/export-basemeshes.py`; see `public/assets/basemeshes/LICENSE.txt`.
+- The mannequins are the same bundle's primitive figures, by Paul Kotelevets and Julien Kaspar, rigged onto Bozzetto's bones by `tools/build-mannequins.py`; see `public/assets/armature/LICENSE.txt`.
 
 ## License
 

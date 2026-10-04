@@ -1,7 +1,7 @@
 {
   "name": "Bozzetto",
   "short_name": "Bozzetto",
-  "description": "Sculpt timelapses & 3D studies: sculpt, relight, and replay real geometry in the browser.",
+  "description": "Pose, sculpt, render and time-lapse, in the browser.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
