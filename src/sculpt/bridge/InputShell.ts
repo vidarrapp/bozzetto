@@ -8,6 +8,7 @@ import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
 import { keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
+import { KEY_DRAG_DEG_PER_PX } from '../../viewer/Lighting';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
@@ -1106,7 +1107,10 @@ export class InputShell {
     // on its vertical axis alone, so the light could never come from above
     // or below.
     if (this.lKeyHeld) {
-      this.hooks.moveKeyLight((e.clientX - prevAbsX) * 0.5, -(e.clientY - prevAbsY) * 0.5);
+      this.hooks.moveKeyLight(
+        (e.clientX - prevAbsX) * KEY_DRAG_DEG_PER_PX,
+        -(e.clientY - prevAbsY) * KEY_DRAG_DEG_PER_PX,
+      );
       return;
     }
 

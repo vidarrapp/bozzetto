@@ -8,9 +8,10 @@
 // Render, Tool and Armature panels and on the brush rail, the Render
 // panel's ranges and defaults, and ambient occlusion's. Then the Capture
 // window and where recording is allowed, the panels' sides on the iPad's
-// screens, Mask and Extract in the Model panel, Delete highest level, and
-// ambient occlusion outside sculpt mode. Each gets (page, base, t) - a
-// fresh page, the server's origin, and the check collector.
+// screens, Mask and Extract in the Model panel, Delete highest level,
+// ambient occlusion outside sculpt mode, the environment's rescale and its
+// plate, and the key light on L in Armature mode. Each gets (page, base,
+// t) - a fresh page, the server's origin, and the check collector.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { openArmature, openSculpt } from './lib.mjs';
@@ -762,7 +763,9 @@ const doubleTap = async (dev, at) => {
 /** The defaults the ranges suite and the AO suite expect (Viewer's DEFAULT_AO / DEFAULT_CAVITY, Environment's). */
 const AO_DEFAULT = { intensity: 1, radius: 0.3 };
 const CAVITY_DEFAULT = { strength: 0.9, radius: 8, strengthMax: 2, radiusMin: 2, radiusMax: 12 };
-const HDRI_DEFAULT = 0.25;
+/** The environment's intensity is in slider units: 1 is ENV_SCALE to the renderer (Environment). */
+const HDRI_DEFAULT = 1;
+const ENV_SCALE = 0.2;
 
 /** The key light as the rig holds it. */
 const keyLight = (page) => page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
@@ -4080,7 +4083,10 @@ export const suites = {
     const lit = await page.evaluate(() => ({ key: window.__bozzetto.lighting.state().find((l) => l.id === 'key').intensity, env: window.__bozzetto.scene.environmentIntensity }));
     const keyRow = await sliderRow(page, 'Render', 'Intensity', 0);
     const envRow = await sliderRow(page, 'Render', 'Intensity', 1);
-    t.ok(lit.key === 7 && lit.env === 2.6, `a saved look past the new travel renders as saved (key ${lit.key}, HDRI ${lit.env})`);
+    t.ok(
+      lit.key === 7 && Math.abs(lit.env - 2.6 * ENV_SCALE) < 1e-12,
+      `a saved look past the new travel renders as saved (key ${lit.key}, HDRI ${lit.env}, 2.6 on the slider's scale)`,
+    );
     t.ok(
       keyRow.thumb === 5 && keyRow.readout === '7.0' && envRow.thumb === 2 && envRow.readout === '2.60',
       `and the panel pins both thumbs and says the values (${keyRow.readout}, ${envRow.readout})`,
@@ -4949,5 +4955,277 @@ export const suites = {
     const registry = JSON.parse(html.match(/window\.__BOZZETTO__=(.*?);<\/script>/s)?.[1] ?? 'null');
     const exported = registry?.manifest?.ao;
     t.ok(exported?.enabled === true && exported.intensity === AO_DEFAULT.intensity && exported.radius === AO_DEFAULT.radius, `and its single-file export carries GTAO on (${JSON.stringify(exported)})`);
+  },
+
+  // The environment's intensity on a usable scale (owner call: at the
+  // renderer's 1 the default map overpowers the key light, and the owner
+  // works at about 0.1). 1 on the slider is 0.2 to the renderer, the
+  // slider's 0..2 its 0..0.4, and an environment starts at 1. The plate
+  // shown as the background has a brightness of its own beside Bg blur,
+  // so the light no longer dims or brightens it. A record from before the
+  // rescale has no version mark and is read on the old scale - through a
+  // look, the way every saved look, autosave, .bozz file and armature
+  // comes back, and through a project's manifest, the way a published
+  // project and a single-file export do - and renders the light and the
+  // plate it rendered before; a new record round-trips.
+  async envScale(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    const env = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        return { state: v.environment.getState(), light: v.scene.environmentIntensity, plate: v.scene.backgroundIntensity };
+      });
+    const showEnv = (e) => `slider ${e.state.intensity}, plate ${e.state.bgBrightness}; renderer ${e.light}, plate ${e.plate}`;
+    let e = await env();
+    t.ok(
+      e.state.v === 2 && e.state.intensity === HDRI_DEFAULT && e.state.bgBrightness === 1 && e.light === HDRI_DEFAULT * ENV_SCALE && e.plate === 1,
+      `a new environment starts at 1 on the slider, ${ENV_SCALE} to the renderer, with the plate at 1, and its record says which scale it is on (${showEnv(e)})`,
+    );
+
+    // The panel: the slider's own travel, and the plate's row beside Bg blur.
+    t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
+    await page.evaluate(() => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
+      sel.value = 'studio-neutral';
+      sel.dispatchEvent(new Event('change'));
+    });
+    await page.waitForFunction(() => !!window.__bozzetto.scene.environment, null, { timeout: 30_000 });
+    const intensity = await sliderRow(page, 'Render', 'Intensity', 1);
+    const plate = await sliderRow(page, 'Render', 'Bg brightness');
+    const order = await page.evaluate(() => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const row = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Bg brightness');
+      return row?.previousElementSibling?.firstElementChild?.textContent ?? null;
+    });
+    t.ok(intensity.min === 0 && intensity.max === 2 && intensity.thumb === HDRI_DEFAULT, `the HDRI's Intensity still runs 0..2, at ${intensity.thumb}`);
+    t.ok(plate?.shown && plate.min === 0 && plate.max === 2 && plate.thumb === 1 && order === 'Bg blur', `a Bg brightness row follows Bg blur, 0..2 from 1 (after ${order})`);
+    const slide = (caption, nth, value) =>
+      page.evaluate(
+        ([c, k, v]) => {
+          const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+          const input = [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === c)[k].querySelector('input');
+          input.value = String(v);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+        [caption, nth, value],
+      );
+    await slide('Bg brightness', 0, 1.5);
+    e = await env();
+    t.ok(e.plate === 1.5 && e.light === HDRI_DEFAULT * ENV_SCALE, `the plate brightens on its own slider, the light as it was (${showEnv(e)})`);
+    await slide('Intensity', 1, 0.5);
+    e = await env();
+    t.ok(e.light === 0.5 * ENV_SCALE && e.plate === 1.5, `and the light dims on Intensity, the plate as it was (${showEnv(e)})`);
+
+    // A new record round-trips, as a look and through a scene file.
+    const fresh = await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      window.__newLook = v.getLook();
+      window.__envFile = await window.__sculpt.file.pack();
+      v.environment.setIntensity(1.8);
+      v.environment.setBackgroundBrightness(0.3);
+      await v.applyLook(window.__newLook);
+      return window.__newLook.environment;
+    });
+    e = await env();
+    t.ok(fresh.v === 2 && fresh.intensity === 0.5 && fresh.bgBrightness === 1.5, `the record written carries the scale's mark and both values (${JSON.stringify(fresh)})`);
+    t.ok(e.state.intensity === 0.5 && e.state.bgBrightness === 1.5 && e.light === 0.5 * ENV_SCALE && e.plate === 1.5, `and comes back as it was written (${showEnv(e)})`);
+    await page.evaluate(async () => {
+      window.__bozzetto.environment.setIntensity(1.8);
+      window.__bozzetto.environment.setBackgroundBrightness(0.3);
+      await window.__sculpt.file.open(window.__envFile);
+    });
+    e = await env();
+    t.ok(e.state.intensity === 0.5 && e.state.bgBrightness === 1.5 && e.light === 0.5 * ENV_SCALE && e.plate === 1.5, `so does a scene file saved with it (${showEnv(e)})`);
+
+    // Old records, through a look: the default c7cf570 saved (0.25 on the
+    // old scale), and another strength. Before, the renderer and the plate
+    // both took the stored number as it was.
+    const asOld = (intensity) =>
+      page.evaluate(async (i) => {
+        const v = window.__bozzetto;
+        const old = { ...window.__newLook.environment, intensity: i };
+        delete old.v;
+        delete old.bgBrightness;
+        await v.applyLook({ environment: old });
+        window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+      }, intensity);
+    // What each reads on the slider now: the old number over the scale,
+    // tidied (0.6 / 0.2 is 2.9999999999999996 in floating point).
+    for (const [old, slider] of [[0.25, 1.25], [0.6, 3], [1.7, 8.5]]) {
+      await asOld(old);
+      e = await env();
+      t.ok(
+        e.light === old && e.plate === old && e.state.v === 2 && e.state.intensity === slider && e.state.bgBrightness === old,
+        `a look saved at ${old} before the rescale renders its light and its plate at ${old}, as before, and reads ${slider} on the slider now (${showEnv(e)})`,
+      );
+    }
+    const shown = {
+      intensity: await sliderRow(page, 'Render', 'Intensity', 1),
+      plate: await sliderRow(page, 'Render', 'Bg brightness'),
+    };
+    t.ok(Math.abs(shown.intensity.thumb - 2) < 1e-9 && shown.intensity.readout === '8.50' && shown.plate.thumb === 1.7, `the panel shows the converted values (Intensity pinned at 2 reading ${shown.intensity.readout}, plate ${shown.plate.thumb})`);
+
+    // Old and new records through a project's manifest: the same light and
+    // the same plate for the same scene.
+    const manifest = async (environment) => {
+      await page.unroute('**/timelapses/demo/manifest.json');
+      await page.route('**/timelapses/demo/manifest.json', async (route) => {
+        const res = await route.fetch();
+        await route.fulfill({ response: res, json: { ...(await res.json()), environment } });
+      });
+      await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => !!window.__bozzetto?.scene.environment && !document.getElementById('overlay'), null, { timeout: 90_000 });
+      return page.evaluate(() => {
+        const v = window.__bozzetto;
+        return {
+          state: v.environment.getState(),
+          light: v.scene.environmentIntensity,
+          plate: v.scene.backgroundIntensity,
+          shown: !!v.scene.background?.isTexture,
+        };
+      });
+    };
+    const record = { id: 'studio-neutral', background: 'hdri', bgColor: '#1c1814', rotation: 30, blur: 0.2 };
+    const before = await manifest({ ...record, intensity: 0.5 });
+    t.ok(
+      before.light === 0.5 && before.plate === 0.5 && before.shown && before.state.intensity === 2.5 && before.state.bgBrightness === 0.5,
+      `a project published before the rescale opens at its old light and plate, 0.5 and 0.5 (${showEnv(before)})`,
+    );
+    const after = await manifest({ ...record, v: 2, intensity: 2.5, bgBrightness: 0.5 });
+    t.ok(after.light === before.light && after.plate === before.plate && after.shown, `and one written on the new scale with the same values renders the same (${showEnv(after)})`);
+    await page.unroute('**/timelapses/demo/manifest.json');
+  },
+
+  // Hold L in Armature mode (owner request, as in sculpt mode): the drag
+  // moves the key light - across swings it round, up and down raises and
+  // lowers it, half a degree a pixel - and does nothing else, wherever it
+  // starts: off the figure it does not orbit, on a part it picks nothing,
+  // on the selection's gizmo it turns no joint, on a ball it grabs none.
+  // Let go of L and each of those presses does what it always did, the
+  // light staying put. The key is in the hotkey guide and in Preferences,
+  // where it can be rebound.
+  async armatureLight(page, base, t) {
+    await openArmature(page, base);
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    await page.evaluate(() => window.__armature.select('upperarm.L'));
+    const state = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        const a = window.__armature;
+        const key = v.lighting.state().find((l) => l.id === 'key');
+        const cam = v.getCameraState();
+        return {
+          az: key.azimuth,
+          el: key.elevation,
+          camera: [...cam.position, ...cam.target].map((x) => x.toFixed(3)).join(','),
+          pose: JSON.stringify(a.state()),
+          selected: a.selected(),
+        };
+      });
+    // The camera at rest: the framing at boot may still be settling.
+    let camera = '';
+    for (let i = 0; i < 20; i++) {
+      const now = (await state()).camera;
+      if (now === camera) break;
+      camera = now;
+      await page.waitForTimeout(300);
+    }
+    // Where each drag starts, in whole pixels so the light's steps are
+    // exact: the selected upper arm's gizmo, the root's ball, the other
+    // thigh (a part well clear of both) and bare canvas.
+    const at = await page.evaluate(() => {
+      const a = window.__armature;
+      const arm = a.armature;
+      const round = (p) => (p ? [Math.round(p[0]), Math.round(p[1])] : null);
+      const canvas = window.__bozzetto.captureCanvas;
+      const r = canvas.getBoundingClientRect();
+      const thigh = arm.jointWorld('thigh.R').add(arm.jointWorld('shin.R')).multiplyScalar(0.5);
+      const bare = [Math.round(r.left + r.width * 0.2), Math.round(r.top + r.height * 0.5)];
+      return {
+        gizmo: round(a.onScreen(...arm.jointWorld('upperarm.L').toArray())),
+        ball: round(a.ballOnScreen('root')),
+        part: round(a.onScreen(thigh.x, thigh.y, thigh.z)),
+        bare,
+        bareIsCanvas: document.elementFromPoint(...bare) === canvas,
+      };
+    });
+    t.ok(!!at.gizmo && !!at.ball && !!at.part && at.bareIsCanvas, `the drags start on the selection's gizmo ${at.gizmo}, the root's ball ${at.ball}, the right thigh ${at.part} and bare canvas ${at.bare}`);
+    const drag = async (from, [dx, dy], withL) => {
+      await page.mouse.move(...from);
+      if (withL) await page.keyboard.down('l');
+      await page.mouse.down();
+      await page.mouse.move(from[0] + dx, from[1] + dy, { steps: 4 });
+      await page.mouse.up();
+      if (withL) await page.keyboard.up('l');
+    };
+    await page.evaluate(() => document.activeElement?.blur?.());
+    const start = await state();
+    const steps = [
+      [at.bare, [80, -20]],
+      [at.gizmo, [40, 30]],
+      [at.ball, [50, 20]],
+      [at.part, [-30, -10]],
+    ];
+    for (const [from, by] of steps) await drag(from, by, true);
+    const held = await state();
+    const across = steps.reduce((n, [, [dx]]) => n + dx, 0);
+    const up = -steps.reduce((n, [, [, dy]]) => n + dy, 0);
+    t.ok(
+      held.az === start.az + across * 0.5 && held.el === start.el + up * 0.5,
+      `with L held, the drags turn the key light by half a degree a pixel (azimuth ${start.az} to ${held.az}, elevation ${start.el} to ${held.el})`,
+    );
+    t.eq(held.camera, start.camera, 'and none of them orbits');
+    t.ok(held.pose === start.pose, 'the gizmo turns no joint and the ball moves nothing: the pose is as it was');
+    t.eq(held.selected, 'upperarm.L', 'and the part pressed is not picked');
+
+    // L let go: the same presses do what they always did, and the light
+    // stays where the drags left it.
+    await drag(at.gizmo, steps[1][1], false);
+    let s = await state();
+    t.ok(s.pose !== held.pose && s.az === held.az && s.el === held.el, 'without L, the same drag on the gizmo turns the joint');
+    await page.mouse.click(...at.part);
+    s = await state();
+    t.ok(s.selected === 'thigh.R' && s.az === held.az, `a click on the thigh picks it (${s.selected})`);
+    await page.evaluate(() => window.__armature.select(null));
+    const turned = s.pose;
+    await drag(at.ball, steps[2][1], false);
+    s = await state();
+    t.ok(s.pose !== turned && s.az === held.az && s.el === held.el, "the root's ball moves the figure");
+    await drag(at.bare, steps[0][1], false);
+    await page.waitForTimeout(300);
+    s = await state();
+    t.ok(s.camera !== held.camera && s.az === held.az && s.el === held.el, 'and the drag off the figure orbits');
+
+    // The key, where keys are listed.
+    const listed = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.help-guide .help-row')].find((r) => r.textContent.includes('Move the key light'));
+      return row ? [...row.querySelectorAll('kbd')].map((k) => k.textContent).join('+') : null;
+    });
+    t.eq(listed, 'L', 'the hotkey guide lists L for the key light in Armature mode');
+    await page.keyboard.press('Control+Comma');
+    const pref = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.prefs__row')].find((r) => r.querySelector('.prefs__label')?.textContent.includes('Move the key light'));
+      return row ? [...row.querySelectorAll('.prefs__key kbd')].map((k) => k.textContent).join('+') : null;
+    });
+    await page.keyboard.press('Escape');
+    t.eq(pref, 'L', 'and Preferences has it, on L, to rebind');
+
+    // Sculpt mode's own, through the same code: the same drag over the
+    // sphere turns the light the same, and sculpts nothing.
+    await openForInput(page, base);
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    const from = [Math.round(cx), Math.round(cy)];
+    const keyOf = () => page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
+    const before = await keyOf();
+    const sum = await meshSum(page);
+    const strokes = await strokeCount(page);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await drag(from, [60, -20], true);
+    const after = await keyOf();
+    t.ok(
+      after.azimuth === before.azimuth + 30 && after.elevation === before.elevation + 10 && (await meshSum(page)) === sum && (await strokeCount(page)) === strokes,
+      `in sculpt mode the same drag turns it the same, sculpting nothing (azimuth ${before.azimuth} to ${after.azimuth}, elevation ${before.elevation} to ${after.elevation})`,
+    );
   },
 };

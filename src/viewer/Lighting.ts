@@ -80,6 +80,12 @@ export interface LightingState {
 
 const DEFAULT_SOFTNESS = 5;
 
+/**
+ * Degrees the key light turns per pixel of a hold-L drag (nudgeKey): half
+ * a degree, so a drag across a tablet's screen is a turn and a half.
+ */
+export const KEY_DRAG_DEG_PER_PX = 0.5;
+
 const LIGHT_LABELS: Record<LightId, string> = {
   key: 'Key',
   fill: 'Fill',
@@ -200,6 +206,22 @@ export class Lighting {
     this.config[id].azimuth = azimuth;
     this.config[id].elevation = elevation;
     this.refresh();
+  }
+
+  /**
+   * Turn the key light by degrees, as a hold-L drag does in sculpt and
+   * Armature mode: sideways swings it around the subject, wrapping round,
+   * and up and down raises and lowers it between a little below the
+   * horizon and straight overhead. Past overhead, azimuth would stop
+   * meaning anything and the light would appear to stick.
+   */
+  nudgeKey(deltaAzimuth: number, deltaElevation: number): void {
+    const key = this.config.key;
+    let az = (key.azimuth + deltaAzimuth) % 360;
+    if (az > 180) az -= 360;
+    if (az < -180) az += 360;
+    const el = Math.max(-20, Math.min(90, key.elevation + deltaElevation));
+    this.setAngles('key', az, el);
   }
 
   setShadow(id: LightId, castShadow: boolean): void {

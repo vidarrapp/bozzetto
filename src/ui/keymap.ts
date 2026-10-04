@@ -144,6 +144,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'arm.send', label: 'Send to Sculpt', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
   { id: 'gesture.armPick', label: 'Select a part (its gizmo appears)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
   { id: 'gesture.armOrbit', label: 'Orbit', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag off the figure' },
+  // Sculpt mode's light.move, for the figure: a key of its own (not a
+  // gesture row) so Preferences can rebind it as it can sculpt's.
+  { id: 'arm.light', label: 'Move the key light (hold + drag: across / up)', group: 'Armature', mode: 'armature', chord: 'l', hold: true },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame-rate meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },

@@ -3,6 +3,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { Viewer } from '../viewer/Viewer';
+import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
@@ -473,7 +474,43 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     return best;
   };
+  // --- hold L: the key light -------------------------------------------------
+  /**
+   * Hold L and move the pointer (owner request, as in sculpt mode): across
+   * swings the key light around the figure, up and down raises and lowers
+   * it, half a degree a pixel (Lighting.nudgeKey). While L is held the
+   * pointer is the light's alone - a press orbits nothing, picks no part,
+   * grabs no ball and starts no gizmo drag - and letting go of L gives it
+   * back. The orbit and both gizmos listen on the canvas too, so the
+   * light's events end there with stopImmediatePropagation: stopPropagation
+   * alone stops nothing on the element it is called on.
+   */
+  let lightHeld = false;
+  /** Where the pointer last moved over the canvas: the light turns by the step from there. */
+  const lastPointer = { x: NaN, y: NaN };
+  let lightSyncTimer = 0;
+  const lightMoved = (): void => {
+    scheduleSave(); // the look rides the armature's record
+    // The Render panel's azimuth and elevation rows read their values when
+    // they are built: one rebuild once the drag settles, as sculpt does.
+    clearTimeout(lightSyncTimer);
+    lightSyncTimer = window.setTimeout(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')), 350);
+  };
+  const claimForLight = (e: PointerEvent): void => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+
   const onPointerDown = (e: PointerEvent): void => {
+    if (lightHeld) {
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+      claimForLight(e);
+      return;
+    }
     if (e.button !== 0 || dragging) return;
     // A press on a gizmo handle belongs to the gizmo (its hover set `axis`).
     for (const tc of controls) {
@@ -528,6 +565,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     select(picked);
   };
   const onPointerMove = (e: PointerEvent): void => {
+    const dx = e.clientX - lastPointer.x;
+    const dy = e.clientY - lastPointer.y;
+    lastPointer.x = e.clientX;
+    lastPointer.y = e.clientY;
+    if (lightHeld) {
+      if (Number.isFinite(dx) && Number.isFinite(dy) && (dx !== 0 || dy !== 0)) {
+        viewer.lighting.nudgeKey(dx * KEY_DRAG_DEG_PER_PX, -dy * KEY_DRAG_DEG_PER_PX);
+        lightMoved();
+      }
+      claimForLight(e);
+      return;
+    }
     if (aiming) {
       // Where the pointer sits around the limb IS the aim. The plane it
       // reads on cuts across the limb at the joint, so the angle is the
@@ -673,7 +722,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     await flushSave();
   };
-  const onLookEdit = (): void => scheduleSave();
+  const onLookEdit = (): void => {
+    // A panel control in hand: no rebuild of the panel under it.
+    clearTimeout(lightSyncTimer);
+    scheduleSave();
+  };
   document.addEventListener('input', onLookEdit);
   document.addEventListener('change', onLookEdit);
   // Leaving some other way - a reload, a closed tab: the record is saved at
@@ -975,6 +1028,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       case 'arm.send':
         void send(panel.resolution);
         break;
+      case 'arm.light':
+        lightHeld = true; // until its keyup (onKeyUp), or the window losing focus
+        break;
       case 'view.frame':
       case 'view.frameAll':
         frame();
@@ -986,6 +1042,17 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     e.stopPropagation();
   };
   window.addEventListener('keydown', onKey, true);
+  // A held key ends on its own key, whatever the modifiers are doing now.
+  const onKeyUp = (e: KeyboardEvent): void => {
+    if (keymap.holdActionForKeyUp(e, 'armature')?.id === 'arm.light') lightHeld = false;
+  };
+  window.addEventListener('keyup', onKeyUp, true);
+  // Losing the window eats the keyup (an app switch with L down): without
+  // this every press after it would still go to the light.
+  const onBlur = (): void => {
+    lightHeld = false;
+  };
+  window.addEventListener('blur', onBlur);
 
   // Console/test handle.
   const handle = {
@@ -1080,7 +1147,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
 
   return () => {
     void flushSave();
+    clearTimeout(lightSyncTimer);
     window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('keyup', onKeyUp, true);
+    window.removeEventListener('blur', onBlur);
     canvas.removeEventListener('pointerdown', onPointerDown, true);
     canvas.removeEventListener('pointermove', onPointerMove, true);
     window.removeEventListener('pointerup', onPointerUp, true);

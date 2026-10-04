@@ -796,17 +796,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleWireframe: () => {
       viewer.toggleWireframe();
     },
-    // Sideways swings the key light around the model, up/down raises it.
-    // Elevation is clamped just shy of the poles, where azimuth stops
-    // meaning anything and the light would appear to stick.
+    // Sideways swings the key light around the model, up/down raises it
+    // (Lighting.nudgeKey, which Armature mode's hold-L drag shares).
     moveKeyLight: (deltaAzimuth, deltaElevation) => {
-      const key = lighting.state().find((l) => l.id === 'key');
-      if (!key) return;
-      let az = (key.azimuth + deltaAzimuth) % 360;
-      if (az > 180) az -= 360;
-      if (az < -180) az += 360;
-      const el = Math.max(-20, Math.min(90, key.elevation + deltaElevation));
-      lighting.setAngles('key', az, el);
+      lighting.nudgeKey(deltaAzimuth, deltaElevation);
       // The Render panel's azimuth/elevation rows read their values once,
       // when built; without this the sliders kept showing wherever the
       // light was before the drag. One rebuild after the drag settles.

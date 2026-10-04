@@ -8,7 +8,13 @@ export type BackgroundMode = 'theme' | 'color' | 'hdri';
 
 /** Persisted environment state (stored in a project's `data.environment`). */
 export interface EnvState {
+  /**
+   * The scale the record is on (ENV_STATE_VERSION). Records written before
+   * the rescale have none, and applyState reads them on the old one.
+   */
+  v?: number;
   id: string | null;
+  /** The environment's light, in slider units: 1 is ENV_INTENSITY_SCALE to the renderer. */
   intensity: number;
   background: BackgroundMode;
   bgColor: string;
@@ -16,6 +22,8 @@ export interface EnvState {
   rotation: number;
   /** Background blur (scene.backgroundBlurriness, 0..1); softens an HDRI plate. */
   blur: number;
+  /** The HDRI plate's brightness (scene.backgroundIntensity), apart from its light. */
+  bgBrightness: number;
 }
 
 interface EnvConfig {
@@ -25,13 +33,30 @@ interface EnvConfig {
 }
 
 /**
- * Where a newly picked HDRI starts. At 1 the Neutral studio map adds about
- * as much light as sculpt mode's key light and fills the shadow side in
- * (the key's modelling drops by a quarter, measured); at 0.25 it fills
- * without flattening, between the owner's usual 0.1 and the old 1. A
- * saved look carries its own value; this is for a look that has none yet.
+ * What 1 on the Intensity slider is to the renderer (owner call). At the
+ * renderer's 1 the Neutral studio map adds about as much light as sculpt
+ * mode's key light and fills the shadow side in (the key's modelling drops
+ * by a quarter, measured), and the owner works at about 0.1, so nearly all
+ * of the slider's travel sat above anything in use. Scaled, the slider's
+ * 0..2 is the renderer's 0..0.4.
  */
-export const DEFAULT_ENV_INTENSITY = 0.25;
+export const ENV_INTENSITY_SCALE = 0.2;
+
+/**
+ * Where an environment starts when a look has none of its own: 0.2 to the
+ * renderer, which fills without flattening the key light's modelling.
+ */
+export const DEFAULT_ENV_INTENSITY = 1;
+
+/** The HDRI plate's starting brightness: the map as the renderer shows it at 1. */
+export const DEFAULT_BG_BRIGHTNESS = 1;
+
+/**
+ * The scale an environment record is written on. A record without it is
+ * from before the rescale: its intensity is in the renderer's own units,
+ * and its plate was as bright as its light (see applyState).
+ */
+export const ENV_STATE_VERSION = 2;
 
 /** Available HDRIs (public/assets/env). Missing files just fail to load. */
 export const ENVIRONMENTS: EnvConfig[] = [
@@ -52,10 +77,12 @@ export function envAssetUrl(id: string): string | null {
  * Image-based lighting + scene background. Loads an equirectangular .hdr,
  * prefilters it with PMREM for `scene.environment` (PBR irradiance +
  * reflections), and owns `scene.background`: the theme colour, a solid colour,
- * or the blurred HDRI. Intensity drives `scene.environmentIntensity`: for a
- * standard material lit by `scene.environment` (no own envMap), the renderer
- * overrides `material.envMapIntensity` with it, so that is the only knob that
- * takes effect.
+ * or the blurred HDRI. Intensity, scaled by ENV_INTENSITY_SCALE, drives
+ * `scene.environmentIntensity`: for a standard material lit by
+ * `scene.environment` (no own envMap), the renderer overrides
+ * `material.envMapIntensity` with it, so that is the only knob that takes
+ * effect. The plate shown as the background has its own brightness, so
+ * the light can be set without the backdrop going dim or blowing out.
  */
 export class Environment {
   private readonly pmrem: PMREMGenerator;
@@ -64,6 +91,7 @@ export class Environment {
   private equirect: Texture | null = null;
   private currentId: string | null = null;
   private intensity = DEFAULT_ENV_INTENSITY;
+  private bgBrightness = DEFAULT_BG_BRIGHTNESS;
   private bgMode: BackgroundMode = 'theme';
   private bgColor = '#1c1814';
   private rigRotation = 0;
@@ -87,8 +115,8 @@ export class Environment {
     // WebGPU backend cannot run, so the two backends would not prefilter
     // alike. The node generator is built for both.
     this.pmrem = new PMREMGenerator(renderer);
-    this.scene.environmentIntensity = this.intensity;
-    this.scene.backgroundIntensity = this.intensity;
+    this.scene.environmentIntensity = this.intensity * ENV_INTENSITY_SCALE;
+    this.scene.backgroundIntensity = this.bgBrightness;
     this.updateBackground();
     this.disposeTheme = onThemeChange(() => {
       if (this.bgMode === 'theme') this.updateBackground();
@@ -101,12 +129,14 @@ export class Environment {
 
   getState(): EnvState {
     return {
+      v: ENV_STATE_VERSION,
       id: this.currentId,
       intensity: this.intensity,
       background: this.bgMode,
       bgColor: this.bgColor,
       rotation: this.offset,
       blur: this.blur,
+      bgBrightness: this.bgBrightness,
     };
   }
 
@@ -145,11 +175,20 @@ export class Environment {
     }
   }
 
+  /** The environment's light, in slider units (see ENV_INTENSITY_SCALE). */
   setIntensity(value: number): void {
     this.intensity = value;
-    this.scene.environmentIntensity = value;
-    // Only affects a texture background (the HDRI plate), so the solid/theme
-    // backgrounds are untouched; this makes the HDRI plate track the slider.
+    this.scene.environmentIntensity = value * ENV_INTENSITY_SCALE;
+  }
+
+  /**
+   * The HDRI plate's brightness. It only scales a texture background, so
+   * the theme and solid-colour backgrounds are untouched. It used to be
+   * the light's own intensity, which dimmed the plate to near black at the
+   * light levels in use.
+   */
+  setBackgroundBrightness(value: number): void {
+    this.bgBrightness = value;
     this.scene.backgroundIntensity = value;
   }
 
@@ -188,8 +227,31 @@ export class Environment {
     this.scene.backgroundRotation.set(0, rad, 0);
   }
 
+  /**
+   * Every saved environment comes back through here - a project's manifest
+   * at boot (published, and the single-file export's), and every look
+   * through Viewer.applyLook (sculpt's, kept between visits beside the
+   * autosave; .bozz files and gallery scenes; armatures and their files) -
+   * so this is where the rescale is undone for records written before it. One without the version mark has its intensity in
+   * the renderer's units and showed its plate as bright as its light: the
+   * intensity is divided by the scale and the plate takes the old value,
+   * so it renders exactly as it did. The renderer gets the stored number
+   * itself, since dividing and multiplying back can move the last bit; the
+   * slider's value is rounded past the ninth decimal, so 0.6 is saved
+   * again as 3 rather than 2.9999999999999996.
+   */
   async applyState(state: Partial<EnvState>): Promise<void> {
-    if (typeof state.intensity === 'number') this.setIntensity(state.intensity);
+    const rescaled = typeof state.v === 'number' && state.v >= ENV_STATE_VERSION;
+    if (typeof state.intensity === 'number') {
+      if (rescaled) {
+        this.setIntensity(state.intensity);
+      } else {
+        this.setIntensity(Math.round((state.intensity / ENV_INTENSITY_SCALE) * 1e9) / 1e9);
+        this.scene.environmentIntensity = state.intensity;
+        this.setBackgroundBrightness(state.intensity);
+      }
+    }
+    if (rescaled && typeof state.bgBrightness === 'number') this.setBackgroundBrightness(state.bgBrightness);
     if (state.background) this.bgMode = state.background;
     if (typeof state.bgColor === 'string') this.bgColor = state.bgColor;
     if (typeof state.rotation === 'number') this.offset = state.rotation;

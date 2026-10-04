@@ -794,8 +794,8 @@ export class Panel {
     sec.appendChild(labelRow('HDRI', select));
 
     // All the HDRI knobs live together, right under the picker, and only
-    // while an HDRI is loaded - intensity, rotation and blur have nothing
-    // to act on under "None".
+    // while an HDRI is loaded - intensity, rotation, blur and the plate's
+    // brightness have nothing to act on under "None".
     const hdriRows = div('env-rows');
     hdriRows.appendChild(
       compactRange('Intensity', 0, HDRI_INTENSITY_MAX, 0.01, state.intensity, (v) => env.setIntensity(v), {
@@ -807,6 +807,13 @@ export class Panel {
     );
     hdriRows.appendChild(
       compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v), { limits: FRACTION }),
+    );
+    // The plate shown as the background, apart from the light it gives:
+    // 1 is the map as it is, whatever the Intensity above.
+    hdriRows.appendChild(
+      compactRange('Bg brightness', 0, BG_BRIGHTNESS_MAX, 0.01, state.bgBrightness, (v) => env.setBackgroundBrightness(v), {
+        limits: AMOUNT,
+      }),
     );
     sec.appendChild(hdriRows);
 
@@ -1024,9 +1031,12 @@ const DEGREES: Limits = { min: 0, wrap: 360 }; // a turn, wrapped
  * Slider travel for the light and HDRI intensities (owner call: most of the
  * old 0..8 and 0..3 went unused at the top). A value past either is still
  * reached by typing it, and a look saved with one still renders as it was.
+ * The HDRI's 0..2 is on its own scale (Environment's ENV_INTENSITY_SCALE),
+ * the renderer's 0..0.4; the plate's brightness runs 0..2 around its 1.
  */
 const LIGHT_INTENSITY_MAX = 5;
 const HDRI_INTENSITY_MAX = 2;
+const BG_BRIGHTNESS_MAX = 2;
 
 /**
  * Ambient occlusion's travel. GTAO's strength runs to 2, all of it usable
