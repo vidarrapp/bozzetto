@@ -229,10 +229,10 @@ A single mesh works too: drop one file and get a shareable 3D model on one page.
 
 ### Gallery
 
-- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature, and your own sculpt and armature in progress.
+- Published projects as thumbnail cards, badged *timelapse* or *model*, led by a **Create** tile, which starts a new sculpt or a new armature or opens the time-lapse uploader, and your own sculpt and armature in progress.
 - Signed in, the gallery is your whole list: private projects carry a **Private** badge and every card a switch to change it, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see public projects only.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
-- **Install**, **Upload timelapse**, and **Log in**, which becomes **Projects** once signed in.
+- **Install** and **Log in**, which becomes **Projects** once signed in.
 - The **Install** card also offers the desktop app, reading the latest GitHub release so the links never point at a stale version, and leading with the build for the visitor's platform.
 
 ### Public editor (`/create/`)
@@ -323,6 +323,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **The gallery** reads "Pose, sculpt, render and time-lapse", and **Upload time-lapse** moved from the top row into the Create tile's menu.
 - **Scenes saved to the library go to Projects.** Signed in, **File → Save to library** uploads the scene to the server as a private project, in parts with its progress shown, and keeps a copy on the device; saving again updates the same project in place, and the autosave remembers which project that is across reloads (a `.bozz` file never carries it). Your gallery and the Projects page list these scenes with a thumbnail, object and triangle counts and size, to open in Sculpt, rename, delete or make public. `/?sculpt=1&project=<id>` opens one; offline, the copy on the device opens instead.
 - **Signed out, Save to library downloads a file.** Browser storage goes with a reinstall (owner report: a sculpt saved on an iPad was gone with the app), so a guest's **Save to library** saves a `.bozz` file, the share sheet on an iPad, and the menu says so. **Keep on this device** still puts a scene on the device's shelf, so nothing a guest could do before is gone.
 - **Work kept only on the device says so.** The "In progress" cards and every scene kept on the device carry a note: on this device only, a reinstall or clearing the browser loses it. Signed in, such a card offers **Upload to Projects**, which makes it a project and marks the card as uploaded.

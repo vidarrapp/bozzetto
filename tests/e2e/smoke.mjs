@@ -1350,6 +1350,29 @@ export const suites = {
     t.ok(greyed.disabled && greyed.back, 'with nothing active the button is disabled, and enabled again after');
   },
 
+  async gallery(page, base, t) {
+    // The uploader lives in the Create menu now, not the top row (owner call).
+    await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+    t.eq(await page.textContent('.landing__tagline'), 'Pose, sculpt, render and time-lapse', 'the tagline');
+    const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
+    t.ok(!chips.some((c) => /upload/i.test(c)), `the top row has no upload chip (${chips.join(', ')})`);
+    await page.click('#landing-grid .card--new');
+    const wide = await page.evaluate(() => {
+      const b = document.querySelector('.create-overlay [data-kind="timelapse"]');
+      const grid = b?.parentElement?.getBoundingClientRect();
+      const r = b?.getBoundingClientRect();
+      return b ? { title: b.querySelector('.create-choice__title')?.textContent, spans: Math.abs(r.width - grid.width) < 2 } : null;
+    });
+    t.ok(wide?.title === 'Upload time-lapse', `the Create menu offers Upload time-lapse (${wide?.title})`);
+    t.ok(wide?.spans, 'on a row of its own, across the menu');
+    await Promise.all([
+      page.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
+      page.click('.create-overlay [data-kind="timelapse"]'),
+    ]);
+    t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
+  },
+
   async armature(page, base, t) {
     // Armature mode is everyone's (owner call), so the way in is the one a
     // visitor takes: a plain visit to the gallery, signed out - the test
@@ -1366,7 +1389,8 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New sculpt, New armature', 'which offers a new sculpt or a new armature');
+    t.eq(choices.join(', '), 'New sculpt, New armature, Upload time-lapse', 'which offers a new sculpt, a new armature or the time-lapse uploader');
+    t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),
       page.click('.create-overlay [data-kind="armature"]'),

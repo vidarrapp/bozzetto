@@ -51,7 +51,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     const install = installChip();
     if (install) chip(install);
   }
-  chip(topChip('Upload timelapse', '/create/'));
   // Same slot either way: the way in for a guest, the way to the editor for
   // the owner - who otherwise had no link to the admin panel at all.
   chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
@@ -103,8 +102,10 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 }
 
 /**
- * The Create tile: a plus that opens the choice between a new sculpt and a
- * new armature (owner call: two kinds of work start here now).
+ * The Create tile: a plus that opens the choice between a new sculpt, a new
+ * armature and the time-lapse uploader (owner calls: two kinds of work start
+ * here, and the uploader moved in from the top row, which keeps to Install
+ * and the sign-in).
  */
 function createCard(): HTMLElement {
   const a = document.createElement('a');
@@ -120,7 +121,11 @@ function createCard(): HTMLElement {
   return a;
 }
 
-/** The two ways to start, in a small dialog over the gallery. */
+/**
+ * The ways to start, in a small dialog over the gallery: the two kinds of
+ * new work side by side, and the uploader for frames made elsewhere on a
+ * row of its own below them.
+ */
 function openCreateChooser(): void {
   const overlay = document.createElement('div');
   overlay.className = 'install-overlay create-overlay';
@@ -137,6 +142,10 @@ function openCreateChooser(): void {
           <span class="create-choice__title">New armature</span>
           <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
         </button>
+        <button type="button" class="create-choice create-choice--wide" data-kind="timelapse">
+          <span class="create-choice__title">Upload time-lapse</span>
+          <span class="create-choice__hint">OBJ or GLB frames from another app, played back as a time-lapse.</span>
+        </button>
       </div>
     </div>`;
   const close = (): void => {
@@ -152,6 +161,9 @@ function openCreateChooser(): void {
   overlay.querySelector('.install-close')?.addEventListener('click', close);
   overlay.querySelector('[data-kind="sculpt"]')?.addEventListener('click', () => void startSculpt());
   overlay.querySelector('[data-kind="armature"]')?.addEventListener('click', () => void startArmature());
+  overlay.querySelector('[data-kind="timelapse"]')?.addEventListener('click', () => {
+    window.location.href = '/create/';
+  });
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
 }
