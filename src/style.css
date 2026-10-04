@@ -2321,6 +2321,43 @@ html.is-page body {
   font-size: 11px;
 }
 
+/* A value typed past a compact slider's travel, at the row's end; the
+   accent says the thumb is pinned rather than showing it. Element and
+   class both, to outrank the caption rules (.light .compact > span). */
+.compact > span.slider-val {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: right;
+  color: var(--accent);
+  font-family: var(--font-spec);
+  font-size: 11px;
+}
+
+/* The number field a double-click or double-tap puts where a slider was
+   (sliderEntry); the rename field's look. */
+.slider-field {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  outline: none;
+}
+
+/* The brush rail's field floats beside its vertical track. */
+.slider-field--float {
+  position: fixed;
+  z-index: 60;
+  width: 72px;
+  flex: none;
+  transform: translateY(-50%);
+}
+
 /* Autosave stopped itself: the one panel line the user must not miss. */
 .sculpt-panel__warn {
   color: var(--accent);

@@ -495,8 +495,9 @@ export class Armature {
     const cur = this.props.get(name);
     const def = this.defs.get(name);
     if (!cur || !def) return;
-    if (typeof p.size === 'number') cur.size = Math.min(4, Math.max(0.2, p.size));
-    if (typeof p.length === 'number') cur.length = Math.min(3, Math.max(0.3, p.length));
+    const { size, length } = PROPORTION_LIMITS;
+    if (typeof p.size === 'number') cur.size = Math.min(size.max, Math.max(size.min, p.size));
+    if (typeof p.length === 'number') cur.length = Math.min(length.max, Math.max(length.min, p.length));
     this.partBones.get(name)!.scale.set(cur.size, cur.length, cur.size);
     for (const child of this.rig.bones) {
       if (child.parent !== name) continue;
@@ -1414,6 +1415,15 @@ export class Armature {
     this.mesh.removeFromParent();
   }
 }
+
+/**
+ * How far a part may be scaled: the panel's sliders run 0.5 to 2, and a
+ * value typed past them is held here (and the same holds for a saved one).
+ */
+export const PROPORTION_LIMITS = {
+  size: { min: 0.2, max: 4 },
+  length: { min: 0.3, max: 3 },
+} as const;
 
 function clamp(v: number, r: [number, number]): number {
   return Math.min(r[1], Math.max(r[0], v));

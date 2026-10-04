@@ -1,8 +1,9 @@
-import type { Viewer, GroundMode, ToneMappingId } from '../viewer/Viewer';
+import { DEFAULT_CAVITY, type Viewer, type GroundMode, type ToneMappingId } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, onTap, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
+import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -44,8 +45,13 @@ export class Panel {
   private syncEnvRows: (() => void) | null = null;
   /** Look-dev sections built for the viewer, revealed only while sculpting. */
   private lookDevSections: HTMLElement[] = [];
+  /**
+   * The AO model on show (off / cavity / gtao). The panel applies it on
+   * every build; it is read back from the viewer whenever a look lands
+   * under it (aoModeOfLook), or a saved GTAO look came back as Cavity.
+   */
   private aoMode = 'cavity';
-  private cavityStrength = 0.9;
+  private cavityStrength: number = DEFAULT_CAVITY.strength;
   /** Master shadows checkbox (viewer + editor + sculpt). */
   private shadowsCheckbox?: HTMLInputElement;
   private readonly onOtherPanelOpen = (e: Event): void => {
@@ -70,6 +76,7 @@ export class Panel {
     // Entering sculpt changes a pile of viewer state (ground, shading,
     // shadows, AO) and restores a saved look on top of it, all after this
     // panel was built - so rebuild rather than trying to re-sync by hand.
+    if (this.sculpting) this.aoMode = this.aoModeOfLook();
     this.buildBody();
     if (!this.editor) {
       this.titleEl.textContent = this.sculpting
@@ -80,8 +87,20 @@ export class Panel {
 
   /** A saved look was applied under us (opening a .bozz file). */
   private readonly onLookRestored = (): void => {
+    this.aoMode = this.aoModeOfLook();
     this.buildBody();
   };
+
+  /**
+   * The AO model a look carries: GTAO when it is enabled, the cavity when
+   * that has a strength, else off. The modes set these explicitly before a
+   * look is read (sculpt mode starts on the cavity), and the panel writes
+   * the same two whenever the model is picked, so they always agree.
+   */
+  private aoModeOfLook(): string {
+    if (this.viewer.aoAvailable() && this.viewer.getAOState().enabled) return 'gtao';
+    return this.viewer.getSculptAO().strength > 0 ? 'cavity' : 'off';
+  }
 
   /**
    * Show the look-dev half only while sculpting. Every control reads its
@@ -307,26 +326,51 @@ export class Panel {
 
     if (hasGtao) {
       const ao = this.viewer.getAOState();
-      // Strength blends the GTAO term toward 1 (0 = none, >1 deepens it).
+      // Strength is an exponent on the GTAO term (Viewer): 0 none, 1 the
+      // term, 2 its square - deeper, never clipped to black.
       gtaoRows.appendChild(
-        compactRange('Strength', 0, 2, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v })),
+        compactRange('Strength', 0, AO_STRENGTH_MAX, 0.05, ao.intensity, (v) => this.viewer.setAO({ intensity: v }), {
+          limits: AMOUNT,
+        }),
       );
+      // A fraction of the subject's radius, so it means the same at any
+      // scale; above zero, or nothing occludes at all.
       gtaoRows.appendChild(
-        compactRange('Radius', 0.05, 1, 0.05, ao.radius, (v) => this.viewer.setAO({ radius: v })),
+        compactRange('Radius', AO_RADIUS_MIN, AO_RADIUS_MAX, 0.01, ao.radius, (v) => this.viewer.setAO({ radius: v }), {
+          limits: { min: 0.01 },
+        }),
       );
       sec.appendChild(gtaoRows);
     }
 
     const cav = this.viewer.getSculptAO();
-    this.cavityStrength = cav.strength > 0 ? cav.strength : 0.9;
+    // While another model is on the cavity's strength is zero; the panel
+    // keeps the last real one to come back to.
+    if (cav.strength > 0) this.cavityStrength = cav.strength;
     cavityRows.appendChild(
-      compactRange('Strength', 0, 2, 0.05, this.cavityStrength, (v) => {
-        this.cavityStrength = v;
-        this.viewer.setSculptAO({ strength: v });
-      }),
+      compactRange(
+        'Strength',
+        0,
+        CAVITY_STRENGTH_MAX,
+        0.05,
+        this.cavityStrength,
+        (v) => {
+          this.cavityStrength = v;
+          this.viewer.setSculptAO({ strength: v });
+        },
+        { limits: AMOUNT },
+      ),
     );
     cavityRows.appendChild(
-      compactRange('Radius', 2, 24, 1, cav.radius, (v) => this.viewer.setSculptAO({ radius: v })),
+      compactRange(
+        'Radius',
+        CAVITY_RADIUS_MIN,
+        CAVITY_RADIUS_MAX,
+        1,
+        cav.radius,
+        (v) => this.viewer.setSculptAO({ radius: v }),
+        { limits: { min: 1 }, unit: ' px' },
+      ),
     );
     sec.appendChild(cavityRows);
 
@@ -460,8 +504,14 @@ export class Panel {
     material.appendChild(wire);
 
     material.appendChild(
-      compactRange('Wire opacity', 0, 1, 0.05, this.viewer.getWireframeOpacity(), (v) =>
-        this.viewer.setWireframeOpacity(v),
+      compactRange(
+        'Wire opacity',
+        0,
+        1,
+        0.05,
+        this.viewer.getWireframeOpacity(),
+        (v) => this.viewer.setWireframeOpacity(v),
+        { limits: FRACTION },
       ),
     );
   }
@@ -489,10 +539,10 @@ export class Panel {
       }
       this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
       this.materialOptions.appendChild(
-        compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v)),
+        compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), { limits: FRACTION }),
       );
       this.materialOptions.appendChild(
-        compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v)),
+        compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), { limits: FRACTION }),
       );
     } else if (this.viewer.getMaterial() === 'matcap') {
       // A thumbnail gallery in a POPOUT, not a dropdown or inline rows
@@ -580,11 +630,17 @@ export class Panel {
         const out = document.createElement('span');
         out.className = 'readout';
         const start = this.viewer.lighting.getRigRotation();
-        out.textContent = `${Math.round(start)}°`;
-        const r = range(0, 360, 1, start, (v) => {
+        const show = (v: number): void => {
+          out.textContent = `${formatSliderNumber(v, 1)}°`;
+        };
+        show(start);
+        const turn = (v: number): void => {
           this.viewer.setRigRotation(v); // rotates the directional rig + HDRI
-          out.textContent = `${Math.round(v)}°`;
-        });
+          show(v);
+        };
+        const r = range(0, 360, 1, start, turn);
+        r.dataset.unit = '°';
+        typedSlider(r, { apply: turn, limits: DEGREES }, start);
         const wrap = div('range-wrap');
         wrap.append(r, out);
         return wrap;
@@ -625,19 +681,29 @@ export class Panel {
         this.lightPickers.get(light.id)?.close();
       } else {
         box.appendChild(
-          compactRange('Intensity', 0, 8, 0.1, light.intensity, (v) =>
-            this.viewer.lighting.setIntensity(light.id, v),
+          compactRange(
+            'Intensity',
+            0,
+            LIGHT_INTENSITY_MAX,
+            0.1,
+            light.intensity,
+            (v) => this.viewer.lighting.setIntensity(light.id, v),
+            { limits: AMOUNT },
           ),
         );
         box.appendChild(
-          compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) =>
-            this.setAngle(light.id, 'az', v),
-          ),
+          compactRange('Azimuth', -180, 180, 1, light.azimuth, (v) => this.setAngle(light.id, 'az', v), {
+            limits: { min: -180, wrap: 360 },
+            unit: '°',
+          }),
         );
         box.appendChild(
-          compactRange('Elevation', -20, 90, 1, light.elevation, (v) =>
-            this.setAngle(light.id, 'el', v),
-          ),
+          // Past straight up the light would come over the top and face
+          // the other way, which is an azimuth change, not an elevation.
+          compactRange('Elevation', -20, 90, 1, light.elevation, (v) => this.setAngle(light.id, 'el', v), {
+            limits: { min: -90, max: 90 },
+            unit: '°',
+          }),
         );
 
         let picker = this.lightPickers.get(light.id);
@@ -659,8 +725,14 @@ export class Panel {
           );
           if (light.castShadow) {
             box.appendChild(
-              compactRange('Softness', 0, 16, 0.5, light.softness, (v) =>
-                this.viewer.lighting.setSoftness(light.id, v),
+              compactRange(
+                'Softness',
+                0,
+                16,
+                0.5,
+                light.softness,
+                (v) => this.viewer.lighting.setSoftness(light.id, v),
+                { limits: AMOUNT },
               ),
             );
           }
@@ -707,13 +779,15 @@ export class Panel {
     // to act on under "None".
     const hdriRows = div('env-rows');
     hdriRows.appendChild(
-      compactRange('Intensity', 0, 3, 0.05, state.intensity, (v) => env.setIntensity(v)),
+      compactRange('Intensity', 0, HDRI_INTENSITY_MAX, 0.01, state.intensity, (v) => env.setIntensity(v), {
+        limits: AMOUNT,
+      }),
     );
     hdriRows.appendChild(
-      compactRange('Rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v)),
+      compactRange('Rotation', 0, 360, 1, state.rotation, (v) => env.setOffset(v), { limits: DEGREES, unit: '°' }),
     );
     hdriRows.appendChild(
-      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v)),
+      compactRange('Bg blur', 0, 1, 0.02, state.blur, (v) => env.setBackgroundBlur(v), { limits: FRACTION }),
     );
     sec.appendChild(hdriRows);
 
@@ -772,17 +846,23 @@ export class Panel {
     surfaceRows.appendChild(labelRow('Surface albedo', this.stagePicker.root));
 
     surfaceRows.appendChild(
-      compactRange('Surface roughness', 0, 1, 0.01, stage.roughness, (v) =>
-        this.viewer.setStageRoughness(v),
-      ),
+      compactRange('Surface roughness', 0, 1, 0.01, stage.roughness, (v) => this.viewer.setStageRoughness(v), {
+        limits: FRACTION,
+      }),
     );
     surfaceRows.appendChild(
-      compactRange('Surface metalness', 0, 1, 0.01, stage.metalness, (v) =>
-        this.viewer.setStageMetalness(v),
-      ),
+      compactRange('Surface metalness', 0, 1, 0.01, stage.metalness, (v) => this.viewer.setStageMetalness(v), {
+        limits: FRACTION,
+      }),
     );
-    const pedestalRow = compactRange('Pedestal width', 0.5, 2, 0.05, stage.pedestalScale, (v) =>
-      this.viewer.setPedestalScale(v),
+    const pedestalRow = compactRange(
+      'Pedestal width',
+      0.5,
+      2,
+      0.05,
+      stage.pedestalScale,
+      (v) => this.viewer.setPedestalScale(v),
+      { limits: { min: 0.1 } },
     );
     surfaceRows.appendChild(pedestalRow);
     sec.appendChild(surfaceRows);
@@ -857,7 +937,18 @@ export class Panel {
       ),
     );
     rows.appendChild(
-      compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v })),
+      // A typed focus may sit in front of the subject (below 0) or behind
+      // it (past 1). Moving the slider lets go of a tap-to-focus lock, so
+      // the first press of a double-click had let go of it before the field
+      // opened; it is put back for the field, which then keeps it on Esc.
+      compactRange('Focus', 0, 1, 0.02, dof.focus, (v) => this.viewer.setDoF({ focus: v }), {
+        hold: () => {
+          const lock = this.viewer.getDoFState().focusPoint;
+          return () => {
+            if (lock) this.viewer.setDoF({ focusPoint: lock });
+          };
+        },
+      }),
     );
     sec.appendChild(rows);
   }
@@ -872,9 +963,9 @@ export class Panel {
       compactRange('Bias', -0.003, 0.001, 0.0001, lighting.getBias(), (v) => lighting.setBias(v)),
     );
     dev.appendChild(
-      compactRange('Normal bias', 0, 0.1, 0.005, lighting.getNormalBias(), (v) =>
-        lighting.setNormalBias(v),
-      ),
+      compactRange('Normal bias', 0, 0.1, 0.005, lighting.getNormalBias(), (v) => lighting.setNormalBias(v), {
+        limits: AMOUNT,
+      }),
     );
 
     const quality = document.createElement('select');
@@ -904,6 +995,33 @@ export class Panel {
 function devMode(): boolean {
   return new URLSearchParams(location.search).has('dev');
 }
+
+/** Typed-value limits shared by the Render panel's sliders. */
+const AMOUNT: Limits = { min: 0 }; // an intensity, a strength, a softness: no less than none
+const FRACTION: Limits = { min: 0, max: 1 }; // an opacity, a roughness, a metalness, a blur
+const DEGREES: Limits = { min: 0, wrap: 360 }; // a turn, wrapped
+
+/**
+ * Slider travel for the light and HDRI intensities (owner call: most of the
+ * old 0..8 and 0..3 went unused at the top). A value past either is still
+ * reached by typing it, and a look saved with one still renders as it was.
+ */
+const LIGHT_INTENSITY_MAX = 5;
+const HDRI_INTENSITY_MAX = 2;
+
+/**
+ * Ambient occlusion's travel. GTAO's strength runs to 2, all of it usable
+ * now that it deepens rather than clips (see DEFAULT_AO in Viewer). The
+ * cavity's taps past about 12 px stamp offset copies of an edge onto the
+ * surface behind it (a ghost of the ear on the cheek, measured on the
+ * realistic head), so its travel ends there; a wider one can be typed.
+ */
+const AO_STRENGTH_MAX = 2;
+const AO_RADIUS_MIN = 0.05;
+const AO_RADIUS_MAX = 1;
+const CAVITY_STRENGTH_MAX = 2;
+const CAVITY_RADIUS_MIN = 2;
+const CAVITY_RADIUS_MAX = 12;
 
 /** Lens slider stops, in 35mm-equivalent mm (wide normal through short tele). */
 const LENS_STEPS: number[] = [35, 50, 55, 80, 105, 135];
@@ -979,6 +1097,81 @@ function range(
   return r;
 }
 
+/** How a slider row treats its value beyond the track. */
+export interface SliderOptions {
+  /**
+   * The quantity's own limits, which a typed value is held to (see
+   * sliderEntry): an intensity's floor of zero, a roughness's 0..1. None
+   * means any number goes; the travel itself never limits a typed value.
+   */
+  limits?: Limits;
+  /** Puts back what a first press does beyond moving the value (see TypedSlider.hold). */
+  hold?: () => () => void;
+  /** Printed after the value, in the readout and the drag bubble. */
+  unit?: string;
+  /** The value is printed times this (proportions 0.5..2 as 50..200%). */
+  scale?: number;
+  /** A slider that picks from a set (a subdivision level) takes no typing. */
+  fixed?: boolean;
+}
+
+/**
+ * A slider row: the caption, the track, and the value at the end. A
+ * numbered row prints its value always; a compact one only while the value
+ * lies past the travel, where the pinned thumb cannot show it.
+ */
+function sliderRow(
+  label: string,
+  min: number,
+  max: number,
+  step: number,
+  value: number,
+  onInput: (v: number) => string | void,
+  opts: SliderOptions,
+  numbered: boolean,
+): { row: HTMLLabelElement; input: HTMLInputElement; val: HTMLSpanElement } {
+  const row = document.createElement('label');
+  row.className = 'compact';
+  const span = document.createElement('span');
+  span.textContent = label;
+  const val = document.createElement('span');
+  const apply = (v: number): void => {
+    const text = onInput(v);
+    if (numbered && typeof text === 'string') val.textContent = text;
+  };
+  const input = range(min, max, step, value, apply);
+  if (opts.unit) input.dataset.unit = opts.unit;
+  if (opts.scale) input.dataset.scale = String(opts.scale);
+  row.append(span, input, val);
+  if (numbered) {
+    val.className = 'sculpt-panel__val';
+    val.textContent = sliderText(input, value);
+  } else {
+    val.className = 'slider-val';
+    val.hidden = true;
+  }
+  if (!opts.fixed) {
+    typedSlider(
+      input,
+      {
+        apply,
+        limits: opts.limits,
+        hold: opts.hold,
+        readout: numbered
+          ? undefined
+          : (v) => {
+              const past = v < min || v > max;
+              val.hidden = !past;
+              if (past) val.textContent = sliderText(input, v);
+            },
+      },
+      value,
+    );
+  }
+  return { row, input, val };
+}
+
+/** A captioned slider; a value typed past its travel is shown at the row's end. */
 export function compactRange(
   label: string,
   min: number,
@@ -986,20 +1179,15 @@ export function compactRange(
   step: number,
   value: number,
   onInput: (v: number) => void,
+  opts: SliderOptions = {},
 ): HTMLLabelElement {
-  const wrap = document.createElement('label');
-  wrap.className = 'compact';
-  const span = document.createElement('span');
-  span.textContent = label;
-  wrap.append(span, range(min, max, step, value, onInput));
-  return wrap;
+  return sliderRow(label, min, max, step, value, (v) => void onInput(v), opts, false).row;
 }
 
 /**
- * A compact slider with its value printed at the right: `format` turns a
- * value into that text (and is also called on every input). `unit` and
- * `scale` ride on the input for the drag bubble, which prints the same
- * number the readout does.
+ * A compact slider with its value printed at the right: `onInput` applies a
+ * value and returns that text. `unit` and `scale` ride on the input for
+ * the drag bubble, which prints the same number the readout does.
  */
 export function numberedRange(
   label: string,
@@ -1008,21 +1196,9 @@ export function numberedRange(
   step: number,
   value: number,
   onInput: (v: number) => string,
-  opts: { unit?: string; scale?: number } = {},
+  opts: SliderOptions = {},
 ): { row: HTMLLabelElement; input: HTMLInputElement; val: HTMLSpanElement } {
-  const row = compactRange(label, min, max, step, value, (v) => {
-    val.textContent = onInput(v);
-  });
-  const val = document.createElement('span');
-  val.className = 'sculpt-panel__val';
-  row.appendChild(val);
-  const input = row.querySelector('input') as HTMLInputElement;
-  if (opts.unit) input.dataset.unit = opts.unit;
-  if (opts.scale) input.dataset.scale = String(opts.scale);
-  // The readout's text is the format's, for the initial value too.
-  const step0 = step >= 1 ? 0 : Math.min(4, (String(step).split('.')[1] ?? '').length);
-  val.textContent = `${((opts.scale ?? 1) * value).toFixed(step0)}${opts.unit ?? ''}`;
-  return { row, input, val };
+  return sliderRow(label, min, max, step, value, onInput, opts, true);
 }
 
 function labelled(label: string, build: () => HTMLElement): HTMLLabelElement {

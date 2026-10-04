@@ -266,7 +266,12 @@ certificate (Windows). For signing in CI, set `CSC_LINK` and
 ## Controls
 
 Every slider shows the value it is set to while you drag it, in a bubble
-under the handle.
+under the handle. Double-click a slider (double-tap on touch) to type a
+value instead: Enter or a press anywhere else applies it, `Esc` keeps what
+was there. A typed value may go past the slider's travel: the handle stays
+at that end and the row shows the value. It is held only to what the
+setting can be, so an intensity never goes below zero, a roughness stays
+within 0 to 1, and an angle wraps round.
 
 Every key below can be changed under **Edit → Preferences** (`Ctrl`+`,`). The
 guide (`H`) shows whatever keys are set.
@@ -328,6 +333,10 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 ### Unreleased
 
 Live on the web; in the next desktop release.
+
+- **Type a value into any slider.** A double-click, or a double-tap on an iPad, turns a slider into a number field in its place, with the number keyboard; Enter or a press anywhere else applies what you typed and `Esc` cancels. A typed value may go past the slider's travel, as in Maya: the handle stays at the end and the row shows the value, and it saves with the look, the brush or the figure like any other. Only what the setting can be holds it back (no intensity below zero, no roughness past 1, angles wrap). This covers the Render, Tool, Model and Armature panels and both tracks of the brush rail, where a brush can now be wider than 500 px. Double-clicking the depth-of-field Focus slider keeps a tap-to-focus lock until you type a focus.
+- **Slider ranges fit the values in use.** Light intensity runs 0 to 5 (was 0 to 8) and HDRI intensity 0 to 2 in hundredths (was 0 to 3 in twentieths); a newly picked HDRI starts at 0.25 rather than 1, where it filled in the key light's shadows almost as brightly as the key itself (an HDRI shown as the background follows the same setting, so a brighter plate wants it raised). The cavity's radius runs 2 to 12 px (was 2 to 24: past about 12 px it stamps ghosts of an edge onto the surface behind it). Looks saved with values past the new ranges load as they were, the handle at the end and the value shown.
+- **Ambient occlusion without the black outlines.** GTAO counted anything within a depth band as an occluder, in full, so a dark band traced every silhouette in front of another surface and the shading stopped dead at the edge of the radius; its noise pattern was never smoothed out, and past strength 1 the blend went below zero and printed black. An occluder now fades with its distance, the term is denoised along each surface, and strength deepens the term (it is now an exponent) instead of clipping it, so the whole 0 to 2 travel is usable. Defaults are radius 0.3 and strength 1 (were 0.5 and 1). The GTAO pass now costs nothing while another model is chosen, and a scene saved on GTAO opens on GTAO; it used to come back as Cavity.
 
 - **The gallery and the browser tab** read "Pose, sculpt, render and timelapse", and **Upload timelapse** moved from the top row into the Create tile's menu.
 - **Scenes saved to the library go to Projects.** Signed in, **File → Save to library** uploads the scene to the server as a private project, in parts with its progress shown, and keeps a copy on the device; saving again updates the same project in place, and the autosave remembers which project that is across reloads (a `.bozz` file never carries it). Your gallery and the Projects page list these scenes with a thumbnail, object and triangle counts and size, to open in Sculpt, rename, delete or make public. `/?sculpt=1&project=<id>` opens one; offline, the copy on the device opens instead.

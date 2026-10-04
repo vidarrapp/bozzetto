@@ -154,7 +154,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // own figure instead - so the cube has to be sent away, or it sits at the
   // origin as a tiny box (owner report).
   viewer.setSculptVisible(false);
-  if (saved?.look) await viewer.applyLook(saved.look);
+  if (saved?.look) {
+    await viewer.applyLook(saved.look);
+    // The Render panel was built on the mode's event, before this look
+    // landed; its sliders read their values once, so it rebuilds.
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+  }
 
   const frame = (): void => {
     const box = armature.bounds();
@@ -750,7 +755,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     name = parsed.name;
     await replaceFigure(parsed.state.preset, parsed.state);
-    if (parsed.look) await viewer.applyLook(parsed.look);
+    if (parsed.look) {
+      await viewer.applyLook(parsed.look);
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    }
     frame();
   };
   /**

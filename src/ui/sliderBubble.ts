@@ -6,6 +6,8 @@
  * sliders (the brush rail) call show/hide themselves.
  */
 
+import { sliderText } from './sliderEntry';
+
 let bubble: HTMLDivElement | null = null;
 let held: HTMLInputElement | null = null;
 let hideTimer = 0;
@@ -46,13 +48,13 @@ export function hideSliderBubble(): void {
   if (bubble) bubble.hidden = true;
 }
 
-/** The slider's value as text: the step's decimals, plus a data-unit suffix. */
+/**
+ * The slider's value as text: the step's decimals (more if a typed value
+ * has them), scaled and with its unit. A value typed past the travel prints
+ * as itself, not as the end the thumb is pinned at (sliderEntry).
+ */
 export function rangeText(input: HTMLInputElement): string {
-  const step = Number(input.step) || 1;
-  const decimals = step >= 1 ? 0 : Math.min(4, (String(step).split('.')[1] ?? '').length);
-  const v = Number(input.value);
-  const scale = input.dataset.scale ? Number(input.dataset.scale) : 1;
-  return (v * scale).toFixed(decimals) + (input.dataset.unit ?? '');
+  return sliderText(input);
 }
 
 function isRange(t: EventTarget | null): t is HTMLInputElement {

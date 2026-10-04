@@ -24,6 +24,15 @@ interface EnvConfig {
   file: string;
 }
 
+/**
+ * Where a newly picked HDRI starts. At 1 the Neutral studio map adds about
+ * as much light as sculpt mode's key light and fills the shadow side in
+ * (the key's modelling drops by a quarter, measured); at 0.25 it fills
+ * without flattening, between the owner's usual 0.1 and the old 1. A
+ * saved look carries its own value; this is for a look that has none yet.
+ */
+export const DEFAULT_ENV_INTENSITY = 0.25;
+
 /** Available HDRIs (public/assets/env). Missing files just fail to load. */
 export const ENVIRONMENTS: EnvConfig[] = [
   { id: 'studio-neutral', label: 'Neutral studio', file: '/assets/env/studio-neutral.hdr' },
@@ -54,7 +63,7 @@ export class Environment {
   private envMap: Texture | null = null;
   private equirect: Texture | null = null;
   private currentId: string | null = null;
-  private intensity = 1;
+  private intensity = DEFAULT_ENV_INTENSITY;
   private bgMode: BackgroundMode = 'theme';
   private bgColor = '#1c1814';
   private rigRotation = 0;

@@ -3,9 +3,11 @@
 // on, Sculpt's input under fingers, the pen, the zoom and the Negative
 // button, the arrow keys in the Scene list, each brush's own size and the
 // World-scale box after an open, capture's default, the autosave's cadence,
-// the two diagnostic overlays, and Save to library signed out and signed in
-// (scenes in Projects, visibility). Each gets (page, base, t) - a fresh
-// page, the server's origin, and the check collector.
+// the two diagnostic overlays, Save to library signed out and signed in
+// (scenes in Projects, visibility), and the sliders: typed values in the
+// Render, Tool and Armature panels and on the brush rail, the Render
+// panel's ranges and defaults, and ambient occlusion's. Each gets (page,
+// base, t) - a fresh page, the server's origin, and the check collector.
 import { readFileSync } from 'node:fs';
 import { openArmature, openSculpt } from './lib.mjs';
 
@@ -675,6 +677,92 @@ const emptySpot = (page) =>
     }
     return null;
   });
+// --- sliders: typed values, ranges and defaults ----------------------------
+
+/**
+ * A panel by its title, opened if it was tucked away, once it has slid all
+ * the way in: at two or three frames a second the slide takes seconds, and
+ * a press aimed at a slider before it ends lands off the screen.
+ */
+const openPanel = async (page, title) => {
+  const found = await page.evaluate((name) => {
+    const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+    if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
+    return !!p;
+  }, title);
+  if (!found) return false;
+  await page.waitForFunction(
+    (name) => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+      return getComputedStyle(p).transform === 'none';
+    },
+    title,
+    { timeout: 20_000 },
+  );
+  return true;
+};
+
+/**
+ * A slider row by its panel's title and its caption (the nth of that
+ * caption), scrolled into view: where its track, or the field standing in
+ * for it, sits on the page; what the thumb and the row's readout say; and
+ * the field, while one is up.
+ */
+const sliderRow = (page, panel, label, nth = 0) =>
+  page.evaluate(
+    ([name, caption, k]) => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+      const row = p && [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === caption)[k];
+      if (!row) return null;
+      row.scrollIntoView({ block: 'center' });
+      const input = row.querySelector('input[type=range]');
+      const field = row.querySelector('.slider-field');
+      const r = (field ?? input).getBoundingClientRect();
+      const val = row.querySelector('.slider-val, .sculpt-panel__val');
+      return {
+        at: [r.left + r.width / 2, r.top + r.height / 2],
+        // Where the thumb sits at either end of the travel.
+        maxEnd: [r.right - 8, r.top + r.height / 2],
+        thumb: Number(input.value),
+        min: Number(input.min),
+        max: Number(input.max),
+        step: Number(input.step),
+        shown: !input.hidden,
+        readout: val && !val.hidden ? val.textContent : null,
+        field: field && {
+          value: field.value,
+          focused: document.activeElement === field,
+          selected: field.selectionStart === 0 && field.selectionEnd === field.value.length,
+          inputMode: field.inputMode,
+        },
+      };
+    },
+    [panel, label, nth],
+  );
+
+/** Type into whatever field has focus, replacing its selection, and finish with a key. */
+const typeValue = async (page, text, finish = 'Enter') => {
+  await page.keyboard.type(text);
+  if (finish) await page.keyboard.press(finish);
+};
+
+/** A double-tap with a finger, stamped as a platform would stamp it (see carve). */
+const doubleTap = async (dev, at) => {
+  const t0 = Date.now() / 1000;
+  await dev.touch('touchStart', [at], t0);
+  await dev.touch('touchEnd', [], t0 + 0.05);
+  await dev.touch('touchStart', [at], t0 + 0.15);
+  await dev.touch('touchEnd', [], t0 + 0.2);
+};
+
+/** The defaults the ranges suite and the AO suite expect (Viewer's DEFAULT_AO / DEFAULT_CAVITY, Environment's). */
+const AO_DEFAULT = { intensity: 1, radius: 0.3 };
+const CAVITY_DEFAULT = { strength: 0.9, radius: 8, strengthMax: 2, radiusMin: 2, radiusMax: 12 };
+const HDRI_DEFAULT = 0.25;
+
+/** The key light as the rig holds it. */
+const keyLight = (page) => page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
+
 // The Preferences window's finger choice, set the way a user sets it.
 const setFingers = async (page, label) => {
   await page.keyboard.press('Control+Comma');
@@ -3590,5 +3678,387 @@ export const suites = {
     } finally {
       await ctx.close();
     }
+  },
+
+  // Typed values on sliders (owner request, after Maya). A double-click
+  // turns a slider into a number field where it stands, holding the value
+  // and selected, with a numeric keyboard on an iPad; Enter or leaving it
+  // commits, Esc keeps what was there. A value past the travel is applied
+  // as typed: the thumb pins at that end, the row prints the value, and so
+  // does the drag bubble; the next drag moves from the pinned thumb. The
+  // quantity's own limits still hold. The DoF Focus slider lets go of a
+  // tap-to-focus lock when it moves, which the first press of a double-click
+  // did; the field puts the lock back, so Esc leaves it. And a typed look
+  // rides the scene file.
+  async typedValues(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    const empty = await emptySpot(page);
+    t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
+    const intensity = () => sliderRow(page, 'Render', 'Intensity');
+    let row = await intensity();
+    t.ok(row && row.min === 0 && row.max === 5 && row.thumb === 3, `the key's Intensity runs 0..5 and sits at 3 (${row?.min}..${row?.max}, ${row?.thumb})`);
+
+    await page.mouse.dblclick(...row.at);
+    row = await intensity();
+    t.ok(
+      !row.shown && row.field?.focused && row.field.selected && row.field.value === '3' && row.field.inputMode === 'decimal',
+      `a double-click puts a focused number field in its place, holding 3, selected, with a decimal keyboard (${JSON.stringify(row.field)})`,
+    );
+    t.eq((await keyLight(page)).intensity, 3, 'and the presses that opened it left the light as it was');
+    t.ok(
+      await page.evaluate(() => document.querySelector('.slider-field').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))),
+      'the field keeps its own context menu (cut and paste)',
+    );
+    await typeValue(page, '7.5');
+    row = await intensity();
+    let key = await keyLight(page);
+    t.ok(
+      row.shown && !row.field && key.intensity === 7.5 && row.thumb === 5 && row.readout === '7.5',
+      `Enter applies 7.5, past the travel: the thumb pins at 5 and the row says 7.5 (light ${key.intensity}, thumb ${row.thumb}, readout ${row.readout})`,
+    );
+    // Pressed at the pinned end, the bubble prints the value itself.
+    const [ex, ey] = [row.maxEnd[0] + 6, row.maxEnd[1]];
+    await page.mouse.move(ex, ey);
+    await page.mouse.down();
+    const bubble = await page.evaluate(() => document.querySelector('.slider-bubble')?.textContent ?? null);
+    await page.mouse.up();
+    t.ok(bubble === '7.5' && (await keyLight(page)).intensity === 7.5, `a press there shows 7.5 in the bubble and moves nothing (${bubble})`);
+    // Two presses on one spot inside 350 ms are a double-click, so the
+    // drag waits out the one before it.
+    await page.waitForTimeout(450);
+    await page.mouse.move(ex, ey);
+    await page.mouse.down();
+    await page.mouse.move(ex - 60, ey, { steps: 4 });
+    await page.mouse.up();
+    row = await intensity();
+    key = await keyLight(page);
+    t.ok(key.intensity < 5 && key.intensity === row.thumb && row.readout === null, `a drag from there moves within the travel again (${key.intensity}, readout ${row.readout})`);
+
+    const before = key.intensity;
+    await page.mouse.dblclick(...row.at);
+    await typeValue(page, '1.2', 'Escape');
+    row = await intensity();
+    t.ok(!row.field && row.shown && (await keyLight(page)).intensity === before, `Esc closes the field and keeps ${before}`);
+    await page.mouse.dblclick(...row.at);
+    await typeValue(page, '-3');
+    row = await intensity();
+    t.ok((await keyLight(page)).intensity === 0 && row.thumb === 0 && row.readout === null, 'below zero is held at zero: an intensity has nothing less');
+    await page.mouse.dblclick(...row.at);
+    await typeValue(page, '0,25');
+    t.eq((await keyLight(page)).intensity, 0.25, 'a comma reads as the decimal point');
+    let az = await sliderRow(page, 'Render', 'Azimuth');
+    await page.mouse.dblclick(...az.at);
+    await typeValue(page, '200');
+    az = await sliderRow(page, 'Render', 'Azimuth');
+    key = await keyLight(page);
+    t.ok(key.azimuth === -160 && az.thumb === -160, `an angle wraps: 200 degrees is -160 (${key.azimuth})`);
+
+    // The keys typed are the field's, not hotkeys.
+    const sym = () => page.evaluate(() => window.__sculpt.session.getSymmetry());
+    const symBefore = await sym();
+    await page.mouse.dblclick(...(await intensity()).at);
+    await typeValue(page, 'x', 'Escape');
+    t.eq(await sym(), symBefore, 'an x typed into the field leaves symmetry alone');
+    // A press anywhere else blurs it (touchGuards), which commits.
+    await page.mouse.dblclick(...(await intensity()).at);
+    await page.keyboard.type('2.5');
+    await dev.penDrag([empty, empty]);
+    row = await intensity();
+    t.ok(
+      !row.field && (await keyLight(page)).intensity === 2.5 && (await page.evaluate(() => document.activeElement === document.body)),
+      'a pen press on the canvas blurs the field, which commits it',
+    );
+    await doubleTap(dev, (await intensity()).at);
+    row = await intensity();
+    t.ok(row.field?.focused && row.field.value === '2.5', `a double-tap with a finger opens it too (${JSON.stringify(row.field)})`);
+    await typeValue(page, '4');
+    t.eq((await keyLight(page)).intensity, 4, 'and Enter applies what was typed');
+    const viaKey = await page.evaluate(() => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const input = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Intensity').querySelector('input');
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      const f = document.querySelector('.slider-field');
+      return f && document.activeElement === f ? f.value : null;
+    });
+    t.eq(viaKey, '4', 'Enter on a focused slider opens its field as well');
+    await page.keyboard.press('Escape');
+
+    // DoF focus and its lock.
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.setDoF({ enabled: true });
+      v.setDoF({ focusPoint: [0, 0, 0] });
+      v.onDofChange?.();
+    });
+    const dof = () => page.evaluate(() => window.__bozzetto.getDoFState());
+    let focus = await sliderRow(page, 'Render', 'Focus');
+    await page.mouse.dblclick(...focus.at);
+    let d = await dof();
+    t.ok(!!d.focusPoint, 'with the Focus field up, the tap-to-focus lock still holds');
+    await page.keyboard.press('Escape');
+    d = await dof();
+    t.ok(!!d.focusPoint && d.focus === 0.35, `Esc leaves the lock and the focus as they were (${d.focus}, lock ${!!d.focusPoint})`);
+    focus = await sliderRow(page, 'Render', 'Focus');
+    await page.mouse.dblclick(...focus.at);
+    await typeValue(page, '1.4');
+    d = await dof();
+    focus = await sliderRow(page, 'Render', 'Focus');
+    t.ok(!d.focusPoint && d.focus === 1.4 && focus.readout === '1.40', `a typed focus lets go of the lock, and may sit behind the subject (${d.focus}, ${focus.readout})`);
+    await page.evaluate(() => {
+      window.__bozzetto.setDoF({ enabled: false });
+      window.__bozzetto.onDofChange?.();
+    });
+
+    // Packed past the travel, changed, opened: back as it was typed.
+    await page.mouse.dblclick(...(await intensity()).at);
+    await typeValue(page, '6.5');
+    await page.evaluate(async () => {
+      window.__typed = await window.__sculpt.file.pack();
+      window.__bozzetto.lighting.setIntensity('key', 1);
+    });
+    await page.evaluate(() => window.__sculpt.file.open(window.__typed));
+    row = await intensity();
+    key = await keyLight(page);
+    t.ok(key.intensity === 6.5 && row.thumb === 5 && row.readout === '6.5', `a typed 6.5 survives a scene pack and open, pinned, with its readout (${key.intensity}, ${row.readout})`);
+  },
+
+  // A brush size typed past the travel (owner request) is the brush's own,
+  // like any size: kept as typed, the Tool panel's Size row pinned at 500
+  // and saying so and the rail's nub at the top, still there after a tool
+  // switch, and in the scene file. A size is held to a pixel at least. The
+  // rail's tracks take a double-tap the same way, and the step keys move
+  // down from a typed size rather than snapping it back to 500.
+  async typedBrush(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3'); // Standard clay
+    t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens');
+    const held = () => page.evaluate(() => window.__sculpt.input.getBrushRadius());
+    const nub = () => page.evaluate(() => parseFloat(document.querySelector('.sculpt-slider[data-kind="size"] .sculpt-slider__nub').style.bottom));
+    let row = await sliderRow(page, 'Tool', 'Size');
+    const start = Math.round(await held());
+    await page.mouse.dblclick(...row.at);
+    row = await sliderRow(page, 'Tool', 'Size');
+    t.ok(row.field?.focused && row.field.value === String(start), `a double-click on Size opens its field at the brush's size (${row.field?.value}, held ${start})`);
+    await typeValue(page, '800');
+    row = await sliderRow(page, 'Tool', 'Size');
+    t.ok(
+      Math.round(await held()) === 800 && row.thumb === 500 && row.readout === '800' && (await nub()) === 100,
+      `800 is kept: the slider pins at 500 and says 800, the rail's nub sits at the top (${(await held()).toFixed(1)}, ${row.readout}, nub ${await nub()}%)`,
+    );
+    await page.keyboard.press('4'); // Inflate
+    const inflate = Math.round(await held());
+    await page.keyboard.press('3');
+    row = await sliderRow(page, 'Tool', 'Size');
+    t.ok(
+      inflate === start && Math.round(await held()) === 800 && row.readout === '800' && row.thumb === 500,
+      `Inflate keeps its own size (${inflate}), and back on clay the 800 is still there (${(await held()).toFixed(1)}, ${row.readout})`,
+    );
+    await page.evaluate(async () => {
+      window.__sized = await window.__sculpt.file.pack();
+      window.__sculpt.input.setBrushRadius(60);
+    });
+    await page.evaluate(() => window.__sculpt.file.open(window.__sized));
+    await page.keyboard.press('3');
+    row = await sliderRow(page, 'Tool', 'Size');
+    t.ok(Math.round(await held()) === 800 && row.readout === '800', `it rides the scene file (${(await held()).toFixed(1)}, ${row.readout})`);
+    await page.keyboard.press(']');
+    t.eq(Math.round(await held()), 800, 'the larger-size key leaves a typed 800 alone');
+    await page.keyboard.press('[');
+    const stepped = await held();
+    t.ok(stepped < 800 && stepped > 500, `the smaller-size key steps down from 800, not from 500 (${stepped.toFixed(1)})`);
+    row = await sliderRow(page, 'Tool', 'Size');
+    await page.mouse.dblclick(...row.at);
+    await typeValue(page, '0');
+    t.eq(Math.round(await held()), 1, 'a typed 0 is held to a pixel');
+
+    const track = (kind) =>
+      page.evaluate((k) => {
+        const r = document.querySelector(`.sculpt-slider[data-kind="${k}"]`).getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2];
+      }, kind);
+    const floating = () =>
+      page.evaluate(() => {
+        const f = document.querySelector('.slider-field--float');
+        return f && { value: f.value, focused: document.activeElement === f, mode: f.inputMode };
+      });
+    await doubleTap(dev, await track('size'));
+    let field = await floating();
+    t.ok(field?.focused && field.value === '1' && field.mode === 'decimal', `a double-tap on the rail's size track opens a field beside it, at the brush's size (${JSON.stringify(field)})`);
+    t.eq(Math.round(await held()), 1, 'and the taps themselves left the size alone');
+    await typeValue(page, '120');
+    t.ok(Math.round(await held()) === 120 && !(await floating()), 'what is typed there sizes the brush, and the field goes');
+    await doubleTap(dev, await track('strength'));
+    field = await floating();
+    const strength = Math.round((await page.evaluate(() => window.__sculpt.input.getBrushIntensity())) * 100);
+    t.ok(field?.focused && field.value === String(strength), `the strength track's field is in percent (${field?.value}, ${strength}%)`);
+    await typeValue(page, '150');
+    t.eq(await page.evaluate(() => window.__sculpt.input.getBrushIntensity()), 1, 'and a strength is held to 100%');
+  },
+
+  // The Armature panel's sliders take typed values as well. A part's size
+  // typed past 200% is kept, pinned with its readout, and held to the
+  // figure's own limit of 400%; it comes back with the saved armature, and
+  // so does a light intensity typed in the Render panel, which used to
+  // come back with the panel still showing the value from before the look.
+  async typedArmature(page, base, t) {
+    await openArmature(page, base);
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    t.ok(await openPanel(page, 'Armature'), 'the Armature panel opens');
+    await page.evaluate(() => window.__armature.select('upperarm.L'));
+    const size = () => page.evaluate(() => window.__armature.armature.getProportions('upperarm.L').size);
+    let row = await sliderRow(page, 'Armature', 'Size');
+    t.ok(row && row.max === 2 && row.readout === '100%', `the upper arm's Size runs to 200% and reads 100% (${row?.max}, ${row?.readout})`);
+    await page.mouse.dblclick(...row.at);
+    row = await sliderRow(page, 'Armature', 'Size');
+    t.eq(row.field?.value, '100', 'its field holds the percent the row shows');
+    await typeValue(page, '300');
+    row = await sliderRow(page, 'Armature', 'Size');
+    t.ok((await size()) === 3 && row.thumb === 2 && row.readout === '300%', `300% is kept: the part is 3x, the thumb pinned, the row says 300% (${await size()}, ${row.readout})`);
+    await page.mouse.dblclick(...row.at);
+    await typeValue(page, '500');
+    row = await sliderRow(page, 'Armature', 'Size');
+    t.ok((await size()) === 4 && row.readout === '400%', `500% is held at the figure's 400% (${await size()}, ${row.readout})`);
+    await openPanel(page, 'Render');
+    let light = await sliderRow(page, 'Render', 'Intensity');
+    await page.mouse.dblclick(...light.at);
+    await typeValue(page, '6');
+    t.eq((await keyLight(page)).intensity, 6, 'a light intensity typed in the Render panel here is applied');
+    await page.evaluate(() => window.__armature.save());
+
+    await openArmature(page, base);
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    await openPanel(page, 'Armature');
+    await page.evaluate(() => window.__armature.select('upperarm.L'));
+    row = await sliderRow(page, 'Armature', 'Size');
+    t.ok((await size()) === 4 && row.readout === '400%' && row.thumb === 2, `after a reload the part is still 400%, pinned (${await size()}, ${row.readout})`);
+    await openPanel(page, 'Render');
+    light = await sliderRow(page, 'Render', 'Intensity');
+    t.ok((await keyLight(page)).intensity === 6 && light.readout === '6.0' && light.thumb === 5, `and the Render panel shows the light's 6, not what it had before the look (${light.readout}, thumb ${light.thumb})`);
+  },
+
+  // The Render panel's travel and defaults (owner call: most of the old
+  // 0..8 light and 0..3 HDRI travel went unused at the top), and a look
+  // saved with values past the new travel, which loads and renders as it
+  // was: the light and the environment at their saved strengths, the
+  // panel's thumbs pinned and its rows saying the values.
+  async sliderRanges(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
+    const light = await sliderRow(page, 'Render', 'Intensity');
+    t.ok(light.min === 0 && light.max === 5 && light.step === 0.1, `a light's Intensity runs 0..5 (${light.min}..${light.max})`);
+    const fresh = await page.evaluate(() => window.__bozzetto.environment.getState().intensity);
+    await page.evaluate(() => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
+      sel.value = 'studio-neutral';
+      sel.dispatchEvent(new Event('change'));
+    });
+    await page.waitForFunction(() => !!window.__bozzetto.scene.environment, null, { timeout: 30_000 });
+    const hdri = await sliderRow(page, 'Render', 'Intensity', 1);
+    t.ok(
+      hdri.shown && hdri.min === 0 && hdri.max === 2 && hdri.step === 0.01 && hdri.thumb === fresh && fresh === HDRI_DEFAULT,
+      `the HDRI's Intensity runs 0..2 in hundredths, and a new environment starts at ${HDRI_DEFAULT} (${hdri.min}..${hdri.max} by ${hdri.step}, at ${hdri.thumb})`,
+    );
+    const rot = await sliderRow(page, 'Render', 'Rotation');
+    t.ok(rot.min === 0 && rot.max === 360, 'its Rotation runs a full turn');
+    await page.evaluate(() => {
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
+      sel.value = 'gtao';
+      sel.dispatchEvent(new Event('change'));
+    });
+    const aoStrength = await sliderRow(page, 'Render', 'Strength', 0);
+    const aoRadius = await sliderRow(page, 'Render', 'Radius', 0);
+    t.ok(
+      aoStrength.min === 0 && aoStrength.max === 2 && aoStrength.thumb === AO_DEFAULT.intensity,
+      `GTAO's Strength runs 0..2 and starts at ${AO_DEFAULT.intensity} (${aoStrength.min}..${aoStrength.max}, at ${aoStrength.thumb})`,
+    );
+    t.ok(
+      aoRadius.min === 0.05 && aoRadius.max === 1 && aoRadius.step === 0.01 && aoRadius.thumb === AO_DEFAULT.radius,
+      `its Radius runs 0.05..1 in hundredths and starts at ${AO_DEFAULT.radius} (${aoRadius.min}..${aoRadius.max}, at ${aoRadius.thumb})`,
+    );
+    const cavStrength = await sliderRow(page, 'Render', 'Strength', 1);
+    const cavRadius = await sliderRow(page, 'Render', 'Radius', 1);
+    t.ok(
+      cavStrength.max === CAVITY_DEFAULT.strengthMax && cavStrength.thumb === CAVITY_DEFAULT.strength && cavRadius.min === CAVITY_DEFAULT.radiusMin && cavRadius.max === CAVITY_DEFAULT.radiusMax && cavRadius.thumb === CAVITY_DEFAULT.radius,
+      `the cavity's Strength runs 0..${cavStrength.max} from ${cavStrength.thumb}, its Radius ${cavRadius.min}..${cavRadius.max} px from ${cavRadius.thumb}`,
+    );
+
+    // A look from before the ranges changed, with values past them.
+    await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      const look = v.getLook();
+      look.lighting.key.intensity = 7;
+      look.environment.intensity = 2.6;
+      await v.applyLook(look);
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    });
+    const lit = await page.evaluate(() => ({ key: window.__bozzetto.lighting.state().find((l) => l.id === 'key').intensity, env: window.__bozzetto.scene.environmentIntensity }));
+    const keyRow = await sliderRow(page, 'Render', 'Intensity', 0);
+    const envRow = await sliderRow(page, 'Render', 'Intensity', 1);
+    t.ok(lit.key === 7 && lit.env === 2.6, `a saved look past the new travel renders as saved (key ${lit.key}, HDRI ${lit.env})`);
+    t.ok(
+      keyRow.thumb === 5 && keyRow.readout === '7.0' && envRow.thumb === 2 && envRow.readout === '2.60',
+      `and the panel pins both thumbs and says the values (${keyRow.readout}, ${envRow.readout})`,
+    );
+  },
+
+  // Ambient occlusion (owner report: the radius felt large and cut off,
+  // and over 0.5 the strength drew black outlines). GTAO's defaults are
+  // what the panel starts on and what the pass gets; the radius follows the
+  // subject, and so does the denoise's depth tolerance; GTAO and its
+  // denoise are in the graph only while GTAO is the model; and the model
+  // rides a scene file - a GTAO look used to come back as Cavity.
+  async aoDefaults(page, base, t) {
+    await openSculpt(page, base, '&q=low');
+    const state = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        const out = v.pipeline.outputNode;
+        return {
+          ao: v.getAOState(),
+          cav: v.getSculptAO(),
+          radius: v.aoNode.radius.value,
+          subject: v.subjectRadius,
+          phi: v.aoDenoise.depthPhi.value,
+          out: out === v.composites.sculpt.ao ? 'gtao' : out === v.composites.sculpt.plain ? 'plain' : 'other',
+        };
+      });
+    const model = (value) =>
+      page.evaluate((m) => {
+        const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+        const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
+        if (m) {
+          sel.value = m;
+          sel.dispatchEvent(new Event('change'));
+        }
+        return sel.value;
+      }, value);
+    let s = await state();
+    t.ok(
+      !s.ao.enabled && s.cav.strength === CAVITY_DEFAULT.strength && s.cav.radius === CAVITY_DEFAULT.radius && (await model()) === 'cavity',
+      `sculpt mode starts on the cavity at its defaults (${s.cav.strength}, ${s.cav.radius} px)`,
+    );
+    t.ok(s.ao.intensity === AO_DEFAULT.intensity && s.ao.radius === AO_DEFAULT.radius, `GTAO waits at strength ${s.ao.intensity}, radius ${s.ao.radius}`);
+    t.eq(s.out, 'plain', 'with the cavity on, neither GTAO nor its denoise is in the graph');
+    await model('gtao');
+    s = await state();
+    t.ok(s.ao.enabled && s.cav.strength === 0 && s.out === 'gtao', `choosing GTAO puts it in the graph and the cavity at zero (${s.out})`);
+    t.ok(
+      Math.abs(s.radius - AO_DEFAULT.radius * s.subject) < 1e-6 && Math.abs(s.phi - 0.25 * s.radius) < 1e-6,
+      `its radius is ${AO_DEFAULT.radius} of the subject's (${s.radius.toFixed(2)} of ${s.subject.toFixed(2)}), the denoise's depth tolerance a quarter of that`,
+    );
+    await page.evaluate(async () => {
+      window.__aoLook = await window.__sculpt.file.pack();
+    });
+    await model('cavity');
+    s = await state();
+    t.ok(!s.ao.enabled && s.cav.strength === CAVITY_DEFAULT.strength && s.out === 'plain', 'back on the cavity, GTAO leaves the graph and the cavity has its strength back');
+    await page.evaluate(() => window.__sculpt.file.open(window.__aoLook));
+    s = await state();
+    t.ok(s.ao.enabled && s.out === 'gtao' && (await model()) === 'gtao', `a scene saved on GTAO opens on GTAO, and the panel says so (${await model()})`);
   },
 };

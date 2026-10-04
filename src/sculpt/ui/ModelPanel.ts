@@ -1,5 +1,11 @@
 import { div } from '../../ui/dom';
-import { checkbox, compactRange, section, numberedRange } from '../../ui/Panel';
+import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
+import { setSliderValue, type Limits } from '../../ui/sliderEntry';
+
+/** Typed-value limits (sliderEntry). */
+const FRACTION: Limits = { min: 0, max: 1 };
+/** The voxel grid the remesher will build, as SculptSession holds it. */
+export const VOXEL_RESOLUTION: Limits = { min: 8, max: 400, integer: true };
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
@@ -59,14 +65,14 @@ export class ModelPanel extends SidePanel {
     albedoName.textContent = 'Albedo';
     albedoRow.append(albedoName, this.albedoPicker.root);
     sec.appendChild(albedoRow);
-    const rough = compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) =>
-      mats.setRoughness(v),
-    );
+    const rough = compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), {
+      limits: FRACTION,
+    });
     this.roughInput = rough.querySelector('input') as HTMLInputElement;
     sec.appendChild(rough);
-    const metal = compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) =>
-      mats.setMetalness(v),
-    );
+    const metal = compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), {
+      limits: FRACTION,
+    });
     this.metalInput = metal.querySelector('input') as HTMLInputElement;
     sec.appendChild(metal);
   }
@@ -77,8 +83,8 @@ export class ModelPanel extends SidePanel {
     // While the popover is up, the picker is the source of truth; echoes of
     // its own drag must not fight the thumb being held.
     if (this.albedoPicker && !this.albedoPicker.isOpen()) this.albedoPicker.set(state.albedo);
-    this.roughInput.value = String(state.roughness);
-    this.metalInput.value = String(state.metalness);
+    setSliderValue(this.roughInput, state.roughness);
+    setSliderValue(this.metalInput, state.metalness);
   }
 
   // --- Topology + Remesh (moved from the old Sculpt panel) ----------------
@@ -109,14 +115,30 @@ export class ModelPanel extends SidePanel {
     // away with the checkbox.
     const detail = this.session.getDynTopoDetail();
     this.dynDetailRows = [
-      this.numberedRange('Stroke subdivision', 0, 100, 1, detail.subdivision, (v) => {
-        this.session.setDynTopoDetail({ subdivision: v });
-        return String(Math.round(v));
-      }),
-      this.numberedRange('Stroke decimation', 0, 100, 1, detail.decimation, (v) => {
-        this.session.setDynTopoDetail({ decimation: v });
-        return String(Math.round(v));
-      }),
+      this.numberedRange(
+        'Stroke subdivision',
+        0,
+        100,
+        1,
+        detail.subdivision,
+        (v) => {
+          this.session.setDynTopoDetail({ subdivision: v });
+          return String(Math.round(v));
+        },
+        { limits: { min: 0, max: 100 } },
+      ),
+      this.numberedRange(
+        'Stroke decimation',
+        0,
+        100,
+        1,
+        detail.decimation,
+        (v) => {
+          this.session.setDynTopoDetail({ decimation: v });
+          return String(Math.round(v));
+        },
+        { limits: { min: 0, max: 100 } },
+      ),
     ];
     for (const r of this.dynDetailRows) sec.appendChild(r.row);
 
@@ -129,11 +151,19 @@ export class ModelPanel extends SidePanel {
 
   private buildRemesh(body: HTMLElement): void {
     const remesh = section(body, 'Remesh');
-    const res = this.numberedRange('Resolution', 16, 300, 2, this.remeshResolution, (v) => {
-      this.remeshResolution = v;
-      this.session.setRemeshResolution(v); // Merge in the Scene panel reads it too
-      return String(Math.round(v));
-    });
+    const res = this.numberedRange(
+      'Resolution',
+      16,
+      300,
+      2,
+      this.remeshResolution,
+      (v) => {
+        this.remeshResolution = v;
+        this.session.setRemeshResolution(v); // Merge in the Scene panel reads it too
+        return String(Math.round(v));
+      },
+      { limits: VOXEL_RESOLUTION },
+    );
     remesh.appendChild(res.row);
     const row = div('sculpt-panel__row');
     row.appendChild(
@@ -152,8 +182,9 @@ export class ModelPanel extends SidePanel {
     step: number,
     value: number,
     onInput: (v: number) => string,
+    opts: SliderOptions = {},
   ): { row: HTMLLabelElement; input: HTMLInputElement; val: HTMLSpanElement } {
-    return numberedRange(label, min, max, step, value, onInput);
+    return numberedRange(label, min, max, step, value, onInput, opts);
   }
 
   private opButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -187,9 +218,16 @@ export class ModelPanel extends SidePanel {
     // Dragging previews the target level in the readout; the jump itself
     // lands on release ('change'). Applying per input step would rebuild
     // this block - and the slider under the pointer - mid-drag.
-    const levels = this.numberedRange('Level', 1, Math.max(2, lv.levels), 1, lv.sel + 1, (v) => {
-      return `${Math.round(v)}/${this.session.getLevels()?.levels ?? lv.levels}`;
-    });
+    // A pick from the levels there are, like the f-stops: no typing.
+    const levels = this.numberedRange(
+      'Level',
+      1,
+      Math.max(2, lv.levels),
+      1,
+      lv.sel + 1,
+      (v) => `${Math.round(v)}/${this.session.getLevels()?.levels ?? lv.levels}`,
+      { fixed: true },
+    );
     levels.input.addEventListener('change', () => {
       this.session.selectLevel(Number(levels.input.value) - 1);
       this.refreshTopology(); // selectLevel may clamp or no-op; re-sync

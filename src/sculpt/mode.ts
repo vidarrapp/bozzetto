@@ -229,6 +229,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const savedMaterial = viewer.materials.getMaterialState();
   const savedShadowsMaster = lighting.getShadowsMaster();
   const savedGround = viewer.getGround();
+  const savedAO = viewer.getAOState();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
   // Shadows on by default (review call): they read the form far better than
@@ -237,6 +238,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (savedDof.enabled) viewer.setDoF({ enabled: false });
   viewer.onDofChange?.();
   viewer.scene.environment = null;
+  // Said here rather than left to the Render panel, which reads the AO
+  // model back from the look (Reset look returns to this, too).
+  viewer.setAO({ enabled: false });
   viewer.setSculptShading(true);
   // Flat shading is the sculpt default; the panel checkbox drives it live.
   viewer.materials.setFlatShading(true);
@@ -1404,6 +1408,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.environment.setRotation(lighting.getRigRotation());
     viewer.scene.environment = savedEnv;
     viewer.setSculptShading(false);
+    viewer.setAO(savedAO);
     viewer.materials.applyMaterialState(savedMaterial);
     viewer.setDoF(savedDof);
     viewer.onDofChange?.();

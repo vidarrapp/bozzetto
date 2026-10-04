@@ -21,9 +21,10 @@ import {
   Vector2,
   Vector3, BackSide, FrontSide } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, mix, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
-import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
+import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
+import { softAo, type SoftGTAONode } from './gtao';
 import type { Matrix4, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
@@ -89,6 +90,21 @@ const TAP_SLOP = 10;
  * smoothly instead of stuttering frame by frame.
  */
 const PLAYBACK_MIN_BUFFER = 4;
+
+/**
+ * GTAO's defaults (Render panel > Ambient occlusion > GTAO), set on a box
+ * room, the default sphere on the floor and on the pedestal, a head and
+ * the mannequin. The radius is a fraction of the subject's bounding
+ * radius. At 0.5 it felt large for the scene (owner report) - in a box
+ * room it shaded most of each wall - and the owner had settled on 0.2 with
+ * the old term; this one fades towards the edge of its radius (gtao.ts),
+ * so 0.3 now reaches about as far as 0.2 did. The strength is an exponent
+ * on the term (see buildPipeline): 1, the term as computed, sits mid-travel.
+ */
+export const DEFAULT_AO = { intensity: 1, radius: 0.3 } as const;
+
+/** The sculpt cavity's defaults: its strength, and its tap radius in pixels. */
+export const DEFAULT_CAVITY = { strength: 0.9, radius: 8 } as const;
 
 /** Ambient-occlusion state (persisted in a project's `data.ao`). */
 export interface AOState {
@@ -288,28 +304,33 @@ export class Viewer {
    * tone-mapped on output. Toggling an effect recomposes `pipeline.outputNode`.
    */
   private pipeline: RenderPipeline | null = null;
-  private aoNode: ReturnType<typeof ao> | null = null;
-  /** Sculpt-mode composite: scene colour x cavity x GTAO, uniform-gated. */
-  private sculptComposite: Node | null = null;
-  /** The DoF gather over the sculpt composite (owner call: DoF in sculpt). */
-  private sculptDofNode: Node | null = null;
+  private aoNode: SoftGTAONode | null = null;
+  /** The edge-aware denoise over the GTAO term (its depth tolerance follows the radius). */
+  private aoDenoise: ReturnType<typeof denoise> | null = null;
+  /**
+   * The output composites: the viewer's (scene colour, x GTAO) and sculpt
+   * mode's (x cavity, x GTAO), each without GTAO and with it.
+   */
+  private composites: Record<'viewer' | 'sculpt', Record<'plain' | 'ao', Node>> | null = null;
+  /** DoF gathers over the composites, built as each is first wanted (owner call: DoF in sculpt). */
+  private readonly dofNodes = new Map<Node, Node>();
+  private viewZNode: Node | null = null;
   /** `?aodebug` in sculpt: R = view distance/400, G = raw occlusion, B = factor. */
   private sculptAoDebugNode: Node | null = null;
+  /** `?aodebug` in the viewer: the GTAO term as greyscale. */
+  private aoDebugNode: Node | null = null;
   /** `?dofdebug` in viewer: the DoF chain's viewZ as distance/400 greyscale. */
   private dofViewZDebugNode: Node | null = null;
   private readonly dofDebug = new URLSearchParams(location.search).has('dofdebug');
   private sculptShading = false;
-  /** Pre-built graph nodes: the AO-composited colour, and the DoF gather over it. */
-  private aoColor: Node | null = null;
-  private dofNode: ReturnType<typeof dof> | null = null;
   /** Effective AO strength uniform (= intensity when enabled, else 0). */
   private readonly aoStrengthU = uniform(1);
   /** Sculpt SSAO strength and tap radius in px (tunable later in-palette). */
-  private readonly cavityStrengthU = uniform(0.9);
-  private readonly sculptAoRadiusU = uniform(8);
+  private readonly cavityStrengthU = uniform(DEFAULT_CAVITY.strength);
+  private readonly sculptAoRadiusU = uniform(DEFAULT_CAVITY.radius);
   private aoEnabled = true; // AO on by default
-  private aoIntensity = 1;
-  private aoRadiusFraction = 0.5;
+  private aoIntensity: number = DEFAULT_AO.intensity;
+  private aoRadiusFraction: number = DEFAULT_AO.radius;
   private subjectRadius = 1;
   /** `?aodebug`: render the raw GTAO buffer (untone-mapped) and log AO params. */
   private readonly aoDebug = new URLSearchParams(location.search).has('aodebug');
@@ -1125,15 +1146,15 @@ export class Viewer {
   }
 
   setAO(state: Partial<AOState>): void {
-    if (typeof state.enabled === 'boolean') this.aoEnabled = state.enabled;
+    if (typeof state.enabled === 'boolean' && state.enabled !== this.aoEnabled) {
+      this.aoEnabled = state.enabled;
+      this.rebuildOutput(); // GTAO joins or leaves the graph
+    }
     if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;
     if (typeof state.radius === 'number') {
       this.aoRadiusFraction = state.radius;
       this.applyAoRadius();
     }
-    // AO stays in the graph everywhere now; enabling/strength just drive the
-    // effective-strength uniform (0 when disabled), sculpt included - the
-    // sculpt composite gates GTAO through the same uniform.
     this.applyAoStrength();
   }
 
@@ -1143,7 +1164,7 @@ export class Viewer {
 
   /** DoF is available once the node pipeline built (it always does on WebGPU). */
   dofAvailable(): boolean {
-    return this.dofNode !== null;
+    return this.pipeline !== null;
   }
 
   setDoF(state: Partial<DoFState>): void {
@@ -1158,6 +1179,10 @@ export class Viewer {
       // A manual focus from the slider releases any tap-to-focus lock.
       this.dofFocusPoint = null;
     }
+    // A lock handed back (a saved state, or the Focus slider putting back
+    // the one its own first press let go of) holds over the focus above.
+    const fp = state.focusPoint;
+    if (fp?.length === 3) this.dofFocusPoint = new Vector3(fp[0], fp[1], fp[2]);
     this.applyDof();
   }
 
@@ -1745,8 +1770,10 @@ export class Viewer {
   /**
    * Build the node postprocessing graph: a scene pass writing colour, depth and
    * view-space normals (MRT), feeding a Ground-Truth AO node whose sample count
-   * and render scale follow the device tier. The colour/AO composite is assembled
-   * in rebuildOutput().
+   * and render scale follow the device tier, and the cavity term sculpt mode
+   * uses. Four composites come out of it - the viewer's and sculpt mode's,
+   * each with GTAO and without - and rebuildOutput() puts one on screen, with
+   * a depth-of-field gather over it when DoF is on.
    */
   private buildPipeline(): void {
     const tier = SHADOW_TIERS[detectQuality()];
@@ -1756,31 +1783,30 @@ export class Viewer {
     // path dereferences the pass depth texture at shader-build time, which isn't
     // a valid texture yet, so that path fails to compile.
     scenePass.setMRT(mrt({ output, normal: normalView }));
+    const colour = scenePass.getTextureNode('output');
+    const depthTex = scenePass.getTextureNode('depth');
+    const normalTex = scenePass.getTextureNode('normal');
 
-    const aoNode = ao(
-      scenePass.getTextureNode('depth'),
-      scenePass.getTextureNode('normal'),
-      this.camera,
-    );
+    const aoNode = softAo(depthTex, normalTex, this.camera);
     aoNode.samples.value = tier.aoSamples;
     aoNode.resolutionScale = tier.aoResolutionScale;
+    // GTAO turns its slices per pixel by a 5x5 noise tile and leaves the
+    // averaging to whoever reads it. Read raw, the tile printed as a hatch
+    // over every partly occluded surface, and as a black one once the
+    // strength went up. three's edge-aware denoise averages it along a
+    // surface and not across an edge (depth and normal weighted).
+    const aoClean = denoise(aoNode.getTextureNode(), depthTex, normalTex, this.camera);
+    const aoTerm = (aoClean as unknown as { r: ReturnType<typeof float> }).r.clamp(1e-4, 1);
+    // Strength is an exponent on the term: 0 none, 1 the term as computed, 2
+    // its square. It was a blend, mix(1, term, strength), which past 1 ran
+    // below zero wherever the term fell under 1 - 1/strength and was floored
+    // to black there - every half-occluded pixel at strength 2. A power
+    // deepens the same pixels without ever crossing zero.
+    const aoFactor = pow(aoTerm, this.aoStrengthU);
 
-    // Scene colour modulated by AO (effective strength 0 when disabled), then a
-    // depth-of-field gather over that colour. Both nodes stay built; rebuildOutput
-    // selects whether DoF is in the output, and applyAoStrength()/applyDof() drive
-    // the look through uniforms — so toggling never rebuilds the graph nodes.
-    // Strength runs to 2 (it deepens the term past 1), so the blend can
-    // cross zero under heavy occlusion; floored, or the negative colour
-    // came out of the output transform as bright blotches.
-    const aoFactor = mix(float(1), aoNode.getTextureNode().r, this.aoStrengthU).max(0);
-    const aoColor = scenePass.getTextureNode('output').mul(vec4(vec3(aoFactor), float(1)));
-
-    // Sculpt-mode composite: instead of GTAO, a small depth-only SSAO (8 taps).
+    // Sculpt-mode composite: a small depth-only SSAO (8 taps), the cavity.
     // Depth ignores facet normals, so flat shading shows no grid at facet
     // edges (a normal-divergence term did); only real creases occlude.
-    // rebuildOutput swaps to this whole-output when sculpt shading is on, so
-    // the GTAO and DoF passes leave the graph and cost nothing.
-    const depthTex = scenePass.getTextureNode('depth');
     const suv = uv();
     const pixel = vec2(1, 1).div(screenSize).mul(this.sculptAoRadiusU);
     // near/far must be bound to the SCENE camera explicitly. The contextual
@@ -1830,24 +1856,20 @@ export class Viewer {
     const sculptAo = float(1)
       .sub((occlusion as ReturnType<typeof float>).div(axes.length).mul(this.cavityStrengthU))
       .clamp(0.35, 1);
-    // ONE uniform-gated sculpt composite replaces the old three-way output
-    // swap (cavity / GTAO / plain): the cavity factor gates itself through
-    // cavityStrengthU (1.0 at strength 0) and GTAO through the effective
-    // aoStrengthU (1.0 when disabled), so the AO picker's three models are
-    // all this node with different uniform values - no recompile per
-    // change, and a DoF gather can finally wrap sculpt output without
-    // three prebuilt variants (owner call: full look parity in sculpt).
-    const sculptComposite = scenePass
-      .getTextureNode('output')
-      .mul(vec4(vec3(sculptAo.mul(aoFactor as never) as unknown as ReturnType<typeof float>), float(1)));
-    this.sculptComposite = sculptComposite as unknown as Node;
-    this.sculptDofNode = dof(
-      sculptComposite,
-      scenePass.getViewZNode(),
-      this.dofFocusU,
-      this.dofRangeU,
-      this.dofBokehU,
-    ) as unknown as Node;
+
+    // The cavity gates itself through its strength (1.0 at strength 0), so
+    // Off and Cavity share a composite. GTAO is the one thing that leaves
+    // the graph when it is not chosen: its pass and the denoise are the
+    // heaviest work here, and they used to run on every frame, picked or
+    // not, gated only by a zero strength. Switching it on or off now costs
+    // one rebuild of the output, as turning DoF on or off always has.
+    const shade = (factor: unknown): Node =>
+      colour.mul(vec4(vec3(factor as never), float(1))) as unknown as Node;
+    this.composites = {
+      viewer: { plain: colour as unknown as Node, ao: shade(aoFactor) },
+      sculpt: { plain: shade(sculptAo), ao: shade(sculptAo.mul(aoFactor as never)) },
+    };
+    this.viewZNode = scenePass.getViewZNode() as unknown as Node;
     // Diagnostic view for ?aodebug in sculpt: channels expose each stage so a
     // dead cavity can be blamed on depth, ramp or composite in one frame.
     this.sculptAoDebugNode = vec4(
@@ -1856,10 +1878,13 @@ export class Viewer {
       sculptAo,
       float(1),
     ) as unknown as Node;
+    // ?aodebug in the viewer: the GTAO term the composite multiplies by, as
+    // greyscale (1 = open ... 0 = fully occluded).
+    this.aoDebugNode = vec4(vec3(aoTerm), float(1)) as unknown as Node;
     // ?dofdebug: scene depth as distance/400 greyscale, through the SAME
     // bound-uniform conversion the cavity uses. A model-vs-background
     // gradient proves the depth texture and conversion; note DoF itself
-    // keeps getViewZNode() below - its contextual camera accessors resolve
+    // keeps getViewZNode() - its contextual camera accessors resolve
     // correctly inside the DoF node's own passes (verified by A/B), unlike
     // in this pipeline's final output quad, where the cavity had to bind
     // the camera explicitly.
@@ -1875,57 +1900,55 @@ export class Viewer {
       ),
       float(1),
     ) as unknown as Node;
-    const dofNode = dof(
-      aoColor,
-      scenePass.getViewZNode(),
-      this.dofFocusU,
-      this.dofRangeU,
-      this.dofBokehU,
-    );
 
     this.aoNode = aoNode;
-    this.aoColor = aoColor;
-    this.dofNode = dofNode;
+    this.aoDenoise = aoClean;
     this.pipeline = new RenderPipeline(this.renderer);
     // In AO-debug, show the raw occlusion values (1 = unoccluded ... 0 = fully
     // occluded) without the ACES/sRGB output transform, so the buffer reads true.
     if (this.aoDebug || this.dofDebug) this.pipeline.outputColorTransform = false;
     this.applyAoStrength();
+    this.applyAoRadius();
     this.applyDof();
     this.rebuildOutput();
   }
 
+  /** The depth-of-field gather over a composite, built the first time it is asked for. */
+  private dofOver(base: Node): Node {
+    let node = this.dofNodes.get(base);
+    if (!node) {
+      const viewZ = this.viewZNode as never;
+      node = dof(base as never, viewZ, this.dofFocusU, this.dofRangeU, this.dofBokehU) as unknown as Node;
+      this.dofNodes.set(base, node);
+    }
+    return node;
+  }
+
   /**
-   * Select the pipeline output: the depth-of-field gather when DoF is on,
-   * otherwise the AO-composited colour directly (so the DoF gather leaves the
-   * graph and costs nothing). The pipeline applies tone mapping + sRGB on output.
+   * Select the pipeline output: the viewer's or sculpt mode's composite, with
+   * GTAO or without, and the depth-of-field gather over it when DoF is on (so
+   * neither GTAO nor the gather is in the graph, or costs anything, while it
+   * is off). The pipeline applies tone mapping + sRGB on output.
    */
   private rebuildOutput(): void {
-    if (!this.pipeline || !this.aoColor || !this.dofNode || !this.aoNode) return;
-    if (this.sculptShading && this.sculptComposite) {
-      if (this.aoDebug && this.sculptAoDebugNode) {
-        this.pipeline.outputNode = this.sculptAoDebugNode;
-        this.pipeline.needsUpdate = true;
-        return;
-      }
-      // Off / Cavity / GTAO all live inside the one composite now, gated by
-      // uniforms (see buildPipeline), so the only structural choice left is
-      // whether the DoF gather wraps it.
-      this.pipeline.outputNode =
-        this.dofEnabled && this.sculptDofNode ? this.sculptDofNode : this.sculptComposite;
-      this.pipeline.needsUpdate = true;
-      return;
-    }
-    if (this.dofDebug && this.dofViewZDebugNode) {
-      this.pipeline.outputNode = this.dofViewZDebugNode;
-    } else if (this.aoDebug) {
-      // Diagnostic view: the raw GTAO buffer as greyscale. Uniform white means
-      // GTAO computed no occlusion anywhere (the bug we're chasing); visible dark
-      // creases mean AO works and the composite/strength is the problem instead.
-      this.pipeline.outputNode = vec4(vec3(this.aoNode.getTextureNode().r), float(1));
+    const c = this.composites;
+    if (!this.pipeline || !c) return;
+    let out: Node;
+    if (this.sculptShading && this.aoDebug && this.sculptAoDebugNode) {
+      out = this.sculptAoDebugNode;
+    } else if (!this.sculptShading && this.dofDebug && this.dofViewZDebugNode) {
+      out = this.dofViewZDebugNode;
+    } else if (!this.sculptShading && this.aoDebug && this.aoDebugNode) {
+      // Diagnostic view: the GTAO term as greyscale. Uniform white means GTAO
+      // computed no occlusion anywhere; visible dark creases mean AO works and
+      // the composite/strength is the problem instead.
+      out = this.aoDebugNode;
     } else {
-      this.pipeline.outputNode = this.dofEnabled ? this.dofNode : this.aoColor;
+      const base = c[this.sculptShading ? 'sculpt' : 'viewer'][this.aoEnabled ? 'ao' : 'plain'];
+      out = this.dofEnabled ? this.dofOver(base) : base;
     }
+    if (this.pipeline.outputNode === out) return;
+    this.pipeline.outputNode = out;
     this.pipeline.needsUpdate = true;
   }
 
@@ -1939,11 +1962,11 @@ export class Viewer {
     if (!this.aoNode) return;
     const radius = this.aoRadiusFraction * this.subjectRadius;
     this.aoNode.radius.value = radius;
-    // `thickness` gates which samples count as occluders — abs(viewΔz) < thickness,
-    // in world units. Its default of 1 rejects every occluder on large models
-    // (subjects here can be ~hundreds of units), which zeroed AO entirely. Track
-    // it to the sampling radius so the depth tolerance scales with the subject.
-    this.aoNode.thickness.value = radius;
+    // The denoise's depth tolerance is in world units too (its default of 5
+    // is a small fraction of a subject here, or most of one): a neighbour
+    // further off this pixel's tangent plane than a quarter of the radius
+    // is another surface, and is not averaged in.
+    if (this.aoDenoise) this.aoDenoise.depthPhi.value = Math.max(radius * 0.25, 1e-4);
   }
 
   /**

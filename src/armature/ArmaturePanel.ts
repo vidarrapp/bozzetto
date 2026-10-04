@@ -1,6 +1,8 @@
 import { div, labelRow, selectEl } from '../ui/dom';
 import { checkbox, numberedRange, section } from '../ui/Panel';
 import { SidePanel } from '../sculpt/ui/SidePanel';
+import { VOXEL_RESOLUTION } from '../sculpt/ui/ModelPanel';
+import { PROPORTION_LIMITS } from './Armature';
 import { RIG_PRESETS } from './rig';
 import { FIGURES } from './figures';
 import type { Armature } from './Armature';
@@ -109,10 +111,18 @@ export class ArmaturePanel extends SidePanel {
 
     const send = section(this.body, 'Send to Sculpt');
     send.appendChild(
-      numberedRange('Resolution', 16, 300, 2, this.resolution, (v) => {
-        this.resolution = v;
-        return String(Math.round(v));
-      }).row,
+      numberedRange(
+        'Resolution',
+        16,
+        300,
+        2,
+        this.resolution,
+        (v) => {
+          this.resolution = v;
+          return String(Math.round(v));
+        },
+        { limits: VOXEL_RESOLUTION },
+      ).row,
     );
     const sendRow = div('sculpt-panel__row');
     const sendBtn = this.opButton('Send to Sculpt', () => this.hooks.send(this.resolution));
@@ -200,7 +210,9 @@ export class ArmaturePanel extends SidePanel {
               this.hooks.joint(selected, next);
               return `${Math.round(v)}°`;
             },
-            { unit: '°' },
+            // The joint's own limits are the travel; the figure holds a
+            // turn to them however it is asked for.
+            { unit: '°', limits: { min: lo, max: hi } },
           ).row,
         );
       }
@@ -223,7 +235,7 @@ export class ArmaturePanel extends SidePanel {
             this.hooks.aim(bend.id, v);
             return `${Math.round(v)}°`;
           },
-          { unit: '°' },
+          { unit: '°', limits: { min: -180, wrap: 360 } },
         ).row,
       );
     }
@@ -240,7 +252,7 @@ export class ArmaturePanel extends SidePanel {
           this.hooks.proportions(selected, { size: v });
           return pct(v);
         },
-        { unit: '%', scale: 100 },
+        { unit: '%', scale: 100, limits: PROPORTION_LIMITS.size },
       ).row,
     );
     this.partBody.appendChild(
@@ -254,7 +266,7 @@ export class ArmaturePanel extends SidePanel {
           this.hooks.proportions(selected, { length: v });
           return pct(v);
         },
-        { unit: '%', scale: 100 },
+        { unit: '%', scale: 100, limits: PROPORTION_LIMITS.length },
       ).row,
     );
   }

@@ -103,8 +103,26 @@ const TAP_SLOP = 10;
 /** Hold-key adjust modes for brush size (b) and strength (s). */
 type AdjustMode = 'radius' | 'intensity' | null;
 
+/**
+ * The size control's travel (the rail, the Tool panel's slider, b-drags and
+ * the wheel keys). A size typed into either slider may go past it (see
+ * sliderEntry): the radius itself is held only to a whole pixel.
+ */
 const RADIUS_MIN = 5;
 const RADIUS_MAX = 500;
+const RADIUS_FLOOR = 1;
+/** Dab spacing's floor: any tighter and a stroke lays down so many dabs it stalls. */
+const SPACING_MIN = 0.02;
+
+/**
+ * A relative nudge held to a travel, without yanking a value already past
+ * it back inside: from a size typed at 800, the larger-size key does
+ * nothing and the smaller one steps down from 800, not from 500.
+ */
+function nudgeWithin(current: number, next: number, lo: number, hi: number): number {
+  return Math.min(Math.max(hi, current), Math.max(Math.min(lo, current), next));
+}
+
 /**
  * Stroke-start grace: the full ring stays up this long before the
  * mid-stroke reduction, so pencils without hover (iPad) still see the
@@ -490,7 +508,9 @@ export class InputShell {
   setBrushSpacing(v: number): void {
     const tool = this.currentTool();
     if (typeof tool._spacing !== 'number') return;
-    tool._spacing = Math.min(0.6, Math.max(0.02, v));
+    // Wider than the travel's 0.6 is a typed value, and a dotted stroke is
+    // a stroke; tighter than the floor is not.
+    tool._spacing = Math.max(SPACING_MIN, v);
     this.onBrushSettingsChange?.();
   }
 
@@ -511,7 +531,7 @@ export class InputShell {
     for (const [idx, value] of Object.entries(table)) {
       const tool = tools[Number(idx)];
       if (tool && typeof tool._spacing === 'number' && Number.isFinite(value)) {
-        tool._spacing = Math.min(0.6, Math.max(0.02, value));
+        tool._spacing = Math.max(SPACING_MIN, value);
       }
     }
   }
@@ -739,7 +759,9 @@ export class InputShell {
     if (this.worldScale?.isEnabled()) {
       this.worldScale.setSliderValue(px); // which tells the autosave itself
     } else {
-      this.currentTool()._radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, px));
+      // Held to a pixel, not to the travel: the sliders keep drags inside
+      // it, and a typed size past it is meant (see sliderEntry).
+      this.currentTool()._radius = Math.max(RADIUS_FLOOR, px);
       // The pixel sizes ride the scene record too.
       this.onBrushSettingsChange?.();
     }
@@ -1104,7 +1126,8 @@ export class InputShell {
       this.adjustLastY = e.clientY;
       const tool = this.currentTool();
       if (this.adjust === 'radius') {
-        this.setBrushRadius(this.getBrushRadius() + dx);
+        const r = this.getBrushRadius();
+        this.setBrushRadius(nudgeWithin(r, r + dx, RADIUS_MIN, RADIUS_MAX));
       } else {
         tool._intensity = Math.min(1, Math.max(0, tool._intensity + dy * 0.005));
       }
@@ -1794,7 +1817,8 @@ export class InputShell {
   private nudgeRadius(dir: number): void {
     const tool = this.currentTool();
     const step = Math.max(2, tool._radius * 0.06) * dir;
-    this.setBrushRadius(this.getBrushRadius() + step);
+    const r = this.getBrushRadius();
+    this.setBrushRadius(nudgeWithin(r, r + step, RADIUS_MIN, RADIUS_MAX));
     this.syncCursorBrush();
     this.cursor.flashScreen(NUDGE_FLASH_MS);
   }

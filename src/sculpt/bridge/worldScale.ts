@@ -34,9 +34,12 @@ import type { SculptSession } from './SculptSession';
  * a change applies to the brush in hand alone.
  */
 
-/** Slider travel, shared with screen-pixel mode so one control serves both. */
-const SLIDER_MIN = 5;
+/**
+ * Slider travel, shared with screen-pixel mode so one control serves both.
+ * A size typed past it is kept (see sliderEntry), down to the floor.
+ */
 const SLIDER_MAX = 500;
+const SLIDER_FLOOR = 1;
 
 /**
  * The tools a modifier swaps in for a single stroke (InputShell): Smooth
@@ -147,11 +150,11 @@ export class WorldScaleBrush {
   }
 
   getSliderValue(): number {
-    return Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, this.worldOf(this.inHand()) / this.unit()));
+    return Math.max(SLIDER_FLOOR, this.worldOf(this.inHand()) / this.unit());
   }
 
   setSliderValue(v: number): void {
-    this.worlds.set(this.inHand(), Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, v)) * this.unit());
+    this.worlds.set(this.inHand(), Math.max(SLIDER_FLOOR, v) * this.unit());
     this.sync();
     this.onChange?.();
   }

@@ -1,5 +1,6 @@
 import type { InputShell } from '../bridge/InputShell';
 import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
+import { holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
 
 /**
  * Minimal Procreate-style left rail (WS2h review request + undo round): two
@@ -12,7 +13,9 @@ import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
  * moves the nubs through InputShell.onBrushChange. The history buttons act
  * on tap and auto-repeat while held; their enabled state is re-checked by
  * refreshHistory(), which the mode tick polls (cheap: two flag reads, DOM
- * touched only on change).
+ * touched only on change). A double-tap on either track opens a number
+ * field beside it, as every slider's double-click does (sliderEntry): a
+ * size typed past 500 px is kept, and the nub pins at the top.
  */
 
 const R_MIN = 5;
@@ -114,7 +117,52 @@ export class BrushSliders {
     el.addEventListener('pointerup', hideSliderBubble);
     el.addEventListener('pointercancel', hideSliderBubble);
     holdable(el);
+    watchDoublePress(
+      el,
+      () => {
+        // A press on the track sets the value where it lands; the pair of
+        // presses that opens the field must leave the brush as it was.
+        const before = kind === 'size' ? this.input.getBrushRadius() : this.input.getBrushIntensity();
+        return () => {
+          if (kind === 'size') this.input.setBrushRadius(before);
+          else this.input.setBrushIntensity(before);
+        };
+      },
+      (undo) => {
+        undo();
+        hideSliderBubble();
+        this.openField(kind, el, nub);
+      },
+    );
     return { el, nub };
+  }
+
+  /**
+   * The typed value for a track, in a field beside its nub: the size in
+   * pixels, the strength in percent, as the drag bubble prints them.
+   */
+  private openField(kind: 'size' | 'strength', el: HTMLElement, nub: HTMLElement): void {
+    const size = kind === 'size';
+    const value = size ? Math.round(this.input.getBrushRadius()) : Math.round(this.input.getBrushIntensity() * 100);
+    const track = el.getBoundingClientRect();
+    const at = nub.getBoundingClientRect();
+    openNumberField(
+      String(value),
+      size ? 'Brush size' : 'Brush strength',
+      (field) => {
+        field.classList.add('slider-field--float');
+        field.style.left = `${Math.round(track.right + 8)}px`;
+        field.style.top = `${Math.round(at.top + at.height / 2)}px`;
+        document.body.appendChild(field);
+        return () => field.remove();
+      },
+      (typed) => {
+        const raw = parseTyped(typed);
+        if (!Number.isFinite(raw)) return;
+        if (size) this.input.setBrushRadius(holdToLimits(raw, { min: 1, integer: true }));
+        else this.input.setBrushIntensity(holdToLimits(raw / 100, { min: 0, max: 1 }));
+      },
+    );
   }
 
   private buildHistButton(

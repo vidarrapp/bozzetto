@@ -1,6 +1,7 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
+import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
 import { alphaThumbUrl } from '../bridge/alphas';
@@ -15,6 +16,14 @@ import { SidePanel } from './SidePanel';
 /** Matches the left rail's range so the two controls agree end to end. */
 const RADIUS_MIN = 5;
 const RADIUS_MAX = 500;
+
+/** Typed-value limits (sliderEntry): what each quantity can be, past the travel. */
+const FRACTION: Limits = { min: 0, max: 1 }; // a strength, a pressure amount, a profile
+const AMOUNT: Limits = { min: 0 };
+/** A brush radius: a whole pixel at least, and as large as anyone types. */
+const BRUSH_SIZE: Limits = { min: 1, integer: true };
+/** Under one a falloff's flat top reaches the rim and its slope divides by zero. */
+const PLATEAU: Limits = { min: 0, max: 0.95 };
 
 /**
  * The Tool palette (WS4/WS5, renamed from Sculpt by owner call): everything
@@ -152,8 +161,9 @@ export class SculptPanel extends SidePanel {
         RADIUS_MIN,
         RADIUS_MAX,
         1,
-        this.input.getBrushRadius(),
+        Math.round(this.input.getBrushRadius()),
         (v) => this.input.setBrushRadius(v),
+        { limits: BRUSH_SIZE },
       );
       this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(sizeRow);
@@ -171,11 +181,19 @@ export class SculptPanel extends SidePanel {
     );
     sizeCurveRow.hidden = d.size <= 0;
     dyn.appendChild(
-      compactRange('Pressure: size', 0, 1, 0.05, d.size, (v) => {
-        d.size = v;
-        sizeCurveRow.hidden = v <= 0;
-        this.input.onBrushSettingsChange?.();
-      }),
+      compactRange(
+        'Pressure: size',
+        0,
+        1,
+        0.05,
+        d.size,
+        (v) => {
+          d.size = v;
+          sizeCurveRow.hidden = v <= 0;
+          this.input.onBrushSettingsChange?.();
+        },
+        { limits: FRACTION },
+      ),
     );
     dyn.appendChild(sizeCurveRow);
     // Drag has no strength at all: no slider for it, and no pressure to
@@ -188,6 +206,7 @@ export class SculptPanel extends SidePanel {
         0.01,
         this.input.getBrushIntensity(),
         (v) => this.input.setBrushIntensity(v),
+        { limits: FRACTION },
       );
       this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(strengthRow);
@@ -200,11 +219,19 @@ export class SculptPanel extends SidePanel {
       );
       strengthCurveRow.hidden = d.strength <= 0;
       dyn.appendChild(
-        compactRange('Pressure: strength', 0, 1, 0.05, d.strength, (v) => {
-          d.strength = v;
-          strengthCurveRow.hidden = v <= 0;
-          this.input.onBrushSettingsChange?.();
-        }),
+        compactRange(
+          'Pressure: strength',
+          0,
+          1,
+          0.05,
+          d.strength,
+          (v) => {
+            d.strength = v;
+            strengthCurveRow.hidden = v <= 0;
+            this.input.onBrushSettingsChange?.();
+          },
+          { limits: FRACTION },
+        ),
       );
       dyn.appendChild(strengthCurveRow);
     }
@@ -215,9 +242,10 @@ export class SculptPanel extends SidePanel {
     // rake only combs at all when its stamps overlap.
     if (this.input.hasBrushSpacing()) {
       dyn.appendChild(
-        compactRange('Spacing', 0.02, 0.6, 0.01, this.input.getBrushSpacing(), (v) =>
-          this.input.setBrushSpacing(v),
-        ),
+        // Under 0.02 a stroke lays down so many dabs that it stalls.
+        compactRange('Spacing', 0.02, 0.6, 0.01, this.input.getBrushSpacing(), (v) => this.input.setBrushSpacing(v), {
+          limits: { min: 0.02 },
+        }),
       );
     }
 
@@ -231,21 +259,45 @@ export class SculptPanel extends SidePanel {
       // drops it at the rim (sharp), 1 is the plain gradual bell (soft).
       const move = manager.getTool(tool) as unknown as VolumetricMove;
       extras.appendChild(
-        compactRange('Falloff (sharp-soft)', 0.3, 1, 0.05, move.falloffPow, (v) => {
-          move.falloffPow = v;
-        }),
+        compactRange(
+          'Falloff (sharp-soft)',
+          0.3,
+          1,
+          0.05,
+          move.falloffPow,
+          (v) => {
+            move.falloffPow = v;
+          },
+          { limits: { min: 0.05 } },
+        ),
       );
     } else if (tool === Enums.Tools.BRUSH) {
       const strips = manager.getTool(tool) as unknown as ClayStripsBrush;
       extras.appendChild(
-        compactRange('Strip plateau', 0, 0.8, 0.05, strips.plateau, (v) => {
-          strips.plateau = v;
-        }),
+        compactRange(
+          'Strip plateau',
+          0,
+          0.8,
+          0.05,
+          strips.plateau,
+          (v) => {
+            strips.plateau = v;
+          },
+          { limits: PLATEAU },
+        ),
       );
       extras.appendChild(
-        compactRange('Strip layer', 0.01, 0.5, 0.01, strips.layer, (v) => {
-          strips.layer = v;
-        }),
+        compactRange(
+          'Strip layer',
+          0.01,
+          0.5,
+          0.01,
+          strips.layer,
+          (v) => {
+            strips.layer = v;
+          },
+          { limits: AMOUNT },
+        ),
       );
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
@@ -256,14 +308,31 @@ export class SculptPanel extends SidePanel {
       // surface in, which is a different tool entirely.
       const crease = manager.getTool(tool) as unknown as CreaseBrush;
       extras.appendChild(
-        compactRange('Profile (sharp-soft)', 1, 12, 0.5, 13 - crease.profile, (v) => {
-          crease.profile = 13 - v;
-        }),
+        // The exponent is 13 minus this, and has to stay above zero.
+        compactRange(
+          'Profile (sharp-soft)',
+          1,
+          12,
+          0.5,
+          13 - crease.profile,
+          (v) => {
+            crease.profile = 13 - v;
+          },
+          { limits: { max: 12.9 } },
+        ),
       );
       extras.appendChild(
-        compactRange('Pinch', 0, 2.5, 0.1, crease.pinch, (v) => {
-          crease.pinch = v;
-        }),
+        compactRange(
+          'Pinch',
+          0,
+          2.5,
+          0.1,
+          crease.pinch,
+          (v) => {
+            crease.pinch = v;
+          },
+          { limits: AMOUNT },
+        ),
       );
     } else if (tool === Enums.Tools.TWIST) {
       // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
@@ -274,28 +343,61 @@ export class SculptPanel extends SidePanel {
       // it (owner feedback).
       const polish = manager.getTool(tool) as unknown as PolishBrush;
       extras.appendChild(
-        compactRange('Plane lock (follow-flatten)', 0, 0.95, 0.05, polish.planeLock, (v) => {
-          polish.planeLock = v;
-        }),
+        // The brush itself holds the lock under 0.95.
+        compactRange(
+          'Plane lock (follow-flatten)',
+          0,
+          0.95,
+          0.05,
+          polish.planeLock,
+          (v) => {
+            polish.planeLock = v;
+          },
+          { limits: { min: 0, max: 0.95 } },
+        ),
       );
       extras.appendChild(
-        compactRange('Plateau', 0, 0.8, 0.05, polish.plateau, (v) => {
-          polish.plateau = v;
-        }),
+        compactRange(
+          'Plateau',
+          0,
+          0.8,
+          0.05,
+          polish.plateau,
+          (v) => {
+            polish.plateau = v;
+          },
+          { limits: PLATEAU },
+        ),
       );
       extras.appendChild(
-        compactRange('Build-up', 0.2, 2, 0.1, polish.gain, (v) => {
-          polish.gain = v;
-        }),
+        compactRange(
+          'Build-up',
+          0.2,
+          2,
+          0.1,
+          polish.gain,
+          (v) => {
+            polish.gain = v;
+          },
+          { limits: AMOUNT },
+        ),
       );
     } else if (tool === Enums.Tools.PAINT) {
       // The paint falloff, from the vendor's hardness: 1 is a hard-edged
       // stamp, 0 fades from the centre. Shown sharp-to-soft like the rest.
       const paint = manager.getTool(tool);
       extras.appendChild(
-        compactRange('Profile (sharp-soft)', 0, 1, 0.05, 1 - (paint._hardness ?? 0.75), (v) => {
-          paint._hardness = 1 - v;
-        }),
+        compactRange(
+          'Profile (sharp-soft)',
+          0,
+          1,
+          0.05,
+          1 - (paint._hardness ?? 0.75),
+          (v) => {
+            paint._hardness = 1 - v;
+          },
+          { limits: FRACTION },
+        ),
       );
     }
 
@@ -488,8 +590,14 @@ export class SculptPanel extends SidePanel {
   private buildMask(body: HTMLElement): void {
     const sec = section(body, 'Mask');
     sec.appendChild(
-      compactRange('Darken', 0.05, 1, 0.05, this.viewer.materials.getMaskDarken(), (v) =>
-        this.viewer.materials.setMaskDarken(v),
+      compactRange(
+        'Darken',
+        0.05,
+        1,
+        0.05,
+        this.viewer.materials.getMaskDarken(),
+        (v) => this.viewer.materials.setMaskDarken(v),
+        { limits: FRACTION },
       ),
     );
     const ops = div('sculpt-panel__row');
@@ -503,9 +611,17 @@ export class SculptPanel extends SidePanel {
     sec.appendChild(ops);
 
     sec.appendChild(
-      compactRange('Extract thickness', 0, 6, 0.1, this.extractThickness, (v) => {
-        this.extractThickness = v;
-      }),
+      compactRange(
+        'Extract thickness',
+        0,
+        6,
+        0.1,
+        this.extractThickness,
+        (v) => {
+          this.extractThickness = v;
+        },
+        { limits: AMOUNT },
+      ),
     );
     const extractRow = div('sculpt-panel__row');
     extractRow.appendChild(
@@ -520,10 +636,9 @@ export class SculptPanel extends SidePanel {
 
   /** Follow radius/strength changes made anywhere else (rail, keys, drags). */
   refreshBrushValues(): void {
-    if (this.sizeInput) this.sizeInput.value = String(Math.round(this.input.getBrushRadius()));
-    if (this.strengthInput) {
-      this.strengthInput.value = this.input.getBrushIntensity().toFixed(2);
-    }
+    // Through the slider's own value, so a size typed past 500 reads as itself.
+    if (this.sizeInput) setSliderValue(this.sizeInput, Math.round(this.input.getBrushRadius()));
+    if (this.strengthInput) setSliderValue(this.strengthInput, Number(this.input.getBrushIntensity().toFixed(2)));
   }
 
   /** The Extract thickness the ctrl+e hotkey should use. */
