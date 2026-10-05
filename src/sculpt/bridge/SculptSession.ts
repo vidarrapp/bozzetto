@@ -639,7 +639,7 @@ export class SculptSession {
 
   /**
    * Delete the highest level of the active object's stack, with its
-   * detail (the Model panel's Delete highest level). The vendor's
+   * detail (the Model panel's Delete highest). The vendor's
    * deleteHigher drops every level above the SELECTED one, so the
    * selection is walked to the level under the top first, and back down
    * to where it was afterwards when it sat lower still; when it was on the

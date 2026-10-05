@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { appVersion } from './scripts/app-version.mjs';
 
 // Builds the viewer as a single self-contained classic IIFE (three.js and all),
 // emitted to dist/embed/. A classic script — not an ES module — is required so
@@ -10,6 +11,11 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   base: './',
+  // Match the main build: the hotkey guide shows the version, here the
+  // version of the build that wrote the export.
+  define: {
+    __BOZZETTO_VERSION__: JSON.stringify(appVersion()),
+  },
   resolve: {
     // Match the main build: route bare `three` to the WebGPU build so the
     // self-contained embed renders with WebGPURenderer too (see vite.config.ts).

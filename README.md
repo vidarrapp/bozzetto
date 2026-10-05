@@ -32,6 +32,8 @@ Bozzetto installs to the home screen and launches fullscreen. That is the way to
 
 **Installed, Bozzetto works offline.** A service worker precaches the app with its base meshes, mannequins and default environment, so it opens, sculpts and poses with no network at all. The gallery still shows your work in progress and the projects you saw last time; the other environments download once and are kept. Only opening a timelapse you have never played needs a connection.
 
+**Updates download in the background, and the app says so:** a notice in the corner shows the download's progress, and afterwards names the version it updated to. On the gallery an update goes in straight away; anywhere else the notice offers **Reload**, which saves your work first.
+
 Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish or save to the library. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data. Deleting the app still takes it, which is why a guest's **Save to library** downloads a file.
 
 ## Sculpt
@@ -44,7 +46,7 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
 - **Masking** with `Ctrl`, plus blur, sharpen, invert, clear, and **Extract** to turn a masked region into a new object, all in the Model panel's **Mask** section, which acts on the active object.
 - **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
-- **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh. **Delete highest level** in the Model panel drops the top level of the stack with its detail, in one undo step.
+- **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh. **Delete highest**, beside **Rebuild** in the Model panel, drops the top level of the stack with its detail, in one undo step.
 - **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
 - **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. The files are precached with the app, so the whole library works offline.
 - **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, whose rows `↑` and `↓` step through (`Shift` extends the selection), a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked. **Solo** (`Alt`+`Q`, or the Scene panel's **Solo** button) shows the active object alone until you press it again.
@@ -276,7 +278,11 @@ setting can be, so an intensity never goes below zero, a roughness stays
 within 0 to 1, and an angle wraps round.
 
 Every key below can be changed under **Edit → Preferences** (`Ctrl`+`,`). The
-guide (`H`) shows whatever keys are set.
+guide (`H`) shows whatever keys are set. At its foot it names the version
+running, the release and the commit it was built from, as in
+`0.5.3 (2e735c6)`, with **Check for updates** beside it. The desktop app names
+it there and, on macOS, in its About panel, and has nothing to check: it
+updates by release.
 
 | Input | Action |
 | --- | --- |
@@ -337,6 +343,8 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 Live on the web; in the next desktop release.
 
+- **The app says when it updates.** Updates used to go in silently, and only on the gallery, so an iPad could stay on an old version with nothing to say so. Now a notice in the bottom-right corner says **Downloading update…**, with a bar for how much of it has arrived. On the gallery it then says **Updating…** and goes straight in; anywhere else it says **Update ready** with **Reload**, which saves the work first, as leaving for the gallery does (Sculpt's autosave, Armature's save), and asks before reloading if it cannot. After the reload it says, once, **Updated to** and the version. An update that cannot install says **Update failed** with **Try again**, and the browser's console names the file it stopped at and what the server answered. The notice blocks nothing, stays under the Capture window and clear of the toolbar, the transport and an open panel, and goes with the interface on `Tab`. The desktop app has none: it updates by release.
+- **The version, in the hotkey guide.** The guide's foot names the version running, the release and the commit it was built from, as in `0.5.3 (2e735c6)`, so which build a device is on has an answer on the device. **Check for updates** beside it says **Up to date**, or finds the new version and starts its download. The desktop app names its version there and, on macOS, in the About panel, without the check.
 - **An expired sign-in says so, and the save is kept.** Cloudflare Access sessions run out, and an app installed on an iPad keeps a sign-in of its own, apart from Safari's. Once it had run out, **Save to library** said "the server could not be reached" with the server up, and the app went on offering the owner's things: Access's redirect to its login page failed the way no network does, and the offline copy of the sign-in answered in its place. Now the app tells the two apart. The gallery shows **Log in** and says once that the sign-in has expired. **Save to library** keeps the scene on the device, its card marked **Not uploaded** with **Upload to Projects**, and the notice offers **Sign in again**, which stores the work, goes through the Access login and comes back to the same scene, its project included; the next save that goes through replaces the kept copy. With no connection the scene is kept the same way, and the notice says that instead. **Upload to Projects** on a card, publishing and the Capture window say the sign-in has expired and offer **Sign in again** too; recording carries on meanwhile. Offline, the last sign-in still stands.
 - **The environment's intensity on a scale you can use, and the backdrop apart from it.** At 1 the default environment filled the key light's shadow side in almost as brightly as the key itself, and the values in use sat at the very bottom of the slider. Intensity 1 now means what 0.2 did: the slider's 0 to 2, in hundredths, covers the old 0 to 0.4 (it ran 0 to 3), and an environment starts at 1, the old 0.2 (it started at the old 1). The HDRI shown as the background has its own **Bg brightness** beside Bg blur, 0 to 2 and 1 to begin with (the plate as the old intensity 1 showed it), so it no longer goes dark or bright with the lighting. Everything saved before, looks, the autosave, `.bozz` files, armatures, published projects and single-file exports, opens exactly as it rendered: a record without the new scale's mark is read on the old one. A look saved from now on, in a file or a published project, opened in an older build (the desktop app until its next release) gets an environment five times too strong there.
 - **`L` in Armature mode.** Hold `L` and drag to move the key light, as in Sculpt: across swings it round the figure, up and down raises and lowers it. While `L` is held the drag does nothing else: no orbit, no part picked, no gizmo or ball dragged. Rebind it under **Edit → Preferences**.
@@ -344,7 +352,7 @@ Live on the web; in the next desktop release.
 - **Recording only where it can go somewhere.** A timelapse leaves the device only by publishing, which needs the sign-in, so recording is allowed signed in, on the web and the iPad, and in the desktop app. A guest on the web has no Capture button and records nothing, whatever the device remembered. Frames recorded before stay where they are, and New clears them as it always has. Signing in later, through the publish forms or elsewhere before coming back to the page, brings the button. An autosave that stops itself now also says so on screen, for everyone: a guest has no Capture window to read the note in.
 - **The Model panel docks on the left, under Scene.** The left edge holds Scene then Model, the right Render then Tool. Each edge still opens one panel at a time; the tabs keep clear of each other, and of an open panel on their own edge, on every iPad screen in either orientation; and the albedo picker opens beside the panel rather than over its sliders.
 - **Mask and Extract move to the Model panel.** The Tool panel's Mask section (darkening, Blur, Sharpen, Invert, Clear, and Extract with its thickness) is a section of the Model panel now, acting on the active object as before. The mask keys and the Mask brush are unchanged; `Ctrl`+`E` extracts at the Model panel's thickness.
-- **Delete highest level.** The Model panel's Topology section drops the top level of the active object's subdivision stack. If that level was selected, the selection moves to the new top. It is one undo step, and undo brings the level back with its detail; with one level left the button is disabled.
+- **Delete highest.** The Model panel's Topology section drops the top level of the active object's subdivision stack, from a button beside **Rebuild** (it was **Delete highest level**, on a row of its own). If that level was selected, the selection moves to the new top. It is one undo step, and undo brings the level back with its detail; with one level left the button is disabled.
 - **Ambient occlusion outside sculpt mode again.** The Render panel applied its own starting AO model each time it was built, and that model was Cavity, which only sculpt mode draws, so the viewer, published projects, the editor's and the uploader's previews and their single-file exports, and Armature mode rendered with no AO at all, whatever had been saved. Outside sculpt mode the panel offers GTAO and Off, starts on GTAO at its defaults, and keeps what the project or the look saved; sculpt mode keeps Cavity, GTAO and Off. A sculpt published on Cavity now goes out on GTAO, and an armature saved on it comes back on GTAO. A project whose look was saved in the editor while this was broken carries AO off and opens with it off: save its look again on GTAO.
 
 - **Type a value into any slider.** A double-click, or a double-tap on an iPad, turns a slider into a number field in its place, with the number keyboard; Enter or a press anywhere else applies what you typed and `Esc` cancels. A typed value may go past the slider's travel, as in Maya: the handle stays at the end and the row shows the value, and it saves with the look, the brush or the figure like any other. Only what the setting can be holds it back (no intensity below zero, no roughness past 1, angles wrap). This covers the Render, Tool, Model and Armature panels and both tracks of the brush rail, where a brush can now be wider than 500 px. Double-clicking the depth-of-field Focus slider keeps a tap-to-focus lock until you type a focus.
@@ -564,7 +572,8 @@ src/
     ui/                    toolbar, File menu, Capture window, Tool/Model/Scene panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
-                           Preferences and its settings, touch guards
+                           Preferences and its settings, touch guards, the
+                           service worker and its update notices
   create/                  the timelapse uploader's entry
   desktop/, net/           the desktop shell's renderer side, and where API calls go
   embed/main.ts            entry for the self-contained single-file export
@@ -586,6 +595,7 @@ functions/
   _shared/                 D1/R2 helpers, manifest shaping, auth
 migrations/                D1 schema
 scripts/
+  app-version.mjs          the version a build says it is: package.json's + the commit
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
   export-single-file.mjs   CLI: timelapse to a self-contained .html

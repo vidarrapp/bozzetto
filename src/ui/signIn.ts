@@ -1,4 +1,5 @@
 import { desktopSignIn, isDesktop } from '../net/origin';
+import { readyToLeave } from './leaving';
 
 /**
  * Sign in again from wherever an expired session was noticed, and come
@@ -7,29 +8,13 @@ import { desktopSignIn, isDesktop } from '../net/origin';
  * Cloudflare Access fronts /admin*, so a navigation to /admin/login runs
  * its login, and the Function there (functions/admin/login.ts) then sends
  * the browser back to `next`: this page. The work crosses the round trip
- * the way it crosses a reload. A mode registers what must be written before
- * the page goes - Sculpt its autosave, Armature its save - and the page it
- * returns to restores from there, the scene's project link with it.
+ * as it crosses any deliberate leaving (ui/leaving): what each mode
+ * registered is written first, and the page it returns to restores from
+ * there.
  *
  * The desktop app has no such page to go to: it signs in through its own
  * window and the page stays where it is.
  */
-
-/**
- * Write what the page holds that is not stored yet. Resolves false when
- * something could not be, which would be lost by leaving.
- */
-type Flush = () => Promise<boolean>;
-
-const flushes = new Set<Flush>();
-
-/** Have `flush` run before the page leaves to sign in. Returns the undo. */
-export function beforeSignIn(flush: Flush): () => void {
-  flushes.add(flush);
-  return () => {
-    flushes.delete(flush);
-  };
-}
 
 /** /admin/login, told to come back to this page. */
 export function signInHref(): string {
@@ -44,16 +29,7 @@ export function signInHref(): string {
  */
 export async function signInAgain(): Promise<boolean> {
   if (isDesktop()) return desktopSignIn().catch(() => false);
-  const stored = await Promise.all([...flushes].map((flush) => flush().catch(() => false)));
-  if (
-    stored.includes(false) &&
-    !confirm(
-      'The newest work on this page could not be stored on this device, and signing in means leaving the page. ' +
-        'Leave anyway? Cancel, then File > Save file, keeps a copy.',
-    )
-  ) {
-    return false;
-  }
+  if (!(await readyToLeave('signing in means leaving the page. Leave anyway?'))) return false;
   window.location.assign(signInHref());
   return false;
 }

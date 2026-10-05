@@ -2417,9 +2417,10 @@ body.chrome-hidden .transport {
 
 /* Deliberately NOT hidden (review call): the brush sliders and undo/redo
    chips, the Negative button and its group, the object stats, and every
-   toast, tooltip and hotkey guide. Hiding those left a screen you could
-   not work on or read - the standing panels and their docked tabs were
-   the clutter worth clearing, not the tools. Keeping the toolbar's left
+   toast, tooltip and hotkey guide - all but the update notice, which waits
+   for the interface to come back (its own rule). Hiding those left a screen
+   you could not work on or read - the standing panels and their docked tabs
+   were the clutter worth clearing, not the tools. Keeping the toolbar's left
    group also keeps the hide button itself on screen, which is what makes
    the way back obvious without a corner glyph.
    Restoring is instant by construction: the transition above lives on the
@@ -2689,6 +2690,127 @@ body.chrome-hidden .transport {
 
 .sculpt-toast__btn:hover {
   background: var(--hover);
+}
+
+/* The update notice (ui/updates): the bottom-right corner on every page,
+   in the toasts' look. Under the Capture window (20), the hotkey guide and
+   the menus, over the panels; and wherever something already holds the
+   corner, beside it rather than over it (the modifiers below, which
+   ui/updateNotice sets from what is on the page). */
+.update-notice {
+  position: fixed;
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 19;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 7px 8px 8px 14px;
+  overflow: hidden; /* the bar runs along the foot, inside the border */
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+}
+
+/* A notice with nothing to press keeps its padding even. */
+.update-notice--plain {
+  padding-right: 14px;
+}
+
+.update-notice[data-state='failed'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.update-notice__words {
+  flex: 1 1 auto;
+}
+
+.update-notice .sculpt-toast__btn {
+  padding: 4px 10px;
+}
+
+.update-notice .update-notice__dismiss {
+  padding: 4px 8px;
+}
+
+.update-notice__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--control-bg);
+}
+
+.update-notice__fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* No measure (the worker's list could not be read, or the takeover that
+   follows): a stretch of bar runs along it instead. */
+.update-notice__bar--busy .update-notice__fill {
+  width: 30%;
+  transition: none;
+  animation: update-notice-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes update-notice-busy {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-notice__bar--busy .update-notice__fill {
+    width: 100%;
+    opacity: 0.5;
+    animation: none;
+  }
+}
+
+/* Where the corner is taken, set by ui/updateNotice from what the page
+   holds. */
+
+/* Sculpt: above the toolbar's row, the corner button that hides the
+   interface included. The brushes reach to 68px, and on a narrow screen
+   the notice is wider than the gap beside them. */
+.update-notice--over-button {
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+
+/* The viewer: above the transport bar. */
+.update-notice--over-transport {
+  bottom: 101px;
+}
+
+/* An open panel on the right reaches down to about 90px off the bottom:
+   raised over Sculpt's toolbar or the transport the notice would cover its
+   foot, so it moves to the panel's left. */
+.update-notice--beside-panel {
+  right: calc(292px + env(safe-area-inset-right, 0px));
+}
+
+/* Gone with the interface on Tab, to come back with it: a clear view is
+   what hiding it asks for. */
+body.chrome-hidden .update-notice {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    visibility 0s linear 0.18s;
 }
 
 /* Inline-SVG icons (repo overrides) sized and tinted like font glyphs. */
@@ -3197,7 +3319,8 @@ body.is-sampling * {
   border-top: 1px solid var(--panel-border);
 }
 
-.help-guide__prefs {
+.help-guide__prefs,
+.help-guide__check {
   padding: 5px 10px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
@@ -3208,8 +3331,32 @@ body.is-sampling * {
   cursor: pointer;
 }
 
-.help-guide__prefs:hover {
+.help-guide__prefs:hover,
+.help-guide__check:hover {
   border-color: var(--accent);
+}
+
+.help-guide__check:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The build this is, and the way to ask for a newer one. */
+.help-guide__version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.help-guide__ver {
+  flex-basis: 100%;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 /* The gallery's "start a sculpt" tile: same footprint as a project card,

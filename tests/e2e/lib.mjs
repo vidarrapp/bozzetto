@@ -32,10 +32,17 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-/** Serve a folder on a free localhost port. */
-export function serve(root, port = 0) {
-  const base = resolve(root);
-  const server = createServer((req, res) => {
+/**
+ * Serve a folder on a free localhost port.
+ *
+ * `root` may be a function, asked on every request, so a suite can switch
+ * the site to another build under the same origin - a deploy, as an
+ * installed app meets one. `gone(pathname)` answers 404 for a file that is
+ * there, and `delay(pathname)` holds an answer back that many milliseconds.
+ */
+export function serve(root, port = 0, { gone, delay } = {}) {
+  const server = createServer(async (req, res) => {
+    const base = resolve(typeof root === 'function' ? root() : root);
     const url = new URL(req.url ?? '/', 'http://localhost');
     let file = normalize(join(base, decodeURIComponent(url.pathname)));
     if (!file.startsWith(base)) {
@@ -43,7 +50,9 @@ export function serve(root, port = 0) {
       return;
     }
     if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
-    if (!existsSync(file)) {
+    const wait = delay?.(url.pathname) ?? 0;
+    if (wait > 0) await new Promise((ok) => setTimeout(ok, wait));
+    if (!existsSync(file) || gone?.(url.pathname)) {
       res.writeHead(404).end();
       return;
     }

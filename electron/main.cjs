@@ -11,6 +11,7 @@
  */
 const { app, BrowserWindow, Menu, protocol, net, shell, session } = require('electron');
 const fs = require('node:fs/promises');
+const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {
@@ -82,6 +83,7 @@ function main() {
     // and re-registering there would take the whole app down.
     registerFileIpc();
     registerServerIpc();
+    setAboutPanel();
     buildMenu();
     createWindow();
     // A file opened from the OS at launch: on Windows and Linux it is an
@@ -131,6 +133,23 @@ function main() {
 
 /** True from the moment a quit was requested until it is cancelled or done. */
 let quitting = false;
+
+/**
+ * The About panel (the app menu's, on macOS) names the build the way the
+ * hotkey guide does: package.json's version and the commit, "Version 0.5.3
+ * (2e735c6)". The commit is known only when the renderer is built, so the
+ * desktop build writes both beside it (vite.config.ts). There is nothing to
+ * update from here - the app ships its bytes and has no service worker -
+ * so the version is all it says.
+ */
+function setAboutPanel() {
+  try {
+    const { version, commit } = JSON.parse(readFileSync(path.join(DIST, 'version.json'), 'utf8'));
+    app.setAboutPanelOptions({ applicationName: 'Bozzetto', applicationVersion: version, version: commit });
+  } catch {
+    // A build from before the file: the panel keeps package.json's version.
+  }
+}
 
 /** Serve dist-desktop, refusing anything that climbs out of it. */
 function serveApp() {

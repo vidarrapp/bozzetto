@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { rmSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+import { appVersion, buildCommit, packageVersion } from './scripts/app-version.mjs';
 
 // Served at the site root on Cloudflare Pages, alongside Functions at /api,
 // /admin/api and /media — so absolute asset URLs (base '/') are correct, and
@@ -9,7 +10,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 const root = fileURLToPath(new URL('.', import.meta.url));
 
 /**
- * `--mode desktop` builds for the Electron shell. Three differences, all
+ * `--mode desktop` builds for the Electron shell. Four differences, all
  * forced by the shell rather than chosen:
  *   - No service worker. bozzetto://app IS a secure context, so the worker
  *     would happily register and then serve a stale precache inside an app
@@ -18,12 +19,32 @@ const root = fileURLToPath(new URL('.', import.meta.url));
  *     through devtools-over-the-wire.
  *   - No /admin entry. The desktop app has no editor; the publish flow
  *     imports src/admin/api.ts directly, which is unaffected.
+ *   - A version.json beside the app, for the About panel: the main process
+ *     is not built here, so it cannot have the version injected.
  */
 export default defineConfig(({ mode }) => {
   const desktop = mode === 'desktop';
   return {
   base: '/',
+  define: {
+    // What the hotkey guide and the update notices say this build is
+    // (scripts/app-version.mjs). Each build's own, so a deploy with no
+    // version bump still reads differently from the one before it.
+    __BOZZETTO_VERSION__: JSON.stringify(appVersion()),
+  },
   plugins: [
+    // The desktop app's About panel (electron/main.cjs) reads the version
+    // from here, the commit being known only at build time.
+    desktop && {
+      name: 'bozzetto-version-file',
+      generateBundle(): void {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({ version: packageVersion(), commit: buildCommit() }),
+        });
+      },
+    },
     // The demo timelapse is a synthetic test fixture - an icosphere
     // displaced by noise - and it ships nowhere: not in the desktop app,
     // where a bust nobody sculpted has no business in the user's own

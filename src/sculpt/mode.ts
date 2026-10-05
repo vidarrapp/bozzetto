@@ -30,7 +30,7 @@ import { galleryForm } from './ui/galleryForm';
 import { statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { isDesktop } from '../net/origin';
-import { beforeSignIn } from '../ui/signIn';
+import { beforeLeaving } from '../ui/leaving';
 import {
   mountDesktop,
   setDocumentDirty,
@@ -1389,11 +1389,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     });
   };
   galleryLink?.addEventListener('click', onLeave);
-  // Signing in again leaves the page and comes back to it (ui/signIn): the
-  // scene goes as it goes to the gallery, written and pictured first, and
-  // the autosave brings it back, link and unsent copy included. A scene
-  // the store does not hold as it stands is said before the page goes.
-  const offSignIn = beforeSignIn(async () => {
+  // Signing in again and reloading onto an update leave the page and come
+  // back to it (ui/leaving): the scene goes as it goes to the gallery,
+  // written and pictured first, and the autosave brings it back, link and
+  // unsent copy included. A scene the store does not hold as it stands is
+  // said before the page goes.
+  const offLeaving = beforeLeaving(async () => {
     await Promise.all([snapshot(), storeLook()]);
     return persist.settle();
   });
@@ -1411,7 +1412,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     document.removeEventListener('change', onLookInput, true);
     document.removeEventListener('visibilitychange', onLookHide);
     document.removeEventListener('visibilitychange', onReturn);
-    offSignIn();
+    offLeaving();
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     perfLog.triangles = null; // the session is going; the log keeps its entries

@@ -262,9 +262,10 @@ export class ModelPanel extends SidePanel {
   }
 
   /**
-   * Rebuild the multiresolution block: level slider + Lower/Higher/
-   * Subdivide/Rebuild, and Delete highest level. Levels exist only on
-   * static multimeshes; with dynamic topology on the block explains itself
+   * Rebuild the multiresolution block: level slider, Lower/Higher/
+   * Subdivide, then Rebuild and Delete highest - one acts at the bottom of
+   * the stack, the other at the top. Levels exist only on static
+   * multimeshes; with dynamic topology on the block explains itself
    * instead.
    */
   refreshTopology(): void {
@@ -314,6 +315,16 @@ export class ModelPanel extends SidePanel {
     const subdiv = this.opButton('Subdivide', () => void this.session.subdivide());
     subdiv.disabled = lv.sel !== lv.levels - 1;
     subdiv.title = 'Add a finer level above the top one (ctrl+D)';
+    ops.append(lower, higher, subdiv);
+    this.topoBody.appendChild(ops);
+
+    // Rebuild and Delete highest share the second row: Rebuild adds a
+    // level under the bottom one, Delete highest takes the top one away
+    // with its detail, and one undo brings it back. The short name is what
+    // lets the two sit together at the panel's width; the title says it in
+    // full. A lone level is the object itself, so there is nothing to
+    // delete.
+    const ends = div('sculpt-panel__row');
     const rebuild = this.opButton('Rebuild', () => {
       if (!this.session.reverse()) {
         alert('This topology cannot be rebuilt into a lower level.');
@@ -321,18 +332,11 @@ export class ModelPanel extends SidePanel {
     });
     rebuild.disabled = lv.sel !== 0;
     rebuild.title = 'Rebuild a coarser level under the lowest one (reversion)';
-    ops.append(lower, higher, subdiv, rebuild);
-    this.topoBody.appendChild(ops);
-
-    // The top of the stack goes, with its detail; one undo brings it back.
-    // A lone level is the object itself, so there is nothing to delete.
-    const drop = div('sculpt-panel__row');
-    const del = this.opButton('Delete highest level', () => void this.session.deleteHighestLevel());
-    del.classList.add('sculpt-panel__btn--wide');
+    const del = this.opButton('Delete highest', () => void this.session.deleteHighestLevel());
     del.disabled = lv.levels <= 1;
     del.title = 'Remove the top subdivision level and its detail (Ctrl+Z brings it back)';
-    drop.appendChild(del);
-    this.topoBody.appendChild(drop);
+    ends.append(rebuild, del);
+    this.topoBody.appendChild(ends);
   }
 
   /** Re-sync stateful controls after engine-side changes (undo, dyntopo). */

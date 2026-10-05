@@ -9,13 +9,18 @@
 // Render, Tool and Armature panels and on the brush rail, the Render
 // panel's ranges and defaults, and ambient occlusion's. Then the Capture
 // window and where recording is allowed, the panels' sides on the iPad's
-// screens, Mask and Extract in the Model panel, Delete highest level,
-// ambient occlusion outside sculpt mode, the environment's rescale and its
-// plate, and the key light on L in Armature mode. Each gets (page, base,
-// t) - a fresh page, the server's origin, and the check collector.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { openArmature, openSculpt } from './lib.mjs';
+// screens, Mask and Extract in the Model panel, Delete highest on
+// Rebuild's row, ambient occlusion outside sculpt mode, the environment's
+// rescale and its plate, the key light on L in Armature mode, and an
+// update to the installed app between two builds, said on screen. Each
+// gets (page, base, t) - a fresh page, the server's origin, and the check
+// collector.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openArmature, openSculpt, serve } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
 const names = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
@@ -875,6 +880,100 @@ const cachedProbe = (page) =>
     const hit = await (await caches.open('bozzetto-whoami')).match('/admin/api/whoami');
     return hit ? await hit.text() : null;
   });
+
+// --- updates: two builds, one origin -------------------------------------
+
+/**
+ * The tree as it stands, built twice the way two deploys of it differ: the
+ * same code under two commits, given as Cloudflare Pages gives one
+ * (CF_PAGES_COMMIT_SHA). The second changes only what a version changes -
+ * the main chunk that carries it, the chunks that import that, index.html
+ * and the worker's list - which is an update as small as they come. Built
+ * side by side, without source maps (nothing here reads them), into a
+ * scratch folder the caller removes.
+ */
+async function twoBuilds(oldSha, newSha) {
+  const repo = fileURLToPath(new URL('../..', import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), 'bozzetto-updates-'));
+  const vite = join(repo, 'node_modules', 'vite', 'bin', 'vite.js');
+  const build = (name, sha) =>
+    new Promise((ok, fail) => {
+      const outDir = join(dir, name);
+      const args = [vite, 'build', '--mode', 'test', '--outDir', outDir, '--emptyOutDir', '--sourcemap', 'false', '--logLevel', 'error'];
+      const p = spawn(process.execPath, args, { cwd: repo, env: { ...process.env, CF_PAGES_COMMIT_SHA: sha }, stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = '';
+      p.stderr.on('data', (d) => (err += d));
+      p.on('error', fail);
+      p.on('exit', (code) => (code === 0 ? ok(outDir) : fail(new Error(`the ${name} build failed (${code}): ${err.slice(-1500)}`))));
+    });
+  try {
+    const [older, newer] = await Promise.all([build('old', oldSha), build('new', newSha)]);
+    return { dir, older, newer };
+  } catch (e) {
+    rmSync(dir, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+/** A build's main script, as its index.html names it: which build a page runs. */
+const mainScript = (dir) => readFileSync(join(dir, 'index.html'), 'utf8').match(/src="(\/assets\/main-[^"]+\.js)"/)?.[1] ?? null;
+
+/** The main script the page is running, or null mid-reload. */
+const runningScript = (page) =>
+  page.evaluate(() => document.querySelector('script[type="module"][src*="/assets/main-"]')?.getAttribute('src') ?? null).catch(() => null);
+
+/**
+ * Everything the update notice says, in order, across the reloads an
+ * update makes: its state, words, whether it shows, its bar (a percentage,
+ * "busy", or null for none) and its buttons. Kept on this side, so a
+ * reload loses nothing.
+ */
+async function noticeLog(ctx) {
+  const log = [];
+  await ctx.exposeBinding('__updateNotice', (_source, entry) => void log.push(entry));
+  await ctx.addInitScript(() => {
+    let last = '';
+    const read = () => {
+      const el = document.querySelector('.update-notice');
+      if (!el) return;
+      const bar = el.querySelector('.update-notice__bar');
+      const entry = {
+        state: el.dataset.state ?? null,
+        text: el.querySelector('.update-notice__words')?.textContent ?? '',
+        shown: !el.hidden,
+        bar: bar && !bar.hidden ? (bar.getAttribute('aria-valuenow') ?? 'busy') : null,
+        buttons: [...el.querySelectorAll('button')].filter((b) => !b.hidden).map((b) => b.textContent),
+        title: el.title,
+        page: location.pathname + location.search,
+      };
+      const key = JSON.stringify(entry);
+      if (key === last) return;
+      last = key;
+      window.__updateNotice(entry);
+    };
+    new MutationObserver(read).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  return log;
+}
+
+/** The notice log, one entry a line, for a check's message. */
+const showNotices = (log) =>
+  log.map((e) => `${e.state} "${e.text}"${e.bar !== null ? ` [${e.bar}]` : ''}${e.shown ? '' : ' (hidden)'}${e.buttons.length ? ` {${e.buttons.join(', ')}}` : ''}`).join(' > ');
+
+/** Poll `fn` until it answers truthy or time runs out; a reload in between is no answer. */
+async function eventually(page, fn, timeout = 60_000) {
+  const until = Date.now() + timeout;
+  while (Date.now() < until) {
+    try {
+      const v = await fn();
+      if (v) return v;
+    } catch {
+      /* the page is between documents */
+    }
+    await page.waitForTimeout(150);
+  }
+  return null;
+}
 
 /** The last failure notice: its words and its buttons. Null when none comes. */
 const failedNotice = (page) =>
@@ -3469,11 +3568,20 @@ export const suites = {
     t.ok(!!write && /^put \d/.test(write.note), `the write after it, with the put's own share (${write ? `${write.ms.toFixed(1)} ms, ${write.note}` : 'missing'})`);
     t.ok(!!stall && stall.tris === tris && /^frame \d/.test(stall.note) && Math.abs(stall.at - Date.now()) < 120_000, `the render loop logged the stall it caused, with a time of day (${stall ? `${Math.round(stall.ms)} ms, ${stall.note}, at ${new Date(stall.at).toISOString()}` : 'missing'})`);
     t.ok(entries.every((e, i) => i === 0 || entries[i - 1].t >= e.t), 'the console list is newest first');
-    // The overlay shows both within a redraw, in the words of the log.
-    await page.waitForFunction(() => /autosave serialise/.test(document.querySelector('.perf-debug')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => {});
-    const text = await page.evaluate(() => document.querySelector('.perf-debug')?.textContent ?? '');
-    const longest = (what) =>
+    // The overlay shows both within a redraw, in the words of the log. It
+    // redraws on a timer, and when frames are slow the stall is logged a
+    // redraw after the serialise (it is noted by the first frame after the
+    // hold, which can come a second or more late in a software-rendered
+    // browser), so the wait is for both, not for the first redraw with one.
+    const longestIn = (text, what) =>
       Math.max(0, ...[...text.matchAll(new RegExp(`${what}(?: ×\\d+)?\\s+([\\d.]+) (ms|s)\\b`, 'g'))].map((m) => Number(m[1]) * (m[2] === 's' ? 1000 : 1)));
+    const overlay = () => page.evaluate(() => document.querySelector('.perf-debug')?.textContent ?? '');
+    let text = await overlay();
+    for (const until = Date.now() + 10_000; Date.now() < until; text = await overlay()) {
+      if (longestIn(text, 'autosave serialise') >= HOLD - 10 && longestIn(text, 'stall') >= HOLD - 10) break;
+      await page.waitForTimeout(100);
+    }
+    const longest = (what) => longestIn(text, what);
     const lineOf = (what) => text.split('\n').find((l) => l.includes(what))?.trim() ?? 'missing';
     t.ok(longest('autosave serialise') >= HOLD - 10, `the overlay lists the serialise: "${lineOf('autosave serialise')}"`);
     t.ok(longest('stall') >= HOLD - 10, `and the stall: "${text.split('\n').find((l) => /stall/.test(l) && /\d s\b/.test(l))?.trim() ?? lineOf('stall')}"`);
@@ -4999,12 +5107,13 @@ export const suites = {
     t.eq(await count(page), before - 1, 'and an undo takes the extraction back');
   },
 
-  // Delete highest level (owner request): the Model panel's Topology drops
-  // the top of the active object's stack. With the top selected the
-  // selection moves to the new top; from lower down it stays where it is.
-  // It is one undo step, which brings the level back with its detail, and
-  // redo deletes it again; the level slider and the triangle count follow,
-  // and with one level left the button is disabled.
+  // Delete highest (owner request): the Model panel's Topology drops the
+  // top of the active object's stack. The button shares Rebuild's row, both
+  // on one line at the panel's width on every iPad screen. With the top
+  // selected the selection moves to the new top; from lower down it stays
+  // where it is. It is one undo step, which brings the level back with its
+  // detail, and redo deletes it again; the level slider and the triangle
+  // count follow, and with one level left the button is disabled.
   async deleteLevel(page, base, t) {
     page.on('dialog', (d) => void d.accept()); // a subdivision past the soft line asks first
     await openSculpt(page, base, '&q=low');
@@ -5014,7 +5123,7 @@ export const suites = {
         const { session } = window.__sculpt;
         const panel = document.querySelector('.panel--model');
         const slider = [...panel.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Level');
-        const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Delete highest level');
+        const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Delete highest');
         const lv = session.getLevels();
         return {
           sel: lv.sel,
@@ -5034,7 +5143,30 @@ export const suites = {
         .then(() => true)
         .catch(() => false);
     const del = () =>
-      page.evaluate(() => [...document.querySelectorAll('.panel--model button')].find((b) => b.textContent === 'Delete highest level').click());
+      page.evaluate(() => [...document.querySelectorAll('.panel--model button')].find((b) => b.textContent === 'Delete highest').click());
+    // Delete highest and Rebuild, where they sit: one row, each on one
+    // line, inside the panel.
+    const ends = () =>
+      page.evaluate(() => {
+        const panel = document.querySelector('.panel--model');
+        const topo = panel.querySelector('.sculpt-panel__topo').getBoundingClientRect();
+        const find = (label) => [...panel.querySelectorAll('button')].find((b) => b.textContent === label);
+        const box = (b) => {
+          const r = b.getBoundingClientRect();
+          return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), h: Math.round(r.height) };
+        };
+        const [rebuild, del, lower] = [find('Rebuild'), find('Delete highest'), find('Lower')];
+        return {
+          row: !!del && del.parentElement === rebuild?.parentElement,
+          rebuild: rebuild && box(rebuild),
+          del: del && box(del),
+          lower: lower && box(lower),
+          inside: !!del && !!rebuild && box(rebuild).l >= topo.left - 0.5 && box(del).r <= topo.right + 0.5,
+          title: del?.title ?? '',
+          old: !!find('Delete highest level'),
+        };
+      });
+    const fits = (e) => e.row && e.inside && e.del.t === e.rebuild.t && e.del.h === e.rebuild.h && e.del.h === e.lower.h && e.del.t > e.lower.t;
 
     // Three levels at least, and detail on the top one that only it has.
     await page.evaluate(() => {
@@ -5063,6 +5195,21 @@ export const suites = {
     let s = await topo();
     const start = s;
     t.ok(s.levels >= 3 && s.sel === s.levels - 1 && s.button && !s.button.disabled, `the button is there, enabled, with the top level selected (${show(s)})`);
+    // The panel slides in; where the buttons sit is where it ends up.
+    await page.addStyleTag({ content: '.panel { transition: none !important; }' });
+    let e = await ends();
+    t.ok(fits(e) && !e.old, `Delete highest sits on Rebuild's row, under Lower, Higher and Subdivide, each on one line inside the panel (${JSON.stringify(e)})`);
+    t.ok(/top subdivision level and its detail/.test(e.title), `its title still says it in full ("${e.title}")`);
+    const wide = page.viewportSize();
+    const misfits = [];
+    for (const [w, h] of [[1180, 820], [744, 1133], [1366, 1024]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.waitForTimeout(100);
+      e = await ends();
+      if (!fits(e)) misfits.push(`${w}x${h}: ${JSON.stringify(e)}`);
+    }
+    await page.setViewportSize(wide);
+    t.ok(!misfits.length, `and so on the iPad's screens${misfits.length ? `: ${misfits.join('; ')}` : ''}`);
     const lowerTris = await page.evaluate(() => {
       const mul = window.__sculpt.session.getMesh();
       return mul._meshes[mul._meshes.length - 2].getNbTriangles();
@@ -5490,5 +5637,281 @@ export const suites = {
       after.azimuth === before.azimuth + 30 && after.elevation === before.elevation + 10 && (await meshSum(page)) === sum && (await strokeCount(page)) === strokes,
       `in sculpt mode the same drag turns it the same, sculpting nothing (azimuth ${before.azimuth} to ${after.azimuth}, elevation ${before.elevation} to ${after.elevation})`,
     );
+  },
+
+  // Updates to the installed app (owner request: "a little progress bar or
+  // notice when an update is found and applied"). Two builds of this tree
+  // and one origin: the old build installed and in control, then the site
+  // switched to the new one, as a deploy does. On the gallery the download
+  // shows its progress and the update goes in there and then, the page
+  // saying what it is on now; in Sculpt and Armature it waits for Reload,
+  // which keeps the work (and asks first when the autosave cannot); an
+  // install with a file missing says so, and Try again recovers once the
+  // file is served. The hotkey guide names the version and checks for
+  // updates; the desktop app names it and checks nothing.
+  async updates(page, base, t) {
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+    const OLD = `${pkg.version} (1111111)`;
+    const NEW = `${pkg.version} (2222222)`;
+    const browser = page.context().browser();
+
+    // The desktop app: no worker, so the version alone, and never a notice.
+    const desk = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    try {
+      await desk.addInitScript(desktopBridgeStub);
+      const app = await desk.newPage();
+      await openSculpt(app, base, '&q=low');
+      const g = await app.evaluate(() => ({
+        version: document.querySelector('.help-guide__ver')?.textContent ?? null,
+        check: !!document.querySelector('.help-guide__check'),
+        notice: !!document.querySelector('.update-notice'),
+      }));
+      const shape = new RegExp(`^Bozzetto ${pkg.version.replace(/\./g, '\\.')} \\((?:[0-9a-f]{7,}|dev)\\)$`);
+      t.ok(shape.test(g.version ?? '') && !g.check && !g.notice, `the desktop app's guide names the version and offers no check, and no notice comes (${JSON.stringify(g)})`);
+    } finally {
+      await desk.close();
+    }
+
+    const built = Date.now();
+    const { dir, older, newer } = await twoBuilds(`1111111${'a'.repeat(33)}`, `2222222${'b'.repeat(33)}`);
+    const oldMain = mainScript(older);
+    const newMain = mainScript(newer);
+    t.ok(oldMain && newMain && oldMain !== newMain, `two builds, two main scripts (${oldMain}, ${newMain}; ${Math.round((Date.now() - built) / 1000)} s to build)`);
+    const site = { root: older, gone: new Set(), slow: 0 };
+    const server = await serve(() => site.root, 0, {
+      gone: (path) => site.gone.has(path),
+      // The new build's files arrive slowly enough for the download to be watched.
+      delay: (path) => (site.root === newer && /^\/assets\/|\.html$/.test(path) ? site.slow : 0),
+    });
+    const origin = server.base;
+
+    /** A fresh device: its own storage and worker, and what the page says and asks (`answer` is the reply). */
+    const device = async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const log = await noticeLog(ctx);
+      const p = await ctx.newPage();
+      const d = { ctx, p, log, errors: [], warnings: [], dialogs: [], answer: true };
+      p.on('pageerror', (e) => d.errors.push(String(e)));
+      p.on('console', (m) => {
+        if (m.type() === 'warning') d.warnings.push(m.text());
+      });
+      p.on('dialog', (dlg) => {
+        d.dialogs.push(dlg.message());
+        void (d.answer ? dlg.accept() : dlg.dismiss());
+      });
+      return d;
+    };
+    /** The old build installed on `d`, its worker serving `path`. */
+    const install = async (d, path) => {
+      site.root = older;
+      site.gone.clear();
+      site.slow = 0;
+      await d.p.goto(`${origin}/`, { waitUntil: 'load' });
+      const active = await workerActivated(d.p);
+      await d.p.goto(`${origin}${path}`, { waitUntil: 'load' });
+      const controlled = await d.p.evaluate(() => !!navigator.serviceWorker.controller);
+      return active && controlled && (await runningScript(d.p)) === oldMain;
+    };
+    const updatedTo = (d) => eventually(d.p, () => d.log.find((e) => e.state === 'updated' && e.shown), 20_000);
+    const checked = (d) =>
+      eventually(d.p, async () => {
+        const said = await d.p.textContent('.help-guide__checked');
+        return said && said !== 'Checking…' ? said : null;
+      }, 30_000);
+
+    try {
+      // The gallery: the download, its progress, the update taken at once.
+      let d = await device();
+      try {
+        t.ok(await install(d, '/'), `the old build is installed and serves the gallery (${oldMain})`);
+        t.eq(showNotices(d.log), '', 'a first install says nothing');
+        site.root = newer;
+        site.slow = 500;
+        const t0 = Date.now();
+        await d.p.reload({ waitUntil: 'domcontentloaded' }); // a relaunch: the browser looks for an update
+        const took = await eventually(d.p, async () => (await runningScript(d.p)) === newMain);
+        const secs = Math.round((Date.now() - t0) / 1000);
+        const done = await updatedTo(d);
+        const seen = showNotices(d.log);
+        const steps = d.log.filter((e) => e.state === 'downloading' && /^\d+$/.test(e.bar ?? '')).map((e) => Number(e.bar));
+        t.ok(took, `after the deploy the gallery takes the new build by itself, in ${secs} s`);
+        t.ok(d.log[0]?.state === 'downloading' && d.log[0].text === 'Downloading update…' && d.log[0].shown, `the download is said as it starts (${seen})`);
+        t.ok(steps.some((v) => v > 0 && v < 100) && steps.every((v, i) => i === 0 || v >= steps[i - 1]), `with its progress as the files arrive (${steps.join(', ')}%)`);
+        t.ok(d.log.some((e) => e.state === 'applying' && e.text === 'Updating…' && e.shown), 'then Updating… until the reload');
+        t.ok(done?.text === `Updated to ${NEW}` && done.page === '/', `and after it: "${done?.text}"`);
+        const gone = await eventually(d.p, () => d.log.find((e) => e.state === 'updated' && !e.shown), 15_000);
+        await d.p.reload({ waitUntil: 'load' });
+        await d.p.waitForTimeout(1500);
+        const times = d.log.filter((e) => e.state === 'updated' && e.shown).length;
+        t.ok(gone && times === 1, `it goes by itself, and is said once (${times} time(s) over two loads)`);
+        t.ok(!d.errors.length, `no page errors on the gallery${d.errors.length ? `: ${d.errors.join(' | ')}` : ''}`);
+      } finally {
+        await d.ctx.close();
+      }
+
+      // Sculpt: the update waits for Reload, which keeps the work.
+      d = await device();
+      try {
+        t.ok(await install(d, '/?sculpt=1&q=low'), 'the old build is installed and serves Sculpt');
+        await d.p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+        await d.p.click('.help-toggle');
+        t.eq(await d.p.textContent('.help-guide__ver'), `Bozzetto ${OLD}`, 'the hotkey guide names the version');
+        await d.p.click('.help-guide__check');
+        t.eq(await checked(d), 'Up to date', 'Check for updates, with nothing newer, says Up to date');
+        t.eq(showNotices(d.log), '', 'and no notice comes');
+
+        await d.p.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+        const before = await names(d.p);
+        site.root = newer;
+        site.slow = 500;
+        await d.p.click('.help-guide__check');
+        t.eq(await checked(d), 'Update found', 'after a deploy, Check for updates finds the new build');
+        const ready = await eventually(d.p, () => d.log.find((e) => e.state === 'ready' && e.shown), 60_000);
+        t.ok(ready?.text === 'Update ready' && ready.buttons.join(',') === 'Reload,×', `downloaded, it says Update ready, with Reload (${showNotices(d.log)})`);
+        t.ok(d.log.some((e) => e.state === 'downloading' && e.shown && /^\d+$/.test(e.bar ?? '')), 'having said Downloading update…, with its progress');
+        t.eq(await runningScript(d.p), oldMain, 'Sculpt stays on the build it started with until then');
+
+        // In the corner, clear of the button there and the brush toolbar,
+        // and of the Render panel when it opens over that corner: on the
+        // iPad's tightest screens, landscape and portrait, where the notice
+        // is wider than the room beside the brushes.
+        await d.p.addStyleTag({ content: '.panel { transition: none !important; }' });
+        const clear = () =>
+          d.p.evaluate(() => {
+            const box = (el) => el?.getBoundingClientRect() ?? null;
+            const meets = (a, b) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+            const n = box(document.querySelector('.update-notice'));
+            const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+            return {
+              inCorner: !!n && innerWidth - n.right < 400 && innerHeight - n.bottom < 120,
+              button: meets(n, box(document.querySelector('.sculpt-toolbar__right'))),
+              toolbar: meets(n, box(document.querySelector('.sculpt-toolbar__brushes'))),
+              panel: !render.classList.contains('panel--collapsed') && meets(n, box(render)),
+            };
+          });
+        const toggleRender = () =>
+          d.p.evaluate(() => {
+            const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+            render.querySelector(render.classList.contains('panel--collapsed') ? '.panel__handle' : '.panel__close').click();
+          });
+        const crowded = [];
+        for (const [w, h] of [[1280, 800], [1024, 768], [744, 1133]]) {
+          await d.p.setViewportSize({ width: w, height: h });
+          await d.p.waitForTimeout(100);
+          const shut = await clear();
+          await toggleRender();
+          const open = await clear();
+          await toggleRender();
+          if (!shut.inCorner || shut.button || shut.toolbar || open.button || open.toolbar || open.panel) crowded.push(`${w}x${h}: ${JSON.stringify({ shut, open })}`);
+        }
+        await d.p.setViewportSize({ width: 1280, height: 800 });
+        t.ok(!crowded.length, `the notice keeps clear of the corner button and the toolbar, and of the Render panel open${crowded.length ? `: ${crowded.join('; ')}` : ''}`);
+
+        // Out of the way: × puts it away until it is asked for, and the
+        // bare screen Tab makes has no notice on it.
+        await d.p.click('.update-notice__dismiss');
+        const away = await d.p.evaluate(() => document.querySelector('.update-notice').hidden);
+        await d.p.click('.help-guide__check');
+        const again = await checked(d);
+        const back = await d.p.evaluate(() => !document.querySelector('.update-notice').hidden);
+        t.ok(away && back && again === 'Update ready', `dismissed it goes, and Check for updates brings it back (${again})`);
+        await d.p.evaluate(() => document.activeElement?.blur?.());
+        await d.p.keyboard.press('Tab');
+        const hid = await eventually(d.p, () => d.p.evaluate(() => document.body.classList.contains('chrome-hidden') && getComputedStyle(document.querySelector('.update-notice')).visibility === 'hidden'), 5000);
+        await d.p.keyboard.press('Tab');
+        const shows = await d.p.evaluate(() => getComputedStyle(document.querySelector('.update-notice')).visibility === 'visible');
+        t.ok(hid && shows, 'it goes with the interface on Tab, and comes back with it');
+
+        // The autosave stopped with work unsaved: Reload asks first, and
+        // Cancel keeps the page as it is.
+        d.answer = false;
+        await d.p.evaluate(() => {
+          const persist = window.__sculpt.persist;
+          persist.disabled = true;
+          persist.dirty = true;
+        });
+        await d.p.click('.update-notice__action');
+        const asked = await eventually(d.p, () => d.dialogs.length > 0 && d.log.at(-1)?.state === 'ready' && d.log.at(-1).shown, 20_000);
+        t.ok(asked && /could not be stored on this device, and updating reloads the page\. Reload anyway\?/.test(d.dialogs[0] ?? ''), `with the autosave stopped, Reload asks first ("${d.dialogs[0]}")`);
+        t.ok((await runningScript(d.p)) === oldMain && d.log.at(-1)?.text === 'Update ready', 'and Cancel stays, Update ready still offered');
+        await d.p.evaluate(() => {
+          window.__sculpt.persist.disabled = false;
+        });
+        d.dialogs.length = 0;
+        d.answer = true;
+
+        await d.p.click('.update-notice__action');
+        const took = await eventually(d.p, async () => (await runningScript(d.p)) === newMain, 60_000);
+        await d.p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+        const after = await names(d.p);
+        t.ok(took && d.log.some((e) => e.state === 'applying' && e.text === 'Updating…'), 'Reload says Updating… and takes the new build');
+        t.eq(after.join(', '), before.join(', '), 'and the scene comes back as it was, the cube added just before included');
+        t.eq(d.dialogs.join(' | '), '', 'nothing was asked: the autosave held it all');
+        const done = await updatedTo(d);
+        t.ok(done?.text === `Updated to ${NEW}` && /sculpt=1/.test(done.page), `and Sculpt says what it is on now: "${done?.text}"`);
+        t.eq(await d.p.textContent('.help-guide__ver'), `Bozzetto ${NEW}`, 'as the guide does');
+        t.ok(!d.errors.length, `no page errors in Sculpt${d.errors.length ? `: ${d.errors.join(' | ')}` : ''}`);
+      } finally {
+        await d.ctx.close();
+      }
+
+      // Armature: Reload saves the figure first, as leaving for the gallery
+      // does. The pose is made the instant before, inside the mode's own
+      // save delay, so only Reload's store can have kept it.
+      d = await device();
+      try {
+        t.ok(await install(d, '/?armature=1&q=low'), 'the old build is installed and serves Armature');
+        await d.p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+        site.root = newer;
+        site.slow = 0;
+        await d.p.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
+        const ready = await eventually(d.p, () => d.log.find((e) => e.state === 'ready' && e.shown), 60_000);
+        const posed = await d.p.evaluate(() => {
+          const a = window.__armature;
+          const hand = a.handlePosition('hand.L');
+          const shoulder = a.armature.jointWorld('upperarm.L').toArray();
+          const arm = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1], hand[2] - shoulder[2]);
+          a.reach('hand.L', hand[0], hand[1] + 0.3 * arm, hand[2] + 0.2 * arm);
+          const at = a.handlePosition('hand.L');
+          document.querySelector('.update-notice__action').click();
+          return { at, moved: Math.hypot(at[0] - hand[0], at[1] - hand[1], at[2] - hand[2]), arm };
+        });
+        const took = await eventually(d.p, async () => (await runningScript(d.p)) === newMain, 60_000);
+        await d.p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+        const back = await d.p.evaluate(() => window.__armature.handlePosition('hand.L'));
+        const off = Math.hypot(...back.map((v, i) => v - posed.at[i]));
+        t.ok(!!ready && took, 'Armature offers Reload too, and it takes the new build');
+        t.ok(posed.moved > 0.1 * posed.arm && off < 1e-3 * posed.arm, `and a pose made the moment before comes back (the hand moved ${posed.moved.toFixed(2)}, back ${off.toExponential(1)} off it)`);
+        t.ok(!d.errors.length && !d.dialogs.length, `nothing asked, no page errors in Armature${d.errors.length ? `: ${d.errors.join(' | ')}` : ''}`);
+      } finally {
+        await d.ctx.close();
+      }
+
+      // A file of the update missing: it fails, says so, and Try again
+      // recovers once the file is there.
+      d = await device();
+      try {
+        t.ok(await install(d, '/'), 'the old build is installed again, on a new device');
+        site.root = newer;
+        site.gone.add(newMain);
+        await d.p.reload({ waitUntil: 'domcontentloaded' });
+        const failed = await eventually(d.p, () => d.log.find((e) => e.state === 'failed' && e.shown), 60_000);
+        t.ok(failed?.text === 'Update failed' && failed.buttons.join(',') === 'Try again,×', `with ${newMain} answering 404, it says Update failed, with Try again (${showNotices(d.log)})`);
+        const warned = d.warnings.find((w) => w.startsWith('Update failed'));
+        t.ok(!!warned && warned.includes(newMain) && warned.includes('404'), `the console says where it stopped and what the server answers (${warned})`);
+        t.eq(await runningScript(d.p), oldMain, 'and the gallery stays on the build it has');
+        site.gone.clear();
+        await d.p.click('.update-notice__action');
+        const took = await eventually(d.p, async () => (await runningScript(d.p)) === newMain, 60_000);
+        const done = await updatedTo(d);
+        t.ok(took && done?.text === `Updated to ${NEW}`, `served again, Try again takes the update (${showNotices(d.log)})`);
+        t.ok(!d.errors.length, `no page errors through the failure${d.errors.length ? `: ${d.errors.join(' | ')}` : ''}`);
+      } finally {
+        await d.ctx.close();
+      }
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   },
 };

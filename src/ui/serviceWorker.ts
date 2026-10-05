@@ -23,7 +23,11 @@
  *
  * That turns a bricked install into a URL the owner can send someone,
  * instead of "delete the app and reinstall it".
+ *
+ * Updates - a newer build found, downloaded, taken and said on screen - are
+ * ui/updates' business once the worker is registered.
  */
+import { announceUpdate, watchUpdates } from './updates';
 
 const SW_URL = '/sw.js';
 const OPT_OUT = 'bozzetto-no-sw';
@@ -84,12 +88,15 @@ export function registerServiceWorker(): void {
   if (params.has('sw')) setOptOut(false);
   if (optedOut()) return;
 
+  // "Updated to <version>", when this is the first run of a new build.
+  announceUpdate();
+
   // After load: registration competes with the first frames for bandwidth
   // and main-thread time, and the app is more useful than its cache.
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register(SW_URL)
-      .then(adoptUpdates)
+      .then(watchUpdates)
       .catch((err) => {
         // Never fatal. Without a worker the app is exactly what it was
         // before: online-only.
@@ -101,48 +108,4 @@ export function registerServiceWorker(): void {
       for (const name of RETIRED_CACHES) void caches.delete(name).catch(() => {});
     }
   });
-}
-
-/**
- * Where a reload costs nothing: the gallery. Sculpt mode, Armature mode and
- * the viewer are left alone - a page mid-stroke, mid-pose or mid-playback
- * is not reloaded under anyone, and it keeps the worker it started with
- * (whose precache still holds every chunk it might yet import) until it is
- * closed. Armature mode lives at / too, and was taken for the gallery.
- */
-function reloadIsFree(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return (
-    window.location.pathname === '/' &&
-    !params.has('sculpt') &&
-    !params.has('armature') &&
-    !params.has('tl')
-  );
-}
-
-/**
- * A new worker installs and WAITS (vite.config: registerType 'prompt');
- * nothing on this page promotes it while the page might still import a
- * chunk only the old precache has. On the gallery, though, the update is
- * taken at once: the waiting worker is told to activate, and the page
- * reloads onto it the moment it takes over. Anywhere else the worker
- * waits for the next launch - or for the walk back to the gallery.
- */
-function adoptUpdates(reg: ServiceWorkerRegistration): void {
-  const promote = (): void => {
-    if (reg.waiting && reloadIsFree()) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-  };
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // The new worker owns the page now; its bundle is not the one that is
-    // running. No worker claimed this page on first install (no
-    // clientsClaim), so this only ever fires for a real update.
-    if (reloadIsFree()) window.location.reload();
-  });
-  reg.addEventListener('updatefound', () => {
-    const next = reg.installing;
-    next?.addEventListener('statechange', () => {
-      if (next.state === 'installed' && navigator.serviceWorker.controller) promote();
-    });
-  });
-  promote(); // one was already waiting from an earlier visit
 }

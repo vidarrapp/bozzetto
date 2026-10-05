@@ -9,6 +9,9 @@
  * sliders, undo/redo, the Negative button, the object stats, and any toast,
  * tooltip or hotkey guide that appears. Hiding those made the mode useless
  * rather than minimal; the collapsed tabs were the clutter worth removing.
+ * The one notice that goes is the update notice (ui/updates): it needs
+ * nothing done this minute, and a clear view is what the mode is for. It
+ * comes back with the interface.
  *
  * Because the toolbar's Negative group survives, so does the hide button
  * sitting in it - which means there is always a visible, labelled control
