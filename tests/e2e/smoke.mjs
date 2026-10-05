@@ -1104,13 +1104,14 @@ const offeredText = async (page) => {
   return `${items.map((i) => `${i.label} ${i.hint}`).join(' | ')} || ${guide}`;
 };
 
-/** What the boot opened: object count, link, the address, and the toast's words. */
+/** What the boot opened: object count, link, the address, and the toast's words and button. */
 const bootState = (page) =>
   page.evaluate(() => ({
     objects: window.__sculpt.session.getMeshes().length,
     link: window.__sculpt.fileActions.link,
     search: location.search,
     toast: document.querySelector('.sculpt-toast:not(.file-menu__note) > span')?.textContent ?? '',
+    fresh: !!document.querySelector('.sculpt-toast:not(.file-menu__note) > .sculpt-toast__btn'),
     failed: [...document.querySelectorAll('.file-menu__progress[data-state="failed"]')].map((e) => e.textContent),
   }));
 
@@ -3905,7 +3906,9 @@ export const suites = {
       const got = fake.calls.slice(mark).filter((c) => c.method === 'GET' && c.path.endsWith('/scene.bozz')).map((c) => c.path);
       t.ok(opened.objects === 3 && opened.link?.id === id && !/project=/.test(opened.search), `?project= opens the scene, linked to its project, and leaves the address (${opened.objects} objects, ${opened.search})`);
       t.ok(got.length === 1 && got[0] === `/media/${id}/scene.bozz`, `the file came from the media route (${got.join(', ')})`);
-      t.ok(/^Opened ".+" from Projects$/.test(opened.toast), `and says where it came from ("${opened.toast}")`);
+      // Owner call: the scene is what was asked for, so no notice, and no
+      // Start fresh offering to throw it away.
+      t.ok(opened.toast === '' && !opened.fresh, `and opens without a notice${opened.toast ? ` (said "${opened.toast}")` : ''}`);
       t.eq(await storedFrames(owner), 0, 'and starts a reel of its own, as File > Open does: the frames recorded before are gone');
       mark = fake.calls.length;
       await boot(`&project=${newId}`);
@@ -3918,10 +3921,11 @@ export const suites = {
       await boot(`&project=${id}`);
       opened = await bootState(owner);
       t.ok(opened.objects === 3 && opened.link?.id === id, `offline, this device's copy opens instead, still the project's (${opened.objects} objects)`);
-      t.ok(/^Opened this device's copy of ".+": the server could not be reached$/.test(opened.toast), `and says so, and why ("${opened.toast}")`);
+      t.ok(/^Opened this device's copy of ".+": the server could not be reached$/.test(opened.toast) && !opened.fresh, `and says so, and why, with nothing to press ("${opened.toast}"${opened.fresh ? ', with Start fresh' : ''})`);
       await boot('&project=no-such-scene');
       opened = await bootState(owner);
       t.ok(opened.failed.includes('Could not open that project: the server could not be reached') && !/project=/.test(opened.search), `with no copy to fall back on, it says it could not open it and carries on (${opened.failed.join(' | ')})`);
+      t.ok(opened.toast === 'Restored your last sculpt' && opened.fresh, `on the autosave, which says so with Start fresh ("${opened.toast}"${opened.fresh ? ', Start fresh' : ''})`);
       fake.opts.offline = false;
 
       t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);

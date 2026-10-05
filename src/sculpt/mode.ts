@@ -1230,16 +1230,25 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Timelapse capture stacks its edit hooks on top of the autosave's (the
   // unmount below unwinds in reverse). Install is async (frame index read).
   void recorder.install();
-  const toast = saved
-    ? restoredToast(() => {
-        persist.disable();
-        // The desktop sidecar mirrors the autosave; a fresh start that left
-        // it behind would offer the abandoned scene back at the reload.
-        void Promise.all([clearSavedScene(), clearDesktopRecovery()]).then(() =>
-          location.reload(),
-        );
-      }, openedLabel(opened))
-    : null;
+  // Only the autosave coming back on its own gets the notice, with Start
+  // fresh as the way out of it. A scene opened from a library card or from
+  // Projects is what was asked for: saying so, with an offer to throw it
+  // away, only got in the way (owner call). The exception is a project
+  // that opened from this device's copy because Projects could not be
+  // reached, which says so, and why, with nothing to press.
+  let toast: HTMLDivElement | null = null;
+  if (saved && !openedExplicitly) {
+    toast = bootToast(openedLabel(opened), () => {
+      persist.disable();
+      // The desktop sidecar mirrors the autosave; a fresh start that left
+      // it behind would offer the abandoned scene back at the reload.
+      void Promise.all([clearSavedScene(), clearDesktopRecovery()]).then(() =>
+        location.reload(),
+      );
+    });
+  } else if (saved && opened?.from === 'device') {
+    toast = bootToast(openedLabel(opened));
+  }
   // Asked for a project and got neither it nor a device copy: say why,
   // rather than leave the autosaved scene looking like the answer.
   if (opened && !opened.scene) {
@@ -1570,9 +1579,8 @@ async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
   }
 }
 
-/** The boot toast's words for what was opened. */
+/** The boot notice's words: the autosave back, or a project's device copy and why. */
 function openedLabel(opened: ProjectOpen | null): string {
-  if (opened?.from === 'server') return `Opened "${opened.link?.title}" from Projects`;
   // The reason, not a guess at it: offline, signed out and deleted all
   // land here, and each wants a different next step.
   if (opened?.from === 'device') {
@@ -1581,18 +1589,24 @@ function openedLabel(opened: ProjectOpen | null): string {
   return 'Restored your last sculpt';
 }
 
-/** "Restored your sculpt" notice with a start-fresh escape hatch. */
-function restoredToast(onFresh: () => void, text = 'Restored your last sculpt'): HTMLDivElement {
+/**
+ * The boot notice. With `onFresh` it carries Start fresh, the way out of
+ * an autosave nobody asked to resume.
+ */
+function bootToast(text: string, onFresh?: () => void): HTMLDivElement {
   const toast = document.createElement('div');
   toast.className = 'sculpt-toast';
   const label = document.createElement('span');
   label.textContent = text;
-  const fresh = document.createElement('button');
-  fresh.type = 'button';
-  fresh.className = 'sculpt-toast__btn';
-  fresh.textContent = 'Start fresh';
-  fresh.addEventListener('click', onFresh);
-  toast.append(label, fresh);
+  toast.append(label);
+  if (onFresh) {
+    const fresh = document.createElement('button');
+    fresh.type = 'button';
+    fresh.className = 'sculpt-toast__btn';
+    fresh.textContent = 'Start fresh';
+    fresh.addEventListener('click', onFresh);
+    toast.append(fresh);
+  }
   document.body.appendChild(toast);
   // Ten seconds of being SEEN, not ten seconds from mount: the boot
   // overlay is still up when this is built, and on a slow device (or a
