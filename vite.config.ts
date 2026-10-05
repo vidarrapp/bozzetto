@@ -119,7 +119,12 @@ export default defineConfig(({ mode }) => {
         // against: 200 + "<!doctype" where JSON was expected. Navigation
         // requests are the only ones routed here, but the API and the
         // editor are denied explicitly rather than by assumption.
-        navigateFallbackDenylist: [/^\/api\//, /^\/admin\//, /^\/media\//],
+        // /cdn-cgi/ is Cloudflare's own: Access hands a sign-in back through
+        // /cdn-cgi/access/authorized, a navigation inside this worker's
+        // scope, and answered with the app shell the token never reached the
+        // edge, so no session cookie was ever set and the visitor landed on
+        // the gallery. That is how the installed iPad app could not sign in.
+        navigateFallbackDenylist: [/^\/api\//, /^\/admin\//, /^\/media\//, /^\/cdn-cgi\//],
         runtimeCaching: [
           {
             // The sign-in probe. Everything owner-only (the gallery's
