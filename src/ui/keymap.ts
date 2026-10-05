@@ -148,7 +148,7 @@ export const ACTIONS: ActionDef[] = [
   // gesture row) so Preferences can rebind it as it can sculpt's.
   { id: 'arm.light', label: 'Move the key light (hold + drag: across / up)', group: 'Armature', mode: 'armature', chord: 'l', hold: true },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
-  { id: 'ui.fps', label: 'Frame-rate meter', group: 'Interface', mode: 'both', chord: 'p' },
+  { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
 ];
 

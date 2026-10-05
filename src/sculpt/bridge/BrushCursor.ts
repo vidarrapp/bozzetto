@@ -54,6 +54,8 @@ export class BrushCursor {
   private hasStrength = true;
   private lastAnchorCss = 0;
   private anchorWorldRadius = 0;
+  /** The mid-stroke reduction in force (setStrokeStyle). */
+  private strokeStyle: StrokeStyle = null;
 
   constructor(container: HTMLElement) {
     const NS = 'http://www.w3.org/2000/svg';
@@ -193,8 +195,13 @@ export class BrushCursor {
    * rests either way. null restores the full hover cursor.
    */
   setStrokeStyle(style: StrokeStyle): void {
+    const was = this.strokeStyle;
+    this.strokeStyle = style;
     this.root.classList.toggle('is-dot-only', style === 'dot');
     this.root.classList.toggle('is-dim', style === 'dim');
+    // The ring was not kept up to date while hidden (renderSurface): draw
+    // it where the surface is now, before it shows again.
+    if (was === 'dot' && style !== 'dot' && this.mode === 'surface') this.renderSurface();
   }
 
   private applyMode(mode: 'hidden' | 'screen' | 'surface'): void {
@@ -280,7 +287,11 @@ export class BrushCursor {
     this.root.style.display = '';
     this.root.dataset.mode = 'surface';
 
-    this.ringPath.setAttribute('d', this.ringPathData(s.point, s.normal, s.worldRadius));
+    // Hidden under a stroke's dot-only reduction: 48 projected points and a
+    // path string per move for nothing, so it waits until the ring shows.
+    if (this.strokeStyle !== 'dot') {
+      this.ringPath.setAttribute('d', this.ringPathData(s.point, s.normal, s.worldRadius));
+    }
     // The mirrored ring rides the same projection; an empty d hides it.
     this.ghostPath.setAttribute(
       'd',

@@ -19,9 +19,9 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, BackSide, FrontSide } from 'three';
+  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, mix } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -40,6 +40,8 @@ import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
 import { formatMs, perfLog, STALL_MS } from './perfLog';
+import { FrameStats, ms, type FrameSummary } from './frameStats';
+import { settings } from '../ui/settings';
 
 /** Output grade choices (Render panel > Camera > Tone mapping). */
 export type ToneMappingId = 'none' | 'neutral' | 'agx' | 'cinematic';
@@ -204,6 +206,49 @@ const WIRE_MAX_OPACITY_WHITE = 0.4;
 const WIRE_MAX_OPACITY_BLACK = 0.6;
 
 /**
+ * MSAA samples for the scene pass. The renderer itself is made without
+ * antialias: with it, the canvas got a 4x colour and depth buffer of its
+ * own, and the only thing ever drawn there is the pipeline's full-screen
+ * output quad, which has no edges to smooth. The scene pass keeps its 4x.
+ * `?canvasmsaa=1` builds the old way, to compare a frame against.
+ */
+const SCENE_SAMPLES = 4;
+const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
+
+/**
+ * Fast frames (Viewer.updateFrameMode): how long ambient occlusion takes to
+ * fade back in once the view stops, and how recently the camera must have
+ * moved to count as moving (the damped coast after a drag, a wheel zoom).
+ */
+const AO_FADE_MS = 150;
+const MOVED_WITHIN_MS = 150;
+/**
+ * The smallest turn (radians) or move (share of the orbit distance) in a
+ * frame that counts as the camera moving: about a quarter of a pixel, so
+ * the coast's last imperceptible creep does not keep the AO away.
+ */
+const CAMERA_STILL_EPS = 2e-4;
+
+/** What a frame is doing, for the fast frames and the meter. */
+export type InteractionKind = 'stroke' | 'move';
+
+/** Counts of the renderer's builds and allocations; see Viewer.instrumentBackend. */
+export interface RenderCounters {
+  /** Node graphs built into shaders. */
+  nodeBuilds: number;
+  /** Shader modules compiled. */
+  programs: number;
+  /** Render pipelines created. */
+  pipelines: number;
+  /** GPU textures created, render targets included (a resize is one). */
+  textures: number;
+  /** GPU buffers created for geometry. */
+  buffers: number;
+  /** Bind groups created. */
+  bindGroups: number;
+}
+
+/**
  * Scene, renderer, camera, and the single render loop (design doc §4).
  *
  * The display object is one persistent Mesh: only its geometry is swapped per
@@ -299,7 +344,7 @@ export class Viewer {
   private captureSaved: { pixelRatio: number; frame: number; playing: boolean } | null = null;
   /** Vertical axis the turntable spins the model about (its bounding-box centre). */
   private readonly turntableCenter = new Vector3();
-  /** Smoothed frames-per-second, for the dev FPS meter (hotkey "t"). */
+  /** Smoothed frames-per-second, for the frame meter (P). */
   private fps = 60;
   /**
    * The stall watchdog's clock: when the last frame began (0 when there is
@@ -308,6 +353,54 @@ export class Viewer {
    */
   private frameStart = 0;
   private frameWork = 0;
+
+  /** Where each frame's time goes, for the frame meter (frameStats.ts). */
+  readonly frameStats = new FrameStats();
+  /** Builds and allocations since boot; see instrumentBackend. */
+  private readonly counters: RenderCounters = {
+    nodeBuilds: 0,
+    programs: 0,
+    pipelines: 0,
+    textures: 0,
+    buffers: 0,
+    bindGroups: 0,
+  };
+  /** Shadow maps drawn per light since boot, counted as they render. */
+  private readonly shadowRenders = { key: 0, fill: 0, rim: 0 };
+  /** This browser can time the GPU with timestamp queries (WebGPU's, or WebGL's timer query). */
+  private gpuTimestamps = false;
+  /** The meter is up, so the GPU is timed; see setGpuTiming. */
+  private gpuTiming = false;
+  private timestampPending = false;
+  private donePending = false;
+
+  /**
+   * Fast frames: while a stroke, a pose drag or the view is moving, ambient
+   * occlusion holds or steps aside and the fill and rim shadows refresh
+   * less often (updateFrameMode). The editors switch this on while they are
+   * mounted (Sculpt, Armature); the viewer and embeds draw every frame full.
+   */
+  fastFrames = false;
+  /** What the mounted editor is doing right now: a stroke, a drag that moves things, or neither. */
+  interactionProbe: (() => InteractionKind | null) | null = null;
+  /** Pins the frame mode for tests and measurements; undefined follows the probe and the camera. */
+  debugInteraction: InteractionKind | null | undefined = undefined;
+  private interaction: InteractionKind | null = null;
+  /** The AO texture matches the view and the scene as they are (safe to hold). */
+  private aoValid = false;
+  /** 0: the AO term as drawn; 1: no AO (the view is moving). Fades back on its own clock. */
+  private readonly aoDropU = uniform(0);
+  /** The denoised AO, drawn to a texture of its own so a stroke can hold it. */
+  private aoRtt: ReturnType<typeof rtt> | null = null;
+  /** Denoise passes drawn since boot. */
+  private aoRttRenders = 0;
+  private lastCameraMove = -Infinity;
+  private readonly lastCamPos = new Vector3();
+  private readonly lastCamQuat = new Quaternion();
+  private frameNo = 0;
+  /** Counters when the interaction under way began, and across the last whole one. */
+  private interactionStart: RenderCounters | null = null;
+  private lastInteractionDelta: RenderCounters | null = null;
 
   /**
    * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
@@ -396,6 +489,9 @@ export class Viewer {
    *  it on), so the panel checkbox can re-sync. */
   onDofChange: (() => void) | null = null;
 
+  /** The adapter line's wording, reachable from the console and the tests. */
+  static readonly describeAdapter = describeAdapter;
+
   /**
    * Build a viewer with an initialized renderer. The renderer targets WebGPU and
    * falls back to a WebGL 2 backend automatically when WebGPU is unavailable, so
@@ -411,7 +507,14 @@ export class Viewer {
   ): Promise<Viewer> {
     // On dual-GPU machines (discrete + integrated) the default adapter can
     // land on the integrated chip; ask for the fast one explicitly.
-    const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Timestamps are asked for here, where the backend checks the adapter
+    // can give them, and then switched off until the meter wants them
+    // (setGpuTiming): three can only turn them on at construction.
+    const renderer = new WebGPURenderer({
+      antialias: CANVAS_MSAA,
+      powerPreference: 'high-performance',
+      trackTimestamp: true,
+    } as ConstructorParameters<typeof WebGPURenderer>[0]);
     await renderer.init();
     const viewer = new Viewer(renderer, container, manifest, source, options);
     viewer.warnIfSoftwareRendering();
@@ -449,6 +552,8 @@ export class Viewer {
     this.camera.setFocalLength(this.focalLength);
 
     this.lighting = new Lighting(this.scene, this.renderer);
+    this.setUpTiming();
+    this.instrumentBackend();
     this.materials = new Materials(source);
     this.environment = new Environment(this.scene, this.renderer, source);
     this.envLoadingEl = document.createElement('div');
@@ -1062,9 +1167,167 @@ export class Viewer {
     return this.aoNode !== null;
   }
 
-  /** Smoothed frames-per-second (dev FPS meter). */
+  /** Smoothed frames-per-second (the frame meter). */
   getFps(): number {
     return this.fps;
+  }
+
+  /**
+   * Whether the GPU can be timed here, settled once: WebGPU keeps
+   * trackTimestamp only when the adapter has the timestamp-query feature,
+   * and WebGL needs its timer-query extension. Either way tracking goes off
+   * until the meter asks for it (setGpuTiming): every pass would otherwise
+   * write timestamps nobody reads, until the query pool filled.
+   */
+  private setUpTiming(): void {
+    const b = this.renderer.backend as { trackTimestamp?: boolean; isWebGPUBackend?: boolean; disjoint?: unknown };
+    this.gpuTimestamps = b.trackTimestamp === true && (b.isWebGPUBackend === true || !!b.disjoint);
+    b.trackTimestamp = false;
+  }
+
+  /**
+   * Count what the renderer builds and allocates, at the backend, where
+   * every node build, shader module, pipeline, texture, geometry buffer and
+   * bind group is made. Fast frames promise none of these from pen-down to
+   * pen-up, so the first dab never waits on a compile, and these counts are
+   * how that is checked, by the latency suite and on the meter. A wrapper
+   * around each call and an increment; nothing else.
+   */
+  private instrumentBackend(): void {
+    const be = this.renderer.backend as unknown as Record<string, unknown>;
+    const count = (method: string, key: keyof RenderCounters): void => {
+      const fn = be[method];
+      if (typeof fn !== 'function') return;
+      be[method] = (...args: unknown[]): unknown => {
+        this.counters[key]++;
+        return (fn as (...a: unknown[]) => unknown).apply(be, args);
+      };
+    };
+    count('createNodeBuilder', 'nodeBuilds');
+    count('createProgram', 'programs');
+    count('createRenderPipeline', 'pipelines');
+    count('createTexture', 'textures');
+    count('createAttribute', 'buffers');
+    count('createIndexAttribute', 'buffers');
+    count('createStorageAttribute', 'buffers');
+    count('createBindings', 'bindGroups');
+    // A shadow map is drawn by a render with its light's shadow camera,
+    // which nothing else renders with, so that is where they are counted.
+    const cameras = new Map(this.lighting.shadowCameras());
+    const render = this.renderer.render.bind(this.renderer);
+    this.renderer.render = (scene, camera) => {
+      const id = cameras.get(camera);
+      if (id) this.shadowRenders[id]++;
+      render(scene, camera);
+    };
+  }
+
+  /** Builds and allocations since boot (a copy). */
+  renderCounters(): RenderCounters {
+    return { ...this.counters };
+  }
+
+  /** Passes drawn since boot: GTAO, its denoise, and each light's shadow map. */
+  passCounts(): { gtao: number; denoise: number; shadows: { key: number; fill: number; rim: number } } {
+    return { gtao: this.aoNode?.renders ?? 0, denoise: this.aoRttRenders, shadows: { ...this.shadowRenders } };
+  }
+
+  /**
+   * Time the GPU while the meter is up. With timestamp queries every pass
+   * gets two timestamp writes, read back once a frame (sampleGpu); without
+   * them, on WebGPU, how long after submission the queue reports the frame
+   * done stands in. Off, neither runs.
+   */
+  setGpuTiming(on: boolean): void {
+    if (this.gpuTiming === on) return;
+    this.gpuTiming = on;
+    if (this.gpuTimestamps) {
+      (this.renderer.backend as { trackTimestamp?: boolean }).trackTimestamp = on;
+    }
+    if (!on) this.frameStats.clearGpu();
+  }
+
+  /** How the GPU is being timed, for the meter's GPU row. */
+  gpuTimingSource(): 'timestamps' | 'submit' | null {
+    if (this.gpuTimestamps) return 'timestamps';
+    return (this.renderer.backend as { device?: unknown }).device ? 'submit' : null;
+  }
+
+  /**
+   * After a frame's submission, while the meter is up: one timestamp read
+   * back in flight at a time (three sums the passes of the newest frame in
+   * the batch), and one wait on the queue, which also dates the GPU
+   * finishing the frame that used an input event.
+   */
+  private sampleGpu(submittedAt: number, inputAt: number): void {
+    if (this.gpuTimestamps && !this.timestampPending) {
+      this.timestampPending = true;
+      void this.renderer
+        .resolveTimestampsAsync('render')
+        .then((gpuMs) => {
+          if (this.gpuTiming && typeof gpuMs === 'number' && gpuMs > 0) this.frameStats.noteGpu(gpuMs, 'timestamps');
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.timestampPending = false;
+        });
+    }
+    const device = (this.renderer.backend as { device?: { queue: { onSubmittedWorkDone(): Promise<void> } } }).device;
+    if (device && !this.donePending) {
+      this.donePending = true;
+      void device.queue
+        .onSubmittedWorkDone()
+        .then(() => {
+          if (!this.gpuTiming) return;
+          const done = performance.now();
+          if (!this.gpuTimestamps) this.frameStats.noteGpu(done - submittedAt, 'submit');
+          if (inputAt > 0) this.frameStats.noteReady(done - inputAt);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.donePending = false;
+        });
+    }
+  }
+
+  /**
+   * A pointer handler did work for the coming frame (a stroke step, a pose
+   * drag): its time, the event's timestamp and the vendored step's share.
+   */
+  noteInput(ms: number, eventTime: number, stepMs = 0): void {
+    this.frameStats.noteInput(ms, eventTime, stepMs);
+  }
+
+  /** The point the camera orbits, without the copy getCameraState makes (per-frame callers). */
+  orbitTarget(): Vector3 {
+    return this.controls.controls.target;
+  }
+
+  /**
+   * What the frames are doing now, for the meter and the tests: the kind of
+   * interaction, whether the AO is held or dropped, how the fill and rim
+   * shadows are scheduled, and the builds across the last interaction.
+   */
+  frameMode(): {
+    kind: InteractionKind | null;
+    fast: boolean;
+    ao: 'full' | 'held' | 'off' | 'fading';
+    aoDrop: number;
+    shadows: 'all' | 'hold' | 'stagger';
+    lastInteraction: RenderCounters | null;
+  } {
+    const fast = this.fastActive();
+    const kind = fast ? this.interaction : null;
+    const drop = this.aoDropU.value as number;
+    const ao = kind === 'move' ? 'off' : this.aoNode?.skip ? 'held' : drop > 0 ? 'fading' : 'full';
+    return {
+      kind: this.interaction,
+      fast,
+      ao,
+      aoDrop: drop,
+      shadows: kind === 'stroke' ? 'hold' : kind === 'move' ? 'stagger' : 'all',
+      lastInteraction: this.lastInteractionDelta ? { ...this.lastInteractionDelta } : null,
+    };
   }
 
   private gpuInfoCache: string | null = null;
@@ -1085,10 +1348,7 @@ export class Viewer {
     };
     try {
       if (b.isWebGPUBackend && b.device) {
-        const ai = b.device.adapterInfo;
-        info =
-          [ai?.description, ai?.vendor, ai?.architecture].filter(Boolean).join(' · ') ||
-          'adapter (no info)';
+        info = describeAdapter(b.device.adapterInfo);
       } else if (b.gl) {
         const gl = b.gl;
         const ext = gl.getExtension('WEBGL_debug_renderer_info') as {
@@ -1122,7 +1382,16 @@ export class Viewer {
     }
   }
 
-  /** Live diagnostics for the debug overlay (hotkey "t"): [label, value] rows. */
+  /** The frame meter's numbers, about the last second. */
+  frameSummary(): FrameSummary {
+    return this.frameStats.summary();
+  }
+
+  /**
+   * Live diagnostics for the frame meter (P): [label, value] rows. The
+   * first rows say where the frame's time goes against the display's
+   * budget and which side is short; the rest describe the renderer.
+   */
   debugInfo(): Array<[string, string]> {
     const b = this.renderer.backend as { isWebGPUBackend?: boolean; isWebGLBackend?: boolean };
     const backend = b.isWebGPUBackend ? 'WebGPU' : b.isWebGLBackend ? 'WebGL2' : '?';
@@ -1136,8 +1405,49 @@ export class Viewer {
         'gpu' in navigator ? 'no adapter · see chrome://gpu' : 'unsupported browser',
       ]);
     }
+    const s = this.frameStats.summary();
+    const budget = s.periodMs ? `${ms(s.periodMs)} ms` : '…';
+    const gpuSource = this.gpuTimingSource();
+    const gpu =
+      s.gpuMs !== null
+        ? s.gpuSource === 'timestamps'
+          ? `${ms(s.gpuMs)} ms`
+          : `≈ ${ms(s.gpuMs)} ms (submit to done)`
+        : gpuSource
+          ? 'measuring'
+          : 'not available';
+    const frame = `CPU ${ms(s.cpuMs)} · GPU ${s.gpuMs !== null ? `${s.gpuSource === 'timestamps' ? '' : '≈'}${ms(s.gpuMs)}` : '–'} · budget ${budget}`;
+    const latency =
+      s.inputToSubmitMs !== null
+        ? `input to submit ${ms(s.inputToSubmitMs)}${s.inputToReadyMs !== null ? ` · to GPU done ${ms(s.inputToReadyMs)}` : ''} ms`
+        : 'no input';
+    const info = this.renderer.info.render as { drawCalls?: number; calls?: number; triangles?: number };
+    const mode = this.frameMode();
+    // The AO part only where GTAO is drawn at all: the cavity, and no AO,
+    // have nothing to hold or drop.
+    const aoText = this.aoEnabled ? ` · AO ${mode.ao}` : '';
+    const modeText = mode.kind
+      ? `${mode.kind === 'stroke' ? 'stroke' : 'moving'}${mode.fast ? `${aoText} · fill/rim ${mode.shadows === 'all' ? 'every frame' : mode.shadows === 'hold' ? 'held' : 'every 3rd frame'}` : ' · full look'}`
+      : mode.ao === 'fading'
+        ? 'still · AO fading in'
+        : 'still';
+    const last = mode.lastInteraction;
     return [
-      ['fps', String(Math.round(this.fps))],
+      ['fps', `${Math.round(s.frames ? s.fps : this.fps)} · refresh ${s.refreshHz ? `${s.refreshHz} Hz` : '…'} · missed ${s.missed}/${s.refreshes}`],
+      ['frame', frame],
+      ['verdict', s.verdict],
+      ['cpu', `input ${ms(s.inputMs)} (step ${ms(s.stepMs)}) · loop ${ms(s.loopMs)} · encode ${ms(s.encodeMs)} ms`],
+      ['gpu time', gpu],
+      ['moves', s.movesPerFrame ? `${s.movesPerFrame.toFixed(1)} per frame` : '–'],
+      ['latency', latency],
+      ['draws', `${info.drawCalls ?? info.calls ?? 0} · ${formatCount(info.triangles ?? 0)} tris`],
+      ['frames', modeText],
+      [
+        'builds',
+        last
+          ? `last stroke or drag: ${last.nodeBuilds + last.programs + last.pipelines} builds · ${last.textures + last.buffers + last.bindGroups} allocations`
+          : 'no stroke or drag yet',
+      ],
       ['backend', backend],
       ['gpu', this.gpuDescription()],
       ...rows,
@@ -1508,6 +1818,7 @@ export class Viewer {
     this.targetIndex = -1;
     this.displayedIndex = -1;
     this.timer.update(); // discard time accumulated during capture
+    this.frameStats.resetClock(); // nor is the capture a frame to the meter
     this.loop();
   }
 
@@ -1796,7 +2107,8 @@ export class Viewer {
    */
   private buildPipeline(): void {
     const tier = SHADOW_TIERS[detectQuality()];
-    const scenePass = pass(this.scene, this.camera);
+    // The scene keeps its 4x MSAA here, the canvas has none (SCENE_SAMPLES).
+    const scenePass = pass(this.scene, this.camera, CANVAS_MSAA ? {} : { samples: SCENE_SAMPLES });
     // GTAO reads colour, depth and view-space normals. Normals come from an MRT
     // target (read via .sample()): GTAONode's alternative depth-reconstruction
     // path dereferences the pass depth texture at shader-build time, which isn't
@@ -1815,13 +2127,31 @@ export class Viewer {
     // strength went up. three's edge-aware denoise averages it along a
     // surface and not across an edge (depth and normal weighted).
     const aoClean = denoise(aoNode.getTextureNode(), depthTex, normalTex, this.camera);
-    const aoTerm = (aoClean as unknown as { r: ReturnType<typeof float> }).r.clamp(1e-4, 1);
+    // The denoise gets a pass and a texture of its own. Inline, its 16-tap
+    // loop ran inside the output shader on every frame, so a stroke could
+    // not hold the AO without paying for the denoise anyway; drawn to a
+    // texture, holding it is skipping its pass (updateFrameMode). One
+    // channel at half float, the same pixels it computed inline.
+    const aoRtt = rtt(aoClean as unknown as Node, null, null, {
+      type: HalfFloatType,
+      format: RedFormat,
+      depthBuffer: false,
+    } as unknown as { type: typeof HalfFloatType });
+    const updateRtt = aoRtt.updateBefore.bind(aoRtt);
+    aoRtt.updateBefore = (frame) => {
+      if (aoRtt.autoUpdate || aoRtt.textureNeedsUpdate) this.aoRttRenders++;
+      return updateRtt(frame);
+    };
+    this.aoRtt = aoRtt;
+    const aoTerm = (aoRtt as unknown as { r: ReturnType<typeof float> }).r.clamp(1e-4, 1);
     // Strength is an exponent on the term: 0 none, 1 the term as computed, 2
     // its square. It was a blend, mix(1, term, strength), which past 1 ran
     // below zero wherever the term fell under 1 - 1/strength and was floored
     // to black there - every half-occluded pixel at strength 2. A power
-    // deepens the same pixels without ever crossing zero.
-    const aoFactor = pow(aoTerm, this.aoStrengthU);
+    // deepens the same pixels without ever crossing zero. The drop fades it
+    // to none while the view moves (updateFrameMode): a uniform, so dropping
+    // it changes no shader.
+    const aoFactor = mix(pow(aoTerm, this.aoStrengthU), float(1), this.aoDropU);
 
     // Sculpt-mode composite: a small depth-only SSAO (8 taps), the cavity.
     // Depth ignores facet normals, so flat shading shows no grid at facet
@@ -1969,6 +2299,9 @@ export class Viewer {
     if (this.pipeline.outputNode === out) return;
     this.pipeline.outputNode = out;
     this.pipeline.needsUpdate = true;
+    // A new output may bring GTAO into the graph: a stroke holds an AO only
+    // once one has been drawn for the view (updateFrameMode).
+    this.aoValid = false;
   }
 
   /** Drive the effective AO strength: the user intensity when enabled, else 0. */
@@ -2008,6 +2341,114 @@ export class Viewer {
       ? this.camera.position.distanceTo(this.dofFocusPoint)
       : this.controls.targetDistance() + (this.dofFocus * 2 - 1) * this.subjectRadius;
     this.dofFocusU.value = Math.max(focus, 0.01);
+  }
+
+  /** Fast frames apply: an editor is mounted, and Preferences says Fast frames. */
+  private fastActive(): boolean {
+    return this.fastFrames && settings.get('interactionLook') === 'fast';
+  }
+
+  /**
+   * Decide what this frame draws, after everything that moves the camera has
+   * run and before it renders (see fastFrames).
+   *
+   * Under a stroke ('stroke': the editor says so, and the camera is still)
+   * the AO texture from the last full frame stays: GTAO and its denoise are
+   * skipped, and nothing outside the brush changes, so pen-down shows no
+   * pop. While anything moves ('move': the camera, the gizmo, a pose drag) a
+   * held screen-space AO would smear across the view, so the AO is dropped,
+   * and fades back over AO_FADE_MS once things stop. A held AO is always one
+   * drawn for the view on screen: after a move, a stroke draws one full
+   * frame before holding. The fill and rim shadows hold under a stroke and
+   * redraw in turn while things move (Lighting.scheduleShadows).
+   *
+   * None of it builds, compiles or allocates anything: passes are skipped,
+   * a uniform moves and the shadows' update flags change. The skipped passes
+   * were compiled by the full frames before, and keep their targets.
+   */
+  private updateFrameMode(now: number, dt: number): void {
+    const moved = this.cameraMoved();
+    if (moved) this.lastCameraMove = now;
+    const navigating = this.controls.isHeld() || now - this.lastCameraMove < MOVED_WITHIN_MS;
+    const probe = this.interactionProbe?.() ?? null;
+    let kind: InteractionKind | null = probe === 'move' || navigating ? 'move' : probe;
+    if (this.debugInteraction !== undefined) kind = this.debugInteraction;
+    this.bracketInteraction(kind, probe !== null || this.controls.isHeld());
+    this.interaction = kind;
+
+    const fast = this.fastActive();
+    const ao = this.aoNode;
+    const denoise = this.aoRtt;
+    if (fast && kind === 'move') {
+      if (ao) ao.skip = true;
+      if (denoise) denoise.autoUpdate = false;
+      this.aoValid = false;
+      this.aoDropU.value = 1;
+    } else {
+      const hold = fast && kind === 'stroke' && this.aoValid && !moved;
+      if (ao) ao.skip = hold;
+      if (denoise) denoise.autoUpdate = !hold;
+      // Not held: this frame draws the AO for the view as it now stands.
+      if (!hold) this.aoValid = this.aoEnabled;
+      const drop = this.aoDropU.value as number;
+      if (drop > 0) this.aoDropU.value = Math.max(0, drop - (dt * 1000) / AO_FADE_MS);
+    }
+    this.lighting.scheduleShadows(
+      fast && kind === 'stroke' ? 'hold' : fast && kind === 'move' ? 'stagger' : 'all',
+      this.frameNo,
+    );
+  }
+
+  /**
+   * Whether the camera turned or moved this frame by more than about a
+   * quarter of a pixel (CAMERA_STILL_EPS), measured from where it last
+   * counted as moving, so a slow creep still adds up.
+   */
+  private cameraMoved(): boolean {
+    const cam = this.camera;
+    const dist = Math.max(this.controls.targetDistance(), 1e-6);
+    // 1 - |q.q'| is about angle^2 / 8 for small turns.
+    const turned = 1 - Math.abs(cam.quaternion.dot(this.lastCamQuat));
+    const shifted = cam.position.distanceTo(this.lastCamPos) / dist;
+    const moved = shifted > CAMERA_STILL_EPS || turned > (CAMERA_STILL_EPS * CAMERA_STILL_EPS) / 8;
+    if (moved) {
+      this.lastCamPos.copy(cam.position);
+      this.lastCamQuat.copy(cam.quaternion);
+    }
+    return moved;
+  }
+
+  /** True from an interaction's end until the frame after it has rendered. */
+  private interactionEnding = false;
+
+  /**
+   * Bracket each stroke or drag with the build counters, so the meter (and
+   * a test) can say what one cost: from the frame it began through the
+   * first full frame after it ended, the frame the skipped passes return
+   * in. Only a person starts one - a stroke, a pose or gizmo drag, a pointer
+   * on the view - and the coast after it stays inside; the camera moving on
+   * its own (the framing at boot, while the first frames compile) does not.
+   */
+  private bracketInteraction(kind: InteractionKind | null, byUser: boolean): void {
+    if (kind !== null && byUser && !this.interactionStart) this.interactionStart = this.renderCounters();
+    if (!this.interactionStart) return;
+    this.interactionEnding = kind === null;
+  }
+
+  private finishInteraction(): void {
+    this.interactionEnding = false;
+    const start = this.interactionStart;
+    if (!start) return;
+    const now = this.counters;
+    this.lastInteractionDelta = {
+      nodeBuilds: now.nodeBuilds - start.nodeBuilds,
+      programs: now.programs - start.programs,
+      pipelines: now.pipelines - start.pipelines,
+      textures: now.textures - start.textures,
+      buffers: now.buffers - start.buffers,
+      bindGroups: now.bindGroups - start.bindGroups,
+    };
+    this.interactionStart = null;
   }
 
   /**
@@ -2062,7 +2503,7 @@ export class Viewer {
    */
   onPostControls: (() => void) | null = null;
 
-  private readonly loop = (): void => {
+  private readonly loop = (rafTime?: number): void => {
     const now = performance.now();
     // The stall watchdog (perfLog): frames this far apart mean the main
     // thread was held up, which is what a freeze on the device is. The note
@@ -2113,21 +2554,32 @@ export class Viewer {
       this.displayedIndex = shownIndex;
     }
 
-    this.controls.update();
+    this.controls.update(dt);
     this.onPostControls?.();
     // After everything that moves the camera this frame: the near plane
     // follows the distance it ended at.
     this.controls.syncLimits();
+    this.updateFrameMode(now, dt);
+    this.frameNo++;
+    const encodeStart = performance.now();
     this.renderOnce();
-    this.frameWork = performance.now() - now;
+    const end = performance.now();
+    this.frameWork = end - now;
+    // The loop's own share, the encode, and the input the frame carried;
+    // rAF's own timestamp, aligned to the display, measures the refresh.
+    const inputAt = this.frameStats.endFrame(rafTime ?? now, encodeStart - now, end - encodeStart, end);
+    if (this.gpuTiming) this.sampleGpu(end, inputAt);
+    if (this.interactionEnding) this.finishInteraction();
   };
 
   /**
    * A hidden tab gets no frames at all; coming back is not a stall, so the
-   * watchdog starts over from the next one.
+   * watchdog starts over from the next one, and the meter does not read
+   * the gap as a frame.
    */
   private readonly onVisibility = (): void => {
     this.frameStart = 0;
+    this.frameStats.resetClock();
   };
 
   private readonly onResize = (): void => {
@@ -2222,6 +2674,25 @@ export class Viewer {
 
 function preventTouchDefault(e: TouchEvent): void {
   e.preventDefault();
+}
+
+/**
+ * The WebGPU adapter in a line. Firefox-based browsers (Zen among them)
+ * report nothing at all, deliberately, and the line says that rather than
+ * looking like a fault.
+ */
+export function describeAdapter(ai: { vendor?: string; architecture?: string; description?: string } | undefined): string {
+  return (
+    [ai?.description, ai?.vendor, ai?.architecture].filter(Boolean).join(' · ') ||
+    'not reported by this browser'
+  );
+}
+
+/** 1.6M, 820k, 950: a count the meter can print in a few characters. */
+function formatCount(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
+  return String(n);
 }
 
 function clampOrdinal(value: number, count: number): number {

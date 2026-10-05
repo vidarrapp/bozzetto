@@ -33,6 +33,40 @@ const NEAR_OF_RADIUS = 1 / 100;
 const FAR_OF_RADIUS = 100;
 
 /**
+ * Damping, as the share of the motion still owed that one 60 Hz frame
+ * applies. It used to be a flat 0.08 per frame, so the feel followed the
+ * frame rate: half of a drag was on screen after eight frames, which is
+ * 130 ms at 60 fps and twice that at 30. Both numbers are now per 60 Hz
+ * frame and scaled by the time each frame took (dampingFor), so any frame
+ * rate feels the way 60 always did.
+ *
+ * While a pointer holds the view it follows closely (HELD: half a move
+ * shows within two frames); once it lets go, the old coast takes over
+ * (COAST), started at the speed the view was moving so a flick carries on
+ * about as far as it used to (see release).
+ */
+const DAMPING_HELD = 0.3;
+const DAMPING_COAST = 0.08;
+/** How quickly the tracked release speed follows the view, in seconds. */
+const VELOCITY_TAU = 0.05;
+/** OrbitControls' state with no pointer holding the view. */
+const STATE_NONE = -1;
+
+/** A per-60 Hz-frame damping share, for a frame that took `dt` seconds. */
+export function dampingFor(perFrame60: number, dt: number): number {
+  return 1 - Math.pow(1 - perFrame60, Math.max(0, dt) * 60);
+}
+
+/** What the damping reads and writes inside OrbitControls. */
+interface OrbitInternals {
+  state: number;
+  dampingFactor: number;
+  _sphericalDelta: Spherical;
+  _panOffset: Vector3;
+  _scale: number;
+}
+
+/**
  * DCC-style camera navigation (design doc §7).
  *
  * OrbitControls with a remapped button scheme and damping. The fixed up-vector
@@ -148,20 +182,80 @@ export class Controls {
     }
   }
 
-  update(): void {
+  /** A pointer held the view at the last update (a drag, or fingers on the glass). */
+  private held = false;
+  /** The view's motion per 60 Hz frame while held: what the coast starts from. */
+  private readonly velocity = { theta: 0, phi: 0, pan: new Vector3() };
+  private readonly panStep = new Vector3();
+
+  /** Whether a pointer is holding the view (an orbit, pan or pinch under way). */
+  isHeld(): boolean {
+    return (this.controls as unknown as OrbitInternals).state !== STATE_NONE;
+  }
+
+  /** Advance the controls by one frame that took `dt` seconds. */
+  update(dt = 1 / 60): void {
+    const c = this.controls as unknown as OrbitInternals;
+    const held = c.state !== STATE_NONE;
+    if (this.held && !held) this.release(c);
+    this.held = held;
+    const step = Math.min(Math.max(dt, 0), 0.1);
+    c.dampingFactor = dampingFor(held ? DAMPING_HELD : DAMPING_COAST, step);
+    if (held && step > 0) this.trackVelocity(c, step);
     this.controls.update();
+  }
+
+  /**
+   * What this frame applies, per 60 Hz frame, smoothed over VELOCITY_TAU:
+   * read before the update, from what OrbitControls is owed and the share
+   * it is about to apply. A pointer held still lets it run down to nothing,
+   * as it should: a drag that stopped before letting go does not coast.
+   */
+  private trackVelocity(c: OrbitInternals, dt: number): void {
+    const k = c.dampingFactor / (dt * 60);
+    const a = 1 - Math.exp(-dt / VELOCITY_TAU);
+    const v = this.velocity;
+    v.theta += (c._sphericalDelta.theta * k - v.theta) * a;
+    v.phi += (c._sphericalDelta.phi * k - v.phi) * a;
+    this.panStep.copy(c._panOffset).multiplyScalar(k).sub(v.pan).multiplyScalar(a);
+    v.pan.add(this.panStep);
+  }
+
+  /**
+   * The pointer let go: owe the view what a coast from its current speed
+   * travels, which is speed x (1 - COAST) / COAST - what the steady 0.08
+   * damping always left owed at that speed. Whatever is owed already, if
+   * more, stands.
+   */
+  private release(c: OrbitInternals): void {
+    const k = (1 - DAMPING_COAST) / DAMPING_COAST;
+    const v = this.velocity;
+    const owe = (now: number, speed: number): number => (Math.abs(speed * k) > Math.abs(now) ? speed * k : now);
+    c._sphericalDelta.theta = owe(c._sphericalDelta.theta, v.theta);
+    c._sphericalDelta.phi = owe(c._sphericalDelta.phi, v.phi);
+    c._panOffset.set(owe(c._panOffset.x, v.pan.x), owe(c._panOffset.y, v.pan.y), owe(c._panOffset.z, v.pan.z));
+    this.clearVelocity();
+  }
+
+  private clearVelocity(): void {
+    this.velocity.theta = 0;
+    this.velocity.phi = 0;
+    this.velocity.pan.set(0, 0, 0);
   }
 
   /**
    * Drop whatever the damping still owes the view (the pen took over from
    * fingers mid-orbit): the camera stops where it is, rather than drifting
-   * on under the first stroke.
+   * on under the first stroke. The release that follows a takeover must
+   * not start a coast either, so the held state and its speed go too.
    */
   halt(): void {
-    const c = this.controls as unknown as { _sphericalDelta: Spherical; _panOffset: Vector3; _scale: number };
+    const c = this.controls as unknown as OrbitInternals;
     c._sphericalDelta.set(0, 0, 0);
     c._panOffset.set(0, 0, 0);
     c._scale = 1;
+    this.held = false;
+    this.clearVelocity();
   }
 
   /**

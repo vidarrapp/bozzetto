@@ -40,7 +40,12 @@
   --accent: #bb5b33;
   --accent-hover: #c87049;
   --accent-soft: rgba(187, 91, 51, 0.16);
-  --panel-bg: rgba(28, 24, 20, 0.88);
+  /* Every panel's background alpha, in one place (Preferences > Appearance
+     > Panel opacity sets it on the root; appearance.ts). Nothing behind a
+     panel is blurred: a blur over the 3D view had the browser redraw it on
+     every frame the view moved, on the GPU the frame itself needs. */
+  --panel-alpha: 0.95;
+  --panel-bg: rgb(28 24 20 / var(--panel-alpha));
   --panel-border: #4a3f35;
   --control-bg: #2a2520;
   --hover: rgba(255, 255, 255, 0.08);
@@ -60,11 +65,12 @@
   --accent: #9a4827;
   --accent-hover: #bb5b33;
   --accent-soft: rgba(187, 91, 51, 0.14);
-  --panel-bg: rgba(250, 246, 238, 0.92);
+  --panel-bg: rgb(250 246 238 / var(--panel-alpha));
   --panel-border: #c9c1b1;
   --control-bg: #e8e3d9;
   --hover: rgba(0, 0, 0, 0.06);
 }
+
 
 * {
   box-sizing: border-box;
@@ -287,7 +293,6 @@ h1,
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   z-index: 10;
   user-select: none;
@@ -339,7 +344,6 @@ h1,
   border: 1px solid var(--panel-border);
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
-  backdrop-filter: blur(8px);
 }
 
 /* Handle label: the panel's name, shown vertically only when collapsed so the
@@ -471,7 +475,6 @@ h1,
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
@@ -1253,7 +1256,6 @@ html.is-page body {
   padding: 12px 20px 16px;
   background: var(--panel-bg);
   border-top: 1px solid var(--panel-border);
-  backdrop-filter: blur(8px);
   user-select: none;
 }
 
@@ -1326,7 +1328,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease 0.3s;
@@ -1376,7 +1377,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   cursor: pointer;
 }
 
@@ -1403,7 +1403,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   transition: opacity 0.6s ease;
 }
 
@@ -1426,7 +1425,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
@@ -1486,7 +1484,7 @@ html.is-page body {
   border-radius: var(--radius);
 }
 
-/* --- dev FPS meter (hotkey "t") --- */
+/* --- frame meter (P, or Preferences > Diagnostics) --- */
 .fps-meter {
   position: fixed;
   left: 12px;
@@ -1502,7 +1500,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
 }
 
 .fps-meter__row {
@@ -1531,7 +1528,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   pointer-events: none;
 }
 
@@ -1553,7 +1549,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   z-index: 10;
   transition: transform 0.25s ease;
@@ -1600,7 +1595,6 @@ html.is-page body {
   border: 1px solid var(--panel-border);
   border-left: none;
   border-radius: 0 var(--radius) var(--radius) 0;
-  backdrop-filter: blur(8px);
 }
 
 
@@ -1717,7 +1711,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   pointer-events: auto;
 }
 
@@ -2110,7 +2103,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
   /* Above every panel (15) so it is never clipped or covered. */
   z-index: 32;
@@ -2711,7 +2703,6 @@ body.chrome-hidden .transport {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   background: var(--panel-bg);
-  backdrop-filter: blur(8px);
   color: var(--text);
   font-family: var(--font-body);
   font-size: 13px;
@@ -3045,7 +3036,6 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -3076,7 +3066,6 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
@@ -3169,10 +3158,55 @@ body.is-sampling * {
   padding: 4px 8px;
 }
 
-/* Preferences: the hotkey editor, on the server-settings card. */
+/* Preferences: the settings and the hotkey editor, on the server-settings
+   card. The body scrolls as one, so the buttons stay on screen however
+   many groups sit above the hotkeys. */
 .prefs__card {
   position: relative;
   width: min(560px, 92vw);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.prefs__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -4px 10px 0;
+  padding-right: 4px;
+}
+
+/* The question a group of choices answers, under its group heading. */
+.prefs__question {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* A slider setting: its title with the value beside it, the slider, then
+   a line on what it does (Panel opacity). */
+.prefs__slider {
+  padding: 5px 0;
+}
+
+.prefs__slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.prefs__slider-value {
+  font-family: var(--font-spec);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.prefs__slider input[type='range'] {
+  width: 100%;
+  margin: 6px 0 2px;
+  accent-color: var(--accent);
 }
 
 .prefs__tabs {
@@ -3199,12 +3233,7 @@ body.is-sampling * {
 }
 
 .prefs__list {
-  /* The Touch rows sit above the list now; leave them, the title and the
-     buttons on screen on a landscape iPad. */
-  max-height: max(160px, min(55vh, calc(100vh - 400px)));
-  overflow: auto;
-  margin: 4px 0 10px;
-  padding-right: 4px;
+  margin: 4px 0 0;
 }
 
 .prefs__choices {
@@ -3560,7 +3589,7 @@ body.is-sampling * {
 
 .cpick__pop {
   /* On the body, not in the panel: the panel body scrolls and clips, and
-     its backdrop-filter makes a stacking context no z-index climbs out of
+     the panel is a stacking context no z-index climbs out of
      - the popover painted under later rows, and taps meant for its
      sliders landed on whatever covered it, which the outside-press
      dismiss read as "outside" (same disease the outliner menu had). */
@@ -3574,7 +3603,6 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
@@ -3689,7 +3717,6 @@ body.is-sampling * {
   justify-content: center;
   padding: 24px;
   background: rgb(0 0 0 / 45%);
-  backdrop-filter: blur(2px);
 }
 
 .install-card {
@@ -3767,7 +3794,6 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  backdrop-filter: blur(8px);
   box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
   color: var(--text);
 }

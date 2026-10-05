@@ -1,14 +1,20 @@
 import type { Viewer } from '../viewer/Viewer';
 import { launchSummary } from './launch';
+import { settings } from './settings';
 
 /**
- * Debug overlay, toggled by the hotkey "t". Shows FPS plus live renderer
- * diagnostics (backend, size, material, AO/DoF, subject scale, clip range,
- * environment). Polls on a timer — no extra render loop.
+ * The frame meter: P, or Preferences > Diagnostics, where the choice is
+ * kept, so a device that should show it keeps showing it across reloads.
+ * Where each frame's time goes against the display's budget, which side
+ * is short, and the renderer's own diagnostics (backend, size, AO, DoF,
+ * subject scale, clip range, environment). Polls on a timer - no render
+ * loop of its own - and times the GPU only while it is up, because reading
+ * that back costs a little every frame (Viewer.setGpuTiming).
  */
 export class FpsMeter {
   private readonly el: HTMLDivElement;
   private readonly timer: number;
+  private readonly offSettings: () => void;
 
   constructor(private readonly viewer: Viewer) {
     this.el = document.createElement('div');
@@ -16,10 +22,20 @@ export class FpsMeter {
     this.el.hidden = true;
     document.body.appendChild(this.el);
     this.timer = window.setInterval(() => this.render(), 250);
+    this.offSettings = settings.onChange(() => this.apply());
+    this.apply();
   }
 
+  /** P: show or hide it, and remember which. */
   toggle(): void {
-    this.el.hidden = !this.el.hidden;
+    settings.set('meter', this.el.hidden ? 'on' : 'off');
+  }
+
+  private apply(): void {
+    const on = settings.get('meter') === 'on';
+    if (on === !this.el.hidden) return;
+    this.el.hidden = !on;
+    this.viewer.setGpuTiming(on);
     this.render();
   }
 
@@ -49,6 +65,8 @@ export class FpsMeter {
 
   dispose(): void {
     clearInterval(this.timer);
+    this.offSettings();
+    this.viewer.setGpuTiming(false);
     this.el.remove();
   }
 }

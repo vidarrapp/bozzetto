@@ -1,13 +1,14 @@
 import { div } from './dom';
 import { ACTIONS, chordOf, chordParts, keymap, type ActionDef, type KeyMode } from './keymap';
-import { settings, type SettingsValues } from './settings';
+import { rangeOf, settings, type OnOff, type SettingsValues } from './settings';
 
 /**
- * Preferences: what a finger does, then the hotkey editor. Every keyed
- * action in both modes, with its current chord; click one, press the new
- * key. The keymap is the single source the handlers and the guide read,
- * so a change is live at once and shows up in the guide; the settings
- * store is read the same way, at the next press.
+ * Preferences: what a finger does, how solid the panels are, how frames are
+ * drawn while things move, the diagnostic overlays, then the hotkey editor. Every keyed action in
+ * both modes, with its current chord; click one, press the new key. The
+ * keymap is the single source the handlers and the guide read, so a change
+ * is live at once and shows up in the guide; the settings store is read
+ * the same way, at the next press or the next frame.
  *
  * A modal, like the server settings: while it is up the body carries
  * `has-modal` and the key handlers stand down, which is also what lets
@@ -70,6 +71,50 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     (v) => settings.set('fingers', v),
   );
 
+  // How solid the panels are, tried by dragging (owner request): every
+  // value shows on the panels as the slider passes it.
+  const appearanceHead = div('prefs__group');
+  appearanceHead.textContent = 'Appearance';
+  const opacity = panelOpacityRow();
+
+  // How frames are drawn while things move (Viewer.updateFrameMode).
+  const perfHead = div('prefs__group');
+  perfHead.textContent = 'Performance';
+  const lookQuestion = div('prefs__question');
+  lookQuestion.textContent = 'While sculpting, posing or moving the view';
+  const look = choiceGroup<SettingsValues['interactionLook']>(
+    'interactionLook',
+    [
+      [
+        'fast',
+        'Fast frames',
+        'Ambient occlusion holds still under a stroke and steps aside while the view or a pose moves, and the fill and rim shadows redraw less often, so each frame keeps up with the pen. All of it is back as you let go.',
+      ],
+      ['full', 'Full look', 'Every frame is drawn in full, as a still one is.'],
+    ],
+    (v) => settings.set('interactionLook', v),
+  );
+
+  // The overlays that say what a device is doing, kept on across reloads,
+  // so the web version needs no URL parameters for them.
+  const diagHead = div('prefs__group');
+  diagHead.textContent = 'Diagnostics';
+  const meter = toggleRow(
+    'meter',
+    'Frame meter',
+    "Frame rate, where each frame's time goes (CPU, GPU and the display's budget) and which side is short. P shows and hides it.",
+  );
+  const stallLog = toggleRow(
+    'stallLog',
+    'Stall log',
+    'Every pause between frames longer than 300 ms, and how long the heavy jobs took, newest first.',
+  );
+  const inputLog = toggleRow(
+    'inputLog',
+    'Input log',
+    'Pointer and touch events as the browser delivers them, and what Sculpt did with each.',
+  );
+
   const keysHead = div('prefs__group');
   keysHead.textContent = 'Hotkeys';
   const keysBlurb = div('dsettings__hint');
@@ -99,7 +144,27 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   const resetAll = button('Reset all', 'sculpt-panel__btn');
   const close = button('Close', 'sculpt-panel__btn dsettings__primary');
   row.append(resetAll, close);
-  card.append(title, blurb, touchHead, fingers.root, keysHead, keysBlurb, tabs, list, row);
+  // Everything between the title and the buttons scrolls as one, so the
+  // buttons stay on screen however many groups there are.
+  const body = div('prefs__body');
+  body.append(
+    touchHead,
+    fingers.root,
+    appearanceHead,
+    opacity.root,
+    perfHead,
+    lookQuestion,
+    look.root,
+    diagHead,
+    meter.root,
+    stallLog.root,
+    inputLog.root,
+    keysHead,
+    keysBlurb,
+    tabs,
+    list,
+  );
+  card.append(title, blurb, body, row);
   root.appendChild(card);
 
   // --- the capture step -------------------------------------------------
@@ -228,6 +293,9 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     open: (m) => {
       mode = m;
       fingers.set(settings.get('fingers'));
+      look.set(settings.get('interactionLook'));
+      opacity.sync();
+      for (const t of [meter, stallLog, inputLog]) t.sync();
       render();
       root.hidden = false;
       document.body.classList.add('has-modal');
@@ -248,6 +316,7 @@ function choiceGroup<V extends string>(
 ): { root: HTMLElement; set: (value: V) => void } {
   const root = div('prefs__choices');
   root.setAttribute('role', 'radiogroup');
+  root.dataset.setting = name;
   const inputs = new Map<V, HTMLInputElement>();
   for (const [value, label, hint] of options) {
     const row = document.createElement('label');
@@ -275,6 +344,72 @@ function choiceGroup<V extends string>(
       for (const [v, input] of inputs) input.checked = v === value;
     },
   };
+}
+
+/** The settings that are a box to tick. */
+type OnOffKey = { [K in keyof SettingsValues]: SettingsValues[K] extends OnOff ? K : never }[keyof SettingsValues];
+
+/**
+ * A checkbox row with a title over a line of explanation, bound to an
+ * on/off setting. `sync` re-reads the stored value when the window opens,
+ * and the row also follows the setting while it is up (P toggles the
+ * meter's with the window closed, but a test or the console may not).
+ */
+function toggleRow(key: OnOffKey, label: string, hint: string): { root: HTMLElement; sync: () => void } {
+  const root = document.createElement('label');
+  root.className = 'prefs__choice prefs__toggle';
+  root.dataset.setting = key;
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.addEventListener('change', () => settings.set(key, input.checked ? 'on' : 'off'));
+  const text = div('prefs__choice-text');
+  const head = div('prefs__choice-title');
+  head.textContent = label;
+  const note = div('prefs__choice-hint');
+  note.textContent = hint;
+  text.append(head, note);
+  root.append(input, text);
+  const sync = (): void => {
+    input.checked = settings.get(key) === 'on';
+  };
+  settings.onChange(sync);
+  sync();
+  return { root, sync };
+}
+
+/**
+ * Panel opacity: a slider over the setting's range, each value applied and
+ * kept as it is dragged (appearance.ts puts it on the panels), with the
+ * value beside the title and a line on what it does underneath.
+ */
+function panelOpacityRow(): { root: HTMLElement; sync: () => void } {
+  const { min, max } = rangeOf('panelOpacity');
+  const root = div('prefs__slider');
+  root.dataset.setting = 'panelOpacity';
+  const head = div('prefs__slider-head');
+  const title = div('prefs__choice-title');
+  title.textContent = 'Panel opacity';
+  const value = div('prefs__slider-value');
+  head.append(title, value);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = '1';
+  input.dataset.unit = '%';
+  input.setAttribute('aria-label', 'Panel opacity');
+  input.addEventListener('input', () => settings.set('panelOpacity', Number(input.value)));
+  const hint = div('prefs__choice-hint');
+  hint.textContent = 'How much of the view shows through the panels. At 100% they are solid.';
+  root.append(head, input, hint);
+  const sync = (): void => {
+    const v = settings.get('panelOpacity');
+    input.value = String(v);
+    value.textContent = `${v}%`;
+  };
+  settings.onChange(sync);
+  sync();
+  return { root, sync };
 }
 
 function button(text: string, cls: string): HTMLButtonElement {

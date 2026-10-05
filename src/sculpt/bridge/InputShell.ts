@@ -9,6 +9,7 @@ import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../.
 import { keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
 import { KEY_DRAG_DEG_PER_PX } from '../../viewer/Lighting';
+import { perfLog } from '../../viewer/perfLog';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
@@ -137,6 +138,11 @@ const STROKE_REDUCE_DELAY_MS = 250;
  * take over navigation either way).
  */
 const GESTURE_GRACE_MS = 250;
+/**
+ * A stroke end at least this slow goes in the perf log: a frame at 60 Hz,
+ * which is when the next stroke's first dab starts to wait on it.
+ */
+const STROKE_END_LOG_MS = 16;
 /** Screen-ring feedback duration for keyboard size/strength nudges. */
 const NUDGE_FLASH_MS = 450;
 /** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
@@ -181,6 +187,31 @@ export class InputShell {
   onBrushChange: (() => void) | null = null;
   /** Fired when a stroke has spent the Negative arm, so the toolbar can show it. */
   onNegativeChange: (() => void) | null = null;
+  /**
+   * Stroke work done for the coming frame, for the frame meter: the whole
+   * handler's ms, the event's timestamp, and the vendored step's share
+   * (picking, sculpting, normals; 0 for a stroke's end).
+   */
+  onWork: ((ms: number, eventTime: number, stepMs: number) => void) | null = null;
+  /** How long the last stroke's end took (octree rebalance, undo tidy). */
+  lastEndMs = 0;
+  /**
+   * The canvas's page rect, read once per press rather than on every move:
+   * reading it after the cursor's SVG changed forces a style and layout
+   * pass, and browsers that deliver several moves a frame paid that on each
+   * one. A resize, a scroll and every press read it afresh.
+   */
+  private rect: DOMRect | null = null;
+  private readonly forgetRect = (): void => {
+    this.rect = null;
+  };
+  private rectObserver: ResizeObserver | null = null;
+  /**
+   * A hover moved the pointer and the surface under it is owed a pick.
+   * Picked once a frame (flushHover), not on every move: a pick raycasts
+   * every visible object, and some browsers deliver several moves a frame.
+   */
+  private hoverDue = false;
 
   private pointerId = -1;
   /** Device that owns the current stroke, so a Pencil can outrank a finger. */
@@ -347,6 +378,10 @@ export class InputShell {
     // iPad app switch) while b/s/l was held left the shell stuck in that
     // mode for good - every move resizing the brush, every press swallowed.
     window.addEventListener('blur', this.onWindowBlur);
+    window.addEventListener('resize', this.forgetRect);
+    window.addEventListener('scroll', this.forgetRect, { capture: true, passive: true });
+    this.rectObserver = new ResizeObserver(this.forgetRect);
+    this.rectObserver.observe(this.session.getCanvas());
     this.syncCursorBrush();
     // Review decision: invert the Crease default (upstream ships _negative
     // true, a carving valley; Bozzetto defaults to the raised ridge, and alt
@@ -367,6 +402,10 @@ export class InputShell {
     window.removeEventListener('keydown', this.onKeyDown, true);
     window.removeEventListener('keyup', this.onKeyUp, true);
     window.removeEventListener('blur', this.onWindowBlur);
+    window.removeEventListener('resize', this.forgetRect);
+    window.removeEventListener('scroll', this.forgetRect, { capture: true });
+    this.rectObserver?.disconnect();
+    this.rectObserver = null;
     this.session.setCanvasCursor('default');
   }
 
@@ -401,8 +440,7 @@ export class InputShell {
 
   private setMouseAt(clientX: number, clientY: number): void {
     const s = this.session;
-    const canvas = s.getCanvas();
-    const rect = canvas.getBoundingClientRect();
+    const rect = (this.rect ??= s.getCanvas().getBoundingClientRect());
     const ratio = s.getPixelRatio();
     s._mouseX = (clientX - rect.left) * ratio;
     s._mouseY = (clientY - rect.top) * ratio;
@@ -788,6 +826,10 @@ export class InputShell {
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     // Our own re-dispatch on its way to OrbitControls; let it through.
     if (this.handingToOrbit) return;
+    // Every press reads the canvas where it is now; the moves reuse it.
+    this.rect = null;
+    // A hover pick owed from before the press must not land mid-stroke.
+    this.hoverDue = false;
     if (e.button !== 0) return; // middle/right stay with OrbitControls
     if (e.pointerType === 'touch') {
       this.touchesDown.add(e.pointerId);
@@ -1178,22 +1220,14 @@ export class InputShell {
         this.cursor.hide();
         return;
       }
-      // Hover: ring on the surface under the cursor. Off the mesh, no
-      // cursor at all, Move included: every brush starts on the surface.
-      const surf = s.hoverSurface(true);
-      if (surf) {
-        // The mirror rides along on HOVER only: it shows where symmetry
-        // will put the other half (and is the one always-visible sign that
-        // symmetry is on), while a stroke keeps the single dot on the side
-        // being worked (owner call).
-        this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius, surf.mirror);
-      } else {
-        this.cursor.hide();
-      }
+      // Hover: the ring goes on the surface under the cursor, picked at the
+      // next frame (flushHover) rather than here.
+      this.hoverDue = true;
       return;
     }
     e.preventDefault();
     e.stopPropagation();
+    const t0 = performance.now();
 
     // Upstream onDeviceMove, sculpt branch: refresh picking, then stroke.
     this.feedPressure(e);
@@ -1202,6 +1236,7 @@ export class InputShell {
     this.worldScale?.sync();
     s.getSculptManager().preUpdate();
     s.getSculptManager().update();
+    const stepMs = performance.now() - t0;
 
     // The stroke just refreshed picking; reuse it for the ring (no re-pick).
     const strokeSurf = s.hoverSurface(false);
@@ -1213,7 +1248,38 @@ export class InputShell {
 
     s._lastMouseX = s._mouseX;
     s._lastMouseY = s._mouseY;
+    this.onWork?.(performance.now() - t0, e.timeStamp, stepMs);
   };
+
+  /**
+   * The hover pick a move left owed, once a frame (sculpt mode calls this
+   * after the camera has moved for the frame): the ring on the surface
+   * under the cursor, or no cursor at all off the mesh, Move included,
+   * since every brush starts on the surface. Never while a press is down:
+   * the picking it writes is the stroke's too.
+   */
+  flushHover(): void {
+    if (!this.hoverDue) return;
+    this.hoverDue = false;
+    const s = this.session;
+    if (this.pointerId !== -1 || s._action !== Enums.Action.NOTHING) return;
+    if (this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld) return;
+    const surf = s.hoverSurface(true);
+    if (surf) {
+      // The mirror rides along on HOVER only: it shows where symmetry
+      // will put the other half (and is the one always-visible sign that
+      // symmetry is on), while a stroke keeps the single dot on the side
+      // being worked (owner call).
+      this.cursor.setSurface(surf.point, surf.normal, surf.worldRadius, surf.mirror);
+    } else {
+      this.cursor.hide();
+    }
+  }
+
+  /** A stroke is under way (the frame mode holds the AO for it). */
+  isStroking(): boolean {
+    return this.pointerId !== -1 && this.session._action === Enums.Action.SCULPT_EDIT;
+  }
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
@@ -1269,8 +1335,7 @@ export class InputShell {
 
     if (s._action === Enums.Action.SCULPT_EDIT) {
       // Upstream onDeviceUp: octree rebalance + drop no-op undo entries.
-      s.getSculptManager().end();
-      s.getStateManager().cleanNoop();
+      this.endStroke(e.timeStamp);
       e.stopPropagation();
       // The orbit pivot follows the work: turn around the last edit point.
       const edit = s.lastEditWorldPoint();
@@ -1287,7 +1352,10 @@ export class InputShell {
     // Capture-phase leave fires for every descendant crossing (canvas to
     // overlay chips and back); only the container's own leave means the
     // pointer left the viewport.
-    if (e.target === this.container) this.cursor.hide();
+    if (e.target === this.container) {
+      this.hoverDue = false;
+      this.cursor.hide();
+    }
   };
 
   // --- fingers navigate ----------------------------------------------------
@@ -1538,8 +1606,7 @@ export class InputShell {
   private abandonStroke(): void {
     const s = this.session;
     if (s._action === Enums.Action.SCULPT_EDIT) {
-      s.getSculptManager().end();
-      s.getStateManager().cleanNoop();
+      this.endStroke(performance.now());
       const edit = s.lastEditWorldPoint();
       if (edit) this.hooks.focusEdit(edit);
     }
@@ -1550,6 +1617,23 @@ export class InputShell {
     this.pointerId = -1;
     this.strokePointerType = '';
     s._action = Enums.Action.NOTHING;
+  }
+
+  /**
+   * The vendor's stroke end, timed: the octree rebalance runs over every
+   * cell the stroke touched, which on a dense mesh can cost a frame or
+   * more, right where the next stroke starts. A slow one goes in the perf
+   * log, beside whatever else held the main thread then.
+   */
+  private endStroke(eventTime: number): void {
+    const s = this.session;
+    const t0 = performance.now();
+    s.getSculptManager().end();
+    s.getStateManager().cleanNoop();
+    const ms = performance.now() - t0;
+    this.lastEndMs = ms;
+    if (ms >= STROKE_END_LOG_MS) perfLog.record('stroke end', ms);
+    this.onWork?.(ms, eventTime, 0);
   }
 
   /** Route pointerdown decisions to the on-device log (?inputdebug=1). */
@@ -1798,7 +1882,7 @@ export class InputShell {
         return this.selectTool(Enums.Tools.PAINT, e);
       default:
         // A shared action this shell does not act on (the guide, the
-        // frame-rate meter, the ground) falls through to the viewer's
+        // frame meter, the ground) falls through to the viewer's
         // handler, unclaimed.
         return;
     }

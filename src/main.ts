@@ -9,6 +9,7 @@ import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
 import { registerServiceWorker } from './ui/serviceWorker';
+import { followPanelOpacity } from './ui/appearance';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -17,6 +18,7 @@ import { registerServiceWorker } from './ui/serviceWorker';
  */
 async function main(): Promise<void> {
   initTheme();
+  followPanelOpacity();
   mountThemeToggle();
   installSliderBubble();
   installTouchGuards();

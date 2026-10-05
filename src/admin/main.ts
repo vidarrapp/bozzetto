@@ -2,6 +2,7 @@ import { api, failureText, mediaPath } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
+import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 
 /**
@@ -204,6 +205,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 }
 
 initTheme();
+followPanelOpacity();
 mountThemeToggle();
   installSliderBubble();
 const projectId = new URLSearchParams(window.location.search).get('p');

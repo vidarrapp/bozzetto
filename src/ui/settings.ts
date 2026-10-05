@@ -5,6 +5,9 @@
  * the next press without a reload.
  */
 
+/** A setting that is either on or off, kept as a word so the store stays one shape. */
+export type OnOff = 'on' | 'off';
+
 export interface SettingsValues {
   /**
    * What a finger does in Sculpt. 'navigate' (the default, owner call): one
@@ -13,14 +16,70 @@ export interface SettingsValues {
    * behaviour, for sculpting without a pen - a finger on the model strokes.
    */
   fingers: 'navigate' | 'sculpt';
+  /**
+   * What a frame draws while a stroke, a pose drag or the view is moving,
+   * in Sculpt and Armature. 'fast' (the default): ambient occlusion holds
+   * still under a stroke and steps aside while things move, and the fill
+   * and rim shadows refresh less often (Viewer.updateFrameMode). 'full':
+   * every frame drawn as a still one is.
+   */
+  interactionLook: 'fast' | 'full';
+  /**
+   * How opaque the panels are, in percent (Preferences > Appearance): from
+   * 60, where a good deal of the view shows through, to 100, solid. Nothing
+   * behind a panel is blurred at any setting (appearance.ts).
+   */
+  panelOpacity: number;
+  /** The frame meter (P), kept across reloads so a device keeps showing it. */
+  meter: OnOff;
+  /** The stall log overlay (what ?perfdebug=1 shows), in every mode. */
+  stallLog: OnOff;
+  /** The input log overlay in Sculpt (what ?inputdebug=1 shows). */
+  inputLog: OnOff;
 }
 
-const DEFAULTS: SettingsValues = { fingers: 'navigate' };
-
-/** Each setting's accepted values; anything else in the store is ignored. */
-const ALLOWED: { [K in keyof SettingsValues]: readonly SettingsValues[K][] } = {
-  fingers: ['navigate', 'sculpt'],
+const DEFAULTS: SettingsValues = {
+  fingers: 'navigate',
+  interactionLook: 'fast',
+  panelOpacity: 95,
+  meter: 'off',
+  stallLog: 'off',
+  inputLog: 'off',
 };
+
+const ON_OFF = ['on', 'off'] as const;
+
+/** A number setting's range, whole numbers only. */
+interface Range {
+  min: number;
+  max: number;
+}
+
+/**
+ * Each setting's accepted values - a list, or a number's range - and
+ * anything else in the store is ignored.
+ */
+const ALLOWED: { [K in keyof SettingsValues]: SettingsValues[K] extends number ? Range : readonly SettingsValues[K][] } = {
+  fingers: ['navigate', 'sculpt'],
+  interactionLook: ['fast', 'full'],
+  panelOpacity: { min: 60, max: 100 },
+  meter: ON_OFF,
+  stallLog: ON_OFF,
+  inputLog: ON_OFF,
+};
+
+/** Whether `value` is one `key` accepts. */
+function accepts(key: keyof SettingsValues, value: unknown): boolean {
+  const rule = ALLOWED[key] as Range | readonly unknown[];
+  if (Array.isArray(rule)) return rule.includes(value);
+  const range = rule as Range;
+  return typeof value === 'number' && Number.isInteger(value) && value >= range.min && value <= range.max;
+}
+
+/** A number setting's range, for the control that sets it. */
+export function rangeOf(key: 'panelOpacity'): Range {
+  return { ...ALLOWED[key] };
+}
 
 const STORAGE_KEY = 'bozzetto-settings';
 
@@ -39,7 +98,7 @@ export class Settings {
   }
 
   set<K extends keyof SettingsValues>(key: K, value: SettingsValues[K]): void {
-    if (!ALLOWED[key].includes(value) || this.values[key] === value) return;
+    if (!accepts(key, value) || this.values[key] === value) return;
     this.values[key] = value;
     this.save();
     for (const fn of this.listeners) fn();
@@ -57,9 +116,7 @@ export class Settings {
       const parsed = JSON.parse(raw) as Partial<Record<keyof SettingsValues, unknown>>;
       for (const key of Object.keys(ALLOWED) as Array<keyof SettingsValues>) {
         const v = parsed[key];
-        if ((ALLOWED[key] as readonly unknown[]).includes(v)) {
-          (this.values as unknown as Record<string, unknown>)[key] = v;
-        }
+        if (accepts(key, v)) (this.values as unknown as Record<string, unknown>)[key] = v;
       }
     } catch {
       // A blocked or corrupt store: the defaults stand.

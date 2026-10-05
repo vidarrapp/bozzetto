@@ -44,8 +44,9 @@ import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
-import { PerfDebug } from './ui/PerfDebug';
 import { perfLog } from '../viewer/perfLog';
+import { settings } from '../ui/settings';
+import { forcedByUrl } from '../ui/diagnostics';
 import { CaptureWindow } from './ui/CaptureWindow';
 import { FileMenu, reportNotUploaded } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
@@ -513,33 +514,36 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // column becomes the scene graph/outliner entry point later).
   const stats = makeStatsCorner(session);
 
-  // Opt-in hardware input log, for bugs that only exist on a real tablet,
-  // and the perf log's overlay, for freezes that only happen on one.
-  const inputDebug = new URLSearchParams(location.search).get('inputdebug') === '1'
-    ? new InputDebug()
-    : null;
-  const perfDebug = new URLSearchParams(location.search).get('perfdebug') === '1'
-    ? new PerfDebug()
-    : null;
+  // The opt-in hardware input log, for bugs that only exist on a real
+  // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
+  // put up once the input shell exists (syncInputDebug, below). The stall
+  // log lives with the viewer (mountViewer), in every mode.
+  let inputDebug: InputDebug | null = null;
 
   // Tab clears the interface for focused work; the toggle owns the ways back.
   const chrome = new ChromeToggle();
 
   const cursor = new BrushCursor(container);
-  // The surface ring is projected SVG: crisp at any DPI on any backend.
+  // The surface ring is projected SVG: crisp at any DPI on any backend. The
+  // container's size is kept by an observer rather than read per point: a
+  // ring projects fifty points between writes to the SVG, and every read
+  // after a write forced the browser to lay the page out again.
   const projVec = new Vector3();
+  const viewSize = { w: container.clientWidth, h: container.clientHeight };
+  const sizeObserver = new ResizeObserver(() => {
+    viewSize.w = container.clientWidth;
+    viewSize.h = container.clientHeight;
+  });
+  sizeObserver.observe(container);
   cursor.setProjector((p) => {
     projVec.set(p[0], p[1], p[2]).project(viewer.camera);
     if (projVec.z > 1 || projVec.z < -1) return null;
-    return [
-      (projVec.x * 0.5 + 0.5) * container.clientWidth,
-      (0.5 - projVec.y * 0.5) * container.clientHeight,
-    ];
+    return [(projVec.x * 0.5 + 0.5) * viewSize.w, (0.5 - projVec.y * 0.5) * viewSize.h];
   });
 
-  // The same tick re-projects the cursor when the camera moves under a
-  // still pointer (wheel zoom).
-  const followTick = (): void => {
+  // Before the controls: the turntable's coast turns the camera, which the
+  // controls then carry on from, and the history buttons' flags.
+  const spinTick = (): void => {
     // Coast: once the ticks stop arriving, keep the spin going briefly and
     // let it decay. The gap check keeps this from double-counting while the
     // wheel is still feeding steps.
@@ -557,6 +561,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // History flags move through many routes (strokes, panel ops, keyboard,
     // buttons, restore); polling each frame is cheaper than wiring them all.
     sliders?.refreshHistory();
+  };
+  // After the controls and the pivot re-centring, so everything that hangs
+  // off the camera uses the camera this frame renders with: the light rig
+  // used to follow from onTick, a frame behind the view while it turned.
+  // The cursor re-projects when the camera moves under a still pointer
+  // (wheel zoom), and a hover owed a pick gets it, once a frame.
+  const followTick = (): void => {
+    input.flushHover();
     const cam = viewer.camera;
     if (cam.position.equals(camScratch.prevPos) && cam.quaternion.equals(camScratch.prevQuat)) {
       return;
@@ -573,10 +585,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     worldScale.sync();
     cursor.refresh();
   };
-  viewer.onTick = followTick;
+  viewer.onTick = spinTick;
   // After the controls, not before: onTick's camera is overwritten by
   // controls.update() later in the same frame.
-  viewer.onPostControls = () => applyPivotOrbit();
+  viewer.onPostControls = () => {
+    applyPivotOrbit();
+    followTick();
+  };
 
   /**
    * Orbit around the last stroke instead of the middle of the view, without
@@ -671,9 +686,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       return;
     }
     const sc = orbitScratch;
-    const st = viewer.getCameraState();
-    const cam = sc.cam.set(st.position[0], st.position[1], st.position[2]);
-    const tgt = sc.tgt.set(st.target[0], st.target[1], st.target[2]);
+    // Every frame of an orbit: read the camera in place, no copies.
+    const cam = sc.cam.copy(viewer.camera.position);
+    const tgt = sc.tgt.copy(viewer.orbitTarget());
     const off0 = sc.off0.subVectors(prev.cam, prev.target);
     const off1 = sc.off1.subVectors(cam, tgt);
     const d0 = off0.length();
@@ -831,10 +846,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const worldScale = new WorldScaleBrush(
     session,
     viewer.camera,
-    () =>
-      viewer.camera.position.distanceTo(
-        new Vector3(...(viewer.getCameraState().target as [number, number, number])),
-      ),
+    // Asked on every stroke step and camera move: read the target, no copy.
+    () => viewer.camera.position.distanceTo(viewer.orbitTarget()),
     () => {
       const active = session.getMesh();
       if (!active) return 1;
@@ -903,13 +916,36 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // converted from the tool's starting pixel size at the entry distance.
   worldScale.begin();
   input.install();
-  // The log wants to know what the shell did with each pointer, not just
-  // that one arrived: the two together tell a dropped Pencil event apart
-  // from one we received and then discarded.
-  input.setVerdictSink(inputDebug ? inputDebug.verdict : null);
-  // And what the shell believes between events: a stroke still open, the
-  // touches it counts as down, how long since the pen last spoke.
-  inputDebug?.watch(input);
+  // The input log, up while Preferences > Diagnostics says so or the page
+  // was opened with ?inputdebug=1, and following the setting live.
+  const inputDebugForced = forcedByUrl('inputdebug');
+  const syncInputDebug = (): void => {
+    const on = inputDebugForced || settings.get('inputLog') === 'on';
+    if (on && !inputDebug) {
+      const log = new InputDebug();
+      inputDebug = log;
+      // The log wants to know what the shell did with each pointer, not
+      // just that one arrived: the two together tell a dropped Pencil event
+      // apart from one we received and then discarded.
+      input.setVerdictSink(log.verdict);
+      // And what the shell believes between events: a stroke still open,
+      // the touches it counts as down, how long since the pen last spoke.
+      log.watch(input);
+    } else if (!on && inputDebug) {
+      input.setVerdictSink(null);
+      inputDebug.dispose();
+      inputDebug = null;
+    }
+  };
+  syncInputDebug();
+  const offInputDebug = settings.onChange(syncInputDebug);
+
+  // Fast frames while a stroke or a gizmo drag is under way (and, the
+  // viewer sees for itself, while the view moves): Viewer.updateFrameMode.
+  // The stroke's own work goes to the frame meter as the frame's input.
+  viewer.fastFrames = true;
+  viewer.interactionProbe = () => (input.isStroking() ? 'stroke' : gizmo.isDragging() ? 'move' : null);
+  input.onWork = (ms, eventTime, stepMs) => viewer.noteInput(ms, eventTime, stepMs);
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   toolbar.onToggleTransform = () => {
@@ -1452,8 +1488,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // outlives sculpt mode and must come back visible for playback.
     viewer.setSculptVisible(true);
     galleryLink?.removeEventListener('click', onLeave);
+    offInputDebug();
     inputDebug?.dispose();
-    perfDebug?.dispose();
+    inputDebug = null;
+    sizeObserver.disconnect();
     chrome.dispose();
     sliders?.dispose();
     toolbar.dispose();
@@ -1465,6 +1503,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;
+    viewer.fastFrames = false;
+    viewer.interactionProbe = null;
     viewer.materials.onAlbedoChange = null;
     viewer.materials.onPbrChange = null;
     viewer.materials.setSculptVertexColor(false);
@@ -1482,6 +1522,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.onDofChange?.();
     viewer.exitSculpt();
     sync.dispose();
+    session.dispose();
   };
 }
 

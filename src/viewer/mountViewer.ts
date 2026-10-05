@@ -6,11 +6,13 @@ import { Transport } from '../ui/Transport';
 import { installShortcuts } from '../ui/shortcuts';
 import { Help } from '../ui/Help';
 import { FpsMeter } from '../ui/FpsMeter';
+import { mountStallLog } from '../ui/diagnostics';
 
 /**
  * Boot a Viewer into `viewport` and wire up the full public UI (panel,
- * transport, help, FPS meter, shortcuts). Shared by the live entry (main.ts)
- * and the embedded single-file entry so both present an identical viewer.
+ * transport, help, frame meter, stall log, shortcuts). Shared by the live
+ * entry (main.ts) and the embedded single-file entry so both present an
+ * identical viewer.
  */
 export async function mountViewer(
   viewport: HTMLElement,
@@ -35,6 +37,9 @@ export async function mountViewer(
   }
   const help = new Help();
   const fps = new FpsMeter(viewer);
+  // The stall log lives here, not in one mode, so it reads the same over
+  // the viewer, Sculpt and Armature (Preferences > Diagnostics, ?perfdebug=1).
+  mountStallLog();
   installShortcuts(viewer, {
     togglePanel: () => panel.toggleCollapsed(),
     toggleHelp: () => help.toggle(),

@@ -1,10 +1,12 @@
-import { formatMs, perfLog, STALL_MS, type PerfEntry } from '../../viewer/perfLog';
+import { formatMs, perfLog, STALL_MS, type PerfEntry } from '../viewer/perfLog';
 
 /**
- * On-device perf log (`?perfdebug=1`): the last stalls and heavy operations
- * from perfLog, newest first, so a freeze on the iPad reads as what it was -
- * "autosave write 2.41 s" just under "stall 2.43 s" - rather than as a
- * guess. The console has the same entries as `__bozzettoPerf.recent()`.
+ * On-device perf log, the stall log (Preferences > Diagnostics, or
+ * `?perfdebug=1`): the last stalls and heavy operations from perfLog,
+ * newest first, so a freeze on the iPad reads as what it was - "autosave
+ * write 2.41 s" just under "stall 2.43 s" - rather than as a guess. The
+ * console has the same entries as `__bozzettoPerf.recent()`. Mounted with
+ * the viewer (mountDiagnostics), so it works in every mode.
  *
  * It draws on a timer, never from the operations it reports, so nothing
  * being measured ever waits on the DOM; it looks like the input log

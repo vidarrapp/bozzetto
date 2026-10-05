@@ -779,9 +779,9 @@ const keyLight = (page) => page.evaluate(() => window.__bozzetto.lighting.state(
 // The Preferences window's finger choice, set the way a user sets it.
 const setFingers = async (page, label) => {
   await page.keyboard.press('Control+Comma');
-  await page.locator('.prefs__choice', { hasText: label }).click();
+  await page.locator('[data-setting="fingers"] .prefs__choice', { hasText: label }).click();
   const checked = await page.evaluate(() =>
-    [...document.querySelectorAll('.prefs__choice')]
+    [...document.querySelectorAll('[data-setting="fingers"] .prefs__choice')]
       .filter((c) => c.querySelector('input').checked)
       .map((c) => c.querySelector('.prefs__choice-title').textContent)
       .join(','),
@@ -5919,3 +5919,6 @@ export const suites = {
     }
   },
 };
+
+// The input plumbing the latency suites (latency.mjs) share with these.
+export { camera, camMoved, devices, emptySpot, line, meshSum, openForInput, probe, restoreCamera, screenOf, settle, strokeCount };

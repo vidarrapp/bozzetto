@@ -86,6 +86,24 @@ class SoftGTAONode extends GTAONode {
    */
   readonly falloff: UniformNode<'float', number> = uniform(0.35) as unknown as UniformNode<'float', number>;
 
+  /**
+   * Leave the AO texture as the last pass drew it (Viewer.updateFrameMode).
+   * Under a stroke the camera holds still, so last frame's occlusion is
+   * this frame's everywhere but under the brush, and skipping the pass is
+   * the whole of its cost. Only the pass is skipped: nothing in the graph
+   * changes, so nothing is rebuilt, recompiled or reallocated either way.
+   */
+  skip = false;
+  /** Passes drawn since the viewer was built (the latency suite counts them). */
+  renders = 0;
+
+  override updateBefore(frame: Parameters<GTAONode['updateBefore']>[0]): boolean | undefined {
+    // undefined, not false: false asks the frame to try the node again.
+    if (this.skip) return undefined;
+    this.renders++;
+    return super.updateBefore(frame);
+  }
+
   override setup(builder: NodeBuilder): N {
     const self = this as unknown as GTAOInternals & GTAONode;
     const uvNode: N = uv();

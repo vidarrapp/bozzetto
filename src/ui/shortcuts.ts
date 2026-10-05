@@ -8,7 +8,7 @@ export interface ShortcutHandlers {
   togglePanel?: () => void;
   /** Toggle the hotkey guide overlay (H). */
   toggleHelp?: () => void;
-  /** Toggle the FPS meter (P). */
+  /** Toggle the frame meter (P), which remembers the choice. */
   toggleFps?: () => void;
   /** Called after a command that changes panel-reflected state, to re-sync it. */
   refresh?: () => void;
@@ -17,7 +17,7 @@ export interface ShortcutHandlers {
 /**
  * Global keyboard shortcuts, shared by the viewer and the editor preview,
  * and underneath sculpt mode for whatever its shell leaves unclaimed (the
- * guide, the frame-rate meter, the ground). The keys live in the keymap
+ * guide, the frame meter, the ground). The keys live in the keymap
  * (src/ui/keymap.ts), which Preferences edits; this only says what each
  * action does. Returns a disposer that detaches the listener.
  */

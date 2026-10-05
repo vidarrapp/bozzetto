@@ -232,7 +232,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       viewer.setOrbitEnabled(!on);
       // One control at a time on the root, where both are attached.
       for (const other of controls) if (other !== tc) other.enabled = !on && attached.has(other);
-      if (!on) commit();
+      if (!on) {
+        commit();
+        flushPanel();
+      }
     });
     tc.addEventListener('objectChange', () => {
       afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
@@ -254,7 +257,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // or no drag of it would show.
     armature.applyPins(undefined, armature.plantFeet && !(joint && armature.isFoot(joint)));
     syncHandles();
-    panel.refresh(selected);
+    refreshPanel();
     scheduleSave();
   };
   // Attached pickers need their matrices before the first hover.
@@ -421,8 +424,33 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * that landed off the ball's centre does not make the figure jump.
    */
   let moving: { from: Vector3; root: Vector3 } | null = null;
+  /** A ball or a gizmo is being dragged: the figure is moving under the pointer. */
+  const dragUnderway = (): boolean => dragging || reaching !== null || aiming !== null || moving !== null;
+  /**
+   * The panel was not refreshed during a drag, and owes a refresh at its
+   * end. A refresh rebuilds the joint and part sections, and doing that on
+   * every move of a drag held each frame up for rows nobody reads until the
+   * drag ends, where the numbers then land.
+   */
+  let panelStale = false;
+  const refreshPanel = (): void => {
+    if (dragUnderway()) panelStale = true;
+    else panel.refresh(selected);
+  };
+  const flushPanel = (): void => {
+    if (!panelStale) return;
+    panelStale = false;
+    panel.refresh(selected);
+  };
+  // Fast frames while a pose drag moves the figure (and, the viewer sees
+  // for itself, while the view moves): Viewer.updateFrameMode.
+  viewer.fastFrames = true;
+  viewer.interactionProbe = () => (dragUnderway() ? 'move' : null);
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
+  // Scratch for the aim drag, which runs on every move.
+  const dragNormal = new Vector3();
+  const hingeAt = new Vector3();
   /** What the last press took: 'ik:<chain>', 'aim:<chain>', 'root', a part's bone, or nothing. */
   let picked: string | null = null;
   /** How near a ball's centre a press has to land to take it, in CSS pixels. */
@@ -566,6 +594,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     select(picked);
   };
   const onPointerMove = (e: PointerEvent): void => {
+    const t0 = performance.now();
+    // A drag's work for the coming frame, for the frame meter.
+    const noteWork = (): void => viewer.noteInput(performance.now() - t0, e.timeStamp);
     const dx = e.clientX - lastPointer.x;
     const dy = e.clientY - lastPointer.y;
     lastPointer.x = e.clientX;
@@ -583,9 +614,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       // reads on cuts across the limb at the joint, so the angle is the
       // one the solver wants and the hand or foot never moves.
       aim(e);
-      const at = armature.hingeWorld(aiming, new Vector3());
+      const at = armature.hingeWorld(aiming, hingeAt);
       if (!at) return;
-      dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragPoint).clone(), at);
+      dragPlane.setFromNormalAndCoplanarPoint(viewer.camera.getWorldDirection(dragNormal), at);
       if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
       const angle = armature.aimFromPoint(aiming, dragPoint);
       if (angle !== null) {
@@ -593,11 +624,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         armature.applyPins();
         syncHandles();
         placeControls();
-        panel.refresh(selected);
+        refreshPanel();
         scheduleSave();
       }
       e.preventDefault();
       e.stopPropagation();
+      noteWork();
       return;
     }
     if (moving) {
@@ -611,6 +643,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       placeControls();
       e.preventDefault();
       e.stopPropagation();
+      noteWork();
       return;
     }
     if (!reaching) return;
@@ -621,10 +654,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     armature.applyPins(reaching);
     syncHandles();
     placeControls();
-    panel.refresh(selected);
+    refreshPanel();
     scheduleSave();
     e.preventDefault();
     e.stopPropagation();
+    noteWork();
   };
   const onPointerUp = (e: PointerEvent): void => {
     if (!reaching && !aiming && !moving) return;
@@ -638,6 +672,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       // Never captured (synthetic events): nothing to release.
     }
     commit();
+    flushPanel();
   };
   canvas.addEventListener('pointerdown', onPointerDown, true);
   canvas.addEventListener('pointermove', onPointerMove, true);
@@ -1169,6 +1204,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     offLeaving();
     galleryLink?.removeEventListener('click', onLeave);
     select(null);
+    viewer.fastFrames = false;
+    viewer.interactionProbe = null;
     viewer.setSculptVisible(true);
     for (const tc of controls) {
       viewer.scene.remove(tc.getHelper());

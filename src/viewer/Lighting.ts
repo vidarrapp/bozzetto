@@ -16,6 +16,9 @@ import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
 
 export type LightId = 'key' | 'fill' | 'rim';
 
+/** How often the fill and rim shadows redraw; see Lighting.scheduleShadows. */
+export type ShadowSchedule = 'all' | 'hold' | 'stagger';
+
 export interface DirLightConfig {
   enabled: boolean;
   intensity: number;
@@ -247,6 +250,40 @@ export class Lighting {
   setSoftness(id: LightId, softness: number): void {
     this.config[id].softness = softness;
     this.refresh();
+  }
+
+  /**
+   * How often the fill and rim shadows are redrawn (Viewer.updateFrameMode).
+   * 'all', every frame, is how a still frame is drawn. 'hold' keeps the
+   * maps as they are, for a stroke: the camera and the lights stand still,
+   * and the fill and rim are soft enough that the stroked area catching up
+   * on release does not show. 'stagger' redraws each one every third frame
+   * on a frame of its own, so no frame pays for both, for a moving view or
+   * figure (in Sculpt the lights turn with the camera). The key light always
+   * redraws: its shadow is the one that reads the form.
+   *
+   * Through each shadow's own autoUpdate/needsUpdate, which r184's shadow
+   * node honours; castShadow is never touched, because flipping it rebuilds
+   * the shadow targets (see Viewer.updateStage).
+   */
+  scheduleShadows(mode: ShadowSchedule, frame: number): void {
+    this.key.shadow.autoUpdate = true;
+    const secondary = [this.fill, this.rim];
+    for (let i = 0; i < secondary.length; i++) {
+      const shadow = secondary[i].shadow;
+      shadow.autoUpdate = mode === 'all';
+      if (mode === 'stagger' && frame % 3 === i) shadow.needsUpdate = true;
+    }
+  }
+
+  /** Which light each shadow camera belongs to, for counting shadow passes. */
+  shadowCameras(): Array<[object, LightId]> {
+    return ALL.map((id) => [this.lights[id].shadow.camera, id]);
+  }
+
+  /** Whether a light casts a shadow right now (it is on, configured to, and the tier allows it). */
+  casts(id: LightId): boolean {
+    return this.lights[id].castShadow;
   }
 
   /** Developer: shadow depth bias / normal bias across all casters. */

@@ -218,8 +218,8 @@ export class GeometrySync {
       return;
     }
 
-    const ranges = coalesceVertexRanges(this.dirty);
-    if (!ranges) {
+    const n = coalesceVertexRanges(this.dirty);
+    if (n < 0) {
       pos.clearUpdateRanges();
       nrm.clearUpdateRanges();
       pos.needsUpdate = true;
@@ -231,7 +231,9 @@ export class GeometrySync {
     }
 
     let elements = 0;
-    for (const [start, count] of ranges) {
+    for (let i = 0; i < n; i += 2) {
+      const start = rangeBuf[i];
+      const count = rangeBuf[i + 1];
       pos.addUpdateRange(start, count);
       nrm.addUpdateRange(start, count);
       elements += count;
@@ -258,20 +260,37 @@ export class GeometrySync {
 }
 
 /**
- * Turn dirty vertex ids into merged [offsetElements, countElements] ranges
- * over an xyz-interleaved array. Ids are sorted, deduped implicitly by the
- * merge, and spans closer than RANGE_MERGE_GAP elements fuse. Returns null
- * when the spread defeats coalescing (more than RANGE_CAP ranges), which
- * callers treat as "do a full upload instead".
+ * The sort buffer and the ranges, kept between commits: this runs on every
+ * stroke step, and a fresh typed array and a fresh array of pairs each time
+ * were garbage the collector then had to stop for, mid-stroke.
  */
-function coalesceVertexRanges(dirty: number[]): Array<[number, number]> | null {
+let sortBuf = new Int32Array(4096);
+/** Flat [offset, count, offset, count, ...] pairs from the last coalesce. */
+const rangeBuf: number[] = [];
+
+/**
+ * Turn dirty vertex ids into merged [offsetElements, countElements] ranges
+ * over an xyz-interleaved array, written flat into rangeBuf. Ids are
+ * sorted, deduped implicitly by the merge, and spans closer than
+ * RANGE_MERGE_GAP elements fuse. Returns the number of entries written
+ * (two per range), or -1 when the spread defeats coalescing (more than
+ * RANGE_CAP ranges), which callers treat as "do a full upload instead".
+ */
+function coalesceVertexRanges(dirty: number[]): number {
+  if (sortBuf.length < dirty.length) {
+    let size = sortBuf.length;
+    while (size < dirty.length) size *= 2;
+    sortBuf = new Int32Array(size);
+  }
+  for (let i = 0; i < dirty.length; i++) sortBuf[i] = dirty[i];
   // A typed-array sort (no comparator) is several times faster than
   // Array.sort with one, and this runs on every stroke step.
-  const ids = Int32Array.from(dirty).sort();
-  const ranges: Array<[number, number]> = [];
+  const ids = sortBuf.subarray(0, dirty.length).sort();
+  rangeBuf.length = 0;
   let start = -1;
   let end = -1; // inclusive vertex ids
-  for (const id of ids) {
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
     if (start < 0) {
       start = end = id;
       continue;
@@ -280,11 +299,11 @@ function coalesceVertexRanges(dirty: number[]): Array<[number, number]> | null {
       if (id > end) end = id;
       continue;
     }
-    ranges.push([start * 3, (end - start + 1) * 3]);
-    if (ranges.length > RANGE_CAP) return null;
+    rangeBuf.push(start * 3, (end - start + 1) * 3);
+    if (rangeBuf.length > RANGE_CAP * 2) return -1;
     start = end = id;
   }
-  if (start >= 0) ranges.push([start * 3, (end - start + 1) * 3]);
-  if (ranges.length > RANGE_CAP) return null;
-  return ranges;
+  if (start >= 0) rangeBuf.push(start * 3, (end - start + 1) * 3);
+  if (rangeBuf.length > RANGE_CAP * 2) return -1;
+  return rangeBuf.length;
 }

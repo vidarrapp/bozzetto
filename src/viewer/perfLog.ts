@@ -14,7 +14,8 @@
  * Always on, because the point is to read it after the fact: a
  * performance.now() either side of work that is expensive anyway, and no
  * allocation once the ring is full. `__bozzettoPerf.recent()` in the console
- * lists it, newest first; `?perfdebug=1` shows it in sculpt mode.
+ * lists it, newest first; the stall log shows it (Preferences > Diagnostics,
+ * or `?perfdebug=1`), in every mode.
  */
 
 export interface PerfEntry {

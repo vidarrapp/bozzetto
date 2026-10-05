@@ -175,6 +175,13 @@ export class SculptSession {
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
+  /**
+   * The canvas's CSS width, kept by an observer: getPixelRatio runs in
+   * every stroke step, and reading clientWidth there forced a style and
+   * layout pass whenever the cursor's SVG had changed since the last one.
+   */
+  private cssWidth: number;
+  private readonly sizeObserver: ResizeObserver;
 
   constructor(
     private readonly camera: CameraAdapter,
@@ -182,6 +189,11 @@ export class SculptSession {
     /** Ask Bozzetto for a redraw (the viewer's rAF loop already repaints). */
     private readonly requestRender: () => void,
   ) {
+    this.cssWidth = canvas.clientWidth;
+    this.sizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) this.cssWidth = entry.contentRect.width;
+    });
+    this.sizeObserver.observe(canvas);
     // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and the
     // WS5 capture design consumes undo states as timelapse deltas, so history
     // is worth keeping (a stroke state holds only the touched vertices).
@@ -239,8 +251,13 @@ export class SculptSession {
 
   /** Device-pixel ratio of the canvas (mouse coords are device px). */
   getPixelRatio(): number {
-    const cssWidth = this.canvas.clientWidth;
+    const cssWidth = this.cssWidth;
     return cssWidth > 0 ? this.canvas.width / cssWidth : 1;
+  }
+
+  /** Stop watching the canvas (sculpt mode unmounting; the canvas stays). */
+  dispose(): void {
+    this.sizeObserver.disconnect();
   }
 
   setCanvasCursor(style: string): void {

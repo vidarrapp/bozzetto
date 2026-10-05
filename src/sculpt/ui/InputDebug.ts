@@ -1,6 +1,6 @@
 /**
- * On-device pointer/touch log (`?inputdebug=1`), for input bugs that only
- * appear on real hardware.
+ * On-device pointer/touch log, the input log (Preferences > Diagnostics, or
+ * `?inputdebug=1`), for input bugs that only appear on real hardware.
  *
  * Hold-to-carve took three attempts precisely because iPadOS behaviour here
  * cannot be reproduced headlessly: synthetic pointers are never cancelled,
@@ -17,6 +17,12 @@
  */
 
 const MAX_LINES = 26;
+/**
+ * How often the status line is read. A timer, not a frame loop of its own:
+ * a second rAF chain would run beside the viewer's, at whatever rate the
+ * display (or an uncapped desktop app) gives it.
+ */
+const STATUS_MS = 100;
 
 /** What the status line reads off the input shell (InputShell provides it). */
 export interface InputStatus {
@@ -33,7 +39,7 @@ export class InputDebug {
   private readonly t0 = performance.now();
   private source: InputStatus | null = null;
   private statusText = '';
-  private raf = 0;
+  private timer = 0;
 
   private readonly onPointer = (e: PointerEvent): void => {
     const el = e.target as HTMLElement | null;
@@ -79,14 +85,14 @@ export class InputDebug {
     this.log.textContent = this.lines.join('\n');
   }
 
-  /** Show what `source` believes on the status line, refreshed every frame. */
+  /** Show what `source` believes on the status line, refreshed every STATUS_MS. */
   watch(source: InputStatus): void {
     this.source = source;
-    if (!this.raf) this.raf = requestAnimationFrame(this.refresh);
+    if (!this.timer) this.timer = window.setInterval(this.refresh, STATUS_MS);
+    this.refresh();
   }
 
   private readonly refresh = (): void => {
-    this.raf = requestAnimationFrame(this.refresh);
     const s = this.source;
     if (!s) return;
     const device = s.strokeDevice();
@@ -101,8 +107,8 @@ export class InputDebug {
   };
 
   dispose(): void {
-    cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    clearInterval(this.timer);
+    this.timer = 0;
     for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
       window.removeEventListener(type, this.onPointer as EventListener, true);
     }
