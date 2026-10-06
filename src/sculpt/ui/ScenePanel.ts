@@ -5,6 +5,8 @@ import type { PrimitiveKind, SculptSession } from '../bridge/SculptSession';
 import { BASE_MESHES, BASE_MESH_GROUPS, baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
+import { RemeshTooLarge } from '../bridge/remeshBudget';
+import { statusToast } from './statusToast';
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -426,6 +428,11 @@ export class ScenePanel extends SidePanel {
     let merged: SculptMesh | null;
     try {
       merged = this.session.mergeMeshes(sources, base) as unknown as SculptMesh | null;
+    } catch (err) {
+      // The union's grid is past this device's memory: said, nothing merged.
+      if (!(err instanceof RemeshTooLarge)) throw err;
+      statusToast('Merging...').fail(err.message);
+      return;
     } finally {
       this.library?.endRestore();
     }

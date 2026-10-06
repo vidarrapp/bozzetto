@@ -46,8 +46,8 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Apple Pencil pressure** drives brush strength through the stroke, with per-brush response curves.
 - **Masking** with `Ctrl`, plus blur, sharpen, invert, clear, and **Extract** to turn a masked region into a new object, all in the Model panel's **Mask** section, which acts on the active object.
 - **Mirror symmetry** per brush, on across X by default, each brush with its own axis. Hovering shows the mirrored brush ring.
-- **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh. **Delete highest**, beside **Rebuild** in the Model panel, drops the top level of the stack with its detail, in one undo step.
-- **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
+- **Topology**: a multiresolution stack, dynamic topology with stroke detail sliders, and voxel remesh up to 512 voxels across, its grid drawn over the view while you hold the resolution slider. A remesh the device cannot spare the memory for is refused with the reason. **Delete highest**, beside **Rebuild** in the Model panel, drops the top level of the stack with its detail, in one undo step.
+- **Painting**: vertex-paint albedo with an HSV picker, alt-click to sample, or drag the swatch onto the viewport to pick a colour off the screen, as the background's and the lights' swatches do. Flood fill, and `Shift` blurs the paint under the brush. Named materials per object, each with albedo, roughness and metalness.
 - **Create menu** in the Scene panel: seven primitives (sphere, cube, cylinder, torus, cone, capsule, plane) and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at the same size as a primitive; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. The files are precached with the app, so the whole library works offline.
 - **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, whose rows `↑` and `↓` step through (`Shift` extends the selection), a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked. **Solo** (`Alt`+`Q`, or the Scene panel's **Solo** button) shows the active object alone until you press it again.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
@@ -124,8 +124,10 @@ sign-in, and everything stays on your device.
   pose, proportions, pins and the lighting; not the picture), **File → Open**
   reads one back.
 - **Send to Sculpt** voxelises the posed figure into one closed object at
-  the resolution on the slider and opens Sculpt mode with it; a sculpt with work in
-  it gets the figure as an extra object instead.
+  the resolution on the slider (up to 512; the voxel grid shows over the
+  figure while you hold it) and opens Sculpt mode with it; a sculpt with work in
+  it gets the figure as an extra object instead. A resolution the device
+  cannot spare the memory for is refused before it leaves.
 
 | Input | Action |
 | --- | --- |
@@ -255,7 +257,7 @@ Package step, and drop the `CSC_IDENTITY_AUTO_DISCOVERY: false` line there.
 - Timelapses that fit the device memory budget buffer whole, so scrubbing and looping never reload. Larger ones keep a budget's worth around the playhead.
 - WebGPU through three.js's node renderer, with automatic WebGL 2 fallback. Same materials, shadows, AO and depth of field on either backend.
 - Real-time relighting: a multi-light rig with two presets, per-light toggles and colours, rig rotation, and soft VSM shadows.
-- Material modes: lit PBR and matcaps, with a wireframe overlay, in smooth or flat shading.
+- Material modes: lit PBR and matcaps, with a wireframe overlay, in smooth or flat shading. A sculpt published with paint shows its own colours, or one plain colour that the albedo sets.
 - Ten matcaps in a thumbnail gallery. Tone mapping is selectable: None, Neutral, AgX or Cinematic.
 - HDRI environment lighting with three background modes and separate rotation for the rig and the HDRI. The HDRI's intensity runs 0 to 2, where 1 is a fill that leaves the key light's modelling alone, and the plate shown as the background has its own brightness.
 - Ground-truth ambient occlusion and node-based depth of field, both adjustable.
@@ -365,6 +367,13 @@ updates by release.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. `?perfdebug=1` lists the last stalls and heavy operations with their times, and in sculpt mode `?inputdebug=1` logs pen and touch input; both can be on at once, and **Edit → Preferences → Diagnostics** keeps either on without the switch. `?canvasmsaa=1` gives the canvas its own MSAA again, as it had before, to compare a frame against.
 
 ## Changelog
+
+### Unreleased
+
+- **Sculpt colours or one plain colour.** A sculpt published from Sculpt mode carries its paint as vertex colours, which stood in for the albedo, so the Render panel's albedo did nothing to it. A model with colours now gets a **Colour** switch in the Material section: **Sculpt colours**, the default, with no albedo row since it would do nothing, or **Plain colour**, which sets the paint aside for the albedo. The choice is part of the look: **Save look** keeps it, the single-file export carries it, and a look saved before it opens on the model's own colours. Sculpt mode always shows its paint.
+- **Pick a background or light colour off the view.** The background's swatch and each light's now pick as the paint brush's does, in Sculpt, Armature and the editors' previews: drag the swatch onto the view and the colour under the pointer is applied as you move, read from the frame as it was when the drag began. Let go over the view to keep it, or anywhere off it, over a panel say, to put the colour back. The Pinch icon stands in as the cursor until there is an eyedropper. Letting go over the swatch no longer opens its picker.
+- **A larger colour picker.** The saturation/value field and the hue strip are twice the size, and the picker opens beside its panel rather than over the panel's rows, still fitting beside an open panel on an iPad held upright. The H row is gone, since the hue strip sets the hue; S and V take typed values like every other slider.
+- **See the voxel grid, up to 512.** While the remesh **Resolution** slider is held, in the Model panel or in Armature's Send to Sculpt, the grid the remesh will build is drawn over the view: its cells on the three faces of the object's box nearest the camera, with a caption giving one voxel's size on screen and the memory the remesh will take. The resolution now goes to 512, on the slider and typed (it stopped at 300 and 400). A remesh, merge or Send to Sculpt that would need more memory than the device can spare, a quarter of what the browser reports or 1 GB where it reports nothing (Safari), is refused before it starts, saying how high this object can go, instead of taking the tab down; the remesher also gives its working memory back when it is done.
 
 ### v1.3.5
 

@@ -2,6 +2,7 @@ import { DEFAULT_CAVITY, type Viewer, type GroundMode, type ToneMappingId } from
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, onTap, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
+import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 
@@ -544,6 +545,27 @@ export class Panel {
       // In sculpt mode these three are PER-OBJECT material values and live
       // in the Model panel; here they would edit whichever object happens
       // to be selected while dressed as scene-wide controls.
+      // A sculpt published from Sculpt mode carries its paint as vertex
+      // colours, which replace the albedo outright (Materials), so the
+      // albedo did nothing to one (owner report). Its own colours or one
+      // plain colour, the albedo's: offered only where there are colours
+      // to choose between, and saved with the look like the rest.
+      const painted = mats.hasModelVertexColors();
+      const plain = state.vertexColors === false;
+      if (painted) {
+        const source = selectEl(
+          [
+            ['sculpt', 'Sculpt colours'],
+            ['plain', 'Plain colour'],
+          ],
+          plain ? 'plain' : 'sculpt',
+        );
+        source.addEventListener('change', () => {
+          mats.setPlainColor(source.value === 'plain');
+          this.rebuildMaterialOptions(); // the albedo row comes or goes
+        });
+        this.materialOptions.appendChild(labelRow('Colour', source));
+      }
       // The shared HSV picker, not <input type="color">: the same control
       // the paint brush uses, so albedo and paint are picked the same way.
       // REUSED across rebuilds, never recreated: the picker's own slider
@@ -556,7 +578,13 @@ export class Panel {
       } else if (!this.albedoPicker.isOpen()) {
         this.albedoPicker.set(state.albedo);
       }
-      this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
+      // Over the model's own colours the albedo sets nothing, so it is not
+      // offered; its popover goes with the row if it was up.
+      if (!painted || plain) {
+        this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
+      } else {
+        this.albedoPicker.close();
+      }
       this.materialOptions.appendChild(
         compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), { limits: FRACTION }),
       );
@@ -728,7 +756,10 @@ export class Panel {
         let picker = this.lightPickers.get(light.id);
         if (!picker) {
           const id = light.id;
-          picker = colorPicker(light.color, (hex) => this.viewer.lighting.setColor(id, hex));
+          const setColor = (hex: string): void => this.viewer.lighting.setColor(id, hex);
+          picker = colorPicker(light.color, setColor);
+          // Drag the swatch onto the view to light with a colour off the frame.
+          installSwatchPick(picker, this.viewer, setColor);
           this.lightPickers.set(id, picker);
         } else if (!picker.isOpen()) {
           picker.set(light.color);
@@ -835,7 +866,10 @@ export class Panel {
     sec.appendChild(labelRow('Background', bg));
 
     if (!this.bgPicker) {
-      this.bgPicker = colorPicker(state.bgColor, (hex) => env.setBackgroundColor(hex));
+      const setBg = (hex: string): void => env.setBackgroundColor(hex);
+      this.bgPicker = colorPicker(state.bgColor, setBg);
+      // The same drag-to-pick as the lights' and the paint brush's swatches.
+      installSwatchPick(this.bgPicker, this.viewer, setBg);
     } else if (!this.bgPicker.isOpen()) {
       this.bgPicker.set(state.bgColor);
     }

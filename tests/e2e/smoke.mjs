@@ -5938,4 +5938,4 @@ export const suites = {
 };
 
 // The input plumbing the latency suites (latency.mjs) share with these.
-export { camera, camMoved, devices, emptySpot, line, meshSum, openForInput, probe, restoreCamera, screenOf, settle, strokeCount };
+export { camera, camMoved, devices, emptySpot, keyLight, line, meshSum, openForInput, openPanel, probe, restoreCamera, screenOf, settle, sliderRow, strokeCount, typeValue };

@@ -1,7 +1,9 @@
 import { div, labelRow, selectEl } from '../ui/dom';
 import { checkbox, numberedRange, section } from '../ui/Panel';
 import { SidePanel } from '../sculpt/ui/SidePanel';
-import { VOXEL_RESOLUTION } from '../sculpt/ui/ModelPanel';
+import { VOXEL_RESOLUTION, VOXEL_SLIDER } from '../sculpt/ui/ModelPanel';
+import { showWhileHeld, VoxelOverlay } from '../sculpt/ui/VoxelOverlay';
+import type { Viewer } from '../viewer/Viewer';
 import { PROPORTION_LIMITS } from './Armature';
 import { RIG_PRESETS } from './rig';
 import { FIGURES } from './figures';
@@ -44,10 +46,13 @@ export class ArmaturePanel extends SidePanel {
   private selected: string | null = null;
   /** Voxel resolution for Send to Sculpt (the Model panel's range). */
   resolution = 120;
+  /** The voxel grid over the figure while the Resolution slider is held, as in Sculpt. */
+  private readonly voxelOverlay: VoxelOverlay;
 
   constructor(
     private readonly figure: () => Armature,
     private readonly hooks: ArmaturePanelHooks,
+    viewer: Viewer,
   ) {
     super({ id: 'armature', title: 'Armature', side: 'right', variant: 'panel--armature' });
 
@@ -110,20 +115,29 @@ export class ArmaturePanel extends SidePanel {
     }
 
     const send = section(this.body, 'Send to Sculpt');
-    send.appendChild(
-      numberedRange(
-        'Resolution',
-        16,
-        300,
-        2,
-        this.resolution,
-        (v) => {
-          this.resolution = v;
-          return String(Math.round(v));
-        },
-        { limits: VOXEL_RESOLUTION },
-      ).row,
+    const resolution = numberedRange(
+      'Resolution',
+      VOXEL_SLIDER.min,
+      VOXEL_SLIDER.max,
+      VOXEL_SLIDER.step,
+      this.resolution,
+      (v) => {
+        this.resolution = v;
+        return String(Math.round(v));
+      },
+      { limits: VOXEL_RESOLUTION },
     );
+    send.appendChild(resolution.row);
+    // The grid Sculpt will voxelise the posed figure on, while the slider
+    // is held: the figure's world box, as Send to Sculpt bakes it.
+    this.voxelOverlay = new VoxelOverlay(viewer);
+    showWhileHeld(resolution.input, this.voxelOverlay, () => {
+      const fig = this.figure();
+      // bounds() is the skinned figure in its mesh's frame; bakeWorld
+      // carries it on into the world.
+      const b = fig.bounds().applyMatrix4(fig.mesh.matrixWorld);
+      return b.isEmpty() ? null : [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z];
+    });
     const sendRow = div('sculpt-panel__row');
     const sendBtn = this.opButton('Send to Sculpt', () => this.hooks.send(this.resolution));
     sendBtn.classList.add('sculpt-panel__btn--wide');
@@ -278,6 +292,11 @@ export class ArmaturePanel extends SidePanel {
     b.textContent = label;
     b.addEventListener('click', onClick);
     return b;
+  }
+
+  override dispose(): void {
+    this.voxelOverlay.dispose();
+    super.dispose();
   }
 }
 

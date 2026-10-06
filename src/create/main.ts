@@ -224,6 +224,9 @@ function main(): void {
     // paused loop the WebGPU canvas retains its last frame, so no extra flag is
     // needed (the option is kept only for call-site symmetry with the viewer).
     preview = await Viewer.create(previewBox, manifest, memorySource, { preserveDrawingBuffer: true });
+    // The console handle the viewer's own page has (mountViewer), for the
+    // preview here: __bozzetto.getLook() and the like.
+    (window as unknown as { __bozzetto?: Viewer }).__bozzetto = preview;
     await preview.boot();
     panel = new Panel(preview, { editor: true });
     preview.onDofChange = () => panel?.refreshControls();

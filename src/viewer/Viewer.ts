@@ -788,9 +788,10 @@ export class Viewer {
     // A published model that was painted carries COLOR_0, which the loader
     // hands back as a `color` attribute. Albedo then comes from the paint,
     // exactly as it did in sculpt mode (the fill IS the material colour, so
-    // unpainted areas read as their material too). materialsPBR does not
-    // exist here, so only the colour half of the sculpt path switches on.
-    if (geom.getAttribute('color')) this.materials.setSculptVertexColor(true);
+    // unpainted areas read as their material too), unless the look below
+    // asks for a plain colour. materialsPBR does not exist here, so only
+    // the colour half of the sculpt path switches on.
+    this.materials.setModelVertexColors(!!geom.getAttribute('color'));
     this.lighting.applyPreset(this.manifest.defaults.lightingPreset);
     // A saved custom rig (set in the editor) overrides the preset.
     if (this.manifest.lighting) {
@@ -2030,11 +2031,12 @@ export class Viewer {
   }
 
   /**
-   * The colour under a screen point, read from the rendered frame, as a
-   * hex string - or null when the point is off the canvas. The paint
-   * brush's swatch drag samples with this: the FRAME, so a background, an
-   * environment and (one day) a reference board all count, not only the
-   * model's own vertex colours.
+   * The colour under a screen point, read from a frame rendered for it, as
+   * a hex string - or null when the point is off the canvas. The FRAME, so
+   * a background, an environment and (one day) a reference board all
+   * count, not only the model's own vertex colours. One point, one frame:
+   * the swatches' drag-to-pick reads frameSampler's single read instead;
+   * this serves the console and the tests.
    */
   async samplePixel(clientX: number, clientY: number): Promise<string | null> {
     const src = this.renderer.domElement;
@@ -2054,8 +2056,46 @@ export class Viewer {
     if (!ctx) return null;
     ctx.drawImage(src, sx, sy, 1, 1, 0, 0, 1, 1);
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-    const hex = (v: number): string => v.toString(16).padStart(2, '0');
-    return `#${hex(r)}${hex(g)}${hex(b)}`;
+    return rgbHex(r, g, b);
+  }
+
+  /**
+   * The rendered frame, read back ONCE, as a lookup: the colour under a
+   * screen point as a hex string, or null off the canvas. A swatch's
+   * eyedropper (ui/swatchPick) samples this while it is dragged, rather
+   * than a fresh frame per move: it applies the colour under the pointer
+   * as it goes, and a light or the background read back from a frame
+   * already showing the last pick would feed the pick on itself - a light
+   * picked off the surface it lights darkens with every move.
+   */
+  async frameSampler(): Promise<(clientX: number, clientY: number) => string | null> {
+    const src = this.renderer.domElement;
+    await this.renderForReadback(false);
+    const w = src.width;
+    const h = src.height;
+    let pixels: Uint8ClampedArray | null = null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(src, 0, 0);
+        pixels = ctx.getImageData(0, 0, w, h).data;
+      }
+    } finally {
+      this.endReadback();
+    }
+    return (clientX, clientY) => {
+      const rect = src.getBoundingClientRect();
+      if (!pixels || clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) {
+        return null;
+      }
+      const sx = Math.min(w - 1, Math.floor(((clientX - rect.left) / rect.width) * w));
+      const sy = Math.min(h - 1, Math.floor(((clientY - rect.top) / rect.height) * h));
+      const i = (sy * w + sx) * 4;
+      return rgbHex(pixels[i], pixels[i + 1], pixels[i + 2]);
+    };
   }
 
   dispose(): void {
@@ -3170,6 +3210,12 @@ function formatCount(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
   return String(n);
+}
+
+/** Three bytes read off a canvas, as the `#rrggbb` every colour in the app is. */
+function rgbHex(r: number, g: number, b: number): string {
+  const hex = (v: number): string => v.toString(16).padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
 function clampOrdinal(value: number, count: number): number {

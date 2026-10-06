@@ -6,12 +6,20 @@ import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 /** Typed-value limits (sliderEntry). */
 const FRACTION: Limits = { min: 0, max: 1 };
 const AMOUNT: Limits = { min: 0 };
-/** The voxel grid the remesher will build, as SculptSession holds it. */
-export const VOXEL_RESOLUTION: Limits = { min: 8, max: 400, integer: true };
+/**
+ * The voxel grid the remesher will build, as SculptSession holds it: up to
+ * 512 cells across (owner call), as far as this device's memory allows
+ * (remeshBudget). The sliders here and in Armature travel all the way.
+ */
+export const VOXEL_RESOLUTION: Limits = { min: REMESH_LIMITS.min, max: REMESH_LIMITS.max, integer: true };
+export const VOXEL_SLIDER = { min: 16, max: REMESH_LIMITS.max, step: 2 } as const;
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { Viewer } from '../../viewer/Viewer';
+import { REMESH_LIMITS, RemeshTooLarge } from '../bridge/remeshBudget';
 import { SidePanel } from './SidePanel';
+import { statusToast } from './statusToast';
+import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 
 /**
  * The Model panel (owner layout call): everything about the SELECTED
@@ -31,6 +39,8 @@ export class ModelPanel extends SidePanel {
   private metalInput!: HTMLInputElement;
   private dyntopoCheckbox!: HTMLInputElement;
   private remeshResolution = 150;
+  /** The voxel grid over the view while the Resolution slider is held. */
+  private voxelOverlay: VoxelOverlay | null = null;
   private extractThickness = 1;
   private topoBody?: HTMLDivElement;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
@@ -160,9 +170,9 @@ export class ModelPanel extends SidePanel {
     const remesh = section(body, 'Remesh');
     const res = this.numberedRange(
       'Resolution',
-      16,
-      300,
-      2,
+      VOXEL_SLIDER.min,
+      VOXEL_SLIDER.max,
+      VOXEL_SLIDER.step,
       this.remeshResolution,
       (v) => {
         this.remeshResolution = v;
@@ -172,10 +182,20 @@ export class ModelPanel extends SidePanel {
       { limits: VOXEL_RESOLUTION },
     );
     remesh.appendChild(res.row);
+    // The grid this resolution builds on the active object, over the view
+    // while the slider is held (owner request).
+    this.voxelOverlay = new VoxelOverlay(this.viewer);
+    showWhileHeld(res.input, this.voxelOverlay, () => this.session.remeshBox());
     const row = div('sculpt-panel__row');
     row.appendChild(
       this.opButton('Voxel remesh', () => {
-        this.session.voxelRemesh(this.remeshResolution);
+        try {
+          this.session.voxelRemesh(this.remeshResolution);
+        } catch (err) {
+          // Too much for this device's memory: said, and nothing changed.
+          if (!(err instanceof RemeshTooLarge)) throw err;
+          statusToast('Remeshing...').fail(err.message);
+        }
       }),
     );
     remesh.appendChild(row);
@@ -348,6 +368,8 @@ export class ModelPanel extends SidePanel {
   override dispose(): void {
     this.albedoPicker?.dispose();
     this.albedoPicker = null;
+    this.voxelOverlay?.dispose();
+    this.voxelOverlay = null;
     super.dispose();
   }
 }

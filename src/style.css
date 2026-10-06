@@ -1659,6 +1659,44 @@ html.is-page body {
   z-index: 9;
 }
 
+/* The voxel grid while a remesh resolution slider is held (VoxelOverlay.ts):
+   projected onto a canvas over the view, as the brush ring is. */
+.voxel-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.voxel-overlay canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* White lines that invert what they cross: light over the background,
+     dark over pale clay, readable on any model in either theme. */
+  mix-blend-mode: difference;
+}
+
+/* Over the grid: the voxel's size here and the memory the remesh takes. */
+.voxel-overlay__caption {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 3px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* More than this device can spare: the remesh will be refused. */
+.voxel-overlay__caption--over {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* The symmetry ghost: the mirrored brush ring, drawn on hover. Faint on
    purpose - it says "this is where the other half lands", and must never
    compete with the ring you are aiming. */
@@ -2898,10 +2936,40 @@ body.chrome-hidden .update-notice {
   pointer-events: none;
 }
 
-/* Dragging the paint swatch over the view: a crosshair says "pick". */
+/* Dragging a colour swatch over the view (swatchPick.ts): the pick's own
+   cursor stands in for the system one, which is hidden. The Pinch icon
+   for now, until the owner's eyedropper; its centre is the pixel read. */
 body.is-sampling,
 body.is-sampling * {
-  cursor: crosshair !important;
+  cursor: none !important;
+}
+
+.swatch-pick {
+  position: fixed;
+  z-index: 80;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  color: #fff;
+  pointer-events: none;
+  /* Readable on any colour it is held over. */
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 90%)) drop-shadow(0 1px 2px rgb(0 0 0 / 55%));
+}
+
+.swatch-pick svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.swatch-pick svg path {
+  fill: currentColor;
+}
+
+/* Over a panel or past the canvas, where letting go cancels. */
+.swatch-pick--off {
+  opacity: 0.45;
 }
 
 /* iOS long-press hijack, found with ?inputdebug=1: a stationary finger on
@@ -3601,6 +3669,9 @@ body.is-sampling * {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   cursor: pointer;
+  /* A drag off the swatch is the eyedropper (swatchPick.ts), never the
+     panel scrolling under a finger or the Pencil. */
+  touch-action: none;
 }
 
 .cpick__pop {
@@ -3615,7 +3686,12 @@ body.is-sampling * {
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  width: 196px;
+  /* Twice the field and the hue strip it had (owner call), and still
+     beside an open panel on an iPad held upright: a right-edge panel
+     leaves 464 px of a 744 px iPad mini, a left one 432. A phone gets
+     the screen less a margin. */
+  width: 356px;
+  max-width: calc(100vw - 16px);
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
@@ -3632,14 +3708,14 @@ body.is-sampling * {
 .cpick__field {
   position: relative;
   flex: 1;
-  height: 110px;
+  height: 220px;
   border-radius: var(--radius);
   cursor: crosshair;
 }
 
 .cpick__hue {
   position: relative;
-  width: 14px;
+  width: 28px;
   border-radius: var(--radius);
   cursor: ns-resize;
   background: linear-gradient(
@@ -3657,18 +3733,18 @@ body.is-sampling * {
 }
 
 .cpick__dot {
-  width: 12px;
-  height: 12px;
-  margin: -6px 0 0 -6px;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
   border-radius: 50%;
 }
 
 .cpick__huedot {
   left: -2px;
   right: -2px;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 2px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
 }
 
 .cpick__rows {

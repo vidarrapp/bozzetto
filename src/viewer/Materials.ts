@@ -24,6 +24,13 @@ export interface MaterialState {
   metalness: number;
   flatShading: boolean;
   matcapIndex: number;
+  /**
+   * A model that carries painted vertex colours (a sculpt published from
+   * Sculpt mode) shows them - "Sculpt colours", true - or the albedo over
+   * the whole of it - "Plain colour", false. Absent from looks saved
+   * before the choice existed, which mean the model's own colours.
+   */
+  vertexColors?: boolean;
 }
 
 interface MatcapConfig {
@@ -121,9 +128,15 @@ export class Materials {
    */
   private readonly maskDarkenU = uniform(MASK_DARKEN_DEFAULT);
   private maskTintOn = false;
-  /** Read albedo from the painted `color` attribute (sculpt, and published
-      models that carry COLOR_0). */
+  /** Read albedo from the painted `color` attribute while sculpting. */
   private sculptVertexColor = false;
+  /** The viewer's model carries painted colours (a published sculpt's COLOR_0). */
+  private modelVertexColor = false;
+  /**
+   * The look's Plain colour: a painted model shows the albedo instead of
+   * its paint. Never while sculpting, where the paint is the work.
+   */
+  private plainColor = false;
   /** Read roughness/metalness from materialsPBR.x/.y - sculpt only: a
       published model has a colour attribute but no materialsPBR, and a
       shader reading a missing attribute is not an error you get to see. */
@@ -152,7 +165,8 @@ export class Materials {
    * painted stroke by the material underneath it).
    *
    * The mask tint composes on top either way, and off sculpt mode both
-   * drop away - a viewer subject has neither attribute.
+   * drop away - a viewer subject has no mask, and only a painted one has
+   * colours (setModelVertexColors).
    */
   setSculptVertexColor(on: boolean): void {
     this.sculptVertexColor = on;
@@ -162,6 +176,37 @@ export class Materials {
   setSculptVertexPBR(on: boolean): void {
     this.sculptVertexPBR = on;
     this.rebuildSculptColor();
+  }
+
+  /**
+   * The viewer's model came with painted colours (a published sculpt): its
+   * albedo is the paint, exactly as it was in Sculpt mode, unless the look
+   * asks for a plain colour. Apart from the sculpt switch above, so that
+   * leaving Sculpt mode does not take a published model's paint with it.
+   */
+  setModelVertexColors(on: boolean): void {
+    this.modelVertexColor = on;
+    this.rebuildSculptColor();
+  }
+
+  /** Whether the viewer's model has painted colours to show (the Render panel's switch). */
+  hasModelVertexColors(): boolean {
+    return this.modelVertexColor;
+  }
+
+  /** Plain colour (true) or the model's own paint (false); see MaterialState.vertexColors. */
+  setPlainColor(plain: boolean): void {
+    if (plain === this.plainColor) return;
+    this.plainColor = plain;
+    this.rebuildSculptColor();
+  }
+
+  /**
+   * Whether the Lit colour reads the `color` attribute: always while
+   * sculpting, and for a painted model unless the look says Plain colour.
+   */
+  private readsVertexColor(): boolean {
+    return this.sculptVertexColor || (this.modelVertexColor && !this.plainColor);
   }
 
   private rebuildSculptColor(): void {
@@ -195,7 +240,7 @@ export class Materials {
       // source PNGs). The mask darken below still applies in both modes:
       // masks must stay visible while sculpting.
       let node: unknown =
-        this.sculptVertexColor && id === 'lit' ? attribute('color', 'vec3') : null;
+        this.readsVertexColor() && id === 'lit' ? attribute('color', 'vec3') : null;
       // How much of the surface counts as masked: the vertex mask when the
       // tint is on, and the whole object when it is locked (owner call: a
       // locked object draws as if fully masked, so the padlock shows in
@@ -328,6 +373,7 @@ export class Materials {
       metalness: lit.metalness,
       flatShading: this.flatShading,
       matcapIndex: this.matcapIndex,
+      vertexColors: !this.plainColor,
     };
   }
 
@@ -340,6 +386,7 @@ export class Materials {
     if (finite(state.metalness)) this.setMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (typeof state.matcapIndex === 'number') this.setMatcapIndex(state.matcapIndex);
     if (typeof state.flatShading === 'boolean') this.setFlatShading(state.flatShading);
+    if (typeof state.vertexColors === 'boolean') this.setPlainColor(!state.vertexColors);
   }
 
   dispose(): void {

@@ -12,3 +12,7 @@ Negative button uses the uicons reflect-vertical glyph, so no
 negative.svg is needed. Keep any future drops as the plain single-color
 downloads; fills are overridden by CSS. Flaticon attribution lives in
 the README credits section.
+
+`eyedropper.svg` is not a toolbar slot: dropped here, it becomes the
+cursor of the colour swatches' drag-to-pick (src/ui/swatchPick.ts), where
+the Pinch glyph stands in until then.

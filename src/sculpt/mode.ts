@@ -7,6 +7,7 @@ import { InputShell } from './bridge/InputShell';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
+import { formatBytes, RemeshTooLarge } from './bridge/remeshBudget';
 import {
   ScenePersist,
   type SculptSettings,
@@ -1406,7 +1407,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const handoff = await takeHandoff();
     if (handoff) {
       const untouched = !fileActions.hasWork();
-      const added = session.addVoxelised(handoff.name, handoff.positions, handoff.indices, handoff.resolution);
+      const voxelise = (resolution: number): ReturnType<SculptSession['addVoxelised']> =>
+        session.addVoxelised(handoff.name, handoff.positions, handoff.indices, resolution);
+      let added: ReturnType<typeof voxelise>;
+      try {
+        added = voxelise(handoff.resolution);
+      } catch (err) {
+        // Armature refuses a resolution this device cannot take before it
+        // sends, so this is a figure sent from a roomier device or an older
+        // app. The handoff is already taken: the figure comes at the most
+        // that fits, and says so, rather than not at all.
+        if (!(err instanceof RemeshTooLarge)) throw err;
+        added = voxelise(err.fits);
+        statusToast('Voxelising the figure...').fail(
+          `The figure was remeshed at ${err.fits}, the most this device can take: ${handoff.resolution} would need about ${formatBytes(err.bytes)}.`,
+        );
+      }
       if (untouched) {
         for (const m of [...session.getMeshes()]) if (m !== added) session.deleteMesh(m);
       }

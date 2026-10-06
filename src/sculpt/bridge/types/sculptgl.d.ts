@@ -60,6 +60,8 @@ declare module '@sculpt-vendor/misc/Utils' {
     SCALE: number;
     /** Sentinel for the 4th index of triangle faces in the 4-stride arrays. */
     TRI_INDEX: number;
+    /** Give back the scratch pool a remesh grew (a Bozzetto addition). */
+    releaseMemory(): void;
   };
   export default Utils;
 }

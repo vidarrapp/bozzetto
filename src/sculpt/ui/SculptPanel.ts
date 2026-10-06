@@ -3,6 +3,7 @@ import { div, labelRow, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
+import { installSwatchPick } from '../../ui/swatchPick';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
 import { alphaThumbUrl } from '../bridge/alphas';
 import { ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
@@ -143,7 +144,9 @@ export class SculptPanel extends SidePanel {
       fill.addEventListener('click', () => this.input.fillPaint());
       colourRow.append(this.paintPicker.root, fill);
       dyn.appendChild(labelRow('Colour', colourRow));
-      this.installSwatchDrag(this.paintPicker);
+      // Drag the swatch over the view to pick a colour off the frame, as
+      // the Render panel's background and light swatches do.
+      installSwatchPick(this.paintPicker, this.viewer, (hex) => this.input.setPaintColor(hex));
       const hint = div('sculpt-panel__hint muted');
       hint.textContent =
         'Alt + click picks a colour off the model. Drag the swatch onto the view to pick from the screen.';
@@ -492,51 +495,6 @@ export class SculptPanel extends SidePanel {
   /** The gizmo's parts changed (mode.ts remembers them for next time). */
   onGizmoParts: ((parts: GizmoParts) => void) | null = null;
 
-  /**
-   * Drag the paint swatch out over the view and let go: the colour under
-   * the pointer, read from the rendered frame (owner request). The frame,
-   * not the model: a background, an environment, and one day a reference
-   * board are all fair game. A tap still opens the picker as before - the
-   * drag only takes over once the pointer has clearly left the swatch.
-   */
-  private installSwatchDrag(picker: ColorPickerHandle): void {
-    const swatch = picker.root.querySelector<HTMLElement>('.cpick__swatch');
-    if (!swatch) return;
-    let startX = 0;
-    let startY = 0;
-    let sampling = false;
-    const move = (e: PointerEvent): void => {
-      if (sampling) return;
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) < 8) return;
-      sampling = true;
-      swatch.setPointerCapture(e.pointerId);
-      document.body.classList.add('is-sampling');
-    };
-    const end = (e: PointerEvent): void => {
-      swatch.removeEventListener('pointermove', move);
-      swatch.removeEventListener('pointerup', end);
-      swatch.removeEventListener('pointercancel', end);
-      if (!sampling) return;
-      sampling = false;
-      document.body.classList.remove('is-sampling');
-      if (swatch.hasPointerCapture(e.pointerId)) swatch.releasePointerCapture(e.pointerId);
-      // Cancel or a release over the panel itself: no pick.
-      if (e.type === 'pointercancel') return;
-      void this.viewer.samplePixel(e.clientX, e.clientY).then((hex) => {
-        if (!hex) return;
-        this.input.setPaintColor(hex);
-        picker.set(hex);
-      });
-    };
-    swatch.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      startX = e.clientX;
-      startY = e.clientY;
-      swatch.addEventListener('pointermove', move);
-      swatch.addEventListener('pointerup', end);
-      swatch.addEventListener('pointercancel', end);
-    });
-  }
 
   private curveSelect(value: CurveId, onChange: (c: CurveId) => void): HTMLSelectElement {
     const sel = selectEl(CURVE_OPTIONS, value);

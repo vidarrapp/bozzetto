@@ -16,6 +16,8 @@ import { fetchFigure, figureById } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel } from './ArmaturePanel';
+import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
+import { statusToast } from '../sculpt/ui/statusToast';
 import { armatureStamp, packArmature, unpackArmature } from './file';
 import { loadArmature, saveArmature, saveHandoff, type ArmatureFile } from './persist';
 
@@ -904,6 +906,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
 
   const send = async (resolution: number): Promise<void> => {
     const bake = armature.bakeWorld();
+    // Priced here, on the figure Sculpt will voxelise, before leaving: a
+    // grid this device cannot spare is refused with the reason, and the
+    // figure stays where it is to try a lower resolution.
+    try {
+      checkRemesh(boxOfPositions(bake.positions), resolution);
+    } catch (err) {
+      if (!(err instanceof RemeshTooLarge)) throw err;
+      statusToast('Sending to Sculpt...').fail(err.message);
+      return;
+    }
     await saveHandoff({
       v: 1,
       name: 'Figure',
@@ -993,6 +1005,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       },
       send: (resolution) => void send(resolution),
     },
+    viewer,
   );
 
   // --- menus -------------------------------------------------------------------------

@@ -45,6 +45,7 @@ import type { CameraAdapter } from './CameraAdapter';
 import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { perfLog } from '../../viewer/perfLog';
+import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -759,7 +760,55 @@ export class SculptSession {
   }
 
   setRemeshResolution(resolution: number): void {
-    this.remeshResolution = Math.min(400, Math.max(8, Math.round(resolution)));
+    this.remeshResolution = Math.min(REMESH_LIMITS.max, Math.max(REMESH_LIMITS.min, Math.round(resolution)));
+  }
+
+  /**
+   * The world box the remesher grids for these meshes (the active one by
+   * default): their vertices through their matrices, as Remesh.js takes
+   * them. From the vertices rather than computeWorldBound, whose box of a
+   * turned object's turned box is looser than the grid the remesh builds,
+   * which the memory guard prices and the Model panel's overlay draws.
+   */
+  remeshBox(meshes: SculptMesh[] = this.mesh ? [this.mesh] : []): number[] | null {
+    const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (const mesh of meshes) {
+      const v = mesh.getVertices();
+      // The affine matrix written out (column-major, as gl-matrix keeps
+      // it): a few million vertices go through here as a slider is pressed.
+      const e = mesh.getMatrix();
+      for (let i = 0, n = mesh.getNbVertices() * 3; i < n; i += 3) {
+        const x = v[i];
+        const y = v[i + 1];
+        const z = v[i + 2];
+        const p0 = e[0] * x + e[4] * y + e[8] * z + e[12];
+        const p1 = e[1] * x + e[5] * y + e[9] * z + e[13];
+        const p2 = e[2] * x + e[6] * y + e[10] * z + e[14];
+        if (p0 < box[0]) box[0] = p0;
+        if (p1 < box[1]) box[1] = p1;
+        if (p2 < box[2]) box[2] = p2;
+        if (p0 > box[3]) box[3] = p0;
+        if (p1 > box[4]) box[4] = p1;
+        if (p2 > box[5]) box[5] = p2;
+      }
+    }
+    return box[0] <= box[3] ? box : null;
+  }
+
+  /**
+   * Run the remesher once at the current resolution, refused before
+   * anything is built when this device cannot spare the memory
+   * (RemeshTooLarge: the grid alone is gigabytes at 512), and its scratch
+   * pool handed back afterwards.
+   */
+  private remeshAt(meshes: SculptMesh[], base: SculptMesh, box: number[] | null): SculptMesh {
+    if (box) checkRemesh(box, this.remeshResolution);
+    Remesh.RESOLUTION = this.remeshResolution;
+    try {
+      return Remesh.remesh(meshes, base);
+    } finally {
+      Utils.releaseMemory();
+    }
   }
 
   /** Voxel remesh of the active mesh (upstream GuiTopology; new topology). */
@@ -768,9 +817,8 @@ export class SculptSession {
     if (!mesh) return false;
     const t0 = performance.now();
     this.setRemeshResolution(resolution);
-    Remesh.RESOLUTION = this.remeshResolution;
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
-    const newMesh = new Multimesh(Remesh.remesh([mesh], mesh)) as unknown as SculptMesh;
+    const newMesh = new Multimesh(this.remeshAt([mesh], mesh, this.remeshBox([mesh]))) as unknown as SculptMesh;
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -787,6 +835,11 @@ export class SculptSession {
    * closed surface, which is the whole point of the trip.
    */
   addVoxelised(name: string, positions: Float32Array, indices: Uint32Array, resolution: number): Multimesh {
+    // Priced before the weld: a figure too large for this device at this
+    // resolution is refused (RemeshTooLarge) with nothing built.
+    this.setRemeshResolution(resolution);
+    const box = boxOfPositions(positions);
+    checkRemesh(box, this.remeshResolution);
     // Welded first: the parts arrive as render geometry, a vertex per face
     // corner, and the voxeliser needs each block to be a closed shell to
     // know its inside from its outside (unwelded, every edge is a hole).
@@ -812,9 +865,7 @@ export class SculptSession {
     base.setVertices(v);
     base.setFaces(faces);
     base.init();
-    this.setRemeshResolution(resolution);
-    Remesh.RESOLUTION = this.remeshResolution;
-    const mesh = new Multimesh(Remesh.remesh([base], base));
+    const mesh = new Multimesh(this.remeshAt([base as unknown as SculptMesh], base as unknown as SculptMesh, box));
     this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
     this.addNewMesh(mesh as unknown as SculptMesh);
     return mesh;
@@ -834,8 +885,7 @@ export class SculptSession {
     if (sources.length < 2) return null;
     if (!sources.includes(base)) base = sources[0];
     const t0 = performance.now();
-    Remesh.RESOLUTION = this.remeshResolution;
-    const merged = new Multimesh(Remesh.remesh(sources, base));
+    const merged = new Multimesh(this.remeshAt(sources, base, this.remeshBox(sources)));
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
     this.writeSymmetryAxis(this.getSymmetryAxis(), [merged as unknown as SculptMesh]);
     this.stateManager.pushStateAddRemove(merged, sources);

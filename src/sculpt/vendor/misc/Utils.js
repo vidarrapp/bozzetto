@@ -163,15 +163,23 @@ Utils.ab2str = function (buf) {
 };
 
 /** Return a buffer array which is at least nbBytes long */
-Utils.getMemory = (function () {
-  var pool = new ArrayBuffer(100000);
-  return function (nbBytes) {
-    if (pool.byteLength >= nbBytes)
-      return pool;
-    pool = new ArrayBuffer(nbBytes);
-    return pool;
-  };
-})();
+// BOZZETTO EDIT: the pool lives outside the closure so releaseMemory can
+// hand it back (below).
+var memoryPool = new ArrayBuffer(100000);
+Utils.getMemory = function (nbBytes) {
+  if (memoryPool.byteLength >= nbBytes)
+    return memoryPool;
+  memoryPool = new ArrayBuffer(nbBytes);
+  return memoryPool;
+};
+
+// BOZZETTO EDIT: a voxel remesh grows the pool to its whole grid, hundreds
+// of megabytes and at 512 voxels gigabytes, that no stroke needs again.
+// Kept, it is held for the rest of the session and adds to the next
+// remesh's peak, so the bridge gives it back once a remesh is done.
+Utils.releaseMemory = function () {
+  if (memoryPool.byteLength > 100000) memoryPool = new ArrayBuffer(100000);
+};
 
 /** Return the current time */
 Utils.now = Date.now || function () {

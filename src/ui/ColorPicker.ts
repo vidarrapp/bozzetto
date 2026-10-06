@@ -1,10 +1,12 @@
-import { div } from './dom';
+import { div, isTextField } from './dom';
+import { setSliderValue, typedSlider, type Limits } from './sliderEntry';
 import { isHexColor } from '../viewer/color';
 
 /**
  * HSV colour picker: a swatch that opens a popover holding a
- * saturation/value spectrum with a hue strip beside it, plus numeric H, S
- * and V sliders.
+ * saturation/value spectrum with a hue strip beside it, plus numeric S and
+ * V sliders. The hue strip alone sets the hue (owner call): the H row only
+ * repeated it as a number, and its room went to a field twice the size.
  *
  * HSV rather than RGB because picking a colour is a perceptual job - you
  * reach for "the same red but duller", which is one slider in HSV and three
@@ -20,6 +22,8 @@ export interface ColorPickerHandle {
   readonly root: HTMLElement;
   /** Set the colour from outside (a tool switch, an eyedropper pick). */
   set(hex: string): void;
+  /** The colour the swatch shows, as `#rrggbb`. */
+  value(): string;
   /** Whether the popover is up (hosts skip echo set()s while it is). */
   isOpen(): boolean;
   close(): void;
@@ -57,31 +61,48 @@ export function hsvToHex({ h, s, v }: HSV): string {
   return `#${to(f(5))}${to(f(3))}${to(f(1))}`;
 }
 
-/** A labelled slider row inside the picker (H 0..360, S and V 0..100). */
+/** S and V are percentages: a typed value is held to 0..100, in whole steps. */
+const PERCENT: Limits = { min: 0, max: 100, integer: true };
+
+/**
+ * A labelled slider row inside the picker (S and V, 0..100), taking typed
+ * values like every other slider (sliderEntry): a double-click or a
+ * double-tap turns it into a number field. A <label>, as the panels' rows
+ * are, so the field is named for the row it stands in.
+ */
 function hsvRow(
   label: string,
-  max: number,
+  name: string,
   value: number,
   onInput: (v: number) => void,
 ): { row: HTMLElement; input: HTMLInputElement } {
-  const row = div('cpick__row');
-  const name = document.createElement('span');
-  name.className = 'cpick__label';
-  name.textContent = label;
+  const row = document.createElement('label');
+  row.className = 'cpick__row';
+  const caption = document.createElement('span');
+  caption.className = 'cpick__label';
+  caption.textContent = label;
   const input = document.createElement('input');
   input.type = 'range';
   input.min = '0';
-  input.max = String(max);
+  input.max = '100';
   input.step = '1';
   input.value = String(Math.round(value));
+  input.setAttribute('aria-label', name);
   const out = document.createElement('span');
   out.className = 'cpick__value';
-  out.textContent = input.value;
-  input.addEventListener('input', () => {
-    out.textContent = input.value;
-    onInput(Number(input.value));
-  });
-  row.append(name, input, out);
+  input.addEventListener('input', () => onInput(Number(input.value)));
+  row.append(caption, input, out);
+  typedSlider(
+    input,
+    {
+      apply: onInput,
+      limits: PERCENT,
+      readout: (v) => {
+        out.textContent = String(Math.round(v));
+      },
+    },
+    Math.round(value),
+  );
   return { row, input };
 }
 
@@ -90,6 +111,8 @@ export function colorPicker(
   onChange: (hex: string) => void,
 ): ColorPickerHandle {
   let hsv = hexToHsv(isHexColor(initial) ? initial : '#000000');
+  /** The colour as last set or picked: what value() answers, exactly as it came. */
+  let current = isHexColor(initial) ? initial.toLowerCase() : hsvToHex(hsv);
 
   const root = div('cpick');
   const swatch = document.createElement('button');
@@ -114,23 +137,25 @@ export function colorPicker(
   pop.hidden = true;
   document.body.appendChild(pop);
 
-  /** Fixed-position the popover against the swatch, on-screen whatever the
-   * anchor's corner: beside it to the left when there is room (the panels
-   * hug the right edge), else to the right, clamped vertically. In a panel
-   * docked on the LEFT edge (the Model panel's albedo) it opens beside the
-   * whole panel, over the view, rather than across the rows under the
-   * swatch that it would otherwise cover. */
+  /** Fixed-position the popover beside the swatch's PANEL, over the view,
+   * rather than across the rows around the swatch: left of a panel on the
+   * right edge, right of one docked on the left (the Model panel's albedo).
+   * At twice its old size it would otherwise cover the captions of every
+   * row beside it. Where that side has no room (a phone) it opens on the
+   * other side of the swatch, clamped on-screen, and vertically it starts
+   * level with the swatch. */
   const place = (): void => {
     const r = swatch.getBoundingClientRect();
     const w = pop.offsetWidth;
     const h = pop.offsetHeight;
-    const leftPanel = swatch.closest('.panel--left');
-    const leftSide = r.left - w - 8;
-    const left = leftPanel
-      ? Math.min(window.innerWidth - w - 8, leftPanel.getBoundingClientRect().right + 8)
-      : leftSide >= 8
-        ? leftSide
-        : Math.min(window.innerWidth - w - 8, r.right + 8);
+    const panel = swatch.closest('.panel');
+    const p = panel?.getBoundingClientRect() ?? r;
+    const onLeftEdge = !!swatch.closest('.panel--left');
+    const beside = onLeftEdge ? p.right + 8 : p.left - w - 8;
+    const fits = beside >= 8 && beside + w <= window.innerWidth - 8;
+    const left = fits
+      ? beside
+      : Math.max(8, Math.min(window.innerWidth - w - 8, onLeftEdge ? r.right + 8 : r.left - w - 8));
     const top = Math.min(window.innerHeight - h - 8, Math.max(8, r.top - 4));
     pop.style.left = `${Math.round(left)}px`;
     pop.style.top = `${Math.round(top)}px`;
@@ -152,6 +177,7 @@ export function colorPicker(
 
   const emit = (): void => {
     const hex = hsvToHex(hsv);
+    current = hex;
     paintSwatch(hex);
     onChange(hex);
   };
@@ -165,35 +191,23 @@ export function colorPicker(
     hueDot.style.top = `${(hsv.h / 360) * 100}%`;
   };
 
-  const hRow = hsvRow('H', 360, hsv.h, (v) => {
-    hsv.h = v;
-    paint();
-    emit();
-  });
-  const sRow = hsvRow('S', 100, hsv.s * 100, (v) => {
+  const sRow = hsvRow('S', 'Saturation', hsv.s * 100, (v) => {
     hsv.s = v / 100;
     paint();
     emit();
   });
-  const vRow = hsvRow('V', 100, hsv.v * 100, (v) => {
+  const vRow = hsvRow('V', 'Value', hsv.v * 100, (v) => {
     hsv.v = v / 100;
     paint();
     emit();
   });
-  rows.append(hRow.row, sRow.row, vRow.row);
+  rows.append(sRow.row, vRow.row);
 
+  // Through the typed-value entry, so a value typed earlier does not
+  // linger in the row's readout once the field or the strip moves it.
   const syncRows = (): void => {
-    hRow.input.value = String(Math.round(hsv.h));
-    sRow.input.value = String(Math.round(hsv.s * 100));
-    vRow.input.value = String(Math.round(hsv.v * 100));
-    for (const [i, o] of [
-      [hRow.input, hsv.h],
-      [sRow.input, hsv.s * 100],
-      [vRow.input, hsv.v * 100],
-    ] as const) {
-      const out = i.nextElementSibling as HTMLElement | null;
-      if (out) out.textContent = String(Math.round(o));
-    }
+    setSliderValue(sRow.input, Math.round(hsv.s * 100));
+    setSliderValue(vRow.input, Math.round(hsv.v * 100));
   };
 
   // Dragging in the spectrum: pointer capture so the drag survives leaving
@@ -242,6 +256,10 @@ export function colorPicker(
     if (!pop.contains(t) && !root.contains(t)) close();
   };
   const onKey = (e: KeyboardEvent): void => {
+    // Esc in a row's number field is the field's own: it puts the value
+    // back. Closing the picker under it would blur the field, which
+    // applies what was typed instead.
+    if (isTextField(e.target)) return;
     if (e.key === 'Escape' && !pop.hidden) {
       close();
       e.stopPropagation();
@@ -264,9 +282,13 @@ export function colorPicker(
     set(hex: string): void {
       if (!isHexColor(hex)) return;
       hsv = hexToHsv(hex);
+      current = hex.toLowerCase();
       paintSwatch(hex);
       paint();
       syncRows();
+    },
+    value(): string {
+      return current;
     },
     isOpen(): boolean {
       return !pop.hidden;
