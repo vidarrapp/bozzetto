@@ -20,9 +20,11 @@ export interface AlphaInfo {
 }
 
 /**
- * The rake set: the two ZBrush stock rake alphas that comb at a default
- * brush on an unsubdivided sphere (owner call: the rest of the first batch
- * is set aside until hand-authored stencils replace it).
+ * The rake set: the two rake stencils that comb at a default brush on an
+ * unsubdivided sphere (owner call: the rest of the first batch is set aside
+ * until hand-authored stencils replace it). Every rake stencil, rake01 to
+ * rake09, is the owner's own edit, not stock material: they ship under the
+ * project's own licence, with no third-party notice to add.
  *
  * What made these two the keepers was measured, not guessed - a stroke
  * rendered per stencil against the tine width each one puts on the model.

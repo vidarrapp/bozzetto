@@ -40,6 +40,16 @@ const CURVES: Record<CurveId, (p: number) => number> = {
 };
 
 /**
+ * Whether `c` names a curve. Own keys only: `in` also finds everything an
+ * object inherits, so a saved "__proto__" or "toString" passed, was kept,
+ * and made every stroke throw from then on. (Not Object.hasOwn, which the
+ * older iPadOS Safari lacks.)
+ */
+export function isCurveId(c: unknown): c is CurveId {
+  return typeof c === 'string' && Object.prototype.hasOwnProperty.call(CURVES, c);
+}
+
+/**
  * Where each brush starts (owner-tuned). Size is constant and strength
  * follows pressure for most brushes; the crease and the paint brush want
  * both, and Drag has no strength to drive at all.
@@ -77,8 +87,10 @@ export class DynamicsStore {
   }
 
   load(table: Record<number, Partial<BrushDynamics> & LegacyDynamics> | undefined): void {
-    if (!table) return;
+    if (!table || typeof table !== 'object') return;
     for (const [tool, d] of Object.entries(table)) {
+      // `in` below throws on anything but an object.
+      if (!Number.isInteger(Number(tool)) || !d || typeof d !== 'object') continue;
       const base = this.get(Number(tool));
       // Scenes from before the amounts carry on/off switches: on is the
       // full range, off is none, which is what the switches meant.
@@ -93,9 +105,8 @@ export class DynamicsStore {
               : 0;
       // An unknown curve id (a hand-edited or foreign save) would make the
       // pressure getter throw inside every stroke; fall back per field.
-      const sizeCurve = d.sizeCurve && d.sizeCurve in CURVES ? d.sizeCurve : base.sizeCurve;
-      const strengthCurve =
-        d.strengthCurve && d.strengthCurve in CURVES ? d.strengthCurve : base.strengthCurve;
+      const sizeCurve = isCurveId(d.sizeCurve) ? d.sizeCurve : base.sizeCurve;
+      const strengthCurve = isCurveId(d.strengthCurve) ? d.strengthCurve : base.strengthCurve;
       this.map.set(Number(tool), { size, strength, sizeCurve, strengthCurve });
     }
   }

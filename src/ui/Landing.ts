@@ -26,8 +26,9 @@ import { apiFetch, apiJson, isDesktop } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
-import { signInButton } from './signIn';
+import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
+import { markOpenOnClick } from './openToken';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
@@ -71,6 +72,10 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // worker's last "signed in" used to stand in for an expired session, and
   // the gallery went on offering the owner's things until each one failed.
   chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
+  // And the way out (owner request), so a sign-in is not left behind on a
+  // device the owner is done with. The desktop app signs out in Server
+  // settings, where it signs in.
+  if (admin && !isDesktop()) chip(signOutChip());
   if (signIn.expired && takeExpiryNotice()) {
     // Once, in the heading's quiet voice: the chip says the rest.
     const note = document.createElement('p');
@@ -110,14 +115,17 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // one tap from being opened. A device copy of a scene the list already
   // shows is left out: the project's own card stands for it.
   const listed = new Set(projects.map((p) => p.id));
-  for (const c of await libraryCards(() => void renderLanding(app), inProgress !== null, { owner, listed })) {
+  // What opening a scene would replace: the sculpt in progress, or a reel
+  // captured on this device (which goes with it, as File > Open's does).
+  const workHere = inProgress !== null || (await framesKept());
+  for (const c of await libraryCards(() => void renderLanding(app), workHere, { owner, listed })) {
     grid.appendChild(c);
   }
 
   // Then scenes in Projects - the owner's library, kept on the server, and
   // any the owner has made public - and after them the published work.
   for (const p of projects.filter((p) => p.mode === 'scene')) {
-    grid.appendChild(sceneCard(p, { owner, hasUnsavedWork: inProgress !== null }));
+    grid.appendChild(sceneCard(p, { owner, hasUnsavedWork: workHere }));
   }
   // Only projects with frames are shown publicly; empties live in the editor.
   for (const p of projects.filter((p) => p.mode !== 'scene' && p.frameCount > 0)) {
@@ -228,6 +236,15 @@ async function startArmature(): Promise<void> {
   }
   if (hasWork) await store.clearArmature();
   window.location.href = '/?armature=1';
+}
+
+/** Whether captured frames are kept on this device. */
+async function framesKept(): Promise<boolean> {
+  try {
+    return await (await import('../sculpt/bridge/ScenePersist')).hasSculptFrames();
+  } catch {
+    return false;
+  }
 }
 
 /** The armature in progress on this device, if there is one. */
@@ -451,10 +468,16 @@ async function libraryCards(
 
     // Opening replaces whatever is in the autosave slot, and the autosave
     // overwrites it seconds later - the same trap Open file guards, so the
-    // same guard: ask, but only when there is unsaved work to lose.
+    // same guard: ask, but only when there is unsaved work to lose. Asked
+    // (or with nothing to ask about), the tab says so for Sculpt, which
+    // otherwise asks again: a link to the same address can come from
+    // anywhere (ui/openToken).
     thumb.addEventListener('click', (ev) => {
-      if (!hasUnsavedWork) return;
-      if (!confirm(`Open "${e.name}"? Your work in progress will be replaced.`)) ev.preventDefault();
+      if (hasUnsavedWork && !confirm(`Open "${e.name}"? Your work in progress will be replaced.`)) {
+        ev.preventDefault();
+        return;
+      }
+      markOpenOnClick(ev, thumb);
     });
 
     const title = card.querySelector<HTMLElement>('.card__title')!;
@@ -550,8 +573,11 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
       `${p.scene.tris.toLocaleString('en-US')} tris · ${mb(p.scene.bytes)} · ${ago(p.updated_at)}`
     : 'Upload did not finish';
   thumb.addEventListener('click', (ev) => {
-    if (!opts.hasUnsavedWork) return;
-    if (!confirm(`Open "${p.title}"? Your work in progress will be replaced.`)) ev.preventDefault();
+    if (opts.hasUnsavedWork && !confirm(`Open "${p.title}"? Your work in progress will be replaced.`)) {
+      ev.preventDefault();
+      return;
+    }
+    markOpenOnClick(ev, thumb);
   });
   if (!opts.owner) return card;
 
@@ -711,8 +737,10 @@ function card(p: ProjectSummary): HTMLElement {
   a.className = 'card';
   a.href = `?tl=${encodeURIComponent(p.id)}`;
 
-  const frames =
-    p.frameCount > 0 ? `${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}` : 'no frames yet';
+  // A number, made one: this goes into innerHTML, and the list is the
+  // server's word, not the app's.
+  const count = Number(p.frameCount) || 0;
+  const frames = count > 0 ? `${count} frame${count === 1 ? '' : 's'}` : 'no frames yet';
 
   a.innerHTML = `
     <div class="card__thumb"></div>
@@ -739,7 +767,9 @@ function ownerCard(p: ProjectSummary): HTMLElement {
   const card = div('card card--library card--owned');
   card.dataset.project = p.id;
   const href = `?tl=${encodeURIComponent(p.id)}`;
-  const frames = `${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
+  // A number, made one: this goes into innerHTML (see card()).
+  const count = Number(p.frameCount) || 0;
+  const frames = `${count} frame${count === 1 ? '' : 's'}`;
   card.innerHTML = `
     <a class="card__thumb">
       <span class="card__badges"></span>

@@ -9,7 +9,9 @@
  * (run `npm run build` first). Writes <id>.html (or <outFile>) at the repo root.
  *
  * Shares its core with the editor's in-browser export: both call
- * buildSingleFileHtml from src/export/singleFile.js. Pure Node, no deps.
+ * buildSingleFileHtml from src/export/singleFile.js, which also writes the
+ * page's Content-Security-Policy (no network at all, by the browser's own
+ * enforcement). Pure Node, no deps.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -22,8 +24,10 @@ const PUBLIC = join(ROOT, 'public');
 const EMBED = join(ROOT, 'dist', 'embed');
 
 // Mirror of the matcap set in src/viewer/Materials.ts (always embedded; the
-// matcap material loads all four at startup).
-const MATCAP_IDS = ['warm-clay', 'blue-grey', 'terracotta', 'silver'];
+// matcap material loads every one at startup). It still named the four
+// house matcaps the VR pack replaced, none of which exists any more, so
+// exports from here carried no matcap at all.
+const MATCAP_IDS = Array.from({ length: 10 }, (_, i) => `vr${String(i + 1).padStart(2, '0')}`);
 
 const [id, outArg] = process.argv.slice(2);
 if (!id) {
@@ -61,8 +65,8 @@ for (const frame of manifest.frames ?? []) {
   add(frame.sd, join(projectDir, frame.sd));
 }
 
-// Matcaps (all four) and the selected HDRI, if any. Keys match the absolute
-// paths the viewer requests these by.
+// Matcaps (all of them) and the selected HDRI, if any. Keys match the
+// absolute paths the viewer requests these by.
 for (const m of MATCAP_IDS) {
   add(`/assets/matcaps/${m}.png`, join(PUBLIC, 'assets', 'matcaps', `${m}.png`));
 }

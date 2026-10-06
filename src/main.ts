@@ -8,6 +8,7 @@ import { installSliderBubble } from './ui/sliderBubble';
 import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
+import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
 
@@ -40,8 +41,23 @@ async function main(): Promise<void> {
     await renderLanding(app);
     return;
   }
+  // The id goes into request paths: `?tl=../media/x/f.json%23` reached the
+  // bundled-demo fallback as a path to any JSON on the site. Not an id
+  // (net/ids), not a project.
+  if (!isProjectId(id)) {
+    showError(document.getElementById('overlay'), new Error('That is not a project link'));
+    return;
+  }
   await bootViewer(id);
 }
+
+/**
+ * The bundled demo timelapse ships in the dev server and the test build
+ * only (vite.config.ts drops it everywhere else), so only those look for
+ * it: elsewhere the fallback could never find a project, only answer for
+ * whatever JSON a path happened to reach.
+ */
+const BUNDLED_DEMO = import.meta.env.DEV || import.meta.env.MODE === 'test';
 
 /**
  * Project-less sculpt entry (/?sculpt=1): boot the viewer on a synthetic
@@ -156,7 +172,8 @@ async function loadProject(
   const owned = await ownerManifest(id);
   if (owned) return owned;
 
-  const staticUrl = new URL(`${base}timelapses/${id}/manifest.json`, window.location.href).href;
+  if (!BUNDLED_DEMO) throw new Error(`Project "${id}" not found`);
+  const staticUrl = new URL(`${base}timelapses/${encodeURIComponent(id)}/manifest.json`, window.location.href).href;
   const sres = await fetch(staticUrl);
   if (!sres.ok) throw new Error(`Project "${id}" not found`);
   return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
@@ -230,7 +247,11 @@ async function bootArmature(): Promise<void> {
 }
 
 function addGalleryLink(): void {
-  const a = topChip('← Gallery', window.location.pathname);
+  // The gallery is the site's root, whatever the address says: a path such
+  // as `//elsewhere.example/` reaches this page through the host's own
+  // fallback for unknown paths (the worker's answered it too, before it
+  // took a list), and used as a link it is another site.
+  const a = topChip('← Gallery', '/');
   a.classList.add('viewer-back');
   topbarLeft().appendChild(a);
 }

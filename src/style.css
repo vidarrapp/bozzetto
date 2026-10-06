@@ -3394,6 +3394,16 @@ body.is-sampling * {
   letter-spacing: 0.04em;
 }
 
+/* The icons' credit, which their licence asks for: one quiet line. */
+.help-guide__credit {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.help-guide__credit a {
+  color: var(--muted);
+}
+
 /* The gallery's "start a sculpt" tile: same footprint as a project card,
    but a plus over the default subject rather than a thumbnail. */
 /* Library cards carry their own controls, so they are a div with a link

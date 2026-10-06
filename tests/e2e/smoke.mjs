@@ -864,7 +864,7 @@ const readBozz = (page, bytes, needle = '') =>
  * waitForFunction: an async predicate returns a promise, which is truthy,
  * so that resolves at once, long before the worker has installed.
  */
-async function workerActivated(page, timeout = 120_000) {
+export async function workerActivated(page, timeout = 120_000) {
   const until = Date.now() + timeout;
   while (Date.now() < until) {
     const state = await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active?.state ?? null);
@@ -1009,7 +1009,7 @@ const savedToast = (page) =>
     .catch(() => ({ state: 'none', text: '' }));
 
 /** How many captured frames IndexedDB holds. */
-const storedFrames = (page) =>
+export const storedFrames = (page) =>
   page.evaluate(
     () =>
       new Promise((ok, fail) => {
@@ -1030,7 +1030,7 @@ const storedFrames = (page) =>
 // --- capture: the window, and where recording is allowed -------------------
 
 /** The sign-in probe answering as the owner, for every page of a context. */
-const signInContext = (ctx) =>
+export const signInContext = (ctx) =>
   ctx.route('**/admin/api/whoami', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
   );
@@ -1105,7 +1105,7 @@ const offeredText = async (page) => {
 };
 
 /** What the boot opened: object count, link, the address, and the toast's words and button. */
-const bootState = (page) =>
+export const bootState = (page) =>
   page.evaluate(() => ({
     objects: window.__sculpt.session.getMeshes().length,
     link: window.__sculpt.fileActions.link,
@@ -1127,7 +1127,7 @@ const ACCESS_LOGIN = 'https://example.cloudflareaccess.com/cdn-cgi/access/login/
  * would, and `expired` answers the owner's routes as Access does once the
  * session has run out.
  */
-function fakeProjects() {
+export function fakeProjects() {
   const projects = new Map();
   const uploads = new Map();
   const calls = [];
@@ -3728,6 +3728,15 @@ export const suites = {
       const owner = await ctx.newPage();
       const errors = [];
       owner.on('pageerror', (e) => errors.push(String(e)));
+      // A scene opened by its address asks before it replaces the work on
+      // this device (ui/openToken), and these boots follow the address, so
+      // the question comes: the owner says yes. Anything else is dismissed,
+      // as Playwright would have.
+      const asked = [];
+      owner.on('dialog', (d) => {
+        asked.push(d.message());
+        void (/^Open "/.test(d.message()) ? d.accept() : d.dismiss());
+      });
       const boot = async (query = '') => {
         await openSculpt(owner, base, `&q=low${query}`);
         if (!fake.opts.offline) {
@@ -3901,8 +3910,10 @@ export const suites = {
 
       // Opening by ?project=: fetched through the media route, linked.
       mark = fake.calls.length;
+      asked.length = 0;
       await boot(`&project=${id}`);
       let opened = await bootState(owner);
+      t.eq(asked.join(' | '), `Open "${fake.projects.get(id).title}"? The work in progress on this device will be replaced.`, 'followed by its address, it asks first: there is work here');
       const got = fake.calls.slice(mark).filter((c) => c.method === 'GET' && c.path.endsWith('/scene.bozz')).map((c) => c.path);
       t.ok(opened.objects === 3 && opened.link?.id === id && !/project=/.test(opened.search), `?project= opens the scene, linked to its project, and leaves the address (${opened.objects} objects, ${opened.search})`);
       t.ok(got.length === 1 && got[0] === `/media/${id}/scene.bozz`, `the file came from the media route (${got.join(', ')})`);

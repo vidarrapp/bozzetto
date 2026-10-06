@@ -47,7 +47,12 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
   // never has: there the version stands alone.
   html += `<div class="help-guide__version"><span class="help-guide__ver">Bozzetto ${esc(APP_VERSION)}</span>`;
   if (updates) html += `<button type="button" class="help-guide__check">Check for updates</button>`;
-  html += `<span class="help-guide__checked" role="status"></span></div></div>`;
+  html += `<span class="help-guide__checked" role="status"></span></div>`;
+  // The interface icons are Flaticon's UIcons, whose licence asks for this
+  // line wherever they are used.
+  html +=
+    '<div class="help-guide__credit"><a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener">Icons by Flaticon (UIcons)</a></div>';
+  html += '</div>';
   return html;
 }
 

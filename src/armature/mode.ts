@@ -793,7 +793,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (!galleryLink || e.defaultPrevented || e.button !== 0) return;
     e.preventDefault();
     void snapshot().finally(() => {
-      window.location.href = galleryLink.href;
+      // The site's root, never the link's own address (main.ts addGalleryLink).
+      window.location.href = '/';
     });
   };
   galleryLink?.addEventListener('click', onLeave);

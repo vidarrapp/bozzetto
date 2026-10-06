@@ -3,6 +3,7 @@ import type { Object3D } from 'three';
 import { getGLTFLoader } from '../loaders/gltf';
 import type { AssetSource } from './AssetSource';
 import type { FrameEntry, Tier } from '../types/manifest';
+import { gunzipCapped } from './inflate';
 
 export interface FrameStreamerOptions {
   /** Frames to prefetch eagerly ahead of the playhead (forward-biased). */
@@ -15,6 +16,15 @@ export interface FrameStreamerOptions {
 
 /** Background-fill fetches kept in flight beyond the near window. */
 const BACKGROUND_CONCURRENCY = 2;
+
+/**
+ * The most one frame may inflate to. The largest frame Sculpt writes is a
+ * scene at the subdivision ceiling, 16M triangles: about 190 MB of 32-bit
+ * indices, 64 MB of quantised positions and 32 MB of colours, under 300 MB;
+ * the converters write nothing larger. 512 MiB is past that, and past the
+ * largest budget a device gives every resident frame together.
+ */
+const MAX_FRAME_BYTES = 512 * 1024 * 1024;
 
 /**
  * Resident-geometry budget when none is given: sized from device memory where
@@ -302,12 +312,15 @@ export class FrameStreamer {
   }
 }
 
-/** Gzip magic sniff + native inflate; non-gzip bytes pass through untouched. */
+/**
+ * Gzip magic sniff + native inflate; non-gzip bytes pass through untouched.
+ * Capped: a small frame that inflates past MAX_FRAME_BYTES is refused once
+ * it gets there, instead of being inflated whole first.
+ */
 async function maybeGunzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
-  const head = new Uint8Array(bytes);
+  const head = new Uint8Array(bytes, 0, Math.min(2, bytes.byteLength));
   if (head.length < 2 || head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return new Response(stream).arrayBuffer();
+  return gunzipCapped(bytes, MAX_FRAME_BYTES, 'This frame is too large to open');
 }
 
 const IDENTITY = new Matrix4();

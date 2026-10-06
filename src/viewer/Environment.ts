@@ -3,8 +3,13 @@ import { PMREMGenerator, type WebGPURenderer } from 'three/webgpu';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { getTheme, onThemeChange, THEME_BG } from '../ui/theme';
 import { loadViaBlob, type AssetSource } from './AssetSource';
+import { hexColor } from './color';
 
 export type BackgroundMode = 'theme' | 'color' | 'hdri';
+
+const BACKGROUND_MODES: readonly BackgroundMode[] = ['theme', 'color', 'hdri'];
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Persisted environment state (stored in a project's `data.environment`). */
 export interface EnvState {
@@ -146,13 +151,14 @@ export class Environment {
   }
 
   async setEnvironment(id: string | null): Promise<void> {
-    this.currentId = id;
+    const cfg = id ? ENVIRONMENTS.find((e) => e.id === id) : undefined;
+    // An id that names no environment (a file's, say) is none, not kept.
+    this.currentId = cfg ? cfg.id : null;
     const myToken = ++this.token;
     this.disposeMaps();
     this.scene.environment = null; // never point the scene at a disposed map
     if (this.bgMode === 'hdri') this.updateBackground(); // fall back until loaded
 
-    const cfg = id ? ENVIRONMENTS.find((e) => e.id === id) : undefined;
     if (!cfg) {
       this.scene.environment = null;
       return;
@@ -206,7 +212,7 @@ export class Environment {
   }
 
   setBackgroundColor(hex: string): void {
-    this.bgColor = hex;
+    this.bgColor = hexColor(hex, this.bgColor);
     if (this.bgMode === 'color') this.updateBackground();
   }
 
@@ -251,8 +257,11 @@ export class Environment {
    * again as 3 rather than 2.9999999999999996.
    */
   async applyState(state: Partial<EnvState>): Promise<void> {
-    const rescaled = typeof state.v === 'number' && state.v >= ENV_STATE_VERSION;
-    if (typeof state.intensity === 'number') {
+    // Each value only when it is what it says it is: these records come
+    // from files and manifests as well as from this app, and the colour
+    // ends up in a panel swatch's style (see color.ts).
+    const rescaled = finite(state.v) && state.v >= ENV_STATE_VERSION;
+    if (finite(state.intensity) && state.intensity >= 0) {
       if (rescaled) {
         this.setIntensity(state.intensity);
       } else {
@@ -261,13 +270,15 @@ export class Environment {
         this.setBackgroundBrightness(state.intensity);
       }
     }
-    if (rescaled && typeof state.bgBrightness === 'number') this.setBackgroundBrightness(state.bgBrightness);
-    if (state.background) this.bgMode = state.background;
-    if (typeof state.bgColor === 'string') this.bgColor = state.bgColor;
-    if (typeof state.rotation === 'number') this.offset = state.rotation;
-    if (typeof state.blur === 'number') this.blur = state.blur;
+    if (rescaled && finite(state.bgBrightness) && state.bgBrightness >= 0) {
+      this.setBackgroundBrightness(state.bgBrightness);
+    }
+    if (BACKGROUND_MODES.includes(state.background as BackgroundMode)) this.bgMode = state.background!;
+    if (state.bgColor !== undefined) this.bgColor = hexColor(state.bgColor, this.bgColor);
+    if (finite(state.rotation)) this.offset = state.rotation;
+    if (finite(state.blur)) this.blur = Math.min(1, Math.max(0, state.blur));
     this.applyRotation();
-    if ('id' in state) await this.setEnvironment(state.id ?? null);
+    if ('id' in state) await this.setEnvironment(typeof state.id === 'string' ? state.id : null);
     // Always: with no HDRI, setEnvironment returns before touching the
     // background, and a saved solid colour came back as the theme.
     this.updateBackground();

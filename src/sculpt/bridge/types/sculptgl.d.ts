@@ -123,6 +123,9 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getNbVertices(): number;
     getNbTriangles(): number;
     getNbFaces(): number;
+    /** Faces that are quads (the rest are triangles). */
+    getNbQuads(): number;
+    getNbEdges(): number;
     getMatrix(): Float32Array;
     /**
      * The octree's local AABB transformed by the mesh matrix, as

@@ -5,6 +5,7 @@ import { formatMs, perfLog } from '../../viewer/perfLog';
 import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
+import { sanitizeLook, sanitizeScene } from './sanitize';
 
 /**
  * Workspace preferences that ride with a scene: how the brushes are set up,
@@ -250,7 +251,9 @@ export async function clearSculptLook(): Promise<void> {
 /** The saved sculpt look, or null when there is none. */
 export async function loadSculptLook(): Promise<LookState | null> {
   try {
-    return ((await withStore('readonly', (s) => s.get(LOOK_KEY))) as LookState) ?? null;
+    // Through the same reading a file's look gets: the record is only as
+    // sound as the looks the session took in before writing it.
+    return (sanitizeLook(await withStore('readonly', (s) => s.get(LOOK_KEY))) as LookState) ?? null;
   } catch {
     return null;
   }
@@ -278,6 +281,18 @@ export async function hasSavedScene(): Promise<boolean> {
     return (await withStore('readonly', (s) => s.count(KEY))) > 0;
   } catch {
     return false; // storage blocked: nothing to resume, nothing to clear
+  }
+}
+
+/**
+ * Are there captured frames? The boot asks before an opened scene is let
+ * replace them, as it asks about the scene (sculpt/mode.ts).
+ */
+export async function hasSculptFrames(): Promise<boolean> {
+  try {
+    return (await withNamedStore(FRAME_META_STORE, 'readonly', (s) => s.count())) > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -380,7 +395,10 @@ const withStore = <T>(
   op: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> => withNamedStore(STORE, mode, op);
 
+// The checks below read records from files as well as from this app, so a
+// level or an object that is not an object at all is a no, not a throw.
 function validLevel(l: SavedLevel): boolean {
+  if (!l || typeof l !== 'object') return false;
   const n = l.nbVertices * 3;
   return (
     l.vertices instanceof Float32Array &&
@@ -396,6 +414,8 @@ function validLevel(l: SavedLevel): boolean {
 
 function validMesh(m: SavedMesh): boolean {
   return (
+    !!m &&
+    typeof m === 'object' &&
     m.baseFaces instanceof Uint32Array &&
     m.baseFaces.length === m.nbBaseFaces * 4 &&
     Array.isArray(m.levels) &&
@@ -407,71 +427,92 @@ function validMesh(m: SavedMesh): boolean {
   );
 }
 
-/** The saved scene, or null when there is none (or storage is unavailable). */
+/**
+ * The autosave holds a record that cannot be read back: one that fails
+ * the structural check, or that sanitizeScene cannot mend. The boot sets
+ * it aside and says so, rather than restore half of it.
+ */
+export class UnreadableSceneError extends Error {}
+
+/**
+ * The saved scene, or null when there is none (or storage is unavailable).
+ * Throws UnreadableSceneError for a record that is there but unusable.
+ */
 export async function loadSavedScene(): Promise<SavedScene | null> {
+  let rec: SavedScene | SavedSceneV2 | SavedSceneV1 | undefined;
   try {
-    const rec = (await withStore('readonly', (s) => s.get(KEY))) as
-      | SavedScene
-      | SavedSceneV2
-      | SavedSceneV1
-      | undefined;
-    if (!rec) return null;
-    if (rec.v === 1) {
-      // Pre-multires format: one level whose faces are the base topology.
-      if (
-        !(rec.vertices instanceof Float32Array) ||
-        !(rec.faces instanceof Uint32Array) ||
-        rec.vertices.length !== rec.nbVertices * 3 ||
-        rec.colors?.length !== rec.nbVertices * 3 ||
-        rec.materials?.length !== rec.nbVertices * 3 ||
-        rec.faces.length !== rec.nbFaces * 4 ||
-        rec.matrix?.length !== 16
-      ) {
-        return null;
-      }
-      return {
-        v: 3,
-        savedAt: rec.savedAt,
-        meshes: [
-          {
-            nbBaseFaces: rec.nbFaces,
-            baseFaces: rec.faces,
-            levels: [
-              {
-                nbVertices: rec.nbVertices,
-                vertices: rec.vertices,
-                normals: null,
-                colors: rec.colors,
-                materials: rec.materials,
-                detailsXYZ: null,
-                detailsRGB: null,
-                detailsPBR: null,
-              },
-            ],
-            sel: 0,
-            matrix: rec.matrix,
-          },
-        ],
-        active: 0,
-        symmetry: rec.symmetry,
-      };
-    }
-    if (rec.v === 2) {
-      const mesh: SavedMesh = {
-        name: rec.name,
-        nbBaseFaces: rec.nbBaseFaces,
-        baseFaces: rec.baseFaces,
-        levels: rec.levels,
-        sel: rec.sel,
-        matrix: rec.matrix,
-      };
-      if (!validMesh(mesh)) return null;
-      return { v: 3, savedAt: rec.savedAt, meshes: [mesh], active: 0, symmetry: rec.symmetry };
-    }
-    return validSavedScene(rec) ? rec : null;
+    rec = (await withStore('readonly', (s) => s.get(KEY))) as typeof rec;
   } catch {
     return null; // private windows / blocked storage: sculpt still works
   }
+  if (!rec) return null;
+  // Written by a newer build (another tab, say, on the next version): not
+  // this build's to read, nor to set aside.
+  if (typeof rec.v === 'number' && rec.v > 4) return null;
+  const scene = upgradeSaved(rec);
+  if (!scene) throw new UnreadableSceneError('the saved scene does not add up');
+  try {
+    return sanitizeScene(scene);
+  } catch (err) {
+    throw new UnreadableSceneError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** A stored record of any version as a v3/v4 one, or null when it does not check out. */
+function upgradeSaved(rec: SavedScene | SavedSceneV2 | SavedSceneV1): SavedScene | null {
+  if (rec.v === 1) {
+    // Pre-multires format: one level whose faces are the base topology.
+    if (
+      !(rec.vertices instanceof Float32Array) ||
+      !(rec.faces instanceof Uint32Array) ||
+      rec.vertices.length !== rec.nbVertices * 3 ||
+      rec.colors?.length !== rec.nbVertices * 3 ||
+      rec.materials?.length !== rec.nbVertices * 3 ||
+      rec.faces.length !== rec.nbFaces * 4 ||
+      rec.matrix?.length !== 16
+    ) {
+      return null;
+    }
+    return {
+      v: 3,
+      savedAt: rec.savedAt,
+      meshes: [
+        {
+          nbBaseFaces: rec.nbFaces,
+          baseFaces: rec.faces,
+          levels: [
+            {
+              nbVertices: rec.nbVertices,
+              vertices: rec.vertices,
+              normals: null,
+              colors: rec.colors,
+              materials: rec.materials,
+              detailsXYZ: null,
+              detailsRGB: null,
+              detailsPBR: null,
+            },
+          ],
+          sel: 0,
+          matrix: rec.matrix,
+        },
+      ],
+      active: 0,
+      symmetry: rec.symmetry,
+    };
+  }
+  if (rec.v === 2) {
+    const mesh: SavedMesh = {
+      name: rec.name,
+      nbBaseFaces: rec.nbBaseFaces,
+      baseFaces: rec.baseFaces,
+      levels: rec.levels,
+      sel: rec.sel,
+      matrix: rec.matrix,
+    };
+    if (!validMesh(mesh)) return null;
+    return { v: 3, savedAt: rec.savedAt, meshes: [mesh], active: 0, symmetry: rec.symmetry };
+  }
+  return validSavedScene(rec) ? rec : null;
 }
 
 /** Structural check for a v3/v4 record (shared with the .bozz file loader). */

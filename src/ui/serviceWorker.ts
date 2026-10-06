@@ -18,7 +18,9 @@
  *             otherwise. The opt-out has to outlive the reload: without
  *             it, unregistering and reloading just runs this function
  *             again and registers a fresh worker, which is a rescue that
- *             rescues nothing.
+ *             rescues nothing. It asks first: any page can link here
+ *             with it, and the app would stop working offline on the
+ *             strength of a click somewhere else.
  *   ?sw       undo that and register again.
  *
  * That turns a bricked install into a URL the owner can send someone,
@@ -76,13 +78,21 @@ export function registerServiceWorker(): void {
   const params = new URLSearchParams(window.location.search);
 
   if (params.has('nosw')) {
-    setOptOut(true);
-    void unregisterAll().then(() => {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('nosw');
-      window.location.replace(url.href);
-    });
-    return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('nosw');
+    if (
+      window.confirm(
+        'Switch off offline use on this device? The copy of the app kept for working offline is removed, ' +
+          'and it stays off until a link with ?sw turns it back on.',
+      )
+    ) {
+      setOptOut(true);
+      void unregisterAll().then(() => window.location.replace(url.href));
+      return;
+    }
+    // Declined: nothing changes, and the switch leaves the address so a
+    // reload does not ask again.
+    history.replaceState(history.state, '', url);
   }
 
   if (params.has('sw')) setOptOut(false);

@@ -1,5 +1,7 @@
 import { desktopSignIn, isDesktop } from '../net/origin';
+import { signOut } from '../admin/api';
 import { readyToLeave } from './leaving';
+import { topChip } from './topbar';
 
 /**
  * Sign in again from wherever an expired session was noticed, and come
@@ -54,6 +56,21 @@ export function signInButton(
       .finally(() => {
         b.disabled = false;
       });
+  });
+  return b;
+}
+
+/**
+ * Sign out, as a top-row chip (owner request: a sign-in should not stay
+ * behind on a device the owner is done with). It goes through Access's
+ * logout and comes back to the gallery (admin/api signOut). The desktop
+ * app signs out in Server settings instead, where it signs in.
+ */
+export function signOutChip(): HTMLElement {
+  const b = topChip('Sign out') as HTMLButtonElement;
+  b.addEventListener('click', () => {
+    b.disabled = true;
+    void signOut();
   });
   return b;
 }

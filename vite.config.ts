@@ -135,17 +135,26 @@ export default defineConfig(({ mode }) => {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
-        // A navigation fallback that answers /api/ with index.html is
-        // exactly the SPA-fallback failure loadProject() had to be hardened
-        // against: 200 + "<!doctype" where JSON was expected. Navigation
-        // requests are the only ones routed here, but the API and the
-        // editor are denied explicitly rather than by assumption.
-        // /cdn-cgi/ is Cloudflare's own: Access hands a sign-in back through
-        // /cdn-cgi/access/authorized, a navigation inside this worker's
-        // scope, and answered with the app shell the token never reached the
-        // edge, so no session cookie was ever set and the visitor landed on
-        // the gallery. That is how the installed iPad app could not sign in.
-        navigateFallbackDenylist: [/^\/api\//, /^\/admin\//, /^\/media\//, /^\/cdn-cgi\//],
+        // Which navigations the worker answers with the app's shell, offline
+        // or not: the root, with whatever query it was opened with - the
+        // gallery, ?sculpt=1, ?armature=1, ?tl=<id> - and nothing else. Tested
+        // against the path and the query together, hence the query in the
+        // pattern. /create/ is answered by its own precached page
+        // (create/index.html, which the precache finds for the bare
+        // directory) before this fallback is asked; listed here, a query on
+        // it would have been answered with the gallery's shell instead.
+        //
+        // It was a denylist (/api/, /admin/, /media/, /cdn-cgi/), and every
+        // other path in scope got the shell: `//elsewhere.example/` too, a
+        // path whose own address, used as a link, is another site. Listing
+        // what is the app's means none of these is ever answered from here:
+        // the API, whose JSON a shell answer replaces with "<!doctype"
+        // (loadProject had to be hardened against that); the editor and
+        // the media, Access-gated; and Cloudflare's /cdn-cgi/, through which
+        // Access hands a sign-in back (/cdn-cgi/access/authorized) and signs
+        // one out (/cdn-cgi/access/logout) - answered with the shell, the
+        // installed iPad app could not sign in.
+        navigateFallbackAllowlist: [/^\/(?:\?.*)?$/],
         runtimeCaching: [
           {
             // The sign-in probe. Everything owner-only (the gallery's
@@ -218,8 +227,15 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
-            // Gallery card thumbnails, so the cards keep their pictures.
-            urlPattern: /\/media\/.*\/thumb\.jpg/,
+            // Gallery card thumbnails, so the cards keep their pictures:
+            // the public media route's, on this site, and only those. The
+            // pattern was /\/media\/.*\/thumb\.jpg/, which also matched the
+            // owner's gated route (/admin/api/media/<id>/thumb.jpg), so a
+            // private project's picture was kept for thirty days whatever
+            // the server's no-store said. A function, so the origin and the
+            // path's start can both be said; the build writes it into the
+            // worker as it stands.
+            urlPattern: ({ url }) => url.origin === self.location.origin && /^\/media\/[^/]+\/thumb\.jpg$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'bozzetto-thumbs',

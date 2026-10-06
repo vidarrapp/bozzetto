@@ -35,6 +35,7 @@ import { Materials } from './Materials';
 import type { MaterialState } from './Materials';
 import { Environment } from './Environment';
 import type { EnvState } from './Environment';
+import { hexColor } from './color';
 import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
@@ -173,6 +174,10 @@ export interface LookState {
 
 /** Ground presentation: a contact shadow, a fading studio floor, or a pedestal. */
 export type GroundMode = 'off' | 'shadow' | 'floor' | 'pedestal';
+
+const GROUND_MODES: readonly GroundMode[] = ['off', 'shadow', 'floor', 'pedestal'];
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Stage / presentation state (persisted in a project's `data.presentation`). */
 export interface StageState {
@@ -941,7 +946,10 @@ export class Viewer {
 
   /** Pick the output grade (Render panel; rides the saved look). */
   setToneMapping(id: ToneMappingId): void {
-    if (!(id in TONE_MAPPINGS)) return;
+    // Own keys only: `in` also finds what every object inherits, and a
+    // saved "__proto__" went on to the renderer as a tone mapping. (Not
+    // Object.hasOwn, which the older iPadOS Safari lacks.)
+    if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(TONE_MAPPINGS, id)) return;
     this.toneMappingId = id;
     this.applyToneMapping();
     this.invalidate();
@@ -1185,6 +1193,8 @@ export class Viewer {
   // Stage-surface PBR — applied to both the floor and pedestal materials (only
   // one is ever shown, so they read as a single material in the panel).
   setStageColor(hex: string): void {
+    // Normalised on the way in: the value reaches a panel swatch's style.
+    hex = hexColor(hex, this.stageColor);
     this.stageColor = hex;
     this.floorMaterial.color.set(hex);
     this.pedestalMaterial.color.set(hex);
@@ -1223,11 +1233,13 @@ export class Viewer {
   }
 
   applyStageState(state: Partial<StageState>): void {
+    // Each value only when it is what it says: stage records come from
+    // files and manifests as well as from this app.
     if (typeof state.color === 'string') this.setStageColor(state.color);
-    if (typeof state.roughness === 'number') this.setStageRoughness(state.roughness);
-    if (typeof state.metalness === 'number') this.setStageMetalness(state.metalness);
-    if (typeof state.pedestalScale === 'number') this.pedestalScale = state.pedestalScale;
-    if (state.ground) this.groundMode = state.ground;
+    if (finite(state.roughness)) this.setStageRoughness(Math.min(1, Math.max(0, state.roughness)));
+    if (finite(state.metalness)) this.setStageMetalness(Math.min(1, Math.max(0, state.metalness)));
+    if (finite(state.pedestalScale) && state.pedestalScale > 0) this.pedestalScale = state.pedestalScale;
+    if (GROUND_MODES.includes(state.ground as GroundMode)) this.groundMode = state.ground!;
     this.layoutStage();
     this.updateStage();
     this.invalidate();

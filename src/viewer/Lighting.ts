@@ -13,6 +13,7 @@ import {
 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { detectQuality, SHADOW_TIERS, type ShadowTier } from './quality';
+import { hexColor } from './color';
 
 export type LightId = 'key' | 'fill' | 'rim';
 
@@ -98,6 +99,30 @@ const LIGHT_LABELS: Record<LightId, string> = {
 const ALL: LightId[] = ['key', 'fill', 'rim'];
 
 const UP_AXIS = new Vector3(0, 1, 0);
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * A saved light over the one it replaces, field by field: each value only
+ * when it is what it says it is, and only the fields a light has. Saved
+ * lights come from files, manifests and looks, and were spread in whole:
+ * a colour that was a CSS url() reached the panel's swatch, and a number
+ * that was a string reached the renderer.
+ */
+function mergeLight(base: DirLightConfig, saved: unknown): DirLightConfig {
+  if (!saved || typeof saved !== 'object') return base;
+  const s = saved as Record<string, unknown>;
+  const softness = finite(s.softness) ? Math.max(0, s.softness) : base.softness;
+  return {
+    enabled: typeof s.enabled === 'boolean' ? s.enabled : base.enabled,
+    intensity: finite(s.intensity) ? Math.max(0, s.intensity) : base.intensity,
+    color: hexColor(s.color, base.color),
+    azimuth: finite(s.azimuth) ? s.azimuth : base.azimuth,
+    elevation: finite(s.elevation) ? s.elevation : base.elevation,
+    castShadow: typeof s.castShadow === 'boolean' ? s.castShadow : base.castShadow,
+    ...(softness === undefined ? {} : { softness }),
+  };
+}
 
 /** Default three-point rig and a raking-key preset for form study (§6). */
 export const PRESETS: LightingPreset[] = [
@@ -201,7 +226,7 @@ export class Lighting {
   }
 
   setColor(id: LightId, hex: string): void {
-    this.config[id].color = hex;
+    this.config[id].color = hexColor(hex, this.config[id].color);
     this.refresh();
   }
 
@@ -406,15 +431,16 @@ export class Lighting {
 
   /** Apply a persisted rig state, defensively (data may be partial or old). */
   applyState(state: Partial<LightingState>): void {
-    if (state.key) this.config.key = { ...this.config.key, ...state.key };
-    if (state.fill) this.config.fill = { ...this.config.fill, ...state.fill };
-    if (state.rim) this.config.rim = { ...this.config.rim, ...state.rim };
-    if (state.ambient) {
-      if (typeof state.ambient.intensity === 'number') this.hemi.intensity = state.ambient.intensity;
-      if (state.ambient.sky) this.hemi.color = new Color(state.ambient.sky);
-      if (state.ambient.ground) this.hemi.groundColor = new Color(state.ambient.ground);
+    for (const id of ALL) this.config[id] = mergeLight(this.config[id], state[id]);
+    const ambient = state.ambient as Partial<Record<keyof AmbientConfig, unknown>> | undefined;
+    if (ambient && typeof ambient === 'object') {
+      if (finite(ambient.intensity)) this.hemi.intensity = Math.max(0, ambient.intensity);
+      const sky = `#${this.hemi.color.getHexString()}`;
+      const ground = `#${this.hemi.groundColor.getHexString()}`;
+      if (ambient.sky) this.hemi.color = new Color(hexColor(ambient.sky, sky));
+      if (ambient.ground) this.hemi.groundColor = new Color(hexColor(ambient.ground, ground));
     }
-    if (typeof state.rigRotation === 'number') this.setRigRotation(state.rigRotation);
+    if (finite(state.rigRotation)) this.setRigRotation(state.rigRotation);
     if (typeof state.shadowsMaster === 'boolean') this.shadowsMaster = state.shadowsMaster;
     this.refresh();
   }

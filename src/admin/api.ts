@@ -6,6 +6,7 @@
  */
 
 import { apiFetch, isDesktop, type ApiResult } from '../net/origin';
+import { forgetOwnerCaches } from '../net/ownerCaches';
 
 export type Visibility = 'public' | 'private';
 
@@ -73,16 +74,27 @@ async function call<T>(
   const res = await apiFetch(pathname, init);
   if (res.signedOut) throw new AuthExpiredError();
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    // The server's own words where it gave some (a 400, 415 or 503 says
+    // what was wrong with the request, or with the server's setup).
+    let said: string | null = null;
     if (res.bytes) {
       try {
-        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: string };
-        if (body.error) message = body.error;
+        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: unknown };
+        if (typeof body.error === 'string' && body.error) said = body.error;
       } catch {
         /* non-JSON error body */
       }
     }
-    if (res.status === 403) message = 'Not authorized — sign in via Cloudflare Access.';
+    let message = said ?? `Request failed (${res.status})`;
+    // A 403 is one of two refusals (functions/_shared/http.ts): a write the
+    // browser said another site's page sent, which signing in again would
+    // not change, or someone who is not the owner.
+    if (res.status === 403) {
+      message =
+        said === 'Cross-site request refused'
+          ? 'The request was refused as coming from another site'
+          : 'Not authorized — sign in via Cloudflare Access.';
+    }
     // The desktop reports "no server configured" as status 0; saying that is
     // more use than a generic failure.
     if (res.status === 0) message = res.error ?? 'No server configured.';
@@ -186,9 +198,11 @@ const EXPIRY_TOLD_KEY = 'bozzetto-sign-in-expiry-told';
  */
 const REMEMBER_MS = 30 * 24 * 60 * 60 * 1000;
 
-function remember(email: string): void {
+function remember(): void {
   try {
-    localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ email, at: Date.now() }));
+    // When, and nothing else: the address is never read back, and a
+    // device the owner has left need not keep it.
+    localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ at: Date.now() }));
     localStorage.removeItem(EXPIRY_TOLD_KEY);
   } catch {
     // Storage refused: a later signed-out answer reads as a guest's.
@@ -212,7 +226,10 @@ export function signedInHereBefore(): boolean {
   if (isDesktop()) return false;
   try {
     const raw = localStorage.getItem(SIGNED_IN_KEY);
-    const at = raw ? (JSON.parse(raw) as { at?: unknown }).at : null;
+    const rec = raw ? (JSON.parse(raw) as { at?: unknown; email?: unknown }) : null;
+    const at = rec?.at;
+    // Records from before kept the owner's address too: kept no longer.
+    if (typeof at === 'number' && rec?.email !== undefined) localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ at }));
     return typeof at === 'number' && Date.now() - at < REMEMBER_MS;
   } catch {
     return false;
@@ -249,14 +266,59 @@ export async function checkSignIn(): Promise<SignIn> {
   } catch {
     return { email: null, expired: false };
   }
-  if (res.signedOut) return { email: null, expired: signedInHereBefore() };
+  if (res.signedOut) {
+    // The session has gone, so the worker's copies of the owner's private
+    // answers go with it: offline they would go on showing the private
+    // list to whoever has the device. The remembered sign-in stays, so the
+    // gallery can still say the sign-in expired.
+    await forgetOwnerCaches();
+    return { email: null, expired: signedInHereBefore() };
+  }
   const email = whoamiEmail(res);
   if (email) {
-    remember(email);
+    remember();
     return { email, expired: false };
   }
-  if (res.status === 403) forget();
+  if (res.status === 403) {
+    forget();
+    await forgetOwnerCaches();
+  }
   return { email: null, expired: false };
+}
+
+/**
+ * Where Sign out goes: Cloudflare Access's logout on this site, which
+ * deletes the session cookie here and revokes the session for every Access
+ * application (developers.cloudflare.com, Access session management). The
+ * team domain's logout would do the same, but this page cannot learn the
+ * team's host - Access's redirect to its login reaches a page fetch
+ * without its Location - and it is not written into the source. `returnTo`
+ * asks to come back to the gallery: the team domain's logout takes it
+ * (Cloudflare's own answers; the documentation names no parameter), and
+ * where it is ignored Access shows its signed-out page instead. Either way
+ * the session ends.
+ */
+export function signOutHref(): string {
+  return `/cdn-cgi/access/logout?returnTo=${encodeURIComponent(new URL('/', window.location.href).href)}`;
+}
+
+/**
+ * Sign out of this device: forget the remembered sign-in (so nothing reads
+ * as an expired one afterwards), drop the worker's copies of the owner's
+ * answers, then end the Access session itself. The device's own copies of
+ * the owner's scenes stay: they are on the shelf, which is the device's.
+ * Recording needs nothing more: it follows the sign-in check, which reads
+ * as a guest's once the remembered sign-in is gone.
+ */
+export async function signOut(): Promise<void> {
+  forget();
+  try {
+    localStorage.removeItem(EXPIRY_TOLD_KEY);
+  } catch {
+    // Nothing was remembered that could be.
+  }
+  await forgetOwnerCaches();
+  window.location.assign(signOutHref());
 }
 
 function whoamiEmail(res: ApiResult): string | null {

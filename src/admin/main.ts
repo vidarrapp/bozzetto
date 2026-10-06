@@ -4,6 +4,10 @@ import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
+import { topbarRight } from '../ui/topbar';
+import { signOutChip } from '../ui/signIn';
+import { isProjectId } from '../net/ids';
+import { markOpen } from '../ui/openToken';
 
 /**
  * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
@@ -62,6 +66,9 @@ async function renderList(host: HTMLElement): Promise<void> {
 
   const list = host.querySelector<HTMLElement>('#project-list')!;
   const form = host.querySelector<HTMLFormElement>('#create-form')!;
+  // This page is only reached signed in (Access fronts it), so the way out
+  // is always offered, beside the theme toggle.
+  topbarRight().appendChild(signOutChip());
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -149,8 +156,10 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         e.preventDefault();
         void (async () => {
           const store = await import('../sculpt/bridge/ScenePersist').catch(() => null);
-          const busy = store ? await store.hasSavedScene() : false;
+          const busy = store ? (await store.hasSavedScene()) || (await store.hasSculptFrames()) : false;
           if (busy && !confirm(`Open "${p.title}"? Your work in progress in Sculpt will be replaced.`)) return;
+          // Asked, or nothing to ask about: Sculpt need not ask again (ui/openToken).
+          markOpen('project', p.id);
           window.location.href = open.href;
         })();
       });
@@ -208,6 +217,8 @@ initTheme();
 followPanelOpacity();
 mountThemeToggle();
   installSliderBubble();
+// An id from the address goes into request paths: one that is not an id
+// (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');
-if (projectId) void renderEditor(root, projectId);
+if (isProjectId(projectId)) void renderEditor(root, projectId);
 else void renderList(root);

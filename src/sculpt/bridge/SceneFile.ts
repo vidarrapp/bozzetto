@@ -1,6 +1,8 @@
 import type { SavedScene } from './ScenePersist';
 import { validSavedScene } from './ScenePersist';
 import type { SculptSession } from './SculptSession';
+import { sanitizeScene } from './sanitize';
+import { inflateEach } from '../../viewer/inflate';
 
 /**
  * Scene files for guests (WS5): the same v3 SavedScene the autosave keeps,
@@ -19,6 +21,34 @@ import type { SculptSession } from './SculptSession';
 
 const MAGIC = 0x315a4f42; // "BOZ1"
 
+/**
+ * The most a scene file may unpack to. The largest scene Sculpt makes is
+ * one object at the subdivision ceiling (SculptSession: 16M triangles at
+ * the top level, about 8M vertices). Its top level is 84 bytes a vertex -
+ * positions, normals, colours and materials, and three detail vectors, 12
+ * bytes each - and the levels below add a third again: about 900 MB, a
+ * size the autosave already declines to write (ScenePersist). 1 GiB is
+ * above that and is reached by nothing legitimate; a file that claims more,
+ * or inflates past it, is refused before it is held.
+ */
+export const MAX_SCENE_BYTES = 1024 * 1024 * 1024;
+
+/** The header is the look, materials, settings and a few fields an object: kilobytes in practice. */
+const MAX_HEADER_BYTES = 16 * 1024 * 1024;
+
+/** How deep the header may nest. A scene's goes six levels down. */
+const MAX_DEPTH = 32;
+
+/** A refusal of the file itself, as against the stream failing under it. */
+class SceneFileError extends Error {}
+
+const notAScene = (): SceneFileError => new SceneFileError('This file is not a Bozzetto scene');
+const tooLarge = (): SceneFileError => new SceneFileError('This scene is too large to open');
+const damaged = (why: string): SceneFileError => new SceneFileError(`This scene file is damaged (${why})`);
+
+/** Up to a multiple of four. Not `(n + 3) & ~3`, which is 32-bit and goes negative past 2^31. */
+const pad4 = (n: number): number => Math.ceil(n / 4) * 4;
+
 interface BufferEntry {
   t: 'f32' | 'u32';
   off: number;
@@ -32,7 +62,7 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   const claim = (t: 'f32' | 'u32', a: Float32Array | Uint32Array): { __buf: number } => {
     blobs.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
     table.push({ t, off: cursor, len: a.length });
-    cursor += (a.byteLength + 3) & ~3;
+    cursor += pad4(a.byteLength);
     return { __buf: table.length - 1 };
   };
   const strip = (v: unknown): unknown => {
@@ -52,7 +82,7 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   // server project with it, nor to a copy on this device's shelf.
   const { project: _link, unsent: _unsent, ...portable } = scene;
   const header = new TextEncoder().encode(JSON.stringify({ scene: strip(portable), buffers: table }));
-  const headPad = (header.length + 3) & ~3;
+  const headPad = pad4(header.length);
   const raw = new Uint8Array(8 + headPad + cursor);
   const dv = new DataView(raw.buffer);
   dv.setUint32(0, MAGIC, true);
@@ -65,66 +95,184 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   return new Response(gz).blob();
 }
 
+/** What a container's header says: the scene with its arrays as references, and where they are. */
+interface Layout {
+  scene: unknown;
+  buffers: BufferEntry[];
+  /** Where the blob region starts. */
+  blobBase: number;
+  /** Where the file ends, header and every array included. */
+  size: number;
+}
+
+/**
+ * The layout from a container's first bytes - or, until the header is all
+ * there, how many bytes it takes to say. Everything the header claims is
+ * checked against everything else before a byte is set aside for it: its
+ * own length, each array's place and size, and what they come to together.
+ */
+function readLayout(head: Uint8Array): Layout | number {
+  if (head.length < 8) return 8;
+  const dv = new DataView(head.buffer, head.byteOffset, 8);
+  // The magic alone settles most files that are not scenes, early.
+  if (dv.getUint32(0, true) !== MAGIC) throw notAScene();
+  const headerLen = dv.getUint32(4, true);
+  if (headerLen === 0 || headerLen > MAX_HEADER_BYTES) throw notAScene();
+  if (head.length < 8 + headerLen) return 8 + headerLen;
+  let parsed: { scene?: unknown; buffers?: unknown } | null;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(head.subarray(8, 8 + headerLen))) as typeof parsed;
+  } catch {
+    throw notAScene();
+  }
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.buffers)) throw notAScene();
+  const buffers = parsed.buffers as BufferEntry[];
+  let end = 0;
+  let declared = 0;
+  for (const e of buffers) {
+    if (
+      !e ||
+      (e.t !== 'f32' && e.t !== 'u32') ||
+      !Number.isSafeInteger(e.off) ||
+      !Number.isSafeInteger(e.len) ||
+      e.off < 0 ||
+      e.len < 0
+    ) {
+      throw damaged('a bad buffer entry');
+    }
+    end = Math.max(end, e.off + e.len * 4);
+    declared += e.len * 4;
+  }
+  const blobBase = 8 + pad4(headerLen);
+  const size = blobBase + pad4(end);
+  if (size > MAX_SCENE_BYTES) throw tooLarge();
+  // Each array comes out as a copy, so the copies together may be no
+  // bigger than the region they come out of. Otherwise a few kilobytes of
+  // header could point a thousand entries at one region and ask for a
+  // thousand copies of it.
+  if (declared > size - blobBase) throw damaged('arrays that overlap');
+  return { scene: parsed.scene, buffers, blobBase, size };
+}
+
+/**
+ * Inflate a gzipped container a chunk at a time: the header first, which
+ * says how big the whole is, and then exactly that much into one buffer,
+ * set aside once. A stream that runs on past what its header said, or
+ * claims more than a scene can be, is stopped where it is.
+ */
+async function inflateScene(bytes: ArrayBuffer): Promise<{ raw: Uint8Array; layout: Layout }> {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new SceneFileError('This browser cannot read compressed scene files');
+  }
+  // Chunks are kept as they come until there are as many bytes as the
+  // header needs, and only then joined: a joined copy per chunk would cost
+  // the square of a long header.
+  const s = {
+    parts: [] as Uint8Array[],
+    have: 0,
+    need: 8,
+    layout: null as Layout | null,
+    out: null as Uint8Array | null,
+    got: 0,
+  };
+  try {
+    await inflateEach(bytes, (chunk) => {
+      if (s.out) {
+        if (s.got + chunk.length > s.out.length) throw notAScene();
+        s.out.set(chunk, s.got);
+        s.got += chunk.length;
+        return;
+      }
+      s.parts.push(chunk);
+      s.have += chunk.length;
+      if (s.have < s.need) return;
+      const head = new Uint8Array(s.have);
+      let at = 0;
+      for (const p of s.parts) {
+        head.set(p, at);
+        at += p.length;
+      }
+      s.parts = [head];
+      const read = readLayout(head);
+      if (typeof read === 'number') {
+        s.need = read;
+        return;
+      }
+      if (head.length > read.size) throw notAScene();
+      s.layout = read;
+      s.out = new Uint8Array(read.size);
+      s.out.set(head);
+      s.got = head.length;
+      s.parts = [];
+    });
+  } catch (err) {
+    if (err instanceof SceneFileError) throw err;
+    throw damaged('it does not decompress'); // the stream's own failure: bad or cut-off gzip
+  }
+  if (!s.layout || !s.out || s.got < s.out.length) throw damaged('it ends early');
+  return { raw: s.out, layout: s.layout };
+}
+
+/**
+ * The header's scene with its arrays put back. Each array is copied out of
+ * the file once - the scene owns its arrays - and a reference to one that
+ * was copied already is refused: the old reader copied an array again for
+ * every reference to it.
+ */
+function revive(layout: Layout, raw: Uint8Array): unknown {
+  const used = new Set<number>();
+  const walk = (v: unknown, depth: number): unknown => {
+    if (depth > MAX_DEPTH) throw damaged('it nests too deeply');
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
+    if (!v || typeof v !== 'object') return v;
+    const ref = (v as { __buf?: unknown }).__buf;
+    if (ref !== undefined) {
+      if (typeof ref !== 'number' || !Number.isInteger(ref)) throw damaged('a bad array reference');
+      const e = layout.buffers[ref];
+      if (!e) throw damaged('a missing array');
+      if (used.has(ref)) throw damaged('an array used twice');
+      used.add(ref);
+      // In range: readLayout put every entry inside `size`, and the file is that long.
+      const start = layout.blobBase + e.off;
+      const copy = raw.slice(start, start + e.len * 4);
+      return e.t === 'f32' ? new Float32Array(copy.buffer) : new Uint32Array(copy.buffer);
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v)) {
+      // JSON.parse makes "__proto__" an own key; assigned, it would set the
+      // copy's prototype instead. No scene field is called that.
+      if (k === '__proto__') continue;
+      out[k] = walk(val, depth + 1);
+    }
+    return out;
+  };
+  return walk(layout.scene, 0);
+}
+
 /** Parse a scene file; throws with a human-readable reason on bad input. */
 export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
-  let raw = new Uint8Array(bytes);
-  if (raw.length > 2 && raw[0] === 0x1f && raw[1] === 0x8b) {
-    if (typeof DecompressionStream === 'undefined') {
-      throw new Error('This browser cannot read compressed scene files');
-    }
-    const plain = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    raw = new Uint8Array(await new Response(plain).arrayBuffer());
+  const sniff = new Uint8Array(bytes, 0, Math.min(2, bytes.byteLength));
+  let raw: Uint8Array;
+  let layout: Layout;
+  if (sniff.length === 2 && sniff[0] === 0x1f && sniff[1] === 0x8b) {
+    ({ raw, layout } = await inflateScene(bytes));
+  } else {
+    raw = new Uint8Array(bytes);
+    const read = readLayout(raw);
+    if (typeof read === 'number') throw notAScene(); // shorter than its own header
+    if (raw.length > read.size) throw notAScene();
+    if (raw.length < read.size) throw damaged('it ends early');
+    layout = read;
   }
-  const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
-  if (raw.length < 8 || dv.getUint32(0, true) !== MAGIC) {
-    throw new Error('Not a Bozzetto scene file');
-  }
-  const headerLen = dv.getUint32(4, true);
-  const headPad = (headerLen + 3) & ~3;
-  const parsed = JSON.parse(new TextDecoder().decode(raw.subarray(8, 8 + headerLen))) as {
-    scene: unknown;
-    buffers: BufferEntry[];
-  };
-  const blobBase = raw.byteOffset + 8 + headPad;
-  const revive = (v: unknown): unknown => {
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const ref = (v as { __buf?: number }).__buf;
-      if (typeof ref === 'number') {
-        const e = parsed.buffers[ref];
-        if (!e) throw new Error('Corrupt scene file (missing buffer)');
-        // Bounds before slice: a truncated or edited file would otherwise
-        // hand the restore a short/garbage array and fail much later, with
-        // the scene already torn down.
-        const end = e.off + e.len * 4;
-        if (
-          (e.t !== 'f32' && e.t !== 'u32') ||
-          !Number.isInteger(e.off) ||
-          !Number.isInteger(e.len) ||
-          e.off < 0 ||
-          e.len < 0 ||
-          blobBase + end > raw.buffer.byteLength
-        ) {
-          throw new Error('Corrupt scene file (bad buffer entry)');
-        }
-        // Copy out of the file buffer so the scene owns its arrays.
-        return e.t === 'f32'
-          ? new Float32Array(raw.buffer.slice(blobBase + e.off, blobBase + e.off + e.len * 4))
-          : new Uint32Array(raw.buffer.slice(blobBase + e.off, blobBase + e.off + e.len * 4));
-      }
-      const out: Record<string, unknown> = {};
-      for (const [k, val] of Object.entries(v)) out[k] = revive(val);
-      return out;
-    }
-    if (Array.isArray(v)) return v.map(revive);
-    return v;
-  };
-  const scene = revive(parsed.scene);
-  if (!validSavedScene(scene)) throw new Error('Scene file failed validation');
+  const scene = revive(layout, raw);
+  if (!validSavedScene(scene)) throw damaged('its objects do not add up');
+  // Every field checked before anything is swapped in (sanitize.ts).
+  const clean = sanitizeScene(scene);
   // Nor is a link taken from one: which project a scene belongs to is
   // decided by how it was opened, never by what a file claims.
-  delete scene.project;
-  delete scene.unsent;
-  return scene;
+  delete clean.project;
+  delete clean.unsent;
+  return clean;
 }
 
 /**

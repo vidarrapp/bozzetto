@@ -86,6 +86,35 @@ function escapeHtml(s) {
 }
 
 /**
+ * The exported page's Content-Security-Policy. The file carries everything
+ * it shows - the viewer, its stylesheet, every frame, matcap and HDRI - so
+ * it needs the network for nothing, and with this it cannot reach it: a
+ * look, a manifest or a frame that names an address (a colour that is a
+ * CSS url(), a glTF buffer elsewhere) is refused by the browser, whoever
+ * made the file and wherever it is opened.
+ *
+ * What the viewer does need, and nothing more: its two inline scripts and
+ * its inline styles; WebAssembly, for the meshopt decoder that unpacks the
+ * frames; blob: and data: images and fetches (the matcaps decode through
+ * blob: URLs and the HDRI loads through one, and a glTF may carry its
+ * images and buffers as either); and blob: workers and media, for the
+ * decoder's workers and the browser's players should either be asked for.
+ * The fonts are not carried, so none load either way. base-uri and
+ * form-action do not fall back to default-src, so they are said outright.
+ */
+const CSP = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline' 'wasm-unsafe-eval'",
+  "style-src 'unsafe-inline'",
+  'img-src blob: data:',
+  'connect-src blob: data:',
+  'worker-src blob:',
+  'media-src blob:',
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
+/**
  * Build the self-contained HTML document.
  * @param {SingleFileInput} input
  * @returns {string}
@@ -111,6 +140,7 @@ export function buildSingleFileHtml({ manifest, assets, viewerJs, css = '', titl
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="${CSP}" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>${docTitle}</title>
     <style>${css}</style>

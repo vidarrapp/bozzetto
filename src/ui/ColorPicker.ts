@@ -1,4 +1,5 @@
 import { div } from './dom';
+import { isHexColor } from '../viewer/color';
 
 /**
  * HSV colour picker: a swatch that opens a popover holding a
@@ -88,13 +89,19 @@ export function colorPicker(
   initial: string,
   onChange: (hex: string) => void,
 ): ColorPickerHandle {
-  let hsv = hexToHsv(initial);
+  let hsv = hexToHsv(isHexColor(initial) ? initial : '#000000');
 
   const root = div('cpick');
   const swatch = document.createElement('button');
   swatch.type = 'button';
   swatch.className = 'cpick__swatch';
-  swatch.style.background = initial;
+  // `#rrggbb` and nothing else reaches the style. The values come from
+  // looks and files, and `background` takes url(): a colour that was an
+  // address had every browser that drew the swatch fetch it.
+  const paintSwatch = (hex: string): void => {
+    if (isHexColor(hex)) swatch.style.background = hex;
+  };
+  paintSwatch(initial);
   swatch.setAttribute('aria-label', 'Choose a colour');
   root.appendChild(swatch);
 
@@ -145,7 +152,7 @@ export function colorPicker(
 
   const emit = (): void => {
     const hex = hsvToHex(hsv);
-    swatch.style.background = hex;
+    paintSwatch(hex);
     onChange(hex);
   };
 
@@ -255,8 +262,9 @@ export function colorPicker(
   return {
     root,
     set(hex: string): void {
+      if (!isHexColor(hex)) return;
       hsv = hexToHsv(hex);
-      swatch.style.background = hex;
+      paintSwatch(hex);
       paint();
       syncRows();
     },

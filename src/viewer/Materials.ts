@@ -3,6 +3,7 @@ import { MeshMatcapNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { attribute, float, materialColor, mix, uniform, userData, vec3 } from 'three/tsl';
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
+import { hexColor } from './color';
 
 export interface MaterialModeInfo {
   id: string;
@@ -270,7 +271,8 @@ export class Materials {
   onPbrChange: (() => void) | null = null;
 
   setAlbedo(hex: string): void {
-    (this.registry.get('lit') as MeshStandardNodeMaterial).color = new Color(hex);
+    const lit = this.registry.get('lit') as MeshStandardNodeMaterial;
+    lit.color = new Color(hexColor(hex, `#${lit.color.getHexString()}`));
     this.onAlbedoChange?.();
     this.onChange?.();
   }
@@ -330,9 +332,12 @@ export class Materials {
   }
 
   applyMaterialState(state: Partial<MaterialState>): void {
+    // Each value only when it is what it says: material records come from
+    // files and manifests as well as from this app.
+    const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
     if (state.albedo) this.setAlbedo(state.albedo);
-    if (typeof state.roughness === 'number') this.setRoughness(state.roughness);
-    if (typeof state.metalness === 'number') this.setMetalness(state.metalness);
+    if (finite(state.roughness)) this.setRoughness(Math.min(1, Math.max(0, state.roughness)));
+    if (finite(state.metalness)) this.setMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (typeof state.matcapIndex === 'number') this.setMatcapIndex(state.matcapIndex);
     if (typeof state.flatShading === 'boolean') this.setFlatShading(state.flatShading);
   }

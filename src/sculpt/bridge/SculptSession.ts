@@ -54,6 +54,15 @@ import { perfLog } from '../../viewer/perfLog';
  */
 const SOFT_SUBDIVISION_TRIS = 4000000;
 const MAX_SUBDIVISION_TRIS = 16000000;
+/**
+ * The most triangles any level of an object read back from a record may
+ * have. ctrl+d's gate counts the level below times four, and for a level
+ * of triangles (each becomes three quads, six triangles) a subdivision
+ * reaches one and a half times the ceiling. Nothing else makes a larger
+ * level: a voxel remesh is a few million at most, and an OBJ that size
+ * would not fit a browser's strings.
+ */
+const MAX_RESTORE_TRIS = MAX_SUBDIVISION_TRIS * 1.5;
 
 /** Surface data under the cursor, for the brush ring (world space). */
 export interface HoverSurface {
@@ -1515,6 +1524,13 @@ export class SculptSession {
    */
   private buildLevels(saved: SavedMesh): Multimesh {
     const l0 = saved.levels[0];
+    // Sizes are checked before anything is built: a record states its own,
+    // and building first is how a crafted one got the memory to take the
+    // tab down.
+    const faces = saved.baseFaces;
+    let baseTris = 0;
+    for (let f = 0; f < saved.nbBaseFaces; f++) baseTris += faces[f * 4 + 3] === Utils.TRI_INDEX ? 1 : 2;
+    if (baseTris > MAX_RESTORE_TRIS) throw new Error('sculpt restore: the base level is past the triangle ceiling');
     const base = new MeshStatic(null);
     base.setVertices(l0.vertices);
     base.setColors(l0.colors);
@@ -1530,6 +1546,21 @@ export class SculptSession {
     const mesh = new Multimesh(base);
     for (let i = 1; i < saved.levels.length; i++) {
       const li = saved.levels[i];
+      // What addLevel is about to make, read off the level below: every
+      // face becomes quads (four from a quad, three from a triangle), and
+      // the vertices are the old ones plus one an edge and one a quad
+      // (Subdivision.fullSubdivision). A saved level of any other size is
+      // not this one, and one past the ceiling is past anything a session
+      // makes: both are refused before the subdivision runs. A record with
+      // twenty levels of one vertex each used to subdivide until the tab
+      // ran out of memory, its first mismatch only checked afterwards.
+      const below = mesh._meshes[mesh._meshes.length - 1];
+      const quads = below.getNbQuads();
+      const nextTris = 2 * (4 * quads + 3 * (below.getNbFaces() - quads));
+      if (nextTris > MAX_RESTORE_TRIS) throw new Error(`sculpt restore: level ${i} is past the triangle ceiling`);
+      if (below.getNbVertices() + below.getNbEdges() + quads !== li.nbVertices) {
+        throw new Error(`sculpt restore: level ${i} shape mismatch`);
+      }
       const m = mesh.addLevel();
       if (m.getNbVertices() !== li.nbVertices) {
         throw new Error(`sculpt restore: level ${i} shape mismatch`);

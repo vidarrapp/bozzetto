@@ -28,6 +28,9 @@ export interface SculptMaterial {
   metalness: number;
 }
 
+/** What a material id looks like: `m` and its sequence number. */
+export const MATERIAL_ID = /^m\d{1,9}$/;
+
 /** SculptGL's own starting values, so an untouched object matches upstream. */
 export const DEFAULT_MATERIAL: Omit<SculptMaterial, 'id' | 'name'> = {
   albedo: '#fed9a8',
@@ -184,6 +187,20 @@ export class MaterialLibrary {
   }
 
   /**
+   * Back to a new scene's library: the one material, nothing assigned or
+   * painted. For a record set aside at boot, whose objects are gone with it.
+   */
+  reset(): void {
+    this.restoring = false;
+    this.materials.length = 0;
+    this.seq = 0;
+    this.assigned.clear();
+    this.painted.clear();
+    this.initialised.clear();
+    this.create('Clay');
+  }
+
+  /**
    * Rebuild from a scene record, after the meshes exist. A v3 record has no
    * materials, so the library keeps its default and every object points at
    * it - which is what those scenes already looked like.
@@ -204,14 +221,18 @@ export class MaterialLibrary {
 
   loadFrom(scene: SavedScene): void {
     this.restoring = false;
-    if (scene.materials?.length) {
+    // sanitizeScene has already made every material well formed; the ids
+    // are checked again here because a bad one used to throw below, after
+    // the scene had been swapped in, and the autosave then wrote the same
+    // list back for every later boot to throw on.
+    const restored = Array.isArray(scene.materials)
+      ? scene.materials.filter((m) => typeof m?.id === 'string' && MATERIAL_ID.test(m.id))
+      : [];
+    if (restored.length) {
       this.materials.length = 0;
-      for (const m of scene.materials) this.materials.push({ ...m });
+      for (const m of restored) this.materials.push({ ...m });
       // Keep new ids clear of restored ones.
-      this.seq = this.materials.reduce((max, m) => {
-        const n = Number(m.id.replace(/^m/, ''));
-        return Number.isFinite(n) ? Math.max(max, n) : max;
-      }, 0);
+      this.seq = this.materials.reduce((max, m) => Math.max(max, Number(m.id.slice(1))), 0);
     }
     this.assigned.clear();
     this.painted.clear();

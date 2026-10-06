@@ -12,6 +12,8 @@ import {
   type SculptSettings,
   clearSavedScene,
   clearSculptFrames,
+  hasSavedScene,
+  hasSculptFrames,
   loadSavedScene,
   clearSculptLook,
   loadSculptLook,
@@ -30,6 +32,8 @@ import { galleryForm } from './ui/galleryForm';
 import { statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { isDesktop } from '../net/origin';
+import { isProjectId } from '../net/ids';
+import { takeOpen } from '../ui/openToken';
 import { beforeLeaving } from '../ui/leaving';
 import {
   mountDesktop,
@@ -110,8 +114,18 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // this one", where the autosave is only "carry on where I was". A missing
   // or unreadable one falls back rather than failing the boot.
   const query = new URLSearchParams(window.location.search);
-  const libId = query.get('lib');
-  const projectId = query.get('project');
+  const libParam = query.get('lib');
+  const projectParam = query.get('project');
+  // Ids go into storage keys and request paths: a parameter that is not
+  // one (net/ids) opens nothing, and the boot goes on as if it were not
+  // there.
+  const libId = isProjectId(libParam) ? libParam : null;
+  const projectId = isProjectId(projectParam) ? projectParam : null;
+  const asked = libParam !== null || projectParam !== null;
+  // What the gallery card or the Projects page that sent this tab here
+  // noted, if one did: that it has asked already (ui/openToken). Taken
+  // whatever happens next, so it serves this boot and no later one.
+  const sentHere = takeOpen();
   let saved: SavedScene | null = null;
   // The project the boot scene belongs to, if any: where Save to library
   // writes again. Set by how the scene was opened, never read from a file.
@@ -120,10 +134,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // autosave's, or the entry itself when that is what was opened.
   let bootUnsent: string | null = null;
   let opened: ProjectOpen | null = null;
+  // The opened scene's name, for the question below and for a failure.
+  let openedName: string | null = null;
   if (projectId) {
     opened = await openProjectAtBoot(projectId);
     saved = opened.scene;
     bootLink = opened.link;
+    openedName = opened.link?.title ?? null;
   } else if (libId) {
     const lib = await import('./bridge/SceneLibrary');
     saved = await lib.loadFromLibrary(libId);
@@ -134,8 +151,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const project = entry?.projectId ?? entry?.uploadTo;
     bootLink = entry && project ? { id: project, title: entry.name } : null;
     bootUnsent = entry?.unsent ? entry.id : null;
+    openedName = entry?.name ?? null;
   }
-  if (libId || projectId) {
+  if (asked) {
     // The link has done its job. Left in the address bar, a reload - or
     // iOS relaunching the tab with the same URL - would open the untouched
     // shelf copy again and hide every autosaved edit made since behind it.
@@ -144,40 +162,99 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     url.searchParams.delete('project');
     history.replaceState(history.state, '', url);
   }
+  const what = openedName ? `"${openedName}"` : 'this scene';
+  // A scene opened by its address replaces the work on this device: the
+  // autosave is written over within seconds, and the captured frames go.
+  // The gallery's cards ask first, but an address is a link like any
+  // other, and any page can send one - so the boot asks too, unless the
+  // page that sent this tab here asked already, about this same scene.
+  // Declined, the work stays and boots as if no link had been followed.
+  const askedAlready = sentHere === (projectId ? `project:${projectId}` : `lib:${libId}`);
+  if (saved && !askedAlready && ((await hasSavedScene()) || (await hasSculptFrames()))) {
+    if (!window.confirm(`Open ${what}? The work in progress on this device will be replaced.`)) {
+      saved = null;
+      bootLink = null;
+      bootUnsent = null;
+      opened = null;
+    }
+  }
   // Whether the boot scene is one that was asked for, rather than the
-  // autosave standing in for an open that failed.
+  // autosave standing in for an open that failed or was declined.
   let openedExplicitly = !!saved;
-  // An opened scene starts a reel of its own, as File > Open does: frames
-  // recorded on the scene it replaces would otherwise run on into it, and
-  // a publish must never mix two scenes' geometry. Cleared before the
-  // recorder reads its store at install.
-  if (openedExplicitly) await clearSculptFrames();
+  // The material library is read with the scene it rides in: a record
+  // whose materials will not load is as unusable as one whose objects
+  // will not build, and is set aside the same way.
+  const library = new MaterialLibrary(session);
+  // What went wrong at boot, if anything: said once the page is up.
+  let bootFailure: string | null = null;
+  const LOST = 'Your last sculpt could not be restored, so Sculpt started a new one';
+  /**
+   * Build a record, its objects and then its materials. False when it
+   * will not build, with nothing of it left behind but a fresh sphere:
+   * replaceScene rolls its own half-built objects back, and a library
+   * that failed after them is reset with the scene.
+   */
+  const build = (scene: SavedScene): boolean => {
+    library.beginRestore();
+    try {
+      session.replaceScene(scene);
+      library.loadFrom(scene);
+      return true;
+    } catch (err) {
+      console.warn('sculpt restore failed:', err);
+      library.endRestore();
+      library.reset();
+      session.newScene();
+      return false;
+    }
+  };
+  if (saved) {
+    if (build(saved)) {
+      // An opened scene starts a reel of its own, as File > Open does:
+      // frames recorded on the scene it replaces would otherwise run on
+      // into it, and a publish must never mix two scenes' geometry.
+      // Cleared once the scene stands - one that would not build takes
+      // nothing with it - and before the recorder reads its store.
+      await clearSculptFrames();
+    } else {
+      bootFailure = `Could not open ${what}: the scene is damaged`;
+      saved = null;
+      bootLink = null;
+      bootUnsent = null;
+      opened = null;
+      openedExplicitly = false;
+    }
+  }
   // The desktop app starts clean (owner call): its work lives in files,
   // and a scene that was saved to one has no business coming back on its
   // own. The slot and the reel are cleared so the gallery's in-progress
   // card does not offer them either; a crash still leaves the recovery
   // sidecar, which is offered below as before.
-  if (isDesktop() && !libId && !projectId) {
+  if (isDesktop() && !asked) {
     await Promise.all([clearSavedScene(), clearSculptFrames()]);
   } else if (!saved) {
-    saved = await loadSavedScene();
-    bootLink = saved?.project ?? null;
-    bootUnsent = saved?.unsent ?? null;
+    let autosaved: SavedScene | null = null;
+    try {
+      autosaved = await loadSavedScene();
+    } catch (err) {
+      // There, but unreadable (ScenePersist): set aside, and said so.
+      console.warn('sculpt autosave unreadable, starting fresh:', err);
+      void clearSavedScene();
+      bootFailure ??= LOST;
+    }
+    if (autosaved && build(autosaved)) {
+      saved = autosaved;
+      bootLink = saved.project ?? null;
+      bootUnsent = saved.unsent ?? null;
+    } else if (autosaved) {
+      // A malformed record must never brick sculpt entry: drop it, start
+      // clean, and say so rather than leave the work to vanish unexplained.
+      void clearSavedScene();
+      bootFailure ??= LOST;
+    }
   }
-  let multimesh;
-  try {
-    multimesh = saved ? session.restoreScene(saved) : session.addSphere();
-  } catch (err) {
-    // A malformed record must never brick sculpt entry: drop it, start clean.
-    console.warn('sculpt restore failed, starting fresh:', err);
-    void clearSavedScene();
-    saved = null;
-    bootLink = null;
-    bootUnsent = null;
-    opened = null;
-    openedExplicitly = false;
-    multimesh = session.addSphere();
-  }
+  if (!session.getMesh()) session.addSphere();
+  const multimesh = session.getMesh()!;
   // The boot scene is the floor of history: its add-states must not be
   // undoable (ctrl+z or the rail buttons would delete restored objects).
   session.clearHistory();
@@ -298,10 +375,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     c[1] = col.g;
     c[2] = col.b;
   };
-  const library = new MaterialLibrary(session);
-  // A restored scene brings its own library and assignments. Applied here,
-  // before the panels are built, so the first thing they show is right.
-  if (saved) library.loadFrom(saved);
+  // A restored scene brought its own library and assignments with it (the
+  // boot's build, above), before the panels are built, so the first thing
+  // they show is right.
   const activeMaterial = (): SculptMaterial => {
     const active = session.getMesh();
     return active ? library.materialFor(active) : library.list()[0];
@@ -1037,7 +1113,24 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The mount restore: materials were applied when the library loaded (the
   // panels need them first); settings wait until here, where the world
   // scale and dynamics they describe exist to be written into.
-  applySettings(saved);
+  try {
+    applySettings(saved);
+  } catch (err) {
+    // sanitizeScene leaves these nothing to trip on. Were something to,
+    // the record must not brick every boot after it: it goes the way of
+    // a record that will not build - set aside, a clean start, said so.
+    console.warn('sculpt settings failed, starting fresh:', err);
+    if (saved && !openedExplicitly) void clearSavedScene();
+    bootFailure ??= openedExplicitly ? `Could not open ${what}: the scene is damaged` : LOST;
+    saved = null;
+    bootLink = null;
+    bootUnsent = null;
+    opened = null;
+    openedExplicitly = false;
+    library.reset();
+    session.newScene();
+    applySettings(null);
+  }
 
   // "Is there work to lose?" - asked before anything replaces the scene.
   // A session restored from the autosave counts: it exists nowhere else.
@@ -1300,6 +1393,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (opened && !opened.scene) {
     statusToast('Opening the project...').fail(`Could not open that project: ${opened.error}`);
   }
+  // A scene or a record that would not build (above): said, not just dropped.
+  if (bootFailure) statusToast('Opening...').fail(bootFailure);
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
@@ -1440,7 +1535,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The flush is what makes the card honest: the picture and the geometry
     // behind it must describe the same moment.
     void Promise.all([snapshot(), persist.flush(), storeLook()]).finally(() => {
-      window.location.href = galleryLink.href;
+      // The site's root, never the link's own address (main.ts addGalleryLink).
+      window.location.href = '/';
     });
   };
   galleryLink?.addEventListener('click', onLeave);
