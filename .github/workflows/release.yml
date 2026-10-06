@@ -1,20 +1,28 @@
 # Desktop releases.
 #
-# This builds Bozzetto on all three platforms, attaches the installers to
-# a GitHub Release, and publishes it once all three are on it. macOS is
-# the reason it is a matrix at all: Apple's tooling cannot be cross-run,
-# so the .dmg has to be built on a mac. Linux and Windows could share a
-# runner, but building each on its own platform is what the installers
-# are tested against.
+# This builds Bozzetto on all three platforms and, for a release, attaches
+# the installers to a GitHub Release and publishes it once all three are on
+# it. macOS is the reason it is a matrix at all: Apple's tooling cannot be
+# cross-run, so the .dmg has to be built on a mac. Linux and Windows could
+# share a runner, but building each on its own platform is what the
+# installers are tested against.
 #
-# Two ways to release, both ending in the same published release:
+# Two ways to release, both from main and both ending in the same
+# published release:
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+#   npm version 0.1.0 && git push --follow-tags
 #
-# or run it from the Actions tab with the version filled in, and the
-# workflow tags main itself. Run it there with the version left empty to
-# test the build: that path publishes nothing and leaves the installers
-# as artifacts.
+# or run it from the Actions tab on main with the version filled in, and
+# the workflow tags main itself. Run it with the version left empty, on any
+# branch, to test the build: that path publishes nothing and leaves the
+# installers as artifacts.
+#
+# Each job gets the token it needs and no more. The builders run the
+# project's dependencies, so they can read the repository and nothing
+# else: no write token, no token left in .git/config, no install scripts,
+# no OIDC token. The attest job runs none of the project's code and is the
+# one that signs the provenance; the draft and publish jobs run nothing but
+# gh, and are the only ones that can write.
 name: Release desktop
 
 on:
@@ -23,56 +31,103 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'Version to release (e.g. 0.1.0; must match package.json). Leave empty for a test build.'
+        description: 'Version to release from main (e.g. 0.1.0; must match package.json). Leave empty for a test build of the selected branch.'
         required: false
         default: ''
 
-# The release is created, uploaded to, and published with this token.
-permissions:
-  contents: write
+# Nothing by default; every job asks for its own.
+permissions: {}
+
+# One run per ref at a time. A second waits instead of cancelling the
+# first: a release cut off halfway through its upload is worse than a late one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  # A release opens its draft first, so the three builders find one
-  # release to upload to instead of racing to create three. Skipped on a
-  # test build, which publishes nothing.
+  # A release opens its draft first, so the publish job finds one release
+  # to upload to. Skipped on a test build, which publishes nothing.
   draft:
     if: github.event_name == 'push' || inputs.release != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.open.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - name: Tag, and open the draft release
+      - name: Check where it comes from, tag, and open the draft release
         id: open
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_INPUT: ${{ inputs.release }}
         run: |
-          set -e
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then tag="$GITHUB_REF_NAME"; else tag="v$RELEASE_INPUT"; fi
-          # electron-builder names the files and looks the release up by
-          # package.json's version, so a tag that says otherwise would
-          # upload to a release nobody asked for.
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          # The commit the builders will check out, as this job did.
+          built=$(git rev-parse HEAD)
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+            # A pushed tag releases only what main already has: the commit
+            # it names must be main's head, or behind it.
+            on_main=$(gh api "repos/$repo/compare/main...$built" --jq .status)
+            if [ "$on_main" != "identical" ] && [ "$on_main" != "behind" ]; then
+              echo "::error::$tag points at $built, which is not on main ($on_main). Releases are made from main."
+              exit 1
+            fi
+          else
+            # From the Actions tab, main only. Any other branch can still be
+            # test-built: leave the version empty.
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Releases are made from main, and this run is on $GITHUB_REF. Leave the version empty to test-build this branch."
+              exit 1
+            fi
+            tag="v$RELEASE_INPUT"
+          fi
+
+          # electron-builder names the files by package.json's version, so a
+          # tag that says otherwise would release files named for another one.
           version=$(node -p "require('./package.json').version")
           if [ "$tag" != "v$version" ]; then
             echo "::error::$tag does not match package.json version $version"
             exit 1
           fi
-          # From the Actions tab there is no tag yet: make one at this commit.
-          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
-            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
-              gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
-              echo "tagged $GITHUB_SHA as $tag"
+
+          # The tag must name the commit being built. From the Actions tab
+          # there is usually no tag yet: make one here. One left by an
+          # earlier run has to point here too, or the release would carry
+          # installers built from a commit its tag does not name.
+          if ref=$(gh api "repos/$repo/git/ref/tags/$tag" 2>/dev/null); then
+            type=$(jq -r .object.type <<<"$ref")
+            sha=$(jq -r .object.sha <<<"$ref")
+            if [ "$type" = "tag" ]; then sha=$(gh api "repos/$repo/git/tags/$sha" --jq .object.sha); fi
+            if [ "$sha" != "$built" ]; then
+              echo "::error::$tag already exists at $sha, not at $built, the commit this run builds. Bump the version, or delete the tag if nothing was released from it."
+              exit 1
             fi
-          fi
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq "map(select(.tag_name == \"$tag\")) | length")
-          if [ "$existing" = "0" ]; then
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-              --draft --title "Bozzetto $tag" --generate-notes
+          elif [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            gh api "repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="$built" > /dev/null
+            echo "tagged $built as $tag"
           else
-            echo "a release for $tag already exists; uploading to it"
+            echo "::error::the tag $tag that started this run is gone"
+            exit 1
+          fi
+
+          # A draft from an earlier, failed run is reused. A published
+          # release is left exactly as it is.
+          release=$(gh api "repos/$repo/releases" --jq "map(select(.tag_name == \"$tag\")) | first // empty")
+          if [ -z "$release" ]; then
+            gh release create "$tag" --repo "$repo" --draft --verify-tag \
+              --title "Bozzetto $tag" --generate-notes
+          elif [ "$(jq -r .draft <<<"$release")" = "true" ]; then
+            echo "a draft release for $tag already exists; uploading to it"
+          else
+            echo "::error::$tag is already published, and a published release is not changed. Bump the version to release again."
+            exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -80,6 +135,11 @@ jobs:
     needs: draft
     # A test build skips the draft job; the build must still happen.
     if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
+    timeout-minutes: 30
+    # Read the repository, nothing else. electron-builder only packages
+    # here (--publish never); the publish job uploads what it made.
+    permissions:
+      contents: read
     strategy:
       # One platform failing should not throw away the two that worked.
       fail-fast: false
@@ -95,20 +155,27 @@ jobs:
             target: --mac dmg zip --universal
     runs-on: ${{ matrix.os }}
 
-    # Action majors built for Node 24: the runners have deprecated the
-    # Node 20 runtime and annotate every step that still targets it.
-    # (upload-artifact's v5 still declares node20; v6 is the node24 one.)
+    # Actions pinned to commits (the comment names the release), built for
+    # Node 24: the runners have deprecated the Node 20 runtime. Dependabot
+    # keeps the pins current.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           # The build's own Node. 20 reached end of life in April 2026;
           # 22 is what the desktop build is verified on.
           node-version: 22
-          cache: npm
+          # No dependency cache in a release build: what it installs comes
+          # from the registry, checked against package-lock.json.
+          package-manager-cache: false
 
-      - run: npm ci
+      # No install scripts. Nothing the build runs needs one: esbuild and
+      # workerd find their platform binaries through optionalDependencies,
+      # and electron-builder downloads Electron itself.
+      - run: npm ci --ignore-scripts
 
       # electron-builder packages dist-desktop; it does not build it. This
       # step is what makes dist-desktop exist on a fresh runner - without
@@ -118,20 +185,17 @@ jobs:
         run: npm run build:desktop
 
       - name: Package
-        run: npx electron-builder ${{ matrix.target }} --publish ${{ needs.draft.result == 'success' && 'always' || 'never' }}
+        run: npx electron-builder ${{ matrix.target }} --publish never
         env:
-          # The token electron-builder uses to upload to the draft release.
-          # Provided by Actions; no secret to configure.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Without this, a mac runner with no certificate installed still
           # tries to discover one and fails the build rather than producing
           # an unsigned app. Remove it once a Developer ID is in place.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # Test builds publish nothing, so keep the output reachable.
+      # The installers only: electron-builder's latest*.yml and .blockmap
+      # files are for an auto-updater the app does not have.
       - name: Upload installers
-        if: needs.draft.result == 'skipped'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: bozzetto-${{ matrix.os }}
           path: |
@@ -141,27 +205,80 @@ jobs:
             release/*.zip
           if-no-files-found: error
 
-  # All three builders succeeded (a failed one leaves the draft as it is,
-  # for a person to look at): check the installers are all on the release,
-  # then publish it. The site's Install card reads the latest published
-  # release, so this is the moment the downloads go live.
-  publish:
-    needs: [draft, build]
-    if: needs.draft.result == 'success' && needs.build.result == 'success'
+  # Signed build provenance for every installer, test builds included:
+  # `gh attestation verify <file> -R vidarrapp/bozzetto` shows which commit
+  # and workflow run made it. Its own job, so the OIDC token that signs it
+  # is never within reach of the build's dependencies.
+  attest:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bozzetto-*
+          path: installers
+          merge-multiple: true
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            installers/*.AppImage
+            installers/*.exe
+            installers/*.dmg
+            installers/*.zip
+
+  # Every builder succeeded and every installer is attested (a failure
+  # leaves the draft as it is, for a person to look at): put the installers
+  # and their checksums on the release, check they are all there, and
+  # publish it. The site's Install card reads the latest published release,
+  # so this is the moment the downloads go live.
+  publish:
+    needs: [draft, build, attest]
+    if: needs.draft.result == 'success' && needs.build.result == 'success' && needs.attest.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bozzetto-*
+          path: installers
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: installers
+        run: |
+          set -euo pipefail
+          sha256sum -- *.AppImage *.exe *.dmg *.zip > ../SHA256SUMS
+          cat ../SHA256SUMS
+
+      # No --clobber: a file already on the release is never replaced. A
+      # rerun that finds one there stops here instead.
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh release upload "$TAG" installers/* SHA256SUMS --repo "$GITHUB_REPOSITORY"
+
       - name: Publish the release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.draft.outputs.tag }}
         run: |
+          set -euo pipefail
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
             --jq "map(select(.tag_name == \"$TAG\"))[0]")
-          id=$(echo "$release" | jq -r .id)
-          names=$(echo "$release" | jq -r '.assets[].name')
+          id=$(jq -r .id <<<"$release")
+          names=$(jq -r '.assets[].name' <<<"$release")
           echo "$names"
-          for ext in .dmg .exe .AppImage; do
-            echo "$names" | grep -q "$ext\$" || { echo "no $ext on the release; leaving it a draft"; exit 1; }
+          for end in .dmg .zip .exe .AppImage SHA256SUMS; do
+            grep -q -- "$end\$" <<<"$names" || { echo "no $end on the release; leaving it a draft"; exit 1; }
           done
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=true --jq .html_url
