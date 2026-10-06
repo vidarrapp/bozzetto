@@ -12,24 +12,28 @@
  * the OS edited-dot, what Save writes to, and what Cmd+S means.
  */
 import { isDesktop } from '../net/origin';
-import { serverSettings } from './ServerSettings';
+import { serverSettings, signOutOfServer } from './ServerSettings';
 
 export interface DesktopBridge {
   version: string;
   platform: string;
   openScene(): Promise<SceneFilePayload | null>;
+  /** A file on the recents list; the main process refuses any other path. */
   readScene(path: string): Promise<SceneFilePayload>;
-  saveScene(bytes: ArrayBuffer, path: string | null): Promise<SavedAt | null>;
+  /** Write to this window's document, whose path only the main process knows, or ask where. */
+  saveScene(bytes: ArrayBuffer): Promise<SavedAt | null>;
+  /** Ask where, starting at the document; `suggested` is a file name for an untitled one. */
   saveSceneAs(bytes: ArrayBuffer, suggested: string): Promise<SavedAt | null>;
   exportBytes(
     bytes: ArrayBuffer,
     suggested: string,
     filters?: { name: string; extensions: string[] }[],
-  ): Promise<SavedAt | null>;
+  ): Promise<{ name: string } | null>;
   recentFiles(): Promise<string[]>;
   /** Pick an OBJ file and read it. null when cancelled. */
-  openObj(): Promise<{ path: string; name: string; text: string } | null>;
-  setDocument(doc: { path: string | null; name: string | null; dirty: boolean }): void;
+  openObj(): Promise<{ name: string; text: string } | null>;
+  /** Which file the document is (a ref, or null while untitled) and whether it has unsaved work. */
+  setDocument(doc: { ref: number | null; dirty: boolean }): void;
   /** Answer a save the main process asked for (see 'file:saveForClose'). */
   saveDone(saved: boolean): void;
   writeRecovery(bytes: ArrayBuffer): Promise<boolean>;
@@ -53,14 +57,20 @@ export interface DesktopBridge {
   onOpenPath(fn: (payload: SceneFilePayload) => void): () => void;
 }
 
+/**
+ * A scene file the main process read for this window. Never its path: the
+ * page names the file back by `ref` (setDocument), and the main process
+ * alone knows where it is and where Save writes.
+ */
 export interface SceneFilePayload {
-  path: string;
+  ref: number;
   name: string;
   bytes: ArrayBuffer;
 }
 
+/** A file the document now is, after an open or a save. */
 interface SavedAt {
-  path: string;
+  ref: number;
   name: string;
 }
 
@@ -100,6 +110,12 @@ export interface DocumentHost {
   redo(): void;
   /** Open the server settings UI. */
   showServerSettings(): void;
+  /**
+   * The sign-in to the server changed (Server settings or the Server
+   * menu): ask again who the page is for, so publishing and Save to
+   * Library follow it rather than the last answer.
+   */
+  signInChanged(): void;
   /** Open Preferences (the hotkey editor). */
   showPreferences(): void;
 }
@@ -107,25 +123,22 @@ export interface DocumentHost {
 /**
  * The open document. A desktop app's title bar is a promise about where
  * Save will write; keeping that in one place is what stops the promise
- * from drifting away from the truth.
+ * from drifting away from the truth. The place is the main process, which
+ * holds the path: this side knows the file by its ref and its name.
  */
 class DocumentModel {
-  private path: string | null = null;
+  private ref: number | null = null;
   private name: string | null = null;
   private dirty = false;
 
   constructor(private readonly bridge: DesktopBridge) {}
-
-  get filePath(): string | null {
-    return this.path;
-  }
 
   get fileName(): string | null {
     return this.name;
   }
 
   setFile(at: SavedAt | null): void {
-    this.path = at?.path ?? null;
+    this.ref = at?.ref ?? null;
     this.name = at?.name ?? null;
     this.dirty = false;
     this.sync();
@@ -154,11 +167,13 @@ class DocumentModel {
   }
 
   private sync(): void {
-    this.bridge.setDocument({ path: this.path, name: this.name, dirty: this.dirty });
+    this.bridge.setDocument({ ref: this.ref, dirty: this.dirty });
   }
 }
 
 let liveDoc: DocumentModel | null = null;
+/** The mounted page's "ask again who this is for", for Server settings. */
+let liveSignInChanged: (() => void) | null = null;
 
 /**
  * Does the open scene have unsaved changes? Drives the title's bullet, the
@@ -177,15 +192,16 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
 
   const doc = new DocumentModel(bridge);
   liveDoc = doc;
+  liveSignInChanged = () => host.signInChanged();
   doc.setFile(null);
 
-  /** Save to the current path, or ask for one. True when a file was written. */
+  /** Save to the document, or ask where. True when a file was written. */
   const save = async (forceDialog: boolean): Promise<boolean> => {
     const bytes = await host.pack();
     if (!bytes) return false;
     const at = forceDialog
-      ? await bridge.saveSceneAs(bytes, doc.filePath ?? 'sculpt.bozz')
-      : await bridge.saveScene(bytes, doc.filePath);
+      ? await bridge.saveSceneAs(bytes, doc.fileName ?? 'sculpt.bozz')
+      : await bridge.saveScene(bytes);
     if (!at) return false; // cancelled: the document is untouched, still dirty
     doc.setFile(at);
     host.markClean();
@@ -214,7 +230,7 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
 
   const openPayload = async (p: SceneFilePayload): Promise<void> => {
     await doc.whileReplacing(() => host.load(p.bytes));
-    doc.setFile({ path: p.path, name: p.name });
+    doc.setFile({ ref: p.ref, name: p.name });
     // The file on disk IS the work now, so the recovery copy of whatever
     // came before it is not just stale, it is misleading.
     await bridge.clearRecovery();
@@ -271,10 +287,12 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
     'server:settings': () => host.showServerSettings(),
     'server:signIn': async () => {
       await bridge.signIn();
+      host.signInChanged();
       host.showServerSettings();
     },
     'server:signOut': async () => {
-      await bridge.signOut();
+      await signOutOfServer(bridge);
+      host.signInChanged();
       host.showServerSettings();
     },
   };
@@ -315,6 +333,7 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
     offCommand();
     offOpen();
     liveDoc = null;
+    liveSignInChanged = null;
   };
 }
 
@@ -406,7 +425,9 @@ export async function showServerSettings(): Promise<void> {
   const bridge = desktop();
   if (!bridge) return;
   if (!settingsPanel) {
-    settingsPanel = serverSettings(bridge);
+    // Resolved at the moment of the change: the panel outlives the page
+    // that first opened it.
+    settingsPanel = serverSettings(bridge, () => liveSignInChanged?.());
     document.body.appendChild(settingsPanel.root);
   }
   await settingsPanel.open();

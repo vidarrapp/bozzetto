@@ -9,7 +9,7 @@
  * workers all require one, and file:// is not. A standard, secure,
  * fetch-capable scheme gives both, and dist/ ships unmodified.
  */
-const { app, BrowserWindow, Menu, protocol, net, shell, session, screen, powerMonitor, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, session, screen, powerMonitor, ipcMain } = require('electron');
 const fs = require('node:fs/promises');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
@@ -24,9 +24,12 @@ const {
 } = require('./files.cjs');
 const { registerServerIpc, serverMenu } = require('./server.cjs');
 const { applyLaunchSwitches, registerLaunchIpc, launchArguments } = require('./launch.cjs');
+const { openOutside, originOf } = require('./links.cjs');
 
 const SCHEME = 'bozzetto';
 const ORIGIN = `${SCHEME}://app`;
+/** Whether a URL is the app itself: this scheme, this one host, no user info. */
+const isApp = (url) => originOf(url) === ORIGIN;
 /** The desktop build (vite --mode desktop), inside the packaged asar. */
 const DIST = path.join(__dirname, '..', 'dist-desktop');
 
@@ -169,6 +172,10 @@ function setAboutPanel() {
 function serveApp() {
   protocol.handle(SCHEME, async (request) => {
     const notFound = () => new Response('Not found', { status: 404 });
+    // The app is bozzetto://app and nothing else. Under any other host the
+    // same files would be another origin, with storage and a page of its
+    // own, which nothing here should ever load.
+    if (!isApp(request.url)) return notFound();
     let rel;
     try {
       rel = decodeURIComponent(new URL(request.url).pathname);
@@ -272,16 +279,18 @@ function createWindow() {
   void win.loadURL(`${ORIGIN}/?sculpt=1`);
 
   // Anything that is not the app opens in the real browser, never in a
-  // frameless app window with no address bar.
+  // frameless app window with no address bar - and only if it is a web
+  // page or a mail address (links.cjs); other schemes go nowhere. The app
+  // is told apart by origin, not by prefix: bozzetto://app.example starts
+  // with bozzetto://app too.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(ORIGIN)) void shell.openExternal(url);
+    if (!isApp(url)) openOutside(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(ORIGIN)) {
-      e.preventDefault();
-      void shell.openExternal(url);
-    }
+    if (isApp(url)) return;
+    e.preventDefault();
+    openOutside(url);
   });
   return win;
 }

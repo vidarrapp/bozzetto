@@ -21,6 +21,12 @@
  * file, "Save" would stop meaning anything and closing without saving
  * would be impossible.
  *
+ * And the page never names a path. Which file a window's document is, and
+ * where Save writes, is kept here (documents, below); the page is told a
+ * file's name and given a number to refer to it by. So a page that has
+ * been subverted, or is simply wrong, can read and write only files the
+ * user picked in a dialog, opened from the OS or has in recent files.
+ *
  * Nothing here captures a window. Every handler finds the window that
  * asked, through event.sender, so a window closed and reopened (macOS dock
  * click) is not answering dialogs into a destroyed one.
@@ -89,54 +95,118 @@ async function noteRecent(filePath) {
   app.addRecentDocument(filePath);
 }
 
-// --- reading scenes -------------------------------------------------------
+// --- the document, as main sees it ---------------------------------------
 
-/** Read a scene and hand the renderer its bytes plus where they came from. */
-async function readScene(filePath) {
+/**
+ * Each window's document: the file it is (`path`, null while untitled),
+ * whether it has unsaved work, and every file this window has been given
+ * (`vended`, by ref), for as long as the window lives.
+ *
+ * The path is set here and nowhere else - from an open or save dialog, an
+ * OS open, or recents - and the page only ever chooses among the files it
+ * was given, by ref (file:document). The close guard reads `dirty` from
+ * here, and the title bar is written from it - one source, so the guard
+ * and the title cannot disagree about whether work is unsaved.
+ */
+const documents = new WeakMap();
+
+function documentOf(win) {
+  let doc = documents.get(win);
+  if (!doc) {
+    doc = { path: null, dirty: false, vended: new Map() };
+    documents.set(win, doc);
+  }
+  return doc;
+}
+
+const nameOf = (doc) => (doc.path ? path.basename(doc.path) : null);
+
+/** The window whose page sent an IPC event, or null if it was not a window's page. */
+function senderWindow(event) {
+  return BrowserWindow.fromWebContents(event.sender) ?? null;
+}
+
+let refSeq = 0;
+/**
+ * Give a window a file: the ref it can name it by (file:document) and the
+ * name to show. A file given twice keeps its first ref.
+ */
+function vend(win, filePath) {
+  const { vended } = documentOf(win);
+  let ref = [...vended].find(([, p]) => p === filePath)?.[0];
+  if (ref === undefined) {
+    ref = ++refSeq;
+    vended.set(ref, filePath);
+  }
+  return { ref, name: path.basename(filePath) };
+}
+
+function showDocument(win) {
+  const doc = documentOf(win);
+  // The dot needs a name to sit on, and on Windows and Linux the title is
+  // the only place unsaved work shows - so an unsaved scene is "Untitled",
+  // as every native app spells it, rather than a bare app name.
+  win.setTitle(`${doc.dirty ? '• ' : ''}${nameOf(doc) ?? 'Untitled'} - Bozzetto`);
+  if (process.platform === 'darwin') {
+    win.setRepresentedFilename(doc.path ?? '');
+    win.setDocumentEdited(doc.dirty);
+  }
+}
+
+/**
+ * Whether a window may read a path it names (file:read): one on the
+ * recents list, or one it was given this session. Anything else is a path
+ * the user never chose.
+ */
+async function mayRead(win, filePath) {
+  if ([...documentOf(win).vended.values()].includes(filePath)) return true;
+  return (await readRecents()).some((p) => path.resolve(p) === filePath);
+}
+
+/**
+ * The start of a save dialog from a name the page suggests: a file name,
+ * never a folder to open the dialog in.
+ */
+function suggestedName(suggested, fallback) {
+  const name = typeof suggested === 'string' ? path.basename(suggested.replace(/\\/g, '/')) : '';
+  return name && name !== '.' && name !== '..' ? name : fallback;
+}
+
+// --- reading and writing scenes ---------------------------------------------
+
+/** Read a scene for a window: its bytes, its name, and a ref to it - never its path. */
+async function readScene(win, filePath) {
   const buf = await fs.readFile(filePath);
   await noteRecent(filePath);
   // new Uint8Array(buffer) COPIES, which matters: Node pools small Buffers
   // in shared slabs, and handing a slab's .buffer across IPC would send
   // the neighbours along with it.
-  return { path: filePath, name: path.basename(filePath), bytes: new Uint8Array(buf).buffer };
+  return { ...vend(win, filePath), bytes: new Uint8Array(buf).buffer };
+}
+
+/**
+ * Write a scene to a file the user chose, which is the window's document
+ * from then on: the page adopts it too (file:document), and Save writes
+ * there next time.
+ */
+async function writeScene(win, target, bytes) {
+  await atomicWrite(target, bytes);
+  await noteRecent(target);
+  documentOf(win).path = target;
+  return vend(win, target);
 }
 
 /** Open a path in a window: the OS "open with", argv, and recents. */
 async function openPathInWindow(win, filePath) {
   if (!win || win.isDestroyed()) return;
   try {
-    win.webContents.send('file:opened', await readScene(filePath));
+    win.webContents.send('file:opened', await readScene(win, filePath));
   } catch (err) {
     await dialog.showMessageBox(win, {
       type: 'error',
       message: `Could not open ${path.basename(filePath)}`,
       detail: String(err && err.message ? err.message : err),
     });
-  }
-}
-
-// --- the document, as main sees it ---------------------------------------
-
-/**
- * What each window last told us about its document. The close guard reads
- * `dirty` from here, and the title bar is written from it - one source, so
- * the guard and the title cannot disagree about whether work is unsaved.
- */
-const documents = new WeakMap();
-
-function documentOf(win) {
-  return documents.get(win) ?? { path: null, name: null, dirty: false };
-}
-
-function applyDocument(win, doc) {
-  documents.set(win, doc);
-  // The dot needs a name to sit on, and on Windows and Linux the title is
-  // the only place unsaved work shows - so an unsaved scene is "Untitled",
-  // as every native app spells it, rather than a bare app name.
-  win.setTitle(`${doc.dirty ? '• ' : ''}${doc.name ?? 'Untitled'} - Bozzetto`);
-  if (process.platform === 'darwin') {
-    win.setRepresentedFilename(doc.path ?? '');
-    win.setDocumentEdited(!!doc.dirty);
   }
 }
 
@@ -201,8 +271,8 @@ function guardClose(win, { onCancel } = {}) {
           defaultId: 0,
           cancelId: 2,
           message: 'Save changes before closing?',
-          detail: documentOf(win).name
-            ? `${documentOf(win).name} on disk will not have your latest changes otherwise.`
+          detail: nameOf(documentOf(win))
+            ? `${nameOf(documentOf(win))} on disk will not have your latest changes otherwise.`
             : 'This sculpt has not been saved to a file.',
         });
         if (response === 2) return onCancel?.(); // stay open, nothing changes
@@ -228,16 +298,27 @@ function guardClose(win, { onCancel } = {}) {
 /** Registered once per process. Windows are found per call, never held. */
 function registerFileIpc() {
   ipcMain.handle('file:open', async (event) => {
-    const win = windowFor(event);
+    const win = senderWindow(event);
+    if (!win) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
       filters: FILTERS,
     });
     if (canceled || !filePaths[0]) return null;
-    return readScene(filePaths[0]);
+    return readScene(win, filePaths[0]);
   });
 
-  ipcMain.handle('file:read', (_e, filePath) => readScene(filePath));
+  // The one call that takes a path, for a recent file: the OS's own recent
+  // lists come in as opens (main.cjs), so this is for the page's. It reads
+  // only what mayRead allows, and a refusal does not repeat the path back.
+  ipcMain.handle('file:read', async (event, filePath) => {
+    const win = senderWindow(event);
+    const wanted = typeof filePath === 'string' && filePath ? path.resolve(filePath) : null;
+    if (!win || !wanted || !(await mayRead(win, wanted))) {
+      throw new Error('Bozzetto opens only files picked in Open or listed in recent files.');
+    }
+    return readScene(win, wanted);
+  });
 
   // An OBJ to import as a new object: text, not bytes, and not a recent.
   ipcMain.handle('file:openObj', async (event) => {
@@ -247,59 +328,68 @@ function registerFileIpc() {
     });
     if (canceled || !filePaths[0]) return null;
     const filePath = filePaths[0];
-    return { path: filePath, name: path.basename(filePath), text: await fs.readFile(filePath, 'utf8') };
+    return { name: path.basename(filePath), text: await fs.readFile(filePath, 'utf8') };
   });
 
-  ipcMain.handle('file:save', async (event, { bytes, filePath }) => {
-    let target = filePath;
+  // Save writes to the window's document, and only there: whatever else a
+  // call carries is not looked at. With no document yet it asks where.
+  ipcMain.handle('file:save', async (event, args) => {
+    const win = senderWindow(event);
+    if (!win) return null;
+    let target = documentOf(win).path;
     if (!target) {
-      const { canceled, filePath: picked } = await dialog.showSaveDialog(windowFor(event), {
+      const { canceled, filePath: picked } = await dialog.showSaveDialog(win, {
         defaultPath: 'sculpt.bozz',
         filters: FILTERS,
       });
       if (canceled || !picked) return null;
       target = picked;
     }
-    await atomicWrite(target, bytes);
-    await noteRecent(target);
-    return { path: target, name: path.basename(target) };
+    return writeScene(win, target, args?.bytes);
   });
 
-  ipcMain.handle('file:saveAs', async (event, { bytes, suggested }) => {
-    const { canceled, filePath } = await dialog.showSaveDialog(windowFor(event), {
-      defaultPath: suggested || 'sculpt.bozz',
+  // The dialog opens on the document itself, as it always has; the page's
+  // suggestion is only a name for an untitled one.
+  ipcMain.handle('file:saveAs', async (event, args) => {
+    const win = senderWindow(event);
+    if (!win) return null;
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: documentOf(win).path ?? suggestedName(args?.suggested, 'sculpt.bozz'),
       filters: FILTERS,
     });
     if (canceled || !filePath) return null;
-    await atomicWrite(filePath, bytes);
-    await noteRecent(filePath);
-    return { path: filePath, name: path.basename(filePath) };
+    return writeScene(win, filePath, args?.bytes);
   });
 
   // OBJ, single-file HTML, reels: bytes the app made that are not scenes.
+  // Written where the dialog says; the page hears the name only.
   ipcMain.handle('file:export', async (event, { bytes, suggested, filters }) => {
     const { canceled, filePath } = await dialog.showSaveDialog(windowFor(event), {
-      defaultPath: suggested,
+      defaultPath: suggestedName(suggested, undefined),
       filters: filters?.length ? filters : undefined,
     });
     if (canceled || !filePath) return null;
     await atomicWrite(filePath, bytes);
-    return { path: filePath, name: path.basename(filePath) };
+    return { name: path.basename(filePath) };
   });
 
   ipcMain.handle('file:recents', readRecents);
 
-  // The title bar is the document: the name, and the OS dirty marker. The
+  // Which file the page's document is - a ref it was given, or null for an
+  // untitled scene - and whether it has unsaved work. A ref this window
+  // was never given changes nothing, so the path is always one main chose.
+  // The title bar shows the result: the name, and the OS dirty marker. The
   // renderer sends this at mount too, which is also how main learns that
   // the page is ready to be handed a file (see main.cjs's open queue).
-  ipcMain.on('file:document', (event, doc) => {
-    const win = windowFor(event);
+  ipcMain.on('file:document', (event, state) => {
+    const win = senderWindow(event);
     if (!win) return;
-    applyDocument(win, {
-      path: doc?.path ?? null,
-      name: doc?.name ?? null,
-      dirty: !!doc?.dirty,
-    });
+    const doc = documentOf(win);
+    const ref = state?.ref ?? null;
+    if (ref === null) doc.path = null;
+    else if (doc.vended.has(ref)) doc.path = doc.vended.get(ref);
+    doc.dirty = !!state?.dirty;
+    showDocument(win);
     win.emit('bozzetto:document');
   });
 

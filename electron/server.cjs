@@ -18,6 +18,7 @@ const { ipcMain, session, BrowserWindow, app } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { atomicWrite, windowFor } = require('./files.cjs');
+const { openOutside, originOf } = require('./links.cjs');
 
 /** Its own cookie jar, so the login is not shared with anything else. */
 const PARTITION = 'persist:bozzetto-server';
@@ -56,8 +57,34 @@ function normalise(raw) {
   return u.origin;
 }
 
+/**
+ * The sign-in window shows whatever the login takes it to - Access, the
+ * identity provider, back to the server - so it may go anywhere over https
+ * (or to the server itself, which may be http on localhost), and nowhere
+ * else. Links it opens in a new window are the app window's: https: and
+ * mailto: go to the browser, anything else is dropped (links.cjs).
+ */
+function guardSignInWindow(w, serverOrigin) {
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    openOutside(url);
+    return { action: 'deny' };
+  });
+  w.webContents.on('will-navigate', (e, url) => {
+    const target = originOf(url);
+    if (target?.startsWith('https://') || target === serverOrigin) return;
+    e.preventDefault();
+    console.warn('bozzetto: the sign-in window stays on https');
+  });
+}
+
 /** Registered once per process; windows are found per call, never held. */
 function registerServerIpc() {
+  // Nothing on the sign-in pages needs a permission: not the camera, not a
+  // notification, and above all not openExternal, which is how a page's
+  // smb: or file: link (or a redirect to one) would reach the OS. The app's
+  // own session refuses them all the same way (main.cjs).
+  session.fromPartition(PARTITION).setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+
   ipcMain.handle('server:get', async () => {
     const cfg = await readConfig();
     if (!cfg.url) return { url: null, signedIn: false };
@@ -87,8 +114,11 @@ function registerServerIpc() {
       height: 700,
       parent: windowFor(event) ?? undefined,
       title: 'Sign in',
-      webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false },
+      // Someone else's pages in a window of ours: no preload, no Node, and
+      // the OS sandbox, said outright rather than left to a default.
+      webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
+    guardSignInWindow(w, url);
     await w.loadURL(`${url}/admin/`);
     return new Promise((resolve) => {
       // Poll the jar rather than guess at Access's redirect chain, which
@@ -120,7 +150,10 @@ function registerServerIpc() {
    * The proxy. The renderer hands a path and a body; this resolves it
    * against the configured server and returns status + bytes. Paths are
    * checked against the routes the app actually uses, so a compromised
-   * renderer cannot aim this at an arbitrary URL.
+   * renderer cannot aim this at an arbitrary URL. A request from here
+   * carries no Origin and Sec-Fetch-Site: none, a request no page started,
+   * which the server's refusal of cross-site writes lets through; the
+   * Access cookie (SameSite=Lax) goes with it. desktop.mjs checks all three.
    */
   ipcMain.handle('server:fetch', async (_e, { pathname, method, body, contentType }) => {
     const { url } = await readConfig();

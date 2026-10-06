@@ -1487,6 +1487,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     undo: () => session.undo(),
     redo: () => session.redo(),
     showServerSettings: () => void showServerSettings(),
+    // Signed in or out in Server settings: the same probe as the forms'
+    // re-check, so they, the menu and Save to Library follow it.
+    signInChanged: () => void probeRole(),
     showPreferences: () => showPreferences('sculpt'),
   });
   if (desktopHandle) {

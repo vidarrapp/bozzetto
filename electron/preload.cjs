@@ -51,20 +51,27 @@ contextBridge.exposeInMainWorld('bozzettoDesktop', {
   onDisplayHz: (fn) => on('display:hz', fn),
 
   // --- files ------------------------------------------------------------
-  /** Ask for a path (OS dialog), then read it. null when cancelled. */
+  // The page never holds a path (files.cjs): a scene comes with its name
+  // and a ref, and the window's document is named by ref.
+  /** Pick a scene (OS dialog) and read it: { ref, name, bytes }, or null when cancelled. */
   openScene: () => ipcRenderer.invoke('file:open'),
-  /** Read a known path, for recents and for files opened from the OS. */
+  /** Read a recent file. Any path not on the recents list is refused. */
   readScene: (filePath) => ipcRenderer.invoke('file:read', filePath),
-  /** Write bytes to the current path, or prompt when there is none. */
-  saveScene: (bytes, filePath) => ipcRenderer.invoke('file:save', { bytes, filePath }),
+  /** Write bytes to this window's document, or ask where when it has none. */
+  saveScene: (bytes) => ipcRenderer.invoke('file:save', { bytes }),
+  /** Ask where, starting at the document (or `suggested`, a file name), and write there. */
   saveSceneAs: (bytes, suggested) => ipcRenderer.invoke('file:saveAs', { bytes, suggested }),
   exportBytes: (bytes, suggested, filters) =>
     ipcRenderer.invoke('file:export', { bytes, suggested, filters }),
   recentFiles: () => ipcRenderer.invoke('file:recents'),
   /** Pick an .obj and read its text, for File > Import OBJ. null when cancelled. */
   openObj: () => ipcRenderer.invoke('file:openObj'),
-  /** Reflect the document into the window title and the OS dirty dot. */
-  setDocument: (doc) => ipcRenderer.send('file:document', doc),
+  /**
+   * Which file the document is (a ref from an open or a save, or null
+   * while untitled) and whether it has unsaved work: the window title and
+   * the OS dirty dot follow it.
+   */
+  setDocument: (doc) => ipcRenderer.send('file:document', { ref: doc?.ref ?? null, dirty: !!doc?.dirty }),
 
   /**
    * The answer to a save the main process asked for (a window closing

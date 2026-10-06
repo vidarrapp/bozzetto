@@ -1,5 +1,17 @@
 import { div } from '../ui/dom';
+import { forgetOwnerCaches } from '../net/ownerCaches';
 import type { DesktopBridge } from './index';
+
+/**
+ * Sign out of the server, from this panel or the Server menu: the main
+ * process drops the Access cookie, and the owner's cached answers go too,
+ * as the web's Sign out drops them. The app has no service worker, so
+ * today there are none; the call keeps the two sign-outs the same.
+ */
+export async function signOutOfServer(bridge: DesktopBridge): Promise<void> {
+  await bridge.signOut();
+  await forgetOwnerCaches();
+}
 
 /**
  * Server settings: which Cloudflare deployment to publish to, and whether
@@ -11,7 +23,11 @@ import type { DesktopBridge } from './index';
  * also the only place that explains what the setting is FOR - Bozzetto
  * works entirely offline, and this is opt-in.
  */
-export function serverSettings(bridge: DesktopBridge): {
+export function serverSettings(
+  bridge: DesktopBridge,
+  /** The sign-in changed here: the page asks again who it is for. */
+  signInChanged: () => void,
+): {
   root: HTMLElement;
   open: () => Promise<void>;
   close: () => void;
@@ -101,6 +117,7 @@ export function serverSettings(bridge: DesktopBridge): {
       try {
         await bridge.setServer(input.value.trim() || null);
         await refresh();
+        signInChanged(); // another server is another sign-in
       } catch (err) {
         // normalise() rejects a URL with a path or a non-https scheme, and
         // its message says which - worth showing verbatim.
@@ -111,6 +128,8 @@ export function serverSettings(bridge: DesktopBridge): {
     })();
   });
 
+  // Either way the page is told: without it, the publish forms and Save to
+  // Library went on acting on the sign-in the page found when it loaded.
   signIn.addEventListener('click', () => {
     void (async () => {
       signIn.disabled = true;
@@ -121,13 +140,15 @@ export function serverSettings(bridge: DesktopBridge): {
         show(err instanceof Error ? err.message : String(err), true);
       }
       await refresh();
+      signInChanged();
     })();
   });
 
   signOut.addEventListener('click', () => {
     void (async () => {
-      await bridge.signOut();
+      await signOutOfServer(bridge);
       await refresh();
+      signInChanged();
     })();
   });
 

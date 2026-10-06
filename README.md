@@ -174,6 +174,16 @@ publish from it; signing in opens Cloudflare Access in a real window. Signed
 in there, **File → Save to Library** saves to Projects on that server, as it
 does on the web; without a server it keeps the scene on this machine.
 
+The app carries its licence and the credits for what it bundles:
+`LICENSE` and `THIRD_PARTY_NOTICES.md` sit in its resources folder
+(`Bozzetto.app/Contents/Resources` on macOS, `resources` beside the program
+on Windows and Linux).
+
+**Known issue:** after signing in to a server, the app can stop responding
+for a few minutes on some machines when v-sync is off. Turning **V-sync** on
+under **Edit → Preferences → Desktop** avoids it. We are looking for reports
+of this from real hardware.
+
 ```bash
 npm run desktop        # build and run
 npm run dist:desktop   # package for the host platform, into release/
@@ -373,6 +383,15 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **`?nosw` asks first.** It takes the app's offline copy off the device and keeps it off, and any page could link to it. Now it asks, and **Cancel** changes nothing.
 - **Sign out.** Signed in, the gallery and the Projects page have **Sign out** beside **Projects**, so a sign-in need not stay behind on a device you are done with. It forgets the sign-in on this device, removes the device's copies of your private lists, and signs out of Cloudflare Access, which ends the session everywhere it was used; the gallery is then a guest's, and scenes kept on the device stay. The desktop app signs out in Server settings, as before.
 - **The device's copies of your private lists go with the sign-in.** The installed app kept your project list, private projects included, for thirty days so that it showed offline, and kept private thumbnails with it. Now the list goes as soon as the app finds the sign-in gone (signed out, expired or refused), and private thumbnails are not kept at all. The device remembers when you last signed in, and no longer your email address.
+
+**The desktop app reads, writes and opens only what you choose.**
+
+- **Files only where you say.** The page inside the desktop app named the file Save wrote to, and could ask the app to read any file by its path, so a page with something wrong in it could have written over, or read, any file you can. Now only the app itself knows where the open document is. Save writes that document, or asks where when there is none; Save As asks, starting at the document as before; and the page can read back only a file you opened or one in your recent files, while a request for anything else is refused without the path said back. Open, Open Recent, a double-clicked `.bozz`, Save, Save As and crash recovery work as they did.
+- **Links leave the app as web pages and mail only.** A link that leaves the app goes to your browser when it is `https:`, or `http:` to this machine (`localhost`, `127.0.0.1`, `[::1]`, where a server of your own answers), and to your mail program when it is `mailto:`. Anything else, `file:` and `smb:` among them, which the system would open, run or mount, now goes nowhere, from the app's window and from the sign-in window alike. The sign-in window is sandboxed, as the app's own is, and is granted no permissions. The app tells its own pages by their host, so `bozzetto://app.example` no longer passes for `bozzetto://app`, and `bozzetto://` serves the app's own host only.
+- **A locked-down build.** The packaged app no longer runs as Node when `ELECTRON_RUN_AS_NODE` is set, ignores `NODE_OPTIONS` and `--inspect`, loads its code from its own archive only, checks that archive on macOS and Windows before using it, keeps its cookies (the server sign-in among them) encrypted on disk, and gives `file:` pages no extra rights (Electron's fuses). Builds are unsigned, so the build signs the Mac app ad hoc again after setting them, as a Mac needs to open it.
+- **Signing in or out tells the page.** Signing in or out in **Server → Server Settings** (or the **Server** menu) now makes the page ask again who it is for. Before, the publish forms and **Save to Library** went on acting on the sign-in found when the page loaded. Signing out also drops the owner's cached answers, as the web's **Sign out** does.
+- **Electron 44.5.1** (was 44.2.0).
+- **No auto-update files.** A build no longer writes the `latest*.yml` files an auto-updater reads; the app has none, and releases carry the installers only.
 
 ### v1.3.4
 
