@@ -1,4 +1,5 @@
-import type { Env } from './types';
+import type { Env } from './env';
+import { accountsOn, isLoopback } from './env';
 
 /**
  * Every JSON answer is sent with nosniff, so no browser ever reads one as
@@ -20,6 +21,45 @@ export function error(message: string, status = 400): Response {
 }
 
 /**
+ * What a refusal can say it is (docs/accounts.md §3). The routes that came
+ * before accounts answer `{error}` alone, as they always have; everything
+ * since adds one of these, which the client acts on - the text is for a
+ * person.
+ */
+export type ErrorCode =
+  | 'bad_request'
+  | 'code_invalid'
+  | 'signin'
+  | 'reauth'
+  | 'cross_site'
+  | 'turnstile'
+  | 'suspended'
+  | 'owner_session'
+  | 'not_found'
+  | 'handle_taken'
+  | 'invite_invalid'
+  | 'flow_expired'
+  | 'file_too_large'
+  | 'quota_exceeded'
+  | 'bad_type'
+  | 'bad_scene'
+  | 'rate_limited'
+  | 'accounts_off'
+  | 'not_configured'
+  | 'mail_paused'
+  | 'not_implemented';
+
+/** A refusal as `{error, code}`, plus whatever the code carries. No cache keeps one. */
+export function refuse(
+  status: number,
+  code: ErrorCode,
+  message: string,
+  extra: Record<string, unknown> = {},
+): Response {
+  return json({ ...extra, error: message, code }, status, { 'cache-control': 'no-store' });
+}
+
+/**
  * Refuse a body the client declares as larger than `max` before a byte of
  * it is read, and - for the binary uploads - insist on the declaration:
  * without it a chunked upload is buffered whole before any cap applies.
@@ -33,7 +73,12 @@ export function bodyLimit(request: Request, max: number, required = false): Resp
 }
 
 export class HttpError extends Error {
-  constructor(message: string, readonly status = 400) {
+  /** With a code, it answers as `refuse` does; without, as `error`. */
+  constructor(
+    message: string,
+    readonly status = 400,
+    readonly code?: ErrorCode,
+  ) {
     super(message);
   }
 }
@@ -41,7 +86,7 @@ export class HttpError extends Error {
 /** Wrap a handler so thrown HttpErrors become clean JSON responses. */
 export function handle(fn: () => Promise<Response>): Promise<Response> {
   return fn().catch((e: unknown) => {
-    if (e instanceof HttpError) return error(e.message, e.status);
+    if (e instanceof HttpError) return e.code ? refuse(e.status, e.code, e.message) : error(e.message, e.status);
     console.error(e);
     return error('Internal error', 500);
   });
@@ -67,9 +112,6 @@ export async function readJson(request: Request): Promise<Record<string, unknown
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError('expected a JSON object');
   return body as Record<string, unknown>;
 }
-
-/** Hosts only this machine can reach: `wrangler pages dev` and the check suite. */
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Each misconfiguration is logged once per isolate, not on every request. */
 let devAdminWarned = false;
@@ -100,7 +142,7 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
   // router matches paths case-insensitively, so /ADMIN/api/... reaches the
   // same Function; Access normalises today, but nothing here relies on it.
   if (!url.pathname.startsWith('/admin/')) return null;
-  const local = LOOPBACK.has(url.hostname);
+  const local = isLoopback(url);
 
   if (env.DEV_ADMIN === 'true') {
     if (local) return 'dev@localhost';
@@ -144,8 +186,12 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * address typed, the desktop app's main process); one with neither header
  * (the desktop app, curl) is no browser acting for a page, and the cookie
  * or the token decides as before.
+ *
+ * The root middleware asks this of every request a Function sees, before
+ * any route runs, so no write anywhere is reachable without it. `same-site`
+ * is refused too: the files host is a sibling of the app's.
  */
-function crossSiteWrite(request: Request): boolean {
+export function crossSiteWrite(request: Request): boolean {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return false;
   const site = request.headers.get('Sec-Fetch-Site');
   if (site !== null && site !== 'same-origin' && site !== 'none') return true;
@@ -154,12 +200,15 @@ function crossSiteWrite(request: Request): boolean {
 }
 
 /**
- * Returns a 403 Response if the request is not an allowed admin, or is a
- * write sent from another site's page; else null.
+ * The answer of every /api/auth/* and /api/me/* route until the batch that
+ * brings it (docs/accounts.md §12). With accounts off those routes are not
+ * there, and say why: 404 accounts_off, as they will once they exist. With
+ * accounts on, a 501, so a staging run never mistakes a stub for a refusal.
  */
-export async function requireAdmin(request: Request, env: Env): Promise<Response | null> {
-  if (crossSiteWrite(request)) return error('Cross-site request refused', 403);
-  return (await adminEmail(request, env)) ? null : error('Unauthorized', 403);
+export function notYet(env: Env): Response {
+  return accountsOn(env)
+    ? refuse(501, 'not_implemented', 'Not implemented yet')
+    : refuse(404, 'accounts_off', 'Accounts are off');
 }
 
 // --- Access JWT verification ------------------------------------------------

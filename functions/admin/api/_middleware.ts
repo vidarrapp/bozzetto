@@ -1,4 +1,4 @@
-import type { Env } from '../../_shared/types';
+import type { Env } from '../../_shared/env';
 
 // Every answer under /admin/api is the owner's: lists and manifests that
 // name private projects, the sign-in probe, refusals. No browser or proxy

@@ -1,5 +1,6 @@
-import type { Env } from '../../../../_shared/types';
-import { bodyLimit, error, handle, json, readJson, requireAdmin } from '../../../../_shared/http';
+import type { Env } from '../../../../_shared/env';
+import { bodyLimit, error, handle, json, readJson } from '../../../../_shared/http';
+import { ownerScope, requireAdmin, type RequestData } from '../../../../_shared/principal';
 import {
   MAX_SCENE_PART_BYTES,
   abortSceneUpload,
@@ -25,22 +26,23 @@ import {
 
 const uploadParam = (request: Request): string | null => new URL(request.url).searchParams.get('upload');
 
-export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
+export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>
   handle(async () => {
-    const denied = await requireAdmin(request, env);
+    const denied = requireAdmin(data);
     if (denied) return denied;
     const id = String(params.id);
+    const scope = ownerScope(data.principal);
     const upload = uploadParam(request);
-    if (!upload) return json(await startSceneUpload(env, id), 201);
+    if (!upload) return json(await startSceneUpload(env, id, scope), 201);
     // The part list: 10,000 parts of a few dozen bytes each at the most.
     const tooBig = bodyLimit(request, 1024 * 1024);
     if (tooBig) return tooBig;
-    return json(toManifest(await completeSceneUpload(env, id, upload, await readJson(request))));
+    return json(toManifest(await completeSceneUpload(env, id, upload, await readJson(request), scope)));
   });
 
-export const onRequestPut: PagesFunction<Env> = ({ env, request, params }) =>
+export const onRequestPut: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>
   handle(async () => {
-    const denied = await requireAdmin(request, env);
+    const denied = requireAdmin(data);
     if (denied) return denied;
     const url = new URL(request.url);
     const upload = url.searchParams.get('upload');
@@ -52,15 +54,15 @@ export const onRequestPut: PagesFunction<Env> = ({ env, request, params }) =>
     const body = await request.arrayBuffer();
     if (body.byteLength === 0) return error('empty body', 400);
     if (body.byteLength > MAX_SCENE_PART_BYTES) return error('part too large', 413);
-    return json(await putScenePart(env, String(params.id), upload, part, body), 201);
+    return json(await putScenePart(env, String(params.id), upload, part, body, ownerScope(data.principal)), 201);
   });
 
-export const onRequestDelete: PagesFunction<Env> = ({ env, request, params }) =>
+export const onRequestDelete: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>
   handle(async () => {
-    const denied = await requireAdmin(request, env);
+    const denied = requireAdmin(data);
     if (denied) return denied;
     const upload = uploadParam(request);
     if (!upload) return error('?upload=<id> required', 400);
-    await abortSceneUpload(env, String(params.id), upload);
+    await abortSceneUpload(env, String(params.id), upload, ownerScope(data.principal));
     return json({ aborted: true });
   });

@@ -1,35 +1,14 @@
-export interface Env {
-  DB: D1Database;
-  BUCKET: R2Bucket;
-  /**
-   * Optional comma-separated allowlist of admin emails (from Access). Unset,
-   * any identity the Access policy let in is the owner.
-   */
-  ADMIN_EMAILS?: string;
-  /**
-   * Local-dev only: when "true", treats every admin request on a loopback
-   * host (localhost, 127.0.0.1, [::1]) as the owner. Ignored on any other.
-   */
-  DEV_ADMIN?: string;
-  /**
-   * Required on every host but a loopback one: admin routes verify the
-   * Access JWT (`Cf-Access-Jwt-Assertion`) against the team's public keys
-   * rather than trust the email header, which is only unforgeable while an
-   * Access application actually fronts the route, and answer 503 while
-   * either is missing. TEAM_DOMAIN is the `<team>.cloudflareaccess.com`
-   * host; AUD is the application's audience tag.
-   */
-  ACCESS_TEAM_DOMAIN?: string;
-  ACCESS_AUD?: string;
-}
-
 /**
  * 'scene' is a sculpt saved to the library: one .bozz file, opened in Sculpt
  * rather than played in the viewer, so it has no frames.
  */
 export type ProjectMode = 'timelapse' | 'model' | 'scene';
 
-/** Public projects are anyone's to see; private ones the owner's alone. */
+/**
+ * Public projects are anyone's to see; private ones the owner's alone. Only
+ * a template is ever public (docs/accounts.md §1): on one, private means
+ * privatised, taken off the gallery.
+ */
 export type Visibility = 'public' | 'private';
 
 /** What a scene card shows, recorded when its file lands. */
@@ -85,4 +64,52 @@ export interface ProjectRow {
   visibility: Visibility;
   created_at: number;
   updated_at: number;
+  /** Whose it is; null for a template, and for the owner's own before the bootstrap. */
+  owner_id: string | null;
+  /** 1 for a template: the site's, listed in the gallery while public. */
+  template: 0 | 1;
+  /** Where its files are in R2; null for the legacy projects/<id>/ (see prefixFor). */
+  storage_prefix: string | null;
+  /** What its files weigh, as counted against its owner's quota. */
+  bytes: number;
+  /** Phase 3's; 'none' until then. */
+  moderation: string;
+}
+
+export type Role = 'owner' | 'moderator' | 'member';
+export type UserStatus = 'active' | 'suspended' | 'deleting';
+
+/** A row of users (migrations/0003_accounts.sql). */
+export interface UserRow {
+  id: string;
+  handle: string;
+  email: string;
+  webauthn_user_id: string;
+  role: Role;
+  status: UserStatus;
+  quota_bytes: number;
+  bytes_used: number;
+  invite_id: string | null;
+  terms_version: string;
+  terms_accepted_at: number;
+  age_confirmed_at: number;
+  handle_changed_at: number | null;
+  suspended_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** A row of sessions: the cookie's token is never stored, only its hash. */
+export interface SessionRow {
+  id: string;
+  token_hash: string;
+  user_id: string;
+  method: string;
+  client: string;
+  user_agent: string | null;
+  created_at: number;
+  last_seen_at: number;
+  reauth_at: number;
+  expires_at: number;
+  revoked_at: number | null;
 }

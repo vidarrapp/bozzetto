@@ -1,4 +1,4 @@
-import type { Env } from '../_shared/types';
+import type { Env } from '../_shared/env';
 
 // GET /admin/login?next=<path> - the way back in after a Cloudflare Access
 // session has expired. Access fronts /admin*, so by the time a request

@@ -1,13 +1,14 @@
-import type { Env } from '../../../../_shared/types';
-import { bodyLimit, error, handle, json, requireAdmin } from '../../../../_shared/http';
+import type { Env } from '../../../../_shared/env';
+import { bodyLimit, error, handle, json } from '../../../../_shared/http';
+import { ownerScope, requireAdmin, type RequestData } from '../../../../_shared/principal';
 import { MAX_FRAMES, putFrame } from '../../../../_shared/projects';
 
 // POST /admin/api/projects/:id/frames?index=N — upload one frame's .glb bytes.
 /** Generous for a single quantized-gzip frame (the 16M-tri ceiling lands well under this). */
 const MAX_FRAME_BYTES = 96 * 1024 * 1024;
-export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
+export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>
   handle(async () => {
-    const denied = await requireAdmin(request, env);
+    const denied = requireAdmin(data);
     if (denied) return denied;
 
     // Digits only. Number() reads a missing or empty ?index as 0, which
@@ -23,6 +24,6 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
     if (body.byteLength === 0) return error('empty body', 400);
     if (body.byteLength > MAX_FRAME_BYTES) return error('frame too large', 413);
 
-    const key = await putFrame(env, String(params.id), index, body);
+    const key = await putFrame(env, String(params.id), index, body, ownerScope(data.principal));
     return json({ key, index, size: body.byteLength }, 201);
   });

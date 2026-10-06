@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   created_at INTEGER NOT NULL, last_used_at INTEGER, counter_warning_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_credentials_user ON credentials (user_id);
 CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,      -- public id; SHA-256 of the cookie token
+  id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,      -- public id, SHA-256 of the cookie token
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   method TEXT NOT NULL, client TEXT NOT NULL DEFAULT 'web', user_agent TEXT,
   created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL, reauth_at INTEGER NOT NULL,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id, revoked_at);
 CREATE TABLE IF NOT EXISTS pending_auth (                   -- email codes and WebAuthn challenges
   id TEXT PRIMARY KEY,                       -- SHA-256 of the flow or ceremony cookie token
-  kind TEXT NOT NULL, purpose TEXT NOT NULL, -- email|webauthn; register|sign_in|reauth|add_passkey|change_email
+  kind TEXT NOT NULL, purpose TEXT NOT NULL, -- email|webauthn, register|sign_in|reauth|add_passkey|change_email
   user_id TEXT REFERENCES users (id) ON DELETE CASCADE, email TEXT, handle TEXT, invite_id TEXT,
   secret TEXT NOT NULL,                      -- HMAC(AUTH_SECRET, id:code), or the challenge
   link_hash TEXT, attempts INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 1,
