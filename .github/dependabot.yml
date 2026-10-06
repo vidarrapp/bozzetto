@@ -1,0 +1,34 @@
+# Weekly version updates. A new release waits a week before it is offered
+# (security updates do not wait), so a hijacked version that gets pulled
+# within days never reaches a pull request.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      # Electron and its packager move together: one pull request, one
+      # desktop test build.
+      electron:
+        patterns:
+          - electron
+          - electron-builder
+      # The rest of the toolchain. None of it ships in the app.
+      dev-tooling:
+        dependency-type: development
+    # What does ship (three, mediabunny, gl-matrix, gifenc, the icons) gets
+    # a pull request of its own.
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - '*'

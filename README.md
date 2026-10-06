@@ -192,33 +192,50 @@ Each installer format has to be built on (or for) its own platform:
 
 `.github/workflows/release.yml` builds all three platforms and attaches the
 installers to a GitHub Release. The version comes from `package.json`, and the
-tag must match it. Either push the tag:
+tag must match it. Releases are made from `main` only. Either push the tag:
 
 ```bash
 npm version 0.1.0        # bumps package.json and commits and tags v0.1.0
 git push --follow-tags   # the tag push starts the release build
 ```
 
-or run **Release desktop** from the **Actions** tab with the version filled
-in, and the workflow tags `main` itself.
+or run **Release desktop** from the **Actions** tab on `main` with the version
+filled in, and the workflow tags `main` itself. A pushed tag whose commit is
+not on `main`, or a version filled in on any other branch, stops the run
+before anything is built.
 
-The workflow opens a draft release, builds on all three platforms, and
-publishes the release once every installer is on it (a failed platform leaves
-it a draft to look at). The macOS build is universal, one app for Apple
-Silicon and Intel. The site's Install card reads the latest published
-release, so it picks the new version up on its own; edit the generated notes
-on GitHub whenever you like.
+The workflow opens a draft release and builds on all three platforms. A
+separate job then signs build provenance for every installer, and the last
+one puts the installers and a `SHA256SUMS` file on the draft and publishes
+the release once all of them are there (a failure anywhere leaves it a draft
+to look at). A file already on a release is never replaced, and a published
+release is never changed: to fix one, release a new version. The macOS build
+is universal, one app for Apple Silicon and Intel. The site's Install card
+reads the latest published release, so it picks the new version up on its
+own; edit the generated notes on GitHub whenever you like.
 
-Run it from the **Actions** tab with the version left empty to test a build
-without releasing; that path publishes nothing and leaves the installers as
-downloadable artifacts. No secrets to configure — it uses the token Actions
-provides.
+Run it from the **Actions** tab with the version left empty to test a build,
+from any branch; that path publishes nothing and leaves the installers as
+downloadable artifacts, attested like a release's. No secrets to configure:
+it uses the token Actions provides, and only the two jobs that write the
+release can write with it. The builders can only read the repository, run no
+install scripts, and give electron-builder no token at all.
+
+To check a download, compare its SHA-256 with its line in the release's
+`SHA256SUMS`, and verify its provenance with the
+[GitHub CLI](https://cli.github.com/), which also shows the commit and the
+workflow run that built it:
+
+```bash
+sha256sum Bozzetto-0.1.0.AppImage    # macOS: shasum -a 256 <file>; Windows: Get-FileHash <file>
+gh attestation verify Bozzetto-0.1.0.AppImage -R vidarrapp/bozzetto
+```
 
 Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
 you add a Developer ID certificate and notarization (macOS) or a code-signing
 certificate (Windows). For signing in CI, set `CSC_LINK` and
-`CSC_KEY_PASSWORD` as repository secrets and drop the
-`CSC_IDENTITY_AUTO_DISCOVERY: false` line from the workflow.
+`CSC_KEY_PASSWORD` as repository secrets, pass them to the workflow's
+Package step, and drop the `CSC_IDENTITY_AUTO_DISCOVERY: false` line there.
 
 ## Features
 
@@ -663,6 +680,86 @@ INSERT INTO d1_migrations (name) VALUES ('0001_init.sql'), ('0002_visibility.sql
 ```
 
 `wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template.
+
+### Security settings checklist
+
+What the repository cannot set for itself: settings made by hand in the
+Cloudflare and GitHub dashboards. Go through them once, and again after
+changing the deployment.
+
+Cloudflare:
+
+- [ ] The Access variables from the admin auth bullet above are set for both
+  **Production** and **Preview** (Pages → Settings → Variables and Secrets).
+- [ ] The Access application's cookie has **SameSite** set to **Lax**
+  (Zero Trust → Access → Applications → the app → Settings → Cookie settings).
+- [ ] The Access application covers every hostname that serves `/admin`: the
+  custom domain `bozzetto.vidarrapp.se`, `bozzetto-3me.pages.dev`, and
+  `*.bozzetto-3me.pages.dev` for preview deployments.
+- [ ] Preview deployments do not bind the production D1 database or R2
+  bucket (Pages → Settings → Bindings, Preview): give Preview its own, or none.
+- [ ] HSTS is on for the zone (SSL/TLS → Edge Certificates → HTTP Strict
+  Transport Security). Include subdomains only if every subdomain of the zone
+  serves HTTPS.
+
+GitHub (Settings):
+
+- [ ] Secret scanning and push protection are on (Advanced Security).
+- [ ] Private vulnerability reporting is on (Advanced Security); `SECURITY.md`
+  sends reporters there.
+- [ ] Release immutability is on (General → Releases), so a published
+  release's files and tag cannot be changed.
+- [ ] A tag ruleset: only repository admins, and the release workflow, may
+  create, move or delete `v*` tags. Save this as `ruleset.json` and run
+  `gh api repos/vidarrapp/bozzetto/rulesets --method POST --input ruleset.json`:
+
+  ```json
+  {
+    "name": "Release tags",
+    "target": "tag",
+    "enforcement": "active",
+    "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
+    "rules": [{ "type": "creation" }, { "type": "update" }, { "type": "deletion" }],
+    "bypass_actors": [
+      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" },
+      { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" }
+    ]
+  }
+  ```
+
+  `5` is the repository admin role. `15368` is GitHub Actions, which is how
+  **Release desktop** run from the Actions tab tags `main` itself. Leave that
+  entry out to make the tags admins-only; releases then start from a tag you
+  push.
+- [ ] A `main` ruleset requiring CI to pass. Admins bypass it, so pushing
+  straight to `main` still works; pull requests, Dependabot's included, wait
+  for the three checks. The same command, with this file:
+
+  ```json
+  {
+    "name": "main: CI passes",
+    "target": "branch",
+    "enforcement": "active",
+    "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
+    "rules": [
+      {
+        "type": "required_status_checks",
+        "parameters": {
+          "strict_required_status_checks_policy": false,
+          "do_not_enforce_on_create": false,
+          "required_status_checks": [
+            { "context": "typecheck-build", "integration_id": 15368 },
+            { "context": "functions", "integration_id": 15368 },
+            { "context": "e2e-smoke", "integration_id": 15368 }
+          ]
+        }
+      }
+    ],
+    "bypass_actors": [
+      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
+    ]
+  }
+  ```
 
 ## Credits
 
