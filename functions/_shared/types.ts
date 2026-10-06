@@ -1,16 +1,23 @@
 export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
-  /** Optional comma-separated allowlist of admin emails (from Access). */
+  /**
+   * Optional comma-separated allowlist of admin emails (from Access). Unset,
+   * any identity the Access policy let in is the owner.
+   */
   ADMIN_EMAILS?: string;
-  /** Local-dev only: when "true", treats every request as an authed admin. */
+  /**
+   * Local-dev only: when "true", treats every admin request on a loopback
+   * host (localhost, 127.0.0.1, [::1]) as the owner. Ignored on any other.
+   */
   DEV_ADMIN?: string;
   /**
-   * Optional hardening: when both are set, admin routes verify the Access
-   * JWT (`Cf-Access-Jwt-Assertion`) against the team's public keys instead
-   * of trusting the email header - which is only unforgeable while an
-   * Access application actually fronts the route. TEAM_DOMAIN is the
-   * `<team>.cloudflareaccess.com` host; AUD is the application audience tag.
+   * Required on every host but a loopback one: admin routes verify the
+   * Access JWT (`Cf-Access-Jwt-Assertion`) against the team's public keys
+   * rather than trust the email header, which is only unforgeable while an
+   * Access application actually fronts the route, and answer 503 while
+   * either is missing. TEAM_DOMAIN is the `<team>.cloudflareaccess.com`
+   * host; AUD is the application's audience tag.
    */
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;

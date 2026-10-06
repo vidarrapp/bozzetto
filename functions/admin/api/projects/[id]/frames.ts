@@ -1,6 +1,6 @@
 import type { Env } from '../../../../_shared/types';
 import { bodyLimit, error, handle, json, requireAdmin } from '../../../../_shared/http';
-import { putFrame } from '../../../../_shared/projects';
+import { MAX_FRAMES, putFrame } from '../../../../_shared/projects';
 
 // POST /admin/api/projects/:id/frames?index=N — upload one frame's .glb bytes.
 /** Generous for a single quantized-gzip frame (the 16M-tri ceiling lands well under this). */
@@ -10,8 +10,11 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
     const denied = await requireAdmin(request, env);
     if (denied) return denied;
 
-    const index = Number(new URL(request.url).searchParams.get('index'));
-    if (!Number.isInteger(index) || index < 0) return error('?index=<n> required', 400);
+    // Digits only. Number() reads a missing or empty ?index as 0, which
+    // quietly overwrote the first frame, and takes '1e3' and '0x10' too.
+    const raw = new URL(request.url).searchParams.get('index');
+    const index = raw !== null && /^\d+$/.test(raw) ? Number(raw) : -1;
+    if (index < 0 || index >= MAX_FRAMES) return error(`?index=<0 to ${MAX_FRAMES - 1}> required`, 400);
 
     // Cap before buffering: a runaway upload should fail fast, not fill R2.
     const tooBig = bodyLimit(request, MAX_FRAME_BYTES, true);

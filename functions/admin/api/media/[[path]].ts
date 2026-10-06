@@ -1,6 +1,6 @@
 import type { Env } from '../../../_shared/types';
 import { adminEmail, handle } from '../../../_shared/http';
-import { pathSegments, serveMedia } from '../../../_shared/media';
+import { notFound, pathSegments, serveMedia } from '../../../_shared/media';
 
 // GET /admin/api/media/<id>/<file> — the owner's way to a project's files,
 // private ones included. It lives under /admin so the Access application
@@ -11,6 +11,6 @@ import { pathSegments, serveMedia } from '../../../_shared/media';
 export const onRequestGet: PagesFunction<Env> = ({ env, request, params }) =>
   handle(async () => {
     const owner = (await adminEmail(request, env)) !== null;
-    if (!owner) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+    if (!owner) return notFound();
     return serveMedia(env, pathSegments(params.path), true);
   });

@@ -1,5 +1,5 @@
 import type { Env } from '../../../_shared/types';
-import { bodyLimit, error, handle, json, requireAdmin } from '../../../_shared/http';
+import { bodyLimit, error, handle, json, readJson, requireAdmin } from '../../../_shared/http';
 import {
   MAX_DATA_BYTES,
   deleteProject,
@@ -29,8 +29,7 @@ export const onRequestPut: PagesFunction<Env> = ({ env, request, params }) =>
     // past twice that cannot succeed and need not be parsed.
     const tooBig = bodyLimit(request, MAX_DATA_BYTES * 2);
     if (tooBig) return tooBig;
-    const patch = (await request.json()) as Record<string, unknown>;
-    return json(await updateProject(env, String(params.id), patch));
+    return json(await updateProject(env, String(params.id), await readJson(request)));
   });
 
 // DELETE /admin/api/projects/:id — remove the project and its R2 objects.

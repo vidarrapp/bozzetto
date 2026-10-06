@@ -339,6 +339,16 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
+### Unreleased
+
+**The server checks who is asking, and from where.**
+
+- **Access verification is required.** The header Cloudflare Access adds to name who signed in can be sent by anyone wherever Access does not front a route, and without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` the server believed it. Now every admin request on a deployed host has its Access token verified as well, and until both variables are set the admin routes answer 503, "Access verification is not configured", rather than fall back to the header (see Deployment). `DEV_ADMIN` works on `localhost` only, and an identity counts only on paths under `/admin/`. `ADMIN_EMAILS` stays optional.
+- **Writes from other sites are refused.** The Access cookie goes with any request a signed-in browser sends, including one a page on another site makes it send. A write the browser marks as coming from another origin is now refused, and the writes that take JSON insist on `application/json`, which another site cannot send without the browser asking first. The editor, Sculpt and the desktop app are unaffected.
+- **Sign in again stays on the site.** `/admin/login?next=/.//evil.example/x` sent the browser to `//evil.example/x`, which it reads as another site. It now always answers with a full address on the site itself.
+- **A bad request is refused for what it is.** Malformed JSON was an internal error and is now a 400. A frame upload with no index was stored as the first frame, overwriting it; it is refused, as is an index past the 10,000-frame limit. A thumbnail must be a JPEG, as every client makes it. Project data is measured in bytes, as the database counts it, so text in scripts that take several bytes a character can no longer pass the 1.5 MB limit.
+- **Headers for the site and its files.** No page of the site can be framed by another (it is never embedded), browsers are told to use HTTPS only and not to guess file types, the camera, microphone, location and USB are switched off, and a Content-Security-Policy runs in report-only mode, reporting to the browser's console what it would block before it is enforced. Files from `/media` are served sandboxed and to this site's own pages only, and the owner's API answers are never cached.
+
 ### v1.3.4
 
 **Faster frames, anti-aliasing when still, v-sync off on the desktop, and update notices.** Desktop app 0.5.4.
@@ -626,7 +636,7 @@ Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub i
 - Build command `npm run build`, output directory `dist`.
 - The `prebuild` step generates the demo timelapse, so those assets ship without being committed.
 - Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column.
-- Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. Set `ADMIN_EMAILS` to limit which identities may write. Also set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` so the admin routes verify the Access JWT directly.
+- Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. The identity header Access adds can be sent by anyone wherever Access does not front a route, so on every host but a local one (`localhost`, `127.0.0.1`, `[::1]`) the admin routes also verify the Access token, and `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are required: until both are set, every admin request is answered 503, "Access verification is not configured". Set them in Pages → Settings for both Production and Preview. The team domain is the `<team>.cloudflareaccess.com` host the login page redirects to; the audience is the application's Audience (AUD) tag, on its page in Zero Trust → Access → Applications. `ADMIN_EMAILS` is optional: set it to limit which identities may write; unset, anyone the Access policy lets in is the owner. In the application's cookie settings, set the SameSite attribute to Lax, so a page on another site cannot make a signed-in browser send the session with a write.
 - The Access application's session duration decides how often the installed app asks to sign in again (Zero Trust → Access → Applications → the app → Session Duration).
 - Production is served at `bozzetto.vidarrapp.se` as a custom domain on the Pages project.
 

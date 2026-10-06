@@ -1,5 +1,5 @@
 import type { Env } from '../../../_shared/types';
-import { bodyLimit, handle, json, requireAdmin } from '../../../_shared/http';
+import { bodyLimit, handle, json, readJson, requireAdmin } from '../../../_shared/http';
 import { createProject, listProjects } from '../../../_shared/projects';
 
 // GET /admin/api/projects — every project, private ones and scenes
@@ -20,6 +20,5 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request }) =>
     if (denied) return denied;
     const tooBig = bodyLimit(request, 64 * 1024); // id, title, mode, fps, visibility
     if (tooBig) return tooBig;
-    const body = (await request.json()) as Record<string, unknown>;
-    return json(await createProject(env, body), 201);
+    return json(await createProject(env, await readJson(request)), 201);
   });

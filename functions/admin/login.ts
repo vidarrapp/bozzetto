@@ -11,27 +11,32 @@ export const onRequestGet: PagesFunction<Env> = ({ request }) =>
   new Response(null, {
     status: 302,
     headers: {
-      location: sameSitePath(new URL(request.url)),
+      location: sameSiteTarget(new URL(request.url)),
       // A remembered redirect would skip Access the next time round.
       'cache-control': 'no-store',
     },
   });
 
 /**
- * `next` when it is a path on this site, `/` otherwise. Only a path is
- * taken - an absolute URL, `//host`, `/\host` or anything that resolves off
- * this origin would make an authenticated route an open redirect - and it
- * is checked by resolving it the way the browser will, not by its spelling.
+ * `next` when it is a path on this site, the gallery otherwise, as an
+ * absolute URL on this origin. Only a path is taken - an absolute URL,
+ * `//host`, `/\host` or anything that resolves off this origin would make
+ * an authenticated route an open redirect - and it is checked by resolving
+ * it the way the browser will, not by its spelling. What goes back is the
+ * resolved URL whole, never its path alone: `/.//evil.example/x` resolves
+ * on this origin to the path `//evil.example/x`, which as a Location of its
+ * own the browser reads as a link to another host.
  */
-function sameSitePath(url: URL): string {
+function sameSiteTarget(url: URL): string {
+  const home = new URL('/', url.origin).href;
   const next = url.searchParams.get('next');
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/';
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return home;
   let target: URL;
   try {
     target = new URL(next, url.origin);
   } catch {
-    return '/';
+    return home;
   }
-  if (target.origin !== url.origin) return '/';
-  return `${target.pathname}${target.search}${target.hash}`;
+  if (target.origin !== url.origin) return home;
+  return target.href;
 }

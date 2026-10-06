@@ -1,9 +1,17 @@
 import type { Env } from './types';
 
+/**
+ * Every JSON answer is sent with nosniff, so no browser ever reads one as
+ * HTML or script, whatever a stored title in it happens to look like.
+ */
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+      ...headers,
+    },
   });
 }
 
@@ -40,43 +48,117 @@ export function handle(fn: () => Promise<Response>): Promise<Response> {
 }
 
 /**
+ * A request body that must be a JSON object. The type is required, not
+ * sniffed: a page on another site can send text/plain or a form without
+ * asking first, but application/json makes the browser ask (a CORS
+ * preflight), and nothing here answers one. A body that does not parse,
+ * or parses to something other than an object, is the client's mistake
+ * and a 400, not an internal error.
+ */
+export async function readJson(request: Request): Promise<Record<string, unknown>> {
+  const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (type !== 'application/json') throw new HttpError('expected a JSON body (content-type: application/json)', 415);
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw new HttpError('malformed JSON body');
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError('expected a JSON object');
+  return body as Record<string, unknown>;
+}
+
+/** Hosts only this machine can reach: `wrangler pages dev` and the check suite. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** Each misconfiguration is logged once per isolate, not on every request. */
+let devAdminWarned = false;
+let unverifiedWarned = false;
+
+/**
  * The authenticated admin email, or null. Cloudflare Access injects
  * `Cf-Access-Authenticated-User-Email` on protected routes; an optional
- * ADMIN_EMAILS allowlist narrows it further.
+ * ADMIN_EMAILS allowlist narrows it further (unset, anyone Access let in
+ * is the owner: the Access policy already decides who that can be).
  *
  * That header is only unforgeable while an Access application actually
- * fronts the route - drop the application (or miss a hostname) and any
- * client can send it. With ACCESS_TEAM_DOMAIN + ACCESS_AUD configured the
- * gate verifies the `Cf-Access-Jwt-Assertion` JWT instead: RS256 against
- * the team's published keys, audience, issuer and expiry, and the email
- * claim must match the header. Without them the header is trusted as
- * before, so an existing deployment keeps working until the vars land.
- * With only ONE of them set the gate fails closed: a half-finished
- * configuration must not silently fall back to trusting a forgeable header.
+ * fronts the route - drop the application, or miss a hostname, and any
+ * client can send it. So on any host but this machine's own the gate
+ * verifies the `Cf-Access-Jwt-Assertion` JWT as well: RS256 against the
+ * team's published keys, audience, issuer and expiry, and its email claim
+ * must match the header. That needs ACCESS_TEAM_DOMAIN and ACCESS_AUD, and
+ * without both every admin request is a 503: a missing variable must
+ * never quietly fall back to trusting a header anyone can send.
+ *
+ * Only on a loopback host is the header taken alone, since Access is never
+ * there to sign a token and only this machine can reach it. DEV_ADMIN,
+ * which skips identity altogether, is honoured there and nowhere else.
  */
 export async function adminEmail(request: Request, env: Env): Promise<string | null> {
-  // Local-dev escape hatch. Set DEV_ADMIN="true" only in a local wrangler.toml
-  // (gitignored); production has no such var, so this never fires there.
-  if (env.DEV_ADMIN === 'true') return 'dev@localhost';
+  const url = new URL(request.url);
+  // An identity is only worth anything where Access fronts the path. The
+  // router matches paths case-insensitively, so /ADMIN/api/... reaches the
+  // same Function; Access normalises today, but nothing here relies on it.
+  if (!url.pathname.startsWith('/admin/')) return null;
+  const local = LOOPBACK.has(url.hostname);
+
+  if (env.DEV_ADMIN === 'true') {
+    if (local) return 'dev@localhost';
+    if (!devAdminWarned) {
+      devAdminWarned = true;
+      console.warn('DEV_ADMIN is set but ignored: it applies on localhost only');
+    }
+  }
 
   const email = request.headers.get('Cf-Access-Authenticated-User-Email');
-  if (!email) return null;
-  if (env.ACCESS_TEAM_DOMAIN || env.ACCESS_AUD) {
-    if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) {
-      throw new HttpError('Access verification is half-configured: set both ACCESS_TEAM_DOMAIN and ACCESS_AUD', 503);
+  if (!local) {
+    const team = env.ACCESS_TEAM_DOMAIN;
+    const aud = env.ACCESS_AUD;
+    if (!team || !aud) {
+      // The variable names go to the log, not to whoever is asking.
+      if (!unverifiedWarned) {
+        unverifiedWarned = true;
+        console.error('Admin routes refused: set both ACCESS_TEAM_DOMAIN and ACCESS_AUD');
+      }
+      throw new HttpError('Access verification is not configured', 503);
     }
     const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
-    if (!jwt) return null;
-    const claimed = await verifyAccessJwt(jwt, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD);
+    if (!email || !jwt) return null;
+    const claimed = await verifyAccessJwt(jwt, team, aud);
     if (!claimed || claimed.toLowerCase() !== email.toLowerCase()) return null;
   }
+  if (!email) return null;
   const allow = env.ADMIN_EMAILS?.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (allow && allow.length > 0 && !allow.includes(email.toLowerCase())) return null;
   return email;
 }
 
-/** Returns a 403 Response if the request is not an allowed admin, else null. */
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * A write another site's page made the browser send. The Access cookie
+ * rides along with such a request like any other, so the session alone
+ * proves nothing about who asked. Browsers say where a request came from,
+ * and a write is refused when Sec-Fetch-Site or Origin names anywhere but
+ * this origin. Sec-Fetch-Site `none` is a request no page started (an
+ * address typed, the desktop app's main process); one with neither header
+ * (the desktop app, curl) is no browser acting for a page, and the cookie
+ * or the token decides as before.
+ */
+function crossSiteWrite(request: Request): boolean {
+  if (SAFE_METHODS.has(request.method.toUpperCase())) return false;
+  const site = request.headers.get('Sec-Fetch-Site');
+  if (site !== null && site !== 'same-origin' && site !== 'none') return true;
+  const origin = request.headers.get('Origin');
+  return origin !== null && origin !== new URL(request.url).origin;
+}
+
+/**
+ * Returns a 403 Response if the request is not an allowed admin, or is a
+ * write sent from another site's page; else null.
+ */
 export async function requireAdmin(request: Request, env: Env): Promise<Response | null> {
+  if (crossSiteWrite(request)) return error('Cross-site request refused', 403);
   return (await adminEmail(request, env)) ? null : error('Unauthorized', 403);
 }
 
@@ -97,16 +179,31 @@ const JWKS_TTL_MS = 60 * 60 * 1000;
  * into a fetch either.
  */
 const JWKS_MISS_REFETCH_MS = 60 * 1000;
+/** A key server that hangs must not hold every admin request with it. */
+const JWKS_TIMEOUT_MS = 5000;
 
 function teamHost(teamDomain: string): string {
   return teamDomain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 }
 
+/**
+ * The team's current keys. Any failure to get them - an error status, a
+ * timeout, no connection, a body that is not JSON - is an outage on our
+ * side and a 503, never a refusal that would read as "not the owner".
+ */
 async function fetchAccessKeys(host: string): Promise<Jwk[]> {
-  const res = await fetch(`https://${host}/cdn-cgi/access/certs`);
-  if (!res.ok) throw new HttpError('Access keys unavailable', 503);
-  const body = (await res.json()) as { keys?: Jwk[] };
-  jwksCache = { host, keys: body.keys ?? [], fetchedAt: Date.now() };
+  let body: { keys?: unknown } | null;
+  try {
+    const res = await fetch(`https://${host}/cdn-cgi/access/certs`, {
+      signal: AbortSignal.timeout(JWKS_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    body = (await res.json()) as { keys?: unknown } | null;
+  } catch (err) {
+    console.error('Access keys unavailable:', err);
+    throw new HttpError('Access keys unavailable', 503);
+  }
+  jwksCache = { host, keys: Array.isArray(body?.keys) ? (body.keys as Jwk[]) : [], fetchedAt: Date.now() };
   return jwksCache.keys;
 }
 

@@ -3,7 +3,12 @@ import { HttpError } from './http';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MAX_TITLE = 200;
-const MAX_FRAMES = 10000;
+/**
+ * Frames in a project, and so one past the highest index a frame may be
+ * stored under. The capture clients stop at this many (GallerySave,
+ * SnapshotRecorder); a reel at 4 fps is over 40 minutes of it.
+ */
+export const MAX_FRAMES = 10000;
 const MAX_STAGES = 500;
 /**
  * The serialised `data` column. D1 refuses a row past 2,000,000 bytes with
@@ -84,6 +89,17 @@ function parseScene(raw: string | null): SceneMeta | null {
 
 export function getProjectRow(env: Env, id: string): Promise<ProjectRow | null> {
   return env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<ProjectRow>();
+}
+
+/**
+ * A project anyone may read, or null. The visibility is part of the query
+ * rather than a check on the row afterwards, so a private row never reaches
+ * a public route's code at all, and a later edit there cannot leak one.
+ */
+export function getPublicProjectRow(env: Env, id: string): Promise<ProjectRow | null> {
+  return env.DB.prepare("SELECT * FROM projects WHERE id = ? AND visibility = 'public'")
+    .bind(id)
+    .first<ProjectRow>();
 }
 
 /**
@@ -202,11 +218,14 @@ function validFrames(v: unknown): ProjectData['frames'] {
       typeof index !== 'number' ||
       !Number.isInteger(index) ||
       index < 0 ||
+      // An index no upload can be stored under would point the manifest
+      // at a frame that can never exist (frames.ts has the same bound).
+      index >= MAX_FRAMES ||
       typeof tris !== 'number' ||
       !Number.isFinite(tris) ||
       tris < 0
     ) {
-      throw new HttpError('frames: each entry needs a non-negative integer index and tris');
+      throw new HttpError(`frames: each entry needs an integer index below ${MAX_FRAMES} and non-negative tris`);
     }
     // Two entries for one index would make frameCount overstate the reel
     // and the viewer fetch the same file twice under different positions.
@@ -260,9 +279,13 @@ export async function updateProject(env: Env, id: string, patch: Record<string, 
   const fps = validFps(patch.fps, row.fps);
   const visibility = validVisibility(patch.visibility, row.visibility);
   // The look blocks (lighting, environment, ...) are stored as sent, so
-  // the row as a whole is what gets bounded.
+  // the row as a whole is what gets bounded - in bytes, as D1 counts it: a
+  // string's length counts UTF-16 units, and a title or stage note in
+  // another script is two or three bytes to each of them.
   const serialised = JSON.stringify(next);
-  if (serialised.length > MAX_DATA_BYTES) throw new HttpError('project data too large', 413);
+  if (new TextEncoder().encode(serialised).byteLength > MAX_DATA_BYTES) {
+    throw new HttpError('project data too large', 413);
+  }
 
   // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
   if ('frames' in patch) {
@@ -310,7 +333,17 @@ export async function putFrame(env: Env, id: string, index: number, body: ArrayB
   return key;
 }
 
+/**
+ * Store a project's gallery thumbnail. Every client encodes it as a JPEG
+ * (Viewer.captureThumbnail), and it is served back as image/jpeg, so
+ * anything that does not start like one is refused: the stored type is
+ * then always true of the bytes behind it.
+ */
 export async function putThumb(env: Env, id: string, body: ArrayBuffer): Promise<void> {
+  const head = new Uint8Array(body, 0, Math.min(3, body.byteLength));
+  if (head.length < 3 || head[0] !== 0xff || head[1] !== 0xd8 || head[2] !== 0xff) {
+    throw new HttpError('thumbnail: expected a JPEG', 415);
+  }
   if (!(await getProjectRow(env, id))) throw new HttpError('Not found', 404);
   await env.BUCKET.put(`projects/${id}/thumb.jpg`, body, {
     httpMetadata: { contentType: 'image/jpeg' },

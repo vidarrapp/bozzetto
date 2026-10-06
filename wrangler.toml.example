@@ -28,9 +28,12 @@ bucket_name = "bozzetto-assets"
 # [vars]
 # ADMIN_EMAILS = "you@example.com"   # restrict admin writes to these identities
 # DEV_ADMIN = "true"                 # LOCAL ONLY: bypass Access so the /admin
-#                                    # editor works in `npm run cf:dev`. Never
-#                                    # set this in the production dashboard.
-# ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"  # with ACCESS_AUD, admin
-# ACCESS_AUD = "<application audience tag>"             # routes verify the Access
-#                                    # JWT instead of trusting the email header
-#                                    # (recommended in production).
+#                                    # editor works in `npm run cf:dev`. Honoured
+#                                    # on localhost / 127.0.0.1 / [::1] only, and
+#                                    # ignored on any other host.
+#
+# Required in the Pages dashboard (Production and Preview), not here: on any
+# host but a loopback one the admin routes verify the Access JWT against these
+# and answer 503 without them. Locally the email header is trusted as it comes.
+# ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
+# ACCESS_AUD = "<application audience tag>"

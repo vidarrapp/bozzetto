@@ -38,25 +38,40 @@ export async function serveMedia(env: Env, segments: string[], owner: boolean): 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
-  headers.set('cache-control', cacheControl(isPublic, rest.join('/')));
+  headers.set('cache-control', cacheControl(isPublic && !owner, rest.join('/')));
   if (!headers.has('content-type')) headers.set('content-type', 'model/gltf-binary');
+  // A stored file is data, never a page. Uploads are the owner's, but the
+  // type a browser acts on should still be the one stored, and a file
+  // opened on its own is sandboxed: no script, no plugins, and an origin
+  // apart from this site's.
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('content-security-policy', "default-src 'none'; sandbox");
+  // Only this site's own pages read these. Nothing loads them from another
+  // origin (the desktop app fetches them in its main process, the
+  // single-file export carries its own copies), so no other site may
+  // embed them either, public or private.
+  headers.set('cross-origin-resource-policy', 'same-origin');
   return new Response(object.body, { headers });
 }
 
 /**
- * A private file is kept nowhere it could outlive the session that fetched
- * it. A scene is re-saved in place under one name, so every read
- * revalidates. Frames and thumbnails are addressed with ?v=<updated_at>,
- * so a URL never changes what it means and may be kept for good.
+ * A private file, or any file read through the Access-gated route, is kept
+ * nowhere it could outlive the session that fetched it. A scene is re-saved
+ * in place under one name, so every read revalidates. Frames and thumbnails
+ * are addressed with ?v=<updated_at>, so a URL never changes what it means
+ * and may be kept for good.
  */
-function cacheControl(isPublic: boolean, file: string): string {
-  if (!isPublic) return 'private, no-store';
+function cacheControl(shared: boolean, file: string): string {
+  if (!shared) return 'private, no-store';
   if (file === 'scene.bozz') return 'public, no-cache';
   return 'public, max-age=31536000, immutable';
 }
 
-function notFound(): Response {
-  return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+export function notFound(): Response {
+  return new Response('Not found', {
+    status: 404,
+    headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+  });
 }
 
 /** A [[path]] catch-all hands over one segment or several. */

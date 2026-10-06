@@ -1,5 +1,5 @@
 import type { Env } from '../../../../_shared/types';
-import { bodyLimit, error, handle, json, requireAdmin } from '../../../../_shared/http';
+import { bodyLimit, error, handle, json, readJson, requireAdmin } from '../../../../_shared/http';
 import {
   MAX_SCENE_PART_BYTES,
   abortSceneUpload,
@@ -35,8 +35,7 @@ export const onRequestPost: PagesFunction<Env> = ({ env, request, params }) =>
     // The part list: 10,000 parts of a few dozen bytes each at the most.
     const tooBig = bodyLimit(request, 1024 * 1024);
     if (tooBig) return tooBig;
-    const body = (await request.json()) as Record<string, unknown>;
-    return json(toManifest(await completeSceneUpload(env, id, upload, body)));
+    return json(toManifest(await completeSceneUpload(env, id, upload, await readJson(request))));
   });
 
 export const onRequestPut: PagesFunction<Env> = ({ env, request, params }) =>

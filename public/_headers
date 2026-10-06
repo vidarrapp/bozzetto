@@ -2,6 +2,9 @@
 # immutable via the framework; these are the stable-named heavy assets, cached
 # so repeat visits don't re-download them. (First load is unaffected — for the
 # HDRs, 1k exports are the win there.)
+#
+# These reach the static files only. A Function's response (/api, /admin/api,
+# /media, /admin/login) carries only the headers its code sets.
 
 /assets/env/*
   Cache-Control: public, max-age=604800
@@ -11,3 +14,20 @@
 
 /assets/fonts/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Every page and file. The site is never embedded in another page (owner
+# decision), so framing is refused outright: X-Frame-Options for browsers
+# that predate frame-ancestors, which a Report-Only policy ignores and so
+# has an enforced header of its own. The rest of the policy is report-only
+# until it has been watched for what it would block. Nothing in the build
+# is inline; 'wasm-unsafe-eval' is the meshopt decoder's WebAssembly, the
+# blob: workers are that decoder's and the video encoder's, and
+# api.github.com is the Install card's lookup of the latest release.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=()
+  Strict-Transport-Security: max-age=31536000
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data: https://api.github.com; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'
