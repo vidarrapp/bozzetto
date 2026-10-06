@@ -107,6 +107,9 @@
       ],
       "icon": "public/icons/icon-512.png"
     },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
     "linux": {
       "target": [
         "AppImage"
