@@ -1,0 +1,40 @@
+# The whole browser suite, smoke.mjs and latency.mjs: about 50 minutes on
+# a fast machine, so weekly and from the Actions tab rather than on every
+# push (ci.yml runs a few of its suites there).
+name: E2E (full)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays, early morning UTC.
+    - cron: '23 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # As in ci.yml: Playwright for this checkout only, with its Chromium.
+      - name: Playwright and Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - run: npm run gen:sample
+      - run: npm run build:test
+      - name: Every suite
+        run: node tests/e2e/run.mjs

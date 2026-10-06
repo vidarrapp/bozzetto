@@ -1,0 +1,83 @@
+# Checks on every push and every pull request: both typechecks and the
+# production build, the Functions against the local Workers runtime, and a
+# few of the browser suites. The whole browser suite (about 50 minutes) is
+# e2e-full.yml, weekly and on demand.
+#
+# A read-only token, no install scripts, and no pull_request_target: a
+# pull request from a fork runs here with nothing worth taking.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch, or pull request, replaces the run still
+# going for the one before.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run typecheck:functions
+      # What Cloudflare Pages runs (prebuild included).
+      - run: npm run build
+
+  functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # wrangler pages dev over workerd, D1 and R2 simulated on disk.
+      - run: npm run check:functions
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Playwright is not a dependency of the app (tests/e2e/lib.mjs takes
+      # whichever one it can reach). Add it to this checkout only, at a
+      # fixed version, with its Chromium and the libraries that needs.
+      - name: Playwright and Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+      # build:test has no prebuild hook: make the generated demo assets
+      # first, as npm run build does.
+      - run: npm run gen:sample
+      - run: npm run build:test
+      # Fast suites only: boot, the primitives, the gallery's Create menu,
+      # and a scene file's round trip.
+      - name: Smoke suites
+        timeout-minutes: 10
+        run: node tests/e2e/run.mjs boot primitives gallery roundtrip
