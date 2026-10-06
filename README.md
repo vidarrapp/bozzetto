@@ -366,7 +366,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.3.5
+
+**Verified sign-in, refused forgeries and crafted files, confined desktop file access.** Desktop app 0.5.5.
 
 **The server checks who is asking, and from where.**
 
