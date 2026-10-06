@@ -8,7 +8,9 @@
 name: CI
 
 on:
+  # Every branch; a release tag's commit was already checked on its branch.
   push:
+    branches: ['**']
   pull_request:
 
 permissions:
