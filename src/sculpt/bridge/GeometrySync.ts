@@ -48,6 +48,12 @@ export class GeometrySync {
   };
 
   private mesh: SculptMesh | null = null;
+  /**
+   * Fired whenever the geometry changes on its way to the GPU (a stroke step,
+   * an undo, a paint or mask stroke, a topology change): a still frame's
+   * smoothing starts over (Viewer.invalidate).
+   */
+  onChange: (() => void) | null = null;
   /** Sorted-later dirty vertex ids accumulated since the last commit. */
   private dirty: number[] = [];
   private dirtyIsFull = false;
@@ -80,6 +86,7 @@ export class GeometrySync {
     this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
     this.wireStale = true;
     this.stats.rebuilds++;
+    this.onChange?.();
   }
 
   /**
@@ -150,6 +157,7 @@ export class GeometrySync {
     const nrm = this.geometry.getAttribute('normal') as BufferAttribute;
     this.commitGeometry(pos, nrm);
     this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
+    this.onChange?.();
   }
 
   /**
@@ -171,6 +179,7 @@ export class GeometrySync {
     if (which !== 'color') {
       (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
     }
+    this.onChange?.();
   }
 
   /**

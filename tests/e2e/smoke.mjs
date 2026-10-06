@@ -4479,7 +4479,10 @@ export const suites = {
     const state = () =>
       page.evaluate(() => {
         const v = window.__bozzetto;
-        const out = v.pipeline.outputNode;
+        // Sculpt draws through the still frame's sum (anti-aliasing when
+        // still): the picture is what the sum is of.
+        const raw = v.pipeline.outputNode;
+        const out = raw === v.accumulateOut ? v.accumulateInput : raw;
         return {
           ao: v.getAOState(),
           cav: v.getSculptAO(),
@@ -5281,7 +5284,10 @@ export const suites = {
     const aoState = () =>
       page.evaluate(() => {
         const v = window.__bozzetto;
-        const out = v.pipeline.outputNode;
+        // Armature draws through the still frame's sum (anti-aliasing when
+        // still): the picture is what the sum is of.
+        const raw = v.pipeline.outputNode;
+        const out = raw === v.accumulateOut ? v.accumulateInput : raw;
         const sel = [...document.querySelectorAll('.panel label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
         return {
           ao: v.getAOState(),

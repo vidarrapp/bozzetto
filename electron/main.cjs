@@ -9,7 +9,7 @@
  * workers all require one, and file:// is not. A standard, secure,
  * fetch-capable scheme gives both, and dist/ ships unmodified.
  */
-const { app, BrowserWindow, Menu, protocol, net, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, shell, session, screen, powerMonitor, ipcMain } = require('electron');
 const fs = require('node:fs/promises');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
@@ -23,11 +23,19 @@ const {
   windowFor,
 } = require('./files.cjs');
 const { registerServerIpc, serverMenu } = require('./server.cjs');
+const { applyLaunchSwitches, registerLaunchIpc, launchArguments } = require('./launch.cjs');
 
 const SCHEME = 'bozzetto';
 const ORIGIN = `${SCHEME}://app`;
 /** The desktop build (vite --mode desktop), inside the packaged asar. */
 const DIST = path.join(__dirname, '..', 'dist-desktop');
+
+/**
+ * The launch settings this process runs with (launch.cjs), set before ready.
+ * Declared ahead of the lock below: main() assigns it while this module is
+ * still being evaluated, and a `let` further down would not exist yet.
+ */
+let launch = { vsync: false, highPerformanceGpu: false };
 
 // One running copy. Windows and Linux hand a double-clicked .bozz to a NEW
 // process as an argv entry; without the lock every file opened from the
@@ -41,6 +49,10 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function main() {
+  // Chromium switches (v-sync, the high-performance GPU) only take before
+  // the app is ready, so launch.json is read and applied first of all.
+  launch = applyLaunchSwitches();
+
   // Must run before app-ready. `standard` gives it an origin (so storage is
   // partitioned per app rather than opaque), `secure` unlocks WebGPU and
   // IndexedDB, `supportFetchAPI` lets the app's own fetch() reach its assets.
@@ -83,6 +95,8 @@ function main() {
     // and re-registering there would take the whole app down.
     registerFileIpc();
     registerServerIpc();
+    registerLaunchIpc(launch);
+    watchPower();
     setAboutPanel();
     buildMenu();
     createWindow();
@@ -177,6 +191,32 @@ function serveApp() {
   });
 }
 
+/** The refresh rate of the display a window is on (or the primary display before there is one). */
+function displayHzOf(win) {
+  const display = win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+  return Math.round(display?.displayFrequency || 0);
+}
+
+/**
+ * Battery and mains, as they change: with v-sync off the page paces itself
+ * to the display on battery even while you work (Viewer.scheduleNext), so
+ * no frame is drawn that the display cannot show. `power:now` answers for
+ * the moment it is asked, for a page that loads after the window was made
+ * (a reload), whose launch arguments still say how things were then.
+ * Registered once.
+ */
+function watchPower() {
+  const tell = (onBattery) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('power:battery', onBattery);
+  };
+  powerMonitor.on('on-battery', () => tell(true));
+  powerMonitor.on('on-ac', () => tell(false));
+  ipcMain.handle('power:now', (e) => ({
+    onBattery: powerMonitor.isOnBatteryPower(),
+    displayHz: displayHzOf(BrowserWindow.fromWebContents(e.sender)),
+  }));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -195,7 +235,19 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       webgl: true,
+      // The launch state in force, the display's refresh rate and the
+      // battery, for the page's frame pacing and its meter (preload.cjs).
+      additionalArguments: launchArguments(launch, displayHzOf(null), powerMonitor.isOnBatteryPower()),
     },
+  });
+  // Dragged to another display: its refresh rate is the page's new budget.
+  let shownHz = displayHzOf(null);
+  win.on('moved', () => {
+    const hz = displayHzOf(win);
+    if (hz !== shownHz) {
+      shownHz = hz;
+      win.webContents.send('display:hz', hz);
+    }
   });
 
   // The document owns the title. Without this the page's own <title>

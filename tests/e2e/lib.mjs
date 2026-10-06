@@ -69,7 +69,7 @@ export function serve(root, port = 0, { gone, delay } = {}) {
   });
 }
 
-function playwright() {
+export function playwright() {
   const require = createRequire(import.meta.url);
   const names = ['playwright', 'playwright-core'];
   for (const name of names) {

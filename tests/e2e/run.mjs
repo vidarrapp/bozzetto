@@ -29,6 +29,18 @@ if (!chosen.length) {
 
 const server = await serve(dist);
 const browser = await launch();
+// Adaptive quality off in every page, contexts the suites make themselves
+// included: software frames here miss every refresh, and the ladder would
+// lighten frames under suites that compare them. The latency suites turn
+// it back on where they test it.
+const newContext = browser.newContext.bind(browser);
+browser.newContext = async (options) => {
+  const ctx = await newContext(options);
+  await ctx.addInitScript(() => {
+    window.__bozzettoAdaptiveOff = true;
+  });
+  return ctx;
+};
 let failed = 0;
 try {
   for (const [name, fn] of chosen) {

@@ -1343,6 +1343,12 @@ html.is-page body {
   border: 2px solid var(--panel-border);
   border-top-color: var(--accent);
   border-radius: 50%;
+}
+
+/* Spinning only while shown: an endless animation keeps asking for frames
+   behind opacity 0, and in the desktop app, with v-sync off, that is as many
+   as the machine can draw. */
+.transport__buffering--show .transport__spinner {
   animation: transport-spin 0.8s linear infinite;
 }
 

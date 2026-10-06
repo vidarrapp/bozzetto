@@ -7,6 +7,7 @@ import { installShortcuts } from '../ui/shortcuts';
 import { Help } from '../ui/Help';
 import { FpsMeter } from '../ui/FpsMeter';
 import { mountStallLog } from '../ui/diagnostics';
+import { followDesktopPacing } from '../desktop/launch';
 
 /**
  * Boot a Viewer into `viewport` and wire up the full public UI (panel,
@@ -40,6 +41,8 @@ export async function mountViewer(
   // The stall log lives here, not in one mode, so it reads the same over
   // the viewer, Sculpt and Armature (Preferences > Diagnostics, ?perfdebug=1).
   mountStallLog();
+  // The desktop app's frame pacing (v-sync off, the display, the battery).
+  followDesktopPacing(viewer);
   installShortcuts(viewer, {
     togglePanel: () => panel.toggleCollapsed(),
     toggleHelp: () => help.toggle(),

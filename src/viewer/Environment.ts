@@ -103,6 +103,11 @@ export class Environment {
 
   /** Fired while an HDRI is downloading/prefiltering (drives a loading hint). */
   onLoading: ((loading: boolean) => void) | null = null;
+  /**
+   * Fired after anything that changes the picture, an HDRI landing after
+   * its download included: a still frame starts smoothing over.
+   */
+  onChange: (() => void) | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -167,6 +172,7 @@ export class Environment {
       this.envMap = this.pmrem.fromEquirectangular(equirect).texture;
       this.scene.environment = this.envMap;
       this.updateBackground();
+      this.onChange?.();
     } catch (err) {
       console.error(`Environment "${id}" failed to load:`, err);
       this.scene.environment = null;
@@ -179,6 +185,7 @@ export class Environment {
   setIntensity(value: number): void {
     this.intensity = value;
     this.scene.environmentIntensity = value * ENV_INTENSITY_SCALE;
+    this.onChange?.();
   }
 
   /**
@@ -190,6 +197,7 @@ export class Environment {
   setBackgroundBrightness(value: number): void {
     this.bgBrightness = value;
     this.scene.backgroundIntensity = value;
+    this.onChange?.();
   }
 
   setBackgroundMode(mode: BackgroundMode): void {
@@ -219,12 +227,14 @@ export class Environment {
   setBackgroundBlur(value: number): void {
     this.blur = value;
     this.scene.backgroundBlurriness = value;
+    this.onChange?.();
   }
 
   private applyRotation(): void {
     const rad = ((this.rigRotation + this.offset) * Math.PI) / 180;
     this.scene.environmentRotation.set(0, rad, 0);
     this.scene.backgroundRotation.set(0, rad, 0);
+    this.onChange?.();
   }
 
   /**
@@ -270,6 +280,8 @@ export class Environment {
   }
 
   private updateBackground(): void {
+    // The theme switching counts as a change too: the theme background follows it.
+    this.onChange?.();
     // Background softening: the editor's Bg blur slider plus the camera's
     // depth-of-field bokeh both contribute (this is the always-on plate blur).
     this.scene.backgroundBlurriness = this.blur;

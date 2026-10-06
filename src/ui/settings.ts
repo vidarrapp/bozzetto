@@ -25,6 +25,16 @@ export interface SettingsValues {
    */
   interactionLook: 'fast' | 'full';
   /**
+   * Anti-aliasing in Sculpt and Armature (Preferences > Performance).
+   * 'still' (the default, owner call): frames are drawn without it while
+   * anything moves, and a still view is smoothed over the next frames
+   * (Viewer.updateAntialias). 'always': 4x MSAA on every frame, as before.
+   * 'off': never, on screen; thumbnails are smoothed whatever this says.
+   */
+  antialias: 'still' | 'always' | 'off';
+  /** Adaptive quality: lighter frames while they keep missing the display (adaptive.ts). */
+  adaptive: OnOff;
+  /**
    * How opaque the panels are, in percent (Preferences > Appearance): from
    * 60, where a good deal of the view shows through, to 100, solid. Nothing
    * behind a panel is blurred at any setting (appearance.ts).
@@ -41,6 +51,8 @@ export interface SettingsValues {
 const DEFAULTS: SettingsValues = {
   fingers: 'navigate',
   interactionLook: 'fast',
+  antialias: 'still',
+  adaptive: 'on',
   panelOpacity: 95,
   meter: 'off',
   stallLog: 'off',
@@ -62,6 +74,8 @@ interface Range {
 const ALLOWED: { [K in keyof SettingsValues]: SettingsValues[K] extends number ? Range : readonly SettingsValues[K][] } = {
   fingers: ['navigate', 'sculpt'],
   interactionLook: ['fast', 'full'],
+  antialias: ['still', 'always', 'off'],
+  adaptive: ON_OFF,
   panelOpacity: { min: 60, max: 100 },
   meter: ON_OFF,
   stallLog: ON_OFF,

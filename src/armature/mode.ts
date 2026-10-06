@@ -7,6 +7,7 @@ import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
+import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
@@ -383,6 +384,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   };
   const syncHandles = (): void => {
+    // Every pose change, selection and figure swap comes through here: the
+    // picture changed, so a still frame's smoothing starts over.
+    viewer.invalidate();
     handleGroup.visible = handlesOn;
     if (!handlesOn) return;
     const at = new Vector3();
@@ -446,6 +450,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // for itself, while the view moves): Viewer.updateFrameMode.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (dragUnderway() ? 'move' : null);
+  // Anti-aliasing as Preferences says, as in Sculpt (the viewer's own is 4x MSAA).
+  const applyAntialias = (): void => viewer.setAntialias(settings.get('antialias'));
+  applyAntialias();
+  const offAntialias = settings.onChange(applyAntialias);
   const dragPlane = new Plane();
   const dragPoint = new Vector3();
   // Scratch for the aim drag, which runs on every move.
@@ -742,19 +750,26 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /**
    * Picture the figure for the gallery card, as sculpt mode does its work,
    * and save it with the rest. The balls, the gizmo and the selection wash
-   * stay out of the picture: they are the tool, not the figure.
+   * stay out of the picture: they are the tool, not the figure. `smooth`
+   * false (a page on its way out) takes it in one render, not sixteen: the
+   * card is drawn down to a quarter of the canvas's width or less, which
+   * smooths its edges about as much.
    */
-  const snapshot = async (): Promise<void> => {
+  const snapshot = async (smooth = true): Promise<void> => {
     const overlays: Object3D[] = [handleGroup, ...controls.map((tc) => tc.getHelper())];
     if (highlight) overlays.push(highlight);
     const shown = overlays.map((o) => o.visible);
     for (const o of overlays) o.visible = false;
+    // A held, smoothed view still has them in it: the picture starts over.
+    viewer.invalidate();
     try {
-      thumb = await viewer.captureThumbnail(320);
+      thumb = await viewer.captureThumbnail(320, smooth);
     } catch {
       // Never block leaving the page over a picture.
     } finally {
       overlays.forEach((o, i) => (o.visible = shown[i]));
+      // The handles are back: the picture changed without a setter.
+      viewer.invalidate();
     }
     await flushSave();
   };
@@ -770,7 +785,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // (a page on its way out may never draw another frame).
   const onHidden = (): void => {
     void flushSave();
-    void snapshot();
+    void snapshot(false);
   };
   window.addEventListener('pagehide', onHidden);
   const galleryLink = document.querySelector<HTMLAnchorElement>('.viewer-back');
@@ -1206,6 +1221,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     select(null);
     viewer.fastFrames = false;
     viewer.interactionProbe = null;
+    offAntialias();
+    viewer.setAntialias('always');
     viewer.setSculptVisible(true);
     for (const tc of controls) {
       viewer.scene.remove(tc.getHelper());

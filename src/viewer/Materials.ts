@@ -80,7 +80,9 @@ export class Materials {
   ];
 
   constructor(source: AssetSource) {
-    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, matcapUrl(m.url)));
+    // A matcap arriving changes the picture after the fact, with nothing
+    // else to say so: a still frame smoothed before it would hold the old one.
+    this.matcapTextures = MATCAPS.map((m) => loadMatcap(source, matcapUrl(m.url), () => this.onChange?.()));
 
     // Lit PBR — the default mode and the reason lighting exists. polygonOffset
     // pushes the surface back a touch so the wireframe overlay reads on top.
@@ -135,6 +137,9 @@ export class Materials {
     this.maskTintOn = on;
     this.rebuildSculptColor();
   }
+
+  /** Fired after anything that changes the picture: a still frame starts smoothing over. */
+  onChange: (() => void) | null = null;
 
   /**
    * Sculpt mode paints per-vertex, so albedo comes from the `color`
@@ -214,11 +219,13 @@ export class Materials {
       m.colorNode = node as unknown as MeshStandardNodeMaterial['colorNode'];
       m.needsUpdate = true;
     }
+    this.onChange?.();
   }
 
   /** Brightness floor of fully masked areas (0 = black, 1 = no tint). */
   setMaskDarken(v: number): void {
     this.maskDarkenU.value = Math.min(1, Math.max(0, v));
+    this.onChange?.();
   }
 
   getMaskDarken(): number {
@@ -254,6 +261,7 @@ export class Materials {
     const mat = this.registry.get('matcap') as MeshMatcapNodeMaterial;
     mat.matcap = this.matcapTextures[index];
     mat.needsUpdate = true;
+    this.onChange?.();
   }
 
   /** Fired after the Lit albedo changes (sculpt writes it to the object). */
@@ -264,16 +272,19 @@ export class Materials {
   setAlbedo(hex: string): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).color = new Color(hex);
     this.onAlbedoChange?.();
+    this.onChange?.();
   }
 
   setRoughness(value: number): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).roughness = value;
     this.onPbrChange?.();
+    this.onChange?.();
   }
 
   setMetalness(value: number): void {
     (this.registry.get('lit') as MeshStandardNodeMaterial).metalness = value;
     this.onPbrChange?.();
+    this.onChange?.();
   }
 
   /** Perceptual luminance of the Lit albedo (0..1) — picks the wire overlay colour. */
@@ -295,6 +306,7 @@ export class Materials {
       m.flatShading = flat;
       m.needsUpdate = true; // toggling flatShading recompiles the shader
     }
+    this.onChange?.();
   }
 
   toggleFlatShading(): boolean {
@@ -337,7 +349,7 @@ export class Materials {
  * immediately and fills it once the bytes arrive (decoded via a blob URL, so it
  * works over the network and from an embedded base64 registry alike).
  */
-function loadMatcap(source: AssetSource, path: string): Texture {
+function loadMatcap(source: AssetSource, path: string, onLoad: () => void): Texture {
   const tex = new Texture();
   tex.colorSpace = SRGBColorSpace;
   void source
@@ -349,6 +361,7 @@ function loadMatcap(source: AssetSource, path: string): Texture {
         tex.image = img;
         tex.needsUpdate = true;
         URL.revokeObjectURL(url);
+        onLoad();
       };
       img.onerror = () => URL.revokeObjectURL(url);
       img.src = url;

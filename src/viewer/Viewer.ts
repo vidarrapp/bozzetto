@@ -41,6 +41,9 @@ import type { Manifest, Tier } from '../types/manifest';
 import { detectQuality, SHADOW_TIERS } from './quality';
 import { formatMs, perfLog, STALL_MS } from './perfLog';
 import { FrameStats, ms, type FrameSummary } from './frameStats';
+import { FrameClock } from './frameClock';
+import { AccumulateNode, stillOffsets } from './accumulate';
+import { AdaptiveQuality, type QualityKnobs } from './adaptive';
 import { settings } from '../ui/settings';
 
 /** Output grade choices (Render panel > Camera > Tone mapping). */
@@ -232,6 +235,43 @@ const CAMERA_STILL_EPS = 2e-4;
 /** What a frame is doing, for the fast frames and the meter. */
 export type InteractionKind = 'stroke' | 'move';
 
+/**
+ * Anti-aliasing (Viewer.setAntialias). 'always': the scene pass's 4x MSAA
+ * on every frame, the viewer's and the embeds' way. 'still': no MSAA, and a
+ * view left still is smoothed by jittered samples summed over the next
+ * frames (accumulate.ts); Sculpt and Armature's default. 'off': no MSAA and
+ * no smoothing on screen. Thumbnails are smooth in every mode.
+ */
+export type AntialiasMode = 'still' | 'always' | 'off';
+
+/**
+ * How long nothing may change before a still frame starts smoothing (ms),
+ * and how many jittered samples it averages. Sixteen at 60 Hz is a quarter
+ * of a second after the wait; the owner asked for a mode that kicks in on
+ * a still frame, not a cost paid on every one.
+ */
+const STILL_AA_AFTER_MS = 1000;
+const STILL_AA_SAMPLES = 16;
+const STILL_OFFSETS = stillOffsets(STILL_AA_SAMPLES);
+
+/**
+ * The desktop app with v-sync off draws a frame as soon as the last is done.
+ * With nothing happening for this long (no input, playback, stroke, camera
+ * move or smoothing still to finish) it paces itself to the display instead
+ * (Viewer.scheduleNext), so an idle window does not run the GPU flat out.
+ */
+const IDLE_AFTER_MS = 1000;
+
+/** The desktop app's frame pacing, from its launch state (desktop/launch.ts). */
+export interface Pacing {
+  /** V-sync is off: frames are not held for the display. */
+  uncapped: boolean;
+  /** The display's refresh rate, from Electron (0: not known). */
+  displayHz: number;
+  /** Running on battery: paced to the display while working too. */
+  onBattery: boolean;
+}
+
 /** Counts of the renderer's builds and allocations; see Viewer.instrumentBackend. */
 export interface RenderCounters {
   /** Node graphs built into shaders. */
@@ -385,6 +425,13 @@ export class Viewer {
   interactionProbe: (() => InteractionKind | null) | null = null;
   /** Pins the frame mode for tests and measurements; undefined follows the probe and the camera. */
   debugInteraction: InteractionKind | null | undefined = undefined;
+  /**
+   * Test hook: the loop runs and paces as ever but nothing is drawn, a
+   * readback's renders included, so the desktop suite can measure the
+   * pacing apart from a software renderer that takes a tenth of a second
+   * over every frame (and seconds over a thumbnail).
+   */
+  debugSkipRender = false;
   private interaction: InteractionKind | null = null;
   /** The AO texture matches the view and the scene as they are (safe to hold). */
   private aoValid = false;
@@ -402,6 +449,41 @@ export class Viewer {
   private interactionStart: RenderCounters | null = null;
   private lastInteractionDelta: RenderCounters | null = null;
 
+  /** The frame clock: every render a new frame, and the only rAF loop (frameClock.ts). */
+  readonly clock: FrameClock;
+  /** Anti-aliasing in force; the viewer and embeds keep 'always' (setAntialias). */
+  private aaMode: AntialiasMode = 'always';
+  /** The still frame's sum (accumulate.ts), drawn through in 'still' and 'off'. */
+  private accumulate: AccumulateNode | null = null;
+  /** How many samples the sum holds, for the output to divide by. */
+  private readonly aaCountU = uniform(1);
+  /** Samples summed for the still frame so far (0: the frame is plain). */
+  private aaSamples = 0;
+  /**
+   * A readback's smooth image waits on the canvas to be read: until it is,
+   * the loop draws the same held image rather than going back to a plain
+   * frame (the readback waits a frame for the canvas to present, and the
+   * loop draws in that frame first).
+   */
+  private readbackHold = false;
+  /** When the picture last changed (invalidate), for the still frame's wait. */
+  private lastChange = 0;
+  /** The scene pass, whose MSAA follows the anti-aliasing mode. */
+  private scenePass: ReturnType<typeof pass> | null = null;
+  /** Adaptive quality (adaptive.ts), and the tier it steps down from. */
+  private readonly adaptive: AdaptiveQuality;
+  /** Unsubscribes adaptive quality from Preferences (dispose). */
+  private readonly offAdaptive: () => void;
+  private readonly tierAoSamples: number;
+  private readonly tierAoScale: number;
+  private readonly startRatio: number;
+  /** The desktop app's pacing; a browser leaves the defaults (setPacing). */
+  private pacing: Pacing = { uncapped: false, displayHz: 0, onBattery: false };
+  /** A paced frame waiting on its timer (scheduleNext), or 0. */
+  private pacer = 0;
+  /** When input last arrived (wake), for the idle pacing. */
+  private lastInput = 0;
+
   /**
    * Node postprocessing graph: a scene pass (colour + depth + normal via MRT)
    * composited with Ground-Truth ambient occlusion, then an optional DoF gather,
@@ -418,6 +500,10 @@ export class Viewer {
   private composites: Record<'viewer' | 'sculpt', Record<'plain' | 'ao', Node>> | null = null;
   /** DoF gathers over the composites, built as each is first wanted (owner call: DoF in sculpt). */
   private readonly dofNodes = new Map<Node, Node>();
+  /** The output in the 'still' and 'off' anti-aliasing modes: the sum over its count. */
+  private accumulateOut: Node | null = null;
+  /** What the sum is of now (rebuildOutput rebuilds the output when it changes). */
+  private accumulateInput: Node | null = null;
   private viewZNode: Node | null = null;
   /** `?aodebug` in sculpt: R = view distance/400, G = raw occlusion, B = factor. */
   private sculptAoDebugNode: Node | null = null;
@@ -469,9 +555,6 @@ export class Viewer {
   private readonly activeTouches = new Set<number>();
   /** Container box watcher: the resize source of truth (see the constructor). */
   private containerObserver: ResizeObserver | null = null;
-  /** Adaptive quality: trims render cost when measured FPS is low. */
-  private adaptTimer = 0;
-  private adaptStep = 0;
   /** Playback is stalled waiting for PLAYBACK_MIN_BUFFER frames to decode. */
   private buffering = false;
 
@@ -533,7 +616,9 @@ export class Viewer {
   ) {
     void options;
     this.renderer = renderer;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.clock = new FrameClock(renderer);
+    this.startRatio = Math.min(window.devicePixelRatio, 2);
+    this.renderer.setPixelRatio(this.startRatio);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.outputColorSpace = 'srgb';
     this.renderer.toneMapping = ACESFilmicToneMapping;
@@ -556,6 +641,23 @@ export class Viewer {
     this.instrumentBackend();
     this.materials = new Materials(source);
     this.environment = new Environment(this.scene, this.renderer, source);
+    // The lights, the materials and the environment are edited directly by
+    // the panels, not through the viewer, so they say when the picture has
+    // changed themselves: a still frame then starts smoothing over.
+    const changed = (): void => this.invalidate();
+    this.lighting.onChange = changed;
+    this.materials.onChange = changed;
+    this.environment.onChange = changed;
+    const quality = SHADOW_TIERS[detectQuality()];
+    this.tierAoSamples = quality.aoSamples;
+    this.tierAoScale = quality.aoResolutionScale;
+    this.adaptive = new AdaptiveQuality(this.qualityKnobs());
+    // Off in Preferences, or for the e2e harness, whose software frames
+    // miss every refresh and would walk every suite down the ladder.
+    const adaptiveWanted = (): boolean =>
+      settings.get('adaptive') === 'on' && !(window as { __bozzettoAdaptiveOff?: boolean }).__bozzettoAdaptiveOff;
+    this.adaptive.setEnabled(adaptiveWanted());
+    this.offAdaptive = settings.onChange(() => this.adaptive.setEnabled(adaptiveWanted()));
     this.envLoadingEl = document.createElement('div');
     this.envLoadingEl.className = 'env-loading';
     this.envLoadingEl.textContent = 'Loading environment…';
@@ -627,6 +729,16 @@ export class Viewer {
     // matter which events the platform forgot to send.
     this.containerObserver = new ResizeObserver(() => this.onResize());
     this.containerObserver.observe(container);
+    // Input: a pointer over the view (hovering included: the gizmo and the
+    // figure's balls light up under it), the wheel, a key, or a control
+    // moved in a panel. Each wakes a paced desktop loop at once and starts
+    // a still frame's wait over (onActivity).
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel']) {
+      this.container.addEventListener(type, this.onActivity, { capture: true, passive: true });
+    }
+    window.addEventListener('keydown', this.onActivity, { capture: true, passive: true });
+    document.addEventListener('input', this.onActivity, { capture: true, passive: true });
+    document.addEventListener('change', this.onActivity, { capture: true, passive: true });
 
     // Tap-to-focus: a brief reticle flashed at a double-click / double-tap pick.
     this.reticle = document.createElement('div');
@@ -718,7 +830,6 @@ export class Viewer {
 
     this.timer.update(); // establish the delta baseline before the first frame
     this.loop();
-    this.startAdaptive();
   }
 
   // --- transport / commands used by the UI panel -------------------------
@@ -818,6 +929,7 @@ export class Viewer {
     // The ground/shadow/pedestal follow the chosen Ground option, not the
     // material's shading — so matcap renders keep the stage too.
     this.updateStage();
+    this.invalidate();
   }
 
   /** The chosen output grade (lit modes; matcap always renders ungraded). */
@@ -832,6 +944,7 @@ export class Viewer {
     if (!(id in TONE_MAPPINGS)) return;
     this.toneMappingId = id;
     this.applyToneMapping();
+    this.invalidate();
   }
 
   /**
@@ -872,6 +985,7 @@ export class Viewer {
     this.sculptExtras.push(mesh);
     this.scene.add(mesh);
     if (wire) this.attachWire(mesh, wire);
+    this.invalidate();
     return mesh;
   }
 
@@ -915,11 +1029,13 @@ export class Viewer {
     if (mesh.userData.locked === undefined) mesh.userData.locked = 0;
     this.sculptExtras.push(mesh);
     this.scene.add(mesh);
+    this.invalidate();
   }
 
   setSculptExtraMatrix(mesh: Mesh, matrix: Matrix4): void {
     mesh.matrix.copy(matrix);
     mesh.matrixWorldNeedsUpdate = true;
+    this.invalidate();
   }
 
   removeSculptExtra(mesh: Mesh): void {
@@ -928,6 +1044,7 @@ export class Viewer {
     this.highlightSculpt(mesh, false);
     this.detachWire(mesh);
     this.scene.remove(mesh);
+    this.invalidate();
   }
 
   /**
@@ -943,6 +1060,7 @@ export class Viewer {
   private washMaterial: MeshBasicNodeMaterial | null = null;
 
   highlightSculpt(target: Mesh | 'primary', on: boolean): void {
+    this.invalidate();
     const host = target === 'primary' ? this.display : target;
     const existing = this.sculptOutlines.get(host);
     if (!on) {
@@ -1007,6 +1125,7 @@ export class Viewer {
   setSculptLocked(target: Mesh | 'primary', locked: boolean): void {
     const host = target === 'primary' ? this.display : target;
     host.userData.locked = locked ? 1 : 0;
+    this.invalidate();
   }
 
   /**
@@ -1016,6 +1135,7 @@ export class Viewer {
    */
   setSculptVisible(visible: boolean): void {
     this.display.visible = visible;
+    this.invalidate();
   }
 
   /**
@@ -1032,6 +1152,7 @@ export class Viewer {
   setSculptAO(state: { strength?: number; radius?: number }): void {
     if (typeof state.strength === 'number') this.cavityStrengthU.value = state.strength;
     if (typeof state.radius === 'number') this.sculptAoRadiusU.value = state.radius;
+    this.invalidate();
   }
 
   getSculptAO(): { strength: number; radius: number } {
@@ -1048,6 +1169,7 @@ export class Viewer {
     this.groundMode = mode;
     this.layoutStage(); // the pedestal changes the ground height
     this.updateStage();
+    this.invalidate();
   }
 
   getGround(): GroundMode {
@@ -1066,24 +1188,28 @@ export class Viewer {
     this.stageColor = hex;
     this.floorMaterial.color.set(hex);
     this.pedestalMaterial.color.set(hex);
+    this.invalidate();
   }
 
   setStageRoughness(value: number): void {
     this.stageRoughness = value;
     this.floorMaterial.roughness = value;
     this.pedestalMaterial.roughness = value;
+    this.invalidate();
   }
 
   setStageMetalness(value: number): void {
     this.stageMetalness = value;
     this.floorMaterial.metalness = value;
     this.pedestalMaterial.metalness = value;
+    this.invalidate();
   }
 
   /** Scale the pedestal's base (width/depth only); the height is unaffected. */
   setPedestalScale(value: number): void {
     this.pedestalScale = value;
     this.layoutStage();
+    this.invalidate();
   }
 
   getStageState(): StageState {
@@ -1104,6 +1230,7 @@ export class Viewer {
     if (state.ground) this.groundMode = state.ground;
     this.layoutStage();
     this.updateStage();
+    this.invalidate();
   }
 
   /**
@@ -1160,6 +1287,7 @@ export class Viewer {
   setRigRotation(deg: number): void {
     this.lighting.setRigRotation(deg);
     this.environment.setRotation(deg);
+    this.invalidate();
   }
 
   /** AO is available once the node pipeline built (it always does on WebGPU). */
@@ -1432,8 +1560,15 @@ export class Viewer {
         ? 'still · AO fading in'
         : 'still';
     const last = mode.lastInteraction;
+    const given = this.frameStats.reportedPeriod ? (this.pacing.displayHz > 0 ? ' (display)' : ' (assumed)') : '';
+    const refresh = s.refreshHz ? `${s.refreshHz} Hz${given}` : '…';
+    const p = this.pacing;
+    const pacing = p.uncapped
+      ? `v-sync off · ${this.isPaced() ? `paced to ${p.displayHz || 60} Hz${p.onBattery ? ' (battery)' : ' (idle)'}` : 'unpaced'}`
+      : null;
     return [
-      ['fps', `${Math.round(s.frames ? s.fps : this.fps)} · refresh ${s.refreshHz ? `${s.refreshHz} Hz` : '…'} · missed ${s.missed}/${s.refreshes}`],
+      ['fps', `${Math.round(s.frames ? s.fps : this.fps)} · refresh ${refresh} · missed ${s.missed}/${s.refreshes}`],
+      ...(pacing ? ([['pacing', pacing]] as Array<[string, string]>) : []),
       ['frame', frame],
       ['verdict', s.verdict],
       ['cpu', `input ${ms(s.inputMs)} (step ${ms(s.stepMs)}) · loop ${ms(s.loopMs)} · encode ${ms(s.encodeMs)} ms`],
@@ -1442,6 +1577,8 @@ export class Viewer {
       ['latency', latency],
       ['draws', `${info.drawCalls ?? info.calls ?? 0} · ${formatCount(info.triangles ?? 0)} tris`],
       ['frames', modeText],
+      ['AA', this.antialiasState()],
+      ['quality', this.adaptive.describe()],
       [
         'builds',
         last
@@ -1477,6 +1614,7 @@ export class Viewer {
       this.applyAoRadius();
     }
     this.applyAoStrength();
+    this.invalidate();
   }
 
   getAOState(): AOState {
@@ -1505,6 +1643,7 @@ export class Viewer {
     const fp = state.focusPoint;
     if (fp?.length === 3) this.dofFocusPoint = new Vector3(fp[0], fp[1], fp[2]);
     this.applyDof();
+    this.invalidate();
   }
 
   /** Flip DoF on/off (hotkey "b"); returns the new state. */
@@ -1539,6 +1678,7 @@ export class Viewer {
     const hit = this.picker.intersectObject(this.display, false)[0];
     if (!hit) return false;
     this.dofFocusPoint = hit.point.clone();
+    this.invalidate();
     if (!this.dofEnabled) this.setDoF({ enabled: true });
     this.updateDofFocus(); // apply this frame, not next
     this.flashReticle(clientX - rect.left, clientY - rect.top);
@@ -1561,6 +1701,7 @@ export class Viewer {
     this.camera.setFocalLength(mm);
     this.focalLength = mm;
     this.controls.dollyForFov(oldFov, this.camera.fov);
+    this.invalidate();
   }
 
   getFocalLength(): number {
@@ -1652,6 +1793,7 @@ export class Viewer {
       this.subjectBox.copy(geom.boundingBox);
       this.controls.focus(this.subjectBox);
     }
+    this.invalidate();
   }
 
   toggleWireframe(): boolean {
@@ -1666,6 +1808,7 @@ export class Viewer {
     this.wireframe.visible = on && !this.inSculpt;
     for (const w of this.sculptWires.values()) w.lines.visible = on;
     if (on) this.updateWireColor();
+    this.invalidate();
   }
 
   isWireframe(): boolean {
@@ -1690,6 +1833,7 @@ export class Viewer {
     const max = this.wireIsWhite ? WIRE_MAX_OPACITY_WHITE : WIRE_MAX_OPACITY_BLACK;
     this.wireMaterial.opacity = this.wireOpacity * max;
     this.wireLineMaterial.opacity = this.wireOpacity * max;
+    this.invalidate();
   }
 
   /** Light wires on a dark albedo, dark wires on a light one. */
@@ -1739,7 +1883,8 @@ export class Viewer {
     this.rafId = 0;
     // A paused loop is not a stalled one.
     this.frameStart = 0;
-    clearTimeout(this.adaptTimer);
+    clearTimeout(this.pacer);
+    this.pacer = 0;
     this.captureSaved = {
       pixelRatio: this.renderer.getPixelRatio(),
       frame: this.timeline.frameIndex(),
@@ -1763,6 +1908,7 @@ export class Viewer {
     this.display.geometry = geom;
     this.wireframe.geometry = geom;
     this.displayedIndex = ordinal;
+    this.invalidate(); // a smoothed capture frame is of the frame before
   }
 
   /** Load + render one frame into the capture canvas (call between begin/end). */
@@ -1793,6 +1939,7 @@ export class Viewer {
     this.display.position.copy(offset);
     this.wireframe.rotation.set(0, angle, 0);
     this.wireframe.position.copy(offset);
+    this.invalidate();
     await this.renderForReadback();
   }
 
@@ -1819,17 +1966,20 @@ export class Viewer {
     this.displayedIndex = -1;
     this.timer.update(); // discard time accumulated during capture
     this.frameStats.resetClock(); // nor is the capture a frame to the meter
+    this.endReadback();
     this.loop();
   }
 
   /**
    * Render the current frame and read it back as a JPEG thumbnail blob. When a
    * crop guide is active the thumbnail is cropped to it, so the saved image
-   * matches the framing used for the reel.
+   * matches the framing used for the reel. Smoothed whatever the screen
+   * shows (renderForReadback); `smooth` false takes the frame in one render
+   * instead, for a page on its way out, which may not live through sixteen.
    */
-  async captureThumbnail(maxWidth = 640): Promise<Blob> {
+  async captureThumbnail(maxWidth = 640, smooth = true): Promise<Blob> {
     const t0 = performance.now();
-    await this.renderForReadback();
+    await this.renderForReadback(smooth);
     const srcCanvas = this.renderer.domElement;
     const crop = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
     const sx = crop ? Math.round(crop.x) : 0;
@@ -1843,14 +1993,19 @@ export class Viewer {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('2D context unavailable for capture');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    // Timed on its own: drawing the WebGPU canvas into a 2D one can wait
-    // on the GPU, and it waits on the main thread.
-    const d0 = performance.now();
-    ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, w, h);
-    const draw = performance.now() - d0;
+    let draw = 0;
+    try {
+      if (!ctx) throw new Error('2D context unavailable for capture');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      // Timed on its own: drawing the WebGPU canvas into a 2D one can wait
+      // on the GPU, and it waits on the main thread.
+      const d0 = performance.now();
+      ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, w, h);
+      draw = performance.now() - d0;
+    } finally {
+      this.endReadback();
+    }
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error('thumbnail capture failed'))),
@@ -1875,7 +2030,9 @@ export class Viewer {
     if (clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) {
       return null;
     }
-    await this.renderForReadback();
+    // The colour as drawn: one plain frame, not the still frame's smoothing
+    // (the swatch drag samples on every move).
+    await this.renderForReadback(false);
     const sx = Math.floor(((clientX - rect.left) / rect.width) * src.width);
     const sy = Math.floor(((clientY - rect.top) / rect.height) * src.height);
     const canvas = document.createElement('canvas');
@@ -1891,7 +2048,14 @@ export class Viewer {
 
   dispose(): void {
     cancelAnimationFrame(this.rafId);
-    clearTimeout(this.adaptTimer);
+    clearTimeout(this.pacer);
+    this.offAdaptive();
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel']) {
+      this.container.removeEventListener(type, this.onActivity, { capture: true });
+    }
+    window.removeEventListener('keydown', this.onActivity, { capture: true });
+    document.removeEventListener('input', this.onActivity, { capture: true });
+    document.removeEventListener('change', this.onActivity, { capture: true });
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.containerObserver?.disconnect();
@@ -1960,6 +2124,7 @@ export class Viewer {
     }
     this.lighting.fitToBounds(this.subjectBox);
     this.layoutStage();
+    this.invalidate();
   }
 
   private sculptSaved: { geometry: BufferGeometry; frustumCulled: boolean } | null = null;
@@ -2001,6 +2166,7 @@ export class Viewer {
     this.wireframe.matrix.copy(matrix);
     this.display.matrixWorldNeedsUpdate = true;
     this.wireframe.matrixWorldNeedsUpdate = true;
+    this.invalidate();
   }
 
   exitSculpt(): void {
@@ -2017,6 +2183,7 @@ export class Viewer {
     this.display.frustumCulled = saved.frustumCulled;
     this.wireframe.frustumCulled = saved.frustumCulled;
     this.fitScene(this.display.geometry);
+    this.invalidate();
   }
 
   /**
@@ -2031,6 +2198,7 @@ export class Viewer {
     // (the sculpt geometry carries masking in its materialsPBR attribute).
     this.materials.setSculptMaskTint(on);
     this.rebuildOutput();
+    this.invalidate();
   }
 
   /**
@@ -2043,14 +2211,19 @@ export class Viewer {
     this.fitSubjectBounds(box, true, true);
   }
 
+  // The camera moves below are seen by the next frame anyway; invalidating
+  // at once also covers a readback taken before that frame.
+
   /** Turntable step around the subject (sculpt wheel keys, degrees). */
   orbitAzimuth(deg: number): void {
     this.controls.rotateAzimuth(deg);
+    this.invalidate();
   }
 
   /** Place the camera and its orbit target directly (pivot-orbit rewrite). */
   setCameraState(position: Vector3, target: Vector3): void {
     this.controls.placeCamera(position, target);
+    this.invalidate();
   }
 
   /**
@@ -2064,11 +2237,13 @@ export class Viewer {
   /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
   orbitAzimuthAbout(centre: Vector3, deg: number): void {
     this.controls.rotateAzimuthAbout(centre, deg);
+    this.invalidate();
   }
 
   /** Dolly by a multiplier (>1 out, <1 in); see Controls.dollyBy. */
   dolly(factor: number): void {
     this.controls.dollyBy(factor);
+    this.invalidate();
   }
 
   /** Stop the orbit's damped drift where it is; see Controls.halt. */
@@ -2107,8 +2282,10 @@ export class Viewer {
    */
   private buildPipeline(): void {
     const tier = SHADOW_TIERS[detectQuality()];
-    // The scene keeps its 4x MSAA here, the canvas has none (SCENE_SAMPLES).
+    // The scene keeps its 4x MSAA here, the canvas has none (SCENE_SAMPLES);
+    // setAntialias takes it away for the still frame's own smoothing.
     const scenePass = pass(this.scene, this.camera, CANVAS_MSAA ? {} : { samples: SCENE_SAMPLES });
+    this.scenePass = scenePass;
     // GTAO reads colour, depth and view-space normals. Normals come from an MRT
     // target (read via .sample()): GTAONode's alternative depth-reconstruction
     // path dereferences the pass depth texture at shader-build time, which isn't
@@ -2252,6 +2429,10 @@ export class Viewer {
 
     this.aoNode = aoNode;
     this.aoDenoise = aoClean;
+    // The still frame's sum, and the output that reads it (used by the
+    // 'still' and 'off' anti-aliasing modes; rebuildOutput picks).
+    this.accumulate = new AccumulateNode(this.composites.viewer.plain);
+    this.accumulateOut = (this.accumulate.getTextureNode() as ReturnType<typeof float>).div(this.aaCountU) as unknown as Node;
     this.pipeline = new RenderPipeline(this.renderer);
     // In AO-debug, show the raw occlusion values (1 = unoccluded ... 0 = fully
     // occluded) without the ACES/sRGB output transform, so the buffer reads true.
@@ -2279,7 +2460,7 @@ export class Viewer {
    * neither GTAO nor the gather is in the graph, or costs anything, while it
    * is off). The pipeline applies tone mapping + sRGB on output.
    */
-  private rebuildOutput(): void {
+  private rebuildOutput(force = false): void {
     const c = this.composites;
     if (!this.pipeline || !c) return;
     let out: Node;
@@ -2294,9 +2475,22 @@ export class Viewer {
       out = this.aoDebugNode;
     } else {
       const base = c[this.sculptShading ? 'sculpt' : 'viewer'][this.aoEnabled ? 'ao' : 'plain'];
-      out = this.dofEnabled ? this.dofOver(base) : base;
+      const picture = this.dofEnabled ? this.dofOver(base) : base;
+      // 'still' and 'off' draw through the sum, which a moving view replaces
+      // every frame and a still one adds jittered samples to; 'always'
+      // draws the picture straight, from the MSAA scene pass.
+      if (this.aaMode !== 'always' && this.accumulate && this.accumulateOut) {
+        if (this.accumulateInput !== picture) {
+          this.accumulate.setInput(picture);
+          this.accumulateInput = picture;
+          force = true; // the sum's own pass rebuilds with the output
+        }
+        out = this.accumulateOut;
+      } else {
+        out = picture;
+      }
     }
-    if (this.pipeline.outputNode === out) return;
+    if (this.pipeline.outputNode === out && !force) return;
     this.pipeline.outputNode = out;
     this.pipeline.needsUpdate = true;
     // A new output may bring GTAO into the graph: a stroke holds an AO only
@@ -2343,6 +2537,192 @@ export class Viewer {
     this.dofFocusU.value = Math.max(focus, 0.01);
   }
 
+  // --- anti-aliasing when still --------------------------------------------
+
+  /**
+   * Choose the anti-aliasing (AntialiasMode). The editors set theirs from
+   * Preferences while they are mounted; the viewer and embeds keep 'always'.
+   * Moving to or from 'always' changes the scene pass's MSAA, which
+   * rebuilds the output and recompiles the scene's pipelines once, here;
+   * going still, smoothing, holding and moving again never do
+   * (updateAntialias).
+   */
+  setAntialias(mode: AntialiasMode): void {
+    if (mode === this.aaMode) return;
+    this.aaMode = mode;
+    const scene = this.scenePass as unknown as { options: { samples?: number } } | null;
+    if (scene && !CANVAS_MSAA) scene.options.samples = mode === 'always' ? SCENE_SAMPLES : 0;
+    this.resetStill();
+    this.rebuildOutput(true);
+    this.invalidate();
+  }
+
+  getAntialias(): AntialiasMode {
+    return this.aaMode;
+  }
+
+  /**
+   * The picture changed: a still frame's smoothing starts over from the
+   * plain frame, at once. Every setter here that changes what is drawn
+   * calls this, as do the lights, the materials and the environment (their
+   * onChange), the editors' redraw requests, input over the view
+   * (onActivity) and a resize; a stroke, drag or camera move counts for as
+   * long as it lasts (updateAntialias). A smoothed image cannot outlive
+   * what it shows.
+   */
+  invalidate(): void {
+    this.lastChange = performance.now();
+    if (this.aaSamples > 0) this.resetStill();
+  }
+
+  /** Back to the plain frame: the sum replaced each frame, no camera offset. */
+  private resetStill(): void {
+    this.aaSamples = 0;
+    if (this.accumulate) this.accumulate.mode = 'replace';
+    this.aaCountU.value = 1;
+    if (this.camera.view?.enabled) this.camera.clearViewOffset();
+  }
+
+  /**
+   * Once a frame, before it renders. While anything changes the frame is
+   * plain (the sum replaced by it). Once nothing has for STILL_AA_AFTER_MS,
+   * each frame adds one sample drawn through a sub-pixel camera offset, the
+   * last plain frame being the first; at STILL_AA_SAMPLES the sum is held,
+   * and nothing is drawn but its average until the next change. Held, the
+   * image is the same every frame: no shimmer.
+   */
+  private updateAntialias(now: number): void {
+    const acc = this.accumulate;
+    if (!acc || this.aaMode === 'always' || this.capturing || this.readbackHold) return;
+    if (this.interaction !== null) this.lastChange = now;
+    if (this.aaMode === 'off' || now - this.lastChange < STILL_AA_AFTER_MS) {
+      if (this.aaSamples > 0 || acc.mode !== 'replace') this.resetStill();
+      return;
+    }
+    if (this.aaSamples >= STILL_AA_SAMPLES) {
+      acc.mode = 'hold';
+      if (this.camera.view?.enabled) this.camera.clearViewOffset();
+      return;
+    }
+    this.addStillSample();
+  }
+
+  /**
+   * Set up the next sample: the camera offset by its sub-pixel step, the
+   * sum told to add, and the count the output divides by. The step is in
+   * the drawing buffer's pixels, whatever its size (a capture renders
+   * denser than the screen), and the view keeps the camera's own aspect.
+   */
+  private addStillSample(): void {
+    const acc = this.accumulate;
+    if (!acc) return;
+    if (this.aaSamples === 0) this.aaSamples = 1; // the plain frame already in the sum
+    const [jx, jy] = STILL_OFFSETS[this.aaSamples];
+    const buffer = this.renderer.getDrawingBufferSize(this.bufferSize);
+    const fh = buffer.y;
+    const fw = fh * this.camera.aspect;
+    this.camera.setViewOffset(fw, fh, (jx * fw) / buffer.x, jy, fw, fh);
+    acc.mode = 'add';
+    this.aaSamples++;
+    this.aaCountU.value = this.aaSamples;
+  }
+
+  /** Scratch for addStillSample. */
+  private readonly bufferSize = new Vector2();
+
+  /** The anti-aliasing as the meter says it: "4× MSAA", "off …", "plain …" (not yet still), "9/16", "16/16 held". */
+  private antialiasState(): string {
+    if (this.aaMode === 'always') return '4× MSAA';
+    if (this.aaMode === 'off') return 'off (thumbnails smoothed)';
+    if (this.aaSamples === 0) return `plain (smooths after ${STILL_AA_AFTER_MS / 1000} s still)`;
+    const held = this.accumulate?.mode === 'hold';
+    return `${this.aaSamples}/${STILL_AA_SAMPLES}${held ? ' held' : ''}`;
+  }
+
+  // --- desktop pacing ------------------------------------------------------
+
+  /**
+   * The desktop app's launch state and what changes after it (the battery,
+   * the display moved to). Browsers never call this: they hold every frame
+   * for the display themselves.
+   */
+  setPacing(p: Partial<Pacing>): void {
+    this.pacing = { ...this.pacing, ...p };
+    const { uncapped, displayHz } = this.pacing;
+    // Uncapped, rAF's spacing is the frame time, not the display's: the
+    // meter's budget comes from the display Electron reports instead, or
+    // 60 Hz where it reports none, as the idle pacing assumes.
+    this.frameStats.setDisplayPeriod(uncapped ? 1000 / (displayHz > 0 ? displayHz : 60) : 0);
+    this.wake();
+  }
+
+  getPacing(): Pacing {
+    return { ...this.pacing };
+  }
+
+  /**
+   * Input arrived: a loop paced because it was idle draws its next frame
+   * now rather than on its timer. On battery the cap holds while working
+   * too, so input leaves the timer be (it is never more than a refresh off).
+   */
+  wake(): void {
+    this.lastInput = performance.now();
+    if (!this.pacer || this.capturing || this.isPaced()) return;
+    clearTimeout(this.pacer);
+    this.pacer = 0;
+    this.rafId = requestAnimationFrame(this.loop);
+  }
+
+  /** Input over the view, a key, or a panel control moved (see the constructor). */
+  private readonly onActivity = (): void => {
+    this.invalidate();
+    this.wake();
+  };
+
+  /**
+   * Nothing has happened for IDLE_AFTER_MS: no input, no camera move, no
+   * stroke or drag, no playback, and no still frame part-way through its
+   * smoothing (which should finish at full speed).
+   */
+  private idle(now: number): boolean {
+    const smoothing = this.aaMode !== 'always' && this.aaSamples > 0 && this.accumulate?.mode !== 'hold';
+    return (
+      now - this.lastInput > IDLE_AFTER_MS &&
+      now - this.lastCameraMove > IDLE_AFTER_MS &&
+      this.interaction === null &&
+      !this.timeline.playing &&
+      !smoothing
+    );
+  }
+
+  /** Whether the next frame is paced to the display (the meter and the tests read this). */
+  isPaced(now = performance.now()): boolean {
+    const p = this.pacing;
+    return p.uncapped && (p.onBattery || this.idle(now));
+  }
+
+  /**
+   * Ask for the next frame. Browsers, and the desktop app with v-sync on,
+   * already hold each frame for the display. With v-sync off the app draws
+   * as fast as frames finish while you work; idle, or on battery all the
+   * time, it waits on a timer until a refresh period after this frame
+   * began, so it never draws frames the display cannot show.
+   */
+  private scheduleNext(frameStart: number): void {
+    if (this.isPaced(frameStart)) {
+      const hz = this.pacing.displayHz > 0 ? this.pacing.displayHz : 60;
+      const wait = frameStart + 1000 / hz - performance.now();
+      if (wait > 1) {
+        this.pacer = window.setTimeout(() => {
+          this.pacer = 0;
+          this.rafId = requestAnimationFrame(this.loop);
+        }, wait);
+        return;
+      }
+    }
+    this.rafId = requestAnimationFrame(this.loop);
+  }
+
   /** Fast frames apply: an editor is mounted, and Preferences says Fast frames. */
   private fastActive(): boolean {
     return this.fastFrames && settings.get('interactionLook') === 'fast';
@@ -2373,6 +2753,12 @@ export class Viewer {
     const probe = this.interactionProbe?.() ?? null;
     let kind: InteractionKind | null = probe === 'move' || navigating ? 'move' : probe;
     if (this.debugInteraction !== undefined) kind = this.debugInteraction;
+    // Come to rest from a coast: what the damping still owes the view is a
+    // fraction of a pixel, but it creeps on, and the creep adds up against
+    // the last place the camera counted as moving, so it could count once
+    // more a moment later and drop the AO again as it faded back in (the
+    // latency suite caught it). The coast ends here instead.
+    if (this.interaction === 'move' && kind === null && !this.controls.isHeld()) this.controls.halt();
     this.bracketInteraction(kind, probe !== null || this.controls.isHeld());
     this.interaction = kind;
 
@@ -2418,6 +2804,19 @@ export class Viewer {
     return moved;
   }
 
+  /**
+   * Whether the camera is off where it last counted as moving, by the same
+   * quarter-pixel margin, without moving that mark: for a readback taken
+   * between frames, after a camera change no frame has seen yet.
+   */
+  private cameraDrifted(): boolean {
+    const cam = this.camera;
+    const dist = Math.max(this.controls.targetDistance(), 1e-6);
+    const turned = 1 - Math.abs(cam.quaternion.dot(this.lastCamQuat));
+    const shifted = cam.position.distanceTo(this.lastCamPos) / dist;
+    return shifted > CAMERA_STILL_EPS || turned > (CAMERA_STILL_EPS * CAMERA_STILL_EPS) / 8;
+  }
+
   /** True from an interaction's end until the frame after it has rendered. */
   private interactionEnding = false;
 
@@ -2456,6 +2855,10 @@ export class Viewer {
    * Viewer.create), so per-frame rendering is synchronous.
    */
   private renderOnce(): void {
+    if (this.debugSkipRender) return;
+    // Every render is a frame of its own (frameClock.ts): a readback's
+    // sixteen in a row each redraw the scene.
+    this.clock.tick();
     if (this.dofEnabled) this.updateDofFocus(); // focus plane tracks the orbit target
     if (this.wireframeOn && this.sculptWires.size) this.refreshSculptWires();
     if (this.pipeline) this.pipeline.render();
@@ -2468,31 +2871,81 @@ export class Viewer {
    * animation-frame yield after the synchronous render lets the WebGPU canvas
    * present.
    */
-  private async renderForReadback(): Promise<void> {
-    this.renderOnce();
+  private async renderForReadback(smooth = true): Promise<void> {
+    const acc = this.accumulate;
+    // A camera moved since the last frame (directly, by code) makes a held
+    // or part-smoothed image stale: start from a plain frame of this view.
+    // Anything else that changes the picture says so (invalidate), as
+    // Armature does when it hides its handles for its picture.
+    if (this.aaSamples > 0 && this.cameraDrifted()) this.resetStill();
+    if (smooth && acc && this.aaMode !== 'always') {
+      // Thumbnails, and anything else published, are smooth whatever the
+      // screen shows (owner call): the still frame's samples are finished
+      // now, one render each, from a plain frame if there is none. A view
+      // already held costs one render.
+      if (this.aaSamples < STILL_AA_SAMPLES) {
+        if (this.aaSamples === 0) {
+          acc.mode = 'replace';
+          this.aaCountU.value = 1;
+          this.renderOnce();
+        }
+        do {
+          this.addStillSample();
+          this.renderOnce();
+        } while (this.aaSamples < STILL_AA_SAMPLES);
+        acc.mode = 'hold';
+        this.camera.clearViewOffset();
+      }
+      this.readbackHold = true; // until the caller has read it (endReadback)
+      this.renderOnce();
+    } else {
+      this.renderOnce();
+    }
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
 
-  /**
-   * Adaptive quality: after a warmup, if the measured FPS is below target, shed
-   * cost by lowering the device-pixel-ratio cap in two steps.
-   */
-  private startAdaptive(): void {
-    this.adaptTimer = window.setTimeout(() => this.adapt(), 2000);
-  }
-
-  private adapt(): void {
-    const TARGET = 50;
-    if (this.fps >= TARGET || this.adaptStep >= 2) return;
-    this.adaptStep += 1;
-    this.setRenderScale(this.adaptStep === 1 ? 1.25 : 1.0);
-    this.adaptTimer = window.setTimeout(() => this.adapt(), 1200);
+  /** The canvas has been read: the loop's anti-aliasing goes on as before. */
+  private endReadback(): void {
+    this.readbackHold = false;
   }
 
   private setRenderScale(maxRatio: number): void {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxRatio));
+    const ratio = Math.min(this.startRatio, maxRatio);
+    if (ratio === this.renderer.getPixelRatio()) return;
+    this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.invalidate(); // the still frame's sum is reallocated at the new size
   }
+
+  /**
+   * The knobs adaptive quality turns (adaptive.ts), each from the tier's
+   * own setting: uniforms, shadow schedules and map sizes, and the pixel
+   * ratio. Nothing here rebuilds a shader, and the anti-aliasing mode is
+   * never one of them.
+   */
+  private qualityKnobs(): QualityKnobs {
+    return {
+      hasAo: () => this.aoEnabled,
+      setAoSamples: (share) => {
+        if (this.aoNode) this.aoNode.samples.value = Math.max(4, Math.round(this.tierAoSamples * share));
+        this.invalidate();
+      },
+      setAoResolution: (share) => {
+        if (this.aoNode) this.aoNode.resolutionScale = this.tierAoScale * share;
+        this.invalidate();
+      },
+      setShadowEconomy: (on) => this.lighting.setShadowQuality(on, this.shadowMapShare),
+      pixelRatioSteps: () => [1.75, 1.5, 1.25, 1].filter((cap) => cap < this.startRatio),
+      setPixelRatioCap: (cap) => this.setRenderScale(cap),
+      setShadowMapScale: (share) => {
+        this.shadowMapShare = share;
+        this.lighting.setShadowQuality(this.adaptive.level >= 3, share);
+      },
+    };
+  }
+
+  /** Adaptive quality's shadow map share, kept beside the economy it is set with. */
+  private shadowMapShare = 1;
 
   /** Per-frame hook (sculpt mode: light follow + cursor re-projection). */
   onTick: (() => void) | null = null;
@@ -2513,7 +2966,7 @@ export class Viewer {
       perfLog.record('stall', now - this.frameStart, `frame ${formatMs(this.frameWork)}`);
     }
     this.frameStart = now;
-    this.rafId = requestAnimationFrame(this.loop);
+    this.scheduleNext(now);
     this.onTick?.();
     this.timer.update();
     const raw = this.timer.getDelta();
@@ -2552,6 +3005,7 @@ export class Viewer {
       this.display.geometry = geom;
       this.wireframe.geometry = geom;
       this.displayedIndex = shownIndex;
+      this.invalidate();
     }
 
     this.controls.update(dt);
@@ -2560,6 +3014,16 @@ export class Viewer {
     // follows the distance it ended at.
     this.controls.syncLimits();
     this.updateFrameMode(now, dt);
+    // The desktop suite's hook draws nothing, so there is nothing to sum.
+    if (this.debugSkipRender) this.resetStill();
+    else this.updateAntialias(now);
+    // Adaptive quality judges a window a second, and changes anything only
+    // between strokes and drags, the view still for a moment.
+    this.adaptive.tick(
+      now,
+      () => this.frameStats.summary(),
+      this.interaction === null && now - this.lastCameraMove > 300 && !this.capturing,
+    );
     this.frameNo++;
     const encodeStart = performance.now();
     this.renderOnce();
@@ -2592,6 +3056,7 @@ export class Viewer {
     // (setFocalLength recomputes the FOV and the projection matrix).
     this.camera.setFocalLength(this.focalLength);
     this.renderer.setSize(w, h);
+    this.invalidate(); // a new size: the still frame's sum is reallocated
   };
 
   /**

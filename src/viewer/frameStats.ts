@@ -89,6 +89,8 @@ export class FrameStats {
 
   /** The refresh period in ms (0 = not yet known). */
   periodMs = 0;
+  /** A period given rather than measured (setDisplayPeriod), or 0. */
+  private displayPeriod = 0;
   /** When a slower refresh than the believed one was first seen, or -1. */
   private slowerSince = -1;
 
@@ -149,6 +151,22 @@ export class FrameStats {
     return earliest;
   }
 
+  /**
+   * The display's period as Electron reports it, for the desktop app with
+   * v-sync off: there rAF fires as soon as a frame is done, so its spacing
+   * is the frame time and says nothing about the display. 0 goes back to
+   * measuring.
+   */
+  setDisplayPeriod(ms: number): void {
+    this.displayPeriod = ms;
+    if (ms > 0) this.periodMs = ms;
+  }
+
+  /** Whether the period is the display's own, as reported, rather than measured. */
+  get reportedPeriod(): boolean {
+    return this.displayPeriod > 0;
+  }
+
   /** The loop was paused (a capture, a hidden tab): the next gap is not a frame. */
   resetClock(): void {
     this.lastRaf = -1;
@@ -183,6 +201,10 @@ export class FrameStats {
    * held for SLOWER_AFTER_MS: a display swap, or a cap switched on.
    */
   private estimateRefresh(now: number): void {
+    if (this.displayPeriod > 0) {
+      this.periodMs = this.displayPeriod;
+      return;
+    }
     const n = Math.min(this.count, ESTIMATE_WINDOW);
     let k = 0;
     for (let j = 1; j <= n; j++) {

@@ -101,7 +101,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const container = canvas.parentElement as HTMLElement;
 
   const camera = new CameraAdapter(viewer.camera, canvas);
-  const session = new SculptSession(camera, canvas, () => {});
+  // The vendor asks for a redraw after every change it makes: the loop
+  // repaints anyway, but a still frame's smoothing has to start over.
+  const session = new SculptSession(camera, canvas, () => viewer.invalidate());
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
   // A ?lib=<id> link from a gallery card outranks it, and so does a
   // ?project=<id> link to a scene in Projects - those are an explicit "open
@@ -185,6 +187,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   perfLog.triangles = () => session.getMesh()?.getNbTriangles() ?? 0;
 
   const sync = new GeometrySync();
+  // Every upload is a change to the picture (Viewer.invalidate).
+  sync.onChange = () => viewer.invalidate();
   sync.bind(multimesh as unknown as SculptMesh);
 
   // The display mesh adopts the sculpt geometry (with the vendor mesh's
@@ -422,6 +426,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         continue;
       }
       const extraSync = new GeometrySync();
+      extraSync.onChange = () => viewer.invalidate();
       extraSync.bind(mesh);
       const handle = viewer.addSculptExtra(
         extraSync.geometry,
@@ -945,6 +950,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The stroke's own work goes to the frame meter as the frame's input.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (input.isStroking() ? 'stroke' : gizmo.isDragging() ? 'move' : null);
+  // Anti-aliasing as Preferences says (the viewer's own is 4x MSAA): 'still'
+  // smooths a view left still, 'always' keeps MSAA, 'off' neither.
+  const applyAntialias = (): void => viewer.setAntialias(settings.get('antialias'));
+  applyAntialias();
+  const offAntialias = settings.onChange(applyAntialias);
   input.onWork = (ms, eventTime, stepMs) => viewer.noteInput(ms, eventTime, stepMs);
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
@@ -1505,6 +1515,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.onPostControls = null;
     viewer.fastFrames = false;
     viewer.interactionProbe = null;
+    offAntialias();
+    viewer.setAntialias('always');
     viewer.materials.onAlbedoChange = null;
     viewer.materials.onPbrChange = null;
     viewer.materials.setSculptVertexColor(false);

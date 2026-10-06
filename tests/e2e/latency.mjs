@@ -2,10 +2,13 @@
 // a stroke, a pose drag or the view moves (the AO held under a stroke and
 // dropped while things move, the fill and rim shadows held or staggered,
 // and not one build, compile or allocation from pen-down to pen-up); the
-// Preferences that steer them and the diagnostic overlays they keep on;
-// the damping's feel at any frame rate; and the measurements behind the
-// work, printed with each run (stroke steps per mesh size, stroke ends,
-// encode time full and fast, and the canvas without MSAA against with).
+// anti-aliasing that waits for a still view; adaptive quality's ladder;
+// the desktop app's frame pacing as the viewer runs it (desktop.mjs runs
+// it in the app); the Preferences that steer them and the diagnostic
+// overlays they keep on; the damping's feel at any frame rate; and the
+// measurements behind the work, printed with each run (stroke steps per
+// mesh size, stroke ends, encode time full and fast, the canvas without
+// MSAA against with, and a still frame smoothed against 4x MSAA).
 // Each gets (page, base, t), as the smoke suites do.
 import { openArmature, openSculpt } from './lib.mjs';
 import { camera, devices, emptySpot, line, openForInput, screenOf, settle } from './smoke.mjs';
@@ -276,6 +279,165 @@ const stillAgain = (page, timeout = 20_000) =>
     )
     .catch(() => {});
 
+/**
+ * The anti-aliasing in force: the mode, the meter's words for it, the
+ * scene pass's MSAA, what the still frame's sum is doing and how many
+ * times it has been drawn.
+ */
+const aaState = (page) =>
+  page.evaluate(() => {
+    const v = window.__bozzetto;
+    return {
+      mode: v.getAntialias(),
+      state: v.antialiasState(),
+      samples: v.scenePass?.options.samples ?? null,
+      sum: v.accumulate?.mode ?? null,
+      renders: v.accumulate?.renders ?? 0,
+    };
+  });
+/** Wait for the still frame to be smoothed and held. */
+const heldAA = (page, timeout = 120_000) =>
+  page.waitForFunction(() => window.__bozzetto.antialiasState() === '16/16 held', null, { timeout }).catch(() => {});
+/** Wait for the still frame to be part-way through its smoothing. */
+const smoothingAA = (page, timeout = 60_000) =>
+  page.waitForFunction(() => /^([2-9]|1[0-5])\/16$/.test(window.__bozzetto.antialiasState()), null, { timeout }).catch(() => {});
+/**
+ * Count, from here on, each time a smoothed or part-smoothed frame is
+ * sent back to the plain one; returns the count so far.
+ */
+const watchResets = (page) =>
+  page.evaluate(() => {
+    const v = window.__bozzetto;
+    if (!v.__resetWatch) {
+      const reset = v.resetStill.bind(v);
+      v.resetStill = () => {
+        if (v.aaSamples > 0) window.__aaResets = (window.__aaResets ?? 0) + 1;
+        reset();
+      };
+      v.__resetWatch = true;
+    }
+    return window.__aaResets ?? 0;
+  });
+/**
+ * Let the still frame get part-way through its smoothing, do `fn`, and
+ * say whether that sent it back to the plain frame (and from where).
+ */
+const resetBy = async (page, fn) => {
+  await smoothingAA(page);
+  const from = await page.evaluate(() => ({ n: window.__aaResets ?? 0, state: window.__bozzetto.antialiasState() }));
+  await fn();
+  const reset = await page
+    .waitForFunction((n) => (window.__aaResets ?? 0) > n, from.n, { timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  return { reset, from: from.state };
+};
+/**
+ * The next thumbnail's source frame, kept under `key` as captureThumbnail
+ * reads it: drawImage watched for the viewer's canvas.
+ */
+const grabNextReadback = (page, key) =>
+  page.evaluate((k) => {
+    const proto = CanvasRenderingContext2D.prototype;
+    if (!proto.__grab) {
+      const draw = proto.drawImage;
+      proto.drawImage = function (src, ...rest) {
+        const want = window.__grabKey;
+        if (want && src === window.__bozzetto?.captureCanvas) {
+          window.__grabKey = null;
+          const c = document.createElement('canvas');
+          c.width = src.width;
+          c.height = src.height;
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          draw.call(ctx, src, 0, 0);
+          (window.__shots ??= {})[want] = ctx.getImageData(0, 0, c.width, c.height).data;
+        }
+        return draw.call(this, src, ...rest);
+      };
+      proto.__grab = true;
+    }
+    window.__grabKey = k;
+  }, key);
+
+/**
+ * Adaptive quality, on, with the harness's own windows left unjudged (its
+ * software frames miss every refresh): the test hands windows over itself,
+ * a second apart on a clock of its own. `__judge(kind, n)` judges n of a
+ * kind and returns the level asked for and the one in force.
+ */
+const adaptiveUnderTest = (page) =>
+  page.evaluate(() => {
+    delete window.__bozzettoAdaptiveOff;
+    const v = window.__bozzetto;
+    const a = v.adaptive;
+    a.setEnabled(true);
+    a.lastWindow = Infinity;
+    const P = 1000 / 60;
+    const win = (missed, cpu, gpu) => ({
+      frames: 50,
+      fps: 50,
+      periodMs: P,
+      refreshHz: 60,
+      missed: Math.round(missed * 60),
+      refreshes: 60,
+      cpuMs: cpu,
+      inputMs: 0,
+      stepMs: 0,
+      loopMs: 0,
+      encodeMs: cpu,
+      movesPerFrame: 0,
+      gpuMs: gpu,
+      gpuSource: 'timestamps',
+      inputToSubmitMs: null,
+      inputToReadyMs: null,
+      verdict: missed > 0.05 ? 'GPU short' : 'within budget',
+    });
+    // Missing two refreshes in five with the GPU over budget; keeping up
+    // with half the budget spare; missing as many with the CPU over it.
+    window.__windows = { bad: win(0.4, 4, 25), good: win(0, 3, 5), cpuShort: win(0.4, 16, 5) };
+    window.__clock ??= 1e6;
+    window.__judge = (kind, n = 1) => {
+      for (let i = 0; i < n; i++) {
+        window.__clock += 1000;
+        a.judge(window.__clock, window.__windows[kind]);
+      }
+      return { target: a.target, level: a.level };
+    };
+  });
+/** The quality in force: the level, the knobs as set, and the anti-aliasing beside them. */
+const quality = (page) =>
+  page.evaluate(() => {
+    const v = window.__bozzetto;
+    const key = v.lighting.lights.key.shadow;
+    return {
+      level: v.adaptive.level,
+      target: v.adaptive.target,
+      text: v.adaptive.describe(),
+      aoSamples: v.aoNode?.samples.value ?? null,
+      aoScale: v.aoNode?.resolutionScale ?? null,
+      blur: key.blurSamples,
+      map: key.mapSize.x,
+      ratio: v.renderer.getPixelRatio(),
+      aa: `${v.getAntialias()}/${v.scenePass?.options.samples}`,
+    };
+  });
+
+/** Frames the loop ran per second over `ms`, waking it every 40 ms if `working` (as input does). */
+const loopRate = (page, ms, working) =>
+  page.evaluate(
+    ([d, w]) =>
+      new Promise((ok) => {
+        const v = window.__bozzetto;
+        const f0 = v.frameNo;
+        const poke = w ? setInterval(() => v.wake(), 40) : 0;
+        setTimeout(() => {
+          clearInterval(poke);
+          ok(Math.round(((v.frameNo - f0) * 1000) / d));
+        }, d);
+      }),
+    [ms, working],
+  );
+
 export const suites = {
   // The frame meter (P): it starts hidden, P shows it and the choice is
   // kept across a reload; it names the refresh it measured, splits the
@@ -370,6 +532,10 @@ export const suites = {
   async fastStroke(page, base, t) {
     await openForInput(page, base);
     const dev = await devices(page);
+    // Plain frames throughout: the pixel checks below compare a frame from
+    // before pen-down with one during the stroke, and a view left still
+    // would otherwise have been smoothed in between (stillAA covers that).
+    await openPrefsChoice(page, 'antialias', 'Off');
     await page.keyboard.press('3');
     await page.keyboard.press('f');
     t.eq(await aoModel(page, 'gtao'), 'gtao', 'GTAO picked in the Render panel');
@@ -539,6 +705,351 @@ export const suites = {
     t.eq(show(grew(before, await counters(page))), '{}', 'no build or allocation from the press to the frames after the release');
   },
 
+  // Anti-aliasing when still (Preferences > Performance), Sculpt and
+  // Armature's default: the scene pass draws without MSAA, and a view left
+  // still for a second is smoothed by sixteen jittered samples summed into
+  // a target made up front, then held, the same image every frame. Input
+  // over the view, a key, a panel's control, a Viewer setter, the lights,
+  // the materials, the environment, a stroke and the camera moving each
+  // send it back to the plain frame at once, and not one build, compile or
+  // allocation comes of going still, smoothing, holding, moving again or a
+  // stroke. Thumbnails are smooth in every mode; Always is the 4x MSAA
+  // scene pass; the frame clock is the viewer's own; Armature smooths too
+  // and the viewer keeps its MSAA.
+  async stillAA(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    let a = await aaState(page);
+    t.ok(a.mode === 'still' && a.samples === 0, `Sculpt anti-aliases a still view by default, its scene pass without MSAA (${show(a)})`);
+    const clock = await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      const f0 = v.clock.frameId();
+      const n0 = v.frameNo;
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(ok))));
+      return { owned: v.clock.owned, threeLoop: v.renderer._animation._requestId, frames: v.clock.frameId() - f0, renders: v.frameNo - n0 };
+    });
+    t.ok(
+      clock.owned && clock.threeLoop === null && clock.frames > 0 && clock.frames === clock.renders,
+      `the viewer owns the frame clock: three's own loop is stopped and every render is a frame (${show(clock)})`,
+    );
+
+    await page.keyboard.press('p');
+    await settle(page);
+    await stillAgain(page);
+    await watchResets(page);
+    const before = { c: await counters(page) };
+    // The plain frame of this view, then the same view smoothed and held.
+    await page.evaluate(() => window.__bozzetto.invalidate());
+    await snapshot(page, 'plain');
+    await page
+      .waitForFunction(
+        () => /^\d+\/16$/.test([...document.querySelectorAll('.fps-meter__row')].find((r) => r.children[0].textContent === 'AA')?.children[1].textContent ?? ''),
+        null,
+        { timeout: 60_000 },
+      )
+      .catch(() => {});
+    const midway = (await meterRows(page)).AA;
+    await heldAA(page);
+    a = await aaState(page);
+    t.eq(a.state, '16/16 held', 'left still, the view is smoothed over sixteen samples and held');
+    t.ok(/^\d+\/16$/.test(midway ?? ''), `the meter shows the smoothing as it goes ("AA ${midway}")`);
+    await frames(page, 2);
+    t.eq((await meterRows(page)).AA, '16/16 held', 'and when it is done');
+    await snapshot(page, 'smooth');
+    const held0 = await aaState(page);
+    await frames(page, 3);
+    await snapshot(page, 'smooth2');
+    const held1 = await aaState(page);
+    t.ok(held1.renders === held0.renders && held1.sum === 'hold', `held, the sum is not drawn again (${held0.renders} draws, then ${held1.renders})`);
+    const steady = await compareShots(page, 'smooth', 'smooth2');
+    t.eq(steady.max, 0, `and the held image is the same every frame: no shimmer (${steady.changed} pixels differ)`);
+    const edges = await compareShots(page, 'plain', 'smooth');
+    t.ok(
+      edges.changed > 50 && edges.max >= 16 && edges.mean < 1 && edges.changed < edges.n / 4,
+      `smoothed, the edges differ from the plain frame's and little else does, the brightness kept (${edges.changed} of ${edges.n} pixels, max ${edges.max}, mean ${edges.mean.toFixed(4)})`,
+    );
+
+    // Again from the start, the same view comes to the same image.
+    await page.evaluate(() => window.__bozzetto.invalidate());
+    await heldAA(page);
+    await snapshot(page, 'smooth3');
+    const again = await compareShots(page, 'smooth', 'smooth3');
+    t.ok(again.max <= 1, `smoothed again, the same view comes to the same image (max ${again.max}, ${again.changed} pixels differ)`);
+
+    // Everything that changes the picture goes back to the plain frame.
+    const spot = (await emptySpot(page)) ?? [200, 400];
+    const triggers = [
+      ['the pointer moving over the view', () => page.mouse.move(spot[0] + 3, spot[1] + 2)],
+      ['a key', () => page.keyboard.press('F10')],
+      ["a panel's control", () => page.evaluate(() => document.querySelector('.panel input[type="range"]').dispatchEvent(new Event('input', { bubbles: true })))],
+      ['a Viewer setter (the cavity)', () => page.evaluate(() => window.__bozzetto.setSculptAO({ strength: window.__bozzetto.getSculptAO().strength }))],
+      ['the lights (the shadow bias)', () => page.evaluate(() => window.__bozzetto.lighting.setBias(window.__bozzetto.lighting.getBias()))],
+      ['the materials (the mask tint)', () => page.evaluate(() => window.__bozzetto.materials.setMaskDarken(window.__bozzetto.materials.getMaskDarken()))],
+      ['the environment (its light)', () => page.evaluate(() => window.__bozzetto.environment.setIntensity(window.__bozzetto.environment.getState().intensity))],
+      ['the camera moved by code', () => page.evaluate(() => window.__bozzetto.camera.position.multiplyScalar(1.001))],
+      ['a Viewer camera call (orbit)', () => page.evaluate(() => window.__bozzetto.orbitAzimuth(2))],
+    ];
+    for (const [what, fn] of triggers) {
+      const r = await resetBy(page, fn);
+      t.ok(r.reset, `${what} sends the smoothing frame (${r.from}) back to the plain one`);
+    }
+    await settle(page);
+    await stillAgain(page);
+    // A stroke: plain while it goes.
+    const [cx, cy] = await screenOf(page, 'Sphere');
+    await smoothingAA(page);
+    const n0 = await watchResets(page);
+    const during = await dev.penDrag(line([cx - 40, cy + 10], [cx + 40, cy - 10], 5), () => aaState(page));
+    t.ok((await watchResets(page)) > n0 && during.state.startsWith('plain') && during.sum === 'replace', `a stroke goes back to the plain frame and stays there while it lasts (${during.state})`);
+    await heldAA(page);
+    t.eq((await aaState(page)).state, '16/16 held', 'and the view smooths once it is over');
+    const after = { c: await counters(page) };
+    t.eq(
+      show(grew(before.c, after.c)),
+      '{}',
+      'not one build, compile or allocation going still, smoothing, holding, moving again, or at pen-down or pen-up',
+    );
+
+    // Off: plain on screen, thumbnails smoothed anyway.
+    await snapshot(page, 'smoothHere');
+    await openPrefsChoice(page, 'antialias', 'Off');
+    a = await aaState(page);
+    t.ok(a.mode === 'off' && a.samples === 0 && a.state.startsWith('off'), `Off in Preferences: no smoothing on screen (${show(a)})`);
+    t.eq((await stored(page)).antialias, 'off', 'and the choice is kept');
+    await frames(page, 3);
+    await snapshot(page, 'offPlain');
+    await grabNextReadback(page, 'thumb');
+    const thumb = await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      const r0 = v.accumulate.renders;
+      const blob = await v.captureThumbnail();
+      return { draws: v.accumulate.renders - r0, bytes: blob.size, grabbed: !!window.__shots.thumb };
+    });
+    t.ok(thumb.grabbed && thumb.draws >= 16 && thumb.bytes > 1000, `a thumbnail is smoothed whatever the screen shows: ${thumb.draws} samples drawn for it (${thumb.bytes} bytes)`);
+    const tsmooth = await compareShots(page, 'smoothHere', 'thumb');
+    const tplain = await compareShots(page, 'offPlain', 'thumb');
+    t.ok(
+      tsmooth.max <= 1 && tplain.changed > 50 && tplain.mean < 1,
+      `it reads the smoothed image (max ${tsmooth.max} from it) and not the plain one on screen (${tplain.changed} pixels differ, mean ${tplain.mean.toFixed(4)})`,
+    );
+    await frames(page, 3);
+    await snapshot(page, 'offAfter');
+    a = await aaState(page);
+    const back = await compareShots(page, 'offPlain', 'offAfter');
+    t.ok(a.sum === 'replace' && back.max === 0, `after it the screen is plain again (${a.state}, ${back.changed} pixels differ)`);
+
+    // Always: the 4x MSAA scene pass on every frame.
+    await openPrefsChoice(page, 'antialias', 'Always');
+    a = await aaState(page);
+    t.ok(a.mode === 'always' && a.samples === 4 && a.state === '4× MSAA', `Always: every frame through the 4x MSAA scene pass (${show(a)})`);
+    await frames(page, 2);
+    t.eq((await meterRows(page)).AA, '4× MSAA', 'as the meter says');
+    await openPrefsChoice(page, 'antialias', 'When still');
+    t.eq((await stored(page)).antialias, undefined, 'When still again, the default, nothing is stored');
+    t.eq((await aaState(page)).samples, 0, 'and the scene pass is without MSAA again');
+
+    // Armature smooths a still view too; the viewer keeps its MSAA.
+    await openArmature(page, base);
+    await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    await page.evaluate(() => window.__bozzetto.haltOrbit());
+    await heldAA(page);
+    a = await aaState(page);
+    t.ok(a.mode === 'still' && a.samples === 0 && a.state === '16/16 held', `Armature smooths a still view the same way (${show(a)})`);
+    await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
+    a = await aaState(page);
+    t.ok(a.mode === 'always' && a.samples === 4 && a.state === '4× MSAA', `the viewer keeps its 4x MSAA (${show(a)})`);
+  },
+
+  // Adaptive quality: windows that keep missing the display step the
+  // frames down a level at a time, applied only with nothing under way and
+  // the view still; where GTAO is not drawn its two steps are skipped; a
+  // CPU-short window steps nothing (lighter GPU work would not help); eight
+  // good windows step back up, and a level that fails again straight away
+  // waits, longer each time, before it is tried again. Off in Preferences
+  // it goes back to the tier. It never touches the anti-aliasing, and no
+  // step rebuilds a shader.
+  async adaptive(page, base, t) {
+    await openForInput(page, base);
+    t.ok(!(await page.evaluate(() => window.__bozzetto.adaptive.enabled)), 'the harness runs with adaptive quality held off (its software frames miss every refresh)');
+    await adaptiveUnderTest(page);
+    await settle(page);
+    await stillAgain(page);
+    const tier = await quality(page);
+    t.ok(tier.level === 0 && tier.blur === 4 && tier.map === 1024 && tier.text === 'full quality', `on, at the low tier's own quality (${show(tier)})`);
+
+    // Mid-stroke a step waits; with the stroke over it lands.
+    await page.evaluate(() => {
+      window.__bozzetto.debugInteraction = 'stroke';
+    });
+    let r = await page.evaluate(() => window.__judge('bad'));
+    t.eq(r.target, 0, 'one window missing two refreshes in five asks for nothing yet');
+    r = await page.evaluate(() => window.__judge('bad'));
+    t.eq(r.target, 3, 'two in a row ask for a step down, past the AO\'s two (the cavity look draws no GTAO) to the shadows');
+    await frames(page, 3);
+    t.eq((await quality(page)).level, 0, 'mid-stroke nothing changes');
+    const c0 = await counters(page);
+    await page.evaluate(() => {
+      window.__bozzetto.debugInteraction = undefined;
+    });
+    await frames(page, 3);
+    let q = await quality(page);
+    t.ok(q.level === 3 && q.blur === 2 && q.text === 'softer shadows', `the stroke over, the step lands: half the shadow blur samples (${show(q)})`);
+    t.eq(show(grew(c0, await counters(page))), '{}', 'with nothing built or allocated');
+    t.eq(q.aa, 'still/0', 'and the anti-aliasing as it was');
+
+    r = await page.evaluate(() => window.__judge('cpuShort', 4));
+    t.eq(r.target, 3, 'windows short of CPU step nothing down');
+    const c1 = await counters(page);
+    await page.evaluate(() => window.__judge('bad', 2));
+    await frames(page, 3);
+    q = await quality(page);
+    t.ok(q.level === 4 && q.map === 512 && q.text === 'softer shadows · shadow maps ½', `two more and the shadow maps halve (${show(q)})`);
+    const g1 = grew(c1, await counters(page));
+    t.ok(!g1.nodeBuilds && !g1.programs && !g1.pipelines, `resized, not rebuilt (${show(g1)})`);
+    r = await page.evaluate(() => window.__judge('bad', 4));
+    t.eq(r.target, 4, 'and that is the bottom of the ladder here (no pixel ratio above 1 to lower)');
+
+    r = await page.evaluate(() => window.__judge('good', 7));
+    t.eq(r.target, 4, 'seven good windows are not yet enough to step up');
+    r = await page.evaluate(() => window.__judge('good'));
+    t.eq(r.target, 3, 'the eighth steps back up');
+    await frames(page, 3);
+    q = await quality(page);
+    t.ok(q.level === 3 && q.map === 1024, `the maps back at full size (${show(q)})`);
+    // Straight back down from there: that level waits before another try.
+    r = await page.evaluate(() => window.__judge('bad', 2));
+    t.eq(r.target, 4, 'failing again at once, it steps back down');
+    r = await page.evaluate(() => window.__judge('good', 8));
+    t.eq(r.target, 4, 'and eight good windows later it does not step up: the level just failed waits');
+    r = await page.evaluate(() => window.__judge('good', 24));
+    t.eq(r.target, 3, 'half a minute on, it is tried again');
+    const wait = await page.evaluate(() => {
+      window.__judge('bad', 2);
+      const a = window.__bozzetto.adaptive;
+      return a.heldUntil.get(3) - window.__clock;
+    });
+    t.eq(wait, 60_000, 'failing again, the wait doubles');
+
+    // Off in Preferences: back to the tier at the next still moment.
+    await openPrefs(page);
+    await prefToggle(page, 'Adaptive quality');
+    await page.keyboard.press('Escape');
+    await frames(page, 3);
+    q = await quality(page);
+    t.ok(q.level === 0 && q.blur === 4 && q.map === 1024 && q.text === 'off', `off in Preferences, the tier's own quality comes back (${show(q)})`);
+    t.eq((await stored(page)).adaptive, 'off', 'and the choice is kept');
+    await openPrefs(page);
+    await prefToggle(page, 'Adaptive quality');
+    await page.keyboard.press('Escape');
+    t.eq((await stored(page)).adaptive, undefined, 'on again, the default, nothing is stored');
+
+    // GTAO drawn: its two steps come first.
+    await aoModel(page, 'gtao');
+    await adaptiveUnderTest(page);
+    await frames(page, 3);
+    const ao = await quality(page);
+    await page.evaluate(() => window.__judge('bad', 2));
+    await frames(page, 3);
+    q = await quality(page);
+    t.ok(q.level === 1 && q.aoSamples === ao.aoSamples / 2 && q.text === 'AO samples ½', `with GTAO the first step halves its samples (${ao.aoSamples} to ${q.aoSamples})`);
+    await page.evaluate(() => window.__judge('bad', 2));
+    await frames(page, 3);
+    q = await quality(page);
+    t.ok(q.level === 2 && q.aoScale === ao.aoScale / 2 && q.text === 'AO samples ½ · AO ½ res', `and the next its resolution (${ao.aoScale} to ${q.aoScale})`);
+
+    // A denser screen: the pixel ratio steps down a quarter at a time.
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+    try {
+      const p2 = await ctx.newPage();
+      await openForInput(p2, base);
+      await adaptiveUnderTest(p2);
+      await p2.evaluate(() => window.__judge('bad', 4));
+      await frames(p2, 3);
+      q = await quality(p2);
+      const size = await p2.evaluate(() => [window.__bozzetto.captureCanvas.width, window.__bozzetto.captureCanvas.clientWidth]);
+      t.ok(q.level === 4 && q.ratio === 1.75 && size[0] === Math.floor(size[1] * 1.75), `at a pixel ratio of 2, the step after the shadows draws at 1.75 (${show(q)}, canvas ${size[0]} for ${size[1]} px)`);
+      t.eq(q.aa, 'still/0', 'the anti-aliasing untouched');
+      await p2.evaluate(() => window.__bozzetto.adaptive.setEnabled(false));
+      await frames(p2, 3);
+      t.eq((await quality(p2)).ratio, 2, 'and off, back to 2');
+    } finally {
+      await ctx.close();
+    }
+  },
+
+  // The desktop app's frame pacing, as the viewer runs it (desktop.mjs
+  // runs it in the app): a browser is never paced. With v-sync off the
+  // loop runs free while anything happens and paces itself to the display
+  // a second after everything stops; input wakes it at once; on battery it
+  // stays paced while working too. The meter says which. Nothing is drawn
+  // here (the test hook), so the rates are the loop's own.
+  async pacing(page, base, t) {
+    await openForInput(page, base);
+    const state = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        return { pacing: v.getPacing(), paced: v.isPaced(), timer: v.pacer !== 0 };
+      });
+    let s = await state();
+    t.ok(!s.pacing.uncapped && !s.paced, `in a browser the loop is never paced: the browser holds each frame for the display (${show(s.pacing)})`);
+    await page.keyboard.press('p');
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.debugSkipRender = true;
+      v.setPacing({ uncapped: true, displayHz: 20, onBattery: false });
+    });
+    // A second first for the software renderer's backlog of frames to drain.
+    await loopRate(page, 1000, true);
+    const free = await loopRate(page, 1500, true);
+    s = await state();
+    t.ok(!s.paced, 'v-sync off and working, the loop is not paced');
+    await page.waitForFunction(() => window.__bozzetto.isPaced(), null, { timeout: 10_000 }).catch(() => {});
+    const idle = await loopRate(page, 1500, false);
+    t.ok(idle <= 22 && free >= idle * 1.8, `a second after everything stops it paces itself to the display: ${idle} frames a second at 20 Hz, against ${free} working`);
+    let rows = await meterRows(page);
+    t.eq(rows.pacing, 'v-sync off · paced to 20 Hz (idle)', 'the meter says it is paced, and why');
+    t.ok(/refresh 20 Hz \(display\)/.test(rows.fps ?? ''), `and measures against the display's own rate (${rows.fps})`);
+
+    // Input wakes it at once, not on its timer (200 ms at 5 Hz).
+    await page.evaluate(() => window.__bozzetto.setPacing({ displayHz: 5 }));
+    await page.waitForFunction(() => window.__bozzetto.isPaced() && window.__bozzetto.pacer !== 0, null, { timeout: 10_000 }).catch(() => {});
+    const woke = await page.evaluate(
+      () =>
+        new Promise((ok) => {
+          const v = window.__bozzetto;
+          const f0 = v.frameNo;
+          const t0 = performance.now();
+          const canvas = v.captureCanvas;
+          const r = canvas.getBoundingClientRect();
+          canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 20, clientY: r.top + 20, bubbles: true }));
+          const unpaced = !v.isPaced();
+          const check = () => (v.frameNo > f0 ? ok({ ms: Math.round(performance.now() - t0), unpaced }) : setTimeout(check, 1));
+          check();
+        }),
+    );
+    t.ok(woke.unpaced && woke.ms < 120, `input wakes it at once: the next frame ${woke.ms} ms after a pointer move, not on its 200 ms timer`);
+
+    // On battery: paced while working too.
+    await page.evaluate(() => window.__bozzetto.setPacing({ displayHz: 20, onBattery: true }));
+    const battery = await loopRate(page, 1500, true);
+    s = await state();
+    t.ok(s.paced && battery <= 22, `on battery it stays paced while working: ${battery} frames a second at 20 Hz`);
+    await frames(page, 2);
+    rows = await meterRows(page);
+    t.eq(rows.pacing, 'v-sync off · paced to 20 Hz (battery)', 'as the meter says');
+    await page.evaluate(() => window.__bozzetto.setPacing({ onBattery: false }));
+    const mains = await loopRate(page, 1500, true);
+    t.ok(mains >= battery * 1.8, `back on mains it runs free again (${mains} frames a second)`);
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.setPacing({ uncapped: false, displayHz: 0, onBattery: false });
+      v.debugSkipRender = false;
+    });
+    s = await state();
+    t.ok(!s.paced && !s.timer, 'v-sync on again (as a browser is), nothing paces');
+  },
+
   // The damping, scaled by the time a frame takes: any frame rate covers
   // the same ground in the same time as 60 Hz always did; a held drag
   // follows closely (30% a 60 Hz frame, 8% before); and letting go owes
@@ -642,6 +1153,7 @@ export const suites = {
         toggles: [...document.querySelectorAll('.prefs__toggle')].map(
           (c) => `${c.querySelector('.prefs__choice-title').textContent}${c.querySelector('input').checked ? ' (on)' : ''}`,
         ),
+        desktop: !!document.querySelector('.prefs__desktop'),
       };
     });
     t.ok(
@@ -651,7 +1163,8 @@ export const suites = {
     t.eq(layout.slider, '60 to 100, at 95 (95%)', 'Panel opacity runs 60 to 100%, at 95%');
     t.eq(layout.question, 'While sculpting, posing or moving the view', 'the frames choice says when it applies');
     t.eq(layout.looks.join(', '), 'Fast frames (on), Full look', 'Fast frames by default, or Full look');
-    t.eq(layout.toggles.join(', '), 'Frame meter, Stall log, Input log', 'and three boxes, all off');
+    t.eq(layout.toggles.join(', '), 'Adaptive quality (on), Frame meter, Stall log, Input log', 'Adaptive quality on, and the three diagnostic boxes off');
+    t.eq(layout.desktop, false, 'and no Desktop group: that is the desktop app\'s alone');
 
     // Dragged, the panels follow each value as the slider passes it.
     const dragged = await page.evaluate(() => {
@@ -756,6 +1269,10 @@ export const suites = {
     }
     const save = await page.evaluate(async () => {
       const { persist } = window.__sculpt;
+      // The stroke's own autosave may be under way (the first change after
+      // a quiet spell is saved five seconds on): let it land first, or the
+      // flush below finds a write in flight and has nothing to time.
+      await persist.settle();
       window.__bozzettoPerf.clear();
       persist.markDirty();
       await persist.flush();
@@ -816,6 +1333,8 @@ export const suites = {
         await c.addInitScript(() => {
           let seed = 20261005;
           Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+          // MSAA in the scene pass in both builds: this compares the canvas's own.
+          localStorage.setItem('bozzetto-settings', JSON.stringify({ antialias: 'always' }));
         });
         try {
           const p = await c.newPage();
@@ -851,6 +1370,62 @@ export const suites = {
           await c.close();
         }
       }
+    }
+
+    // Anti-aliasing when still against 4x MSAA: what a frame costs the CPU
+    // plain (no MSAA), held once smoothed (the sum's average only, nothing
+    // else drawn) and through the MSAA scene pass; and the same still view
+    // smoothed against the MSAA one, GTAO and a floor in it.
+    const c = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 } });
+    await c.addInitScript(() => {
+      let seed = 20261005;
+      Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    });
+    try {
+      const p = await c.newPage();
+      await openSculpt(p, base, '&q=low');
+      await p.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+      await aoModel(p, 'gtao');
+      await p.evaluate(() => window.__bozzetto.setGround('floor'));
+      await settle(p);
+      await stillAgain(p);
+      const FRAMES = 5;
+      const costOf = async (mode) => {
+        const from = await p.evaluate((m) => {
+          window.__bozzetto.setAntialias(m);
+          return window.__bozzetto.frameNo;
+        }, mode);
+        if (mode === 'still') {
+          await heldAA(p);
+          const at = await p.evaluate(() => window.__bozzetto.frameNo);
+          await p.waitForFunction((f) => window.__bozzetto.frameNo >= f, at + FRAMES + 1, { timeout: 60_000 }).catch(() => {});
+        } else {
+          await p.waitForFunction((f) => window.__bozzetto.frameNo >= f, from + FRAMES + 2, { timeout: 120_000 }).catch(() => {});
+        }
+        return recentFrames(p, FRAMES);
+      };
+      const plain = await costOf('off');
+      const held = await costOf('still');
+      await snapshot(p, 'still');
+      const msaa = await costOf('always');
+      await snapshot(p, 'msaa');
+      t.ok(
+        held.frames > 2 && held.encode < plain.encode,
+        `measure: a frame's encode ${fmt(plain.encode)} ms plain, ${fmt(held.encode)} ms held once smoothed, ${fmt(msaa.encode)} ms through 4x MSAA (GTAO, floor; ${plain.frames}, ${held.frames}, ${msaa.frames} frames)`,
+      );
+      const d = await compareShots(p, 'still', 'msaa');
+      t.ok(d.mean < 2, `measure: the still view smoothed against 4x MSAA: max difference ${d.max}, mean ${d.mean.toFixed(4)}, ${d.changed} of ${d.n} pixels differ`);
+      const thumb = await p.evaluate(async () => {
+        const v = window.__bozzetto;
+        v.setAntialias('still');
+        v.invalidate();
+        window.__bozzettoPerf.clear();
+        await v.captureThumbnail();
+        return window.__bozzettoPerf.recent().filter((e) => e.what === 'thumbnail').map((e) => `${e.ms.toFixed(0)} ms (${e.note})`);
+      });
+      t.ok(thumb.length === 1, `measure: a smooth thumbnail from a plain frame, sixteen renders in software: ${thumb.join(', ')}`);
+    } finally {
+      await c.close();
     }
   },
 };

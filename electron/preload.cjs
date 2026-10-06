@@ -15,9 +15,40 @@ const on = (channel, fn) => {
   return () => ipcRenderer.off(channel, sub);
 };
 
+/** A `--name=value` argument main.cjs passed this window (launch.cjs), or null. */
+const arg = (name) => {
+  const prefix = `--${name}=`;
+  const found = process.argv.find((a) => a.startsWith(prefix));
+  return found ? found.slice(prefix.length) : null;
+};
+
 contextBridge.exposeInMainWorld('bozzettoDesktop', {
   version: process.versions.electron,
   platform: process.platform,
+
+  // --- launch settings (launch.cjs) ---------------------------------------
+  /**
+   * What this window runs with, known before the page draws its first
+   * frame: v-sync (off unless launch.json turns it on), whether the
+   * high-performance GPU switch applied, the display's refresh rate and the
+   * battery at load.
+   */
+  launch: {
+    vsync: arg('bozzetto-vsync') === 'on',
+    highPerformanceGpu: arg('bozzetto-hp-gpu') === 'on',
+    displayHz: Number(arg('bozzetto-display-hz')) || 0,
+    onBattery: arg('bozzetto-battery') === '1',
+  },
+  /** launch.json as saved (next launch) and as running, for Preferences. */
+  getLaunchOptions: () => ipcRenderer.invoke('launch:get'),
+  /** Change launch.json; it applies when the app next starts. */
+  setLaunchOptions: (opts) => ipcRenderer.invoke('launch:set', opts),
+  /** On battery or mains, as it changes. */
+  onBattery: (fn) => on('power:battery', fn),
+  /** The battery and this window's display as they are now (a reload outlives its arguments). */
+  powerNow: () => ipcRenderer.invoke('power:now'),
+  /** The window moved to a display with another refresh rate. */
+  onDisplayHz: (fn) => on('display:hz', fn),
 
   // --- files ------------------------------------------------------------
   /** Ask for a path (OS dialog), then read it. null when cancelled. */

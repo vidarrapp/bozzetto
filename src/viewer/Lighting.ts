@@ -271,9 +271,40 @@ export class Lighting {
     const secondary = [this.fill, this.rim];
     for (let i = 0; i < secondary.length; i++) {
       const shadow = secondary[i].shadow;
-      shadow.autoUpdate = mode === 'all';
-      if (mode === 'stagger' && frame % 3 === i) shadow.needsUpdate = true;
+      // Adaptive quality's economy: still frames redraw the fill and rim
+      // every other frame, one each, rather than both every frame.
+      const every = mode === 'all' && this.economy ? 2 : mode === 'stagger' ? 3 : 1;
+      shadow.autoUpdate = every === 1 && mode === 'all';
+      if (every > 1 && frame % every === i) shadow.needsUpdate = true;
     }
+  }
+
+  /** Fired after anything that changes the picture: a still frame starts smoothing over. */
+  onChange: (() => void) | null = null;
+  /** Adaptive quality's shadow economy: fewer blur samples, fill and rim every other frame. */
+  private economy = false;
+  /** Adaptive quality's map scale: shadow maps as a share of the tier's size. */
+  private mapScale = 1;
+
+  /**
+   * Cheaper shadows for adaptive quality (adaptive.ts): with `economy`, half
+   * the blur samples; with `mapScale` below 1, smaller maps whose blur
+   * radius shrinks with them, so the shadows stay as soft in the scene.
+   * Uniforms and map sizes only: no shader is rebuilt, and a resized map
+   * is reallocated at its next draw.
+   */
+  setShadowQuality(economy: boolean, mapScale: number): void {
+    if (economy === this.economy && mapScale === this.mapScale) return;
+    this.economy = economy;
+    this.mapScale = mapScale;
+    for (const id of ALL) {
+      const size = this.sizes[id];
+      if (size === 0) continue;
+      const shadow = this.lights[id].shadow;
+      shadow.blurSamples = Math.max(2, Math.round(this.tier.blurSamples * (economy ? 0.5 : 1)));
+      shadow.mapSize.set(Math.round(size * mapScale), Math.round(size * mapScale));
+    }
+    this.refresh();
   }
 
   /** Which light each shadow camera belongs to, for counting shadow passes. */
@@ -289,10 +320,12 @@ export class Lighting {
   /** Developer: shadow depth bias / normal bias across all casters. */
   setBias(bias: number): void {
     for (const id of ALL) this.lights[id].shadow.bias = bias;
+    this.onChange?.();
   }
 
   setNormalBias(normalBias: number): void {
     for (const id of ALL) this.lights[id].shadow.normalBias = normalBias;
+    this.onChange?.();
   }
 
   getBias(): number {
@@ -306,6 +339,7 @@ export class Lighting {
   /** Rotate the whole rig around the subject (degrees). */
   setRigRotation(deg: number): void {
     this.rigRotationDeg = deg;
+    this.onChange?.();
     if (this.followQuat) {
       this.applyRigFollow();
       return;
@@ -323,6 +357,7 @@ export class Lighting {
    * Pass null to restore the plain world-fixed Y rotation.
    */
   setRigFollow(q: Quaternion | null): void {
+    this.onChange?.();
     this.followQuat = q ? (this.followQuat ?? new Quaternion()).copy(q) : null;
     if (this.followQuat) this.applyRigFollow();
     else this.rig.rotation.set(0, MathUtils.degToRad(this.rigRotationDeg), 0);
@@ -417,6 +452,7 @@ export class Lighting {
     // away the centre fitToBounds computed a moment earlier.
     if (center) this.aimCenter.copy(center);
     for (const id of ALL) this.apply(id, this.aimCenter);
+    this.onChange?.();
   }
 
   private apply(id: LightId, target: Vector3): void {
@@ -442,6 +478,6 @@ export class Lighting {
     // it's on. Softness drives the VSM blur.
     const canCast = this.sizes[id] > 0;
     light.castShadow = canCast && cfg.castShadow && cfg.enabled && this.shadowsMaster;
-    if (canCast) light.shadow.radius = cfg.softness ?? DEFAULT_SOFTNESS;
+    if (canCast) light.shadow.radius = (cfg.softness ?? DEFAULT_SOFTNESS) * this.mapScale;
   }
 }
