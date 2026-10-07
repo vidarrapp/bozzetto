@@ -20,11 +20,12 @@ export interface Env {
   DEV_ADMIN?: string;
   /**
    * Required on every host but a loopback one: admin routes verify the
-   * Access JWT (`Cf-Access-Jwt-Assertion`) against the team's public keys
-   * rather than trust the email header, which is only unforgeable while an
-   * Access application actually fronts the route, and answer 503 while
-   * either is missing. TEAM_DOMAIN is the `<team>.cloudflareaccess.com`
-   * host; AUD is the application's audience tag.
+   * Access JWT (`Cf-Access-Jwt-Assertion`, or the `CF_Authorization` cookie
+   * that holds the same token) against the team's public keys rather than
+   * trust the email header, which is only unforgeable while an Access
+   * application actually fronts the route, and answer 503 while either is
+   * missing. TEAM_DOMAIN is the `<team>.cloudflareaccess.com` host; AUD is
+   * the application's audience tag.
    */
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;

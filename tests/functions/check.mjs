@@ -308,35 +308,37 @@ function stopServer(server) {
  * types, and @simplewebauthn/server), subfolders and all, with its relative
  * imports pointed at the compiled copies and its package imports at the
  * repo's node_modules. The repo's shared/ is compiled beside it as it sits
- * beside functions/, so `../../shared/bozz` finds it. A fresh directory per
- * suite, so no module state carries over. Modules are asked for by their
- * path under _shared, without the extension: 'env', 'auth/audit'; and
- * shared/'s by `../../shared/<name>`: '../../shared/bozz'.
+ * beside functions/, so `../../shared/bozz` finds it, and so is the root
+ * middleware, which imports _shared as every route does. A fresh directory
+ * per suite, so no module state carries over. Modules are asked for by
+ * their path under _shared, without the extension: 'env', 'auth/audit';
+ * shared/'s by `../../shared/<name>`: '../../shared/bozz'; and the
+ * middleware as '../_middleware'.
  */
 async function compileShared(dir) {
   const { default: ts } = await import('typescript');
+  const transpile = (from, to) => {
+    const { outputText } = ts.transpileModule(readFileSync(from, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
+    });
+    const linked = outputText
+      .replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3')
+      // A package (@simplewebauthn/server) as the repo resolves it: the
+      // compiled copy is outside the repo, where no node_modules is.
+      .replace(/(from\s+['"])((?:@[a-z0-9-]+\/)?[a-z][^'"]*)(['"])/g, (_, a, name, b) => `${a}${import.meta.resolve(name)}${b}`);
+    writeFileSync(to, linked);
+  };
   const compile = (from, to) => {
     mkdirSync(to, { recursive: true });
     for (const entry of readdirSync(from, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        compile(join(from, entry.name), join(to, entry.name));
-        continue;
-      }
-      if (!entry.name.endsWith('.ts')) continue;
-      const { outputText } = ts.transpileModule(readFileSync(join(from, entry.name), 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
-      });
-      const linked = outputText
-        .replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3')
-        // A package (@simplewebauthn/server) as the repo resolves it: the
-        // compiled copy is outside the repo, where no node_modules is.
-        .replace(/(from\s+['"])((?:@[a-z0-9-]+\/)?[a-z][^'"]*)(['"])/g, (_, a, name, b) => `${a}${import.meta.resolve(name)}${b}`);
-      writeFileSync(join(to, entry.name.replace(/\.ts$/, '.mjs')), linked);
+      if (entry.isDirectory()) compile(join(from, entry.name), join(to, entry.name));
+      else if (entry.name.endsWith('.ts')) transpile(join(from, entry.name), join(to, entry.name.replace(/\.ts$/, '.mjs')));
     }
   };
   const shared = join(dir, 'functions', '_shared');
   compile(join(repo, 'functions', '_shared'), shared);
   compile(join(repo, 'shared'), join(dir, 'shared'));
+  transpile(join(repo, 'functions', '_middleware.ts'), join(dir, 'functions', '_middleware.mjs'));
   return (name) => import(pathToFileURL(join(shared, `${name}.mjs`)).href);
 }
 

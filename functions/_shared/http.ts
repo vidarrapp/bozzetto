@@ -1,5 +1,6 @@
 import type { Env } from './env';
 import { isLoopback } from './env';
+import { readCookie } from './auth/session';
 
 /**
  * Every JSON answer is sent with nosniff, so no browser ever reads one as
@@ -133,24 +134,71 @@ export async function readJson(request: Request): Promise<Record<string, unknown
 let devAdminWarned = false;
 let unverifiedWarned = false;
 
+/** The cookie Access keeps its token in, on the application's own host. */
+const ACCESS_COOKIE = 'CF_Authorization';
+
 /**
- * The authenticated admin email, or null. Cloudflare Access injects
- * `Cf-Access-Authenticated-User-Email` on protected routes; an optional
- * ADMIN_EMAILS allowlist narrows it further (unset, anyone Access let in
- * is the owner: the Access policy already decides who that can be).
+ * Why the gate turned a request away, as the log says it: a word, never
+ * the token, the cookie, a header or an address. The asker hears the same
+ * 403 whichever it was.
  *
- * That header is only unforgeable while an Access application actually
- * fronts the route - drop the application, or miss a hostname, and any
- * client can send it. So on any host but this machine's own the gate
- * verifies the `Cf-Access-Jwt-Assertion` JWT as well: RS256 against the
- * team's published keys, audience, issuer and expiry, and its email claim
- * must match the header. That needs ACCESS_TEAM_DOMAIN and ACCESS_AUD, and
- * without both every admin request is a 503: a missing variable must
- * never quietly fall back to trusting a header anyone can send.
+ * - no_identity: no token, in the header or the cookie (on loopback, no
+ *   email header)
+ * - bad_token: malformed - its parts, its JSON, its alg or kid, or an
+ *   expiry or email claim it lacks
+ * - unknown_kid: signed by a key the team does not publish
+ * - bad_signature: not signed by the key it names
+ * - aud, iss: for another application, or from another team
+ * - expired, not_yet_valid: outside the time it was issued for
+ * - email_mismatch: the email header names someone the token does not
+ * - not_allowed: ADMIN_EMAILS does not name them
+ */
+type Refusal =
+  | 'no_identity'
+  | 'bad_token'
+  | 'unknown_kid'
+  | 'bad_signature'
+  | 'aud'
+  | 'iss'
+  | 'expired'
+  | 'not_yet_valid'
+  | 'email_mismatch'
+  | 'not_allowed';
+
+/** A refusal: null to the caller, and one line in the log saying why. */
+function refused(reason: Refusal): null {
+  console.warn(`access gate refused: ${reason}`);
+  return null;
+}
+
+/**
+ * The authenticated admin email, or null. Cloudflare Access vouches for
+ * whoever it lets through to a protected route; an optional ADMIN_EMAILS
+ * allowlist narrows that further (unset, anyone Access let in is the
+ * owner: the Access policy already decides who that can be).
  *
- * Only on a loopback host is the header taken alone, since Access is never
- * there to sign a token and only this machine can reach it. DEV_ADMIN,
- * which skips identity altogether, is honoured there and nowhere else.
+ * The `Cf-Access-Authenticated-User-Email` header Access adds is only
+ * unforgeable while an Access application actually fronts the route - drop
+ * the application, or miss a hostname, and any client can send it. So on
+ * any host but this machine's own the identity is the email claim of the
+ * Access token, verified: RS256 against the team's published keys,
+ * audience, issuer and expiry. The token is the `Cf-Access-Jwt-Assertion`
+ * header's or, without one, the `CF_Authorization` cookie's, where Access
+ * keeps the same signed token: the zone fronts the site (zone, then
+ * Access, then Pages, orange-to-orange), and the headers Access adds need
+ * not survive that hop to the Functions, while the browser's own cookie
+ * does. An email header that did arrive must name the token's identity;
+ * one that did not is no refusal. All of this needs ACCESS_TEAM_DOMAIN and
+ * ACCESS_AUD, and without both every admin request is a 503: a missing
+ * variable must never quietly fall back to trusting a header anyone can
+ * send.
+ *
+ * Only on a loopback host is the email header taken alone, since Access is
+ * never there to sign a token and only this machine can reach it.
+ * DEV_ADMIN, which skips identity altogether, is honoured there and
+ * nowhere else.
+ *
+ * Each refusal logs one line, `access gate refused: <reason>` (Refusal).
  */
 export async function adminEmail(request: Request, env: Env): Promise<string | null> {
   const url = new URL(request.url);
@@ -168,7 +216,8 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
     }
   }
 
-  const email = request.headers.get('Cf-Access-Authenticated-User-Email');
+  const header = request.headers.get('Cf-Access-Authenticated-User-Email');
+  let email = header;
   if (!local) {
     const team = env.ACCESS_TEAM_DOMAIN;
     const aud = env.ACCESS_AUD;
@@ -180,14 +229,19 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
       }
       throw new HttpError('Access verification is not configured', 503);
     }
-    const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
-    if (!email || !jwt) return null;
-    const claimed = await verifyAccessJwt(jwt, team, aud);
-    if (!claimed || claimed.toLowerCase() !== email.toLowerCase()) return null;
+    // Access's header when it came through, else its cookie: the same
+    // token, which the zone's hop leaves alone. With both, the header's is
+    // the one checked, and a bad one there is not rescued by the cookie.
+    const jwt = request.headers.get('Cf-Access-Jwt-Assertion') || readCookie(request, ACCESS_COOKIE);
+    if (!jwt) return refused('no_identity');
+    const verified = await verifyAccessJwt(jwt, team, aud);
+    if ('refused' in verified) return refused(verified.refused);
+    if (header !== null && header.toLowerCase() !== verified.email.toLowerCase()) return refused('email_mismatch');
+    email = verified.email;
   }
-  if (!email) return null;
+  if (!email) return refused('no_identity');
   const allow = env.ADMIN_EMAILS?.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (allow && allow.length > 0 && !allow.includes(email.toLowerCase())) return null;
+  if (allow && allow.length > 0 && !allow.includes(email.toLowerCase())) return refused('not_allowed');
   return email;
 }
 
@@ -282,20 +336,25 @@ function b64url(s: string): Uint8Array {
 }
 
 /**
- * Verify an Access application token and return its email claim, or null.
- * Any malformed input is a null, never a throw: the caller turns null into
- * a 403 and an attacker learns nothing about which check failed. The one
+ * Verify an Access application token: its email claim, or the check it
+ * failed. Malformed input of any kind is a `bad_token`, never a throw: the
+ * caller turns every refusal into the same 403, so an attacker learns
+ * nothing about which check failed, and only the log says. The one
  * exception is the key set being unreachable, which is an outage on our
  * side and reports as a 503 rather than masquerading as a refusal.
  */
-async function verifyAccessJwt(token: string, teamDomain: string, aud: string): Promise<string | null> {
+async function verifyAccessJwt(
+  token: string,
+  teamDomain: string,
+  aud: string,
+): Promise<{ email: string } | { refused: Refusal }> {
   try {
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    if (parts.length !== 3) return { refused: 'bad_token' };
     const header = JSON.parse(new TextDecoder().decode(b64url(parts[0]))) as { alg?: string; kid?: string };
-    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) return null;
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) return { refused: 'bad_token' };
     const jwk = await accessKey(teamDomain, header.kid);
-    if (!jwk) return null;
+    if (!jwk) return { refused: 'unknown_kid' };
     const key = await crypto.subtle.importKey(
       'jwk',
       jwk,
@@ -309,7 +368,7 @@ async function verifyAccessJwt(token: string, teamDomain: string, aud: string): 
       b64url(parts[2]),
       new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
     );
-    if (!ok) return null;
+    if (!ok) return { refused: 'bad_signature' };
     const claims = JSON.parse(new TextDecoder().decode(b64url(parts[1]))) as {
       aud?: string | string[];
       iss?: string;
@@ -318,14 +377,16 @@ async function verifyAccessJwt(token: string, teamDomain: string, aud: string): 
       email?: string;
     };
     const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    if (!auds.includes(aud)) return null;
-    if (claims.iss !== `https://${teamHost(teamDomain)}`) return null;
+    if (!auds.includes(aud)) return { refused: 'aud' };
+    if (claims.iss !== `https://${teamHost(teamDomain)}`) return { refused: 'iss' };
     const now = Math.floor(Date.now() / 1000);
-    if (typeof claims.exp !== 'number' || claims.exp < now) return null;
-    if (typeof claims.nbf === 'number' && claims.nbf > now + 60) return null;
-    return typeof claims.email === 'string' && claims.email ? claims.email : null;
+    if (typeof claims.exp !== 'number') return { refused: 'bad_token' };
+    if (claims.exp < now) return { refused: 'expired' };
+    if (typeof claims.nbf === 'number' && claims.nbf > now + 60) return { refused: 'not_yet_valid' };
+    if (typeof claims.email !== 'string' || !claims.email) return { refused: 'bad_token' };
+    return { email: claims.email };
   } catch (err) {
     if (err instanceof HttpError) throw err; // the key set is down: say so
-    return null;
+    return { refused: 'bad_token' };
   }
 }

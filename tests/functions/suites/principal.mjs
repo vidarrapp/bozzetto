@@ -13,6 +13,20 @@ const ACCESS_LOOKALIKE = {
   cookie: 'CF_Authorization=header.payload.signature; __Host-bz_session=bz1_not-a-session',
 };
 
+/**
+ * Whether `line` is among what `server` logged after `from` (an offset into
+ * its log), waiting up to two seconds: the runtime's output reaches the
+ * harness a little after the answer does.
+ */
+async function logs(server, from, line) {
+  const until = Date.now() + 2000;
+  while (!server.log.slice(from).includes(line)) {
+    if (Date.now() > until) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+}
+
 export async function run({ checks, off, on, compileShared }) {
   const whoIs = async (server, headers = {}) => (await server.call('GET', '/api/dev/principal', { headers })).json;
 
@@ -24,10 +38,14 @@ export async function run({ checks, off, on, compileShared }) {
   t.eq(p?.principal?.kind, 'guest', 'the Access headers, its cookie and a session cookie are ignored on /api: still a guest');
   let r = await off.call('GET', '/admin/api/whoami', { headers: asOwner });
   t.ok(r.status === 200 && r.json?.email === OWNER, `on /admin/ the Access identity alone is the owner, lock 1 with no owner account behind it (${r.status} ${r.json?.email})`);
+  let from = off.log.length;
   r = await off.call('GET', '/admin/api/whoami', { headers: { cookie: '__Host-bz_session=bz1_not-a-session' } });
   t.eq(r.status, 403, 'a session cookie is no way into /admin/ without Access');
+  t.ok(await logs(off, from, 'access gate refused: no_identity'), "and the server's log says why, in a word: access gate refused: no_identity");
+  from = off.log.length;
   r = await off.call('GET', '/admin/api/whoami', { headers: asStranger });
   t.eq(r.status, 403, 'and an identity ADMIN_EMAILS does not name is nobody there either');
+  t.ok((await logs(off, from, 'access gate refused: not_allowed')) && !off.log.slice(from).includes('someone@'), 'logged as not_allowed, and without the address');
   const stubs = [
     ['GET', '/api/auth/session'],
     ['POST', '/api/auth/passkey/options'],
