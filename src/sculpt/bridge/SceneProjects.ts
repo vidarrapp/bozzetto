@@ -12,7 +12,8 @@ import {
   type SceneProject,
 } from '../../admin/api';
 import { accountsOn } from '../../net/account';
-import { apiFetch, isDesktop, isSignedIn, type ApiResult } from '../../net/origin';
+import { apiFetch, isDesktop, type ApiResult } from '../../net/origin';
+import { ownerSignedIn } from '../../desktop/serverAccount';
 import type { SceneLink } from './ScenePersist';
 
 /**
@@ -214,8 +215,14 @@ export async function fetchTemplateScene(id: string): Promise<{ bytes: ArrayBuff
   return { bytes: await sceneBytes(project), project };
 }
 
-/** Whether the owner may be signed in here, as far as this device can say without asking. */
-const ownerHere = async (): Promise<boolean> => (isDesktop() ? isSignedIn() : signedInHereBefore());
+/**
+ * Whether the owner may be signed in here: on the web, as far as this
+ * device can say without asking; in the desktop app, as its server says -
+ * with accounts, the session the app holds is the owner's account (GET
+ * /api/me), and without them Access's cookie is in its jar.
+ */
+const ownerHere = async (): Promise<boolean> =>
+  isDesktop() ? ownerSignedIn().catch(() => false) : signedInHereBefore();
 
 /**
  * A template's manifest: the public one, or for the owner, one the gallery

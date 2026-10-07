@@ -1,4 +1,5 @@
 import { errorText } from '../net/account';
+import { OwnerSessionError, failureText } from './api';
 
 /**
  * The owner tools' second lock, as the page meets it (docs/accounts.md §2,
@@ -59,4 +60,31 @@ export function ownerSignInPanel(retry: () => void): HTMLElement {
   });
   panel.append(words, go);
   return panel;
+}
+
+/**
+ * An owner tool's call with the second lock mended in place, for the tabs
+ * over accounts (Invites, Users, Audit): refused for want of the owner's
+ * session (OwnerSessionError), the sign-in dialog opens over the page and
+ * the call is made again once signed in. `auto` is a tab loading itself,
+ * whose dialog opens by itself once a load, as the Projects list's does; a
+ * button pressed asks every time. Null when the owner did not sign in, for
+ * the caller to show ownerSignInPanel; any other refusal is thrown.
+ */
+export async function asOwner<T>(call: () => Promise<T>, auto = false): Promise<T | null> {
+  try {
+    return await call();
+  } catch (err) {
+    if (!(err instanceof OwnerSessionError)) throw err;
+    if (!(await ownerSignIn(auto))) return null;
+    return call();
+  }
+}
+
+/** A failure as the owner's tabs say one: a sentence, capitalised and stopped. */
+export function failureSentence(err: unknown): string {
+  const text = failureText(err).trim();
+  if (!text) return 'Something went wrong.';
+  const capital = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
 }

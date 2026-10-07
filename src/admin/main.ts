@@ -14,9 +14,11 @@ import { markOpen } from '../ui/openToken';
 
 /**
  * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
- * preview, settings); with no `p` it shows the project list + create form.
- * Navigation uses plain links (full reload), so each view starts clean and the
- * preview's WebGL context is never leaked across views.
+ * preview, settings); with no `p` it shows the project list + create form,
+ * and with accounts on, tabs beside it for the owner's tools over accounts
+ * (`?tab=invites|users|audit`). Navigation uses plain links (full reload),
+ * so each view starts clean and the preview's WebGL context is never leaked
+ * across views.
  */
 const root = document.getElementById('admin');
 if (!root) throw new Error('#admin element not found');
@@ -52,7 +54,31 @@ async function createWithSlug(title: string): Promise<{ id: string }> {
   throw new Error('Could not find an available id for that title');
 }
 
-async function renderList(host: HTMLElement): Promise<void> {
+/**
+ * The tabs of /admin/ (docs/accounts.md §8): Projects, and with accounts
+ * on and the owner's account made, the owner's tools over accounts -
+ * Invites, Users and the Audit log. A tab is a plain link (`?tab=`), so each
+ * starts clean, as the editor's views do.
+ */
+type Tab = 'projects' | 'invites' | 'users' | 'audit';
+
+const TABS: ReadonlyArray<readonly [Tab, string]> = [
+  ['projects', 'Projects'],
+  ['invites', 'Invites'],
+  ['users', 'Users'],
+  ['audit', 'Audit'],
+];
+
+/** The tab the address asks for; Projects for anything else. */
+function wantedTab(): Tab {
+  const asked = new URLSearchParams(window.location.search).get('tab');
+  return TABS.find(([t]) => t === asked)?.[0] ?? 'projects';
+}
+
+/** Where a tab is: /admin/ for Projects, `?tab=` for the rest. */
+const tabHref = (tab: Tab): string => (tab === 'projects' ? '/admin/' : `/admin/?tab=${tab}`);
+
+async function renderAdmin(host: HTMLElement, wanted: Tab): Promise<void> {
   host.innerHTML = `
     <div class="admin">
       <div class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></div>
@@ -60,29 +86,68 @@ async function renderList(host: HTMLElement): Promise<void> {
         <h1>Bozzetto editor</h1>
       </header>
       <div id="owner-account"></div>
-      <form class="admin-create" id="create-form">
-        <input name="title" placeholder="New project title" required autofocus />
-        <button type="submit" class="btn btn--primary">Create</button>
-      </form>
-      <p class="admin__hint muted">The project id is derived from the title; you can set the frame rate and mode on the next page.</p>
-      <div class="admin-list" id="project-list"></div>
+      <nav class="admin-tabs" id="admin-tabs" aria-label="Owner tools" hidden></nav>
+      <div id="admin-tab"></div>
     </div>`;
-
-  const list = host.querySelector<HTMLElement>('#project-list')!;
-  const form = host.querySelector<HTMLFormElement>('#create-form')!;
+  const body = host.querySelector<HTMLElement>('#admin-tab')!;
   // This page is only reached signed in (Access fronts it), so the way out
   // is always offered, beside the theme toggle. Drawn again after a sign-in
-  // (renderList runs again), so one chip, not a second beside the first.
+  // (renderAdmin runs again), so one chip, not a second beside the first.
   topbarRight().querySelector('.admin-signout')?.remove();
   const out = signOutChip();
   out.classList.add('admin-signout');
   topbarRight().appendChild(out);
   // With accounts on, the owner's account: made here the first time
   // (bootstrap), and signed in for the second lock after that.
-  if (!(await ownerAccount(host.querySelector<HTMLElement>('#owner-account')!, () => void renderList(host)))) {
-    list.textContent = '';
-    return;
+  const gate = await ownerAccount(host.querySelector<HTMLElement>('#owner-account')!, () => void renderAdmin(host, wanted));
+  if (!gate.go) return;
+  // The tabs over accounts are there once there are accounts, and an owner
+  // to use them; before that, the address's tab is Projects.
+  const tab = gate.owner ? wanted : 'projects';
+  if (tab !== wanted) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tab');
+    history.replaceState(history.state, '', url);
   }
+  if (gate.owner) drawTabs(host.querySelector<HTMLElement>('#admin-tabs')!, tab);
+  switch (tab) {
+    case 'invites':
+      return (await import('./invites')).renderInvites(body);
+    case 'users':
+      return (await import('./users')).renderUsers(body);
+    case 'audit':
+      return (await import('./audit')).renderAudit(body);
+    default:
+      return renderProjects(body);
+  }
+}
+
+function drawTabs(nav: HTMLElement, current: Tab): void {
+  nav.replaceChildren(
+    ...TABS.map(([tab, label]) => {
+      const a = document.createElement('a');
+      a.className = `admin-tab${tab === current ? ' admin-tab--current' : ''}`;
+      a.href = tabHref(tab);
+      a.textContent = label;
+      a.dataset.tab = tab;
+      if (tab === current) a.setAttribute('aria-current', 'page');
+      return a;
+    }),
+  );
+  nav.hidden = false;
+}
+
+/** The Projects tab: the create form and the owner's list. */
+async function renderProjects(body: HTMLElement): Promise<void> {
+  body.innerHTML = `
+    <form class="admin-create" id="create-form">
+      <input name="title" placeholder="New project title" required autofocus />
+      <button type="submit" class="btn btn--primary">Create</button>
+    </form>
+    <p class="admin__hint muted">The project id is derived from the title; you can set the frame rate and mode on the next page.</p>
+    <div class="admin-list" id="project-list"></div>`;
+  const list = body.querySelector<HTMLElement>('#project-list')!;
+  const form = body.querySelector<HTMLFormElement>('#create-form')!;
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -105,33 +170,34 @@ async function renderList(host: HTMLElement): Promise<void> {
 
 /**
  * The owner's account, with accounts on (docs/accounts.md §8): whether the
- * page may go on to the list. Accounts off, there is nothing to do. With
- * no owner account yet, "Create your account" is offered above the list,
- * which Access alone still opens. With one, and no owner's session here
- * (403 owner_session), the sign-in dialog opens over the page, and the
- * page draws itself again once signed in; until then it says why the list
- * is not there.
+ * page may go on to its tab (`go`), and whether there is an owner's account
+ * signed in here to use the tools over accounts (`owner`). Accounts off,
+ * there is nothing to do, and no such tools. With no owner account yet,
+ * "Create your account" is offered above the list, which Access alone
+ * still opens. With one, and no owner's session here (403 owner_session),
+ * the sign-in dialog opens over the page, and the page draws itself again
+ * once signed in; until then it says why the list is not there.
  */
-async function ownerAccount(slot: HTMLElement, again: () => void): Promise<boolean> {
+async function ownerAccount(slot: HTMLElement, again: () => void): Promise<{ go: boolean; owner: boolean }> {
   slot.replaceChildren();
   const config = await loadConfig();
-  if (!config?.accounts) return true;
+  if (!config?.accounts) return { go: true, owner: false };
   try {
     const who = await whoami();
     if (who.owner === null) slot.appendChild(bootstrapForm(who.email, again));
-    return true;
+    return { go: true, owner: who.owner !== null };
   } catch (err) {
     if (err instanceof AccountError && err.code === 'owner_session') {
       if (await ownerSignIn(true)) {
         again();
-        return false;
+        return { go: false, owner: false };
       }
       slot.appendChild(ownerSignInPanel(again));
-      return false;
+      return { go: false, owner: false };
     }
     // Anything else - Access's own refusal, no connection - is the list's
     // to say, as it always has.
-    return true;
+    return { go: true, owner: false };
   }
 }
 
@@ -371,9 +437,9 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 initTheme();
 followPanelOpacity();
 mountThemeToggle();
-  installSliderBubble();
+installSliderBubble();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');
 if (isProjectId(projectId)) void renderEditor(root, projectId);
-else void renderList(root);
+else void renderAdmin(root, wantedTab());

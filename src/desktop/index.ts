@@ -39,10 +39,22 @@ export interface DesktopBridge {
   writeRecovery(bytes: ArrayBuffer): Promise<boolean>;
   readRecovery(): Promise<ArrayBuffer | null>;
   clearRecovery(): Promise<boolean>;
-  getServer(): Promise<{ url: string | null; signedIn: boolean }>;
-  setServer(url: string | null): Promise<{ url: string | null; signedIn: boolean }>;
-  signIn(): Promise<{ url: string; signedIn: boolean }>;
-  signOut(): Promise<{ signedIn: boolean }>;
+  /**
+   * The server, and whether the jar holds the cookie that signs in to it:
+   * the account's session where the server has accounts (`accounts`, as its
+   * /api/config said; null when it could not be asked), Access's where it
+   * has not. A cookie is not proof of a session: serverAccount asks.
+   */
+  getServer(): Promise<ServerInfo>;
+  setServer(url: string | null): Promise<ServerInfo>;
+  /** The sign-in window: the server's own sign-in page with accounts, Cloudflare Access without. */
+  signIn(): Promise<{ url: string; signedIn: boolean; accounts: boolean | null }>;
+  /**
+   * Sign out: an account's session ended on the server first, then every
+   * cookie gone. `revoked` is whether the server ended it, null when there
+   * was no account's session to end.
+   */
+  signOut(): Promise<{ signedIn: boolean; revoked: boolean | null }>;
   api(init: {
     pathname: string;
     method?: string;
@@ -55,6 +67,14 @@ export interface DesktopBridge {
   message(opts: { message: string; detail?: string; type?: string }): Promise<boolean>;
   onCommand(fn: (command: string) => void): () => void;
   onOpenPath(fn: (payload: SceneFilePayload) => void): () => void;
+}
+
+/** What the main process says of the server (server:get). */
+export interface ServerInfo {
+  url: string | null;
+  signedIn: boolean;
+  /** Whether the server has accounts, as its /api/config said; null when it could not be asked. */
+  accounts: boolean | null;
 }
 
 /**
@@ -291,9 +311,16 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
       host.showServerSettings();
     },
     'server:signOut': async () => {
-      await signOutOfServer(bridge);
+      const ended = await signOutOfServer(bridge);
       host.signInChanged();
       host.showServerSettings();
+      if (!ended) {
+        await bridge.message({
+          type: 'warning',
+          message: 'Signed out on this computer.',
+          detail: 'The server did not answer, so the session there ends when it runs out.',
+        });
+      }
     },
   };
 

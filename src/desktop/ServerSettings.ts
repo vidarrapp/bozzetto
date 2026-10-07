@@ -1,16 +1,52 @@
 import { div } from '../ui/dom';
+import { suspensionText } from '../net/account';
 import { forgetOwnerCaches } from '../net/ownerCaches';
 import type { DesktopBridge } from './index';
+import { serverAccount, type ServerAccount } from './serverAccount';
 
 /**
  * Sign out of the server, from this panel or the Server menu: the main
- * process drops the Access cookie, and the owner's cached answers go too,
- * as the web's Sign out drops them. The app has no service worker, so
- * today there are none; the call keeps the two sign-outs the same.
+ * process asks the server to end the account's session, where there is
+ * one, then drops every cookie - the account's or Access's - and the
+ * cached answers go too, as the web's Sign out drops them. The app has no
+ * service worker, so today there are none; the call keeps the two
+ * sign-outs the same. False when the server was not reached to end the
+ * session, which this device has let go all the same.
  */
-export async function signOutOfServer(bridge: DesktopBridge): Promise<void> {
-  await bridge.signOut();
+export async function signOutOfServer(bridge: DesktopBridge): Promise<boolean> {
+  const { revoked } = await bridge.signOut();
   await forgetOwnerCaches();
+  return revoked !== false;
+}
+
+/**
+ * A refusal from the main process, as its own words: Electron puts
+ * "Error invoking remote method 'server:set': Error: " in front of what
+ * the handler threw.
+ */
+function said(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '');
+}
+
+/** What the panel says of where the app stands with its server. */
+function statusText(s: ServerAccount): string {
+  switch (s.state) {
+    case 'none':
+      return 'No server set — everything stays on this device.';
+    case 'out':
+      return `${s.url} — not signed in, so publishing will not work yet.`;
+    case 'in':
+      return `Signed in to ${s.url}.`;
+    case 'account':
+      return `Signed in to ${s.url} as @${s.me.handle}.`;
+    case 'ended':
+      return `${s.url} — not signed in: the sign-in here has ended. Sign in again to publish.`;
+    case 'suspended':
+      return `${s.url} — ${suspensionText(s.reason)}`;
+    case 'unconfirmed':
+      return `Signed in to ${s.url}, which did not answer just now.`;
+  }
 }
 
 /**
@@ -95,20 +131,16 @@ export function serverSettings(
   };
 
   const refresh = async (): Promise<void> => {
-    const { url, signedIn } = await bridge.getServer();
-    input.value = url ?? '';
+    const s = await serverAccount(bridge);
+    input.value = s.url ?? '';
     // Signing in is meaningless without a server, and signing out is
     // meaningless without a session: say so by disabling rather than by
-    // letting the click fail.
-    signIn.disabled = !url || signedIn;
-    signOut.disabled = !signedIn;
-    show(
-      !url
-        ? 'No server set — everything stays on this device.'
-        : signedIn
-          ? `Signed in to ${url}.`
-          : `${url} — not signed in, so publishing will not work yet.`,
-    );
+    // letting the click fail. A session the server has let go is signed in
+    // to again (the window drops it first); a suspended one is not, since
+    // no sign-in lifts it - Sign out lets it go.
+    signIn.disabled = s.state === 'none' || s.state === 'in' || s.state === 'account' || s.state === 'suspended' || s.state === 'unconfirmed';
+    signOut.disabled = s.state === 'none' || s.state === 'out';
+    show(statusText(s));
   };
 
   save.addEventListener('click', () => {
@@ -121,7 +153,7 @@ export function serverSettings(
       } catch (err) {
         // normalise() rejects a URL with a path or a non-https scheme, and
         // its message says which - worth showing verbatim.
-        show(err instanceof Error ? err.message : String(err), true);
+        show(said(err), true);
       } finally {
         save.disabled = false;
       }
@@ -134,20 +166,26 @@ export function serverSettings(
     void (async () => {
       signIn.disabled = true;
       show('Opening the sign-in window…');
+      let failed: unknown = null;
       try {
         await bridge.signIn();
       } catch (err) {
-        show(err instanceof Error ? err.message : String(err), true);
+        failed = err;
       }
       await refresh();
+      // After the status, which would otherwise hide it: a server that did
+      // not answer says so until the next try.
+      if (failed !== null) show(said(failed), true);
       signInChanged();
     })();
   });
 
   signOut.addEventListener('click', () => {
     void (async () => {
-      await signOutOfServer(bridge);
+      signOut.disabled = true;
+      const ended = await signOutOfServer(bridge).catch(() => false);
       await refresh();
+      if (!ended) show('Signed out on this device. The server did not answer, so the session there ends when it runs out.', true);
       signInChanged();
     })();
   });

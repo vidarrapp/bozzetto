@@ -93,16 +93,22 @@ contextBridge.exposeInMainWorld('bozzettoDesktop', {
   clearRecovery: () => ipcRenderer.invoke('recovery:clear'),
 
   // --- the optional server ----------------------------------------------
+  /** The server, whether the jar holds its sign-in's cookie, and whether it has accounts. */
   getServer: () => ipcRenderer.invoke('server:get'),
   setServer: (url) => ipcRenderer.invoke('server:set', url),
-  /** Sign in to a Cloudflare Access deployment, in a real browser window. */
+  /**
+   * Sign in, in a real browser window: the server's own sign-in page where
+   * it has accounts (/?signin=desktop), Cloudflare Access where it has not.
+   */
   signIn: () => ipcRenderer.invoke('server:signIn'),
+  /** Sign out: an account's session ended on the server, then every cookie gone. */
   signOut: () => ipcRenderer.invoke('server:signOut'),
   /**
    * Proxy an API call through the main process. Requests from there carry
    * no Origin header, so the server's total absence of CORS stops
-   * mattering, and the Access cookie rides along on a named session
-   * partition exactly as it would in a browser tab.
+   * mattering, and the sign-in's cookie - the account's session, or
+   * Access's - rides along on a named session partition exactly as it
+   * would in a browser tab.
    */
   api: (init) => ipcRenderer.invoke('server:fetch', init),
 

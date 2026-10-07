@@ -513,8 +513,11 @@ async function openByAddress(browser, base, t) {
     t.ok(dialogs.length === 1 && st.objects === 2, `Yes: the scene opens (${st.objects} objects)`);
     t.eq(await storedFrames(p), 0, 'and the reel of the work it replaced is gone with it');
 
-    // From its card: the card asks, Sculpt does not ask again.
-    await p.evaluate(() => window.__sculpt.persist.flush());
+    // From its card: the card asks, Sculpt does not ask again. The scene
+    // the Yes opened is written first, and the write waited for (settle):
+    // a write still in flight when the page goes may land after the next
+    // page has read the autosave, or not at all.
+    await p.evaluate(() => window.__sculpt.persist.settle());
     await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('.card--library .card__thumb', { timeout: 30_000 });
     dialogs.length = 0;
@@ -522,7 +525,11 @@ async function openByAddress(browser, base, t) {
     await p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
     t.ok(dialogs.length === 1 && /^Open ".+"\? Your work in progress will be replaced\.$/.test(dialogs[0]), `opened from its card, the card asks and Sculpt does not ask again (${dialogs.join(' | ')})`);
 
-    // An address with no id in it.
+    // An address with no id in it. The scene the card opened is written
+    // first, and the write waited for: otherwise the reload's own pagehide
+    // write can land after the next page has read the autosave, which then
+    // boots the work from before the card (three objects, not two).
+    await p.evaluate(() => window.__sculpt.persist.settle());
     dialogs.length = 0;
     await openSculpt(p, base, '&q=low&lib=..%2Fx');
     st = await bootState(p);

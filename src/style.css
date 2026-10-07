@@ -4625,6 +4625,212 @@ body.is-sampling * {
   margin: 0 0 10px;
 }
 
+/* --- The owner's tools over accounts (docs/accounts.md §8): tabs beside
+   Projects for Invites, Users and the Audit log, on the editor's own rows
+   and buttons. --- */
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: -12px 0 22px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.admin-tabs[hidden] {
+  display: none;
+}
+
+.admin-tab {
+  margin-bottom: -1px;
+  padding: 6px 2px 8px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.admin-tab:hover {
+  color: var(--text);
+}
+
+.admin-tab--current {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+/* A count the owner should act on: deletions left waiting. */
+.admin__notice {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.admin__notice[hidden] {
+  display: none;
+}
+
+/* A number beside its word, in a create form or a panel. */
+.admin-create__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.admin-create .admin-create__field input,
+.admin-create__field input {
+  width: 6.5em;
+  padding: 7px 9px;
+}
+
+.admin-invites__form input[name='label'] {
+  flex: 2 1 240px;
+}
+
+.admin-invites__made,
+.admin-user__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.admin-invites__made {
+  margin-bottom: 16px;
+  border-color: var(--accent);
+}
+
+.admin-invites__made[hidden],
+.admin-user__detail[hidden] {
+  display: none;
+}
+
+.admin-invites__made p {
+  margin: 0;
+}
+
+.admin-invites__linkrow,
+.admin-user__actions,
+.admin-user__suspend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-invites__link {
+  flex: 1 1 320px;
+  padding: 7px 9px;
+  font-family: var(--font-spec);
+  font-size: 12px;
+}
+
+.admin-invites__form + .admin__hint + .account-say {
+  margin: -14px 0 14px;
+}
+
+.admin-invite[data-state='live'] .admin-invite__state {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-invite .account-say,
+.admin-user .account-say {
+  margin-top: 2px;
+}
+
+/* An account: its row, and under it, once opened, what can be done to it. */
+.admin-user {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-user__main {
+  flex: 1 1 auto;
+}
+
+.admin-user .admin-row__title .badge {
+  margin-left: 4px;
+}
+
+.admin-user__meter {
+  max-width: 360px;
+  margin: 4px 0 0;
+}
+
+.admin-user[data-status='gone'] .admin-row {
+  opacity: 0.55;
+}
+
+.admin-user__facts,
+.admin-user__why,
+.admin-user__own {
+  margin: 0;
+}
+
+.admin-user__why {
+  color: var(--accent);
+}
+
+.admin-user__reason {
+  flex: 1 1 280px;
+  padding: 7px 9px;
+}
+
+.admin-users__more,
+.admin-audit__more {
+  margin-top: 12px;
+}
+
+.admin-users__more[hidden],
+.admin-audit__more[hidden],
+.admin-audit__clear[hidden] {
+  display: none;
+}
+
+.admin-audit__filter select {
+  width: auto;
+  min-width: 200px;
+}
+
+.admin-audit__filter input[name='subject'] {
+  flex: 1 1 240px;
+}
+
+.admin-audit__row {
+  padding: 8px 14px;
+}
+
+.admin-audit__action {
+  font-family: var(--font-spec);
+  font-weight: 400;
+}
+
+.admin-audit__detail {
+  overflow-wrap: anywhere;
+}
+
+.admin-audit__subjectbtn {
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .admin-user .admin-row,
+  .admin-invite {
+    flex-wrap: wrap;
+  }
+
+  .admin-user .admin-row__actions,
+  .admin-invite .admin-row__actions {
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 560px) {
   .account-item {
     flex-wrap: wrap;

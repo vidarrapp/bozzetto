@@ -385,6 +385,18 @@ const asJson = (body: unknown): { body: ArrayBuffer; contentType: string } => ({
   contentType: 'application/json',
 });
 
+/**
+ * One of the owner's tools over accounts (docs/accounts.md §8: invites,
+ * users, the audit log), on /admin/api: JSON both ways, `body` sent as
+ * JSON when there is one. Refused as every owner route is (call): an
+ * OwnerSessionError for want of the owner's session, else an ApiError with
+ * the server's code (owner, wrong_status, bad_request…) and what came with
+ * it, for the page to say as a sentence.
+ */
+export function ownerCall<T>(pathname: string, method = 'GET', body?: unknown): Promise<T> {
+  return call<T>(pathname, body === undefined ? { method } : { method, ...asJson(body) });
+}
+
 /** What the sign-in probe found. */
 export interface SignIn {
   /**

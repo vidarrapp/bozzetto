@@ -54,7 +54,7 @@ import { crc32 } from 'node:zlib';
 import { openSculpt, startAccountsServer } from './lib.mjs';
 import { chooseFile, clearNotices, failedNotice, fileItems, readBozz, savedToast, shelf, workerRoutes } from './smoke.mjs';
 import { TURNSTILE_SECRET, startTurnstileFake } from '../functions/turnstile-fake.mjs';
-import { inviteToken, seedInvite } from '../functions/lib.mjs';
+import { inviteToken, seedInvite, seedUser } from '../functions/lib.mjs';
 
 const VIEWPORT = { width: 1280, height: 800 };
 const MINUTE = 60_000;
@@ -1572,6 +1572,372 @@ async function deleteAccount(server, a, t) {
   t.ok(device.remembered === null && !copies.some((c) => c.projectId), `this device forgets the sign-in and its copies of the account's projects (${show(copies)})`);
 }
 
+// --- the owner's tools over accounts (docs/accounts.md §8, Batch 9) ------------------
+
+/** Accounts the seed makes for the owner's tools: one left half deleted, one whose storage count drifted, and enough others for a second page. */
+const LEAVING = { id: 'u-leaving', handle: 'leaving', email: 'leaving@example.com' };
+const DRIFT = { id: 'u-drift', handle: 'drift', email: 'drift@example.com' };
+const FILLERS = 50;
+/** Rows the seed writes to the log, of an action of their own, for a second page of a filter. */
+const SEEDED_ROWS = 60;
+
+function ownerToolsSeed(now) {
+  const sql = (v) => (typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`);
+  const rows = [
+    seedUser({ ...LEAVING, status: 'deleting', at: now - 10 * DAY }),
+    // Its deletion began two days ago (the account.delete row says when): flagged.
+    `INSERT INTO audit_log (at, actor, action, subject, detail) VALUES (${[now - 2 * DAY, LEAVING.id, 'account.delete', LEAVING.id, '{}'].map(sql).join(', ')});`,
+    seedUser({ ...DRIFT, used: 5 * MiB, at: now - 9 * DAY }),
+  ];
+  for (let i = 0; i < FILLERS; i++) {
+    const n = String(i).padStart(2, '0');
+    rows.push(seedUser({ id: `u-fill-${n}`, handle: `filler${n}`, at: now - 30 * DAY - i * 1000 }));
+  }
+  for (let i = 0; i < SEEDED_ROWS; i++) {
+    rows.push(`INSERT INTO audit_log (at, actor, action, subject, detail) VALUES (${[now - 3 * DAY - i * 1000, 'u-fill-00', 'test.seeded', 'u-fill-00', `{"n":${i}}`].map(sql).join(', ')});`);
+  }
+  return rows.join('\n');
+}
+
+/** An owner tab, drawn: /admin/?tab=<tab> (or /admin/ for Projects), and what the tab row says. */
+async function ownerTab(o, tab, ready) {
+  const p = o.page;
+  await p.goto(`${o.origin}/admin/${tab === 'projects' ? '' : `?tab=${tab}`}`, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector(ready, { timeout: 30_000 }).catch(() => {});
+  return p.evaluate(() =>
+    [...document.querySelectorAll('.admin-tabs .admin-tab')].map((a) => ({ label: a.textContent, href: a.getAttribute('href'), current: a.getAttribute('aria-current') === 'page' })),
+  );
+}
+
+/** An account's row on the Users tab: what it says. */
+const userRow = (p, handle) =>
+  p.evaluate((h) => {
+    const row = [...document.querySelectorAll('.admin-user')].find((r) => r.querySelector('.admin-row__title')?.textContent.split(' ')[0] === `@${h}`);
+    if (!row) return null;
+    return {
+      id: row.dataset.user,
+      status: row.dataset.status,
+      title: row.querySelector('.admin-row__title').textContent,
+      meta: row.querySelector('.admin-row__meta').textContent,
+      usage: row.querySelector('.admin-user__usage').textContent,
+      open: !row.querySelector('.admin-user__detail').hidden,
+      detail: row.querySelector('.admin-user__detail').textContent,
+      buttons: [...row.querySelectorAll('.admin-user__detail button')].map((b) => b.textContent),
+      said: row.querySelector('.admin-user__detail .account-say')?.textContent ?? '',
+    };
+  }, handle);
+
+/** The row's selector, for clicks. */
+const rowOf = (id) => `.admin-user[data-user="${id}"]`;
+
+/** Wait (bounded) until an account's panel says something matching `re`; what it says either way. */
+async function panelSays(p, id, re, timeout = 20_000) {
+  await p
+    .waitForFunction(
+      ([sel, src]) => new RegExp(src).test(document.querySelector(`${sel} .admin-user__detail .account-say`)?.textContent ?? ''),
+      [rowOf(id), re.source],
+      { timeout },
+    )
+    .catch(() => {});
+  return p.evaluate((sel) => document.querySelector(`${sel} .admin-user__detail .account-say`)?.textContent ?? '', rowOf(id));
+}
+
+/** Open an account's panel (Manage), and wait for its actions. */
+async function manage(p, id) {
+  await p.click(`${rowOf(id)} .admin-user__manage`);
+  await p.waitForFunction((sel) => !!document.querySelector(`${sel} .admin-user__detail .admin-user__facts`), rowOf(id), { timeout: 20_000 }).catch(() => {});
+}
+
+/**
+ * The owner's tabs over accounts, on /admin/ beside Projects: Invites -
+ * one made with a label, uses and days, its link shown once with Copy,
+ * redeemed in another browser, then withdrawn; Users - the accounts in
+ * pages of 50, a deletion left waiting flagged, an account signed out
+ * everywhere and suspended (its holder then gets 403 suspended, and is
+ * mailed the reason), a stale Unsuspend refused as the account having
+ * moved on, its quota changed, a drifted count recounted, the owner's own
+ * account offered neither, and the deletion finished; Audit - newest
+ * first, filtered by action and by subject, with Load more.
+ */
+async function ownerPages(server, browser, o, t) {
+  const p = o.page;
+  const writes = (path) => o.requests.filter((r) => r.method !== 'GET' && r.path.startsWith(path)).length;
+
+  // --- the tabs ------------------------------------------------------------------------
+  const tabs = await ownerTab(o, 'projects', '.admin-row, .admin__empty');
+  t.ok(
+    show(tabs.map((x) => x.label)) === show(['Projects', 'Invites', 'Users', 'Audit']) &&
+      tabs[0].current &&
+      show(tabs.map((x) => x.href)) === show(['/admin/', '/admin/?tab=invites', '/admin/?tab=users', '/admin/?tab=audit']),
+    `with accounts on and the owner's account signed in, /admin/ has Invites, Users and Audit beside Projects (${show(tabs)})`,
+  );
+
+  // --- Invites -------------------------------------------------------------------------
+  await p.click('.admin-tab:text-is("Invites")');
+  await p.waitForSelector('.admin-invites__form', { timeout: 30_000 }).catch(() => {});
+  t.ok(new URL(p.url()).search === '?tab=invites', `a tab is a link (${new URL(p.url()).search})`);
+  const defaults = await p.evaluate(() => ({
+    uses: document.querySelector('.admin-invites__form input[name=maxUses]').value,
+    days: document.querySelector('.admin-invites__form input[name=expiresInDays]').value,
+  }));
+  t.ok(defaults.uses === '1' && defaults.days === '14', `a new invite admits one account for 14 days unless said (${show(defaults)})`);
+  const made = writes('/admin/api/invites');
+  await p.fill('.admin-invites__form input[name=maxUses]', '0');
+  await p.click('.admin-invites__form button[type=submit]');
+  t.eq(await saidLike(p, /admits from/, '#admin-tab'), 'An invite admits from 1 to 500 accounts.', 'uses out of range are said so');
+  t.eq(writes('/admin/api/invites'), made, 'and nothing is sent');
+  await o.ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.base });
+  await p.fill('.admin-invites__form input[name=label]', 'For Cleo');
+  await p.fill('.admin-invites__form input[name=maxUses]', '2');
+  await p.fill('.admin-invites__form input[name=expiresInDays]', '7');
+  await p.click('.admin-invites__form button[type=submit]');
+  await p.waitForSelector('.admin-invites__made:not([hidden]) .admin-invites__link', { timeout: 15_000 }).catch(() => {});
+  const link = await p.evaluate(() => document.querySelector('.admin-invites__link')?.value ?? '');
+  const token = new RegExp(`^${server.base.replace(/[.]/g, '\\.')}/\\?invite=([A-Za-z0-9_-]{22})$`).exec(link)?.[1] ?? null;
+  t.ok(!!token, `the invite's link is shown, on this site (${link})`);
+  const shown = await p.textContent('.admin-invites__made p').catch(() => '');
+  t.ok(/admits 2 accounts until .+\. This is the only time its link is shown: copy it now\./.test(shown ?? ''), `once, and says so ("${shown}")`);
+  await p.click('.admin-invites__made button:text-is("Copy")');
+  await p.waitForFunction(() => document.querySelector('.admin-invites__copied')?.textContent !== '', null, { timeout: 5000 }).catch(() => {});
+  const copied = await p.evaluate(async () => ({ said: document.querySelector('.admin-invites__copied')?.textContent, text: await navigator.clipboard.readText().catch(() => null) }));
+  t.ok(copied.said === 'Copied.' && copied.text === link, `Copy puts it on the clipboard (${show(copied)})`);
+  const row = () =>
+    p.evaluate(() => {
+      const r = document.querySelector('.admin-invite');
+      return r
+        ? { state: r.dataset.state, title: r.querySelector('.admin-row__title').textContent, meta: r.querySelector('.admin-row__meta').textContent, badge: r.querySelector('.admin-invite__state').textContent, revoke: !!r.querySelector('.admin-invite__revoke') }
+        : null;
+    });
+  let first = await row();
+  t.ok(first?.state === 'live' && first.title === 'For Cleo' && /^0 of 2 used · made .+ · until .+$/.test(first.meta) && first.badge === 'Live' && first.revoke, `the list has it first, live, none of two used (${show(first)})`);
+  await ownerTab(o, 'invites', '.admin-invite');
+  t.ok(await p.evaluate(() => document.querySelector('.admin-invites__made').hidden && !document.querySelector('.admin-invites__link')), 'drawn again, the link is not shown: it was shown once');
+
+  // Redeemed in another browser: Join, from the link.
+  const c = await browserFor(browser, server.base, { ip: '203.0.113.30' });
+  try {
+    const cp = c.page;
+    await gallery(c, `?invite=${token}`);
+    await step(cp, 'Join Bozzetto');
+    await cp.fill('.account-card input[name=handle]', 'cleo');
+    await cp.waitForFunction(() => document.querySelector('.account-card .account-hint')?.textContent === '@cleo is free.', null, { timeout: 10_000 }).catch(() => {});
+    await cp.fill('.account-card input[name=email]', 'cleo@example.com');
+    await cp.check('.account-card input[name=terms]');
+    const before = await lastMail(server, 'cleo@example.com');
+    await cp.click('.account-card .account-submit');
+    await step(cp, 'Check your email');
+    const code = codeIn(await mailAfter(server, 'cleo@example.com', before));
+    await typeCode(cp, code ?? '');
+    if (await step(cp, 'Add a passkey?', 10_000)) await press(cp, '.account-card', 'Not now');
+    t.ok((await dialogGone(cp)) && (await chipShown(cp, '@cleo')), 'the invite is redeemed in another browser: Join makes @cleo');
+    await ownerTab(o, 'invites', '.admin-invite');
+    first = await row();
+    t.ok(first?.state === 'live' && /^1 of 2 used/.test(first.meta), `the list counts the use, and the invite is still live (${first?.meta})`);
+    await p.click('.admin-invite .admin-invite__revoke');
+    await p.waitForFunction(() => document.querySelector('.admin-invite')?.dataset.state === 'revoked', null, { timeout: 15_000 }).catch(() => {});
+    first = await row();
+    t.ok(first?.state === 'revoked' && first.badge === 'Withdrawn' && !first.revoke && /withdrawn/.test(first.meta), `Revoke withdraws it (${show(first)})`);
+    const check = await server.call('POST', '/api/auth/invite/check', { json: { invite: token }, headers: { 'cf-connecting-ip': '203.0.113.31' } });
+    t.eq(check.status, 410, 'and its link admits nobody now');
+
+    // --- Users -------------------------------------------------------------------------
+    const cleo = (await server.call('GET', '/api/dev/user?email=cleo%40example.com')).body?.user?.id ?? '';
+    await ownerTab(o, 'users', '.admin-user');
+    const notice = await p.evaluate(() => {
+      const n = document.querySelector('.admin-users__pending');
+      return n && !n.hidden ? n.textContent : null;
+    });
+    t.eq(notice, 'One account has been waiting over a day for its deletion to finish. Finish deletion, under Manage, carries it on.', 'a deletion left waiting over a day is flagged at the top');
+    const page1 = await p.evaluate(() => ({ rows: document.querySelectorAll('.admin-user').length, more: !document.querySelector('.admin-users__more').hidden }));
+    t.ok(page1.rows === 50 && page1.more, `the accounts, 50 a page, with Load more (${show(page1)})`);
+    const handles = await p.evaluate(() => [...document.querySelectorAll('.admin-user .admin-row__title')].map((x) => x.textContent.split(' ')[0]));
+    t.eq(handles[0], '@cleo', 'newest first');
+    await p.click('.admin-users__more');
+    await p.waitForFunction((n) => document.querySelectorAll('.admin-user').length > n, page1.rows, { timeout: 15_000 }).catch(() => {});
+    const all = await p.evaluate(() => ({
+      handles: [...document.querySelectorAll('.admin-user .admin-row__title')].map((x) => x.textContent.split(' ')[0]),
+      more: !document.querySelector('.admin-users__more').hidden,
+    }));
+    t.ok(
+      all.handles.length > 50 && !all.more && new Set(all.handles).size === all.handles.length && all.handles.includes('@filler49') && all.handles.includes('@boss'),
+      `Load more brings the rest, none twice, and there is no more (${all.handles.length} accounts)`,
+    );
+    let cleoRow = await userRow(p, 'cleo');
+    t.ok(
+      !!cleoRow &&
+        cleoRow.id === cleo &&
+        /^cleo@example\.com · joined .+ · last seen .+ · 0 projects$/.test(cleoRow.meta) &&
+        cleoRow.usage === '0 of 250 MB used' &&
+        cleoRow.title === '@cleo',
+      `each row: handle, address, dates, projects, and storage against the quota (${show(cleoRow && { meta: cleoRow.meta, usage: cleoRow.usage })})`,
+    );
+    const boss = await userRow(p, 'boss');
+    t.ok(boss?.title === '@boss owner' && /^\d+(\.\d+)? of 10 GB used$/.test(boss.usage), `the owner's row says so, with its 10 GB (${show(boss && { title: boss.title, usage: boss.usage })})`);
+    const leaving = await userRow(p, 'leaving');
+    t.ok(leaving?.title === '@leaving being deleted' && leaving.status === 'deleting', `an account being deleted says so (${leaving?.title})`);
+
+    // Signed out everywhere.
+    await manage(p, cleo);
+    cleoRow = await userRow(p, 'cleo');
+    t.ok(
+      /^0 passkeys · signed in on 1 session · /.test(cleoRow?.detail ?? '') &&
+        show(cleoRow?.buttons) === show(['Suspend', 'Revoke sessions', 'Set quota', 'Recount']),
+      `Manage opens the account: its passkeys and sessions counted, and what can be done (${show(cleoRow && { detail: cleoRow.detail.slice(0, 60), buttons: cleoRow.buttons })})`,
+    );
+    await p.click(`${rowOf(cleo)} .admin-user__revoke`);
+    t.eq(await panelSays(p, cleo, /signed out of/), '@cleo is signed out of 1 session.', 'Revoke sessions signs it out everywhere, and says how many');
+    t.eq((await me(cp)).status, 401, 'its browser is signed out');
+
+    // Suspended: a reason is needed, asked about, mailed; the holder's cookie then answers 403 suspended.
+    const sent = writes(`/admin/api/users/${cleo}/suspend`);
+    await p.click(`${rowOf(cleo)} .admin-user__suspend button[type=submit]`);
+    t.eq(await panelSays(p, cleo, /Give a reason/), 'Give a reason: it is mailed to them, and kept on the account while it is suspended.', 'Suspend wants a reason');
+    t.eq(writes(`/admin/api/users/${cleo}/suspend`), sent, 'and sends nothing without one');
+    const mailed = await lastMail(server, 'cleo@example.com');
+    await p.fill(`${rowOf(cleo)} .admin-user__reason`, 'Spam in the gallery');
+    await p.click(`${rowOf(cleo)} .admin-user__suspend button[type=submit]`);
+    t.eq(await panelSays(p, cleo, /is suspended/), '@cleo is suspended, and has been mailed the reason.', 'confirmed, it is suspended');
+    cleoRow = await userRow(p, 'cleo');
+    t.ok(cleoRow?.title === '@cleo suspended' && /Suspended: Spam in the gallery/.test(cleoRow.detail) && show(cleoRow.buttons) === show(['Unsuspend', 'Set quota', 'Recount']), `the row says so, with the reason, and offers Unsuspend (${show(cleoRow && { title: cleoRow.title, buttons: cleoRow.buttons })})`);
+    const notice2 = await mailAfter(server, 'cleo@example.com', mailed);
+    t.ok(notice2?.subject === 'Your Bozzetto account is suspended' && /The reason given: Spam in the gallery/.test(notice2.body), `its holder is mailed the reason ("${notice2?.subject}")`);
+    const refused = await cp.evaluate(async () => {
+      const r = await fetch('/api/me');
+      return { status: r.status, code: (await r.json().catch(() => ({}))).code };
+    });
+    t.ok(refused.status === 403 && refused.code === 'suspended', `and its browser is answered 403 suspended (${show(refused)})`);
+
+    // An Unsuspend from a panel drawn before someone else lifted it: refused, said, drawn again.
+    const lifted = await p.evaluate((id) => fetch(`/admin/api/users/${id}/unsuspend`, { method: 'POST' }).then((r) => r.status), cleo);
+    t.eq(lifted, 200, 'lifted meanwhile, in another tab');
+    await p.click(`${rowOf(cleo)} .admin-user__unsuspend`);
+    t.eq(await panelSays(p, cleo, /active now/), '@cleo is active now, so that cannot be done. It is shown as it is now.', "the stale panel's Unsuspend is refused as a sentence (409 wrong_status)");
+    cleoRow = await userRow(p, 'cleo');
+    t.ok(cleoRow?.status === 'active' && show(cleoRow.buttons) === show(['Suspend', 'Revoke sessions', 'Set quota', 'Recount']), `and the account is drawn as it now is (${show(cleoRow && { status: cleoRow.status, buttons: cleoRow.buttons })})`);
+
+    // The quota, in MiB.
+    const quotas = writes(`/admin/api/users/${cleo}/quota`);
+    await p.fill(`${rowOf(cleo)} .admin-user__quota`, '0');
+    await p.click(`${rowOf(cleo)} .admin-user__setquota`);
+    t.eq(await panelSays(p, cleo, /whole number/), 'A quota is a whole number of MiB from 1 to 102,400.', 'a quota out of range is said so');
+    t.eq(writes(`/admin/api/users/${cleo}/quota`), quotas, 'and nothing is sent');
+    await p.fill(`${rowOf(cleo)} .admin-user__quota`, '500');
+    await p.click(`${rowOf(cleo)} .admin-user__setquota`);
+    t.eq(await panelSays(p, cleo, /quota is/), "@cleo's quota is 500 MB.", 'Set quota changes it');
+    cleoRow = await userRow(p, 'cleo');
+    const stored = (await server.call('GET', `/api/dev/user?id=${cleo}`)).body?.user?.quota_bytes;
+    t.ok(cleoRow?.usage === '0 of 500 MB used' && stored === 500 * MiB, `the bar and the account both have it (${cleoRow?.usage}; ${stored})`);
+
+    // Recount: a count that drifted from what R2 holds.
+    await manage(p, DRIFT.id);
+    let drift = await userRow(p, 'drift');
+    t.eq(drift?.usage, '5 of 250 MB used', 'an account whose count says 5 MB');
+    await p.click(`${rowOf(DRIFT.id)} .admin-user__recount`);
+    t.eq(await panelSays(p, DRIFT.id, /Counted again/), 'Counted again: 0 KB, where it said 5 MB.', 'Recount counts what it stores from the files themselves');
+    drift = await userRow(p, 'drift');
+    t.eq(drift?.usage, '0 of 250 MB used', 'and the row has the new count');
+
+    // The owner's own account: neither suspended nor signed out from here.
+    const ownerId = boss?.id ?? '';
+    await manage(p, ownerId);
+    const own = await userRow(p, 'boss');
+    t.ok(
+      show(own?.buttons) === show(['Set quota', 'Recount']) && /Your own account: it is not suspended, signed out everywhere or deleted from here\./.test(own?.detail ?? ''),
+      `the owner's own account offers only its quota and a recount, and says why (${show(own?.buttons)})`,
+    );
+    const ownRefusal = await p.evaluate((id) => fetch(`/admin/api/users/${id}/suspend`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"reason":"x"}' }).then(async (r) => ({ status: r.status, code: (await r.json()).code })), ownerId);
+    t.ok(ownRefusal.status === 409 && ownRefusal.code === 'owner', `as the server would refuse (${show(ownRefusal)})`);
+
+    // A deletion left waiting, finished.
+    await manage(p, LEAVING.id);
+    const half = await userRow(p, 'leaving');
+    t.ok(show(half?.buttons) === show(['Finish deletion']) && /Its deletion began .+ and has not finished\./.test(half?.detail ?? ''), `an account being deleted offers Finish deletion alone (${show(half?.buttons)})`);
+    await p.click(`${rowOf(LEAVING.id)} .admin-user__finish`);
+    t.eq(await panelSays(p, LEAVING.id, /is deleted/), '@leaving is deleted, with everything in it.', 'Finish deletion carries it to its end');
+    const after = await p.evaluate(() => ({ notice: !document.querySelector('.admin-users__pending').hidden }));
+    const gone = (await server.call('GET', `/api/dev/user?id=${LEAVING.id}`)).body?.user ?? null;
+    t.ok(!after.notice && gone === null, `the account is gone, and so is the flag (${show({ ...after, gone })})`);
+  } finally {
+    await c.ctx.close();
+  }
+
+  // --- Audit ---------------------------------------------------------------------------
+  await ownerTab(o, 'audit', '.admin-audit__row');
+  const log = () =>
+    p.evaluate(() => ({
+      rows: [...document.querySelectorAll('.admin-audit__row')].map((r) => ({
+        id: Number(r.dataset.audit),
+        action: r.querySelector('.admin-audit__action').textContent,
+        subject: r.querySelector('.admin-audit__subjectbtn')?.textContent ?? null,
+        detail: r.querySelector('.admin-audit__detail')?.textContent ?? '',
+      })),
+      more: !document.querySelector('.admin-audit__more').hidden,
+      actions: [...document.querySelectorAll('.admin-audit__byaction option')].map((o2) => o2.value).filter(Boolean),
+      search: location.search,
+    }));
+  let a = await log();
+  t.ok(
+    a.rows.length === 50 && a.more && a.rows[0].action === 'account.finish_deletion' && a.rows[0].subject === LEAVING.id,
+    `the log, newest first, 50 a page: the deletion just finished on top (${show(a.rows.slice(0, 3))})`,
+  );
+  t.ok(
+    ['invite.create', 'invite.revoke', 'account.suspend', 'account.unsuspend', 'account.quota', 'account.recount', 'account.revoke_sessions', 'test.seeded'].every((x) => a.actions.includes(x)),
+    `the action filter offers what the log holds (${show(a.actions)})`,
+  );
+  await p.selectOption('.admin-audit__byaction', 'account.suspend');
+  await p.click('.admin-audit__filter button[type=submit]');
+  // The list has rows again, every one of them the filter's (an empty list, still loading, is not).
+  await p
+    .waitForFunction(
+      () => {
+        const rows = [...document.querySelectorAll('.admin-audit__row .admin-audit__action')];
+        return rows.length > 0 && rows.every((x) => x.textContent === 'account.suspend');
+      },
+      null,
+      { timeout: 15_000 },
+    )
+    .catch(() => {});
+  a = await log();
+  t.ok(a.rows.length >= 2 && a.rows.every((r) => r.action === 'account.suspend') && /action=account\.suspend/.test(a.search), `filtered by action: only suspensions, and the address keeps it (${a.rows.length}; ${a.search})`);
+  await p.click('.admin-audit__row .admin-audit__subjectbtn');
+  await p
+    .waitForFunction(
+      () => {
+        const want = document.querySelector('.admin-audit__subject').value;
+        const rows = [...document.querySelectorAll('.admin-audit__row')];
+        return !!want && rows.length > 0 && rows.every((r) => r.querySelector('.admin-audit__subjectbtn')?.textContent === want);
+      },
+      null,
+      { timeout: 15_000 },
+    )
+    .catch(() => {});
+  a = await log();
+  const subject = await p.evaluate(() => document.querySelector('.admin-audit__subject').value);
+  t.ok(
+    !!subject && a.rows.length > 1 && a.rows.every((r) => r.subject === subject) && new Set(a.rows.map((r) => r.action)).size > 1,
+    `a row's subject, pressed, filters by it: everything about that account (${subject}: ${show([...new Set(a.rows.map((r) => r.action))])})`,
+  );
+  await p.selectOption('.admin-audit__byaction', 'test.seeded');
+  await p.fill('.admin-audit__subject', '');
+  await p.click('.admin-audit__filter button[type=submit]');
+  await p.waitForFunction(() => document.querySelectorAll('.admin-audit__row').length === 50, null, { timeout: 15_000 }).catch(() => {});
+  a = await log();
+  t.ok(a.rows.length === 50 && a.more, `a filter with more than a page has Load more (${a.rows.length})`);
+  await p.click('.admin-audit__more');
+  await p.waitForFunction((n) => document.querySelectorAll('.admin-audit__row').length === n, SEEDED_ROWS, { timeout: 15_000 }).catch(() => {});
+  a = await log();
+  // The seed wrote row n a second before row n-1: newest first is n in order.
+  const order = a.rows.map((r) => r.detail);
+  t.ok(
+    a.rows.length === SEEDED_ROWS && !a.more && order.every((d, i) => d === `n ${i}`) && new Set(a.rows.map((r) => r.id)).size === SEEDED_ROWS,
+    `Load more brings the rest, newest first, none twice, and no more (${a.rows.length}: ${order.slice(48, 52).join(', ')})`,
+  );
+  await p.click('.admin-audit__clear');
+  await p.waitForFunction(() => document.querySelectorAll('.admin-audit__row').length === 50 && document.querySelector('.admin-audit__byaction').value === '', null, { timeout: 15_000 }).catch(() => {});
+  a = await log();
+  t.ok(a.rows[0]?.action === 'account.finish_deletion' && a.search === '?tab=audit', `Clear shows the whole log again (${a.search})`);
+}
+
 export const suites = {
   async accounts(page, base, t) {
     const browser = page.context().browser();
@@ -1586,6 +1952,7 @@ export const suites = {
       seedInvite({ id: 'inv-join', name: 'join', expires: now + 14 * DAY }),
       seedInvite({ id: 'inv-spent', name: 'spent', expires: now + 14 * DAY, maxUses: 1, uses: 1 }),
       seedInvite({ id: 'inv-join2', name: 'join2', expires: now + 14 * DAY }),
+      ownerToolsSeed(now),
     ].join('\n');
     let server = null;
     try {
@@ -1638,6 +2005,8 @@ export const suites = {
       await part('my projects', () => myProjectsPage(server, a, t));
       await part('download my data', () => exportData(server, a, t));
       await part('delete account', () => deleteAccount(server, a, t));
+      // The owner's tools over accounts (Batch 9): Invites, Users, Audit.
+      await part('owner pages', () => ownerPages(server, browser, o, t));
       t.ok(!a.errors.length, `no page errors in the member's browser${a.errors.length ? `: ${a.errors.join(' | ')}` : ''}`);
       t.ok(!o.errors.length, `no page errors in the owner's browser${o.errors.length ? `: ${o.errors.join(' | ')}` : ''}`);
     } finally {

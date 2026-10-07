@@ -1,7 +1,9 @@
 // The desktop app itself, under Electron, on a virtual display:
 //
-//   npm run build:desktop && xvfb-run -a node tests/e2e/desktop.mjs
+//   npm run build:desktop && npm run build:test && xvfb-run -a node tests/e2e/desktop.mjs
 //   xvfb-run -a node tests/e2e/desktop.mjs --app release/Bozzetto-<version>.AppImage
+//
+// (build:test makes dist/, the web build the accounts server serves.)
 //
 // The launch switches take effect (v-sync off by default: frames run free
 // while you work, well past any display, and drop back to the display's
@@ -26,6 +28,16 @@
 // other host; signing in and out in Server settings tells the page, which
 // asks again who it is for.
 //
+// Then a server with accounts: the real Functions over the web build
+// (startAccountsServer), signed in to through the server's own page,
+// /?signin=desktop, in the same sandboxed window, with a code from the
+// dev outbox; the account's session cookie lands in the app's jar, GET
+// /api/me through the proxy says who it is, Server settings shows the
+// handle, and the owner's Save to library and Publish model go to My
+// projects (/api/me), as on the web. A session ended on the server reads
+// as ended though its cookie is still in the jar; signing out ends it on
+// the server and empties the jar.
+//
 // With --app, those checks run against a packaged build (an AppImage is
 // extracted and started through its own AppRun), after its fuse wire is
 // read back from the binary and ELECTRON_RUN_AS_NODE and --inspect are
@@ -43,7 +55,8 @@ import { createRequire } from 'node:module';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { checks, playwright } from './lib.mjs';
+import { checks, playwright, startAccountsServer } from './lib.mjs';
+import { seedSession, seedUser, seededToken } from '../functions/lib.mjs';
 
 const require = createRequire(import.meta.url);
 const root = resolve('.');
@@ -147,7 +160,7 @@ async function start() {
     steady = n >= 30 ? steady + 1 : 0;
     going = steady >= 3;
   }
-  return { app, win, errors, going, close: () => app.close() };
+  return { app, win, errors, going, pages: () => app.windows(), close: () => app.close() };
 }
 
 /** Frames the loop ran per second over `ms`, woken every 40 ms if `working`, as input wakes it. */
@@ -266,6 +279,9 @@ async function startPackaged(exe) {
     win,
     errors,
     log: () => log,
+    // Every window's page, the sign-in window's among them: a page in
+    // another partition is filed under the default context over CDP.
+    pages: () => browser.contexts().flatMap((c) => c.pages()),
     close: async () => {
       await browser.close().catch(() => {});
       killGroup(child);
@@ -365,15 +381,18 @@ const outside = join(tmpdir(), `bozzetto-outside-${process.pid}.bozz`);
  * Server settings there, and through the bridge for a packaged build,
  * whose menus a test cannot reach.
  */
+/** Something the page answers, given `ms` before it counts as no answer (a dialog waiting, say). */
+const askOf = (win) => (fn, arg, ms = 20_000) =>
+  Promise.race([
+    win.evaluate(fn, arg),
+    sleep(ms).then(() => {
+      throw new Error(`no answer in ${ms / 1000} s: a dialog waiting?`);
+    }),
+  ]);
+
 async function security(run) {
   const { app, win } = run;
-  const ask = (fn, arg, ms = 20_000) =>
-    Promise.race([
-      win.evaluate(fn, arg),
-      sleep(ms).then(() => {
-        throw new Error(`no answer in ${ms / 1000} s: a dialog waiting?`);
-      }),
-    ]);
+  const ask = askOf(win);
   const want = require('electron/package.json').version;
   await win.keyboard.press('Escape'); // Preferences, if a check above left it open
   const version = await win.evaluate(() => window.bozzettoDesktop.version);
@@ -439,14 +458,20 @@ async function security(run) {
   const beforeSignIn = osLog().length;
   const markIn = deploy.seen.length;
   if (app) {
+    // Each window the app opens from here: where it first went, and what it runs with once loaded.
     await app.evaluate(({ app: a }) => {
       globalThis.__opened = [];
-      a.on('browser-window-created', (_e, w) =>
+      a.on('browser-window-created', (_e, w) => {
+        const seen = { url: null };
+        globalThis.__opened.push(seen);
+        w.webContents.once('did-navigate', (_ev, url) => {
+          seen.url = url;
+        });
         w.webContents.once('did-finish-load', () => {
           const p = w.webContents.getLastWebPreferences() ?? {};
-          globalThis.__opened.push({ sandbox: p.sandbox, contextIsolation: p.contextIsolation, nodeIntegration: p.nodeIntegration, preload: p.preload ?? null });
-        }),
-      );
+          Object.assign(seen, { sandbox: p.sandbox, contextIsolation: p.contextIsolation, nodeIntegration: p.nodeIntegration, preload: p.preload ?? null });
+        });
+      });
     });
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
@@ -473,6 +498,14 @@ async function security(run) {
     t.ok(
       prefs.length === 1 && prefs[0].sandbox === true && prefs[0].contextIsolation === true && prefs[0].nodeIntegration === false && !prefs[0].preload,
       `the sign-in window is sandboxed, isolated, with no Node and no preload (${show(prefs)})`,
+    );
+    // A server without accounts (its /api/config says nothing of them) is
+    // signed in to through Cloudflare Access, at /admin/, as it always was.
+    const asked = deploy.seen.slice(markIn).map((r) => `${r.method} ${r.path}`);
+    const config = asked.indexOf('GET /api/config');
+    t.ok(
+      config >= 0 && config < asked.indexOf('GET /admin/') && prefs[0]?.url === `${base}/admin/`,
+      `with accounts off, the sign-in reads the server's /api/config, then opens Access's window at /admin/ (${show({ url: prefs[0]?.url, asked: asked.slice(0, 6) })})`,
     );
   } else {
     await ask((u) => window.bozzettoDesktop.setServer(u), base);
@@ -693,10 +726,15 @@ async function security(run) {
   t.eq(show(osLog().slice(beforeNav)), show(['xdg-email mailto:someone@example.com']), 'a page navigating to a mailto: hands it to the mail program, and to smb: or a look-alike of the app, nothing');
   t.ok(stayed.sculpt && stayed.url.startsWith('bozzetto://app/'), `and the app stays where it is (${show(stayed)})`);
   t.ok(run.errors.length === 0, `no page errors${run.errors.length ? `: ${run.errors.join(' | ')}` : ''}`);
+}
 
-  // --- bozzetto:// serves the app's own host only ------------------------------
-  // Last: it takes the window off the app. A navigation from here is the
-  // browser's own, not the page's, so it reaches the protocol handler.
+/**
+ * bozzetto:// serves the app's own host only. Last of all: it takes the
+ * window off the app. A navigation from here is the browser's own, not
+ * the page's, so it reaches the protocol handler.
+ */
+async function ownHostOnly(run) {
+  const { win } = run;
   const statusOf = (u) => win.goto(u).then((r) => r?.status() ?? null, (e) => `threw ${String(e.message).split('\n')[0]}`);
   const hosts = {
     evil: await statusOf('bozzetto://evil/index.html'),
@@ -704,6 +742,355 @@ async function security(run) {
     app: await statusOf('bozzetto://app/index.html'),
   };
   t.ok(hosts.evil === 404 && hosts.lookalike === 404 && hosts.app === 200, `bozzetto:// answers its own host and 404s any other (${show(hosts)})`);
+}
+
+// --- a server with accounts ---------------------------------------------------
+
+const MiB = 1024 * 1024;
+const DAY = 24 * 60 * 60 * 1000;
+/** The owner's account on the accounts server, made by the seed rather than the bootstrap. */
+const OWNER = { id: 'u-desk-owner', handle: 'boss', email: 'owner@example.com' };
+
+/** The code a code mail carries in its subject, or null. */
+const codeIn = (row) => /^(\d{6}) is your Bozzetto code$/.exec(row?.subject ?? '')?.[1] ?? null;
+
+/** A route asked through the app's proxy, as the page asks it: its status and its JSON (null for none). */
+const proxiedJson = (ask, pathname) =>
+  ask(async (path) => {
+    const r = await window.bozzettoDesktop.api({ pathname: path });
+    let json = null;
+    try {
+      json = r.bytes ? JSON.parse(new TextDecoder().decode(r.bytes)) : null;
+    } catch {
+      // Not JSON.
+    }
+    return { status: r.status, json };
+  }, pathname);
+
+/**
+ * The app against the real Functions with accounts on (startAccountsServer,
+ * over the web build, at http://localhost), docs/accounts.md §2. Signing in
+ * reads the server's /api/config and opens its own sign-in page,
+ * /?signin=desktop, in the sign-in window - sandboxed, as Access's is -
+ * where the code from the outbox is typed; the window closes by itself
+ * once the account's session cookie lands in the jar, and Server settings
+ * says who is signed in, confirmed by GET /api/me through the proxy. The
+ * owner's Save to library and Capture's Publish model go to My projects
+ * (/api/me, under the account's own folder in R2), as on the web. A
+ * session the server has since ended reads as that, though its cookie is
+ * still in the jar, and signing in again drops it first. Sign out ends the
+ * session on the server (the owner tools count it gone) and empties the jar.
+ * Development drives it through Server settings and reads the jar; a
+ * packaged build, through the bridge.
+ */
+async function accountsSignIn(run) {
+  const { app, win } = run;
+  const ask = askOf(win);
+  if (!existsSync(join(root, 'dist', 'index.html'))) {
+    t.ok(false, 'dist/index.html missing - run `npm run build:test` for the accounts server');
+    return;
+  }
+  const now = Date.now();
+  const seed = [
+    seedUser({ ...OWNER, role: 'owner', quota: 10240 * MiB, at: now - DAY }),
+    // The harness's own sign-in as the owner, for the owner tools' count of sessions.
+    seedSession({ name: 'desk-tools', id: 's-desk-tools', user: OWNER.id, created: now }),
+  ].join('\n');
+  let server;
+  try {
+    server = await startAccountsServer({ dist: join(root, 'dist'), seed });
+  } catch (e) {
+    t.ok(false, `the accounts server started: ${e?.message ?? e}`);
+    return;
+  }
+  const tools = { 'cf-access-authenticated-user-email': OWNER.email, cookie: `__Host-bz_session=${seededToken('desk-tools')}` };
+  /** The owner's good sessions, as the owner tools count them. */
+  const sessions = async () => (await server.call('GET', `/admin/api/users/${OWNER.id}`, { headers: tools })).body?.sessions ?? null;
+  const base = server.base;
+  const panel = win.getByRole('dialog', { name: 'Server settings' });
+  const statusNow = () => win.evaluate(() => document.querySelector('[aria-label="Server settings"] .dsettings__status')?.textContent ?? null);
+  const statusIs = (want, timeout = 60_000) =>
+    win
+      .waitForFunction((w) => document.querySelector('[aria-label="Server settings"] .dsettings__status')?.textContent === w, want, { timeout })
+      .then(() => true, () => false);
+  const formsShow = (on) =>
+    win
+      .waitForFunction(
+        (o) => {
+          const fields = [...document.querySelectorAll('.gallery-form__fields')];
+          return fields.length > 0 && fields.every((f) => f.hidden === !o);
+        },
+        on,
+        { timeout: 20_000 },
+      )
+      .then(() => true, () => false);
+  const jar = () =>
+    app.evaluate(async ({ session }) =>
+      (await session.fromPartition('persist:bozzetto-server').cookies.get({})).map((c) => ({
+        name: c.name,
+        value: c.value,
+        secure: c.secure,
+        httpOnly: c.httpOnly,
+        sameSite: c.sameSite,
+        hostOnly: c.hostOnly,
+      })),
+    );
+  /** The sign-in window's page, once it is on the server. */
+  const signInPage = async () => {
+    for (let i = 0; i < 120; i++) {
+      const page = run.pages().find((p) => p.url().startsWith(base));
+      if (page) return page;
+      await sleep(250);
+    }
+    return null;
+  };
+  /**
+   * Sign in through the window: started from Server settings (development)
+   * or the bridge, the code asked for in the window, read from the outbox
+   * and typed there. What the window offered first, and whether it was
+   * seen to close by itself.
+   */
+  const signInByWindow = async () => {
+    const before = (await server.outbox(OWNER.email)).at(-1)?.id ?? 0;
+    if (app) await panel.getByRole('button', { name: 'Sign in', exact: true }).click();
+    else await win.evaluate(() => void (window.__signingIn = window.bozzettoDesktop.signIn()));
+    const page = await signInPage();
+    if (!page) return { page: null, url: run.pages().map((p) => p.url()).join(', ') };
+    const url = page.url();
+    // What the jar held as the window opened: a session the server had let go is dropped first.
+    const held = app ? (await jar()).filter((c) => c.name === '__Host-bz_session').length : null;
+    await page.waitForFunction(() => document.querySelector('.account-card .account-title')?.textContent === 'Sign in', null, { timeout: 60_000 });
+    const view = await page.evaluate(() => ({
+      primary: [...document.querySelectorAll('.account-card .btn--primary')].map((b) => b.textContent),
+      lede: document.querySelector('.account-card .account-lede')?.textContent ?? '',
+      search: location.search,
+    }));
+    await page.fill('.account-card input[name=email]', OWNER.email);
+    await page.click('.account-card .account-submit');
+    let mail = null;
+    for (let i = 0; i < 60 && !mail; i++) {
+      mail = (await server.outbox(OWNER.email)).find((r) => r.id > before && codeIn(r)) ?? null;
+      if (!mail) await sleep(250);
+    }
+    if (!mail) return { page, url, held, view, typed: false };
+    const closed = new Promise((ok) => page.once('close', () => ok(true)));
+    await page.fill('.account-card input[name=code]', codeIn(mail));
+    const gone = await Promise.race([closed, sleep(30_000).then(() => false)]);
+    const answer = app ? null : await ask(() => window.__signingIn, undefined, 30_000);
+    return { page, url, held, view, typed: true, gone, answer };
+  };
+
+  try {
+    t.eq(await sessions(), 1, 'the accounts server is up, the owner signed in once for the harness (the owner tools count good sessions)');
+    if (app) {
+      await app.evaluate(() => {
+        globalThis.__opened = [];
+      });
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL().startsWith('bozzetto://'))
+          ?.webContents.send('menu:command', 'server:settings'),
+      );
+      await panel.waitFor({ state: 'visible', timeout: 10_000 });
+      await panel.locator('.dsettings__input').fill(base);
+      await panel.getByRole('button', { name: 'Save', exact: true }).click();
+      t.ok(await statusIs(`${base} — not signed in, so publishing will not work yet.`, 15_000), `the accounts server set in Server settings, not signed in (${await statusNow()})`);
+    } else {
+      await ask((u) => window.bozzettoDesktop.setServer(u), base);
+    }
+    const info = await ask(() => window.bozzettoDesktop.getServer());
+    t.ok(info.url === base && info.signedIn === false && info.accounts === true, `the main process reads the server's /api/config: it has accounts (${show(info)})`);
+
+    // --- signing in, in the window ------------------------------------------
+    const first = await signInByWindow();
+    t.ok(!!first.page, `Sign in opens the server's own sign-in page in the window (${first.url})`);
+    t.ok(
+      first.view?.primary?.[0] === 'Email me a code' && /closes by itself/.test(first.view?.lede ?? '') && first.view?.search === '',
+      `it leads with the code, says the window closes by itself, and takes ?signin=desktop off its address (${show(first.view)})`,
+    );
+    t.ok(first.typed && first.gone, `the code from the outbox, typed in the window, signs in, and the window closes by itself (${show({ typed: first.typed, gone: first.gone })})`);
+    if (app) {
+      const opened = await app.evaluate(() => globalThis.__opened);
+      t.ok(
+        opened.length === 1 &&
+          opened[0].url === `${base}/?signin=desktop` &&
+          opened[0].sandbox === true &&
+          opened[0].contextIsolation === true &&
+          opened[0].nodeIntegration === false &&
+          !opened[0].preload,
+        `the window went to ${base}/?signin=desktop, sandboxed, isolated, with no Node and no preload (${show(opened)})`,
+      );
+      t.ok(await statusIs(`Signed in to ${base} as @${OWNER.handle}.`), `Server settings says who is signed in, as the server confirms it (${await statusNow()})`);
+      const cookies = await jar();
+      const held = cookies.find((c) => c.name === '__Host-bz_session');
+      t.ok(
+        !!held && held.secure && held.httpOnly && held.sameSite === 'lax' && held.hostOnly && !cookies.some((c) => c.name === 'CF_Authorization'),
+        `the account's session cookie is in the app's jar, as the server set it (${show(cookies.map(({ value, ...c }) => c))})`,
+      );
+    } else {
+      t.ok(first.answer?.signedIn === true && first.answer?.accounts === true, `the bridge's sign-in answers signed in (${show(first.answer)})`);
+    }
+    const me = await proxiedJson(ask, '/api/me');
+    t.ok(
+      me.status === 200 && me.json?.handle === OWNER.handle && me.json?.role === 'owner',
+      `GET /api/me through the proxy answers the account (${me.status} ${show(me.json && { handle: me.json.handle, role: me.json.role })})`,
+    );
+    const current = (await proxiedJson(ask, '/api/me/account')).json?.sessions?.find((x) => x.current);
+    t.eq(current?.client, 'desktop', "and the session is marked as the desktop app's");
+    t.eq(await sessions(), 2, 'the owner tools count a second good session');
+    // Signed in from Server settings, the page asks again who it is for; the
+    // bridge's own sign-in tells it nothing, so that is development's to see.
+    if (app) t.ok(await formsShow(true), 'the page is told: it asks again who it is for, and offers the owner publishing');
+
+    // --- publishing goes to /api/me, as on the web --------------------------
+    if (app) {
+      await app.evaluate(({ ipcMain }) => {
+        globalThis.__proxied = [];
+        const real = ipcMain._invokeHandlers?.get('server:fetch');
+        if (!real) return;
+        globalThis.__realProxy = real;
+        ipcMain.removeHandler('server:fetch');
+        ipcMain.handle('server:fetch', (e, init) => {
+          globalThis.__proxied.push(`${init?.method ?? 'GET'} ${init?.pathname}`);
+          return real(e, init);
+        });
+      });
+    }
+    await win.evaluate(() => {
+      document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove());
+      window.__sculpt.session.addPrimitive('capsule');
+    });
+    let saved;
+    if (app) {
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL().startsWith('bozzetto://'))
+          ?.webContents.send('menu:command', 'file:saveToLibrary'),
+      );
+      saved = await win
+        .waitForFunction(
+          () => {
+            const el = [...document.querySelectorAll('.file-menu__progress')].pop();
+            return el && el.dataset.state !== 'running' ? { state: el.dataset.state, text: el.textContent } : null;
+          },
+          null,
+          { timeout: 60_000 },
+        )
+        .then((h) => h.jsonValue(), () => ({ state: 'none', text: '' }));
+    } else {
+      // No menu to reach in a packaged build: the same pipeline, from the page.
+      saved = await ask(
+        async () => {
+          const files = window.__sculpt.fileActions;
+          try {
+            const link = await files.uploadToProjects();
+            return { state: 'done', text: `Saved to ${await files.place()}: ${link.title}` };
+          } catch (e) {
+            return { state: 'failed', text: String(e?.message ?? e) };
+          }
+        },
+        undefined,
+        60_000,
+      );
+    }
+    const listed = (await proxiedJson(ask, '/api/me/projects')).json ?? [];
+    const scene = Array.isArray(listed) ? listed.find((x) => x.mode === 'scene') : null;
+    const stored = (await server.call('GET', `/api/dev/r2?prefix=${encodeURIComponent(`users/${OWNER.id}/projects/`)}`)).body?.objects ?? [];
+    t.ok(
+      saved.state === 'done' && /^Saved to My projects/.test(saved.text) && !!scene && scene.visibility === 'private' && scene.media === `/api/me/media/${scene.id}`,
+      `the owner's Save to library saves to My projects, as on the web (${saved.text}; ${show(scene && { id: scene.id, mode: scene.mode, media: scene.media })})`,
+    );
+    t.ok(
+      !!scene && stored.some((o) => o.key === `users/${OWNER.id}/projects/${scene.id}/scene.bozz`),
+      `its file is under the account's own folder (${show(stored.map((o) => o.key))})`,
+    );
+    if (app) {
+      // Capture's Publish model: a model in My projects, by title alone.
+      await win.evaluate(() => {
+        const form = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
+        form.querySelector('.gallery-form__input[placeholder="Title (optional)"]').value = 'Desk model';
+        [...form.querySelectorAll('button')].find((b) => b.textContent === 'Publish model').click();
+      });
+      await win
+        .waitForFunction(() => /^Saved/.test(document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form__status')?.textContent ?? ''), null, { timeout: 60_000 })
+        .catch(() => {});
+      const published = await win.evaluate(() => document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form__status')?.textContent ?? '');
+      const mine = (await proxiedJson(ask, '/api/me/projects')).json ?? [];
+      const models = Array.isArray(mine) ? mine.filter((x) => x.mode === 'model') : [];
+      t.ok(
+        /^Saved/.test(published) && models.length === 1 && models[0].title === 'Desk model' && models[0].visibility === 'private',
+        `Publish model puts a model in My projects (${published}; ${show(models.map((x) => x.title))})`,
+      );
+
+      const proxied = await app.evaluate(({ ipcMain }) => {
+        if (globalThis.__realProxy) {
+          ipcMain.removeHandler('server:fetch');
+          ipcMain.handle('server:fetch', globalThis.__realProxy);
+        }
+        return globalThis.__proxied;
+      });
+      const writes = proxied.filter((x) => !x.startsWith('GET '));
+      t.ok(
+        writes.some((x) => x === 'POST /api/me/projects') && !writes.some((x) => x.includes('/admin/api/')),
+        `through the account's own routes, never the owner tools' (${show(writes)})`,
+      );
+    }
+
+    // --- a session the server has ended, its cookie still in the jar -----------
+    const revoked = await server.call('POST', '/api/me/sessions/revoke-all', { json: { keepCurrent: true }, headers: tools });
+    const still = await ask(() => window.bozzettoDesktop.getServer());
+    t.ok(revoked.body?.revoked === 1 && still.signedIn === true, `signed out elsewhere, the jar still holds the cookie (${show({ revoked: revoked.body, still })})`);
+    if (app) {
+      await win.keyboard.press('Escape');
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL().startsWith('bozzetto://'))
+          ?.webContents.send('menu:command', 'server:settings'),
+      );
+      await panel.waitFor({ state: 'visible', timeout: 10_000 });
+      const ended = await statusIs(`${base} — not signed in: the sign-in here has ended. Sign in again to publish.`, 15_000);
+      const enabled = await panel.getByRole('button', { name: 'Sign in', exact: true }).isEnabled();
+      t.ok(ended && enabled, `Server settings asks the server, and says the sign-in has ended, offering Sign in (${await statusNow()})`);
+    }
+    const endedToken = app ? (await jar()).find((c) => c.name === '__Host-bz_session')?.value ?? null : null;
+    const again = await signInByWindow();
+    t.ok(
+      again.typed && again.gone && again.view?.primary?.[0] === 'Email me a code' && (!app || again.held === 0),
+      `signing in again drops the ended session's cookie first, so the window offers the sign-in, and closes once signed in (${show({ held: again.held, typed: again.typed, gone: again.gone })})`,
+    );
+    if (app) {
+      const now = (await jar()).find((c) => c.name === '__Host-bz_session')?.value ?? null;
+      t.ok(!!endedToken && !!now && now !== endedToken, 'with a new session cookie in the jar, not the ended one');
+    }
+    if (app) t.ok(await statusIs(`Signed in to ${base} as @${OWNER.handle}.`), `signed in again (${await statusNow()})`);
+    t.eq(await sessions(), 2, 'with a good session again');
+
+    // --- signing out ------------------------------------------------------------
+    const tokenBefore = app ? (await jar()).find((c) => c.name === '__Host-bz_session')?.value ?? null : null;
+    if (app) {
+      await panel.getByRole('button', { name: 'Sign out', exact: true }).click();
+      t.ok(await statusIs(`${base} — not signed in, so publishing will not work yet.`, 15_000), `signed out in Server settings (${await statusNow()})`);
+      t.ok(await formsShow(false), 'and the page is told: the publish forms go back to their gate');
+      const left = await jar();
+      t.eq(left.length, 0, "the app's jar is empty");
+      const old = await server.call('GET', '/api/me', { headers: { cookie: `__Host-bz_session=${tokenBefore}` } });
+      t.eq(old.status, 401, 'and the cookie it held answers nothing any more: the server ended the session');
+      await win.keyboard.press('Escape');
+    } else {
+      const out = await ask(() => window.bozzettoDesktop.signOut());
+      t.ok(out.signedIn === false && out.revoked === true, `the bridge's sign-out says the server ended the session (${show(out)})`);
+    }
+    t.eq(await sessions(), 1, 'the owner tools count the desktop session gone');
+    const after = await proxiedJson(ask, '/api/me');
+    const status = await ask(() => window.bozzettoDesktop.getServer());
+    t.ok(after.status === 401 && status.signedIn === false, `and the proxy is signed out (${show({ me: after.status, status })})`);
+    t.ok(run.errors.length === 0, `no page errors with the accounts server${run.errors.length ? `: ${run.errors.join(' | ')}` : ''}`);
+  } finally {
+    // The scene the saves above changed is in My projects, not in a file:
+    // the window would ask about it as it closes, with no one to answer.
+    await win.evaluate(() => window.bozzettoDesktop.setDocument({ ref: null, dirty: false })).catch(() => {});
+    await server.close();
+  }
 }
 
 /**
@@ -759,6 +1146,8 @@ async function packagedRun() {
   t.ok(await run.win.evaluate(() => window.bozzettoDesktop.launch.vsync), 'with v-sync on, from its launch.json');
   t.ok(!/Debugger listening/.test(run.log()), 'and --inspect opened no debugger in its main process');
   await security(run);
+  await accountsSignIn(run);
+  await ownHostOnly(run);
 }
 
 
@@ -872,6 +1261,8 @@ async function development() {
   t.ok(run.errors.length === 0, `no page errors${run.errors.length ? `: ${run.errors.join(' | ')}` : ''}`);
 
   await security(run);
+  await accountsSignIn(run);
+  await ownHostOnly(run);
 }
 
 try {
@@ -891,7 +1282,13 @@ try {
   }
   if (deploy?.seen.length) console.log(`--- the deployment saw ---\n${deploy.seen.map((r) => `${r.method} ${r.path}`).join('\n')}`);
 } finally {
-  await run?.close().catch(() => {});
+  // A window that asks about unsaved work as it closes would hold this
+  // forever; past a minute the app is ended instead.
+  const closing = run?.close().catch(() => {});
+  if (closing && !(await Promise.race([closing.then(() => true), sleep(60_000).then(() => false)]))) {
+    console.log('the app did not close within a minute: killed');
+    run?.app?.process().kill('SIGKILL');
+  }
   deploy?.close();
   rmSync(outside, { force: true });
   rmSync(home, { recursive: true, force: true });
