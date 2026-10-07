@@ -297,9 +297,10 @@ function stopServer(server) {
 
 /**
  * functions/_shared compiled on its own into `dir`, for the suites that ask
- * it things directly: each file transpiled alone (they import only each
- * other and types), subfolders and all, with its relative imports pointed
- * at the compiled copies. A fresh directory per suite, so no module state
+ * it things directly: each file transpiled alone (they import each other,
+ * types, and @simplewebauthn/server), subfolders and all, with its relative
+ * imports pointed at the compiled copies and its package imports at the
+ * repo's node_modules. A fresh directory per suite, so no module state
  * carries over. Modules are asked for by their path under _shared, without
  * the extension: 'env', 'auth/audit'.
  */
@@ -316,7 +317,11 @@ async function compileShared(dir) {
       const { outputText } = ts.transpileModule(readFileSync(join(from, entry.name), 'utf8'), {
         compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
       });
-      const linked = outputText.replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3');
+      const linked = outputText
+        .replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3')
+        // A package (@simplewebauthn/server) as the repo resolves it: the
+        // compiled copy is outside the repo, where no node_modules is.
+        .replace(/(from\s+['"])((?:@[a-z0-9-]+\/)?[a-z][^'"]*)(['"])/g, (_, a, name, b) => `${a}${import.meta.resolve(name)}${b}`);
       writeFileSync(join(to, entry.name.replace(/\.ts$/, '.mjs')), linked);
     }
   };

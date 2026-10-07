@@ -11,7 +11,9 @@ import { resolvePrincipal, type RequestData } from './_shared/principal';
 //      routes are never reachable on it.
 //   2. A write another site's page sent is refused (crossSiteWrite), on
 //      every route, whatever answers it after.
-//   3. ctx.data.principal says who is asking, and ctx.data.now when.
+//   3. ctx.data.principal says who is asking, and ctx.data.now when: one
+//      read for a session cookie (sessions JOIN users), or for the owner
+//      on /admin/api/ once accounts are on, and none otherwise.
 //
 // A root middleware would make Pages run Functions for every path, static
 // files and all, each billed as a request. public/_routes.json keeps them
@@ -19,7 +21,7 @@ import { resolvePrincipal, type RequestData } from './_shared/principal';
 // /media/* and /m/*. Static files never reach this, on either host; the
 // WAF rule in docs/accounts.md §11 keeps the files host to /m/ for those.
 export const onRequest: PagesFunction<Env, string, RequestData> = async (ctx) => {
-  const { request, env, data } = ctx;
+  const { request, env, data, waitUntil } = ctx;
   const url = new URL(request.url);
   if (onMediaHost(url, env) && !(request.method === 'GET' && url.pathname.startsWith('/m/'))) {
     return notFound();
@@ -27,7 +29,7 @@ export const onRequest: PagesFunction<Env, string, RequestData> = async (ctx) =>
   if (crossSiteWrite(request)) return refuse(403, 'cross_site', 'Cross-site request refused');
   data.now = requestTime(request, env);
   try {
-    data.principal = await resolvePrincipal(request, env, url);
+    data.principal = await resolvePrincipal(request, env, url, data.now, waitUntil);
   } catch (err) {
     // Access unconfigured, or its keys out of reach: our side's fault, said
     // as the admin routes have always said it. It never reaches the

@@ -15,6 +15,6 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ request,
       ? { kind: p.kind, email: p.email, owner: p.owner?.id ?? null }
       : p.kind === 'user'
         ? { kind: p.kind, user: p.user.id, session: p.session.id, recentAuth: p.recentAuth }
-        : { kind: p.kind };
+        : { kind: p.kind, ...(p.refused ? { refused: p.refused } : {}) };
   return json({ principal, now: data.now }, 200, { 'cache-control': 'no-store' });
 };

@@ -171,7 +171,7 @@ type Principal =
 | 401 | `signin`, `reauth` |
 | 403 | `cross_site`, `turnstile`, `suspended`, `owner_session` |
 | 404 | `not_found` (also anything not yours) |
-| 409 | `handle_taken` |
+| 409 | `handle_taken`, `owner_exists` (the bootstrap, once there is an owner) |
 | 410 | `invite_invalid`, `flow_expired` |
 | 413 | `file_too_large`, `quota_exceeded` |
 | 415 | `bad_type` |

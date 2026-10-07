@@ -24,10 +24,17 @@ const ROUTES = [
   '/api/projects/csrf-target',
   '/api/config',
   '/api/auth/signout',
+  '/api/auth/passkey/options',
   '/api/auth/passkey/verify',
+  '/api/auth/handle',
   '/api/auth/register/start',
   '/api/me',
+  '/api/me/account',
   '/api/me/projects',
+  '/api/me/passkeys',
+  '/api/me/passkeys/options',
+  '/api/me/passkeys/csrf-credential',
+  '/api/me/sessions/s-csrf-session',
   '/api/me/sessions/revoke-all',
   '/api/dev/principal',
   '/api/dev/audit',
@@ -39,6 +46,7 @@ const ROUTES = [
   '/admin/api/projects/csrf-target/scene',
   '/admin/api/projects/csrf-target/template',
   '/admin/api/media/csrf-target/thumb.jpg',
+  '/admin/api/owner/bootstrap',
   '/admin/login',
   '/media/csrf-target/thumb.jpg',
   '/m/csrf-target/thumb.jpg',
@@ -91,9 +99,21 @@ export async function run({ checks, off, on }) {
     const missed = await leaks(off, path);
     t.ok(missed.length === 0, `${path}: every write from another site is 403 cross_site${missed.length ? ` (not: ${missed.join('; ')})` : ''}`);
   }
-  for (const path of ['/api/auth/signout', '/api/me', '/api/me/projects']) {
+  for (const path of [
+    '/api/auth/signout',
+    '/api/auth/passkey/options',
+    '/api/auth/passkey/verify',
+    '/api/me',
+    '/api/me/projects',
+    '/api/me/passkeys',
+    '/api/me/passkeys/options',
+    '/api/me/passkeys/csrf-credential',
+    '/api/me/sessions/s-csrf-session',
+    '/api/me/sessions/revoke-all',
+    '/admin/api/owner/bootstrap',
+  ]) {
     const missed = await leaks(on, path);
-    t.ok(missed.length === 0, `${path} with accounts on, where the route itself would answer 501: refused first${missed.length ? ` (not: ${missed.join('; ')})` : ''}`);
+    t.ok(missed.length === 0, `${path} with accounts on, where the route itself would answer: refused first${missed.length ? ` (not: ${missed.join('; ')})` : ''}`);
   }
   r = await call('GET', '/admin/api/projects/csrf-target', { headers: asOwner });
   const still = await call('GET', '/admin/api/media/csrf-target/thumb.jpg', { headers: asOwner });
@@ -110,8 +130,10 @@ export async function run({ checks, off, on }) {
     [off, 404, 'accounts_off'],
     [on, 501, 'not_implemented'],
   ]) {
-    r = await server.call('POST', '/api/auth/signout', { headers: { origin: server.base, 'sec-fetch-site': 'same-origin' }, json: {} });
+    r = await server.call('POST', '/api/auth/email/start', { headers: { origin: server.base, 'sec-fetch-site': 'same-origin' }, json: {} });
     t.ok(r.status === status && r.json?.code === code, `this site's own write reaches the stub, accounts ${server === off ? 'off' : 'on'} (${r.status} ${r.json?.code})`);
   }
+  r = await on.call('POST', '/api/auth/signout', { headers: { origin: on.base, 'sec-fetch-site': 'same-origin' }, json: {} });
+  t.eq(r.status, 204, "and with accounts on, this site's own sign-out is answered");
   t.report();
 }

@@ -36,6 +36,7 @@ export type ErrorCode =
   | 'suspended'
   | 'owner_session'
   | 'not_found'
+  | 'owner_exists'
   | 'handle_taken'
   | 'invite_invalid'
   | 'flow_expired'
@@ -73,11 +74,12 @@ export function bodyLimit(request: Request, max: number, required = false): Resp
 }
 
 export class HttpError extends Error {
-  /** With a code, it answers as `refuse` does; without, as `error`. */
+  /** With a code, it answers as `refuse` does, `extra` and all; without, as `error`. */
   constructor(
     message: string,
     readonly status = 400,
     readonly code?: ErrorCode,
+    readonly extra: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -86,7 +88,7 @@ export class HttpError extends Error {
 /** Wrap a handler so thrown HttpErrors become clean JSON responses. */
 export function handle(fn: () => Promise<Response>): Promise<Response> {
   return fn().catch((e: unknown) => {
-    if (e instanceof HttpError) return e.code ? refuse(e.status, e.code, e.message) : error(e.message, e.status);
+    if (e instanceof HttpError) return e.code ? refuse(e.status, e.code, e.message, e.extra) : error(e.message, e.status);
     console.error(e);
     return error('Internal error', 500);
   });

@@ -508,10 +508,10 @@ function handOver(env: Env, row: ProjectRow, template: boolean, to: string | nul
  * for what already holds changes nothing and records nothing. Either way
  * updated_at moves, so every ?v= its files were served under is retired.
  *
- * Until Batch 3 resolves the owner's account on /admin/, owner tools act
- * as no account (scope.owner null), so a project handed to an existing
- * owner account leaves their reach while accounts are off; it is read
- * back as that account's.
+ * While accounts are off, owner tools act as no account (scope.owner
+ * null) even once the bootstrap has made one, so a project handed to an
+ * existing owner account leaves their reach until accounts are on again;
+ * it is read back as that account's.
  */
 export async function setTemplate(
   env: Env,

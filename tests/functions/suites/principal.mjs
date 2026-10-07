@@ -43,15 +43,17 @@ export async function run({ checks, off, on, compileShared }) {
   }
   t.report();
 
+  // Lock 2, and who a session cookie makes the asker, are the locks and
+  // sessions suites'; the locks suite makes this server's owner.
   t = checks('functions: principal, accounts on');
-  r = await on.call('GET', '/api/me');
+  r = await on.call('GET', '/api/me/projects');
   t.ok(r.status === 501 && r.json?.code === 'not_implemented', `with accounts on, a route still to come says so: 501 (${r.status} ${r.json?.code})`);
-  r = await on.call('POST', '/api/auth/passkey/options', { json: {} });
+  r = await on.call('POST', '/api/auth/email/start', { json: {} });
   t.ok(r.status === 501 && r.json?.code === 'not_implemented', `/api/auth/* too (${r.status} ${r.json?.code})`);
+  r = await on.call('GET', '/api/me');
+  t.ok(r.status === 401 && r.json?.code === 'signin', `a route that is there asks a guest to sign in (${r.status} ${r.json?.code})`);
   p = await whoIs(on, ACCESS_LOOKALIKE);
   t.eq(p?.principal?.kind, 'guest', 'a cookie no session stands behind is a guest');
-  r = await on.call('GET', '/admin/api/whoami', { headers: asOwner });
-  t.ok(r.status === 200 && r.json?.email === OWNER, `with no owner account yet, Access alone still opens /admin/ (${r.status})`);
   t.report();
 
   // --- the files host -------------------------------------------------------

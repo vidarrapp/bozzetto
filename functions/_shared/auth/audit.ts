@@ -9,11 +9,11 @@ import type { Env } from '../env';
  * `detail` never holds an IP, a code, a token or an email address, and an
  * account is named by its bare id, which is all that is left of one once
  * it is deleted. The actor is the exception the design makes: owner tools
- * act as the Access identity, an email, until the owner has an account to
- * name instead (Batch 3).
+ * act as the Access identity, an email, until the bootstrap has made the
+ * owner an account to name instead (ownerActor), and while accounts are off.
  */
 export interface AuditEntry {
-  /** Who acted: the Access email for owner tools, else a user id. */
+  /** Who acted: a user id, or the Access email for owner tools with no owner account behind them. */
   actor: string;
   /** What was done, as `<thing>.<what>`: `project.template`. */
   action: string;

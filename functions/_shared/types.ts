@@ -113,3 +113,24 @@ export interface SessionRow {
   expires_at: number;
   revoked_at: number | null;
 }
+
+/** A row of credentials: one passkey, as WebAuthn registered it. */
+export interface CredentialRow {
+  /** The credential id, base64url, as the browser names it. */
+  id: string;
+  user_id: string;
+  /** The COSE public key. D1 hands a BLOB back as an array of numbers, node:sqlite as bytes. */
+  public_key: ArrayLike<number>;
+  counter: number;
+  /** JSON: the transports the browser reported, for allowCredentials. */
+  transports: string;
+  /** 'singleDevice' or 'multiDevice' (synced). */
+  device_type: string;
+  backed_up: 0 | 1;
+  aaguid: string | null;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+  /** When a sign-in last reported a counter no higher than the stored one: a cloned key, or a sloppy one. */
+  counter_warning_at: number | null;
+}

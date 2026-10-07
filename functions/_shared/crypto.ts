@@ -28,11 +28,11 @@ export function base32(bytes: Uint8Array): string {
 }
 
 /**
- * A new user or project id: `u-` or `p-` and 128 random bits as 26 base32
- * characters. Enough that ids can be made without asking the database
- * whether one is taken, and that guessing one is hopeless.
+ * A new user, project or session id: `u-`, `p-` or `s-` and 128 random bits
+ * as 26 base32 characters. Enough that ids can be made without asking the
+ * database whether one is taken, and that guessing one is hopeless.
  */
-export function randomId(kind: 'u' | 'p'): string {
+export function randomId(kind: 'u' | 'p' | 's'): string {
   return `${kind}-${base32(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 
@@ -40,6 +40,22 @@ export function base64url(bytes: Uint8Array): string {
   let bin = '';
   for (const byte of bytes) bin += String.fromCharCode(byte);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * base64url (padded or not) as bytes, or null when it is not base64url:
+ * what a client sends is decoded with this, so a bad value is a refusal
+ * rather than an exception.
+ */
+export function fromBase64url(text: string): Uint8Array | null {
+  if (typeof text !== 'string' || !/^[A-Za-z0-9_-]*={0,2}$/.test(text) || text.replace(/=+$/, '').length % 4 === 1) {
+    return null;
+  }
+  const plain = text.replace(/=+$/, '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(plain + '='.repeat((4 - (plain.length % 4)) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /** A secret to hand out once - a cookie, an invite, a sign-in link: `bytes` random bytes, base64url. */
