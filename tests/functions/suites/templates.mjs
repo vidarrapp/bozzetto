@@ -22,6 +22,7 @@ import {
   asOwner,
   asStranger,
   d1,
+  bozz,
   ids,
   jpeg,
   migratedDatabase,
@@ -81,7 +82,7 @@ export async function run({ checks, off, compileShared, repo }) {
   let t = checks('functions: templates, set up');
   const frame = pattern(6000, 51);
   const thumb = jpeg(52);
-  const sceneBytes = pattern(3000, 53);
+  const sceneBytes = bozz({ vertices: 80, seed: 53 });
   const made = [];
   const owner = (method, path, opts = {}) => call(method, path, { headers: asOwner, ...opts });
   made.push(await owner('POST', '/admin/api/projects', { json: { id: 'tm-reel', title: 'A reel' } }));

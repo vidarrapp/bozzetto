@@ -2,6 +2,7 @@
 // and the shapes they compare. The harness itself (servers, seeds, the
 // runner) is check.mjs.
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 
 /** The one identity ADMIN_EMAILS lets through, as Access would name it. */
 export const OWNER = 'owner@example.com';
@@ -37,6 +38,149 @@ export const concat = (...parts) => {
 export const jpeg = (seed, length = 508) => concat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), pattern(length, seed));
 
 export const ids = (list) => (Array.isArray(list) ? list.map((p) => p.id) : []);
+
+// --- files the content checks take -----------------------------------------------------
+
+const pad4 = (n) => Math.ceil(n / 4) * 4;
+
+/** Bytes that do not compress: a xorshift stream from a seed, so a scene's size is about what it holds. */
+export function noise(length, seed = 1) {
+  const out = new Uint8Array(length);
+  let x = seed * 2654435761 >>> 0 || 1;
+  for (let i = 0; i < length; i++) {
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    x >>>= 0;
+    out[i] = x & 255;
+  }
+  return out;
+}
+
+/**
+ * The bare .bozz container (shared/bozz.ts): 'BOZ1', the header's length,
+ * the header, padding to four, and `blob` bytes of noise after it. The
+ * header is given as text, so a suite can send one that is not JSON.
+ */
+export function container(headerText, blob, seed = 1) {
+  const head = Buffer.from(headerText);
+  const out = new Uint8Array(8 + pad4(head.length) + pad4(blob));
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x315a4f42, true);
+  dv.setUint32(4, head.length, true);
+  out.set(head, 8);
+  out.set(noise(pad4(blob), seed), 8 + pad4(head.length));
+  return out;
+}
+
+/**
+ * A scene's header as packScene writes one (SceneFile.ts): one object of
+ * `vertices` vertices and `faces` faces, one level, its arrays in a
+ * buffers table, a material. What the content checks are held to.
+ */
+export function sceneHeader({ vertices = 3, faces = 1 } = {}) {
+  const n3 = vertices * 3;
+  const arrays = [
+    ['u32', faces * 4],
+    ['f32', n3],
+    ['f32', n3],
+    ['f32', n3],
+    ['f32', 16],
+  ];
+  let off = 0;
+  const buffers = arrays.map(([t, len]) => {
+    const e = { t, off, len };
+    off += len * 4;
+    return e;
+  });
+  return {
+    scene: {
+      v: 4,
+      savedAt: 1,
+      meshes: [
+        {
+          name: 'Sphere',
+          nbBaseFaces: faces,
+          baseFaces: { __buf: 0 },
+          levels: [
+            {
+              nbVertices: vertices,
+              vertices: { __buf: 1 },
+              normals: null,
+              colors: { __buf: 2 },
+              materials: { __buf: 3 },
+              detailsXYZ: null,
+              detailsRGB: null,
+              detailsPBR: null,
+            },
+          ],
+          sel: 0,
+          matrix: { __buf: 4 },
+        },
+      ],
+      active: 0,
+      symmetry: true,
+      materials: [{ id: 'm1', name: 'Clay', albedo: '#cccccc', roughness: 0.5, metalness: 0 }],
+    },
+    buffers,
+  };
+}
+
+/** Where a header's arrays end: what its blob region must hold. */
+const blobOf = (header) => (Array.isArray(header?.buffers) ? header.buffers.reduce((end, e) => Math.max(end, (e?.off ?? 0) + (e?.len ?? 0) * 4), 0) : 0);
+
+/**
+ * A .bozz scene file as the app packs one, gzipped unless `raw`: the
+ * header sceneHeader() makes, after `edit(header)` has had its way with
+ * it (the content suite breaks one thing at a time so), and arrays of
+ * noise, so its size is close to `vertices` * 36 bytes compressed or not.
+ * `trailer` (gzipped only) puts four other bytes where the gzip's size is.
+ */
+export function bozz({ vertices = 3, faces = 1, seed = 1, raw = false, edit, trailer } = {}) {
+  const header = sceneHeader({ vertices, faces });
+  edit?.(header);
+  const bare = container(JSON.stringify(header), blobOf(header), seed);
+  if (raw) return bare;
+  const gz = new Uint8Array(gzipSync(bare));
+  if (trailer !== undefined) new DataView(gz.buffer, gz.byteOffset).setUint32(gz.length - 4, trailer >>> 0, true);
+  return gz;
+}
+
+/** A scene of about `bytes` bytes once gzipped: noise does not compress, so the arrays come to that. */
+export const bozzOf = (bytes, seed = 1) => bozz({ vertices: Math.max(1, Math.floor((bytes - 600) / 36)), seed });
+
+/**
+ * A glTF 2.0 binary: its header ('glTF', `version`, the length), a JSON
+ * chunk, and `bin` bytes of noise; gzipped unless `raw`. `length` puts
+ * another length in its header.
+ */
+export function glb({ bin = 256, seed = 1, raw = false, version = 2, length } = {}) {
+  const json = Buffer.from(JSON.stringify({ asset: { version: '2.0' }, buffers: [{ byteLength: bin }] }).padEnd(64, ' '));
+  const jsonLen = pad4(json.length);
+  const binLen = pad4(bin);
+  const total = 12 + 8 + jsonLen + 8 + binLen;
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true);
+  dv.setUint32(4, version, true);
+  dv.setUint32(8, length ?? total, true);
+  dv.setUint32(12, jsonLen, true);
+  dv.setUint32(16, 0x4e4f534a, true);
+  out.fill(0x20, 20, 20 + jsonLen);
+  out.set(json, 20);
+  dv.setUint32(20 + jsonLen, binLen, true);
+  dv.setUint32(24 + jsonLen, 0x004e4942, true);
+  out.set(noise(binLen, seed), 28 + jsonLen);
+  return raw ? out : new Uint8Array(gzipSync(out));
+}
+
+/** `bytes` cut into parts of `size`, the last the rest: as a client uploads a file. */
+export function parts(bytes, size) {
+  const out = [];
+  for (let at = 0; at < bytes.length; at += size) out.push(bytes.subarray(at, Math.min(bytes.length, at + size)));
+  return out;
+}
 
 /** A project's `data` column as createProject writes it, for rows the suites seed in SQL. */
 export const DATA = JSON.stringify({
@@ -74,12 +218,15 @@ export async function migratedDatabase(repo) {
 /**
  * A D1 binding over a node:sqlite database, for the suites that hand
  * functions/_shared an env of their own: prepare, bind, first, all, run and
- * batch, as the Functions use them. A batch is one transaction, as D1's is.
- * `beforeBatch`, when given, runs just ahead of each batch, so a suite can
- * change a row between a function's read and its write.
+ * batch, as the Functions use them. A batch is one transaction, as D1's is,
+ * and answers rows for the statements that return them (a SELECT, a
+ * RETURNING), as D1's does. `beforeBatch`, when given, runs just ahead of
+ * each batch, so a suite can change a row between a function's read and
+ * its write.
  */
 export function d1(db, { beforeBatch } = {}) {
   const plain = (row) => (row ? { ...row } : row);
+  const rows = (sql) => /^\s*(SELECT|WITH)\b/i.test(sql) || /\bRETURNING\b/i.test(sql);
   const statement = (sql, binds = []) => ({
     bind: (...values) => statement(sql, values),
     first: async (column) => {
@@ -92,6 +239,12 @@ export function d1(db, { beforeBatch } = {}) {
       const info = db.prepare(sql).run(...binds);
       return { results: [], success: true, meta: { changes: Number(info.changes), last_row_id: Number(info.lastInsertRowid) } };
     },
+    /** What a batch answers for it. */
+    batched: async () => {
+      if (!rows(sql)) return statement(sql, binds).run();
+      const results = db.prepare(sql).all(...binds).map(plain);
+      return { results, success: true, meta: { changes: /^\s*(SELECT|WITH)\b/i.test(sql) ? 0 : results.length } };
+    },
   });
   return {
     prepare: (sql) => statement(sql),
@@ -100,7 +253,7 @@ export function d1(db, { beforeBatch } = {}) {
       db.exec('BEGIN');
       try {
         const out = [];
-        for (const s of statements) out.push(await s.run());
+        for (const s of statements) out.push(await s.batched());
         db.exec('COMMIT');
         return out;
       } catch (err) {

@@ -3,6 +3,8 @@ import { validSavedScene } from './ScenePersist';
 import type { SculptSession } from './SculptSession';
 import { sanitizeScene } from './sanitize';
 import { inflateEach } from '../../viewer/inflate';
+import type { BufferEntry, Layout } from '../../../shared/bozz';
+import { MAGIC, MAX_DEPTH, SceneFileError, damaged, notAScene, pad4, readLayout } from '../../../shared/bozz';
 
 /**
  * Scene files for guests (WS5): the same v3 SavedScene the autosave keeps,
@@ -19,41 +21,12 @@ import { inflateEach } from '../../viewer/inflate';
  * touching this module.
  */
 
-const MAGIC = 0x315a4f42; // "BOZ1"
-
 /**
- * The most a scene file may unpack to. The largest scene Sculpt makes is
- * one object at the subdivision ceiling (SculptSession: 16M triangles at
- * the top level, about 8M vertices). Its top level is 84 bytes a vertex -
- * positions, normals, colours and materials, and three detail vectors, 12
- * bytes each - and the levels below add a third again: about 900 MB, a
- * size the autosave already declines to write (ScenePersist). 1 GiB is
- * above that and is reached by nothing legitimate; a file that claims more,
- * or inflates past it, is refused before it is held.
+ * The most a scene file may unpack to (shared/bozz.ts says why 1 GiB). The
+ * container's constants, its errors and readLayout() live there, where the
+ * server reads an upload's header with the same code (docs/accounts.md §4).
  */
-export const MAX_SCENE_BYTES = 1024 * 1024 * 1024;
-
-/** The header is the look, materials, settings and a few fields an object: kilobytes in practice. */
-const MAX_HEADER_BYTES = 16 * 1024 * 1024;
-
-/** How deep the header may nest. A scene's goes six levels down. */
-const MAX_DEPTH = 32;
-
-/** A refusal of the file itself, as against the stream failing under it. */
-class SceneFileError extends Error {}
-
-const notAScene = (): SceneFileError => new SceneFileError('This file is not a Bozzetto scene');
-const tooLarge = (): SceneFileError => new SceneFileError('This scene is too large to open');
-const damaged = (why: string): SceneFileError => new SceneFileError(`This scene file is damaged (${why})`);
-
-/** Up to a multiple of four. Not `(n + 3) & ~3`, which is 32-bit and goes negative past 2^31. */
-const pad4 = (n: number): number => Math.ceil(n / 4) * 4;
-
-interface BufferEntry {
-  t: 'f32' | 'u32';
-  off: number;
-  len: number;
-}
+export { MAX_SCENE_BYTES } from '../../../shared/bozz';
 
 export async function packScene(scene: SavedScene): Promise<Blob> {
   const blobs: Uint8Array[] = [];
@@ -93,65 +66,6 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   if (typeof CompressionStream === 'undefined') return new Blob([raw]);
   const gz = new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'));
   return new Response(gz).blob();
-}
-
-/** What a container's header says: the scene with its arrays as references, and where they are. */
-interface Layout {
-  scene: unknown;
-  buffers: BufferEntry[];
-  /** Where the blob region starts. */
-  blobBase: number;
-  /** Where the file ends, header and every array included. */
-  size: number;
-}
-
-/**
- * The layout from a container's first bytes - or, until the header is all
- * there, how many bytes it takes to say. Everything the header claims is
- * checked against everything else before a byte is set aside for it: its
- * own length, each array's place and size, and what they come to together.
- */
-function readLayout(head: Uint8Array): Layout | number {
-  if (head.length < 8) return 8;
-  const dv = new DataView(head.buffer, head.byteOffset, 8);
-  // The magic alone settles most files that are not scenes, early.
-  if (dv.getUint32(0, true) !== MAGIC) throw notAScene();
-  const headerLen = dv.getUint32(4, true);
-  if (headerLen === 0 || headerLen > MAX_HEADER_BYTES) throw notAScene();
-  if (head.length < 8 + headerLen) return 8 + headerLen;
-  let parsed: { scene?: unknown; buffers?: unknown } | null;
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(head.subarray(8, 8 + headerLen))) as typeof parsed;
-  } catch {
-    throw notAScene();
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.buffers)) throw notAScene();
-  const buffers = parsed.buffers as BufferEntry[];
-  let end = 0;
-  let declared = 0;
-  for (const e of buffers) {
-    if (
-      !e ||
-      (e.t !== 'f32' && e.t !== 'u32') ||
-      !Number.isSafeInteger(e.off) ||
-      !Number.isSafeInteger(e.len) ||
-      e.off < 0 ||
-      e.len < 0
-    ) {
-      throw damaged('a bad buffer entry');
-    }
-    end = Math.max(end, e.off + e.len * 4);
-    declared += e.len * 4;
-  }
-  const blobBase = 8 + pad4(headerLen);
-  const size = blobBase + pad4(end);
-  if (size > MAX_SCENE_BYTES) throw tooLarge();
-  // Each array comes out as a copy, so the copies together may be no
-  // bigger than the region they come out of. Otherwise a few kilobytes of
-  // header could point a thousand entries at one region and ask for a
-  // thousand copies of it.
-  if (declared > size - blobBase) throw damaged('arrays that overlap');
-  return { scene: parsed.scene, buffers, blobBase, size };
 }
 
 /**

@@ -10,7 +10,7 @@
 //                 had its key come from its id
 //   keys-scene    users/u-keys/projects/keys-scene/, private, read back
 //                 through keys-scene-peek
-import { DATA, FILES_HOST, MiB, asOwner, jpeg, pattern, same } from '../lib.mjs';
+import { DATA, FILES_HOST, MiB, asOwner, bozzOf, jpeg, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -57,7 +57,7 @@ export async function run({ checks, off }) {
 
   const s = await call('POST', '/admin/api/projects/keys-scene/scene', { headers: asOwner });
   const u = encodeURIComponent(s.json?.uploadId ?? '');
-  const body = pattern(MiB / 2, 24);
+  const body = bozzOf(MiB / 2, 24);
   const part = await call('PUT', `/admin/api/projects/keys-scene/scene?upload=${u}&part=1`, { headers: asOwner, bytes: body });
   const done = await call('POST', `/admin/api/projects/keys-scene/scene?upload=${u}`, { headers: asOwner, json: { parts: [part.json], objects: 1, tris: 2 } });
   r = await call('GET', '/media/keys-scene-peek/scene.bozz');

@@ -1,6 +1,8 @@
 import type { Env } from './env';
 import type { ProjectData, ProjectMode, ProjectRow, SceneMeta, Visibility } from './types';
 import { type Actor, auditStatement } from './auth/audit';
+import { MEMBER_LIMITS } from './config';
+import { randomId } from './crypto';
 import { filesOrigin } from './env';
 import { HttpError } from './http';
 
@@ -54,9 +56,11 @@ export function prefixFor(row: Pick<ProjectRow, 'id' | 'storage_prefix'>): strin
 
 /** The files a project can have, as they follow its prefix. Nothing else is stored or served. */
 export const PROJECT_FILE = /^(scene\.bozz|thumb\.jpg|frames\/sd\/\d{4}\.glb)$/;
-const SCENE_FILE = 'scene.bozz';
-const THUMB_FILE = 'thumb.jpg';
-const frameFile = (index: number): string => `frames/sd/${String(index).padStart(4, '0')}.glb`;
+export const SCENE_FILE = 'scene.bozz';
+export const THUMB_FILE = 'thumb.jpg';
+/** Where a project's frames are, under its prefix. */
+export const FRAMES_DIR = 'frames/sd/';
+export const frameFile = (index: number): string => `${FRAMES_DIR}${String(index).padStart(4, '0')}.glb`;
 
 /**
  * The prefix a new project's files go under: its creator's folder,
@@ -77,8 +81,15 @@ function newPrefix(owner: string | null, id: string): string | null {
  */
 export type OwnerScope = { owner: string | null };
 
+/**
+ * An account on /api/me reaches its own projects and nothing else: `WHERE
+ * id = ? AND owner_id = ?` (docs/accounts.md §1). A template is no one's,
+ * so it is never in one; neither is anyone else's, the owner's included.
+ */
+export type MemberScope = { member: string };
+
 /** 'public' is anyone's: the templates the gallery lists. */
-export type Scope = 'public' | OwnerScope;
+export type Scope = 'public' | OwnerScope | MemberScope;
 
 /**
  * A scope as SQL. It goes into the query rather than being checked on the
@@ -86,9 +97,9 @@ export type Scope = 'public' | OwnerScope;
  * and a later edit there cannot leak one.
  */
 function where(scope: Scope): { sql: string; binds: (string | null)[] } {
-  return scope === 'public'
-    ? { sql: "template = 1 AND visibility = 'public'", binds: [] }
-    : { sql: '(template = 1 OR owner_id IS ?)', binds: [scope.owner] };
+  if (scope === 'public') return { sql: "template = 1 AND visibility = 'public'", binds: [] };
+  if ('member' in scope) return { sql: 'owner_id = ?', binds: [scope.member] };
+  return { sql: '(template = 1 OR owner_id IS ?)', binds: [scope.owner] };
 }
 
 /** Listed in the gallery, and so anyone's to read. */
@@ -124,7 +135,7 @@ export interface ProjectSummary {
  * or what owner tools reach. The filter is in the query, not the page: a
  * private project is never sent to a guest's browser to be hidden there.
  */
-export async function listProjects(env: Env, scope: Scope): Promise<ProjectSummary[]> {
+export async function listProjects(env: Env, scope: 'public' | OwnerScope): Promise<ProjectSummary[]> {
   const { sql, binds } = where(scope);
   const { results } = await env.DB.prepare(
     // Sort by creation date so the gallery order is stable — editing a project
@@ -139,6 +150,28 @@ export async function listProjects(env: Env, scope: Scope): Promise<ProjectSumma
     .bind(...binds)
     .all<Omit<ProjectSummary, 'scene' | 'template' | 'media'> & { scene: string | null; template: 0 | 1 }>();
   return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: r.template === 1, media: mediaBase(r, env) }));
+}
+
+/** One card of My projects: a gallery card, and what its files weigh against the quota. */
+export interface MemberSummary extends ProjectSummary {
+  bytes: number;
+}
+
+/**
+ * An account's own projects, newest first, for My projects: each as the
+ * gallery lists one, with its files on the private route and its size.
+ */
+export async function listMemberProjects(env: Env, userId: string): Promise<MemberSummary[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, title, mode, fps, updated_at, visibility, bytes,
+            COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount,
+            json_extract(data, '$.scene') AS scene
+     FROM projects WHERE owner_id = ?
+     ORDER BY created_at DESC, id`,
+  )
+    .bind(userId)
+    .all<Omit<MemberSummary, 'scene' | 'template' | 'media'> & { scene: string | null }>();
+  return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: false, media: memberMediaBase(r.id) }));
 }
 
 /** json_extract hands an object back as JSON text. */
@@ -193,12 +226,18 @@ export function mediaBase(row: Pick<ProjectRow, 'id' | 'template' | 'visibility'
 }
 
 /**
+ * Where an account's own project's files are read from on /api/me: the
+ * private route, which serves them to the row's owner alone (§4).
+ */
+export const memberMediaBase = (id: string): string => `/api/me/media/${encodeURIComponent(id)}`;
+
+/**
  * A row as owner tools answer a create or an update with it: every column
  * 0.5 sent as it is stored, whether it is a template, and the base its
  * files are now read from. Who owns it and where in R2 its files are stay
  * on the server.
  */
-export function toOwnerRow(row: ProjectRow, env: Env): unknown {
+export function toOwnerRow(row: ProjectRow, env: Env, base: string = mediaBase(row, env)): unknown {
   const { id, title, mode, fps, data, visibility, created_at, updated_at } = row;
   return {
     id,
@@ -208,17 +247,24 @@ export function toOwnerRow(row: ProjectRow, env: Env): unknown {
     data,
     visibility,
     template: row.template === 1,
-    media: mediaBase(row, env),
+    media: base,
     created_at,
     updated_at,
   };
 }
 
-/** Shape a row into the manifest the viewer consumes (design doc §11). */
-export function toManifest(row: ProjectRow, env: Env): unknown {
+/** The same on /api/me: the files on the private route, and what they weigh. */
+export function toMemberRow(row: ProjectRow, env: Env): unknown {
+  return { ...(toOwnerRow(row, env, memberMediaBase(row.id)) as object), bytes: row.bytes };
+}
+
+/**
+ * Shape a row into the manifest the viewer consumes (design doc §11), its
+ * files under `base`: where its scope serves them.
+ */
+export function toManifest(row: ProjectRow, env: Env, base: string = mediaBase(row, env)): unknown {
   const data = JSON.parse(row.data) as ProjectData;
   const frames = [...data.frames].sort((a, b) => a.index - b.index);
-  const base = mediaBase(row, env);
   return {
     id: row.id,
     title: row.title,
@@ -324,6 +370,52 @@ export async function createProject(env: Env, input: CreateInput, scope: OwnerSc
   return ownedRow(env, id, scope);
 }
 
+/** A title as given, trimmed and cut to 200 characters; null for none. */
+function cleanTitle(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, MAX_TITLE) : null;
+}
+
+/** A visibility on /api/me: every account's own project is private, and asking for anything else is refused. */
+function memberVisibility(v: unknown): void {
+  if (v === undefined || v === null || v === 'private') return;
+  if (v === 'public') throw new HttpError('Your projects are private', 400, 'bad_request', { reason: 'public' });
+  validVisibility(v, 'private');
+}
+
+/**
+ * A new project of an account's own (POST /api/me/projects): its id the
+ * server's (`p-` and 26 base32 characters), private, under the account's
+ * folder, and no more than MEMBER_LIMITS.projects of them - counted as the
+ * row goes in, so two creates at once cannot both take the last place.
+ * An id in the input is ignored; `visibility: 'public'` is refused.
+ */
+export async function createMemberProject(
+  env: Env,
+  userId: string,
+  input: Record<string, unknown>,
+  now: number,
+): Promise<ProjectRow> {
+  memberVisibility(input.visibility);
+  const mode = input.mode ?? 'timelapse';
+  if (mode !== 'timelapse' && mode !== 'model' && mode !== 'scene') {
+    throw new HttpError("mode: expected 'timelapse', 'model' or 'scene'", 400, 'bad_request');
+  }
+  const fps = validFps(input.fps, 4);
+  const title = cleanTitle(input.title) ?? 'Untitled';
+  const id = randomId('p');
+  const max = MEMBER_LIMITS.projects;
+  const { meta } = await env.DB.prepare(
+    `INSERT INTO projects (id, title, mode, fps, data, visibility, template, owner_id, storage_prefix, created_at, updated_at)
+     SELECT ?, ?, ?, ?, ?, 'private', 0, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM projects WHERE owner_id = ?) < ?`,
+  )
+    .bind(id, title, mode, fps, JSON.stringify(defaultData()), userId, newPrefix(userId, id), now, now, userId, max)
+    .run();
+  if (!meta.changes) throw new HttpError(`An account holds at most ${max} projects`, 400, 'bad_request', { limit: max });
+  const row = await getProjectRow(env, id, { member: userId });
+  if (!row) throw new HttpError('Not found', 404, 'not_found');
+  return row;
+}
+
 /**
  * The pieces of a patch that the viewer later reads back through
  * validateManifest: a bad shape stored here would make the project
@@ -375,15 +467,25 @@ function validStages(v: unknown): ProjectData['stages'] {
   });
 }
 
-export async function updateProject(
-  env: Env,
-  id: string,
-  patch: Record<string, unknown>,
-  scope: OwnerScope,
-  by: Actor,
-): Promise<ProjectRow> {
-  const row = await ownedRow(env, id, scope);
+/** What a patch makes of a row: its data, title, mode and fps, each validated. */
+export interface Patched {
+  /** The data as it was, and as it will be. */
+  data: ProjectData;
+  next: ProjectData;
+  /** `next` as stored, measured against MAX_DATA_BYTES already. */
+  serialised: string;
+  title: string;
+  mode: ProjectMode;
+  fps: number;
+}
 
+/**
+ * A patch applied to a row, as PUT takes one on either side: fields left
+ * out are kept; frames, stages, fps and the row's size are validated; a
+ * scene's counts are a completed upload's alone. The same for owner tools
+ * and for an account's own projects, so the two cannot drift apart.
+ */
+export function patched(row: ProjectRow, patch: Record<string, unknown>): Patched {
   const data = JSON.parse(row.data) as ProjectData;
   const next: ProjectData = {
     defaults: { ...data.defaults, ...((patch.defaults as object) ?? {}) },
@@ -398,25 +500,13 @@ export async function updateProject(
     // Written by a completed upload only, never by a patch.
     ...(data.scene ? { scene: data.scene } : {}),
   };
-  const title =
-    typeof patch.title === 'string' && patch.title.trim()
-      ? patch.title.trim().slice(0, MAX_TITLE)
-      : row.title;
+  const title = cleanTitle(patch.title) ?? row.title;
   // A scene stays a scene and nothing else becomes one: the one has a
   // file and no frames, the others frames and no file, and the editor's
   // mode switch must not turn either into a project nothing can open.
   const mode: ProjectMode =
     row.mode !== 'scene' && (patch.mode === 'model' || patch.mode === 'timelapse') ? patch.mode : row.mode;
   const fps = validFps(patch.fps, row.fps);
-  const visibility = validVisibility(patch.visibility, row.visibility);
-  // A public project is a template, for the reason createProject gives, so
-  // one made public becomes one, as the Template switch would make it:
-  // nobody's, its bytes off its owner's usage, and audited (handOver).
-  // Made private, a template stays one, privatised: off the gallery until
-  // it is made public again (docs/accounts.md §5).
-  const template = visibility === 'public' ? 1 : row.template;
-  const owner = template ? null : row.owner_id;
-  const becomes = template === 1 && row.template === 0;
   // The look blocks (lighting, environment, ...) are stored as sent, so
   // the row as a whole is what gets bounded - in bytes, as D1 counts it: a
   // string's length counts UTF-16 units, and a title or stage note in
@@ -425,6 +515,75 @@ export async function updateProject(
   if (new TextEncoder().encode(serialised).byteLength > MAX_DATA_BYTES) {
     throw new HttpError('project data too large', 413);
   }
+  return { data, next, serialised, title, mode, fps };
+}
+
+/**
+ * The frames a patch's frame list leaves out that the stored list had: the
+ * files a re-upload with fewer frames orphans. Empty when the patch says
+ * nothing of frames.
+ */
+export function orphanedFrames(patch: Record<string, unknown>, p: Patched): number[] {
+  if (!('frames' in patch)) return [];
+  const keep = new Set(p.next.frames.map((f) => f.index));
+  return p.data.frames.filter((f) => !keep.has(f.index)).map((f) => f.index);
+}
+
+/**
+ * The same patch on an account's own project (PUT /api/me/projects/:id),
+ * once its orphaned frames are gone: everything a patch is on owner tools
+ * but the visibility, which stays private (`public` is refused), and the
+ * template flag, which a member's project never has. `freed` bytes come
+ * off the project and its owner's usage in the same batch.
+ */
+export async function updateMemberProject(
+  env: Env,
+  row: ProjectRow,
+  p: Patched,
+  freed: number,
+  now: number,
+): Promise<ProjectRow> {
+  const owner = row.owner_id;
+  if (!owner) throw new HttpError('Not found', 404, 'not_found');
+  const mine = 'SELECT 1 FROM projects WHERE id = ? AND owner_id = ?';
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE users SET bytes_used = MAX(0, bytes_used - ?) WHERE id = ? AND EXISTS (${mine})`).bind(
+      freed,
+      owner,
+      row.id,
+      owner,
+    ),
+    env.DB.prepare(
+      `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, bytes = MAX(0, bytes - ?), updated_at = ?
+       WHERE id = ? AND owner_id = ?`,
+    ).bind(p.title, p.mode, p.fps, p.serialised, freed, now, row.id, owner),
+  ]);
+  const after = await getProjectRow(env, row.id, { member: owner });
+  if (!after) throw new HttpError('Not found', 404, 'not_found');
+  return after;
+}
+
+/** A patch's visibility on /api/me, checked: anything but private is refused. */
+export const checkMemberPatch = (patch: Record<string, unknown>): void => memberVisibility(patch.visibility);
+
+export async function updateProject(
+  env: Env,
+  id: string,
+  patch: Record<string, unknown>,
+  scope: OwnerScope,
+  by: Actor,
+): Promise<ProjectRow> {
+  const row = await ownedRow(env, id, scope);
+  const visibility = validVisibility(patch.visibility, row.visibility);
+  const { data, next, serialised, title, mode, fps } = patched(row, patch);
+  // A public project is a template, for the reason createProject gives, so
+  // one made public becomes one, as the Template switch would make it:
+  // nobody's, its bytes off its owner's usage, and audited (handOver).
+  // Made private, a template stays one, privatised: off the gallery until
+  // it is made public again (docs/accounts.md §5).
+  const template = visibility === 'public' ? 1 : row.template;
+  const owner = template ? null : row.owner_id;
+  const becomes = template === 1 && row.template === 0;
 
   // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
   if ('frames' in patch) {
@@ -601,125 +760,6 @@ export async function putThumb(env: Env, id: string, body: ArrayBuffer, scope: O
 }
 
 // --- scene files --------------------------------------------------------
-
-/** A scene's file: where its row says, under the one name a scene's file has. */
-const sceneKey = (row: ProjectRow): string => prefixFor(row) + SCENE_FILE;
-const SCENE_TYPE = 'application/x-bozzetto';
-/**
- * The part size clients are asked to send. R2 wants every part but the
- * last at least 5 MiB and all of them the same size; 8 MiB keeps a small
- * scene to one request and a large one to a few dozen.
- */
-export const SCENE_PART_BYTES = 8 * 1024 * 1024;
-/** A part as received: comfortably over the size asked for, well under the 100 MB request cap. */
-export const MAX_SCENE_PART_BYTES = 32 * 1024 * 1024;
-/** R2's own limit on parts per upload. */
-const MAX_SCENE_PARTS = 10000;
-
-async function sceneRow(env: Env, id: string, scope: OwnerScope): Promise<ProjectRow> {
-  const row = await ownedRow(env, id, scope);
-  if (row.mode !== 'scene') throw new HttpError('Not a scene project');
-  return row;
-}
-
-/**
- * R2 reports an upload it no longer has (aborted, completed, expired) as
- * error 10024; that is the client's stale id, not an outage, and says so.
- * Anything else stays a 500.
- */
-function uploadError(err: unknown): never {
-  const message = err instanceof Error ? err.message : String(err);
-  if (/\(10024\)|NoSuchUpload|upload does not exist/i.test(message)) throw new HttpError('Unknown upload', 404);
-  throw err;
-}
-
-/** Begin replacing a scene's file. The old one stays readable until complete. */
-export async function startSceneUpload(
-  env: Env,
-  id: string,
-  scope: OwnerScope,
-): Promise<{ uploadId: string; partSize: number }> {
-  const row = await sceneRow(env, id, scope);
-  const upload = await env.BUCKET.createMultipartUpload(sceneKey(row), {
-    httpMetadata: { contentType: SCENE_TYPE },
-  });
-  return { uploadId: upload.uploadId, partSize: SCENE_PART_BYTES };
-}
-
-export async function putScenePart(
-  env: Env,
-  id: string,
-  uploadId: string,
-  part: number,
-  body: ArrayBuffer,
-  scope: OwnerScope,
-): Promise<{ part: number; etag: string }> {
-  const row = await sceneRow(env, id, scope);
-  if (!Number.isInteger(part) || part < 1 || part > MAX_SCENE_PARTS) {
-    throw new HttpError(`part: expected an integer from 1 to ${MAX_SCENE_PARTS}`);
-  }
-  try {
-    const done = await env.BUCKET.resumeMultipartUpload(sceneKey(row), uploadId).uploadPart(part, body);
-    return { part: done.partNumber, etag: done.etag };
-  } catch (err) {
-    uploadError(err);
-  }
-}
-
-function validCount(v: unknown, name: string): number {
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
-    throw new HttpError(`${name}: expected a non-negative integer`);
-  }
-  return v;
-}
-
-/**
- * Finish an upload: the parts become the scene's file in one step, and the
- * row records what is in it. The size is R2's measure of what landed, not
- * the client's claim, since it is what the gallery reports the scene costs.
- */
-export async function completeSceneUpload(
-  env: Env,
-  id: string,
-  uploadId: string,
-  body: { parts?: unknown; objects?: unknown; tris?: unknown },
-  scope: OwnerScope,
-): Promise<ProjectRow> {
-  const row = await sceneRow(env, id, scope);
-  if (!Array.isArray(body.parts) || body.parts.length === 0 || body.parts.length > MAX_SCENE_PARTS) {
-    throw new HttpError('parts: expected a non-empty array');
-  }
-  const parts = body.parts.map((p) => {
-    const o = p as { part?: unknown; etag?: unknown };
-    if (typeof o?.part !== 'number' || !Number.isInteger(o.part) || typeof o.etag !== 'string' || !o.etag) {
-      throw new HttpError('parts: each entry needs a part number and its etag');
-    }
-    return { partNumber: o.part, etag: o.etag };
-  });
-  const objects = validCount(body.objects, 'objects');
-  const tris = validCount(body.tris, 'tris');
-  let stored: R2Object;
-  try {
-    stored = await env.BUCKET.resumeMultipartUpload(sceneKey(row), uploadId).complete(parts);
-  } catch (err) {
-    uploadError(err);
-  }
-  const data = JSON.parse(row.data) as ProjectData;
-  data.scene = { objects, tris, bytes: stored.size };
-  // updated_at is the file's ?v=, so a re-save reaches every reader.
-  const { sql, binds } = where(scope);
-  await env.DB.prepare(`UPDATE projects SET data = ?, updated_at = ? WHERE id = ? AND ${sql}`)
-    .bind(JSON.stringify(data), Date.now(), id, ...binds)
-    .run();
-  return ownedRow(env, id, scope);
-}
-
-/** Drop an unfinished upload. Best effort: R2 expires abandoned ones on its own. */
-export async function abortSceneUpload(env: Env, id: string, uploadId: string, scope: OwnerScope): Promise<void> {
-  const row = await sceneRow(env, id, scope);
-  try {
-    await env.BUCKET.resumeMultipartUpload(sceneKey(row), uploadId).abort();
-  } catch {
-    // Already completed, aborted or expired: nothing left to drop.
-  }
-}
+//
+// A scene's file is uploaded in parts, checked and counted as it comes:
+// functions/_shared/uploads.ts, for owner tools and accounts alike.

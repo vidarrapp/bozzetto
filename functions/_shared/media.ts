@@ -30,7 +30,7 @@ const REVALIDATE = 'public, no-cache';
  * Stream one of a project's R2 objects (a frame, the thumbnail, a scene
  * file), if the asker may see it.
  *
- * Three routes serve these, differing in `scope`. The open ones - /m/* on
+ * Four routes serve these, differing in `scope`. The open ones - /m/* on
  * the files host and this one, and /media/* for the apps installed before
  * /m/ - never look at identity: Cloudflare Access does not front them, so
  * the identity headers there are whatever the client chose to send, and a
@@ -39,7 +39,13 @@ const REVALIDATE = 'public, no-cache';
  * readable by the app's pages from the files host. The owner's
  * /admin/api/media/* sits under the Access application, which is what makes
  * the identity the root middleware read there worth trusting; it reaches
- * whatever owner tools do, and nothing may keep what it sends.
+ * whatever owner tools do, and nothing may keep what it sends. An
+ * account's own, /api/me/media/*, reaches that account's projects alone
+ * (`{member}`), on its session, and is kept nowhere either.
+ *
+ * On the two private routes `?download=1` makes any file a download named
+ * after its project (a scene always is one): what My projects' Download
+ * and the export zip ask for.
  *
  * The key is the row's prefix and a file name from the fixed set, never a
  * path from the URL (docs/accounts.md §4). Every refusal is the same 404: a
@@ -97,7 +103,8 @@ export async function serveMedia(ctx: MediaContext, segments: string[], scope: S
     return notFound(shared);
   }
   const current = asked !== null && asked === String(row.updated_at);
-  const policy = { kind, row, open, shared, cache: cacheControl(open, kind, current) };
+  const download = !open && url.searchParams.get('download') === '1';
+  const policy = { kind, file, download, row, open, shared, cache: cacheControl(open, kind, current) };
   if (hit && current) return finish(new Response(hit.body, hit), policy);
   discard(hit);
 
@@ -280,6 +287,10 @@ async function fromCache(key: string, request: Request, ranged: boolean): Promis
 
 interface Policy {
   kind: Kind;
+  /** The file's name under the project, as asked for: `frames/sd/0003.glb`. */
+  file: string;
+  /** Asked for as a download (`?download=1`, private routes only). */
+  download: boolean;
   row: FileRow;
   open: boolean;
   shared: Record<string, string>;
@@ -294,14 +305,14 @@ interface Policy {
  * site's. A scene is a download named after its project; a thumbnail is a
  * picture to show.
  */
-function finish(res: Response, { kind, row, open, shared, cache }: Policy): Response {
+function finish(res: Response, { kind, file, download, row, open, shared, cache }: Policy): Response {
   const h = res.headers;
   for (const [name, value] of Object.entries(shared)) h.set(name, value);
   h.set('content-type', TYPES[kind]);
   h.set('cache-control', cache);
   h.set('x-content-type-options', 'nosniff');
   h.set('content-security-policy', "default-src 'none'; sandbox");
-  if (kind === 'scene') h.set('content-disposition', attachment(row.title, row.id));
+  if (kind === 'scene' || download) h.set('content-disposition', attachment(row.title, row.id, suffix(kind, file)));
   else if (kind === 'thumb') h.set('content-disposition', 'inline');
   // The owner's files are this origin's alone. The open routes' carry
   // `same-site` (openHeaders), so the app may embed the files host's.
@@ -341,17 +352,25 @@ function openHeaders(url: URL, env: Env): Record<string, string> {
   return out;
 }
 
+/** What a downloaded file's name ends with after its project's title: `.bozz`, `.jpg`, `-0003.glb`. */
+function suffix(kind: Kind, file: string): string {
+  if (kind === 'scene') return '.bozz';
+  if (kind === 'thumb') return '.jpg';
+  return `-${file.slice(file.lastIndexOf('/') + 1)}`;
+}
+
 /**
- * `attachment; filename="<title>.bozz"` (docs/accounts.md §4). A title is
- * anyone's text and a header is not the place for all of it: the plain
- * `filename` gets printable ASCII alone, anything else as `_`, and the
- * whole title, when that changed it, goes in `filename*` (RFC 6266).
+ * `attachment; filename="<title>.bozz"` (docs/accounts.md §4), or the
+ * suffix of another kind of file. A title is anyone's text and a header is
+ * not the place for all of it: the plain `filename` gets printable ASCII
+ * alone, anything else as `_`, and the whole title, when that changed it,
+ * goes in `filename*` (RFC 6266).
  */
-function attachment(title: string, id: string): string {
+function attachment(title: string, id: string, end: string): string {
   const base = (title.trim() || id)
     .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '\ufffd')
     .replace(/[\u0000-\u001f\u007f"\\/]/g, '_');
-  const name = /\.bozz$/i.test(base) ? base : `${base}.bozz`;
+  const name = base.toLowerCase().endsWith(end.toLowerCase()) ? base : `${base}${end}`;
   const ascii = name.replace(/[^\x20-\x7e]/g, '_');
   const plain = `attachment; filename="${ascii}"`;
   if (ascii === name) return plain;

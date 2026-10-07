@@ -1,6 +1,6 @@
 // What owner tools take in: request bodies of every kind, refused before
 // they can do harm, and a scene's file uploaded in parts.
-import { FILES_HOST, MiB, asOwner, asStranger, concat, ids, jpeg, pattern, same } from '../lib.mjs';
+import { FILES_HOST, MiB, asOwner, asStranger, bozz, bozzOf, concat, ids, jpeg, parts, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -63,8 +63,8 @@ export async function run({ checks, off }) {
   const start = await call('POST', `/admin/api/projects/${scene}/scene`, { headers: asOwner });
   const upload = start.json?.uploadId;
   t.ok(start.status === 201 && typeof upload === 'string' && start.json?.partSize === 8 * MiB, `an upload starts, asking for 8 MiB parts (${start.status}, ${start.json?.partSize})`);
-  const first = pattern(8 * MiB, 1);
-  const last = pattern(300_000, 2);
+  // A scene file as the app writes one, gzipped, a little over one part.
+  const [first, last] = parts(bozzOf(8 * MiB + 300_000, 1), 8 * MiB);
   const u = encodeURIComponent(upload ?? '');
   const p1 = await call('PUT', `/admin/api/projects/${scene}/scene?upload=${u}&part=1`, { headers: asOwner, bytes: first });
   const p2 = await call('PUT', `/admin/api/projects/${scene}/scene?upload=${u}&part=2`, { headers: asOwner, bytes: last });
@@ -107,7 +107,7 @@ export async function run({ checks, off }) {
   // Re-save in place: a new upload replaces the file and moves ?v= on.
   const again = await call('POST', `/admin/api/projects/${scene}/scene`, { headers: asOwner });
   const u2 = encodeURIComponent(again.json?.uploadId ?? '');
-  const small = pattern(1000, 3);
+  const small = bozz({ vertices: 20, seed: 3 });
   const q1 = await call('PUT', `/admin/api/projects/${scene}/scene?upload=${u2}&part=1`, { headers: asOwner, bytes: small });
   r = await call('POST', `/admin/api/projects/${scene}/scene?upload=${u2}`, {
     headers: asOwner,

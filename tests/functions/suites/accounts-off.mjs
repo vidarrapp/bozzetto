@@ -33,8 +33,20 @@ const ROUTES = [
   ['PATCH', '/api/me'],
   ['POST', '/api/me/email/start'],
   ['POST', '/api/me/email/verify'],
-  // And the ones still to come, which answer the same.
+  // Batch 5's: an account's projects, files, export and deletion.
   ['GET', '/api/me/projects'],
+  ['POST', '/api/me/projects'],
+  ['GET', '/api/me/projects/p-someproject'],
+  ['PUT', '/api/me/projects/p-someproject'],
+  ['DELETE', '/api/me/projects/p-someproject'],
+  ['POST', '/api/me/projects/p-someproject/scene'],
+  ['PUT', '/api/me/projects/p-someproject/scene?upload=u&part=1'],
+  ['DELETE', '/api/me/projects/p-someproject/scene?upload=u'],
+  ['POST', '/api/me/projects/p-someproject/frames?index=0'],
+  ['POST', '/api/me/projects/p-someproject/thumb'],
+  ['GET', '/api/me/media/p-someproject/thumb.jpg'],
+  ['GET', '/api/me/export'],
+  ['POST', '/api/me/delete'],
 ];
 
 export async function run({ checks, off }) {

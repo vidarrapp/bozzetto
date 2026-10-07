@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { accountsOn, isLoopback } from './env';
+import { isLoopback } from './env';
 
 /**
  * Every JSON answer is sent with nosniff, so no browser ever reads one as
@@ -48,8 +48,7 @@ export type ErrorCode =
   | 'accounts_off'
   | 'not_configured'
   | 'turnstile_down'
-  | 'mail_paused'
-  | 'not_implemented';
+  | 'mail_paused';
 
 /** A refusal as `{error, code}`, plus whatever the code carries. No cache keeps one. */
 export function refuse(
@@ -212,18 +211,6 @@ export function crossSiteWrite(request: Request): boolean {
   if (site !== null && site !== 'same-origin' && site !== 'none') return true;
   const origin = request.headers.get('Origin');
   return origin !== null && origin !== new URL(request.url).origin;
-}
-
-/**
- * The answer of every /api/auth/* and /api/me/* route until the batch that
- * brings it (docs/accounts.md §12). With accounts off those routes are not
- * there, and say why: 404 accounts_off, as they will once they exist. With
- * accounts on, a 501, so a staging run never mistakes a stub for a refusal.
- */
-export function notYet(env: Env): Response {
-  return accountsOn(env)
-    ? refuse(501, 'not_implemented', 'Not implemented yet')
-    : refuse(404, 'accounts_off', 'Accounts are off');
 }
 
 // --- Access JWT verification ------------------------------------------------

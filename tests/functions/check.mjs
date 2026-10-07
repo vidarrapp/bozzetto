@@ -14,7 +14,8 @@
 // be started at all.
 //
 // Each server is a throwaway project directory - copies of the repo's
-// functions/ and migrations/, a small static site with the repo's
+// functions/, shared/ (what they share with the app: shared/bozz.ts) and
+// migrations/, a small static site with the repo's
 // public/_routes.json, node_modules linked in so wrangler resolves what the
 // Functions import, and a wrangler.toml of its own, so a local wrangler.toml
 // with DEV_ADMIN or real bindings never leaks in. The migrations are
@@ -144,6 +145,8 @@ function wranglerToml(vars) {
 function prepareProject(dir) {
   mkdirSync(dir);
   cpSync(join(repo, 'functions'), join(dir, 'functions'), { recursive: true });
+  // The Functions import the app's container code from beside them.
+  cpSync(join(repo, 'shared'), join(dir, 'shared'), { recursive: true });
   // So an import the Functions make resolves as it does in the repo.
   symlinkSync(join(repo, 'node_modules'), join(dir, 'node_modules'), 'junction');
   const site = join(dir, 'public');
@@ -304,9 +307,11 @@ function stopServer(server) {
  * it things directly: each file transpiled alone (they import each other,
  * types, and @simplewebauthn/server), subfolders and all, with its relative
  * imports pointed at the compiled copies and its package imports at the
- * repo's node_modules. A fresh directory per suite, so no module state
- * carries over. Modules are asked for by their path under _shared, without
- * the extension: 'env', 'auth/audit'.
+ * repo's node_modules. The repo's shared/ is compiled beside it as it sits
+ * beside functions/, so `../../shared/bozz` finds it. A fresh directory per
+ * suite, so no module state carries over. Modules are asked for by their
+ * path under _shared, without the extension: 'env', 'auth/audit'; and
+ * shared/'s by `../../shared/<name>`: '../../shared/bozz'.
  */
 async function compileShared(dir) {
   const { default: ts } = await import('typescript');
@@ -329,8 +334,10 @@ async function compileShared(dir) {
       writeFileSync(join(to, entry.name.replace(/\.ts$/, '.mjs')), linked);
     }
   };
-  compile(join(repo, 'functions', '_shared'), dir);
-  return (name) => import(pathToFileURL(join(dir, `${name}.mjs`)).href);
+  const shared = join(dir, 'functions', '_shared');
+  compile(join(repo, 'functions', '_shared'), shared);
+  compile(join(repo, 'shared'), join(dir, 'shared'));
+  return (name) => import(pathToFileURL(join(shared, `${name}.mjs`)).href);
 }
 
 const base = mkdtempSync(join(tmpdir(), 'bozzetto-functions-'));
@@ -391,7 +398,7 @@ try {
         turnstile,
         repo,
         scratch,
-        compileShared: () => compileShared(join(scratch, '_shared')),
+        compileShared: () => compileShared(join(scratch, 'compiled')),
       });
     } catch (err) {
       // A suite that throws has failed, whatever it had checked so far.

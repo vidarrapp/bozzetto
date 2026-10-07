@@ -1,6 +1,6 @@
 import type { Env } from '../../_shared/env';
 import type { RequestData } from '../../_shared/principal';
-import { HttpError, notYet } from '../../_shared/http';
+import { HttpError, refuse } from '../../_shared/http';
 import { meOf } from '../../_shared/auth/account';
 import { answer, api, readBody, requireUser } from '../../_shared/auth/api';
 import { auditStatement } from '../../_shared/auth/audit';
@@ -26,9 +26,9 @@ import { tooMany } from '../../_shared/auth/ratelimit';
 //
 // They are answered here, not in an index.ts, because Pages tries a
 // catch-all with more segments first, and /api/me/[[path]] matches /api/me
-// itself. Every other /api/me/* path without a route of its own is one
-// still to come (Batch 5: projects, media, export, deletion) and answers
-// 501 not_implemented; with accounts off, the middleware beside this has
+// itself. Every route phase 1 has under /api/me is there now (§3, §4), so
+// any other path, or a route asked with a method it does not answer, is
+// 404 not_found; with accounts off, the middleware beside this has
 // answered 404 accounts_off before either.
 export const onRequest: PagesFunction<Env, string, RequestData> = ({ request, env, params, data }) => {
   const path = params.path;
@@ -37,7 +37,7 @@ export const onRequest: PagesFunction<Env, string, RequestData> = ({ request, en
     return api(async () => answer(await meOf(env, requireUser(data.principal).user)));
   }
   if (root && request.method === 'PATCH') return api(() => changeHandle(request, env, data));
-  return notYet(env);
+  return Promise.resolve(refuse(404, 'not_found', 'Not found'));
 };
 
 async function changeHandle(request: Request, env: Env, data: RequestData): Promise<Response> {

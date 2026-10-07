@@ -20,5 +20,5 @@
       "@sculpt-vendor/*": ["./src/sculpt/vendor/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "shared"]
 }

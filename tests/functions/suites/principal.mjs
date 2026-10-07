@@ -46,8 +46,10 @@ export async function run({ checks, off, on, compileShared }) {
   // Lock 2, and who a session cookie makes the asker, are the locks and
   // sessions suites'; the locks suite makes this server's owner.
   t = checks('functions: principal, accounts on');
+  r = await on.call('GET', '/api/me/no-such-route');
+  t.ok(r.status === 404 && r.json?.code === 'not_found' && r.headers.get('cache-control') === 'no-store', `every /api/me/* route is there, so any other path is 404 not_found (${r.status} ${r.json?.code})`);
   r = await on.call('GET', '/api/me/projects');
-  t.ok(r.status === 501 && r.json?.code === 'not_implemented', `with accounts on, a route still to come says so: 501 (${r.status} ${r.json?.code})`);
+  t.ok(r.status === 401 && r.json?.code === 'signin', `and one that is there asks a guest to sign in (${r.status} ${r.json?.code})`);
   r = await on.call('POST', '/api/auth/no-such-route', { json: {} });
   t.ok(r.status === 404 && r.json?.code === 'not_found' && r.headers.get('cache-control') === 'no-store', `every /api/auth/* route is there, so any other path is 404 not_found (${r.status} ${r.json?.code})`);
   r = await on.call('GET', '/api/auth/email/start');

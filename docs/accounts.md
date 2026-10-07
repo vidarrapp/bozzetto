@@ -309,7 +309,7 @@ The client zips it with client-zip 2.5.1 (MIT, no dependencies), one file per re
 ```
 GET|POST        /api/me/projects             list (with bytes) | create {title, mode} → 'p-<26>', private
 GET|PUT|DELETE  /api/me/projects/:id         manifest | patch | delete
-POST|PUT|DELETE /api/me/projects/:id/scene   start {size} | ?upload=&part= | ?upload= complete {parts, objects, tris} | abort
+POST|PUT|POST|DELETE /api/me/projects/:id/scene   start {size} | ?upload=&part= | ?upload= complete {parts, objects, tris} | ?upload= abort
 POST            /api/me/projects/:id/frames?index=N   /api/me/projects/:id/thumb
 GET             /api/me/media/:id/<file>[?download=1]
 ```
@@ -342,6 +342,7 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 - **Scene last part.** Its gzip ISIZE must equal the unpacked size mod 2³².
 - **Thumbnails** start `FF D8 FF`. Frames are `glTF` v2, raw or gzipped.
 - **Anything else** is 415 `bad_type`.
+- **Owner tools' scene uploads** get the same checks, since templates reach every visitor. Their `{size}` stays optional for the 0.5 client; without it, the last part's ISIZE goes unchecked.
 
 **Serving.** Every route sends:
 
