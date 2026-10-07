@@ -388,9 +388,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.4
 
-**Accounts, ready for the site's owner to switch on; templates in the gallery; colour picked off the view.**
+**Accounts, ready for the site's owner to switch on; templates in the gallery; colour picked off the view.** Desktop app 0.6.0.
 
 **The gallery shows the site's templates.**
 

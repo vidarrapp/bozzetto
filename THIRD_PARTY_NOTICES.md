@@ -208,6 +208,15 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
+### Bundled with the Functions (server only)
+
+The Functions bundle brings `@simplewebauthn/server`'s own
+dependencies, which run on Cloudflare's servers and ship to no user:
+`@peculiar/asn1-schema`, `@peculiar/asn1-x509` and `@peculiar/x509`
+(MIT), `asn1js` (BSD-3-Clause), `reflect-metadata` (Apache-2.0) and
+`tslib` (0BSD). Their licence texts are in `node_modules/` under each
+package.
+
 ### Workbox (web app only)
 
 The service worker that keeps the installed web app working offline is

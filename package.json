@@ -1,11 +1,11 @@
 {
   "name": "bozzetto",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "Sculpt, paint and timelapses.",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "gen:sample": "node scripts/generate-sample.mjs",

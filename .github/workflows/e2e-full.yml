@@ -1,4 +1,4 @@
-# The whole browser suite, smoke.mjs and latency.mjs: about 50 minutes on
+# The whole browser suite, every suite in tests/e2e: about 50 minutes on
 # a fast machine, so weekly and from the Actions tab rather than on every
 # push (ci.yml runs a few of its suites there).
 name: E2E (full)
