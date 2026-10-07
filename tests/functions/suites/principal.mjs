@@ -48,8 +48,10 @@ export async function run({ checks, off, on, compileShared }) {
   t = checks('functions: principal, accounts on');
   r = await on.call('GET', '/api/me/projects');
   t.ok(r.status === 501 && r.json?.code === 'not_implemented', `with accounts on, a route still to come says so: 501 (${r.status} ${r.json?.code})`);
-  r = await on.call('POST', '/api/auth/email/start', { json: {} });
-  t.ok(r.status === 501 && r.json?.code === 'not_implemented', `/api/auth/* too (${r.status} ${r.json?.code})`);
+  r = await on.call('POST', '/api/auth/no-such-route', { json: {} });
+  t.ok(r.status === 404 && r.json?.code === 'not_found' && r.headers.get('cache-control') === 'no-store', `every /api/auth/* route is there, so any other path is 404 not_found (${r.status} ${r.json?.code})`);
+  r = await on.call('GET', '/api/auth/email/start');
+  t.ok(r.status === 404 && r.json?.code === 'not_found', `and so is a route asked with a method it does not answer (${r.status} ${r.json?.code})`);
   r = await on.call('GET', '/api/me');
   t.ok(r.status === 401 && r.json?.code === 'signin', `a route that is there asks a guest to sign in (${r.status} ${r.json?.code})`);
   p = await whoIs(on, ACCESS_LOOKALIKE);

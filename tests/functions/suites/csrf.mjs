@@ -27,8 +27,16 @@ const ROUTES = [
   '/api/auth/passkey/options',
   '/api/auth/passkey/verify',
   '/api/auth/handle',
+  '/api/auth/invite/check',
   '/api/auth/register/start',
+  '/api/auth/register/verify',
+  '/api/auth/email/start',
+  '/api/auth/email/resend',
+  '/api/auth/email/verify',
+  '/api/auth/email/link',
   '/api/me',
+  '/api/me/email/start',
+  '/api/me/email/verify',
   '/api/me/account',
   '/api/me/projects',
   '/api/me/passkeys',
@@ -38,6 +46,8 @@ const ROUTES = [
   '/api/me/sessions/revoke-all',
   '/api/dev/principal',
   '/api/dev/audit',
+  '/api/dev/outbox',
+  '/api/dev/user',
   '/admin/api/whoami',
   '/admin/api/projects',
   '/admin/api/projects/csrf-target',
@@ -103,6 +113,15 @@ export async function run({ checks, off, on }) {
     '/api/auth/signout',
     '/api/auth/passkey/options',
     '/api/auth/passkey/verify',
+    '/api/auth/invite/check',
+    '/api/auth/register/start',
+    '/api/auth/register/verify',
+    '/api/auth/email/start',
+    '/api/auth/email/resend',
+    '/api/auth/email/verify',
+    '/api/auth/email/link',
+    '/api/me/email/start',
+    '/api/me/email/verify',
     '/api/me',
     '/api/me/projects',
     '/api/me/passkeys',
@@ -128,10 +147,10 @@ export async function run({ checks, off, on }) {
   t.ok(reads.length === 0, `no read is refused as cross-site, on any route (${reads.join('; ') || 'none'})`);
   for (const [server, status, code] of [
     [off, 404, 'accounts_off'],
-    [on, 501, 'not_implemented'],
+    [on, 400, 'bad_request'],
   ]) {
     r = await server.call('POST', '/api/auth/email/start', { headers: { origin: server.base, 'sec-fetch-site': 'same-origin' }, json: {} });
-    t.ok(r.status === status && r.json?.code === code, `this site's own write reaches the stub, accounts ${server === off ? 'off' : 'on'} (${r.status} ${r.json?.code})`);
+    t.ok(r.status === status && r.json?.code === code, `this site's own write reaches the route, accounts ${server === off ? 'off' : 'on'} (${r.status} ${r.json?.code})`);
   }
   r = await on.call('POST', '/api/auth/signout', { headers: { origin: on.base, 'sec-fetch-site': 'same-origin' }, json: {} });
   t.eq(r.status, 204, "and with accounts on, this site's own sign-out is answered");

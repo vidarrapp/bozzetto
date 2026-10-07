@@ -86,7 +86,7 @@ export interface SessionView {
   createdAt: number;
   lastSeenAt: number;
   expiresAt: number;
-  /** How it was signed in: passkey, bootstrap (Batch 4 adds code and link). */
+  /** How it was signed in: passkey, email (a code), link (the code mail's link), bootstrap. */
   method: string;
   /** The session this request came with. */
   current: boolean;

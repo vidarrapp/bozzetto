@@ -47,6 +47,7 @@ export type ErrorCode =
   | 'rate_limited'
   | 'accounts_off'
   | 'not_configured'
+  | 'turnstile_down'
   | 'mail_paused'
   | 'not_implemented';
 
@@ -74,21 +75,33 @@ export function bodyLimit(request: Request, max: number, required = false): Resp
 }
 
 export class HttpError extends Error {
-  /** With a code, it answers as `refuse` does, `extra` and all; without, as `error`. */
+  /**
+   * With a code, it answers as `refuse` does, `extra` and all; without, as
+   * `error`. `headers` go on the answer as well, each appended: a 429's
+   * Retry-After, a Set-Cookie that clears a flow that is over.
+   */
   constructor(
     message: string,
     readonly status = 400,
     readonly code?: ErrorCode,
     readonly extra: Record<string, unknown> = {},
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
+  }
+
+  /** The answer this refusal makes: `{error, code}` (or `{error}` without a code), and its headers. */
+  toResponse(code: ErrorCode | undefined = this.code): Response {
+    const res = code ? refuse(this.status, code, this.message, this.extra) : error(this.message, this.status);
+    for (const [name, value] of Object.entries(this.headers)) res.headers.append(name, value);
+    return res;
   }
 }
 
 /** Wrap a handler so thrown HttpErrors become clean JSON responses. */
 export function handle(fn: () => Promise<Response>): Promise<Response> {
   return fn().catch((e: unknown) => {
-    if (e instanceof HttpError) return e.code ? refuse(e.status, e.code, e.message, e.extra) : error(e.message, e.status);
+    if (e instanceof HttpError) return e.toResponse();
     console.error(e);
     return error('Internal error', 500);
   });

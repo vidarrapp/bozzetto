@@ -21,7 +21,8 @@ import {
 // With {reauth: true} and a session, the same for re-authenticating: only
 // the account's own passkeys are offered, and the answer (verify, with
 // reauth: true) sets the session's reauth_at. No session is 401 signin;
-// an account with no passkey is a 400, and confirms by email (Batch 4).
+// an account with no passkey is a 400, and confirms by a code instead
+// (/api/auth/email/start and verify, with reauth: true).
 //
 // 60 per 10 minutes per IP, sign-in, re-authentication and new passkeys
 // together; past that, 429 rate_limited with Retry-After.

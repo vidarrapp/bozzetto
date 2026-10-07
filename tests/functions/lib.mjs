@@ -203,3 +203,47 @@ export function seedCredential({ credential, user, name = 'Seeded passkey', coun
   return `INSERT INTO credentials (id, user_id, public_key, counter, transports, device_type, backed_up, aaguid, name, created_at)
   VALUES (${[credential.id, user, credential.cose, counter, '["internal"]', 'singleDevice', 0, '00000000-0000-0000-0000-000000000000', name, at].map(sql).join(', ')});`;
 }
+
+// --- accounts: invites, mail and codes ------------------------------------------------
+
+/** An invite link's token (16 bytes, base64url), made up from a name so a suite can seed it and send it. */
+export const inviteToken = (name) => createHash('sha256').update(`invite:${name}`).digest('base64url').slice(0, 22);
+
+/** An invite, as the owner's tools would have made it (Batch 6), with the token inviteToken(name) makes. */
+export function seedInvite({ id, name, maxUses = 1, uses = 0, created = 0, expires, revoked = null, label = '' }) {
+  return `INSERT INTO invites (id, token_hash, label, max_uses, uses, created_by, created_at, expires_at, revoked_at)
+  VALUES (${[id, sha256hex(inviteToken(name)), label, maxUses, uses, null, created, expires, revoked].map(sql).join(', ')});`;
+}
+
+/** What the stub mailer wrote for one address, oldest first: {id, at, to, subject, body} each. */
+export async function outbox(server, to) {
+  const r = await server.call('GET', `/api/dev/outbox?to=${encodeURIComponent(to)}`);
+  return r.json?.rows ?? [];
+}
+
+/** The code a code mail carries in its subject, or null. */
+export const codeIn = (row) => /^(\d{6}) is your Bozzetto code$/.exec(row?.subject ?? '')?.[1] ?? null;
+
+/** The token of the sign-in link a code mail carries, or null. */
+export const linkIn = (row) => /\/\?link=([A-Za-z0-9_-]{43}) /.exec(row?.body ?? '')?.[1] ?? null;
+
+/** An account's users row as stored (GET /api/dev/user), or null. */
+export async function storedUser(server, { id, email }) {
+  const q = id ? `id=${encodeURIComponent(id)}` : `email=${encodeURIComponent(email)}`;
+  return (await server.call('GET', `/api/dev/user?${q}`)).json?.user ?? null;
+}
+
+/** The audit rows about one subject, oldest first (GET /api/dev/audit). */
+export async function auditRows(server, subject) {
+  return (await server.call('GET', `/api/dev/audit?subject=${encodeURIComponent(subject)}`)).json?.rows ?? [];
+}
+
+/**
+ * What the server itself logged, without wrangler's own request lines: the
+ * mail suites check no address is ever in it.
+ */
+export const workerLog = (server) =>
+  server.log
+    .split('\n')
+    .filter((line) => !line.includes('[wrangler:'))
+    .join('\n');

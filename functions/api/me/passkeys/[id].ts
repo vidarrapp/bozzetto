@@ -4,7 +4,7 @@ import { HttpError } from '../../../_shared/http';
 import { auditStatement } from '../../../_shared/auth/audit';
 import { PASSKEY_COLUMNS, cleanPasskeyName, passkeyOf, type PasskeyFields } from '../../../_shared/auth/account';
 import { answer, api, noContent, readBody, requireRecentAuth, requireUser } from '../../../_shared/auth/api';
-import { notify } from '../../../_shared/auth/notify';
+import { notify } from '../../../_shared/auth/mail';
 
 // PATCH /api/me/passkeys/:id {name} - rename one of the account's passkeys:
 // trimmed, cut to 64 characters, and not empty (400). Answers {passkey}.
@@ -26,8 +26,8 @@ export const onRequestPatch: PagesFunction<Env, string, RequestData> = ({ reques
 // DELETE /api/me/passkeys/:id - remove one of the account's passkeys
 // (docs/accounts.md §3). It needs recent authentication (401 reauth). The
 // last one may go too: the account then signs in by email code. Audited,
-// and the holder is told (mail, Batch 4). 204; anyone else's is 404.
-export const onRequestDelete: PagesFunction<Env, string, RequestData> = ({ env, params, data }) =>
+// and the holder is told by mail. 204; anyone else's is 404.
+export const onRequestDelete: PagesFunction<Env, string, RequestData> = ({ request, env, params, data, waitUntil }) =>
   api(async () => {
     const { user } = requireRecentAuth(data.principal);
     const id = String(params.id);
@@ -39,9 +39,13 @@ export const onRequestDelete: PagesFunction<Env, string, RequestData> = ({ env, 
         { actor: user.id, action: 'passkey.remove', subject: user.id, at: data.now, detail: { credential: id } },
         { sql: 'SELECT 1 FROM credentials WHERE id = ? AND user_id = ?', binds: [id, user.id] },
       ),
-      env.DB.prepare('DELETE FROM credentials WHERE id = ? AND user_id = ?').bind(id, user.id),
+      env.DB.prepare('DELETE FROM credentials WHERE id = ? AND user_id = ? RETURNING name').bind(id, user.id),
     ]);
     if (!removed.meta.changes) throw new HttpError('Not found', 404, 'not_found');
-    await notify(env, user, 'passkey.removed');
+    const name = (removed.results?.[0] as { name?: unknown } | undefined)?.name;
+    await notify(env, { request, now: data.now, waitUntil }, user, {
+      kind: 'passkey.removed',
+      name: typeof name === 'string' ? name : '',
+    });
     return noContent();
   });

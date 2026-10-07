@@ -57,6 +57,12 @@ export const RESERVED: ReadonlySet<string> = new Set([
   'mail',
 ]);
 
+const DAY = 24 * 60 * 60 * 1000;
+/** How long a handle let go of (renamed, or its account deleted) is held from anyone else: 90 days. */
+export const HANDLE_HOLD = 90 * DAY;
+/** How often an account may change its handle: once per 30 days. */
+export const HANDLE_CHANGE_EVERY = 30 * DAY;
+
 /** Why a handle cannot be had: `format` and `reserved` are the asker's to fix, `taken` and `retired` someone else's. */
 export type HandleProblem = 'format' | 'reserved' | 'taken' | 'retired';
 

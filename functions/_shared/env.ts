@@ -55,12 +55,17 @@ export interface Env {
   AUTH_SECRET?: string;
   /** Turnstile's widget key, sent to the client only while TURNSTILE_SECRET is set too. */
   TURNSTILE_SITE_KEY?: string;
+  /**
+   * What Turnstile tokens are checked with (auth/turnstile.ts). Unset, every
+   * check passes on a loopback host and is a 503 anywhere else. One of
+   * Cloudflare's test secrets is held to success alone, for staging.
+   */
   TURNSTILE_SECRET?: string;
   /** Loopback only: where Turnstile tokens are verified, so the tests can stand in for Cloudflare. */
   TURNSTILE_VERIFY_URL?: string;
-  /** Resend's API key. Unset, mail goes to dev_outbox on loopback and is refused elsewhere. */
+  /** Resend's API key. Unset, mail goes to dev_outbox on loopback and is refused (503) elsewhere. */
   RESEND_API_KEY?: string;
-  /** The sender, `Bozzetto <login@vidarrapp.se>`. */
+  /** The sender, `Bozzetto <login@vidarrapp.se>`; mail is refused without it once RESEND_API_KEY is set. */
   MAIL_FROM?: string;
   /**
    * Loopback only: when "true", the test hooks answer - the X-Test-Now

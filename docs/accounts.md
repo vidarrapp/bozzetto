@@ -177,7 +177,7 @@ type Principal =
 | 415 | `bad_type` |
 | 422 | `bad_scene` |
 | 429 | `rate_limited`, with Retry-After |
-| 503 | `accounts_off`, `not_configured`, `mail_paused` |
+| 503 | `accounts_off`, `not_configured`, `turnstile_down`, `mail_paused` |
 
 **Rate limits** are fixed windows in `rate_limits`. Each is keyed by HMAC(AUTH_SECRET, IP or address), cut to 128 bits and kept 48 hours.
 
@@ -216,7 +216,7 @@ type Principal =
    3. the session, the flow's deletion, and the audit row.
 
    - No row: 410.
-   - UNIQUE clash: 409, and the flow is kept.
+   - UNIQUE clash: 409, and the flow is kept: the same code with another `handle` completes it.
    - Success: 201 `{user}` with the cookie.
 5. **Passkey offer.** The new session counts as recent authentication. The offer can be skipped, and comes back after each code sign-in.
 
@@ -239,7 +239,7 @@ type Principal =
 **Email code (sign-in, recovery).**
 
 1. **Start.** `POST /api/auth/email/start {email, turnstile, link?}` checks Turnstile (`email-code`). It mails a code only if an active account has that address, but always returns 202 with the flow cookie.
-2. **Resend.** `POST /api/auth/email/resend {turnstile}` sends a new code: at most 3 per flow, 60 s apart.
+2. **Resend.** `POST /api/auth/email/resend {turnstile}` sends a new code: at most 3 sends per flow (the first included), 60 s apart.
 3. **Verify.** `POST /api/auth/email/verify {code}`:
    1. increments `attempts` `WHERE attempts < 5 AND expires_at > ? RETURNING …`; no row is 410 `flow_expired`;
    2. compares HMACs with `crypto.subtle.timingSafeEqual`; a mismatch is 400 `code_invalid`;
@@ -416,9 +416,9 @@ The code field is `autocomplete="one-time-code" inputmode="numeric"`.
 **Turnstile.**
 
 - **Widget.** Rendered explicitly (`api.js?render=explicit`, `appearance: 'interaction-only'`) in Join, and wherever a code is requested or resent. Each submit uses a fresh token: tokens last 300 s and validate once.
-- **Server.** It posts `secret`, `response`, `remoteip` (not stored) and `idempotency_key` to `https://challenges.cloudflare.com/turnstile/v0/siteverify`. It requires `success`, `hostname` equal to APP_ORIGIN's host, and the expected `action`. If siteverify is unreachable, it answers 503.
+- **Server.** It posts `secret`, `response`, `remoteip` (not stored) and `idempotency_key` to `https://challenges.cloudflare.com/turnstile/v0/siteverify`. It requires `success`, `hostname` equal to APP_ORIGIN's host, and the expected `action`. If siteverify is unreachable, it tries once more under the same key, then answers 503 `turnstile_down`.
 - **No `TURNSTILE_SECRET`.** Loopback passes and `/api/config` sends `turnstileSiteKey: null`; other hosts answer 503.
-- **Testing.** Tests point `TURNSTILE_VERIFY_URL` (loopback only) at a fake. Staging can use Cloudflare's test keys: `1x00000000000000000000AA` with `1x0000000000000000000000000000000AA` pass, and the `2x…` keys fail.
+- **Testing.** Tests point `TURNSTILE_VERIFY_URL` (loopback only) at a fake. Staging can use Cloudflare's test keys: `1x00000000000000000000AA` with `1x0000000000000000000000000000000AA` pass, and the `2x…` keys fail. A test secret's answer names neither our host nor our action, so with one only `success` is checked.
 - **CSP.** `script-src` and `frame-src` add `https://challenges.cloudflare.com`; `connect-src` and `img-src` add the files host.
 
 ## 7. Client UI

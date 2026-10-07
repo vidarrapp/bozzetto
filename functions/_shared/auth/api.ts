@@ -1,6 +1,6 @@
 import type { ErrorCode } from '../http';
 import type { Principal, UserPrincipal } from '../principal';
-import { HttpError, json, readJson, refuse } from '../http';
+import { HttpError, json, readJson } from '../http';
 
 /**
  * What every accounts route (/api/auth/*, /api/me/*, the bootstrap) shares:
@@ -30,12 +30,13 @@ function codeFor(status: number): ErrorCode {
 
 /**
  * Run an accounts route: a thrown HttpError answers as `{error, code}`,
- * given one by its status if it came without (readJson's, for one), and
+ * given one by its status if it came without (readJson's, for one), with
+ * whatever headers it carries (Retry-After, a cookie cleared), and
  * anything else is logged and answers 500.
  */
 export function api(fn: () => Promise<Response>): Promise<Response> {
   return fn().catch((e: unknown) => {
-    if (e instanceof HttpError) return refuse(e.status, e.code ?? codeFor(e.status), e.message, e.extra);
+    if (e instanceof HttpError) return e.toResponse(e.code ?? codeFor(e.status));
     console.error(e);
     return json({ error: 'Internal error' }, 500, { 'cache-control': 'no-store' });
   });

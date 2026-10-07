@@ -62,9 +62,12 @@ bucket_name = "bozzetto-assets"
 #                             # variable VITE_MEDIA_ORIGIN takes the same value.
 # TURNSTILE_SITE_KEY = "0x4AAAA..."
 #                             # the widget's key, sent to the client only while
-#                             # TURNSTILE_SECRET is set as well.
+#                             # TURNSTILE_SECRET is set as well. Staging may use
+#                             # Cloudflare's test pair, 1x00000000000000000000AA
+#                             # with the secret 1x0000000000000000000000000000000AA.
 # MAIL_FROM = "Bozzetto <login@vidarrapp.se>"
-#                             # the sender of sign-in codes and notices.
+#                             # the sender of sign-in codes and notices; with
+#                             # RESEND_API_KEY set and this not, mail is refused.
 # DEV_TEST_HOOKS = "true"     # LOCAL ONLY: the X-Test-Now clock and /api/dev/*.
 #                             # Honoured on a loopback host and nowhere else.
 # TURNSTILE_VERIFY_URL = "http://127.0.0.1:8789/verify"
@@ -75,9 +78,12 @@ bucket_name = "bozzetto-assets"
 # and locally in .dev.vars (gitignored) - never in this file:
 #   AUTH_SECRET       keys every HMAC: email codes, rate-limit buckets.
 #                     `openssl rand -base64 32`, one per project.
-#   TURNSTILE_SECRET  Turnstile's secret key.
+#   TURNSTILE_SECRET  Turnstile's secret key. Unset, Turnstile passes on a
+#                     loopback host and is refused (503) anywhere else.
 #   RESEND_API_KEY    Resend's API key. Unset, mail goes to dev_outbox on a
-#                     loopback host and is refused anywhere else.
+#                     loopback host (read it back with GET /api/dev/outbox?to=
+#                     under DEV_TEST_HOOKS) and is refused anywhere else.
+#                     At most 90 mails go out per UTC day.
 #
 # TERMS_VERSION is not a variable but a constant, in
 # functions/_shared/config.ts: it changes in the commit that changes

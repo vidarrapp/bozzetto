@@ -19,7 +19,10 @@ import { randomId, randomToken, sha256Hex } from '../crypto';
 export const SESSION_COOKIE = '__Host-bz_session';
 /** The WebAuthn ceremony in progress: its challenge is in pending_auth under this token's hash. */
 export const CEREMONY_COOKIE = '__Host-bz_wa';
-/** The email-code flow in progress (Batch 4), cleared by every sign-in all the same. */
+/**
+ * The email-code flow in progress (codes.ts): its code is in pending_auth
+ * under this token's hash. Cleared by every sign-in.
+ */
 export const FLOW_COOKIE = '__Host-bz_flow';
 
 const MINUTE = 60_000;
@@ -32,6 +35,8 @@ export const SESSION_TTL = 90 * DAY;
 export const SESSION_IDLE = 30 * DAY;
 /** What counts as recent authentication: adding or removing a passkey, and the like, need it. */
 export const RECENT_AUTH = 10 * MINUTE;
+/** How long the flow cookie lives: past its code's 10 minutes, and set again by each resend. */
+export const FLOW_TTL = 15 * MINUTE;
 /** last_seen_at is written at most this often, so most requests cost the one read and no write. */
 export const SEEN_EVERY = HOUR;
 
@@ -72,14 +77,21 @@ export function ceremonyCookie(token: string, ttlMs: number): string {
 
 export const clearCeremony = (): string => cookie(CEREMONY_COOKIE, '', 0, 'Strict');
 
+/** An email flow's cookie, SameSite=Strict, for FLOW_TTL. */
+export function flowCookie(token: string): string {
+  return cookie(FLOW_COOKIE, token, FLOW_TTL / 1000, 'Strict');
+}
+
+export const clearFlow = (): string => cookie(FLOW_COOKIE, '', 0, 'Strict');
+
 /** Every auth cookie, cleared: what signing out sends. */
 export function clearAuthCookies(): string[] {
-  return [cookie(SESSION_COOKIE, '', 0, 'Lax'), clearCeremony(), cookie(FLOW_COOKIE, '', 0, 'Strict')];
+  return [cookie(SESSION_COOKIE, '', 0, 'Lax'), clearCeremony(), clearFlow()];
 }
 
 /** What every sign-in sends: the new session, and the other auth cookies cleared (§2). */
 export function signInCookies(token: string): string[] {
-  return [sessionCookie(token), clearCeremony(), cookie(FLOW_COOKIE, '', 0, 'Strict')];
+  return [sessionCookie(token), clearCeremony(), clearFlow()];
 }
 
 /** A response with these Set-Cookie headers added, one each. */

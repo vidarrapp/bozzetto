@@ -22,7 +22,10 @@
 // as production's database meets 0003_accounts.sql. Its variables are the
 // ones docs/accounts.md §10 names: APP_ORIGIN, RP_ID=localhost, AUTH_SECRET,
 // DEV_TEST_HOOKS=true (the X-Test-Now clock, /api/dev/*), TURNSTILE_SECRET
-// and MEDIA_ORIGIN, with ACCOUNTS_ENABLED=true on `on` alone.
+// and MEDIA_ORIGIN, with ACCOUNTS_ENABLED=true on `on` alone. There is no
+// RESEND_API_KEY, so mail goes to dev_outbox (GET /api/dev/outbox), and
+// TURNSTILE_VERIFY_URL names a fake siteverify on node:http
+// (turnstile-fake.mjs), which the suites get as `turnstile`.
 //
 // Cloudflare Access is not there locally, so the suites play its part: an
 // admin request carries the Cf-Access-Authenticated-User-Email header that
@@ -52,6 +55,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checks } from '../e2e/lib.mjs';
 import { FILES_HOST, OWNER } from './lib.mjs';
+import { TURNSTILE_SECRET, startTurnstileFake } from './turnstile-fake.mjs';
 
 const repo = fileURLToPath(new URL('../..', import.meta.url));
 const suitesDir = fileURLToPath(new URL('./suites/', import.meta.url));
@@ -333,7 +337,9 @@ const base = mkdtempSync(join(tmpdir(), 'bozzetto-functions-'));
 const servers = {};
 const tally = [];
 let setupFailed = false;
+let turnstile = null;
 try {
+  turnstile = await startTurnstileFake();
   if (needed.length > 0) {
     const ports = Object.fromEntries(await Promise.all(needed.map(async (n) => [n, await freePort()])));
     const first = join(base, needed[0]);
@@ -349,7 +355,8 @@ try {
         RP_ID: 'localhost',
         AUTH_SECRET: secret,
         DEV_TEST_HOOKS: 'true',
-        TURNSTILE_SECRET: 'test',
+        TURNSTILE_SECRET,
+        TURNSTILE_VERIFY_URL: turnstile.url,
         MEDIA_ORIGIN: `http://${FILES_HOST}`,
         ...SERVERS[name],
       };
@@ -381,6 +388,7 @@ try {
       await suite.run({
         checks: counted,
         ...servers,
+        turnstile,
         repo,
         scratch,
         compileShared: () => compileShared(join(scratch, '_shared')),
@@ -398,6 +406,7 @@ try {
   console.error(err.message);
 } finally {
   await Promise.all(Object.values(servers).map(stopServer));
+  await turnstile?.close();
   const failed = tally.reduce((n, s) => n + s.failed, 0);
   // What a server said is most of a diagnosis when something failed.
   if (failed) {

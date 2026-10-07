@@ -12,7 +12,7 @@ import {
   type PasskeyFields,
 } from '../../../_shared/auth/account';
 import { answer, api, readBody, requireRecentAuth, requireUser } from '../../../_shared/auth/api';
-import { notify } from '../../../_shared/auth/notify';
+import { notify } from '../../../_shared/auth/mail';
 import { clearCeremony, userAgentOf, withCookies } from '../../../_shared/auth/session';
 import { notAccepted, relyingParty, takeCeremony, verifyRegistration } from '../../../_shared/auth/webauthn';
 
@@ -28,12 +28,12 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, dat
 // ID, user verification, not cross-origin), and recent authentication
 // (401 reauth). The name defaults from the user agent ("Safari on iPad");
 // one given is trimmed and cut to 64 characters. An account holds at most
-// 10 (400 with `limit`). Answers 201 {passkey}; the holder is told (mail,
-// Batch 4). Any failure of the passkey itself is the same 400.
+// 10 (400 with `limit`). Answers 201 {passkey}; the holder is told by
+// mail. Any failure of the passkey itself is the same 400.
 export const onRequestPost: PagesFunction<Env, string, RequestData> = (ctx) =>
   api(() => save(ctx)).then((res) => withCookies(res, [clearCeremony()]));
 
-async function save({ request, env, data }: EventContext<Env, string, RequestData>): Promise<Response> {
+async function save({ request, env, data, waitUntil }: EventContext<Env, string, RequestData>): Promise<Response> {
   const { now } = data;
   const ceremony = await takeCeremony(env, request, now);
   const { user } = requireRecentAuth(data.principal);
@@ -78,7 +78,7 @@ async function save({ request, env, data }: EventContext<Env, string, RequestDat
     throw err;
   }
   if (!added) throw new HttpError(`An account holds at most ${max} passkeys`, 400, 'bad_request', { limit: max });
-  await notify(env, user, 'passkey.added');
+  await notify(env, { request, now, waitUntil }, user, { kind: 'passkey.added', name });
   const row = await env.DB.prepare(`SELECT ${PASSKEY_COLUMNS} FROM credentials WHERE id = ?`)
     .bind(made.id)
     .first<PasskeyFields>();
