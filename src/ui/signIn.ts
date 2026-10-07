@@ -1,5 +1,5 @@
 import { desktopSignIn, isDesktop } from '../net/origin';
-import { accountsOn, errorText } from '../net/account';
+import { accountsOn, errorText, reloadConfig } from '../net/account';
 import { signOut, type SignInVia } from '../admin/api';
 import { readyToLeave } from './leaving';
 import { topChip } from './topbar';
@@ -41,7 +41,14 @@ export function signInHref(): string {
  * page is on its way out by then.
  */
 export async function signInAgain(via?: SignInVia, reason?: string): Promise<boolean> {
-  if (isDesktop()) return desktopSignIn().catch(() => false);
+  if (isDesktop()) {
+    const signedIn = await desktopSignIn().catch(() => false);
+    // The window asked the server afresh whether it has accounts; the
+    // retry that follows must choose its route by the same answer, as
+    // Server settings' sign-in does (desktop/ServerSettings).
+    void reloadConfig();
+    return signedIn;
+  }
   if (via !== 'access' && (await accountsOn())) {
     try {
       const { openSignIn } = await import('./account/signIn');

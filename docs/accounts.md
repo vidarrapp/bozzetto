@@ -2,14 +2,16 @@
 
 Design for release 0.6, written against 47caede and reviewed by the owner; the brief for the batches in §12. It takes the owner's decisions and the audit's requirements as given; where it had to choose, the reason follows in a line.
 
+Batches 1–9 built it, and Batch 10 brought this text in line with what they built: where the build departed from the design, the text says what was built, with the reason where one was needed. It is the reference for phases 2 and 3.
+
 ## Decisions in brief
 
-- **Identity.** One principal per request, resolved in a new root `functions/_middleware.ts`. `/admin/*` needs the Access JWT and the owner's app session; everything else needs the app session alone.
+- **Identity.** One principal per request, resolved in a new root `functions/_middleware.ts`. `/admin/api/*` needs the Access JWT and, once the owner has an account, the owner's app session; everything else needs the app session alone, and public files nothing at all.
 - **Sign-in.** Passkeys come first, via `@simplewebauthn/server` 14.0.3 (exact pin) and `@simplewebauthn/browser` 14.0.0.
   - Six-digit email codes cover sign-up, recovery and sign-in without a passkey.
   - Invites and Turnstile gate registration.
 - **Projects** gain `owner_id`, `template`, `storage_prefix` and `bytes`. Migration 0003 makes every public project a template. No R2 object moves, because the key prefix lives on the row.
-- **Files.** Private files are served only through authenticated app-origin routes. Public files (templates now, community work in phase 3) come from `files.vidarrapp.se`, a second custom domain on the same Pages project, served by code.
+- **Files.** Private files are served only through authenticated app-origin routes. Public files (templates now, community work in phase 3) come from `files.vidarrapp.se`, a second custom domain on the same Pages project, served by code. The app's own host serves the same files on `/m/` and `/media/`, and manifests name `/media/` there until `MEDIA_ORIGIN` and `APP_ORIGIN` are both set.
   - Why not an R2 public domain: it publishes every object by key, while "public" here is a row property that changes.
 - **Flag.** Everything sits behind `ACCOUNTS_ENABLED`; unset, the site is 0.5.5 with templates.
 - **Platform.** The design fits the Workers Free plan (10 ms of CPU and 50 subrequests per request, bindings included). Hence zips built on the client, deletion that resumes across requests, and one D1 read per session.
@@ -19,7 +21,7 @@ Design for release 0.6, written against 47caede and reviewed by the owner; the b
 - **No Node APIs.** The 14.0.3 ESM build has no `node:` imports and needs only `globalThis.crypto` and `SubtleCrypto`, both workerd globals. JSR lists Cloudflare Workers as a runtime.
 - **Runs on Web APIs alone.** An esbuild bundle ran a `none`-attestation registration and an assertion in a V8 context with only Web APIs, and refused a wrong origin.
 - **Cost.** 309 KB minified, 85 KB gzipped, and about 1 ms of CPU per warm assertion. It typechecks under `tsconfig.functions.json`.
-- **Next and fallback.** `check.mjs` confirms it in workerd. If it fails there, use 13.3.3: the same API, without 14.0.2's CRL fixes.
+- **In workerd.** The check suite runs it there (Batch 3), so 14.0.3 shipped. 13.3.3 stays the fallback: the same API, without 14.0.2's CRL fixes.
 
 ## 1. Data model
 
@@ -92,12 +94,14 @@ CREATE TABLE IF NOT EXISTS dev_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, at 
   to_addr TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL);       -- stub mailer, loopback only
 ```
 
-- **Visibility.** The landing shows `template = 1 AND visibility = 'public'`; a privatised template is `private`. Members' projects are always `private`: the member API refuses `public`, and nothing is unlisted.
+- **Visibility.** The landing shows `template = 1 AND visibility = 'public'`; a privatised template is `private`. Members' projects are always `private`: the member API refuses `public` (400), and nothing is unlisted.
+- **Public means template.** Only a template is ever public, so a project owner tools create as public, or make public, becomes one, handed over as the Template switch hands it (§5): nobody's, its bytes off its owner's usage, audited.
 - **Ownership.** Member writes use `WHERE id = ? AND owner_id = ?`. Owner tools use `WHERE id = ? AND (template = 1 OR owner_id IS ?)`.
 - **Usage** is `bytes_used` plus the user's `upload_parts`.
+- **`header_ok`** doubles as storage for what a scene upload's part 1 turned out to be: 0 until it passes, 1 for a bare `BOZ1` container (held to the declared size), and otherwise the unpacked size its gzip header gives, which the last part's ISIZE must match. A header is at least 12 bytes, so the two meanings never meet.
 - **Constraints.** Enumerated columns get CHECKs like `role`'s. `audit_log.detail` never holds an IP, code, token or email, and `rate_limits` holds IPs only as keyed hashes.
 - **Foreign keys.** D1 enforces them, and `projects.owner_id` has no ON DELETE action, so nobody who still owns projects can be deleted before R2 is cleared.
-- **`d1_migrations`** stays hand-kept: after the console run, `INSERT INTO d1_migrations (name) VALUES ('0003_accounts.sql');`. Staging uses `wrangler d1 migrations apply`.
+- **`d1_migrations`** stays hand-kept: after the console run, `INSERT INTO d1_migrations (name) VALUES ('0003_accounts.sql');`. Production has 0003 applied and recorded. Staging uses `wrangler d1 migrations apply`.
 
 ## 2. Identity and sessions
 
@@ -105,40 +109,43 @@ A root middleware compiles to `include: ["/*"]` (wrangler's `convertRoutesToGlob
 
 1. answers 404 on the `MEDIA_ORIGIN` host to anything but `GET /m/*`;
 2. runs `crossSiteWrite()`, moved unchanged out of `requireAdmin`, on every write;
-3. sets `ctx.data.principal`:
+3. sets `ctx.data.principal`, and `ctx.data.now`, the request's time (the clock, or `X-Test-Now` under the test hooks):
 
 ```ts
 type Principal =
-  | { kind: 'guest' }
+  | { kind: 'guest'; refused?: 'owner_session' | 'suspended' }
   | { kind: 'user'; user: UserRow; session: SessionRow; recentAuth: boolean }  // outside /admin/
-  | { kind: 'admin'; email: string; owner: UserRow | null };                    // /admin/* only
+  | { kind: 'admin'; email: string; owner: UserRow | null };                    // /admin/api/* only
 ```
 
-**On `/admin/*`:**
+**On `/admin/api/*`:**
 
-- **Lock 1** is today's `adminEmail()`, which verifies the Access JWT. It is enough alone while accounts are off or no owner exists (`owner: null`).
-- **Lock 2** applies once an owner exists: `__Host-bz_session` must belong to the `role = 'owner'` user.
-- **Failing lock 2** gives 403 `owner_session`, and the page opens the sign-in dialog.
+- **Lock 1** is today's `adminEmail()`, which verifies the Access JWT. It is enough alone while accounts are off or no owner exists (`owner: null`). `/admin/login`, the one other `/admin/` Function, reads no identity: Access has run before it, and all it does is send the browser back.
+- **Lock 2** applies once an owner exists: `__Host-bz_session` must belong to the `role = 'owner'` user. One read finds the owner and, when the cookie is theirs and good, the session.
+- **Failing lock 2** is a guest marked `refused: 'owner_session'`, never an admin, so no owner route can serve it by forgetting to check. `requireAdmin` answers 403 `owner_session`, and the page opens the sign-in dialog.
 
 **Elsewhere:**
 
 - Access headers and `CF_Authorization` are ignored.
 - No cookie is `guest`, with no query.
+- `/m/*` and `/media/*` are a guest's with no query, whatever cookie comes: public files are the same for everyone, and the timelapse viewer asks for hundreds. The files host is a guest's on every path.
 - A cookie costs one `sessions JOIN users` read by `token_hash`. It requires `revoked_at IS NULL`, `expires_at > now`, `last_seen_at > now − 30 d`, and status `active` (or `deleting`, which reaches only `POST /api/me/delete`).
 - A suspended account's cookie, its session revoked or not, is a guest that routes wanting an account answer 403 `suspended` rather than 401 `signin`, until the session's 90 days are up: signing in again would not help.
 - `last_seen_at` is rewritten at most hourly, in `waitUntil`.
 
-**Roles.** `functions/_shared/auth/permissions.ts` is the one map:
+**Roles:**
 
 - `owner`: everything;
 - `moderator`: `content.moderate` (no routes until phase 3) plus own projects;
 - `member`: own projects.
 
+Phase 1 needed no map for these, and has none: `requireUser` (`functions/_shared/auth/api.ts`) admits any signed-in account to its own rows, and `requireAdmin` (`principal.ts`) admits the owner through both locks. A moderator is a member until phase 3 brings the first `content.moderate` route, and `functions/_shared/auth/permissions.ts` with it.
+
 | Path | Credential | Grants |
 |---|---|---|
-| `/admin/*` | Access JWT + owner session (once an owner exists) | owner tools |
-| `/api/*`, app-origin `/m/*` | app session | own data, public reads |
-| `files.vidarrapp.se/m/*` | none | public files |
+| `/admin/api/*` | Access JWT + owner session (once an owner exists) | owner tools |
+| `/api/*` | app session | own data, public reads |
+| `files.vidarrapp.se/m/*`, app-origin `/m/*` and `/media/*` | none | public files |
 
 | Cookie | Value | Attributes | Max-Age |
 |---|---|---|---|
@@ -146,39 +153,43 @@ type Principal =
 | `__Host-bz_flow` | email-flow token (32 bytes) | same, SameSite=Strict | 15 min |
 | `__Host-bz_wa` | ceremony token (32 bytes) | same, SameSite=Strict | 5 min |
 
-- **Lifetimes.** Sessions last 90 days absolute and 30 days idle (the design proposed 60 and 14; an occasional sculptor on an iPad would be asked to sign in too often, and a passkey re-check is cheap). Recent authentication (`reauth_at`) means the last 10 minutes. Every sign-in mints a fresh token and clears the other cookies.
+- **Lifetimes.** Sessions last 90 days absolute and 30 days idle (the design proposed 60 and 14; an occasional sculptor on an iPad would be asked to sign in too often, and a passkey re-check is cheap). Recent authentication (`reauth_at`) means the last 10 minutes. Every sign-in mints a fresh token, clears the other cookies, and revokes the session the browser held, if any, in the same batch.
 - **CSRF, three layers:**
   - SameSite on every cookie.
   - `crossSiteWrite()`: Sec-Fetch-Site must be `same-origin` or `none`, else the Origin must match. This refuses the same-site files host too.
   - `readJson()` requires `application/json`, and binary bodies use `application/octet-stream`. Both force a preflight that nothing answers.
 - **Sessions.** `GET /api/me/account` lists them (id, client, user agent, dates, method, current). `DELETE /api/me/sessions/:id`, `POST /api/me/sessions/revoke-all {keepCurrent}` and `POST /api/auth/signout` revoke them. Suspension and deletion revoke them all.
 
-**Desktop.** Only `electron/server.cjs` changes.
+**Desktop.** The main process (`electron/server.cjs`) changes, with the preload's bridge and the renderer's Server settings:
 
-1. **`server:signIn`** reads `/api/config`. With accounts on, it opens `<server>/?signin=desktop` and polls for `__Host-bz_session` instead of `CF_Authorization`; with accounts off, it opens today's Access window.
+1. **The config decides.** The main process asks each server's `/api/config` whether it has accounts: once a run, and again at every sign-in, since a server can switch them on. One that did not answer is asked again after 30 seconds, not on every call meanwhile.
+2. **`server:signIn`.** With accounts on, it opens `<server>/?signin=desktop` and polls the jar for a new `__Host-bz_session` (not one it held before) instead of `CF_Authorization`; with accounts off, it opens today's Access window. A server whose config cannot be had is an error ("did not answer"), not a guess.
+   - A session the server still knows (`GET /api/me` answers 200) opens no window. One it refuses (401, or 403 suspended) is dropped first, so the page offers the sign-in again.
    - The page leads with the email code. An unsigned Electron build gets no Touch ID passkeys (that needs `app.configureWebAuthn` and a keychain entitlement), and platform passkeys elsewhere in Electron are unproven.
-   - It keeps "Use a passkey" for phones and security keys, sends `client: 'desktop'`, and skips the service worker.
-2. **`server:get`** reports signed in while the cookie exists. The renderer confirms with `GET /api/me`.
-3. **`server:signOut`** posts `/api/auth/signout` through the jar, then clears cookies.
-4. **`ALLOWED` gains `m`.** `HttpSource` already maps foreign frame URLs to the server path, and the app host serves template `/m/*`.
+   - It keeps "Use a passkey" for phones and security keys, sends `client: 'desktop'`, mails no link (it would open the default browser, not this window), offers no passkey afterwards, and skips the service worker.
+   - The window has no preload and no Node, runs in the OS sandbox, and is granted no permissions. It navigates over https, or to the server itself, and nowhere else; a link it opens goes to the browser (`https:`, `mailto:`) or nowhere.
+3. **`server:get`** reports signed in while the cookie that applies is in the jar: the session's on a server with accounts, Access's on one without, either while the server cannot say; and `accounts`, as the config said. The renderer confirms with `GET /api/me` (`src/desktop/serverAccount.ts`): signed in as whom, ended (401), suspended (403), or unconfirmed when there was no answer.
+4. **`server:signOut`** posts `/api/auth/signout` through the jar when it holds a session, then clears every cookie whatever the answer; `revoked` says whether the server ended it.
+5. **`ALLOWED` gains `m`.** The renderer asks for a file named on the files host by its path on the configured server (`serverPath()` in `src/net/origin.ts`), so the proxy stays pinned to that server, and the app host serves template `/m/*`.
+6. **The renderer's copy of the config** is kept for the page's life, so Server settings asks for it again (`reloadConfig()`) after another server is set or a sign-in, as does Sculpt's Sign in again. Publishing goes to the account's projects, as on the web.
 
 ## 3. Auth flows
 
-**Errors** are `{error, code}`. With accounts off, `/api/auth/*` and `/api/me/*` answer 404 `accounts_off`.
+**Errors** are `{error, code}`, and no cache keeps one. With accounts off, `/api/auth/*`, `/api/me/*`, the bootstrap, and the owner's invites and users answer 404 `accounts_off`.
 
 | Status | Codes |
 |---|---|
-| 400 | `bad_request`, `code_invalid {attemptsLeft}` |
+| 400 | `bad_request` (with `reason` where there is one), `code_invalid {attemptsLeft}` |
 | 401 | `signin`, `reauth` |
 | 403 | `cross_site`, `turnstile`, `suspended`, `owner_session` |
-| 404 | `not_found` (also anything not yours) |
+| 404 | `not_found` (also anything not yours), `accounts_off` |
 | 409 | `handle_taken`, `owner_exists` (the bootstrap, once there is an owner), `owner` (an owner tool on the owner's own account), `wrong_status {status}` (an account action from a status it does not start from) |
 | 410 | `invite_invalid`, `flow_expired` |
 | 413 | `file_too_large`, `quota_exceeded` |
 | 415 | `bad_type` |
 | 422 | `bad_scene` |
 | 429 | `rate_limited`, with Retry-After |
-| 503 | `accounts_off`, `not_configured`, `turnstile_down`, `mail_paused` |
+| 503 | `not_configured`, `turnstile_down`, `mail_paused` |
 
 **Rate limits** are fixed windows in `rate_limits`. Each is keyed by HMAC(AUTH_SECRET, IP or address), cut to 128 bits and kept 48 hours.
 
@@ -195,8 +206,12 @@ type Principal =
 
 **Config and identity.**
 
-- `GET /api/config` is public and returns `{accounts, rpId, turnstileSiteKey, mediaOrigin, termsVersion, limits}`.
+- `GET /api/config` is public and returns `{accounts, rpId, turnstileSiteKey, mediaOrigin, termsVersion, limits}`, kept a minute (`max-age=60`).
+  - `turnstileSiteKey` is sent only while `TURNSTILE_SECRET` is set too: a widget whose tokens nothing can check would only be in the way.
+  - `mediaOrigin` is sent only once `APP_ORIGIN` is set beside `MEDIA_ORIGIN`, since the files host lets the app's pages read it by naming `APP_ORIGIN`; until then it is null, and files are on the app's own `/media/`.
 - `GET /api/me` returns `{id, handle, role, status, usage: {used, reserved, quota}}`.
+  - It and `PATCH /api/me {handle}` are answered by `functions/api/me/[[path]].ts`, because Pages tries a catch-all with more segments first, and that one matches `/api/me` itself.
+  - Any other path under `/api/me` or `/api/auth`, or a route asked with a method it does not answer, is 404 `not_found`.
 - `GET /api/me/account` returns `{email, createdAt, termsVersion, passkeys, sessions}`.
 
 **Invite and registration.**
@@ -208,7 +223,7 @@ type Principal =
 3. **Start.** `POST /api/auth/register/start {invite, handle, email, acceptTerms, ageConfirmed, turnstile, link?}`:
    - checks Turnstile (`register`), the invite, the handle and the address;
    - stores the pending account in `pending_auth`, mails the code, and sets the flow cookie;
-   - returns 202 `{expiresAt, resendAfter: 60}`.
+   - returns 202 `{expiresAt, resendAfter: 60, resendsLeft}`, as every start and resend does.
 
    A registered address gets an "already registered" mail instead, and the same 202.
 4. **Verify.** `POST /api/auth/register/verify {code}` checks the code (see email code, step 3), then runs one D1 batch:
@@ -240,7 +255,7 @@ type Principal =
 **Email code (sign-in, recovery).**
 
 1. **Start.** `POST /api/auth/email/start {email, turnstile, link?}` checks Turnstile (`email-code`). It mails a code only if an active account has that address, but always returns 202 with the flow cookie.
-2. **Resend.** `POST /api/auth/email/resend {turnstile}` sends a new code: at most 3 sends per flow (the first included), 60 s apart.
+2. **Resend.** `POST /api/auth/email/resend {turnstile}` sends a new code: at most 3 sends per flow (the first included), 60 s apart. Each new code (and link) replaces the last, with 10 minutes and 5 attempts of its own.
 3. **Verify.** `POST /api/auth/email/verify {code}`:
    1. increments `attempts` `WHERE attempts < 5 AND expires_at > ? RETURNING …`; no row is 410 `flow_expired`;
    2. compares HMACs with `crypto.subtle.timingSafeEqual`; a mismatch is 400 `code_invalid`;
@@ -260,23 +275,26 @@ type Principal =
 - **Email and handle.** `POST /api/me/email/start {email, turnstile}` needs recent authentication and mails a code to the new address. `POST /api/me/email/verify {code}` swaps the address and tells the old one. `PATCH /api/me {handle}` works at most once per 30 days, and the old handle is retired for 90 days.
 - **Sign out everywhere.** `POST /api/me/sessions/revoke-all {keepCurrent: false}` revokes all sessions, audits, and clears the cookie.
 
-**Export.** `GET /api/me/export` returns `bozzetto-export/1` JSON:
+**Export.** `GET /api/me/export` needs recent authentication and returns `bozzetto-export/1` JSON:
 
 - account: handle, email, role, dates, terms;
 - passkeys: name, dates, type, AAGUID;
 - sessions;
-- projects: metadata, `data`, and files with sizes and `/api/me/media/…` URLs;
+- projects: metadata, `data`, and files with sizes and `/api/me/media/…?download=1` URLs;
 - audit rows.
 
-The client zips it with client-zip 2.5.1 (MIT, no dependencies), one file per request. The archive holds `account.json`, `projects/<slug>-<id>/{project.json, scene.bozz, thumb.jpg, frames/NNNN.glb}` and `README.txt`.
+The files come from R2 listings, at most 40 a request. An account past that (tens of thousands of files) gets `complete: false`, and the projects not listed name their files from their data, with `size: null`.
+
+The client zips it with client-zip 2.5.1 (MIT, no dependencies), one file per request. The archive holds `account.json`, `projects/<slug>-<id>/{project.json, scene.bozz, thumb.jpg, frames/NNNN.glb}` and `README.txt`, which also lists any file that could not be had.
 
 - **Why client-side:** a zip needs a CRC-32 over every byte, which is beyond 10 ms of CPU for 250 MiB; one file per request also stays far under 50 subrequests.
-- **iPad:** the zip is held in memory there, so per-project downloads remain the fallback.
+- **Where it goes:** where the browser has `showSaveFilePicker` (Chromium), the zip streams into the file picked, so its size is never held in memory; elsewhere it is a download once whole.
+- **iPad:** Safari holds that download in memory, so past 200 MB the export is offered a project at a time as well. A project's own download uses the same paths, so the parts unpacked together are the whole.
 
 **Deletion.** `POST /api/me/delete {handle}`.
 
-- **First call:** sets `status = 'deleting'`, revokes other sessions, audits, and mails.
-- **Each later call** (or the owner's Finish deletion) spends up to 40 subrequests on, in order:
+- **First call:** needs recent authentication and the handle, typed (400 `bad_request` with reason `handle` when it is not the account's). It sets `status = 'deleting'`, revokes the other sessions, audits, and mails the holder that the deletion has begun: the address is certain to be there then, and the holder hears of it while it runs.
+- **Every call,** the first one included (or the owner's Finish deletion), spends up to 40 subrequests on, in order:
   1. aborting uploads;
   2. per project, R2 `list` and `delete` (1,000 keys a call), then the row;
   3. sweeping `users/<uid>/`, except prefixes templates still use (owner only);
@@ -350,19 +368,20 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 - a type from a fixed per-file map;
 - `nosniff`;
 - `Content-Security-Policy: default-src 'none'; sandbox`;
-- `Content-Disposition: attachment; filename="<title>.bozz"` (`inline` for thumbnails);
-- a 404 for anything missing, private or not yours.
+- `Content-Disposition: attachment; filename="<title>.bozz"` (`inline` for thumbnails); on the private routes, `?download=1` makes any file a download named after its project, which My projects' Download and the export ask for;
+- one Range span, and the conditional headers, judged against the stored object;
+- a 404 for anything missing, private or not yours, the same in every case.
 
 | Route | Who | Caching, cross-origin |
 |---|---|---|
 | app `/api/me/media/:id/<file>` | the row's owner (`WHERE id = ? AND owner_id = ?`) | `private, no-store`; CORP `same-origin` |
 | app `/admin/api/media/*` | owner tools | as today |
-| `files.vidarrapp.se/m/:id/<file>` | anyone; public templates (phase 3: approved work) | `public, max-age=31536000, immutable` with the current `?v=` (scenes, and any other `?v=`, `public, no-cache`); ACAO `APP_ORIGIN`; CORP `same-site`; HSTS; Cache API after the row check |
+| `files.vidarrapp.se/m/:id/<file>` | anyone; public templates (phase 3: approved work) | `public, max-age=31536000, immutable` with the current `?v=` (scenes, and any other `?v=`, `public, no-cache`); ACAO `APP_ORIGIN`; CORP `same-site`; HSTS; the Cache API, read beside the row but answered from only once the row says the project is still a listed template, so a privatised one stops at once |
 | app `/m/*`, `/media/*` | public templates only | as above; `/media/*` serves 0.5 apps until 0.7 |
 
 - **No `MEDIA_ORIGIN`** (local, tests, previews), or no `APP_ORIGIN` for the files host to answer: manifests use same-origin `/media/`, which installed 0.5 desktop apps can reach until desktop 0.6 ships; `/m/` answers there too.
 - **Owner routes.** `/admin/api/projects*` and `/admin/api/media/*` stay for owner tools: templates and the owner's own projects, behind both locks.
-- **The owner's Sculpt saves** go to `/api/me/*`, like everyone's.
+- **The owner's Sculpt saves** go to `/api/me/*`, like everyone's, except a template opened from Projects (`&scope=admin`, §5), which saves back through `/admin/api`.
 
 ## 5. Templates and galleries
 
@@ -370,22 +389,29 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
   - It stays unversioned, so installed apps' worker rule (`/\/api\/projects/`) and their caches keep working.
   - Old clients' `mediaPath()` lands on `/media/*`.
 - **Landing.** The Create tile and the device's cards, then public templates for everyone.
-  - Scene templates open as copies (`/?sculpt=1&template=<id>`, no project link), so Save to library makes the user's own project, or a download for guests.
+  - Scene templates open as copies (`/?sculpt=1&template=<id>`, no project link and no device copy), so Save to library makes the user's own project, or a download for guests. The open asks before replacing work on the device, unless a card click a moment ago already asked.
   - Model and timelapse templates play in the viewer.
   - Armature templates need a server format, so they wait for phase 2.
 - **Projects page.** It lists templates and the owner's own projects. A **Template** switch sits beside Public/Private (`POST /admin/api/projects/:id/template {template}`).
   - On: `owner_id = NULL` and `template = 1`; the bytes leave the owner's usage.
-  - Off: the project returns to the owner, private.
+  - Off: the project returns to the owner's account, private; to nobody while there is no owner account yet, which is how the owner's projects are kept until the bootstrap claims them.
+  - Either way it is one conditional batch, audited (`project.template`), and `updated_at` moves, which retires every `?v=` its files were served under. A row that changed meanwhile is 409; asking for what already holds changes nothing.
   - On a template, Public/Private means listed or privatised.
+- **Public means template.** Making a project public from owner tools, when it is created or later, makes it a template, as the switch would (§1).
 - **Edit in Sculpt** (owner only, from Projects): `/?sculpt=1&project=<id>&scope=admin` loads and saves through `/admin/api`. Saves bump `updated_at`, so every `?v=` changes. From the gallery, the owner gets a copy like anyone else.
+  - Batch 2b shipped without `&scope=admin`: with accounts off, the owner's routes are where every save goes anyway. Batch 8 added it, with accounts on only, when the owner's own saves moved to `/api/me`.
 
 ## 6. Email and Turnstile
 
 **Resend.**
 
-- **Request.** `POST https://api.resend.com/emails` with `Authorization: Bearer RESEND_API_KEY`, `{from, to, subject, text, html}`, and `Idempotency-Key: <flow id>:<send n>` (kept 24 hours).
-- **Sender.** `Bozzetto <login@vidarrapp.se>` (`MAIL_FROM`). Tracking is off; it would route sign-in links through Resend.
-- **Mails sent:** codes; already registered; passkey added or removed; email changed (to the old address); suspended; deleted.
+- **Request.** `POST https://api.resend.com/emails` with `Authorization: Bearer RESEND_API_KEY`, `{from, to, subject, text}`, and `Idempotency-Key: <flow id>:<send n>` (kept 24 hours; a notice's key is a hash of the notice). Text alone: with no HTML there is no tracking pixel and no link rewritten through Resend, whatever the domain's settings say.
+- **Sender.** `Bozzetto <login@vidarrapp.se>` (`MAIL_FROM`). Tracking is off; it would route sign-in links through Resend. With `RESEND_API_KEY` set and `MAIL_FROM` not, mail is refused (503 `not_configured`).
+- **Delivery.** `sendMail(env, ctx, mail)` takes the request's context (`{request, now, waitUntil}`). It counts the mail against the day's cap, then hands it to Resend in `waitUntil`, so the answer's timing says nothing about whether an address has an account.
+  - No answer, a 429 or a 5xx is retried once, under the same key, so a mail Resend did take is not sent twice.
+  - No log line names an address: a failure is logged with anything shaped like one scrubbed out, a notice that could not go by the account's id, and the stub's line by its subject and outbox row.
+  - A notice never fails what it tells of: unconfigured, capped or refused, it is logged and dropped.
+- **Mails sent:** codes; already registered; passkey added or removed; email changed (to the old address); suspended, with the reason; being deleted, on a deletion's first call.
 
 ```
 Subject: 123456 is your Bozzetto code
@@ -419,15 +445,16 @@ The code field is `autocomplete="one-time-code" inputmode="numeric"`.
 
 - **Widget.** Rendered explicitly (`api.js?render=explicit`, `appearance: 'interaction-only'`) in Join, and wherever a code is requested or resent. Each submit uses a fresh token: tokens last 300 s and validate once.
 - **Server.** It posts `secret`, `response`, `remoteip` (not stored) and `idempotency_key` to `https://challenges.cloudflare.com/turnstile/v0/siteverify`. It requires `success`, `hostname` equal to APP_ORIGIN's host, and the expected `action`. If siteverify is unreachable, it tries once more under the same key, then answers 503 `turnstile_down`.
-- **No `TURNSTILE_SECRET`.** Loopback passes and `/api/config` sends `turnstileSiteKey: null`; other hosts answer 503.
-- **Testing.** Tests point `TURNSTILE_VERIFY_URL` (loopback only) at a fake. Staging can use Cloudflare's test keys: `1x00000000000000000000AA` with `1x0000000000000000000000000000000AA` pass, and the `2x…` keys fail. A test secret's answer names neither our host nor our action, so with one only `success` is checked.
-- **CSP.** `script-src` and `frame-src` add `https://challenges.cloudflare.com`; `connect-src` and `img-src` add the files host.
+- **No `TURNSTILE_SECRET`.** Loopback passes and `/api/config` sends `turnstileSiteKey: null`; other hosts answer 503 `not_configured`, as they do for a secret siteverify rejects, or for no `APP_ORIGIN` to check the host against.
+- **Testing.** Tests point `TURNSTILE_VERIFY_URL` (loopback only) at a fake (§10). Staging can use Cloudflare's test keys: `1x00000000000000000000AA` with `1x0000000000000000000000000000000AA` pass, and the `2x…` keys fail. A test secret's answer names neither our host nor our action, so with one only `success` is checked, and `APP_ORIGIN` is not needed; off loopback that is logged, since test keys keep nobody out.
+- **CSP.** `script-src` and `frame-src` add `https://challenges.cloudflare.com`; `connect-src` and `img-src` add the files hosts, production's and staging's (`public/_headers`). The policy is still report-only.
 
 ## 7. Client UI
 
 **The sign-in dialog.** Sign-in is a dialog, so the page and its work stay put, with no Access round trip.
 
-- It opens from the gallery chip, from Sculpt's notices (a failed save retries afterwards), and from `/?signin`, `/?invite=` and `/?link=`.
+- It opens from the gallery chip, from Sculpt's notices (a failed save retries afterwards), and from `/?signin`, `/?invite=` and `/?link=`. Each is taken off the address as it is read, so a reload or a shared address does not carry it on, and a link's token never stays in the history.
+- `/?signin=desktop` is the desktop app's sign-in window (§2): its sign-ins say `client: 'desktop'`, it leads with the code, its mail carries no link, no passkey is offered after it, and it registers no service worker.
 - **Sign in:** a passkey button, autofill on the email field, and "Email me a code".
 - **Join with an invite:**
   1. invite, live-checked handle, email, the 13+ and terms box, and Turnstile;
@@ -437,44 +464,48 @@ The code field is `autocomplete="one-time-code" inputmode="numeric"`.
 **Where passkeys work.**
 
 - Passkeys are bound to `rpId`, and `*.pages.dev` hosts never match it.
-- The client compares `rpId` from `/api/config` with `location.hostname`, and shows only email codes where they differ.
+- The client compares `rpId` from `/api/config` with `location.hostname`, and shows only email codes where they differ, or where the browser has no WebAuthn, saying why; Account then adds no passkey.
+- The desktop app's own pages never offer one either: Account says to add it in a browser, at the `rpId`.
 - `/?me`, `/?account` and the sign-in links are queries on `/`, which the worker's `navigateFallbackAllowlist` already serves offline.
 
-**Top row.** A guest sees Sign in and Install. Signed in, it shows My projects and an `@handle` menu (Account, Sign out). The owner also gets Owner tools.
+**Top row.** A guest sees Sign in and Install. Signed in, it shows My projects and an `@handle` menu (Account, Sign out). The owner also gets Owner tools. A suspended account is told so in the top row, the gallery, Sculpt and Account, and offered Sign out, never Sign in, since signing in again would not lift it.
 
 **My projects (`/?me`).**
 
 - A storage meter: used, reserved while uploading, quota.
-- Cards with thumbnail, renamable title, mode, size and date.
-- Actions: **Open** (Sculpt for scenes, else the viewer), **Download** (`.bozz` or a frames zip), **Delete**.
-- Read-only offline.
+- Cards with thumbnail, renamable title (up to 200 characters, as the server keeps), mode, size and date.
+- Actions: **Open** (Sculpt for scenes, else the viewer), **Download** (`.bozz` or a frames zip), **Delete**, which asks first and removes the device's copy too.
+- Read-only offline, from the worker's copy of the list; a scene the device has a copy of still opens, and nothing else does.
 
 **Account (`/?account`).**
 
 - Handle, and email changed by code.
 - Passkeys, and sessions (revoke one or all).
-- Download my data, and Delete account.
+- Download my data (§3, Export), and Delete account: the handle typed, then carried through to done, step by step, with what is left shown. The device's copies of the account's projects go with it; scenes kept only on the device stay.
 - The legal pages.
 
 **Save to library.**
 
 - **Guest:** downloads a `.bozz`, as today.
-- **Signed in:** saves to My projects. This is today's owner flow on `/api/me`.
-- **Expired sign-in:** the scene stays on the device as Not uploaded, and **Sign in** opens the dialog in place.
-- **Full quota:** the scene also stays: "Your storage is full (248 of 250 MB)".
+- **Signed in:** saves to My projects, the owner's saves included. This is today's owner flow on `/api/me`.
+- **Expired sign-in:** the scene stays on the device as Not uploaded, and **Sign in again** opens the dialog in place, then saves.
+- **Full quota:** the scene also stays: "Your storage is full (248 of 250 MB)". Where more than a megabyte is still free, it was this file that would not fit, and the notice says "There is not room for this in your storage (… used)".
+- **Suspended:** downloads a `.bozz`, as a guest's save does, and says why.
+- **A template opened from Projects** (`&scope=admin`, §5) saves back to the template through `/admin/api`.
 - **Capture** publishes to My projects, with no id and no visibility choice. Recording follows "signed in", not "owner".
 
 **Roles.**
 
-- `checkSignIn()` reads `/api/config`, then `GET /api/me`. A 401 means signed out, or expired where the device remembers a sign-in.
-- `Role` becomes `'owner'|'moderator'|'member'|'expired'|'guest'`.
+- `checkSignIn()` reads `/api/config`, then `GET /api/me`. A 401 means signed out, or expired where the device remembers a sign-in; a 403 `suspended` is signed in and suspended.
+- `Role` becomes `'owner'|'moderator'|'member'|'suspended'|'expired'|'guest'`.
 - With accounts off, the whoami probe stays.
 
 **Service worker.**
 
-- `/api/me` (no email in it) and `/api/me/projects` are NetworkFirst, and dropped on sign-out or 401.
-- `/api/me/account`, `/api/auth/*` and `/api/me/media/*` are never cached.
-- The thumbnail rule also takes `<VITE_MEDIA_ORIGIN>/m/<id>/thumb.jpg`, with `crossorigin="anonymous"` images.
+- `/api/me` (no email in it), `/api/me/projects` and its projects' manifests are NetworkFirst, and dropped on sign-out or 401.
+- `/api/config` is NetworkFirst too. It is read before the sign-in probe, so offline the last answer says which probe to trust, and online a switch made on the server is seen at once.
+- `/api/auth/*`, `/api/me/account`, `/api/me/export` and `/api/me/media/*` are never cached. Their rule is NetworkOnly and comes first: the first rule that matches is the one used, so none added later can keep them.
+- The thumbnail rule also takes `<VITE_MEDIA_ORIGIN>/m/<id>/thumb.jpg`, with `crossorigin="anonymous"` images. `VITE_MEDIA_ORIGIN` is read at build time, so the build is told the files host (anything but an origin fails it); unset, the rule takes the app's own `/m/` and `/media/` thumbnails alone.
 
 **iPad PWA.** It has its own cookie jar, and mail links open Safari. So codes are typed, and after an invite is redeemed in Safari the user signs in again in the app; the passkey is in iCloud Keychain.
 
@@ -482,12 +513,13 @@ The code field is `autocomplete="one-time-code" inputmode="numeric"`.
 - 17.4 replaced WebAuthn's user-gesture rule with rate limiting.
 - Safari's conditional UI regressed until 26.3.
 - Apple's forums report passkey prompts misbehaving more on pages opened from Home Screen shortcuts (iOS 18.6.2, unresolved).
+- After a code sign-in in Safari on an iPad or iPhone, the passkey offer says that Bozzetto on the Home Screen keeps a sign-in of its own, to sign in there too.
 
-Hence Batch 0: test on the real iPad first.
+Hence Batch 0: test on the real iPad first. It shipped as the Passkey check page (`/?passkeycheck`, or Preferences → Diagnostics), which talks to no server.
 
 ## 8. Owner tools (phase 1)
 
-These are tabs beside Projects on `/admin/`, behind Access and the owner session.
+These are tabs beside Projects on `/admin/` (`src/admin/{invites,users,audit}.ts`), behind Access and the owner session. They show only once accounts are on and the owner's account exists.
 
 - **Invites.**
   - Create with `{label, maxUses 1–500 (default 1), expiresInDays 1–90 (default 14)}`. The link is shown once.
@@ -499,7 +531,8 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
     - Suspend `{reason}`, which revokes sessions, drops uploads in progress and mails the user the reason, and Unsuspend, after which the user signs in again;
     - Revoke sessions, Quota override (1–102,400 MiB), Recount;
     - Finish deletion. Deletions pending over 24 hours are flagged (`pendingDeletions`), counted from the `account.delete` row.
-  - None of them suspends, signs out or deletes the owner's own account (409 `owner`); an action from the wrong status is 409 `wrong_status`.
+  - None of them suspends, signs out (Revoke sessions) or finishes deleting the owner's own account (409 `owner`); an action from the wrong status is 409 `wrong_status {status}`, and the page draws the account again as it now is.
+  - **Manage** on a row reads `GET /admin/api/users/:id`, which counts its passkeys and good sessions, and offers only what its status allows: Suspend and Revoke sessions while active, Unsuspend while suspended, Quota and Recount unless it is being deleted, and Finish deletion while it is. On the owner's own row, the actions the server would refuse are not offered at all.
   - The reason is kept on the user's row while suspended and mailed, but not audited: free text may name people.
   - Routes: `GET /admin/api/users?cursor=`, `GET /admin/api/users/:id`, `POST /admin/api/users/:id/{suspend,unsuspend,revoke-sessions,recount,finish-deletion}`, `PUT /admin/api/users/:id/quota`.
 - **Audit.**
@@ -507,13 +540,15 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
   - Nothing past 12 months (by the calendar) is listed, and each load deletes up to 500 such rows, oldest first.
   - It answers with accounts off too, since owner tools write to it then as the Access identity; invites and users are 404 `accounts_off`.
 - **Bootstrap.**
-  - With accounts on and no owner, "Create your account" calls `POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed}`. It needs Access alone, and is refused once an owner exists.
+  - With accounts on and no owner, "Create your account" calls `POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed}`. It needs Access alone, and is refused once an owner exists (409 `owner_exists`, whoever asks).
   - It creates the `role = 'owner'` user with the Access email and a 10 GiB quota, and claims the rows with `owner_id IS NULL AND template = 0`.
   - It then signs the owner in (method `bootstrap`) and offers a passkey.
 
 ## 9. Legal pages (outlines, not legal advice)
 
 `public/legal/privacy.html` and `public/legal/terms.html` (with sections `#content` and `#takedown`) are static and precached. They are linked from Join, Account and the gallery's foot. Join records `TERMS_VERSION` (`2026-10`); asking again after a change comes in phase 2.
+
+They shipped (Batch 7) with the owner's decisions as bracketed placeholders, marked `legal__todo`: the contact address, the takedown address, what the templates' copies may be used for, and nudity (open questions 4–6). They are written in before accounts are switched on (§11). The accounts e2e suite checks that the placeholders are there, so its legal-pages check changes with them.
 
 **Privacy notice.**
 
@@ -565,12 +600,14 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
 
 - It symlinks `node_modules` into its temp project, so wrangler resolves simplewebauthn.
 - It sets `APP_ORIGIN`, `RP_ID=localhost`, `ACCOUNTS_ENABLED=true`, `AUTH_SECRET`, `DEV_TEST_HOOKS=true` and `TURNSTILE_SECRET=test`.
-- It points `TURNSTILE_VERIFY_URL` at a node:http fake:
-  - `pass` passes;
-  - `pass-other-action` returns a different action;
+- It points `TURNSTILE_VERIFY_URL` at a node:http fake (`tests/functions/turnstile-fake.mjs`), which answers by the token, since siteverify names the widget's action and a fake can only learn it from the token:
+  - `pass:<action>` passes, for the app's host and that action;
+  - `pass-other-action` and `pass-other-host:<action>` pass for another action or another host;
   - `down` returns 500;
-  - anything else fails.
+  - `error:<code>` fails with that error code;
+  - anything else fails, and so does any secret but the harness's. Every request is kept, so a suite can see what the server sent.
 - It honours an `X-Test-Now` clock on loopback with hooks on.
+- The same hooks (`DEV_TEST_HOOKS`, loopback only: 404 anywhere else, and the WAF blocks `/api/dev/` in production) answer `GET /api/dev/principal` (who the middleware decided was asking, and when), `/api/dev/outbox?to=`, `/api/dev/r2?prefix=`, `/api/dev/rows?user=`, `/api/dev/user?id=|email=` and `/api/dev/audit?subject=`.
 - It adds `tests/functions/authenticator.mjs`, the software ES256 authenticator used for the check above.
 
 **Suites.**
@@ -609,7 +646,9 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
 - **owner tools:** suspend, quota, audit rows without personal data.
 - **accounts off.**
 
-**E2E.** `tests/e2e/accounts.mjs` runs on `wrangler pages dev dist` at `http://localhost:<port>`, because WebAuthn takes `localhost` as an RP ID but not an IP. Codes come from the outbox, and Turnstile is bypassed.
+As built, the suites are `access-gate`, `accounts-off`, `admin`, `codes`, `config`, `content`, `crypto`, `csrf`, `deletion`, `email-change`, `export`, `handles`, `isolation`, `keys`, `limits`, `locks`, `mail`, `media`, `media-private`, `migration`, `owner-tools`, `passkeys`, `principal`, `quota`, `ratelimit`, `registration`, `routes`, `sessions`, `templates`, `templates-list`, `uploads` and `visibility`: 1,568 checks, run whole by `npm run check:functions` in about a minute.
+
+**E2E.** `tests/e2e/accounts.mjs` runs on `wrangler pages dev dist` at `http://localhost:<port>`, because WebAuthn takes `localhost` as an RP ID but not an IP. Codes come from the outbox. Turnstile's script is a stand-in that hands each widget a `pass:<action>` token, which the server checks with the fake siteverify above.
 
 - **Authenticator.** CDP `WebAuthn.enable`, then `WebAuthn.addVirtualAuthenticator` with `{options: {protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, defaultBackupEligibility: true, defaultBackupState: true}}`. `WebAuthn.setUserVerified` covers the UV failure.
 - **Path:**
@@ -621,15 +660,18 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
   6. Copy a template.
   7. Export the zip.
   8. Delete the account.
-- **Desktop.** `desktop.mjs` adds sign-in and sign-out against a local server.
-- **CI.** The accounts suite joins `e2e-smoke`.
+- **As built,** the path also takes in: a code sign-in after a wrong code; the handle and the address changed; codes alone on `127.0.0.1`; a mailed link; a resend; the desktop app's sign-in window; a used-up invite; the legal pages; the owner's Create your account and the second lock; a template edited from Projects; a suspension, as each page tells it; a quota the owner lowers, and sessions the owner revokes, as Save to library meets them; Capture; the owner's Invites, Users and Audit tabs. Before any of it, it checks the build: the worker's rules, the legal pages in the precache, and the policy admitting Turnstile. Copying a template is the `templates` suite's, against mocks.
+- **Desktop.** `desktop.mjs` adds sign-in and sign-out against a local server (Batch 9: 91 checks, 46 of them on the packaged app).
+- **CI.** The accounts suite joins `e2e-smoke` (Batch 10), as a step of its own after the smoke suites.
 
 ## 11. Rollout
 
-1. Apply 0003 in the console and record it; deploy Batches 1–2. The gallery shows the same set as before, now as templates.
-2. Bring `files.vidarrapp.se` live, then set `MEDIA_ORIGIN`.
+1. Apply 0003 in the console and record it; deploy Batches 1–2. The gallery shows the same set as before, now as templates. (0003 is applied in production and recorded.)
+2. Bring `files.vidarrapp.se` live, then set `MEDIA_ORIGIN`, with `APP_ORIGIN` beside it: until both are set, manifests keep naming the app's own `/media/` (§3, Config). Build with `VITE_MEDIA_ORIGIN` set to the same origin, so the worker keeps the files host's thumbnails.
 3. Deploy Batches 3–9 with `ACCOUNTS_ENABLED` unset in production and `true` on staging. Test there, the real iPad included.
-4. Set the production secrets and `ACCOUNTS_ENABLED=true`. The owner bootstraps, then sends the first invites. Desktop 0.6.0 follows.
+4. Write the owner's decisions into the legal pages (§9). Set the production secrets and `ACCOUNTS_ENABLED=true`. The owner bootstraps, then sends the first invites. Desktop 0.6.0 follows.
+
+Until step 4, production is 0.5.5 with templates: `/api/config` says `accounts: false`, `/api/auth/*` and `/api/me/*` answer 404 `accounts_off`, and the owner signs in through Access alone.
 
 **Staging** is a second Pages project, `bozzetto-staging`, on the same repository with production branch `staging`.
 
@@ -642,17 +684,17 @@ Why not the Preview environment: its bindings and secrets would reach every bran
 **Owner's checklist:**
 
 - [ ] **Resend.** Account, domain, the records in §6, tracking off. Store `RESEND_API_KEY` as a secret in both projects.
-- [ ] **Turnstile.** One Managed widget for both app hosts. Set `TURNSTILE_SITE_KEY` as a variable and `TURNSTILE_SECRET` as a secret.
+- [ ] **Turnstile.** One Managed widget for both app hosts, `bozzetto.vidarrapp.se` and `bozzetto-staging.vidarrapp.se`. Set `TURNSTILE_SITE_KEY` as a variable and `TURNSTILE_SECRET` as a secret.
 - [ ] **`AUTH_SECRET`.** Generate it with `openssl rand -base64 32`; store it as a secret in each project.
-- [ ] **Variables.** `APP_ORIGIN=https://bozzetto.vidarrapp.se`, `RP_ID=bozzetto.vidarrapp.se`, `MEDIA_ORIGIN=https://files.vidarrapp.se`, `MAIL_FROM`, `ACCOUNTS_ENABLED`. Build variables: `VITE_MEDIA_ORIGIN`, and `NODE_VERSION=22` (simplewebauthn 14 targets Node 22).
+- [ ] **Variables.** `APP_ORIGIN=https://bozzetto.vidarrapp.se`, `RP_ID=bozzetto.vidarrapp.se`, `MEDIA_ORIGIN=https://files.vidarrapp.se`, `MAIL_FROM`, `ACCOUNTS_ENABLED`. Build variables: `VITE_MEDIA_ORIGIN`, and `NODE_VERSION=22` (simplewebauthn 14 and its x509 dependency need Node 20 or later; CI runs 22).
 - [ ] **Files domain.** `files.vidarrapp.se` as a custom domain on the Pages project; the dashboard makes the proxied CNAME.
 - [ ] **WAF custom rules** (Free allows 5):
-  - Block `http.host eq "files.vidarrapp.se" and not starts_with(http.request.uri.path, "/m/")`.
+  - Block `http.host in {"files.vidarrapp.se" "files-staging.vidarrapp.se"} and not starts_with(http.request.uri.path, "/m/")`. The Functions refuse anything else there already; the rule keeps the static files, which never reach them, off the files hosts.
   - Block `starts_with(http.request.uri.path, "/api/dev/")`.
 - [ ] **WAF rate limiting.** Free allows one rule (10 s window, per IP, path only).
   - Free: `starts_with(http.request.uri.path, "/api/auth/")` over 20 in 10 s → block 10 s.
   - Pro adds a second: `starts_with(http.request.uri.path, "/m/") or starts_with(http.request.uri.path, "/media/")` over 600 a minute → block a minute. Keep it generous, because timelapses prefetch hundreds of frames.
-- [ ] **Addresses.** The privacy and takedown addresses exist, and the README checklist gains these items.
+- [ ] **Addresses.** The privacy and takedown addresses exist, and are written into the legal pages with the owner's other decisions (§9). The README's Security settings checklist carries these items (Batch 10).
 
 **What ships when:**
 
@@ -679,6 +721,16 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
 | 8 | Client: My projects, Sculpt | `/?me`, Save to library and Capture for members, export zip, SW rules | `src/ui/account/myProjects.ts`, `src/sculpt/bridge/{FileActions,SceneProjects,GallerySave}.ts`, `src/sculpt/ui/*`, `vite.config.ts` | e2e accounts |
 | 9 | Desktop, owner UI | sign-in window, Server settings; admin tabs | `electron/server.cjs`, `src/desktop/ServerSettings.ts`, `src/admin/{invites,users,audit}.ts` | `desktop.mjs`, e2e |
 | 10 | Docs, release | README (Deployment, checklist, Changelog), `docs/accounts.md`, `SECURITY.md`, 0.6.0 | | |
+
+**As built.** Batches 0–9 are done; Batch 10 brought this text, the README, `SECURITY.md` and CI in line, and the version and the release are the owner's. The main files differ from the plan in places:
+
+- **No `functions/_shared/auth/permissions.ts`** (§2, Roles). `GET` and `PATCH /api/me` are in `functions/api/me/[[path]].ts`, not an `index.ts` (§3).
+- **Batch 3** added `functions/_shared/auth/{account,api,gate}.ts` (the account's views, the `{error, code}` wrapper and `requireUser`, the `accounts_off` gate) and brought `ratelimit.ts` forward from Batch 4.
+- **Batch 4** put the email flows end to end in `functions/_shared/auth/flows.ts` and invites in `auth/invites.ts`.
+- **Batch 5** added `functions/_shared/{content,deletion}.ts`, and `shared/bozz.ts`, which both tsconfigs include.
+- **Batch 6** added `functions/_shared/{users,owner}.ts`.
+- **Batch 7** added `src/ui/account/{signIn,account,menu,links,parts,myProjects}.ts`, `src/admin/ownerSession.ts` and `public/legal/theme.js`; **Batch 8** `src/ui/account/{archive,zip}.ts`; **Batch 9** `src/desktop/serverAccount.ts` and the preload's bridge.
+- **Batch 10** added `reloadConfig()` (§2, Desktop) and the accounts suite in CI.
 
 **Order:**
 

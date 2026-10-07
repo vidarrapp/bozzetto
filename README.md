@@ -17,6 +17,7 @@ It installs to an iPad's home screen and works offline, and there are desktop bu
 | `/?sculpt=1&project=<id>` | A scene from Projects, open in Sculpt |
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
+| `/?me`, `/?account` | My projects and Account, once the site has accounts |
 | `/create/` | Timelapse uploader (**Create → Upload timelapse**), no sign-in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
@@ -294,6 +295,18 @@ Package step, and drop the `CSC_IDENTITY_AUTO_DISCOVERY: false` line there.
 - **Record reel** exports the timelapse or a turntable spin as MP4 or GIF, up to 1080p, with a choice of aspect.
 - Export a self-contained `.html` that opens offline.
 
+### Accounts
+
+Off until the site's owner turns them on (see Deployment); until then the site works as it always has, and Cloudflare Access signs the owner in.
+
+- **By invite.** An invite link opens **Join**: a handle, an email address, a box to confirm you are 13 or older and accept the Terms, and Cloudflare's bot check; a six-digit code by mail finishes it.
+- **Passkeys and email codes.** Sign in with a passkey (Face ID, Touch ID, a phone or a security key) or a code mailed to you, in a dialog over the page, so the work on it stays put. No passwords.
+- **My projects.** Save to library and Capture keep your work on the server, private to you, in 250 MB of your own, with a meter that shows how much is used. Open, rename, download and delete it from **My projects**, where the list stays readable offline.
+- **Your data, and leaving.** **Account** changes your handle and address, manages passkeys and where you are signed in, downloads everything the site keeps about you as one zip, and deletes the account with everything in it.
+- **Templates.** The gallery's templates open as copies that are yours to keep.
+- **Owner tools.** Invites, the accounts (suspend, sign out, quota, recount, finish a deletion) and the audit log, on `/admin/`, behind Cloudflare Access and the owner's own account.
+- **Privacy.** No analytics and no ads; the Privacy notice and the Terms are at `/legal/`.
+
 ### Platform
 
 - Serverless on Cloudflare: metadata in D1, meshes and scene files in R2, every API route a Pages Function. A scene saved from Sculpt is a `.bozz` file in R2 beside its thumbnail, uploaded in parts.
@@ -377,25 +390,35 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+**Accounts, ready for the site's owner to switch on; templates in the gallery; colour picked off the view.**
+
+**The gallery shows the site's templates.**
+
+- **Templates in the gallery.** What the gallery shows is now the site's templates, each card badged **Template**. A model or a timelapse still plays in the viewer. A scene opens in Sculpt as a copy that belongs to no project, so **Save to library** keeps it as your own, as it does any new scene: a `.bozz` download for a guest, a new private project when you are signed in, and never a save over the template; nothing of it goes on the device's shelf. Opening one asks first when there is work in progress on the device, as every card does, and Sculpt asks when the link came from elsewhere. Signed in, the gallery and the Projects page list the templates beside your own work, those taken off the gallery too; making a project public makes it a template, which the **Private** switch now says, and each row on the Projects page has a **Template** switch beside it. On, the project belongs to no one and **Private** says whether the gallery lists it; off, it is yours again, and private. **Open in Sculpt** there still opens a template itself, to edit, and saves it back there.
+- **Ready for a files host.** Once the server names one for the templates' files (`files.vidarrapp.se`), their pictures and files come from there. The pictures are asked for in a way the installed app can keep, as it keeps the others, when the build is told the host (`VITE_MEDIA_ORIGIN`), and the desktop app asks its own server for the same files. The installed app never keeps what accounts add for signing in, the account itself or a member's own files, and the site's Content-Security-Policy, still report-only, names the files hosts.
+
+**Accounts, off until the site's owner switches them on.** Everything in this part waits for the owner to set the secrets for mail, the bot check and the sign-in codes, and to turn on `ACCOUNTS_ENABLED` (see Deployment). Until then none of it shows: the site is as it was, with templates, and Cloudflare Access signs the owner in.
+
+- **Sign in with a passkey or a code.** The gallery's top row has **Sign in**, which opens a dialog over the page instead of leaving it, so whatever is on the page stays put: **Use a passkey**, the passkeys the device keeps for the site among the email field's suggestions, or **Email me a code**, six digits that work once, for ten minutes, and can be sent again after a minute. After a sign-in by code a passkey is offered, and offered again next time if you skip it; on an iPad or iPhone the offer also says that Bozzetto on the Home Screen keeps a sign-in of its own, to sign in to there too. Where the page's address is not the one passkeys belong to (a preview, an IP address), or the browser has none, only codes are offered, saying why, and Account adds no passkey there. Signed in, the top row has **My projects** and your **@handle**, which holds **Account** and **Sign out**; the owner also has **Owner tools**. For offline use the installed app keeps who is signed in (never the address), until you sign out, and the site's own settings.
+- **Join with an invite.** An invite link opens **Join**. The invite is checked as it opens and your handle as you type it (free, taken, reserved, or held for 90 days after someone gave it up); then your email address, a box to confirm you are 13 or older and accept the Terms, including the content policy, and Cloudflare's bot check, which only shows itself when it needs you. A code comes by mail to finish; in a computer's browser the mail also carries a link that finishes it in the browser that asked, and the tab that asked carries on by itself.
+- **Save to library and Capture for everyone signed in.** **Save to library** in Sculpt saves to your own **My projects**, whoever you are, the owner included, with no id or visibility to choose, and saving again updates the same project; a guest still gets a `.bozz` file. A save that finds the sign-in gone keeps the scene on the device as **Not uploaded**, and **Sign in again** on its notice opens the sign-in dialog in place, then saves; an upload from a gallery card does the same. If your storage is full, the scene stays too, and the notice says so with the numbers, for example "Your storage is full (248 of 250 MB)". **Upload to My projects** on a gallery card sends a scene kept only on the device. The Capture window publishes a timelapse or a model to **My projects** too, by title alone, and recording works for anyone signed in.
+- **My projects.** **My projects** (`/?me`) lists your own work: how much of your storage it takes, as a bar with what is stored, what an upload in progress holds and your quota (250 MB), then a card for each project with its picture, title, kind, size and date. **Open** opens a scene in Sculpt and a timelapse or a model in the viewer; **Download** saves a scene's `.bozz` file, or a zip of a timelapse's or a model's frames with its settings; **Rename** changes the title (up to 200 characters); **Delete** asks first, then removes it from the server and from the device. Offline the page shows the list as it was last seen, and only a scene the device has a copy of opens.
+- **Account.** **Account** (`/?account`) changes your handle, once in 30 days, and your address, by a code sent to the new one, which the old one is told of. It adds, renames and removes passkeys, and lists where you are signed in, to sign any of it out, or everywhere else. Adding or removing a passkey and changing the address ask you to confirm it is you, with a passkey or a code, when your sign-in is more than ten minutes old; so do **Download my data** and **Delete account**.
+- **Download my data.** **Account → Download my data** gathers everything the site keeps about your account and your projects' files, and zips them in the browser: `account.json`, a folder per project with its settings, scene, picture and frames, and a `README.txt` saying what each is. In a browser that can, you choose where the zip goes and it is written there as it is made; elsewhere it downloads once it is complete. Over 200 MB, which an iPad has to hold in memory, it can also be downloaded a project at a time.
+- **Delete account.** **Account → Delete account** asks you to type your handle, then deletes the account and everything in it a step at a time, showing how much is left, and takes you to the gallery, signed out; a mail tells you it has begun. The device's copies of your projects go with it; scenes kept only on the device stay. If it stops part way, **Finish deleting** carries it on, and the site's owner can finish it too.
+- **A suspended account is told why.** An account the owner has suspended is told so in the top row, the gallery, Sculpt and Account, and the mail it was sent gives the reason. It is offered **Sign out**, never a sign-in, since signing in again would not lift it, and its **Save to library** downloads a `.bozz` file instead. Its work is kept.
+- **The owner's account.** `/admin/` offers **Create your account** the first time: a handle and the terms, for the address Cloudflare Access signed you in with. Your projects become the account's, and a passkey is offered. From then on the owner tools want the account signed in as well as Access, and ask for it in the dialog, in place.
+- **Owner tools: Invites, Users and Audit.** `/admin/` has tabs beside **Projects** for the owner's tools over accounts: make and withdraw invite links, each shown once as it is made, with **Copy**; see the accounts, with their storage against the quota, and suspend or unsuspend one (the reason is mailed to its holder), sign one out everywhere, set its quota, count its storage again, or finish a deletion it left half done (flagged once it has waited a day); and read the audit log, filtered by action or subject. Refusals are said as sentences: your own account is never suspended or signed out from there, and an action an account has moved past since the page drew it says so and shows it as it now is.
+- **Desktop app: sign in with your account.** On a server with accounts, **Server → Sign In** opens the site's own sign-in in its window, leading with a code by email; the mail carries no link, which would open another browser, and a passkey on a phone or a security key works too. The window closes by itself once you are in, its sign-in marked as the app's, and **Server Settings** says which account you are signed in as, asking the server rather than trusting what the app keeps: a sign-in ended elsewhere reads as ended, and **Sign In** starts afresh. After another server is set, or a sign-in, the app asks the server afresh what it offers, so a server that has switched accounts on since the app opened is treated as one. **Save to Library** and the Capture window's publishing go to your own **My projects**, the owner's too, as on the web. **Sign Out** ends the session on the server, then lets the app's cookies go. On a server without accounts, Cloudflare Access signs you in, as before.
+- **Privacy notice and Terms.** `/legal/privacy.html` and `/legal/terms.html`, the Terms with the content policy and how to report content, linked from Join, Account and the gallery's foot, and kept for offline use. The owner's decisions are still to be written in, in brackets. The Content-Security-Policy, still report-only, admits Cloudflare's bot check.
+
+**Colour picked off the view, the remesh's grid, and a passkey check.**
+
 - **Sculpt colours or one plain colour.** A sculpt published from Sculpt mode carries its paint as vertex colours, which stood in for the albedo, so the Render panel's albedo did nothing to it. A model with colours now gets a **Colour** switch in the Material section: **Sculpt colours**, the default, with no albedo row since it would do nothing, or **Plain colour**, which sets the paint aside for the albedo. The choice is part of the look: **Save look** keeps it, the single-file export carries it, and a look saved before it opens on the model's own colours. Sculpt mode always shows its paint.
 - **Pick a background or light colour off the view.** The background's swatch and each light's now pick as the paint brush's does, in Sculpt, Armature and the editors' previews: drag the swatch onto the view and the colour under the pointer is applied as you move, read from the frame as it was when the drag began. Let go over the view to keep it, or anywhere off it, over a panel say, to put the colour back. The Pinch icon stands in as the cursor until there is an eyedropper. Letting go over the swatch no longer opens its picker.
 - **A larger colour picker.** The saturation/value field and the hue strip are twice the size, and the picker opens beside its panel rather than over the panel's rows, still fitting beside an open panel on an iPad held upright. The H row is gone, since the hue strip sets the hue; S and V take typed values like every other slider.
 - **See the voxel grid, up to 512.** While the remesh **Resolution** slider is held, in the Model panel or in Armature's Send to Sculpt, the grid the remesh will build is drawn over the view: its cells on the three faces of the object's box nearest the camera, with a caption giving one voxel's size on screen and the memory the remesh will take. The resolution now goes to 512, on the slider and typed (it stopped at 300 and 400). A remesh, merge or Send to Sculpt that would need more memory than the device can spare, a quarter of what the browser reports or 1 GB where it reports nothing (Safari), is refused before it starts, saying how high this object can go, instead of taking the tab down; the remesher also gives its working memory back when it is done.
-- **Passkey check.** Accounts will sign in with passkeys and guard sign-up with Cloudflare's Turnstile, and before anything is built on them a test page finds out whether they work where it matters most: on the iPad, in Safari and in the app installed on the Home Screen, which keeps its own sign-ins and where passkey prompts are reported to misbehave. **Edit → Preferences → Diagnostics → Passkey check…**, or `/?passkeycheck`, opens it, offline too. It says how the page was opened and what the browser offers, creates a test passkey, signs in with it, with any passkey for the site and from an email field's suggestions, and loads the bot check with Cloudflare's test key; **Copy report** copies every result as text. Nothing is sent to Bozzetto's server. The test passkey is a real entry in the device's password manager, named "Bozzetto passkey check" with the date, and the page says how to delete it. The desktop app has no such page.
-
-- **Templates in the gallery.** What the gallery shows is now the site's templates, each card badged **Template**. A model or a timelapse still plays in the viewer. A scene opens in Sculpt as a copy that belongs to no project, so **Save to library** keeps it as your own, as it does any new scene: a `.bozz` download for a guest, a new private project when you are signed in, and never a save over the template; nothing of it goes on the device's shelf. Opening one asks first when there is work in progress on the device, as every card does, and Sculpt asks when the link came from elsewhere. Signed in, the gallery and the Projects page list the templates beside your own work, those taken off the gallery too; making a project public makes it a template, which the **Private** switch now says, and each row on the Projects page has a **Template** switch beside it. On, the project belongs to no one and **Private** says whether the gallery lists it; off, it is yours again, and private. **Open in Sculpt** there still opens a template itself, to edit.
-- **Ready for a files host.** Once the server names one for the templates' files (`files.vidarrapp.se`), their pictures and files come from there. The pictures are asked for in a way the installed app can keep, as it keeps the others, when the build is told the host (`VITE_MEDIA_ORIGIN`), and the desktop app asks its own server for the same files. The installed app never keeps what accounts will add for signing in, the account itself or a member's own files, and the site's Content-Security-Policy, still report-only, names the files hosts.
-- **Sign in, when the site has accounts.** With accounts switched on, the gallery's top row has **Sign in**, which opens a dialog over the page instead of leaving it: **Use a passkey**, the passkeys the device keeps for the site among the email field's suggestions, or **Email me a code**, six digits that work once, for ten minutes, and can be sent again after a minute. After a sign-in by code a passkey is offered, and offered again next time if you skip it; on an iPad or iPhone the offer also says that Bozzetto on the Home Screen keeps a sign-in of its own, to sign in to there too. Where the page's address is not the one passkeys belong to (a preview, an IP address), or the browser has none, only codes are offered, saying why, and Account adds no passkey there. Signed in, the top row has **My projects** and your **@handle**, which holds **Account** and **Sign out**; the owner also has **Owner tools**. A save in Sculpt, or an upload from the gallery, that finds the sign-in gone still keeps the scene on the device, and its **Sign in again** now opens the same dialog, then saves. For offline use the installed app keeps who is signed in (never the address), until you sign out, and the site's own settings. An account the owner has suspended is told so in the top row, the gallery, Sculpt and Account (the mail it was sent says why), and offered **Sign out**, never a sign-in, since signing in again would not lift it; its **Save to library** downloads a `.bozz` file instead. `/?signin=desktop` is the page the desktop app signs in through (below): it leads with the code, its mail carries no link, no passkey is offered after it, its sign-in is marked as the app's, and it installs nothing for offline use. With accounts off nothing changes: Cloudflare Access signs the owner in, as before.
-- **Join with an invite.** An invite link opens **Join**. The invite is checked as it opens and your handle as you type it (free, taken, reserved, or held for 90 days after someone gave it up); then your email address, a box to confirm you are 13 or older and accept the Terms, including the content policy, and Cloudflare's bot check, which only shows itself when it needs you. A code comes by mail to finish; in a computer's browser the mail also carries a link that finishes it in the browser that asked, and the tab that asked carries on by itself.
-- **Account.** **Account** (`/?account`) changes your handle, once in 30 days, and your address, by a code sent to the new one, which the old one is told of. It adds, renames and removes passkeys, and lists where you are signed in, to sign any of it out, or everywhere else. Adding or removing a passkey and changing the address ask you to confirm it is you, with a passkey or a code, when your sign-in is more than ten minutes old; so do **Download my data** and **Delete account** (below).
-- **My projects.** With accounts on, **My projects** (`/?me`) lists your own work: how much of your storage it takes, as a bar with what is stored, what an upload in progress holds and your quota, then a card for each project with its picture, title, kind, size and date. **Open** opens a scene in Sculpt and a timelapse or a model in the viewer; **Download** saves a scene's `.bozz` file, or a zip of a timelapse's or a model's frames with its settings; **Rename** changes the title (up to 200 characters); **Delete** asks first, then removes it from the server and from the device. Offline the page shows the list as it was last seen, and only a scene the device has a copy of opens.
-- **Save to library and Capture for everyone signed in.** With accounts on, **Save to library** in Sculpt saves to your own **My projects**, whoever you are, the owner included, with no id or visibility to choose, and saving again updates the same project; a guest still gets a `.bozz` file. If the sign-in has gone, the scene stays on the device as **Not uploaded**, and **Sign in again** on the notice opens the sign-in dialog in place, then saves. If your storage is full, the scene stays too, and the notice says so with the numbers, for example "Your storage is full (248 of 250 MB)". **Upload to My projects** on a gallery card sends a scene kept only on the device. The Capture window publishes a timelapse or a model to **My projects** too, by title alone, and recording works for anyone signed in. **Open in Sculpt** on the owner's Projects page still opens a template itself, and saves it back there. With accounts off, all of this is as it was: the owner's **Projects**.
-- **Download my data.** **Account → Download my data** gathers everything the site keeps about your account and your projects' files, and zips them in the browser: `account.json`, a folder per project with its settings, scene, picture and frames, and a `README.txt` saying what each is. In a browser that can, you choose where the zip goes and it is written there as it is made; elsewhere it downloads once it is complete. Over 200 MB, which an iPad has to hold in memory, it can also be downloaded a project at a time. It asks you to confirm it is you when your sign-in is more than ten minutes old.
-- **Delete account.** **Account → Delete account** asks you to type your handle, and to confirm it is you when your sign-in is more than ten minutes old, then deletes the account and everything in it a step at a time, showing how much is left, and takes you to the gallery, signed out. The device's copies of your projects go with it; scenes kept only on the device stay. If it stops part way, **Finish deleting** carries it on, and the site's owner can finish it too.
-- **The owner's account.** With accounts on, `/admin/` offers **Create your account** the first time: a handle and the terms, for the address Cloudflare Access signed you in with. Your projects become the account's, and a passkey is offered. From then on the owner tools want the account signed in as well as Access, and ask for it in the dialog, in place.
-- **Desktop app: sign in with your account.** On a server with accounts, **Server → Sign In** opens the site's own sign-in in its window, leading with a code by email; a passkey on a phone or a security key works too. The window closes by itself once you are in, and **Server Settings** says which account you are signed in as, asking the server rather than trusting what the app keeps: a sign-in ended elsewhere reads as ended, and **Sign In** starts afresh. **Save to Library** and the Capture window's publishing go to your own **My projects**, the owner's too, as on the web. **Sign Out** ends the session on the server, then lets the app's cookies go. On a server without accounts, Cloudflare Access signs you in, as before.
-- **Owner tools: Invites, Users and Audit.** With accounts on, `/admin/` has tabs beside **Projects** for the owner's tools over accounts: make and withdraw invite links, each shown once as it is made, with **Copy**; see the accounts, with their storage against the quota, and suspend or unsuspend one (the reason is mailed to its holder), sign one out everywhere, set its quota, count its storage again, or finish a deletion it left half done (flagged once it has waited a day); and read the audit log, filtered by action or subject. Refusals are said as sentences: your own account is never suspended or signed out from there, and an action an account has moved past since the page drew it says so and shows it as it now is.
-- **Privacy notice and Terms.** `/legal/privacy.html` and `/legal/terms.html`, the Terms with the content policy and how to report content, linked from Join, Account and the gallery's foot, and kept for offline use. The owner's decisions are still to be written in, in brackets. The Content-Security-Policy, still report-only, admits Cloudflare's bot check.
+- **Passkey check.** Accounts sign in with passkeys and guard sign-up with Cloudflare's Turnstile, and a test page finds out whether those work where it matters most: on the iPad, in Safari and in the app installed on the Home Screen, which keeps its own sign-ins and where passkey prompts are reported to misbehave. **Edit → Preferences → Diagnostics → Passkey check…**, or `/?passkeycheck`, opens it, offline too. It says how the page was opened and what the browser offers, creates a test passkey, signs in with it, with any passkey for the site and from an email field's suggestions, and loads the bot check with Cloudflare's test key; **Copy report** copies every result as text. Nothing is sent to Bozzetto's server. The test passkey is a real entry in the device's password manager, named "Bozzetto passkey check" with the date, and the page says how to delete it. The desktop app has no such page.
 
 ### v1.3.5
 
@@ -567,7 +590,7 @@ First public release.
 
 ## Getting started
 
-Requires Node 18 or newer.
+Requires Node 20 or newer; CI and the deployment use 22.
 
 ### Viewer only (no backend)
 
@@ -672,6 +695,8 @@ src/
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
                            Preferences and its settings, touch guards, the
                            service worker and its update notices
+  ui/account/              accounts: the sign-in dialog, Join, Account,
+                           My projects, the data download's zip
   create/                  the timelapse uploader's entry
   desktop/, net/           the desktop shell's renderer side, and where API calls go
   embed/main.ts            entry for the self-contained single-file export
@@ -684,13 +709,20 @@ src/
     api.ts                 typed client for the Functions API
 electron/                  the desktop app: main process, bozzetto:// protocol, server bridge
 public/assets/             matcaps, environments, fonts, brush stencils, base meshes, mannequins
+public/legal/              the Privacy notice and the Terms
 functions/
-  api/                     public read API (project list + manifest), public projects only
-  admin/api/               Access-gated API: the owner's list and manifests, writes
-                           (projects, frames, thumb, scene uploads), and media/ for
-                           private projects' files
-  media/[[path]].ts        streams public projects' files from R2
-  _shared/                 D1/R2 helpers, manifest shaping, auth
+  _middleware.ts           runs first for every Function: the files host, cross-site
+                           writes, and who is asking
+  api/                     the public list and manifests (the templates), /api/config,
+                           and, with accounts on, auth/ (signing in) and me/ (an
+                           account's own projects, files and settings)
+  admin/api/               the owner tools, behind Access and the owner's account:
+                           projects and templates, uploads, media/ for private files,
+                           invites, users, the audit log
+  m/, media/               the templates' files, on the files host and on this one
+  _shared/                 D1/R2 helpers, manifest shaping, sessions and passkeys,
+                           mail and Turnstile, quota and uploads
+shared/bozz.ts             the scene file's reader, shared by the app and the Functions
 migrations/                D1 schema
 scripts/
   app-version.mjs          the version a build says it is: package.json's + the commit
@@ -710,12 +742,14 @@ tests/functions/           the Functions against wrangler pages dev: npm run che
 
 Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub integration, so every push to `main` builds and deploys.
 
-- Build command `npm run build`, output directory `dist`.
+- Build command `npm run build`, output directory `dist`, with the build variable `NODE_VERSION=22`: the passkey library and its certificate parser need Node 20 or later, and CI builds on 22.
 - The `prebuild` step generates the demo timelapse, so those assets ship without being committed.
-- Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column.
-- Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. The identity header Access adds can be sent by anyone wherever Access does not front a route, so on every host but a local one (`localhost`, `127.0.0.1`, `[::1]`) the admin routes also verify the Access token, and `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are required: until both are set, every admin request is answered 503, "Access verification is not configured". Set them in Pages → Settings for both Production and Preview. The team domain is the `<team>.cloudflareaccess.com` host the login page redirects to; the audience is the application's Audience (AUD) tag, on its page in Zero Trust → Access → Applications. `ADMIN_EMAILS` is optional: set it to limit which identities may write; unset, anyone the Access policy lets in is the owner. In the application's cookie settings, set the SameSite attribute to Lax, so a page on another site cannot make a signed-in browser send the session with a write.
+- Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column, and from `0003_accounts.sql` on, the gallery lists templates, which 0003 makes of every public project, so it shows the same set as before. 0003 only adds, and 0.5.5 runs on it. It is applied in production, through the console and recorded; staging takes it with `npx wrangler d1 migrations apply bozzetto-staging --remote`, from a `wrangler.toml` that names that database.
+- Functions run on `/api/*`, `/admin/api/*`, `/admin/login`, `/media/*` and `/m/*` only, which `public/_routes.json` lists. Without it, the root middleware (`functions/_middleware.ts`) would run for every static file, each billed as a Functions request. A Function on any other path never runs until the file names it.
+- Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. The identity header Access adds can be sent by anyone wherever Access does not front a route, so on every host but a local one (`localhost`, `127.0.0.1`, `[::1]`) the admin routes also verify the Access token, and `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are required: until both are set, every admin request is answered 503, "Access verification is not configured". Set them in Pages → Settings for both Production and Preview. The team domain is the `<team>.cloudflareaccess.com` host the login page redirects to; the audience is the application's Audience (AUD) tag, on its page in Zero Trust → Access → Applications. `ADMIN_EMAILS` is optional: set it to limit which identities may write; unset, anyone the Access policy lets in is the owner. In the application's cookie settings, set the SameSite attribute to Lax, so a page on another site cannot make a signed-in browser send the session with a write. With accounts on, once the owner has made an account (`/admin/` offers **Create your account** the first time), the owner tools want that account signed in as well: a second lock, not a replacement, so the Access application stays.
 - The Access application's session duration decides how often the installed app asks to sign in again (Zero Trust → Access → Applications → the app → Session Duration).
 - Production is served at `bozzetto.vidarrapp.se` as a custom domain on the Pages project.
+- The files host, `files.vidarrapp.se`, is a second custom domain on the same Pages project (Custom domains → Set up a domain; the dashboard makes the proxied CNAME). It serves the templates' files on `/m/` and answers nothing else. Once it answers, set `MEDIA_ORIGIN` to it, with `APP_ORIGIN` beside it, since it lets the app's pages read its files by naming that origin; until both are set, manifests name the files on the app's own `/media/`, which serves the same. Build with `VITE_MEDIA_ORIGIN` set to the same origin, so the installed app keeps the files host's thumbnails as it keeps the others.
 
 Without Wrangler at hand, a migration can go in through the D1 dashboard's
 **Console**: run the file's statements one at a time, then record it so a later
@@ -731,7 +765,33 @@ CREATE TABLE IF NOT EXISTS d1_migrations(
 INSERT INTO d1_migrations (name) VALUES ('0001_init.sql'), ('0002_visibility.sql');
 ```
 
-`wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template.
+After a console run of `0003_accounts.sql`, record it the same way: `INSERT INTO d1_migrations (name) VALUES ('0003_accounts.sql');`.
+
+`wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template, and lists every variable below.
+
+### Turning on accounts
+
+**Accounts are off until the owner sets their secrets and turns them on with `ACCOUNTS_ENABLED=true`.** Unset, the site is 0.5.5 with templates: `/api/config` says `accounts: false`, `/api/auth/*` and `/api/me/*` answer 404, and the owner signs in through Cloudflare Access alone. The rest can be set ahead of the switch, which changes nothing until it is thrown. The design, and why each part is as it is, is in [docs/accounts.md](docs/accounts.md).
+
+Set them in Pages → Settings → Variables and Secrets, for Production; staging has a project of its own (below). Locally the variables go under `[vars]` in `wrangler.toml` and the secrets in `.dev.vars`.
+
+| Name | Kind | Production | Unset |
+| --- | --- | --- | --- |
+| `ACCOUNTS_ENABLED` | variable | `true` | accounts off, whatever else is set |
+| `APP_ORIGIN` | variable | `https://bozzetto.vidarrapp.se` | passkeys and Turnstile refused (503), and the files host not used |
+| `RP_ID` | variable | `bozzetto.vidarrapp.se` | passkeys refused (503); codes still sign in |
+| `MEDIA_ORIGIN` | variable | `https://files.vidarrapp.se` | the templates' files come from the app's own `/media/` |
+| `MAIL_FROM` | variable | `Bozzetto <login@vidarrapp.se>` | mail refused (503), once `RESEND_API_KEY` is set |
+| `TURNSTILE_SITE_KEY` | variable | the widget's site key | no bot-check widget is drawn |
+| `AUTH_SECRET` | secret | `openssl rand -base64 32`, one per project | every sign-in and Join refused (503): it keys the codes and the rate limits |
+| `TURNSTILE_SECRET` | secret | the widget's secret key | Join and every code refused (503) |
+| `RESEND_API_KEY` | secret | Resend's API key | every mail refused (503) |
+| `VITE_MEDIA_ORIGIN` | build variable | `https://files.vidarrapp.se` | the installed app keeps no thumbnails from the files host |
+| `NODE_VERSION` | build variable | `22` | the build image's own Node |
+
+Then, with accounts on, the owner opens `/admin/`, makes the owner's account with **Create your account**, and sends the first invites from the **Invites** tab. The dashboard work this needs (Resend, Turnstile, the files host, the WAF rules) is in the checklist below.
+
+**Staging** is a second Pages project, `bozzetto-staging`, on this repository with `staging` as its production branch: its own D1 and R2 (both `bozzetto-staging`), the hosts `bozzetto-staging.vidarrapp.se` and `files-staging.vidarrapp.se`, its own Access application, `RP_ID=bozzetto-staging.vidarrapp.se`, and accounts on, so they are tried there first, on the real iPad too. Not the Preview environment: its bindings and secrets would reach every branch preview. Staging may use Cloudflare's Turnstile test keys (`1x00000000000000000000AA` with the secret `1x0000000000000000000000000000000AA`), which pass every check and so keep nobody out.
 
 ### Security settings checklist
 
@@ -753,6 +813,59 @@ Cloudflare:
 - [ ] HSTS is on for the zone (SSL/TLS → Edge Certificates → HTTP Strict
   Transport Security). Include subdomains only if every subdomain of the zone
   serves HTTPS.
+
+Accounts, before `ACCOUNTS_ENABLED` is turned on (docs/accounts.md §11), in
+production and again for staging:
+
+- [ ] **Resend.** An account, with the domain added (Resend → Domains:
+  `vidarrapp.se`, or a sending subdomain such as `mail.vidarrapp.se`, which
+  Resend recommends: the same records one level down), its DNS records in
+  Cloudflare, and open and click tracking off, since tracking would route
+  sign-in links through Resend. `RESEND_API_KEY` is stored as a secret and
+  `MAIL_FROM` set, in both projects. The free tier sends 100 mails a day;
+  the server stops at 90. The values come from Resend's page for the domain:
+
+  | Type | Name | Value |
+  | --- | --- | --- |
+  | MX | `send` | `feedback-smtp.<region>.amazonses.com`, priority 10 |
+  | TXT | `send` | `v=spf1 include:amazonses.com ~all` |
+  | TXT | `resend._domainkey` | the DKIM key, DNS only (not proxied) |
+  | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:<owner>`, only if there is none yet; `p=quarantine` after two clean weeks |
+
+  The `send` records are the bounce address, so the root's own SPF record
+  stays as it is.
+- [ ] **Turnstile.** One Managed widget whose hostnames are both app hosts,
+  `bozzetto.vidarrapp.se` and `bozzetto-staging.vidarrapp.se` (Turnstile →
+  Add widget). `TURNSTILE_SITE_KEY` is set as a variable and
+  `TURNSTILE_SECRET` stored as a secret.
+- [ ] **`AUTH_SECRET`.** Made with `openssl rand -base64 32`, a different one
+  for each project, and stored as a secret.
+- [ ] **The files host.** `files.vidarrapp.se` is a custom domain on the
+  Pages project, and `files-staging.vidarrapp.se` on staging's (Pages → the
+  project → Custom domains); `MEDIA_ORIGIN`, `APP_ORIGIN` and the build's
+  `VITE_MEDIA_ORIGIN` name them.
+- [ ] **WAF custom rules** (Security → WAF → Custom rules; Free allows 5),
+  each with the action **Block**:
+  - `http.host in {"files.vidarrapp.se" "files-staging.vidarrapp.se"} and not starts_with(http.request.uri.path, "/m/")`:
+    the files hosts serve `/m/` and nothing else. The Functions refuse the
+    rest already; this keeps the static files, which never reach them, off
+    those hosts too.
+  - `starts_with(http.request.uri.path, "/api/dev/")`: the test hooks,
+    which answer on `localhost` alone, are not reachable at all.
+- [ ] **WAF rate limiting** (Security → WAF → Rate limiting rules; Free allows
+  one, counting per IP over 10 seconds): requests matching
+  `starts_with(http.request.uri.path, "/api/auth/")`, more than 20 in 10
+  seconds, are blocked for 10 seconds. The server keeps its own limits on
+  mail, codes and sign-ups; this one stops a flood before it costs a request.
+  On Pro, a second rule: `starts_with(http.request.uri.path, "/m/") or starts_with(http.request.uri.path, "/media/")`,
+  more than 600 a minute, blocked for a minute; generous, since a timelapse
+  fetches hundreds of frames.
+- [ ] **The addresses.** The contact address for privacy requests and the
+  takedown address for reports exist, and are written into
+  `public/legal/privacy.html` and `public/legal/terms.html` in place of the
+  bracketed placeholders, with the owner's other decisions there (what copies
+  of the templates may be used for, and nudity). The accounts suite checks
+  that the placeholders are there, so its legal-pages check changes with them.
 
 GitHub (Settings):
 

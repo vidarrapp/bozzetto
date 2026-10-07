@@ -70,13 +70,6 @@ export async function hasServer(): Promise<boolean> {
   return !!(await b.getServer()).url;
 }
 
-/** Whether a Cloudflare Access login is in force (desktop only). */
-export async function isSignedIn(): Promise<boolean> {
-  if (!isDesktop()) return true; // the browser's own cookie decides
-  const b = bridge();
-  return b ? (await b.getServer()).signedIn : false;
-}
-
 /**
  * The desktop app's own sign-in: a real window on the deployment, which
  * leaves this page where it is (Server > Sign In does the same). False

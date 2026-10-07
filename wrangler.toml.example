@@ -85,6 +85,15 @@ bucket_name = "bozzetto-assets"
 #                     under DEV_TEST_HOOKS) and is refused anywhere else.
 #                     At most 90 mails go out per UTC day.
 #
+# Build variables: set in the dashboard (Settings -> Variables and Secrets,
+# which a build reads as well), never here - they shape what `npm run build`
+# writes, not what the Functions read:
+#   VITE_MEDIA_ORIGIN "https://files.vidarrapp.se": MEDIA_ORIGIN's value, read
+#                     at build time, so the installed app keeps the files
+#                     host's thumbnails. Anything but an origin fails the build.
+#   NODE_VERSION      "22": the passkey library and its certificate parser
+#                     need Node 20 or later.
+#
 # TERMS_VERSION is not a variable but a constant, in
 # functions/_shared/config.ts: it changes in the commit that changes
 # public/legal/terms.html, so the version an account accepts is always the

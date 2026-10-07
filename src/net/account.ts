@@ -150,6 +150,18 @@ export function loadConfig(): Promise<AccountsConfig | null> {
   return config;
 }
 
+/**
+ * The config asked for again, the copy this page holds let go: for the
+ * desktop app, whose server can change under a page that stays open (a
+ * server set in Server settings, a sign-in that found accounts switched on
+ * since the page loaded). Every caller after this gets the new answer;
+ * one already holding the old keeps it.
+ */
+export function reloadConfig(): Promise<AccountsConfig | null> {
+  config = null;
+  return loadConfig();
+}
+
 async function fetchConfig(): Promise<AccountsConfig | null> {
   let res: ApiResult;
   try {

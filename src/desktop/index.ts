@@ -12,7 +12,7 @@
  * the OS edited-dot, what Save writes to, and what Cmd+S means.
  */
 import { isDesktop } from '../net/origin';
-import { serverSettings, signOutOfServer } from './ServerSettings';
+import { serverSettings, signInToServer, signOutOfServer } from './ServerSettings';
 
 export interface DesktopBridge {
   version: string;
@@ -306,7 +306,7 @@ export function mountDesktop(host: DocumentHost): (() => void) | null {
     'edit:preferences': () => host.showPreferences(),
     'server:settings': () => host.showServerSettings(),
     'server:signIn': async () => {
-      await bridge.signIn();
+      await signInToServer(bridge);
       host.signInChanged();
       host.showServerSettings();
     },

@@ -1,7 +1,7 @@
 # Checks on every push and every pull request: both typechecks and the
 # production build, the Functions against the local Workers runtime, and a
-# few of the browser suites. The whole browser suite (about 50 minutes) is
-# e2e-full.yml, weekly and on demand.
+# few of the browser suites, the accounts suite among them. The whole
+# browser suite (about 50 minutes) is e2e-full.yml, weekly and on demand.
 #
 # A read-only token, no install scripts, and no pull_request_target: a
 # pull request from a fork runs here with nothing worth taking.
@@ -57,7 +57,7 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -83,3 +83,13 @@ jobs:
       - name: Smoke suites
         timeout-minutes: 10
         run: node tests/e2e/run.mjs boot primitives gallery roundtrip
+      # Sign-in, Join, Account, My projects, the owner's tools and Delete
+      # account, against the real Functions: the suite starts `wrangler
+      # pages dev` over dist/ itself, in a throwaway project with
+      # node_modules linked in and a local D1 (tests/e2e/lib.mjs
+      # startAccountsServer), with a stand-in for Turnstile's siteverify
+      # (tests/functions/turnstile-fake.mjs) and codes read from the dev
+      # outbox. Two to five minutes, wrangler's start included.
+      - name: Accounts suite
+        timeout-minutes: 15
+        run: node tests/e2e/run.mjs accounts

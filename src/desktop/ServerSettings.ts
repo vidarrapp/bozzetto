@@ -1,8 +1,23 @@
 import { div } from '../ui/dom';
-import { suspensionText } from '../net/account';
+import { reloadConfig, suspensionText } from '../net/account';
 import { forgetOwnerCaches } from '../net/ownerCaches';
 import type { DesktopBridge } from './index';
 import { serverAccount, type ServerAccount } from './serverAccount';
+
+/**
+ * Sign in to the server, from this panel or the Server menu: the main
+ * process's sign-in window. The page's copy of the server's config is
+ * asked for again afterwards, whether or not the window signed anyone in:
+ * the sign-in asked the server afresh whether it has accounts, and the
+ * page must not go on choosing routes by an answer from before it.
+ */
+export async function signInToServer(bridge: DesktopBridge): Promise<void> {
+  try {
+    await bridge.signIn();
+  } finally {
+    void reloadConfig();
+  }
+}
 
 /**
  * Sign out of the server, from this panel or the Server menu: the main
@@ -148,6 +163,9 @@ export function serverSettings(
       save.disabled = true;
       try {
         await bridge.setServer(input.value.trim() || null);
+        // Another server is another config: accounts, where passkeys work,
+        // the files host. Asked again before the page is told to look.
+        void reloadConfig();
         await refresh();
         signInChanged(); // another server is another sign-in
       } catch (err) {
@@ -168,7 +186,7 @@ export function serverSettings(
       show('Opening the sign-in window…');
       let failed: unknown = null;
       try {
-        await bridge.signIn();
+        await signInToServer(bridge);
       } catch (err) {
         failed = err;
       }
