@@ -111,12 +111,20 @@ export class HandleField {
   readonly root: HTMLLabelElement;
   private timer = 0;
   private asked = '';
-  /** The last answer, for the handle it was about. */
-  private known: { handle: string; ok: boolean } | null = null;
+  /** The last answer, for the handle it was about, and the server's reason when it said no. */
+  private known: { handle: string; ok: boolean; reason?: string | null } | null = null;
 
+  /**
+   * `owner`: the field is the owner's own (the bootstrap on /admin/). The
+   * names the live check calls reserved are reserved to keep anyone else
+   * from passing as the owner, so for the owner they are not a refusal:
+   * the form goes on to the server, which allows the protected ones and
+   * refuses the route names itself.
+   */
   constructor(
     label = 'Handle',
     private readonly current: string | null = null,
+    private readonly owner = false,
   ) {
     this.root = field(label, this.input, this.hint);
     this.input.addEventListener('input', () => this.changed());
@@ -157,10 +165,15 @@ export class HandleField {
     try {
       const answer = await checkHandle(handle);
       if (this.asked !== handle || this.value !== handle) return false;
-      this.known = { handle, ok: answer.available };
+      const reason = answer.available ? null : (answer.reason ?? 'taken');
+      // Reserved means reserved for the owner; the owner's own form lets
+      // the server decide between a protected name and a route's.
+      const ok = answer.available || (this.owner && reason === 'reserved');
+      this.known = { handle, ok, reason };
       if (answer.available) this.say(`@${handle} is free.`, 'ok');
-      else this.say(handleReasonText(answer.reason ?? 'taken'), 'no');
-      return answer.available;
+      else if (ok) this.say(`@${handle} is kept for the owner, which is you.`, 'ok');
+      else this.say(handleReasonText(reason ?? 'taken'), 'no');
+      return ok;
     } catch (err) {
       if (this.value === handle) this.say(errorText(err), 'no');
       return false;

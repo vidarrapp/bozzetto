@@ -60,7 +60,8 @@ export async function run({ checks, on, off, compileShared, repo }) {
   const access = browser();
   const admin = (b, method, path, opts = {}) => b.call(method, path, { ...opts, headers: { ...asOwner, ...opts.headers } });
   const bootstrap = (b, json, headers = asOwner) => b.call('POST', '/admin/api/owner/bootstrap', { json, headers });
-  const good = { handle: 'TheOwner', acceptTerms: true, ageConfirmed: true };
+  // The owner's own name, which only the owner's account may take (handles.ts).
+  const good = { handle: 'VidarRapp', acceptTerms: true, ageConfirmed: true };
 
   // --- before there is an owner ------------------------------------------------------
   let t = checks('functions: lock 1 alone, before the bootstrap');
@@ -81,9 +82,9 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.eq(r.status, 403, 'a member session is no Access');
   for (const [what, body, status, code, reason] of [
     ['terms not accepted', { ...good, acceptTerms: false }, 400, 'bad_request'],
-    ['age not confirmed', { handle: 'TheOwner', acceptTerms: true }, 400, 'bad_request'],
+    ['age not confirmed', { handle: 'VidarRapp', acceptTerms: true }, 400, 'bad_request'],
     ['a handle too short', { ...good, handle: 'ab' }, 400, 'bad_request', 'format'],
-    ['a reserved handle', { ...good, handle: 'Admin' }, 400, 'bad_request', 'reserved'],
+    ['a route name, which not even the owner may take', { ...good, handle: 'Admin' }, 400, 'bad_request', 'reserved'],
     ['a handle taken, in other capitals', { ...good, handle: 'LKTAKEN' }, 409, 'handle_taken', 'taken'],
     ['a retired handle', { ...good, handle: 'lkretired' }, 409, 'handle_taken', 'retired'],
   ]) {
@@ -102,7 +103,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
   r = await bootstrap(owner, good);
   const made = r.json?.user;
   const cookie = setCookies(r).find((c) => c.name === '__Host-bz_session');
-  t.ok(r.status === 201 && made?.handle === 'theowner' && made?.role === 'owner' && made?.status === 'active' && /^u-[0-9a-hjkmnp-tv-z]{26}$/.test(made?.id), `201 {user}: the owner's account, its handle lower-cased (${r.status} ${JSON.stringify(made)})`);
+  t.ok(r.status === 201 && made?.handle === 'vidarrapp' && made?.role === 'owner' && made?.status === 'active' && /^u-[0-9a-hjkmnp-tv-z]{26}$/.test(made?.id), `201 {user}: the owner's account, under a protected name, lower-cased (${r.status} ${JSON.stringify(made)})`);
   t.ok(made?.usage?.quota === 10 * GiB && made?.usage?.used === 1234 && made?.usage?.reserved === 0, `10 GiB, and the claimed projects' bytes counted against it (${JSON.stringify(made?.usage)})`);
   t.ok(cookie?.attrs.samesite === 'Lax' && cookie?.attrs.httponly === true && cookie?.attrs.secure === true && /^bz1_/.test(cookie?.value), 'and signed in, with the session cookie');
   const acc = (await owner.call('GET', '/api/me/account')).json;
@@ -116,6 +117,10 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(r.status === 409 && r.json?.code === 'owner_exists', `again, with Access alone: 409 owner_exists (${r.status} ${r.json?.code})`);
   r = await bootstrap(owner, { ...good, handle: 'another' });
   t.ok(r.status === 409 && r.json?.code === 'owner_exists', `and with the owner signed in too (${r.status})`);
+  r = await access.call('GET', '/api/auth/handle?h=vidarrapp');
+  t.ok(r.json?.available === false && r.json?.reason === 'reserved', `the live check still says reserved, not taken (${JSON.stringify(r.json)})`);
+  r = await browser('lk-member').call('PATCH', '/api/me', { json: { handle: 'VidarRapp' } });
+  t.ok(r.status === 400 && r.json?.code === 'bad_request' && r.json?.reason === 'reserved', `and a member renamed to it: 400 reserved, as before the owner had it (${r.status} ${r.json?.code} ${r.json?.reason})`);
   t.report();
 
   // --- lock 2 ------------------------------------------------------------------------------
@@ -129,7 +134,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
   r = await admin(access, 'GET', '/admin/api/media/lk-own/thumb.jpg');
   t.eq(r.status, 404, 'and the owner media route is not found');
   r = await admin(owner, 'GET', '/admin/api/whoami');
-  t.ok(r.status === 200 && r.json?.email === OWNER && r.json?.owner?.id === made?.id && r.json?.owner?.handle === 'theowner', `Access and the owner's session: in (${r.status} ${JSON.stringify(r.json)})`);
+  t.ok(r.status === 200 && r.json?.email === OWNER && r.json?.owner?.id === made?.id && r.json?.owner?.handle === 'vidarrapp', `Access and the owner's session: in (${r.status} ${JSON.stringify(r.json)})`);
   r = await admin(owner, 'GET', '/admin/api/projects');
   const listed = ids(r.json);
   t.ok(r.status === 200 && listed.includes('lk-own') && listed.includes('lk-own2') && listed.includes('lk-template') && !listed.includes('lk-member-proj') && !listed.includes('lk-forbidden'), `the claimed projects are the owner's own now, the templates still reached, a member's not (${r.status})`);

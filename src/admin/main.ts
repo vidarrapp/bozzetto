@@ -219,7 +219,7 @@ function bootstrapForm(email: string, again: () => void): HTMLElement {
     `Accounts are on, and the owner has no account yet. Make yours: it takes the address Cloudflare Access ` +
     `signed you in with (${email}), with a 10 GB quota, and the projects you have now become its own. ` +
     'From then on, the owner tools want it signed in as well as Access.';
-  const handle = new HandleField('Handle');
+  const handle = new HandleField('Handle', null, true);
   const terms = termsBox();
   const say = new Say();
   const submit = document.createElement('button');

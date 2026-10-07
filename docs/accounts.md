@@ -220,7 +220,9 @@ Phase 1 needed no map for these, and has none: `requireUser` (`functions/_shared
 1. **Link.** `https://bozzetto.vidarrapp.se/?invite=<16 random bytes, base64url>`. The app moves the token to sessionStorage and opens Join.
 2. **Live checks.** `POST /api/auth/invite/check {invite}` returns 200 `{expiresAt}` or 410. `GET /api/auth/handle?h=` returns `{available, reason?: format|reserved|taken|retired}`.
    - Input is lower-cased before the regex.
-   - The reserved list in `functions/_shared/auth/handles.ts` starts with: admin, administrator, api, app, owner, moderator, mod, staff, support, help, bozzetto, vidarrapp, me, u, user, account, settings, login, logout, signin, signup, register, join, invite, media, files, static, assets, templates, gallery, root, system, null, undefined, abuse, security, privacy, terms, legal, www, mail.
+   - Reserved names are two lists in `functions/_shared/auth/handles.ts`, both answered `reserved`:
+     - Route names, which no account may take, the owner's included: admin, administrator, api, app, me, u, user, account, settings, login, logout, signin, signup, register, join, invite, media, files, static, assets, templates, gallery, legal, root, system, null, undefined, www, mail, m, dev, auth.
+     - Protected names, which only the owner's bootstrap may take (§8): bozzetto, vidarrapp, owner, moderator, mod, staff, support, help, abuse, security, privacy, terms. They keep anyone from passing for the owner, and the owner is who they protect. Join, a rename and the live check refuse them, the live check whoever asks.
 3. **Start.** `POST /api/auth/register/start {invite, handle, email, acceptTerms, ageConfirmed, turnstile, link?}`:
    - checks Turnstile (`register`), the invite, the handle and the address;
    - stores the pending account in `pending_auth`, mails the code, and sets the flow cookie;
@@ -544,6 +546,7 @@ These are tabs beside Projects on `/admin/` (`src/admin/{invites,users,audit}.ts
 - **Bootstrap.**
   - With accounts on and no owner, "Create your account" calls `POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed}`. It needs Access alone, and is refused once an owner exists (409 `owner_exists`, whoever asks).
   - It creates the `role = 'owner'` user with the Access email and a 10 GiB quota, and claims the rows with `owner_id IS NULL AND template = 0`.
+  - Its handle may be a protected name (§3), such as the owner's own; a route name is refused as for anyone.
   - It then signs the owner in (method `bootstrap`) and offers a passkey.
 
 ## 9. Legal pages (outlines, not legal advice)

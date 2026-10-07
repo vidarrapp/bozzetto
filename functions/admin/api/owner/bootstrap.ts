@@ -27,10 +27,15 @@ const OWNER_QUOTA = 10 * 1024 * 1024 * 1024;
 // signed in (method 'bootstrap'), which counts as recent authentication,
 // so the page can offer a passkey at once. All of it is one batch, audited.
 //
+// The handle may be one of the protected names (handles.ts), such as the
+// owner's own, which every other account is refused: they are kept so that
+// nobody can pass for the owner, and the owner is who they protect.
+//
 // Answers 201 {user} (as GET /api/me) with the session cookie. A handle
-// that is malformed or reserved is a 400 with `reason`; one taken or
-// retired a 409 handle_taken with `reason`; terms or age not confirmed, or
-// an account already under the Access address, a 400.
+// that is malformed or a route name, which not even the owner may take, is
+// a 400 with `reason` (format, reserved); one taken or retired a 409
+// handle_taken with `reason`; terms or age not confirmed, or an account
+// already under the Access address, a 400.
 export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ request, env, data }) =>
   api(async () => {
     if (!accountsOn(env)) return refuse(404, 'accounts_off', 'Accounts are off');
@@ -46,7 +51,8 @@ export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ request
     }
     const { now } = data;
     const handle = normalizeHandle(body.handle);
-    const problem = await handleProblem(env, handle, now);
+    // The owner's account, alone, may take a protected name.
+    const problem = await handleProblem(env, handle, now, { owner: true });
     if (problem === 'format' || problem === 'reserved') {
       throw new HttpError('That handle cannot be used', 400, 'bad_request', { reason: problem });
     }
