@@ -57,11 +57,12 @@ Out of scope:
 
 - Cloudflare's, GitHub's and Resend's own platforms, and Cloudflare Access
   and Turnstile themselves.
-- A deployment that does not follow the README (no Access application in
-  front of `/admin`, say), unless the README itself is what is wrong.
+- A deployment that does not follow `docs/deployment.md` (no Access
+  application in front of `/admin`, say), unless that document itself is
+  what is wrong.
 - That the desktop builds are unsigned, so macOS and Windows warn before
   opening them. This is known; check a download against `SHA256SUMS` and its
-  attestation instead (see the README's Releasing section).
+  attestation instead (see Releasing in `docs/desktop.md`).
 - Denial of service by volume, and social engineering.
 - Vulnerabilities in a dependency with no demonstrated effect on Bozzetto:
   please report those to the dependency.

@@ -694,7 +694,7 @@ Why not the Preview environment: its bindings and secrets would reach every bran
 - [ ] **WAF rate limiting.** Free allows one rule (10 s window, per IP, path only).
   - Free: `starts_with(http.request.uri.path, "/api/auth/")` over 20 in 10 s → block 10 s.
   - Pro adds a second: `starts_with(http.request.uri.path, "/m/") or starts_with(http.request.uri.path, "/media/")` over 600 a minute → block a minute. Keep it generous, because timelapses prefetch hundreds of frames.
-- [ ] **Addresses.** The privacy and takedown addresses exist, and are written into the legal pages with the owner's other decisions (§9). The README's Security settings checklist carries these items (Batch 10).
+- [ ] **Addresses.** The privacy and takedown addresses exist, and are written into the legal pages with the owner's other decisions (§9). The Security settings checklist in `docs/deployment.md` carries these items (Batch 10).
 
 **What ships when:**
 

@@ -22,8 +22,6 @@ It installs to an iPad's home screen and works offline, and there are desktop bu
 | `/create/` | Timelapse uploader (**Create → Upload timelapse**), no sign-in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
-Runs entirely on Cloudflare Pages, Functions, D1 and R2. No server to run yourself.
-
 ## Install as an app
 
 Bozzetto installs to the home screen and launches fullscreen. That is the way to use sculpt mode on an iPad. The gallery's **Install** button walks you through it.
@@ -36,7 +34,7 @@ Bozzetto installs to the home screen and launches fullscreen. That is the way to
 
 **Updates download in the background, and the app says so:** a notice in the corner shows the download's progress, and afterwards names the version it updated to. On the gallery an update goes in straight away; anywhere else the notice offers **Reload**, which saves your work first.
 
-Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish or save to the library. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data. Deleting the app still takes it, which is why a guest's **Save to library** downloads a file.
+Sculpts autosave to browser storage whether installed or not. Nothing uploads unless you sign in and publish or save to the library. There are no analytics and no ads; the privacy notice and terms are at `/legal/`. On iPad, installing also protects that storage: home-screen apps are exempt from the eviction that clears ordinary browsing data. Deleting the app still takes it, which is why a guest's **Save to library** downloads a file.
 
 ## Sculpt
 
@@ -174,9 +172,9 @@ Download it from the [latest release](https://github.com/vidarrapp/bozzetto/rele
 or from the gallery's **Install** card, which leads with the build for your
 platform. Every environment, base mesh and mannequin ships inside it.
 
-It is local by default and makes no network requests at all. Point it at your
-own Cloudflare deployment under **Server → Server Settings** if you want to
-publish from it; signing in opens a real window. On a server with accounts
+It is local by default and makes no network requests at all. Point it at a
+Bozzetto server under **Server → Server Settings** if you want to publish
+from it; signing in opens a real window. On a server with accounts
 that is the site's own sign-in, which leads with a code by email (a passkey on
 a phone or a security key works too), and Server Settings then says which
 account you are signed in as; on one without, it is Cloudflare Access. Signed
@@ -185,78 +183,10 @@ projects on that server (Projects, without accounts), as they do on the web;
 without a server the scene stays on this machine. **Sign Out** ends the
 session on the server as well as in the app.
 
-The app carries its licence and the credits for what it bundles:
-`LICENSE` and `THIRD_PARTY_NOTICES.md` sit in its resources folder
-(`Bozzetto.app/Contents/Resources` on macOS, `resources` beside the program
-on Windows and Linux).
-
 **Known issue:** after signing in to a server, the app can stop responding
 for a few minutes on some machines when v-sync is off. Turning **V-sync** on
 under **Edit → Preferences → Desktop** avoids it. We are looking for reports
 of this from real hardware.
-
-```bash
-npm run desktop        # build and run
-npm run dist:desktop   # package for the host platform, into release/
-```
-
-Each installer format has to be built on (or for) its own platform:
-
-| Target | Where it builds | Notes |
-| --- | --- | --- |
-| Linux AppImage | anywhere | `npx electron-builder --linux AppImage` |
-| Windows portable | anywhere | `npx electron-builder --win --dir` gives `release/win-unpacked` with `Bozzetto.exe` — zip and ship |
-| Windows installer | Windows, or Linux with wine | `npx electron-builder --win nsis`; without wine it fails with `spawn wine ENOENT` |
-| macOS dmg | macOS only | Apple's tooling cannot be cross-run |
-
-### Releasing
-
-`.github/workflows/release.yml` builds all three platforms and attaches the
-installers to a GitHub Release. The version comes from `package.json`, and the
-tag must match it. Releases are made from `main` only. Either push the tag:
-
-```bash
-npm version 0.1.0        # bumps package.json and commits and tags v0.1.0
-git push --follow-tags   # the tag push starts the release build
-```
-
-or run **Release desktop** from the **Actions** tab on `main` with the version
-filled in, and the workflow tags `main` itself. A pushed tag whose commit is
-not on `main`, or a version filled in on any other branch, stops the run
-before anything is built.
-
-The workflow opens a draft release and builds on all three platforms. A
-separate job then signs build provenance for every installer, and the last
-one puts the installers and a `SHA256SUMS` file on the draft and publishes
-the release once all of them are there (a failure anywhere leaves it a draft
-to look at). A file already on a release is never replaced, and a published
-release is never changed: to fix one, release a new version. The macOS build
-is universal, one app for Apple Silicon and Intel. The site's Install card
-reads the latest published release, so it picks the new version up on its
-own; edit the generated notes on GitHub whenever you like.
-
-Run it from the **Actions** tab with the version left empty to test a build,
-from any branch; that path publishes nothing and leaves the installers as
-downloadable artifacts, attested like a release's. No secrets to configure:
-it uses the token Actions provides, and only the two jobs that write the
-release can write with it. The builders can only read the repository, run no
-install scripts, and give electron-builder no token at all.
-
-To check a download, compare its SHA-256 with its line in the release's
-`SHA256SUMS`, and verify its provenance with the
-[GitHub CLI](https://cli.github.com/), which also shows the commit and the
-workflow run that built it:
-
-```bash
-sha256sum Bozzetto-0.1.0.AppImage    # macOS: shasum -a 256 <file>; Windows: Get-FileHash <file>
-gh attestation verify Bozzetto-0.1.0.AppImage -R vidarrapp/bozzetto
-```
-
-Builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn until
-you add a Developer ID certificate and notarization (macOS) or a code-signing
-certificate (Windows). For signing in CI, set `CSC_LINK` and
-`CSC_KEY_PASSWORD` as repository secrets, pass them to the workflow's
-Package step, and drop the `CSC_IDENTITY_AUTO_DISCOVERY: false` line there.
 
 ## Features
 
@@ -293,31 +223,9 @@ Package step, and drop the `CSC_IDENTITY_AUTO_DISCOVERY: false` line there.
 - OBJ to glTF-binary conversion runs in a Web Worker, overlapped with upload.
 - Set up the look in the preview and press **Save look** to store the opening state.
 - Mark stages, capture any frame as the gallery thumbnail, and rename or re-configure from **Settings**.
-- With accounts on, tabs beside **Projects** hold the owner's tools over accounts. **Invites** makes invite links, each admitting from 1 to 500 accounts (one unless you say) for 1 to 90 days (14 unless you say), with a label for your own use; a link is shown once, as it is made, with **Copy**, and the list gives each one's uses, dates and state, with **Revoke** for a live one. **Users** lists the accounts, newest first, 50 a page: handle, address, role, status, when each joined and was last seen, how many projects, and storage used against the quota as a bar. **Manage** on one counts its passkeys and sessions and offers what can be done from where it stands: **Suspend** (with a reason, which is mailed to its holder) or **Unsuspend**, **Revoke sessions**, its **Quota** in MiB, **Recount** its storage from the files themselves, and **Finish deletion** for a deletion its holder began and left, which are flagged at the top once they have waited a day. Your own account is not suspended or signed out from there. **Audit** lists what was done, newest first, filtered by action or by an account's or project's id.
 - Every project is public or private: **Settings** has the choice, and so does each row of the project list. Public makes it a template, the site's rather than yours. Each row also has a **Template** switch: on, the project belongs to no one, and **Private** says whether the gallery lists it; off, it is yours again, and private. Publishing from Sculpt asks too, public unless you choose otherwise. Scenes saved from Sculpt are listed as well, and open there; a template's opens the template itself, to edit.
 - **Record reel** exports the timelapse or a turntable spin as MP4 or GIF, up to 1080p, with a choice of aspect.
 - Export a self-contained `.html` that opens offline.
-
-### Accounts
-
-Off until the site's owner turns them on (see Deployment); until then the site works as it always has, and Cloudflare Access signs the owner in.
-
-- **By invite.** An invite link opens **Join**: a handle, an email address, a box to confirm you are 13 or older and accept the Terms, and Cloudflare's bot check; a six-digit code by mail finishes it.
-- **Passkeys and email codes.** Sign in with a passkey (Face ID, Touch ID, a phone or a security key) or a code mailed to you, in a dialog over the page, so the work on it stays put. No passwords.
-- **My projects.** Save to library and Capture keep your work on the server, private to you, in 250 MB of your own, with a meter that shows how much is used. Open, rename, download and delete it from **My projects**, where the list stays readable offline.
-- **Your data, and leaving.** **Account** changes your handle and address, manages passkeys and where you are signed in, downloads everything the site keeps about you as one zip, and deletes the account with everything in it.
-- **Templates.** The gallery's templates open as copies that are yours to keep.
-- **Owner tools.** Invites, the accounts (suspend, sign out, quota, recount, finish a deletion) and the audit log, on `/admin/`, behind Cloudflare Access and the owner's own account.
-- **Privacy.** No analytics and no ads; the Privacy notice and the Terms are at `/legal/`.
-
-### Platform
-
-- Serverless on Cloudflare: metadata in D1, meshes and scene files in R2, every API route a Pages Function. A scene saved from Sculpt is a `.bozz` file in R2 beside its thumbnail, uploaded in parts.
-- Admin writes sit behind Cloudflare Access, and so does every read of a private project: the public list, manifests and `/media` serve public projects only, and a private project's files come through `/admin/api/media`, so one cannot be fetched by guessing its id. Public reads and the viewer are open.
-- Accounts, behind `ACCOUNTS_ENABLED`: members join by invite and sign in with passkeys or six-digit email codes, in a dialog over the page, with Turnstile keeping out bots. Sessions are cookies the page cannot read, and once the owner has an account the owner tools want it signed in as well as Access. Each account keeps its own projects on `/api/me`, which mirror the owner's routes, within a quota (250 MB; the owner's 10 GB); their files come only through a private route that no cache keeps. **Download my data** is zipped in the browser with client-zip, a file at a time, and an account is deleted a step at a time until nothing of it is left.
-- A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
-- A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. The other HDRIs, the gallery list and the sign-in answer (with accounts on, the account, without its address, the site's settings and the list of My projects, never their files) are cached as they are used, so an installed app keeps working offline, owner features included; signing out, or a sign-in that has gone, drops what was kept of the account. The kept sign-in answer stands in only when there is no network: an expired sign-in reaches the app as what it is, Cloudflare Access's redirect to its login, and is not taken for being offline. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
-- The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Controls
 
@@ -387,7 +295,7 @@ updates by release.
 | `Tab` | Closes panels, then hides the interface, the Capture window with it. `Tab` or `Esc` returns, the window where it was |
 | `Esc` in the Capture window | Closes the window |
 
-URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. `?perfdebug=1` lists the last stalls and heavy operations with their times, and in sculpt mode `?inputdebug=1` logs pen and touch input; both can be on at once, and **Edit → Preferences → Diagnostics** keeps either on without the switch. `?canvasmsaa=1` gives the canvas its own MSAA again, as it had before, to compare a frame against.
+URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. `?perfdebug=1` lists the last stalls and heavy operations with their times, and in sculpt mode `?inputdebug=1` logs pen and touch input; both can be on at once, and **Edit → Preferences → Diagnostics** keeps either on without the switch.
 
 ## Changelog
 
@@ -400,7 +308,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **Templates in the gallery.** What the gallery shows is now the site's templates, each card badged **Template**. A model or a timelapse still plays in the viewer. A scene opens in Sculpt as a copy that belongs to no project, so **Save to library** keeps it as your own, as it does any new scene: a `.bozz` download for a guest, a new private project when you are signed in, and never a save over the template; nothing of it goes on the device's shelf. Opening one asks first when there is work in progress on the device, as every card does, and Sculpt asks when the link came from elsewhere. Signed in, the gallery and the Projects page list the templates beside your own work, those taken off the gallery too; making a project public makes it a template, which the **Private** switch now says, and each row on the Projects page has a **Template** switch beside it. On, the project belongs to no one and **Private** says whether the gallery lists it; off, it is yours again, and private. **Open in Sculpt** there still opens a template itself, to edit, and saves it back there.
 - **Ready for a files host.** Once the server names one for the templates' files (`files.vidarrapp.se`), their pictures and files come from there. The pictures are asked for in a way the installed app can keep, as it keeps the others, when the build is told the host (`VITE_MEDIA_ORIGIN`), and the desktop app asks its own server for the same files. The installed app never keeps what accounts add for signing in, the account itself or a member's own files, and the site's Content-Security-Policy, still report-only, names the files hosts.
 
-**Accounts, off until the site's owner switches them on.** Everything in this part waits for the owner to set the secrets for mail, the bot check and the sign-in codes, and to turn on `ACCOUNTS_ENABLED` (see Deployment). Until then none of it shows: the site is as it was, with templates, and Cloudflare Access signs the owner in.
+**Accounts, off until the site's owner switches them on.** Until then none of it shows: the site is as it was, with templates, and Cloudflare Access signs the owner in.
 
 - **Sign in with a passkey or a code.** The gallery's top row has **Sign in**, which opens a dialog over the page instead of leaving it, so whatever is on the page stays put: **Use a passkey**, the passkeys the device keeps for the site among the email field's suggestions, or **Email me a code**, six digits that work once, for ten minutes, and can be sent again after a minute. After a sign-in by code a passkey is offered, and offered again next time if you skip it; on an iPad or iPhone the offer also says that Bozzetto on the Home Screen keeps a sign-in of its own, to sign in to there too. Where the page's address is not the one passkeys belong to (a preview, an IP address), or the browser has none, only codes are offered, saying why, and Account adds no passkey there. Signed in, the top row has **My projects** and your **@handle**, which holds **Account** and **Sign out**; the owner also has **Owner tools**. For offline use the installed app keeps who is signed in (never the address), until you sign out, and the site's own settings.
 - **Join with an invite.** An invite link opens **Join**. The invite is checked as it opens and your handle as you type it (free, taken, reserved, or held for 90 days after someone gave it up); then your email address, a box to confirm you are 13 or older and accept the Terms, including the content policy, and Cloudflare's bot check, which only shows itself when it needs you. A code comes by mail to finish; in a computer's browser the mail also carries a link that finishes it in the browser that asked, and the tab that asked carries on by itself.
@@ -412,8 +320,8 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **A suspended account is told why.** An account the owner has suspended is told so in the top row, the gallery, Sculpt and Account, and the mail it was sent gives the reason. It is offered **Sign out**, never a sign-in, since signing in again would not lift it, and its **Save to library** downloads a `.bozz` file instead. Its work is kept.
 - **The owner's account.** `/admin/` offers **Create your account** the first time: a handle and the terms, for the address Cloudflare Access signed you in with. Your projects become the account's, and a passkey is offered. From then on the owner tools want the account signed in as well as Access, and ask for it in the dialog, in place.
 - **Owner tools: Invites, Users and Audit.** `/admin/` has tabs beside **Projects** for the owner's tools over accounts: make and withdraw invite links, each shown once as it is made, with **Copy**; see the accounts, with their storage against the quota, and suspend or unsuspend one (the reason is mailed to its holder), sign one out everywhere, set its quota, count its storage again, or finish a deletion it left half done (flagged once it has waited a day); and read the audit log, filtered by action or subject. Refusals are said as sentences: your own account is never suspended or signed out from there, and an action an account has moved past since the page drew it says so and shows it as it now is.
-- **Desktop app: sign in with your account.** On a server with accounts, **Server → Sign In** opens the site's own sign-in in its window, leading with a code by email; the mail carries no link, which would open another browser, and a passkey on a phone or a security key works too. The window closes by itself once you are in, its sign-in marked as the app's, and **Server Settings** says which account you are signed in as, asking the server rather than trusting what the app keeps: a sign-in ended elsewhere reads as ended, and **Sign In** starts afresh. After another server is set, or a sign-in, the app asks the server afresh what it offers, so a server that has switched accounts on since the app opened is treated as one. **Save to Library** and the Capture window's publishing go to your own **My projects**, the owner's too, as on the web. **Sign Out** ends the session on the server, then lets the app's cookies go. On a server without accounts, Cloudflare Access signs you in, as before.
-- **Privacy notice and Terms.** `/legal/privacy.html` and `/legal/terms.html`, the Terms with the content policy and how to report content, linked from Join, Account and the gallery's foot, and kept for offline use. The owner's decisions are still to be written in, in brackets. The Content-Security-Policy, still report-only, admits Cloudflare's bot check.
+- **Desktop app: sign in with your account.** On a server with accounts, **Server → Sign In** opens the site's own sign-in in its window, leading with a code by email; the mail carries no link, which would open another browser, and a passkey on a phone or a security key works too. The window closes by itself once you are in, its sign-in marked as the app's, and **Server Settings** says which account you are signed in as, asking the server rather than trusting what the app keeps: a sign-in ended elsewhere reads as ended, and **Sign In** starts afresh. **Save to Library** and the Capture window's publishing go to your own **My projects**, the owner's too, as on the web. **Sign Out** ends the session on the server, then lets the app's cookies go. On a server without accounts, Cloudflare Access signs you in, as before.
+- **Privacy notice and Terms.** `/legal/privacy.html` and `/legal/terms.html`, the Terms with the content policy and how to report content, linked from Join, Account and the gallery's foot, and kept for offline use. The owner's decisions are still to be written in, in brackets.
 
 **Colour picked off the view, the remesh's grid, and a passkey check.**
 
@@ -429,7 +337,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 **The server checks who is asking, and from where.**
 
-- **Access verification is required.** The header Cloudflare Access adds to name who signed in can be sent by anyone wherever Access does not front a route, and without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` the server believed it. Now every admin request on a deployed host has its Access token verified as well, and until both variables are set the admin routes answer 503, "Access verification is not configured", rather than fall back to the header (see Deployment). `DEV_ADMIN` works on `localhost` only, and an identity counts only on paths under `/admin/`. `ADMIN_EMAILS` stays optional.
+- **Access verification is required.** The header Cloudflare Access adds to name who signed in can be sent by anyone wherever Access does not front a route, and without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` the server believed it. Now every admin request on a deployed host has its Access token verified as well, and until both variables are set the admin routes answer 503, "Access verification is not configured", rather than fall back to the header (see [docs/deployment.md](docs/deployment.md)). `DEV_ADMIN` works on `localhost` only, and an identity counts only on paths under `/admin/`. `ADMIN_EMAILS` stays optional.
 - **Writes from other sites are refused.** The Access cookie goes with any request a signed-in browser sends, including one a page on another site makes it send. A write the browser marks as coming from another origin is now refused, and the writes that take JSON insist on `application/json`, which another site cannot send without the browser asking first. The editor, Sculpt and the desktop app are unaffected.
 - **Sign in again stays on the site.** `/admin/login?next=/.//evil.example/x` sent the browser to `//evil.example/x`, which it reads as another site. It now always answers with a full address on the site itself.
 - **A bad request is refused for what it is.** Malformed JSON was an internal error and is now a 400. A frame upload with no index was stored as the first frame, overwriting it; it is refused, as is an index past the 10,000-frame limit. A thumbnail must be a JPEG, as every client makes it. Project data is measured in bytes, as the database counts it, so text in scripts that take several bytes a character can no longer pass the 1.5 MB limit.
@@ -591,343 +499,11 @@ First public release.
 - In-browser editor exporting a self-contained `.html`, plus MP4/GIF reel export.
 - Gallery of portrait thumbnails.
 
-## Getting started
+## Source
 
-Requires Node 20 or newer; CI and the deployment use 22.
-
-### Viewer only (no backend)
-
-```bash
-npm install
-npm run dev      # generates a demo timelapse, then starts Vite
-```
-
-With no backend running, the viewer falls back to a synthetic bust at `?tl=demo`.
-It is a test fixture and ships in neither the live site nor the desktop app;
-`npm run build:test` is the build that keeps it, which is what the test suites
-need.
-
-### Full stack (viewer, editor, and API)
-
-The editor and APIs are Cloudflare Pages Functions, so run them with Wrangler against a local D1 and R2:
-
-```bash
-cp wrangler.toml.example wrangler.toml
-npm run db:migrate:local          # apply migrations to the local D1
-npm run cf:dev                    # build, then `wrangler pages dev`
-```
-
-Set `DEV_ADMIN = "true"` in the `[vars]` block of `wrangler.toml` to use the editor locally without Cloudflare Access. Keep that local only.
-
-### Scripts
-
-```bash
-npm run build               # type-check + static production build into dist/
-npm run build:test          # the same, keeping the demo timelapse the suites need
-npm run preview             # serve the production build
-npm run export <id>         # bundle a timelapse into <id>.html
-npm run typecheck           # app types
-npm run typecheck:functions # Pages Functions types
-npm run check:functions     # the Functions against a local wrangler pages dev (D1, R2)
-npm run db:migrate          # apply D1 migrations to the remote database
-npm run e2e:build           # test build, then the browser smoke tests (needs Playwright)
-npm run e2e -- <suite ...>  # the smoke tests against the current test build
-npm run desktop             # build and run the desktop app
-npm run build:desktop       # the desktop build alone, into dist-desktop/
-xvfb-run -a node tests/e2e/desktop.mjs  # the desktop app's own suite, on a virtual display
-npm run dist:desktop        # package the desktop app for this platform, into release/
-```
-
-The Blender scripts behind the base meshes and the mannequins, and the
-`rig:*` scripts beside them, are described in `tools/README.md`.
-
-## Tutorial
-
-From a blank project to a published timelapse.
-
-1. **Look at the viewer first.** Run `npm run dev` and open `/?tl=demo` for a synthetic sample. Drag to orbit, `Space` to play, `H` for hotkeys.
-2. **Prepare your frames.** Export each stage as `.obj` or `.glb`, named so they sort in order (`sculpt_001.obj`, `sculpt_002.obj`). A few thousand to a few hundred thousand triangles per frame plays back comfortably.
-3. **Create a project.** Open `/admin/` and create from a title. The id is slugged from it.
-4. **Add your frames.** Drop the sequence on the dropzone. Tick **OBJ files are Z-up** for Blender and most DCC exports. They convert and upload together.
-5. **Set up the look.** Pick lighting, material and environment, orbit to your angle, then press **Save look**.
-6. **Annotate and finish.** Add stages to mark key frames, then **Save thumbnail**. It is live at `/?tl=<id>`.
-7. **Share it.** Send the link, or press **Export .html** for one self-contained file that opens offline.
-
-### From the command line
-
-Build a timelapse without the editor or a database:
-
-```bash
-node scripts/obj-to-timelapse.mjs <inputDir> <id> [--fps=4] [--title="..."] [--z-up]
-npm run build
-npm run export <id>          # writes a self-contained <id>.html
-```
-
-## Project layout
-
-```
-index.html                 app shell: gallery, viewer, sculpt and armature
-admin/index.html           app shell (editor)
-create/index.html          app shell (timelapse uploader)
-src/
-  main.ts                  entry: ?tl=<id> boots the viewer, ?sculpt=1 and
-                           ?armature=1 their modes, anything else the gallery
-  types/manifest.ts        the manifest data contract (+ validation)
-  loaders/gltf.ts          shared GLTFLoader setup
-  viewer/
-    Viewer.ts              scene, renderer, camera, render loop
-    AssetSource.ts         where bytes come from: network or inlined export
-    mountViewer.ts         boots the viewer + UI, shared by both entries
-    Lighting.ts            multi-light rig, presets, VSM shadows
-    Materials.ts           material registry + mode switching
-    Environment.ts         HDRI image-based lighting + background
-    Controls.ts            OrbitControls with a DCC button mapping
-    FrameStreamer.ts       fetch / prefetch / cache / dispose of frames
-    Timeline.ts            playback clock, fps, stage jumps, scrub
-    quality.ts             device quality tiers
-  armature/
-    mode.ts                armature entry: figure, handles, gizmo, files, Send to Sculpt
-    Armature.ts            the posable figure: bones, limits, IK, pins, planting
-    rig.ts, glbRig.ts      the built-in rigs, and the reader for a rigged .glb
-    figures.ts             the mannequins
-  sculpt/
-    mode.ts                sculpt entry: mounts the session, panels, autosave
-    bridge/                the Bozzetto side: input, tools, alphas, persistence
-    ui/                    toolbar, File menu, Capture window, Tool/Model/Scene panels, sliders
-    vendor/                vendored SculptGL editing core (MIT)
-  ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
-                           Preferences and its settings, touch guards, the
-                           service worker and its update notices
-  ui/account/              accounts: the sign-in dialog, Join, Account,
-                           My projects, the data download's zip
-  create/                  the timelapse uploader's entry
-  desktop/, net/           the desktop shell's renderer side, and where API calls go
-  embed/main.ts            entry for the self-contained single-file export
-  export/singleFile.js     pure bundler core shared by the editor and CLI
-  admin/
-    main.ts                editor router (list / per-project)
-    editor.ts              project editor: upload, preview, look, stages, export
-    convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
-    glb.ts                 pure OBJ parse + glTF-binary writer
-    api.ts                 typed client for the Functions API
-electron/                  the desktop app: main process, bozzetto:// protocol, server bridge
-public/assets/             matcaps, environments, fonts, brush stencils, base meshes, mannequins
-public/legal/              the Privacy notice and the Terms
-functions/
-  _middleware.ts           runs first for every Function: the files host, cross-site
-                           writes, and who is asking
-  api/                     the public list and manifests (the templates), /api/config,
-                           and, with accounts on, auth/ (signing in) and me/ (an
-                           account's own projects, files and settings)
-  admin/api/               the owner tools, behind Access and the owner's account:
-                           projects and templates, uploads, media/ for private files,
-                           invites, users, the audit log
-  m/, media/               the templates' files, on the files host and on this one
-  _shared/                 D1/R2 helpers, manifest shaping, sessions and passkeys,
-                           mail and Turnstile, quota and uploads
-shared/bozz.ts             the scene file's reader, shared by the app and the Functions
-migrations/                D1 schema
-scripts/
-  app-version.mjs          the version a build says it is: package.json's + the commit
-  generate-sample.mjs      builds the demo frames + manifest
-  obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
-  export-single-file.mjs   CLI: timelapse to a self-contained .html
-tools/
-  export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
-  build-mannequins.py      Blender: the bundle's figures rigged into public/assets/armature
-  blender_armature.py      Blender: the armature rig, to model against
-  rig.json, *.mjs          the rig for the Blender scripts, and test figures
-tests/e2e/                 browser smoke tests: npm run e2e:build (needs Playwright)
-tests/functions/           the Functions against wrangler pages dev: npm run check:functions
-```
-
-## Deployment
-
-Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub integration, so every push to `main` builds and deploys.
-
-- Build command `npm run build`, output directory `dist`, with the build variable `NODE_VERSION=22`: the passkey library and its certificate parser need Node 20 or later, and CI builds on 22.
-- The `prebuild` step generates the demo timelapse, so those assets ship without being committed.
-- Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column, and from `0003_accounts.sql` on, the gallery lists templates, which 0003 makes of every public project, so it shows the same set as before. 0003 only adds, and 0.5.5 runs on it. It is applied in production, through the console and recorded; staging takes it with `npx wrangler d1 migrations apply bozzetto-staging --remote`, from a `wrangler.toml` that names that database.
-- Functions run on `/api/*`, `/admin/api/*`, `/admin/login`, `/media/*` and `/m/*` only, which `public/_routes.json` lists. Without it, the root middleware (`functions/_middleware.ts`) would run for every static file, each billed as a Functions request. A Function on any other path never runs until the file names it.
-- Admin auth: put a Cloudflare Access application in front of `/admin*`, including `/admin/api/*`. Add every hostname you edit from, both `*.pages.dev` and any custom domain. The identity header Access adds can be sent by anyone wherever Access does not front a route, so on every host but a local one (`localhost`, `127.0.0.1`, `[::1]`) the admin routes also verify the Access token, and `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are required: until both are set, every admin request is answered 503, "Access verification is not configured". Set them in Pages → Settings for both Production and Preview. The team domain is the `<team>.cloudflareaccess.com` host the login page redirects to; the audience is the application's Audience (AUD) tag, on its page in Zero Trust → Access → Applications. `ADMIN_EMAILS` is optional: set it to limit which identities may write; unset, anyone the Access policy lets in is the owner. In the application's cookie settings, set the SameSite attribute to Lax, so a page on another site cannot make a signed-in browser send the session with a write. With accounts on, once the owner has made an account (`/admin/` offers **Create your account** the first time), the owner tools want that account signed in as well: a second lock, not a replacement, so the Access application stays.
-- The Access application's session duration decides how often the installed app asks to sign in again (Zero Trust → Access → Applications → the app → Session Duration).
-- Production is served at `bozzetto.vidarrapp.se` as a custom domain on the Pages project.
-- The files host, `files.vidarrapp.se`, is a second custom domain on the same Pages project (Custom domains → Set up a domain; the dashboard makes the proxied CNAME). It serves the templates' files on `/m/` and answers nothing else. Once it answers, set `MEDIA_ORIGIN` to it, with `APP_ORIGIN` beside it, since it lets the app's pages read its files by naming that origin; until both are set, manifests name the files on the app's own `/media/`, which serves the same. Build with `VITE_MEDIA_ORIGIN` set to the same origin, so the installed app keeps the files host's thumbnails as it keeps the others.
-
-Without Wrangler at hand, a migration can go in through the D1 dashboard's
-**Console**: run the file's statements one at a time, then record it so a later
-`npm run db:migrate` skips it. A database first set up without `db:migrate`
-has no bookkeeping table yet, so create it as Wrangler would:
-
-```sql
-CREATE TABLE IF NOT EXISTS d1_migrations(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE,
-  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-INSERT INTO d1_migrations (name) VALUES ('0001_init.sql'), ('0002_visibility.sql');
-```
-
-After a console run of `0003_accounts.sql`, record it the same way: `INSERT INTO d1_migrations (name) VALUES ('0003_accounts.sql');`.
-
-`wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template, and lists every variable below.
-
-### Turning on accounts
-
-**Accounts are off until the owner sets their secrets and turns them on with `ACCOUNTS_ENABLED=true`.** Unset, the site is 0.5.5 with templates: `/api/config` says `accounts: false`, `/api/auth/*` and `/api/me/*` answer 404, and the owner signs in through Cloudflare Access alone. The rest can be set ahead of the switch, which changes nothing until it is thrown. The design, and why each part is as it is, is in [docs/accounts.md](docs/accounts.md).
-
-Set them in Pages → Settings → Variables and Secrets, for Production; staging has a project of its own (below). Locally the variables go under `[vars]` in `wrangler.toml` and the secrets in `.dev.vars`.
-
-| Name | Kind | Production | Unset |
-| --- | --- | --- | --- |
-| `ACCOUNTS_ENABLED` | variable | `true` | accounts off, whatever else is set |
-| `APP_ORIGIN` | variable | `https://bozzetto.vidarrapp.se` | passkeys and Turnstile refused (503), and the files host not used |
-| `RP_ID` | variable | `bozzetto.vidarrapp.se` | passkeys refused (503); codes still sign in |
-| `MEDIA_ORIGIN` | variable | `https://files.vidarrapp.se` | the templates' files come from the app's own `/media/` |
-| `MAIL_FROM` | variable | `Bozzetto <login@vidarrapp.se>` | mail refused (503), once `RESEND_API_KEY` is set |
-| `TURNSTILE_SITE_KEY` | variable | the widget's site key | no bot-check widget is drawn |
-| `AUTH_SECRET` | secret | `openssl rand -base64 32`, one per project | every sign-in and Join refused (503): it keys the codes and the rate limits |
-| `TURNSTILE_SECRET` | secret | the widget's secret key | Join and every code refused (503) |
-| `RESEND_API_KEY` | secret | Resend's API key | every mail refused (503) |
-| `VITE_MEDIA_ORIGIN` | build variable | `https://files.vidarrapp.se` | the installed app keeps no thumbnails from the files host |
-| `NODE_VERSION` | build variable | `22` | the build image's own Node |
-
-Then, with accounts on, the owner opens `/admin/`, makes the owner's account with **Create your account**, and sends the first invites from the **Invites** tab. The dashboard work this needs (Resend, Turnstile, the files host, the WAF rules) is in the checklist below.
-
-**Staging** is a second Pages project, `bozzetto-staging`, on this repository with `staging` as its production branch: its own D1 and R2 (both `bozzetto-staging`), the hosts `bozzetto-staging.vidarrapp.se` and `files-staging.vidarrapp.se`, its own Access application, `RP_ID=bozzetto-staging.vidarrapp.se`, and accounts on, so they are tried there first, on the real iPad too. Not the Preview environment: its bindings and secrets would reach every branch preview. Staging may use Cloudflare's Turnstile test keys (`1x00000000000000000000AA` with the secret `1x0000000000000000000000000000000AA`), which pass every check and so keep nobody out.
-
-### Security settings checklist
-
-What the repository cannot set for itself: settings made by hand in the
-Cloudflare and GitHub dashboards. Go through them once, and again after
-changing the deployment.
-
-Cloudflare:
-
-- [ ] The Access variables from the admin auth bullet above are set for both
-  **Production** and **Preview** (Pages → Settings → Variables and Secrets).
-- [ ] The Access application's cookie has **SameSite** set to **Lax**
-  (Zero Trust → Access → Applications → the app → Settings → Cookie settings).
-- [ ] The Access application covers every hostname that serves `/admin`: the
-  custom domain `bozzetto.vidarrapp.se`, `bozzetto-3me.pages.dev`, and
-  `*.bozzetto-3me.pages.dev` for preview deployments.
-- [ ] Preview deployments do not bind the production D1 database or R2
-  bucket (Pages → Settings → Bindings, Preview): give Preview its own, or none.
-- [ ] HSTS is on for the zone (SSL/TLS → Edge Certificates → HTTP Strict
-  Transport Security). Include subdomains only if every subdomain of the zone
-  serves HTTPS.
-
-Accounts, before `ACCOUNTS_ENABLED` is turned on (docs/accounts.md §11), in
-production and again for staging:
-
-- [ ] **Resend.** An account, with the domain added (Resend → Domains:
-  `vidarrapp.se`, or a sending subdomain such as `mail.vidarrapp.se`, which
-  Resend recommends: the same records one level down), its DNS records in
-  Cloudflare, and open and click tracking off, since tracking would route
-  sign-in links through Resend. `RESEND_API_KEY` is stored as a secret and
-  `MAIL_FROM` set, in both projects. The free tier sends 100 mails a day;
-  the server stops at 90. The values come from Resend's page for the domain:
-
-  | Type | Name | Value |
-  | --- | --- | --- |
-  | MX | `send` | `feedback-smtp.<region>.amazonses.com`, priority 10 |
-  | TXT | `send` | `v=spf1 include:amazonses.com ~all` |
-  | TXT | `resend._domainkey` | the DKIM key, DNS only (not proxied) |
-  | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:<owner>`, only if there is none yet; `p=quarantine` after two clean weeks |
-
-  The `send` records are the bounce address, so the root's own SPF record
-  stays as it is.
-- [ ] **Turnstile.** One Managed widget whose hostnames are both app hosts,
-  `bozzetto.vidarrapp.se` and `bozzetto-staging.vidarrapp.se` (Turnstile →
-  Add widget). `TURNSTILE_SITE_KEY` is set as a variable and
-  `TURNSTILE_SECRET` stored as a secret.
-- [ ] **`AUTH_SECRET`.** Made with `openssl rand -base64 32`, a different one
-  for each project, and stored as a secret.
-- [ ] **The files host.** `files.vidarrapp.se` is a custom domain on the
-  Pages project, and `files-staging.vidarrapp.se` on staging's (Pages → the
-  project → Custom domains); `MEDIA_ORIGIN`, `APP_ORIGIN` and the build's
-  `VITE_MEDIA_ORIGIN` name them.
-- [ ] **WAF custom rules** (Security → WAF → Custom rules; Free allows 5),
-  each with the action **Block**:
-  - `http.host in {"files.vidarrapp.se" "files-staging.vidarrapp.se"} and not starts_with(http.request.uri.path, "/m/")`:
-    the files hosts serve `/m/` and nothing else. The Functions refuse the
-    rest already; this keeps the static files, which never reach them, off
-    those hosts too.
-  - `starts_with(http.request.uri.path, "/api/dev/")`: the test hooks,
-    which answer on `localhost` alone, are not reachable at all.
-- [ ] **WAF rate limiting** (Security → WAF → Rate limiting rules; Free allows
-  one, counting per IP over 10 seconds): requests matching
-  `starts_with(http.request.uri.path, "/api/auth/")`, more than 20 in 10
-  seconds, are blocked for 10 seconds. The server keeps its own limits on
-  mail, codes and sign-ups; this one stops a flood before it costs a request.
-  On Pro, a second rule: `starts_with(http.request.uri.path, "/m/") or starts_with(http.request.uri.path, "/media/")`,
-  more than 600 a minute, blocked for a minute; generous, since a timelapse
-  fetches hundreds of frames.
-- [ ] **The addresses.** The contact address for privacy requests and the
-  takedown address for reports exist, and are written into
-  `public/legal/privacy.html` and `public/legal/terms.html` in place of the
-  bracketed placeholders, with the owner's other decisions there (what copies
-  of the templates may be used for, and nudity). The accounts suite checks
-  that the placeholders are there, so its legal-pages check changes with them.
-
-GitHub (Settings):
-
-- [ ] Secret scanning and push protection are on (Advanced Security).
-- [ ] Private vulnerability reporting is on (Advanced Security); `SECURITY.md`
-  sends reporters there.
-- [ ] Release immutability is on (General → Releases), so a published
-  release's files and tag cannot be changed.
-- [ ] A tag ruleset: only repository admins, and the release workflow, may
-  create, move or delete `v*` tags. Save this as `ruleset.json` and run
-  `gh api repos/vidarrapp/bozzetto/rulesets --method POST --input ruleset.json`:
-
-  ```json
-  {
-    "name": "Release tags",
-    "target": "tag",
-    "enforcement": "active",
-    "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
-    "rules": [{ "type": "creation" }, { "type": "update" }, { "type": "deletion" }],
-    "bypass_actors": [
-      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" },
-      { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" }
-    ]
-  }
-  ```
-
-  `5` is the repository admin role. `15368` is GitHub Actions, which is how
-  **Release desktop** run from the Actions tab tags `main` itself. Leave that
-  entry out to make the tags admins-only; releases then start from a tag you
-  push.
-- [ ] A `main` ruleset requiring CI to pass. Admins bypass it, so pushing
-  straight to `main` still works; pull requests, Dependabot's included, wait
-  for the three checks. The same command, with this file:
-
-  ```json
-  {
-    "name": "main: CI passes",
-    "target": "branch",
-    "enforcement": "active",
-    "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
-    "rules": [
-      {
-        "type": "required_status_checks",
-        "parameters": {
-          "strict_required_status_checks_policy": false,
-          "do_not_enforce_on_create": false,
-          "required_status_checks": [
-            { "context": "typecheck-build", "integration_id": 15368 },
-            { "context": "functions", "integration_id": 15368 },
-            { "context": "e2e-smoke", "integration_id": 15368 }
-          ]
-        }
-      }
-    ],
-    "bypass_actors": [
-      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
-    ]
-  }
-  ```
+The code is on [GitHub](https://github.com/vidarrapp/bozzetto) under the MIT
+licence, and the app can be built and run from it; [`docs/`](docs/) has the
+notes for that.
 
 ## Credits
 
