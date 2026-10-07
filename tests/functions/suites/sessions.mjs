@@ -119,7 +119,10 @@ export async function run({ checks, on, compileShared, repo }) {
   t.eq((await me(forged)).status, 401, 'a token nobody was given: 401');
   forged.jar.set('__Host-bz_session', 'not-a-token');
   t.eq((await me(forged)).status, 401, 'nor anything else');
-  t.eq((await me(holding('suspended'))).status, 401, 'a suspended account has no good session');
+  r = await me(holding('suspended'));
+  t.ok(r.status === 403 && r.json?.code === 'suspended' && r.headers.get('cache-control') === 'no-store', `a suspended account has no good session: 403 suspended, which signing in again would not mend (${r.status} ${r.json?.code})`);
+  r = await holding('suspended').call('GET', '/api/dev/principal');
+  t.ok(r.json?.principal?.kind === 'guest' && r.json?.principal?.refused === 'suspended', `it is a guest marked suspended, never the account (${JSON.stringify(r.json?.principal)})`);
   t.eq((await me(holding('deleting'))).status, 401, 'nor, for anything but finishing the deletion, one being deleted');
   t.eq((await me(holding('revoked'))).status, 401, 'nor a revoked session');
   t.report();

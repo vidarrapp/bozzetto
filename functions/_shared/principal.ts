@@ -13,14 +13,16 @@ import { SESSION_COOKIE, findOwner, findSession, readCookie, recentAuth, touch }
  * - guest: nobody in particular. On /admin/api/ a guest may carry
  *   `refused: 'owner_session'`: Access vouched for them (lock 1), but the
  *   owner's session did not come with it (lock 2), which owner routes
- *   answer with a 403 the page acts on.
+ *   answer with a 403 the page acts on. Elsewhere a guest may carry
+ *   `refused: 'suspended'`: the session cookie is a suspended account's,
+ *   which routes that want an account answer with 403 suspended.
  * - user: a signed-in account, outside /admin/ (its session, and whether
  *   it authenticated in the last ten minutes).
  * - admin: on /admin/* only, the owner as Cloudflare Access vouched for
  *   them (lock 1), with their account once accounts have an owner (lock 2).
  */
 export type Principal =
-  | { kind: 'guest'; refused?: 'owner_session' }
+  | { kind: 'guest'; refused?: 'owner_session' | 'suspended' }
   | { kind: 'user'; user: UserRow; session: SessionRow; recentAuth: boolean }
   | { kind: 'admin'; email: string; owner: UserRow | null };
 
@@ -97,6 +99,7 @@ export async function resolvePrincipal(
   const token = readCookie(request, SESSION_COOKIE);
   if (token === null) return GUEST;
   const found = await findSession(env, token, now);
+  if (found === 'suspended') return { kind: 'guest', refused: 'suspended' };
   if (!found) return GUEST;
   if (
     found.user.status === 'deleting' &&

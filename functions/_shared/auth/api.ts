@@ -106,10 +106,17 @@ async function capped(request: Request, max: number): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
-/** The signed-in account asking, or a 401 signin: the client opens the sign-in dialog. */
+/**
+ * The signed-in account asking, or a 401 signin: the client opens the
+ * sign-in dialog. A suspended account's cookie is 403 suspended instead,
+ * since signing in again would not help.
+ */
 export function requireUser(principal: Principal): UserPrincipal {
-  if (principal.kind !== 'user') throw new HttpError('Sign in first', 401, 'signin');
-  return principal;
+  if (principal.kind === 'user') return principal;
+  if (principal.kind === 'guest' && principal.refused === 'suspended') {
+    throw new HttpError('This account is suspended', 403, 'suspended');
+  }
+  throw new HttpError('Sign in first', 401, 'signin');
 }
 
 /**

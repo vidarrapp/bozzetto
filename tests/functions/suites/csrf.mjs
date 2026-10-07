@@ -66,6 +66,17 @@ const ROUTES = [
   '/admin/api/projects/csrf-target/template',
   '/admin/api/media/csrf-target/thumb.jpg',
   '/admin/api/owner/bootstrap',
+  '/admin/api/invites',
+  '/admin/api/invites/i-csrf/revoke',
+  '/admin/api/users',
+  '/admin/api/users/u-csrf',
+  '/admin/api/users/u-csrf/suspend',
+  '/admin/api/users/u-csrf/unsuspend',
+  '/admin/api/users/u-csrf/revoke-sessions',
+  '/admin/api/users/u-csrf/quota',
+  '/admin/api/users/u-csrf/recount',
+  '/admin/api/users/u-csrf/finish-deletion',
+  '/admin/api/audit',
   '/admin/login',
   '/media/csrf-target/thumb.jpg',
   '/m/csrf-target/thumb.jpg',
@@ -145,6 +156,10 @@ export async function run({ checks, off, on }) {
     '/api/me/sessions/s-csrf-session',
     '/api/me/sessions/revoke-all',
     '/admin/api/owner/bootstrap',
+    '/admin/api/invites',
+    '/admin/api/users/u-csrf/suspend',
+    '/admin/api/users/u-csrf/quota',
+    '/admin/api/users/u-csrf/finish-deletion',
   ]) {
     const missed = await leaks(on, path);
     t.ok(missed.length === 0, `${path} with accounts on, where the route itself would answer: refused first${missed.length ? ` (not: ${missed.join('; ')})` : ''}`);

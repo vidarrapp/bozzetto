@@ -201,20 +201,26 @@ export async function tokenHash(token: string | null): Promise<string | null> {
 /**
  * The good session this token belongs to, with its account, or null: one
  * `sessions JOIN users` read by token_hash, and none at all for a value
- * that is no token. An account that is suspended has no good session; one
- * being deleted does, and the caller decides what it reaches.
+ * that is no token. One being deleted has a good session, and the caller
+ * decides what it reaches. An account that is suspended has none: its
+ * cookie is `'suspended'` instead, whatever became of the session
+ * (suspending an account revokes them all), until its 90 days are up, so
+ * whoever holds it can be told why nothing answers (403 suspended) rather
+ * than asked to sign in, which the account cannot.
  */
-export async function findSession(env: Env, token: string | null, now: number): Promise<SessionUser | null> {
+export async function findSession(env: Env, token: string | null, now: number): Promise<SessionUser | 'suspended' | null> {
   const hash = await tokenHash(token);
   if (!hash) return null;
   const row = await env.DB.prepare(
     `SELECT u.*, ${SELECT_SESSION} FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE ${LIVE} AND u.status IN ('active', 'deleting')`,
+     WHERE s.token_hash = ?1 AND s.expires_at > ?2
+       AND ((s.revoked_at IS NULL AND s.last_seen_at > ?3 AND u.status IN ('active', 'deleting')) OR u.status = 'suspended')`,
   )
     .bind(hash, now, now - SESSION_IDLE)
     .first<Joined>();
   if (!row) return null;
   const found = split(row);
+  if (found.user.status === 'suspended') return 'suspended';
   return found.session ? (found as SessionUser) : null;
 }
 

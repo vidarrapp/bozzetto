@@ -28,11 +28,12 @@ export function base32(bytes: Uint8Array): string {
 }
 
 /**
- * A new user, project or session id: `u-`, `p-` or `s-` and 128 random bits
- * as 26 base32 characters. Enough that ids can be made without asking the
- * database whether one is taken, and that guessing one is hopeless.
+ * A new user, project, session or invite id: `u-`, `p-`, `s-` or `i-` and
+ * 128 random bits as 26 base32 characters. Enough that ids can be made
+ * without asking the database whether one is taken, and that guessing one
+ * is hopeless.
  */
-export function randomId(kind: 'u' | 'p' | 's'): string {
+export function randomId(kind: 'u' | 'p' | 's' | 'i'): string {
   return `${kind}-${base32(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 

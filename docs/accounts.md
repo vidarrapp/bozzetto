@@ -125,6 +125,7 @@ type Principal =
 - Access headers and `CF_Authorization` are ignored.
 - No cookie is `guest`, with no query.
 - A cookie costs one `sessions JOIN users` read by `token_hash`. It requires `revoked_at IS NULL`, `expires_at > now`, `last_seen_at > now − 30 d`, and status `active` (or `deleting`, which reaches only `POST /api/me/delete`).
+- A suspended account's cookie, its session revoked or not, is a guest that routes wanting an account answer 403 `suspended` rather than 401 `signin`, until the session's 90 days are up: signing in again would not help.
 - `last_seen_at` is rewritten at most hourly, in `waitUntil`.
 
 **Roles.** `functions/_shared/auth/permissions.ts` is the one map:
@@ -171,7 +172,7 @@ type Principal =
 | 401 | `signin`, `reauth` |
 | 403 | `cross_site`, `turnstile`, `suspended`, `owner_session` |
 | 404 | `not_found` (also anything not yours) |
-| 409 | `handle_taken`, `owner_exists` (the bootstrap, once there is an owner) |
+| 409 | `handle_taken`, `owner_exists` (the bootstrap, once there is an owner), `owner` (an owner tool on the owner's own account), `wrong_status {status}` (an account action from a status it does not start from) |
 | 410 | `invite_invalid`, `flow_expired` |
 | 413 | `file_too_large`, `quota_exceeded` |
 | 415 | `bad_type` |
@@ -490,18 +491,21 @@ These are tabs beside Projects on `/admin/`, behind Access and the owner session
 
 - **Invites.**
   - Create with `{label, maxUses 1–500 (default 1), expiresInDays 1–90 (default 14)}`. The link is shown once.
-  - The list shows uses, expiry and state; each invite can be revoked.
+  - The list (the newest 500) shows uses, expiry and state (`live`, `used`, `expired`, `revoked`); each invite can be revoked, and revoking it again changes nothing.
   - Routes: `GET|POST /admin/api/invites`, `POST /admin/api/invites/:id/revoke`.
 - **Users.**
-  - The list shows handle, email, role, status, dates, and used versus quota.
+  - The list shows handle, email, role, status, dates, and used versus quota, newest first, 50 a page.
   - Actions:
-    - Suspend `{reason}`, which revokes sessions and mails the user, and Unsuspend;
-    - Revoke sessions, Quota override (MiB), Recount;
-    - Finish deletion. Deletions pending over 24 hours are flagged.
-  - Routes: `GET /admin/api/users?cursor=`, `POST /admin/api/users/:id/{suspend,unsuspend,revoke-sessions,recount,finish-deletion}`, `PUT /admin/api/users/:id/quota`.
+    - Suspend `{reason}`, which revokes sessions, drops uploads in progress and mails the user the reason, and Unsuspend, after which the user signs in again;
+    - Revoke sessions, Quota override (1–102,400 MiB), Recount;
+    - Finish deletion. Deletions pending over 24 hours are flagged (`pendingDeletions`), counted from the `account.delete` row.
+  - None of them suspends, signs out or deletes the owner's own account (409 `owner`); an action from the wrong status is 409 `wrong_status`.
+  - The reason is kept on the user's row while suspended and mailed, but not audited: free text may name people.
+  - Routes: `GET /admin/api/users?cursor=`, `GET /admin/api/users/:id`, `POST /admin/api/users/:id/{suspend,unsuspend,revoke-sessions,recount,finish-deletion}`, `PUT /admin/api/users/:id/quota`.
 - **Audit.**
-  - Newest first, 50 a page, filtered by action or subject (`GET /admin/api/audit?before=&action=&subject=`).
-  - Each load deletes up to 500 rows past 12 months.
+  - Newest first, 50 a page, filtered by action or subject (`GET /admin/api/audit?before=&action=&subject=`), with the actions the log holds for the filter.
+  - Nothing past 12 months (by the calendar) is listed, and each load deletes up to 500 such rows, oldest first.
+  - It answers with accounts off too, since owner tools write to it then as the Access identity; invites and users are 404 `accounts_off`.
 - **Bootstrap.**
   - With accounts on and no owner, "Create your account" calls `POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed}`. It needs Access alone, and is refused once an owner exists.
   - It creates the `role = 'owner'` user with the Access email and a 10 GiB quota, and claims the rows with `owner_id IS NULL AND template = 0`.

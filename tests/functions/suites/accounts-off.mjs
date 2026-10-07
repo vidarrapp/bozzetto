@@ -1,13 +1,14 @@
 // Accounts off (docs/accounts.md §3): with ACCOUNTS_ENABLED unset, every
-// route Batches 3 and 4 bring is not there - 404 accounts_off, kept by no
+// route Batches 3 to 6 bring is not there - 404 accounts_off, kept by no
 // cache, with no cookie set, nothing stored and nothing mailed - whoever
 // asks, a session cookie and the Access identity included. The site is
-// 0.5.5 with templates.
+// 0.5.5 with templates. (The owner's audit log is the exception, and the
+// owner-tools suite's: owner tools write to it with accounts off too.)
 import { asOwner } from '../lib.mjs';
 
 export const needs = ['off'];
 
-/** Every route of Batches 3 and 4, as [method, path]. */
+/** Every route of Batches 3 to 6 that is about accounts, as [method, path]. */
 const ROUTES = [
   ['POST', '/api/auth/passkey/options'],
   ['POST', '/api/auth/passkey/verify'],
@@ -47,6 +48,18 @@ const ROUTES = [
   ['GET', '/api/me/media/p-someproject/thumb.jpg'],
   ['GET', '/api/me/export'],
   ['POST', '/api/me/delete'],
+  // Batch 6's: the owner's invites and accounts.
+  ['GET', '/admin/api/invites'],
+  ['POST', '/admin/api/invites'],
+  ['POST', '/admin/api/invites/i-someinvite/revoke'],
+  ['GET', '/admin/api/users'],
+  ['GET', '/admin/api/users/u-someone'],
+  ['POST', '/admin/api/users/u-someone/suspend'],
+  ['POST', '/admin/api/users/u-someone/unsuspend'],
+  ['POST', '/admin/api/users/u-someone/revoke-sessions'],
+  ['PUT', '/admin/api/users/u-someone/quota'],
+  ['POST', '/admin/api/users/u-someone/recount'],
+  ['POST', '/admin/api/users/u-someone/finish-deletion'],
 ];
 
 export async function run({ checks, off }) {

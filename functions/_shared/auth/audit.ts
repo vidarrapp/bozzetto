@@ -68,3 +68,122 @@ export function auditStatement(
 export async function audit(env: Env, entry: AuditEntry): Promise<void> {
   await auditStatement(env, entry).run();
 }
+
+// --- reading it, and letting it go ------------------------------------------------------
+
+/**
+ * How far back the log goes from `now`: twelve months by the calendar (§3,
+ * §9), so a row written on 7 October 2026 is kept until 7 October 2027.
+ */
+export function auditCutoff(now: number): number {
+  const d = new Date(now);
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  return d.getTime();
+}
+
+/** The most rows one look at the log deletes. */
+export const AUDIT_SWEEP = 500;
+
+/**
+ * Delete up to AUDIT_SWEEP rows written before the cutoff, oldest first;
+ * answers how many went. The owner's audit page does this after each
+ * answer (waitUntil), so the log keeps itself to twelve months with no
+ * schedule: more than that many past it are taken over the next looks.
+ */
+export async function sweepAudit(env: Env, now: number): Promise<number> {
+  const { meta } = await env.DB.prepare(
+    'DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log WHERE at < ? ORDER BY at, id LIMIT ?)',
+  )
+    .bind(auditCutoff(now), AUDIT_SWEEP)
+    .run();
+  return meta.changes;
+}
+
+/** A row as the owner's audit page shows it: the detail as the object it was written as. */
+export interface AuditView {
+  id: number;
+  at: number;
+  actor: string;
+  action: string;
+  subject: string | null;
+  detail: Record<string, unknown>;
+}
+
+/** Which rows, and from where: newest first, after `before` (the last row of the page before), within the twelve months. */
+export interface AuditQuery {
+  before: { at: number; id: number } | null;
+  action: string | null;
+  subject: string | null;
+  limit: number;
+  now: number;
+}
+
+interface AuditRow {
+  id: number;
+  at: number;
+  actor: string;
+  action: string;
+  subject: string | null;
+  detail: string;
+}
+
+function detailOf(text: string): Record<string, unknown> {
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A page of the log, newest first (by time, then id), filtered by action
+ * and subject when asked, and nothing past the twelve months even before
+ * the sweep has caught up: `rows`, `next` (the cursor for the page after,
+ * null at the end), and `actions`, every action the log holds, for a
+ * filter to offer. One read: a subject is found by its index; the rest,
+ * and the actions, are a pass over a table that keeps a year of a small
+ * site's doings.
+ */
+export async function listAudit(
+  env: Env,
+  q: AuditQuery,
+): Promise<{ rows: AuditView[]; next: { at: number; id: number } | null; actions: string[] }> {
+  const cutoff = auditCutoff(q.now);
+  const where = ['at >= ?'];
+  const binds: unknown[] = [cutoff];
+  if (q.action !== null) {
+    where.push('action = ?');
+    binds.push(q.action);
+  }
+  if (q.subject !== null) {
+    where.push('subject = ?');
+    binds.push(q.subject);
+  }
+  if (q.before) {
+    where.push('(at < ? OR (at = ? AND id < ?))');
+    binds.push(q.before.at, q.before.at, q.before.id);
+  }
+  const [page, seen] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT id, at, actor, action, subject, detail FROM audit_log WHERE ${where.join(' AND ')}
+       ORDER BY at DESC, id DESC LIMIT ?`,
+    ).bind(...binds, q.limit + 1),
+    env.DB.prepare('SELECT DISTINCT action FROM audit_log WHERE at >= ? ORDER BY action').bind(cutoff),
+  ]);
+  const found = (page.results ?? []) as AuditRow[];
+  const rows = found.slice(0, q.limit).map((r) => ({
+    id: r.id,
+    at: r.at,
+    actor: r.actor,
+    action: r.action,
+    subject: r.subject,
+    detail: detailOf(r.detail),
+  }));
+  const last = rows.at(-1);
+  return {
+    rows,
+    next: found.length > q.limit && last ? { at: last.at, id: last.id } : null,
+    actions: ((seen.results ?? []) as { action: string }[]).map((r) => r.action),
+  };
+}

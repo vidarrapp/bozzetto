@@ -150,10 +150,15 @@ export interface PendingKey {
   storage_prefix: string | null;
 }
 
+/** Give up these uploads in R2 alone, each as best it can be: their rows are the caller's. */
+export async function abortInR2(env: Env, rows: PendingKey[]): Promise<void> {
+  await Promise.all(rows.map((r) => abortR2(env, prefixFor({ id: r.pid, storage_prefix: r.storage_prefix }) + r.file, r.r2_upload_id)));
+}
+
 /** Give up these uploads: each in R2, then their rows, which take their parts' reservations with them. */
 export async function abortPending(env: Env, rows: PendingKey[]): Promise<void> {
   if (rows.length === 0) return;
-  await Promise.all(rows.map((r) => abortR2(env, prefixFor({ id: r.pid, storage_prefix: r.storage_prefix }) + r.file, r.r2_upload_id)));
+  await abortInR2(env, rows);
   await env.DB.prepare(`DELETE FROM pending_uploads WHERE id IN (${rows.map(() => '?').join(', ')})`)
     .bind(...rows.map((r) => r.id))
     .run();

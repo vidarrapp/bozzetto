@@ -38,6 +38,8 @@ export type ErrorCode =
   | 'not_found'
   | 'owner_exists'
   | 'handle_taken'
+  | 'owner'
+  | 'wrong_status'
   | 'invite_invalid'
   | 'flow_expired'
   | 'file_too_large'
