@@ -1,6 +1,7 @@
 # Bozzetto
 
-<img width="1915" height="956" alt="bozzetto_v1_screenshot_vidarrapp" src="https://github.com/user-attachments/assets/6a8b27f6-5806-422b-ac81-89909a84751d" />
+<img width="2358" height="1339" alt="bozzetto_screenshot_261007" src="https://github.com/user-attachments/assets/cd4ab67a-714c-424e-821d-310b5602ff8a" />
+
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
