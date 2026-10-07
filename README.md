@@ -62,6 +62,8 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 
 ## Armature mode
 
+<img width="2362" height="1331" alt="bozzetto_armature_mode" src="https://github.com/user-attachments/assets/d5b59363-7006-47af-a572-f3089ad40c87" />
+
 A posable figure of its own, for reference or as the start of a sculpt.
 Pick **Create → New armature** in the gallery (or open `/?armature=1`). No
 sign-in, and everything stays on your device.
