@@ -1,5 +1,5 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
-// latency.mjs's, hardening.mjs's and tweaks.mjs's.
+// latency.mjs's, hardening.mjs's, tweaks.mjs's and passkeyCheck.mjs's.
 //
 //   npm run build:test && node tests/e2e/run.mjs [suite ...]
 //
@@ -12,10 +12,11 @@ import { join, resolve } from 'node:path';
 import { checks, launch, serve } from './lib.mjs';
 import { suites as hardening } from './hardening.mjs';
 import { suites as latency } from './latency.mjs';
+import { suites as passkeyCheck } from './passkeyCheck.mjs';
 import { suites as smoke } from './smoke.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 
-const suites = { ...smoke, ...latency, ...hardening, ...tweaks };
+const suites = { ...smoke, ...latency, ...hardening, ...tweaks, ...passkeyCheck };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

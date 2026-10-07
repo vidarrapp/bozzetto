@@ -14,8 +14,9 @@ import { followPanelOpacity } from './ui/appearance';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
- * the landing gallery. Projects load from the API (`/api/projects/:id`); the
- * bundled static demo still works via a fallback so it never depends on the db.
+ * the landing gallery, or Sculpt, Armature or the passkey check when asked.
+ * Projects load from the API (`/api/projects/:id`); the bundled static demo
+ * still works via a fallback so it never depends on the db.
  */
 async function main(): Promise<void> {
   initTheme();
@@ -35,6 +36,13 @@ async function main(): Promise<void> {
   }
   if (!id && params.get('armature') === '1') {
     await bootArmature();
+    return;
+  }
+  // The passkey check (Preferences > Diagnostics, docs/accounts.md batch
+  // 0): a page of its own, loaded only when asked for.
+  if (!id && params.has('passkeycheck')) {
+    const { renderPasskeyCheck } = await import('./ui/passkeyCheck');
+    renderPasskeyCheck(app);
     return;
   }
   if (!id) {

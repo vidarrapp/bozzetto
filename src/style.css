@@ -725,7 +725,8 @@ html.is-page body {
   min-height: 100%;
 }
 
-#app.app--landing {
+#app.app--landing,
+#app.app--page {
   position: static;
 }
 
@@ -3338,6 +3339,27 @@ body.is-sampling * {
   line-height: 1.4;
 }
 
+/* A row that opens something (Diagnostics > Passkey check…): its title
+   and line of explanation in a button, bordered as the guide's Customise
+   hotkeys… is, since there is nothing to tick. */
+.prefs__open {
+  width: 100%;
+  margin: 4px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.prefs__open:hover,
+.prefs__open:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .prefs__group {
   margin: 12px 0 4px;
   font-family: var(--font-spec);
@@ -4069,4 +4091,175 @@ body.is-sampling * {
   margin-top: 12px;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* --- the passkey check (/?passkeycheck) ---
+   A page of plain panels, one a step: what it does, its buttons, then rows
+   of what was found, in the spec face so ids and flags line up. The rows
+   can be selected and copied, unlike the app's chrome. */
+.pkcheck {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 20px 64px;
+}
+
+.pkcheck__head {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.pkcheck__title {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.pkcheck__lede {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.pkcheck__step {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.pkcheck__step-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pkcheck__note {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pkcheck__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.pkcheck__actions:empty {
+  display: none;
+}
+
+.pkcheck__btn {
+  padding: 8px 12px;
+}
+
+.pkcheck__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pkcheck__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pkcheck__input {
+  flex: 1 1 auto;
+  max-width: 320px;
+  padding: 7px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  /* 16px or more, or Safari zooms the page in on focus. */
+  font-size: 16px;
+}
+
+.pkcheck__widget:not(:empty) {
+  margin: 10px 0 0;
+}
+
+.pkcheck__rows {
+  margin: 10px 0 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pkcheck__rows:empty {
+  display: none;
+}
+
+.pkcheck__row {
+  display: grid;
+  grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+  gap: 12px;
+  padding: 3px 0;
+  border-top: 1px solid var(--panel-border);
+  font-size: 12px;
+}
+
+.pkcheck__row:first-child {
+  border-top: 0;
+}
+
+.pkcheck__row dt {
+  color: var(--muted);
+}
+
+.pkcheck__row--sub dt {
+  padding-left: 14px;
+}
+
+.pkcheck__value {
+  margin: 0;
+  font-family: var(--font-spec);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.pkcheck__value--no {
+  color: var(--accent);
+}
+
+.pkcheck__value--unknown {
+  color: var(--muted);
+}
+
+.pkcheck__copied:empty {
+  display: none;
+}
+
+.pkcheck__fallback {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 11px;
+}
+
+.pkcheck__fallback[hidden] {
+  display: none;
+}
+
+/* A phone, or an iPad in a narrow split: label over value. */
+@media (max-width: 560px) {
+  .pkcheck__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
 }

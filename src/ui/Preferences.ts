@@ -2,12 +2,14 @@ import { div } from './dom';
 import { ACTIONS, chordOf, chordParts, keymap, type ActionDef, type KeyMode } from './keymap';
 import { rangeOf, settings, type OnOff, type SettingsValues } from './settings';
 import { launchOptions, launchState, setLaunchOptions, type LaunchOptions } from '../desktop/launch';
+import { isDesktop } from '../net/origin';
+import { readyToLeave } from './leaving';
 
 /**
  * Preferences: what a finger does, how solid the panels are, how frames are
  * drawn while things move, anti-aliasing and adaptive quality, the desktop
- * app's launch settings (there only), the diagnostic overlays, then the
- * hotkey editor. Every keyed action in
+ * app's launch settings (there only), the diagnostic overlays and the
+ * passkey check, then the hotkey editor. Every keyed action in
  * both modes, with its current chord; click one, press the new key. The
  * keymap is the single source the handlers and the guide read, so a change
  * is live at once and shows up in the guide; the settings store is read
@@ -139,6 +141,17 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     'Input log',
     'Pointer and touch events as the browser delivers them, and what Sculpt did with each.',
   );
+  // A test page for the accounts to come (docs/accounts.md, batch 0), its
+  // own page so the installed app can open it too. Not in the desktop app,
+  // whose page is at no web address a passkey could belong to.
+  const passkeyCheck = isDesktop()
+    ? null
+    : openRow(
+        'passkeyCheck',
+        'Passkey check…',
+        'Whether this device can sign in with a passkey, in the browser and from the Home Screen, and whether the bot check loads: a test page for the accounts to come. It opens in place of this page.',
+        () => void openPasskeyCheck(),
+      );
 
   const keysHead = div('prefs__group');
   keysHead.textContent = 'Hotkeys';
@@ -188,6 +201,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     meter.root,
     stallLog.root,
     inputLog.root,
+    ...(passkeyCheck ? [passkeyCheck] : []),
     keysHead,
     keysBlurb,
     tabs,
@@ -460,6 +474,35 @@ function toggleRow(key: OnOffKey, label: string, hint: string): { root: HTMLElem
   settings.onChange(sync);
   sync();
   return { root, sync };
+}
+
+/**
+ * A row that opens something rather than setting it: a title over a line
+ * of explanation, as the other rows have, all one button.
+ */
+function openRow(key: string, label: string, hint: string, action: () => void): HTMLButtonElement {
+  const root = document.createElement('button');
+  root.type = 'button';
+  root.className = 'prefs__choice prefs__open';
+  root.dataset.setting = key;
+  const text = div('prefs__choice-text');
+  const head = div('prefs__choice-title');
+  head.textContent = label;
+  const note = div('prefs__choice-hint');
+  note.textContent = hint;
+  text.append(head, note);
+  root.append(text);
+  root.addEventListener('click', action);
+  return root;
+}
+
+/**
+ * Off to the passkey check (`/?passkeycheck`). Leaving the page, so what
+ * is on it is stored first, as for signing in.
+ */
+async function openPasskeyCheck(): Promise<void> {
+  if (!(await readyToLeave('opening the passkey check means leaving the page. Leave anyway?'))) return;
+  window.location.assign('/?passkeycheck');
 }
 
 /**
