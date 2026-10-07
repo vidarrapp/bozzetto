@@ -8,5 +8,5 @@ import { getProjectRow, toManifest } from '../../_shared/projects';
 export const onRequestGet: PagesFunction<Env> = ({ env, params }) =>
   handle(async () => {
     const row = await getProjectRow(env, String(params.id), 'public');
-    return row ? json(toManifest(row)) : error('Not found', 404);
+    return row ? json(toManifest(row, env)) : error('Not found', 404);
   });

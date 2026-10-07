@@ -1,6 +1,6 @@
 // What owner tools take in: request bodies of every kind, refused before
 // they can do harm, and a scene's file uploaded in parts.
-import { MiB, asOwner, asStranger, concat, ids, jpeg, pattern, same } from '../lib.mjs';
+import { FILES_HOST, MiB, asOwner, asStranger, concat, ids, jpeg, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -100,7 +100,7 @@ export async function run({ checks, off }) {
   t.ok(r.status === 200 && same(r.bytes, whole), `then /media serves it (${r.status})`);
   t.eq(r.headers.get('cache-control'), 'public, no-cache', 'revalidated on every read, since a re-save replaces it in place');
   r = await call('GET', `/api/projects/${scene}`);
-  t.ok(r.status === 200 && r.json?.scene?.file?.startsWith(`/media/${scene}/scene.bozz?v=`), `and its public manifest points there (${r.json?.scene?.file})`);
+  t.ok(r.status === 200 && r.json?.scene?.file?.startsWith(`http://${FILES_HOST}/m/${scene}/scene.bozz?v=`), `and its public manifest points at /m/ on the files host (${r.json?.scene?.file})`);
   r = await call('GET', '/api/projects');
   t.ok(ids(r.json).includes(scene), 'and the public list has it');
 

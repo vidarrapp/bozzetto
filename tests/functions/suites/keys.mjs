@@ -10,7 +10,7 @@
 //                 had its key come from its id
 //   keys-scene    users/u-keys/projects/keys-scene/, private, read back
 //                 through keys-scene-peek
-import { DATA, MiB, asOwner, jpeg, pattern, same } from '../lib.mjs';
+import { DATA, FILES_HOST, MiB, asOwner, jpeg, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -50,7 +50,7 @@ export async function run({ checks, off }) {
   r = await call('GET', '/media/keys-peek/frames/sd/0003.glb');
   t.ok(f.status === 201 && listed.status === 200 && same(r.bytes, frame), `a frame lands under the prefix too (${f.status}, ${listed.status}, ${r.status})`);
   r = await call('GET', '/api/projects/keys-custom');
-  t.eq(r.json?.frames?.[0]?.sd?.split('?')[0], '/media/keys-custom/frames/sd/0003.glb', 'while its manifest names the route, by id, never the key');
+  t.eq(r.json?.frames?.[0]?.sd?.split('?')[0], `http://${FILES_HOST}/m/keys-custom/frames/sd/0003.glb`, 'while its manifest names the route, by id, never the key');
   await call('PUT', '/admin/api/projects/keys-custom', { headers: asOwner, json: { frames: [] } });
   r = await call('GET', '/media/keys-peek/frames/sd/0003.glb');
   t.eq(r.status, 404, 'a frame dropped from the list is deleted from where it was');

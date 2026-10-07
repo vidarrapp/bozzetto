@@ -10,7 +10,7 @@
 // What the API makes of them is what production's gallery will show.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DATA, DATA_ONE_FRAME, asOwner, ids, jpeg, same } from '../lib.mjs';
+import { DATA, DATA_ONE_FRAME, FILES_HOST, asOwner, ids, jpeg, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -183,7 +183,8 @@ export async function run({ checks, off, repo }) {
   const owned = Object.fromEntries(((await off.call('GET', '/admin/api/projects', { headers: asOwner })).json ?? []).map((p) => [p.id, `${p.visibility}/${p.template}`]));
   t.ok(owned['mig-scene'] === 'private/false' && owned['mig-hidden'] === 'private/false' && owned['mig-reel'] === 'public/true', `owner tools still reach all four: the private ones as the owner's own (${['mig-reel', 'mig-scene', 'mig-hidden'].map((id) => owned[id]).join(', ')})`);
   let r = await off.call('GET', '/api/projects/mig-reel');
-  t.ok(r.status === 200 && r.json?.template === true && r.json?.media === '/media/mig-reel' && r.json?.frames?.[0]?.sd?.startsWith('/media/mig-reel/frames/sd/0000.glb?v='), `its manifest says so, with its files where they always were (${r.json?.media}, ${r.json?.frames?.[0]?.sd})`);
+  const files = `http://${FILES_HOST}/m/mig-reel`;
+  t.ok(r.status === 200 && r.json?.template === true && r.json?.media === files && r.json?.frames?.[0]?.sd?.startsWith(`${files}/frames/sd/0000.glb?v=`), `its manifest says so, its files on the files host (${r.json?.media}, ${r.json?.frames?.[0]?.sd})`);
   r = await off.call('GET', '/media/mig-reel/thumb.jpg');
   t.ok(r.status === 200 && same(r.bytes, LEGACY_THUMB), `a file 0.5 stored under projects/<id>/ is served from there: nothing moved (${r.status})`);
   t.report();

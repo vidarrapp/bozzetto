@@ -1,6 +1,7 @@
 // The media routes: what /media serves to anyone and /admin/api/media to
 // the owner, and the headers every answer carries. public/_headers reaches
-// the static files only: these come from code.
+// the static files only: these come from code. /media is /m/'s handler
+// under the name 0.5's apps use; templates.mjs checks /m/ itself.
 import { asOwner, asStranger, ids, jpeg, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
@@ -22,9 +23,12 @@ export async function run({ checks, off }) {
     const th = await call('POST', `/admin/api/projects/${id}/thumb`, { headers: asOwner, bytes: thumb });
     t.ok(c.status === 201 && f.status === 201 && p.status === 200 && th.status === 201, `${id}: made ${visibility}, with a frame, the frame list and a thumbnail (${c.status}, ${f.status}, ${p.status}, ${th.status})`);
   }
-  let r = await call('GET', '/media/med-pub/frames/sd/0000.glb');
+  const version = (await call('GET', '/api/projects/med-pub')).json?.updated_at;
+  let r = await call('GET', `/media/med-pub/frames/sd/0000.glb?v=${version}`);
   t.ok(r.status === 200 && same(r.bytes, frame), `a public frame streams (${r.status}, ${r.bytes.length} bytes)`);
-  t.eq(r.headers.get('cache-control'), 'public, max-age=31536000, immutable', 'and may be cached for good');
+  t.eq(r.headers.get('cache-control'), 'public, max-age=31536000, immutable', 'and at its current version may be cached for good');
+  r = await call('GET', '/media/med-pub/frames/sd/0000.glb');
+  t.eq(r.headers.get('cache-control'), 'public, no-cache', 'at no version it is revalidated: the bytes are whatever is stored now');
   r = await call('GET', '/media/med-pub/thumb.jpg');
   t.ok(r.status === 200 && same(r.bytes, thumb), `so does its thumbnail (${r.status})`);
   r = await call('GET', '/media/med-priv/frames/sd/0000.glb');
@@ -71,7 +75,7 @@ export async function run({ checks, off }) {
   r = await call('GET', '/media/med-pub/frames/sd/0000.glb');
   t.eq(r.headers.get('x-content-type-options'), 'nosniff', 'a media file keeps the type it was stored with');
   t.eq(r.headers.get('content-security-policy'), "default-src 'none'; sandbox", 'opened on its own it is sandboxed');
-  t.eq(r.headers.get('cross-origin-resource-policy'), 'same-origin', 'and no other site may embed it');
+  t.eq(r.headers.get('cross-origin-resource-policy'), 'same-site', "and only this site's own hosts may embed it");
   r = await call('GET', '/media/med-pub/thumb.jpg');
   t.eq(r.headers.get('content-type'), 'image/jpeg', 'a thumbnail is served as the JPEG it was checked to be');
   r = await call('GET', '/admin/api/media/med-priv/frames/sd/0000.glb', { headers: asOwner });

@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import type { SessionRow, UserRow } from './types';
 import type { OwnerScope } from './projects';
+import type { Actor } from './auth/audit';
 import { accountsOn, onMediaHost } from './env';
 import { HttpError, adminEmail, error } from './http';
 
@@ -82,4 +83,14 @@ export function requireAdmin(data: RequestData): Response | null {
 export function ownerScope(principal: Principal): OwnerScope {
   if (principal.kind !== 'admin') throw new HttpError('Unauthorized', 403);
   return { owner: principal.owner?.id ?? null };
+}
+
+/**
+ * Who an owner tool acts as in the audit log, and when: the Access
+ * identity for now (docs/accounts.md §12, Batch 3 names the owner's
+ * account once there is one), at the request's time.
+ */
+export function ownerActor(data: RequestData): Actor {
+  if (data.principal.kind !== 'admin') throw new HttpError('Unauthorized', 403);
+  return { actor: data.principal.email, at: data.now };
 }

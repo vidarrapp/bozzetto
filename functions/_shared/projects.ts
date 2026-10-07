@@ -1,5 +1,7 @@
 import type { Env } from './env';
 import type { ProjectData, ProjectMode, ProjectRow, SceneMeta, Visibility } from './types';
+import { type Actor, auditStatement } from './auth/audit';
+import { filesOrigin } from './env';
 import { HttpError } from './http';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -136,7 +138,7 @@ export async function listProjects(env: Env, scope: Scope): Promise<ProjectSumma
   )
     .bind(...binds)
     .all<Omit<ProjectSummary, 'scene' | 'template' | 'media'> & { scene: string | null; template: 0 | 1 }>();
-  return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: r.template === 1, media: mediaBase(r) }));
+  return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: r.template === 1, media: mediaBase(r, env) }));
 }
 
 /** json_extract hands an object back as JSON text. */
@@ -157,50 +159,66 @@ export function getProjectRow(env: Env, id: string, scope: Scope): Promise<Proje
     .first<ProjectRow>();
 }
 
+/** What serving one of a project's files needs of its row. */
+export type FileRow = Pick<ProjectRow, 'id' | 'storage_prefix' | 'title' | 'updated_at'>;
+
 /**
  * What serving one of a project's files needs of its row - that it is in
- * scope, and its prefix - and nothing more: `data` runs to megabytes on a
+ * scope, its prefix, the title a downloaded scene is named after and the
+ * version its URLs carry - and nothing more: `data` runs to megabytes on a
  * long timelapse, and the viewer asks for hundreds of frames.
  */
-export function getFileRow(
-  env: Env,
-  id: string,
-  scope: Scope,
-): Promise<Pick<ProjectRow, 'id' | 'storage_prefix'> | null> {
+export function getFileRow(env: Env, id: string, scope: Scope): Promise<FileRow | null> {
   const { sql, binds } = where(scope);
-  return env.DB.prepare(`SELECT id, storage_prefix FROM projects WHERE id = ? AND ${sql}`)
+  return env.DB.prepare(`SELECT id, storage_prefix, title, updated_at FROM projects WHERE id = ? AND ${sql}`)
     .bind(id, ...binds)
-    .first<Pick<ProjectRow, 'id' | 'storage_prefix'>>();
+    .first<FileRow>();
 }
 
 /**
  * Where a project's files are read from. A listed template's come off the
- * open /media route, cacheable by anyone. Anything else's come only
- * through /admin/api/media, which Cloudflare Access fronts, so its manifest
- * points there - and only the owner is ever handed that manifest.
- *
- * Batch 2a moves the listed ones to /m/ (MEDIA_ORIGIN's, or this origin's
- * own while it is unset); /media stays for the apps already installed.
+ * open routes, cacheable by anyone: /m/ on the files host (MEDIA_ORIGIN)
+ * once there is one, else /media on this origin - the same handler as /m/
+ * under the name installed 0.5 desktop apps can reach, whose proxy passes
+ * /api, /admin/api and /media alone, until desktop 0.6 is out. Anything
+ * else's come only through /admin/api/media, which Cloudflare Access
+ * fronts, so its manifest points there - and only the owner is ever handed
+ * that manifest.
  */
-export function mediaBase(row: Pick<ProjectRow, 'id' | 'template' | 'visibility'>): string {
-  return `${listed(row) ? '/media' : '/admin/api/media'}/${row.id}`;
+export function mediaBase(row: Pick<ProjectRow, 'id' | 'template' | 'visibility'>, env: Env): string {
+  const id = encodeURIComponent(row.id);
+  if (!listed(row)) return `/admin/api/media/${id}`;
+  const files = filesOrigin(env);
+  return files ? `${files}/m/${id}` : `/media/${id}`;
 }
 
 /**
  * A row as owner tools answer a create or an update with it: every column
- * 0.5 sent as it is stored, and whether it is a template. Who owns it and
- * where its files are stay on the server.
+ * 0.5 sent as it is stored, whether it is a template, and the base its
+ * files are now read from. Who owns it and where in R2 its files are stay
+ * on the server.
  */
-export function toOwnerRow(row: ProjectRow): unknown {
+export function toOwnerRow(row: ProjectRow, env: Env): unknown {
   const { id, title, mode, fps, data, visibility, created_at, updated_at } = row;
-  return { id, title, mode, fps, data, visibility, template: row.template === 1, created_at, updated_at };
+  return {
+    id,
+    title,
+    mode,
+    fps,
+    data,
+    visibility,
+    template: row.template === 1,
+    media: mediaBase(row, env),
+    created_at,
+    updated_at,
+  };
 }
 
 /** Shape a row into the manifest the viewer consumes (design doc §11). */
-export function toManifest(row: ProjectRow): unknown {
+export function toManifest(row: ProjectRow, env: Env): unknown {
   const data = JSON.parse(row.data) as ProjectData;
   const frames = [...data.frames].sort((a, b) => a.index - b.index);
-  const base = mediaBase(row);
+  const base = mediaBase(row, env);
   return {
     id: row.id,
     title: row.title,
@@ -362,6 +380,7 @@ export async function updateProject(
   id: string,
   patch: Record<string, unknown>,
   scope: OwnerScope,
+  by: Actor,
 ): Promise<ProjectRow> {
   const row = await ownedRow(env, id, scope);
 
@@ -391,13 +410,13 @@ export async function updateProject(
   const fps = validFps(patch.fps, row.fps);
   const visibility = validVisibility(patch.visibility, row.visibility);
   // A public project is a template, for the reason createProject gives, so
-  // one made public becomes one, and leaves its owner. Made private, a
-  // template stays one, privatised: off the gallery until it is made public
-  // again (docs/accounts.md §5). Once there is usage to count, becoming a
-  // template also takes the project's bytes off its owner's (Batch 2a's
-  // switch); with accounts off there is none.
+  // one made public becomes one, as the Template switch would make it:
+  // nobody's, its bytes off its owner's usage, and audited (handOver).
+  // Made private, a template stays one, privatised: off the gallery until
+  // it is made public again (docs/accounts.md §5).
   const template = visibility === 'public' ? 1 : row.template;
   const owner = template ? null : row.owner_id;
+  const becomes = template === 1 && row.template === 0;
   // The look blocks (lighting, environment, ...) are stored as sent, so
   // the row as a whole is what gets bounded - in bytes, as D1 counts it: a
   // string's length counts UTF-16 units, and a title or stage note in
@@ -420,14 +439,111 @@ export async function updateProject(
     }
   }
 
-  const { sql, binds } = where(scope);
-  await env.DB.prepare(
+  // Becoming a template, the row must still be as it was read, as the
+  // statements moving its bytes require; otherwise anything in scope.
+  const { sql, binds } = becomes ? { sql: STILL, binds: still(row) } : where(scope);
+  const update = env.DB.prepare(
     `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, visibility = ?, template = ?, owner_id = ?, updated_at = ?
-     WHERE id = ? AND ${sql}`,
-  )
-    .bind(title, mode, fps, serialised, visibility, template, owner, Date.now(), id, ...binds)
-    .run();
+     WHERE ${becomes ? '' : 'id = ? AND '}${sql}`,
+  ).bind(title, mode, fps, serialised, visibility, template, owner, Date.now(), ...(becomes ? [] : [id]), ...binds);
+  if (becomes) {
+    const done = await env.DB.batch([...handOver(env, row, true, null, by), update]);
+    if (!done.at(-1)?.meta.changes) throw new HttpError('The project changed meanwhile; try again', 409);
+  } else {
+    await update.run();
+  }
   return ownedRow(env, id, scope);
+}
+
+// --- templates ---------------------------------------------------------------
+
+/** A project's row as it was read: who owned it, what it weighed, and whether it was a template. */
+const STILL = 'id = ? AND template = ? AND owner_id IS ? AND bytes = ?';
+const still = (row: ProjectRow): unknown[] => [row.id, row.template, row.owner_id, row.bytes];
+
+/**
+ * What goes with a project changing hands between an account and the site:
+ * its bytes leave the usage of whoever owned it and join the new owner's
+ * (none, for a template), and the audit log says so. Each statement holds
+ * only while the row is still as it was read (STILL), so in the batch that
+ * changes the row, ahead of that change, they apply exactly when it does.
+ * Usage is never taken below nothing: a count gone astray is the Recount
+ * tool's to put right, not a reason to refuse the change.
+ */
+function handOver(env: Env, row: ProjectRow, template: boolean, to: string | null, by: Actor): D1PreparedStatement[] {
+  const guard = { sql: `SELECT 1 FROM projects WHERE ${STILL}`, binds: still(row) };
+  const out: D1PreparedStatement[] = [];
+  if (row.bytes > 0 && row.owner_id !== to) {
+    if (row.owner_id) {
+      out.push(
+        env.DB.prepare(`UPDATE users SET bytes_used = MAX(0, bytes_used - ?) WHERE id = ? AND EXISTS (${guard.sql})`).bind(
+          row.bytes,
+          row.owner_id,
+          ...guard.binds,
+        ),
+      );
+    }
+    if (to) {
+      out.push(
+        env.DB.prepare(`UPDATE users SET bytes_used = bytes_used + ? WHERE id = ? AND EXISTS (${guard.sql})`).bind(
+          row.bytes,
+          to,
+          ...guard.binds,
+        ),
+      );
+    }
+  }
+  const detail = { template, from: row.owner_id, to, bytes: row.bytes };
+  out.push(auditStatement(env, { ...by, action: 'project.template', subject: row.id, detail }, guard));
+  return out;
+}
+
+/**
+ * The Template switch (docs/accounts.md §5). On, the project becomes the
+ * site's: nobody's, its bytes off its owner's usage, and as listed or not
+ * as it already was - Public/Private on a template says whether the
+ * gallery lists it. Off, it goes back to the owner, private: to the
+ * owner's account once there is one, else to nobody, which is how the
+ * owner's own projects are kept until the bootstrap claims them. Asking
+ * for what already holds changes nothing and records nothing. Either way
+ * updated_at moves, so every ?v= its files were served under is retired.
+ *
+ * Until Batch 3 resolves the owner's account on /admin/, owner tools act
+ * as no account (scope.owner null), so a project handed to an existing
+ * owner account leaves their reach while accounts are off; it is read
+ * back as that account's.
+ */
+export async function setTemplate(
+  env: Env,
+  id: string,
+  on: boolean,
+  scope: OwnerScope,
+  by: Actor,
+): Promise<ProjectRow> {
+  const row = await ownedRow(env, id, scope);
+  if ((row.template === 1) === on) return row;
+  const owner = on
+    ? null
+    : ((await env.DB.prepare("SELECT id FROM users WHERE role = 'owner'").first<{ id: string }>())?.id ?? null);
+  const visibility: Visibility = on ? row.visibility : 'private';
+  const done = await env.DB.batch([
+    ...handOver(env, row, on, owner, by),
+    env.DB.prepare(`UPDATE projects SET template = ?, owner_id = ?, visibility = ?, updated_at = ? WHERE ${STILL}`).bind(
+      on ? 1 : 0,
+      owner,
+      visibility,
+      Date.now(),
+      ...still(row),
+    ),
+  ]);
+  const after = (await getProjectRow(env, id, scope)) ?? (await getProjectRow(env, id, { owner }));
+  if (!after) throw new HttpError('Not found', 404);
+  // Nothing applied: the row changed between the read and the batch. If
+  // that change was this one, made by another request, it is done.
+  if (!done.at(-1)?.meta.changes && (after.template === 1) !== on) {
+    throw new HttpError('The project changed meanwhile; try again', 409);
+  }
+  return after;
 }
 
 export async function deleteProject(env: Env, id: string, scope: OwnerScope): Promise<void> {

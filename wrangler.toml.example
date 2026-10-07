@@ -37,3 +37,53 @@ bucket_name = "bozzetto-assets"
 # and answer 503 without them. Locally the email header is trusted as it comes.
 # ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
 # ACCESS_AUD = "<application audience tag>"
+
+# --- Accounts (docs/accounts.md §11) -----------------------------------------
+# Variables: set in the dashboard (Settings -> Variables and Secrets) for
+# Production, and in the staging project for staging; locally, under [vars]
+# above. All are optional; what each one's absence means is beside it in
+# functions/_shared/env.ts.
+#
+# ACCOUNTS_ENABLED = "true"   # accounts on. Unset (or anything else) the site is
+#                             # 0.5.5 with templates whatever else is set, so the
+#                             # rest can be set ahead of the switch.
+# APP_ORIGIN = "https://bozzetto.vidarrapp.se"
+#                             # the app's origin: what WebAuthn and Turnstile check,
+#                             # and the one origin whose pages may read the files
+#                             # host by script (CORS).
+# RP_ID = "bozzetto.vidarrapp.se"
+#                             # the passkey relying party: the app's host name.
+# MEDIA_ORIGIN = "https://files.vidarrapp.se"
+#                             # the files host, a second custom domain on this
+#                             # project: it answers GET /m/* and nothing else, and
+#                             # manifests name template files there - once
+#                             # APP_ORIGIN is set too, so the app may read them.
+#                             # Unset, they are on this origin's /media/. The build
+#                             # variable VITE_MEDIA_ORIGIN takes the same value.
+# TURNSTILE_SITE_KEY = "0x4AAAA..."
+#                             # the widget's key, sent to the client only while
+#                             # TURNSTILE_SECRET is set as well.
+# MAIL_FROM = "Bozzetto <login@vidarrapp.se>"
+#                             # the sender of sign-in codes and notices.
+# DEV_TEST_HOOKS = "true"     # LOCAL ONLY: the X-Test-Now clock and /api/dev/*.
+#                             # Honoured on a loopback host and nowhere else.
+# TURNSTILE_VERIFY_URL = "http://127.0.0.1:8789/verify"
+#                             # LOCAL ONLY: a stand-in for Turnstile's siteverify,
+#                             # for the tests. Ignored off loopback.
+#
+# Secrets: encrypted in the dashboard, or `npx wrangler pages secret put NAME`,
+# and locally in .dev.vars (gitignored) - never in this file:
+#   AUTH_SECRET       keys every HMAC: email codes, rate-limit buckets.
+#                     `openssl rand -base64 32`, one per project.
+#   TURNSTILE_SECRET  Turnstile's secret key.
+#   RESEND_API_KEY    Resend's API key. Unset, mail goes to dev_outbox on a
+#                     loopback host and is refused anywhere else.
+#
+# TERMS_VERSION is not a variable but a constant, in
+# functions/_shared/config.ts: it changes in the commit that changes
+# public/legal/terms.html, so the version an account accepts is always the
+# text that shipped with it.
+#
+# public/_routes.json keeps Functions to /api/*, /admin/api/*, /admin/login,
+# /media/* and /m/*. A Function anywhere else never runs, and a static file
+# never meets functions/_middleware.ts, nor is billed as a Functions request.

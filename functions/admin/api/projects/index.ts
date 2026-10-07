@@ -23,5 +23,5 @@ export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, re
     if (denied) return denied;
     const tooBig = bodyLimit(request, 64 * 1024); // id, title, mode, fps, visibility
     if (tooBig) return tooBig;
-    return json(toOwnerRow(await createProject(env, await readJson(request), ownerScope(data.principal))), 201);
+    return json(toOwnerRow(await createProject(env, await readJson(request), ownerScope(data.principal)), env), 201);
   });

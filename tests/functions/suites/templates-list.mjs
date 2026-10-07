@@ -4,7 +4,7 @@
 // own projects - before the bootstrap, the rows no account owns - and
 // never a member's. Some rows are seeded in SQL because no route makes
 // them: a public row that is no template, and a member and their projects.
-import { DATA, asOwner, ids, jpeg, pattern, same } from '../lib.mjs';
+import { DATA, FILES_HOST, asOwner, ids, jpeg, pattern, same } from '../lib.mjs';
 
 export const needs = ['off'];
 
@@ -36,8 +36,8 @@ export async function run({ checks, off }) {
   t.ok(r.status === 201 && r.json?.visibility === 'public' && r.json?.template === true, `what owner tools publish is a template (${r.status} ${r.json?.visibility} ${r.json?.template})`);
   let list = await publicList();
   const made = list.find((p) => p.id === 'tl-made');
-  t.ok(made?.template === true && made?.media === '/media/tl-made', `listed, marked a template, with the base its files are read from (${JSON.stringify(made && { template: made.template, media: made.media })})`);
-  t.ok(list.length > 0 && list.every((p) => p.template === true && p.visibility === 'public' && p.media === `/media/${p.id}`), 'every project on the list is a public template, its files on /media');
+  t.ok(made?.template === true && made?.media === `http://${FILES_HOST}/m/tl-made`, `listed, marked a template, with the base its files are read from (${JSON.stringify(made && { template: made.template, media: made.media })})`);
+  t.ok(list.length > 0 && list.every((p) => p.template === true && p.visibility === 'public' && p.media === `http://${FILES_HOST}/m/${p.id}`), 'every project on the list is a public template, its files on /m/ on the files host');
   const listedOwn = (await ownerList()).filter((p) => p.template && p.visibility === 'public').map((p) => p.id);
   t.eq(ids(list).sort().join(','), listedOwn.sort().join(','), 'and the list is exactly the public templates owner tools see');
   for (const [id, why] of [

@@ -1,6 +1,6 @@
 import type { Env } from '../../../_shared/env';
 import { bodyLimit, error, handle, json, readJson } from '../../../_shared/http';
-import { ownerScope, requireAdmin, type RequestData } from '../../../_shared/principal';
+import { ownerActor, ownerScope, requireAdmin, type RequestData } from '../../../_shared/principal';
 import {
   MAX_DATA_BYTES,
   deleteProject,
@@ -18,12 +18,12 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, par
     const denied = requireAdmin(data);
     if (denied) return denied;
     const row = await getProjectRow(env, String(params.id), ownerScope(data.principal));
-    return row ? json(toManifest(row)) : error('Not found', 404);
+    return row ? json(toManifest(row, env)) : error('Not found', 404);
   });
 
 // PUT /admin/api/projects/:id — update metadata (title, visibility, mode,
 // fps), lighting, stages, frames. Fields left out are kept. Made public, a
-// project becomes a template.
+// project becomes a template, as the Template switch makes one.
 export const onRequestPut: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>
   handle(async () => {
     const denied = requireAdmin(data);
@@ -33,7 +33,8 @@ export const onRequestPut: PagesFunction<Env, string, RequestData> = ({ env, req
     const tooBig = bodyLimit(request, MAX_DATA_BYTES * 2);
     if (tooBig) return tooBig;
     const patch = await readJson(request);
-    return json(toOwnerRow(await updateProject(env, String(params.id), patch, ownerScope(data.principal))));
+    const row = await updateProject(env, String(params.id), patch, ownerScope(data.principal), ownerActor(data));
+    return json(toOwnerRow(row, env));
   });
 
 // DELETE /admin/api/projects/:id — remove the project and its R2 objects.

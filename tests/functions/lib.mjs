@@ -47,3 +47,65 @@ export const DATA = JSON.stringify({
 
 /** The same with one frame listed, so a manifest has a frame path to show. */
 export const DATA_ONE_FRAME = JSON.stringify({ ...JSON.parse(DATA), frames: [{ index: 0, tris: 12 }] });
+
+/**
+ * A fresh SQLite in memory with every migration applied and foreign keys
+ * enforced, as D1 enforces them; null where this Node has no node:sqlite
+ * (22.13 and later have it), and the suite skips what needed it.
+ */
+export async function migratedDatabase(repo) {
+  let sqlite;
+  try {
+    sqlite = await import('node:sqlite');
+  } catch {
+    return null;
+  }
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const db = new sqlite.DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  for (const f of readdirSync(join(repo, 'migrations')).filter((n) => n.endsWith('.sql')).sort()) {
+    db.exec(readFileSync(join(repo, 'migrations', f), 'utf8'));
+  }
+  return db;
+}
+
+/**
+ * A D1 binding over a node:sqlite database, for the suites that hand
+ * functions/_shared an env of their own: prepare, bind, first, all, run and
+ * batch, as the Functions use them. A batch is one transaction, as D1's is.
+ * `beforeBatch`, when given, runs just ahead of each batch, so a suite can
+ * change a row between a function's read and its write.
+ */
+export function d1(db, { beforeBatch } = {}) {
+  const plain = (row) => (row ? { ...row } : row);
+  const statement = (sql, binds = []) => ({
+    bind: (...values) => statement(sql, values),
+    first: async (column) => {
+      const row = db.prepare(sql).get(...binds);
+      if (row === undefined) return null;
+      return column === undefined ? plain(row) : (row[column] ?? null);
+    },
+    all: async () => ({ results: db.prepare(sql).all(...binds).map(plain), success: true, meta: {} }),
+    run: async () => {
+      const info = db.prepare(sql).run(...binds);
+      return { results: [], success: true, meta: { changes: Number(info.changes), last_row_id: Number(info.lastInsertRowid) } };
+    },
+  });
+  return {
+    prepare: (sql) => statement(sql),
+    batch: async (statements) => {
+      beforeBatch?.();
+      db.exec('BEGIN');
+      try {
+        const out = [];
+        for (const s of statements) out.push(await s.run());
+        db.exec('COMMIT');
+        return out;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+  };
+}

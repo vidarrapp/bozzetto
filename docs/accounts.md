@@ -355,10 +355,10 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 |---|---|---|
 | app `/api/me/media/:id/<file>` | the row's owner (`WHERE id = ? AND owner_id = ?`) | `private, no-store`; CORP `same-origin` |
 | app `/admin/api/media/*` | owner tools | as today |
-| `files.vidarrapp.se/m/:id/<file>` | anyone; public templates (phase 3: approved work) | `public, max-age=31536000, immutable` with `?v=` (scenes `public, no-cache`); ACAO `APP_ORIGIN`; CORP `same-site`; HSTS; Cache API after the row check |
+| `files.vidarrapp.se/m/:id/<file>` | anyone; public templates (phase 3: approved work) | `public, max-age=31536000, immutable` with the current `?v=` (scenes, and any other `?v=`, `public, no-cache`); ACAO `APP_ORIGIN`; CORP `same-site`; HSTS; Cache API after the row check |
 | app `/m/*`, `/media/*` | public templates only | as above; `/media/*` serves 0.5 apps until 0.7 |
 
-- **No `MEDIA_ORIGIN`** (local, tests, previews): manifests use same-origin `/m/`.
+- **No `MEDIA_ORIGIN`** (local, tests, previews), or no `APP_ORIGIN` for the files host to answer: manifests use same-origin `/media/`, which installed 0.5 desktop apps can reach until desktop 0.6 ships; `/m/` answers there too.
 - **Owner routes.** `/admin/api/projects*` and `/admin/api/media/*` stay for owner tools: templates and the owner's own projects, behind both locks.
 - **The owner's Sculpt saves** go to `/api/me/*`, like everyone's.
 

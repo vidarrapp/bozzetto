@@ -71,10 +71,11 @@ export async function run({ checks, off, on, compileShared }) {
     r = await off.callHost(FILES_HOST, method, path, { headers: asOwner });
     t.ok(r.status === 404 && r.headers.get('cache-control') === 'no-store', `${method} ${path} on the files host is not found (${r.status})`);
   }
-  // Nothing serves /m/ until Batch 2a: the request passes the split and
-  // falls through to the static site, as a path no Function answers does.
+  // GET /m/* passes the split, to the files route: its 404, for a project
+  // that is not there, says what every answer there says of who may read
+  // it, which the middleware's does not.
   r = await off.callHost(FILES_HOST, 'GET', '/m/any/thumb.jpg');
-  t.ok(!(r.status === 404 && r.headers.get('cache-control') === 'no-store'), `GET /m/* gets past it (${r.status})`);
+  t.ok(r.status === 404 && r.headers.get('access-control-allow-origin') !== null && r.headers.get('strict-transport-security') !== null, `GET /m/* gets past it, to the files route (${r.status})`);
   t.report();
 
   // --- the test clock -------------------------------------------------------

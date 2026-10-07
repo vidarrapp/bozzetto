@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { accountsOn, mediaOrigin } from './env';
+import { accountsOn, filesOrigin } from './env';
 
 /** The terms Join asks a new account to accept; a change asks again (phase 2). */
 export const TERMS_VERSION = '2026-10';
@@ -40,7 +40,9 @@ export function publicConfig(env: Env) {
     rpId: env.RP_ID || null,
     // A widget whose tokens nothing can check would only be in the way.
     turnstileSiteKey: env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET ? env.TURNSTILE_SITE_KEY : null,
-    mediaOrigin: mediaOrigin(env),
+    // Where manifests name public files: the files host, once APP_ORIGIN
+    // lets it answer the app's pages (filesOrigin), else null: /media here.
+    mediaOrigin: filesOrigin(env),
     termsVersion: TERMS_VERSION,
     limits: MEMBER_LIMITS,
   };

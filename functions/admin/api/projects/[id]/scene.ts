@@ -37,7 +37,7 @@ export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, re
     // The part list: 10,000 parts of a few dozen bytes each at the most.
     const tooBig = bodyLimit(request, 1024 * 1024);
     if (tooBig) return tooBig;
-    return json(toManifest(await completeSceneUpload(env, id, upload, await readJson(request), scope)));
+    return json(toManifest(await completeSceneUpload(env, id, upload, await readJson(request), scope), env));
   });
 
 export const onRequestPut: PagesFunction<Env, string, RequestData> = ({ env, request, params, data }) =>

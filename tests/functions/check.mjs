@@ -298,20 +298,29 @@ function stopServer(server) {
 /**
  * functions/_shared compiled on its own into `dir`, for the suites that ask
  * it things directly: each file transpiled alone (they import only each
- * other and types), with its relative imports pointed at the compiled
- * copies. A fresh directory per suite, so no module state carries over.
+ * other and types), subfolders and all, with its relative imports pointed
+ * at the compiled copies. A fresh directory per suite, so no module state
+ * carries over. Modules are asked for by their path under _shared, without
+ * the extension: 'env', 'auth/audit'.
  */
 async function compileShared(dir) {
   const { default: ts } = await import('typescript');
-  mkdirSync(dir, { recursive: true });
-  const from = join(repo, 'functions', '_shared');
-  for (const file of readdirSync(from).filter((f) => f.endsWith('.ts'))) {
-    const { outputText } = ts.transpileModule(readFileSync(join(from, file), 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
-    });
-    const linked = outputText.replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3');
-    writeFileSync(join(dir, file.replace(/\.ts$/, '.mjs')), linked);
-  }
+  const compile = (from, to) => {
+    mkdirSync(to, { recursive: true });
+    for (const entry of readdirSync(from, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        compile(join(from, entry.name), join(to, entry.name));
+        continue;
+      }
+      if (!entry.name.endsWith('.ts')) continue;
+      const { outputText } = ts.transpileModule(readFileSync(join(from, entry.name), 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
+      });
+      const linked = outputText.replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3');
+      writeFileSync(join(to, entry.name.replace(/\.ts$/, '.mjs')), linked);
+    }
+  };
+  compile(join(repo, 'functions', '_shared'), dir);
   return (name) => import(pathToFileURL(join(dir, `${name}.mjs`)).href);
 }
 
