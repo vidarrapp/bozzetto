@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { VitePWA } from 'vite-plugin-pwa';
 import { appVersion, buildCommit, packageVersion } from './scripts/app-version.mjs';
 
@@ -41,6 +42,36 @@ function mediaOrigin(mode: string): string {
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/** The source path every page links the app's stylesheet by; a build names it by its hash. */
+const STYLESHEET_SOURCE = '<link rel="stylesheet" href="/src/style.css" />';
+
+/**
+ * The legal pages (public/legal/*.html, docs/accounts.md §9) are static,
+ * copied as they are, and link the app's stylesheet by its source path, as
+ * the app's own pages do; the dev server serves it there. A build names
+ * the stylesheet by its hash, so each page's link is pointed at what the
+ * built index.html links - when the files are written, before the
+ * worker's precache is listed (closeBundle), so the pages it keeps and
+ * their revisions are the ones served. A page left unlinked fails the
+ * build rather than going out unstyled.
+ */
+function legalPages(outDir: string): void {
+  const dir = join(outDir, 'legal');
+  if (!existsSync(dir)) return;
+  const index = readFileSync(join(outDir, 'index.html'), 'utf8');
+  const sheets = [...index.matchAll(/<link\b[^>]*\brel="stylesheet"[^>]*>/g)]
+    .map((m) => /\bhref="([^"]+)"/.exec(m[0])?.[1])
+    .filter((href): href is string => !!href && href.endsWith('.css'));
+  if (sheets.length === 0) throw new Error('legal pages: the built index.html links no stylesheet');
+  const links = sheets.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n    ');
+  for (const name of readdirSync(dir).filter((n) => n.endsWith('.html'))) {
+    const file = join(dir, name);
+    const html = readFileSync(file, 'utf8');
+    if (!html.includes(STYLESHEET_SOURCE)) throw new Error(`legal pages: ${name} does not link ${STYLESHEET_SOURCE}`);
+    writeFileSync(file, html.replace(STYLESHEET_SOURCE, links));
+  }
+}
 
 /**
  * `--mode desktop` builds for the Electron shell. Four differences, all
@@ -96,6 +127,13 @@ export default defineConfig(({ mode }) => {
     // syntax that fails outright on Windows, and this repo now builds
     // there. Vite copies public/ wholesale, so the fixture is removed after
     // the bundle is written rather than filtered on the way in.
+    {
+      name: 'bozzetto-legal-pages',
+      apply: 'build' as const,
+      writeBundle(options: { dir?: string }): void {
+        legalPages(options.dir ?? `${root}${desktop ? 'dist-desktop' : 'dist'}`);
+      },
+    },
     mode !== 'test' && {
       name: 'bozzetto-drop-demo',
       closeBundle(): void {
@@ -208,6 +246,39 @@ export default defineConfig(({ mode }) => {
               url.origin === self.location.origin &&
               /^\/api\/(?:auth\/|me\/account(?:\/|$)|me\/media\/)/.test(url.pathname),
             handler: 'NetworkOnly',
+          },
+          {
+            // The account signed in, with accounts on (docs/accounts.md §7):
+            // the sign-in probe's answer then, with no address in it. Network
+            // first, as the Access probe below: online the live answer (a 401
+            // passes through and is never stored, and the app drops this
+            // cache when it sees one, ownerCaches.ts); offline, or slower than
+            // the timeout, the last one stands in, so an installed app keeps
+            // its owner's and members' things. /api/me alone: the account's
+            // details (/api/me/account) are never kept, by the rule above.
+            urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname === '/api/me',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-me',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // What the deployment is (/api/config): accounts on or off, where
+            // passkeys work, the Turnstile key. The same for everyone, and
+            // read before the sign-in probe, so offline the last answer says
+            // which probe to trust; online the live one, so a switch made on
+            // the server is seen at once.
+            urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname === '/api/config',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-config',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
           },
           {
             // The sign-in probe. Everything owner-only (the gallery's

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en-GB" class="is-page">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
+    <meta name="theme-color" content="#1c1814" />
+    <title>Privacy notice · Bozzetto</title>
+    <script src="/legal/theme.js"></script>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <nav class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></nav>
+    <main class="legal">
+      <h1>Privacy notice</h1>
+      <p class="legal__meta">Version 2026-10. What Bozzetto keeps about you, why, for how long, and what you can do about it.</p>
+
+      <h2 id="who">Who is responsible</h2>
+      <p>
+        Bozzetto is run by its owner, who decides what is kept and why (the controller, in the words of the
+        GDPR). Questions about your data, and requests, go to
+        <span class="legal__todo">[contact address]</span>.
+      </p>
+
+      <h2 id="what">What is kept, and why</h2>
+      <h3>To give you an account (the contract between us, GDPR Art. 6(1)(b))</h3>
+      <ul>
+        <li>Your account: your handle, your email address, when you joined, the version of the terms you accepted and when, and that you confirmed you are 13 or older. Your birth date is not asked for, and not kept.</li>
+        <li>Your work: the projects and scenes you save, their pictures and files, and how much room they take, so that they are there when you come back.</li>
+      </ul>
+      <h3>To keep accounts safe (a legitimate interest in security, Art. 6(1)(f))</h3>
+      <ul>
+        <li>Passkeys: each passkey's public key, its name, and when it was added and last used. The private key never leaves your device.</li>
+        <li>Sessions: where you are signed in, with the browser's description of itself (its user agent) and the dates, so that you can see them in Account and sign any of them out.</li>
+        <li>A log of security events, such as signing in, a passkey added or removed, or a changed address. It holds no email addresses, codes or tokens, and is kept for 12 months.</li>
+        <li>Limits on how often codes can be asked for and tried, counted by a keyed hash of your IP address, never the address itself, and kept for up to 48 hours.</li>
+        <li>Turnstile, Cloudflare's check that keeps out bots, which runs when you join and when you ask for a code.</li>
+        <li>The codes mailed to you, kept only as a keyed hash, for the 10 minutes a code works.</li>
+      </ul>
+
+      <h2 id="who-else">Who else handles it</h2>
+      <ul>
+        <li><strong>Cloudflare</strong> hosts Bozzetto: the site, its database (D1) and its file storage (R2), Turnstile, and Access, which guards the owner's tools.</li>
+        <li><strong>Resend</strong> sends the mail: your codes, and notices about your account. It keeps its logs of what it sent for 30 days.</li>
+        <li>The <strong>Install</strong> card asks <strong>GitHub</strong> (api.github.com) for the latest desktop app, so GitHub sees your IP address when it is opened.</li>
+      </ul>
+
+      <h2 id="how-long">How long it is kept</h2>
+      <ul>
+        <li>Your account and your work: until you delete them.</li>
+        <li>The database's own history, from which it can be restored: 7 days on Cloudflare's free plan, 30 on the paid one. After that a deleted account is gone from it too.</li>
+        <li>The log of security events: 12 months.</li>
+        <li>A handle that is given up, by a change or with its account: held for 90 days, so that nobody can take it at once.</li>
+      </ul>
+
+      <h2 id="cookies">No tracking, so no banner</h2>
+      <p>
+        Bozzetto has no analytics, no adverts and no tracking. The cookies it sets are the ones signing in
+        needs, and what it keeps on your device is your settings and the work you keep there. None of it
+        needs your consent, so there is no consent banner.
+      </p>
+
+      <h2 id="rights">Your rights</h2>
+      <ul>
+        <li>To have a copy of your data: <strong>Download my data</strong>, in Account, gives you all of it.</li>
+        <li>To have it erased: <strong>Delete account</strong>, in Account, deletes your account and your work.</li>
+        <li>To have it corrected, to restrict or object to its use, or to have it moved elsewhere: ask at <span class="legal__todo">[contact address]</span>.</li>
+        <li>To complain: to IMY, the Swedish Authority for Privacy Protection (<a href="https://www.imy.se/">imy.se</a>), or to the authority where you live.</li>
+      </ul>
+
+      <h2 id="age">Age</h2>
+      <p>Bozzetto is for people aged 13 and over, the age at which you can agree to this yourself in Sweden. Joining asks you to confirm it; nobody is asked for a birth date.</p>
+
+      <h2 id="changes">Changes</h2>
+      <p>When this notice changes, its version above changes too.</p>
+
+      <p class="legal__foot"><a href="/legal/terms.html">Terms of use</a> · <a href="/">Bozzetto</a></p>
+    </main>
+  </body>
+</html>

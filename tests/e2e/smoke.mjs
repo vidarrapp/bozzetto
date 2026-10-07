@@ -926,7 +926,7 @@ async function twoBuilds(oldSha, newSha) {
  * another origin only from its start - as the handler's name and cache,
  * or null for none, which leaves the request to the network untouched.
  */
-function workerRoutes(dir, origin = 'http://127.0.0.1:8788') {
+export function workerRoutes(dir, origin = 'http://127.0.0.1:8788') {
   const routes = [];
   const strategy = (name) =>
     class {

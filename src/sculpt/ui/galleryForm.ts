@@ -22,8 +22,8 @@ export function galleryForm(opts: {
     visibility: Visibility,
     progress: (text: string) => void,
   ) => Promise<string>;
-  /** Re-run the admin check; resolves to the email, or null for a guest. */
-  recheck: () => Promise<string | null>;
+  /** Re-run the sign-in check; resolves to who the page is for now. */
+  recheck: () => Promise<Role>;
 }): { root: HTMLDivElement; setRole: (role: Role) => void } {
   const root = div('gallery-form');
   root.hidden = true;
@@ -62,13 +62,14 @@ export function galleryForm(opts: {
     gateNote.textContent = 'Checking sign-in...';
     void opts
       .recheck()
-      .then((email) => {
+      .then((found) => {
         // The re-check set the role and its words; a guest is told how to
         // sign in, since that is what was asked. Not in another tab: an
         // installed app cannot reach one (it keeps cookies of its own), so
-        // the page is left and come back to, with the work kept. The
-        // desktop app signs in from its Server menu.
-        if (email || role !== 'guest') return;
+        // the sign-in happens here (the dialog, with accounts on) or the
+        // page is left and come back to, with the work kept. The desktop
+        // app signs in from its Server menu.
+        if (found !== 'guest') return;
         if (isDesktop()) sayGate('Not signed in: Server > Sign In.', false);
         else sayGate('Not signed in.', true, 'Sign in');
       })
@@ -135,9 +136,14 @@ export function galleryForm(opts: {
         if (err instanceof AuthExpiredError) {
           status.replaceChildren('Your sign-in has expired, so publishing stopped.');
           status.appendChild(
-            signInButton('sculpt-panel__btn gallery-form__signin', (ok) => {
-              if (ok) void opts.recheck();
-            }),
+            signInButton(
+              'sculpt-panel__btn gallery-form__signin',
+              (ok) => {
+                if (ok) void opts.recheck();
+              },
+              'Sign in again',
+              role === 'expired' ? 'session' : err.via,
+            ),
           );
           return;
         }
@@ -159,6 +165,11 @@ export function galleryForm(opts: {
     fields.hidden = next !== 'owner';
     if (next === 'expired') sayGate('Your sign-in has expired.', true);
     else if (next === 'guest') sayGate('Needs the admin sign-in.', false);
+    // No sign-in lifts a suspension: nothing is offered.
+    else if (next === 'suspended') sayGate('Your account is suspended.', false);
+    // A member's own projects, and publishing to them, come with the next
+    // update; until then the gallery is the owner's to publish to.
+    else if (next !== 'owner') sayGate('Publishing to the gallery is for the owner.', false);
   };
 
   root.append(gate, fields);

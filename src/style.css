@@ -773,6 +773,11 @@ html.is-page body {
   font-size: 13px;
 }
 
+/* A suspended account: said every time, in the accent, while it lasts. */
+.landing__notice--suspended {
+  color: var(--accent);
+}
+
 .landing__signin {
   padding: 0;
   border: 0;
@@ -4276,4 +4281,417 @@ body.is-sampling * {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
   }
+}
+
+/* --- accounts: the sign-in dialog, the Account page (docs/accounts.md §7) ---
+   The dialog is the install card's surface with a form in it; the page is
+   the gallery's frame with plain sections. Fields are 16px, or Safari
+   zooms the page in on focus. */
+.account-card {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.account-body > * + * {
+  margin-top: 10px;
+}
+
+.account-reason {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
+.account-lede,
+.account-note,
+.account-small,
+.account-foot,
+.account-line {
+  margin: 0;
+  font-size: 13px;
+}
+
+.account-note,
+.account-small,
+.account-foot {
+  color: var(--muted);
+}
+
+.account-small {
+  font-size: 12px;
+}
+
+.account-or {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.account-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-field__label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.account-input:focus-visible {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.account-input:disabled {
+  opacity: 0.6;
+}
+
+.account-input[name='code'] {
+  font-family: var(--font-spec);
+  letter-spacing: 0.2em;
+}
+
+.account-hint,
+.account-invite {
+  margin: 0;
+  min-height: 1em;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-hint[data-tone='ok'],
+.account-invite[data-tone='ok'] {
+  color: var(--text);
+}
+
+.account-hint[data-tone='no'],
+.account-invite[data-tone='no'] {
+  color: var(--accent);
+}
+
+.account-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.account-check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.account-legal,
+.account-links a {
+  color: var(--accent);
+}
+
+.account-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-actions .btn,
+.account-passkey,
+.account-submit {
+  padding: 8px 14px;
+}
+
+.account-passkey {
+  width: 100%;
+}
+
+.account-body .btn:disabled,
+.account-section .btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.account-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+/* A way between steps: a button that reads as a link. */
+.account-linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.account-linkbtn:hover {
+  background: none;
+}
+
+.account-linkbtn:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+.account-linkbtn[hidden],
+.account-say:empty,
+.account-bot:empty {
+  display: none;
+}
+
+.account-say {
+  margin: 0;
+  font-size: 13px;
+}
+
+.account-say[data-tone='error'] {
+  color: var(--accent);
+}
+
+.account-say[data-tone='note'] {
+  color: var(--muted);
+}
+
+/* The account's pages: the gallery's frame, a section per subject. */
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.account-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.account-section > .account-step,
+.account-section > .account-list,
+.account-section > .account-code {
+  align-self: stretch;
+}
+
+.account-section__title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--panel-border);
+}
+
+.account-item:first-child {
+  border-top: 0;
+}
+
+.account-item__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-item__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.account-item__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-item__warn {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.account-item__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.account-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.account-rename .account-input {
+  width: auto;
+  flex: 1 1 160px;
+}
+
+/* The @handle chip: a handle is lower-case, and is shown as it is. */
+.account-menu__chip {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+/* The gallery's foot, with accounts on: the legal pages. */
+.landing__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 40px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
+  font-size: 12px;
+}
+
+.landing__foot a {
+  color: var(--muted);
+}
+
+/* Owner tools with accounts on: Create your account, and the second lock. */
+.admin__bootstrap,
+.admin__lock {
+  max-width: 520px;
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+}
+
+.admin__bootstrap h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.admin__lock p {
+  margin: 0 0 10px;
+}
+
+@media (max-width: 560px) {
+  .account-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* --- the legal pages (public/legal/*.html, docs/accounts.md §9) ---
+   Static documents on the app's stylesheet: the gallery's frame, a column
+   of text that can be selected and copied, unlike the app's chrome. */
+.legal {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 64px 20px 64px;
+  font-size: 14px;
+  line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.legal h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: -0.01em;
+}
+
+.legal h2 {
+  margin: 28px 0 6px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.legal h3 {
+  margin: 16px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.legal p,
+.legal ul {
+  margin: 6px 0;
+}
+
+.legal ul {
+  padding-left: 20px;
+}
+
+.legal li {
+  margin: 3px 0;
+}
+
+.legal a {
+  color: var(--accent);
+}
+
+.legal__meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* An owner's decision still to be written in. */
+.legal__todo {
+  padding: 0 4px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.legal__foot {
+  margin-top: 36px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 12px;
 }

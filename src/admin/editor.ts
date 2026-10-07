@@ -1,4 +1,5 @@
-import { api, failureText, type Visibility } from './api';
+import { OwnerSessionError, api, failureText, type Visibility } from './api';
+import { ownerSignIn, ownerSignInPanel } from './ownerSession';
 import { frameFromFile, runPool } from './convert';
 import { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
@@ -141,6 +142,14 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   try {
     project = (await api.get(id)) as EditorProject;
   } catch (err) {
+    // The owner tools' second lock (docs/accounts.md §2): signed in, the
+    // editor opens; until then the page says why it has not.
+    if (err instanceof OwnerSessionError) {
+      if (await ownerSignIn(true)) return renderEditor(host, id);
+      host.innerHTML = `<div class="admin"><div class="topbar topbar--left"><a class="topchip" href="/admin/">← Projects</a></div></div>`;
+      host.querySelector('.admin')?.appendChild(ownerSignInPanel(() => void renderEditor(host, id)));
+      return;
+    }
     // The id comes straight off the URL (?p=) and the message off the wire:
     // neither may reach innerHTML, or a crafted link runs script in the
     // admin origin with the Access session behind it.

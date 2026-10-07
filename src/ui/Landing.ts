@@ -7,8 +7,9 @@
  * the db has any projects (or when the API isn't reachable, e.g. plain
  * `vite dev`).
  *
- * For the owner (the Access probe answers) the list comes from
- * `/admin/api/projects` instead: the templates and the owner's own work.
+ * For the owner (the Access probe answers, or with accounts on the
+ * owner's account) the list comes from `/admin/api/projects` instead: the
+ * templates and the owner's own work.
  * Private projects show with a Private badge and a toggle, whose Public
  * makes a template, and the owner's own scenes saved to the library from
  * Sculpt sit beside the device's own shelf, opening in Sculpt as
@@ -16,6 +17,11 @@
  * owner too, and is edited from Projects. An owner whose sign-in has
  * expired gets a guest's gallery and Log in, as that is what the server
  * will answer, told once that the sign-in expired.
+ *
+ * With accounts on (docs/accounts.md §7) the top row is the account's: Sign
+ * in for a guest, which opens the sign-in dialog over the gallery; My
+ * projects and the @handle menu signed in, and Owner tools for the owner
+ * (ui/account/menu). The foot links the legal pages.
  */
 
 import { div } from './dom';
@@ -24,11 +30,13 @@ import {
   api,
   checkSignIn,
   mediaPath,
+  roleOf,
   setThumbSrc,
   takeExpiryNotice,
   uploadFailure,
   VISIBILITY_HINT,
   type ProjectSummary,
+  type SignIn,
   type Visibility,
 } from '../admin/api';
 import { apiFetch, apiJson, isDesktop } from '../net/origin';
@@ -38,6 +46,9 @@ import { DEVICE_ONLY_NOTE } from './deviceOnly';
 import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { markOpenOnClick } from './openToken';
+import { accountChips } from './account/menu';
+import { LEGAL } from './account/parts';
+import { suspensionText } from '../net/account';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
@@ -59,8 +70,8 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 
   // Page actions live in the shared top row with the theme toggle, so the
   // same controls sit in the same place on every page and mode.
-  const signIn = await checkSignIn().catch(() => ({ email: null, expired: false }));
-  const admin = signIn.email;
+  const signIn: SignIn = await checkSignIn().catch(() => ({ email: null, expired: false }));
+  const admin = roleOf(signIn) === 'owner';
   const bar = topbarRight();
   // A re-render (after a delete) must not stack a second set of chips
   // beside the first: the row outlives the grid it is rebuilt around.
@@ -69,27 +80,46 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     el.classList.add('landing-chip');
     bar.appendChild(el);
   };
-  // Guests get the install steps (owner call: the audience being shown the
-  // app); the owner has it installed, and standalone hides it regardless.
-  if (!admin && !signIn.expired) {
-    const install = installChip();
-    if (install) chip(install);
+  // A sign-in from the gallery (the chip, the expiry line): the page draws
+  // itself again for whoever it is for now.
+  const again = (): void => void renderLanding(app);
+  if (signIn.accounts) {
+    // The account's chips (docs/accounts.md §7): Sign in and Install for a
+    // guest; My projects, Owner tools for the owner, and the @handle menu.
+    for (const c of accountChips(signIn, roleOf(signIn), again)) chip(c);
+    app.querySelector('.landing')?.appendChild(legalFoot());
+  } else {
+    // Guests get the install steps (owner call: the audience being shown the
+    // app); the owner has it installed, and standalone hides it regardless.
+    if (!admin && !signIn.expired) {
+      const install = installChip();
+      if (install) chip(install);
+    }
+    // Same slot either way: the way in for a guest, the way to the editor for
+    // the owner - who otherwise had no link to the admin panel at all. An
+    // expired sign-in is Log in, which is the truth of it: the service
+    // worker's last "signed in" used to stand in for an expired session, and
+    // the gallery went on offering the owner's things until each one failed.
+    chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
+    // And the way out (owner request), so a sign-in is not left behind on a
+    // device the owner is done with. The desktop app signs out in Server
+    // settings, where it signs in.
+    if (admin && !isDesktop()) chip(signOutChip());
   }
-  // Same slot either way: the way in for a guest, the way to the editor for
-  // the owner - who otherwise had no link to the admin panel at all. An
-  // expired sign-in is Log in, which is the truth of it: the service
-  // worker's last "signed in" used to stand in for an expired session, and
-  // the gallery went on offering the owner's things until each one failed.
-  chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
-  // And the way out (owner request), so a sign-in is not left behind on a
-  // device the owner is done with. The desktop app signs out in Server
-  // settings, where it signs in.
-  if (admin && !isDesktop()) chip(signOutChip());
+  if (signIn.suspended) {
+    // Every time, while it lasts: nothing of the account answers until the
+    // owner lifts it, and no sign-in would.
+    const note = document.createElement('p');
+    note.className = 'landing__notice landing__notice--suspended';
+    note.textContent = suspensionText(signIn.suspended.reason);
+    app.querySelector('.landing__head > div')?.appendChild(note);
+  }
   if (signIn.expired && takeExpiryNotice()) {
-    // Once, in the heading's quiet voice: the chip says the rest.
+    // Once, in the heading's quiet voice: the chip says the rest. With
+    // accounts on, Sign in again opens the dialog here.
     const note = document.createElement('p');
     note.className = 'landing__notice';
-    note.append('Your sign-in has expired. ', signInButton('landing__signin'));
+    note.append('Your sign-in has expired. ', signInButton('landing__signin', (ok) => (ok ? again() : undefined)));
     app.querySelector('.landing__head > div')?.appendChild(note);
   }
 
@@ -127,7 +157,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // What opening a scene would replace: the sculpt in progress, or a reel
   // captured on this device (which goes with it, as File > Open's does).
   const workHere = inProgress !== null || (await framesKept());
-  for (const c of await libraryCards(() => void renderLanding(app), workHere, { owner, listed })) {
+  for (const c of await libraryCards(() => void renderLanding(app), workHere, { owner, listed, expired: signIn.expired })) {
     grid.appendChild(c);
   }
 
@@ -141,6 +171,20 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   for (const p of projects.filter((p) => p.mode !== 'scene' && p.frameCount > 0)) {
     grid.appendChild(owner ? ownerCard(p) : card(p));
   }
+}
+
+/** The gallery's foot, with accounts on: the legal pages (docs/accounts.md §9). */
+function legalFoot(): HTMLElement {
+  const foot = document.createElement('footer');
+  foot.className = 'landing__foot';
+  const link = (text: string, href: string): HTMLAnchorElement => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = text;
+    return a;
+  };
+  foot.append(link('Privacy', LEGAL.privacy), link('Terms', LEGAL.terms), link('Report content', LEGAL.takedown));
+  return foot;
 }
 
 /**
@@ -362,7 +406,7 @@ async function sculptCard(): Promise<HTMLElement | null> {
 async function libraryCards(
   onChange: () => void,
   hasUnsavedWork: boolean,
-  opts: { owner: boolean; listed: Set<string> },
+  opts: { owner: boolean; listed: Set<string>; expired: boolean },
 ): Promise<HTMLElement[]> {
   let lib: typeof import('../sculpt/bridge/SceneLibrary');
   let entries: Awaited<ReturnType<typeof import('../sculpt/bridge/SceneLibrary').listLibrary>>;
@@ -465,7 +509,16 @@ async function libraryCards(
           b.textContent = 'Upload to Projects';
           const reason = uploadFailure(err);
           if (reason === 'expired') {
-            failNotice('Your sign-in has expired. The scene stays on this device.', signInButton(''));
+            // Signed in again in the dialog (accounts on), the upload goes again.
+            const retry = (ok: boolean): void => {
+              if (ok && b.isConnected) b.click();
+            };
+            // A sign-in the probe found expired is the account's (with
+            // accounts on), whatever the owner route answered.
+            const via = opts.expired ? 'session' : err instanceof AuthExpiredError ? err.via : undefined;
+            failNotice('Your sign-in has expired. The scene stays on this device.', signInButton('', retry, 'Sign in again', via));
+          } else if (reason === 'suspended') {
+            failNotice(`${err instanceof Error ? err.message : String(err)} The scene stays on this device.`);
           } else if (reason === 'offline') {
             failNotice('No connection. The scene stays on this device; use Upload to Projects when you are online.');
           } else {
@@ -686,7 +739,7 @@ function visibilityToggle(p: ProjectSummary, repaint: () => void): HTMLLabelElem
  */
 function actionFailed(what: string, err: Error): void {
   if (err instanceof AuthExpiredError) {
-    failNotice(`${what}: your sign-in has expired.`, signInButton(''));
+    failNotice(`${what}: your sign-in has expired.`, signInButton('', undefined, 'Sign in again', err.via));
     return;
   }
   alert(`${what}: ${err.message}`);

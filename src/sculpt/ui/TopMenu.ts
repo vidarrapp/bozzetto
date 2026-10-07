@@ -28,7 +28,11 @@ export class TopMenu {
   /** Re-reads each item's label and hint, run whenever the menu opens. */
   private readonly painters: Array<() => void> = [];
 
-  constructor(label: string, items: MenuItem[], cls: string) {
+  /**
+   * `host` is the row the chip goes in: the left one, beside the gallery
+   * link, unless said otherwise (the account's menu sits on the right).
+   */
+  constructor(label: string, items: MenuItem[], cls: string, host: HTMLElement = topbarLeft()) {
     this.chip = topChip(label) as HTMLButtonElement;
     this.chip.classList.add('file-menu__chip', `${cls}__chip`);
     this.chip.setAttribute('aria-haspopup', 'menu');
@@ -40,7 +44,7 @@ export class TopMenu {
     this.pop.hidden = true;
     for (const item of items) this.pop.appendChild(this.build(item));
 
-    topbarLeft().appendChild(this.chip);
+    host.appendChild(this.chip);
     document.body.appendChild(this.pop);
     document.addEventListener('pointerdown', this.onPointerDown, true);
     window.addEventListener('keydown', this.onKeyDown, true);
@@ -140,10 +144,11 @@ export class TopMenu {
     return b;
   }
 
-  /** Under the chip, left-aligned with it. */
+  /** Under the chip, left-aligned with it, and kept on screen: a chip at the right edge has its list end there. */
   private place(): void {
     const r = this.chip.getBoundingClientRect();
-    this.pop.style.left = `${Math.round(r.left)}px`;
+    const room = window.innerWidth - this.pop.offsetWidth - 8;
+    this.pop.style.left = `${Math.round(Math.max(8, Math.min(r.left, room)))}px`;
     this.pop.style.top = `${Math.round(r.bottom + 6)}px`;
   }
 

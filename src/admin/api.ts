@@ -7,6 +7,7 @@
 
 import { apiFetch, isDesktop, type ApiResult } from '../net/origin';
 import { forgetOwnerCaches } from '../net/ownerCaches';
+import { AccountError, getMe, loadConfig, signOutHere, suspensionText, type Me } from '../net/account';
 
 export type Visibility = 'public' | 'private';
 
@@ -146,14 +147,24 @@ async function call<T>(
     // The server's own words where it gave some (a 400, 415 or 503 says
     // what was wrong with the request, or with the server's setup).
     let said: string | null = null;
+    let code: string | null = null;
+    let reason: string | null = null;
     if (res.bytes) {
       try {
-        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: unknown };
+        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: unknown; code?: unknown; reason?: unknown };
         if (typeof body.error === 'string' && body.error) said = body.error;
+        if (typeof body.code === 'string') code = body.code;
+        if (typeof body.reason === 'string') reason = body.reason;
       } catch {
         /* non-JSON error body */
       }
     }
+    // Access let the owner through, but the owner's own session did not
+    // come with it (docs/accounts.md §2, lock 2): signing in to the
+    // account mends it, in the dialog, without leaving the page.
+    if (res.status === 403 && code === 'owner_session') throw new OwnerSessionError();
+    // The account is suspended: signing in again would not help.
+    if (res.status === 403 && code === 'suspended') throw new SuspendedError(reason);
     let message = said ?? `Request failed (${res.status})`;
     // A 403 is one of two refusals (functions/_shared/http.ts): a write the
     // browser said another site's page sent, which signing in again would
@@ -192,8 +203,42 @@ export class ApiError extends Error {
  * refusal of what was asked: signing in again and repeating it works.
  */
 export class AuthExpiredError extends ApiError {
-  constructor() {
+  /**
+   * Which sign-in ran out: Cloudflare Access's (`access`), which only a
+   * page load through Access renews (/admin/login), or the account's own
+   * session (`session`), which the sign-in dialog renews in place.
+   */
+  readonly via: SignInVia;
+  constructor(via: SignInVia = 'access') {
     super('Your sign-in has expired', 401);
+    this.via = via;
+  }
+}
+
+/** The two sign-ins a call can find gone. */
+export type SignInVia = 'access' | 'session';
+
+/**
+ * An owner route refused for want of the owner's own session (403
+ * owner_session): Access vouched for the owner, but once the owner has an
+ * account, the owner tools want that account signed in too (lock 2). The
+ * sign-in dialog mends it.
+ */
+export class OwnerSessionError extends AuthExpiredError {
+  constructor() {
+    super('session');
+    this.message = "Sign in to the owner's account";
+  }
+}
+
+/**
+ * The account asking is suspended (403 suspended, docs/accounts.md §2): its
+ * cookie answers nothing until the owner lifts it, and signing in again
+ * would not help, so nothing offers to. `reason` when the server gives one.
+ */
+export class SuspendedError extends ApiError {
+  constructor(readonly reason: string | null = null) {
+    super(suspensionText(reason), 403);
   }
 }
 
@@ -211,12 +256,14 @@ export class UnreachableError extends Error {
 
 /**
  * Why an upload did not happen, which decides what the notice offers: a
- * sign-in, a wait for the connection, or the server's own words.
+ * sign-in, a wait for the connection, the suspension said and nothing
+ * offered, or the server's own words.
  */
-export type UploadFailure = 'expired' | 'offline' | 'refused';
+export type UploadFailure = 'expired' | 'offline' | 'suspended' | 'refused';
 
 export function uploadFailure(err: unknown): UploadFailure {
   if (err instanceof AuthExpiredError) return 'expired';
+  if (err instanceof SuspendedError) return 'suspended';
   // A rejected fetch, or a lazy chunk that could not load, is a connection.
   if (err instanceof UnreachableError || err instanceof TypeError) return 'offline';
   // The desktop's proxy reports a connection it could not make as status 0.
@@ -230,6 +277,7 @@ export function uploadFailure(err: unknown): UploadFailure {
  * the page again, which runs the login; saying so beats "failed".
  */
 export function failureText(err: unknown): string {
+  if (err instanceof OwnerSessionError) return "the owner tools need you signed in to the owner's account";
   if (err instanceof AuthExpiredError) return 'your sign-in has expired. Reload the page to sign in again';
   return err instanceof Error ? err.message : String(err);
 }
@@ -241,14 +289,28 @@ const asJson = (body: unknown): { body: ArrayBuffer; contentType: string } => ({
 
 /** What the sign-in probe found. */
 export interface SignIn {
-  /** The owner's email while the session holds (offline, the service worker's last answer). */
+  /**
+   * With accounts off, the owner's email while the Access session holds
+   * (offline, the service worker's last answer). Never set with accounts
+   * on: the account (`me`) says who it is.
+   */
   email: string | null;
   /**
-   * Access turned the probe away on a device the owner has signed in on:
+   * The server turned the probe away on a device someone has signed in on:
    * the session ran out. Owner work stays reachable (Save to library keeps
    * the scene here, recording goes on) and Sign in again is offered.
    */
   expired: boolean;
+  /** Whether this site has accounts (/api/config); absent or false, the Access probe answered. */
+  accounts?: boolean;
+  /** With accounts on, the account signed in here (GET /api/me), or null. */
+  me?: Me | null;
+  /**
+   * With accounts on, the account signed in here is suspended (403
+   * suspended): signed in, and answered nothing, until the owner lifts it.
+   * Its reason when the server gives one.
+   */
+  suspended?: { reason: string | null } | null;
 }
 
 /**
@@ -320,15 +382,23 @@ export function takeExpiryNotice(): boolean {
 }
 
 /**
- * Whether this session holds an admin identity, and whether a signed-out
- * answer is a sign-in that expired. Only a JSON 200 is the owner. Access's
- * redirect to its login is "signed out": the owner's session expired when
- * this device remembers a sign-in, a guest otherwise. A refusal from the
- * API itself (403) is someone Access let through who is not the owner, so
- * the memory goes. Anything else - no network and nothing cached, an HTML
- * page where JSON belongs - reads as a guest, as it always has.
+ * Who is signed in here, and whether a signed-out answer is a sign-in that
+ * expired. The deployment's config comes first (docs/accounts.md §7):
+ * with accounts on, the account's session decides (checkAccount); with
+ * them off, or no config to be had (a server from before accounts, or
+ * offline with none kept), Cloudflare Access does, as it always has.
+ *
+ * The Access probe: whether this session holds an admin identity. Only a
+ * JSON 200 is the owner. Access's redirect to its login is "signed out":
+ * the owner's session expired when this device remembers a sign-in, a
+ * guest otherwise. A refusal from the API itself (403) is someone Access
+ * let through who is not the owner, so the memory goes. Anything else -
+ * no network and nothing cached, an HTML page where JSON belongs - reads
+ * as a guest, as it always has.
  */
 export async function checkSignIn(): Promise<SignIn> {
+  const config = await loadConfig();
+  if (config?.accounts) return checkAccount();
   let res: ApiResult;
   try {
     res = await apiFetch('/admin/api/whoami');
@@ -356,6 +426,35 @@ export async function checkSignIn(): Promise<SignIn> {
 }
 
 /**
+ * The account signed in here (GET /api/me, which the service worker keeps
+ * for offline use): a 401 is signed out, or expired where this device
+ * remembers a sign-in, and the worker's copies of private answers go with
+ * it (docs/accounts.md §7). A 403 suspended is an account signed in and
+ * suspended, which no sign-in mends: said as that, with the copies gone
+ * too. No answer at all reads as a guest's, as the Access probe's does.
+ */
+async function checkAccount(): Promise<SignIn> {
+  const signedOut = { email: null, expired: false, accounts: true, me: null };
+  let me: Me | null;
+  try {
+    me = await getMe();
+  } catch (err) {
+    if (err instanceof AccountError && err.code === 'suspended') {
+      await forgetOwnerCaches();
+      const reason = typeof err.body.reason === 'string' ? err.body.reason : null;
+      return { ...signedOut, suspended: { reason } };
+    }
+    return signedOut;
+  }
+  if (me) {
+    remember();
+    return { ...signedOut, me };
+  }
+  await forgetOwnerCaches();
+  return { ...signedOut, expired: signedInHereBefore() };
+}
+
+/**
  * Where Sign out goes: Cloudflare Access's logout on this site, which
  * deletes the session cookie here and revokes the session for every Access
  * application (developers.cloudflare.com, Access session management). The
@@ -372,14 +471,20 @@ export function signOutHref(): string {
 }
 
 /**
- * Sign out of this device: forget the remembered sign-in (so nothing reads
- * as an expired one afterwards), drop the worker's copies of the owner's
- * answers, then end the Access session itself. The device's own copies of
- * the owner's scenes stay: they are on the shelf, which is the device's.
- * Recording needs nothing more: it follows the sign-in check, which reads
- * as a guest's once the remembered sign-in is gone.
+ * Sign out of this device: end the sign-in, forget the remembered one (so
+ * nothing reads as an expired one afterwards), drop the worker's copies of
+ * private answers, and go to the gallery. With accounts on, the account's
+ * session is what ends (docs/accounts.md §7): the server revokes it and
+ * clears its cookie first, and a sign-out that got no answer throws with
+ * everything as it was, since the cookie is beyond the page's reach. With
+ * them off, the Access session ends, through its logout and back. The
+ * device's own copies of scenes stay: they are on the shelf, which is the
+ * device's. Recording needs nothing more: it follows the sign-in check,
+ * which reads as a guest's once the remembered sign-in is gone.
  */
 export async function signOut(): Promise<void> {
+  const accounts = (await loadConfig())?.accounts === true;
+  if (accounts) await signOutHere();
   forget();
   try {
     localStorage.removeItem(EXPIRY_TOLD_KEY);
@@ -387,7 +492,7 @@ export async function signOut(): Promise<void> {
     // Nothing was remembered that could be.
   }
   await forgetOwnerCaches();
-  window.location.assign(signOutHref());
+  window.location.assign(accounts ? '/' : signOutHref());
 }
 
 function whoamiEmail(res: ApiResult): string | null {
@@ -401,12 +506,15 @@ function whoamiEmail(res: ApiResult): string | null {
 }
 
 /**
- * Who the page is for, as everything owner-only asks it: the owner signed
- * in, the owner whose sign-in expired, or a guest.
+ * Who the page is for, as everything that depends on a sign-in asks it:
+ * the owner, a moderator or a member signed in (docs/accounts.md §7; with
+ * accounts off, the owner is whoever Access vouches for), an account
+ * signed in and suspended, someone whose sign-in expired, or a guest.
  */
-export type Role = 'owner' | 'expired' | 'guest';
+export type Role = 'owner' | 'moderator' | 'member' | 'suspended' | 'expired' | 'guest';
 
-export const roleOf = (s: SignIn): Role => (s.email ? 'owner' : s.expired ? 'expired' : 'guest');
+export const roleOf = (s: SignIn): Role =>
+  s.me ? s.me.role : s.suspended ? 'suspended' : s.email ? 'owner' : s.expired ? 'expired' : 'guest';
 
 const project = (id: string): string => `/admin/api/projects/${encodeURIComponent(id)}`;
 

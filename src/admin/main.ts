@@ -1,6 +1,9 @@
-import { TEMPLATE_HINT, VISIBILITY_HINT, api, failureText, mediaPath, setThumbSrc } from './api';
+import { OwnerSessionError, TEMPLATE_HINT, VISIBILITY_HINT, api, failureText, mediaPath, setThumbSrc } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
+import { ownerSignIn, ownerSignInPanel } from './ownerSession';
+import { AccountError, bootstrapOwner, errorText, loadConfig, whoami } from '../net/account';
+import { HandleField, Say, termsBox } from '../ui/account/parts';
 import { initTheme, mountThemeToggle } from '../ui/theme';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
@@ -56,6 +59,7 @@ async function renderList(host: HTMLElement): Promise<void> {
       <header class="admin__head">
         <h1>Bozzetto editor</h1>
       </header>
+      <div id="owner-account"></div>
       <form class="admin-create" id="create-form">
         <input name="title" placeholder="New project title" required autofocus />
         <button type="submit" class="btn btn--primary">Create</button>
@@ -67,8 +71,18 @@ async function renderList(host: HTMLElement): Promise<void> {
   const list = host.querySelector<HTMLElement>('#project-list')!;
   const form = host.querySelector<HTMLFormElement>('#create-form')!;
   // This page is only reached signed in (Access fronts it), so the way out
-  // is always offered, beside the theme toggle.
-  topbarRight().appendChild(signOutChip());
+  // is always offered, beside the theme toggle. Drawn again after a sign-in
+  // (renderList runs again), so one chip, not a second beside the first.
+  topbarRight().querySelector('.admin-signout')?.remove();
+  const out = signOutChip();
+  out.classList.add('admin-signout');
+  topbarRight().appendChild(out);
+  // With accounts on, the owner's account: made here the first time
+  // (bootstrap), and signed in for the second lock after that.
+  if (!(await ownerAccount(host.querySelector<HTMLElement>('#owner-account')!, () => void renderList(host)))) {
+    list.textContent = '';
+    return;
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -89,6 +103,102 @@ async function renderList(host: HTMLElement): Promise<void> {
   await refresh(list);
 }
 
+/**
+ * The owner's account, with accounts on (docs/accounts.md §8): whether the
+ * page may go on to the list. Accounts off, there is nothing to do. With
+ * no owner account yet, "Create your account" is offered above the list,
+ * which Access alone still opens. With one, and no owner's session here
+ * (403 owner_session), the sign-in dialog opens over the page, and the
+ * page draws itself again once signed in; until then it says why the list
+ * is not there.
+ */
+async function ownerAccount(slot: HTMLElement, again: () => void): Promise<boolean> {
+  slot.replaceChildren();
+  const config = await loadConfig();
+  if (!config?.accounts) return true;
+  try {
+    const who = await whoami();
+    if (who.owner === null) slot.appendChild(bootstrapForm(who.email, again));
+    return true;
+  } catch (err) {
+    if (err instanceof AccountError && err.code === 'owner_session') {
+      if (await ownerSignIn(true)) {
+        again();
+        return false;
+      }
+      slot.appendChild(ownerSignInPanel(again));
+      return false;
+    }
+    // Anything else - Access's own refusal, no connection - is the list's
+    // to say, as it always has.
+    return true;
+  }
+}
+
+/**
+ * "Create your account": the owner's account, made once from the Access
+ * identity, with a handle and the terms; the projects the owner had
+ * before accounts become its own. It signs the owner in and offers a
+ * passkey, then the page draws itself again behind both locks.
+ */
+function bootstrapForm(email: string, again: () => void): HTMLElement {
+  const form = document.createElement('form');
+  form.className = 'admin__bootstrap account-step';
+  form.noValidate = true;
+  const title = document.createElement('h2');
+  title.textContent = 'Create your account';
+  const lede = document.createElement('p');
+  lede.className = 'muted';
+  lede.textContent =
+    `Accounts are on, and the owner has no account yet. Make yours: it takes the address Cloudflare Access ` +
+    `signed you in with (${email}), with a 10 GB quota, and the projects you have now become its own. ` +
+    'From then on, the owner tools want it signed in as well as Access.';
+  const handle = new HandleField('Handle');
+  const terms = termsBox();
+  const say = new Say();
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'btn btn--primary';
+  submit.textContent = 'Create account';
+  form.append(title, lede, handle.root, terms.root, submit, say.root);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void (async () => {
+      say.clear();
+      if (!(await handle.check())) {
+        handle.input.focus();
+        return;
+      }
+      if (!terms.box.checked) {
+        say.error('Tick the box to confirm you are 13 or older and accept the Terms.');
+        return;
+      }
+      submit.disabled = true;
+      say.note('Creating your account…');
+      try {
+        const me = await bootstrapOwner(handle.value);
+        say.note(`Your account is @${me.handle}.`);
+        const { offerPasskey } = await import('../ui/account/signIn');
+        await offerPasskey(me);
+        again();
+      } catch (err) {
+        submit.disabled = false;
+        if (err instanceof AccountError && err.code === 'owner_exists') {
+          again();
+          return;
+        }
+        if (err instanceof AccountError && (err.code === 'handle_taken' || err.reason)) {
+          handle.refused(err.reason);
+          say.clear();
+          return;
+        }
+        say.error(errorText(err));
+      }
+    })();
+  });
+  return form;
+}
+
 async function refresh(listEl: HTMLElement): Promise<void> {
   listEl.textContent = 'Loading…';
   let projects: ProjectSummary[];
@@ -96,6 +206,12 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // The owner's list: private projects and scenes saved from Sculpt too.
     projects = await api.adminList();
   } catch (err) {
+    if (err instanceof OwnerSessionError) {
+      // The second lock (docs/accounts.md §2): signed in, the list comes.
+      if (await ownerSignIn(true)) return refresh(listEl);
+      listEl.replaceChildren(ownerSignInPanel(() => void refresh(listEl)));
+      return;
+    }
     listEl.textContent = `Failed to load projects: ${failureText(err)}`;
     return;
   }

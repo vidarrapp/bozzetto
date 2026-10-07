@@ -32,6 +32,7 @@ import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
+import { suspensionText } from '../net/account';
 import { isDesktop } from '../net/origin';
 import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
@@ -1279,16 +1280,18 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // the publish buttons (and Save to library's upload, and the Capture
   // chip) when they sign in. Capture itself still starts off until the
   // checkbox turns it on (owner call; see SnapshotRecorder.install).
-  const probeRole = async (): Promise<string | null> => {
+  const probeRole = async (): Promise<Role> => {
     const answer = await checkSignIn();
-    role = roleOf(answer);
-    ownerNow = !!answer.email;
-    if (role !== 'guest') signedIn = true;
-    tlForm.setRole(role);
-    modelForm.setRole(role);
-    fileMenu?.setRole(role);
+    const found = roleOf(answer);
+    role = found;
+    ownerNow = found === 'owner';
+    // A suspended account records nothing: there is nowhere for it to go.
+    if (found !== 'guest' && found !== 'suspended') signedIn = true;
+    tlForm.setRole(found);
+    modelForm.setRole(found);
+    fileMenu?.setRole(found, answer.suspended ? suspensionText(answer.suspended.reason) : '');
     applyRecordingGate();
-    return answer.email;
+    return found;
   };
   const tlForm = galleryForm({
     buttonLabel: 'Publish timelapse',
@@ -1307,7 +1310,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   void probeRole();
   // A save that found the sign-in expired, or one that went through after
   // it had: the probe says which, for the forms and the menu alike.
-  if (fileMenu) fileMenu.onSignInChange = () => void probeRole();
+  if (fileMenu) fileMenu.onSignInChange = () => probeRole();
   // A guest on the web cannot reach the forms' re-check: it lives in the
   // Capture window, whose chip they do not have. Signing in happens
   // elsewhere (the gallery's Log in, /admin/ in another tab or app), and
@@ -1491,6 +1494,32 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Electron. Inert in a browser: mountDesktop returns null and nothing
   // below it runs. It reuses the same file pipeline the panel buttons and
   // the tests use, so there is one packing path, not two.
+
+  /**
+   * The desktop app's Save to Library. Signed in to a server, it uploads
+   * to Projects as it does on the web; without one it keeps the scene on
+   * this device: the app's storage is its own profile, not a browser's,
+   * and File > Save is right beside it for a copy that leaves the machine.
+   * Signed in again from its notice, it goes again.
+   */
+  const desktopSave = async (): Promise<void> => {
+    const owner = ownerNow ?? (await probeRole()) === 'owner';
+    if (!owner) {
+      await fileActions.keepOnDevice();
+      statusToast('Keeping on this device...').done('Kept on this device');
+      return;
+    }
+    const status = statusToast('Saving to Projects...');
+    try {
+      const link = await fileActions.uploadToProjects((text) => status.set(text));
+      status.done(`Saved to Projects: ${link.title}`);
+    } catch (err) {
+      reportNotUploaded(status, err, async () => {
+        await probeRole();
+        await desktopSave();
+      });
+    }
+  };
   const desktopHandle = mountDesktop({
     pack: () => fileActions.pack().then((b) => b.arrayBuffer()),
     load: async (bytes) => {
@@ -1499,25 +1528,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     reset: () => fileActions.newScene(),
     hasWork,
     markClean: () => markSceneClean(),
-    // Signed in to a server, Save to Library uploads to Projects as it does
-    // on the web. Without one it keeps the scene on this device: the app's
-    // storage is its own profile, not a browser's, and File > Save is right
-    // beside it for a copy that leaves the machine.
-    saveToLibrary: async () => {
-      const owner = ownerNow ?? !!(await probeRole());
-      if (!owner) {
-        await fileActions.keepOnDevice();
-        statusToast('Keeping on this device...').done('Kept on this device');
-        return;
-      }
-      const status = statusToast('Saving to Projects...');
-      try {
-        const link = await fileActions.uploadToProjects((text) => status.set(text));
-        status.done(`Saved to Projects: ${link.title}`);
-      } catch (err) {
-        reportNotUploaded(status, err, () => void probeRole());
-      }
-    },
+    saveToLibrary: () => desktopSave(),
     importObj: (text, zUp, name) => fileActions.importObj(text, zUp, name),
     objText: () => fileActions.objText(),
     undo: () => session.undo(),

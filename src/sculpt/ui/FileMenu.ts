@@ -2,7 +2,7 @@ import { TopMenu } from './TopMenu';
 import { statusToast, type StatusToast } from './statusToast';
 import { downloadBlob, stampName } from '../bridge/SceneFile';
 import { NotUploadedError, type FileActions } from '../bridge/FileActions';
-import type { Role } from '../../admin/api';
+import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInButton } from '../../ui/signIn';
 
@@ -26,6 +26,8 @@ export class FileMenu {
   private zUp = false;
   /** Who the page is for, by the sign-in probe; null until it has answered. */
   private role: Role | null = null;
+  /** A suspended account's sentence, said when it tries to save to it. */
+  private suspension = '';
   private resolveRole: (role: Role) => void = () => {};
   private readonly roleKnown = new Promise<Role>((resolve) => {
     this.resolveRole = resolve;
@@ -33,9 +35,9 @@ export class FileMenu {
   /**
    * A save found the sign-in expired. The mount asks the probe again, so
    * the forms and this menu all say so; a desktop sign-in that ended well
-   * is reported the same way.
+   * is reported the same way. Resolves once the probe has answered.
    */
-  onSignInChange: (() => void) | null = null;
+  onSignInChange: (() => Promise<unknown> | void) | null = null;
 
   constructor(private readonly actions: FileActions) {
     // Hidden inputs are how a web page asks for a file.
@@ -97,14 +99,21 @@ export class FileMenu {
     return this.menu.chip;
   }
 
-  /** The sign-in probe's answer, which decides what Save to library does. */
-  setRole(role: Role): void {
+  /**
+   * The sign-in probe's answer, which decides what Save to library does;
+   * with `suspension`, what a suspended account is told when it saves.
+   */
+  setRole(role: Role, suspension = ''): void {
     this.role = role;
+    this.suspension = suspension;
     this.resolveRole(role);
   }
 
   private libraryHint(): string {
     if (this.role === 'expired') return 'Your sign-in has expired: keeps it on this device until you sign in again';
+    if (this.role === 'suspended') return 'Your account is suspended: downloads a .bozz file to keep';
+    // Members' own library (My projects) comes with the next update; until
+    // then theirs is a file, as a guest's is.
     if (this.role !== 'owner') return 'Downloads a .bozz file to keep';
     const link = this.actions.link;
     return link ? `Updates "${link.title}" in Projects` : 'Uploads to Projects, as a private scene';
@@ -112,11 +121,14 @@ export class FileMenu {
 
   /**
    * Save to library: an upload to Projects for the owner, with its progress
-   * shown until it ends; a .bozz download for everyone else. The owner
+   * shown until it ends; a .bozz download for everyone else, a suspended
+   * account told why it gets one. The owner
    * whose sign-in expired is still the owner: the upload is tried (the
    * session may have been renewed meanwhile), and when it cannot go the
    * scene is kept on this device and the notice offers Sign in again. A
-   * failed upload never ends at an error alone.
+   * failed upload never ends at an error alone. Signed in again in the
+   * dialog, the save goes again by itself, once the probe has said who the
+   * page is for now.
    */
   async saveToLibrary(): Promise<void> {
     const role =
@@ -125,10 +137,13 @@ export class FileMenu {
         this.roleKnown,
         new Promise<Role>((resolve) => window.setTimeout(() => resolve('guest'), ROLE_WAIT_MS)),
       ]));
-    if (role === 'guest') {
+    if (role !== 'owner' && role !== 'expired') {
       downloadBlob(await this.actions.pack(), stampName('bozz'));
       this.actions.markClean(); // this scene now exists outside the browser
-      this.menu.note('Saved as a .bozz file');
+      // A suspended account keeps nothing new, and is told why, with no
+      // sign-in offered: signing in again would not lift it.
+      if (role === 'suspended') statusToast('').fail(`${this.suspension} The scene was saved as a .bozz file instead.`);
+      else this.menu.note('Saved as a .bozz file');
       return;
     }
     if (this.actions.isUploading()) {
@@ -139,10 +154,20 @@ export class FileMenu {
     try {
       const link = await this.actions.uploadToProjects((text) => status.set(text));
       status.done(`Saved to Projects: ${link.title}`);
-      if (role === 'expired') this.onSignInChange?.();
+      if (role === 'expired') void this.onSignInChange?.();
     } catch (err) {
-      reportNotUploaded(status, err, () => this.onSignInChange?.());
-      if (err instanceof NotUploadedError && err.reason === 'expired') this.onSignInChange?.();
+      // A sign-in the probe already found expired is the account's (with
+      // accounts on), whatever the owner route answered: the dialog first.
+      reportNotUploaded(
+        status,
+        err,
+        async () => {
+          await this.onSignInChange?.();
+          await this.saveToLibrary();
+        },
+        role === 'expired' ? 'session' : undefined,
+      );
+      if (err instanceof NotUploadedError && err.reason === 'expired') void this.onSignInChange?.();
     }
   }
 
@@ -199,16 +224,28 @@ export class FileMenu {
  * How a Save to library that did not upload ended, on its notice: what was
  * kept and where, and the next step - Sign in again, a connection, or the
  * server's own words. Shared by the web's File menu and the desktop app's.
- * `signedIn` hears a desktop sign-in that ended well.
+ * `signedIn` hears a sign-in that ended well, in the desktop app's window
+ * or the sign-in dialog; `viaOverride` says which sign-in to renew when
+ * the caller knows better than the error (ui/signIn).
  */
-export function reportNotUploaded(status: StatusToast, err: unknown, signedIn?: () => void): void {
+export function reportNotUploaded(
+  status: StatusToast,
+  err: unknown,
+  signedIn?: () => unknown,
+  viaOverride?: SignInVia,
+): void {
   if (!(err instanceof NotUploadedError)) {
     const why = err instanceof Error ? err.message : String(err);
     status.fail(`Not saved to Projects: ${why}. The scene is still here; Save file or Keep on this device keeps a copy.`);
     return;
   }
+  // Which sign-in ran out decides how it is renewed: the account's in the
+  // dialog, here; Access's through its login and back (ui/signIn).
+  const via = viaOverride ?? (err.why instanceof AuthExpiredError ? err.why.via : undefined);
   const signIn =
-    err.reason === 'expired' ? signInButton('', (ok) => (ok ? signedIn?.() : undefined)) : undefined;
+    err.reason === 'expired'
+      ? signInButton('', (ok) => (ok ? void signedIn?.() : undefined), 'Sign in again', via)
+      : undefined;
   if (!err.kept) {
     // Nothing on the shelf either: the autosave still holds the scene, and
     // a file is the copy that does not depend on this device's storage.
@@ -218,12 +255,17 @@ export function reportNotUploaded(status: StatusToast, err: unknown, signedIn?: 
         ? 'Your sign-in has expired'
         : err.reason === 'offline'
           ? 'No connection'
-          : `Not saved to Projects: ${err.why.message}`;
+          : err.reason === 'suspended'
+            ? err.why.message.replace(/\.$/, '')
+            : `Not saved to Projects: ${err.why.message}`;
     status.fail(`${head}, and ${lost}.`, signIn);
     return;
   }
   if (err.reason === 'expired') {
     status.fail('Your sign-in has expired. Saved on this device.', signIn);
+  } else if (err.reason === 'suspended') {
+    // Said as the server's refusal is: no sign-in would lift it.
+    status.fail(`${err.why.message} Saved on this device.`);
   } else if (err.reason === 'offline') {
     status.fail('No connection. Saved on this device; use Upload to Projects when you are online.');
   } else {

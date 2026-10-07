@@ -11,12 +11,16 @@ import { apiFetch, apiManifestUrl } from './net/origin';
 import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
+import { takeAccountLink } from './ui/account/links';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
- * the landing gallery, or Sculpt, Armature or the passkey check when asked.
- * Projects load from the API (`/api/projects/:id`); the bundled static demo
- * still works via a fallback so it never depends on the db.
+ * the landing gallery, or Sculpt, Armature or the passkey check when asked,
+ * and with accounts on the Account page (`?account`) and My projects
+ * (`?me`). The sign-in links (`?signin`, `?invite=`, `?link=`) open the
+ * sign-in dialog over the gallery. Projects load from the API
+ * (`/api/projects/:id`); the bundled static demo still works via a
+ * fallback so it never depends on the db.
  */
 async function main(): Promise<void> {
   initTheme();
@@ -45,8 +49,27 @@ async function main(): Promise<void> {
     renderPasskeyCheck(app);
     return;
   }
+  // The account's pages (docs/accounts.md §7), loaded only when asked for.
+  if (!id && params.has('account')) {
+    const { renderAccount } = await import('./ui/account/account');
+    await renderAccount(app);
+    return;
+  }
+  if (!id && params.has('me')) {
+    const { renderMyProjects } = await import('./ui/account/myProjects');
+    await renderMyProjects(app);
+    return;
+  }
   if (!id) {
+    // A sign-in link is taken off the address first, so nothing else sees
+    // it, then answered over the gallery once it has drawn.
+    const link = takeAccountLink();
     await renderLanding(app);
+    if (link) {
+      const { openAccountLink } = await import('./ui/account/signIn');
+      const me = await openAccountLink(link).catch(() => null);
+      if (me) await renderLanding(app);
+    }
     return;
   }
   // The id goes into request paths: `?tl=../media/x/f.json%23` reached the

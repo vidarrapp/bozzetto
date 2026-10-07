@@ -76,6 +76,10 @@ export function registerServiceWorker(): void {
   // bytes on disk. Attempting it only logs a failure at every launch.
   if ((window as { bozzettoDesktop?: unknown }).bozzettoDesktop) return;
   const params = new URLSearchParams(window.location.search);
+  // Nor in the desktop app's sign-in window (/?signin=desktop,
+  // docs/accounts.md §2): a page of the site in a session of the app's,
+  // there to sign in and close, with nothing to keep for offline use.
+  if (params.get('signin') === 'desktop') return;
 
   if (params.has('nosw')) {
     const url = new URL(window.location.href);
