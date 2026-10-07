@@ -28,6 +28,8 @@ export class FileMenu {
   private role: Role | null = null;
   /** A suspended account's sentence, said when it tries to save to it. */
   private suspension = '';
+  /** Whether the site has accounts: then Save to library is My projects, for anyone signed in. */
+  private accounts = false;
   private resolveRole: (role: Role) => void = () => {};
   private readonly roleKnown = new Promise<Role>((resolve) => {
     this.resolveRole = resolve;
@@ -101,34 +103,57 @@ export class FileMenu {
 
   /**
    * The sign-in probe's answer, which decides what Save to library does;
-   * with `suspension`, what a suspended account is told when it saves.
+   * with `suspension`, what a suspended account is told when it saves, and
+   * `accounts`, whether the site has accounts (docs/accounts.md §7).
    */
-  setRole(role: Role, suspension = ''): void {
+  setRole(role: Role, suspension = '', accounts = false): void {
     this.role = role;
     this.suspension = suspension;
+    this.accounts = accounts;
     this.resolveRole(role);
+  }
+
+  /**
+   * Where Save to library puts the scene, as a sentence names it: with
+   * accounts on, My projects - unless the scene was opened through the
+   * owner tools (a template edited from Projects), which it goes back to;
+   * with them off, the owner's Projects.
+   */
+  private place(): string {
+    return this.accounts && this.actions.link?.scope !== 'admin' ? 'My projects' : 'Projects';
+  }
+
+  /**
+   * Whether Save to library sends the scene to a server for `role`: the
+   * owner (with accounts off, whoever Access vouches for) or, with accounts
+   * on, anyone signed in; and someone whose sign-in expired, whose save is
+   * tried and kept here when it cannot go.
+   */
+  private uploads(role: Role): boolean {
+    if (role === 'owner' || role === 'expired') return true;
+    return this.accounts && (role === 'member' || role === 'moderator');
   }
 
   private libraryHint(): string {
     if (this.role === 'expired') return 'Your sign-in has expired: keeps it on this device until you sign in again';
     if (this.role === 'suspended') return 'Your account is suspended: downloads a .bozz file to keep';
-    // Members' own library (My projects) comes with the next update; until
-    // then theirs is a file, as a guest's is.
-    if (this.role !== 'owner') return 'Downloads a .bozz file to keep';
+    if (!this.role || !this.uploads(this.role)) return 'Downloads a .bozz file to keep';
     const link = this.actions.link;
-    return link ? `Updates "${link.title}" in Projects` : 'Uploads to Projects, as a private scene';
+    if (link) return `Updates "${link.title}" in ${this.place()}`;
+    return this.accounts ? 'Saves to My projects, where only you see it' : 'Uploads to Projects, as a private scene';
   }
 
   /**
-   * Save to library: an upload to Projects for the owner, with its progress
-   * shown until it ends; a .bozz download for everyone else, a suspended
-   * account told why it gets one. The owner
-   * whose sign-in expired is still the owner: the upload is tried (the
-   * session may have been renewed meanwhile), and when it cannot go the
-   * scene is kept on this device and the notice offers Sign in again. A
-   * failed upload never ends at an error alone. Signed in again in the
-   * dialog, the save goes again by itself, once the probe has said who the
-   * page is for now.
+   * Save to library: an upload for whoever saves to a server here - the
+   * owner's Projects with accounts off, the account's own My projects with
+   * them on - with its progress shown until it ends; a .bozz download for
+   * everyone else, a suspended account told why it gets one. Someone whose
+   * sign-in expired is still signed in on this device: the upload is tried
+   * (the session may have been renewed meanwhile), and when it cannot go
+   * the scene is kept on this device and the notice offers Sign in again,
+   * as it says a full quota. A failed upload never ends at an error alone.
+   * Signed in again in the dialog, the save goes again by itself, once the
+   * probe has said who the page is for now.
    */
   async saveToLibrary(): Promise<void> {
     const role =
@@ -137,7 +162,7 @@ export class FileMenu {
         this.roleKnown,
         new Promise<Role>((resolve) => window.setTimeout(() => resolve('guest'), ROLE_WAIT_MS)),
       ]));
-    if (role !== 'owner' && role !== 'expired') {
+    if (!this.uploads(role)) {
       downloadBlob(await this.actions.pack(), stampName('bozz'));
       this.actions.markClean(); // this scene now exists outside the browser
       // A suspended account keeps nothing new, and is told why, with no
@@ -146,14 +171,15 @@ export class FileMenu {
       else this.menu.note('Saved as a .bozz file');
       return;
     }
+    const place = this.place();
     if (this.actions.isUploading()) {
-      this.menu.note('Already saving to Projects');
+      this.menu.note(`Already saving to ${place}`);
       return;
     }
-    const status = statusToast('Saving to Projects...');
+    const status = statusToast(`Saving to ${place}...`);
     try {
       const link = await this.actions.uploadToProjects((text) => status.set(text));
-      status.done(`Saved to Projects: ${link.title}`);
+      status.done(`Saved to ${place}: ${link.title}`);
       if (role === 'expired') void this.onSignInChange?.();
     } catch (err) {
       // A sign-in the probe already found expired is the account's (with
@@ -239,6 +265,7 @@ export function reportNotUploaded(
     status.fail(`Not saved to Projects: ${why}. The scene is still here; Save file or Keep on this device keeps a copy.`);
     return;
   }
+  const place = err.place;
   // Which sign-in ran out decides how it is renewed: the account's in the
   // dialog, here; Access's through its login and back (ui/signIn).
   const via = viaOverride ?? (err.why instanceof AuthExpiredError ? err.why.via : undefined);
@@ -255,9 +282,9 @@ export function reportNotUploaded(
         ? 'Your sign-in has expired'
         : err.reason === 'offline'
           ? 'No connection'
-          : err.reason === 'suspended'
+          : err.reason === 'suspended' || err.reason === 'full'
             ? err.why.message.replace(/\.$/, '')
-            : `Not saved to Projects: ${err.why.message}`;
+            : `Not saved to ${place}: ${err.why.message}`;
     status.fail(`${head}, and ${lost}.`, signIn);
     return;
   }
@@ -266,10 +293,13 @@ export function reportNotUploaded(
   } else if (err.reason === 'suspended') {
     // Said as the server's refusal is: no sign-in would lift it.
     status.fail(`${err.why.message} Saved on this device.`);
+  } else if (err.reason === 'full') {
+    // The server's numbers (docs/accounts.md §7): "Your storage is full (248 of 250 MB)".
+    status.fail(`${err.why.message}. Saved on this device; make room in ${place}, then use Upload to ${place} on its card.`);
   } else if (err.reason === 'offline') {
-    status.fail('No connection. Saved on this device; use Upload to Projects when you are online.');
+    status.fail(`No connection. Saved on this device; use Upload to ${place} when you are online.`);
   } else {
-    status.fail(`Not saved to Projects: ${err.why.message}. Saved on this device; Upload to Projects tries again.`);
+    status.fail(`Not saved to ${place}: ${err.why.message}. Saved on this device; Upload to ${place} tries again.`);
   }
 }
 

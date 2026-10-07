@@ -126,6 +126,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const libId = isProjectId(libParam) ? libParam : null;
   const projectId = isProjectId(projectParam) ? projectParam : null;
   const templateId = isProjectId(templateParam) ? templateParam : null;
+  // Edit in Sculpt from the owner's Projects page (docs/accounts.md §5):
+  // with accounts on, the project is read and saved through the owner
+  // tools rather than the account's own routes - how a template is edited
+  // as itself.
+  const projectScope = query.get('scope') === 'admin' ? ('admin' as const) : undefined;
   const asked = libParam !== null || projectParam !== null || templateParam !== null;
   // What the gallery card or the Projects page that sent this tab here
   // noted, if one did: that it has asked already (ui/openToken). Taken
@@ -144,7 +149,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Which one this boot opens, as the page that sent it here notes it.
   const openKey = projectId ? `project:${projectId}` : templateId ? `template:${templateId}` : `lib:${libId}`;
   if (projectId) {
-    opened = await openProjectAtBoot(projectId);
+    opened = await openProjectAtBoot(projectId, projectScope);
     saved = opened.scene;
     bootLink = opened.link;
     openedName = opened.title;
@@ -163,7 +168,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // unsent re-save, and a save that does upload takes its card's place.
     const entry = saved ? await lib.getLibraryEntry(libId) : null;
     const project = entry?.projectId ?? entry?.uploadTo;
-    bootLink = entry && project ? { id: project, title: entry.name } : null;
+    bootLink = entry && project ? { id: project, title: entry.name, ...(entry.scope ? { scope: entry.scope } : {}) } : null;
     bootUnsent = entry?.unsent ? entry.id : null;
     openedName = entry?.name ?? null;
   }
@@ -175,6 +180,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     url.searchParams.delete('lib');
     url.searchParams.delete('project');
     url.searchParams.delete('template');
+    url.searchParams.delete('scope');
     history.replaceState(history.state, '', url);
   }
   const what = !openedName
@@ -1252,13 +1258,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   }
 
   // Gallery publishing (WS5): built for everyone, revealed only when the
-  // admin probe confirms a Cloudflare Access session. Guests keep the
-  // device-local outputs (autosave, scene file, OBJ) - nothing uploads.
-  // The same answer decides what Save to library does.
-  let ownerNow: boolean | null = null;
+  // admin probe confirms a Cloudflare Access session - with accounts on,
+  // any sign-in, publishing to My projects. Guests keep the device-local
+  // outputs (autosave, scene file, OBJ) - nothing uploads. The same answer
+  // decides what Save to library does.
+  let savesNow: boolean | null = null;
   const galleryHooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
   /** Who the page is for, by the latest probe; null before its first answer. */
   let role: Role | null = null;
+  /** Whether the site has accounts, by the latest probe. */
+  let accountsHere = false;
+  /**
+   * Whether Save to library goes to a server for `who`: the owner (with
+   * accounts off, whoever Access vouches for), or with accounts on anyone
+   * signed in. An expired sign-in is still that device's: the save is
+   * tried, and kept here when it cannot go.
+   */
+  const savesToServer = (who: Role): boolean => who !== 'guest' && who !== 'suspended';
   /**
    * Whether recording can go somewhere here (recordingAllowed), and so
    * whether the Capture chip shows: the desktop app from the start, the
@@ -1284,25 +1300,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const answer = await checkSignIn();
     const found = roleOf(answer);
     role = found;
-    ownerNow = found === 'owner';
+    accountsHere = answer.accounts === true;
+    // Whoever saves to a server here: the owner with accounts off, anyone
+    // signed in with them on (docs/accounts.md §7).
+    savesNow = savesToServer(found);
     // A suspended account records nothing: there is nowhere for it to go.
     if (found !== 'guest' && found !== 'suspended') signedIn = true;
-    tlForm.setRole(found);
-    modelForm.setRole(found);
-    fileMenu?.setRole(found, answer.suspended ? suspensionText(answer.suspended.reason) : '');
+    tlForm.setRole(found, accountsHere);
+    modelForm.setRole(found, accountsHere);
+    fileMenu?.setRole(found, answer.suspended ? suspensionText(answer.suspended.reason) : '', accountsHere);
     applyRecordingGate();
     return found;
   };
   const tlForm = galleryForm({
     buttonLabel: 'Publish timelapse',
-    onSave: (id, title, visibility, progress) =>
-      saveTimelapseToGallery(recorder, galleryHooks, id, title, visibility, progress),
+    onSave: (target, progress) => saveTimelapseToGallery(recorder, galleryHooks, target, progress),
     recheck: probeRole,
   });
   const modelForm = galleryForm({
     buttonLabel: 'Publish model',
-    onSave: (id, title, visibility, progress) =>
-      saveModelToGallery(session, recorder, galleryHooks, id, title, visibility, progress),
+    onSave: (target, progress) => saveModelToGallery(session, recorder, galleryHooks, target, progress),
     recheck: probeRole,
   });
   captureWindow.captureSlot.appendChild(tlForm.root);
@@ -1317,7 +1334,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // the page is back in front afterwards, so that is when it asks again -
   // and so does an owner whose sign-in had expired.
   const onReturn = (): void => {
-    if (document.visibilityState === 'visible' && role !== 'owner' && !isDesktop()) void probeRole();
+    const signedInNow = role === 'owner' || role === 'moderator' || role === 'member';
+    if (document.visibilityState === 'visible' && !signedInNow && !isDesktop()) void probeRole();
   };
   document.addEventListener('visibilitychange', onReturn);
 
@@ -1497,22 +1515,24 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   /**
    * The desktop app's Save to Library. Signed in to a server, it uploads
-   * to Projects as it does on the web; without one it keeps the scene on
+   * as it does on the web - to Projects, or with accounts on to My
+   * projects; without one it keeps the scene on
    * this device: the app's storage is its own profile, not a browser's,
    * and File > Save is right beside it for a copy that leaves the machine.
    * Signed in again from its notice, it goes again.
    */
   const desktopSave = async (): Promise<void> => {
-    const owner = ownerNow ?? (await probeRole()) === 'owner';
-    if (!owner) {
+    const saves = savesNow ?? savesToServer(await probeRole());
+    if (!saves) {
       await fileActions.keepOnDevice();
       statusToast('Keeping on this device...').done('Kept on this device');
       return;
     }
-    const status = statusToast('Saving to Projects...');
+    const place = await fileActions.place().catch(() => 'Projects');
+    const status = statusToast(`Saving to ${place}...`);
     try {
       const link = await fileActions.uploadToProjects((text) => status.set(text));
-      status.done(`Saved to Projects: ${link.title}`);
+      status.done(`Saved to ${place}: ${link.title}`);
     } catch (err) {
       reportNotUploaded(status, err, async () => {
         await probeRole();
@@ -1745,16 +1765,18 @@ interface ProjectOpen {
 
 /**
  * /?sculpt=1&project=<id>: the scene project's file, fetched through the
- * media route with the Access session, and - for the owner - kept as this
- * device's copy of the project. When it cannot be had - offline, signed
- * out, deleted - the copy kept under the project's id by the last save or
- * open opens instead.
+ * media route with the session - with accounts on, the account's own
+ * (My projects), or with `scope` 'admin' the owner tools' (Edit in Sculpt
+ * from Projects) - and, when it is the reader's own, kept as this device's
+ * copy of the project. When it cannot be had - offline, signed out,
+ * deleted - the copy kept under the project's id by the last save or open
+ * opens instead.
  */
-async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
+async function openProjectAtBoot(id: string, asked?: 'admin'): Promise<ProjectOpen> {
   const lib = await import('./bridge/SceneLibrary');
   try {
     const { fetchSceneProject } = await import('./bridge/SceneProjects');
-    const { bytes, project, owner } = await fetchSceneProject(id);
+    const { bytes, project, owner, scope } = await fetchSceneProject(id, asked);
     const scene = await unpackScene(bytes);
     // The owner's copy follows the server, so offline opens the latest. A
     // guest opening a public scene gets no copy: nothing lands in their
@@ -1767,10 +1789,11 @@ async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
           bytes,
           objects: project.scene?.objects ?? scene.meshes.length,
           tris: project.scene?.tris ?? 0,
+          scope,
         })
         .catch(() => undefined);
     }
-    const link = { id: project.id, title: project.title };
+    const link = { id: project.id, title: project.title, ...(scope ? { scope } : {}) };
     return { kind: 'project', scene, link, title: project.title, from: 'server' };
   } catch (err) {
     console.warn('sculpt: could not open project', id, err);
@@ -1778,7 +1801,9 @@ async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
     const entry = await lib.getLibraryEntry(id);
     const scene = entry ? await lib.loadFromLibrary(id) : null;
     if (entry && scene) {
-      return { kind: 'project', scene, link: { id, title: entry.name }, title: entry.name, from: 'device', error };
+      const scope = entry.scope ?? asked;
+      const link = { id, title: entry.name, ...(scope ? { scope } : {}) };
+      return { kind: 'project', scene, link, title: entry.name, from: 'device', error };
     }
     return { kind: 'project', scene: null, link: null, title: null, from: null, error };
   }

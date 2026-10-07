@@ -4,7 +4,7 @@ import type { SculptSession } from './SculptSession';
 import { sanitizeScene } from './sanitize';
 import { inflateEach } from '../../viewer/inflate';
 import type { BufferEntry, Layout } from '../../../shared/bozz';
-import { MAGIC, MAX_DEPTH, SceneFileError, damaged, notAScene, pad4, readLayout } from '../../../shared/bozz';
+import { MAGIC, MAX_DEPTH, MAX_NAME, SceneFileError, damaged, notAScene, pad4, readLayout } from '../../../shared/bozz';
 
 /**
  * Scene files for guests (WS5): the same v3 SavedScene the autosave keeps,
@@ -27,6 +27,11 @@ import { MAGIC, MAX_DEPTH, SceneFileError, damaged, notAScene, pad4, readLayout 
  * server reads an upload's header with the same code (docs/accounts.md §4).
  */
 export { MAX_SCENE_BYTES } from '../../../shared/bozz';
+
+/** An object or a material with its name, if it has one, no longer than a reader takes. */
+function capName<T extends { name?: unknown }>(o: T): T {
+  return typeof o.name === 'string' && o.name.length > MAX_NAME ? { ...o, name: o.name.slice(0, MAX_NAME) } : o;
+}
 
 export async function packScene(scene: SavedScene): Promise<Blob> {
   const blobs: Uint8Array[] = [];
@@ -54,7 +59,15 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   // a file leaves the device, and must not carry a pointer to the owner's
   // server project with it, nor to a copy on this device's shelf.
   const { project: _link, unsent: _unsent, ...portable } = scene;
-  const header = new TextEncoder().encode(JSON.stringify({ scene: strip(portable), buffers: table }));
+  // A name past what a reader takes (shared/bozz.ts MAX_NAME: this app's
+  // own reader and the server's both refuse it) would make a file nothing
+  // opens, nor any server keeps: cut to it here, where every file is made.
+  const named = {
+    ...portable,
+    meshes: portable.meshes.map(capName),
+    ...(portable.materials ? { materials: portable.materials.map(capName) } : {}),
+  };
+  const header = new TextEncoder().encode(JSON.stringify({ scene: strip(named), buffers: table }));
   const headPad = pad4(header.length);
   const raw = new Uint8Array(8 + headPad + cursor);
   const dv = new DataView(raw.buffer);

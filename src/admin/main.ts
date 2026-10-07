@@ -221,6 +221,10 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     listEl.appendChild(fromHTML('<p class="admin__empty">No projects yet. Create one above.</p>'));
     return;
   }
+  // With accounts on, Sculpt saves to the account's own projects; a scene
+  // opened from here is read and saved through the owner tools instead
+  // (docs/accounts.md §5), so a template is edited as itself.
+  const accounts = (await loadConfig())?.accounts === true;
 
   for (const p of projects) {
     const scene = p.mode === 'scene';
@@ -269,7 +273,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
     if (scene) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
-      open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}`;
+      open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}`;
       // Opening replaces the sculpt in progress on this device, as a
       // gallery card does - so the same question, when there is one.
       open.addEventListener('click', (e) => {

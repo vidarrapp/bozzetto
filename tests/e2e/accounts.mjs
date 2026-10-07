@@ -31,16 +31,28 @@
 // no service worker; a used-up invite says so; the legal pages. Then the owner: Create your account on /admin/,
 // a passkey, the second lock opening the dialog by itself and the list
 // coming once signed in; and in Sculpt, a save the second lock refused
-// goes again once signed in from its notice; an account the owner
-// suspends is told so, in the top row, the gallery, Sculpt and Account,
-// offered Sign out and never Sign in. First of all, the build: the
-// worker's rules for the account and the site's settings, the legal pages
-// in its precache on the built stylesheet, and the policy admitting
+// goes again once signed in from its notice, to My projects, and a scene
+// opened from the Projects page saves back through the owner tools; an
+// account the owner suspends is told so, in the top row, the gallery,
+// Sculpt and Account, offered Sign out and never Sign in. Then the
+// member's own projects: Save to library makes a project of the bytes the
+// scene packs to, and a second save updates it; a quota the owner lowers
+// refuses the next, which stays on the device with the server's numbers;
+// sessions the owner revokes make the next save Not uploaded, and Sign in
+// again signs in and saves; Capture publishes a model there. My projects:
+// the meter, rename, download (the .bozz, and a frames zip), open in the
+// viewer and Sculpt, read only offline, delete. Download my data, after
+// confirming it is you, as one zip streamed to a picked file and as a
+// download, unzipped and checked here; Delete account, the handle typed,
+// to done, and a guest's gallery. First of all, the build: the worker's
+// rules for the account, My projects and the site's settings, the legal
+// pages in its precache on the built stylesheet, and the policy admitting
 // Turnstile.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { crc32 } from 'node:zlib';
 import { openSculpt, startAccountsServer } from './lib.mjs';
-import { workerRoutes } from './smoke.mjs';
+import { chooseFile, clearNotices, failedNotice, fileItems, readBozz, savedToast, shelf, workerRoutes } from './smoke.mjs';
 import { TURNSTILE_SECRET, startTurnstileFake } from '../functions/turnstile-fake.mjs';
 import { inviteToken, seedInvite } from '../functions/lib.mjs';
 
@@ -330,7 +342,10 @@ async function joinWithInvite(server, turnstile, a, t) {
 async function signOut(a, t, label = 'ada') {
   const p = a.page;
   // What the worker would have kept of the account (pages here run without it).
-  await p.evaluate(() => caches.open('bozzetto-me').then((c) => c.put('/api/me', new Response('{}'))));
+  await p.evaluate(async () => {
+    await caches.open('bozzetto-me').then((c) => c.put('/api/me', new Response('{}')));
+    await caches.open('bozzetto-my-projects').then((c) => c.put('/api/me/projects', new Response('[]')));
+  });
   await p.click(`.topbar--right .topchip:text-is("@${label}")`);
   await p.click('.account-menu button:text-is("Sign out")');
   await p.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 15_000 }).catch(() => {});
@@ -339,7 +354,10 @@ async function signOut(a, t, label = 'ada') {
   const cookies = (await a.ctx.cookies()).map((c) => c.name);
   t.ok(!cookies.includes('__Host-bz_session') && (await me(p)).status === 401, `the session cookie is gone, and /api/me says signed out (${show(cookies)})`);
   t.ok(a.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/signout'), 'through POST /api/auth/signout');
-  t.ok(!(await p.evaluate(() => caches.has('bozzetto-me'))), 'and the kept copy of the account goes with it');
+  t.ok(
+    !(await p.evaluate(async () => (await caches.has('bozzetto-me')) || (await caches.has('bozzetto-my-projects')))),
+    'and the kept copies of the account and of My projects go with it',
+  );
 }
 
 /** A modal passkey sign-in: the autofill asked for as the dialog opens, stopped by the button's prompt. */
@@ -408,8 +426,13 @@ async function accountPasskeys(server, a, t) {
   await openAccount(a);
   const sections = await p.evaluate(() => [...document.querySelectorAll('.account-section')].map((s) => s.dataset.section));
   t.eq(show(sections), show(['handle', 'email', 'passkeys', 'sessions', 'data', 'legal']), 'Account: handle, email, passkeys, sessions, your data, the small print');
-  const later = await p.evaluate(() => [...document.querySelectorAll('[data-section="data"] .account-item')].map((r) => ({ meta: r.querySelector('.account-item__meta').textContent, disabled: r.querySelector('button').disabled })));
-  t.ok(later.length === 2 && later.every((r) => r.disabled && /Arrives with the next update\.$/.test(r.meta)), `Download my data and Delete account say they arrive with the next update (${show(later)})`);
+  const data = await p.evaluate(() =>
+    [...document.querySelectorAll('[data-section="data"] .account-item')].map((r) => ({ item: r.dataset.item, button: r.querySelector('button').textContent, disabled: r.querySelector('button').disabled })),
+  );
+  t.ok(
+    show(data) === show([{ item: 'download', button: 'Download my data', disabled: false }, { item: 'delete', button: 'Delete account…', disabled: false }]),
+    `Your data offers Download my data and Delete account (${show(data)})`,
+  );
   const legal = await p.evaluate(() => [...document.querySelectorAll('[data-section="legal"] a')].map((l) => l.getAttribute('href')));
   t.ok(['/legal/terms.html', '/legal/terms.html#content', '/legal/privacy.html', '/legal/terms.html#takedown'].every((h) => legal.includes(h)), `and the legal pages (${show(legal)})`);
 
@@ -450,6 +473,9 @@ async function accountPasskeys(server, a, t) {
   t.ok(await dialogGone(p, 20_000), 'confirmed by a passkey');
   await p.waitForFunction(() => document.querySelectorAll('[data-section="passkeys"] .account-item').length === 1, null, { timeout: 20_000 }).catch(() => {});
   t.eq(show(await passkeyNames(p)), show(['Work laptop']), 'then it is removed');
+  // The security key goes back in the drawer: its passkey is no account's
+  // now, and a later sign-in that asks for any passkey must not find it.
+  await second.cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId: second.id });
   const notices = (await server.outbox('ada@example.com')).map((m) => m.subject).filter((s) => !/code$/.test(s));
   t.ok(notices.length >= 2, `the holder is told by mail of each passkey added and removed (${show(notices)})`);
 }
@@ -784,8 +810,26 @@ function build(dist, t) {
       show(route('/api/config')) === show({ handler: 'NetworkFirst', cache: 'bozzetto-config' }),
     `the worker keeps /api/me and /api/config, network first (${show([route('/api/me'), route('/api/config')])})`,
   );
-  const never = ['/api/me/account', '/api/auth/passkey/options', '/api/me/media/p-abc/scene.bozz'].filter((u) => route(u)?.handler !== 'NetworkOnly');
-  t.ok(!never.length, `and still sends the account's details, the ceremonies and a member's files to the network${never.length ? `: not ${never.join(', ')}` : ''}`);
+  const never = [
+    '/api/me/account',
+    '/api/auth/passkey/options',
+    '/api/me/media/p-abc/scene.bozz',
+    '/api/me/media/p-abc/thumb.jpg?v=3',
+    '/api/me/media/p-abc/frames/sd/0000.glb?v=3',
+    '/api/me/export',
+  ].filter((u) => route(u)?.handler !== 'NetworkOnly');
+  t.ok(!never.length, `and still sends the account's details, its export, the ceremonies and a member's files to the network${never.length ? `: not ${never.join(', ')}` : ''}`);
+  const mine = ['/api/me/projects', '/api/me/projects/p-abc'].map((u) => route(u));
+  t.ok(
+    mine.every((r) => show(r) === show({ handler: 'NetworkFirst', cache: 'bozzetto-my-projects' })),
+    `it keeps My projects' list and manifests, network first (${show(mine)})`,
+  );
+  const scripts = readdirSync(join(dist, 'assets')).filter((f) => f.endsWith('.js'));
+  const purges = scripts.some((f) => {
+    const js = readFileSync(join(dist, 'assets', f), 'utf8');
+    return js.includes('"bozzetto-my-projects"') && js.includes('"bozzetto-owner-projects"') && js.includes('"bozzetto-me"');
+  });
+  t.ok(purges, 'and the app names that cache among the ones a sign-out drops (ownerCaches.ts)');
   const worker = readFileSync(join(dist, 'sw.js'), 'utf8');
   const precached = ['legal/privacy.html', 'legal/terms.html', 'legal/theme.js'].filter((f) => worker.includes(`"${f}"`));
   t.eq(precached.length, 3, `the legal pages and their script are precached (${show(precached)})`);
@@ -801,83 +845,114 @@ function build(dist, t) {
 }
 
 /** /admin/ before the owner has an account, then the second lock, then Sculpt's save. */
-async function owner(server, browser, t) {
-  const o = await browserFor(browser, server.base, { ip: '203.0.113.20', access: true, authenticator: true });
-  try {
-    const p = o.page;
-    await p.goto(`${server.base}/admin/`, { waitUntil: 'domcontentloaded' });
-    await p.waitForSelector('.admin__bootstrap', { timeout: 30_000 }).catch(() => {});
-    const form = await p.evaluate(() => ({
-      title: document.querySelector('.admin__bootstrap h2')?.textContent ?? null,
-      email: /owner@example\.com/.test(document.querySelector('.admin__bootstrap .muted')?.textContent ?? ''),
-      box: document.querySelector('.admin__bootstrap input[name=terms]')?.closest('label').textContent ?? null,
-    }));
-    t.ok(form.title === 'Create your account' && form.email && form.box === 'I am 13 or older and accept the Terms, including the content policy', `with no owner account, /admin/ offers Create your account, for the Access address (${show(form)})`);
-    await p.fill('.admin__bootstrap input[name=handle]', 'boss');
-    await p.waitForFunction(() => document.querySelector('.admin__bootstrap .account-hint')?.textContent === '@boss is free.', null, { timeout: 10_000 }).catch(() => {});
-    await p.click('.admin__bootstrap button[type=submit]');
-    t.eq(await saidLike(p, /Tick the box/, '.admin__bootstrap'), 'Tick the box to confirm you are 13 or older and accept the Terms.', 'the box is required here too');
-    await p.check('.admin__bootstrap input[name=terms]');
-    await p.click('.admin__bootstrap button[type=submit]');
-    t.ok(await step(p, 'Add a passkey?'), 'Create account makes it, signed in, and offers a passkey');
-    await press(p, '.account-card', 'Add a passkey');
-    t.ok(await dialogGone(p), 'a passkey is added');
-    await p.waitForSelector('.admin__empty, .admin-row', { timeout: 20_000 }).catch(() => {});
-    t.ok(await p.evaluate(() => !document.querySelector('.admin__bootstrap') && !!document.querySelector('.admin__empty, .admin-row')), 'then the page is the list, the form gone');
+async function owner(server, o, t) {
+  const p = o.page;
+  await p.goto(`${server.base}/admin/`, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.admin__bootstrap', { timeout: 30_000 }).catch(() => {});
+  const form = await p.evaluate(() => ({
+    title: document.querySelector('.admin__bootstrap h2')?.textContent ?? null,
+    email: /owner@example\.com/.test(document.querySelector('.admin__bootstrap .muted')?.textContent ?? ''),
+    box: document.querySelector('.admin__bootstrap input[name=terms]')?.closest('label').textContent ?? null,
+  }));
+  t.ok(form.title === 'Create your account' && form.email && form.box === 'I am 13 or older and accept the Terms, including the content policy', `with no owner account, /admin/ offers Create your account, for the Access address (${show(form)})`);
+  await p.fill('.admin__bootstrap input[name=handle]', 'boss');
+  await p.waitForFunction(() => document.querySelector('.admin__bootstrap .account-hint')?.textContent === '@boss is free.', null, { timeout: 10_000 }).catch(() => {});
+  await p.click('.admin__bootstrap button[type=submit]');
+  t.eq(await saidLike(p, /Tick the box/, '.admin__bootstrap'), 'Tick the box to confirm you are 13 or older and accept the Terms.', 'the box is required here too');
+  await p.check('.admin__bootstrap input[name=terms]');
+  await p.click('.admin__bootstrap button[type=submit]');
+  t.ok(await step(p, 'Add a passkey?'), 'Create account makes it, signed in, and offers a passkey');
+  await press(p, '.account-card', 'Add a passkey');
+  t.ok(await dialogGone(p), 'a passkey is added');
+  await p.waitForSelector('.admin__empty, .admin-row', { timeout: 20_000 }).catch(() => {});
+  t.ok(await p.evaluate(() => !document.querySelector('.admin__bootstrap') && !!document.querySelector('.admin__empty, .admin-row')), 'then the page is the list, the form gone');
 
-    // The gallery: the owner's chips.
-    await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
-    await chipShown(p, '@boss');
-    const row = await chips(p);
-    t.ok(row.includes('My projects') && row.includes('Owner tools') && row.includes('@boss'), `the owner's top row: My projects, Owner tools, @boss (${row.join(', ')})`);
+  // The gallery: the owner's chips.
+  await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
+  await chipShown(p, '@boss');
+  const row = await chips(p);
+  t.ok(row.includes('My projects') && row.includes('Owner tools') && row.includes('@boss'), `the owner's top row: My projects, Owner tools, @boss (${row.join(', ')})`);
 
-    // The second lock: Access alone no longer opens the owner tools.
-    await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
-    await p.goto(`${server.base}/admin/`, { waitUntil: 'domcontentloaded' });
-    t.ok(await step(p, 'Sign in', 20_000), 'without the owner\'s session, /admin/ opens the sign-in dialog by itself');
-    t.eq(await p.textContent('.account-card .account-reason'), "Owner tools need you signed in to the owner's account.", 'saying why');
-    await press(p, '.account-card', 'Use a passkey');
-    t.ok(await dialogGone(p), 'signed in with the owner\'s passkey');
-    await p.waitForSelector('.admin__empty, .admin-row', { timeout: 20_000 }).catch(() => {});
-    t.ok(await p.evaluate(() => !!document.querySelector('.admin__empty, .admin-row') && !document.querySelector('.admin__lock')), 'and the list comes');
+  // The second lock: Access alone no longer opens the owner tools.
+  await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
+  await p.goto(`${server.base}/admin/`, { waitUntil: 'domcontentloaded' });
+  t.ok(await step(p, 'Sign in', 20_000), 'without the owner\'s session, /admin/ opens the sign-in dialog by itself');
+  t.eq(await p.textContent('.account-card .account-reason'), "Owner tools need you signed in to the owner's account.", 'saying why');
+  await press(p, '.account-card', 'Use a passkey');
+  t.ok(await dialogGone(p), 'signed in with the owner\'s passkey');
+  await p.waitForSelector('.admin__empty, .admin-row', { timeout: 20_000 }).catch(() => {});
+  t.ok(await p.evaluate(() => !!document.querySelector('.admin__empty, .admin-row') && !document.querySelector('.admin__lock')), 'and the list comes');
 
-    // Sculpt: Save to library goes to Projects; with the session gone it is
-    // kept here, and Sign in again from the notice signs in and saves.
-    await openSculpt(p, server.base, '&q=low');
-    await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
-    await p.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
-    const save = async () => {
-      await p.click('.file-menu--file__chip');
-      await p.click('.file-menu--file button:has-text("Save to library")');
-    };
-    await save();
-    await p.waitForFunction(() => document.querySelector('.file-menu__progress')?.dataset.state === 'done', null, { timeout: 60_000 }).catch(() => {});
-    const first = await p.evaluate(() => document.querySelector('.file-menu__progress')?.textContent ?? '');
-    t.ok(/^Saved to Projects: /.test(first), `the owner's Save to library uploads ("${first}")`);
-    await p.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
-    await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
-    await p.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
-    await save();
-    await p.waitForFunction(() => document.querySelector('.file-menu__progress')?.dataset.state === 'failed', null, { timeout: 60_000 }).catch(() => {});
-    const failed = await p.evaluate(() => {
-      const n = document.querySelector('.file-menu__progress');
-      return { text: n?.querySelector('.file-menu__words')?.textContent ?? n?.textContent, buttons: [...(n?.querySelectorAll('button') ?? [])].map((b) => b.textContent) };
-    });
-    t.ok(failed.text === 'Your sign-in has expired. Saved on this device.' && failed.buttons.includes('Sign in again'), `without the owner's session the save is kept here, and the notice offers Sign in again (${show(failed)})`);
-    await p.click('.file-menu__progress button:text-is("Sign in again")');
-    t.ok(await step(p, 'Sign in'), 'which opens the dialog over Sculpt');
-    await press(p, '.account-card', 'Use a passkey');
-    await dialogGone(p);
-    await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done'), null, { timeout: 60_000 }).catch(() => {});
-    const again = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`));
-    t.ok(again.some((x) => /^done: Saved to Projects: /.test(x)), `signed in, the save goes again by itself (${show(again)})`);
-    const unsent = await p.evaluate(() => window.__sculpt.fileActions.unsentCopy);
-    t.eq(unsent, null, 'and the copy kept on the device is let go');
-    await suspension(server, browser, o, t);
-    t.ok(!o.errors.length, `no page errors in the owner's browser${o.errors.length ? `: ${o.errors.join(' | ')}` : ''}`);
-  } finally {
-    await o.ctx.close();
-  }
+  // Sculpt: Save to library goes to My projects, the owner's as everyone's;
+  // with the session gone it is kept here, and Sign in again from the
+  // notice signs in and saves.
+  await openSculpt(p, server.base, '&q=low');
+  await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
+  const save = async () => {
+    await p.click('.file-menu--file__chip');
+    await p.click('.file-menu--file button:has-text("Save to library")');
+  };
+  await save();
+  await p.waitForFunction(() => document.querySelector('.file-menu__progress')?.dataset.state === 'done', null, { timeout: 60_000 }).catch(() => {});
+  const first = await p.evaluate(() => document.querySelector('.file-menu__progress')?.textContent ?? '');
+  t.ok(/^Saved to My projects: /.test(first), `the owner's Save to library saves to My projects ("${first}")`);
+  const saved = await p.evaluate(() => window.__sculpt.fileActions.link);
+  t.ok(
+    !!saved && !saved.scope && o.requests.some((r) => r.method === 'POST' && r.path === '/api/me/projects') && !o.requests.some((r) => r.method !== 'GET' && r.path.startsWith('/admin/api/projects')),
+    `through the account's own routes, not the owner tools' (${show(saved)})`,
+  );
+  await p.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
+  await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
+  await save();
+  await p.waitForFunction(() => document.querySelector('.file-menu__progress')?.dataset.state === 'failed', null, { timeout: 60_000 }).catch(() => {});
+  const failed = await p.evaluate(() => {
+    const n = document.querySelector('.file-menu__progress');
+    return { text: n?.querySelector('.file-menu__words')?.textContent ?? n?.textContent, buttons: [...(n?.querySelectorAll('button') ?? [])].map((b) => b.textContent) };
+  });
+  t.ok(failed.text === 'Your sign-in has expired. Saved on this device.' && failed.buttons.includes('Sign in again'), `without the owner's session the save is kept here, and the notice offers Sign in again (${show(failed)})`);
+  await p.click('.file-menu__progress button:text-is("Sign in again")');
+  t.ok(await step(p, 'Sign in'), 'which opens the dialog over Sculpt');
+  await press(p, '.account-card', 'Use a passkey');
+  await dialogGone(p);
+  await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done'), null, { timeout: 60_000 }).catch(() => {});
+  const again = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`));
+  t.ok(again.some((x) => /^done: Saved to My projects: /.test(x)), `signed in, the save goes again by itself (${show(again)})`);
+  const unsent = await p.evaluate(() => window.__sculpt.fileActions.unsentCopy);
+  t.eq(unsent, null, 'and the copy kept on the device is let go');
+  return saved?.id ?? '';
+}
+
+/**
+ * Edit in Sculpt from the owner's Projects page (docs/accounts.md §5): with
+ * accounts on, Open in Sculpt reads the scene through the owner tools
+ * (`&scope=admin`), and its saves go back there - how a template is edited
+ * as itself - rather than to My projects.
+ */
+async function editFromProjects(o, id, t) {
+  const p = o.page;
+  await p.goto(`${o.origin}/admin/`, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector(`.admin-row[data-project="${id}"] .admin-row__open`, { timeout: 30_000 }).catch(() => {});
+  const href = await p.evaluate((pid) => document.querySelector(`.admin-row[data-project="${pid}"] .admin-row__open`)?.getAttribute('href') ?? null, id);
+  t.eq(href, `/?sculpt=1&project=${id}&scope=admin`, "with accounts on, the Projects page opens a scene in Sculpt through the owner tools");
+  await p.click(`.admin-row[data-project="${id}"] .admin-row__open`);
+  await p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 }).catch(() => {});
+  await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
+  const link = await p.evaluate(() => ({ link: window.__sculpt.fileActions.link, search: location.search }));
+  t.ok(link.link?.id === id && link.link.scope === 'admin' && !/scope=/.test(link.search), `the scene opens linked to it through the owner tools (${show(link)})`);
+  const hint = (await fileItems(p)).find((i) => i.label === 'Save to library')?.hint;
+  t.ok(/^Updates ".+" in Projects$/.test(hint ?? ''), `and Save to library says it updates it in Projects ("${hint}")`);
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+  const mark = o.requests.length;
+  await clearNotices(p);
+  await chooseFile(p, 'Save to library');
+  const end = await savedToast(p);
+  const sent = o.requests.slice(mark).filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
+  t.ok(
+    end.state === 'done' && /^Saved to Projects: /.test(end.text) && sent.includes(`POST /admin/api/projects/${id}/scene`) && !sent.some((x) => x.includes('/api/me/')),
+    `which saves it back through the owner tools ("${end.text}": ${show(sent)})`,
+  );
 }
 
 /**
@@ -962,6 +1037,541 @@ async function suspension(server, browser, o, t) {
   }
 }
 
+// --- the member's projects (docs/accounts.md §7, Batch 8) --------------------------
+
+/** A JSON route as the page asks it, with its cookies: {status, body}. */
+const pageJson = (p, path) =>
+  p.evaluate(async (u) => {
+    const r = await fetch(u);
+    let body = null;
+    try {
+      body = await r.json();
+    } catch {
+      /* not JSON */
+    }
+    return { status: r.status, body };
+  }, path);
+
+/** Bytes the page fetches, with its cookies; null for a refusal. */
+const pageBytes = (p, path) =>
+  p
+    .evaluate(async (u) => {
+      const r = await fetch(u);
+      if (!r.ok) return null;
+      const u8 = new Uint8Array(await r.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+      return btoa(bin);
+    }, path)
+    .then((b) => (b === null ? null : Buffer.from(b, 'base64')));
+
+/** The bytes the device's shelf keeps under a key (SceneLibrary's libraryData store); null for none. */
+const deviceBytes = (p, key) =>
+  p
+    .evaluate(
+      (k) =>
+        new Promise((ok, fail) => {
+          const req = indexedDB.open('bozzetto-sculpt');
+          req.onerror = () => fail(req.error);
+          req.onsuccess = () => {
+            const db = req.result;
+            const tx = db.transaction('libraryData');
+            const got = tx.objectStore('libraryData').get(k);
+            tx.oncomplete = () => {
+              db.close();
+              if (!got.result) return ok(null);
+              const u8 = new Uint8Array(got.result);
+              let bin = '';
+              for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+              ok(btoa(bin));
+            };
+          };
+        }),
+      key,
+    )
+    .then((b) => (b === null ? null : Buffer.from(b, 'base64')));
+
+/** What R2 holds under a prefix, key to size (the dev hook). */
+const r2 = async (server, prefix) =>
+  Object.fromEntries(((await server.call('GET', `/api/dev/r2?prefix=${encodeURIComponent(prefix)}`)).body?.objects ?? []).map((o) => [o.key, o.size]));
+
+/** A size as the account's pages say one (net/account.ts amount, sizeText, sizeOfText). */
+const amount = (n) => (n >= 100 ? String(Math.round(n)) : n >= 1 ? String(Math.round(n * 10) / 10) : n > 0 ? String(Math.max(0.01, Math.round(n * 100) / 100)) : '0');
+const MiB = 1024 * 1024;
+const mbOf = (bytes) => amount(bytes / MiB);
+
+/**
+ * The files in a zip, by name, in the order they were written, each with
+ * its bytes and whether its CRC-32 holds. client-zip stores files as they
+ * are (method 0), so reading one is reading its central directory - and,
+ * for an archive past 4 GiB, its Zip64 records, read here too.
+ */
+function readZip(buf) {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('not a zip: no end of central directory');
+  let count = buf.readUInt16LE(eocd + 10);
+  let at = buf.readUInt32LE(eocd + 16);
+  if (at === 0xffffffff || count === 0xffff) {
+    const z64 = Number(buf.readBigUInt64LE(eocd - 20 + 8));
+    count = Number(buf.readBigUInt64LE(z64 + 32));
+    at = Number(buf.readBigUInt64LE(z64 + 48));
+  }
+  const files = [];
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(at) !== 0x02014b50) throw new Error(`not a zip: entry ${n} is not a central directory record`);
+    const method = buf.readUInt16LE(at + 10);
+    const crc = buf.readUInt32LE(at + 16);
+    let size = buf.readUInt32LE(at + 20);
+    let length = buf.readUInt32LE(at + 24);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const extraLen = buf.readUInt16LE(at + 30);
+    const commentLen = buf.readUInt16LE(at + 32);
+    let local = buf.readUInt32LE(at + 42);
+    const name = buf.toString('utf8', at + 46, at + 46 + nameLen);
+    for (let e = at + 46 + nameLen; e + 4 <= at + 46 + nameLen + extraLen; e += 4 + buf.readUInt16LE(e + 2)) {
+      if (buf.readUInt16LE(e) !== 0x0001) continue;
+      let q = e + 4;
+      if (length === 0xffffffff) (length = Number(buf.readBigUInt64LE(q))), (q += 8);
+      if (size === 0xffffffff) (size = Number(buf.readBigUInt64LE(q))), (q += 8);
+      if (local === 0xffffffff) local = Number(buf.readBigUInt64LE(q));
+    }
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + size);
+    files.push({ name, method, length, data, crcOk: crc32(data) === crc });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return files;
+}
+
+/** The member's own Save to library, with accounts on: a project, again in place, a full quota, an expired sign-in; and Capture. */
+async function memberLibrary(server, o, a, t) {
+  const p = a.page;
+  const uid = (await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id ?? '';
+  await openSculpt(p, server.base, '&q=low');
+  await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
+  const lib = (await fileItems(p)).find((i) => i.label === 'Save to library');
+  t.eq(lib?.hint, 'Saves to My projects, where only you see it', 'signed in as a member, Save to library says it saves to My projects');
+  const capture = await p.evaluate(() => {
+    const f = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
+    return {
+      id: !f.querySelector('.gallery-form__input[placeholder="project-id"]').hidden,
+      visibility: !f.querySelector('.gallery-form__visibility').hidden,
+      where: f.querySelector('.gallery-form__where').textContent,
+      recording: window.__sculpt.recorder.isAllowed() && !window.__sculpt.captureWindow.chip.hidden,
+    };
+  });
+  t.ok(
+    !capture.id && !capture.visibility && capture.where === 'To My projects, where only you see it.' && capture.recording,
+    `Capture is a member's too: recording is allowed, and its publish asks no id and no visibility (${show(capture)})`,
+  );
+
+  // The first save: a project of the member's own, with the bytes the scene packed to.
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
+  await clearNotices(p);
+  await chooseFile(p, 'Save to library');
+  let end = await savedToast(p);
+  t.ok(end.state === 'done' && /^Saved to My projects: Sculpt /.test(end.text), `Save to library saves to My projects ("${end.text}")`);
+  let list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const pid = list[0]?.id ?? '';
+  t.ok(
+    list.length === 1 && list[0].mode === 'scene' && list[0].visibility === 'private' && list[0].scene?.objects === 2 && /^p-/.test(pid) && list[0].media === `/api/me/media/${pid}`,
+    `a private scene project of the account's own, under the server's id, both objects in it (${show(list.map((x) => ({ id: x.id, mode: x.mode, scene: x.scene, media: x.media })))})`,
+  );
+  const link = await p.evaluate(() => window.__sculpt.fileActions.link);
+  t.ok(link?.id === pid && !link.scope, `the scene belongs to it now (${show(link)})`);
+  const file = await pageBytes(p, `/api/me/media/${pid}/scene.bozz`);
+  const copy = await deviceBytes(p, pid);
+  const stored = await r2(server, `users/${uid}/projects/${pid}/`);
+  const key = (f) => `users/${uid}/projects/${pid}/${f}`;
+  t.ok(
+    !!file && !!copy && file.equals(copy) && stored[key('scene.bozz')] === file.length && list[0].scene.bytes === file.length,
+    `the server keeps the bytes the device's copy holds, under the account's folder (${file?.length} bytes)`,
+  );
+  const usage = (await pageJson(p, '/api/me')).body?.usage;
+  t.ok(
+    stored[key('thumb.jpg')] > 0 && list[0].bytes === file.length + stored[key('thumb.jpg')] && usage?.used === list[0].bytes,
+    `its size - the file and its picture - is what the account's storage counts (${list[0]?.bytes}; used ${usage?.used})`,
+  );
+  t.eq(file ? (await readBozz(p, file)).objects : 0, 2, 'and the file opens as the scene it was');
+
+  // Again, after an edit: the same project, updated in place.
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
+  await clearNotices(p);
+  await chooseFile(p, 'Save to library');
+  end = await savedToast(p);
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  t.ok(end.state === 'done' && list.length === 1 && list[0].id === pid && list[0].scene?.objects === 3, `a second save updates it in place, three objects now ("${end.text}")`);
+  t.eq((await fileItems(p)).find((i) => i.label === 'Save to library')?.hint, `Updates "${list[0]?.title}" in My projects`, 'and the menu says which project it updates');
+
+  // A full quota: refused by the server, kept on the device, said with the server's numbers.
+  const setQuota = (mib) =>
+    o.page.evaluate(
+      ([id, q]) => fetch(`/admin/api/users/${id}/quota`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quotaMiB: q }) }).then((r) => r.status),
+      [uid, mib],
+    );
+  t.eq(await setQuota(1), 200, "the owner sets the member's quota to 1 MB");
+  await p.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+  const held = (await pageJson(p, '/api/me')).body?.usage ?? { used: 0, reserved: 0 };
+  await clearNotices(p);
+  await chooseFile(p, 'Save to library');
+  let notice = await failedNotice(p);
+  t.eq(
+    notice?.text,
+    `Your storage is full (${mbOf(held.used + held.reserved)} of 1 MB). Saved on this device; make room in My projects, then use Upload to My projects on its card.`,
+    'a save the quota cannot take stays on the device, and the notice says how full the storage is, in the server\'s numbers',
+  );
+  let copies = await shelf(p);
+  t.ok(copies.filter((c) => c.unsent).length === 1 && copies.some((c) => c.unsent && c.uploadTo === pid && c.objects === 4), `the scene is on the shelf as Not uploaded, for its project (${show(copies)})`);
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  t.ok(list.length === 1 && list[0].scene?.objects === 3, 'and nothing changed on the server');
+  t.eq(await setQuota(250), 200, 'the quota is put back');
+
+  // The sign-in gone: revoked on the server, so a save is kept here, and Sign in again signs in and saves.
+  const revoked = await o.page.evaluate((id) => fetch(`/admin/api/users/${id}/revoke-sessions`, { method: 'POST' }).then((r) => r.status), uid);
+  t.eq(revoked, 200, "the owner signs the member out everywhere");
+  await clearNotices(p);
+  await chooseFile(p, 'Save to library');
+  notice = await failedNotice(p);
+  t.ok(notice?.text === 'Your sign-in has expired. Saved on this device.' && notice.buttons.includes('Sign in again'), `its next save is kept on the device, with Sign in again (${show(notice)})`);
+  copies = await shelf(p);
+  t.eq(copies.filter((c) => c.unsent).length, 1, 'replacing the copy the refused save kept, not adding another');
+  await p.click('.file-menu__progress button:text-is("Sign in again")');
+  t.ok(await step(p, 'Sign in'), 'Sign in again opens the dialog over Sculpt');
+  await p.waitForFunction(() => !document.querySelector('.account-card .account-passkey')?.disabled, null, { timeout: 10_000 }).catch(() => {});
+  await press(p, '.account-card', 'Use a passkey');
+  const closed = await dialogGone(p, 20_000);
+  t.ok(closed, `signed in with the passkey${closed ? '' : `, but the dialog says "${await said(p)}"`}`);
+  await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done'), null, { timeout: 60_000 }).catch(() => {});
+  const again = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`));
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  t.ok(again.some((x) => /^done: Saved to My projects: /.test(x)) && list.length === 1 && list[0].scene?.objects === 4, `signed in, the save goes again by itself, to the same project (${show(again)})`);
+  copies = await shelf(p);
+  t.ok(!copies.some((c) => c.unsent) && (await p.evaluate(() => window.__sculpt.fileActions.unsentCopy)) === null, `and the copy kept on the device is let go (${show(copies)})`);
+
+  // Capture's publish: a model in My projects, under a title alone.
+  await p.evaluate(() => {
+    const form = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
+    form.querySelector('.gallery-form__input[placeholder="Title (optional)"]').value = 'Ada model';
+    [...form.querySelectorAll('button')].find((b) => b.textContent === 'Publish model').click();
+  });
+  await p.waitForFunction(() => /^Saved/.test(document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form__status')?.textContent ?? ''), null, { timeout: 60_000 }).catch(() => {});
+  const status = await p.evaluate(() => document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form__status')?.textContent ?? '');
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const model = list.find((x) => x.mode === 'model');
+  t.ok(/^Saved/.test(status) && !!model && model.title === 'Ada model' && model.frameCount === 1 && model.visibility === 'private', `Publish model puts a model in My projects (${status}; ${show(model)})`);
+}
+
+/** My projects (/?me): the meter, the cards, rename, download, open, read only offline, delete. */
+async function myProjectsPage(server, a, t) {
+  const p = a.page;
+  const open = async () => {
+    await p.goto(`${server.base}/?me`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('.card--mine', { timeout: 30_000 }).catch(() => {});
+  };
+  await open();
+  const usage = (await pageJson(p, '/api/me')).body?.usage ?? {};
+  let list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const scene = list.find((x) => x.mode === 'scene') ?? {};
+  const model = list.find((x) => x.mode === 'model') ?? {};
+  const view = () =>
+    p.evaluate(() => ({
+      meter: document.querySelector('.storage-meter__text')?.textContent ?? null,
+      now: Number(document.querySelector('.storage-meter')?.getAttribute('aria-valuenow')),
+      max: Number(document.querySelector('.storage-meter')?.getAttribute('aria-valuemax')),
+      cards: [...document.querySelectorAll('.card--mine')].map((c) => ({
+        id: c.dataset.project,
+        title: c.querySelector('.card__title')?.textContent ?? null,
+        meta: c.querySelector('.card__meta').textContent,
+        badge: c.querySelector('.card__badge').textContent,
+        actions: [...c.querySelectorAll('.card__action')].map((b) => b.textContent),
+      })),
+    }));
+  let v = await view();
+  t.ok(
+    v.meter === `${mbOf(usage.used)} of 250 MB used` && v.now === usage.used + usage.reserved && v.max === usage.quota,
+    `My projects' meter says what is stored, of the quota (${v.meter}; ${v.now} of ${v.max})`,
+  );
+  t.ok(
+    v.cards.length === 2 &&
+      v.cards[0].id === model.id &&
+      v.cards[1].id === scene.id &&
+      /^Model · 1 frame · [\d.]+ (KB|MB) · \d+ \w+ \d{4}$/.test(v.cards[0].meta) &&
+      /^Scene · 4 objects · [\d.]+ MB · \d+ \w+ \d{4}$/.test(v.cards[1].meta) &&
+      v.cards.every((c) => show(c.actions) === show(['Open', 'Download', 'Rename', 'Delete'])),
+    `a card for each, newest first, with its kind, size and date, and Open, Download, Rename and Delete (${show(v.cards)})`,
+  );
+  await p.waitForFunction((id) => document.querySelector(`.card--mine[data-project="${id}"] .card__img`)?.complete, scene.id, { timeout: 10_000 }).catch(() => {});
+  const img = await p.evaluate((id) => {
+    const i = document.querySelector(`.card--mine[data-project="${id}"] .card__img`);
+    return i ? { src: i.getAttribute('src'), width: i.naturalWidth } : null;
+  }, scene.id);
+  t.ok(!!img && img.src.startsWith(`/api/me/media/${scene.id}/thumb.jpg?v=`) && img.width > 0, `its picture comes through the private route (${show(img)})`);
+
+  // Rename, up to 200 characters.
+  const card = (id) => `.card--mine[data-project="${id}"]`;
+  await p.click(`${card(scene.id)} .card__rename`);
+  const max = await p.evaluate((sel) => document.querySelector(`${sel} input[name=title]`)?.maxLength ?? null, card(scene.id));
+  await p.fill(`${card(scene.id)} input[name=title]`, 'Bust study');
+  await p.click(`${card(scene.id)} .card__save`);
+  await p.waitForFunction((sel) => document.querySelector(`${sel} .card__title`)?.textContent === 'Bust study', card(scene.id), { timeout: 15_000 }).catch(() => {});
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const named = (await shelf(p)).find((c) => c.key === scene.id)?.name;
+  t.ok(max === 200 && list.find((x) => x.id === scene.id)?.title === 'Bust study' && named === 'Bust study', `Rename renames it, on the server and its copy here, up to 200 characters (${max}; ${named})`);
+
+  // Download: the scene's .bozz, as stored.
+  let [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30_000 }).catch(() => null), p.click(`${card(scene.id)} .card__download`)]);
+  const bozz = dl ? readFileSync(await dl.path()) : null;
+  const served = await pageBytes(p, `/api/me/media/${scene.id}/scene.bozz`);
+  t.ok(!!dl && dl.suggestedFilename() === 'Bust study.bozz' && !!bozz && !!served && bozz.equals(served), `Download saves the scene's .bozz file as stored (${dl?.suggestedFilename()}, ${bozz?.length} bytes)`);
+
+  // Download: a model's frames, zipped here.
+  [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60_000 }).catch(() => null), p.click(`${card(model.id)} .card__download`)]);
+  const zip = dl ? readZip(readFileSync(await dl.path())) : [];
+  const folder = `projects/ada-model-${model.id}`;
+  const frame = await pageBytes(p, `/api/me/media/${model.id}/frames/sd/0000.glb`);
+  const zipped = zip.find((f) => f.name === `${folder}/frames/0000.glb`);
+  t.ok(
+    dl?.suggestedFilename() === 'ada-model.zip' &&
+      show(zip.map((f) => f.name)) === show([`${folder}/project.json`, `${folder}/thumb.jpg`, `${folder}/frames/0000.glb`]) &&
+      zip.every((f) => f.method === 0 && f.crcOk) &&
+      !!frame &&
+      !!zipped &&
+      zipped.data.equals(frame),
+    `Download zips a model's frames with its settings and picture (${dl?.suggestedFilename()}: ${show(zip.map((f) => `${f.name} ${f.length}`))})`,
+  );
+
+  // Open: the model in the viewer, through the account's own routes.
+  await Promise.all([p.waitForURL((u) => u.searchParams.get('tl') === model.id, { timeout: 30_000 }).catch(() => {}), p.click(`${card(model.id)} .card__open`)]);
+  await p.waitForFunction(() => !!window.__bozzetto || !!document.querySelector('.overlay--error'), null, { timeout: 60_000 }).catch(() => {});
+  const viewer = await p.evaluate(() => ({ up: !!window.__bozzetto, error: document.querySelector('.overlay--error')?.textContent ?? null }));
+  t.ok(viewer.up && !viewer.error, `Open plays a model in the viewer, from the account's own manifest (${show(viewer)})`);
+
+  // Offline, the page is read only.
+  await open();
+  await p.evaluate(() => {
+    window.__onLine = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+    Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+    window.dispatchEvent(new Event('offline'));
+  });
+  await p.waitForFunction(() => /You are offline/.test(document.querySelector('.my-projects__body > .account-say')?.textContent ?? ''), null, { timeout: 15_000 }).catch(() => {});
+  const offline = await p.evaluate((ids) =>
+    ids.map((id) => {
+      const c = document.querySelector(`.card--mine[data-project="${id}"]`);
+      return {
+        open: !!c?.querySelector('.card__open')?.getAttribute('href'),
+        disabled: [...(c?.querySelectorAll('button.card__action') ?? [])].map((b) => b.disabled),
+      };
+    }),
+  [scene.id, model.id]);
+  t.ok(
+    offline[0].open && !offline[1].open && offline.every((c) => c.disabled.length === 3 && c.disabled.every(Boolean)),
+    `offline it is read only: a scene with a copy here still opens, nothing else does (${show(offline)})`,
+  );
+  await p.evaluate(() => {
+    Object.defineProperty(Navigator.prototype, 'onLine', window.__onLine);
+    window.dispatchEvent(new Event('online'));
+  });
+  await p.waitForFunction(() => !/You are offline/.test(document.querySelector('.my-projects__body > .account-say')?.textContent ?? '') && !!document.querySelector('.card--mine .card__delete:not(:disabled)'), null, { timeout: 15_000 }).catch(() => {});
+
+  // Delete, asked first: from the server, and the meter follows.
+  const before = Number(await p.getAttribute('.storage-meter', 'aria-valuenow'));
+  await p.click(`${card(model.id)} .card__delete`);
+  await p.waitForFunction((sel) => !document.querySelector(sel), card(model.id), { timeout: 15_000 }).catch(() => {});
+  await p.waitForFunction((n) => Number(document.querySelector('.storage-meter')?.getAttribute('aria-valuenow')) < n, before, { timeout: 15_000 }).catch(() => {});
+  list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  v = await view();
+  const gone = await r2(server, `users/${(await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id}/projects/${model.id}/`);
+  t.ok(
+    list.length === 1 && list[0].id === scene.id && v.cards.length === 1 && v.now < before && !Object.keys(gone).length,
+    `Delete takes it off the server, its files too, and the meter follows (${before} to ${v.now} bytes)`,
+  );
+
+  // Open: the scene in Sculpt, through the account's own routes.
+  await Promise.all([p.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 30_000 }).catch(() => {}), p.click(`${card(scene.id)} .card__open`)]);
+  await p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 }).catch(() => {});
+  const opened = await p.evaluate(() => ({ link: window.__sculpt?.fileActions.link ?? null, objects: window.__sculpt?.session.getMeshes().length ?? 0 }));
+  t.ok(opened.link?.id === scene.id && opened.link.title === 'Bust study' && opened.objects === 4, `Open opens a scene in Sculpt, linked to its project (${show(opened)})`);
+}
+
+/** Account → Download my data: confirmed, then one zip of everything, streamed to a picked file or downloaded. */
+async function exportData(server, a, t) {
+  const p = a.page;
+  clock.offset += 11 * MINUTE; // the sign-in more than ten minutes old: the export asks again
+  await openAccount(a);
+  const list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const scene = list[0] ?? {};
+  const uid = (await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id ?? '';
+  const stored = await r2(server, `users/${uid}/projects/${scene.id}/`);
+  // A picked file, as Chromium's Save dialog gives one: here, a stream the page keeps.
+  await p.evaluate(() => {
+    window.showSaveFilePicker = async (opts) => {
+      const saved = { name: opts.suggestedName, chunks: [], closed: false };
+      window.__saved = saved;
+      return {
+        name: opts.suggestedName,
+        createWritable: async () =>
+          new WritableStream({
+            write(chunk) {
+              saved.chunks.push(new Uint8Array(chunk));
+            },
+            close() {
+              saved.closed = true;
+            },
+          }),
+      };
+    };
+  });
+  await p.click('[data-item="download"] button:text-is("Download my data")');
+  t.ok(await step(p, 'Confirm it is you'), 'Download my data ten minutes on asks to confirm it is you');
+  await press(p, '.account-card', 'Use a passkey');
+  await dialogGone(p, 20_000);
+  await p.waitForSelector('.account-export__sum', { timeout: 30_000 }).catch(() => {});
+  const sum = await p.textContent('.account-export__sum').catch(() => null);
+  const total = Object.values(stored).reduce((n, x) => n + x, 0);
+  t.eq(sum, `1 project, 2 files, ${mbOf(total)} MB in all.`, 'then says what it comes to');
+  await p.click('.account-export__whole');
+  await p.waitForFunction(() => window.__saved?.closed === true, null, { timeout: 60_000 }).catch(() => {});
+  const picked = await p.evaluate(() => {
+    const s = window.__saved;
+    if (!s) return null;
+    const all = new Uint8Array(s.chunks.reduce((n, c) => n + c.length, 0));
+    let at = 0;
+    for (const c of s.chunks) {
+      all.set(c, at);
+      at += c.length;
+    }
+    let bin = '';
+    for (let i = 0; i < all.length; i += 0x8000) bin += String.fromCharCode(...all.subarray(i, i + 0x8000));
+    return { name: s.name, b64: btoa(bin), said: document.querySelector('.account-export .account-say')?.textContent ?? '' };
+  });
+  const zip = picked ? readZip(Buffer.from(picked.b64, 'base64')) : [];
+  const folder = `projects/bust-study-${scene.id}`;
+  const names = zip.map((f) => f.name);
+  t.ok(
+    /^bozzetto-ada_l-\d{4}-\d{2}-\d{2}\.zip$/.test(picked?.name ?? '') && picked.said === `Saved as ${picked.name}.` &&
+      show(names) === show(['account.json', `${folder}/project.json`, `${folder}/scene.bozz`, `${folder}/thumb.jpg`, 'README.txt']),
+    `Save as one zip writes it, as it is made, to the file picked: account.json, the project's folder, README.txt (${picked?.name}: ${show(names)})`,
+  );
+  const entry = (name) => zip.find((f) => f.name === name);
+  const served = await pageBytes(p, `/api/me/media/${scene.id}/scene.bozz`);
+  t.ok(
+    zip.every((f) => f.method === 0 && f.crcOk) &&
+      entry(`${folder}/scene.bozz`)?.data.equals(served ?? Buffer.alloc(0)) &&
+      entry(`${folder}/scene.bozz`)?.length === stored[`users/${uid}/projects/${scene.id}/scene.bozz`] &&
+      entry(`${folder}/thumb.jpg`)?.length === stored[`users/${uid}/projects/${scene.id}/thumb.jpg`],
+    'each file is whole, the sizes R2 holds, the scene byte for byte',
+  );
+  let account = null;
+  let project = null;
+  try {
+    account = JSON.parse(entry('account.json').data.toString('utf8'));
+    project = JSON.parse(entry(`${folder}/project.json`).data.toString('utf8'));
+  } catch {
+    /* said below */
+  }
+  t.ok(
+    account?.format === 'bozzetto-export/1' &&
+      account.account?.handle === 'ada_l' &&
+      account.account?.email === 'ada@new.example' &&
+      Array.isArray(account.passkeys) &&
+      Array.isArray(account.sessions) &&
+      Array.isArray(account.audit) &&
+      show(account.projects) === show([{ id: scene.id, title: 'Bust study', mode: 'scene', folder }]),
+    `account.json holds the account, its passkeys, sessions and audit rows, and names each project's folder (${show(account?.projects)})`,
+  );
+  t.ok(
+    project?.id === scene.id && project.title === 'Bust study' && show(project.files.map((f) => f.name)) === show(['scene.bozz', 'thumb.jpg']) && project.data && typeof project.data === 'object',
+    `project.json holds the project's settings and its files (${show(project?.files)})`,
+  );
+  const readme = entry('README.txt')?.data.toString('utf8') ?? '';
+  t.ok(/^Bozzetto: your data/.test(readme) && readme.includes('@ada_l') && readme.includes('account.json') && !readme.includes('Not included'), 'README.txt says what is in it');
+
+  // Where no file can be picked (Safari, an iPad), the zip downloads once it is whole.
+  await p.evaluate(() => {
+    window.showSaveFilePicker = undefined;
+  });
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60_000 }).catch(() => null), p.click('.account-export__whole')]);
+  const downloaded = dl ? readZip(readFileSync(await dl.path())) : [];
+  t.ok(
+    !!dl && /^bozzetto-ada_l-\d{4}-\d{2}-\d{2}\.zip$/.test(dl.suggestedFilename()) && show(downloaded.map((f) => f.name)) === show(names) && downloaded.every((f) => f.crcOk),
+    `without a file to write to, the same zip downloads (${dl?.suggestedFilename()})`,
+  );
+}
+
+/** Account → Delete account: the handle typed, confirmed, deleted to done, and the gallery a guest's. */
+async function deleteAccount(server, a, t) {
+  const p = a.page;
+  const uid = (await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id ?? '';
+  // Forty more projects, empty: a deletion step spends at most 40
+  // subrequests (functions/_shared/deletion.ts), about one per empty
+  // project, so this one takes more than a step, and says how far it is.
+  const made = await p.evaluate(async () => {
+    let n = 0;
+    for (let i = 0; i < 40; i++) {
+      const r = await fetch('/api/me/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: `Empty ${i + 1}`, mode: 'timelapse' }),
+      });
+      if (r.status === 201) n++;
+    }
+    return n;
+  });
+  t.eq(made, 40, 'forty more projects, so the deletion takes more than one step');
+  const notes = [];
+  await a.ctx.exposeBinding('__deleteNote', (_source, text) => void notes.push(text));
+  clock.offset += 11 * MINUTE; // asks to confirm it is you, again
+  await openAccount(a);
+  await p.evaluate(() => {
+    const host = document.querySelector('[data-item="delete"]');
+    new MutationObserver(() => {
+      const text = host.querySelector('.account-say')?.textContent ?? '';
+      if (text) window.__deleteNote(text);
+    }).observe(host, { subtree: true, childList: true, characterData: true });
+  });
+  await p.click('[data-item="delete"] button:text-is("Delete account…")');
+  const form = '[data-item="delete"] form';
+  await p.waitForSelector(form, { timeout: 10_000 }).catch(() => {});
+  t.ok(/cannot be undone/.test((await p.textContent(`${form} .account-delete__warn`).catch(() => '')) ?? ''), 'Delete account says what goes, and that it cannot be undone');
+  await p.fill(`${form} input[name=confirm]`, 'ada');
+  await p.click(`${form} button:text-is("Delete my account")`);
+  t.eq(await saidLike(p, /Type your handle/, '[data-item="delete"]'), 'Type your handle, ada_l, exactly to confirm.', 'it goes no further without the handle typed');
+  const sent = a.requests.filter((r) => r.path === '/api/me/delete').length;
+  t.eq(sent, 0, 'and nothing was sent');
+  await p.fill(`${form} input[name=confirm]`, '@ada_l');
+  await p.click(`${form} button:text-is("Delete my account")`);
+  t.ok(await step(p, 'Confirm it is you'), 'the handle typed, it asks to confirm it is you');
+  await press(p, '.account-card', 'Use a passkey');
+  await p.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 60_000 }).catch(() => {});
+  await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 }).catch(() => {});
+  const calls = a.requests.filter((r) => r.path === '/api/me/delete').length;
+  const steps = notes.filter((n) => /^Deleting… \d+ still to go\.$/.test(n));
+  t.ok(
+    calls >= 3 && steps.length >= 1,
+    `it asks again and again until the server says done - ${calls} calls, the first refused until it was confirmed - saying how far it is (${show([...new Set(notes)])})`,
+  );
+  const notice = await p.textContent('.landing__notice').catch(() => null);
+  t.eq(notice, 'Your account has been deleted, with everything in it.', 'then the gallery says so');
+  t.ok(await chipShown(p, 'Sign in'), `a guest's gallery: Sign in (${(await chips(p)).join(', ')})`);
+  const cookies = (await a.ctx.cookies()).map((c) => c.name);
+  t.ok(!cookies.includes('__Host-bz_session') && (await me(p)).status === 401, `signed out: no session cookie, and /api/me says so (${show(cookies)})`);
+  const rows = (await server.call('GET', `/api/dev/rows?user=${uid}`)).body ?? {};
+  const files = await r2(server, `users/${uid}/`);
+  t.ok(
+    rows.users === 0 && rows.projects === 0 && rows.credentials === 0 && rows.sessions === 0 && rows.pendingUploads === 0 && !Object.keys(files).length,
+    `nothing of the account is left on the server: rows ${show(rows)}, files ${Object.keys(files).length}`,
+  );
+  const device = await p.evaluate(() => ({ remembered: localStorage.getItem('bozzetto-signed-in') }));
+  const copies = await shelf(p);
+  t.ok(device.remembered === null && !copies.some((c) => c.projectId), `this device forgets the sign-in and its copies of the account's projects (${show(copies)})`);
+}
+
 export const suites = {
   async accounts(page, base, t) {
     const browser = page.context().browser();
@@ -998,6 +1608,7 @@ export const suites = {
     };
     clock.offset = 0;
     const a = await browserFor(browser, server.base, { ip: '203.0.113.11', authenticator: true });
+    let o = null;
     try {
       await part('join', () => joinWithInvite(server, turnstile, a, t));
       await part('sign out', () => signOut(a, t));
@@ -1014,13 +1625,24 @@ export const suites = {
       await part('desktop window', () => desktopWindow(server, browser, t));
       await part('spent invite', () => spentInvite(browser, server.base, t));
       await part('legal pages', () => legalPages(browser, server.base, t));
+      // The owner: Create your account, the second lock, Sculpt's saves.
+      o = await browserFor(browser, server.base, { ip: '203.0.113.20', access: true, authenticator: true });
+      let scene = '';
+      await part('owner', async () => {
+        scene = await owner(server, o, t);
+      });
+      await part('edit from projects', () => editFromProjects(o, scene, t));
+      await part('suspension', () => suspension(server, browser, o, t));
+      // The member's own projects (Batch 8), the owner's tools at hand for the quota and the sessions.
+      await part('member library', () => memberLibrary(server, o, a, t));
+      await part('my projects', () => myProjectsPage(server, a, t));
+      await part('download my data', () => exportData(server, a, t));
+      await part('delete account', () => deleteAccount(server, a, t));
       t.ok(!a.errors.length, `no page errors in the member's browser${a.errors.length ? `: ${a.errors.join(' | ')}` : ''}`);
+      t.ok(!o.errors.length, `no page errors in the owner's browser${o.errors.length ? `: ${o.errors.join(' | ')}` : ''}`);
     } finally {
       await a.ctx.close();
-    }
-    try {
-      await part('owner', () => owner(server, browser, t));
-    } finally {
+      await o?.ctx.close();
       const log = server.log();
       await server.close();
       await turnstile.close();

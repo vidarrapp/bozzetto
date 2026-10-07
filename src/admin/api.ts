@@ -3,11 +3,26 @@
  * through the Access-gated `/admin/api/*` routes (Cloudflare Access supplies
  * the identity in production; the local `DEV_ADMIN` var stands in for it in
  * dev); the public list stays on `/api/projects`.
+ *
+ * With accounts on, an account's own projects - the owner's included - are
+ * on `/api/me/projects`, which mirror the owner's routes (docs/accounts.md
+ * §4): the same calls with another base path (projectRoutes), held to the
+ * account's quota, and refused in sentences a person can act on.
  */
 
 import { apiFetch, isDesktop, type ApiResult } from '../net/origin';
 import { forgetOwnerCaches } from '../net/ownerCaches';
-import { AccountError, getMe, loadConfig, signOutHere, suspensionText, type Me } from '../net/account';
+import {
+  AccountError,
+  accountsOn,
+  getMe,
+  loadConfig,
+  signOutHere,
+  storageFullText,
+  sizeText,
+  suspensionText,
+  type Me,
+} from '../net/account';
 
 export type Visibility = 'public' | 'private';
 
@@ -41,11 +56,14 @@ export interface ProjectSummary {
    * The base its files are read from, as the server names it: for a listed
    * template an open route, on this site (`/media/<id>`) or, once the
    * server has a files host, there (`https://files.…/m/<id>`); for
-   * anything else the Access-gated `/admin/api/media/<id>`. Taken as
-   * given, whichever it is. Absent from a server before accounts
-   * (mediaPath falls back).
+   * anything else the Access-gated `/admin/api/media/<id>`, or an
+   * account's own project's private `/api/me/media/<id>`. Taken as given,
+   * whichever it is. Absent from a server before accounts (mediaPath falls
+   * back).
    */
   media?: string;
+  /** What its files weigh against the account's quota: on My projects' list (GET /api/me/projects). */
+  bytes?: number;
 }
 
 /**
@@ -149,9 +167,11 @@ async function call<T>(
     let said: string | null = null;
     let code: string | null = null;
     let reason: string | null = null;
+    let body: Record<string, unknown> = {};
     if (res.bytes) {
       try {
-        const body = JSON.parse(new TextDecoder().decode(res.bytes)) as { error?: unknown; code?: unknown; reason?: unknown };
+        const parsed = JSON.parse(new TextDecoder().decode(res.bytes)) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
         if (typeof body.error === 'string' && body.error) said = body.error;
         if (typeof body.code === 'string') code = body.code;
         if (typeof body.reason === 'string') reason = body.reason;
@@ -159,6 +179,9 @@ async function call<T>(
         /* non-JSON error body */
       }
     }
+    // The account's own routes answer in codes (docs/accounts.md §3-4),
+    // each said as what can be done about it.
+    if (isMemberRoute(pathname)) throw memberRefusal(res, code, body, said);
     // Access let the owner through, but the owner's own session did not
     // come with it (docs/accounts.md §2, lock 2): signing in to the
     // account mends it, in the dialog, without leaving the page.
@@ -178,7 +201,7 @@ async function call<T>(
     // The desktop reports "no server configured" as status 0; saying that is
     // more use than a generic failure.
     if (res.status === 0) message = res.error ?? 'No server configured.';
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, code, body);
   }
   // An Access login page answering in the API's place is a sign-in problem,
   // not a reply: parsing it would throw "Unexpected token '<'".
@@ -186,13 +209,86 @@ async function call<T>(
   return (res.bytes ? JSON.parse(new TextDecoder().decode(res.bytes)) : null) as T;
 }
 
-/** A refused call, with the status kept for callers that branch on it. */
+/** The account's own routes: its projects and their files (docs/accounts.md §4). */
+const isMemberRoute = (pathname: string): boolean => pathname.startsWith('/api/me/');
+
+/**
+ * A refusal from the account's own routes, as the error that says what to
+ * do next: a sign-in that has gone (401, renewed in the dialog), a
+ * suspension (403, which no sign-in lifts), a full quota (413, with the
+ * server's numbers), or the server's refusal said as a sentence.
+ */
+function memberRefusal(res: ApiResult, code: string | null, body: Record<string, unknown>, said: string | null): ApiError {
+  if (res.status === 0) return new ApiError(res.error ?? 'No connection.', 0);
+  if (res.status === 401) return new AuthExpiredError('session');
+  if (res.status === 403 && code === 'suspended') {
+    return new SuspendedError(typeof body.reason === 'string' ? body.reason : null);
+  }
+  if (res.status === 413 && code === 'quota_exceeded') {
+    const n = (k: string): number => (typeof body[k] === 'number' ? (body[k] as number) : 0);
+    return new QuotaError(n('used'), n('quota'), body);
+  }
+  return new ApiError(projectRefusalText(res.status, code, body, said), res.status, code, body);
+}
+
+/** What the account's project routes refuse, by the code they refuse with (docs/accounts.md §4). */
+function projectRefusalText(
+  status: number,
+  code: string | null,
+  body: Record<string, unknown>,
+  said: string | null,
+): string {
+  const limit = typeof body.limit === 'number' ? body.limit : null;
+  switch (code) {
+    case 'file_too_large':
+      return limit !== null ? `That file is too large: the most is ${sizeText(limit)}` : 'That file is too large to keep';
+    case 'bad_type':
+      return 'That file is not one Bozzetto keeps';
+    case 'bad_scene':
+      // The server's own sentence: what in the scene it would not take.
+      return (typeof body.reason === 'string' && body.reason.replace(/\.$/, '')) || 'The scene file was refused';
+    case 'bad_request':
+      if (limit !== null) return `You have ${limit} projects, the most an account can have. Delete one to make room`;
+      if (body.reason === 'public') return 'Your projects are private: they cannot be made public';
+      break;
+    case 'not_found':
+      return 'That project is not there any more';
+    case 'cross_site':
+      return 'The request was refused as coming from another site';
+    default:
+      break;
+  }
+  if (status >= 500) return 'Something went wrong on the server. Try again in a moment';
+  return (said ?? '').replace(/\.$/, '') || `Request failed (${status})`;
+}
+
+/**
+ * A refused call, with the status kept for callers that branch on it, and
+ * - from the routes that answer in codes - the code and what came with it.
+ */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code: string | null = null,
+    readonly body: Record<string, unknown> = {},
   ) {
     super(message);
+  }
+}
+
+/**
+ * The account's storage cannot take what was sent (413 quota_exceeded,
+ * docs/accounts.md §4): how full it is, as the server counts it - what it
+ * stores and what its uploads in progress hold - against the quota.
+ */
+export class QuotaError extends ApiError {
+  constructor(
+    readonly used: number,
+    readonly quota: number,
+    body: Record<string, unknown> = {},
+  ) {
+    super(storageFullText(used, quota), 413, 'quota_exceeded', body);
   }
 }
 
@@ -257,13 +353,15 @@ export class UnreachableError extends Error {
 /**
  * Why an upload did not happen, which decides what the notice offers: a
  * sign-in, a wait for the connection, the suspension said and nothing
- * offered, or the server's own words.
+ * offered, room to be made (a full quota, with the server's numbers), or
+ * the server's own words.
  */
-export type UploadFailure = 'expired' | 'offline' | 'suspended' | 'refused';
+export type UploadFailure = 'expired' | 'offline' | 'suspended' | 'full' | 'refused';
 
 export function uploadFailure(err: unknown): UploadFailure {
   if (err instanceof AuthExpiredError) return 'expired';
   if (err instanceof SuspendedError) return 'suspended';
+  if (err instanceof QuotaError) return 'full';
   // A rejected fetch, or a lazy chunk that could not load, is a connection.
   if (err instanceof UnreachableError || err instanceof TypeError) return 'offline';
   // The desktop's proxy reports a connection it could not make as status 0.
@@ -485,6 +583,17 @@ export function signOutHref(): string {
 export async function signOut(): Promise<void> {
   const accounts = (await loadConfig())?.accounts === true;
   if (accounts) await signOutHere();
+  await forgetSignIn();
+  window.location.assign(accounts ? '/' : signOutHref());
+}
+
+/**
+ * What this device keeps of a sign-in, let go: the remembered sign-in (so
+ * nothing reads as an expired one afterwards), the expiry notice's mark,
+ * and the worker's copies of private answers. Sign out ends the session
+ * first; an account deleted has had its session ended by the server.
+ */
+export async function forgetSignIn(): Promise<void> {
   forget();
   try {
     localStorage.removeItem(EXPIRY_TOLD_KEY);
@@ -492,7 +601,6 @@ export async function signOut(): Promise<void> {
     // Nothing was remembered that could be.
   }
   await forgetOwnerCaches();
-  window.location.assign(accounts ? '/' : signOutHref());
 }
 
 function whoamiEmail(res: ApiResult): string | null {
@@ -516,28 +624,128 @@ export type Role = 'owner' | 'moderator' | 'member' | 'suspended' | 'expired' | 
 export const roleOf = (s: SignIn): Role =>
   s.me ? s.me.role : s.suspended ? 'suspended' : s.email ? 'owner' : s.expired ? 'expired' : 'guest';
 
-const project = (id: string): string => `/admin/api/projects/${encodeURIComponent(id)}`;
+/**
+ * The routes a projects client reaches: the owner tools' (`admin`,
+ * /admin/api/projects, behind Access and the owner's session, held to no
+ * quota) or an account's own (`me`, /api/me/projects, held to its quota,
+ * docs/accounts.md §4). The member routes mirror the owner's, so one set
+ * of calls serves both with another base path.
+ */
+export type ProjectScope = 'admin' | 'me';
+
+/** One set of project calls, on one scope's routes. */
+export interface ProjectsClient {
+  readonly scope: ProjectScope;
+  /** Where work sent here is, as a sentence names it: Projects (the owner tools'), or My projects. */
+  readonly place: string;
+  /** Every project the scope reaches, newest first. */
+  list(): Promise<ProjectSummary[]>;
+  /** A project's manifest, its files under the scope's media route. */
+  get(id: string): Promise<unknown>;
+  create(input: CreateInput): Promise<ProjectSummary>;
+  update(id: string, patch: unknown): Promise<ProjectSummary>;
+  rename(id: string, title: string): Promise<ProjectSummary>;
+  remove(id: string): Promise<unknown>;
+  uploadFrame(id: string, index: number, glb: ArrayBuffer): Promise<{ index: number; size: number; key?: string }>;
+  uploadThumb(id: string, blob: Blob): Promise<{ ok: boolean }>;
+  /**
+   * Begin a scene file upload; the server says how big each part should
+   * be. An account's upload declares the file's size first (`size`, which
+   * must fit its quota); the owner tools' never needed to, and are asked
+   * as they always were.
+   */
+  sceneStart(id: string, size?: number): Promise<{ uploadId: string; partSize: number }>;
+  scenePart(id: string, uploadId: string, part: number, bytes: ArrayBuffer): Promise<{ part: number; etag: string }>;
+  sceneComplete(
+    id: string,
+    uploadId: string,
+    body: { parts: { part: number; etag: string }[]; objects: number; tris: number },
+  ): Promise<SceneProject>;
+  sceneAbort(id: string, uploadId: string): Promise<unknown>;
+}
+
+function projectRoutes(scope: ProjectScope): ProjectsClient {
+  const root = scope === 'admin' ? '/admin/api/projects' : '/api/me/projects';
+  const project = (id: string): string => `${root}/${encodeURIComponent(id)}`;
+  const client: ProjectsClient = {
+    scope,
+    place: scope === 'admin' ? 'Projects' : 'My projects',
+    list: () => call<ProjectSummary[]>(root),
+    get: (id) => call(project(id)),
+    create: (input) => call<ProjectSummary>(root, { method: 'POST', ...asJson(input) }),
+    update: (id, patch) => call<ProjectSummary>(project(id), { method: 'PUT', ...asJson(patch) }),
+    rename: (id, title) => client.update(id, { title }),
+    remove: (id) => call(project(id), { method: 'DELETE' }),
+    uploadFrame: (id, index, glb) =>
+      call<{ index: number; size: number; key?: string }>(`${project(id)}/frames?index=${index}`, {
+        method: 'POST',
+        body: glb,
+      }),
+    uploadThumb: async (id, blob) =>
+      call<{ ok: boolean }>(`${project(id)}/thumb`, {
+        method: 'POST',
+        body: await blob.arrayBuffer(),
+        contentType: blob.type || 'image/jpeg',
+      }),
+    sceneStart: (id, size) =>
+      call<{ uploadId: string; partSize: number }>(
+        `${project(id)}/scene`,
+        scope === 'me' ? { method: 'POST', ...asJson({ size }) } : { method: 'POST' },
+      ),
+    scenePart: (id, uploadId, part, bytes) =>
+      call<{ part: number; etag: string }>(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}&part=${part}`, {
+        method: 'PUT',
+        body: bytes,
+        contentType: 'application/octet-stream',
+      }),
+    sceneComplete: (id, uploadId, body) =>
+      call<SceneProject>(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, {
+        method: 'POST',
+        ...asJson(body),
+      }),
+    sceneAbort: (id, uploadId) => call(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, { method: 'DELETE' }),
+  };
+  return client;
+}
+
+/** The owner tools' projects: templates and the owner's own, on /admin/api. */
+export const ownerProjects = projectRoutes('admin');
+
+/** The signed-in account's own projects, on /api/me (My projects). */
+export const memberProjects = projectRoutes('me');
+
+/**
+ * Where Save to library, Capture and the gallery's Upload put work: with
+ * accounts on, the account's own projects - the owner's too, as everyone's
+ * (docs/accounts.md §4) - unless the work was opened through the owner
+ * tools (`scope` 'admin': a template, edited from Projects), which saves
+ * back there; with accounts off, the owner tools, as before.
+ */
+export async function libraryProjects(scope?: ProjectScope): Promise<ProjectsClient> {
+  if (scope === 'admin') return ownerProjects;
+  return (await accountsOn()) ? memberProjects : ownerProjects;
+}
 
 export const api = {
   /** The public list: what a guest's gallery shows. */
   list: () => call<ProjectSummary[]>('/api/projects'),
 
   /** Every project, private ones and scenes included, each with its visibility. */
-  adminList: () => call<ProjectSummary[]>('/admin/api/projects'),
+  adminList: ownerProjects.list,
 
   /** The owner's manifest: any project, with paths to where its files are served to the owner. */
-  get: (id: string) => call(project(id)),
+  get: ownerProjects.get,
 
-  create: (input: CreateInput) => call<ProjectSummary>('/admin/api/projects', { method: 'POST', ...asJson(input) }),
+  create: ownerProjects.create,
 
-  update: (id: string, patch: unknown) => call<ProjectSummary>(project(id), { method: 'PUT', ...asJson(patch) }),
+  update: ownerProjects.update,
 
   /**
    * Public or private. Made public, a project becomes a template, the
    * gallery's and no one's (docs/accounts.md §1); made private, a template
    * stays one, taken off the gallery. The answer says which it now is.
    */
-  setVisibility: (id: string, visibility: Visibility) => api.update(id, { visibility }),
+  setVisibility: (id: string, visibility: Visibility) => ownerProjects.update(id, { visibility }),
 
   /**
    * Make a project a template, or the owner's own again (docs/accounts.md
@@ -545,45 +753,22 @@ export const api = {
    * it; off, it is the owner's, and private. Answers the updated summary.
    */
   setTemplate: (id: string, template: boolean) =>
-    call<ProjectSummary>(`${project(id)}/template`, { method: 'POST', ...asJson({ template }) }),
+    call<ProjectSummary>(`/admin/api/projects/${encodeURIComponent(id)}/template`, { method: 'POST', ...asJson({ template }) }),
 
-  rename: (id: string, title: string) => api.update(id, { title }),
+  rename: ownerProjects.rename,
 
-  remove: (id: string) => call(project(id), { method: 'DELETE' }),
+  remove: ownerProjects.remove,
 
-  uploadFrame: (id: string, index: number, glb: ArrayBuffer) =>
-    call<{ key: string; index: number; size: number }>(`${project(id)}/frames?index=${index}`, {
-      method: 'POST',
-      body: glb,
-    }),
+  uploadFrame: ownerProjects.uploadFrame,
 
-  uploadThumb: async (id: string, blob: Blob) =>
-    call<{ ok: boolean }>(`${project(id)}/thumb`, {
-      method: 'POST',
-      body: await blob.arrayBuffer(),
-      contentType: blob.type || 'image/jpeg',
-    }),
+  uploadThumb: ownerProjects.uploadThumb,
 
   /** Begin a scene file upload; the server says how big each part should be. */
-  sceneStart: (id: string) =>
-    call<{ uploadId: string; partSize: number }>(`${project(id)}/scene`, { method: 'POST' }),
+  sceneStart: (id: string) => ownerProjects.sceneStart(id),
 
-  scenePart: (id: string, uploadId: string, part: number, bytes: ArrayBuffer) =>
-    call<{ part: number; etag: string }>(
-      `${project(id)}/scene?upload=${encodeURIComponent(uploadId)}&part=${part}`,
-      { method: 'PUT', body: bytes, contentType: 'application/octet-stream' },
-    ),
+  scenePart: ownerProjects.scenePart,
 
-  sceneComplete: (
-    id: string,
-    uploadId: string,
-    body: { parts: { part: number; etag: string }[]; objects: number; tris: number },
-  ) =>
-    call<SceneProject>(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, {
-      method: 'POST',
-      ...asJson(body),
-    }),
+  sceneComplete: ownerProjects.sceneComplete,
 
-  sceneAbort: (id: string, uploadId: string) =>
-    call(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, { method: 'DELETE' }),
+  sceneAbort: ownerProjects.sceneAbort,
 };

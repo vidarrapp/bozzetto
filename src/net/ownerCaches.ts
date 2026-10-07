@@ -1,17 +1,18 @@
 /**
  * The service worker's copies of private answers: the sign-in probe (with
  * accounts on, the account as GET /api/me answers it), the owner's project
- * list and manifests (private projects and scenes included), and - kept by
- * mistake under the thumbnail rule until it was anchored to the public
- * route - the gated media route's thumbnails. The names are the cacheName
- * of each rule in vite.config.ts.
+ * list and manifests (private projects and scenes included), an account's
+ * own (My projects, GET /api/me/projects), and - kept by mistake under the
+ * thumbnail rule until it was anchored to the public route - the gated
+ * media route's thumbnails. The names are the cacheName of each rule in
+ * vite.config.ts.
  *
  * Kept so an installed app still shows its owner their work offline; the
  * worker's own expiry is thirty days. A sign-in that has gone - signed out,
  * expired, or refused - drops them at once, so a device the owner has
  * left does not go on showing their private list to whoever picks it up.
  */
-const OWNER_CACHES = ['bozzetto-whoami', 'bozzetto-owner-projects', 'bozzetto-me'];
+const OWNER_CACHES = ['bozzetto-whoami', 'bozzetto-owner-projects', 'bozzetto-me', 'bozzetto-my-projects'];
 /** Where the public thumbnails are kept, which held some private ones too. */
 const THUMB_CACHE = 'bozzetto-thumbs';
 

@@ -356,9 +356,13 @@ function sentence(status: number, code: string, body: Record<string, unknown>): 
     case 'mail_paused':
       return `Bozzetto has sent all the mail it may today. Try again ${inWait(n('retryAfter'))}.`;
     case 'bad_request':
+      // Delete account's confirmation: the handle typed was not the account's.
+      if (body.reason === 'handle') return 'Type your handle exactly as it is to confirm.';
       if (typeof body.reason === 'string') return handleReasonText(body.reason);
       if (typeof body.limit === 'number') return `An account can have at most ${body.limit} passkeys. Remove one to add another.`;
       return said || 'That was not accepted.';
+    case 'quota_exceeded':
+      return `${storageFullText(n('used') ?? 0, n('quota') ?? 0)}.`;
     default:
       if (status >= 500) return 'Something went wrong on the server. Try again in a moment.';
       return said || `The request was refused (${status}).`;
@@ -434,6 +438,106 @@ export const getAccount = (): Promise<AccountDetails> => callFor<AccountDetails>
 export async function signOutHere(): Promise<void> {
   await call('POST', '/api/auth/signout');
 }
+
+// --- storage ------------------------------------------------------------------------------
+
+const KiB = 1024;
+const MiB = 1024 * KiB;
+const GiB = 1024 * MiB;
+
+/** A number of a unit, at the precision it is worth: "248", "12.3", "0.04". */
+function amount(n: number): string {
+  if (n >= 100) return String(Math.round(n));
+  if (n >= 1) return String(Math.round(n * 10) / 10);
+  if (n > 0) return String(Math.max(0.01, Math.round(n * 100) / 100));
+  return '0';
+}
+
+/** A size as the account's pages say one: "320 KB", "12.3 MB", "1.5 GB". */
+export function sizeText(bytes: number): string {
+  if (bytes < MiB) return bytes > 0 ? `${Math.max(1, Math.round(bytes / KiB))} KB` : '0 KB';
+  if (bytes < GiB) return `${amount(bytes / MiB)} MB`;
+  return `${amount(bytes / GiB)} GB`;
+}
+
+/** Part of a whole, in the whole's unit: "248 of 250 MB", "1.2 of 10 GB". */
+export function sizeOfText(part: number, whole: number): string {
+  const [unit, size] = whole >= GiB ? ['GB', GiB] : ['MB', MiB];
+  return `${amount(Math.max(0, part) / size)} of ${amount(whole / size)} ${unit}`;
+}
+
+/**
+ * A refusal for want of room (413 quota_exceeded, docs/accounts.md §4), with
+ * the server's numbers - `used` counting what uploads in progress hold too,
+ * as the quota does: "Your storage is full (248 of 250 MB)". Where more
+ * than a megabyte is still free, it was this file that would not fit.
+ * No full stop: it is said mid-sentence as often as not.
+ */
+export function storageFullText(used: number, quota: number): string {
+  if (quota > 0 && quota - used >= MiB) return `There is not room for this in your storage (${sizeOfText(used, quota)} used)`;
+  return `Your storage is full (${sizeOfText(used, quota)})`;
+}
+
+// --- export and deletion ---------------------------------------------------------------
+
+/** One of a project's files, as the export names it: under the project, its size, and where to fetch it. */
+export interface ExportFile {
+  /** scene.bozz, thumb.jpg, frames/sd/0000.glb */
+  name: string;
+  /** Bytes; null where the export could not list it, and named it from the project's data. */
+  size: number | null;
+  /** The private route, with ?download=1. */
+  url: string;
+}
+
+export interface ExportProject {
+  id: string;
+  title: string;
+  mode: string;
+  fps: number;
+  visibility: string;
+  createdAt: number;
+  updatedAt: number;
+  bytes: number;
+  data: unknown;
+  files: ExportFile[];
+}
+
+/**
+ * GET /api/me/export (docs/accounts.md §3): everything the site keeps of
+ * the account, as `bozzetto-export/1` JSON, naming each project's files
+ * for the client to fetch and zip one at a time.
+ */
+export interface AccountExport {
+  format: string;
+  exportedAt: number;
+  /** False when the listings ran out before every project was reached. */
+  complete: boolean;
+  account: { handle: string; email: string } & Record<string, unknown>;
+  passkeys: unknown[];
+  sessions: unknown[];
+  projects: ExportProject[];
+  audit: unknown[];
+}
+
+/** The account's data (needs recent authentication: 401 reauth). */
+export const getExport = (): Promise<AccountExport> => callFor<AccountExport>('GET', '/api/me/export');
+
+/** Where a deletion stands: done, or how many uploads and projects are still to go. */
+export interface DeletionProgress {
+  done: boolean;
+  remaining: number;
+}
+
+/**
+ * Delete the account (POST /api/me/delete, docs/accounts.md §3). The first
+ * call takes the handle, typed to confirm, and needs recent
+ * authentication; it marks the account as being deleted and carries the
+ * deletion as far as one request may. Each later call, with nothing sent,
+ * carries it on, until `done`: then the session is gone with the account.
+ */
+export const deleteAccountStep = (handle?: string): Promise<DeletionProgress> =>
+  callFor<DeletionProgress>('POST', '/api/me/delete', handle === undefined ? undefined : { handle });
 
 // --- invites, handles, codes -------------------------------------------------------------
 

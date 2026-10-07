@@ -1,7 +1,8 @@
 import { div } from '../../ui/dom';
-import { AuthExpiredError, type Role, type Visibility } from '../../admin/api';
+import { AuthExpiredError, type Role } from '../../admin/api';
 import { isDesktop } from '../../net/origin';
 import { signInButton } from '../../ui/signIn';
+import type { PublishTo } from '../bridge/GallerySave';
 
 /**
  * Inline "save to gallery" mini-form: a slug + title pair, who may see it,
@@ -13,22 +14,23 @@ import { signInButton } from '../../ui/signIn';
  * that did not exist. When the session has expired, or a publish finds
  * that it has, the line says so and offers Sign in again, which comes back
  * to this page with the work on it.
+ *
+ * With accounts on (docs/accounts.md §7) it publishes to My projects, for
+ * anyone signed in, the owner too: a title alone, no id and no choice of
+ * who sees it - an account's projects are its own, private.
  */
 export function galleryForm(opts: {
   buttonLabel: string;
-  onSave: (
-    id: string,
-    title: string,
-    visibility: Visibility,
-    progress: (text: string) => void,
-  ) => Promise<string>;
+  onSave: (target: PublishTo, progress: (text: string) => void) => Promise<string>;
   /** Re-run the sign-in check; resolves to who the page is for now. */
   recheck: () => Promise<Role>;
-}): { root: HTMLDivElement; setRole: (role: Role) => void } {
+}): { root: HTMLDivElement; setRole: (role: Role, accounts?: boolean) => void } {
   const root = div('gallery-form');
   root.hidden = true;
   /** The role the form was last told; null before the probe's first answer. */
   let role: Role | null = null;
+  /** Whether it publishes to the account's own projects (accounts on) rather than the gallery. */
+  let mine = false;
 
   // Guests get one line rather than nothing. Hiding the whole thing made a
   // failed admin probe indistinguishable from "this feature does not
@@ -107,6 +109,11 @@ export function galleryForm(opts: {
   }
   visibility.value = 'public';
 
+  // Where a publish goes with accounts on, in place of the id and the choice.
+  const where = div('gallery-form__where');
+  where.textContent = 'To My projects, where only you see it.';
+  where.hidden = true;
+
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'sculpt-panel__btn';
@@ -115,11 +122,19 @@ export function galleryForm(opts: {
   const status = div('gallery-form__status');
 
   go.addEventListener('click', () => {
-    const id = idInput.value.trim().toLowerCase();
+    const title = titleInput.value.trim();
+    const target: PublishTo = mine
+      ? { to: 'mine', title }
+      : {
+          to: 'gallery',
+          id: idInput.value.trim().toLowerCase(),
+          title,
+          visibility: visibility.value === 'private' ? 'private' : 'public',
+        };
     go.disabled = true;
     status.textContent = '';
     void opts
-      .onSave(id, titleInput.value.trim(), visibility.value === 'private' ? 'private' : 'public', (text) => {
+      .onSave(target, (text) => {
         status.textContent = text;
       })
       .then((url) => {
@@ -155,21 +170,25 @@ export function galleryForm(opts: {
   });
 
   const fields = div('gallery-form__fields');
-  fields.append(idInput, titleInput, visibility, go, status);
+  fields.append(idInput, titleInput, visibility, where, go, status);
   fields.hidden = true;
 
-  const setRole = (next: Role): void => {
+  const setRole = (next: Role, accounts = false): void => {
     role = next;
+    // With accounts on, everyone signed in publishes to their own projects;
+    // with them off, the owner to the gallery.
+    const publishes = accounts ? next === 'owner' || next === 'moderator' || next === 'member' : next === 'owner';
+    mine = accounts;
     root.hidden = false;
-    gate.hidden = next === 'owner';
-    fields.hidden = next !== 'owner';
+    gate.hidden = publishes;
+    fields.hidden = !publishes;
+    idInput.hidden = mine;
+    visibility.hidden = mine;
+    where.hidden = !mine;
     if (next === 'expired') sayGate('Your sign-in has expired.', true);
-    else if (next === 'guest') sayGate('Needs the admin sign-in.', false);
+    else if (next === 'guest') sayGate(accounts ? 'Sign in to keep it in My projects.' : 'Needs the admin sign-in.', accounts, 'Sign in');
     // No sign-in lifts a suspension: nothing is offered.
     else if (next === 'suspended') sayGate('Your account is suspended.', false);
-    // A member's own projects, and publishing to them, come with the next
-    // update; until then the gallery is the owner's to publish to.
-    else if (next !== 'owner') sayGate('Publishing to the gallery is for the owner.', false);
   };
 
   root.append(gate, fields);

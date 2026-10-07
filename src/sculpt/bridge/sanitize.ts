@@ -300,7 +300,8 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
 }
 
 function sanitizeLink(v: unknown): SceneLink | undefined {
-  return isRec(v) && isProjectId(v.id) ? { id: v.id, title: str(v.title) ?? v.id } : undefined;
+  if (!isRec(v) || !isProjectId(v.id)) return undefined;
+  return { id: v.id, title: str(v.title) ?? v.id, ...(v.scope === 'admin' ? { scope: 'admin' as const } : {}) };
 }
 
 /**

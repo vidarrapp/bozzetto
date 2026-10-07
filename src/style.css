@@ -2526,6 +2526,7 @@ body.chrome-hidden .transport {
 }
 
 .gallery-form__gatenote,
+.gallery-form__where,
 .gallery-form__status {
   font-family: var(--font-spec);
   font-size: 10px;
@@ -3072,6 +3073,10 @@ body.is-sampling * {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.gallery-form__fields > [hidden] {
+  display: none;
 }
 
 /* The in-progress sculpt card: same shape as a project card, marked so it
@@ -4624,6 +4629,119 @@ body.is-sampling * {
   .account-item {
     flex-wrap: wrap;
   }
+}
+
+/* --- My projects (docs/accounts.md §7): the storage meter, and cards
+   with their actions in the body, where a thumb cannot cover them. --- */
+.my-projects__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.my-projects__body > .account-say {
+  max-width: 720px;
+}
+
+.my-storage {
+  max-width: 720px;
+}
+
+.storage-meter {
+  display: flex;
+  align-self: stretch;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--panel-border);
+}
+
+.storage-meter__used {
+  background: var(--accent);
+}
+
+/* What uploads in progress hold: taken, but not yet stored. */
+.storage-meter__reserved {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px);
+  opacity: 0.6;
+}
+
+.my-storage[data-full='true'] .storage-meter__text {
+  color: var(--accent);
+}
+
+.my-projects__empty {
+  grid-column: 1 / -1;
+}
+
+.card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.card__actions .card__action {
+  align-self: auto;
+  text-decoration: none;
+}
+
+.card__action--off {
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.card__actions .card__action:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.card__delete:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.my-rename .account-input {
+  font-size: 14px;
+  padding: 4px 8px;
+}
+
+/* Account's Your data: what each does, its button, and how it goes beneath. */
+.account-item--data {
+  flex-wrap: wrap;
+}
+
+.account-item__more {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account-item__more:empty {
+  display: none;
+}
+
+/* Only an empty progress line in it: nothing to show yet. A rule of its
+   own, so a browser without :has() still keeps the one above. */
+.account-item__more:not(:has(> :not(.account-say:empty))) {
+  display: none;
+}
+
+.account-export {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.account-export .account-list {
+  align-self: stretch;
+}
+
+.account-delete__warn {
+  color: var(--accent);
 }
 
 /* --- the legal pages (public/legal/*.html, docs/accounts.md §9) ---

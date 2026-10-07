@@ -1,13 +1,15 @@
-import { checkSignIn, roleOf, signOut, type SignIn } from '../../admin/api';
+import { checkSignIn, forgetSignIn, memberProjects, roleOf, signOut, type SignIn } from '../../admin/api';
 import {
   AccountError,
   BotCheck,
   addPasskey,
   changeHandle,
   dayOf,
+  deleteAccountStep,
   errorText,
   finishEmailChange,
   getAccount,
+  getExport,
   inWait,
   loadConfig,
   momentOf,
@@ -16,13 +18,16 @@ import {
   passkeyAborted,
   passkeyErrorText,
   removePasskey,
+  sizeText,
   suspensionText,
   renamePasskey,
   revokeAllSessions,
   revokeSession,
   startEmailChange,
   type AccountDetails,
+  type AccountExport,
   type AccountsConfig,
+  type DeletionProgress,
   type Me,
   type Passkey,
   type SessionView,
@@ -32,6 +37,7 @@ import { forgetOwnerCaches } from '../../net/ownerCaches';
 import { statusToast } from '../../sculpt/ui/statusToast';
 import { signInAgain } from '../signIn';
 import { topChip, topbarLeft, topbarRight } from '../topbar';
+import { noteAccountDeleted } from '../Landing';
 import { accountChips } from './menu';
 import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink } from './parts';
 import { confirmIdentity } from './signIn';
@@ -40,10 +46,11 @@ import { confirmIdentity } from './signIn';
  * The Account page (`/?account`, docs/accounts.md §7): the handle, changed
  * at most once in 30 days; the address, changed by a code sent to the new
  * one; the passkeys, added, renamed and removed; where the account is
- * signed in, one session or all of them signed out; the legal pages. What
- * needs a recent sign-in (a passkey added or removed, the address changed)
- * asks for one when the server says so (401 reauth), then goes on.
- * Download my data and Delete account arrive with the next update.
+ * signed in, one session or all of them signed out; Download my data, a
+ * zip made here (§3); Delete account, the handle typed to confirm; the
+ * legal pages. What needs a recent sign-in (a passkey added or removed,
+ * the address changed, the data downloaded, the account deleted) asks for
+ * one when the server says so (401 reauth), then goes on.
  *
  * Nothing on it is kept offline: the account's details are never cached
  * (§7), so offline the page says it needs a connection.
@@ -143,7 +150,7 @@ function draw(state: PageState): void {
     emailSection(state),
     passkeysSection(state),
     sessionsSection(state),
-    dataSection(),
+    dataSection(state),
     legalSection(state),
   );
 }
@@ -607,25 +614,296 @@ async function signedOutHere(): Promise<void> {
 
 // --- the rest -----------------------------------------------------------------------
 
-function dataSection(): HTMLElement {
+function dataSection(state: PageState): HTMLElement {
   const s = section('data', 'Your data');
   const list = el('ul', 'account-list');
-  for (const [label, what] of [
-    ['Download my data', 'Everything your account holds, as a zip.'],
-    ['Delete account', 'Your account and everything in it, for good.'],
-  ]) {
-    const row = el('li', 'account-item account-item--later');
-    const main = el('div', 'account-item__main');
-    main.append(el('span', 'account-item__title', label), el('span', 'account-item__meta', `${what} Arrives with the next update.`));
-    const soon = button(label);
-    soon.disabled = true;
-    const actions = el('div', 'account-item__actions');
-    actions.appendChild(soon);
-    row.append(main, actions);
-    list.appendChild(row);
-  }
+  list.append(downloadItem(state), deleteItem(state));
   s.appendChild(list);
   return s;
+}
+
+/** One row of Your data: what it is, and its button, with a line beneath for how it goes. */
+function dataItem(key: string, label: string, what: string, danger = false): {
+  row: HTMLElement;
+  action: HTMLButtonElement;
+  more: HTMLElement;
+  say: Say;
+} {
+  const row = el('li', 'account-item account-item--data');
+  row.dataset.item = key;
+  const main = el('div', 'account-item__main');
+  main.append(el('span', 'account-item__title', label), el('span', 'account-item__meta', what));
+  const action = button(label, danger ? 'btn btn--danger' : 'btn');
+  const actions = el('div', 'account-item__actions');
+  actions.appendChild(action);
+  const more = el('div', 'account-item__more');
+  const say = new Say();
+  more.appendChild(say.root);
+  row.append(main, actions, more);
+  return { row, action, more, say };
+}
+
+/** Past this, the zip is offered a project at a time too: an iPad holds a whole zip in memory (§3). */
+const ONE_ZIP_BYTES = 200 * 1024 * 1024;
+
+/** "Download my data" (docs/accounts.md §3): the export, then the files it names, as one zip made here. */
+function downloadItem(state: PageState): HTMLElement {
+  const item = dataItem(
+    'download',
+    'Download my data',
+    'Everything your account holds, as a zip: your projects and their files, and what the site keeps about the account.',
+  );
+  const { action, more, say } = item;
+  let panel: HTMLElement | null = null;
+  action.addEventListener('click', () => {
+    void (async () => {
+      action.disabled = true;
+      panel?.remove();
+      panel = null;
+      say.note('Gathering your data…');
+      try {
+        const data = await withReauth(state, () => getExport());
+        if (!data) {
+          say.clear();
+          return;
+        }
+        say.clear();
+        panel = await exportPanel(state, data);
+        more.appendChild(panel);
+      } catch (err) {
+        say.error(`Your data could not be gathered: ${errorText(err)}`);
+      } finally {
+        action.disabled = false;
+      }
+    })();
+  });
+  return item.row;
+}
+
+/**
+ * What the export comes to, and the ways to save it: one zip, written to a
+ * file where the browser can stream one (zip.ts), else downloaded once it
+ * is whole; and past ONE_ZIP_BYTES, a project at a time as well, with the
+ * account's part on its own, since an iPad holds a zip in memory.
+ */
+async function exportPanel(state: PageState, data: AccountExport): Promise<HTMLElement> {
+  const [{ archiveBytes, archiveFiles, slug, ArchiveError }, { writeZip, zipTarget }] = await Promise.all([
+    import('./archive'),
+    import('./zip'),
+  ]);
+  const panel = el('div', 'account-export');
+  const total = archiveBytes(data.projects);
+  const files = data.projects.reduce((n, p) => n + p.files.length, 0);
+  const projects = data.projects.length;
+  panel.appendChild(
+    el(
+      'p',
+      'account-small account-export__sum',
+      `${projects} project${projects === 1 ? '' : 's'}, ${files} file${files === 1 ? '' : 's'}, ${sizeText(total)} in all.`,
+    ),
+  );
+  const say = new Say();
+  const stamp = new Date(data.exportedAt).toISOString().slice(0, 10);
+  const base = `bozzetto-${data.account.handle}-${stamp}`;
+
+  /** Make one zip, said as it goes, after asking where it goes (first, in the click). */
+  const save = async (b: HTMLButtonElement, name: string, opts: { account: boolean; projects: AccountExport['projects'] }): Promise<void> => {
+    const target = await zipTarget(name);
+    if (!target) return;
+    for (const other of panel.querySelectorAll('button')) other.disabled = true;
+    say.note('Starting…');
+    try {
+      await writeZip(
+        target,
+        archiveFiles(data, opts, (p) => {
+          say.note(`Saving ${p.files} of ${p.of} files (${sizeText(p.bytes)} of ${sizeText(p.total)})…`);
+        }),
+      );
+      say.note(target.kind === 'file' ? `Saved as ${target.name}.` : `Downloaded ${target.name}.`);
+      b.dataset.done = 'true';
+    } catch (err) {
+      say.error(`The download stopped: ${err instanceof ArchiveError ? err.message : errorText(err)}`);
+    } finally {
+      for (const other of panel.querySelectorAll('button')) other.disabled = false;
+    }
+  };
+
+  const whole = button('Save as one zip', 'btn btn--primary account-export__whole');
+  whole.addEventListener('click', () => void save(whole, `${base}.zip`, { account: true, projects: data.projects }));
+  const actions = el('div', 'account-actions');
+  actions.appendChild(whole);
+  panel.appendChild(actions);
+
+  if (total > ONE_ZIP_BYTES) {
+    panel.appendChild(
+      el(
+        'p',
+        'account-small',
+        'That is more than an iPad can hold as one zip. Download it a part at a time instead: unpacked together, the parts are the whole.',
+      ),
+    );
+    const parts = el('ul', 'account-list account-export__parts');
+    const part = (label: string, meta: string, name: string, opts: { account: boolean; projects: AccountExport['projects'] }): void => {
+      const row = el('li', 'account-item');
+      const main = el('div', 'account-item__main');
+      main.append(el('span', 'account-item__title', label), el('span', 'account-item__meta', meta));
+      const b = button('Download');
+      b.addEventListener('click', () => void save(b, name, opts));
+      const acts = el('div', 'account-item__actions');
+      acts.appendChild(b);
+      row.append(main, acts);
+      parts.appendChild(row);
+    };
+    part('Your account', 'account.json and README.txt', `${base}-account.zip`, { account: true, projects: [] });
+    for (const p of data.projects) {
+      part(p.title || p.id, sizeText(archiveBytes([p])), `${base}-${slug(p.title)}-${p.id}.zip`, { account: false, projects: [p] });
+    }
+    panel.appendChild(parts);
+  }
+  panel.appendChild(say.root);
+  if (!data.complete) {
+    panel.appendChild(
+      el('p', 'account-small', 'Some projects had too many files to list in one go; the zip names them from their records instead.'),
+    );
+  }
+  return panel;
+}
+
+/** How many times a deletion step that met no answer is tried again before the page says so. */
+const DELETE_TRIES = 3;
+
+/**
+ * "Delete account" (docs/accounts.md §3): the handle typed to confirm, a
+ * recent sign-in, then POST /api/me/delete again and again until it says
+ * done, the progress said meanwhile. Then what this device keeps of the
+ * account goes - the sign-in it remembers, the worker's copies, and its
+ * copies of the account's projects - and the gallery comes back, a guest's.
+ */
+function deleteItem(state: PageState): HTMLElement {
+  const item = dataItem('delete', 'Delete account', 'Your account and everything in it, for good.', true);
+  const { action, more, say } = item;
+  action.textContent = 'Delete account…';
+  action.addEventListener('click', () => {
+    if (more.querySelector('form')) return;
+    const form = el('form', 'account-step account-delete');
+    form.noValidate = true;
+    const handle = state.me.handle;
+    form.appendChild(
+      el(
+        'p',
+        'account-small account-delete__warn',
+        'This deletes your account and everything in it: your projects and their files, your passkeys, and every sign-in. ' +
+          "The copies of your projects on this device go too. It cannot be undone, so download your data first if you want to keep any of it.",
+      ),
+    );
+    const typed = input('text', 'confirm', { autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', placeholder: handle });
+    form.appendChild(field(`Type your handle, ${handle}, to confirm`, typed));
+    const go = button('Delete my account', 'btn btn--danger');
+    go.type = 'submit';
+    const cancel = button('Cancel');
+    const actions = el('div', 'account-actions');
+    actions.append(go, cancel);
+    form.appendChild(actions);
+    more.insertBefore(form, say.root);
+    action.disabled = true;
+    typed.focus();
+    cancel.addEventListener('click', () => {
+      form.remove();
+      say.clear();
+      action.disabled = false;
+    });
+    /** Whether the deletion has begun on the server: from then on, the steps go on without asking again. */
+    let begun = false;
+    /** The account's projects, for this device's copies of them: asked before the deletion takes them. */
+    let ids: string[] | null = null;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void (async () => {
+        say.clear();
+        const answer = typed.value.trim().replace(/^@/, '').toLowerCase();
+        if (!begun && answer !== handle.toLowerCase()) {
+          say.error(`Type your handle, ${handle}, exactly to confirm.`);
+          typed.focus();
+          return;
+        }
+        go.disabled = cancel.disabled = typed.disabled = true;
+        try {
+          ids ??= (await memberProjects.list().catch(() => [])).map((p) => p.id);
+          let step: DeletionProgress | null;
+          if (begun) {
+            step = await deletionStep();
+          } else {
+            say.note('Deleting your account…');
+            step = await withReauth(state, () => deleteAccountStep(handle));
+            if (!step) {
+              say.clear();
+              go.disabled = cancel.disabled = typed.disabled = false;
+              return;
+            }
+            begun = true;
+          }
+          while (!step.done) {
+            say.note(step.remaining > 0 ? `Deleting… ${step.remaining} still to go.` : 'Deleting… nearly done.');
+            step = await deletionStep();
+          }
+          say.note('Your account has been deleted.');
+          await deletedHere(ids);
+        } catch (err) {
+          go.disabled = false;
+          if (begun) {
+            go.textContent = 'Finish deleting';
+            say.error(
+              `The deletion has begun, and stopped part way: ${errorText(err).replace(/\.$/, '')}. ` +
+                "Press Finish deleting to carry it on; if this page is closed, the site's owner finishes it.",
+            );
+          } else {
+            cancel.disabled = typed.disabled = false;
+            say.error(err);
+          }
+        }
+      })();
+    });
+  });
+  return item.row;
+}
+
+/**
+ * One more step of a deletion that has begun, tried again when it met no
+ * answer or a server's hiccup: each step carries on from where the last
+ * one stopped (functions/_shared/deletion.ts), so asking twice is safe.
+ */
+async function deletionStep(): Promise<DeletionProgress> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < DELETE_TRIES; attempt++) {
+    try {
+      return await deleteAccountStep();
+    } catch (err) {
+      last = err;
+      const transient = err instanceof AccountError && (err.status === 0 || err.status >= 500);
+      if (!transient) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw last;
+}
+
+/**
+ * The account is gone: so is what this device kept of it - the sign-in it
+ * remembers and the worker's copies (forgetSignIn), and its copies of the
+ * account's projects, which would otherwise come back on the gallery as
+ * scenes of no one's. Scenes kept only on this device stay: they were
+ * never the account's. Then the gallery, a guest's, says it once.
+ */
+async function deletedHere(ids: string[]): Promise<void> {
+  try {
+    const lib = await import('../../sculpt/bridge/SceneLibrary');
+    for (const id of ids) await lib.deleteLibraryScene(id);
+  } catch {
+    // Storage blocked: nothing was kept to delete.
+  }
+  await forgetSignIn();
+  noteAccountDeleted();
+  window.location.assign('/');
 }
 
 function legalSection(state: PageState): HTMLElement {

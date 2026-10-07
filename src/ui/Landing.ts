@@ -114,7 +114,13 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     note.textContent = suspensionText(signIn.suspended.reason);
     app.querySelector('.landing__head > div')?.appendChild(note);
   }
-  if (signIn.expired && takeExpiryNotice()) {
+  if (takeDeletedNotice()) {
+    // Once, after Delete account finished: the gallery is a guest's now.
+    const note = document.createElement('p');
+    note.className = 'landing__notice';
+    note.textContent = 'Your account has been deleted, with everything in it.';
+    app.querySelector('.landing__head > div')?.appendChild(note);
+  } else if (signIn.expired && takeExpiryNotice()) {
     // Once, in the heading's quiet voice: the chip says the rest. With
     // accounts on, Sign in again opens the dialog here.
     const note = document.createElement('p');
@@ -157,7 +163,8 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // What opening a scene would replace: the sculpt in progress, or a reel
   // captured on this device (which goes with it, as File > Open's does).
   const workHere = inProgress !== null || (await framesKept());
-  for (const c of await libraryCards(() => void renderLanding(app), workHere, { owner, listed, expired: signIn.expired })) {
+  const libraryOpts = { owner, listed, expired: signIn.expired, accounts: signIn.accounts === true, signedIn: !!signIn.me };
+  for (const c of await libraryCards(() => void renderLanding(app), workHere, libraryOpts)) {
     grid.appendChild(c);
   }
 
@@ -391,6 +398,28 @@ async function sculptCard(): Promise<HTMLElement | null> {
   return a;
 }
 
+/** Where Account's Delete account leaves its word for the gallery it ends on. */
+const DELETED_KEY = 'bozzetto-account-deleted';
+
+/** Say, once, on the next gallery, that the account was deleted (Account's Delete account). */
+export function noteAccountDeleted(): void {
+  try {
+    sessionStorage.setItem(DELETED_KEY, '1');
+  } catch {
+    // Not said, then: the gallery is a guest's either way.
+  }
+}
+
+function takeDeletedNotice(): boolean {
+  try {
+    const said = sessionStorage.getItem(DELETED_KEY) !== null;
+    sessionStorage.removeItem(DELETED_KEY);
+    return said;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The local library: sculpts explicitly saved on this device. Unlike the
  * in-progress card these are a shelf you put things on, so each one can be
@@ -398,15 +427,17 @@ async function sculptCard(): Promise<HTMLElement | null> {
  * link with buttons inside it is neither valid nor operable.
  *
  * Two kinds sit on the shelf. A scene kept only here says so, in the words
- * every device-only copy uses, and for the owner offers Upload to Projects.
- * A device copy of a project (projectId set) is the cache Save to library
+ * every device-only copy uses, and for the owner offers Upload to Projects
+ * - with accounts on, Upload to My projects, for anyone signed in. A
+ * device copy of a project (projectId set) is the cache Save to library
  * keeps for offline opens; the owner's list shows the project itself, so
- * the copy appears only when that list could not be had, marked In Projects.
+ * the copy appears only when that list could not be had, marked In
+ * Projects (In My projects).
  */
 async function libraryCards(
   onChange: () => void,
   hasUnsavedWork: boolean,
-  opts: { owner: boolean; listed: Set<string>; expired: boolean },
+  opts: { owner: boolean; listed: Set<string>; expired: boolean; accounts: boolean; signedIn: boolean },
 ): Promise<HTMLElement[]> {
   let lib: typeof import('../sculpt/bridge/SceneLibrary');
   let entries: Awaited<ReturnType<typeof import('../sculpt/bridge/SceneLibrary').listLibrary>>;
@@ -436,6 +467,11 @@ async function libraryCards(
     // the upload again to whoever has the gallery, since it was the
     // owner's save: an expired sign-in is told so when it is tapped.
     const inProjects = !!e.projectId && !opts.owner;
+    // Where its project is, or where an upload sends it: with accounts on,
+    // My projects, unless it is the owner tools' (a template edited from
+    // Projects, SceneLink.scope).
+    let scope = e.scope;
+    const place = (): string => (opts.accounts && scope !== 'admin' ? 'My projects' : 'Projects');
     // The key changes when an upload turns this card into a project's copy.
     let key = e.id;
     const card = div('card card--library');
@@ -461,8 +497,8 @@ async function libraryCards(
     // this copy as the fallback; a device-only scene opens from here.
     const markInProjects = (projectId: string): void => {
       card.classList.add('card--uploaded');
-      badge.textContent = 'In Projects';
-      thumb.href = `/?sculpt=1&project=${encodeURIComponent(projectId)}`;
+      badge.textContent = `In ${place()}`;
+      thumb.href = `/?sculpt=1&project=${encodeURIComponent(projectId)}${scope === 'admin' ? '&scope=admin' : ''}`;
     };
     if (inProjects) {
       markInProjects(e.projectId!);
@@ -473,20 +509,20 @@ async function libraryCards(
       note.className = 'card__note';
       note.textContent = DEVICE_ONLY_NOTE;
       body.appendChild(note);
-      if (opts.owner || e.unsent) body.appendChild(uploadButton());
+      if (opts.owner || e.unsent || (opts.accounts && opts.signedIn)) body.appendChild(uploadButton());
     }
 
     /**
-     * Upload to Projects: the stored bytes as they are, then this card
-     * becomes the project's copy. An unsent re-save updates its project.
-     * A failed upload leaves the card as it was - the scene is still here
-     * - and says what to do next.
+     * Upload to Projects (with accounts on, My projects): the stored bytes
+     * as they are, then this card becomes the project's copy. An unsent
+     * re-save updates its project. A failed upload leaves the card as it
+     * was - the scene is still here - and says what to do next.
      */
     function uploadButton(): HTMLButtonElement {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'card__action card__upload';
-      b.textContent = 'Upload to Projects';
+      b.textContent = `Upload to ${place()}`;
       b.addEventListener('click', () => {
         b.disabled = true;
         void (async () => {
@@ -494,19 +530,20 @@ async function libraryCards(
           if (!bytes) throw new Error('This scene could not be read from the device');
           const { uploadScene } = await import('../sculpt/bridge/SceneProjects');
           const link = await uploadScene(
-            { bytes, title: e.name, objects: e.objects, tris: e.tris, thumb: e.thumb, projectId: e.uploadTo },
+            { bytes, title: e.name, objects: e.objects, tris: e.tris, thumb: e.thumb, projectId: e.uploadTo, scope },
             (text) => {
               b.textContent = text;
             },
           );
-          const moved = await lib.markUploaded(key, link.id, link.title);
+          const moved = await lib.markUploaded(key, link.id, link.title, link.scope);
           key = moved?.id ?? key;
+          scope = link.scope;
           body.querySelector('.card__note')?.remove();
           b.remove();
           markInProjects(link.id);
         })().catch((err: unknown) => {
           b.disabled = false;
-          b.textContent = 'Upload to Projects';
+          b.textContent = `Upload to ${place()}`;
           const reason = uploadFailure(err);
           if (reason === 'expired') {
             // Signed in again in the dialog (accounts on), the upload goes again.
@@ -519,8 +556,11 @@ async function libraryCards(
             failNotice('Your sign-in has expired. The scene stays on this device.', signInButton('', retry, 'Sign in again', via));
           } else if (reason === 'suspended') {
             failNotice(`${err instanceof Error ? err.message : String(err)} The scene stays on this device.`);
+          } else if (reason === 'full') {
+            // The server's numbers: "Your storage is full (248 of 250 MB)".
+            failNotice(`${err instanceof Error ? err.message : String(err)}. The scene stays on this device; make room in ${place()}, then try again.`);
           } else if (reason === 'offline') {
-            failNotice('No connection. The scene stays on this device; use Upload to Projects when you are online.');
+            failNotice(`No connection. The scene stays on this device; use Upload to ${place()} when you are online.`);
           } else {
             failNotice(`Upload failed: ${err instanceof Error ? err.message : String(err)}. Nothing changed on this device.`);
           }
@@ -554,7 +594,7 @@ async function libraryCards(
 
     card.querySelector<HTMLButtonElement>('.card__trash')!.addEventListener('click', () => {
       const question = card.classList.contains('card--uploaded')
-        ? `Delete this device's copy of "${e.name}"? The scene stays in Projects.`
+        ? `Delete this device's copy of "${e.name}"? The scene stays in ${place()}.`
         : `Delete "${e.name}"? This cannot be undone.`;
       if (!confirm(question)) return;
       void lib.deleteLibraryScene(key).then(() => {
@@ -773,7 +813,7 @@ function setBadges(host: HTMLElement, labels: string[]): void {
  * main process like every other server call. No picture: the gradient
  * placeholder stands in.
  */
-function setPicture(thumb: HTMLElement, path: string): void {
+export function setPicture(thumb: HTMLElement, path: string): void {
   const source = isDesktop()
     ? apiFetch(path)
         .then((r) =>

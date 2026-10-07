@@ -3,22 +3,29 @@ import {
   AuthExpiredError,
   UnreachableError,
   api,
+  libraryProjects,
   mediaPath,
+  memberProjects,
+  ownerProjects,
   signedInHereBefore,
+  type ProjectsClient,
   type SceneProject,
 } from '../../admin/api';
+import { accountsOn } from '../../net/account';
 import { apiFetch, isDesktop, isSignedIn, type ApiResult } from '../../net/origin';
 import type { SceneLink } from './ScenePersist';
 
 /**
- * Scenes as server projects: where Save to library puts a sculpt when the
- * owner is signed in, so it outlives the device it was made on.
+ * Scenes as server projects: where Save to library puts a sculpt when
+ * someone is signed in, so it outlives the device it was made on - the
+ * owner's Projects with accounts off, and with them on the account's own
+ * My projects (docs/accounts.md §7), the owner's included.
  *
  * A scene project is the same bytes as a saved .bozz file or a library
- * entry, stored in R2 with a thumbnail beside it, private until made
- * public. Uploading one is the publishing sequence with a file instead of
- * frames: create the project (or reuse the one the scene came from), send
- * the file in parts, complete, then a best-effort thumbnail.
+ * entry, stored in R2 with a thumbnail beside it, private. Uploading one
+ * is the publishing sequence with a file instead of frames: create the
+ * project (or reuse the one the scene came from), send the file in parts,
+ * complete, then a best-effort thumbnail.
  */
 
 export interface SceneUpload {
@@ -30,7 +37,12 @@ export interface SceneUpload {
   thumb?: Blob;
   /** Re-save this project in place; absent makes a new one. */
   projectId?: string;
+  /** The routes that project is on: 'admin' for the owner tools' (SceneLink.scope). */
+  scope?: 'admin';
 }
+
+/** The longest title a project keeps (functions/_shared/projects.ts). */
+const MAX_TITLE = 200;
 
 const mb = (n: number): string => (n / (1024 * 1024)).toFixed(1);
 
@@ -48,32 +60,35 @@ async function sendPart<T>(send: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Upload a scene, creating its project or re-saving the one it came from.
- * Resolves to the project the scene now belongs to. A project created for
- * this upload is taken back if the upload fails, so a failed save never
- * leaves a card behind that opens nothing.
+ * Upload a scene, creating its project or re-saving the one it came from,
+ * on the routes its scope says (libraryProjects). Resolves to the project
+ * the scene now belongs to. A project created for this upload is taken
+ * back if the upload fails, so a failed save never leaves a card behind
+ * that opens nothing.
  */
 export async function uploadScene(
   u: SceneUpload,
   onProgress: (text: string) => void = () => {},
 ): Promise<SceneLink> {
   try {
-    return await upload(u, onProgress);
+    const client = await libraryProjects(u.scope);
+    const link = await upload(client, u, onProgress);
+    return u.scope === 'admin' ? { ...link, scope: 'admin' } : link;
   } catch (err) {
     throw unreachable(err);
   }
 }
 
-async function upload(u: SceneUpload, onProgress: (text: string) => void): Promise<SceneLink> {
+async function upload(client: ProjectsClient, u: SceneUpload, onProgress: (text: string) => void): Promise<SceneLink> {
   const total = u.bytes.byteLength;
   if (total === 0) throw new Error('Nothing to save');
   let id = u.projectId ?? null;
-  let title = u.title;
+  let title = u.title.slice(0, MAX_TITLE);
   let start: { uploadId: string; partSize: number } | null = null;
   if (id) {
     onProgress('Starting upload...');
     try {
-      start = await api.sceneStart(id);
+      start = await client.sceneStart(id, total);
     } catch (err) {
       // Deleted from another device since it was opened here. Saving it
       // as a new project keeps the work; refusing would only lose it.
@@ -84,14 +99,14 @@ async function upload(u: SceneUpload, onProgress: (text: string) => void): Promi
   let created = false;
   if (!id) {
     onProgress('Creating project...');
-    const made = await api.create({ mode: 'scene', title });
+    const made = await client.create({ mode: 'scene', title });
     id = made.id;
     title = made.title;
     created = true;
   }
   const project = id;
   try {
-    start ??= await api.sceneStart(project);
+    start ??= await client.sceneStart(project, total);
     const { uploadId, partSize } = start;
     const count = Math.max(1, Math.ceil(total / partSize));
     const parts: { part: number; etag: string }[] = [];
@@ -102,22 +117,22 @@ async function upload(u: SceneUpload, onProgress: (text: string) => void): Promi
           count === 1 ? `Uploading ${mb(total)} MB...` : `Uploading ${mb(from)} of ${mb(total)} MB...`,
         );
         const chunk = u.bytes.slice(from, Math.min(total, from + partSize));
-        parts.push(await sendPart(() => api.scenePart(project, uploadId, i + 1, chunk)));
+        parts.push(await sendPart(() => client.scenePart(project, uploadId, i + 1, chunk)));
       }
       onProgress('Finishing...');
-      const done = await api.sceneComplete(project, uploadId, { parts, objects: u.objects, tris: u.tris });
+      const done = await client.sceneComplete(project, uploadId, { parts, objects: u.objects, tris: u.tris });
       title = done.title || title;
     } catch (err) {
-      void api.sceneAbort(project, uploadId).catch(() => undefined);
+      void client.sceneAbort(project, uploadId).catch(() => undefined);
       throw err;
     }
   } catch (err) {
-    if (created) await api.remove(project).catch(() => undefined);
+    if (created) await client.remove(project).catch(() => undefined);
     throw err;
   }
   if (u.thumb) {
     try {
-      await api.uploadThumb(project, u.thumb);
+      await client.uploadThumb(project, u.thumb);
     } catch {
       // The card shows without a picture until the next save.
     }
@@ -131,13 +146,25 @@ function unreachable(err: unknown): unknown {
 }
 
 /**
- * A scene project's manifest: the owner's first, since scenes start
+ * A scene project's manifest, and whether it came as the reader's own -
+ * `owner`, whose device then keeps a copy - rather than off the public
+ * route. With accounts off, the owner's routes first, since scenes start
  * private, then the public one, which is how a guest opens a scene the
- * owner has made public. Throws when neither answers.
+ * owner has made public. With them on, the account's own first (My
+ * projects, the owner's work included), or - asked for through the owner
+ * tools, `scope` 'admin' (Edit in Sculpt from Projects, docs/accounts.md
+ * §5) - theirs, which answers it with the same scope, so it saves back
+ * there; then the public one. Throws when neither answers.
  */
-async function sceneManifest(id: string): Promise<{ project: SceneProject; owner: boolean }> {
+async function sceneManifest(
+  id: string,
+  scope?: 'admin',
+): Promise<{ project: SceneProject; owner: boolean; scope?: 'admin' }> {
+  const accounts = await accountsOn();
+  const own = accounts && scope !== 'admin' ? memberProjects : ownerProjects;
   try {
-    return { project: (await api.get(id)) as SceneProject, owner: true };
+    const project = (await own.get(id)) as SceneProject;
+    return { project, owner: true, ...(accounts && own === ownerProjects ? { scope: 'admin' as const } : {}) };
   } catch (ownerErr) {
     let res: Awaited<ReturnType<typeof apiFetch>>;
     try {
@@ -148,8 +175,9 @@ async function sceneManifest(id: string): Promise<{ project: SceneProject; owner
     if (res.ok && res.bytes && !res.contentType.includes('text/html')) {
       return { project: JSON.parse(new TextDecoder().decode(res.bytes)) as SceneProject, owner: false };
     }
-    // Not public, and the owner's route wanted a sign-in: for the owner
-    // whose session ran out that is the whole story, and the thing to fix.
+    // Not public, and the reader's own route wanted a sign-in: for whoever
+    // had signed in here and whose session ran out, that is the whole
+    // story, and the thing to fix.
     if (ownerErr instanceof AuthExpiredError && signedInHereBefore()) throw ownerErr;
     throw new Error(
       res.status === 404
@@ -161,14 +189,15 @@ async function sceneManifest(id: string): Promise<{ project: SceneProject; owner
 
 /**
  * A scene project's .bozz bytes and its manifest, for opening in Sculpt;
- * `owner` when it came through the owner's routes rather than the public
- * ones.
+ * `owner` when it came as the reader's own rather than off the public
+ * route, and `scope` the routes it came through (sceneManifest).
  */
 export async function fetchSceneProject(
   id: string,
-): Promise<{ bytes: ArrayBuffer; project: SceneProject; owner: boolean }> {
-  const { project, owner } = await sceneManifest(id);
-  return { bytes: await sceneBytes(project), project, owner };
+  scope?: 'admin',
+): Promise<{ bytes: ArrayBuffer; project: SceneProject; owner: boolean; scope?: 'admin' }> {
+  const found = await sceneManifest(id, scope);
+  return { ...found, bytes: await sceneBytes(found.project) };
 }
 
 /**
@@ -224,8 +253,9 @@ async function templateManifest(id: string): Promise<SceneProject> {
  * A scene's .bozz bytes, from under the base its manifest names (mediaPath,
  * which builds every file address the client asks for): the Access-gated
  * media route for the owner's own scene, which the session cookie (or the
- * desktop's proxy) opens, or a template's open one - here, or the files
- * host, which answers this site's pages. `?v=` is the manifest's
+ * desktop's proxy) opens, an account's own private one (/api/me/media),
+ * or a template's open one - here, or the files host, which answers this
+ * site's pages. `?v=` is the manifest's
  * updated_at, as the server writes it into the file's own address.
  */
 async function sceneBytes(project: SceneProject): Promise<ArrayBuffer> {

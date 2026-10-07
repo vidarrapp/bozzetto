@@ -797,7 +797,7 @@ const setFingers = async (page, label) => {
 const DEVICE_NOTE = 'On this device only. A reinstall or clearing the browser loses it.';
 
 /** The File menu's items, each as its label and the hint under it. */
-const fileItems = (page) =>
+export const fileItems = (page) =>
   page.evaluate(() => {
     window.__sculpt.fileMenu.open();
     const out = [...document.querySelectorAll('.file-menu--file .file-menu__item')].map((b) => ({
@@ -809,7 +809,7 @@ const fileItems = (page) =>
   });
 
 /** Choose a File menu item by its label, the way a tap on it would. */
-const chooseFile = (page, label) =>
+export const chooseFile = (page, label) =>
   page.evaluate((l) => {
     window.__sculpt.fileMenu.open();
     const item = [...document.querySelectorAll('.file-menu--file .file-menu__item')].find(
@@ -820,7 +820,7 @@ const chooseFile = (page, label) =>
   }, label);
 
 /** The device shelf as IndexedDB holds it: each record's key, name, project and object count. */
-const shelf = (page) =>
+export const shelf = (page) =>
   page.evaluate(
     () =>
       new Promise((ok, fail) => {
@@ -841,6 +841,8 @@ const shelf = (page) =>
                 objects: rows.result[i].objects,
                 unsent: !!rows.result[i].unsent,
                 uploadTo: rows.result[i].uploadTo ?? null,
+                scope: rows.result[i].scope ?? null,
+                bytes: rows.result[i].bytes,
               })),
             );
           };
@@ -849,7 +851,7 @@ const shelf = (page) =>
   );
 
 /** .bozz bytes, unpacked in the page: how many objects, and whether the header text mentions `needle`. */
-const readBozz = (page, bytes, needle = '') =>
+export const readBozz = (page, bytes, needle = '') =>
   page.evaluate(
     async ([b64, n]) => {
       const u8 = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -1025,7 +1027,7 @@ async function eventually(page, fn, timeout = 60_000) {
 }
 
 /** The last failure notice: its words and its buttons. Null when none comes. */
-const failedNotice = (page) =>
+export const failedNotice = (page) =>
   page
     .waitForFunction(
       () => {
@@ -1041,10 +1043,10 @@ const failedNotice = (page) =>
     .catch(() => null);
 
 /** Clear every notice, so the next one read is the next one shown. */
-const clearNotices = (page) => page.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
+export const clearNotices = (page) => page.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
 
 /** The last progress toast once it has finished: its state and words. */
-const savedToast = (page) =>
+export const savedToast = (page) =>
   page
     .waitForFunction(
       () => {

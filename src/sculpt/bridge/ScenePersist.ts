@@ -157,6 +157,15 @@ export interface SavedScene {
 export interface SceneLink {
   id: string;
   title: string;
+  /**
+   * 'admin' when the scene was opened through the owner tools with
+   * accounts on - Edit in Sculpt from Projects (`&scope=admin`,
+   * docs/accounts.md §5), which is how a template is edited as itself - so
+   * its saves go back there. Absent everywhere else: with accounts on, the
+   * account's own project, saved to My projects; with them off, the
+   * owner's, on the owner tools as everything then is.
+   */
+  scope?: 'admin';
 }
 
 /** The single-mesh v2 format, upgraded on read. */

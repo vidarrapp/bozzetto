@@ -8,6 +8,7 @@ import { installSliderBubble } from './ui/sliderBubble';
 import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
+import { accountsOn } from './net/account';
 import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
@@ -198,9 +199,14 @@ async function loadProject(
   if (!res.ok && res.status !== 404 && res.status !== 0) {
     throw new Error(`Failed to load project (${res.status})`);
   }
-  // A private project is a 404 publicly. Its owner, signed in, reads it
-  // through the Access-gated route, whose manifest points the frames at
-  // the gated media route as well.
+  // A private project is a 404 publicly. With accounts on, the account
+  // whose project it is reads it through its own routes (My projects,
+  // docs/accounts.md §7), whose manifest points the frames at its private
+  // media route. The owner, signed in, reads the rest through the
+  // Access-gated route, whose manifest points the frames at the gated
+  // media route as well.
+  const mine = await accountManifest(id);
+  if (mine) return mine;
   const owned = await ownerManifest(id);
   if (owned) return owned;
 
@@ -209,6 +215,25 @@ async function loadProject(
   const sres = await fetch(staticUrl);
   if (!sres.ok) throw new Error(`Project "${id}" not found`);
   return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
+}
+
+/**
+ * With accounts on, the signed-in account's own project's manifest (GET
+ * /api/me/projects/:id), or null: anyone else's, signed out, or accounts
+ * off, so the owner's route and the bundled fallback still get their turn.
+ */
+async function accountManifest(id: string): Promise<{ manifest: Manifest; manifestUrl: string } | null> {
+  if (!(await accountsOn().catch(() => false))) return null;
+  const path = `/api/me/projects/${encodeURIComponent(id)}`;
+  try {
+    const res = await apiFetch(path);
+    if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
+    const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
+    return { manifest, manifestUrl: await apiManifestUrl(path) };
+  } catch (err) {
+    if (err instanceof SceneProjectError) throw err;
+    return null;
+  }
 }
 
 /**

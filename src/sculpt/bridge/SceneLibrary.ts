@@ -63,6 +63,13 @@ export interface LibraryEntry {
    * second project at its next save.
    */
   sentFrom?: string;
+  /**
+   * 'admin' when the project is the owner tools' (a template edited as
+   * itself, SceneLink.scope): its card opens it, and an unsent copy's
+   * Upload sends it, through those routes again. For a project's copy it
+   * is that project's; for an unsent re-save, the project it was updating.
+   */
+  scope?: 'admin';
 }
 
 const meta = <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
@@ -123,7 +130,7 @@ export async function saveToLibrary(
  */
 export async function cacheProjectScene(
   projectId: string,
-  info: { name: string; bytes: ArrayBuffer; objects: number; tris: number; thumb?: Blob },
+  info: { name: string; bytes: ArrayBuffer; objects: number; tris: number; thumb?: Blob; scope?: 'admin' },
 ): Promise<LibraryEntry> {
   const prior = await getLibraryEntry(projectId);
   const thumb = info.thumb ?? prior?.thumb;
@@ -136,6 +143,7 @@ export async function cacheProjectScene(
     tris: info.tris,
     bytes: info.bytes.byteLength,
     ...(thumb ? { thumb } : {}),
+    ...(info.scope ? { scope: info.scope } : {}),
   };
   await data('readwrite', (s) => s.put(info.bytes, projectId));
   await meta('readwrite', (s) => s.put(entry, projectId));
@@ -158,6 +166,8 @@ export async function keepUnsent(info: {
   tris: number;
   thumb?: Blob;
   uploadTo?: string | null;
+  /** The routes the project it was updating is on (LibraryEntry.scope). */
+  scope?: 'admin';
 }): Promise<LibraryEntry> {
   const prior = info.id ? await getLibraryEntry(info.id) : null;
   const thumb = info.thumb ?? prior?.thumb;
@@ -170,6 +180,7 @@ export async function keepUnsent(info: {
     bytes: info.bytes.byteLength,
     unsent: true,
     ...(info.uploadTo ? { uploadTo: info.uploadTo } : {}),
+    ...(info.uploadTo && info.scope ? { scope: info.scope } : {}),
     ...(thumb ? { thumb } : {}),
   };
   // Geometry first, as saveToLibrary does: no card without a scene behind it.
@@ -185,19 +196,26 @@ export async function keepUnsent(info: {
  * Sculpt writes to the same key. Written first and removed second, so an
  * interruption leaves two copies rather than none.
  */
-export async function markUploaded(id: string, projectId: string, name?: string): Promise<LibraryEntry | null> {
+export async function markUploaded(
+  id: string,
+  projectId: string,
+  name?: string,
+  scope?: 'admin',
+): Promise<LibraryEntry | null> {
   const entry = await getLibraryEntry(id);
   const bytes = await loadLibraryBytes(id);
   if (!entry || !bytes) return null;
   // Sent now: what the unsent marks said is no longer true of it, but
-  // where it came from is what the scene it was kept for will ask.
-  const { unsent, uploadTo: _uploadTo, ...kept } = entry;
+  // where it came from is what the scene it was kept for will ask. The
+  // routes are the ones it went up by.
+  const { unsent, uploadTo: _uploadTo, scope: _scope, ...kept } = entry;
   const moved: LibraryEntry = {
     ...kept,
     id: projectId,
     projectId,
     ...(name ? { name } : {}),
     ...(unsent ? { sentFrom: id } : {}),
+    ...(scope ? { scope } : {}),
   };
   await data('readwrite', (s) => s.put(bytes, projectId));
   await meta('readwrite', (s) => s.put(moved, projectId));

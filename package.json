@@ -36,6 +36,7 @@
     "@flaticon/flaticon-uicons": "^3.3.1",
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",
+    "client-zip": "2.5.1",
     "gifenc": "^1.0.3",
     "gl-matrix": "^3.4.4",
     "mediabunny": "^1.48.1",

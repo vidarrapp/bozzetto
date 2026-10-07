@@ -237,15 +237,36 @@ export default defineConfig(({ mode }) => {
           {
             // Never kept, online or off (docs/accounts.md §7): the sign-in
             // ceremonies (/api/auth/*), the account with its email address
-            // and sessions (/api/me/account), and a member's private files
-            // (/api/me/media/*). No rule below matches them, and this one
-            // comes first, as the first rule that matches is the one used,
-            // so none added later can: NetworkOnly goes to the network and
-            // stores nothing.
+            // and sessions (/api/me/account), everything it holds, the
+            // address included (/api/me/export), and a member's private
+            // files (/api/me/media/*). No rule below matches them, and this
+            // one comes first, as the first rule that matches is the one
+            // used, so none added later can: NetworkOnly goes to the network
+            // and stores nothing.
             urlPattern: ({ url }) =>
               url.origin === self.location.origin &&
-              /^\/api\/(?:auth\/|me\/account(?:\/|$)|me\/media\/)/.test(url.pathname),
+              /^\/api\/(?:auth\/|me\/(?:account|export)(?:\/|$)|me\/media\/)/.test(url.pathname),
             handler: 'NetworkOnly',
+          },
+          {
+            // My projects (docs/accounts.md §7): the account's own list and
+            // its projects' manifests, private. Network first, as the
+            // owner's list below: online the live answer, so a scene saved a
+            // moment ago is there and one deleted is gone (a 401 passes
+            // through and is never stored, and the app drops this cache when
+            // it sees one, or signs out, ownerCaches.ts); offline, the last
+            // list stands in, so My projects still draws its cards, read
+            // only. After the rule above, which keeps the files themselves
+            // (/api/me/media/*) off every cache.
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin && /^\/api\/me\/projects(?:\/[^/]+)?$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-my-projects',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
           },
           {
             // The account signed in, with accounts on (docs/accounts.md §7):

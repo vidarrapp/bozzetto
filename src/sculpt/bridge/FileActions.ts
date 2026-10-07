@@ -14,7 +14,7 @@ import {
   type LibraryEntry,
 } from './SceneLibrary';
 import { uploadScene } from './SceneProjects';
-import { uploadFailure, type UploadFailure } from '../../admin/api';
+import { libraryProjects, uploadFailure, type UploadFailure } from '../../admin/api';
 
 /** How the file actions reach the viewer's look, so .bozz files carry it. */
 export interface LookBridge {
@@ -59,8 +59,9 @@ export interface FileActionHooks {
  * Save to library could not upload the scene, and kept it on this device
  * instead: `kept` is that copy, null when even that failed (`keepError`
  * says why). `reason` is which way the upload went wrong, since each wants
- * its own next step: sign in again, wait for a connection, or read what
- * the server said (`why`).
+ * its own next step: sign in again, wait for a connection, make room, or
+ * read what the server said (`why`). `place` is where it was going, as a
+ * sentence names it: Projects, or My projects.
  */
 export class NotUploadedError extends Error {
   constructor(
@@ -68,12 +69,17 @@ export class NotUploadedError extends Error {
     readonly why: Error,
     readonly kept: LibraryEntry | null,
     readonly keepError: Error | null = null,
+    readonly place = 'Projects',
   ) {
     super(why.message);
   }
 }
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
+
+/** A link as the scene keeps it: its own copy, with the scope only where there is one. */
+const copyLink = (link: SceneLink | null): SceneLink | null =>
+  link ? { id: link.id, title: link.title, ...(link.scope ? { scope: link.scope } : {}) } : null;
 
 /**
  * Everything File means, with no dialogs in it.
@@ -131,8 +137,8 @@ export class FileActions {
 
   /** Point the scene at a project (or at none), and tell the autosave. */
   setLink(link: SceneLink | null): void {
-    if (link?.id === this.linked?.id && link?.title === this.linked?.title) return;
-    this.linked = link ? { id: link.id, title: link.title } : null;
+    if (link?.id === this.linked?.id && link?.title === this.linked?.title && link?.scope === this.linked?.scope) return;
+    this.linked = copyLink(link);
     this.hooks.onLinkChange?.(this.linked);
   }
 
@@ -142,7 +148,7 @@ export class FileActions {
    * from already says so.
    */
   adoptLink(link: SceneLink | null): void {
-    this.linked = link ? { id: link.id, title: link.title } : null;
+    this.linked = copyLink(link);
   }
 
   /** The id of this scene's unsent copy on the shelf, or null. */
@@ -274,17 +280,18 @@ export class FileActions {
   }
 
   /**
-   * Save to library for the signed-in owner: upload the scene as a project
-   * (or re-save the one it came from, in place), then keep a device copy
-   * under the project's id - what an offline open falls back to. The scene
-   * now exists off the device, so like a saved file it is marked clean, as
-   * of the moment it was packed.
+   * Save to library for whoever is signed in: upload the scene as a project
+   * (or re-save the one it came from, in place) - to the owner's Projects
+   * with accounts off, to the account's own My projects with them on
+   * (SceneProjects) - then keep a device copy under the project's id: what
+   * an offline open falls back to. The scene now exists off the device, so
+   * like a saved file it is marked clean, as of the moment it was packed.
    *
    * An upload that fails never loses the save: the same bytes are kept on
    * the shelf, marked unsent so the card offers the upload again, and a
-   * NotUploadedError says why - an expired sign-in, no connection, or the
-   * server's refusal - and what was kept. That copy is not a save: the
-   * scene still counts as unsaved, and the autosave still owns it.
+   * NotUploadedError says why - an expired sign-in, no connection, a full
+   * quota, or the server's refusal - and what was kept. That copy is not a
+   * save: the scene still counts as unsaved, and the autosave still owns it.
    */
   async uploadToProjects(onProgress?: (text: string) => void): Promise<SceneLink> {
     if (this.uploading) throw new Error('Already saving to Projects');
@@ -306,7 +313,7 @@ export class FileActions {
       if (!target && unsent) {
         const sent = await findSentCopy(unsent);
         if (sent?.projectId) {
-          target = { id: sent.projectId, title: sent.name };
+          target = { id: sent.projectId, title: sent.name, ...(sent.scope ? { scope: sent.scope } : {}) };
           if (generation === this.generation) this.setLink(target);
         }
       }
@@ -314,23 +321,25 @@ export class FileActions {
       // project takes that name rather than a fresh "Sculpt <date>".
       const waiting = !target && unsent ? await getLibraryEntry(unsent) : null;
       const title = target?.title ?? waiting?.name ?? defaultSceneName();
+      const scope = target?.scope;
       let link: SceneLink;
       try {
-        link = await uploadScene({ bytes, thumb, title, projectId: target?.id, ...counts }, onProgress);
+        link = await uploadScene({ bytes, thumb, title, projectId: target?.id, scope, ...counts }, onProgress);
       } catch (err) {
         const why = asError(err);
         let kept: LibraryEntry | null = null;
         let keepError: Error | null = null;
         try {
-          kept = await keepUnsent({ id: unsent, name: title, bytes, thumb, uploadTo: target?.id, ...counts });
+          kept = await keepUnsent({ id: unsent, name: title, bytes, thumb, uploadTo: target?.id, scope, ...counts });
           if (generation === this.generation) this.setUnsent(kept.id);
         } catch (keepErr) {
           keepError = asError(keepErr);
         }
-        throw new NotUploadedError(uploadFailure(err), why, kept, keepError);
+        const place = await this.place(scope).catch(() => 'Projects');
+        throw new NotUploadedError(uploadFailure(err), why, kept, keepError, place);
       }
       // A full device is no reason to report a save the server has as failed.
-      await cacheProjectScene(link.id, { name: link.title, bytes, thumb, ...counts }).catch(() => undefined);
+      await cacheProjectScene(link.id, { name: link.title, bytes, thumb, scope: link.scope, ...counts }).catch(() => undefined);
       // The copy an earlier failure kept is in Projects now, newer than it was.
       if (unsent && unsent !== link.id) await deleteLibraryScene(unsent);
       if (generation === this.generation) {
@@ -342,6 +351,15 @@ export class FileActions {
     } finally {
       this.uploading = false;
     }
+  }
+
+  /**
+   * Where Save to library puts this scene, as a sentence names it: My
+   * projects with accounts on, Projects with them off or for a scene opened
+   * through the owner tools (SceneLink.scope).
+   */
+  async place(scope = this.linked?.scope): Promise<string> {
+    return (await libraryProjects(scope)).place;
   }
 
   /** The visible scene as Wavefront OBJ text. */
