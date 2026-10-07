@@ -6,9 +6,9 @@ import { hmacHex } from '../crypto';
  * Fixed-window rate limits (docs/accounts.md §3), counted in rate_limits.
  *
  * A bucket is the limit's name and an HMAC of what it counts by - an IP,
- * or the address a mail would go to - under AUTH_SECRET, cut to 128 bits:
- * the table never holds an IP or an address, and nobody without the secret
- * can tell whose a bucket is. A window is named by the time it starts (a
+ * the address a mail would go to, or a handle - under AUTH_SECRET, cut to
+ * 128 bits: the table never holds an IP or an address, and nobody without
+ * the secret can tell whose a bucket is. A window is named by the time it starts (a
  * day's at midnight UTC), so rows of every limit age alike; they are kept
  * 48 hours. Counting is one upsert that answers the new count.
  */
@@ -26,6 +26,8 @@ const DAY = 24 * HOUR;
 
 /** Passkey options (sign-in, reauthentication, a new passkey): 60 per 10 minutes per IP. */
 export const PASSKEY_OPTIONS: Limit = { name: 'passkey-options', max: 60, windowMs: 10 * MINUTE };
+/** Sign-in options naming a handle (the dialog's fallback): 20 per 10 minutes per handle, beside the IP's. */
+export const PASSKEY_HANDLE: Limit = { name: 'passkey-handle', max: 20, windowMs: 10 * MINUTE };
 /** Handle checks (GET /api/auth/handle): 60 per 10 minutes per IP. */
 export const HANDLE_CHECKS: Limit = { name: 'handle', max: 60, windowMs: 10 * MINUTE };
 /**

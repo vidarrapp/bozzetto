@@ -7,7 +7,9 @@
 // a suspended account - always the same 400. A counter that does not go up
 // is accepted, noted and audited. Re-authentication guards adding and
 // removing, and offers only the account's passkeys. An account holds at
-// most 10. Renaming, and removing down to none.
+// most 10. Renaming, and removing down to none. Options naming a handle:
+// that account's passkeys, or decoys no answer can use, alike in shape and
+// the same for a handle every time; 20 per 10 minutes per handle.
 import { randomBytes } from 'node:crypto';
 import { Authenticator } from '../authenticator.mjs';
 import { Browser, seedCredential, seedSession, seedUser, seededToken, setCookies } from '../lib.mjs';
@@ -345,5 +347,73 @@ export async function run({ checks, on }) {
   b = browser();
   s = await signIn(b, (opts) => key.getAssertion(opts, { origin: b.origin, credential: aliceCredential }));
   t.ok(s.verified.status === 400, `a removed passkey signs nobody in (${s.verified.status})`);
+  t.report();
+
+  // --- options naming a handle -----------------------------------------------------------------
+  t = checks('functions: options naming a handle');
+  clock.now = T + 22 * HOUR;
+  const named = (handle, b = browser()) => b.call('POST', '/api/auth/passkey/options', { json: { handle } });
+  const idsOf = (r) => (r?.json?.allowCredentials ?? []).map((c) => c.id);
+  const shapeOf = (r) => JSON.stringify([Object.keys(r?.json ?? {}).sort(), (r?.json?.allowCredentials ?? []).map((c) => Object.keys(c).sort())[0]]);
+  b = browser();
+  r = await named('pkbob', b);
+  const listed = r.json?.allowCredentials ?? [];
+  t.ok(
+    r.status === 200 && listed.length === 1 && listed[0].id === bobKey.id && listed[0].type === 'public-key' && JSON.stringify(listed[0].transports) === '["internal"]',
+    `a handle's options name its passkeys, id and transports (${r.status} ${JSON.stringify(listed)})`,
+  );
+  t.ok(r.json?.userVerification === 'required' && setCookies(r).some((c) => c.name === '__Host-bz_wa' && c.attrs['max-age'] === '300'), 'verification required, and the challenge bound to this browser as ever');
+  r = await b.call('POST', '/api/auth/passkey/verify', { json: { response: key.getAssertion(r.json, { origin: b.origin, credential: bobKey }) } });
+  t.ok(r.status === 200 && r.json?.user?.id === BOB, `and the passkey named signs in (${r.status})`);
+  t.eq(idsOf(await named('  PkBob ')).join(','), bobKey.id, 'the handle is read as stored: trimmed, in any capitals');
+  const ten = await named('pklimit');
+  t.eq(idsOf(ten).length, 10, 'every passkey of the account, all ten');
+  t.eq(idsOf(await named('pksuspended')).join(','), suspendedKey.id, "a suspended account's too (verify refuses them)");
+
+  // Handles with none: decoys.
+  const real = new Set(key.credentials.map((c) => c.id));
+  const ghost = await named('nobody-here');
+  const decoys = ghost.json?.allowCredentials ?? [];
+  t.ok(ghost.status === 200 && decoys.length >= 1 && decoys.length <= 2, `a handle no account has gets one or two passkeys all the same (${ghost.status} ${decoys.length})`);
+  t.ok(
+    decoys.every((c) => c.type === 'public-key' && JSON.stringify(c.transports) === '["internal","hybrid"]' && /^[A-Za-z0-9_-]+$/.test(c.id) && [16, 20, 32].includes(Buffer.from(c.id, 'base64url').length)),
+    `each like a real one: an id of 16, 20 or 32 bytes in base64url, on this device or a phone (${JSON.stringify(decoys)})`,
+  );
+  t.eq(shapeOf(ghost), shapeOf(ten), 'the answer has the shape of a real one');
+  t.ok(setCookies(ghost).some((c) => c.name === '__Host-bz_wa'), 'and a ceremony is begun for it, as for any');
+  t.eq(idsOf(await named('nobody-here')).join(','), idsOf(ghost).join(','), 'the same handle gets the same ones every time');
+  t.eq(idsOf(await named(' NOBODY-here')).join(','), idsOf(ghost).join(','), 'in any capitals');
+  const handles = ['pknone', 'pkalice', 'x', 'Not a handle!', ...Array.from({ length: 30 }, (_, i) => `ghost-${i}`)];
+  const lists = [];
+  for (const h of handles) lists.push(idsOf(await named(h)));
+  const every = [...idsOf(ghost), ...lists.flat()];
+  t.ok(lists.every((l) => l.length >= 1 && l.length <= 2) && lists.some((l) => l.length === 1) && lists.some((l) => l.length === 2), `with no passkey, or no such account, or no handle's shape: one or two, some of each (${lists.map((l) => l.length).join('')})`);
+  t.eq(new Set(every).size, every.length, `a handle's are its own: ${every.length} ids, none the same`);
+  t.ok(every.every((id) => !real.has(id)), 'and none is a real passkey\'s');
+  t.eq(new Set(every.map((id) => Buffer.from(id, 'base64url').length)).size, 3, 'of every length, 16, 20 and 32 bytes');
+  b = browser();
+  r = await named('nobody-here', b);
+  const fake = new Authenticator().seed({ userHandle: WA.none });
+  fake.id = idsOf(r)[0];
+  r = await b.call('POST', '/api/auth/passkey/verify', { json: { response: new Authenticator().getAssertion(r.json, { origin: b.origin, credential: fake }) } });
+  t.ok(refused(r) && !b.cookie('__Host-bz_session'), `an answer from a decoy is refused: 400, no session (${r.status} ${r.json?.code})`);
+  t.eq(new Set(failures).size, 1, 'the same answer as every other refusal');
+  r = await named(42);
+  t.ok(r.status === 400 && r.json?.code === 'bad_request' && r.headers.get('set-cookie') === null, `a handle that is not a string: 400 (${r.status})`);
+  r = await browser('pk-bob').call('POST', '/api/auth/passkey/options', { json: { reauth: true, handle: 'pklimit' } });
+  t.eq(idsOf(r).join(','), bobKey.id, "re-authenticating, a handle is not looked at: the account's own passkeys");
+
+  // 20 per 10 minutes per handle, whoever asks.
+  clock.now = T + 23 * HOUR;
+  const busy = [];
+  for (let i = 0; i < 20; i++) busy.push((await named(i % 2 ? 'pk-busy' : ' PK-Busy')).status);
+  t.ok(busy.every((st) => st === 200), `20 options naming one handle in 10 minutes, from 20 addresses and in any capitals, are answered (${[...new Set(busy)].join(', ')})`);
+  r = await named('pk-busy');
+  const wait = String(Math.ceil((10 * MINUTE - (clock.now % (10 * MINUTE))) / 1000));
+  t.ok(r.status === 429 && r.json?.code === 'rate_limited' && r.headers.get('retry-after') === wait && r.headers.get('set-cookie') === null, `the 21st is 429 rate_limited, Retry-After the rest of the window, no ceremony begun (${r.status} ${r.headers.get('retry-after')})`);
+  t.eq((await named('pk-quiet')).status, 200, 'another handle has its own count');
+  t.eq((await browser().call('POST', '/api/auth/passkey/options', { json: {} })).status, 200, 'and options naming none are not held back');
+  clock.now += 10 * MINUTE;
+  t.eq((await named('pk-busy')).status, 200, 'the next window starts afresh');
   t.report();
 }

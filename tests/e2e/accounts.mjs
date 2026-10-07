@@ -17,7 +17,10 @@
 // box is ticked, mails a code, makes the account and offers a passkey;
 // sign out; a modal passkey sign-in (the autofill request is only seen to
 // be made, since its picker cannot be driven), refused first without user
-// verification; a code sign-in with a wrong
+// verification, which asks for the handle; where the browser offers no
+// passkey unless it is named (Safari with 1Password on an iPad, played by
+// the page), the button and a pick among the field's suggestions ask for
+// the handle, and Try again names the passkey; a code sign-in with a wrong
 // code first, after which the passkey offer comes back; Account: rename a
 // passkey, add a second after confirming by code, remove it after
 // confirming by passkey; sessions signed out one at a time and all but
@@ -119,15 +122,24 @@ const TURNSTILE_STUB = `
  * A browser whose autofill request waits for the field, as Safari's and
  * Chrome's do with their pickers, until it is stopped: the virtual
  * authenticator would complete one at once, signing in without a click.
- * Counted, so the suite can see one was asked for, and stopped.
+ * Counted, so the suite can see one was asked for, and stopped;
+ * __autofill.refusePick() ends the one waiting as Safari ended a pick it
+ * would not complete. With __refuseUnnamed, a request naming no passkey is
+ * refused at once, as Safari with 1Password on an iPad refused one.
  */
 function waitingAutofill() {
   const real = navigator.credentials.get.bind(navigator.credentials);
-  window.__autofill = { asked: 0, ended: 0 };
+  const refusal = () => new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError');
+  window.__autofill = { asked: 0, ended: 0, refusePick: () => {} };
+  window.__refuseUnnamed = false;
   navigator.credentials.get = (options) => {
-    if (options?.mediation !== 'conditional') return real(options);
+    if (options?.mediation !== 'conditional') {
+      if (window.__refuseUnnamed && !options?.publicKey?.allowCredentials?.length) return Promise.reject(refusal());
+      return real(options);
+    }
     window.__autofill.asked++;
     return new Promise((_, reject) => {
+      window.__autofill.refusePick = () => reject(refusal());
       options.signal?.addEventListener('abort', () => {
         window.__autofill.ended++;
         reject(new DOMException('The operation was aborted.', 'AbortError'));
@@ -210,6 +222,10 @@ const step = (p, title, timeout = 15_000) =>
 const dialogOpen = (p) => p.evaluate(() => !!document.querySelector('.account-card'));
 const dialogGone = (p, timeout = 15_000) =>
   p.waitForFunction(() => !document.querySelector('.account-card'), null, { timeout }).then(() => true, () => false);
+
+/** Wait (bounded) until the sign-in step asks for the handle, to name the passkey; whether it did. */
+const retryShown = (p, timeout = 10_000) =>
+  p.waitForFunction(() => document.querySelector('.account-card .account-retry')?.hidden === false, null, { timeout }).then(() => true, () => false);
 
 /** What the dialog's step says has gone wrong, or is going on. */
 const said = (p, scope = '.account-card') => p.evaluate((s) => document.querySelector(`${s} .account-say`)?.textContent ?? '', scope);
@@ -370,10 +386,10 @@ async function passkeySignIn(a, t) {
   await p.waitForFunction(() => window.__autofill.asked > 0, null, { timeout: 10_000 }).catch(() => {});
   const asked = await p.evaluate(() => window.__autofill.asked);
   t.ok(asked >= 1, `opening the dialog asks for the autofill (${asked})`);
-  // Without user verification the browser refuses, and the dialog says so and stays.
+  // Without user verification the browser refuses, and the dialog asks for the handle and stays.
   await a.auth.cdp.send('WebAuthn.setUserVerified', { authenticatorId: a.auth.id, isUserVerified: false });
   await press(p, '.account-card', 'Use a passkey');
-  t.eq(await saidLike(p, /cancelled/), 'The passkey request was cancelled, or timed out.', 'a passkey that cannot verify its user signs nobody in, and the dialog says so');
+  t.ok(await retryShown(p), 'a passkey that cannot verify its user signs nobody in, and the dialog asks for the handle to try again');
   t.ok((await dialogOpen(p)) && (await me(p)).status === 401, 'the dialog stays, signed out');
   await a.auth.cdp.send('WebAuthn.setUserVerified', { authenticatorId: a.auth.id, isUserVerified: true });
   // The failed prompt's ceremony is asked for again before the button works again.
@@ -383,6 +399,93 @@ async function passkeySignIn(a, t) {
   const ended = await p.evaluate(() => window.__autofill.ended);
   t.ok(ended >= 1, `stopping the autofill first (${ended})`);
   t.ok(await chipShown(p, '@ada'), 'signed in as @ada, with no passkey offered after a passkey');
+}
+
+/**
+ * Where the browser offers no passkey unless it is named: Safari with
+ * 1Password on an iPad refused the button's request and a pick among the
+ * field's suggestions, and let through one naming the passkey. The page
+ * refuses so here, since Chromium's virtual authenticator cannot: with the
+ * passkey made non-discoverable, it answers a named request without the
+ * user handle a sign-in needs. Either failure asks for the handle, beside
+ * the code; a request refused before the field is used asks for nothing;
+ * an unknown handle finds no passkey; ada's, as she might type it, names
+ * hers and signs in.
+ */
+async function passkeyFallback(a, t) {
+  const p = a.page;
+  const [held] = await credentials(a.auth);
+  const heldId = Buffer.from(held?.credentialId ?? '', 'base64').toString('base64url');
+  const open = async () => {
+    const before = await p.evaluate(() => window.__autofill.asked);
+    await p.click('.topbar--right .topchip:text-is("Sign in")');
+    await step(p, 'Sign in');
+    await p.waitForFunction((n) => window.__autofill.asked > n, before, { timeout: 10_000 }).catch(() => {});
+  };
+  const close = async () => {
+    await p.click('.account-card .install-close');
+    await dialogGone(p);
+  };
+  const named = () =>
+    p.waitForResponse((r) => r.url().endsWith('/api/auth/passkey/options') && (r.request().postData() ?? '').includes('"handle"'), { timeout: 15_000 });
+  await p.evaluate(() => {
+    window.__refuseUnnamed = true;
+  });
+
+  await open();
+  t.ok(await p.evaluate(() => document.querySelector('.account-card .account-retry')?.hidden === true), 'the handle is not asked for at first');
+  await press(p, '.account-card', 'Use a passkey');
+  t.ok(await retryShown(p), 'Use a passkey, refused for naming no passkey, asks for the handle');
+  const view = await p.evaluate(() => {
+    const card = document.querySelector('.account-card');
+    return {
+      line: card.querySelector('.account-retry .account-note')?.textContent,
+      focused: document.activeElement?.getAttribute('name') ?? null,
+      buttons: [...card.querySelectorAll('button')].map((b) => b.textContent).filter((x) => x !== '×'),
+      email: !!card.querySelector('input[name=email]'),
+      said: card.querySelector('.account-say')?.textContent ?? '',
+    };
+  });
+  t.ok(
+    view.line === 'Your browser did not offer the passkey. Enter your handle and try again.' &&
+      view.focused === 'handle' &&
+      show(view.buttons) === show(['Use a passkey', 'Try again', 'Email me a code', 'Join with an invite']) &&
+      view.email &&
+      view.said === '',
+    `in one line, with the handle field and Try again, and the code beside them (${show(view)})`,
+  );
+  await close();
+
+  await open();
+  await p.evaluate(() => window.__autofill.refusePick());
+  await sleep(500);
+  const quiet = await p.evaluate(() => ({ asked: !document.querySelector('.account-card .account-retry').hidden, said: document.querySelector('.account-card .account-say').textContent }));
+  t.ok(!quiet.asked && quiet.said === '', `an autofill request refused before the field is used asks for nothing, as before (${show(quiet)})`);
+  await close();
+
+  await open();
+  await p.focus('.account-card input[name=email]');
+  await p.evaluate(() => window.__autofill.refusePick());
+  t.ok(await retryShown(p), "a pick among the email field's suggestions, refused, asks for the handle too");
+
+  await p.fill('.account-card input[name=handle]', 'nobody-here');
+  let answer = named();
+  await press(p, '.account-card', 'Try again');
+  const decoys = ((await (await answer).json()).allowCredentials ?? []).map((c) => c.id);
+  t.eq(await saidLike(p, /Check the handle/), 'The passkey did not work. Check the handle, or sign in with an email code instead.', 'an unknown handle finds no passkey, and the dialog says to check it, or use a code');
+  t.ok(decoys.length >= 1 && !decoys.includes(heldId), `its options named passkeys all the same, none of them ada's (${decoys.length})`);
+  await p.fill('.account-card input[name=handle]', ' @Ada ');
+  answer = named();
+  await press(p, '.account-card', 'Try again');
+  const res = await answer;
+  const sent = JSON.parse(res.request().postData() ?? '{}');
+  const offered = ((await res.json()).allowCredentials ?? []).map((c) => c.id);
+  t.ok(sent.handle === 'ada' && show(offered) === show([heldId]), `Try again asks for options naming the passkeys of @ada, as typed (${show(sent)}: ${show(offered)})`);
+  t.ok(await dialogGone(p), 'and the browser, asked for the passkey by name, signs in with it');
+  t.ok(await chipShown(p, '@ada'), 'as @ada');
+  await p.evaluate(() => {
+    window.__refuseUnnamed = false;
+  });
 }
 
 /** A code sign-in: a wrong code first, said with the tries left; the offer comes back after a code. */
@@ -1981,6 +2084,8 @@ export const suites = {
       await part('sign out', () => signOut(a, t));
       await part('passkey sign-in', () => passkeySignIn(a, t));
       await part('sign out again', () => signOut(a, t));
+      await part('passkey fallback', () => passkeyFallback(a, t));
+      await part('sign out once more', () => signOut(a, t));
       await part('code sign-in', () => codeSignIn(server, turnstile, a, t));
       await part('passkeys', () => accountPasskeys(server, a, t));
       await part('sessions', () => accountSessions(server, browser, a, t));

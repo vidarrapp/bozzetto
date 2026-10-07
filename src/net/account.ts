@@ -572,6 +572,12 @@ export function readCode(raw: string): string | null {
   return /^\d{6}$/.test(digits) ? digits : null;
 }
 
+/** A handle as typed to sign in, "@Ada" being ada; null unless it has a handle's shape. */
+export function readHandle(raw: string): string | null {
+  const handle = raw.trim().replace(/^@/, '').toLowerCase();
+  return HANDLE_SHAPE.test(handle) ? handle : null;
+}
+
 /** An invite as pasted: the link it came in, or the token alone; null when it is neither. */
 export function readInvite(raw: string): string | null {
   const text = raw.trim();
@@ -692,6 +698,15 @@ export const passkeyOptions = (reauth = false): Promise<PublicKeyCredentialReque
   callFor('POST', '/api/auth/passkey/options', reauth ? { reauth: true } : {});
 
 /**
+ * Sign-in options naming the passkeys of the account with `handle`, for a
+ * browser that offers none unless they are named (Safari with 1Password on
+ * an iPad). A handle with none, or no account, is answered with passkeys
+ * no one has, so the answer says nothing of which it was.
+ */
+export const handlePasskeyOptions = (handle: string): Promise<PublicKeyCredentialRequestOptionsJSON> =>
+  callFor('POST', '/api/auth/passkey/options', { handle });
+
+/**
  * Sign in with a passkey, from options asked for before. Modal, the
  * browser's own prompt, unless `autofill`: then the request waits on the
  * email field's suggestions (conditional mediation) until a passkey is
@@ -752,13 +767,25 @@ export function passkeyAborted(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
+/** The browser's own name for why a passkey request failed: NotAllowedError, SecurityError... */
+function browserErrorName(err: unknown): string | undefined {
+  // The browser's own error is the cause of the library's.
+  const cause = err instanceof WebAuthnError ? ((err as Error & { cause?: unknown }).cause as Error | undefined) : undefined;
+  return cause?.name ?? (err as Error | null)?.name;
+}
+
+/**
+ * A passkey request the browser ended with NotAllowedError: refused, its
+ * prompt cancelled or timed out, or no passkey to offer, which it does not
+ * tell apart, so that no site learns which passkeys a device holds.
+ */
+export const passkeyNotAllowed = (err: unknown): boolean => !(err instanceof AccountError) && browserErrorName(err) === 'NotAllowedError';
+
 /** Why a passkey request failed, as a sentence. */
 export function passkeyErrorText(err: unknown): string {
   if (err instanceof AccountError) return err.message;
   const code = err instanceof WebAuthnError ? err.code : '';
-  // The browser's own error is the cause of the library's.
-  const cause = err instanceof WebAuthnError ? ((err as Error & { cause?: unknown }).cause as Error | undefined) : undefined;
-  const name = cause?.name ?? (err as Error | null)?.name;
+  const name = browserErrorName(err);
   if (code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED') return 'This device already has a passkey for your account.';
   if (code === 'ERROR_INVALID_DOMAIN' || code === 'ERROR_INVALID_RP_ID' || name === 'SecurityError') {
     return 'Passkeys do not work at this address. Sign in with an email code instead.';

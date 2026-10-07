@@ -200,6 +200,7 @@ Phase 1 needed no map for these, and has none: `requireUser` (`functions/_shared
 | All mail | 90 per UTC day (Resend's free tier allows 100); then 503 `mail_paused` |
 | Code checks per IP | 30 per 10 min, plus 5 per code |
 | Passkey options per IP | 60 per 10 min |
+| Passkey options per handle | 20 per 10 min |
 | Registrations per IP | 5 per hour |
 | Invite checks per IP | 20 per hour |
 | Handle checks per IP | 60 per 10 min |
@@ -241,6 +242,7 @@ Phase 1 needed no map for these, and has none: `requireUser` (`functions/_shared
 1. **Options.** Opening the dialog calls `POST /api/auth/passkey/options`, which returns:
    - `rpId: RP_ID`, `userVerification: 'required'`, `allowCredentials: []`, and a 300 000 ms timeout;
    - a 32-byte challenge, held 5 minutes and bound to `__Host-bz_wa`.
+   - With `{handle}`, which the dialog asks for once a modal ceremony or an autofill pick fails other than by an abort (Safari with 1Password on an iPad offers no passkey unless it is named), `allowCredentials` names that account's passkeys, id and transports; a handle with none, or no account, gets one or two decoys, seed = HMAC(AUTH_SECRET, `decoy:` + handle) and ids the first 16, 20 or 32 bytes of SHA-256(seed ‖ i), transports `['internal', 'hybrid']`, the same every time, which verify refuses as any unknown id.
 2. **Client.**
    - Where `browserSupportsWebAuthnAutofill()` holds, it calls `startAuthentication({optionsJSON, useBrowserAutofill: true})` on an email field marked `autocomplete="username webauthn"`.
    - A button starts the modal ceremony from the click, because iPadOS before 17.4 needs a gesture.
@@ -646,7 +648,7 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
 - **owner tools:** suspend, quota, audit rows without personal data.
 - **accounts off.**
 
-As built, the suites are `access-gate`, `accounts-off`, `admin`, `codes`, `config`, `content`, `crypto`, `csrf`, `deletion`, `email-change`, `export`, `handles`, `isolation`, `keys`, `limits`, `locks`, `mail`, `media`, `media-private`, `migration`, `owner-tools`, `passkeys`, `principal`, `quota`, `ratelimit`, `registration`, `routes`, `sessions`, `templates`, `templates-list`, `uploads` and `visibility`: 1,568 checks, run whole by `npm run check:functions` in about a minute.
+As built, the suites are `access-gate`, `accounts-off`, `admin`, `codes`, `config`, `content`, `crypto`, `csrf`, `deletion`, `email-change`, `export`, `handles`, `isolation`, `keys`, `limits`, `locks`, `mail`, `media`, `media-private`, `migration`, `owner-tools`, `passkeys`, `principal`, `quota`, `ratelimit`, `registration`, `routes`, `sessions`, `templates`, `templates-list`, `uploads` and `visibility`: 1,594 checks, run whole by `npm run check:functions` in about a minute.
 
 **E2E.** `tests/e2e/accounts.mjs` runs on `wrangler pages dev dist` at `http://localhost:<port>`, because WebAuthn takes `localhost` as an RP ID but not an IP. Codes come from the outbox. Turnstile's script is a stand-in that hands each widget a `pass:<action>` token, which the server checks with the fake siteverify above.
 

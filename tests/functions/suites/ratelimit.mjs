@@ -28,6 +28,8 @@ export async function run({ checks, on, compileShared, repo }) {
   t.ok(r.headers.get('set-cookie') === null && r.headers.get('cache-control') === 'no-store', 'and no ceremony was begun for it');
   r = await options(a);
   t.eq(r.status, 429, 'asking again within the window is refused again');
+  r = await a.call('POST', '/api/auth/passkey/options', { json: { handle: 'someone' } });
+  t.eq(r.status, 429, 'and naming a handle is no way round it');
   r = await options(b);
   t.eq(r.status, 200, 'another address has its own count');
   r = await a.call('GET', '/api/auth/handle?h=still-free');

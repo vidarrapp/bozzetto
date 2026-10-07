@@ -14,16 +14,20 @@ import {
   forDesktopApp,
   forgetInvite,
   getMe,
+  handlePasskeyOptions,
+  handleReasonText,
   inSafariBesideApp,
   loadConfig,
   newPasskeyOptions,
   noPasskeysWhy,
   passkeyAborted,
   passkeyErrorText,
+  passkeyNotAllowed,
   passkeyOptions,
   passkeyReauth,
   passkeySignIn,
   passkeysHere,
+  readHandle,
   readInvite,
   rememberInvite,
   rememberedInvite,
@@ -51,6 +55,7 @@ import type { AccountLink } from './links';
  * - Sign in: a passkey button, whose click is the browser's prompt (iPadOS
  *   before 17.4 wants the gesture), the email field offering passkeys among
  *   its suggestions where the browser can (autofill), and "Email me a code".
+ *   Where the browser offers no passkey, the handle, to name its passkeys.
  * - Join with an invite: the invite checked as the dialog opens, a handle
  *   checked as it is typed, the address, the 13+ and terms box and the bot
  *   check; then the code; then a passkey.
@@ -254,12 +259,14 @@ class Dialog {
     const after: HTMLElement[] = [];
     if (passkeys) {
       const passkeyButton = button('Use a passkey', `btn ${desktop ? '' : 'btn--primary '}account-passkey`);
+      // The handle, asked for once the browser has offered no passkey.
+      const retry = el('form', 'account-step account-retry');
       if (desktop) {
-        after.push(el('p', 'account-or', 'or'), passkeyButton, el('p', 'account-small', 'On your phone, or a security key.'));
+        after.push(el('p', 'account-or', 'or'), passkeyButton, el('p', 'account-small', 'On your phone, or a security key.'), retry);
       } else {
-        before.push(passkeyButton, el('p', 'account-or', 'or'));
+        before.push(passkeyButton, retry, el('p', 'account-or', 'or'));
       }
-      this.passkeySignIn(passkeyButton, say, { autofill: !desktop });
+      this.passkeySignIn(passkeyButton, retry, address, say, { autofill: !desktop });
     } else {
       const why = noPasskeysWhy(this.config);
       if (why) before.push(el('p', 'account-note', `${why}. Sign in with a code sent to your email address.`));
@@ -312,14 +319,59 @@ class Dialog {
    * whose click makes the browser's request before anything is awaited.
    * Asked again every four minutes while the step is up (a challenge lasts
    * five), and after anything that spent or stopped the ceremony.
+   *
+   * A browser may offer no passkey for a request that names none: Safari
+   * with 1Password on an iPad refused the button's, and a pick from the
+   * field's suggestions, yet let through one that named the passkey. So
+   * when either fails in the browser (other than by being stopped), `retry`
+   * asks for the handle, and its Try again asks for options naming that
+   * account's passkeys, then makes the request from its click.
    */
-  private passkeySignIn(trigger: HTMLButtonElement, say: Say, { autofill: withAutofill }: { autofill: boolean }): void {
+  private passkeySignIn(
+    trigger: HTMLButtonElement,
+    retry: HTMLFormElement,
+    address: HTMLInputElement,
+    say: Say,
+    { autofill: withAutofill }: { autofill: boolean },
+  ): void {
     let options: PublicKeyCredentialRequestOptionsJSON | null = null;
     let fetchedAt = 0;
     let alive = true;
-    /** The button's prompt is up: new options now would end its ceremony under it. */
+    /** A prompt is up: new options now would end its ceremony under it. */
     let prompting = false;
     let asking: Promise<void> | null = null;
+    /** The field has had focus since the autofill's request began: a pick is made among its suggestions. */
+    let inField = false;
+
+    const why = el('p', 'account-note', 'Your browser did not offer the passkey. Enter your handle and try again.');
+    why.id = 'account-retry-why';
+    const handle = input('text', 'handle', {
+      autocomplete: 'off',
+      autocapitalize: 'none',
+      spellcheck: 'false',
+      placeholder: 'yourname',
+      'aria-describedby': why.id,
+    });
+    const again = button('Try again');
+    again.type = 'submit';
+    const actions = el('div', 'account-actions');
+    actions.append(again);
+    retry.noValidate = true;
+    retry.hidden = true;
+    retry.append(why, field('Handle', handle), actions);
+    const askHandle = (): void => {
+      say.clear();
+      if (!retry.hidden) return;
+      retry.hidden = false;
+      handle.focus();
+    };
+    /** One prompt at a time, whichever button asked. */
+    const busy = (on: boolean): void => {
+      prompting = on;
+      trigger.disabled = on;
+      again.disabled = on;
+    };
+
     const prepare = (): Promise<void> => {
       asking ??= (async () => {
         try {
@@ -337,29 +389,35 @@ class Dialog {
     };
     const autofill = (): void => {
       if (!options || !alive) return;
+      inField = document.activeElement === address;
       passkeySignIn(options, { autofill: true }).then(
         (me) => this.signedIn(me, 'passkey'),
         (err: unknown) => {
           // Stopped for the button's prompt, or by the dialog closing: nothing to say.
           if (passkeyAborted(err) || !alive) return;
-          // The server turned the passkey down, and its ceremony with it.
           if (err instanceof AccountError) {
+            // The server turned the passkey down, and its ceremony with it.
             say.error(err);
             void prepare();
+          } else if (inField) {
+            // A passkey picked among the suggestions, and then none offered.
+            askHandle();
           }
           // Anything else - no passkey here to offer, the request refused at
-          // once - leaves the field for an address; asking again would only
-          // fail again.
+          // once, before the field was in use - leaves the field for an
+          // address; asking again would only fail again.
         },
       );
     };
+    address.addEventListener('focus', () => {
+      inField = true;
+    });
     trigger.addEventListener('click', () => {
       void (async () => {
         if (!options || Date.now() - fetchedAt > OPTIONS_FRESH_MS) await prepare();
         if (!options) return;
         say.note('Waiting for the passkey…');
-        trigger.disabled = true;
-        prompting = true;
+        busy(true);
         try {
           // Its own ceremony takes the autofill's place.
           const me = await passkeySignIn(options);
@@ -368,13 +426,44 @@ class Dialog {
         } catch (err) {
           if (!alive) return;
           if (passkeyAborted(err)) say.clear();
-          else say.error(passkeyErrorText(err));
+          else if (err instanceof AccountError) say.error(err);
+          else askHandle();
           options = null;
           prompting = false;
           void prepare();
         } finally {
+          busy(false);
+        }
+      })();
+    });
+    retry.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void (async () => {
+        const named = readHandle(handle.value);
+        if (!named) {
+          say.error(handle.value.trim() ? handleReasonText('format') : 'Type your handle.');
+          handle.focus();
+          return;
+        }
+        say.note('Waiting for the passkey…');
+        busy(true);
+        try {
+          // Options on their way for the button would end this ceremony under it.
+          await asking;
+          const me = await passkeySignIn(await handlePasskeyOptions(named));
+          say.clear();
+          this.signedIn(me, 'passkey');
+        } catch (err) {
+          if (!alive) return;
+          if (passkeyAborted(err)) say.clear();
+          else if (passkeyNotAllowed(err)) say.error('The passkey did not work. Check the handle, or sign in with an email code instead.');
+          else say.error(passkeyErrorText(err));
+          // Its ceremony took the place of the one the button and the autofill had.
+          options = null;
           prompting = false;
-          trigger.disabled = false;
+          void prepare();
+        } finally {
+          busy(false);
         }
       })();
     });

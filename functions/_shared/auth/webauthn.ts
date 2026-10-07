@@ -14,7 +14,9 @@ import type { Env } from '../env';
 import type { CredentialRow, UserRow } from '../types';
 import { appOrigin } from '../env';
 import { HttpError, refuse } from '../http';
-import { base64url, fromBase64url, randomToken, sha256Hex } from '../crypto';
+import { base64url, fromBase64url, hmac, randomToken, sha256Hex } from '../crypto';
+import { HANDLE } from './handles';
+import { authSecret } from './ratelimit';
 import { CEREMONY_COOKIE, ceremonyCookie, readCookie } from './session';
 
 /**
@@ -140,6 +142,50 @@ export async function credentialRefs(env: Env, userId: string): Promise<Credenti
   return results.map((r) => ({ id: r.id, transports: parseTransports(r.transports) }));
 }
 
+/**
+ * The passkeys a sign-in naming a handle offers (§3): the account's, found
+ * by its handle as stored (lower-cased; the column compares without case),
+ * or, for a handle with none - no such account, or one without a passkey -
+ * decoys, so the answer looks the same either way.
+ */
+export async function handleRefs(env: Env, handle: string): Promise<CredentialRef[]> {
+  if (HANDLE.test(handle)) {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.transports FROM credentials c JOIN users u ON u.id = c.user_id
+       WHERE u.handle = ? ORDER BY c.created_at, c.id`,
+    )
+      .bind(handle)
+      .all<{ id: string; transports: string }>();
+    if (results.length > 0) return results.map((r) => ({ id: r.id, transports: parseTransports(r.transports) }));
+  }
+  return decoyRefs(env, handle);
+}
+
+/** A decoy's length in bytes: what common passkey providers' ids have. */
+const DECOY_ID_BYTES = [16, 20, 32];
+/** How a decoy says it is reached: a passkey on this device, or a phone's. */
+const DECOY_TRANSPORTS = ['internal', 'hybrid'];
+
+/**
+ * One or two passkeys that no one has, for a handle: from seed =
+ * HMAC(AUTH_SECRET, 'decoy:' + handle), which is never shown, the count
+ * (1 + the low bit of seed[0]) and each id i, the first 16, 20 or 32 bytes
+ * (by seed[i] mod 3) of SHA-256(seed ‖ i). The same handle is answered the
+ * same every time, and without the secret they cannot be told from real
+ * ids. No authenticator holds one, and verify, which knows only the
+ * passkeys saved, refuses one as it refuses anything.
+ */
+export async function decoyRefs(env: Env, handle: string): Promise<CredentialRef[]> {
+  const seed = await hmac(authSecret(env), `decoy:${handle}`);
+  const refs: CredentialRef[] = [];
+  for (let i = 1; i <= 1 + (seed[0] & 1); i++) {
+    const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.of(...seed, i)));
+    const length = DECOY_ID_BYTES[seed[i] % DECOY_ID_BYTES.length];
+    refs.push({ id: base64url(bytes.subarray(0, length)), transports: [...DECOY_TRANSPORTS] });
+  }
+  return refs;
+}
+
 function parseTransports(raw: string): string[] | undefined {
   try {
     const list = JSON.parse(raw) as unknown;
@@ -151,8 +197,9 @@ function parseTransports(raw: string): string[] | undefined {
 
 /**
  * Options for signing in (no credentials named: the browser offers every
- * passkey it has for this site) or re-authenticating (only the account's).
- * User verification is required: a passkey is the whole sign-in.
+ * passkey it has for this site; or a handle's, handleRefs) or
+ * re-authenticating (only the account's). User verification is required:
+ * a passkey is the whole sign-in.
  */
 export function authenticationOptions(rp: RelyingParty, allow: CredentialRef[]): Promise<PublicKeyCredentialRequestOptionsJSON> {
   return generateAuthenticationOptions({
