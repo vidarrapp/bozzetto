@@ -1,14 +1,21 @@
 /**
- * Landing gallery. Lists projects from `/api/projects` as cards linking to the
- * viewer (`?tl=<id>`). The bundled demo is always offered, even before the db
- * has any projects (or when the API isn't reachable, e.g. plain `vite dev`).
+ * Landing gallery. Lists the site's templates from `/api/projects` as cards
+ * (docs/accounts.md §5), each badged Template: a model or a timelapse plays
+ * in the viewer (`?tl=<id>`), and a scene opens in Sculpt as a copy
+ * (`?sculpt=1&template=<id>`), belonging to no project, so saving it makes
+ * something of your own. The bundled demo is always offered, even before
+ * the db has any projects (or when the API isn't reachable, e.g. plain
+ * `vite dev`).
  *
  * For the owner (the Access probe answers) the list comes from
- * `/admin/api/projects` instead: private projects show with a Private badge
- * and a toggle, and scenes saved to the library from Sculpt sit beside the
- * device's own shelf, opening in Sculpt (`?sculpt=1&project=<id>`). An
- * owner whose sign-in has expired gets a guest's gallery and Log in, as
- * that is what the server will answer, told once that the sign-in expired.
+ * `/admin/api/projects` instead: the templates and the owner's own work.
+ * Private projects show with a Private badge and a toggle, whose Public
+ * makes a template, and the owner's own scenes saved to the library from
+ * Sculpt sit beside the device's own shelf, opening in Sculpt as
+ * themselves (`?sculpt=1&project=<id>`); a template opens as a copy for the
+ * owner too, and is edited from Projects. An owner whose sign-in has
+ * expired gets a guest's gallery and Log in, as that is what the server
+ * will answer, told once that the sign-in expired.
  */
 
 import { div } from './dom';
@@ -17,8 +24,10 @@ import {
   api,
   checkSignIn,
   mediaPath,
+  setThumbSrc,
   takeExpiryNotice,
   uploadFailure,
+  VISIBILITY_HINT,
   type ProjectSummary,
   type Visibility,
 } from '../admin/api';
@@ -122,8 +131,9 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     grid.appendChild(c);
   }
 
-  // Then scenes in Projects - the owner's library, kept on the server, and
-  // any the owner has made public - and after them the published work.
+  // Then scenes: the templates, which open as copies, and for the owner
+  // the library kept on the server - and after them the models and
+  // timelapses.
   for (const p of projects.filter((p) => p.mode === 'scene')) {
     grid.appendChild(sceneCard(p, { owner, hasUnsavedWork: workHere }));
   }
@@ -545,9 +555,19 @@ function editableTitle(title: HTMLElement, initial: string, save: (name: string)
 }
 
 /**
- * A scene in Projects: opens in Sculpt, from the server, with this device's
- * copy as the offline fallback. For the owner it carries what the device
- * shelf's cards do - rename, delete - and who may see it.
+ * Where a scene's card opens it in Sculpt. A template opens as a copy, for
+ * everyone, the owner included, so saving it makes a project of one's own
+ * (docs/accounts.md §5); the owner edits the template itself from
+ * Projects. The owner's own scene opens as itself, from the server, with
+ * this device's copy as the offline fallback.
+ */
+const sceneHref = (p: ProjectSummary): string =>
+  `/?sculpt=1&${p.template ? 'template' : 'project'}=${encodeURIComponent(p.id)}`;
+
+/**
+ * A scene from the server, as a card that opens it in Sculpt (sceneHref).
+ * For the owner it carries what the device shelf's cards do - rename,
+ * delete - and who may see it.
  */
 function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: boolean }): HTMLElement {
   const card = div('card card--library card--scene');
@@ -561,10 +581,14 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
       <span class="card__meta"></span>
     </div>`;
   const thumb = card.querySelector<HTMLAnchorElement>('.card__thumb')!;
-  thumb.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}`;
   setPicture(thumb, mediaPath(p, `thumb.jpg?v=${p.updated_at}`));
   const badges = card.querySelector<HTMLElement>('.card__badges')!;
-  const paintBadges = (): void => setBadges(badges, ['Scene', ...(p.visibility === 'private' ? ['Private'] : [])]);
+  // Made public, the owner's scene becomes a template (visibilityToggle),
+  // and from then on opens as a copy: the link follows the badges.
+  const paintBadges = (): void => {
+    thumb.href = sceneHref(p);
+    setBadges(badges, ['Scene', ...kindBadges(p)]);
+  };
   paintBadges();
   const title = card.querySelector<HTMLElement>('.card__title')!;
   title.textContent = p.title || p.id;
@@ -573,7 +597,8 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
       `${p.scene.tris.toLocaleString('en-US')} tris · ${mb(p.scene.bytes)} · ${ago(p.updated_at)}`
     : 'Upload did not finish';
   thumb.addEventListener('click', (ev) => {
-    if (opts.hasUnsavedWork && !confirm(`Open "${p.title}"? Your work in progress will be replaced.`)) {
+    const what = p.template ? `a copy of "${p.title}"` : `"${p.title}"`;
+    if (opts.hasUnsavedWork && !confirm(`Open ${what}? Your work in progress will be replaced.`)) {
       ev.preventDefault();
       return;
     }
@@ -619,13 +644,14 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
 
 /**
  * The owner's Public/Private switch on a card: a checkbox labelled Private,
- * so which way it points is never in doubt. The badge follows once the
- * server has agreed; a refusal puts the box back.
+ * so which way it points is never in doubt. Made public, a project becomes
+ * a template, as the server answers. The badges follow once the server has
+ * agreed; a refusal puts the box back.
  */
 function visibilityToggle(p: ProjectSummary, repaint: () => void): HTMLLabelElement {
   const label = document.createElement('label');
   label.className = 'card__vis';
-  label.title = 'Private projects show only here, signed in';
+  label.title = VISIBILITY_HINT;
   const box = document.createElement('input');
   box.type = 'checkbox';
   box.checked = p.visibility === 'private';
@@ -637,6 +663,8 @@ function visibilityToggle(p: ProjectSummary, repaint: () => void): HTMLLabelElem
       .setVisibility(p.id, want)
       .then((row) => {
         p.visibility = row.visibility ?? want;
+        if (typeof row.template === 'boolean') p.template = row.template;
+        if (typeof row.media === 'string') p.media = row.media;
         box.checked = p.visibility === 'private';
         repaint();
       })
@@ -664,11 +692,20 @@ function actionFailed(what: string, err: Error): void {
   alert(`${what}: ${err.message}`);
 }
 
+/** The badges that say what a project is to the gallery: a template, and private. */
+const kindBadges = (p: ProjectSummary): string[] => [
+  ...(p.template ? ['Template'] : []),
+  ...(p.visibility === 'private' ? ['Private'] : []),
+];
+
+/** Badges that state a project's standing rather than its kind wear no fill. */
+const QUIET_BADGES: Record<string, string> = { Private: 'card__badge--private', Template: 'card__badge--template' };
+
 function setBadges(host: HTMLElement, labels: string[]): void {
   host.replaceChildren(
     ...labels.map((text) => {
       const b = document.createElement('span');
-      b.className = `card__badge${text === 'Private' ? ' card__badge--private' : ''}`;
+      b.className = `card__badge${QUIET_BADGES[text] ? ` ${QUIET_BADGES[text]}` : ''}`;
       b.textContent = text;
       return b;
     }),
@@ -701,7 +738,8 @@ function setPicture(thumb: HTMLElement, path: string): void {
       img.alt = '';
       img.draggable = false;
       img.loading = 'lazy';
-      img.src = src;
+      // A template's picture on the files host is asked for with CORS.
+      setThumbSrc(img, src);
       return img;
     };
     const blur = layer('card__img-blur');
@@ -743,7 +781,7 @@ function card(p: ProjectSummary): HTMLElement {
   const frames = count > 0 ? `${count} frame${count === 1 ? '' : 's'}` : 'no frames yet';
 
   a.innerHTML = `
-    <div class="card__thumb"></div>
+    <div class="card__thumb"><span class="card__badges"></span></div>
     <div class="card__body">
       <span class="card__title"></span>
       <span class="card__meta">
@@ -753,6 +791,7 @@ function card(p: ProjectSummary): HTMLElement {
     </div>`;
   // textContent (not innerHTML) for the title — never trust stored strings.
   a.querySelector<HTMLElement>('.card__title')!.textContent = p.title || p.id;
+  setBadges(a.querySelector<HTMLElement>('.card__badges')!, kindBadges(p));
   // No thumbnail yet: setPicture drops both layers, and the gradient shows.
   setPicture(a.querySelector<HTMLElement>('.card__thumb')!, mediaPath(p, `thumb.jpg?v=${p.updated_at}`));
   return a;
@@ -760,8 +799,9 @@ function card(p: ProjectSummary): HTMLElement {
 
 /**
  * A published project in the owner's gallery: the guest's card plus who may
- * see it - the Private badge, and the switch. With a control on it, the
- * card is a div with links inside rather than a link around everything.
+ * see it - the Template and Private badges, and the switch. With a control
+ * on it, the card is a div with links inside rather than a link around
+ * everything.
  */
 function ownerCard(p: ProjectSummary): HTMLElement {
   const card = div('card card--library card--owned');
@@ -788,7 +828,7 @@ function ownerCard(p: ProjectSummary): HTMLElement {
   title.href = href;
   title.textContent = p.title || p.id;
   const badges = card.querySelector<HTMLElement>('.card__badges')!;
-  const paintBadges = (): void => setBadges(badges, p.visibility === 'private' ? ['Private'] : []);
+  const paintBadges = (): void => setBadges(badges, kindBadges(p));
   paintBadges();
   card.querySelector<HTMLElement>('.card__body')!.appendChild(visibilityToggle(p, paintBadges));
   return card;

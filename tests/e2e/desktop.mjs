@@ -21,8 +21,10 @@
 // stand-in xdg-open on PATH counts what does. bozzetto:// serves its own host and no other. Calls
 // through the server proxy carry no Origin and Sec-Fetch-Site none, and
 // the Access cookie, SameSite=Lax, set by a real sign-in window (a local
-// server stands in for the deployment); signing in and out in Server
-// settings tells the page, which asks again who it is for.
+// server stands in for the deployment); the proxy reaches the server's /m/,
+// where a template's files named on the files host are asked for, and no
+// other host; signing in and out in Server settings tells the page, which
+// asks again who it is for.
 //
 // With --app, those checks run against a packaged build (an AppImage is
 // extracted and started through its own AppRun), after its fuse wire is
@@ -499,6 +501,15 @@ async function security(run) {
     `6a: a POST through the proxy carries no Origin, and Sec-Fetch-Site ${h['sec-fetch-site'] ?? 'not at all'}, which the server lets write (${show({ status: posted.status, origin: h.origin ?? null, site: h['sec-fetch-site'] ?? null, mode: h['sec-fetch-mode'] ?? null, dest: h['sec-fetch-dest'] ?? null })})`,
   );
   t.ok(withCookie(post), `6b: and the Access cookie, set SameSite=Lax by the sign-in window, goes with it (Cookie: ${h.cookie ?? 'none'})`);
+  // A template's files on the files host are asked of the configured
+  // server by their path, /m/ (net/origin serverPath): the proxy reaches
+  // that, and a full address on another host it refuses.
+  const markFiles = deploy.seen.length;
+  const onServer = await ask(() => window.bozzettoDesktop.api({ pathname: '/m/tpl-scene/thumb.jpg?v=1' }));
+  const elsewhere = await ask(() => window.bozzettoDesktop.api({ pathname: 'https://files.example/m/tpl-scene/thumb.jpg' }));
+  const reached = deploy.seen.slice(markFiles).map((r) => r.path);
+  t.ok(onServer.status === 200 && show(reached) === show(['/m/tpl-scene/thumb.jpg']), `the proxy reaches the server's /m/, where a template's files are asked for (${show({ status: onServer.status, reached })})`);
+  t.ok(elsewhere.status === 0 && elsewhere.error === 'Blocked path', `and a full address on another host is refused, never fetched (${show({ status: elsewhere.status, error: elsewhere.error })})`);
   if (app) {
     const jar = await app.evaluate(async ({ session }) =>
       (await session.fromPartition('persist:bozzetto-server').cookies.get({ name: 'CF_Authorization' })).map((c) => ({ sameSite: c.sameSite, httpOnly: c.httpOnly })),

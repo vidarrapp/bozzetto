@@ -29,14 +29,35 @@ export interface ProjectSummary {
   visibility?: Visibility;
   /** A scene's counts and size; null until its first upload has completed. */
   scene?: SceneMeta | null;
+  /**
+   * The site's template rather than anyone's own (docs/accounts.md §5):
+   * all the public list holds, and on the owner's list the ones that
+   * belong to no one. Absent from a server before accounts, whose public
+   * projects were the gallery.
+   */
+  template?: boolean;
+  /**
+   * The base its files are read from, as the server names it: for a listed
+   * template an open route, on this site (`/media/<id>`) or, once the
+   * server has a files host, there (`https://files.…/m/<id>`); for
+   * anything else the Access-gated `/admin/api/media/<id>`. Taken as
+   * given, whichever it is. Absent from a server before accounts
+   * (mediaPath falls back).
+   */
+  media?: string;
 }
 
-/** The owner's manifest of a scene project, as GET /admin/api/projects/:id returns it. */
+/**
+ * A scene project's manifest, as GET /admin/api/projects/:id returns it to
+ * the owner and GET /api/projects/:id a listed template's to anyone.
+ */
 export interface SceneProject {
   id: string;
   title: string;
   mode: string;
   visibility?: Visibility;
+  template?: boolean;
+  media?: string;
   updated_at: number;
   scene?: (SceneMeta & { file: string }) | null;
 }
@@ -51,13 +72,61 @@ export interface CreateInput {
 }
 
 /**
- * Where one of a project's files is read from. A private project's files
- * are only served through the Access-gated mount; a public one's come off
- * the open route, which anyone may cache.
+ * A file base as a server names one: a path on this site (`/media/<id>`),
+ * or an address on another (`https://files.…/m/<id>`). Anything else - a
+ * protocol-relative `//host/…`, another scheme - is not one.
  */
-export function mediaPath(p: Pick<ProjectSummary, 'id' | 'visibility'>, file: string): string {
+const MEDIA_BASE = /^(?:https?:\/\/[^/?#]+)?\/(?!\/)[^?#]*$/;
+
+/**
+ * Where one of a project's files is read from: under the base its summary
+ * or manifest names, which the server sets by where the project is served
+ * - a listed template's off an open route, on this site or the files
+ * host, anything else's through the Access-gated mount. Every file path
+ * the client builds is built here. A server from before accounts names no
+ * base, and its routes follow the visibility: a private project's files
+ * through the gated mount, a public one's off the open /media.
+ */
+export function mediaPath(p: Pick<ProjectSummary, 'id' | 'visibility' | 'media'>, file: string): string {
+  if (typeof p.media === 'string' && MEDIA_BASE.test(p.media)) return `${p.media.replace(/\/+$/, '')}/${file}`;
   const base = p.visibility === 'private' ? '/admin/api/media' : '/media';
   return `${base}/${encodeURIComponent(p.id)}/${file}`;
+}
+
+/**
+ * What the Public/Private switch means, wherever the owner meets it: on
+ * the owner's own work, Public makes it a template, the gallery's and no
+ * one's; on a template, it is whether the gallery lists it
+ * (docs/accounts.md §5).
+ */
+export const VISIBILITY_HINT =
+  "Private: only you see it, signed in. Public: a template, in everyone's gallery, belonging to no one.";
+
+/** And the Template switch, beside it on the Projects page. */
+export const TEMPLATE_HINT =
+  "A template belongs to no one; public, it is in everyone's gallery, where a scene opens as a copy. " +
+  'Off, it is yours again, and private.';
+
+/** Whether a URL is on another origin than this page's: a template's files host. */
+function otherOrigin(url: string): boolean {
+  try {
+    return new URL(url, window.location.href).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Point a thumbnail at its file. One on another origin - a template's, on
+ * the files host - is asked for with CORS (`crossorigin="anonymous"`),
+ * which that host answers for this site's pages: the picture is then the
+ * page's own to read, and the service worker can keep it, which it never
+ * does with the opaque answer a plain cross-origin image gets. Set before
+ * the source, so the request goes out as that.
+ */
+export function setThumbSrc(img: HTMLImageElement, src: string): void {
+  if (otherOrigin(src)) img.crossOrigin = 'anonymous';
+  img.src = src;
 }
 
 /**
@@ -355,7 +424,20 @@ export const api = {
 
   update: (id: string, patch: unknown) => call<ProjectSummary>(project(id), { method: 'PUT', ...asJson(patch) }),
 
+  /**
+   * Public or private. Made public, a project becomes a template, the
+   * gallery's and no one's (docs/accounts.md §1); made private, a template
+   * stays one, taken off the gallery. The answer says which it now is.
+   */
   setVisibility: (id: string, visibility: Visibility) => api.update(id, { visibility }),
+
+  /**
+   * Make a project a template, or the owner's own again (docs/accounts.md
+   * §5). On, it belongs to no one, and Public is whether the gallery lists
+   * it; off, it is the owner's, and private. Answers the updated summary.
+   */
+  setTemplate: (id: string, template: boolean) =>
+    call<ProjectSummary>(`${project(id)}/template`, { method: 'POST', ...asJson({ template }) }),
 
   rename: (id: string, title: string) => api.update(id, { title }),
 

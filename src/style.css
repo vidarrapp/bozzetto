@@ -956,8 +956,10 @@ html.is-page body {
   margin-left: auto;
 }
 
-/* The row's Public/Private switch, beside the actions it is not one of. */
-.admin-row__vis {
+/* The row's Public/Private and Template switches, beside the actions they
+   are not among. */
+.admin-row__vis,
+.admin-row__tpl {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -966,9 +968,19 @@ html.is-page body {
   cursor: pointer;
 }
 
-.admin-row__vis input {
+.admin-row__vis input,
+.admin-row__tpl input {
   margin: 0;
   accent-color: var(--accent);
+}
+
+/* A template's row says so above its title. */
+.admin-row__badge {
+  align-self: flex-start;
+}
+
+.admin-row__badge[hidden] {
+  display: none;
 }
 
 .admin__empty {
@@ -3563,8 +3575,10 @@ body.is-sampling * {
   position: static;
 }
 
-/* Private reads as a state of the work, not as part of it: no fill. */
-.card__badge--private {
+/* Private and Template read as the work's standing, not as part of it: no
+   fill. */
+.card__badge--private,
+.card__badge--template {
   background: rgb(0 0 0 / 55%);
   color: #fff;
   outline: 1px solid rgb(255 255 255 / 35%);

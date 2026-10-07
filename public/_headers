@@ -4,7 +4,7 @@
 # HDRs, 1k exports are the win there.)
 #
 # These reach the static files only. A Function's response (/api, /admin/api,
-# /media, /admin/login) carries only the headers its code sets.
+# /m, /media, /admin/login) carries only the headers its code sets.
 
 /assets/env/*
   Cache-Control: public, max-age=604800
@@ -22,7 +22,12 @@
 # until it has been watched for what it would block. Nothing in the build
 # is inline; 'wasm-unsafe-eval' is the meshopt decoder's WebAssembly, the
 # blob: workers are that decoder's and the video encoder's, and
-# api.github.com is the Install card's lookup of the latest release.
+# api.github.com is the Install card's lookup of the latest release. The
+# files hosts, production's and staging's, serve the templates' files once
+# MEDIA_ORIGIN names them (docs/accounts.md §4): thumbnails are images
+# (img-src); frames and scenes are fetched, and so are the thumbnails the
+# service worker keeps, whose own fetches this policy governs too
+# (connect-src). Nothing from them plays as media, so media-src is as it was.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
@@ -30,4 +35,4 @@
   Strict-Transport-Security: max-age=31536000
   X-Frame-Options: DENY
   Content-Security-Policy: frame-ancestors 'none'
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data: https://api.github.com; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data: https://api.github.com https://files.vidarrapp.se https://files-staging.vidarrapp.se; img-src 'self' blob: data: https://files.vidarrapp.se https://files-staging.vidarrapp.se; media-src 'self' blob:; font-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'

@@ -23,8 +23,14 @@ const { openOutside, originOf } = require('./links.cjs');
 /** Its own cookie jar, so the login is not shared with anything else. */
 const PARTITION = 'persist:bozzetto-server';
 const CONFIG = () => path.join(app.getPath('userData'), 'server.json');
-/** Requests the app makes; anything else is a bug or an attempt. */
-const ALLOWED = /^\/(api|admin\/api|media)\//;
+/**
+ * Requests the app makes; anything else is a bug or an attempt. /m/ is the
+ * files host's path for a template's files (docs/accounts.md §4), which
+ * the server answers on its own host too: a file a manifest names on the
+ * files host is asked for there, by its path (net/origin serverPath), so
+ * this proxy stays pinned to the configured server.
+ */
+const ALLOWED = /^\/(api|admin\/api|media|m)\//;
 
 async function readConfig() {
   try {

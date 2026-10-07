@@ -8,17 +8,19 @@
 // but #rrggbb, and no glTF fetches a buffer or an image from elsewhere. A
 // link that opens a scene asks before it replaces the work here, unless
 // the card that sent it asked. The service worker keeps no private
-// thumbnail, forgets the owner's lists when the sign-in goes, answers only
-// the app's own pages offline, and ?nosw asks. ?tl= takes ids only. A
-// single-file export carries a Content-Security-Policy and still plays.
-// Sign out clears what the device kept and goes through Access's logout.
+// thumbnail and keeps the files host's, never keeps the sign-in
+// ceremonies, the account or a member's files, forgets the owner's lists
+// when the sign-in goes, answers only the app's own pages offline, and
+// ?nosw asks. ?tl= takes ids only. A single-file export carries a
+// Content-Security-Policy and still plays. Sign out clears what the device
+// kept and goes through Access's logout.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openSculpt } from './lib.mjs';
-import { bootState, fakeProjects, signInContext, storedFrames, workerActivated } from './smoke.mjs';
+import { FILES, bootState, fakeProjects, signInContext, storedFrames, workerActivated } from './smoke.mjs';
 
 /** Somewhere no page of the app should ever ask. */
 const ELSEWHERE = 'https://attacker.example';
@@ -426,7 +428,7 @@ async function looksAndModels(page, base, t) {
     await page.goto(`${base}/?tl=${tl}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelector('.overlay--error'), null, { timeout: 30_000 }).catch(() => {});
     const said = await page.evaluate(() => document.querySelector('.overlay__msg')?.textContent ?? '');
-    const probed = paths.filter((p) => /manifest\.json$|^\/api\/projects|^\/admin\/api\/projects|^\/x|^\/media/.test(p));
+    const probed = paths.filter((p) => /manifest\.json$|^\/api\/projects|^\/admin\/api\/projects|^\/x|^\/media|^\/m\//.test(p));
     t.ok(said === 'Could not load project: That is not a project link' && !probed.length, `?tl=${tl} is refused ("${said}"), and nothing is asked for (${probed.join(', ') || 'nothing'})`);
   }
   page.off('request', onRequest);
@@ -551,26 +553,31 @@ async function until(page, fn, arg, timeout = 30_000) {
   return null;
 }
 
-/** What the page's caches hold: which exist, and the paths each keeps. */
+/** What the page's caches hold: which exist, and the paths each keeps (another origin's with its origin). */
 const cacheState = (page) =>
   page.evaluate(async () => {
     const out = {};
     for (const name of await caches.keys()) {
       if (name.startsWith('workbox-precache')) continue;
-      out[name] = (await (await caches.open(name)).keys()).map((r) => new URL(r.url).pathname);
+      out[name] = (await (await caches.open(name)).keys()).map((r) => {
+        const u = new URL(r.url);
+        return u.origin === location.origin ? u.pathname : u.origin + u.pathname;
+      });
     }
     return out;
   });
 
 /**
  * The installed app, with the owner's routes faked as Access and the
- * Functions answer them. The thumbnail rule keeps the public route's
- * pictures and not the gated one's; a sign-in check that finds the
- * session gone drops the owner's cached answers; the server's refusals
- * read as what they are; Sign out forgets the sign-in, drops the caches
- * and goes through Access's logout, after which the gallery is a guest's.
- * Offline, the worker answers the app's own pages and nothing else; and
- * ?nosw asks before it takes the worker out.
+ * Functions answer them. The thumbnail rules keep the open routes'
+ * pictures, this site's and the files host's, and not the gated one's;
+ * the sign-in ceremonies, the account and a member's files are never
+ * kept; a sign-in check that finds the session gone drops the owner's
+ * cached answers; the server's refusals read as what they are; Sign out
+ * forgets the sign-in, drops the caches and goes through Access's logout,
+ * after which the gallery is a guest's. Offline, the worker answers the
+ * app's own pages and nothing else; and ?nosw asks before it takes the
+ * worker out.
  */
 async function workerAndSignOut(browser, base, t) {
   // The worker's own fetches reach the context's routes only with this,
@@ -583,6 +590,16 @@ async function workerAndSignOut(browser, base, t) {
   try {
     fake.add({ id: 'pub-reel', title: 'Public reel', mode: 'timelapse', visibility: 'public', frameCount: 3, thumb: JPEG });
     fake.add({ id: 'priv-reel', title: 'Private reel', mode: 'timelapse', visibility: 'private', frameCount: 2, thumb: JPEG });
+    // A template whose files the server names on the files host.
+    fake.add({ id: 'files-reel', title: 'Files reel', mode: 'timelapse', visibility: 'public', frameCount: 2, thumb: JPEG, mediaOrigin: FILES });
+    // What accounts will answer and the worker must never keep: the
+    // sign-in ceremonies, the account, a member's files. Answered 200 here,
+    // which is what any rule that keeps would keep.
+    const neverKept = [];
+    await ctx.route(/\/api\/(auth|me)\//, (route) => {
+      neverKept.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
     // A refusal to answer the next write with, as the Functions word theirs.
     let refusal = null;
     await ctx.route(fake.serves, (route) => {
@@ -630,10 +647,21 @@ async function workerAndSignOut(browser, base, t) {
     t.ok(await workerActivated(p), 'the worker installs');
     await gallery('Sign out');
     t.ok(/Projects, Sign out/.test(await chips()), `signed in, the top row has Projects and Sign out (${await chips()})`);
-    await p.waitForFunction(() => document.querySelectorAll('.card__img').length >= 2 && [...document.querySelectorAll('.card__img')].every((i) => i.complete), null, { timeout: 30_000 }).catch(() => {});
-    let caches = await cachesUntil((c) => (c['bozzetto-thumbs'] ?? []).length > 0 && (c['bozzetto-owner-projects'] ?? []).length > 0 && (c['bozzetto-whoami'] ?? []).length > 0);
+    await p.waitForFunction(() => document.querySelectorAll('.card__img').length >= 3 && [...document.querySelectorAll('.card__img')].every((i) => i.complete), null, { timeout: 30_000 }).catch(() => {});
+    const filesThumb = `${FILES}/m/files-reel/thumb.jpg`;
+    let caches = await cachesUntil(
+      (c) => (c['bozzetto-thumbs'] ?? []).includes(filesThumb) && (c['bozzetto-owner-projects'] ?? []).length > 0 && (c['bozzetto-whoami'] ?? []).length > 0,
+    );
     const thumbs = caches['bozzetto-thumbs'] ?? [];
     t.ok(thumbs.includes('/media/pub-reel/thumb.jpg') && !thumbs.some((x) => x.startsWith('/admin/')), `the worker keeps the public thumbnail and not the private one (${thumbs.join(', ')})`);
+    t.ok(thumbs.includes(filesThumb), `and a template's on the files host, asked for with CORS so there is an answer to keep (${thumbs.join(', ')})`);
+    // The worker in control, every one of these fetched, and none kept.
+    await p.evaluate(() =>
+      Promise.all(['/api/auth/passkey/options', '/api/me/account', '/api/me/media/p-abc/thumb.jpg?v=1', '/api/me/media/p-abc/scene.bozz'].map((u) => fetch(u).then((r) => r.text()))),
+    );
+    await p.waitForTimeout(500);
+    const keptPaths = Object.values(await cacheState(p)).flat().filter((x) => /^\/api\/(auth|me)\//.test(x));
+    t.ok(neverKept.length >= 4 && !keptPaths.length, `the sign-in ceremonies, the account and a member's files go to the network and are kept nowhere (${neverKept.length} answered${keptPaths.length ? `; kept ${keptPaths.join(', ')}` : ''})`);
     t.ok((caches['bozzetto-owner-projects'] ?? []).includes('/admin/api/projects') && (caches['bozzetto-whoami'] ?? []).length === 1, 'and keeps the owner\'s list and sign-in for offline');
     const remembered = await p.evaluate(() => localStorage.getItem('bozzetto-signed-in'));
     t.ok(!!remembered && Object.keys(JSON.parse(remembered)).join() === 'at', `the device remembers when it was signed in, and not who (${remembered})`);
@@ -660,7 +688,7 @@ async function workerAndSignOut(browser, base, t) {
     await gallery('Log in');
     caches = await cacheState(p);
     t.ok(/Log in/.test(await chips()) && !('bozzetto-whoami' in caches) && !('bozzetto-owner-projects' in caches), `the sign-in expired, the owner's cached list and sign-in are gone (${Object.keys(caches).join(', ')})`);
-    t.ok((caches['bozzetto-thumbs'] ?? []).includes('/media/pub-reel/thumb.jpg') && !(caches['bozzetto-thumbs'] ?? []).some((x) => x.startsWith('/admin/')), `and so is any private thumbnail, the public ones kept (${(caches['bozzetto-thumbs'] ?? []).join(', ')})`);
+    t.ok((caches['bozzetto-thumbs'] ?? []).includes('/media/pub-reel/thumb.jpg') && (caches['bozzetto-thumbs'] ?? []).includes(filesThumb) && !(caches['bozzetto-thumbs'] ?? []).some((x) => x.startsWith('/admin/')), `and so is any private thumbnail, the public ones kept (${(caches['bozzetto-thumbs'] ?? []).join(', ')})`);
     t.ok(!!(await p.evaluate(() => document.querySelector('.landing__notice'))), 'and the gallery says the sign-in expired');
 
     // Sign out.

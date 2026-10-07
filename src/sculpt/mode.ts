@@ -110,19 +110,22 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // repaints anyway, but a still frame's smoothing has to start over.
   const session = new SculptSession(camera, canvas, () => viewer.invalidate());
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
-  // A ?lib=<id> link from a gallery card outranks it, and so does a
-  // ?project=<id> link to a scene in Projects - those are an explicit "open
+  // A ?lib=<id> link from a gallery card outranks it, and so do a
+  // ?project=<id> link to a scene in Projects and a ?template=<id> link to
+  // a template, which opens a copy of it - those are an explicit "open
   // this one", where the autosave is only "carry on where I was". A missing
   // or unreadable one falls back rather than failing the boot.
   const query = new URLSearchParams(window.location.search);
   const libParam = query.get('lib');
   const projectParam = query.get('project');
+  const templateParam = query.get('template');
   // Ids go into storage keys and request paths: a parameter that is not
   // one (net/ids) opens nothing, and the boot goes on as if it were not
   // there.
   const libId = isProjectId(libParam) ? libParam : null;
   const projectId = isProjectId(projectParam) ? projectParam : null;
-  const asked = libParam !== null || projectParam !== null;
+  const templateId = isProjectId(templateParam) ? templateParam : null;
+  const asked = libParam !== null || projectParam !== null || templateParam !== null;
   // What the gallery card or the Projects page that sent this tab here
   // noted, if one did: that it has asked already (ui/openToken). Taken
   // whatever happens next, so it serves this boot and no later one.
@@ -137,11 +140,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let opened: ProjectOpen | null = null;
   // The opened scene's name, for the question below and for a failure.
   let openedName: string | null = null;
+  // Which one this boot opens, as the page that sent it here notes it.
+  const openKey = projectId ? `project:${projectId}` : templateId ? `template:${templateId}` : `lib:${libId}`;
   if (projectId) {
     opened = await openProjectAtBoot(projectId);
     saved = opened.scene;
     bootLink = opened.link;
-    openedName = opened.link?.title ?? null;
+    openedName = opened.title;
+  } else if (templateId) {
+    // A copy: the template's scene, nobody's project. No link, so Save to
+    // library makes the owner a new project (a guest, a download) and
+    // never saves over the template; and no copy on the device's shelf.
+    opened = await openTemplateAtBoot(templateId);
+    saved = opened.scene;
+    openedName = opened.title;
   } else if (libId) {
     const lib = await import('./bridge/SceneLibrary');
     saved = await lib.loadFromLibrary(libId);
@@ -161,16 +173,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const url = new URL(window.location.href);
     url.searchParams.delete('lib');
     url.searchParams.delete('project');
+    url.searchParams.delete('template');
     history.replaceState(history.state, '', url);
   }
-  const what = openedName ? `"${openedName}"` : 'this scene';
+  const what = !openedName
+    ? 'this scene'
+    : opened?.kind === 'template'
+      ? `a copy of "${openedName}"`
+      : `"${openedName}"`;
   // A scene opened by its address replaces the work on this device: the
   // autosave is written over within seconds, and the captured frames go.
   // The gallery's cards ask first, but an address is a link like any
   // other, and any page can send one - so the boot asks too, unless the
   // page that sent this tab here asked already, about this same scene.
   // Declined, the work stays and boots as if no link had been followed.
-  const askedAlready = sentHere === (projectId ? `project:${projectId}` : `lib:${libId}`);
+  const askedAlready = sentHere === openKey;
   if (saved && !askedAlready && ((await hasSavedScene()) || (await hasSculptFrames()))) {
     if (!window.confirm(`Open ${what}? The work in progress on this device will be replaced.`)) {
       saved = null;
@@ -1138,7 +1155,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Otherwise it is edits since the last clean point (a save, or an open),
   // compared by the undo stack's TOP ENTRY rather than its index, because a
   // full stack shifts and leaves the index standing.
-  // A scene just opened from Projects exists there as it is: nothing to lose yet.
+  // A scene just opened from Projects exists there as it is, and a copy of
+  // a template is the template as it is: nothing to lose yet.
   let sceneOnDisk = !saved || !!opened?.from;
   let cleanState: unknown = session.getStateManager().getCurrentState();
   const markSceneClean = (at: unknown = session.getStateManager().getCurrentState()): void => {
@@ -1389,10 +1407,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   } else if (saved && opened?.from === 'device') {
     toast = bootToast(openedLabel(opened));
   }
-  // Asked for a project and got neither it nor a device copy: say why,
-  // rather than leave the autosaved scene looking like the answer.
+  // Asked for a project and got neither it nor a device copy, or for a
+  // template that could not be had: say why, rather than leave the
+  // autosaved scene looking like the answer.
   if (opened && !opened.scene) {
-    statusToast('Opening the project...').fail(`Could not open that project: ${opened.error}`);
+    const noun = opened.kind === 'template' ? 'template' : 'project';
+    statusToast(`Opening the ${noun}...`).fail(`Could not open that ${noun}: ${opened.error}`);
   }
   // A scene or a record that would not build (above): said, not just dropped.
   if (bootFailure) statusToast('Opening...').fail(bootFailure);
@@ -1698,10 +1718,15 @@ function makeLevelToast(): { show(at: number, total: number): void; dispose(): v
   };
 }
 
-/** What a ?project= open came back with. */
+/** What a ?project= or ?template= open came back with. */
 interface ProjectOpen {
+  /** A project opened as itself, or a template opened as a copy of it. */
+  kind: 'project' | 'template';
   scene: SavedScene | null;
+  /** The project the scene belongs to: a template's copy belongs to none. */
   link: SceneLink | null;
+  /** What it is called, for the question and the notices; null when nothing opened. */
+  title: string | null;
   /** 'server' when fetched, 'device' for this device's copy, null for neither. */
   from: 'server' | 'device' | null;
   error?: string;
@@ -1734,17 +1759,44 @@ async function openProjectAtBoot(id: string): Promise<ProjectOpen> {
         })
         .catch(() => undefined);
     }
-    return { scene, link: { id: project.id, title: project.title }, from: 'server' };
+    const link = { id: project.id, title: project.title };
+    return { kind: 'project', scene, link, title: project.title, from: 'server' };
   } catch (err) {
     console.warn('sculpt: could not open project', id, err);
-    // Said after a colon, mid-sentence, where the error's own words start a notice.
-    const error =
-      err instanceof AuthExpiredError ? 'your sign-in has expired' : err instanceof Error ? err.message : String(err);
+    const error = openError(err);
     const entry = await lib.getLibraryEntry(id);
     const scene = entry ? await lib.loadFromLibrary(id) : null;
-    if (entry && scene) return { scene, link: { id, title: entry.name }, from: 'device', error };
-    return { scene: null, link: null, from: null, error };
+    if (entry && scene) {
+      return { kind: 'project', scene, link: { id, title: entry.name }, title: entry.name, from: 'device', error };
+    }
+    return { kind: 'project', scene: null, link: null, title: null, from: null, error };
   }
+}
+
+/**
+ * /?sculpt=1&template=<id>: a copy of a template's scene, from the public
+ * manifest and the file it names, read and checked as any scene file is
+ * (unpackScene). It belongs to no project, so it opens with no link and
+ * leaves nothing on the device's shelf; the autosave keeps it as it keeps
+ * any work in progress. There is no device copy of a template to fall
+ * back on, so one that cannot be had opens nothing, and says why.
+ */
+async function openTemplateAtBoot(id: string): Promise<ProjectOpen> {
+  try {
+    const { fetchTemplateScene } = await import('./bridge/SceneProjects');
+    const { bytes, project } = await fetchTemplateScene(id);
+    const scene = await unpackScene(bytes);
+    return { kind: 'template', scene, link: null, title: project.title, from: 'server' };
+  } catch (err) {
+    console.warn('sculpt: could not open template', id, err);
+    return { kind: 'template', scene: null, link: null, title: null, from: null, error: openError(err) };
+  }
+}
+
+/** Why an open failed, said after a colon, mid-sentence, where the error's own words start a notice. */
+function openError(err: unknown): string {
+  if (err instanceof AuthExpiredError) return 'your sign-in has expired';
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** The boot notice's words: the autosave back, or a project's device copy and why. */

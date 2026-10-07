@@ -3,10 +3,11 @@ import {
   AuthExpiredError,
   UnreachableError,
   api,
+  mediaPath,
   signedInHereBefore,
   type SceneProject,
 } from '../../admin/api';
-import { apiFetch } from '../../net/origin';
+import { apiFetch, isDesktop, isSignedIn, type ApiResult } from '../../net/origin';
 import type { SceneLink } from './ScenePersist';
 
 /**
@@ -167,11 +168,70 @@ export async function fetchSceneProject(
   id: string,
 ): Promise<{ bytes: ArrayBuffer; project: SceneProject; owner: boolean }> {
   const { project, owner } = await sceneManifest(id);
+  return { bytes: await sceneBytes(project), project, owner };
+}
+
+/**
+ * A template's .bozz bytes and its manifest, for opening as a copy
+ * (`/?sculpt=1&template=<id>`, docs/accounts.md §5). Its manifest is the
+ * public one, which every template the gallery lists has, and its file
+ * comes from the base that names: an open route here, or the files host.
+ * A template the owner has taken off the gallery is not on the public
+ * route; the owner's own gallery still shows it, so for an owner signed in
+ * here a copy of that one comes through the owner's routes.
+ */
+export async function fetchTemplateScene(id: string): Promise<{ bytes: ArrayBuffer; project: SceneProject }> {
+  const project = await templateManifest(id);
+  return { bytes: await sceneBytes(project), project };
+}
+
+/** Whether the owner may be signed in here, as far as this device can say without asking. */
+const ownerHere = async (): Promise<boolean> => (isDesktop() ? isSignedIn() : signedInHereBefore());
+
+/**
+ * A template's manifest: the public one, or for the owner, one the gallery
+ * no longer lists, through the owner's routes. Only a template: the
+ * owner's own project, asked for by this address, is not found here, as
+ * it is not one to copy.
+ */
+async function templateManifest(id: string): Promise<SceneProject> {
+  let res: ApiResult;
+  try {
+    res = await apiFetch(`/api/projects/${encodeURIComponent(id)}`);
+  } catch (err) {
+    throw unreachable(err);
+  }
+  if (res.ok && res.bytes && !res.contentType.includes('text/html')) {
+    return JSON.parse(new TextDecoder().decode(res.bytes)) as SceneProject;
+  }
+  if (res.status === 404 && (await ownerHere())) {
+    try {
+      const own = (await api.get(id)) as SceneProject;
+      if (own.template !== false) return own;
+    } catch {
+      // Not the owner's to read either: not found, as the public route said.
+    }
+  }
+  // Status 0 is the desktop's "no server", which the proxy words itself.
+  throw new Error(
+    res.status === 404
+      ? 'Not found. It may have been deleted, or taken off the gallery.'
+      : `Could not reach it (${res.status || res.error || 'no answer'})`,
+  );
+}
+
+/**
+ * A scene's .bozz bytes, from under the base its manifest names (mediaPath,
+ * which builds every file address the client asks for): the Access-gated
+ * media route for the owner's own scene, which the session cookie (or the
+ * desktop's proxy) opens, or a template's open one - here, or the files
+ * host, which answers this site's pages. `?v=` is the manifest's
+ * updated_at, as the server writes it into the file's own address.
+ */
+async function sceneBytes(project: SceneProject): Promise<ArrayBuffer> {
   if (project.mode !== 'scene') throw new Error(`"${project.title}" is not a scene`);
-  const file = project.scene?.file;
-  if (!file) throw new Error(`"${project.title}" has no file: its upload did not finish`);
-  // Through the media route the manifest names: the Access-gated one for a
-  // private scene, which the session cookie (or the desktop's proxy) opens.
+  if (!project.scene) throw new Error(`"${project.title}" has no file: its upload did not finish`);
+  const file = mediaPath(project, `scene.bozz?v=${project.updated_at}`);
   const res = await apiFetch(file).catch((err: unknown) => {
     throw unreachable(err);
   });
@@ -179,5 +239,5 @@ export async function fetchSceneProject(
   if (!res.ok || !res.bytes || res.contentType.includes('text/html')) {
     throw new Error(`Could not download "${project.title}" (${res.status})`);
   }
-  return { bytes: res.bytes, project, owner };
+  return res.bytes;
 }

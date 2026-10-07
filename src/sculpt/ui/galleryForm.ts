@@ -89,13 +89,14 @@ export function galleryForm(opts: {
   titleInput.placeholder = 'Title (optional)';
   titleInput.className = 'gallery-form__input';
 
-  // Public, as publishing has always been, unless chosen otherwise. A
-  // private project shows in the owner's gallery and editor only.
+  // Public, as publishing has always been, unless chosen otherwise: a
+  // template in everyone's gallery, belonging to no one (docs/accounts.md
+  // §5). A private project shows in the owner's gallery and editor only.
   const visibility = document.createElement('select');
   visibility.className = 'gallery-form__input gallery-form__visibility';
   visibility.setAttribute('aria-label', 'Who can see it');
   for (const [value, label] of [
-    ['public', 'Public: in the gallery'],
+    ['public', 'Public: a template in the gallery'],
     ['private', 'Private: only you'],
   ]) {
     const o = document.createElement('option');

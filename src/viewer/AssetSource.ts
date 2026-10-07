@@ -37,9 +37,10 @@ export class HttpSource implements AssetSource {
     //
     // FRAME MEDIA belongs to the project, so it resolves against the
     // manifest: API manifests carry root-absolute /media/... (landing on
-    // whichever host served them) and the bundled demo carries relative
-    // frames/sd/0000.glb (landing beside its own manifest). Both are
-    // already correct and must be left alone.
+    // whichever host served them), or a full address on the server's files
+    // host, and the bundled demo carries relative frames/sd/0000.glb
+    // (landing beside its own manifest). All are already correct and must
+    // be left alone.
     //
     // APP ASSETS - matcaps and HDRIs, requested through this same method -
     // belong to the app, and are root-absolute too. Resolving those against
@@ -57,8 +58,10 @@ export class HttpSource implements AssetSource {
     // In the desktop shell, frames belonging to a REMOTE project are
     // cross-origin and a renderer fetch would be refused - the deployment
     // sends no CORS headers. Those go out through the main process like
-    // every other server call. Frames of the bundled demo resolve onto the
-    // app's own protocol and stay a plain fetch.
+    // every other server call, by their path on the configured server: a
+    // frame named on the files host is served there too, under the same
+    // /m/ path (net/origin serverPath). Frames of the bundled demo resolve
+    // onto the app's own protocol and stay a plain fetch.
     if (isDesktop() && !url.startsWith(window.location.origin)) {
       const r = await apiFetch(new URL(url).pathname + new URL(url).search);
       if (!r.ok || !r.bytes) throw new Error(`Failed to load ${path} (${r.status})`);

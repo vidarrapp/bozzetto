@@ -28,8 +28,9 @@ interface EditorProject {
 }
 
 /**
- * The owner's manifest URL. Frame paths in it are root-absolute (/media or,
- * for a private project, /admin/api/media), so this is only what they
+ * The owner's manifest URL. Frame paths in it are root-absolute (/media
+ * or, for a project the gallery does not list, /admin/api/media), or full
+ * addresses on the server's files host, so this is only what the paths
  * resolve against - but it has to be the route the manifest came from.
  */
 const manifestUrl = (id: string): string =>
@@ -188,7 +189,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
               <label>FPS <input id="f-fps" type="number" min="1" max="30" step="1" /></label>
               <label>Visibility
                 <select id="f-visibility">
-                  <option value="public">Public: in the gallery</option>
+                  <option value="public">Public: a template in the gallery</option>
                   <option value="private">Private: only you, signed in</option>
                 </select>
               </label>

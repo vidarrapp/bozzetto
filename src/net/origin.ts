@@ -106,6 +106,20 @@ export interface ApiResult {
 const isOwnerRoute = (pathname: string): boolean => pathname.startsWith('/admin/api/');
 
 /**
+ * A file the desktop app asks the configured server for, by the address a
+ * manifest gave it. Once the server has a files host, a template's files
+ * are named there (`https://files.…/m/<id>/…`, docs/accounts.md §4), and
+ * the main process's proxy reaches the configured server and nothing else
+ * (electron/server.cjs). The server's own host serves the same /m/ paths,
+ * so a full address is asked of it by its path; a path is left as it is.
+ */
+export function serverPath(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return url;
+  const u = new URL(url);
+  return u.pathname + u.search;
+}
+
+/**
  * Statuses that mean Access turned the request away: a redirect to its
  * login, which is what it answers today, or a bare 401. None of the
  * Functions under /admin/api answers with either - they refuse with a 403 -
@@ -114,15 +128,18 @@ const isOwnerRoute = (pathname: string): boolean => pathname.startsWith('/admin/
 const SIGN_IN_STATUSES = new Set([301, 302, 303, 307, 308, 401]);
 
 /**
- * Call an API route.
+ * Call an API route, or fetch one of a project's files.
  *
- * On the web this is a plain same-origin fetch. On the desktop it goes
- * through the main process instead - not for tidiness, but because a
- * renderer on bozzetto://app cannot reach a deployment at all: the
- * Functions send no CORS headers and answer no preflight, and the admin
- * routes authenticate on a header Cloudflare Access injects only after a
- * cookie login. Requests from the main process carry no Origin, so no CORS
- * check applies, and they ride the session partition holding that cookie.
+ * On the web this is a plain fetch: same-origin for the API, and CORS for
+ * a template's file on the files host, which answers this site's pages.
+ * On the desktop it goes through the main process instead - not for
+ * tidiness, but because a renderer on bozzetto://app cannot reach a
+ * deployment at all: the Functions send no CORS headers and answer no
+ * preflight, and the admin routes authenticate on a header Cloudflare
+ * Access injects only after a cookie login. Requests from the main process
+ * carry no Origin, so no CORS check applies, and they ride the session
+ * partition holding that cookie. A full address there is asked of the
+ * configured server by its path (serverPath).
  */
 export async function apiFetch(
   pathname: string,
@@ -131,6 +148,7 @@ export async function apiFetch(
   if (isDesktop()) {
     const b = bridge();
     if (!b) return { ok: false, status: 0, contentType: '', bytes: null, error: 'No bridge' };
+    pathname = serverPath(pathname);
     const r = await b.api({ pathname, ...init });
     return {
       ok: r.ok,
@@ -192,7 +210,8 @@ export async function apiJson<T>(
 
 /**
  * The absolute URL an API manifest was fetched from, which is what its
- * root-absolute frame paths (/media/<id>/frames/...) must resolve against.
+ * root-absolute frame paths (/media/<id>/frames/...) must resolve against;
+ * a frame named on a files host is a full address, and resolves to itself.
  * On the web that is this origin; on the desktop it is the configured
  * server, which the renderer never otherwise learns the address of.
  */

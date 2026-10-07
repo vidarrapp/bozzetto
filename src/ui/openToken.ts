@@ -1,7 +1,7 @@
 /**
  * "This tab asked to open that scene": what a gallery card or the Projects
- * page leaves behind when it sends the tab to `/?sculpt=1&lib=<id>` or
- * `&project=<id>`.
+ * page leaves behind when it sends the tab to `/?sculpt=1&lib=<id>`,
+ * `&project=<id>` or `&template=<id>` (a copy of a template).
  *
  * Opening a scene replaces the work on this device - the autosave is
  * written over seconds later and the captured frames go - and the card
@@ -16,7 +16,7 @@ const KEY = 'bozzetto-open';
 /** Long enough for the tab to get there; a card clicked and left behind does not count later. */
 const FRESH_MS = 2 * 60 * 1000;
 
-export type OpenKind = 'lib' | 'project';
+export type OpenKind = 'lib' | 'project' | 'template';
 
 /** Note that this tab is about to open the scene, having asked (or found nothing to lose). */
 export function markOpen(kind: OpenKind, id: string): void {
@@ -49,7 +49,9 @@ export function markOpenOnClick(ev: MouseEvent, link: HTMLAnchorElement): void {
   if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
   const q = new URL(link.href, window.location.href).searchParams;
   const project = q.get('project');
+  const template = q.get('template');
   const lib = q.get('lib');
   if (project) markOpen('project', project);
+  else if (template) markOpen('template', template);
   else if (lib) markOpen('lib', lib);
 }

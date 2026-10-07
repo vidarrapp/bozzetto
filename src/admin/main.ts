@@ -1,4 +1,4 @@
-import { api, failureText, mediaPath } from './api';
+import { TEMPLATE_HINT, VISIBILITY_HINT, api, failureText, mediaPath, setThumbSrc } from './api';
 import type { ProjectSummary } from './api';
 import { renderEditor } from './editor';
 import { initTheme, mountThemeToggle } from '../ui/theme';
@@ -119,12 +119,16 @@ async function refresh(listEl: HTMLElement): Promise<void> {
           <img class="admin-row__img" alt="" loading="lazy" />
         </div>
         <div class="admin-row__main">
+          <span class="badge admin-row__badge" hidden>Template</span>
           <span class="admin-row__title"></span>
           <span class="admin-row__meta"></span>
         </div>
         <div class="admin-row__actions">
-          <label class="admin-row__vis" title="Private projects show only to you, signed in">
+          <label class="admin-row__vis">
             <input type="checkbox" /> Private
+          </label>
+          <label class="admin-row__tpl">
+            <input type="checkbox" /> Template
           </label>
           ${actions}
           <button class="btn btn--danger admin-row__delete" type="button">Delete</button>
@@ -133,7 +137,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
     row.dataset.project = p.id;
     const img = row.querySelector<HTMLImageElement>('.admin-row__img')!;
-    img.src = mediaPath(p, `thumb.jpg?v=${p.updated_at}`);
+    setThumbSrc(img, mediaPath(p, `thumb.jpg?v=${p.updated_at}`));
     // No thumbnail yet (e.g. before any frames) → drop the <img>, show the placeholder.
     img.addEventListener('error', () => img.remove());
 
@@ -172,19 +176,50 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
     }
 
+    // Who sees it, and whether it is a template (docs/accounts.md §5): a
+    // template belongs to no one, and Public lists it in the gallery; made
+    // public, the owner's own project becomes one; no longer a template,
+    // a project is the owner's again, and private. Each switch shows what
+    // the server answered, so one moves when the other's change moves it.
     const vis = row.querySelector<HTMLInputElement>('.admin-row__vis input')!;
-    vis.checked = p.visibility === 'private';
-    vis.addEventListener('change', async () => {
-      vis.disabled = true;
+    const tpl = row.querySelector<HTMLInputElement>('.admin-row__tpl input')!;
+    const badge = row.querySelector<HTMLElement>('.admin-row__badge')!;
+    row.querySelector<HTMLElement>('.admin-row__vis')!.title = VISIBILITY_HINT;
+    row.querySelector<HTMLElement>('.admin-row__tpl')!.title = TEMPLATE_HINT;
+    const paint = (): void => {
+      vis.checked = p.visibility === 'private';
+      tpl.checked = p.template === true;
+      badge.hidden = p.template !== true;
+    };
+    paint();
+    /**
+     * One switch's change, sent: the row takes the server's answer - who
+     * sees it, whether it is a template, and where its files now are - and
+     * a refusal puts it back.
+     */
+    const send = async (failed: string, change: () => Promise<ProjectSummary>): Promise<void> => {
+      vis.disabled = tpl.disabled = true;
       try {
-        const updated = await api.setVisibility(p.id, vis.checked ? 'private' : 'public');
-        p.visibility = updated.visibility;
+        const updated = await change();
+        if (updated.visibility) p.visibility = updated.visibility;
+        if (typeof updated.template === 'boolean') p.template = updated.template;
+        if (typeof updated.media === 'string') p.media = updated.media;
       } catch (err) {
-        vis.checked = p.visibility === 'private';
-        alert(`Could not change who sees "${p.title || p.id}": ${failureText(err)}`);
+        // Put back before the alert holds the page, not after.
+        paint();
+        alert(`${failed}: ${failureText(err)}`);
       } finally {
-        vis.disabled = false;
+        paint();
+        vis.disabled = tpl.disabled = false;
       }
+    };
+    vis.addEventListener('change', () => {
+      const want = vis.checked ? 'private' : 'public';
+      void send(`Could not change who sees "${p.title || p.id}"`, () => api.setVisibility(p.id, want));
+    });
+    tpl.addEventListener('change', () => {
+      const want = tpl.checked;
+      void send(`Could not change whether "${p.title || p.id}" is a template`, () => api.setTemplate(p.id, want));
     });
 
     const del = row.querySelector<HTMLButtonElement>('.admin-row__delete')!;

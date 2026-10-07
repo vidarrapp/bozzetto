@@ -5,21 +5,23 @@
 // World-scale box after an open, capture's default, the autosave's cadence,
 // the two diagnostic overlays, Save to library signed out and signed in
 // (scenes in Projects, visibility) and with the sign-in expired or no
-// network, the service worker on, and the sliders: typed values in the
-// Render, Tool and Armature panels and on the brush rail, the Render
-// panel's ranges and defaults, and ambient occlusion's. Then the Capture
-// window and where recording is allowed, the panels' sides on the iPad's
-// screens, Mask and Extract in the Model panel, Delete highest on
-// Rebuild's row, ambient occlusion outside sculpt mode, the environment's
-// rescale and its plate, the key light on L in Armature mode, and an
-// update to the installed app between two builds, said on screen. Each
-// gets (page, base, t) - a fresh page, the server's origin, and the check
-// collector.
+// network, the service worker on, the templates (copies from the gallery,
+// the Template switch, and what the built worker and policy say of their
+// files), and the sliders: typed values in the Render, Tool and Armature
+// panels and on the brush rail, the Render panel's ranges and defaults,
+// and ambient occlusion's. Then the Capture window and where recording is
+// allowed, the panels' sides on the iPad's screens, Mask and Extract in
+// the Model panel, Delete highest on Rebuild's row, ambient occlusion
+// outside sculpt mode, the environment's rescale and its plate, the key
+// light on L in Armature mode, and an update to the installed app between
+// two builds, said on screen. Each gets (page, base, t) - a fresh page,
+// the server's origin, and the check collector.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { openArmature, openSculpt, serve } from './lib.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -915,6 +917,53 @@ async function twoBuilds(oldSha, newSha) {
   }
 }
 
+/**
+ * The routes a built worker registers, in its order, read by running its
+ * sw.js against a stand-in for Workbox that writes each one down: no
+ * browser, so any address on any origin can be put to them. `routeFor`
+ * says which route a GET for an address takes - the first whose matcher
+ * takes it, as Workbox's router has it, a pattern matching an address on
+ * another origin only from its start - as the handler's name and cache,
+ * or null for none, which leaves the request to the network untouched.
+ */
+function workerRoutes(dir, origin = 'http://127.0.0.1:8788') {
+  const routes = [];
+  const strategy = (name) =>
+    class {
+      constructor(o = {}) {
+        this.name = name;
+        this.cacheName = o.cacheName ?? null;
+      }
+    };
+  const known = {
+    NavigationRoute: class {
+      navigation = true;
+    },
+    NetworkOnly: strategy('NetworkOnly'),
+    NetworkFirst: strategy('NetworkFirst'),
+    CacheFirst: strategy('CacheFirst'),
+    StaleWhileRevalidate: strategy('StaleWhileRevalidate'),
+    registerRoute: (match, handler, method = 'GET') => void routes.push({ match, handler, method }),
+  };
+  // Anything else the worker calls (the precache, its plugins) does nothing here.
+  const workbox = new Proxy(known, { get: (o, k) => (k in o ? o[k] : function () {}) });
+  const self = { define: true, location: new URL('/sw.js', origin), addEventListener() {} };
+  vm.runInNewContext(readFileSync(join(dir, 'sw.js'), 'utf8'), { self, define: (_deps, factory) => factory(workbox) });
+  const isPattern = (m) => Object.prototype.toString.call(m) === '[object RegExp]';
+  const routeFor = (address) => {
+    const url = new URL(address, origin);
+    const sameOrigin = url.origin === origin;
+    for (const { match, handler, method } of routes) {
+      if (method !== 'GET' || match?.navigation) continue;
+      const found = isPattern(match) ? match.exec(url.href) : null;
+      const hit = isPattern(match) ? !!found && (sameOrigin || found.index === 0) : !!match({ url, sameOrigin, request: { url: url.href, mode: 'cors' } });
+      if (hit) return { handler: handler.name, cache: handler.cacheName };
+    }
+    return null;
+  };
+  return { count: routes.length, routeFor };
+}
+
 /** A build's main script, as its index.html names it: which build a page runs. */
 const mainScript = (dir) => readFileSync(join(dir, 'index.html'), 'utf8').match(/src="(\/assets\/main-[^"]+\.js)"/)?.[1] ?? null;
 
@@ -1119,29 +1168,64 @@ export const bootState = (page) =>
 const ACCESS_LOGIN = 'https://example.cloudflareaccess.com/cdn-cgi/access/login/127.0.0.1?kid=test&redirect_url=%2Fadmin%2Fapi%2Fwhoami';
 
 /**
- * A stand-in for the Functions, enough for the owner's side of the library:
- * the lists and manifests, create, update, delete, a scene's upload in
- * parts, frames and thumbnails, and both media routes - the open one
- * refusing private projects, as the real one does. Every call is kept for
- * the checks; `offline` makes every one of them fail as a dropped network
+ * The files host the test build's worker knows (vite.config.ts
+ * TEST_MEDIA_ORIGIN), standing in for files.vidarrapp.se: where the fake
+ * names a template's files when told to, as the server does once it has
+ * MEDIA_ORIGIN. `.test` never resolves, so only a route answers there.
+ */
+export const FILES = 'https://files.bozzetto.test';
+
+/**
+ * A stand-in for the Functions, enough for the owner's side of the library
+ * and the templates: the lists and manifests, create, update, delete, the
+ * Template switch, a scene's upload in parts, frames and thumbnails, and
+ * the file routes - the open ones (/media and /m/ here, /m/ on the files
+ * host) serving listed templates only, as the real ones do, and the gated
+ * one anything. As on the server since Batch 1, a public project is a
+ * template, and only a listed template is anyone's to read. Each summary
+ * and manifest names its files' base (`media`) as the server does: a
+ * listed template's `/media/<id>`, or `<origin>/m/<id>` when
+ * `opts.mediaOrigin` (or a project's own `mediaOrigin`) names a files
+ * host, and the gated mount for the rest. Every call is kept for the
+ * checks; `offline` makes every one of them fail as a dropped network
  * would, and `expired` answers the owner's routes as Access does once the
- * session has run out.
+ * session has run out, which is also how it answers a guest who never
+ * signed in.
  */
 export function fakeProjects() {
   const projects = new Map();
   const uploads = new Map();
   const calls = [];
-  const opts = { partSize: 256 * 1024, partDelay: 0, offline: false, expired: false };
+  const opts = { partSize: 256 * 1024, partDelay: 0, offline: false, expired: false, mediaOrigin: '' };
   let made = 0;
   let clock = 1_790_000_000_000;
   const tick = () => (clock += 1000);
-  const summary = (p) => ({ id: p.id, title: p.title, mode: p.mode, fps: 4, updated_at: p.updated_at, frameCount: p.frameCount, visibility: p.visibility, scene: p.scene });
-  const media = (p) => `${p.visibility === 'private' ? '/admin/api/media' : '/media'}/${p.id}`;
+  const listed = (p) => p.template && p.visibility === 'public';
+  const media = (p) => {
+    if (!listed(p)) return `/admin/api/media/${p.id}`;
+    const host = p.mediaOrigin ?? opts.mediaOrigin;
+    return host ? `${host}/m/${p.id}` : `/media/${p.id}`;
+  };
+  const summary = (p) => ({
+    id: p.id,
+    title: p.title,
+    mode: p.mode,
+    fps: 4,
+    updated_at: p.updated_at,
+    frameCount: p.frameCount,
+    visibility: p.visibility,
+    scene: p.scene,
+    template: p.template,
+    media: media(p),
+  });
   const manifest = (p) => ({
     ...summary(p),
     ...(p.mode === 'scene' ? { scene: p.scene ? { ...p.scene, file: `${media(p)}/scene.bozz?v=${p.updated_at}` } : null } : {}),
   });
-  const add = (p) => projects.set(p.id, { frameCount: 0, scene: null, file: null, thumb: null, updated_at: tick(), ...p });
+  // Made public, a project is a template unless said otherwise, as the
+  // migration made every public one and as owner tools make them.
+  const add = (p) =>
+    projects.set(p.id, { frameCount: 0, scene: null, file: null, thumb: null, updated_at: tick(), template: p.visibility === 'public', ...p });
   const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   const body = (raw) => JSON.parse(raw.toString());
 
@@ -1151,8 +1235,11 @@ export function fakeProjects() {
     const { pathname: path } = u;
     const method = req.method();
     const raw = req.postDataBuffer() ?? Buffer.alloc(0);
-    calls.push({ method, path, search: u.search, type: req.headers()['content-type'] ?? '', body: raw });
+    calls.push({ method, origin: u.origin, path, search: u.search, type: req.headers()['content-type'] ?? '', body: raw });
     if (opts.offline) return route.abort('internetdisconnected');
+    // The files host answers its /m/ and nothing else (functions/_middleware.ts).
+    const filesHost = u.origin === FILES;
+    if (filesHost && !path.startsWith('/m/')) return route.fulfill({ status: 404, body: 'Not found' });
     // An expired session, as Cloudflare Access answers one: every owner
     // route redirects to its login page, on another origin.
     if (opts.expired && path.startsWith('/admin/')) return route.fulfill({ status: 302, headers: { location: ACCESS_LOGIN } });
@@ -1176,8 +1263,24 @@ export function fakeProjects() {
       }
       const patch = body(raw);
       if (typeof patch.title === 'string') p.title = patch.title;
-      if (patch.visibility) p.visibility = patch.visibility;
+      if (patch.visibility) {
+        p.visibility = patch.visibility;
+        // Made public, a project becomes a template; made private, a template stays one.
+        if (p.visibility === 'public') p.template = true;
+      }
       if (Array.isArray(patch.frames)) p.frameCount = patch.frames.length;
+      p.updated_at = tick();
+      return json(route, 200, summary(p));
+    }
+    // The Template switch (docs/accounts.md §5): on, nobody's, listed or not
+    // as it was; off, the owner's again, and private.
+    if ((m = path.match(/^\/admin\/api\/projects\/([^/]+)\/template$/)) && method === 'POST') {
+      const p = project(m[1]);
+      if (!p) return json(route, 404, { error: 'Not found' });
+      const b = body(raw);
+      if (typeof b.template !== 'boolean') return json(route, 400, { error: 'template: expected true or false' });
+      p.template = b.template;
+      if (!b.template) p.visibility = 'private';
       p.updated_at = tick();
       return json(route, 200, summary(p));
     }
@@ -1216,20 +1319,25 @@ export function fakeProjects() {
       p.updated_at = tick();
       return json(route, 201, m[2] === 'thumb' ? { ok: true } : { key: 'k', index: 0, size: raw.length });
     }
-    if ((m = path.match(/^\/(admin\/api\/)?media\/([^/]+)\/(.+)$/))) {
+    // The files: the gated mount serves anything owner tools reach, the
+    // open routes a listed template's only. The files host answers this
+    // site's pages (CORS), as the real one answers APP_ORIGIN.
+    if ((m = path.match(/^\/(admin\/api\/media|media|m)\/([^/]+)\/(.+)$/))) {
       const p = project(m[2]);
       const file = m[3] === 'scene.bozz' ? p?.file : m[3] === 'thumb.jpg' ? p?.thumb : null;
-      if (!p || !file || (!m[1] && p.visibility === 'private')) return route.fulfill({ status: 404, body: 'Not found' });
-      return route.fulfill({ status: 200, contentType: m[3] === 'thumb.jpg' ? 'image/jpeg' : 'application/x-bozzetto', body: file });
+      const open = m[1] !== 'admin/api/media';
+      if (!p || !file || (open && !listed(p))) return route.fulfill({ status: 404, body: 'Not found' });
+      const cors = filesHost ? { 'access-control-allow-origin': req.headers().origin ?? '*' } : {};
+      return route.fulfill({ status: 200, contentType: m[3] === 'thumb.jpg' ? 'image/jpeg' : 'application/x-bozzetto', headers: cors, body: file });
     }
-    if (path === '/api/projects') return json(route, 200, [...projects.values()].filter((p) => p.visibility === 'public').map(summary));
+    if (path === '/api/projects') return json(route, 200, [...projects.values()].filter(listed).map(summary));
     if ((m = path.match(/^\/api\/projects\/([^/]+)$/))) {
       const p = project(m[1]);
-      return p && p.visibility === 'public' ? json(route, 200, manifest(p)) : json(route, 404, { error: 'Not found' });
+      return p && listed(p) ? json(route, 200, manifest(p)) : json(route, 404, { error: 'Not found' });
     }
     return json(route, 404, { error: 'Not found' });
   }
-  const serves = (url) => /^\/(admin\/api\/|api\/projects|media\/)/.test(url.pathname);
+  const serves = (url) => /^\/(admin\/api\/|api\/projects|media\/|m\/)/.test(url.pathname);
   return { projects, calls, opts, add, handle, serves, body };
 }
 
@@ -3715,6 +3823,7 @@ export const suites = {
   // showing its progress, keeps a device copy under the project's id, and
   // remembers the project through a reload, so the next save updates it in
   // place. The gallery shows the project with its Private badge and switch,
+  // which makes it public and so a template, as the server answers;
   // offers Upload to Projects on a scene kept only on the device, and opens
   // ?project= from the server - or, offline, from the device copy. The
   // Projects page and the publish forms carry visibility too.
@@ -3872,14 +3981,21 @@ export const suites = {
       t.ok(!!g.img && g.img.src.startsWith(`/admin/api/media/${id}/thumb.jpg?v=`) && g.img.width > 0, `its picture comes through the gated media route (${g.img?.src})`);
       t.ok(g.device.length === 1 && g.device[0].note === DEVICE_NOTE && g.device[0].upload, `the scene kept on the device alone is labelled, with Upload to Projects; the project's own copy has no card of its own (${JSON.stringify(g.device)})`);
       t.eq(g.progress, DEVICE_NOTE, 'the In progress card carries the label for the owner too');
-      t.ok(g.privReel === 'Private' && g.pubReel === '' && g.model, `published work shows with its visibility: private "${g.privReel}", public "${g.pubReel}"`);
+      t.ok(g.privReel === 'Private' && g.pubReel === 'Template' && g.model, `published work shows where it stands: private "${g.privReel}", public and so a template "${g.pubReel}"`);
 
       mark = fake.calls.length;
       await owner.click(`.card--scene[data-project="${id}"] .card__vis input`);
-      await owner.waitForFunction((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__badges`)?.textContent === 'Scene', id, { timeout: 10_000 }).catch(() => {});
+      await owner.waitForFunction((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__badges`)?.textContent === 'SceneTemplate', id, { timeout: 10_000 }).catch(() => {});
       const put = fake.calls.slice(mark).find((c) => c.method === 'PUT' && c.path === `/admin/api/projects/${id}`);
       t.ok(!!put && fake.body(put.body).visibility === 'public' && fake.projects.get(id).visibility === 'public', `the switch makes the scene public through the update route (${put ? put.body : 'no call'})`);
-      t.eq(await owner.evaluate((sid) => document.querySelector(`.card--scene[data-project="${sid}"] .card__badges`).textContent, id), 'Scene', 'and the Private badge goes');
+      const madePublic = await owner.evaluate((sid) => {
+        const c = document.querySelector(`.card--scene[data-project="${sid}"]`);
+        return { badges: [...c.querySelectorAll('.card__badge')].map((b) => b.textContent).join(), href: c.querySelector('.card__thumb').getAttribute('href') };
+      }, id);
+      t.ok(
+        fake.projects.get(id).template === true && madePublic.badges === 'Scene,Template' && madePublic.href === `/?sculpt=1&template=${id}`,
+        `public, the scene is a template, as the server answered: Private goes, Template comes, and the card opens a copy (${JSON.stringify(madePublic)})`,
+      );
 
       mark = fake.calls.length;
       await owner.click('.card--library:not(.card--scene):not(.card--owned) .card__upload');
@@ -3908,7 +4024,9 @@ export const suites = {
       const rowPut = fake.calls.slice(mark).find((c) => c.method === 'PUT' && c.path === '/admin/api/projects/priv-reel');
       t.ok(!!rowPut && fake.body(rowPut.body).visibility === 'public' && fake.projects.get('priv-reel').visibility === 'public', 'a row\'s switch sets its visibility');
 
-      // Opening by ?project=: fetched through the media route, linked.
+      // Opening by ?project=, as Open in Sculpt on the Projects page does:
+      // the owner's manifest, the file under the base it names (the open
+      // /media now the scene is a template), and linked to the project.
       mark = fake.calls.length;
       asked.length = 0;
       await boot(`&project=${id}`);
@@ -3916,7 +4034,7 @@ export const suites = {
       t.eq(asked.join(' | '), `Open "${fake.projects.get(id).title}"? The work in progress on this device will be replaced.`, 'followed by its address, it asks first: there is work here');
       const got = fake.calls.slice(mark).filter((c) => c.method === 'GET' && c.path.endsWith('/scene.bozz')).map((c) => c.path);
       t.ok(opened.objects === 3 && opened.link?.id === id && !/project=/.test(opened.search), `?project= opens the scene, linked to its project, and leaves the address (${opened.objects} objects, ${opened.search})`);
-      t.ok(got.length === 1 && got[0] === `/media/${id}/scene.bozz`, `the file came from the media route (${got.join(', ')})`);
+      t.ok(got.length === 1 && got[0] === `/media/${id}/scene.bozz`, `the file came from the open route under its base (${got.join(', ')})`);
       // Owner call: the scene is what was asked for, so no notice, and no
       // Start fresh offering to throw it away.
       t.ok(opened.toast === '' && !opened.fresh, `and opens without a notice${opened.toast ? ` (said "${opened.toast}")` : ''}`);
@@ -4148,6 +4266,393 @@ export const suites = {
       if (flagWas === undefined) delete process.env[flag];
       else process.env[flag] = flagWas;
     }
+  },
+
+  // Templates (docs/accounts.md §5): what the public list now holds. Each
+  // card is badged Template. A model or a timelapse plays in the viewer;
+  // a scene opens in Sculpt as a copy belonging to no project, kept on no
+  // shelf, so Save to library downloads it for a guest and makes the
+  // owner a new project, never saving over the template. The card asks
+  // before the copy replaces work here, and Sculpt does not ask again;
+  // followed by its address, Sculpt asks. A template named on the files
+  // host has its picture asked for with CORS and its file fetched from
+  // there. The owner sees the templates beside their own work, those off
+  // the gallery too, whose copy comes through the owner's routes; the
+  // Projects page has a Template switch beside Private, each showing what
+  // the server answered, and Open in Sculpt there opens the template
+  // itself, as before. Then the build: the worker sends the sign-in
+  // ceremonies, the account and a member's files to the network every
+  // time, keeps the files host's thumbnails as it keeps this site's, and
+  // the policy names the files hosts.
+  async templates(page, base, t) {
+    const browser = page.context().browser();
+    const viewport = { width: 1280, height: 800 };
+    // A scene to serve, three objects packed as Sculpt packs one, and a picture.
+    await openSculpt(page, base, '&q=low');
+    const made = await page.evaluate(async () => {
+      const s = window.__sculpt;
+      s.session.addPrimitive('capsule');
+      s.session.addPrimitive('torus');
+      const u8 = new Uint8Array(await s.file.pack());
+      let bin = '';
+      for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+      const c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 10;
+      const g = c.getContext('2d');
+      g.fillStyle = '#c8a27a';
+      g.fillRect(0, 0, 8, 10);
+      return {
+        bozz: btoa(bin),
+        jpeg: c.toDataURL('image/jpeg').split(',')[1],
+        objects: s.session.getMeshes().length,
+        tris: s.session.getMeshes().reduce((n, m) => n + m.getNbTriangles(), 0),
+      };
+    });
+    const bozz = Buffer.from(made.bozz, 'base64');
+    const jpeg = Buffer.from(made.jpeg, 'base64');
+    const fake = fakeProjects();
+    const sceneProject = (p) => fake.add({ mode: 'scene', file: bozz, thumb: jpeg, scene: { objects: made.objects, tris: made.tris, bytes: bozz.length }, ...p });
+    sceneProject({ id: 'tpl-scene', title: 'Clay study', visibility: 'public' });
+    sceneProject({ id: 'tpl-files', title: 'Hand study', visibility: 'public', mediaOrigin: FILES });
+    sceneProject({ id: 'tpl-hidden', title: 'Old study', visibility: 'private', template: true });
+    sceneProject({ id: 'own-scene', title: 'My scene', visibility: 'private' });
+    fake.add({ id: 'tpl-reel', title: 'Bust reel', mode: 'timelapse', visibility: 'public', frameCount: 3, thumb: jpeg });
+    fake.add({ id: 'tpl-model', title: 'Torso', mode: 'model', visibility: 'public', frameCount: 1, thumb: jpeg });
+
+    /** Every GET since `from`, the files host's with its origin. */
+    const fetched = (from) => fake.calls.slice(from).filter((c) => c.method === 'GET').map((c) => `${c.origin === FILES ? FILES : ''}${c.path}`);
+    /** The gallery's server cards: the scenes, and what plays in the viewer. */
+    const cardsOf = (pg) =>
+      pg.evaluate(() => {
+        const badges = (el) => [...el.querySelectorAll('.card__badge')].map((b) => b.textContent).join();
+        const picture = (el) => {
+          const img = el.querySelector('.card__img');
+          return img ? { src: img.getAttribute('src'), cors: img.getAttribute('crossorigin'), width: img.naturalWidth } : null;
+        };
+        const vis = (el) => el.querySelector('.card__vis')?.title ?? null;
+        return {
+          scenes: Object.fromEntries(
+            [...document.querySelectorAll('.card--scene')].map((c) => [
+              c.dataset.project,
+              { badges: badges(c), href: c.querySelector('.card__thumb').getAttribute('href'), img: picture(c), vis: vis(c) },
+            ]),
+          ),
+          played: Object.fromEntries(
+            [...document.querySelectorAll('a.card[href^="?tl="], .card--owned')].map((c) => [
+              c.dataset.project ?? new URLSearchParams(c.getAttribute('href')).get('tl'),
+              { badges: badges(c), kind: c.querySelector('.card__meta .badge')?.textContent ?? null, vis: vis(c) },
+            ]),
+          ),
+        };
+      });
+    const contexts = [];
+    try {
+      // --- a guest: Access answers every owner route with its login ---------
+      const guestCtx = await browser.newContext({ viewport, serviceWorkers: 'block' });
+      contexts.push(guestCtx);
+      const asked = [];
+      await guestCtx.route(fake.serves, (route) => {
+        const u = new URL(route.request().url());
+        if (!u.pathname.startsWith('/admin/')) return fake.handle(route);
+        if (u.pathname !== '/admin/api/whoami') asked.push(`${route.request().method()} ${u.pathname}`);
+        return route.fulfill({ status: 302, headers: { location: ACCESS_LOGIN } });
+      });
+      const guest = await guestCtx.newPage();
+      const errors = [];
+      guest.on('pageerror', (e) => errors.push(String(e)));
+      const dialogs = [];
+      let answer = true;
+      guest.on('dialog', (d) => {
+        dialogs.push(d.message());
+        void (answer ? d.accept() : d.dismiss());
+      });
+      await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await guest.waitForSelector('.card--scene[data-project="tpl-files"]', { timeout: 30_000 });
+      await guest.waitForSelector('a.card[href="?tl=tpl-model"]', { timeout: 30_000 });
+      await guest
+        .waitForFunction(() => document.querySelector('.card--scene[data-project="tpl-files"] .card__img')?.naturalWidth > 0, null, { timeout: 15_000 })
+        .catch(() => {});
+      const g = await cardsOf(guest);
+      const tplScene = g.scenes['tpl-scene'];
+      const tplFiles = g.scenes['tpl-files'];
+      t.eq(Object.keys(g.scenes).sort().join(), 'tpl-files,tpl-scene', "a guest's gallery lists the scene templates, and nothing private or off the gallery");
+      t.ok(
+        tplScene?.badges === 'Scene,Template' && tplScene.href === '/?sculpt=1&template=tpl-scene' && !tplScene.vis,
+        `a scene template is badged Template and opens in Sculpt as a copy (${JSON.stringify(tplScene)})`,
+      );
+      t.ok(
+        g.played['tpl-reel']?.badges === 'Template' && g.played['tpl-reel'].kind === 'timelapse' && g.played['tpl-model']?.badges === 'Template' && g.played['tpl-model'].kind === 'model',
+        `the timelapse and the model templates play in the viewer, badged Template too (${JSON.stringify(g.played)})`,
+      );
+      t.ok(tplScene?.img?.src.startsWith('/media/tpl-scene/thumb.jpg?v=') && tplScene.img.cors === null, `a template's picture comes off this site's open route, under its base (${tplScene?.img?.src})`);
+      t.ok(
+        tplFiles?.img?.src.startsWith(`${FILES}/m/tpl-files/thumb.jpg?v=`) && tplFiles.img.cors === 'anonymous' && tplFiles.img.width > 0,
+        `named on the files host, the picture is asked for there, with CORS, and shows (${JSON.stringify(tplFiles?.img)})`,
+      );
+
+      // Opened from its card with nothing here to lose: a copy, asked nothing.
+      let mark = fake.calls.length;
+      dialogs.length = 0;
+      await guest.click('.card--scene[data-project="tpl-scene"] .card__thumb');
+      await guest.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+      await guest.waitForTimeout(250);
+      let st = await bootState(guest);
+      t.ok(
+        st.objects === made.objects && st.link === null && !/template=/.test(st.search) && !dialogs.length,
+        `a guest's tap on a scene template opens a copy, linked to no project, and asks nothing with no work here (${st.objects} objects, link ${JSON.stringify(st.link)}, "${st.search}")`,
+      );
+      t.ok(
+        fetched(mark).includes('/api/projects/tpl-scene') && fetched(mark).includes('/media/tpl-scene/scene.bozz'),
+        `from the public manifest and the file under its base (${fetched(mark).join(', ')})`,
+      );
+      t.ok(!st.toast && !st.failed.length, `with no notice${st.toast ? ` (said "${st.toast}")` : ''}`);
+      t.eq(JSON.stringify(await shelf(guest)), '[]', 'nothing of it is kept on the device shelf');
+      t.eq(await guest.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and untouched it is no work to lose: the template is where it was');
+      const guestLib = (await fileItems(guest)).find((i) => i.label === 'Save to library');
+      const [download] = await Promise.all([guest.waitForEvent('download', { timeout: 30_000 }), chooseFile(guest, 'Save to library')]);
+      const read = await readBozz(guest, readFileSync(await download.path()));
+      t.ok(
+        /\.bozz file/.test(guestLib?.hint ?? '') && /^sculpt-\d{8}-\d{4}\.bozz$/.test(download.suggestedFilename()) && read.objects === made.objects,
+        `Save to library downloads the copy for a guest, as for any new scene (${download.suggestedFilename()}, ${read.objects} objects)`,
+      );
+
+      // With work here, the card asks, and Sculpt does not ask again.
+      await guest.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+      await guest.evaluate(() => window.__sculpt.persist.flush());
+      await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await guest.waitForSelector('.card--scene[data-project="tpl-files"] .card__thumb', { timeout: 30_000 });
+      mark = fake.calls.length;
+      dialogs.length = 0;
+      await guest.click('.card--scene[data-project="tpl-files"] .card__thumb');
+      await guest.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+      await guest.waitForTimeout(250);
+      st = await bootState(guest);
+      t.eq(dialogs.join(' | '), 'Open a copy of "Hand study"? Your work in progress will be replaced.', 'with work here, the card asks first, and Sculpt does not ask again');
+      t.ok(st.objects === made.objects && st.link === null, `the copy opens (${st.objects} objects)`);
+      t.ok(fetched(mark).includes(`${FILES}/m/tpl-files/scene.bozz`), `a template named on the files host is fetched from there (${fetched(mark).join(', ')})`);
+
+      // Followed by its address, Sculpt asks: No keeps the work, Yes opens the copy.
+      await guest.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+      await guest.evaluate(() => window.__sculpt.persist.flush());
+      answer = false;
+      dialogs.length = 0;
+      await openSculpt(guest, base, '&q=low&template=tpl-scene');
+      st = await bootState(guest);
+      t.eq(dialogs.join(' | '), 'Open a copy of "Clay study"? The work in progress on this device will be replaced.', 'followed by its address, Sculpt asks before the copy replaces the work here');
+      t.ok(st.objects === made.objects + 1 && !/template=/.test(st.search), `No: the work in progress boots instead, and the link leaves the address (${st.objects} objects, "${st.search}")`);
+      answer = true;
+      dialogs.length = 0;
+      await openSculpt(guest, base, '&q=low&template=tpl-scene');
+      st = await bootState(guest);
+      t.ok(dialogs.length === 1 && st.objects === made.objects && st.link === null, `Yes: the copy opens (${st.objects} objects)`);
+      // In the autosave now, rather than after its grace, so the boots below come back to it.
+      await guest.evaluate(() => window.__sculpt.persist.flush());
+
+      // Not an id, and not a guest's to copy.
+      dialogs.length = 0;
+      await openSculpt(guest, base, '&q=low&template=..%2Fx');
+      st = await bootState(guest);
+      t.ok(!dialogs.length && !/template=/.test(st.search) && st.objects === made.objects && !st.failed.length, `template=../x opens nothing, asks nothing, and leaves the address (${st.objects} objects)`);
+      await openSculpt(guest, base, '&q=low&template=tpl-hidden');
+      st = await bootState(guest);
+      t.ok(
+        st.failed.includes('Could not open that template: Not found. It may have been deleted, or taken off the gallery.') && !dialogs.length && st.objects === made.objects,
+        `a template off the gallery opens nothing for a guest, and Sculpt says so (${st.failed.join(' | ')})`,
+      );
+      t.eq(asked.join(', '), '', "a guest's copies ask nothing of the owner's routes but who is signed in");
+      t.ok(!errors.length, `no page errors in the guest's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+
+      // --- the owner --------------------------------------------------------
+      const ownerCtx = await browser.newContext({ viewport, serviceWorkers: 'block' });
+      contexts.push(ownerCtx);
+      // A refusal to answer the next write with, as the Functions word theirs.
+      let refusal = null;
+      await ownerCtx.route(fake.serves, (route) => {
+        if (!refusal || route.request().method() === 'GET') return fake.handle(route);
+        const { status, error } = refusal;
+        refusal = null;
+        return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error }) });
+      });
+      const owner = await ownerCtx.newPage();
+      const ownerErrors = [];
+      owner.on('pageerror', (e) => ownerErrors.push(String(e)));
+      const ownerDialogs = [];
+      owner.on('dialog', (d) => {
+        ownerDialogs.push(d.message());
+        void d.accept();
+      });
+      await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await owner.waitForSelector('.card--scene[data-project="own-scene"]', { timeout: 30_000 });
+      await owner.waitForSelector('.card--owned[data-project="tpl-model"]', { timeout: 30_000 });
+      const o = await cardsOf(owner);
+      t.ok(
+        o.scenes['tpl-scene']?.badges === 'Scene,Template' && o.scenes['tpl-scene'].href === '/?sculpt=1&template=tpl-scene' &&
+          o.scenes['tpl-hidden']?.badges === 'Scene,Template,Private' && o.scenes['tpl-hidden'].href === '/?sculpt=1&template=tpl-hidden' &&
+          o.scenes['own-scene']?.badges === 'Scene,Private' && o.scenes['own-scene'].href === '/?sculpt=1&project=own-scene',
+        `the owner's gallery has the templates, those off the gallery too, opening as copies, and the owner's own scene opening as itself (${JSON.stringify(o.scenes)})`,
+      );
+      t.ok(o.played['tpl-reel']?.badges === 'Template' && o.played['tpl-model']?.badges === 'Template', `the published templates are badged Template for the owner too (${JSON.stringify(o.played)})`);
+      t.ok(
+        [...Object.values(o.scenes), ...Object.values(o.played)].every((c) => /Public: a template/.test(c.vis ?? '')),
+        `each Private switch says that Public makes a template (${o.scenes['own-scene']?.vis})`,
+      );
+
+      // The owner's copy of a template, saved to the library: a new project.
+      mark = fake.calls.length;
+      await owner.click('.card--scene[data-project="tpl-scene"] .card__thumb');
+      await owner.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+      await owner.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 });
+      st = await bootState(owner);
+      t.ok(st.objects === made.objects && st.link === null && !ownerDialogs.length, `the owner's tap on a template opens a copy too, linked to nothing (${st.objects} objects, link ${JSON.stringify(st.link)})`);
+      t.ok(!fake.calls.slice(mark).some((c) => c.path.startsWith('/admin/api/projects/tpl-scene')), 'through the public routes, as anyone gets one');
+      t.eq(JSON.stringify(await shelf(owner)), '[]', 'and with no copy on the device shelf');
+      const ownerLib = (await fileItems(owner)).find((i) => i.label === 'Save to library');
+      t.eq(ownerLib?.hint, 'Uploads to Projects, as a private scene', 'Save to library offers a new private scene, as for any new one');
+      mark = fake.calls.length;
+      await chooseFile(owner, 'Save to library');
+      const end = await savedToast(owner);
+      const creates = fake.calls.slice(mark).filter((c) => c.method === 'POST' && c.path === '/admin/api/projects').map((c) => fake.body(c.body));
+      const sentToTemplate = fake.calls.slice(mark).filter((c) => c.method !== 'GET' && c.path.startsWith('/admin/api/projects/tpl-scene'));
+      const link = (await bootState(owner)).link;
+      t.ok(
+        end.state === 'done' && creates.length === 1 && creates[0].mode === 'scene' && !sentToTemplate.length,
+        `it makes the owner a new project, and nothing is sent to the template ("${end.text}")`,
+      );
+      t.ok(
+        !!link && link.id !== 'tpl-scene' && fake.projects.get(link.id)?.scene?.objects === made.objects && fake.projects.get('tpl-scene').file.equals(bozz),
+        `the copy now belongs to ${link?.id}, and the template is as it was`,
+      );
+
+      // A template off the gallery: its copy comes through the owner's routes.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      mark = fake.calls.length;
+      ownerDialogs.length = 0;
+      await openSculpt(owner, base, '&q=low&template=tpl-hidden');
+      st = await bootState(owner);
+      t.ok(
+        st.objects === made.objects && st.link === null && ownerDialogs.join(' | ') === 'Open a copy of "Old study"? The work in progress on this device will be replaced.',
+        `a template off the gallery opens as a copy for the owner, asked first (${ownerDialogs.join(' | ')})`,
+      );
+      t.ok(
+        fetched(mark).includes('/admin/api/projects/tpl-hidden') && fetched(mark).includes('/admin/api/media/tpl-hidden/scene.bozz'),
+        `through the owner's routes, the public one having said not found (${fetched(mark).join(', ')})`,
+      );
+      // The owner's own project is not a template, whoever sends its id there.
+      await owner.evaluate(() => window.__sculpt.persist.flush());
+      ownerDialogs.length = 0;
+      await openSculpt(owner, base, '&q=low&template=own-scene');
+      st = await bootState(owner);
+      t.ok(
+        st.failed.includes('Could not open that template: Not found. It may have been deleted, or taken off the gallery.') && !ownerDialogs.length && st.objects === made.objects,
+        `the owner's own project is no template to copy by that address (${st.failed.join(' | ')})`,
+      );
+
+      // The Projects page: the Template switch beside Private.
+      await owner.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
+      await owner.waitForSelector('.admin-row[data-project="own-scene"]', { timeout: 30_000 });
+      const rowsOf = () =>
+        owner.evaluate(() =>
+          Object.fromEntries(
+            [...document.querySelectorAll('.admin-row')].map((r) => {
+              const badge = r.querySelector('.admin-row__badge');
+              const img = r.querySelector('.admin-row__img');
+              return [
+                r.dataset.project,
+                {
+                  priv: r.querySelector('.admin-row__vis input').checked,
+                  tpl: r.querySelector('.admin-row__tpl input')?.checked ?? null,
+                  busy: r.querySelector('.admin-row__tpl input')?.disabled ?? null,
+                  badge: !!badge && !badge.hidden,
+                  open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null,
+                  img: img ? { src: img.getAttribute('src'), cors: img.getAttribute('crossorigin') } : null,
+                  hint: r.querySelector('.admin-row__tpl')?.title ?? '',
+                },
+              ];
+            }),
+          ),
+        );
+      let rows = await rowsOf();
+      t.ok(
+        rows['tpl-scene']?.tpl === true && rows['tpl-scene'].badge && rows['tpl-scene'].priv === false &&
+          rows['tpl-hidden']?.tpl === true && rows['tpl-hidden'].priv === true &&
+          rows['own-scene']?.tpl === false && !rows['own-scene'].badge && rows[link?.id]?.tpl === false,
+        `each row has a Template switch beside Private, and templates are badged (${JSON.stringify(rows)})`,
+      );
+      t.ok(/template/i.test(rows['own-scene']?.hint ?? ''), `the switch says what a template is ("${rows['own-scene']?.hint}")`);
+      t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Open in Sculpt opens the template itself, through the owner\'s routes, as before');
+      t.ok(
+        rows['tpl-files']?.img?.src.startsWith(`${FILES}/m/tpl-files/thumb.jpg?v=`) && rows['tpl-files'].img.cors === 'anonymous',
+        `a picture on the files host is asked for with CORS here too (${JSON.stringify(rows['tpl-files']?.img)})`,
+      );
+      /** Tap a row's switch, and wait for the server's answer to land. */
+      const flip = async (id, which) => {
+        const from = fake.calls.length;
+        await owner.click(`.admin-row[data-project="${id}"] .admin-row__${which} input`);
+        for (let i = 0; i < 100 && fake.calls.length === from; i++) await owner.waitForTimeout(50);
+        await owner.waitForFunction((pid) => !document.querySelector(`.admin-row[data-project="${pid}"] .admin-row__tpl input`).disabled, id, { timeout: 10_000 }).catch(() => {});
+        return fake.calls.slice(from);
+      };
+      let sent = await flip('own-scene', 'tpl');
+      rows = await rowsOf();
+      let post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/own-scene/template');
+      t.ok(
+        !!post && fake.body(post.body).template === true && fake.projects.get('own-scene').template === true && rows['own-scene'].tpl && rows['own-scene'].badge && rows['own-scene'].priv,
+        `the Template switch makes the owner's project a template through its own route; private still, it is off the gallery (${post ? post.body : 'no call'})`,
+      );
+      sent = await flip('tpl-reel', 'tpl');
+      rows = await rowsOf();
+      post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/tpl-reel/template');
+      t.ok(
+        !!post && fake.body(post.body).template === false && rows['tpl-reel'].tpl === false && !rows['tpl-reel'].badge && rows['tpl-reel'].priv === true,
+        `switched off, the template is the owner's again, and Private follows the server's answer (${JSON.stringify(rows['tpl-reel'])})`,
+      );
+      refusal = { status: 500, error: 'The switch failed' };
+      ownerDialogs.length = 0;
+      await flip('tpl-model', 'tpl');
+      for (let i = 0; i < 40 && !ownerDialogs.length; i++) await owner.waitForTimeout(100);
+      rows = await rowsOf();
+      t.ok(
+        ownerDialogs[0] === 'Could not change whether "Torso" is a template: The switch failed' && rows['tpl-model'].tpl === true && fake.projects.get('tpl-model').template === true,
+        `a refusal says the server's words and puts the switch back (${ownerDialogs.join(' | ')})`,
+      );
+      t.ok(!ownerErrors.length, `no page errors in the owner's context${ownerErrors.length ? `: ${ownerErrors.join(' | ')}` : ''}`);
+    } finally {
+      for (const c of contexts) await c.close();
+    }
+
+    // --- the build ----------------------------------------------------------
+    const dist = resolve('dist');
+    const sw = workerRoutes(dist);
+    const never = ['/api/auth/passkey/options', '/api/auth/email/verify?flow=1', '/api/me/account', '/api/me/account/email', '/api/me/media/p-abc/scene.bozz', '/api/me/media/p-abc/thumb.jpg?v=2'];
+    const notNetworkOnly = never.filter((u) => sw.routeFor(u)?.handler !== 'NetworkOnly');
+    t.ok(!notNetworkOnly.length, `the built worker sends the sign-in ceremonies, the account and a member's files to the network, before any rule that keeps${notNetworkOnly.length ? `: not ${notNetworkOnly.join(', ')}` : ''}`);
+    const thumbs = ['/m/tpl/thumb.jpg?v=1', '/media/tpl/thumb.jpg?v=1', `${FILES}/m/tpl/thumb.jpg?v=1`, `${FILES}/m/tpl/thumb.jpg`];
+    const notThumbs = thumbs.filter((u) => sw.routeFor(u)?.cache !== 'bozzetto-thumbs');
+    t.ok(!notThumbs.length, `it keeps the thumbnails of /media and /m/ here and the files host's /m/${notThumbs.length ? `: not ${notThumbs.join(', ')}` : ''}`);
+    const untouched = [
+      '/admin/api/media/p/thumb.jpg?v=1',
+      '/media/tpl/scene.bozz?v=1',
+      '/m/tpl/scene.bozz?v=1',
+      `${FILES}/m/tpl/scene.bozz?v=1`,
+      `${FILES}/m/tpl/frames/sd/0000.glb?v=1`,
+      `${FILES}/media/tpl/thumb.jpg`,
+      'https://elsewhere.example/m/tpl/thumb.jpg',
+      `https://elsewhere.example/?next=${FILES}/m/tpl/thumb.jpg`,
+    ];
+    const kept = untouched.filter((u) => sw.routeFor(u) !== null);
+    t.ok(!kept.length, `and nothing else of theirs, nor another host's${kept.length ? `: ${kept.map((u) => `${u} (${JSON.stringify(sw.routeFor(u))})`).join(', ')}` : ''}`);
+    const lists = { '/api/projects': 'bozzetto-projects', '/api/projects/tpl': 'bozzetto-projects', '/admin/api/projects': 'bozzetto-owner-projects', '/admin/api/whoami': 'bozzetto-whoami' };
+    const moved = Object.entries(lists).filter(([u, cache]) => sw.routeFor(u)?.cache !== cache);
+    t.ok(!moved.length, `the lists and the sign-in are kept where they were${moved.length ? `: not ${moved.map(([u]) => u).join(', ')}` : ''}`);
+    const policy = readFileSync(join(dist, '_headers'), 'utf8').match(/^\s*Content-Security-Policy-Report-Only:\s*(.+)$/m)?.[1] ?? '';
+    const directive = (name) => policy.split(';').map((d) => d.trim().split(/\s+/)).find(([n]) => n === name)?.slice(1) ?? [];
+    const hosts = ['https://files.vidarrapp.se', 'https://files-staging.vidarrapp.se'];
+    t.ok(
+      hosts.every((h) => directive('connect-src').includes(h) && directive('img-src').includes(h)),
+      `the policy lets pages and the worker fetch from the files hosts and show their pictures (connect-src ${directive('connect-src').join(' ')}; img-src ${directive('img-src').join(' ')})`,
+    );
+    t.ok(!hosts.some((h) => [...directive('media-src'), ...directive('script-src'), ...directive('default-src')].includes(h)), 'and nothing more: media-src, script-src and default-src name neither');
   },
 
   // Typed values on sliders (owner request, after Maya). A double-click

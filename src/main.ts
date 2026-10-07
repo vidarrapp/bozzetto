@@ -146,7 +146,8 @@ async function bootViewer(id: string): Promise<void> {
  * Load a project's manifest. Tries the API first, and falls back to a bundled
  * static timelapse (e.g. `?tl=demo`) when there is no API answering. Frame
  * paths resolve against `manifestUrl`, so API manifests (absolute
- * `/media/...`) and static ones (relative) both work.
+ * `/media/...`, or full addresses on a files host) and static ones
+ * (relative) all work.
  *
  * "No API answering" is not only a 404. A host that serves the app with an
  * SPA fallback answers an unknown /api/ path with 200 and index.html, and
@@ -165,7 +166,7 @@ async function loadProject(
   if (res.ok && !servedHtml && res.bytes) {
     const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
     // Frame paths in an API manifest are root-absolute (/media/...), so they
-    // must resolve against the SERVER, not the app. apiBaseUrl is that
+    // must resolve against the SERVER, not the app. apiManifestUrl is that
     // origin on the desktop and the site's own on the web.
     return { manifest, manifestUrl: await apiManifestUrl(apiPath) };
   }

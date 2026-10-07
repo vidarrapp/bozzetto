@@ -1,13 +1,46 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { rmSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { appVersion, buildCommit, packageVersion } from './scripts/app-version.mjs';
 
 // Served at the site root on Cloudflare Pages, alongside Functions at /api,
-// /admin/api and /media — so absolute asset URLs (base '/') are correct, and
-// nested entries like /admin resolve their bundles properly.
+// /admin/api, /m and /media — so absolute asset URLs (base '/') are correct,
+// and nested entries like /admin resolve their bundles properly.
 const root = fileURLToPath(new URL('.', import.meta.url));
+
+/**
+ * The files host the test build names, standing in for files.vidarrapp.se,
+ * so the browser suites can serve a template's thumbnail from another
+ * origin and see the worker keep it (tests/e2e). `.test` is never a real
+ * host.
+ */
+const TEST_MEDIA_ORIGIN = 'https://files.bozzetto.test';
+
+/**
+ * The files host's origin, VITE_MEDIA_ORIGIN at build time (docs/accounts.md
+ * §11): where the server names its templates' files once its own
+ * MEDIA_ORIGIN is set, and so a second place the worker keeps their
+ * thumbnails from. Unset, the files are on this site's open routes, and
+ * there is nothing more to match. Anything but an origin fails the build
+ * rather than writing a rule that matches nothing.
+ */
+function mediaOrigin(mode: string): string {
+  const raw = loadEnv(mode, root, 'VITE_').VITE_MEDIA_ORIGIN ?? (mode === 'test' ? TEST_MEDIA_ORIGIN : '');
+  if (!raw) return '';
+  let url: URL | null = null;
+  try {
+    url = new URL(raw);
+  } catch {
+    // reported below
+  }
+  if (!url || !/^https?:$/.test(url.protocol) || raw.replace(/\/$/, '') !== url.origin) {
+    throw new Error(`VITE_MEDIA_ORIGIN must be an origin, such as https://files.vidarrapp.se (got "${raw}")`);
+  }
+  return url.origin;
+}
+
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 /**
  * `--mode desktop` builds for the Electron shell. Four differences, all
@@ -24,6 +57,13 @@ const root = fileURLToPath(new URL('.', import.meta.url));
  */
 export default defineConfig(({ mode }) => {
   const desktop = mode === 'desktop';
+  const media = desktop ? '' : mediaOrigin(mode);
+  // Gallery thumbnails: kept once seen, refreshed behind the cached one.
+  const thumbs = {
+    cacheName: 'bozzetto-thumbs',
+    expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+    cacheableResponse: { statuses: [200] },
+  };
   return {
   base: '/',
   define: {
@@ -157,6 +197,19 @@ export default defineConfig(({ mode }) => {
         navigateFallbackAllowlist: [/^\/(?:\?.*)?$/],
         runtimeCaching: [
           {
+            // Never kept, online or off (docs/accounts.md §7): the sign-in
+            // ceremonies (/api/auth/*), the account with its email address
+            // and sessions (/api/me/account), and a member's private files
+            // (/api/me/media/*). No rule below matches them, and this one
+            // comes first, as the first rule that matches is the one used,
+            // so none added later can: NetworkOnly goes to the network and
+            // stores nothing.
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin &&
+              /^\/api\/(?:auth\/|me\/account(?:\/|$)|me\/media\/)/.test(url.pathname),
+            handler: 'NetworkOnly',
+          },
+          {
             // The sign-in probe. Everything owner-only (the gallery's
             // Projects chip, publishing) asks /admin/api/whoami at boot, and
             // offline the fetch throws, so the owner's own installed app
@@ -228,21 +281,38 @@ export default defineConfig(({ mode }) => {
           },
           {
             // Gallery card thumbnails, so the cards keep their pictures:
-            // the public media route's, on this site, and only those. The
-            // pattern was /\/media\/.*\/thumb\.jpg/, which also matched the
-            // owner's gated route (/admin/api/media/<id>/thumb.jpg), so a
-            // private project's picture was kept for thirty days whatever
-            // the server's no-store said. A function, so the origin and the
+            // the open routes' on this site, and only those - /media, where
+            // the server names a listed template's files while it has no
+            // files host, and /m/, the files host's own path, which this
+            // site answers too (docs/accounts.md §4). The pattern was
+            // /\/media\/.*\/thumb\.jpg/, which also matched the owner's
+            // gated route (/admin/api/media/<id>/thumb.jpg), so a private
+            // project's picture was kept for thirty days whatever the
+            // server's no-store said. A function, so the origin and the
             // path's start can both be said; the build writes it into the
             // worker as it stands.
-            urlPattern: ({ url }) => url.origin === self.location.origin && /^\/media\/[^/]+\/thumb\.jpg$/.test(url.pathname),
+            urlPattern: ({ url }) => url.origin === self.location.origin && /^\/(?:m|media)\/[^/]+\/thumb\.jpg$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'bozzetto-thumbs',
-              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [200] },
-            },
+            options: thumbs,
           },
+          // And the files host's, when the build names one: the server
+          // names a template's files there once it has MEDIA_ORIGIN. The
+          // cards ask for those with CORS (crossorigin="anonymous"), so
+          // the answer is a 200 the cache can keep, where a plain image
+          // from another origin is opaque. A pattern rather than a
+          // function, so the origin goes into the worker as written (a
+          // function's own text is what the build copies, without this
+          // file's variables); on another origin, Workbox takes a pattern's
+          // match only from the start of the URL.
+          ...(media
+            ? [
+                {
+                  urlPattern: new RegExp(`^${escapeRegExp(media)}/m/[^/?#]+/thumb\\.jpg(?:\\?|$)`),
+                  handler: 'StaleWhileRevalidate' as const,
+                  options: thumbs,
+                },
+              ]
+            : []),
         ],
       },
     }),
