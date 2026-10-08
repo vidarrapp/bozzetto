@@ -126,7 +126,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(weighs('lk-own') === OWN_THUMB.length + OWN_FRAME.length && weighs('lk-own2') === OWN2_FRAME.length, `each claimed project weighs what R2 holds of it, where its row said 1234 and 0 (${weighs('lk-own')}, ${weighs('lk-own2')})`);
   t.ok(cookie?.attrs.samesite === 'Lax' && cookie?.attrs.httponly === true && cookie?.attrs.secure === true && /^bz1_/.test(cookie?.value), 'and signed in, with the session cookie');
   const acc = (await owner.call('GET', '/api/me/account')).json;
-  t.ok(acc?.email === OWNER && acc?.termsVersion === '2026-10' && acc?.sessions?.[0]?.method === 'bootstrap', `under the Access identity's address, the terms accepted, signed in by 'bootstrap' (${acc?.email} ${acc?.sessions?.[0]?.method})`);
+  t.ok(acc?.email === OWNER && acc?.termsVersion === '2026-10-08' && acc?.sessions?.[0]?.method === 'bootstrap', `under the Access identity's address, the terms accepted, signed in by 'bootstrap' (${acc?.email} ${acc?.sessions?.[0]?.method})`);
   r = await owner.call('GET', '/api/dev/principal');
   t.ok(r.json?.principal?.kind === 'user' && r.json?.principal?.recentAuth === true, 'the new session counts as recent authentication, so a passkey can be offered at once');
   const rows = (await on.call('GET', `/api/dev/audit?subject=${made?.id}`)).json?.rows ?? [];

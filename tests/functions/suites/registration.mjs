@@ -188,10 +188,10 @@ export async function run({ checks, on, turnstile, compileShared }) {
   r = await a.call('GET', '/api/me');
   t.ok(r.status === 200 && r.json?.id === user?.id, `GET /api/me knows the new account (${r.status})`);
   const acc = (await a.call('GET', '/api/me/account')).json;
-  t.ok(acc?.email === 'rgnewbie@example.com' && acc?.termsVersion === '2026-10' && acc?.passkeys?.length === 0 && acc?.createdAt === clock.now, `the account: the address, the terms version in force, no passkey yet (${acc?.email} ${acc?.termsVersion})`);
+  t.ok(acc?.email === 'rgnewbie@example.com' && acc?.termsVersion === '2026-10-08' && acc?.passkeys?.length === 0 && acc?.createdAt === clock.now, `the account: the address, the terms version in force, no passkey yet (${acc?.email} ${acc?.termsVersion})`);
   t.ok(acc?.sessions?.length === 1 && acc.sessions[0].method === 'email' && acc.sessions[0].client === 'desktop' && acc.sessions[0].current, `one session, signed in by 'email', the desktop's (${JSON.stringify(acc?.sessions?.[0])})`);
   const stored = await storedUser(on, { id: user?.id });
-  t.ok(stored?.terms_version === '2026-10' && stored?.terms_accepted_at === clock.now && stored?.age_confirmed_at === clock.now && stored?.invite_id === INVITES.two.id, `the row: the terms and the age confirmed as the account was made, and the invite (${stored?.terms_accepted_at === clock.now} ${stored?.invite_id})`);
+  t.ok(stored?.terms_version === '2026-10-08' && stored?.terms_accepted_at === clock.now && stored?.age_confirmed_at === clock.now && stored?.invite_id === INVITES.two.id, `the row: the terms and the age confirmed as the account was made, and the invite (${stored?.terms_accepted_at === clock.now} ${stored?.invite_id})`);
   t.ok(stored?.email === 'rgnewbie@example.com' && stored?.quota_bytes === 262144000 && stored?.bytes_used === 0 && stored?.handle_changed_at === null && /^[A-Za-z0-9_-]{43}$/.test(stored?.webauthn_user_id ?? ''), 'the address lower-cased, the member quota, and a user handle of 32 random bytes for its passkeys');
   const rows = await auditRows(on, user?.id);
   t.ok(rows.length === 1 && rows[0].action === 'user.register' && rows[0].detail.invite === INVITES.two.id && rows[0].detail.method === 'email' && rows[0].detail.client === 'desktop' && rows[0].detail.session === acc?.sessions?.[0]?.id, `audited as user.register (${JSON.stringify(rows[0]?.detail)})`);

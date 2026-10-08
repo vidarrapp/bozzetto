@@ -870,30 +870,54 @@ async function spentInvite(browser, origin, t) {
   }
 }
 
-/** The legal pages: static, on the app's stylesheet, with their sections. */
+/**
+ * The legal pages: static, on the app's stylesheet, with their sections,
+ * the owner's decisions written in, and no placeholder left.
+ */
 async function legalPages(browser, origin, t) {
   const f = await browserFor(browser, origin, { ip: '203.0.113.17' });
+  const MAIL = 'bozzetto@vidarrapp.se';
   try {
     const p = f.page;
     await p.goto(`${origin}/legal/terms.html`, { waitUntil: 'load' });
     const terms = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      version: /Version 2026-10\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      version: /Version 2026-10-08\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       sections: ['content', 'takedown'].filter((id) => document.getElementById(id)),
-      todo: [...document.querySelectorAll('.legal__todo')].map((n) => n.textContent),
+      text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
+      takedown: [...document.querySelectorAll('#takedown + p a[href^="mailto:"]')].map((a) => a.getAttribute('href')),
+      todo: document.querySelectorAll('.legal__todo').length,
       font: getComputedStyle(document.querySelector('h1')).fontFamily,
       background: getComputedStyle(document.body).backgroundColor,
     }));
-    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10, with #content and #takedown (${show(terms)})`);
-    t.ok(terms.todo.some((x) => x.includes('[takedown address]')) && terms.todo.some((x) => /templates/i.test(x)) && terms.todo.some((x) => /nudity/i.test(x)), 'the owner\'s decisions in brackets: the takedown address, the templates, nudity');
+    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10-08, with #content and #takedown (${show(terms.sections)})`);
+    t.ok(
+      terms.text.includes('Templates are free to use as starting points for your own work, including commercial work. The template itself may not be redistributed as your own.') &&
+        terms.text.includes('Artistic nudity in figure work is allowed.') &&
+        /pornographic content are not/.test(terms.text) &&
+        show(terms.takedown) === show([`mailto:${MAIL}`]),
+      `the owner's decisions written in: the templates, nudity, the takedown address (${show(terms.takedown)})`,
+    );
+    t.ok(!terms.todo && !terms.text.includes('['), `and no placeholder left in the terms (${terms.todo} marked)`);
     t.ok(/Instrument Serif/.test(terms.font) && terms.background === 'rgb(28, 24, 20)', `on the app's stylesheet (${terms.font}, ${terms.background})`);
     await p.goto(`${origin}/legal/privacy.html`, { waitUntil: 'load' });
     const privacy = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      todo: [...document.querySelectorAll('.legal__todo')].map((n) => n.textContent),
+      version: /Version 2026-10-08\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
+      contact: [...document.querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute('href')),
+      todo: document.querySelectorAll('.legal__todo').length,
       imy: !!document.querySelector('a[href="https://www.imy.se/"]'),
     }));
-    t.ok(privacy.title === 'Privacy notice' && privacy.todo.includes('[contact address]') && privacy.imy, `the privacy notice, with the contact address to fill in (${show(privacy)})`);
+    t.ok(
+      privacy.title === 'Privacy notice' && privacy.version && privacy.imy && privacy.contact.length === 2 && privacy.contact.every((h) => h === `mailto:${MAIL}`),
+      `the privacy notice, version 2026-10-08, with the contact address written in (${show(privacy.contact)})`,
+    );
+    t.ok(
+      ['The database\'s own history, from which it can be restored: 7 days.', 'The log of security events: 12 months.', 'held for 90 days', '48 hours at most', 'Resend\'s logs of the mail it sent you: 30 days.'].every((x) => privacy.text.includes(x)),
+      'its retention as decided: 7 days of database history, 12 months of audit log, 90 days for a handle, 48 hours for codes and counts, 30 days at Resend',
+    );
+    t.ok(!privacy.todo && !privacy.text.includes('['), `and no placeholder left in the notice (${privacy.todo} marked)`);
     t.ok(!f.errors.length, `no page errors on the legal pages${f.errors.length ? `: ${f.errors.join(' | ')}` : ''}`);
   } finally {
     await f.ctx.close();

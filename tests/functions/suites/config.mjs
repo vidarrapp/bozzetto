@@ -10,7 +10,7 @@ export async function run({ checks, off, on }) {
   const c = r.json ?? {};
   t.ok(r.status === 200 && c.accounts === false, `with ACCOUNTS_ENABLED unset, accounts are off (${r.status} ${c.accounts})`);
   t.eq(Object.keys(c).sort().join(','), 'accounts,limits,mediaOrigin,rpId,termsVersion,turnstileSiteKey', 'it says what the design lists, and nothing else');
-  t.ok(c.rpId === 'localhost' && c.mediaOrigin === `http://${FILES_HOST}` && c.termsVersion === '2026-10', `the RP ID, the files origin and the terms in force (${c.rpId}, ${c.mediaOrigin}, ${c.termsVersion})`);
+  t.ok(c.rpId === 'localhost' && c.mediaOrigin === `http://${FILES_HOST}` && c.termsVersion === '2026-10-08', `the RP ID, the files origin and the terms in force (${c.rpId}, ${c.mediaOrigin}, ${c.termsVersion})`);
   t.eq(c.turnstileSiteKey, null, 'no Turnstile site key is sent while none is set');
   const limits = c.limits ?? {};
   t.ok(limits.quotaBytes === 250 * 1024 * 1024 && limits.sceneBytes === 100 * 1024 * 1024 && limits.passkeys === 10 && Object.values(limits).every((v) => Number.isInteger(v) && v > 0), `and the member limits, as whole numbers (${JSON.stringify(limits)})`);

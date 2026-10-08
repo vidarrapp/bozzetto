@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { accountsOn, filesOrigin } from './env';
 
 /** The terms Join asks a new account to accept; a change asks again (phase 2). */
-export const TERMS_VERSION = '2026-10';
+export const TERMS_VERSION = '2026-10-08';
 
 const MiB = 1024 * 1024;
 

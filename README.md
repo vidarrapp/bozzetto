@@ -311,6 +311,10 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
+### Unreleased
+
+- **The legal pages are complete.** The terms and the privacy notice carry the owner's decisions in place of their placeholders: `bozzetto@vidarrapp.se` for questions, requests and reports; what templates may be used for; artistic nudity in figure work allowed, pornographic content not; and how long each kind of data is kept. Both are now version 2026-10-08, the version a new account accepts.
+
 ### v1.4.1
 
 **Armatures in My projects, undo in Armature mode, the floor locked, and the passkey fallback.** Desktop app 0.6.1.

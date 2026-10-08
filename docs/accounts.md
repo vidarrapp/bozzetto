@@ -552,9 +552,9 @@ These are tabs beside Projects on `/admin/` (`src/admin/{invites,users,audit}.ts
 
 ## 9. Legal pages (outlines, not legal advice)
 
-`public/legal/privacy.html` and `public/legal/terms.html` (with sections `#content` and `#takedown`) are static and precached. They are linked from Join, Account and the gallery's foot. Join records `TERMS_VERSION` (`2026-10`); asking again after a change comes in phase 2.
+`public/legal/privacy.html` and `public/legal/terms.html` (with sections `#content` and `#takedown`) are static and precached. They are linked from Join, Account and the gallery's foot. Join records `TERMS_VERSION` (`2026-10-08`, the version line on both pages); asking again after a change comes in phase 2.
 
-They shipped (Batch 7) with the owner's decisions as bracketed placeholders, marked `legal__todo`: the contact address, the takedown address, what the templates' copies may be used for, and nudity (open questions 4–6). They are written in before accounts are switched on (§11). The accounts e2e suite checks that the placeholders are there, so its legal-pages check changes with them.
+They shipped (Batch 7) with the owner's decisions as bracketed placeholders, marked `legal__todo`: the contact address, the takedown address, what the templates' copies may be used for, and nudity (open questions 4–6). The owner's answers are now written in (version 2026-10-08), and the accounts e2e suite checks the decided text and that no placeholder is left.
 
 **Privacy notice.**
 
@@ -564,7 +564,8 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
 - **Processors:** Cloudflare (hosting, D1, R2, Turnstile, Access) and Resend, which keeps logs 30 days. The Install card also calls api.github.com.
 - **Retention:**
   - account data until deletion;
-  - D1 point-in-time history for 7 days (Free) or 30 days (Paid);
+  - D1 point-in-time history for 7 days;
+  - email codes and rate-limit counts for 48 hours at most;
   - the audit log for 12 months;
   - retired handles for 90 days.
 - **No consent banner:** there are no analytics or ads, only necessary cookies and storage.
@@ -576,7 +577,7 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
 - Free, invite-only, as is; it may change or end with notice and time to export.
 - One person per account.
 - You keep your work, licensing only its storage and display back to you. Public sharing is opt-in (phase 3).
-- Templates may be used as starting points (owner to confirm).
+- Templates are free to use as starting points for your own work, commercial work included; the template itself may not be redistributed as your own.
 - 250 MB and file checks.
 - Suspension or removal comes with reasons and a way to object.
 - Swedish law; consumer rights intact.
@@ -588,11 +589,11 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
 - No non-consensual intimate imagery, harassment, threats or hate.
 - No infringement of others' work or likeness.
 - No malware or crafted files, no spam, no impersonation.
-- Artistic nudity in figure work is the owner's call.
+- Artistic nudity in figure work is allowed; pornographic content is not.
 
 **Takedown.**
 
-- **Address:** for example `abuse@vidarrapp.se`.
+- **Address:** `bozzetto@vidarrapp.se`, which is also the privacy contact.
 - **A notice names** the project, why it is unlawful, a contact, and a good-faith statement.
 - **Response:** acknowledged within 7 days, faster for child safety and threats. This is the DSA's notice and action for hosts.
 
@@ -761,9 +762,9 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
 1. **Workers Paid?** It lifts the 10 ms CPU and 50-subrequest limits behind export, deletion and uploads.
 2. **Zone plan?** Free allows one rate-limiting rule.
 3. **Mail domain:** `vidarrapp.se` itself, or a subdomain as Resend recommends?
-4. **Addresses:** what are the contact and takedown addresses?
-5. **Templates:** what licence covers copies made from them?
-6. **Nudity:** is artistic nudity in figure work allowed?
+4. ~~**Addresses:**~~ answered: `bozzetto@vidarrapp.se` for both (§9).
+5. ~~**Templates:**~~ answered: free to use as starting points, commercial work included, not to be redistributed as one's own (§9).
+6. ~~**Nudity:**~~ answered: artistic nudity in figure work is allowed; pornographic content is not (§9).
 
 ## Sources
 
