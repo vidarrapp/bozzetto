@@ -311,7 +311,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
-### Unreleased
+### v1.4.1
+
+**Armatures in My projects, undo in Armature mode, the floor locked, and the passkey fallback.** Desktop app 0.6.1.
 
 - **Armature: the selection stays while you look around.** A part is selected when a tap or click lifts, so an orbit, a pan or a zoom - by mouse, wheel or fingers, begun on the figure or off it - leaves the part selected with its gizmo. A tap on empty space lets it go; a tap on another part moves it. A tap on a hand, foot or head ball now selects that ball, larger and lit, with a move gizmo that reaches the limb; a drag of a ball reaches as it always did, one undo step, and brings up no gizmo.
 - **Armature: what Plant feet does, shown.** Planting stands a foot that is on the floor flat on it, and a ring on the floor now marks each foot it holds; off, a foot tilts with its shin. The pins, not planting, are what keep a foot in its place while the pelvis moves, which is why turning planting off moved no foot. The Reach section says so.
