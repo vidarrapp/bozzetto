@@ -442,8 +442,24 @@ export async function run({ checks, off, compileShared, repo }) {
     project('d-put', U, 0, 'private', 400);
     project('d-race', U, 0, 'private', 10);
     project('d-member', M, 0, 'private', 700);
+    project('d-legacy-own', U, 0, 'private', 0);
+    project('d-legacy-tpl', null, 1, 'public', 0);
+    project('d-empty', U, 0, 'private', 0);
+    const stored = new Map([
+      [`users/${U}/projects/d-legacy-own/thumb.jpg`, 900],
+      [`users/${U}/projects/d-legacy-own/frames/sd/0000.glb`, 2100],
+      ['projects/d-legacy-tpl/thumb.jpg', 650],
+    ]);
+    let listed = 0;
+    const BUCKET = {
+      list: async ({ prefix }) => {
+        listed++;
+        return { objects: [...stored].filter(([k]) => k.startsWith(prefix)).map(([key, size]) => ({ key, size })), truncated: false };
+      },
+    };
     let raced = false;
     const env = {
+      BUCKET,
       DB: d1(db, {
         beforeBatch: () => {
           if (raced) db.prepare("UPDATE projects SET bytes = bytes + 1 WHERE id = 'd-race'").run();
@@ -488,6 +504,22 @@ export async function run({ checks, off, compileShared, repo }) {
     res = await attempt(() => projects.setTemplate(env, 'd-race', true, scopeU, by));
     raced = false;
     t.ok(String(res).startsWith('409') && used(U) === 4600 && proj('d-race').template === 0 && rowsAbout('d-race').length === 0, `a row changed between the read and the write: 409, and nothing moved or was recorded (${res})`);
+    // Rows from before the counting: bytes 0, files in R2. Weighed before they change hands.
+    db.prepare('UPDATE users SET bytes_used = 5000 WHERE id = ?').run(U);
+    const bytesOf = (id) => db.prepare('SELECT bytes FROM projects WHERE id = ?').get(id).bytes;
+    res = await projects.setTemplate(env, 'd-legacy-own', true, scopeU, by);
+    t.ok(res.template === 1 && bytesOf('d-legacy-own') === 3000 && used(U) === 5000 && rowsAbout('d-legacy-own')[0]?.detail?.bytes === 3000, `on, a legacy row of the owner's is weighed (3,000 bytes) and moved: what it never added, it does not take away (${bytesOf('d-legacy-own')}, ${used(U)})`);
+    res = await projects.setTemplate(env, 'd-legacy-own', false, scopeU, by);
+    t.ok(res.owner_id === U && used(U) === 8000, `off again, its 3,000 bytes join the owner's usage (${used(U)})`);
+    res = await projects.setTemplate(env, 'd-legacy-tpl', false, { owner: null }, by);
+    t.ok(res.owner_id === U && bytesOf('d-legacy-tpl') === 650 && used(U) === 8650 && rowsAbout('d-legacy-tpl')[0]?.detail?.bytes === 650, `a legacy template switched off brings what R2 holds of it (650) to the owner (${bytesOf('d-legacy-tpl')}, ${used(U)})`);
+    listed = 0;
+    res = await projects.setTemplate(env, 'd-empty', true, scopeU, by);
+    t.ok(res.template === 1 && bytesOf('d-empty') === 0 && used(U) === 8650 && listed === 1, `one with nothing in R2 is listed once and moves nothing (${listed})`);
+    listed = 0;
+    await projects.setTemplate(env, 'd-own', true, scopeU, by);
+    t.eq(listed, 0, 'a row that has bytes is not listed at all');
+    db.prepare('UPDATE users SET bytes_used = 4600 WHERE id = ?').run(U);
     db.prepare("UPDATE users SET role = 'member' WHERE id = ?").run(U);
     project('d-tpl2', null, 1, 'public', 50);
     res = await projects.setTemplate(env, 'd-tpl2', false, { owner: null }, by);

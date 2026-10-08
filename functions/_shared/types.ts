@@ -1,8 +1,9 @@
 /**
  * 'scene' is a sculpt saved to the library: one .bozz file, opened in Sculpt
- * rather than played in the viewer, so it has no frames.
+ * rather than played in the viewer, so it has no frames. 'armature' is a
+ * posed figure saved from Armature mode: one armature.json, opened there.
  */
-export type ProjectMode = 'timelapse' | 'model' | 'scene';
+export type ProjectMode = 'timelapse' | 'model' | 'scene' | 'armature';
 
 /**
  * Public projects are anyone's to see; private ones the owner's alone. Only

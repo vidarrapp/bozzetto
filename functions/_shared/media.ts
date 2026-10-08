@@ -9,8 +9,9 @@ export interface MediaContext {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-type Kind = 'scene' | 'thumb' | 'frame';
-const kindOf = (file: string): Kind => (file === 'scene.bozz' ? 'scene' : file === 'thumb.jpg' ? 'thumb' : 'frame');
+type Kind = 'scene' | 'armature' | 'thumb' | 'frame';
+const kindOf = (file: string): Kind =>
+  file === 'scene.bozz' ? 'scene' : file === 'armature.json' ? 'armature' : file === 'thumb.jpg' ? 'thumb' : 'frame';
 
 /**
  * The type each file is served as, by its name and never by what was stored
@@ -19,6 +20,8 @@ const kindOf = (file: string): Kind => (file === 'scene.bozz' ? 'scene' : file =
  */
 const TYPES: Record<Kind, string> = {
   scene: 'application/x-bozzetto',
+  // gzip or plain JSON, as it was sent (shared/armature.ts): the app reads either.
+  armature: 'application/x-bozzetto-armature',
   thumb: 'image/jpeg',
   frame: 'model/gltf-binary',
 };
@@ -83,7 +86,7 @@ export async function serveMedia(ctx: MediaContext, segments: string[], scope: S
   // A frame or thumbnail at a named version may be in the cache, if the
   // request asks nothing the cache cannot answer for itself.
   const cacheKey =
-    open && kind !== 'scene' && asked !== null && range !== UNSATISFIABLE && !CONDITIONS_R2_ONLY.some((h) => request.headers.has(h))
+    open && kind !== 'scene' && kind !== 'armature' && asked !== null && range !== UNSATISFIABLE && !CONDITIONS_R2_ONLY.some((h) => request.headers.has(h))
       ? `${url.origin}/m/${encodeURIComponent(id)}/${file}?v=${encodeURIComponent(asked)}`
       : null;
   const rowRead = getFileRow(env, id, scope);
@@ -331,7 +334,7 @@ function finish(res: Response, { kind, file, download, row, open, shared, cache 
  */
 function cacheControl(open: boolean, kind: Kind, current: boolean): string {
   if (!open) return 'private, no-store';
-  return kind !== 'scene' && current ? IMMUTABLE : REVALIDATE;
+  return kind !== 'scene' && kind !== 'armature' && current ? IMMUTABLE : REVALIDATE;
 }
 
 /**
@@ -355,6 +358,7 @@ function openHeaders(url: URL, env: Env): Record<string, string> {
 /** What a downloaded file's name ends with after its project's title: `.bozz`, `.jpg`, `-0003.glb`. */
 function suffix(kind: Kind, file: string): string {
   if (kind === 'scene') return '.bozz';
+  if (kind === 'armature') return '.armature.json';
   if (kind === 'thumb') return '.jpg';
   return `-${file.slice(file.lastIndexOf('/') + 1)}`;
 }

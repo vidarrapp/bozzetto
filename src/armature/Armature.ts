@@ -615,6 +615,17 @@ export class Armature {
     for (const c of this.rig.ik) if (FOOT.test(c.effector)) this.setPinned(c.id, true);
   }
 
+  /**
+   * The feet planting holds flat on the ground as the figure stands now:
+   * none with it off, else each whose ankle is at the ground (the height it
+   * rests at, within GROUND_BAND).
+   */
+  plantedFeet(): string[] {
+    if (!this.plantFeet) return [];
+    const ankle = new Vector3();
+    return this.feet.filter((foot) => !!this.jointWorld(foot, ankle) && this.onGround(foot, ankle.y));
+  }
+
   /** Whether a bone is one of the feet planting stands on the ground. */
   isFoot(bone: string): boolean {
     return this.feet.includes(bone);

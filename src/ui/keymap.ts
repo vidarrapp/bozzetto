@@ -32,6 +32,12 @@ export interface ActionDef {
   repeat?: boolean;
   /** Guide text for gesture rows, and extra words for keyed ones. */
   note?: string;
+  /**
+   * Another action whose key this one answers to: the row is shown in its
+   * own mode's list, and rebinding either rebinds both (Armature's undo and
+   * redo are Sculpt's, so one Preferences change covers the two modes).
+   */
+  sameKeyAs?: string;
 }
 
 /**
@@ -139,11 +145,13 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gesture.armRoot', label: 'Move the whole figure, pinned hands and feet staying put', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the ball in the hips' },
   { id: 'arm.resetPose', label: 'Reset the pose', group: 'Armature', mode: 'armature', chord: 'shift+r' },
   { id: 'arm.deselect', label: 'Deselect the joint', group: 'Armature', mode: 'armature', chord: 'escape' },
-  { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true },
-  { id: 'arm.redo', label: 'Redo', group: 'Armature', mode: 'armature', chord: 'ctrl+shift+z', repeat: true },
+  { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true, sameKeyAs: 'edit.undo' },
+  { id: 'arm.redo', label: 'Redo', group: 'Armature', mode: 'armature', chord: 'ctrl+shift+z', repeat: true, sameKeyAs: 'edit.redo' },
   { id: 'arm.send', label: 'Send to Sculpt', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
   { id: 'gesture.armPick', label: 'Select a part (its gizmo appears)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
-  { id: 'gesture.armOrbit', label: 'Orbit', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag off the figure' },
+  { id: 'gesture.armOrbit', label: 'Orbit, keeping the selection', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag, on the figure or off it' },
+  { id: 'gesture.armDeselect', label: 'Deselect', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click off the figure' },
+  { id: 'gesture.armBall', label: 'Select a hand, foot or head ball (move gizmo)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click the ball' },
   // Sculpt mode's light.move, for the figure: a key of its own (not a
   // gesture row) so Preferences can rebind it as it can sculpt's.
   { id: 'arm.light', label: 'Move the key light (hold + drag: across / up)', group: 'Armature', mode: 'armature', chord: 'l', hold: true },
@@ -239,14 +247,21 @@ export class Keymap {
     return this.byId.get(id);
   }
 
+  /** The action whose key `id` answers to: itself, or the one it shares a key with. */
+  private keyOwner(id: string): string {
+    const shared = this.byId.get(id)?.sameKeyAs;
+    return shared && this.byId.has(shared) ? shared : id;
+  }
+
   /** The chord an action answers to now, or null when unbound. */
   chordFor(id: string): string | null {
-    if (this.overrides.has(id)) return this.overrides.get(id) ?? null;
-    return this.byId.get(id)?.chord ?? null;
+    const key = this.keyOwner(id);
+    if (this.overrides.has(key)) return this.overrides.get(key) ?? null;
+    return this.byId.get(key)?.chord ?? null;
   }
 
   isOverridden(id: string): boolean {
-    return this.overrides.has(id);
+    return this.overrides.has(this.keyOwner(id));
   }
 
   /** Every action a mode's handler can be asked for, in table order. */
@@ -284,15 +299,20 @@ export class Keymap {
     return null;
   }
 
-  /** Rebind (null unbinds). Another action on the same chord in the same mode is unbound. */
+  /**
+   * Rebind (null unbinds). Another action on the same chord in the same mode
+   * is unbound. An action sharing another's key (sameKeyAs) rebinds that
+   * one, and so both, in every mode either answers in.
+   */
   rebind(id: string, chord: string | null): void {
-    const a = this.byId.get(id);
+    const a = this.byId.get(this.keyOwner(id));
     if (!a) return;
+    id = a.id;
     if (chord) {
       for (const other of ACTIONS) {
-        if (other.id === id) continue;
+        if (this.keyOwner(other.id) === id) continue;
         if (!this.sharesMode(a, other)) continue;
-        if (this.chordFor(other.id) === chord) this.overrides.set(other.id, null);
+        if (this.chordFor(other.id) === chord) this.overrides.set(this.keyOwner(other.id), null);
       }
     }
     if (chord === a.chord) this.overrides.delete(id);
@@ -303,17 +323,17 @@ export class Keymap {
 
   /** What a chord would displace in an action's modes, for the editor to say so. */
   conflictFor(id: string, chord: string): ActionDef | null {
-    const a = this.byId.get(id);
+    const a = this.byId.get(this.keyOwner(id));
     if (!a) return null;
     for (const other of ACTIONS) {
-      if (other.id === id || !this.sharesMode(a, other)) continue;
+      if (this.keyOwner(other.id) === a.id || !this.sharesMode(a, other)) continue;
       if (this.chordFor(other.id) === chord) return other;
     }
     return null;
   }
 
   reset(id: string): void {
-    this.overrides.delete(id);
+    this.overrides.delete(this.keyOwner(id));
     this.save();
     this.emit();
   }
@@ -329,8 +349,17 @@ export class Keymap {
     return () => this.listeners.delete(fn);
   }
 
+  /** Whether two actions answer in a mode in common, counting the actions that share each one's key. */
   private sharesMode(a: ActionDef, b: ActionDef): boolean {
-    return a.mode === 'both' || b.mode === 'both' || a.mode === b.mode;
+    const ma = this.modesOf(a);
+    const mb = this.modesOf(b);
+    return ma.has('both') || mb.has('both') || [...ma].some((m) => mb.has(m));
+  }
+
+  /** The modes an action's key is heard in: its own, and those of every action sharing it. */
+  private modesOf(a: ActionDef): Set<KeyMode | 'both'> {
+    const owner = this.keyOwner(a.id);
+    return new Set(ACTIONS.filter((x) => this.keyOwner(x.id) === owner).map((x) => x.mode));
   }
 
   private emit(): void {
@@ -343,7 +372,7 @@ export class Keymap {
       if (!raw) return;
       const parsed = JSON.parse(raw) as Record<string, string | null>;
       for (const [id, chord] of Object.entries(parsed)) {
-        if (!this.byId.has(id)) continue;
+        if (!this.byId.has(id) || this.byId.get(id)?.sameKeyAs) continue;
         if (chord !== null && typeof chord !== 'string') continue;
         this.overrides.set(id, chord);
       }

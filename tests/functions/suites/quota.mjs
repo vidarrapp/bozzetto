@@ -303,6 +303,40 @@ export async function run({ checks, on, compileShared, repo }) {
     db.exec(`UPDATE users SET bytes_used = 999 WHERE id = '${user}'`);
     const counted = await quota.recountUsage(env, user);
     t.ok(counted.used === frame.length && row() === frame.length && counted.projects['p-qtdirect'] === frame.length, `a recount puts a drifted count right from R2's listing (${JSON.stringify(counted)})`);
+
+    // A recount carried across calls: R2 lists two keys a listing here, and a call may make three listings.
+    const chunked = 'u-qtchunked00000000000000000';
+    db.exec(seedUser({ id: chunked, handle: 'qtchunked', used: 5 }));
+    const paged = new Map();
+    for (const [id, sizes] of [['p-qtc1', [100, 200, 300]], ['p-qtc2', [40]], ['p-qtc3', []], ['p-qtc4', [7, 8]]]) {
+      db.exec(`INSERT INTO projects (id, title, mode, fps, data, visibility, template, owner_id, storage_prefix, bytes, created_at, updated_at)
+        VALUES ('${id}', 'C', 'timelapse', 4, '{"defaults":{},"camera":{},"stages":[],"frames":[]}', 'private', 0, '${chunked}', 'users/${chunked}/projects/${id}/', 1, 0, 0)`);
+      sizes.forEach((n, i) => paged.set(`users/${chunked}/projects/${id}/frames/sd/000${i}.glb`, n));
+    }
+    let listings = 0;
+    const pagedEnv = {
+      DB: d1(db),
+      BUCKET: {
+        list: async ({ prefix, cursor }) => {
+          listings++;
+          const keys = [...paged.keys()].filter((k) => k.startsWith(prefix)).sort();
+          const from = Number(cursor ?? 0);
+          const page = keys.slice(from, from + 2);
+          const truncated = from + 2 < keys.length;
+          return { objects: page.map((key) => ({ key, size: paged.get(key) })), truncated, cursor: truncated ? String(from + 2) : undefined };
+        },
+      },
+    };
+    const bytesOf = (id) => db.prepare('SELECT bytes FROM projects WHERE id = ?').get(id).bytes;
+    const usedOf = () => db.prepare('SELECT bytes_used FROM users WHERE id = ?').get(chunked).bytes_used;
+    const first = await quota.recountUsage(pagedEnv, chunked, { listings: 3 });
+    t.ok(first.next === 'p-qtc2' && JSON.stringify(first.projects) === JSON.stringify({ 'p-qtc1': 600, 'p-qtc2': 40 }) && listings === 3, `one call counts what its listings allow, in id order, and says where to carry on (${JSON.stringify(first)}, ${listings} listings)`);
+    t.ok(bytesOf('p-qtc1') === 600 && bytesOf('p-qtc3') === 1 && first.used === 642 && usedOf() === 642, `those counted are set; the rest keep their bytes, and usage is the sum of all (${first.used}, ${usedOf()})`);
+    listings = 0;
+    const second = await quota.recountUsage(pagedEnv, chunked, { after: first.next, listings: 3 });
+    t.ok(second.next === null && JSON.stringify(second.projects) === JSON.stringify({ 'p-qtc3': 0, 'p-qtc4': 15 }) && second.used === 655 && usedOf() === 655 && bytesOf('p-qtc3') === 0, `the next call, from there, counts the rest and is done (${JSON.stringify(second)}, ${listings} listings)`);
+    const whole = await quota.recountUsage(pagedEnv, chunked);
+    t.ok(whole.next === null && whole.used === 655, `with the default budget, one call is enough here (${JSON.stringify(whole)})`);
     db.close();
   }
   t.report();

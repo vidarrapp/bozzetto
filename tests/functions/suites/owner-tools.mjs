@@ -66,6 +66,7 @@ const SUSPENDED = 'u-otsuspended00000000000000';
 const BULK = 55;
 const bulk = (i) => `u-otbulk${String(i).padStart(2, '0')}`;
 const STRAY_FRAME = glb({ seed: 71, bin: 900, raw: true });
+const OTHER_FRAME = glb({ seed: 75, bin: 1300, raw: true });
 const DATA = '{"defaults":{},"camera":{},"stages":[],"frames":[]}';
 const project = (id, owner, mode = 'model') =>
   `('${id}', '${id}', '${mode}', 4, '${DATA}', 'private', 0, '${owner}', 'users/${owner}/projects/${id}/', ${T - DAY}, ${T - DAY})`;
@@ -94,6 +95,9 @@ export const seed = {
     seedUser({ id: RECOUNT, handle: 'otrecount', at: T - 20 * DAY }),
     seedSession({ name: 'ot-rc', id: 's-otrc', user: RECOUNT, created: T }),
     `INSERT INTO projects (${PROJECT_COLUMNS}) VALUES ${project('p-otrc1', RECOUNT, 'timelapse')};`,
+    // A row whose bytes went astray: it says 777, R2 holds one frame.
+    `INSERT INTO projects (${PROJECT_COLUMNS}) VALUES ${project('p-otrc2', RECOUNT, 'timelapse')};`,
+    `UPDATE projects SET bytes = 777 WHERE id = 'p-otrc2';`,
     // A deletion begun two days ago and left, of 45 projects; another begun an hour ago.
     seedUser({ id: DELETING, handle: 'otdeleting', status: 'deleting', at: T - 5 * DAY }),
     seedSession({ name: 'ot-d', id: 's-otd', user: DELETING, created: T - 3 * DAY }),
@@ -123,6 +127,7 @@ export const seed = {
   ].join('\n'),
   r2: [
     { key: `users/${RECOUNT}/projects/p-otrc1/frames/sd/0000.glb`, bytes: STRAY_FRAME, type: 'model/gltf-binary' },
+    { key: `users/${RECOUNT}/projects/p-otrc2/frames/sd/0003.glb`, bytes: OTHER_FRAME, type: 'model/gltf-binary' },
     { key: `users/${DELETING}/projects/p-otdl1/thumb.jpg`, bytes: jpeg(74), type: 'image/jpeg' },
   ],
 };
@@ -573,14 +578,16 @@ export async function run({ checks, on, off, compileShared, repo }) {
   const thumb = jpeg(73, 1200);
   r = await browser('ot-rc').call('POST', '/api/me/projects/p-otrc1/thumb', { bytes: thumb });
   const counted0 = (await detail(RECOUNT))?.bytesUsed;
-  t.ok(r.status === 201 && counted0 === thumb.length, `a thumbnail through the API is counted; the frame put into R2 directly is not (${r.status} ${counted0})`);
+  t.ok(r.status === 201 && counted0 === thumb.length, `a thumbnail through the API is counted; the frames put into R2 directly are not (${r.status} ${counted0})`);
   r = await admin('POST', `/admin/api/users/${RECOUNT}/recount`);
-  t.ok(r.status === 200 && JSON.stringify(r.json) === JSON.stringify({ bytesUsed: thumb.length + STRAY_FRAME.length, before: thumb.length }), `{bytesUsed, before}: R2's count now, and the old one (${r.status} ${JSON.stringify(r.json)})`);
-  t.eq((await detail(RECOUNT))?.bytesUsed, thumb.length + STRAY_FRAME.length, 'the account holds it');
+  const all = thumb.length + STRAY_FRAME.length + OTHER_FRAME.length;
+  t.ok(r.status === 200 && JSON.stringify(r.json) === JSON.stringify({ bytesUsed: all, before: thumb.length, next: null }), `{bytesUsed, before, next}: R2's count now, the old one, and nothing left to count (${r.status} ${JSON.stringify(r.json)})`);
+  t.eq((await detail(RECOUNT))?.bytesUsed, all, 'the account holds it');
   r = await browser('ot-rc').call('GET', '/api/me/projects');
-  t.eq(r.json?.find?.((p) => p.id === 'p-otrc1')?.bytes, thumb.length + STRAY_FRAME.length, 'and so does the project');
+  const weighs = (id) => r.json?.find?.((p) => p.id === id)?.bytes;
+  t.ok(weighs('p-otrc1') === thumb.length + STRAY_FRAME.length && weighs('p-otrc2') === OTHER_FRAME.length, `and each project its own share: the one counted short, and the one counted 777 (${weighs('p-otrc1')}, ${weighs('p-otrc2')})`);
   const rc = await audited(RECOUNT, 'account.recount');
-  t.ok(rc.length === 1 && rc[0].actor === owner.id && JSON.stringify(rc[0].detail) === JSON.stringify({ before: thumb.length, after: thumb.length + STRAY_FRAME.length }), `audited with both (${JSON.stringify(rc[0]?.detail)})`);
+  t.ok(rc.length === 1 && rc[0].actor === owner.id && JSON.stringify(rc[0].detail) === JSON.stringify({ before: thumb.length, after: all }), `audited with both (${JSON.stringify(rc[0]?.detail)})`);
   r = await admin('POST', '/admin/api/users/u-nosuchaccount/recount');
   t.eq(r.status, 404, 'an account that is not there: 404');
   t.report();

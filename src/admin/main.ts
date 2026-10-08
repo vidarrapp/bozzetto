@@ -294,9 +294,13 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
   for (const p of projects) {
     const scene = p.mode === 'scene';
-    // A scene is a file to open in Sculpt; the editor is for frames.
+    const armature = p.mode === 'armature';
+    // A scene is a file to open in Sculpt, an armature one to open in
+    // Armature mode; the editor is for frames.
     const actions = scene
       ? '<a class="btn btn--primary admin-row__open">Open in Sculpt</a>'
+      : armature
+        ? '<a class="btn btn--primary admin-row__open">Open in Armature</a>'
       : `<a class="btn btn--primary admin-row__edit">Edit</a>
           <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>`;
     const row = fromHTML(`
@@ -335,9 +339,24 @@ async function refresh(listEl: HTMLElement): Promise<void> {
               `${p.scene.tris.toLocaleString('en-US')} tris · ${(p.scene.bytes / (1024 * 1024)).toFixed(1)} MB`
             : 'upload did not finish'
         }`
-      : `${p.id} · ${p.mode} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
+      : armature
+        ? `${p.id} · armature · opens in Armature mode`
+        : `${p.id} · ${p.mode} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
 
-    if (scene) {
+    if (armature) {
+      const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
+      open.href = `/?armature=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}`;
+      open.addEventListener('click', (e) => {
+        e.preventDefault();
+        void (async () => {
+          const store = await import('../armature/persist').catch(() => null);
+          const busy = store ? await store.hasArmature() : false;
+          if (busy && !confirm(`Open "${p.title}"? The armature in progress on this device will be replaced.`)) return;
+          markOpen('project', p.id);
+          window.location.href = open.href;
+        })();
+      });
+    } else if (scene) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
       open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}`;
       // Opening replaces the sculpt in progress on this device, as a

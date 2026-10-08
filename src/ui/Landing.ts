@@ -152,7 +152,10 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // getting back to. An armature in progress sits beside it.
   const inProgress = await sculptCard();
   if (inProgress) grid.appendChild(inProgress);
-  const armatureInProgress = await armatureCard();
+  // Saved to the library from its card, for whoever saves to a server here:
+  // the owner, or anyone signed in with accounts on (docs/accounts.md §7).
+  const savesHere = admin || signIn.expired || (signIn.accounts === true && !!signIn.me && !signIn.suspended);
+  const armatureInProgress = await armatureCard({ uploads: savesHere, accounts: signIn.accounts === true, expired: signIn.expired });
   if (armatureInProgress) grid.appendChild(armatureInProgress);
 
   // Then the shelf: scenes explicitly saved on this device, newest first.
@@ -174,8 +177,14 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   for (const p of projects.filter((p) => p.mode === 'scene')) {
     grid.appendChild(sceneCard(p, { owner, hasUnsavedWork: workHere }));
   }
+  // Armatures: a template opens in Armature mode as a copy, the owner's
+  // own as itself. The viewer does not play them.
+  const armatureHere = armatureInProgress !== null;
+  for (const p of projects.filter((p) => p.mode === 'armature')) {
+    grid.appendChild(armatureProjectCard(p, { owner, hasUnsavedWork: armatureHere }));
+  }
   // Only projects with frames are shown publicly; empties live in the editor.
-  for (const p of projects.filter((p) => p.mode !== 'scene' && p.frameCount > 0)) {
+  for (const p of projects.filter((p) => p.mode !== 'scene' && p.mode !== 'armature' && p.frameCount > 0)) {
     grid.appendChild(owner ? ownerCard(p) : card(p));
   }
 }
@@ -215,9 +224,9 @@ function createCard(): HTMLElement {
 }
 
 /**
- * The ways to start, in a small dialog over the gallery: the two kinds of
- * new work side by side, and the uploader for frames made elsewhere on a
- * row of its own below them.
+ * The ways to start, in a small dialog over the gallery: three buttons
+ * stacked, the same width - a new sculpt, a new armature, and the uploader
+ * for models and timelapses made elsewhere (owner call).
  */
 function openCreateChooser(): void {
   const overlay = document.createElement('div');
@@ -228,16 +237,16 @@ function openCreateChooser(): void {
       <h2>Create</h2>
       <div class="create-choices">
         <button type="button" class="create-choice" data-kind="sculpt">
-          <span class="create-choice__title">New sculpt</span>
+          <span class="create-choice__title">New Sculpt</span>
           <span class="create-choice__hint">A sphere of clay, brushes and paint.</span>
         </button>
         <button type="button" class="create-choice" data-kind="armature">
-          <span class="create-choice__title">New armature</span>
+          <span class="create-choice__title">New Armature</span>
           <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
         </button>
-        <button type="button" class="create-choice create-choice--wide" data-kind="timelapse">
-          <span class="create-choice__title">Upload timelapse</span>
-          <span class="create-choice__hint">OBJ or GLB frames from another app, played back as a timelapse.</span>
+        <button type="button" class="create-choice" data-kind="timelapse">
+          <span class="create-choice__title">Upload Model(s)</span>
+          <span class="create-choice__hint">OBJ or GLB files from another app: one model, or frames played back as a timelapse.</span>
         </button>
       </div>
     </div>`;
@@ -308,8 +317,14 @@ async function framesKept(): Promise<boolean> {
   }
 }
 
-/** The armature in progress on this device, if there is one. */
-async function armatureCard(): Promise<HTMLElement | null> {
+/**
+ * The armature in progress on this device, if there is one. For whoever
+ * saves to a server here it offers Save to library (owner request: the
+ * card's upload, as the mode's File menu has it), to the project it came
+ * from or was last saved to, else a new one; for a guest, the .armature
+ * file the mode's Save writes.
+ */
+async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired: boolean }): Promise<HTMLElement | null> {
   let file: Awaited<ReturnType<typeof import('../armature/persist').loadArmature>>;
   try {
     const store = await import('../armature/persist');
@@ -318,9 +333,8 @@ async function armatureCard(): Promise<HTMLElement | null> {
     return null;
   }
   if (!file) return null;
-  const a = document.createElement('a');
-  a.className = 'card card--sculpt card--armature';
-  a.href = '/?armature=1';
+  const rec = file;
+  const card = div('card card--sculpt card--armature');
   // The picture is taken on the way out of the mode, as the sculpt card's
   // is; an armature not yet left that way has none.
   const url = file.thumb instanceof Blob ? URL.createObjectURL(file.thumb) : null;
@@ -328,21 +342,72 @@ async function armatureCard(): Promise<HTMLElement | null> {
     ? `<img class="card__img-blur" aria-hidden="true" alt="" draggable="false" src="${url}" />
       <img class="card__img" alt="" draggable="false" src="${url}" />`
     : ''; // no picture: the gradient placeholder stands in
-  a.innerHTML = `
-    <div class="card__thumb">
+  card.innerHTML = `
+    <a class="card__thumb" href="/?armature=1">
       ${picture}
       <span class="card__badge">In progress</span>
-    </div>
+    </a>
     <div class="card__body">
-      <span class="card__title">Your armature</span>
+      <a class="card__title card__link" href="/?armature=1">Your armature</a>
       <span class="card__meta"></span>
       <span class="card__note"></span>
     </div>`;
-  a.querySelector<HTMLElement>('.card__note')!.textContent = DEVICE_ONLY_NOTE;
-  const meta = a.querySelector<HTMLElement>('.card__meta')!;
+  const note = card.querySelector<HTMLElement>('.card__note')!;
+  const where = (): string => (opts.accounts && rec.project?.scope !== 'admin' ? 'My projects' : 'Projects');
+  const paintNote = (): void => {
+    note.textContent = rec.project ? `In ${where()} as "${rec.project.title}"; the latest pose is on this device.` : DEVICE_ONLY_NOTE;
+  };
+  paintNote();
+  const meta = card.querySelector<HTMLElement>('.card__meta')!;
   const posed = Object.keys(file.state.pose ?? {}).length;
   meta.textContent = `${posed} joint${posed === 1 ? '' : 's'} posed · ${ago(file.savedAt)}`;
-  return a;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'card__action card__upload';
+  const label = (): string => (opts.uploads ? 'Save to library' : 'Save file');
+  b.textContent = label();
+  b.title = opts.uploads ? (rec.project ? `Updates "${rec.project.title}" in ${where()}` : `Saves it to ${where()}`) : 'Downloads a .armature file to keep';
+  b.addEventListener('click', () => {
+    b.disabled = true;
+    void (async () => {
+      const [project, files, store] = await Promise.all([import('../armature/project'), import('../armature/file'), import('../armature/persist')]);
+      if (!opts.uploads) {
+        const { downloadBlob } = await import('./download');
+        downloadBlob(files.packArmature(rec), files.armatureStamp());
+        return;
+      }
+      const link = await project.uploadKeptArmature(rec, (text) => {
+        b.textContent = text;
+      });
+      rec.project = link;
+      // The autosave learns its project, so the mode saves back to it too.
+      const now = await store.loadArmature();
+      if (now) await store.saveArmature({ ...now, project: link });
+      paintNote();
+      b.textContent = `Saved to ${where()}`;
+    })()
+      .catch((err: unknown) => {
+        b.textContent = label();
+        const reason = uploadFailure(err);
+        const why = err instanceof Error ? err.message : String(err);
+        if (reason === 'expired') {
+          const retry = (ok: boolean): void => {
+            if (ok && b.isConnected) b.click();
+          };
+          const via = opts.expired ? 'session' : err instanceof AuthExpiredError ? err.via : undefined;
+          failNotice('Your sign-in has expired. The armature stays on this device.', signInButton('', retry, 'Sign in again', via));
+        } else if (reason === 'offline') {
+          failNotice(`No connection. The armature stays on this device; try again when you are online.`);
+        } else {
+          failNotice(`Not saved to ${where()}: ${why.replace(/\.$/, '')}. The armature stays on this device.`);
+        }
+      })
+      .finally(() => {
+        b.disabled = false;
+      });
+  });
+  card.querySelector<HTMLElement>('.card__body')!.appendChild(b);
+  return card;
 }
 
 /**
@@ -732,6 +797,52 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
       });
   });
   card.appendChild(trash);
+  return card;
+}
+
+/**
+ * An armature project from the server, as a card that opens it in
+ * Armature mode: a template as a copy (`&template=`, for everyone, so a
+ * save makes one's own), the owner's own as itself (`&project=`). The
+ * viewer does not play an armature, and the card says where it opens. For
+ * the owner it carries who may see it, as every card of theirs does.
+ */
+function armatureProjectCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: boolean }): HTMLElement {
+  const card = div('card card--library card--armature-project');
+  card.dataset.project = p.id;
+  card.innerHTML = `
+    <a class="card__thumb">
+      <span class="card__badges"></span>
+    </a>
+    <div class="card__body">
+      <a class="card__title card__link"></a>
+      <span class="card__meta"></span>
+    </div>`;
+  const thumb = card.querySelector<HTMLAnchorElement>('.card__thumb')!;
+  const title = card.querySelector<HTMLAnchorElement>('.card__title')!;
+  setPicture(thumb, mediaPath(p, `thumb.jpg?v=${p.updated_at}`));
+  const badges = card.querySelector<HTMLElement>('.card__badges')!;
+  const paintBadges = (): void => {
+    const href = `/?armature=1&${p.template ? 'template' : 'project'}=${encodeURIComponent(p.id)}`;
+    thumb.href = href;
+    title.href = href;
+    setBadges(badges, ['Armature', ...kindBadges(p)]);
+  };
+  paintBadges();
+  title.textContent = p.title || p.id;
+  card.querySelector<HTMLElement>('.card__meta')!.textContent =
+    `${p.template ? 'Opens a copy in Armature mode' : 'Opens in Armature mode'} · ${ago(p.updated_at)}`;
+  for (const link of [thumb, title]) {
+    link.addEventListener('click', (ev) => {
+      const what = p.template ? `a copy of "${p.title}"` : `"${p.title}"`;
+      if (opts.hasUnsavedWork && !confirm(`Open ${what}? The armature in progress on this device will be replaced.`)) {
+        ev.preventDefault();
+        return;
+      }
+      markOpenOnClick(ev, link);
+    });
+  }
+  if (opts.owner) card.querySelector<HTMLElement>('.card__body')!.appendChild(visibilityToggle(p, paintBadges));
   return card;
 }
 

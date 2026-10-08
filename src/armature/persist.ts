@@ -27,6 +27,17 @@ export interface ArmatureFile {
    * way out. Only the autosave keeps it; the .armature file leaves it out.
    */
   thumb?: Blob;
+  /**
+   * The library project this armature was opened from or last saved to,
+   * where Save to library writes again (project.ts). The autosave keeps
+   * it, so a reload still knows; no file ever carries it.
+   */
+  project?: { id: string; title: string; scope?: 'admin' };
+  /**
+   * Whether edits mirror, as it stood: what a library project saved from
+   * the gallery card carries. The mode itself starts with it off.
+   */
+  symmetry?: boolean;
 }
 
 /**

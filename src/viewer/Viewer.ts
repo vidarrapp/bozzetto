@@ -333,6 +333,13 @@ export class Viewer {
     metalness: 0,
   });
   private groundMode: GroundMode = 'shadow';
+  /**
+   * The ground's height when a mode holds it fixed (Armature: the floor its
+   * figure stands and plants its feet on), whatever the subject's box says;
+   * null lets it follow the subject's foot, as everywhere else. While it is
+   * held there is no pedestal, which would move it.
+   */
+  private floorY: number | null = null;
   private stageColor = DEFAULT_STAGE_COLOR;
   private stageRoughness = DEFAULT_STAGE_ROUGHNESS;
   private stageMetalness = 0;
@@ -1175,7 +1182,7 @@ export class Viewer {
   // --- stage (ground: off / shadow / floor / pedestal) ------------------
 
   setGround(mode: GroundMode): void {
-    this.groundMode = mode;
+    this.groundMode = this.floorY !== null && mode === 'pedestal' ? 'floor' : mode;
     this.layoutStage(); // the pedestal changes the ground height
     this.updateStage();
     this.invalidate();
@@ -1185,9 +1192,27 @@ export class Viewer {
     return this.groundMode;
   }
 
-  /** Cycle off → shadow → floor → pedestal → off (hotkey "g"). */
+  /**
+   * Hold the ground at world height `y` (Armature mode), or let it follow
+   * the subject again (null). Held, it is not moved by the subject's box,
+   * and a pedestal - which would lower it - becomes the floor.
+   */
+  lockFloor(y: number | null): void {
+    this.floorY = y;
+    if (y !== null && this.groundMode === 'pedestal') this.groundMode = 'floor';
+    this.layoutStage();
+    this.updateStage();
+    this.invalidate();
+  }
+
+  /** The ground's held height, or null when it follows the subject. */
+  lockedFloor(): number | null {
+    return this.floorY;
+  }
+
+  /** Cycle off → shadow → floor → pedestal → off (hotkey "g"); no pedestal while the floor is held. */
   cycleGround(): void {
-    const order: GroundMode[] = ['off', 'shadow', 'floor', 'pedestal'];
+    const order: GroundMode[] = this.floorY !== null ? ['off', 'shadow', 'floor'] : ['off', 'shadow', 'floor', 'pedestal'];
     this.setGround(order[(order.indexOf(this.groundMode) + 1) % order.length]);
   }
 
@@ -1240,7 +1265,9 @@ export class Viewer {
     if (finite(state.roughness)) this.setStageRoughness(Math.min(1, Math.max(0, state.roughness)));
     if (finite(state.metalness)) this.setStageMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (finite(state.pedestalScale) && state.pedestalScale > 0) this.pedestalScale = state.pedestalScale;
-    if (GROUND_MODES.includes(state.ground as GroundMode)) this.groundMode = state.ground!;
+    if (GROUND_MODES.includes(state.ground as GroundMode)) {
+      this.groundMode = this.floorY !== null && state.ground === 'pedestal' ? 'floor' : state.ground!;
+    }
     this.layoutStage();
     this.updateStage();
     this.invalidate();
@@ -1289,11 +1316,13 @@ export class Viewer {
 
     // Ground sits at the foot of whatever stands on it (the pedestal, or the
     // subject directly). A large span so the shadow-catcher reaches the shadows.
-    const standY = this.groundMode === 'pedestal' ? baseY - pedH : baseY;
+    // Held by the mode (lockFloor), it is where the mode says, a hair under
+    // so a sole on it does not flicker through.
+    const standY = this.floorY ?? (this.groundMode === 'pedestal' ? baseY - pedH : baseY);
     const span = Math.max(size.x, size.z) * 12 + 1;
     this.ground.geometry.dispose();
     this.ground.geometry = new PlaneGeometry(span, span);
-    this.ground.position.set(center.x, standY - size.y * 0.001, center.z);
+    this.ground.position.set(center.x, standY - size.y * (this.floorY !== null ? 0.0002 : 0.001), center.z);
   }
 
   /** Rotate the whole lighting environment — directional rig + HDRI — together. */

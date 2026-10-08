@@ -5,6 +5,7 @@ import { MEMBER_LIMITS } from './config';
 import { randomId } from './crypto';
 import { filesOrigin } from './env';
 import { HttpError } from './http';
+import { weighUnweighed } from './quota';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MAX_TITLE = 200;
@@ -55,12 +56,24 @@ export function prefixFor(row: Pick<ProjectRow, 'id' | 'storage_prefix'>): strin
 }
 
 /** The files a project can have, as they follow its prefix. Nothing else is stored or served. */
-export const PROJECT_FILE = /^(scene\.bozz|thumb\.jpg|frames\/sd\/\d{4}\.glb)$/;
+export const PROJECT_FILE = /^(scene\.bozz|armature\.json|thumb\.jpg|frames\/sd\/\d{4}\.glb)$/;
 export const SCENE_FILE = 'scene.bozz';
 export const THUMB_FILE = 'thumb.jpg';
 /** Where a project's frames are, under its prefix. */
 export const FRAMES_DIR = 'frames/sd/';
 export const frameFile = (index: number): string => `${FRAMES_DIR}${String(index).padStart(4, '0')}.glb`;
+
+// --- armature projects: the fourth mode -------------------------------------
+//
+// A posed figure saved from Armature mode: one file, armature.json
+// (shared/armature.ts; stored by functions/_shared/armatureFile.ts), and no
+// frames. Like a scene it stays what it was made as, starts private, and
+// gets an id from the server when none is given.
+
+/** The modes a create or a patch may name. */
+export const PROJECT_MODES: readonly ProjectMode[] = ['timelapse', 'model', 'scene', 'armature'];
+/** Modes whose project is a file of its own rather than frames: made as one, a project stays one. */
+export const isFileMode = (mode: unknown): mode is 'scene' | 'armature' => mode === 'scene' || mode === 'armature';
 
 /**
  * The prefix a new project's files go under: its creator's folder,
@@ -313,9 +326,9 @@ export interface CreateInput {
  * An id for a scene. Nobody types one: a scene is saved from a menu, not
  * published under a chosen slug, so the server picks it.
  */
-function newSceneId(): string {
+function newSceneId(mode: 'scene' | 'armature' = 'scene'): string {
   const rand = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => (b % 36).toString(36)).join('');
-  return `scene-${Date.now().toString(36)}-${rand}`;
+  return `${mode}-${Date.now().toString(36)}-${rand}`;
 }
 
 /**
@@ -330,9 +343,9 @@ async function ownedRow(env: Env, id: string, scope: OwnerScope): Promise<Projec
 }
 
 export async function createProject(env: Env, input: CreateInput, scope: OwnerScope): Promise<ProjectRow> {
-  const mode: ProjectMode = input.mode === 'model' || input.mode === 'scene' ? input.mode : 'timelapse';
+  const mode: ProjectMode = PROJECT_MODES.includes(input.mode as ProjectMode) ? (input.mode as ProjectMode) : 'timelapse';
   const given = String(input.id ?? '').trim().toLowerCase();
-  const id = mode === 'scene' && !given ? newSceneId() : given;
+  const id = isFileMode(mode) && !given ? newSceneId(mode) : given;
   if (!SLUG.test(id)) throw new HttpError('Invalid id (use a-z, 0-9, hyphen; max 63 chars)');
   // Ids are one namespace whoever owns the row, so this asks of all of them.
   if (await env.DB.prepare('SELECT 1 FROM projects WHERE id = ?').bind(id).first()) {
@@ -343,7 +356,7 @@ export async function createProject(env: Env, input: CreateInput, scope: OwnerSc
   const fps = validFps(input.fps, 4);
   // Publishing has always been public and stays so by default; a scene is
   // work kept for yourself, so it starts private.
-  const visibility = validVisibility(input.visibility, mode === 'scene' ? 'private' : 'public');
+  const visibility = validVisibility(input.visibility, isFileMode(mode) ? 'private' : 'public');
   // Only a template is ever public (docs/accounts.md §1), so what owner
   // tools publish is one - nobody's, on the gallery as before. Anything
   // private is the owner's own.
@@ -397,8 +410,8 @@ export async function createMemberProject(
 ): Promise<ProjectRow> {
   memberVisibility(input.visibility);
   const mode = input.mode ?? 'timelapse';
-  if (mode !== 'timelapse' && mode !== 'model' && mode !== 'scene') {
-    throw new HttpError("mode: expected 'timelapse', 'model' or 'scene'", 400, 'bad_request');
+  if (!PROJECT_MODES.includes(mode as ProjectMode)) {
+    throw new HttpError("mode: expected 'timelapse', 'model', 'scene' or 'armature'", 400, 'bad_request');
   }
   const fps = validFps(input.fps, 4);
   const title = cleanTitle(input.title) ?? 'Untitled';
@@ -505,7 +518,7 @@ export function patched(row: ProjectRow, patch: Record<string, unknown>): Patche
   // file and no frames, the others frames and no file, and the editor's
   // mode switch must not turn either into a project nothing can open.
   const mode: ProjectMode =
-    row.mode !== 'scene' && (patch.mode === 'model' || patch.mode === 'timelapse') ? patch.mode : row.mode;
+    !isFileMode(row.mode) && (patch.mode === 'model' || patch.mode === 'timelapse') ? patch.mode : row.mode;
   const fps = validFps(patch.fps, row.fps);
   // The look blocks (lighting, environment, ...) are stored as sent, so
   // the row as a whole is what gets bounded - in bytes, as D1 counts it: a
@@ -573,7 +586,7 @@ export async function updateProject(
   scope: OwnerScope,
   by: Actor,
 ): Promise<ProjectRow> {
-  const row = await ownedRow(env, id, scope);
+  let row = await ownedRow(env, id, scope);
   const visibility = validVisibility(patch.visibility, row.visibility);
   const { data, next, serialised, title, mode, fps } = patched(row, patch);
   // A public project is a template, for the reason createProject gives, so
@@ -584,6 +597,9 @@ export async function updateProject(
   const template = visibility === 'public' ? 1 : row.template;
   const owner = template ? null : row.owner_id;
   const becomes = template === 1 && row.template === 0;
+  // Its bytes leave its owner's usage: a row from before the counting is
+  // weighed first, so what leaves is what it holds.
+  if (becomes && row.owner_id) row = await weighUnweighed(env, row);
 
   // Re-upload with fewer frames? Drop the now-orphaned meshes from R2.
   if ('frames' in patch) {
@@ -679,11 +695,15 @@ export async function setTemplate(
   scope: OwnerScope,
   by: Actor,
 ): Promise<ProjectRow> {
-  const row = await ownedRow(env, id, scope);
+  let row = await ownedRow(env, id, scope);
   if ((row.template === 1) === on) return row;
   const owner = on
     ? null
     : ((await env.DB.prepare("SELECT id FROM users WHERE role = 'owner'").first<{ id: string }>())?.id ?? null);
+  // Where an account's usage is to move, a row from before the counting
+  // (bytes 0, its files still in R2) is weighed first, so the hand-over
+  // moves what it holds (weighUnweighed).
+  if (row.owner_id !== owner && (row.owner_id ?? owner) !== null) row = await weighUnweighed(env, row);
   const visibility: Visibility = on ? row.visibility : 'private';
   const done = await env.DB.batch([
     ...handOver(env, row, on, owner, by),

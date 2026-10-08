@@ -879,12 +879,16 @@ export class Panel {
     // Stage: a single ground style (contact shadow, fading floor, or pedestal),
     // each with its own albedo where relevant.
     const ground = document.createElement('select');
+    // Where the mode holds the floor (Armature), there is no pedestal to
+    // offer: it would move the ground the figure stands on.
+    const floorHeld = this.viewer.lockedFloor() !== null;
     for (const [value, label] of [
       ['off', 'None'],
       ['shadow', 'Shadow'],
       ['floor', 'Floor'],
       ['pedestal', 'Pedestal'],
     ] as const) {
+      if (floorHeld && value === 'pedestal') continue;
       const opt = document.createElement('option');
       opt.value = value;
       opt.textContent = label;
@@ -924,7 +928,7 @@ export class Panel {
       (v) => this.viewer.setPedestalScale(v),
       { limits: { min: 0.1 } },
     );
-    surfaceRows.appendChild(pedestalRow);
+    if (!floorHeld) surfaceRows.appendChild(pedestalRow);
     sec.appendChild(surfaceRows);
 
     // Conditional rows in one place, re-run by every select that changes

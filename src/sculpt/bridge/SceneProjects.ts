@@ -142,7 +142,7 @@ async function upload(client: ProjectsClient, u: SceneUpload, onProgress: (text:
 }
 
 /** A fetch that threw never reached a server (UnreachableError says so). */
-function unreachable(err: unknown): unknown {
+export function unreachable(err: unknown): unknown {
   return err instanceof TypeError ? new UnreachableError() : err;
 }
 
@@ -157,7 +157,7 @@ function unreachable(err: unknown): unknown {
  * §5) - theirs, which answers it with the same scope, so it saves back
  * there; then the public one. Throws when neither answers.
  */
-async function sceneManifest(
+export async function sceneManifest(
   id: string,
   scope?: 'admin',
 ): Promise<{ project: SceneProject; owner: boolean; scope?: 'admin' }> {
@@ -230,7 +230,7 @@ const ownerHere = async (): Promise<boolean> =>
  * owner's own project, asked for by this address, is not found here, as
  * it is not one to copy.
  */
-async function templateManifest(id: string): Promise<SceneProject> {
+export async function templateManifest(id: string): Promise<SceneProject> {
   let res: ApiResult;
   try {
     res = await apiFetch(`/api/projects/${encodeURIComponent(id)}`);

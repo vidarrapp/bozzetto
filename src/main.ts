@@ -266,6 +266,9 @@ function viewerManifest(raw: unknown): Manifest {
   if (r?.mode === 'scene') {
     throw new SceneProjectError(`"${r.title ?? 'This'}" is a scene saved from Sculpt: open it from the gallery`);
   }
+  if (r?.mode === 'armature') {
+    throw new SceneProjectError(`"${r.title ?? 'This'}" is an armature: it opens in Armature mode, from the gallery or My projects`);
+  }
   return validateManifest(raw);
 }
 

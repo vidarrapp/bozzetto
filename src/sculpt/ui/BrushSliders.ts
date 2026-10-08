@@ -39,36 +39,111 @@ export interface HistoryHooks {
   canRedo(): boolean;
 }
 
+/**
+ * The undo/redo chips, redo above undo: a tap steps once, holding walks the
+ * stack. Sculpt's rail carries them at its foot; Armature mode stands the
+ * same column where the rail would be (armature/mode.ts).
+ */
+export class HistoryButtons {
+  readonly el: HTMLDivElement;
+  private readonly btns: { undo: HTMLButtonElement; redo: HTMLButtonElement };
+  private state = { undo: false, redo: false };
+  private repeatTimer = 0;
+
+  constructor(private readonly history: HistoryHooks) {
+    this.el = document.createElement('div');
+    this.el.className = 'sculpt-hist';
+    this.btns = {
+      undo: this.build('Undo (ctrl+z)', UNDO_ICON, () => this.history.undo(), () => this.history.canUndo()),
+      redo: this.build('Redo (ctrl+shift+z)', REDO_ICON, () => this.history.redo(), () => this.history.canRedo()),
+    };
+    this.btns.undo.dataset.hist = 'undo';
+    this.btns.redo.dataset.hist = 'redo';
+    // Redo above undo (owner call): undo is the one reached for in a
+    // hurry, so it sits closest to the thumb at the bottom of the column.
+    this.el.append(this.btns.redo, this.btns.undo);
+  }
+
+  private build(title: string, icon: string, act: () => void, can: () => boolean): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sculpt-histbtn';
+    // Matches the state cache's initial false; refresh only writes the
+    // DOM on change, so the two must start in agreement.
+    btn.disabled = true;
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.innerHTML = icon;
+    const step = (): void => {
+      if (!can()) return this.stopRepeat();
+      act();
+      this.refresh();
+    };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+      step();
+      this.stopRepeat();
+      this.repeatTimer = window.setTimeout(() => {
+        this.repeatTimer = window.setInterval(step, REPEAT_STEP_MS);
+      }, REPEAT_DELAY_MS);
+    });
+    const stop = (): void => this.stopRepeat();
+    btn.addEventListener('pointerup', stop);
+    btn.addEventListener('pointercancel', stop);
+    holdable(btn);
+    return btn;
+  }
+
+  private stopRepeat(): void {
+    // A timeout id and an interval id share one numeric namespace; clearing
+    // with both is harmless and covers whichever phase the hold is in.
+    window.clearTimeout(this.repeatTimer);
+    window.clearInterval(this.repeatTimer);
+    this.repeatTimer = 0;
+  }
+
+  /** Enable/disable the chips; the DOM is touched only on change. */
+  refresh(): void {
+    const undo = this.history.canUndo();
+    const redo = this.history.canRedo();
+    if (undo !== this.state.undo) {
+      this.state.undo = undo;
+      this.btns.undo.disabled = !undo;
+    }
+    if (redo !== this.state.redo) {
+      this.state.redo = redo;
+      this.btns.redo.disabled = !redo;
+    }
+  }
+
+  dispose(): void {
+    this.stopRepeat();
+    this.el.remove();
+  }
+}
+
 export class BrushSliders {
   private readonly root: HTMLDivElement;
   private readonly nubs: { size: HTMLDivElement; strength: HTMLDivElement };
-  private readonly histBtns: { undo: HTMLButtonElement; redo: HTMLButtonElement };
-  private histState = { undo: false, redo: false };
-  private repeatTimer = 0;
+  private readonly hist: HistoryButtons;
 
   constructor(
     private readonly input: InputShell,
-    private readonly history: HistoryHooks,
+    history: HistoryHooks,
   ) {
     this.root = document.createElement('div');
     this.root.className = 'sculpt-sliders';
     const size = this.buildSlider('size', 'Brush size');
     const strength = this.buildSlider('strength', 'Brush strength');
     this.nubs = { size: size.nub, strength: strength.nub };
-    const hist = document.createElement('div');
-    hist.className = 'sculpt-hist';
-    this.histBtns = {
-      undo: this.buildHistButton('Undo (ctrl+z)', UNDO_ICON, () => this.history.undo(), () =>
-        this.history.canUndo(),
-      ),
-      redo: this.buildHistButton('Redo (ctrl+shift+z)', REDO_ICON, () => this.history.redo(), () =>
-        this.history.canRedo(),
-      ),
-    };
-    // Redo above undo (owner call): undo is the one reached for in a
-    // hurry, so it sits closest to the thumb at the bottom of the column.
-    hist.append(this.histBtns.redo, this.histBtns.undo);
-    this.root.append(size.el, strength.el, hist);
+    this.hist = new HistoryButtons(history);
+    this.root.append(size.el, strength.el, this.hist.el);
     document.body.appendChild(this.root);
 
     this.input.onBrushChange = () => this.refresh();
@@ -165,55 +240,6 @@ export class BrushSliders {
     );
   }
 
-  private buildHistButton(
-    title: string,
-    icon: string,
-    act: () => void,
-    can: () => boolean,
-  ): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'sculpt-histbtn';
-    // Matches the histState cache's initial false; refreshHistory only
-    // writes the DOM on change, so the two must start in agreement.
-    btn.disabled = true;
-    btn.title = title;
-    btn.setAttribute('aria-label', title);
-    btn.innerHTML = icon;
-    const step = (): void => {
-      if (!can()) return this.stopRepeat();
-      act();
-      this.refreshHistory();
-    };
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        btn.setPointerCapture(e.pointerId);
-      } catch {
-        // Synthetic events carry no active pointer; capture is best-effort.
-      }
-      step();
-      this.stopRepeat();
-      this.repeatTimer = window.setTimeout(() => {
-        this.repeatTimer = window.setInterval(step, REPEAT_STEP_MS);
-      }, REPEAT_DELAY_MS);
-    });
-    const stop = (): void => this.stopRepeat();
-    btn.addEventListener('pointerup', stop);
-    btn.addEventListener('pointercancel', stop);
-    holdable(btn);
-    return btn;
-  }
-
-  private stopRepeat(): void {
-    // A timeout id and an interval id share one numeric namespace; clearing
-    // with both is harmless and covers whichever phase the hold is in.
-    window.clearTimeout(this.repeatTimer);
-    window.clearInterval(this.repeatTimer);
-    this.repeatTimer = 0;
-  }
-
   /** Nub positions from the live tool values (bottom = min, top = max). */
   private refresh(): void {
     const tSize = (Math.log(this.input.getBrushRadius()) - LOG_MIN) / LOG_SPAN;
@@ -223,20 +249,11 @@ export class BrushSliders {
 
   /** Enable/disable the history chips; DOM is touched only on change. */
   refreshHistory(): void {
-    const undo = this.history.canUndo();
-    const redo = this.history.canRedo();
-    if (undo !== this.histState.undo) {
-      this.histState.undo = undo;
-      this.histBtns.undo.disabled = !undo;
-    }
-    if (redo !== this.histState.redo) {
-      this.histState.redo = redo;
-      this.histBtns.redo.disabled = !redo;
-    }
+    this.hist.refresh();
   }
 
   dispose(): void {
-    this.stopRepeat();
+    this.hist.dispose();
     this.input.onBrushChange = null;
     this.root.remove();
   }

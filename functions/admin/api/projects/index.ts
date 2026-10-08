@@ -14,9 +14,10 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, dat
   });
 
 // POST /admin/api/projects — create a project (Access-gated). A scene
-// (mode 'scene') may leave out its id, which the server then picks, and
-// starts private; everything else starts public unless asked otherwise,
-// and a public project is a template.
+// (mode 'scene'), or an armature ('armature'), may leave out its id,
+// which the server then picks, and starts private; everything else
+// starts public unless asked otherwise, and a public project is a
+// template.
 export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, request, data }) =>
   handle(async () => {
     const denied = requireAdmin(data);

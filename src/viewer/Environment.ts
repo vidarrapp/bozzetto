@@ -6,6 +6,12 @@ import { loadViaBlob, type AssetSource } from './AssetSource';
 import { hexColor } from './color';
 
 export type BackgroundMode = 'theme' | 'color' | 'hdri';
+/**
+ * Sculpt's and Armature's background for a new scene or figure and their
+ * fresh-start look (owner call): a neutral grey, 20 % on the colour
+ * picker's V scale. The viewer itself keeps following the theme.
+ */
+export const STUDIO_BG = '#333333';
 
 const BACKGROUND_MODES: readonly BackgroundMode[] = ['theme', 'color', 'hdri'];
 

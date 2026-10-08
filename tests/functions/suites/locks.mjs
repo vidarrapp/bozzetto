@@ -15,6 +15,8 @@ import {
   Browser,
   DATA,
   OWNER,
+  glb,
+  jpeg,
   asOwner,
   d1,
   ids,
@@ -33,6 +35,13 @@ const T = 2_100_000_000_000;
 const GiB = 1024 * 1024 * 1024;
 const MEMBER = 'u-lkmember0000000000000000';
 
+// The owner's files from before accounts, where 0.5 put them: their rows say
+// nothing (lk-own a stale 1234), so the bootstrap counts them from R2.
+const OWN_THUMB = jpeg(41, 900);
+const OWN_FRAME = glb({ seed: 42, bin: 2000, raw: true });
+const OWN2_FRAME = glb({ seed: 43, bin: 700, raw: true });
+const TEMPLATE_THUMB = jpeg(44, 1500);
+
 const project = (id, template, owner, bytes, visibility = 'private') =>
   `('${id}', '${id}', 'timelapse', 4, '${DATA}', '${visibility}', ${template}, ${owner ? `'${owner}'` : 'NULL'}, NULL, ${bytes}, 7000, 7000)`;
 
@@ -48,6 +57,12 @@ export const seed = {
       ${project('lk-template', 1, null, 0, 'public')},
       ${project('lk-member-proj', 0, MEMBER, 0)};`,
   ].join('\n'),
+  r2: [
+    { key: 'projects/lk-own/thumb.jpg', bytes: OWN_THUMB, type: 'image/jpeg' },
+    { key: 'projects/lk-own/frames/sd/0000.glb', bytes: OWN_FRAME, type: 'model/gltf-binary' },
+    { key: 'projects/lk-own2/frames/sd/0000.glb', bytes: OWN2_FRAME, type: 'model/gltf-binary' },
+    { key: 'projects/lk-template/thumb.jpg', bytes: TEMPLATE_THUMB, type: 'image/jpeg' },
+  ],
 };
 
 export async function run({ checks, on, off, compileShared, repo }) {
@@ -104,7 +119,11 @@ export async function run({ checks, on, off, compileShared, repo }) {
   const made = r.json?.user;
   const cookie = setCookies(r).find((c) => c.name === '__Host-bz_session');
   t.ok(r.status === 201 && made?.handle === 'vidarrapp' && made?.role === 'owner' && made?.status === 'active' && /^u-[0-9a-hjkmnp-tv-z]{26}$/.test(made?.id), `201 {user}: the owner's account, under a protected name, lower-cased (${r.status} ${JSON.stringify(made)})`);
-  t.ok(made?.usage?.quota === 10 * GiB && made?.usage?.used === 1234 && made?.usage?.reserved === 0, `10 GiB, and the claimed projects' bytes counted against it (${JSON.stringify(made?.usage)})`);
+  const mine = (await owner.call('GET', '/api/me/projects')).json ?? [];
+  const weighs = (id) => mine.find?.((p) => p.id === id)?.bytes;
+  const sum = mine.reduce?.((n, p) => n + p.bytes, 0);
+  t.ok(made?.usage?.quota === 10 * GiB && made?.usage?.used === sum && made?.usage?.used >= OWN_THUMB.length + OWN_FRAME.length + OWN2_FRAME.length && made?.usage?.reserved === 0 && !('recount' in (r.json ?? {})), `10 GiB, and the claimed projects' bytes, counted from R2, against it, all of them (${JSON.stringify(made?.usage)} ${r.json?.recount})`);
+  t.ok(weighs('lk-own') === OWN_THUMB.length + OWN_FRAME.length && weighs('lk-own2') === OWN2_FRAME.length, `each claimed project weighs what R2 holds of it, where its row said 1234 and 0 (${weighs('lk-own')}, ${weighs('lk-own2')})`);
   t.ok(cookie?.attrs.samesite === 'Lax' && cookie?.attrs.httponly === true && cookie?.attrs.secure === true && /^bz1_/.test(cookie?.value), 'and signed in, with the session cookie');
   const acc = (await owner.call('GET', '/api/me/account')).json;
   t.ok(acc?.email === OWNER && acc?.termsVersion === '2026-10' && acc?.sessions?.[0]?.method === 'bootstrap', `under the Access identity's address, the terms accepted, signed in by 'bootstrap' (${acc?.email} ${acc?.sessions?.[0]?.method})`);
@@ -159,6 +178,18 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(switched === 200 && back?.template === false && trail.length === 2 && trail.every((x) => x.actor === made?.id), `a Template switch there and back is audited as the owner's account (${trail.map((x) => x.actor).join(', ')})`);
   r = await admin(owner, 'GET', '/admin/api/projects/lk-own2');
   t.ok(r.status === 200 && r.json?.template === false, 'and the project came back to the owner, still within reach');
+  const usedNow = async () => (await owner.call('GET', '/api/me')).json?.usage?.used;
+  const used0 = await usedNow();
+  t.eq(used0, sum, 'and the bytes it took away came back with it');
+  // A template from before the counting (bytes 0, a thumbnail in R2), switched off: weighed first, so the owner takes what it holds.
+  r = await admin(owner, 'POST', '/admin/api/projects/lk-template/template', { json: { template: false } });
+  const tplTrail = (await on.call('GET', '/api/dev/audit?subject=lk-template')).json?.rows ?? [];
+  const used1 = await usedNow();
+  t.ok(r.status === 200 && used1 === used0 + TEMPLATE_THUMB.length && tplTrail.at(-1)?.detail?.bytes === TEMPLATE_THUMB.length, `a legacy template switched off moves what R2 holds of it onto the owner's usage (${used0} to ${used1}, ${JSON.stringify(tplTrail.at(-1)?.detail)})`);
+  r = await admin(owner, 'POST', '/admin/api/projects/lk-template/template', { json: { template: true } });
+  t.ok(r.status === 200 && (await usedNow()) === used0, `and switched on again, takes it away (${await usedNow()})`);
+  r = await admin(owner, 'POST', `/admin/api/users/${made?.id}/recount`);
+  t.ok(r.status === 200 && r.json?.bytesUsed === used0 && r.json?.before === used0 && r.json?.next === null, `the owner's Recount of their own account agrees, all counted (${JSON.stringify(r.json)})`);
   t.report();
 
   // --- the owner's passkey ---------------------------------------------------------------

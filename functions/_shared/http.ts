@@ -47,6 +47,7 @@ export type ErrorCode =
   | 'quota_exceeded'
   | 'bad_type'
   | 'bad_scene'
+  | 'bad_armature'
   | 'rate_limited'
   | 'accounts_off'
   | 'not_configured'

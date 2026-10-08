@@ -36,7 +36,7 @@ export interface SceneMeta {
 export interface ProjectSummary {
   id: string;
   title: string;
-  /** 'timelapse' | 'model' | 'scene' - a string, so a newer mode is still listed. */
+  /** 'timelapse' | 'model' | 'scene' | 'armature' - a string, so a newer mode is still listed. */
   mode: string;
   fps: number;
   updated_at: number;
@@ -247,6 +247,8 @@ function projectRefusalText(
     case 'bad_scene':
       // The server's own sentence: what in the scene it would not take.
       return (typeof body.reason === 'string' && body.reason.replace(/\.$/, '')) || 'The scene file was refused';
+    case 'bad_armature':
+      return (typeof body.reason === 'string' && body.reason.replace(/\.$/, '')) || 'The armature file was refused';
     case 'bad_request':
       if (limit !== null) return `You have ${limit} projects, the most an account can have. Delete one to make room`;
       if (body.reason === 'public') return 'Your projects are private: they cannot be made public';
@@ -674,6 +676,11 @@ export interface ProjectsClient {
     body: { parts: { part: number; etag: string }[]; objects: number; tris: number },
   ): Promise<SceneProject>;
   sceneAbort(id: string, uploadId: string): Promise<unknown>;
+  /**
+   * An armature project's file, armature.json (shared/armature.ts), in one
+   * request: it replaces the one stored. Answers the project's manifest.
+   */
+  armatureUpload(id: string, bytes: ArrayBuffer): Promise<SceneProject>;
 }
 
 function projectRoutes(scope: ProjectScope): ProjectsClient {
@@ -716,6 +723,8 @@ function projectRoutes(scope: ProjectScope): ProjectsClient {
         ...asJson(body),
       }),
     sceneAbort: (id, uploadId) => call(`${project(id)}/scene?upload=${encodeURIComponent(uploadId)}`, { method: 'DELETE' }),
+    armatureUpload: (id, bytes) =>
+      call<SceneProject>(`${project(id)}/armature`, { method: 'POST', body: bytes, contentType: 'application/octet-stream' }),
   };
   return client;
 }

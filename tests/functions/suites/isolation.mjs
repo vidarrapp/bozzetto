@@ -144,7 +144,7 @@ export async function run({ checks, on }) {
   r = await alice.call('POST', '/api/me/projects', { json: { title: 'Sneaky', mode: 'model', visibility: 'private', template: true, id: 'is-chosen' } });
   const sneaky = r.json;
   t.ok(r.status === 201 && sneaky?.visibility === 'private' && sneaky?.template === false && sneaky?.id !== 'is-chosen' && /^p-/.test(sneaky?.id ?? ''), `private is taken; an id or template flag asked for is not (${r.status} ${sneaky?.id} ${sneaky?.template})`);
-  r = await alice.call('POST', '/api/me/projects', { json: { title: 'Odd', mode: 'armature' } });
+  r = await alice.call('POST', '/api/me/projects', { json: { title: 'Odd', mode: 'sketch' } });
   t.ok(r.status === 400 && r.json?.code === 'bad_request', `a mode there is not: 400 (${r.status})`);
   r = await alice.call('PUT', `/api/me/projects/${sneaky?.id}`, { json: { visibility: 'public' } });
   t.ok(r.status === 400 && r.json?.reason === 'public', `nor can an update make one public (${r.status} ${r.json?.reason})`);

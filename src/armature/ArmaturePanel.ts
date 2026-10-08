@@ -30,7 +30,8 @@ export interface ArmaturePanelHooks {
 }
 
 /**
- * The Armature panel (right edge, under Render): the figure and its
+ * The Armature panel (left edge, where Sculpt docks Scene and Model; the
+ * right keeps Render): the figure and its
  * symmetry, the selected joint's angles, the selected part's proportions,
  * and the way out to Sculpt. The joint and part sections rebuild on every
  * selection change, so their sliders always show the live values.
@@ -54,7 +55,7 @@ export class ArmaturePanel extends SidePanel {
     private readonly hooks: ArmaturePanelHooks,
     viewer: Viewer,
   ) {
-    super({ id: 'armature', title: 'Armature', side: 'right', variant: 'panel--armature' });
+    super({ id: 'armature', title: 'Armature', side: 'left', variant: 'panel--armature' });
 
     const fig = section(this.body, 'Figure');
     // The block figures, then the mannequins (Blender Studio's CC0 base
@@ -77,7 +78,7 @@ export class ArmaturePanel extends SidePanel {
     );
     fig.appendChild(poseRow);
     const hint = div('sculpt-panel__hint muted');
-    hint.textContent = 'Click a part to pose its joint; the pelvis moves the whole figure (w).';
+    hint.textContent = 'Tap a part to pose its joint, and tap off the figure to let it go: turning the view keeps it. The pelvis moves the whole figure (w).';
     fig.appendChild(hint);
     // What a loaded model turned out to be, and what had to be guessed
     // about it. Empty, and invisible, until one is loaded.
@@ -106,7 +107,7 @@ export class ArmaturePanel extends SidePanel {
     reach.appendChild(plant);
     const pinHint = div('sculpt-panel__hint muted');
     pinHint.textContent =
-      'Drag a handle and the limb reaches for it; drag the violet one in the hips and the whole figure moves. A pinned handle stays put while the pelvis moves; with Plant feet on, a foot on the ground stands flat.';
+      'Drag a handle and the limb reaches for it, or tap it for a move gizmo; drag the violet one in the hips and the whole figure moves. A pinned handle stays put while the pelvis moves. Plant feet stands a foot that is on the floor flat on it, marked by a ring on the floor; off, the foot tilts with its shin. Pins, not planting, keep a foot in its place.';
     reach.appendChild(pinHint);
     for (const c of figure().chains()) {
       const box = checkbox(`Pin ${c.label.toLowerCase()}`, false, (on) => this.hooks.pin(c.id, on));

@@ -1,9 +1,10 @@
-import { Box3, Group, Mesh, Plane, Raycaster, SphereGeometry, Vector2, Vector3, type Object3D } from 'three';
+import { Box3, Group, Mesh, Plane, Raycaster, RingGeometry, SphereGeometry, Vector2, Vector3, type Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { Viewer } from '../viewer/Viewer';
 import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
+import { STUDIO_BG } from '../viewer/Environment';
 import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
@@ -20,8 +21,35 @@ import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/re
 import { statusToast } from '../sculpt/ui/statusToast';
 import { armatureStamp, packArmature, unpackArmature } from './file';
 import { loadArmature, saveArmature, saveHandoff, type ArmatureFile } from './persist';
+import { HistoryButtons } from '../sculpt/ui/BrushSliders';
+import { AuthExpiredError, checkSignIn, failureText, roleOf, type Role } from '../admin/api';
+import { suspensionText } from '../net/account';
+import { isProjectId } from '../net/ids';
+import { takeOpen } from '../ui/openToken';
+import { signInButton } from '../ui/signIn';
+import {
+  ArmatureFileError,
+  armatureText,
+  defaultArmatureTitle,
+  encodeArmatureProject,
+  fetchArmatureProject,
+  fetchArmatureTemplate,
+  isProjectRecord,
+  readArmatureProject,
+  uploadArmature,
+  type ArmatureLink,
+} from './project';
 
-const HISTORY_LIMIT = 64;
+/** Undo steps kept (owner call), the oldest let go past it. */
+const HISTORY_LIMIT = 100;
+/**
+ * How long a panel slider rests before its change is one undo step: a
+ * drag of a slider is one step, not one per value it passed through. A
+ * release (its change event) takes the step at once.
+ */
+const SLIDER_SETTLE_MS = 400;
+/** How long Save to library waits on the sign-in probe before treating the visit as a guest's. */
+const ROLE_WAIT_MS = 5000;
 const SAVE_GAP_MS = 400;
 /** The preset id a figure read from a file goes under. */
 const IMPORTED = 'imported';
@@ -92,13 +120,60 @@ async function ensureFigure(id: string): Promise<void> {
  * the viewer as it always was.
  */
 export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
+  // The floor is held where the figure stands (owner call), so the Render
+  // panel built on the event below offers no pedestal; its height comes
+  // once the figure is built (holdFloor).
+  viewer.lockFloor(0);
   // The Render panel, Help and Preferences all listen for this.
   window.dispatchEvent(
     new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'armature' } }),
   );
   viewer.tapToFocus = false;
 
-  const saved = await loadArmature();
+  // An armature project opened by its address (docs/accounts.md §4-5): one's
+  // own (`&project=<id>`, from My projects or the owner's gallery, saved back
+  // there) or a template's copy (`&template=<id>`, nobody's project, so Save
+  // to library makes one of your own). Read through the sanitiser
+  // (project.ts) before anything is replaced; the address is cleaned at once,
+  // so a reload does not open it again over the work done since.
+  const query = new URLSearchParams(window.location.search);
+  const projectParam = query.get('project');
+  const templateParam = query.get('template');
+  const projectId = isProjectId(projectParam) ? projectParam : null;
+  const templateId = isProjectId(templateParam) ? templateParam : null;
+  const projectScope = query.get('scope') === 'admin' ? ('admin' as const) : undefined;
+  const sentHere = takeOpen();
+  if (projectParam !== null || templateParam !== null) {
+    const url = new URL(window.location.href);
+    for (const k of ['project', 'template', 'scope']) url.searchParams.delete(k);
+    history.replaceState(history.state, '', url);
+  }
+  let saved = await loadArmature();
+  /** The project Save to library writes to: the autosave's, or the one just opened. */
+  let bootLink: ArmatureLink | null = saved?.project ?? null;
+  let bootSymmetry: boolean | null = null;
+  /** Said once the page is up: what an opened file needed mending, or why it did not open. */
+  const bootNotes: string[] = [];
+  if (projectId || templateId) {
+    try {
+      const got: Awaited<ReturnType<typeof fetchArmatureTemplate>> & { link?: ArmatureLink | null } = projectId
+        ? await fetchArmatureProject(projectId, projectScope)
+        : await fetchArmatureTemplate(templateId!);
+      const what = got.link ? `"${got.title}"` : `a copy of "${got.title}"`;
+      const key = projectId ? `project:${projectId}` : `template:${templateId}`;
+      // The card that sent this tab here asked already, if there was
+      // anything to ask about (ui/openToken); an address alone asks here.
+      if (!saved || sentHere === key || window.confirm(`Open ${what}? The armature in progress on this device will be replaced.`)) {
+        saved = got.file;
+        bootLink = got.link ?? null;
+        bootSymmetry = got.symmetry;
+        if (got.notice) bootNotes.push(got.notice);
+      }
+    } catch (err) {
+      console.warn('armature: the project could not be opened', err);
+      bootNotes.push(`That armature could not be opened: ${failureText(err)}`);
+    }
+  }
   if (saved?.model) {
     try {
       await parseModel(saved.model);
@@ -140,6 +215,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   }
   let armature = figureFor(wanted);
+  /**
+   * The ground, held at the floor a figure stands on as it is built: the
+   * lowest point of its feet in the rest pose, which is the height its
+   * planting stands feet at too. The four mannequins rest with their soles
+   * at 0, so the floor stays put as one replaces another. Called on a
+   * figure fresh from figureFor, before any pose or placement lands.
+   */
+  const holdFloor = (): void => viewer.lockFloor(armature.bounds().min.y);
+  holdFloor();
   let restored = false;
   if (saved) {
     try {
@@ -153,12 +237,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // they stand once the figure is placed: pins captured on a pose that is
   // then replaced would hold the feet somewhere they are not.
   if (!restored) armature.pinFeet();
+  if (bootSymmetry !== null) armature.symmetry = bootSymmetry;
   viewer.adoptMesh(armature.mesh);
   // The viewer boots on a synthetic one-frame manifest whose subject is a
   // placeholder cube; sculpt mode swaps its geometry, this mode brings its
   // own figure instead - so the cube has to be sent away, or it sits at the
   // origin as a tiny box (owner report).
   viewer.setSculptVisible(false);
+  // A neutral grey backdrop (STUDIO_BG), as Sculpt's, until a saved look says otherwise.
+  viewer.environment.setBackgroundMode('color');
+  viewer.environment.setBackgroundColor(STUDIO_BG);
+  // What the Render panel's Reset look goes back to: the look as the mode
+  // starts it, grey backdrop and all, before a saved one lands on top.
+  const defaultLook = viewer.getLook();
   if (saved?.look) {
     await viewer.applyLook(saved.look);
     // The Render panel was built on the mode's event, before this look
@@ -177,6 +268,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // --- selection + gizmos ---------------------------------------------------
   const canvas = viewer.renderer.domElement;
   let selected: string | null = null;
+  /**
+   * The IK ball picked by a tap, if any (owner request): shown selected,
+   * with the move gizmo on it, which reaches the limb as a drag of the ball
+   * does. A part's selection and a ball's are one at a time.
+   */
+  let selectedHandle: string | null = null;
   const wash = new MeshBasicNodeMaterial();
   wash.color.set('#c87049');
   wash.transparent = true;
@@ -241,7 +338,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       }
     });
     tc.addEventListener('objectChange', () => {
-      afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
+      if (selectedHandle) handleMoved(selectedHandle);
+      else afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
     });
   }
   /**
@@ -279,6 +377,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       tc.getHelper().visible = false;
     }
     attached.clear();
+    selectedHandle = null;
     selected = bone && armature.bones.has(bone) ? bone : null;
     if (selected) {
       const def = armature.def(selected)!;
@@ -310,6 +409,34 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     syncHandles();
     panel.refresh(selected);
+  };
+
+  /** A tap on an IK ball: that ball selected, and the move gizmo on it. */
+  const selectHandle = (id: string | null): void => {
+    select(null);
+    const ball = id ? handles.get(id) : undefined;
+    if (!id || !ball || !handlesOn) return;
+    selectedHandle = id;
+    trimFreeRotate(false);
+    moveTc.attach(ball);
+    moveTc.enabled = true;
+    moveTc.getHelper().visible = true;
+    attached.add(moveTc);
+    syncHandles();
+    placeControls();
+  };
+  /** The selected ball moved by its gizmo: the limb reaches for it, as a drag of the ball reaches. */
+  const handleMoved = (id: string): void => {
+    const ball = handles.get(id);
+    if (!ball) return;
+    armature.reach(id, ball.getWorldPosition(dragPoint));
+    armature.repin(id);
+    armature.applyPins(id);
+    // Back where the hand or foot got to, which the gizmo then follows.
+    syncHandles();
+    placeControls();
+    refreshPanel();
+    scheduleSave();
   };
 
   // --- IK handles ------------------------------------------------------------
@@ -350,7 +477,50 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   rootMat.depthWrite = false;
   rootMat.transparent = true;
   rootMat.opacity = 0.85;
+  // A ball selected by a tap: lit up, and a size larger.
+  const selectedMat = new MeshBasicNodeMaterial();
+  selectedMat.color.set('#ffb070');
+  selectedMat.depthTest = false;
+  selectedMat.depthWrite = false;
+  // A ring on the floor under each foot planting holds flat (owner report:
+  // the box seemed to do nothing, since pins - not planting - hold a foot
+  // in place, and a foot standing flat looks much as one at rest).
+  const plantGroup = new Group();
+  plantGroup.name = 'plant-marks';
+  viewer.scene.add(plantGroup);
+  const plantMat = new MeshBasicNodeMaterial();
+  plantMat.color.set('#c87049');
+  plantMat.transparent = true;
+  plantMat.opacity = 0.7;
+  plantMat.depthWrite = false;
+  const plantGeometry = new RingGeometry(0.72, 1, 40);
+  plantGeometry.rotateX(-Math.PI / 2);
+  const plantMarks = new Map<string, Mesh>();
+  const markAt = new Vector3();
+  const syncPlantMarks = (): void => {
+    const planted = new Set(armature.plantedFeet());
+    const floor = viewer.lockedFloor() ?? 0;
+    for (const [foot, ring] of plantMarks) {
+      if (!planted.has(foot)) ring.visible = false;
+    }
+    for (const foot of planted) {
+      let ring = plantMarks.get(foot);
+      if (!ring) {
+        ring = new Mesh(plantGeometry, plantMat);
+        ring.name = `plant:${foot}`;
+        ring.renderOrder = 20;
+        plantGroup.add(ring);
+        plantMarks.set(foot, ring);
+      }
+      armature.effectorWorld(foot, markAt, 0.5);
+      // About a foot's length across, a hair above the floor.
+      ring.scale.setScalar(0.13 * armature.scale);
+      ring.position.set(markAt.x, floor + 0.002 * armature.scale, markAt.z);
+      ring.visible = true;
+    }
+  };
   const HANDLE_RADIUS = 1.9;
+  const SELECTED_SCALE = 1.35;
   const AIM_RADIUS = 1.3;
   let handlesOn = true;
   const handles = new Map<string, Mesh>();
@@ -389,6 +559,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // Every pose change, selection and figure swap comes through here: the
     // picture changed, so a still frame's smoothing starts over.
     viewer.invalidate();
+    syncPlantMarks();
     handleGroup.visible = handlesOn;
     if (!handlesOn) return;
     const at = new Vector3();
@@ -397,7 +568,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       if (!c) continue;
       armature.effectorWorld(c.effector, at);
       m.position.copy(at);
-      m.material = armature.isPinned(id) ? pinnedMat : freeMat;
+      m.material = id === selectedHandle ? selectedMat : armature.isPinned(id) ? pinnedMat : freeMat;
+      m.scale.setScalar(id === selectedHandle ? HANDLE_RADIUS * SELECTED_SCALE : HANDLE_RADIUS);
     }
     for (const [id, m] of aims) {
       const where = armature.hingeWorld(id, at);
@@ -465,6 +637,28 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   let picked: string | null = null;
   /** How near a ball's centre a press has to land to take it, in CSS pixels. */
   const PICK_RADIUS = 18;
+  /**
+   * How far a press may travel and still be a tap, in CSS pixels: the
+   * viewer's own TAP_SLOP and Sculpt's for a finger (InputShell). A press
+   * that goes farther is a drag - an orbit, a pan, a ball's drag - and
+   * selects nothing.
+   */
+  const TAP_SLOP = 10;
+  /**
+   * A press that may yet be a tap (owner request): on a part, or on empty
+   * space, the selection changes only when it lifts within TAP_SLOP, so
+   * the view can be turned, panned and zoomed - from on the figure or off
+   * it, by mouse or by fingers - and the part stays selected with its
+   * gizmo. On an IK ball it is the ball's drag from the start, as ever,
+   * and only becomes the ball's selection if it lifts within the slop:
+   * `before` is the pose at the press, put back then if the drag had
+   * stirred it on the way.
+   */
+  let tap: { id: number; x: number; y: number; target: string | null; ball: string | null; before: string | null } | null = null;
+  /** The pointers down on the canvas: a second one is a pinch, never a tap. */
+  const down = new Set<number>();
+  const travelled = (e: PointerEvent): boolean =>
+    !!tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP;
   const projected = new Vector3();
   /** Where a world point falls on the page, in CSS pixels; null behind the camera. */
   const toPage = (world: Vector3): [number, number] | null => {
@@ -541,6 +735,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
 
   const onPointerDown = (e: PointerEvent): void => {
+    down.add(e.pointerId);
+    // A second finger: a pinch or a two-finger pan, whatever the first was.
+    if (down.size > 1) tap = null;
     if (lightHeld) {
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -562,6 +759,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       t.pointerHover(t._getPointer(e));
       if (t.axis) {
         picked = null;
+        tap = null;
         return;
       }
     }
@@ -587,6 +785,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           };
         } else {
           reaching = ball.id;
+          if (down.size === 1) {
+            tap = { id: e.pointerId, x: e.clientX, y: e.clientY, target: null, ball: ball.id, before: null };
+          }
         }
       }
       viewer.setOrbitEnabled(false);
@@ -601,12 +802,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     const hit = raycaster.intersectObject(armature.mesh, false)[0];
     picked = hit ? armature.boneAt(hit) : null;
-    select(picked);
+    // Selected when it lifts, if it was a tap; the press goes on to the
+    // orbit either way.
+    tap = down.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, target: picked, ball: null, before: null } : null;
   };
   const onPointerMove = (e: PointerEvent): void => {
     const t0 = performance.now();
     // A drag's work for the coming frame, for the frame meter.
     const noteWork = (): void => viewer.noteInput(performance.now() - t0, e.timeStamp);
+    if (tap && e.pointerId === tap.id && travelled(e)) tap = null;
     const dx = e.clientX - lastPointer.x;
     const dy = e.clientY - lastPointer.y;
     lastPointer.x = e.clientX;
@@ -659,6 +863,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (!reaching) return;
     aim(e);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+    // Still maybe a tap: what the pose was, should it be one.
+    if (tap?.ball && tap.before === null) tap.before = JSON.stringify(armature.serialize());
     armature.reach(reaching, dragPoint);
     armature.repin(reaching);
     armature.applyPins(reaching);
@@ -671,6 +877,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     noteWork();
   };
   const onPointerUp = (e: PointerEvent): void => {
+    down.delete(e.pointerId);
+    let tapped: typeof tap = null;
+    if (tap && e.pointerId === tap.id) {
+      if (e.type === 'pointerup' && !travelled(e)) tapped = tap;
+      tap = null;
+    }
+    // A tap on a part or on empty space: that part selected, or nothing.
+    if (tapped && !tapped.ball) select(tapped.target);
     if (!reaching && !aiming && !moving) return;
     reaching = null;
     aiming = null;
@@ -681,7 +895,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     } catch {
       // Never captured (synthetic events): nothing to release.
     }
-    commit();
+    if (tapped?.ball) {
+      // A tap on an IK ball: the pose as it was at the press, and the ball selected.
+      if (tapped.before !== null) {
+        armature.restore(JSON.parse(tapped.before) as ArmatureState);
+      }
+      selectHandle(tapped.ball);
+    } else {
+      commit();
+    }
     flushPanel();
   };
   canvas.addEventListener('pointerdown', onPointerDown, true);
@@ -690,36 +912,97 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   window.addEventListener('pointercancel', onPointerUp, true);
 
   // --- history + autosave ----------------------------------------------------
-  const history: string[] = [];
-  const future: string[] = [];
-  let last = JSON.stringify(armature.serialize());
+  /**
+   * Undo (owner request: as in Sculpt, the same keys and buttons): each
+   * entry is the figure as it stood - its state and symmetry, the figure's
+   * id among them - before a change: a drag's end (a gizmo, a ball, the
+   * root's ball: one step a drag, never one a frame), a pin, Plant feet, a
+   * reset, a mirror, symmetry, a change of figure, and a panel slider once
+   * it rests (SLIDER_SETTLE_MS) or is let go. HISTORY_LIMIT steps are kept;
+   * New, Open, Load model and an opened project start it over.
+   */
+  const undoStack: string[] = [];
+  const redoStack: string[] = [];
+  const snap = (): string => JSON.stringify({ s: armature.serialize(), y: armature.symmetry });
+  let last = snap();
+  /** A slider's step, waiting for the slider to rest. */
+  let pendingStep = 0;
+  /** An undo or redo putting a state back: what it does is not a step of its own. */
+  let stepping = false;
   const commit = (): void => {
-    const now = JSON.stringify(armature.serialize());
+    if (pendingStep) {
+      clearTimeout(pendingStep);
+      pendingStep = 0;
+    }
+    if (stepping) return;
+    const now = snap();
     if (now === last) return;
-    history.push(last);
-    if (history.length > HISTORY_LIMIT) history.shift();
-    future.length = 0;
+    undoStack.push(last);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
     last = now;
     scheduleSave();
+    histButtons.refresh();
   };
-  const applyState = (json: string): void => {
-    armature.restore(JSON.parse(json) as ArmatureState);
-    last = json;
-    select(selected); // also syncs the handles and the panel
+  /** A panel slider moved: its step is taken once it rests, so a drag of it is one. */
+  const commitSoon = (): void => {
+    if (pendingStep) clearTimeout(pendingStep);
+    pendingStep = window.setTimeout(commit, SLIDER_SETTLE_MS);
+    histButtons.refresh();
+  };
+  /** Start the history over, from the figure as it stands. */
+  const clearHistory = (): void => {
+    if (pendingStep) clearTimeout(pendingStep);
+    pendingStep = 0;
+    undoStack.length = 0;
+    redoStack.length = 0;
+    last = snap();
+    histButtons.refresh();
+  };
+  const applyState = async (json: string): Promise<void> => {
+    const { s: state, y: symmetry } = JSON.parse(json) as { s: ArmatureState; y: boolean };
+    stepping = true;
+    try {
+      // A step across a change of figure puts that figure back too.
+      if (state.preset !== armature.rig.id) await replaceFigure(state.preset, state);
+      else armature.restore(state);
+      armature.symmetry = symmetry;
+    } finally {
+      stepping = false;
+    }
+    last = snap();
+    // Also syncs the handles and the panel.
+    if (selectedHandle) selectHandle(selectedHandle);
+    else select(selected);
+    panel.syncFigure();
     scheduleSave();
+    histButtons.refresh();
   };
   const undo = (): void => {
-    const prev = history.pop();
+    if (stepping) return;
+    commit(); // a slider's step still resting is the one to undo
+    const prev = undoStack.pop();
     if (prev === undefined) return;
-    future.push(last);
-    applyState(prev);
+    redoStack.push(last);
+    void applyState(prev);
   };
   const redo = (): void => {
-    const next = future.pop();
+    if (stepping) return;
+    commit();
+    const next = redoStack.pop();
     if (next === undefined) return;
-    history.push(last);
-    applyState(next);
+    undoStack.push(last);
+    void applyState(next);
   };
+  // The chips where Sculpt has them, at the foot of the left edge.
+  const histButtons = new HistoryButtons({
+    undo,
+    redo,
+    canUndo: () => undoStack.length > 0 || pendingStep !== 0,
+    canRedo: () => redoStack.length > 0,
+  });
+  histButtons.el.classList.add('armature-hist');
+  document.body.appendChild(histButtons.el);
 
   /**
    * The gallery card's picture. It is taken on the way out, and carried by
@@ -736,7 +1019,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     savedAt: Date.now(),
     ...(model ? { model: model.bytes, modelName: model.name } : {}),
     ...(thumb ? { thumb } : {}),
+    ...(link ? { project: { ...link } } : {}),
+    symmetry: armature.symmetry,
   });
+  /** The library project Save to library writes to (project.ts), kept in the autosave record. */
+  let link: ArmatureLink | null = bootLink;
   let saveTimer = 0;
   const flushSave = async (): Promise<void> => {
     if (saveTimer) {
@@ -758,7 +1045,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * smooths its edges about as much.
    */
   const snapshot = async (smooth = true): Promise<void> => {
-    const overlays: Object3D[] = [handleGroup, ...controls.map((tc) => tc.getHelper())];
+    await capture(smooth);
+    await flushSave();
+  };
+  /** The picture alone: the card's, and a library project's thumbnail. Null when none could be had. */
+  const capture = async (smooth = true): Promise<Blob | null> => {
+    const overlays: Object3D[] = [handleGroup, plantGroup, ...controls.map((tc) => tc.getHelper())];
     if (highlight) overlays.push(highlight);
     const shown = overlays.map((o) => o.visible);
     for (const o of overlays) o.visible = false;
@@ -766,22 +1058,33 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.invalidate();
     try {
       thumb = await viewer.captureThumbnail(320, smooth);
+      return thumb;
     } catch {
       // Never block leaving the page over a picture.
+      return null;
     } finally {
       overlays.forEach((o, i) => (o.visible = shown[i]));
       // The handles are back: the picture changed without a setter.
       viewer.invalidate();
     }
-    await flushSave();
   };
-  const onLookEdit = (): void => {
+  const onLookEdit = (e: Event): void => {
     // A panel control in hand: no rebuild of the panel under it.
     clearTimeout(lightSyncTimer);
     scheduleSave();
+    // An Armature slider let go (or a value typed): its step is taken now.
+    if (e.type === 'change' && pendingStep && (e.target as Element | null)?.closest?.('.panel--armature')) commit();
   };
   document.addEventListener('input', onLookEdit);
   document.addEventListener('change', onLookEdit);
+  // The Render panel's Reset look (it only asks; the mode owns the defaults).
+  const onLookReset = (): void => {
+    void viewer.applyLook(defaultLook).then(() => {
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+      scheduleSave();
+    });
+  };
+  window.addEventListener('bozzetto:look-reset', onLookReset);
   // Leaving some other way - a reload, a closed tab: the record is saved at
   // once, and the picture follows if the page lives long enough to take it
   // (a page on its way out may never draw another frame).
@@ -840,6 +1143,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     const pinned = armature.chains().filter((c) => armature.isPinned(c.id)).map((c) => c.id);
     armature.dispose();
     armature = figureFor(preset);
+    holdFloor();
     armature.symmetry = symmetry;
     if (state) {
       armature.restore(state);
@@ -848,7 +1152,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     } else {
       // The new figure stands where the old one stood, with the same
       // handles pinned - each taken where the new figure's hand or foot is,
-      // now that it has been placed - and planting as it was.
+      // now that it has been placed - and planting as it was. Its feet go
+      // on the floor (owner call): where the old one stood across the floor
+      // and which way it faced, not how high.
+      placement.position.y = 0;
       armature.setPlacement(placement);
       armature.plantFeet = plant;
       for (const id of pinned) armature.setPinned(id, true);
@@ -859,21 +1166,50 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.syncFigure();
     commit();
   };
+  /**
+   * Open a file: an .armature (file.ts), or a library project's
+   * armature.json, gzipped or not, as My projects' Download or the export
+   * hands one out - read through the same sanitiser as an opened project.
+   * Either way it is a file, not a project: Save to library makes one anew.
+   */
   const openFile = async (file: File): Promise<void> => {
     let parsed: ArmatureFile;
+    let symmetry: boolean | null = null;
+    let notice: string | null = null;
     try {
-      parsed = unpackArmature(await file.text());
+      const text = await armatureText(await file.arrayBuffer());
+      let rec: unknown = null;
+      try {
+        rec = JSON.parse(text);
+      } catch {
+        // Not JSON at all: unpackArmature says so in its own words.
+      }
+      if (isProjectRecord(rec)) {
+        const read = readArmatureProject(text);
+        parsed = read.file;
+        symmetry = read.symmetry;
+        notice = read.notice;
+      } else {
+        parsed = unpackArmature(text);
+      }
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      alert(err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err));
       return;
     }
     name = parsed.name;
     await replaceFigure(parsed.state.preset, parsed.state);
+    if (symmetry !== null) armature.symmetry = symmetry;
+    panel.refresh(selected);
+    // Said after the swap, whose fetch of a mannequin clears the note.
+    if (notice) panel.setNote(notice);
     if (parsed.look) {
       await viewer.applyLook(parsed.look);
       window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     }
     frame();
+    link = null;
+    clearHistory();
+    scheduleSave();
   };
   /**
    * Take a rigged .glb as the figure: the bones become the rig, the skin
@@ -894,6 +1230,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     name = file.name.replace(/\.(glb|gltf)$/i, '') || 'Model';
     await replaceFigure(IMPORTED, undefined, true);
     frame();
+    // Another figure altogether: its own history, and no project yet (the
+    // library keeps the built-in figures; a model stays on this device).
+    link = null;
+    clearHistory();
     if (read.inferred.length) {
       console.info(`armature: ${read.inferred.join('; ')}`);
     }
@@ -934,13 +1274,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * aim, the pins re-solved around it - all but a foot's own planting,
    * since standing it flat again would undo the turn.
    */
-  const turnJoint = (bone: string, xyz: [number, number, number]): void => {
+  const turnJoint = (bone: string, xyz: [number, number, number], slider = false): void => {
     armature.setPoseEuler(bone, xyz[0], xyz[1], xyz[2]);
     armature.followAims(bone);
     armature.applyPins(undefined, armature.plantFeet && !armature.isFoot(bone));
     placeControls();
     syncHandles();
-    commit();
+    // A slider's drag is one step, taken when it rests (commitSoon).
+    if (slider) commitSoon();
+    else commit();
   };
 
   // --- the panel --------------------------------------------------------------------
@@ -950,7 +1292,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       preset: (id) => void replaceFigure(id),
       symmetry: (on) => {
         armature.symmetry = on;
-        scheduleSave();
+        commit();
       },
       resetPose: () => {
         armature.resetPose();
@@ -963,16 +1305,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         select(selected);
         commit();
       },
-      joint: turnJoint,
+      joint: (bone, xyz) => turnJoint(bone, xyz, true),
       proportions: (bone, p) => {
         armature.setProportions(bone, p);
         armature.applyPins();
         placeControls();
         syncHandles();
-        commit();
+        commitSoon();
       },
       handles: (on) => {
         handlesOn = on;
+        // A hidden ball cannot stay selected.
+        if (!on && selectedHandle) select(null);
         syncHandles();
       },
       pin: (id, on) => {
@@ -994,7 +1338,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         armature.applyPins();
         placeControls();
         syncHandles();
-        commit();
+        commitSoon();
       },
       resetProportions: () => {
         for (const bone of armature.boneNames()) armature.setProportions(bone, { size: 1, length: 1 }, false);
@@ -1007,11 +1351,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     },
     viewer,
   );
+  // What an opened project needed mending, or why it did not open: said
+  // now that there is a page to say it on.
+  for (const note of bootNotes) {
+    panel.setNote(note);
+    statusToast('').fail(note);
+  }
+  // An opened project is the work on this device now: the autosave says so at once.
+  if (bootSymmetry !== null) scheduleSave();
 
   // --- menus -------------------------------------------------------------------------
   const openInput = document.createElement('input');
   openInput.type = 'file';
-  openInput.accept = '.armature,application/json';
+  openInput.accept = '.armature,.json,.gz,application/json,application/gzip';
   openInput.hidden = true;
   openInput.addEventListener('change', () => {
     const f = openInput.files?.[0];
@@ -1029,21 +1381,115 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (f) void loadModel(f);
   });
   document.body.appendChild(modelInput);
+  // --- the library ---------------------------------------------------------------
+  // Save to library, as Sculpt's (owner request): for whoever saves to a
+  // server here - the owner's Projects with accounts off, the account's own
+  // My projects with them on - an armature project (project.ts), created
+  // once and then updated in place; for a guest, the .armature download
+  // Save is. Who the page is for comes from the sign-in probe, asked once.
+  let role: Role | null = null;
+  let accountsHere = false;
+  let suspension = '';
+  const probeRole = async (): Promise<Role> => {
+    try {
+      const answer = await checkSignIn();
+      role = roleOf(answer);
+      accountsHere = answer.accounts === true;
+      suspension = answer.suspended ? suspensionText(answer.suspended.reason) : '';
+    } catch {
+      role = 'guest';
+    }
+    return role;
+  };
+  let roleKnown = probeRole();
+  /** Whether Save to library goes to a server for `who`, as Sculpt's File menu decides it. */
+  const uploads = (who: Role): boolean =>
+    who === 'owner' || who === 'expired' || (accountsHere && (who === 'member' || who === 'moderator'));
+  const place = (): string => (accountsHere && link?.scope !== 'admin' ? 'My projects' : 'Projects');
+  const libraryHint = (): string => {
+    if (role === 'expired') return 'Your sign-in has expired: sign in again to save';
+    if (role === 'suspended') return 'Your account is suspended: downloads a .armature file to keep';
+    if (!role || !uploads(role)) return 'Downloads a .armature file to keep';
+    if (link) return `Updates "${link.title}" in ${place()}`;
+    return accountsHere ? 'Saves to My projects, where only you see it' : 'Uploads to Projects, as a private armature';
+  };
+  let librarySaving = false;
+  const saveToLibrary = async (): Promise<ArmatureLink | null> => {
+    const who =
+      role ??
+      (await Promise.race([roleKnown, new Promise<Role>((ok) => window.setTimeout(() => ok('guest'), ROLE_WAIT_MS))]));
+    if (!uploads(who)) {
+      downloadBlob(packArmature(currentFile()), armatureStamp());
+      if (who === 'suspended') statusToast('').fail(`${suspension} The armature was saved as a .armature file instead.`);
+      else fileMenu.note('Saved as a .armature file');
+      return null;
+    }
+    const where = place();
+    if (armature.rig.id === IMPORTED) {
+      statusToast('').fail(`A model loaded from a file stays on this device: ${where} keeps the built-in figures. Save keeps a .armature file.`);
+      return null;
+    }
+    if (librarySaving) {
+      fileMenu.note(`Already saving to ${where}`);
+      return null;
+    }
+    librarySaving = true;
+    const status = statusToast(`Saving to ${where}...`);
+    try {
+      const picture = await capture(true);
+      const bytes = await encodeArmatureProject(currentFile(), armature.symmetry);
+      const target = link;
+      const saved = await uploadArmature(
+        { bytes, title: target?.title ?? defaultArmatureTitle(name), thumb: picture ?? undefined, projectId: target?.id, scope: target?.scope },
+        (text) => status.set(text),
+      );
+      link = saved;
+      await flushSave();
+      status.done(`Saved to ${where}: ${saved.title}`);
+      return saved;
+    } catch (err) {
+      if (err instanceof AuthExpiredError) {
+        // Signed in again in the dialog, the save goes again by itself.
+        const again = signInButton(
+          '',
+          (ok) => {
+            if (!ok) return;
+            roleKnown = probeRole();
+            void roleKnown.then(() => saveToLibrary());
+          },
+          'Sign in again',
+          accountsHere ? 'session' : err.via,
+        );
+        status.fail('Your sign-in has expired. The armature is still here.', again);
+      } else {
+        status.fail(`Not saved to ${where}: ${failureText(err).replace(/\.$/, '')}. The armature is still here; Save keeps a .armature file.`);
+      }
+      return null;
+    } finally {
+      librarySaving = false;
+    }
+  };
+
   const fileMenu = new TopMenu(
     'File',
     [
       {
         label: 'New armature',
         action: () => {
-          if (history.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
+          if (undoStack.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
           name = 'Armature';
-          void replaceFigure(armature.rig.id, undefined, true);
-          frame();
+          // A new armature is nobody's project, with a history of its own.
+          link = null;
+          void replaceFigure(armature.rig.id, undefined, true).then(() => {
+            frame();
+            clearHistory();
+          });
         },
       },
       { label: 'Open…', action: () => openInput.click() },
       { label: 'Load model…', action: () => modelInput.click() },
       { label: 'Save', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
+      { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
       { separator: true },
       { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
     ],
@@ -1069,7 +1515,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       case 'arm.symmetry':
         armature.symmetry = !armature.symmetry;
         panel.refresh(selected);
-        scheduleSave();
+        commit();
         break;
       case 'arm.move':
         gizmoMode = 'translate';
@@ -1201,6 +1647,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     picked: () => picked,
     select,
     selected: () => selected,
+    /** Select an IK ball by its chain, as a tap on it does; null for none. */
+    selectHandle,
+    /** The IK ball a tap selected, by its chain, if any. */
+    selectedHandle: () => selectedHandle,
     state: () => armature.serialize(),
     undo,
     redo,
@@ -1214,6 +1664,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     open: openFile,
     panel,
     file: currentFile,
+    /** Steps there are to undo and to redo; `resting` while a slider's step waits to be taken. */
+    history: () => ({ undo: undoStack.length, redo: redoStack.length, resting: pendingStep !== 0, limit: HISTORY_LIMIT }),
+    /** Save to library, as the File menu's item does; resolves to the project, or null for a download or a failure. */
+    saveToLibrary,
+    /** Who the page is for, by the sign-in probe; null until it has answered. */
+    role: () => role,
+    /** The library project Save to library writes to, or null. */
+    link: () => (link ? { ...link } : null),
+    /** The project file Save to library would send, as text (gzip undone). */
+    projectText: async () => armatureText(await encodeArmatureProject(currentFile(), armature.symmetry)),
   };
   (window as unknown as { __armature?: object }).__armature = handle;
 
@@ -1229,6 +1689,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     window.removeEventListener('pointercancel', onPointerUp, true);
     document.removeEventListener('input', onLookEdit);
     document.removeEventListener('change', onLookEdit);
+    window.removeEventListener('bozzetto:look-reset', onLookReset);
     window.removeEventListener('pagehide', onHidden);
     offLeaving();
     galleryLink?.removeEventListener('click', onLeave);
@@ -1245,10 +1706,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.removeSculptExtra(armature.mesh);
     armature.dispose();
     viewer.scene.remove(handleGroup);
+    viewer.scene.remove(plantGroup);
+    plantGeometry.dispose();
+    plantMat.dispose();
+    viewer.lockFloor(null);
     handleGeometry.dispose();
     panel.dispose();
     fileMenu.dispose();
     editMenu.dispose();
+    if (pendingStep) clearTimeout(pendingStep);
+    histButtons.dispose();
     openInput.remove();
     modelInput.remove();
     delete (window as unknown as { __armature?: object }).__armature;

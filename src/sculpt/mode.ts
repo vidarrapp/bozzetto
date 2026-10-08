@@ -1,4 +1,5 @@
 import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { STUDIO_BG } from '../viewer/Environment';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
@@ -474,6 +475,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // No stage under a work in progress: the floor/pedestal hid the sculpt's
   // underside. g (or the panel) cycles it back on when wanted.
   viewer.setGround('off');
+  // A neutral grey backdrop (STUDIO_BG) until a saved look says otherwise.
+  viewer.environment.setBackgroundMode('color');
+  viewer.environment.setBackgroundColor(STUDIO_BG);
   // Snapshot the mount defaults BEFORE any saved look lands on top: this is
   // what "Reset look" goes back to, and it has to be captured here, while
   // the defaults above are still what the viewer is showing.

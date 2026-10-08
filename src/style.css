@@ -1840,13 +1840,6 @@ html.is-page body {
   z-index: 11; /* over the Render panel above it, whose tab it can cover */
 }
 
-/* Armature mode: its one panel sits where Tool does under Render. */
-.panel--armature {
-  top: 200px;
-  max-height: calc(100vh - 290px);
-  z-index: 11;
-}
-
 .sculpt-panel__btn--wide {
   width: 100%;
 }
@@ -1872,12 +1865,16 @@ html.is-page body {
   display: none;
 }
 
-/* The Create chooser, in the install card's frame: the two kinds of new
-   work side by side, and the uploader across both columns below them. */
+/* The Create chooser, in the install card's frame: three buttons stacked,
+   the same width (owner call), the card's width on an iPad as on a phone. */
+.create-card {
+  width: 100%;
+}
+
 .create-choices {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
   margin-top: 16px;
 }
 
@@ -1900,10 +1897,6 @@ html.is-page body {
   color: var(--accent);
 }
 
-.create-choice--wide {
-  grid-column: 1 / -1;
-}
-
 .create-choice__title {
   font-family: var(--font-spec);
   font-size: 12px;
@@ -1914,12 +1907,6 @@ html.is-page body {
 .create-choice__hint {
   font-size: 12px;
   color: var(--muted);
-}
-
-@media (max-width: 520px) {
-  .create-choices {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Left-docked panel variant: mirrors the right panel. Left panels cover the
@@ -1956,6 +1943,27 @@ html.is-page body {
   max-height: calc(100vh - 370px);
   width: min(268px, calc(100vw - 64px));
   z-index: 15;
+}
+
+/* Armature mode's one panel docks left (owner call), in Scene's place at
+   the head of the edge - the mode has no corner stats to clear - and at
+   Model's width, which its slider rows need. It stops above the undo and
+   redo chips in the corner below it (their top is 164px off the bottom),
+   so a slider turned in the panel can be undone with the panel open. The
+   right edge keeps Render alone. */
+.panel--left.panel--armature {
+  top: 132px;
+  max-height: calc(100vh - 304px);
+  width: min(268px, calc(100vw - 64px));
+}
+
+/* The undo and redo chips in Armature mode: where Sculpt's sit at the foot
+   of its rail, bottom-left by the resting hand. */
+.armature-hist {
+  position: fixed;
+  left: 44px;
+  bottom: 96px;
+  z-index: 12;
 }
 
 /* Travels its own width plus its left offset, which parks the handle -

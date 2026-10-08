@@ -1,5 +1,6 @@
 import { HttpError } from './http';
 import { SceneFileError, checkHeader, damaged, readLayout, type Layout } from '../../shared/bozz';
+import { ARMATURE_MAX_BYTES, ArmatureFileError, knownArmatureFigure, parseArmatureProject } from '../../shared/armature';
 
 /**
  * What an upload must be before R2 sees a byte of it (docs/accounts.md §4):
@@ -203,4 +204,49 @@ export async function checkFrame(bytes: Uint8Array): Promise<void> {
     throw badType('a glTF 2.0 binary');
   }
   if (!gltfHeader(bytes, bytes.length)) throw badType('a glTF 2.0 binary');
+}
+
+// --- armature projects ------------------------------------------------------------
+
+/** 422 bad_armature, with the reason, as a refused scene is 422 bad_scene. */
+export const badArmature = (reason: string): HttpError => new HttpError(reason, 422, 'bad_armature', { reason });
+
+/**
+ * An armature project's file (shared/armature.ts): gzip, as the app sends
+ * it, or the plain JSON. Inflated whole, since it is small - at most
+ * ARMATURE_MAX_BYTES either way (413 file_too_large past it); anything that
+ * is neither gzip nor starts as a JSON object is 415 bad_type. The text
+ * must be UTF-8 and parse to one object with `v` 1 and a figure the app
+ * has, no `__proto__` in it anywhere: 422 bad_armature {reason} if not.
+ * Answers the figure it names.
+ */
+export async function checkArmatureFile(bytes: Uint8Array): Promise<string> {
+  let raw = bytes;
+  if (isGzip(bytes)) {
+    const { bytes: out, broke } = await inflateStart(bytes, () => false, ARMATURE_MAX_BYTES + 1);
+    if (out.length > ARMATURE_MAX_BYTES) {
+      throw new HttpError(`An armature may be at most ${ARMATURE_MAX_BYTES} bytes unpacked`, 413, 'file_too_large', { limit: ARMATURE_MAX_BYTES });
+    }
+    if (broke) throw badArmature('This armature file is damaged (it does not decompress)');
+    raw = out;
+  } else {
+    // A JSON object, perhaps after a byte-order mark and white space.
+    let at = raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf ? 3 : 0;
+    while (at < raw.length && (raw[at] === 0x20 || raw[at] === 0x09 || raw[at] === 0x0a || raw[at] === 0x0d)) at++;
+    if (raw[at] !== 0x7b) throw badType('an armature');
+  }
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(raw);
+  } catch {
+    throw badArmature('This armature file is not UTF-8 text');
+  }
+  try {
+    const rec = parseArmatureProject(text);
+    if (!knownArmatureFigure(rec.figure)) throw badArmature(`The figure "${String(rec.figure).slice(0, 64)}" is not one Bozzetto has`);
+    return rec.figure as string;
+  } catch (err) {
+    if (err instanceof ArmatureFileError) throw badArmature(err.message);
+    throw err;
+  }
 }

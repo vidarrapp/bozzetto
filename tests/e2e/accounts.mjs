@@ -58,6 +58,7 @@ import { openSculpt, startAccountsServer } from './lib.mjs';
 import { chooseFile, clearNotices, failedNotice, fileItems, readBozz, savedToast, shelf, workerRoutes } from './smoke.mjs';
 import { TURNSTILE_SECRET, startTurnstileFake } from '../functions/turnstile-fake.mjs';
 import { inviteToken, seedInvite, seedUser } from '../functions/lib.mjs';
+import { armatureLibrary } from './armatureProjects.mjs';
 
 const VIEWPORT = { width: 1280, height: 800 };
 const MINUTE = 60_000;
@@ -2108,6 +2109,7 @@ export const suites = {
       // The member's own projects (Batch 8), the owner's tools at hand for the quota and the sessions.
       await part('member library', () => memberLibrary(server, o, a, t));
       await part('my projects', () => myProjectsPage(server, a, t));
+      await part('armature projects', () => armatureLibrary(server, o, a, t, { show, r2 }));
       await part('download my data', () => exportData(server, a, t));
       await part('delete account', () => deleteAccount(server, a, t));
       // The owner's tools over accounts (Batch 9): Invites, Users, Audit.

@@ -311,13 +311,21 @@ export async function setQuota(env: Env, id: string, mib: number, by: Actor): Pr
 
 /**
  * An account's storage counted again from R2 (recountUsage): what it uses
- * now, and what the account said before. Audited with both.
+ * now, what the account said before, and `next` - null once every project
+ * is counted, else where the next call carries on (`after`), since one
+ * request lists only so much. Each call is audited with its before and
+ * after.
  */
-export async function recountUser(env: Env, id: string, by: Actor): Promise<{ bytesUsed: number; before: number }> {
+export async function recountUser(
+  env: Env,
+  id: string,
+  by: Actor,
+  after: string | null = null,
+): Promise<{ bytesUsed: number; before: number; next: string | null }> {
   const { bytes_used: before } = await accountOf(env, id);
-  const { used } = await recountUsage(env, id);
-  await audit(env, { ...by, action: 'account.recount', subject: id, detail: { before, after: used } });
-  return { bytesUsed: used, before };
+  const { used, next } = await recountUsage(env, id, { after });
+  await audit(env, { ...by, action: 'account.recount', subject: id, detail: { before, after: used, ...(next ? { partial: true } : {}) } });
+  return { bytesUsed: used, before, next };
 }
 
 /**

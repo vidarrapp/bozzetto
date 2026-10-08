@@ -13,11 +13,12 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, dat
   api(async () => answer(await listMemberProjects(env, requireUser(data.principal).user.id)));
 
 // POST /api/me/projects {title?, mode?, fps?} - a new project of the
-// account's own: mode 'timelapse' (the default), 'model' or 'scene'; the
-// id is the server's (p- and 26 base32 characters, any given is ignored),
-// and it is private (`visibility: 'public'` is a 400). An account holds at
-// most 500 (400 with `limit`). Answers 201 with the row as owner tools
-// answer one, its `media` on the private route, and its `bytes`.
+// account's own: mode 'timelapse' (the default), 'model', 'scene' or
+// 'armature'; the id is the server's (p- and 26 base32 characters, any
+// given is ignored), and it is private (`visibility: 'public'` is a
+// 400). An account holds at most 500 (400 with `limit`). Answers 201 with
+// the row as owner tools answer one, its `media` on the private route,
+// and its `bytes`.
 export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, request, data }) =>
   api(async () => {
     const { user } = requireUser(data.principal);

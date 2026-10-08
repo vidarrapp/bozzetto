@@ -65,7 +65,11 @@ export const usersApi = {
   unsuspend: (id: string) => ownerCall<UserDetail>(one(id, 'unsuspend'), 'POST'),
   revokeSessions: (id: string) => ownerCall<{ revoked: number }>(one(id, 'revoke-sessions'), 'POST'),
   setQuota: (id: string, quotaMiB: number) => ownerCall<UserDetail>(one(id, 'quota'), 'PUT', { quotaMiB }),
-  recount: (id: string) => ownerCall<{ bytesUsed: number; before: number }>(one(id, 'recount'), 'POST'),
+  recount: (id: string, after: string | null = null) =>
+    ownerCall<{ bytesUsed: number; before: number; next: string | null }>(
+      `${one(id, 'recount')}${after ? `?after=${encodeURIComponent(after)}` : ''}`,
+      'POST',
+    ),
   finishDeletion: (id: string) => ownerCall<{ done: boolean; remaining: number }>(one(id, 'finish-deletion'), 'POST'),
 };
 
@@ -455,7 +459,18 @@ class Account {
     const go = button('Recount', 'btn admin-user__recount');
     go.title = 'Count what the account stores again, from the files themselves';
     go.addEventListener('click', () => {
-      void this.act(go, () => usersApi.recount(this.user.id), async ({ bytesUsed, before }) => {
+      // One request lists only so much: carried on from `next` until all is counted.
+      const count = async (): Promise<{ bytesUsed: number; before: number }> => {
+        const first = await usersApi.recount(this.user.id);
+        let { bytesUsed, next } = first;
+        for (let step = 0; next !== null && step < 100; step++) {
+          this.say.note(`Counting… ${sizeText(bytesUsed)} so far.`);
+          ({ bytesUsed, next } = await usersApi.recount(this.user.id, next));
+        }
+        if (next !== null) throw new Error('It is taking longer than it should. Press Recount again to carry on.');
+        return { bytesUsed, before: first.before };
+      };
+      void this.act(go, count, async ({ bytesUsed, before }) => {
         await this.reload(() =>
           this.say.note(
             bytesUsed === before

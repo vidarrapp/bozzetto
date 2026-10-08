@@ -19,7 +19,7 @@ It installs to an iPad's home screen and works offline, and there are desktop bu
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
 | `/?me`, `/?account` | My projects and Account, once the site has accounts |
-| `/create/` | Timelapse uploader (**Create → Upload timelapse**), no sign-in |
+| `/create/` | Uploader for models and timelapses (**Create → Upload Model(s)**), no sign-in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
 ## Install as an app
@@ -38,7 +38,7 @@ Sculpts autosave to browser storage whether installed or not. Nothing uploads un
 
 ## Sculpt
 
-Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in needed, and nothing leaves your device unless you sign in and save to the library or publish.
+Pick **Create → New Sculpt** in the [gallery](https://bozzetto.vidarrapp.se). No sign-in needed, and nothing leaves your device unless you sign in and save to the library or publish.
 
 - **Ten brushes** on `1`–`0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish, Paint. `Alt` carves, `Shift` smooths from any brush. Without a keyboard, tap the toolbar's **Negative** button to carve the next stroke, or long-press it to carve every stroke until you tap it again.
 - **Brush character** is tunable per tool, and every brush keeps its own size, so each comes back at the size you left it. Clay lays ribbon-like strips. Move starts on the model, like every brush, and drags a soft ball of it, with a Falloff slider from soft to sharp. Polish flattens surfaces while keeping edges crisp, with a Plane lock slider from follow to flatten. Crease has Profile and Pinch sliders, from a broad trough to a knife line.
@@ -63,7 +63,7 @@ Pick **Create → New sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 <img width="2362" height="1331" alt="bozzetto_armature_mode" src="https://github.com/user-attachments/assets/d5b59363-7006-47af-a572-f3089ad40c87" />
 
 A posable figure of its own, for reference or as the start of a sculpt.
-Pick **Create → New armature** in the gallery (or open `/?armature=1`). No
+Pick **Create → New Armature** in the gallery (or open `/?armature=1`). No
 sign-in, and everything stays on your device.
 
 - **Figures.** A new armature starts on the realistic male mannequin,
@@ -78,11 +78,13 @@ sign-in, and everything stays on your device.
   the fallback when a mannequin cannot be fetched (offline before the
   service worker has precached it) or a saved model cannot be read.
 
-- **Pose.** Click a part and its joint's rotate gizmo appears, clamped to
+- **Pose.** Tap or click a part and its joint's rotate gizmo appears, clamped to
   that joint's limits: hinges (elbows, knees) show one ring plus a little
   twist, ball joints three. Symmetry (`X`, off to begin with) mirrors every
   edit to the other side through the pelvis's own frame. The pelvis is the
-  root: its gizmo moves and turns the whole figure (`W` selects it).
+  root: its gizmo moves and turns the whole figure (`W` selects it). The
+  selection stays while you orbit, pan and zoom, from on the figure or off
+  it; a tap on empty space lets it go, and a tap on another part moves it.
 - **Reach.** A ball sits at each hand, the middle of each foot and the top
   of the head. Drag one and the limb reaches for it, inside the same joint
   limits; a foot is held by its middle, so it pivots there rather than
@@ -96,9 +98,13 @@ sign-in, and everything stays on your device.
   figure follows the pointer across the view, as the pelvis gizmo's centre
   moves it, the pinned balls holding their places, and the drag is one undo
   step. Both feet start pinned where they stand, and **Reset pose** moves
-  every pin to where the reset leaves its hand or foot. With **Plant feet**
+  every pin to where the reset leaves its hand or foot. A tap on a hand,
+  foot or head ball selects it, with a move gizmo that reaches the limb as
+  a drag of the ball does. With **Plant feet**
   on (the Reach section's box, on by default), a foot on the ground stands
-  flat, facing the way the figure faces, after every reach, pin and reset:
+  flat, facing the way the figure faces, after every reach, pin and reset,
+  and a ring on the floor marks it. Planting stands a foot flat; the pins
+  are what keep it in its place, with planting on or off:
   in a deep crouch it stays as flat as the ankle bends, then the heel lifts.
   A foot off the ground follows its shin; one on the ground can still be
   turned by hand, until the next reach or move of the pelvis stands it flat
@@ -110,6 +116,10 @@ sign-in, and everything stays on your device.
   points at rest. A knee or elbow turned by hand keeps its new direction.
   The Tool panel has the same as an **Aim** slider when a knee or elbow is
   selected.
+- **The floor.** Every figure stands with its soles on the floor, as it is
+  loaded and as one figure replaces another; a saved pose comes back as it
+  was saved. The floor stays put in Armature mode: the Render panel's
+  **Ground** offers no pedestal, which would move it.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
   stretches the part along its bone and moves the child joints with it.
   Mirrored while symmetry is on.
@@ -134,8 +144,10 @@ sign-in, and everything stays on your device.
 | Input | Action |
 | --- | --- |
 | Click a part | Select it (rotate gizmo at its joint) |
+| Click off the figure | Deselect |
+| Click a hand, foot or head ball | Select it (move gizmo) |
 | Drag a ball | Reach that hand, foot or head towards it |
-| Drag off the figure | Orbit |
+| Drag, on the figure or off it | Orbit, keeping the selection |
 | Drag a small ball | Aim that knee or elbow around the limb |
 | Drag the ball in the hips | Move the whole figure, pinned hands and feet staying put |
 | `X` | Symmetry on / off |
@@ -151,7 +163,7 @@ sign-in, and everything stays on your device.
 
 The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
 
-1. In the gallery, pick **Create → Upload timelapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
+1. In the gallery, pick **Create → Upload Model(s)**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
 2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
 3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
 4. Set up the look in the right-hand panel, then orbit to your angle.
@@ -205,7 +217,7 @@ of this from real hardware.
 
 ### Gallery
 
-- The site's templates as thumbnail cards, badged **Template**, led by a **Create** tile, which starts a new sculpt or a new armature or opens the timelapse uploader, and your own sculpt and armature in progress. A model or a timelapse plays in the viewer; a scene opens in Sculpt as a copy that is yours to keep, with **Save to library**, and never a change to the template.
+- The site's templates as thumbnail cards, badged **Template**, led by a **Create** tile, whose menu stacks **New Sculpt**, **New Armature** and **Upload Model(s)** (the uploader, for a model or a timelapse), and your own sculpt and armature in progress. A model or a timelapse plays in the viewer; a scene opens in Sculpt as a copy that is yours to keep, with **Save to library**, and never a change to the template.
 - Signed in, the gallery is your whole list, the templates included: private projects carry a **Private** badge and every card a switch to change it, making a project public makes it a template, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see the templates the gallery lists, and nothing else.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
 - **Install** and **Log in**, which becomes **Projects** once signed in, and **Log in** again when the sign-in expires, said once under the title with **Sign in again**. With accounts on, **Sign in** and **Install** for a guest; signed in, **My projects** and an **@handle** menu (**Account**, **Sign out**), and **Owner tools** for the owner. The foot links the Privacy notice and the Terms.
@@ -298,6 +310,18 @@ updates by release.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. `?perfdebug=1` lists the last stalls and heavy operations with their times, and in sculpt mode `?inputdebug=1` logs pen and touch input; both can be on at once, and **Edit → Preferences → Diagnostics** keeps either on without the switch.
 
 ## Changelog
+
+### Unreleased
+
+- **Armature: the selection stays while you look around.** A part is selected when a tap or click lifts, so an orbit, a pan or a zoom - by mouse, wheel or fingers, begun on the figure or off it - leaves the part selected with its gizmo. A tap on empty space lets it go; a tap on another part moves it. A tap on a hand, foot or head ball now selects that ball, larger and lit, with a move gizmo that reaches the limb; a drag of a ball reaches as it always did, one undo step, and brings up no gizmo.
+- **Armature: what Plant feet does, shown.** Planting stands a foot that is on the floor flat on it, and a ring on the floor now marks each foot it holds; off, a foot tilts with its shin. The pins, not planting, are what keep a foot in its place while the pelvis moves, which is why turning planting off moved no foot. The Reach section says so.
+- **Armature: the figure on the floor, and the floor held.** Each figure stands with its soles on the floor as it loads and as it replaces another - a raised one included - while a saved pose comes back as saved. The floor no longer moves in Armature mode: the Render panel's **Ground** has no pedestal there, and `G` cycles past it.
+- **A grey backdrop for Sculpt and Armature.** A new scene or figure, and **Reset look**, start on a neutral grey (#333333, 20 % on the colour picker's V); a saved look keeps its own. The viewer still follows the theme.
+- **Create, as three buttons.** The gallery's Create menu stacks **New Sculpt**, **New Armature** and **Upload Model(s)**, the same width; the last opens the uploader, which takes a model or a timelapse.
+- **Armature projects in the library.** **File → Save to library** in Armature mode keeps the figure as a project of its own, as Sculpt keeps a scene: in **My projects** when you are signed in (the owner's **Projects** with accounts off), with a picture of the current view, created the first time and updated in place after; a guest still gets a `.armature` file. The **In progress** armature card on the gallery saves it the same way. The project is the pose, pins, aims, proportions, symmetry and look on one of the built-in figures (a model loaded from a file stays on its device); it opens back in Armature mode from **My projects** (**Open**, and **Download** as a `.armature` file), and the owner's **Template** switch makes one a gallery card badged **Armature** that opens a copy in Armature mode. Opened files are checked field by field, and a figure Bozzetto does not have stands on the realistic male mannequin, saying so. The viewer does not play an armature.
+- **Armature: the panel on the left.** The Armature panel docks on the left edge with the same tab as Sculpt's Scene and Model panels, clear of the top row; Render keeps the right edge, and both can be open together.
+- **Armature: undo and redo, as in Sculpt.** `Ctrl+Z` and `Ctrl+Shift+Z`, the same keys as Sculpt's (rebinding them in Preferences changes both modes), and undo and redo buttons at the foot of the left edge, where Sculpt has them. Every pose change is a step: a drag of a ball or a gizmo is one step however long it runs, a panel slider one step once it is let go, and a pin, a reset, a mirror, symmetry or a change of figure one each. The last 100 steps are kept; New, Open and Load model start over.
+- **Storage counted from the files.** The owner's bootstrap counts the projects it claims from storage, which before said they weighed nothing, and says when it ran out of room to count them all; **Recount** carries on across as many requests as an account's projects take; and the **Template** switch weighs a project from before the counting first, so the usage it moves is what the project holds.
 
 ### v1.4
 

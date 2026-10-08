@@ -5,6 +5,7 @@ import { accountsOn } from '../../../_shared/env';
 import { HttpError, error, refuse } from '../../../_shared/http';
 import { randomId, randomToken } from '../../../_shared/crypto';
 import { TERMS_VERSION } from '../../../_shared/config';
+import { RECOUNT_LISTINGS, recountUsage } from '../../../_shared/quota';
 import { auditStatement } from '../../../_shared/auth/audit';
 import { meOf } from '../../../_shared/auth/account';
 import { answer, api, readBody } from '../../../_shared/auth/api';
@@ -23,15 +24,23 @@ const OWNER_QUOTA = 10 * 1024 * 1024 * 1024;
 // The account is the owner's (role 'owner'), under the Access identity's
 // address, with a 10 GiB quota and the terms and age confirmed now. It
 // claims the projects nobody owns that are not templates - the owner's own
-// before accounts - and their bytes count against it. The owner is then
+// before accounts - and their bytes count against it. Those rows predate
+// the counting (their `bytes` 0), so once claimed they are counted from R2
+// (recountUsage), each project's bytes and the account's usage, as far as
+// this request's subrequests allow (RECOUNT_LISTINGS listings); past that,
+// or if R2 fails, the answer says recount: 'partial', and the owner's
+// Recount (Users) counts the rest. The owner is then
 // signed in (method 'bootstrap'), which counts as recent authentication,
-// so the page can offer a passkey at once. All of it is one batch, audited.
+// so the page can offer a passkey at once. All of it but the count is one
+// batch, audited.
 //
 // The handle may be one of the protected names (handles.ts), such as the
 // owner's own, which every other account is refused: they are kept so that
 // nobody can pass for the owner, and the owner is who they protect.
 //
-// Answers 201 {user} (as GET /api/me) with the session cookie. A handle
+// Answers 201 {user} (as GET /api/me) with the session cookie, and
+// recount: 'partial' beside it when the claimed projects are not all
+// counted yet. A handle
 // that is malformed or a route name, which not even the owner may take, is
 // a 400 with `reason` (format, reserved); one taken or retired a 409
 // handle_taken with `reason`; terms or age not confirmed, or an account
@@ -108,7 +117,18 @@ export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ request
       throw new HttpError('An account already has the address Access signed you in with', 400, 'bad_request');
     }
     if (!results[0].meta.changes) return exists();
+    let partial = false;
+    if ((claimed?.n ?? 0) > 0) {
+      try {
+        partial = (await recountUsage(env, id, { listings: RECOUNT_LISTINGS })).next !== null;
+      } catch (err) {
+        // The account is made: the Recount tool can count them later.
+        console.error('bootstrap recount failed:', err);
+        partial = true;
+      }
+    }
     const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<UserRow>();
     if (!user) throw new Error('the owner account is not there after its batch');
-    return withCookies(answer({ user: await meOf(env, user) }, 201), signInCookies(session.token));
+    const answered = { user: await meOf(env, user), ...(partial ? { recount: 'partial' } : {}) };
+    return withCookies(answer(answered, 201), signInCookies(session.token));
   });

@@ -23,6 +23,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { openArmature, openSculpt, serve } from './lib.mjs';
+import { armaturePanelSide } from './armatureProjects.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
 const names = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
@@ -1798,14 +1799,19 @@ export const suites = {
     const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
     t.ok(!chips.some((c) => /upload/i.test(c)), `the top row has no upload chip (${chips.join(', ')})`);
     await page.click('#landing-grid .card--new');
-    const wide = await page.evaluate(() => {
-      const b = document.querySelector('.create-overlay [data-kind="timelapse"]');
-      const grid = b?.parentElement?.getBoundingClientRect();
-      const r = b?.getBoundingClientRect();
-      return b ? { title: b.querySelector('.create-choice__title')?.textContent, spans: Math.abs(r.width - grid.width) < 2 } : null;
+    const stack = await page.evaluate(() => {
+      const bs = [...document.querySelectorAll('.create-overlay .create-choice')];
+      const grid = bs[0]?.parentElement?.getBoundingClientRect();
+      const rs = bs.map((b) => b.getBoundingClientRect());
+      return {
+        titles: bs.map((b) => b.querySelector('.create-choice__title')?.textContent).join(', '),
+        kinds: bs.map((b) => b.dataset.kind).join(','),
+        sameWidth: rs.every((r) => Math.abs(r.width - grid.width) < 2),
+        stacked: rs.every((r, i) => i === 0 || (r.top >= rs[i - 1].bottom && Math.abs(r.left - rs[0].left) < 1)),
+      };
     });
-    t.ok(wide?.title === 'Upload timelapse', `the Create menu offers Upload timelapse (${wide?.title})`);
-    t.ok(wide?.spans, 'on a row of its own, across the menu');
+    t.eq(stack.titles, 'New Sculpt, New Armature, Upload Model(s)', 'the Create menu offers New Sculpt, New Armature and Upload Model(s), in that order');
+    t.ok(stack.kinds === 'sculpt,armature,timelapse' && stack.sameWidth && stack.stacked, `three buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
     await Promise.all([
       page.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
       page.click('.create-overlay [data-kind="timelapse"]'),
@@ -1829,7 +1835,7 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New sculpt, New armature, Upload timelapse', 'which offers a new sculpt, a new armature or the timelapse uploader');
+    t.eq(choices.join(', '), 'New Sculpt, New Armature, Upload Model(s)', 'which offers a new sculpt, a new armature or the uploader');
     t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),
@@ -1966,6 +1972,132 @@ export const suites = {
       `with the balls hidden it is off the page, and the same press lands on the figure (${rootPress.hidden})`,
     );
 
+    // A selection outlasts the view moving (owner request): a part is
+    // selected by a tap, and an orbit - begun off the figure or on it - or
+    // the wheel leaves it and its gizmo be. A tap on empty space clears it,
+    // a tap on another part moves it. A tap on an IK ball selects the ball,
+    // with the move gizmo; a drag of one is the reach it always was, with
+    // no gizmo on the way, and one undo step.
+    const sel = () =>
+      page.evaluate(() => {
+        const a = window.__armature;
+        return { part: a.selected(), ball: a.selectedHandle(), gizmo: a.gizmo().attached.join(',') };
+      });
+    const tapAt = async ([x, y]) => {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.up();
+      return sel();
+    };
+    const dragAt = async ([x, y], [dx, dy], mid) => {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 6 });
+      const during = mid ? await mid() : null;
+      await page.mouse.move(x + dx, y + dy, { steps: 6 });
+      await page.mouse.up();
+      return during;
+    };
+    const camera = () => page.evaluate(() => window.__bozzetto.camera.position.toArray());
+    const moved = (p, q) => Math.hypot(...p.map((v, i) => v - q[i]));
+    // Empty canvas: well to the side of the figure, with nothing over it.
+    const empty = await page.evaluate(([hx, hy]) => {
+      const canvas = window.__bozzetto.renderer.domElement;
+      for (const dx of [260, -260, 320, -320, 200, -200]) {
+        for (const dy of [0, -80, 80]) {
+          if (document.elementFromPoint(hx + dx, hy + dy) === canvas) return [hx + dx, hy + dy];
+        }
+      }
+      return null;
+    }, hips.ball);
+    t.ok(!!empty, `a spot of empty canvas beside the figure (${JSON.stringify(empty)})`);
+    const view = await page.evaluate(() => {
+      const v = window.__bozzetto;
+      return { position: v.camera.position.toArray(), target: v.controls.controls.target.toArray() };
+    });
+    await handlesBox(false);
+    const keep = { first: await tapAt(hips.ball) };
+    let cam0 = await camera();
+    await dragAt(empty, [90, 30]);
+    keep.offOrbit = { ...(await sel()), turned: moved(cam0, await camera()) };
+    cam0 = await camera();
+    await dragAt(spot.near, [-90, 20]);
+    keep.onOrbit = { ...(await sel()), turned: moved(cam0, await camera()) };
+    await page.mouse.move(...hips.ball);
+    await page.mouse.wheel(0, 240);
+    await page.waitForTimeout(150);
+    keep.wheel = await sel();
+    keep.other = await tapAt(spot.near);
+    keep.cleared = await tapAt(empty);
+    t.ok(!!keep.first.part && keep.first.gizmo !== '', `a tap on the figure selects a part, with its gizmo (${JSON.stringify(keep.first)})`);
+    t.ok(
+      keep.offOrbit.turned > 1e-3 && keep.offOrbit.part === keep.first.part && keep.offOrbit.gizmo === keep.first.gizmo,
+      `an orbit begun off the figure turns the view and keeps the selection and its gizmo (${JSON.stringify(keep.offOrbit)})`,
+    );
+    t.ok(
+      keep.onOrbit.turned > 1e-3 && keep.onOrbit.part === keep.first.part && keep.onOrbit.gizmo === keep.first.gizmo,
+      `so does one begun on another part, which it does not select (${JSON.stringify(keep.onOrbit)})`,
+    );
+    t.ok(keep.wheel.part === keep.first.part && keep.wheel.gizmo === keep.first.gizmo, `and the wheel (${JSON.stringify(keep.wheel)})`);
+    t.ok(/^(shin|thigh)\.L$/.test(keep.other.part ?? '') && keep.other.gizmo !== '', `a tap on another part moves the selection there (${JSON.stringify(keep.other)})`);
+    t.ok(keep.cleared.part === null && keep.cleared.ball === null && keep.cleared.gizmo === '', `a tap on empty space clears it, gizmo and all (${JSON.stringify(keep.cleared)})`);
+    await handlesBox(true);
+    // Back to the view the rest of the suite measures from.
+    await page.evaluate(({ position, target }) => {
+      const v = window.__bozzetto;
+      v.controls.halt();
+      v.controls.placeCamera(new v.camera.position.constructor(...position), new v.camera.position.constructor(...target));
+      v.invalidate?.();
+      window.__armature.select(null);
+    }, view);
+    const ikTap = await page.evaluate(() => {
+      const a = window.__armature;
+      a.commit();
+      return { state: JSON.stringify(a.state()), at: a.ballOnScreen('ik:hand.L') };
+    });
+    const ballLook = () =>
+      page.evaluate(() => {
+        let ball = null;
+        window.__armature.armature.mesh.parent.traverse((o) => {
+          if (o.name === 'ik:hand.L') ball = o;
+        });
+        return { colour: ball.material.color.getHexString(), size: ball.scale.x };
+      });
+    const plainLook = await ballLook();
+    const tappedBall = await tapAt(ikTap.at);
+    const litLook = await ballLook();
+    const stateAfterTap = await page.evaluate(() => JSON.stringify(window.__armature.state()));
+    t.ok(
+      tappedBall.ball === 'hand.L' && tappedBall.part === null && tappedBall.gizmo === 'translate',
+      `a tap on an IK ball selects it, with the move gizmo (${JSON.stringify(tappedBall)})`,
+    );
+    t.ok(litLook.colour !== plainLook.colour && litLook.size > plainLook.size, `and shows it selected: #${plainLook.colour} at ${plainLook.size} becomes #${litLook.colour} at ${litLook.size.toFixed(2)}`);
+    t.eq(stateAfterTap, ikTap.state, 'the tap leaves the pose as it was');
+    const clearedBall = await tapAt(empty);
+    t.ok(clearedBall.ball === null && clearedBall.gizmo === '' && (await ballLook()).size === plainLook.size, `a tap on empty space lets the ball go (${JSON.stringify(clearedBall)})`);
+    const ikDrag = await page.evaluate(() => {
+      const a = window.__armature;
+      a.commit();
+      return { state: JSON.stringify(a.state()), at: a.ballOnScreen('ik:hand.R'), hand: a.handlePosition('hand.R') };
+    });
+    const midDrag = await dragAt(ikDrag.at, [40, -30], sel);
+    const dragged = await page.evaluate(([was]) => {
+      const a = window.__armature;
+      const out = { picked: a.picked(), ...{ part: a.selected(), ball: a.selectedHandle(), gizmo: a.gizmo().attached.join(',') } };
+      const now = JSON.stringify(a.state());
+      const hand = a.handlePosition('hand.R');
+      out.handMoved = Math.hypot(...hand.map((v, i) => v - was[i]));
+      a.undo();
+      out.undone = JSON.stringify(a.state());
+      a.redo();
+      out.redone = JSON.stringify(a.state()) === now;
+      a.undo();
+      return out;
+    }, [ikDrag.hand]);
+    t.ok(midDrag.ball === null && midDrag.part === null && midDrag.gizmo === '', `mid-drag of an IK ball no gizmo comes up (${JSON.stringify(midDrag)})`);
+    t.ok(dragged.picked === 'ik:hand.R' && dragged.handMoved > 1e-3 && dragged.gizmo === '' && dragged.ball === null, `the drag reaches the hand as before (${dragged.handMoved.toFixed(3)} moved), selecting nothing`);
+    t.ok(dragged.undone === ikDrag.state && dragged.redone, 'and is one undo step: undone, the pose is as it was; redone, as the drag left it');
+
     // Dragged, it moves the root in the plane facing the camera, as the
     // pelvis gizmo's centre does, so the ball stays under the pointer: up
     // the screen the figure rises, down it crouches with both pinned feet
@@ -2060,6 +2192,126 @@ export const suites = {
     t.ok(plant.boxOff.plant === false && plant.boxOff.saved === false, 'the Plant feet box turns planting off, and the state says so');
     t.ok(plant.offDown.kept && plant.offDown.tilt > 3 && plant.offDown.off < 1, `with it off, put back down the foot is left as its shin holds it (${plant.offDown.tilt.toFixed(1)}°, its pose untouched)`);
     t.ok(plant.boxOn.plant === true && plant.boxOn.tilt < 3, `ticked again, it takes hold at once (${plant.boxOn.tilt.toFixed(1)}°)`);
+
+    // What Plant feet does, side by side (owner report: "no difference with
+    // it off or on"). The pelvis dropped 6 with the feet pinned: the pins
+    // hold both feet on their marks either way, and planting decides only
+    // whether they stand flat (on) or tilt with their shins (off). With the
+    // feet unpinned they go with the body either way, as planting holds no
+    // place. A ring on the floor marks each foot planting holds.
+    const plantSide = await page.evaluate(() => {
+      const a = window.__armature;
+      const arm = a.armature;
+      const rings = () => {
+        const out = [];
+        window.__bozzetto.scene.traverse((o) => {
+          if (/^plant:/.test(o.name) && o.visible) {
+            let shown = true;
+            for (let p = o.parent; p; p = p.parent) shown &&= p.visible;
+            if (shown) out.push(o.name);
+          }
+        });
+        return out.sort().join(',');
+      };
+      const up = (foot) => {
+        const b = arm.bones.get(foot);
+        const q = b.getWorldQuaternion(b.quaternion.clone());
+        return q;
+      };
+      const run = (plantOn, pinned) => {
+        a.commit();
+        const was = a.state();
+        for (const c of arm.chains()) if (/^foot/.test(c.id)) arm.setPinned(c.id, pinned);
+        // The Reach section's box, as a person ticks it.
+        const box = [...document.querySelectorAll('.panel--armature label.checkbox')].find((l) => l.textContent.trim() === 'Plant feet').querySelector('input');
+        if (box.checked !== plantOn) box.click();
+        const ringsBefore = rings();
+        const feet0 = ['foot.L', 'foot.R'].map((f) => a.handlePosition(f));
+        const q0 = up('foot.L');
+        a.moveRoot(0, -6, 2, 6);
+        const feet1 = ['foot.L', 'foot.R'].map((f) => a.handlePosition(f));
+        const turned = (2 * Math.acos(Math.min(1, Math.abs(q0.dot(up('foot.L')))))) * (180 / Math.PI);
+        const moved = Math.max(...feet0.map((p, i) => Math.hypot(...p.map((v, k) => v - feet1[i][k]))));
+        const out = { moved, turned, ringsBefore, ringsAfter: rings() };
+        arm.restore(was);
+        a.select(null);
+        a.commit();
+        return out;
+      };
+      return {
+        pinnedOn: run(true, true),
+        pinnedOff: run(false, true),
+        freeOn: run(true, false),
+        freeOff: run(false, false),
+      };
+    });
+    t.ok(
+      plantSide.pinnedOn.moved < 0.5 && plantSide.pinnedOff.moved < 0.5,
+      `pelvis dropped 6, pinned feet stay on their marks with planting on (${plantSide.pinnedOn.moved.toFixed(2)} off) and off (${plantSide.pinnedOff.moved.toFixed(2)} off): pins hold them, not planting`,
+    );
+    t.ok(
+      plantSide.pinnedOn.turned < 5 && plantSide.pinnedOff.turned > 10,
+      `planting on, the left foot stays flat (turned ${plantSide.pinnedOn.turned.toFixed(1)}°); off, it tilts with its shin (${plantSide.pinnedOff.turned.toFixed(1)}°)`,
+    );
+    t.ok(
+      plantSide.freeOn.moved > 4 && plantSide.freeOff.moved > 4,
+      `unpinned, the feet go with the body either way (${plantSide.freeOn.moved.toFixed(1)} and ${plantSide.freeOff.moved.toFixed(1)})`,
+    );
+    t.ok(
+      plantSide.pinnedOn.ringsBefore === 'plant:foot.L,plant:foot.R' && plantSide.pinnedOn.ringsAfter === 'plant:foot.L,plant:foot.R' && plantSide.pinnedOff.ringsBefore === '' && plantSide.freeOn.ringsAfter === '',
+      `a ring on the floor marks each planted foot while planting is on, none with it off, and none under a foot lifted off the floor (${JSON.stringify([plantSide.pinnedOn.ringsBefore, plantSide.pinnedOn.ringsAfter, plantSide.pinnedOff.ringsBefore, plantSide.freeOn.ringsAfter])})`,
+    );
+
+    // The floor is held in Armature mode (owner call): the Render panel
+    // offers no pedestal, the G key's cycle skips it, and every mannequin
+    // stands with its soles on it, as it is loaded and as one replaces
+    // another - one raised off the floor first included.
+    const stage = await page.evaluate(() => {
+      const v = window.__bozzetto;
+      const selects = [...document.querySelectorAll('select')].filter((s) => [...s.options].some((o) => o.value === 'floor') && [...s.options].some((o) => o.value === 'shadow'));
+      const labels = [...document.querySelectorAll('label, .row__label, span')].map((l) => l.textContent.trim());
+      const before = v.getGround();
+      v.setGround('pedestal');
+      const asked = v.getGround();
+      const seen = [];
+      for (let i = 0; i < 4; i++) {
+        v.cycleGround();
+        seen.push(v.getGround());
+      }
+      v.setGround(before);
+      return {
+        groundSelects: selects.length,
+        pedestalOffered: selects.some((s) => [...s.options].some((o) => o.value === 'pedestal')),
+        pedestalWidth: labels.includes('Pedestal width'),
+        asked,
+        seen,
+        floor: v.lockedFloor(),
+      };
+    });
+    t.ok(stage.groundSelects >= 1 && !stage.pedestalOffered && !stage.pedestalWidth, `the Render panel's Ground has no Pedestal, and no Pedestal width (${stage.groundSelects} ground list(s))`);
+    t.ok(stage.asked === 'floor' && !stage.seen.includes('pedestal'), `asked for a pedestal, the viewer keeps the floor, and G cycles past it (${stage.asked}; ${stage.seen.join(', ')})`);
+    const standing = [];
+    for (const fid of ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized']) {
+      // Each one swapped in after its predecessor was lifted 12 off the floor.
+      await page.evaluate(() => window.__armature.moveRoot(0, 12, 0));
+      await page.evaluate((id) => window.__armature.figure(id), fid);
+      await page.waitForFunction((id) => window.__armature.armature.rig.id === id, fid, { timeout: 60_000 });
+      standing.push(
+        await page.evaluate(() => {
+          const a = window.__armature;
+          const v = window.__bozzetto;
+          return { id: a.armature.rig.id, soles: a.armature.bounds().min.y, floor: v.lockedFloor(), plane: v.ground.position.y, visible: v.getGround() };
+        }),
+      );
+    }
+    for (const f of standing) {
+      t.ok(
+        Math.abs(f.soles - f.floor) < 0.05 && Math.abs(f.plane - f.floor) < 0.05 && Math.abs(f.floor - standing[0].floor) < 0.05,
+        `${f.id}: its soles at ${f.soles.toFixed(3)}, on the floor at ${f.floor.toFixed(3)} (the plane drawn at ${f.plane.toFixed(3)}), the same floor as the first`,
+      );
+    }
+    await page.evaluate(() => window.__armature.figure('mannequin-male-realistic'));
+    await page.waitForFunction(() => window.__armature.armature.rig.id === 'mannequin-male-realistic', null, { timeout: 60_000 });
 
     // Files saved before this: one from before pins were saved at all opens
     // as a new figure would, feet pinned; one with a foot pin at the toe and
@@ -5509,6 +5761,8 @@ export const suites = {
       if (!x.Tool.tab || x.Tool.ducked) problems.push(`${at}: Tool's tab does not come back when Render closes`);
     }
     t.ok(!problems.length, `on ${sizes.length} iPad screens, no tab overlaps or leaves the screen, and no open panel covers a tab it should not${problems.length ? `: ${problems.join('; ')}` : ''}`);
+    // Armature mode's one panel docks left too, on the same screens.
+    await armaturePanelSide(page, base, t, sizes);
   },
 
   // Mask and Extract live in the Model panel now, as its own section, and

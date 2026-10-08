@@ -353,7 +353,7 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 - **Completion.** R2 `complete()`, then one batch: it moves `bytes_used` and `projects.bytes` by size − `replaces_bytes`, and deletes the pending upload with its parts.
 - **Concurrency.** One upload per (project, file). A start aborts the user's uploads older than 24 hours; R2 drops them at 7 days.
 - **Frames and thumbnails** reserve with a conditional `UPDATE users SET bytes_used = bytes_used + :delta WHERE … <= quota_bytes` before the `put`, and are refunded if the put fails.
-- **Recount.** An owner tool recounts from R2 listings.
+- **Recount.** An owner tool recounts from R2 listings: each project's `bytes`, then `bytes_used` as their sum. One request lists at most 36 times (`RECOUNT_LISTINGS`, under Workers Free's 50 subrequests), projects in id order; `{next}` is the id to carry on after (`POST …/recount?after=<next>`), null once all are counted.
 
 **Content checks** run in memory, before R2.
 
@@ -395,9 +395,9 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 - **Landing.** The Create tile and the device's cards, then public templates for everyone.
   - Scene templates open as copies (`/?sculpt=1&template=<id>`, no project link and no device copy), so Save to library makes the user's own project, or a download for guests. The open asks before replacing work on the device, unless a card click a moment ago already asked.
   - Model and timelapse templates play in the viewer.
-  - Armature templates need a server format, so they wait for phase 2.
+  - Armature projects (`mode: 'armature'`) are one file, `armature.json` (gzip or plain JSON, ≤ 4 MiB, `{v: 1, figure, state, symmetry, look}`, a known figure, no `__proto__`; 422 `bad_armature` otherwise, `shared/armature.ts`), uploaded whole by `POST /api/me/projects/:id/armature` (or `/admin/api/…`); like a scene they stay that mode, and a template opens as a copy in Armature mode (`/?armature=1&template=<id>`), never in the viewer.
 - **Projects page.** It lists templates and the owner's own projects. A **Template** switch sits beside Public/Private (`POST /admin/api/projects/:id/template {template}`).
-  - On: `owner_id = NULL` and `template = 1`; the bytes leave the owner's usage.
+  - On: `owner_id = NULL` and `template = 1`; the bytes leave the owner's usage. A row from before the counting (`bytes` 0) is weighed from R2 first, so what leaves is what it holds.
   - Off: the project returns to the owner's account, private; to nobody while there is no owner account yet, which is how the owner's projects are kept until the bootstrap claims them.
   - Either way it is one conditional batch, audited (`project.template`), and `updated_at` moves, which retires every `?v=` its files were served under. A row that changed meanwhile is 409; asking for what already holds changes nothing.
   - On a template, Public/Private means listed or privatised.
@@ -546,6 +546,7 @@ These are tabs beside Projects on `/admin/` (`src/admin/{invites,users,audit}.ts
 - **Bootstrap.**
   - With accounts on and no owner, "Create your account" calls `POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed}`. It needs Access alone, and is refused once an owner exists (409 `owner_exists`, whoever asks).
   - It creates the `role = 'owner'` user with the Access email and a 10 GiB quota, and claims the rows with `owner_id IS NULL AND template = 0`.
+  - The claimed rows predate the counting (`bytes` 0), so it then recounts them from R2 as Recount does, as far as one request's listings go; past that, or if R2 fails, it answers `recount: 'partial'` beside the user, and Recount counts the rest.
   - Its handle may be a protected name (§3), such as the owner's own; a route name is refused as for anyone.
   - It then signs the owner in (method `bootstrap`) and offers a passkey.
 

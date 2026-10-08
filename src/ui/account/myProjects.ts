@@ -56,6 +56,8 @@ interface Page {
   copies: Set<string>;
   /** Whether opening a scene would replace work in progress here (the autosave, or captured frames). */
   workHere: boolean;
+  /** Whether opening an armature would replace the one in progress here. */
+  armatureHere: boolean;
 }
 
 export async function renderMyProjects(app: HTMLElement): Promise<void> {
@@ -128,6 +130,7 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
     offline: !navigator.onLine,
     copies: await deviceCopies(),
     workHere: await workInProgress(),
+    armatureHere: await armatureInProgress(),
   };
   if (state.offline) {
     say.note(
@@ -177,7 +180,7 @@ function emptyNote(): HTMLElement {
   return el(
     'p',
     'muted my-projects__empty',
-    "Nothing here yet. In Sculpt, Save to library keeps a scene here, and the Capture window's Publish keeps a timelapse or a model.",
+    "Nothing here yet. In Sculpt, Save to library keeps a scene here (in Armature mode, a posed figure), and the Capture window's Publish keeps a timelapse or a model.",
   );
 }
 
@@ -196,6 +199,15 @@ async function workInProgress(): Promise<boolean> {
   try {
     const store = await import('../../sculpt/bridge/ScenePersist');
     return (await store.hasSavedScene()) || (await store.hasSculptFrames());
+  } catch {
+    return false;
+  }
+}
+
+/** Whether an armature is in progress on this device. */
+async function armatureInProgress(): Promise<boolean> {
+  try {
+    return await (await import('../../armature/persist')).hasArmature();
   } catch {
     return false;
   }
@@ -258,12 +270,14 @@ async function refreshMeter(page: Page): Promise<void> {
 
 // --- the cards ---------------------------------------------------------------------------
 
-const MODES: Record<string, string> = { scene: 'Scene', timelapse: 'Timelapse', model: 'Model' };
+const MODES: Record<string, string> = { scene: 'Scene', timelapse: 'Timelapse', model: 'Model', armature: 'Armature' };
 const modeLabel = (p: ProjectSummary): string => MODES[p.mode] ?? p.mode;
 
 /** Where Open goes, or null when there is nothing to open yet. */
 function openHref(p: ProjectSummary): string | null {
   if (p.mode === 'scene') return p.scene ? `/?sculpt=1&project=${encodeURIComponent(p.id)}` : null;
+  // An armature opens in Armature mode; the viewer does not play one.
+  if (p.mode === 'armature') return `/?armature=1&project=${encodeURIComponent(p.id)}`;
   return p.frameCount > 0 ? `/?tl=${encodeURIComponent(p.id)}` : null;
 }
 
@@ -273,6 +287,7 @@ function contents(p: ProjectSummary): string {
     if (!p.scene) return 'upload did not finish';
     return `${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'}`;
   }
+  if (p.mode === 'armature') return 'a posed figure, opens in Armature mode';
   const n = Number(p.frameCount) || 0;
   return n > 0 ? `${n} frame${n === 1 ? '' : 's'}` : 'no frames yet';
 }
@@ -324,7 +339,8 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     open.href = href;
     thumb.href = href;
     const ask = (ev: MouseEvent, link: HTMLAnchorElement): void => {
-      if (p.mode === 'scene' && page.workHere && !confirm(`Open "${p.title}"? Your work in progress will be replaced.`)) {
+      const busy = p.mode === 'scene' ? page.workHere : p.mode === 'armature' ? page.armatureHere : false;
+      if (busy && !confirm(`Open "${p.title}"? Your ${p.mode === 'armature' ? 'armature' : 'work'} in progress will be replaced.`)) {
         ev.preventDefault();
         return;
       }
@@ -435,6 +451,21 @@ async function downloadProject(page: Page, p: ProjectSummary, b: HTMLButtonEleme
       }
       if (!res.ok || !res.bytes) throw new Error(`the server could not send it (${res.status})`);
       downloadBlob(new Blob([res.bytes], { type: 'application/x-bozzetto' }), `${fileBase(p.title, 'scene')}.bozz`);
+      return;
+    }
+    if (p.mode === 'armature') {
+      // As the .armature file a guest's Save writes (armature/file.ts), so
+      // Armature mode's Open takes it back; the project's own format is
+      // the server's.
+      b.textContent = 'Downloading…';
+      const res = await apiFetch(mediaPath(p, `armature.json?v=${p.updated_at}`));
+      if (res.status === 401 || (res.status === 404 && (await getMe().catch(() => undefined)) === null)) {
+        throw new AuthExpiredError('session');
+      }
+      if (!res.ok || !res.bytes) throw new Error(`the server could not send it (${res.status})`);
+      const [{ decodeArmatureProject }, { packArmature }] = await Promise.all([import('../../armature/project'), import('../../armature/file')]);
+      const { file } = await decodeArmatureProject(res.bytes);
+      downloadBlob(packArmature({ ...file, name: p.title || file.name }), `${fileBase(p.title, 'armature')}.armature`);
       return;
     }
     const manifest = (await memberProjects.get(p.id)) as { frames?: { index: number; sd: string }[] };
