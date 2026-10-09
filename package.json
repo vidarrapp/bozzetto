@@ -40,7 +40,7 @@
     "gifenc": "^1.0.3",
     "gl-matrix": "^3.4.4",
     "mediabunny": "^1.48.1",
-    "three": "^0.184.0"
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241106.0",
