@@ -325,5 +325,6 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     settings: sanitizeSettings(scene.settings),
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
+    synced: scene.synced === true ? true : undefined,
   });
 }

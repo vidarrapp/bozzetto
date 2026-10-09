@@ -151,6 +151,29 @@ export interface SavedScene {
    * next save replaces. Never in a .bozz file either.
    */
   unsent?: string;
+  /**
+   * The record is the scene as it was last saved to `project`: written by
+   * a Save to library that went up (or an open of the project), with no
+   * edit since. Only the autosave writes it, and only beside a link; the
+   * gallery's In progress card stands aside while it holds, as the
+   * project's own card is then the same work (SceneStatus). Never in a
+   * .bozz file either.
+   */
+  synced?: boolean;
+}
+
+/**
+ * What the gallery's In progress card needs to know of the autosave
+ * record, kept beside it for the same reason the snapshot is: the card
+ * must not inflate megabytes of vertex arrays to learn three fields. It is
+ * written in the same transaction as the record, so the two never
+ * disagree; a record from before it has none, and the card shows as ever.
+ */
+export interface SceneStatus {
+  savedAt: number;
+  project?: SceneLink;
+  unsent?: string;
+  synced: boolean;
 }
 
 /** A scene project on the server, as the sculpt session refers to it. */
@@ -222,6 +245,8 @@ const SNAPSHOT_KEY = 'currentSnapshot';
  * rotation) and must not drag the whole vertex payload through a rewrite.
  */
 const LOOK_KEY = 'currentLook';
+/** The record's SceneStatus, written with it. */
+const STATUS_KEY = 'currentStatus';
 
 export interface SculptSnapshot {
   /** JPEG of the viewport as it was left. */
@@ -302,6 +327,16 @@ export async function hasSculptFrames(): Promise<boolean> {
     return (await withNamedStore(FRAME_META_STORE, 'readonly', (s) => s.count())) > 0;
   } catch {
     return false;
+  }
+}
+
+/** The autosave record's status (SceneStatus), or null when there is none. */
+export async function loadSceneStatus(): Promise<SceneStatus | null> {
+  try {
+    const rec = (await withStore('readonly', (s) => s.get(STATUS_KEY))) as SceneStatus | undefined;
+    return rec && typeof rec === 'object' && typeof rec.synced === 'boolean' ? rec : null;
+  } catch {
+    return null;
   }
 }
 
@@ -556,6 +591,7 @@ export async function clearSculptFrames(): Promise<void> {
 export async function clearSavedScene(): Promise<void> {
   try {
     await withStore('readwrite', (s) => s.delete(SNAPSHOT_KEY));
+    await withStore('readwrite', (s) => s.delete(STATUS_KEY));
     await withStore('readwrite', (s) => s.delete(KEY));
   } catch {
     // Nothing to clear (or storage unavailable); either way we're done.
@@ -604,6 +640,14 @@ export class ScenePersist {
   /** The write in flight, for settle() to wait on. */
   private writing: Promise<void> | null = null;
   private readonly unwraps: Array<() => void> = [];
+  /** Edits made so far this session: markDirty's count. */
+  private edits = 0;
+  /**
+   * The edit count the scene was last saved to its project at, or -1:
+   * while the two agree, the record is written as the project's own
+   * (SavedScene.synced).
+   */
+  private syncedAt = -1;
 
   /**
    * Last chance to add to a record before it is written - the material
@@ -658,8 +702,14 @@ export class ScenePersist {
       : this.cadence.interval;
   }
 
-  /** Note an edit; the write happens later, in idle time. */
-  markDirty(): void {
+  /**
+   * Note an edit; the write happens later, in idle time. `edit` false is a
+   * write the record needs that changes nothing in the scene - its project
+   * link, its unsent copy, an opened scene to keep - and so does not undo
+   * SavedScene.synced.
+   */
+  markDirty(edit = true): void {
+    if (edit) this.edits++;
     this.onDirty?.();
     if (this.disabled) return;
     if (!this.dirty) {
@@ -701,6 +751,35 @@ export class ScenePersist {
     this.cancelScheduled = () => clearTimeout(timer);
   }
 
+  /** Where the edits stand now, for markSynced once a save that packed them lands. */
+  editCount(): number {
+    return this.edits;
+  }
+
+  /**
+   * The scene as it stood at `at` (an editCount) is in its project now:
+   * a Save to library went up. The record is written again to say so,
+   * unless an edit has come since, which it then says instead.
+   */
+  markSynced(at: number): void {
+    this.syncedAt = at;
+    this.markDirty(false);
+  }
+
+  /** The scene is not its project's as saved: a new link, or none. */
+  unsync(): void {
+    this.syncedAt = -1;
+  }
+
+  /**
+   * The boot scene is its project's as saved (a synced autosave, an opened
+   * project): taken without a write, as the record already says so or the
+   * open writes it anyway.
+   */
+  adoptSynced(): void {
+    this.syncedAt = this.edits;
+  }
+
   private readonly runScheduled = (): void => {
     this.cancelScheduled = null;
     void this.flush();
@@ -718,6 +797,15 @@ export class ScenePersist {
     const scene = this.session.serializeScene();
     if (!scene) return;
     this.decorate?.(scene);
+    // Read with the serialise, before anything waits: an edit made while
+    // the put runs is not in this record.
+    if (scene.project && this.syncedAt === this.edits) scene.synced = true;
+    const status: SceneStatus = {
+      savedAt: scene.savedAt,
+      synced: scene.synced === true,
+      ...(scene.project ? { project: { ...scene.project } } : {}),
+      ...(scene.unsent ? { unsent: scene.unsent } : {}),
+    };
     perfLog.record('autosave serialise', performance.now() - t0);
     // This write takes everything there is. A write still armed (an event
     // flush got here first) would only repeat it inside the interval; the
@@ -738,6 +826,9 @@ export class ScenePersist {
         const p0 = performance.now();
         const req = s.put(scene, KEY);
         put = performance.now() - p0;
+        // The same transaction: the gallery's card never reads a status
+        // that belongs to another record.
+        s.put(status, STATUS_KEY);
         return req;
       });
       perfLog.record('autosave write', performance.now() - w0, `put ${formatMs(put)}`);

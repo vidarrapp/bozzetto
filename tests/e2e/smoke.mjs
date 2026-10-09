@@ -1145,6 +1145,10 @@ export const failedNotice = (page) =>
     .then((h) => h.jsonValue())
     .catch(() => null);
 
+/** The gallery's In progress sculpt card's title, or null when there is no card. */
+export const inProgressTitle = (page) =>
+  page.evaluate(() => document.querySelector('.card--sculpt:not(.card--armature) .card__title')?.textContent ?? null);
+
 /** Clear every notice, so the next one read is the next one shown. */
 export const clearNotices = (page) => page.evaluate(() => document.querySelectorAll('.file-menu__progress').forEach((n) => n.remove()));
 
@@ -4281,6 +4285,48 @@ export const suites = {
       );
       t.eq(fake.projects.get(id).scene?.objects, 3, 'and the server has the new scene');
 
+      // Saved to the library and untouched since, the work is the
+      // project's: the gallery shows the project's card and no In progress
+      // card beside it, through reloads and a visit that changes nothing.
+      // An edit brings the card back, named for what it is; saving again
+      // puts it away. The autosave stays throughout.
+      const sceneTitle = fake.projects.get(id).title;
+      const toGallery = async (reload = false) => {
+        if (reload) await owner.reload({ waitUntil: 'domcontentloaded' });
+        else await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+        await owner.waitForSelector(`.card--scene[data-project="${id}"]`, { timeout: 30_000 });
+        return inProgressTitle(owner);
+      };
+      await owner.evaluate(() => window.__sculpt.persist.settle());
+      const aside = { saved: await toGallery() };
+      aside.reloaded = await toGallery(true);
+      await boot();
+      await owner.evaluate(() => window.__sculpt.persist.settle());
+      aside.visited = await toGallery();
+      t.ok(
+        aside.saved === null && aside.reloaded === null && aside.visited === null,
+        `saved, the In progress card stands aside for the project's own card, after a reload and a visit to Sculpt too (${JSON.stringify(aside)})`,
+      );
+      await boot();
+      await owner.evaluate(() => window.__sculpt.session.toggleSymmetry());
+      await owner.evaluate(() => window.__sculpt.persist.settle());
+      const edited = { now: await toGallery() };
+      edited.reloaded = await toGallery(true);
+      t.ok(
+        edited.now === `Unsaved changes to "${sceneTitle}"` && edited.reloaded === edited.now,
+        `an edit after the save brings it back as unsaved changes to the project, through a reload too (${JSON.stringify(edited)})`,
+      );
+      await boot();
+      await chooseFile(owner, 'Save to library');
+      end = await savedToast(owner);
+      await owner.evaluate(() => window.__sculpt.persist.settle());
+      const resaved = { now: await toGallery(), reloaded: await toGallery(true) };
+      t.ok(
+        end.state === 'done' && resaved.now === null && resaved.reloaded === null,
+        `saving again puts it away ("${end.text}"; ${JSON.stringify(resaved)})`,
+      );
+      await boot();
+
       // The link lives in the autosave record, not in any file.
       const named = await owner.evaluate(async (sid) => {
         const u8 = new Uint8Array(await window.__sculpt.file.pack());
@@ -4560,6 +4606,9 @@ export const suites = {
       t.ok((await chips()).includes('Log in') && !(await chips()).includes('Projects'), `the top row says Log in (${await chips()})`);
       t.eq(g.notice, 'Your sign-in has expired. Sign in again', 'and a quiet line says why, with Sign in again');
       t.ok(g.unsent.length === 1 && g.unsent[0].upload && g.unsent[0].note === DEVICE_NOTE && g.toggles === 0, `the kept scene's card says Not uploaded and offers Upload to Projects; no owner's switches (${JSON.stringify(g)})`);
+      // The scene was saved to its project once, but this save did not go
+      // up: its In progress card is as it always was, not put away.
+      t.eq(await inProgressTitle(owner), 'Your sculpt', 'and the In progress card stays, as it was');
       await gallery();
       t.eq(await owner.evaluate(() => document.querySelector('.landing__notice')?.textContent ?? null), null, 'the line is said once, not on every visit');
       await clearNotices(owner);

@@ -283,7 +283,10 @@ async function startSculpt(): Promise<void> {
   // iOS evicting the page left saved work that this silently RESUMED
   // instead of replacing - the one thing this tile promises not to do.
   const hasWork = await store.hasSavedScene().catch(() => false);
-  if (hasWork && !confirm('Start a new sculpt? The work in progress on this device will be replaced.')) {
+  // Work that is its project's as saved (inProject) loses nothing: there
+  // is no card for it, and no question either.
+  const atRisk = hasWork && !(await inProject(store));
+  if (atRisk && !confirm('Start a new sculpt? The work in progress on this device will be replaced.')) {
     return;
   }
   if (hasWork) {
@@ -411,6 +414,19 @@ async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired
 }
 
 /**
+ * Is the sculpt autosave its project's as saved, with nothing else of it
+ * only here? A Save to library went up (or the project was opened) and
+ * nothing has been edited since (SavedScene.synced), no copy a failed
+ * save kept is waiting to go up, and no captured reel would go with it -
+ * the project's own card opens the same work. The autosave stays, as the
+ * recovery copy it is; it only needs no card of its own.
+ */
+async function inProject(store: typeof import('../sculpt/bridge/ScenePersist')): Promise<boolean> {
+  const status = await store.loadSceneStatus();
+  return !!status?.synced && !!status.project && !status.unsent && !(await framesKept());
+}
+
+/**
  * The unfinished sculpt sitting in this browser's storage, as a card.
  * Clicking goes straight back in, where the autosave restores the geometry.
  *
@@ -419,14 +435,21 @@ async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired
  * way out through the gallery link, so every other exit - a reload, a
  * closed tab, iOS evicting the page - left work with no way back to it
  * from here.
+ *
+ * Work saved to the library and not touched since has no card: the
+ * project's stands for it (inProject). Edited after that save, the card
+ * comes back, named for what it is - unsaved changes to that project.
  */
 async function sculptCard(): Promise<HTMLElement | null> {
   let snap: Awaited<ReturnType<typeof import('../sculpt/bridge/ScenePersist').loadSculptSnapshot>>;
+  let status: Awaited<ReturnType<typeof import('../sculpt/bridge/ScenePersist').loadSceneStatus>>;
   try {
     // Imported lazily: the landing page should not pull in sculpt code just
     // to discover there is nothing saved.
     const store = await import('../sculpt/bridge/ScenePersist');
     if (!(await store.hasSavedScene())) return null;
+    if (await inProject(store)) return null;
+    status = await store.loadSceneStatus();
     snap = await store.loadSculptSnapshot();
   } catch {
     return null; // storage blocked, or the module failed to load
@@ -450,6 +473,12 @@ async function sculptCard(): Promise<HTMLElement | null> {
       <span class="card__meta"></span>
       <span class="card__note"></span>
     </div>`;
+  // Changes made since the scene was saved to its project. Not for a save
+  // that could not upload: that card is as it always was, beside the copy
+  // the save kept.
+  if (status?.project && !status.synced && !status.unsent) {
+    a.querySelector<HTMLElement>('.card__title')!.textContent = `Unsaved changes to "${status.project.title}"`;
+  }
   // The autosave is browser storage like the shelf, and goes the same way
   // with a reinstall - however often it is written.
   a.querySelector<HTMLElement>('.card__note')!.textContent = DEVICE_ONLY_NOTE;

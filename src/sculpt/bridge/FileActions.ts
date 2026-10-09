@@ -58,6 +58,17 @@ export interface FileActionHooks {
   onLinkChange?(link: SceneLink | null): void;
   /** The scene's unsent copy changed (FileActions.unsentCopy): the same, for that. */
   onUnsentChange?(id: string | null): void;
+  /**
+   * Where the scene's edits stand, as a token onSynced can be handed
+   * later: taken as a save packs the scene, as cleanPoint is.
+   */
+  syncPoint?(): number;
+  /**
+   * A Save to library went up: the scene as it stood at `at` is its
+   * project's now, so the autosave record can say so (SavedScene.synced).
+   * Called after onLinkChange, never for a save kept on the device.
+   */
+  onSynced?(at: number): void;
 }
 
 /**
@@ -304,6 +315,7 @@ export class FileActions {
     try {
       const generation = this.generation;
       const at = this.hooks.cleanPoint();
+      const synced = this.hooks.syncPoint?.();
       // Where the scene goes, read before anything waits: a scene opened
       // while this one packs must not send these bytes to its project.
       let target = this.linked;
@@ -352,6 +364,7 @@ export class FileActions {
         this.setLink(link);
         this.setUnsent(null);
         this.hooks.onSceneClean(at);
+        if (synced !== undefined) this.hooks.onSynced?.(synced);
       }
       return link;
     } finally {

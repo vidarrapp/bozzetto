@@ -55,7 +55,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { crc32 } from 'node:zlib';
 import { openSculpt, startAccountsServer } from './lib.mjs';
-import { chooseFile, clearNotices, failedNotice, fileItems, readBozz, savedToast, shelf, workerRoutes } from './smoke.mjs';
+import { chooseFile, clearNotices, failedNotice, fileItems, inProgressTitle, readBozz, savedToast, shelf, workerRoutes } from './smoke.mjs';
 import { TURNSTILE_SECRET, startTurnstileFake } from '../functions/turnstile-fake.mjs';
 import { inviteToken, seedInvite, seedUser } from '../functions/lib.mjs';
 import { armatureLibrary } from './armatureProjects.mjs';
@@ -1328,8 +1328,37 @@ async function memberLibrary(server, o, a, t) {
   );
   t.eq(file ? (await readBozz(p, file)).objects : 0, 2, 'and the file opens as the scene it was');
 
+  // The gallery: saved and untouched since, the work is the project's, so
+  // the In progress card stands aside for the device copy's In My projects
+  // card, through a reload too; an edit brings it back as unsaved changes.
+  const gallery = async (reload = false) => {
+    if (reload) await p.reload({ waitUntil: 'domcontentloaded' });
+    else await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('#landing-grid .card--library', { timeout: 30_000 }).catch(() => {});
+    return p.evaluate(() => ({
+      progress: document.querySelector('.card--sculpt:not(.card--armature) .card__title')?.textContent ?? null,
+      cards: [...document.querySelectorAll('.card--library')].map((c) => c.querySelector('.card__badge')?.textContent ?? null),
+    }));
+  };
+  const backToSculpt = async () => {
+    await openSculpt(p, server.base, '&q=low');
+    await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
+  };
+  await p.evaluate(() => window.__sculpt.persist.settle());
+  const aside = { now: await gallery(), reloaded: await gallery(true) };
+  t.ok(
+    [aside.now, aside.reloaded].every((g) => g.progress === null && show(g.cards) === show(['In My projects'])),
+    `saved to My projects, the gallery shows its copy's card and no In progress card, through a reload too (${show(aside)})`,
+  );
+  t.eq(await inProgressTitle(p), null, 'the In progress card is gone');
+  await backToSculpt();
+
   // Again, after an edit: the same project, updated in place.
   await p.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
+  await p.evaluate(() => window.__sculpt.persist.settle());
+  const edited = await gallery();
+  t.eq(edited.progress, `Unsaved changes to "${list[0]?.title}"`, `an edit brings the In progress card back, as unsaved changes to the project (${show(edited)})`);
+  await backToSculpt();
   await clearNotices(p);
   await chooseFile(p, 'Save to library');
   end = await savedToast(p);
@@ -1359,6 +1388,15 @@ async function memberLibrary(server, o, a, t) {
   list = (await pageJson(p, '/api/me/projects')).body ?? [];
   t.ok(list.length === 1 && list[0].scene?.objects === 3, 'and nothing changed on the server');
   t.eq(await setQuota(250), 200, 'the quota is put back');
+  // A save that did not go up leaves its In progress card as it was,
+  // beside the Not uploaded copy.
+  await p.evaluate(() => window.__sculpt.persist.settle());
+  const unsentHere = await gallery();
+  t.ok(
+    unsentHere.progress === 'Your sculpt' && unsentHere.cards.includes('Not uploaded'),
+    `with a save not uploaded, the In progress card is as it was, beside the Not uploaded card (${show(unsentHere)})`,
+  );
+  await backToSculpt();
 
   // The sign-in gone: revoked on the server, so a save is kept here, and Sign in again signs in and saves.
   const revoked = await o.page.evaluate((id) => fetch(`/admin/api/users/${id}/revoke-sessions`, { method: 'POST' }).then((r) => r.status), uid);

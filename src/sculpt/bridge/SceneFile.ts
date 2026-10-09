@@ -58,7 +58,7 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   // The project link is the autosave's business (see SavedScene.project):
   // a file leaves the device, and must not carry a pointer to the owner's
   // server project with it, nor to a copy on this device's shelf.
-  const { project: _link, unsent: _unsent, ...portable } = scene;
+  const { project: _link, unsent: _unsent, synced: _synced, ...portable } = scene;
   // A name past what a reader takes (shared/bozz.ts MAX_NAME: this app's
   // own reader and the server's both refuse it) would make a file nothing
   // opens, nor any server keeps: cut to it here, where every file is made.
@@ -199,6 +199,7 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
   // decided by how it was opened, never by what a file claims.
   delete clean.project;
   delete clean.unsent;
+  delete clean.synced;
   return clean;
 }
 
