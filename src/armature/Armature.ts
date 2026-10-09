@@ -119,6 +119,14 @@ export class Armature {
   private readonly pose = new Map<string, Quaternion>();
   private readonly props = new Map<string, Proportions>();
   private readonly limits = new Map<string, JointLimits>();
+  /**
+   * Mirrored bones whose rest frame is its mirror's reflected and then
+   * turned half a turn about the bone: a bone hinted along world Y or Z
+   * (the clavicles) keeps its X on that axis on both sides, where the
+   * reflection takes it to the other end. A mirrored pose is turned the
+   * same half turn, or the copy lands twisted and clamps to its limits.
+   */
+  private readonly mirrorTwist = new Set<string>();
   /** Skeleton index of a part bone -> the bone it belongs to. */
   private readonly partOwner = new Map<number, string>();
 
@@ -135,6 +143,7 @@ export class Armature {
     // follows the hinted world axis on BOTH sides, so the left and right
     // frames are mirror images in Y and Z with X shared - the one layout
     // in which a single limit table can serve both sides (see limitsFor).
+    // A bone hinted along Y or Z sits half a turn from that: mirrorTwist.
     for (const def of rig.bones) {
       this.defs.set(def.name, def);
       const head = new Vector3().fromArray(def.head).multiplyScalar(scale);
@@ -173,6 +182,15 @@ export class Armature {
     const rootDef = rig.bones.find((b) => !b.parent)!;
     this.root = this.bones.get(rootDef.name)!;
     for (const def of rig.bones) this.limits.set(def.name, this.limitsFor(def, worldQ));
+    for (const def of rig.bones) {
+      const other = def.mirror ? worldQ.get(def.mirror) : undefined;
+      if (!other) continue;
+      const own = new Vector3(1, 0, 0).applyQuaternion(worldQ.get(def.name)!);
+      const theirs = new Vector3(1, 0, 0).applyQuaternion(other);
+      // The reflection of a frame across YZ keeps X's world x and negates
+      // the rest: (x, y, z) -> (x, -y, -z) for the axis X.
+      if (own.x * theirs.x - own.y * theirs.y - own.z * theirs.z < 0) this.mirrorTwist.add(def.name);
+    }
     for (const c of rig.ik) {
       const at = c.effectorAt;
       if (typeof at === 'number' && Number.isFinite(at)) this.effectorAt.set(c.effector, Math.min(1, Math.max(0, at)));
@@ -416,6 +434,9 @@ export class Armature {
     from.getWorldQuaternion(_q);
     _q.premultiply(rootInv); // in the pelvis frame
     _q.set(_q.x, -_q.y, -_q.z, _q.w); // the reflection of a rotation across YZ
+    // Into the other side's own frame convention (see mirrorTwist): half a
+    // turn about the bone's length.
+    if (this.mirrorTwist.has(def.mirror)) _q.multiply(_q2.set(0, 1, 0, 0));
     _q.premultiply(rootQ); // back to the world
     // pose = restLocal^-1 * parentWorld^-1 * mirroredWorld
     const parent = to.parent as Bone | null;

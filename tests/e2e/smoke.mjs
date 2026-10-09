@@ -148,6 +148,99 @@ const limbFolds = (page) =>
     return out;
   });
 
+// With symmetry on, the clavicles mirror as the other joints do (owner
+// report: they did not). Each clavicle's rest frame keeps its X up on both
+// sides, half a turn about the bone from its mirror's reflection, so a
+// copied pose landed twisted and clamped. Three edits from rest, pins let
+// go: the left clavicle turned by its sliders, the right one by a drag of
+// its gizmo (the bone's quaternion written, then clamped, as the gizmo's
+// change does) and the left hand dragged up, out and forward. After each,
+// how far the right clavicle is from the left's mirror image across the
+// pelvis (degrees; its half turn about its own length aside), and how far
+// the arm below it, and the right shoulder, elbow and hand, are from the
+// mirrors of the left's: exactly, or less what they were apart at rest
+// where the arm itself was not turned (the realistic male's arms are a few
+// degrees apart there, and his forearms' limits leave a dragged hand a
+// tenth of a unit from the exact copy).
+const clavicleMirror = (page) =>
+  page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const Q = arm.root.quaternion.constructor;
+    const V = arm.root.position.constructor;
+    const half = new Q(0, 1, 0, 0);
+    const deg = (r) => (r * 180) / Math.PI;
+    const rest = () => {
+      arm.resetPose();
+      for (const c of arm.chains()) arm.setPinned(c.id, false);
+    };
+    const mirrorOf = (name) => {
+      arm.root.updateMatrixWorld(true);
+      const rq = arm.root.getWorldQuaternion(new Q());
+      const l = arm.bones.get(name).getWorldQuaternion(new Q()).premultiply(rq.clone().invert());
+      l.set(l.x, -l.y, -l.z, l.w).premultiply(rq);
+      return l;
+    };
+    const turned = (name) => {
+      const r = arm.bones.get(name.replace('.L', '.R')).getWorldQuaternion(new Q());
+      const l = mirrorOf(name);
+      return deg(Math.min(l.angleTo(r), l.clone().multiply(half).angleTo(r)));
+    };
+    const points = () => {
+      arm.root.updateMatrixWorld(true);
+      const inv = arm.root.matrixWorld.clone().invert();
+      const out = {};
+      for (const [what, l, r] of [
+        ['shoulder', () => arm.jointWorld('upperarm.L'), () => arm.jointWorld('upperarm.R')],
+        ['elbow', () => arm.jointWorld('forearm.L'), () => arm.jointWorld('forearm.R')],
+        ['hand', () => new V(...a.handlePosition('hand.L')), () => new V(...a.handlePosition('hand.R'))],
+      ]) {
+        const pl = l().applyMatrix4(inv);
+        const pr = r().applyMatrix4(inv);
+        pl.x = -pl.x;
+        out[what] = pl.distanceTo(pr);
+      }
+      return out;
+    };
+    const symmetry = arm.symmetry;
+    rest();
+    const apart = points();
+    const limb = () => ['upperarm.L', 'forearm.L', 'hand.L'].map(turned);
+    const atRest = limb();
+    arm.symmetry = true;
+    const measure = () => {
+      // An arm only carried by its clavicle keeps what it was apart at
+      // rest; one the mirror turned too is copied exactly.
+      const off = (v, was) => Math.min(v, Math.abs(v - was));
+      const got = { clavicle: turned('clavicle.L'), arm: Math.max(...limb().map((v, i) => off(v, atRest[i]))), off: 0 };
+      const now = points();
+      for (const k of Object.keys(now)) got.off = Math.max(got.off, off(now[k], apart[k]));
+      got.euler = [arm.getPoseEuler('clavicle.L'), arm.getPoseEuler('clavicle.R')].map((e) => e.map((v) => v.toFixed(1)).join(', '));
+      return got;
+    };
+    const out = {};
+    a.turn('clavicle.L', 5, 3, -20);
+    out.sliders = measure();
+    rest();
+    const bone = arm.bones.get('clavicle.R');
+    // A drag of the gizmo: 18 degrees about the bone's own Z and 6 about its X.
+    bone.quaternion.multiply(new Q().setFromAxisAngle(new V(0, 0, 1), (18 * Math.PI) / 180));
+    bone.quaternion.multiply(new Q().setFromAxisAngle(new V(1, 0, 0), (6 * Math.PI) / 180));
+    arm.clampPose('clavicle.R');
+    arm.followAims('clavicle.R');
+    a.commit();
+    out.gizmo = measure();
+    rest();
+    const hand = a.handlePosition('hand.L');
+    a.reach('hand.L', hand[0] + 15, hand[1] + 25, hand[2] + 15);
+    out.reach = measure();
+    out.reach.moved = Math.hypot(...a.handlePosition('hand.L').map((v, i) => v - hand[i]));
+    rest();
+    arm.symmetry = symmetry;
+    a.commit();
+    return out;
+  });
+
 // The hips open wide and cross a little, and the shoulders lift further
 // than they drop (owner report: the hips did the reverse, their side
 // limits the wrong way round, and the clavicles' with them). The left foot
@@ -2386,6 +2479,15 @@ export const suites = {
       for (const s of ['L', 'R']) {
         const [clavicle, upper, fore] = [`clavicle.${s}`, `upperarm.${s}`, `forearm.${s}`].map((n) => parts.verts[n] ?? 0);
         t.ok(clavicle === 0 && upper > fore, `${id}: the ${s} deltoid is on the upper arm (clavicle ${clavicle}, upper arm ${upper}, forearm ${fore} vertices)`);
+      }
+
+      // With symmetry on, the clavicles mirror like every other joint.
+      const mirror = await clavicleMirror(page);
+      for (const [how, m] of Object.entries(mirror)) {
+        t.ok(
+          m.clavicle < 0.5 && m.arm < 1 && m.off < 0.25 && (how !== 'reach' || m.moved > 5),
+          `${id}: symmetry on, ${how === 'sliders' ? 'the left clavicle turned by its sliders' : how === 'gizmo' ? 'the right clavicle turned by its gizmo' : `the left hand dragged ${m.moved?.toFixed(1)}`}: the right clavicle ${m.clavicle.toFixed(2)}° off the left's mirror image, the arm ${m.arm.toFixed(2)}°, the shoulder, elbow and hand ${m.off.toFixed(3)} (clavicles L ${m.euler[0]}, R ${m.euler[1]})`,
+        );
       }
 
       // The hips sit in the middle of each half of the pelvis (owner

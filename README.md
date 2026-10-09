@@ -314,6 +314,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 ### Unreleased
 
 - **The legal pages are complete.** The terms and the privacy notice carry the owner's decisions in place of their placeholders: `bozzetto@vidarrapp.se` for questions, requests and reports; what templates may be used for; artistic nudity in figure work allowed, pornographic content not; and how long each kind of data is kept. Both are now version 2026-10-08, the version a new account accepts.
+- **Armature: the clavicles mirror with symmetry on.** A shoulder lifted, dropped or swung forward - by its sliders, its gizmo or a drag of the hand - now moves the other shoulder as its mirror image, as every other joint does, on the mannequins and the blocks alike. Before, the copy came out half a turn twisted about the collarbone and stuck at the end of its limits. Saved poses open as they were.
 
 ### v1.4.1
 
