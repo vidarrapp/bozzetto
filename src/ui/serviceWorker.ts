@@ -80,6 +80,15 @@ export function registerServiceWorker(): void {
   // docs/accounts.md §2): a page of the site in a session of the app's,
   // there to sign in and close, with nothing to keep for offline use.
   if (params.get('signin') === 'desktop') return;
+  // Nor on the files host: it serves templates' files and sends every
+  // other path to the gallery, and a worker registered there (by someone
+  // opening the host's root before the redirect existed) would answer the
+  // root with the app shell from its cache, in front of the redirect. One
+  // found there is removed.
+  if (__BOZZETTO_MEDIA_ORIGIN__ && window.location.origin === __BOZZETTO_MEDIA_ORIGIN__) {
+    void unregisterAll();
+    return;
+  }
 
   if (params.has('nosw')) {
     const url = new URL(window.location.href);

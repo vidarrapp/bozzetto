@@ -102,6 +102,8 @@ export default defineConfig(({ mode }) => {
     // (scripts/app-version.mjs). Each build's own, so a deploy with no
     // version bump still reads differently from the one before it.
     __BOZZETTO_VERSION__: JSON.stringify(appVersion()),
+    // The files host, so the page can tell it is on it (ui/serviceWorker).
+    __BOZZETTO_MEDIA_ORIGIN__: JSON.stringify(media),
   },
   plugins: [
     // The desktop app's About panel (electron/main.cjs) reads the version

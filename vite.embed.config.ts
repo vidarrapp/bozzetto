@@ -15,6 +15,7 @@ export default defineConfig({
   // version of the build that wrote the export.
   define: {
     __BOZZETTO_VERSION__: JSON.stringify(appVersion()),
+    __BOZZETTO_MEDIA_ORIGIN__: '""',
   },
   resolve: {
     // Match the main build: route bare `three` to the WebGPU build so the
