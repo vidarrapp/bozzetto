@@ -787,12 +787,21 @@ const emptySpot = (page) =>
 // --- sliders: typed values, ranges and defaults ----------------------------
 
 /**
- * A panel by its title, opened if it was tucked away, once it has slid all
- * the way in: at two or three frames a second the slide takes seconds, and
+ * A panel by its title, opened if it was tucked away, and all the way in.
+ * The slide is switched off for the page first: a transition only starts
+ * and advances on rendered frames, and Armature mode's full-quality frames
+ * take one to several seconds each under the software renderer, so the
+ * quarter-second slide could still be under way twenty seconds later, and
  * a press aimed at a slider before it ends lands off the screen.
  */
 const openPanel = async (page, title) => {
   const found = await page.evaluate((name) => {
+    if (!document.getElementById('e2e-no-slide')) {
+      const style = document.createElement('style');
+      style.id = 'e2e-no-slide';
+      style.textContent = '.panel { transition: none !important; }';
+      document.head.appendChild(style);
+    }
     const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
     if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
     return !!p;
@@ -2603,10 +2612,10 @@ export const suites = {
         lo = Math.min(lo, l);
         hi = Math.max(hi, l);
       }
-      return { src: img.getAttribute('src'), blur: blur?.getAttribute('src') ?? null, type: blob.type, width: img.naturalWidth, spread: hi - lo };
+      return { src: img.getAttribute('src'), blur: blur?.getAttribute('src') ?? null, type: blob.type, width: img.naturalWidth, height: img.naturalHeight, spread: hi - lo };
     });
     t.ok(!!card && /^blob:/.test(card.src) && card.blur === card.src, `the armature card shows its picture, sharp and blurred (${card?.src ?? 'none'})`);
-    t.ok(!!card && card.type === 'image/jpeg' && card.width > 0 && card.width <= 320 && card.spread > 10, `a JPEG of the figure, ${card?.width} px wide, not an empty frame (spread ${card?.spread?.toFixed(0)})`);
+    t.ok(!!card && card.type === 'image/jpeg' && card.width === 800 && card.height === 1000 && card.spread > 10, `a JPEG of the figure, the gallery's 4:5 portrait at ${card?.width}x${card?.height}, not an empty frame (spread ${card?.spread?.toFixed(0)})`);
 
     // Offline with no mannequin kept, a new armature falls back to the
     // blocks, which are code: a fresh browser whose figure fetches fail.
@@ -5432,7 +5441,7 @@ export const suites = {
         const capture = window.__sculpt.captureWindow.chip;
         return { chips, like: look(capture) === look(file) && look(capture) === look(edit) };
       });
-      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Capture', 'signed in, the top row has a Capture chip beside File and Edit');
+      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Capture, Present', 'signed in, the top row has a Capture chip beside File and Edit, Present after it');
       t.ok(row.like, 'styled as they are');
       let s = await captureState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
@@ -6368,7 +6377,9 @@ export const suites = {
         const res = await route.fetch();
         await route.fulfill({ response: res, json: { ...(await res.json()), environment } });
       });
-      await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+      // A minute: on SwiftShader, leaving a viewer page that is still
+      // drawing (its shadow passes in software) takes about half of one.
+      await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await page.waitForFunction(() => !!window.__bozzetto?.scene.environment && !document.getElementById('overlay'), null, { timeout: 90_000 });
       return page.evaluate(() => {
         const v = window.__bozzetto;

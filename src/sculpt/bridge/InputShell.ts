@@ -86,11 +86,35 @@ export interface InputShellHooks {
   dolly(factor: number): void;
   /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
+  /** Shift+p (or the top row's Present): into Present mode, or back out of it. */
+  togglePresent(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
   toggleMaskTint(): void;
   /** ctrl+e: extract the masked region at the palette's thickness. */
   extractMasked(): void;
 }
+
+/**
+ * What the keyboard still does in Present mode: look round the model,
+ * change how it is lit and shown, leave, and the guides. Every other
+ * action this shell answers edits the scene, picks a tool or moves the
+ * selection, and is claimed and dropped there.
+ */
+const PRESENT_KEYS = new Set([
+  'ui.present',
+  'ui.chrome',
+  'ui.show',
+  'ui.help',
+  'ui.fps',
+  'ui.preferences',
+  'view.frame',
+  'view.frameAll',
+  'view.turnLeft',
+  'view.turnRight',
+  'view.shadows',
+  'view.wireframe',
+  'light.move',
+]);
 
 /** A select-tool press that travels past this is a marquee, not a click. */
 const MARQUEE_SLOP = 5;
@@ -354,6 +378,13 @@ export class InputShell {
   worldScale: WorldScaleBrush | null = null;
   /** Object transform gizmo; mode.ts owns it (it lives in the three scene). */
   transform: TransformGizmo | null = null;
+  /**
+   * Present mode (mode.ts sets it): nothing on the scene answers a press
+   * or a key. A finger navigates whatever Preferences says, the pen and the
+   * mouse orbit wherever they land, and the brush ring stays away; the
+   * held L still moves the light, which is the look and not the scene.
+   */
+  presenting = false;
 
   install(): void {
     // Pen pressure routing lives in the dynamics store (per-brush toggles
@@ -831,6 +862,10 @@ export class InputShell {
     // A hover pick owed from before the press must not land mid-stroke.
     this.hoverDue = false;
     if (e.button !== 0) return; // middle/right stay with OrbitControls
+    if (this.presenting) {
+      this.presentPress(e);
+      return;
+    }
     if (e.pointerType === 'touch') {
       this.touchesDown.add(e.pointerId);
       // Fingers navigate (the default): a finger is routed here, before
@@ -1135,6 +1170,29 @@ export class InputShell {
     e.stopPropagation();
   }
 
+  /**
+   * A press in Present mode: never a stroke, a pick or a gizmo drag. A
+   * finger goes the fingers-navigate way (one orbits, two pan and zoom),
+   * the pen still outranks fingers, and a pen or mouse press orbits - or
+   * pans, with the modifier OrbitControls reads - as a press that missed
+   * the model does.
+   */
+  private presentPress(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      this.touchesDown.add(e.pointerId);
+      this.fingerDown(e);
+      return;
+    }
+    if (this.navTouches.size > 0) this.takeOverFromFingers();
+    if (this.lKeyHeld) {
+      this.heldKeyPress(e);
+      return;
+    }
+    this.orbitPointer = e.pointerId;
+    this.verdict?.(`orbit ${e.pointerType} (presenting)`);
+    this.hooks.orbitBegin();
+  }
+
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     if (e.pointerType === 'touch' && this.fingerMove(e)) return;
@@ -1155,6 +1213,9 @@ export class InputShell {
       );
       return;
     }
+
+    // Presenting there is no ring to place and no stroke to feed.
+    if (this.presenting) return;
 
     if (this.marquee) {
       this.moveSelectPress(e);
@@ -1263,7 +1324,7 @@ export class InputShell {
     this.hoverDue = false;
     const s = this.session;
     if (this.pointerId !== -1 || s._action !== Enums.Action.NOTHING) return;
-    if (this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld) return;
+    if (this.presenting || this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld) return;
     const surf = s.hoverSurface(true);
     if (surf) {
       // The mirror rides along on HOVER only: it shows where symmetry
@@ -1725,9 +1786,17 @@ export class InputShell {
     // shadows.
     if (e.repeat && !action.repeat) return this.claim(e);
 
+    // Present mode looks and does not touch: the brushes, the gizmo, the
+    // mask, the history and the selection are claimed and go nowhere,
+    // so the viewer's own bindings on the same keys stay dormant too.
+    if (this.presenting && !PRESENT_KEYS.has(action.id)) return this.claim(e);
+
     switch (action.id) {
       case 'ui.chrome':
         this.hooks.toggleChrome();
+        return this.claim(e);
+      case 'ui.present':
+        this.hooks.togglePresent();
         return this.claim(e);
       case 'brush.sizeDown':
       case 'brush.sizeUp':

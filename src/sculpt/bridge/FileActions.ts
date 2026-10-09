@@ -49,6 +49,11 @@ export interface FileActionHooks {
   onSceneClean(at?: unknown): void;
   /** A picture of the viewport, for a library card. */
   captureThumb(): Promise<Blob>;
+  /**
+   * In Present mode, the view and the look as a project's manifest blocks,
+   * for Save to library to write beside the file; null otherwise.
+   */
+  presentation?(): Record<string, unknown> | null;
   /** The project link changed, so the autosave record has to learn it. */
   onLinkChange?(link: SceneLink | null): void;
   /** The scene's unsent copy changed (FileActions.unsentCopy): the same, for that. */
@@ -304,6 +309,7 @@ export class FileActions {
       let target = this.linked;
       const unsent = this.unsent;
       const scene = this.serialize();
+      const presentation = this.hooks.presentation?.() ?? undefined;
       const counts = this.counts();
       const thumb = await this.thumb();
       onProgress?.('Packing the scene...');
@@ -324,7 +330,7 @@ export class FileActions {
       const scope = target?.scope;
       let link: SceneLink;
       try {
-        link = await uploadScene({ bytes, thumb, title, projectId: target?.id, scope, ...counts }, onProgress);
+        link = await uploadScene({ bytes, thumb, title, projectId: target?.id, scope, presentation, ...counts }, onProgress);
       } catch (err) {
         const why = asError(err);
         let kept: LibraryEntry | null = null;

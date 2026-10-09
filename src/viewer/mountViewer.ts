@@ -1,4 +1,4 @@
-import { Viewer } from './Viewer';
+import { Viewer, type ToneMappingId } from './Viewer';
 import type { AssetSource } from './AssetSource';
 import type { Manifest } from '../types/manifest';
 import { Panel } from '../ui/Panel';
@@ -27,6 +27,10 @@ export async function mountViewer(
   (window as unknown as { __bozzetto?: Viewer }).__bozzetto = viewer;
   viewer.onStatus = onStatus ?? null; // boot reports loading phases (env) through this
   await viewer.boot();
+  // The grade a presented look was published under (Sculpt's Present
+  // mode); setToneMapping ignores anything that is not one.
+  const grade = manifest.defaults.toneMapping;
+  if (grade) viewer.setToneMapping(grade as ToneMappingId);
 
   // Build the UI after boot so controls reflect the applied look.
   const panel = new Panel(viewer);

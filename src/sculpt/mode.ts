@@ -28,7 +28,7 @@ import { SnapshotRecorder, recordingAllowed } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
-import { saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
+import { presentationPatch, saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { statusToast } from './ui/statusToast';
@@ -43,6 +43,7 @@ import {
   setDocumentDirty,
   offerRecovery,
   clearRecovery as clearDesktopRecovery,
+  desktop,
   showServerSettings,
   writeRecovery,
 } from '../desktop';
@@ -61,6 +62,8 @@ import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
+import { PresentMode } from './ui/Present';
+import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
 /**
@@ -88,6 +91,13 @@ const SPIN_STOP_DEG_S = 2;
  * property of time rather than of frame rate.
  */
 const SPIN_COAST_MAX_MS = 600;
+
+/**
+ * Save image's resolution: twice the window, or twice the device's pixel
+ * ratio, held to this many pixels on the long side - a drawing buffer and
+ * the still frame's sum past it would cost an iPad more memory than it has.
+ */
+const STILL_MAX_SIDE = 4096;
 
 /** Sculpt's clay: warmer and smoother than the viewer's neutral default. */
 const SCULPT_ALBEDO = '#fed9a8';
@@ -304,6 +314,21 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     liveWorldBox(multimesh as unknown as SculptMesh),
     () => sync.wireGeometry(),
   );
+  // The shadows fit every visible object as it is now: added, moved,
+  // scaled, remeshed or grown by a stroke. The octree bounds the vendor
+  // keeps are cheap to read once a frame (see liveWorldBox).
+  const shadowBox = new Box3();
+  const shadowCorner = new Vector3();
+  viewer.setShadowSubject(() => {
+    shadowBox.makeEmpty();
+    for (const mesh of session.getMeshes()) {
+      if (!mesh.isVisible()) continue;
+      const b = mesh.computeWorldBound();
+      shadowBox.expandByPoint(shadowCorner.set(b[0], b[1], b[2]));
+      shadowBox.expandByPoint(shadowCorner.set(b[3], b[4], b[5]));
+    }
+    return shadowBox.isEmpty() ? null : shadowBox;
+  });
 
   // View-follow lighting (review decision): the rig rides the camera orbit
   // as a delta from a REFERENCE view, approximating turning the model in
@@ -507,6 +532,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let editMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
+  // Present mode (ui/Present): the frame tick turns its turntable, so it is
+  // declared before the first frame can ask.
+  let present: PresentMode | null = null;
   const extras = new Map<
     SculptMesh,
     { sync: GeometrySync; handle: ReturnType<Viewer['addSculptExtra']> }
@@ -559,8 +587,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The shell and the gizmo are built after the first reconcile runs, so
   // the sync reads them through holders that start out saying "no".
   let highlightSources = { selecting: (): boolean => false, gizmoActive: (): boolean => false };
+  // None in Present mode either: the view is the presentation.
+  let presenting = false;
   const syncHighlights = (): void => {
-    const show = highlightSources.selecting() || highlightSources.gizmoActive();
+    const show = !presenting && (highlightSources.selecting() || highlightSources.gizmoActive());
     const selected = new Set(session.getSelectedMeshes());
     const active = session.getMesh();
     viewer.highlightSculpt('primary', show && !!active && selected.has(active));
@@ -671,6 +701,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // History flags move through many routes (strokes, panel ops, keyboard,
     // buttons, restore); polling each frame is cheaper than wiring them all.
     sliders?.refreshHistory();
+    // Present's turntable, before the controls as the coast is.
+    present?.tick();
   };
   // After the controls and the pivot re-centring, so everything that hangs
   // off the camera uses the camera this frame renders with: the light rig
@@ -946,6 +978,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     orbitY: (deltaDeg) => turntable(deltaDeg),
     dolly: (factor) => viewer.dolly(factor),
     toggleChrome: () => chrome.handleTab(),
+    togglePresent: () => present?.toggle(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? 1),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
@@ -1061,6 +1094,80 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   applyAntialias();
   const offAntialias = settings.onChange(applyAntialias);
   input.onWork = (ms, eventTime, stepMs) => viewer.noteInput(ms, eventTime, stepMs);
+  /**
+   * Into Present mode: what edits is put away and locked, and what was up
+   * is noted to come back exactly - Tab's state, the Render panel and
+   * which side panel was open, the Select tool or the gizmo and its mode,
+   * the mask tint. Nothing here changes the scene; returns the way back.
+   */
+  const enterPresent = (): (() => void) => {
+    const sidePanels = [sculptPanel, scenePanel, modelPanel];
+    const was = {
+      chrome: chrome.isHidden(),
+      render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
+      open: sidePanels.map((p) => !!p && !p.isCollapsed()),
+      select: input.isSelecting(),
+      gizmo: gizmo.isActive() ? gizmo.getMode() : null,
+      maskTint: viewer.materials.getSculptMaskTint(),
+    };
+    input.exitSelect();
+    exitTransform();
+    for (const p of sidePanels) p?.setCollapsed(true);
+    // The mask's darkening is a working aid, not the look.
+    viewer.materials.setSculptMaskTint(false);
+    input.presenting = true;
+    presenting = true;
+    cursor.hide();
+    syncHighlights();
+    document.body.classList.add('presenting');
+    viewer.materials.setPresenting(true);
+    window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: true } }));
+    return () => {
+      document.body.classList.remove('presenting');
+      viewer.materials.setPresenting(false);
+      window.dispatchEvent(new CustomEvent('bozzetto:present', { detail: { active: false } }));
+      input.presenting = false;
+      presenting = false;
+      chrome.set(was.chrome);
+      // The Render panel first: opening a right-edge panel closes the other.
+      window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: was.render } }));
+      sidePanels.forEach((p, i) => {
+        if (was.open[i]) p?.setCollapsed(false);
+      });
+      viewer.materials.setSculptMaskTint(was.maskTint);
+      if (was.select) input.enterSelect();
+      else if (was.gizmo) enterTransform(was.gizmo);
+      syncHighlights();
+      input.refreshBrushCursor();
+    };
+  };
+  /**
+   * Save image: a PNG of the view at twice the window (twice the device's
+   * pixel ratio), held to STILL_MAX_SIDE, its smoothing finished, with no
+   * interface in it (Viewer.captureStill). Downloaded on the web as
+   * `<title>.png`; the desktop app asks where through its export dialog,
+   * and the page never names a path.
+   */
+  const saveImage = async (): Promise<void> => {
+    const status = statusToast('Rendering the image...');
+    try {
+      const { w, h } = viewer.viewportSize();
+      const ratio = Math.min(Math.max(1, window.devicePixelRatio || 1) * 2, STILL_MAX_SIDE / Math.max(1, w, h));
+      const blob = await viewer.captureStill(ratio);
+      const name = `${imageName(fileActions.link?.title ?? openedName ?? '')}.png`;
+      const bridge = desktop();
+      if (bridge) {
+        const saved = await bridge.exportBytes(await blob.arrayBuffer(), name, [{ name: 'PNG image', extensions: ['png'] }]);
+        status.done(saved ? `Saved ${saved.name}` : 'Image not saved');
+      } else {
+        downloadBlob(blob, name);
+        status.done(`Saved ${name}`);
+      }
+    } catch (err) {
+      console.warn('sculpt: image not saved', err);
+      status.fail(`Could not save the image: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   toolbar.onToggleTransform = () => {
@@ -1069,7 +1176,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   toolbar.onToggleSelect = () => input.toggleSelect();
   toolbar.onToggleChrome = () => chrome.toggle();
-  chrome.onChange = (hidden) => toolbar.setChromeHidden(hidden);
+  chrome.onChange = (hidden) => {
+    toolbar.setChromeHidden(hidden);
+    present?.setChromeHidden(hidden);
+  };
   sliders = new BrushSliders(input, {
     undo: () => session.undo(),
     redo: () => session.redo(),
@@ -1078,7 +1188,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   // How the file actions reach the viewer's look, so .bozz files carry it.
   const lookBridge: LookBridge = {
-    get: () => viewer.getLook(),
+    // A save is of one view: Present's turntable stops for it.
+    get: () => {
+      present?.setTurning(false);
+      return viewer.getLook();
+    },
     apply: async (look) => {
       await applyLookSafely(look);
       sculptPanel?.refreshBrush();
@@ -1198,7 +1312,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     onSceneClean: markSceneClean,
     // The library card wants the same picture the gallery's in-progress
     // card gets, taken at the moment you press Save rather than on the way out.
-    captureThumb: () => viewer.captureThumbnail(480),
+    captureThumb: () => viewer.captureThumbnail(),
+    // From Present mode, Save to library writes the view and the look as
+    // the project's own blocks too (GallerySave.presentationPatch).
+    presentation: () => (present?.isActive() ? presentationPatch(viewer.getLook(), true) : null),
     // A new link must reach the autosave record (it rides the same put as
     // the geometry), or a reload would forget where Save to library goes.
     onLinkChange: () => persist.markDirty(),
@@ -1225,6 +1342,29 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The chip stays hidden until recording is known to be allowed here
   // (the role probe below; the desktop app straight away).
   captureWindow = new CaptureWindow(recorder);
+  // Present mode's chip lands beside Capture's (ui/Present).
+  const turnCentre = new Vector3();
+  present = new PresentMode(
+    {
+      canEnter: () => !input.isStroking() && !gizmo.isDragging(),
+      enter: () => enterPresent(),
+      turn: (deg) => {
+        // About the visible scene's vertical axis, as the arrow keys turn
+        // about the object's: never the stroke pivot.
+        const meshes = session.getMeshes().filter((m) => m.isVisible());
+        if (meshes.length === 0) return;
+        const box = liveWorldBox(meshes[0]);
+        for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+        // A drag's settling tail would read the turn as its own and add it again.
+        endPivotOrbit();
+        viewer.orbitAzimuthAbout(box.getCenter(turnCentre), deg);
+      },
+      saveImage: () => saveImage(),
+      chromeHidden: () => chrome.isHidden(),
+      toggleChrome: () => chrome.toggle(),
+    },
+    container,
+  );
   scenePanel = new ScenePanel(session, library);
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
@@ -1267,7 +1407,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // outputs (autosave, scene file, OBJ) - nothing uploads. The same answer
   // decides what Save to library does.
   let savesNow: boolean | null = null;
-  const galleryHooks = { thumbnail: () => viewer.captureThumbnail(), look: () => viewer.getLook() };
+  // From Present mode a publish is of the presented view: the turntable
+  // stops first, so the look and the picture are of one camera, and the
+  // look goes with its grade (GallerySave.presentationPatch).
+  const galleryHooks = {
+    thumbnail: () => viewer.captureThumbnail(),
+    look: () => {
+      present?.setTurning(false);
+      return viewer.getLook();
+    },
+    presented: () => present?.isActive() ?? false,
+  };
   /** Who the page is for, by the latest probe; null before its first answer. */
   let role: Role | null = null;
   /** Whether the site has accounts, by the latest probe. */
@@ -1498,6 +1648,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     tablet: Tablet,
     library,
     gizmo, // transform modes, for the console and the tests
+    present, // Present mode, its turntable and Save image
     // File pipeline, callable from the console/tests without the menu.
     file: {
       pack: async () => (await fileActions.pack()).arrayBuffer(),
@@ -1593,7 +1744,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     try {
       const meshes = session.getMeshes();
       await saveSculptSnapshot({
-        thumb: await viewer.captureThumbnail(480),
+        thumb: await viewer.captureThumbnail(),
         savedAt: Date.now(),
         objects: meshes.length,
         tris: meshes.reduce((n, m) => n + m.getNbTriangles(), 0),
@@ -1644,6 +1795,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     desktopHandle?.(); // menu commands and OS opens stop reaching a dead scene
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
+    // Out of Present first, so everything it put away comes back to be disposed.
+    present?.dispose();
+    present = null;
     session.onLevelChange = null;
     levelToast.dispose();
     stats.dispose();
@@ -1901,4 +2055,15 @@ function liveWorldBox(mesh: SculptMesh): Box3 {
   // which is the right trade for a brush unit and a framing box.
   const b = mesh.computeWorldBound(); // the mesh's own scratch array
   return new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
+}
+
+/** A title as a file name: what a file system refuses goes, and an empty one is "Sculpt". */
+function imageName(title: string): string {
+  const base = title
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+    .replace(/^[.-]+|[.-]+$/g, '');
+  return base || 'Sculpt';
 }

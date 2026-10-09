@@ -30,6 +30,12 @@ export interface ManifestDefaults {
   material: string;
   /** Initial lighting preset id (e.g. "three_point"). */
   lightingPreset: string;
+  /**
+   * The output grade the look was set under ("cinematic", "agx", ...),
+   * where a publish from Sculpt's Present mode stored one. Absent, the
+   * viewer's own default.
+   */
+  toneMapping?: string;
 }
 
 export interface ManifestCamera {

@@ -19,12 +19,15 @@ export interface ShadowTier {
 }
 
 // A single small subject with a tight, subject-fit shadow frustum doesn't need
-// 4k maps — 2k is plenty and far cheaper. Adaptive quality trims further at
-// runtime when the measured FPS is low (mostly via pixel ratio).
+// 4k maps — 2k is plenty and far cheaper (Lighting.updateShadowFit fits each
+// frustum to the subject, or to the part of it in view). Adaptive quality
+// trims further at runtime when the measured FPS is low (mostly via pixel
+// ratio). Every tier gives the rim a map, so its shadow (on by default)
+// keeps it from lighting the far side through the model; low's is small.
 export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
   high: { key: 2048, fill: 1024, rim: 1024, blurSamples: 12, aoSamples: 16, aoResolutionScale: 1 },
-  medium: { key: 2048, fill: 1024, rim: 0, blurSamples: 8, aoSamples: 8, aoResolutionScale: 1 },
-  low: { key: 1024, fill: 0, rim: 0, blurSamples: 4, aoSamples: 8, aoResolutionScale: 0.5 },
+  medium: { key: 2048, fill: 1024, rim: 1024, blurSamples: 8, aoSamples: 8, aoResolutionScale: 1 },
+  low: { key: 1024, fill: 0, rim: 512, blurSamples: 4, aoSamples: 8, aoResolutionScale: 0.5 },
 };
 
 export function detectQuality(): Quality {

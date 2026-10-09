@@ -135,6 +135,7 @@ export const ACTIONS: ActionDef[] = [
   // --- interface ---
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'sculpt', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'sculpt', chord: 'escape' },
+  { id: 'ui.present', label: 'Present: the model alone, with the Render panel (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
   { id: 'ui.panel', label: 'Toggle the panel', group: 'Interface', mode: 'view', chord: 'tab' },
   // --- armature mode ------------------------------------------------------
   { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },

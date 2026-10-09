@@ -43,6 +43,11 @@ export interface GalleryHooks {
   thumbnail(): Promise<Blob>;
   /** The look to publish with, so the project opens as it was sculpted. */
   look(): LookState;
+  /**
+   * Whether this publish is from Present mode, whose view is the project's
+   * presentation: then the look's tone mapping goes too (presentationPatch).
+   */
+  presented?(): boolean;
 }
 
 /**
@@ -53,7 +58,21 @@ export interface GalleryHooks {
  * publishes on GTAO - it went out with no AO at all.
  */
 function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
-  const look = hooks.look();
+  return presentationPatch(hooks.look(), hooks.presented?.() ?? false);
+}
+
+/**
+ * A look as a project's manifest blocks: camera (position, target, lens,
+ * depth of field), lighting, material (the Sculpt colours / Plain colour
+ * switch included), environment (the background with it), AO, the stage
+ * (`presentation`) and the material mode (`defaults.material`), which the
+ * viewer applies at boot. From Present mode (`presented`) the output grade
+ * goes too, as `defaults.toneMapping`, so the project opens graded as it
+ * was presented; outside it a publish stays as it was. The server stores
+ * these blocks as sent (functions/_shared/projects.ts), `defaults` and
+ * `camera` merged over what the project had.
+ */
+export function presentationPatch(look: LookState, presented: boolean): Record<string, unknown> {
   return {
     lighting: look.lighting,
     material: look.material,
@@ -61,7 +80,10 @@ function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
     ao: aoWithoutCavity(look),
     presentation: look.presentation,
     camera: look.camera,
-    defaults: { material: look.materialMode },
+    defaults: {
+      material: look.materialMode,
+      ...(presented && look.toneMapping ? { toneMapping: look.toneMapping } : {}),
+    },
   };
 }
 

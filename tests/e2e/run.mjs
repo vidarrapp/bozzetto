@@ -1,6 +1,6 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
-// armatureProjects.mjs's, latency.mjs's, hardening.mjs's, tweaks.mjs's,
-// passkeyCheck.mjs's and accounts.mjs's (which starts the real Functions
+// armatureProjects.mjs's, latency.mjs's, shadows.mjs's, hardening.mjs's, tweaks.mjs's,
+// passkeyCheck.mjs's, present.mjs's and accounts.mjs's (which starts the real Functions
 // of its own, with wrangler, beside the static server the rest use).
 //
 //   npm run build:test && node tests/e2e/run.mjs [suite ...]
@@ -17,10 +17,12 @@ import { suites as armatureProjects } from './armatureProjects.mjs';
 import { suites as hardening } from './hardening.mjs';
 import { suites as latency } from './latency.mjs';
 import { suites as passkeyCheck } from './passkeyCheck.mjs';
+import { suites as present } from './present.mjs';
+import { suites as shadows } from './shadows.mjs';
 import { suites as smoke } from './smoke.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...hardening, ...tweaks, ...passkeyCheck, ...accounts };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...passkeyCheck, ...present, ...accounts };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

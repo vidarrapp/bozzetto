@@ -1057,7 +1057,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // A held, smoothed view still has them in it: the picture starts over.
     viewer.invalidate();
     try {
-      thumb = await viewer.captureThumbnail(320, smooth);
+      // The gallery's 4:5 portrait at its one size, as every card's picture is.
+      thumb = await viewer.captureThumbnail(undefined, smooth);
       return thumb;
     } catch {
       // Never block leaving the page over a picture.

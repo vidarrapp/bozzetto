@@ -73,6 +73,17 @@ export class Panel {
     if (!this.collapsed) this.setCollapsed(true);
   };
 
+  /**
+   * Sculpt's Present mode is up: the Material section offers the Sculpt
+   * colours / Plain colour switch over the sculpt, as it does over a
+   * published model (Materials.setPresenting).
+   */
+  private presenting = false;
+  private readonly onPresent = (e: Event): void => {
+    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    this.rebuildMaterialOptions();
+  };
+
   private sculpting = false;
   private readonly onSculptMode = (e: Event): void => {
     const detail = (e as CustomEvent<{ active?: boolean; mode?: string }>).detail;
@@ -88,6 +99,17 @@ export class Panel {
         ? 'Render'
         : this.viewer.manifest.title || 'Bozzetto';
     }
+  };
+
+  /**
+   * Opened or closed from outside, by id ('settings'): Present mode puts
+   * the panel back as it found it when it leaves.
+   */
+  private readonly onPanelSet = (e: Event): void => {
+    const detail = (e as CustomEvent<{ id?: string; open?: boolean }>).detail;
+    if (detail?.id !== 'settings' || typeof detail.open !== 'boolean') return;
+    if (this.collapsed === !detail.open) return;
+    this.setCollapsed(!detail.open);
   };
 
   /** A saved look was applied under us (opening a .bozz file). */
@@ -151,7 +173,9 @@ export class Panel {
   ) {
     this.editor = options.editor ?? false;
 
-    this.root = div('panel');
+    // panel--render names it for the stylesheet: Present mode keeps this
+    // panel and hides the rest.
+    this.root = div('panel panel--render');
     // Editor panel runs full-height (like the sidebar); the viewer panel stays
     // content-sized and leaves room for the transport bar at the bottom.
     if (this.editor) this.root.classList.add('panel--editor');
@@ -208,6 +232,8 @@ export class Panel {
     window.addEventListener('bozzetto:look-restored', this.onLookRestored);
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.addEventListener('bozzetto:panel-close-all', this.onCloseAll);
+    window.addEventListener('bozzetto:panel-set', this.onPanelSet);
+    window.addEventListener('bozzetto:present', this.onPresent);
 
     this.actions = options.actions;
     this.buildBody();
@@ -428,6 +454,8 @@ export class Panel {
     window.removeEventListener('bozzetto:look-restored', this.onLookRestored);
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.removeEventListener('bozzetto:panel-close-all', this.onCloseAll);
+    window.removeEventListener('bozzetto:panel-set', this.onPanelSet);
+    window.removeEventListener('bozzetto:present', this.onPresent);
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();
@@ -541,7 +569,20 @@ export class Panel {
     const mats = this.viewer.materials;
     const state = mats.getMaterialState();
 
-    if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
+    if (this.viewer.getMaterial() === 'lit' && this.sculpting && this.presenting) {
+      // Presenting a sculpt: its paint, or the albedo over all of it, as
+      // the published model will offer. The albedo itself stays per object,
+      // in the Model panel.
+      const source = selectEl(
+        [
+          ['sculpt', 'Sculpt colours'],
+          ['plain', 'Plain colour'],
+        ],
+        state.vertexColors === false ? 'plain' : 'sculpt',
+      );
+      source.addEventListener('change', () => mats.setPlainColor(source.value === 'plain'));
+      this.materialOptions.appendChild(labelRow('Colour', source));
+    } else if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
       // In sculpt mode these three are PER-OBJECT material values and live
       // in the Model panel; here they would edit whichever object happens
       // to be selected while dressed as scene-wide controls.

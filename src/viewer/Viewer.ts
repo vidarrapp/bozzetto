@@ -25,7 +25,7 @@ import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, u
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
-import type { Matrix4, Texture } from 'three';
+import type { Matrix4, Object3D, SkinnedMesh, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
@@ -256,6 +256,14 @@ export type AntialiasMode = 'still' | 'always' | 'off';
  * a still frame, not a cost paid on every one.
  */
 const STILL_AA_AFTER_MS = 1000;
+/**
+ * Every gallery picture is a 4:5 portrait (owner call), at one size, so
+ * the cards look uniform: width over height, and the pixels a thumbnail
+ * is drawn at (captureThumbnail).
+ */
+export const THUMB_ASPECT = 4 / 5;
+export const THUMB_WIDTH = 800;
+export const THUMB_HEIGHT = 1000;
 const STILL_AA_SAMPLES = 16;
 const STILL_OFFSETS = stillOffsets(STILL_AA_SAMPLES);
 
@@ -2013,24 +2021,33 @@ export class Viewer {
   }
 
   /**
-   * Render the current frame and read it back as a JPEG thumbnail blob. When a
-   * crop guide is active the thumbnail is cropped to it, so the saved image
-   * matches the framing used for the reel. Smoothed whatever the screen
-   * shows (renderForReadback); `smooth` false takes the frame in one render
-   * instead, for a page on its way out, which may not live through sixteen.
+   * Render the current frame and read it back as a JPEG thumbnail blob: the
+   * gallery's 4:5 portrait (owner call), the largest one centred on the
+   * view - or on the crop guide's frame, when one is up, so the picture
+   * matches the reel's framing - drawn at `width` x 5/4 of it, by default
+   * THUMB_WIDTH x THUMB_HEIGHT, so every card's picture is the same shape
+   * and size. Smoothed whatever the screen shows (renderForReadback);
+   * `smooth` false takes the frame in one render instead, for a page on
+   * its way out, which may not live through sixteen.
    */
-  async captureThumbnail(maxWidth = 640, smooth = true): Promise<Blob> {
+  async captureThumbnail(width = THUMB_WIDTH, smooth = true): Promise<Blob> {
     const t0 = performance.now();
     await this.renderForReadback(smooth);
     const srcCanvas = this.renderer.domElement;
-    const crop = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
-    const sx = crop ? Math.round(crop.x) : 0;
-    const sy = crop ? Math.round(crop.y) : 0;
-    const sw = crop ? Math.round(crop.w) : srcCanvas.width;
-    const sh = crop ? Math.round(crop.h) : srcCanvas.height;
-    const scale = Math.min(1, maxWidth / sw);
-    const w = Math.max(1, Math.round(sw * scale));
-    const h = Math.max(1, Math.round(sh * scale));
+    const guide = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
+    const fx = guide ? guide.x : 0;
+    const fy = guide ? guide.y : 0;
+    const fw = guide ? guide.w : srcCanvas.width;
+    const fh = guide ? guide.h : srcCanvas.height;
+    // The 4:5 portrait inside that frame, centred.
+    const cw = Math.min(fw, fh * THUMB_ASPECT);
+    const ch = cw / THUMB_ASPECT;
+    const sx = Math.round(fx + (fw - cw) / 2);
+    const sy = Math.round(fy + (fh - ch) / 2);
+    const sw = Math.max(1, Math.round(cw));
+    const sh = Math.max(1, Math.round(ch));
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(w / THUMB_ASPECT));
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -2057,6 +2074,58 @@ export class Viewer {
     });
     perfLog.record('thumbnail', performance.now() - t0, `read-back ${formatMs(draw)}`);
     return blob;
+  }
+
+  /**
+   * The view as it stands, as a PNG at `ratio` device pixels to the
+   * viewport's CSS pixel (Present mode's Save image). The renderer is the
+   * capture's meanwhile, as beginCapture holds it - the loop paused, so
+   * nothing resizes it or moves the picture - and its still frame is
+   * finished as a thumbnail's is (renderForReadback), whatever the screen
+   * shows. Only the canvas is read, so no interface is in it. The screen
+   * goes back to its own size afterwards, and the loop resumes.
+   */
+  async captureStill(ratio: number): Promise<Blob> {
+    if (this.capturing) throw new Error('A capture is already under way');
+    const t0 = performance.now();
+    const before = this.renderer.getPixelRatio();
+    this.capturing = true;
+    cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+    this.frameStart = 0;
+    clearTimeout(this.pacer);
+    this.pacer = 0;
+    try {
+      this.renderer.setPixelRatio(ratio);
+      // The CSS size stays: only the drawing buffer grows.
+      this.renderer.setSize(this.container.clientWidth, this.container.clientHeight, false);
+      this.invalidate();
+      await this.renderForReadback();
+      const src = this.renderer.domElement;
+      const canvas = document.createElement('canvas');
+      canvas.width = src.width;
+      canvas.height = src.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('2D context unavailable for capture');
+      // The held image drawn once more and read in the same task: with the
+      // loop paused nothing else draws it, and a canvas already handed to
+      // the compositor may read back cleared.
+      this.renderOnce();
+      ctx.drawImage(src, 0, 0);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image capture failed'))), 'image/png');
+      });
+      perfLog.record('still', performance.now() - t0, `${canvas.width}x${canvas.height}`);
+      return blob;
+    } finally {
+      this.endReadback();
+      this.capturing = false;
+      this.renderer.setPixelRatio(before);
+      this.onResize(); // the live size and camera, and a fresh still frame
+      this.timer.update(); // the capture's time is not the next frame's delta
+      this.frameStats.resetClock();
+      this.loop();
+    }
   }
 
   /**
@@ -2204,8 +2273,88 @@ export class Viewer {
       else this.controls.frameSubject(this.subjectBox);
     }
     this.lighting.fitToBounds(this.subjectBox);
+    this.measureSkinPad();
     this.layoutStage();
     this.invalidate();
+  }
+
+  /**
+   * The subject's live bounds for the shadow fit, where a mode keeps them
+   * (Sculpt: every visible object's octree bound, cheap to read), or null
+   * to go back to the viewer's own (setShadowSubject(null)).
+   */
+  setShadowSubject(provider: (() => Box3 | null) | null): void {
+    this.shadowSubject = provider;
+    this.invalidate();
+  }
+
+  private shadowSubject: (() => Box3 | null) | null = null;
+  private readonly shadowBox = new Box3();
+  private readonly shadowPoint = new Vector3();
+  /**
+   * How far a posed figure's surface reaches past its bones, measured when
+   * its mode fits it (fitSubject): its live bound is the bones' box grown by
+   * this, which a pose can move without a pass over the skinned vertices.
+   */
+  private skinPad: number | null = null;
+
+  /** Adopted skinned figures (Armature mode), visible ones. */
+  private skinnedSubjects(): SkinnedMesh[] {
+    return this.sculptExtras.filter((m): m is SkinnedMesh => (m as SkinnedMesh).isSkinnedMesh === true && m.visible);
+  }
+
+  /** The bones' world box of the adopted figures, into shadowBox; false when there are none. */
+  private boneBox(): boolean {
+    const box = this.shadowBox.makeEmpty();
+    for (const mesh of this.skinnedSubjects()) {
+      const bones = mesh.skeleton.bones;
+      if (!bones.length) continue;
+      // The pose as it stands this frame (the renderer would do this next).
+      let root: Object3D = bones[0];
+      while (root.parent && (root.parent as Object3D & { isBone?: boolean }).isBone) root = root.parent;
+      root.updateWorldMatrix(true, true);
+      for (const bone of bones) box.expandByPoint(this.shadowPoint.setFromMatrixPosition(bone.matrixWorld));
+    }
+    return !box.isEmpty();
+  }
+
+  private measureSkinPad(): void {
+    this.skinPad = null;
+    if (!this.boneBox()) return;
+    const b = this.shadowBox;
+    const s = this.subjectBox;
+    this.skinPad = Math.max(0, s.max.x - b.max.x, s.max.y - b.max.y, s.max.z - b.max.z, b.min.x - s.min.x, b.min.y - s.min.y, b.min.z - s.min.z);
+  }
+
+  /**
+   * The subject's bounds this frame: the mode's own (Sculpt), the posed
+   * figure's (Armature), the streamed frame's (the viewer, its bound
+   * computed at decode), or the box the subject was fitted to.
+   */
+  private liveShadowBox(): Box3 {
+    const given = this.shadowSubject?.();
+    if (given && !given.isEmpty()) return given;
+    if (this.skinPad !== null && this.boneBox()) return this.shadowBox.expandByScalar(this.skinPad);
+    const geom = this.display.geometry;
+    if (!this.inSculpt && this.display.visible && geom.boundingBox && !geom.boundingBox.isEmpty()) {
+      return this.shadowBox.copy(geom.boundingBox).applyMatrix4(this.display.matrixWorld);
+    }
+    return this.subjectBox;
+  }
+
+  /**
+   * Once a frame, and before a readback: fit the shadow frusta to the
+   * subject as it is now and to the view (Lighting.updateShadowFit), the
+   * camera as the picture is taken with it, so a capture's shadows are the
+   * screen's. Uniforms only; a refit changes the picture, so a still
+   * frame's smoothing starts over.
+   */
+  private refitShadows(): void {
+    this.lighting.setSubjectBounds(this.liveShadowBox());
+    this.lighting.setReceiverY(
+      this.ground.visible ? this.ground.position.y : this.pedestal.visible ? this.subjectBox.min.y : null,
+    );
+    if (this.lighting.updateShadowFit(this.camera, this.controls.targetDistance())) this.invalidate();
   }
 
   private sculptSaved: { geometry: BufferGeometry; frustumCulled: boolean } | null = null;
@@ -2254,6 +2403,7 @@ export class Viewer {
     const saved = this.sculptSaved;
     if (!saved) return;
     this.sculptSaved = null;
+    this.shadowSubject = null;
     this.detachWire(this.display);
     this.inSculpt = false;
     this.wireframe.visible = this.wireframeOn;
@@ -2954,6 +3104,7 @@ export class Viewer {
    */
   private async renderForReadback(smooth = true): Promise<void> {
     const acc = this.accumulate;
+    this.refitShadows();
     // A camera moved since the last frame (directly, by code) makes a held
     // or part-smoothed image stale: start from a plain frame of this view.
     // Anything else that changes the picture says so (invalidate), as
@@ -3095,6 +3246,8 @@ export class Viewer {
     // follows the distance it ended at.
     this.controls.syncLimits();
     this.updateFrameMode(now, dt);
+    // The shadow frusta, for where the subject and the view now are.
+    this.refitShadows();
     // The desktop suite's hook draws nothing, so there is nothing to sum.
     if (this.debugSkipRender) this.resetStill();
     else this.updateAntialias(now);

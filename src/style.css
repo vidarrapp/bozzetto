@@ -2489,6 +2489,115 @@ body.chrome-hidden .transport {
    hidden-state rule, so dropping the class snaps everything straight back
    rather than fading, which is what you want at fifty toggles a day. */
 
+/* --- Present mode (sculpt/ui/Present.ts) --- */
+
+/* What edits goes, the same way Tab's chrome goes (visibility, so nothing
+   hidden keeps a focus stop): the toolbar, the brush rail and its undo
+   chips, every panel but Render, the brush ring, the object stats and the
+   level pill. The top row, the notices and the Render panel stay. */
+body.presenting .sculpt-toolbar,
+body.presenting .sculpt-sliders,
+body.presenting .sculpt-hist,
+body.presenting .sculpt-stats,
+body.presenting .sculpt-leveltoast,
+body.presenting .sculpt-cursor,
+body.presenting .panel:not(.panel--render) {
+  visibility: hidden !important;
+  opacity: 0;
+}
+
+.present-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 30%);
+  font-family: var(--font-spec);
+  font-size: 11px;
+  /* Its buttons and slider are the touch targets; no browser gesture starts here. */
+  touch-action: none;
+  user-select: none;
+  transition: opacity 0.18s ease;
+}
+
+.present-bar__btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font: inherit;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.present-bar__btn:hover {
+  background: var(--hover);
+}
+
+.present-bar__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.present-bar__play.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.present-bar__speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.present-bar__speed input {
+  width: 96px;
+}
+
+.present-bar__val {
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tab in Present hides the Render panel and the top row; the bar stays,
+   faded, as the way back on a device without a Tab key. */
+body.chrome-hidden .present-bar {
+  opacity: 0.4;
+}
+
+body.chrome-hidden .present-bar:hover,
+body.chrome-hidden .present-bar:focus-within {
+  opacity: 1;
+}
+
+/* A narrow screen (an iPad held upright, a phone): the labels tighten. */
+@media (max-width: 600px) {
+  .present-bar {
+    gap: 4px;
+  }
+  .present-bar__btn {
+    padding: 6px 8px;
+    letter-spacing: 0.04em;
+  }
+  .present-bar__speed input {
+    width: 64px;
+  }
+}
+
 /* Said once, when the interface goes, and less each time you do it. */
 .chrome-hint {
   position: fixed;

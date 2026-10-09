@@ -40,6 +40,12 @@ export interface SceneUpload {
   projectId?: string;
   /** The routes that project is on: 'admin' for the owner tools' (SceneLink.scope). */
   scope?: 'admin';
+  /**
+   * A save from Present mode: the view and the look as the project's
+   * manifest blocks (GallerySave.presentationPatch), written once the file
+   * is in. The file carries its own look either way.
+   */
+  presentation?: Record<string, unknown>;
 }
 
 /** The longest title a project keeps (functions/_shared/projects.ts). */
@@ -130,6 +136,13 @@ async function upload(client: ProjectsClient, u: SceneUpload, onProgress: (text:
   } catch (err) {
     if (created) await client.remove(project).catch(() => undefined);
     throw err;
+  }
+  if (u.presentation) {
+    try {
+      await client.update(project, u.presentation);
+    } catch {
+      // Best effort, as the picture is: the scene itself is saved.
+    }
   }
   if (u.thumb) {
     try {

@@ -194,6 +194,19 @@ export class Materials {
     return this.modelVertexColor;
   }
 
+  /**
+   * Sculpt's Present mode: the look's Plain colour shows on the sculpt too,
+   * as the published model will show it. Otherwise the paint is the work
+   * while sculpting, whatever the look says.
+   */
+  private presenting = false;
+
+  setPresenting(on: boolean): void {
+    if (on === this.presenting) return;
+    this.presenting = on;
+    this.rebuildSculptColor();
+  }
+
   /** Plain colour (true) or the model's own paint (false); see MaterialState.vertexColors. */
   setPlainColor(plain: boolean): void {
     if (plain === this.plainColor) return;
@@ -206,7 +219,8 @@ export class Materials {
    * sculpting, and for a painted model unless the look says Plain colour.
    */
   private readsVertexColor(): boolean {
-    return this.sculptVertexColor || (this.modelVertexColor && !this.plainColor);
+    if (this.sculptVertexColor) return !(this.presenting && this.plainColor);
+    return this.modelVertexColor && !this.plainColor;
   }
 
   private rebuildSculptColor(): void {

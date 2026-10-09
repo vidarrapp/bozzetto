@@ -235,6 +235,9 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
   return defined({
     lighting: isRec(v.lighting)
       ? defined({
+          // Which version the record is (Lighting.applyState reads one
+          // without it as written before the rim cast by default).
+          v: num(light.v),
           key: sanitizeLight(light.key),
           fill: sanitizeLight(light.fill),
           rim: sanitizeLight(light.rim),
