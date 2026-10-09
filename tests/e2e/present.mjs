@@ -1,9 +1,14 @@
 // Present mode in Sculpt (sculpt/ui/Present.ts): in and out by the hotkey,
 // the chip and Esc with the interface put back as it was; the brushes, the
 // gizmo and the keys that edit locked while orbit still turns the view;
-// the Render panel reachable, and Tab's interplay with it; the turntable,
-// stopped by a press or a touch and never recorded; Save image's PNG, at
-// twice the window with nothing of the interface in it; a publish and a
+// the Render panel reachable, and Tab's interplay with it (Tab and the
+// toolbar's hide button hide everything, the bar too); the turntable,
+// started and stopped by Space (the play/pause key, rebindable, not while
+// typing), stopped by a press or a touch and never recorded; Save image's
+// PNG, at twice the window with nothing of the interface in it; Save
+// turntable's MP4 and GIF, one turn at the slider's speed, at the size and
+// frame rate asked, Cancel leaving no file and the view as it was, the
+// live turntable carrying on and nothing recorded; a publish and a
 // Save to library from Present storing the camera and the look, the viewer
 // opening the published model at them, and the thumbnail of the presented
 // view; and the iPad's portrait screen, fingers navigating.
@@ -53,6 +58,7 @@ const ui = (page) =>
         render: shown('.panel--render .panel__handle') || shown('.panel--render .panel__header'),
         bar: shown('.present-bar'),
         chip: shown('.present__chip'),
+        hide: shown('.sculpt-toolbar__right .sculpt-toolbar__btn'),
       },
       tool: input.currentToolIndex(),
       selecting: input.isSelecting(),
@@ -62,6 +68,16 @@ const ui = (page) =>
   });
 
 const show = (o) => JSON.stringify(o);
+
+/** ui() once `ok` holds of it, or as it is after a few seconds: hiding fades out over a few slow frames. */
+const uiOnce = async (page, ok) => {
+  let now = await ui(page);
+  for (let i = 0; i < 25 && !ok(now); i++) {
+    await page.waitForTimeout(200);
+    now = await ui(page);
+  }
+  return now;
+};
 const same = (a, b) => show(a) === show(b);
 
 /** The PNG's own size, from its IHDR. */
@@ -308,13 +324,22 @@ export const suites = {
     now = await ui(page);
     t.ok(!now.open.render && !now.chrome && now.presenting, `Tab first closes the Render panel (${show(now)})`);
     await press(page, 'Tab');
-    now = await ui(page);
-    t.ok(now.chrome && !now.shown.render && now.shown.bar && now.presenting, `Tab again hides it with the interface, the bar staying (${show(now)})`);
-    const chromeBtn = await page.evaluate(() => document.querySelector('.present-bar__chrome').textContent);
-    t.eq(chromeBtn, 'Show panels', "the bar's switch offers the panels back");
-    await page.click('.present-bar__chrome');
-    now = await ui(page);
-    t.ok(!now.chrome && now.shown.render && now.presenting, `and brings them back, still presenting (${show(now)})`);
+    const allHidden = (u) => u.chrome && !u.shown.render && !u.shown.bar && !u.shown.chip && u.presenting;
+    now = await uiOnce(page, allHidden);
+    t.ok(allHidden(now), `Tab again hides everything, the bar included (${show(now.shown)})`);
+    t.ok(now.shown.hide, "but the toolbar's hide button, in its corner");
+    t.eq(await page.evaluate(() => document.querySelector('.present-bar__chrome')), null, 'the bar has no hide switch of its own');
+    const allBack = (u) => !u.chrome && u.shown.render && u.shown.bar && u.shown.chip && u.presenting;
+    await page.click('.sculpt-toolbar__right .sculpt-toolbar__btn');
+    now = await uiOnce(page, allBack);
+    t.ok(allBack(now), `the hide button brings it all back, still presenting (${show(now.shown)})`);
+    await page.click('.sculpt-toolbar__right .sculpt-toolbar__btn');
+    now = await uiOnce(page, allHidden);
+    t.ok(allHidden(now), `and hides it all again (${show(now.shown)})`);
+    await press(page, 'Tab');
+    now = await uiOnce(page, allBack);
+    t.ok(allBack(now), `as Tab brings it back (${show(now.shown)})`);
+    t.ok(now.shown.hide, `the hide button shows in Present (${show(now.shown)})`);
     await press(page, 'Tab');
     await press(page, 'Tab');
     await press(page, 'Escape');
@@ -358,6 +383,23 @@ export const suites = {
     await page.mouse.wheel(0, 100);
     await page.waitForTimeout(100);
     t.ok(!(await page.evaluate(() => window.__sculpt.present.isTurning())), 'and so does the wheel');
+    const turning = () => page.evaluate(() => window.__sculpt.present.isTurning());
+    await press(page, 'Space');
+    t.ok(await turning(), 'Space starts the turntable');
+    await press(page, 'Space');
+    t.ok(!(await turning()), 'and stops it');
+    await page.evaluate(() => {
+      const f = document.createElement('input');
+      f.type = 'text';
+      f.id = 'space-field';
+      f.style.cssText = 'position:fixed;left:8px;top:120px;z-index:99';
+      document.body.appendChild(f);
+      f.focus();
+    });
+    await press(page, 'Space');
+    const typed = await page.evaluate(() => document.getElementById('space-field').value);
+    t.ok(!(await turning()) && typed === ' ', `not while typing in a field (${JSON.stringify(typed)})`);
+    await page.evaluate(() => document.getElementById('space-field').remove());
     const frames1 = await page.evaluate(async () => {
       await new Promise((ok) => setTimeout(ok, 800));
       return window.__sculpt.recorder.frameCount();
@@ -404,6 +446,9 @@ export const suites = {
     t.eq(live.w, Math.round(view.w * Math.min(live.ratio, 2)), 'the screen goes back to its own resolution afterwards');
     await press(page, 'Escape');
 
+    // --- Save turntable --------------------------------------------------------
+    await clipChecks(page, base, t);
+
     // --- publishing from Present -------------------------------------------
     await publishChecks(page, base, t);
 
@@ -411,6 +456,189 @@ export const suites = {
     await ipadChecks(page, base, t);
   },
 };
+
+/** An MP4's duration, track size, frame count and codec, from its boxes. */
+function mp4Info(buf) {
+  const boxes = (start, end) => {
+    const out = [];
+    for (let o = start; o + 8 <= end; ) {
+      let size = buf.readUInt32BE(o);
+      let head = 8;
+      if (size === 1) {
+        size = Number(buf.readBigUInt64BE(o + 8));
+        head = 16;
+      } else if (size === 0) size = end - o;
+      out.push({ type: buf.toString('latin1', o + 4, o + 8), body: o + head, end: o + size });
+      o += size;
+    }
+    return out;
+  };
+  const inside = (box, type) => boxes(box.body, box.end).find((b) => b.type === type);
+  const top = boxes(0, buf.length);
+  const moov = top.find((b) => b.type === 'moov');
+  const mvhd = inside(moov, 'mvhd');
+  const v1 = buf[mvhd.body] === 1;
+  const timescale = buf.readUInt32BE(mvhd.body + (v1 ? 20 : 12));
+  const duration = v1 ? Number(buf.readBigUInt64BE(mvhd.body + 24)) : buf.readUInt32BE(mvhd.body + 16);
+  const trak = inside(moov, 'trak');
+  const tkhd = inside(trak, 'tkhd');
+  const stbl = inside(inside(inside(trak, 'mdia'), 'minf'), 'stbl');
+  const stsz = inside(stbl, 'stsz');
+  const stsd = inside(stbl, 'stsd');
+  return {
+    brand: top[0]?.type === 'ftyp' ? buf.toString('latin1', top[0].body, top[0].body + 4) : null,
+    seconds: duration / timescale,
+    w: buf.readUInt32BE(tkhd.end - 8) / 65536,
+    h: buf.readUInt32BE(tkhd.end - 4) / 65536,
+    frames: buf.readUInt32BE(stsz.body + 8),
+    codec: buf.toString('latin1', stsd.body + 12, stsd.body + 16),
+  };
+}
+
+/** A GIF's size, frame count and length (its frames' delays), from its blocks. */
+function gifInfo(b) {
+  const w = b.readUInt16LE(6);
+  const h = b.readUInt16LE(8);
+  const table = (packed) => (packed & 0x80 ? 3 * (1 << ((packed & 7) + 1)) : 0);
+  const subBlocks = (o) => {
+    while (b[o] !== 0) o += b[o] + 1;
+    return o + 1;
+  };
+  let o = 13 + table(b[10]);
+  let frames = 0;
+  let centis = 0;
+  while (o < b.length && b[o] !== 0x3b) {
+    if (b[o] === 0x21) {
+      if (b[o + 1] === 0xf9) centis += b.readUInt16LE(o + 4);
+      o = subBlocks(o + 2);
+    } else if (b[o] === 0x2c) {
+      frames++;
+      o = subBlocks(o + 11 + table(b[o + 9]));
+    } else throw new Error(`not a GIF block at ${o}: ${b[o]}`);
+  }
+  return { w, h, frames, seconds: centis / 100, trailer: b[o] === 0x3b };
+}
+
+/**
+ * Save turntable, in a small window of its own: frames here are software
+ * renders, each a second or so, and the clip's length is the turntable's
+ * (one turn at 60°/s, six seconds, is the shortest there is). Its keymap
+ * has play/pause on K, as Preferences would leave it.
+ */
+async function clipChecks(page, base, t) {
+  const W = 480;
+  const H = 320;
+  const ctx = await page.context().browser().newContext({ viewport: { width: W, height: H }, serviceWorkers: 'block' });
+  await ctx.addInitScript(() => localStorage.setItem('bozzetto-keymap', JSON.stringify({ 'play.toggle': 'k' })));
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on('pageerror', (e) => errors.push(String(e)));
+    await openForInput(p, base);
+    await p.addStyleTag({ content: '.panel { transition: none !important; }' });
+    await p.keyboard.press('Shift+P');
+    await p.waitForTimeout(100);
+    const turning = () => p.evaluate(() => window.__sculpt.present.isTurning());
+    await press(p, 'Space');
+    const bySpace = await turning();
+    await press(p, 'k');
+    t.ok(!bySpace && (await turning()), 'play/pause is one keymap action: rebound to K, K turns the turntable and Space does not');
+    await press(p, 'k');
+
+    // The timelapse records, to show the clip adds nothing to it.
+    const frames0 = await p.evaluate(async () => {
+      const r = window.__sculpt.recorder;
+      r.setAllowed(true);
+      r.setEnabled(true);
+      for (let i = 0; i < 60 && r.frameCount() === 0; i++) await new Promise((ok) => setTimeout(ok, 500));
+      await new Promise((ok) => setTimeout(ok, 1500));
+      return r.frameCount();
+    });
+    const row = await p.evaluate(() => ({
+      format: document.querySelector('.present-bar__format').textContent,
+      size: document.querySelector('.present-bar__size').textContent,
+      clip: document.querySelector('.present-bar__clip').textContent,
+      progress: !document.querySelector('.present-bar__progress').closest('[hidden]'),
+    }));
+    t.ok(row.format === 'MP4' && row.size === '1×' && row.clip === 'Save turntable' && !row.progress, `one row: MP4, 1×, Save turntable, no progress bar yet (${show(row)})`);
+
+    // MP4, 1x, at 60°/s: six seconds, 30 fps, the window's size.
+    await p.evaluate(() => window.__sculpt.present.setSpeed(60));
+    const home = await camera(p);
+    const t0 = Date.now();
+    const [mp4dl] = await Promise.all([
+      p.waitForEvent('download', { timeout: 900_000 }),
+      (async () => {
+        await p.click('.present-bar__clip');
+        const shown = await p.evaluate(() => ({
+          saving: window.__sculpt.present.isSavingClip(),
+          progress: !document.querySelector('.present-bar__progress').closest('[hidden]'),
+          row: !document.querySelector('.present-bar__clip').closest('[hidden]'),
+        }));
+        t.ok(shown.saving && shown.progress && !shown.row, `while it renders the row is a progress bar with Cancel (${show(shown)})`);
+      })(),
+    ]);
+    const mp4ms = Date.now() - t0;
+    const mp4 = readFileSync(await mp4dl.path());
+    const info = mp4Info(mp4);
+    t.eq(mp4dl.suggestedFilename(), 'Sculpt-turntable.mp4', 'Save turntable downloads <title>-turntable.mp4');
+    t.ok(
+      info.frames === 180 && Math.abs(info.seconds - 6) < 0.05 && info.w === W && info.h === H,
+      `an MP4 of one turn at 60°/s: 180 frames, 6 s, the window at 1x (${show(info)}; ${mp4.length} bytes in ${(mp4ms / 1000).toFixed(0)} s)`,
+    );
+    t.ok(['avc1', 'vp09', 'av01'].includes(info.codec), `in H.264, or VP9/AV1 where the browser has no H.264 encoder (${info.codec})`);
+    let back = await camera(p);
+    t.ok(camMoved(home, back) < 1e-4 * home.distance, `the view is back where the turn began (off by ${camMoved(home, back).toExponential(1)})`);
+    const said = await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done' && /^Saved Sculpt-turntable\.mp4$/.test(n.textContent)), null, { timeout: 10_000 }).then(() => true).catch(() => false);
+    t.ok(said, 'and it says it saved the file');
+
+    // GIF, 2x: 15 fps, twice the window (under the GIF's 1080 cap).
+    await p.click('.present-bar__format');
+    await p.click('.present-bar__size');
+    const g0 = Date.now();
+    const [gifdl] = await Promise.all([p.waitForEvent('download', { timeout: 900_000 }), p.click('.present-bar__clip')]);
+    const gif = readFileSync(await gifdl.path());
+    const ginfo = gifInfo(gif);
+    t.eq(gifdl.suggestedFilename(), 'Sculpt-turntable.gif', 'as GIF, <title>-turntable.gif');
+    t.ok(
+      gif.subarray(0, 6).toString() === 'GIF89a' && ginfo.trailer && ginfo.frames === 90 && Math.abs(ginfo.seconds - 6) < 0.05 && ginfo.w === 2 * W && ginfo.h === 2 * H,
+      `a GIF of the same turn: 90 frames at 15 fps adding up to 6 s, the window at 2x (${show(ginfo)}; ${gif.length} bytes in ${((Date.now() - g0) / 1000).toFixed(0)} s)`,
+    );
+
+    // Cancel: no file, and the view as it was.
+    await p.evaluate(() => window.__sculpt.present.setClipFormat('mp4'));
+    await p.evaluate(() => window.__sculpt.present.setClipScale(1));
+    const before = await camera(p);
+    const downloads = [];
+    p.on('download', (d) => downloads.push(d.suggestedFilename()));
+    await p.click('.present-bar__clip');
+    await p.waitForFunction(() => document.querySelector('.present-bar__progress').value > 0.03, null, { timeout: 120_000 });
+    const mid = await camera(p);
+    await p.click('.present-bar__cancel');
+    await p.waitForFunction(() => !window.__sculpt.present.isSavingClip(), null, { timeout: 30_000 });
+    await p.waitForTimeout(1500);
+    back = await camera(p);
+    const rowBack = await p.evaluate(() => !document.querySelector('.present-bar__clip').closest('[hidden]') && !!document.querySelector('.present-bar__progress').closest('[hidden]'));
+    t.ok(camMoved(before, mid) > 0.01 && camMoved(before, back) < 1e-4 * before.distance, `Cancel puts the view back where it was (moved ${camMoved(before, mid).toFixed(3)} mid-turn, then off by ${camMoved(before, back).toExponential(1)})`);
+    t.ok(downloads.length === 0 && rowBack, `and leaves no download, the row back (${show(downloads)})`);
+
+    // The live loop runs on: the turntable turns the view.
+    await p.click('.present-bar__play');
+    await p.waitForTimeout(1500);
+    const live = await camera(p);
+    await p.click('.present-bar__play');
+    t.ok(camMoved(back, live) > 0.02, `afterwards the live turntable turns the view as before (moved ${camMoved(back, live).toFixed(3)})`);
+    const frames1 = await p.evaluate(async () => {
+      await new Promise((ok) => setTimeout(ok, 800));
+      return window.__sculpt.recorder.frameCount();
+    });
+    t.eq(frames1, frames0, 'nothing of the clips was recorded into the timelapse');
+    await p.evaluate(() => window.__sculpt.recorder.setEnabled(false));
+    t.ok(!errors.length, `no page errors saving turntables${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  } finally {
+    await ctx.close();
+  }
+}
 
 async function publishChecks(page, base, t) {
   const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
@@ -566,6 +794,7 @@ async function ipadChecks(page, base, t) {
       return {
         bar: box(document.querySelector('.present-bar')),
         render: box(document.querySelector('.panel--render')),
+        hide: box(document.querySelector('.sculpt-toolbar__right .sculpt-toolbar__btn')),
         chips: [...document.querySelectorAll('.topbar .topchip')].filter((c) => !c.hidden && getComputedStyle(c).display !== 'none').map(box),
         w: innerWidth,
         h: innerHeight,
@@ -575,6 +804,7 @@ async function ipadChecks(page, base, t) {
     const inside = (a) => a.l >= 0 && a.t >= 0 && a.r <= layout.w && a.b <= layout.h;
     t.ok(inside(layout.bar) && inside(layout.render), `the bar and the open Render panel fit the 744x1133 screen (${show(layout.bar)})`);
     t.ok(!meets(layout.bar, layout.render) && !layout.chips.some((c) => meets(c, layout.bar) || meets(c, layout.render)), 'and overlap neither each other nor the top row');
+    t.ok(inside(layout.hide) && !meets(layout.hide, layout.bar) && !meets(layout.hide, layout.render), `the hide button sits clear of the bar and the panel (${show(layout.hide)})`);
     await setRender(ipad, false);
 
     await ipad.keyboard.press('3');

@@ -88,6 +88,8 @@ export interface InputShellHooks {
   toggleChrome(): void;
   /** Shift+p (or the top row's Present): into Present mode, or back out of it. */
   togglePresent(): void;
+  /** Space (play.toggle) in Present: the turntable on or off. */
+  togglePlay(): void;
   /** ctrl+h: show/hide the mask tint (the mask itself stays). */
   toggleMaskTint(): void;
   /** ctrl+e: extract the masked region at the palette's thickness. */
@@ -101,6 +103,7 @@ export interface InputShellHooks {
  * selection, and is claimed and dropped there.
  */
 const PRESENT_KEYS = new Set([
+  'play.toggle',
   'ui.present',
   'ui.chrome',
   'ui.show',
@@ -1770,8 +1773,9 @@ export class InputShell {
     // to edit (Preferences), so nothing below names a key.
     const action = keymap.actionFor(e, 'sculpt');
     if (!action) {
-      // Space would otherwise fall through to the viewer's transport, and
-      // sculpt has no timeline to play. Claimed so it stays inert.
+      // Space unbound from play.toggle would otherwise fall through to the
+      // viewer's transport, and sculpt has no timeline to play. Claimed so
+      // it stays inert.
       if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) return this.claim(e);
       return;
     }
@@ -1797,6 +1801,12 @@ export class InputShell {
         return this.claim(e);
       case 'ui.present':
         this.hooks.togglePresent();
+        return this.claim(e);
+      case 'play.toggle':
+        // Play / pause, the viewer's key: in Present the turntable is what
+        // plays. Sculpt has no timeline, so outside it the key is inert
+        // (claimed, so the viewer's transport underneath never hears it).
+        if (this.presenting) this.hooks.togglePlay();
         return this.claim(e);
       case 'brush.sizeDown':
       case 'brush.sizeUp':

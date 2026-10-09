@@ -2086,47 +2086,89 @@ export class Viewer {
    * goes back to its own size afterwards, and the loop resumes.
    */
   async captureStill(ratio: number): Promise<Blob> {
-    if (this.capturing) throw new Error('A capture is already under way');
     const t0 = performance.now();
-    const before = this.renderer.getPixelRatio();
-    this.capturing = true;
-    cancelAnimationFrame(this.rafId);
-    this.rafId = 0;
-    this.frameStart = 0;
-    clearTimeout(this.pacer);
-    this.pacer = 0;
+    const { width, height } = this.beginStills(ratio);
     try {
-      this.renderer.setPixelRatio(ratio);
-      // The CSS size stays: only the drawing buffer grows.
-      this.renderer.setSize(this.container.clientWidth, this.container.clientHeight, false);
-      this.invalidate();
-      await this.renderForReadback();
-      const src = this.renderer.domElement;
       const canvas = document.createElement('canvas');
-      canvas.width = src.width;
-      canvas.height = src.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('2D context unavailable for capture');
-      // The held image drawn once more and read in the same task: with the
-      // loop paused nothing else draws it, and a canvas already handed to
-      // the compositor may read back cleared.
-      this.renderOnce();
-      ctx.drawImage(src, 0, 0);
+      await this.drawStill(ctx);
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image capture failed'))), 'image/png');
       });
       perfLog.record('still', performance.now() - t0, `${canvas.width}x${canvas.height}`);
       return blob;
     } finally {
-      this.endReadback();
-      this.capturing = false;
-      this.renderer.setPixelRatio(before);
-      this.onResize(); // the live size and camera, and a fresh still frame
-      this.timer.update(); // the capture's time is not the next frame's delta
-      this.frameStats.resetClock();
-      this.loop();
+      this.endStills();
     }
   }
+
+  /**
+   * A run of still frames (captureStill's one; Present's Save turntable,
+   * one a camera angle): the loop paused and the drawing buffer at
+   * `ratio` device pixels to the viewport's CSS pixel, the CSS size kept,
+   * until endStills. Returns the buffer's size.
+   */
+  beginStills(ratio: number): { width: number; height: number } {
+    if (this.capturing) throw new Error('A capture is already under way');
+    this.stillsRatio = this.renderer.getPixelRatio();
+    this.capturing = true;
+    cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+    this.frameStart = 0;
+    clearTimeout(this.pacer);
+    this.pacer = 0;
+    this.renderer.setPixelRatio(ratio);
+    // The CSS size stays: only the drawing buffer grows.
+    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight, false);
+    this.invalidate();
+    const src = this.renderer.domElement;
+    return { width: src.width, height: src.height };
+  }
+
+  /**
+   * One still frame of the view as the camera now has it, its smoothing
+   * finished at `samples` (the still frame's sixteen by default; a video
+   * frame may take fewer), drawn into `ctx` - its canvas filled, the
+   * buffer cropped about its centre where the canvas is smaller (an even
+   * size for a video). Between beginStills and endStills.
+   */
+  async drawStill(ctx: CanvasRenderingContext2D, samples = STILL_AA_SAMPLES): Promise<void> {
+    // Whatever moved since the last frame, this one starts from its own plain frame.
+    this.invalidate();
+    await this.renderForReadback(true, samples);
+    try {
+      const src = this.renderer.domElement;
+      const { width: w, height: h } = ctx.canvas;
+      const sx = Math.max(0, Math.floor((src.width - w) / 2));
+      const sy = Math.max(0, Math.floor((src.height - h) / 2));
+      // The held image drawn once more and read in the same task: with the
+      // loop paused nothing else draws it, and a canvas already handed to
+      // the compositor may read back cleared.
+      this.renderOnce();
+      ctx.drawImage(src, sx, sy, w, h, 0, 0, w, h);
+    } finally {
+      this.endReadback();
+    }
+  }
+
+  /** The end of a run of stills: the screen at its own size, a fresh still frame, the loop resumed. */
+  endStills(): void {
+    if (!this.capturing || this.stillsRatio === null) return;
+    this.endReadback();
+    this.capturing = false;
+    this.renderer.setPixelRatio(this.stillsRatio);
+    this.stillsRatio = null;
+    this.onResize(); // the live size and camera, and a fresh still frame
+    this.timer.update(); // the capture's time is not the next frame's delta
+    this.frameStats.resetClock();
+    this.loop();
+  }
+
+  /** The live pixel ratio while a run of stills holds the renderer (beginStills). */
+  private stillsRatio: number | null = null;
 
   /**
    * The colour under a screen point, read from a frame rendered for it, as
@@ -2468,6 +2510,26 @@ export class Viewer {
   /** Turntable about a world point; see Controls.rotateAzimuthAbout. */
   orbitAzimuthAbout(centre: Vector3, deg: number): void {
     this.controls.rotateAzimuthAbout(centre, deg);
+    this.invalidate();
+  }
+
+  /** Where the camera is and what it looks at, to come back to (placeCameraTurned). */
+  cameraMark(): { position: Vector3; target: Vector3 } {
+    const { position, target } = this.controls.getState();
+    return { position: new Vector3(...position), target: new Vector3(...target) };
+  }
+
+  /**
+   * The camera at `mark`, turned `deg` about the vertical axis through
+   * `centre` as the turntable turns it (orbitAzimuthAbout) - 0 puts it back
+   * exactly. Any drift the orbit had left is stopped first. Present's Save
+   * turntable sets each frame's angle with it, from one mark, so a full
+   * turn ends where it began however many frames it took.
+   */
+  placeCameraTurned(mark: { position: Vector3; target: Vector3 }, centre: Vector3, deg: number): void {
+    this.controls.halt();
+    this.controls.placeCamera(mark.position, mark.target);
+    if (deg !== 0) this.controls.rotateAzimuthAbout(centre, deg);
     this.invalidate();
   }
 
@@ -3102,7 +3164,7 @@ export class Viewer {
    * animation-frame yield after the synchronous render lets the WebGPU canvas
    * present.
    */
-  private async renderForReadback(smooth = true): Promise<void> {
+  private async renderForReadback(smooth = true, samples = STILL_AA_SAMPLES): Promise<void> {
     const acc = this.accumulate;
     this.refitShadows();
     // A camera moved since the last frame (directly, by code) makes a held
@@ -3115,7 +3177,8 @@ export class Viewer {
       // screen shows (owner call): the still frame's samples are finished
       // now, one render each, from a plain frame if there is none. A view
       // already held costs one render.
-      if (this.aaSamples < STILL_AA_SAMPLES) {
+      const target = Math.max(1, Math.min(STILL_AA_SAMPLES, Math.round(samples)));
+      if (this.aaSamples < target) {
         if (this.aaSamples === 0) {
           acc.mode = 'replace';
           this.aaCountU.value = 1;
@@ -3124,7 +3187,7 @@ export class Viewer {
         do {
           this.addStillSample();
           this.renderOnce();
-        } while (this.aaSamples < STILL_AA_SAMPLES);
+        } while (this.aaSamples < target);
         acc.mode = 'hold';
         this.camera.clearViewOffset();
       }

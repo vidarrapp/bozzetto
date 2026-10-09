@@ -113,7 +113,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
   // --- viewer: playback ---
-  { id: 'play.toggle', label: 'Play / pause', group: 'Playback', mode: 'view', chord: 'space' },
+  // One key for both: the viewer's playback, and Present's turntable in Sculpt.
+  { id: 'play.toggle', label: 'Play / pause (in Present, the turntable)', group: 'Playback', mode: 'both', chord: 'space' },
   { id: 'play.back', label: 'Step back', group: 'Playback', mode: 'view', chord: 'arrowleft', repeat: true },
   { id: 'play.forward', label: 'Step forward', group: 'Playback', mode: 'view', chord: 'arrowright', repeat: true },
   // --- viewer: view gestures ---

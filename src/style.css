@@ -2494,8 +2494,11 @@ body.chrome-hidden .transport {
 /* What edits goes, the same way Tab's chrome goes (visibility, so nothing
    hidden keeps a focus stop): the toolbar, the brush rail and its undo
    chips, every panel but Render, the brush ring, the object stats and the
-   level pill. The top row, the notices and the Render panel stay. */
-body.presenting .sculpt-toolbar,
+   level pill. The top row, the notices and the Render panel stay, and so
+   does the toolbar's hide button in its corner: Tab's switch, which in
+   Present hides everything, the bar below included. */
+body.presenting .sculpt-toolbar__left,
+body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
 body.presenting .sculpt-hist,
 body.presenting .sculpt-stats,
@@ -2506,6 +2509,12 @@ body.presenting .panel:not(.panel--render) {
   opacity: 0;
 }
 
+/* The Render panel ends above the bar's two rows, on a tall narrow screen
+   (an upright iPad) as anywhere. */
+body.presenting .panel--render {
+  max-height: calc(100vh - 170px);
+}
+
 .present-bar {
   position: fixed;
   left: 50%;
@@ -2513,8 +2522,9 @@ body.presenting .panel:not(.panel--render) {
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   max-width: calc(100vw - 24px);
   padding: 6px;
   background: var(--panel-bg);
@@ -2526,7 +2536,29 @@ body.presenting .panel:not(.panel--render) {
   /* Its buttons and slider are the touch targets; no browser gesture starts here. */
   touch-action: none;
   user-select: none;
-  transition: opacity 0.18s ease;
+}
+
+.present-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Save turntable's row: the format, the size and the button; while it
+   renders, the progress and its Cancel. */
+.present-bar__cliprow {
+  justify-content: center;
+}
+
+.present-bar__clip {
+  flex: 1 1 auto;
+}
+
+.present-bar__progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 8px;
+  accent-color: var(--accent);
 }
 
 .present-bar__btn {
@@ -2573,20 +2605,21 @@ body.presenting .panel:not(.panel--render) {
   font-variant-numeric: tabular-nums;
 }
 
-/* Tab in Present hides the Render panel and the top row; the bar stays,
-   faded, as the way back on a device without a Tab key. */
+/* Tab in Present hides everything, this bar too; the toolbar's hide
+   button, kept in its corner, is the way back on a device without a Tab
+   key. */
 body.chrome-hidden .present-bar {
-  opacity: 0.4;
-}
-
-body.chrome-hidden .present-bar:hover,
-body.chrome-hidden .present-bar:focus-within {
-  opacity: 1;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    visibility 0s linear 0.18s;
 }
 
 /* A narrow screen (an iPad held upright, a phone): the labels tighten. */
 @media (max-width: 600px) {
-  .present-bar {
+  .present-bar,
+  .present-bar__row {
     gap: 4px;
   }
   .present-bar__btn {

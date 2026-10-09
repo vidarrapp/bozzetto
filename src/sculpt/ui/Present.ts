@@ -18,12 +18,18 @@ import { topbarLeft, topChip } from '../../ui/topbar';
  * tool, the gizmo or the Select tool, the mask tint, Tab's hidden state.
  *
  * The bar along the bottom holds the turntable - a slow turn about the
- * subject's vertical axis, at the speed its slider says, which any press
- * or wheel on the view stops; it moves the camera only, so the timelapse
- * never records it - Save image, Tab's interface switch for a device with
- * no Tab key, and Done. Tab hides the Render panel and the top row as it
- * does anywhere; the bar stays, faded, as the toolbar's hide button stays
- * outside Present, so there is always a way back on the glass.
+ * subject's vertical axis, at the speed its slider says, which Space (the
+ * keymap's play.toggle, the viewer's play/pause) starts and stops and any
+ * press or wheel on the view stops; it moves the camera only, so the
+ * timelapse never records it - Save image, and Done. Under it, one row
+ * saves the turntable as a clip: one full turn at the slider's speed
+ * (36°/s is ten seconds), MP4 or GIF, the window at 1x or 2x
+ * (capture/turntable.ts), rendered offline with a progress bar and Cancel
+ * in the row's place while it runs.
+ *
+ * Tab, and the toolbar's hide button, which stays in its corner in
+ * Present, hide the interface as they do anywhere in Sculpt: here that is
+ * everything, this bar included, and either brings it all back.
  */
 
 /** What mode.ts does for Present mode, which knows the scene and the viewer. */
@@ -36,9 +42,22 @@ export interface PresentHost {
   turn(deg: number): void;
   /** Render the still and hand it over (Save image). */
   saveImage(): Promise<void>;
-  /** Tab's hidden interface, and its switch. */
-  chromeHidden(): boolean;
-  toggleChrome(): void;
+  /** Render one turn as a clip and hand it over (Save turntable); resolves when it is done or cancelled. */
+  saveTurntable(clip: TurntableRequest): Promise<void>;
+}
+
+export type ClipFormat = 'mp4' | 'gif';
+
+/** What Save turntable asks the host for. */
+export interface TurntableRequest {
+  format: ClipFormat;
+  /** The window at 1x or 2x. */
+  scale: 1 | 2;
+  /** The turntable's speed: one turn at it. */
+  degPerSecond: number;
+  /** Aborted by Cancel (or by leaving Present). */
+  signal: AbortSignal;
+  onProgress(done: number, total: number): void;
 }
 
 /** Degrees a second: a slow turn, and the range the slider covers. */
@@ -57,7 +76,16 @@ export class PresentMode {
   private readonly speedInput: HTMLInputElement;
   private readonly speedOut: HTMLSpanElement;
   private readonly saveBtn: HTMLButtonElement;
-  private readonly chromeBtn: HTMLButtonElement;
+  private readonly clipRow: HTMLDivElement;
+  private readonly formatBtn: HTMLButtonElement;
+  private readonly sizeBtn: HTMLButtonElement;
+  private readonly clipBtn: HTMLButtonElement;
+  private readonly progressRow: HTMLDivElement;
+  private readonly progress: HTMLProgressElement;
+  private format: ClipFormat = 'mp4';
+  private scale: 1 | 2 = 1;
+  /** Save turntable under way: its Cancel. */
+  private clip: AbortController | null = null;
   private active = false;
   private restore: (() => void) | null = null;
   private turning = false;
@@ -126,11 +154,31 @@ export class PresentMode {
     this.paintSpeed();
 
     this.saveBtn = button('present-bar__save', 'Save image', () => void this.saveImage());
-    this.chromeBtn = button('present-bar__chrome', 'Hide panels', () => this.host.toggleChrome());
     const done = button('present-bar__done', 'Done', () => this.leave());
     done.setAttribute('aria-label', 'Leave Present');
+    const top = div('present-bar__row');
+    top.append(this.playBtn, speed, this.saveBtn, done);
 
-    this.bar.append(this.playBtn, speed, this.saveBtn, this.chromeBtn, done);
+    // Save turntable: the format and the size switch on a tap, as the
+    // play button does - nothing keeps a focus for Space to land on.
+    this.formatBtn = button('present-bar__format', '', () => this.setClipFormat(this.format === 'mp4' ? 'gif' : 'mp4'));
+    this.sizeBtn = button('present-bar__size', '', () => this.setClipScale(this.scale === 1 ? 2 : 1));
+    this.clipBtn = button('present-bar__clip', 'Save turntable', () => void this.saveTurntable());
+    this.clipBtn.title = 'One full turn at the turntable\'s speed, as a video';
+    this.clipRow = div('present-bar__row present-bar__cliprow');
+    this.clipRow.append(this.formatBtn, this.sizeBtn, this.clipBtn);
+    this.progress = document.createElement('progress');
+    this.progress.className = 'present-bar__progress';
+    this.progress.max = 1;
+    this.progress.value = 0;
+    this.progress.setAttribute('aria-label', 'Saving the turntable');
+    const cancel = button('present-bar__cancel', 'Cancel', () => this.clip?.abort());
+    this.progressRow = div('present-bar__row present-bar__cliprow');
+    this.progressRow.hidden = true;
+    this.progressRow.append(this.progress, cancel);
+    this.paintClip();
+
+    this.bar.append(top, this.clipRow, this.progressRow);
     document.body.appendChild(this.bar);
 
     window.addEventListener('keydown', this.onKeyDown);
@@ -164,13 +212,13 @@ export class PresentMode {
     this.bar.hidden = false;
     this.chip.setAttribute('aria-pressed', 'true');
     this.chip.classList.add('topchip--open');
-    this.setChromeHidden(this.host.chromeHidden());
     this.onChange?.(true);
     return true;
   }
 
   leave(): void {
     if (!this.active) return;
+    this.clip?.abort();
     this.setTurning(false);
     this.active = false;
     this.bar.hidden = true;
@@ -184,7 +232,8 @@ export class PresentMode {
 
   /** The turntable on or off; only while presenting. */
   setTurning(on: boolean): void {
-    on = on && this.active;
+    // Not while a clip renders: it has the camera.
+    on = on && this.active && !this.clip;
     if (on === this.turning) return;
     this.turning = on;
     this.lastTurn = performance.now();
@@ -213,23 +262,83 @@ export class PresentMode {
     if (dt > 0) this.host.turn(this.speed * dt);
   }
 
-  /** Tab's interface went or came back: the bar's switch says which way it goes next. */
-  setChromeHidden(hidden: boolean): void {
-    this.chromeBtn.textContent = hidden ? 'Show panels' : 'Hide panels';
-    this.chromeBtn.setAttribute('aria-pressed', String(hidden));
+  /** Space (play.toggle) in Present: the turntable on or off. */
+  toggleTurning(): void {
+    this.setTurning(!this.turning);
+  }
+
+  getClipFormat(): ClipFormat {
+    return this.format;
+  }
+
+  getClipScale(): 1 | 2 {
+    return this.scale;
+  }
+
+  setClipFormat(format: ClipFormat): void {
+    if (this.clip) return;
+    this.format = format === 'gif' ? 'gif' : 'mp4';
+    this.paintClip();
+  }
+
+  setClipScale(scale: number): void {
+    if (this.clip) return;
+    this.scale = scale >= 2 ? 2 : 1;
+    this.paintClip();
+  }
+
+  /** Whether Save turntable is rendering. */
+  isSavingClip(): boolean {
+    return this.clip !== null;
+  }
+
+  /**
+   * Save turntable: one turn at the slider's speed, from this view. The
+   * turn stops for it, the bar's row becomes the progress and its Cancel,
+   * and the turntable carries on afterwards if it was turning.
+   */
+  async saveTurntable(): Promise<void> {
+    if (this.clip || this.saving || !this.active) return;
+    const wasTurning = this.turning;
+    this.setTurning(false);
+    const clip = new AbortController();
+    this.clip = clip;
+    this.saveBtn.disabled = true;
+    this.progress.value = 0;
+    this.clipRow.hidden = true;
+    this.progressRow.hidden = false;
+    try {
+      await this.host.saveTurntable({
+        format: this.format,
+        scale: this.scale,
+        degPerSecond: this.speed,
+        signal: clip.signal,
+        onProgress: (done, total) => {
+          this.progress.value = total > 0 ? done / total : 0;
+        },
+      });
+    } finally {
+      this.clip = null;
+      this.saveBtn.disabled = false;
+      this.progressRow.hidden = true;
+      this.clipRow.hidden = false;
+      if (wasTurning && !clip.signal.aborted) this.setTurning(true);
+    }
   }
 
   /** Save image: the turn stops for it, so the picture is of one view. */
   async saveImage(): Promise<void> {
-    if (this.saving) return;
+    if (this.saving || this.clip) return;
     this.saving = true;
     this.saveBtn.disabled = true;
+    this.clipBtn.disabled = true;
     this.setTurning(false);
     try {
       await this.host.saveImage();
     } finally {
       this.saving = false;
       this.saveBtn.disabled = false;
+      this.clipBtn.disabled = false;
     }
   }
 
@@ -241,6 +350,15 @@ export class PresentMode {
     this.offKeymap();
     this.chip.remove();
     this.bar.remove();
+  }
+
+  private paintClip(): void {
+    this.formatBtn.textContent = this.format === 'mp4' ? 'MP4' : 'GIF';
+    this.formatBtn.setAttribute('aria-label', `Turntable clip format: ${this.format.toUpperCase()}`);
+    this.formatBtn.title = 'MP4 or GIF';
+    this.sizeBtn.textContent = `${this.scale}×`;
+    this.sizeBtn.setAttribute('aria-label', `Turntable clip size: the window at ${this.scale}x`);
+    this.sizeBtn.title = 'The window at 1x or 2x';
   }
 
   private paintSpeed(): void {

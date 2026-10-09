@@ -12,6 +12,8 @@ export interface VideoSink {
   addFrame(index: number): Promise<void>;
   /** Flush the encoder and produce the finished file. */
   finalize(): Promise<Blob>;
+  /** Abandon the clip: the encoder closed, nothing produced. */
+  cancel?(): Promise<void>;
 }
 
 interface ReelCommon {

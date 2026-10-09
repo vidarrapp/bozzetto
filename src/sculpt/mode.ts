@@ -31,7 +31,7 @@ import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { presentationPatch, saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
 import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
-import { statusToast } from './ui/statusToast';
+import { failNotice, statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { suspensionText } from '../net/account';
 import { isDesktop } from '../net/origin';
@@ -62,7 +62,8 @@ import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
-import { PresentMode } from './ui/Present';
+import { PresentMode, type TurntableRequest } from './ui/Present';
+import { recordTurntable } from '../viewer/capture/turntable';
 import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 
@@ -154,6 +155,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The boot scene's unsent copy on the shelf (FileActions.unsentCopy): the
   // autosave's, or the entry itself when that is what was opened.
   let bootUnsent: string | null = null;
+  // Whether the boot scene is its project's as saved (SavedScene.synced):
+  // a project opened, its device copy, or an autosave that said so. Read
+  // only beside bootLink, which every way out of a boot scene clears.
+  let bootSynced = false;
   let opened: ProjectOpen | null = null;
   // The opened scene's name, for the question below and for a failure.
   let openedName: string | null = null;
@@ -163,6 +168,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     opened = await openProjectAtBoot(projectId, projectScope);
     saved = opened.scene;
     bootLink = opened.link;
+    bootSynced = true;
     openedName = opened.title;
   } else if (templateId) {
     // A copy: the template's scene, nobody's project. No link, so Save to
@@ -181,6 +187,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const project = entry?.projectId ?? entry?.uploadTo;
     bootLink = entry && project ? { id: project, title: entry.name, ...(entry.scope ? { scope: entry.scope } : {}) } : null;
     bootUnsent = entry?.unsent ? entry.id : null;
+    bootSynced = !!entry?.projectId && !entry.unsent;
     openedName = entry?.name ?? null;
   }
   if (asked) {
@@ -282,6 +289,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       saved = autosaved;
       bootLink = saved.project ?? null;
       bootUnsent = saved.unsent ?? null;
+      bootSynced = saved.synced === true;
     } else if (autosaved) {
       // A malformed record must never brick sculpt entry: drop it, start
       // clean, and say so rather than leave the work to vanish unexplained.
@@ -979,6 +987,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     dolly: (factor) => viewer.dolly(factor),
     toggleChrome: () => chrome.handleTab(),
     togglePresent: () => present?.toggle(),
+    togglePlay: () => present?.toggleTurning(),
     extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? 1),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
@@ -1178,7 +1187,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   toolbar.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => {
     toolbar.setChromeHidden(hidden);
-    present?.setChromeHidden(hidden);
   };
   sliders = new BrushSliders(input, {
     undo: () => session.undo(),
@@ -1318,8 +1326,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     presentation: () => (present?.isActive() ? presentationPatch(viewer.getLook(), true) : null),
     // A new link must reach the autosave record (it rides the same put as
     // the geometry), or a reload would forget where Save to library goes.
-    onLinkChange: () => persist.markDirty(),
-    onUnsentChange: () => persist.markDirty(),
+    // Neither is an edit: the scene is as it was (SavedScene.synced). A
+    // new link is not its project's as saved until a save says so.
+    onLinkChange: () => {
+      persist.unsync();
+      persist.markDirty(false);
+    },
+    onUnsentChange: () => persist.markDirty(false),
+    syncPoint: () => persist.editCount(),
+    onSynced: (at) => persist.markSynced(at),
   });
   fileActions.adoptLink(bootLink);
   fileActions.adoptUnsent(bootUnsent);
@@ -1344,6 +1359,50 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   captureWindow = new CaptureWindow(recorder);
   // Present mode's chip lands beside Capture's (ui/Present).
   const turnCentre = new Vector3();
+  /** The middle of the visible scene's box, which the turntable turns about; false with nothing shown. */
+  const sceneCentre = (into: Vector3): boolean => {
+    const meshes = session.getMeshes().filter((m) => m.isVisible());
+    if (meshes.length === 0) return false;
+    const box = liveWorldBox(meshes[0]);
+    for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+    box.getCenter(into);
+    return true;
+  };
+  /**
+   * Save turntable: one turn about the turntable's axis from this view,
+   * at its speed, rendered offline (capture/turntable.ts) - the camera
+   * only, so nothing reaches the timelapse - and handed over as
+   * `<title>-turntable.mp4` or `.gif`: downloaded on the web, through
+   * the export dialog on the desktop.
+   */
+  const saveTurntable = async (clip: TurntableRequest): Promise<void> => {
+    const centre = new Vector3();
+    if (!sceneCentre(centre)) {
+      failNotice('Nothing is shown to turn');
+      return;
+    }
+    endPivotOrbit();
+    try {
+      const blob = await recordTurntable(viewer, { ...clip, centre });
+      if (!blob) {
+        statusToast('').done('Turntable not saved');
+        return;
+      }
+      const name = `${imageName(fileActions.link?.title ?? openedName ?? '')}-turntable.${clip.format}`;
+      const bridge = desktop();
+      if (bridge) {
+        const filter = clip.format === 'mp4' ? { name: 'MP4 video', extensions: ['mp4'] } : { name: 'GIF animation', extensions: ['gif'] };
+        const saved = await bridge.exportBytes(await blob.arrayBuffer(), name, [filter]);
+        statusToast('').done(saved ? `Saved ${saved.name}` : 'Turntable not saved');
+      } else {
+        downloadBlob(blob, name);
+        statusToast('').done(`Saved ${name}`);
+      }
+    } catch (err) {
+      console.warn('sculpt: turntable not saved', err);
+      failNotice(`Could not save the turntable: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   present = new PresentMode(
     {
       canEnter: () => !input.isStroking() && !gizmo.isDragging(),
@@ -1351,17 +1410,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       turn: (deg) => {
         // About the visible scene's vertical axis, as the arrow keys turn
         // about the object's: never the stroke pivot.
-        const meshes = session.getMeshes().filter((m) => m.isVisible());
-        if (meshes.length === 0) return;
-        const box = liveWorldBox(meshes[0]);
-        for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+        if (!sceneCentre(turnCentre)) return;
         // A drag's settling tail would read the turn as its own and add it again.
         endPivotOrbit();
-        viewer.orbitAzimuthAbout(box.getCenter(turnCentre), deg);
+        viewer.orbitAzimuthAbout(turnCentre, deg);
       },
       saveImage: () => saveImage(),
-      chromeHidden: () => chrome.isHidden(),
-      toggleChrome: () => chrome.toggle(),
+      saveTurntable: (clip) => saveTurntable(clip),
     },
     container,
   );
@@ -1543,11 +1598,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (fileActions.unsentCopy) scene.unsent = fileActions.unsentCopy;
   };
   persist.install();
+  if (bootLink && bootSynced) persist.adoptSynced();
   // A scene opened from a library card or from Projects replaces the one in
   // the autosave: write it, with its link, as soon as the grace allows, so
   // a reload before the first stroke comes back to it and not to whatever
-  // the slot held before.
-  if (openedExplicitly) persist.markDirty();
+  // the slot held before. Not an edit: it is the scene as opened.
+  if (openedExplicitly) persist.markDirty(false);
   // Materials and workspace settings ride the scene record, but nothing
   // about them is an EDIT, so they never marked the autosave dirty: create
   // a material, reload, and it was gone unless a stroke happened to follow.
