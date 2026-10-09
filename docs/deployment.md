@@ -150,8 +150,9 @@ GitHub (Settings):
   sends reporters there.
 - [ ] Release immutability is on (General → Releases), so a published
   release's files and tag cannot be changed.
-- [ ] A tag ruleset: only repository admins, and the release workflow, may
-  create, move or delete `v*` tags. Save this as `ruleset.json` and run
+- [ ] A tag ruleset: nobody may move or delete a `v*` tag (GitHub's import
+  refuses a bypass entry for Actions, so creation stays open to whoever can
+  push: the owner and the release workflow). Save this as `ruleset.json` and run
   `gh api repos/vidarrapp/bozzetto/rulesets --method POST --input ruleset.json`:
 
   ```json
@@ -160,10 +161,9 @@ GitHub (Settings):
     "target": "tag",
     "enforcement": "active",
     "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
-    "rules": [{ "type": "creation" }, { "type": "update" }, { "type": "deletion" }],
+    "rules": [{ "type": "update" }, { "type": "deletion" }],
     "bypass_actors": [
-      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" },
-      { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" }
+      { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
     ]
   }
   ```
