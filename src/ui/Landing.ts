@@ -45,7 +45,7 @@ import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
 import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
-import { markOpenOnClick } from './openToken';
+import { markOpen, markOpenOnClick } from './openToken';
 import { accountChips } from './account/menu';
 import { LEGAL } from './account/parts';
 import { suspensionText } from '../net/account';
@@ -145,7 +145,13 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // gallery with nothing in it still leads with the way to make
   // something. Armature mode is everyone's too now (owner call), so the
   // tile asks which of the two to start rather than going straight in.
-  grid.appendChild(createCard());
+  // Signed in, Create timelapse saves to the library rather than only
+  // exporting a file (the uploader's signed-in mode, src/create/main.ts),
+  // and its line in the menu says where. Suspended or expired, the uploader
+  // is a guest's, so the menu is too.
+  const role = roleOf(signIn);
+  const signedIn = role === 'owner' || role === 'moderator' || role === 'member';
+  grid.appendChild(createCard(signedIn ? (signIn.accounts ? 'My projects' : 'Projects') : null));
 
   // Then work in progress: the sculpt autosave lives in this browser, so it
   // is not a project the API knows about, but it is the thing most worth
@@ -204,12 +210,13 @@ function legalFoot(): HTMLElement {
 }
 
 /**
- * The Create tile: a plus that opens the choice between a new sculpt, a new
- * armature and the timelapse uploader (owner calls: two kinds of work start
- * here, and the uploader moved in from the top row, which keeps to Install
- * and the sign-in).
+ * The Create tile: a plus that opens the choice of how to start (owner
+ * calls: the ways to start work sit here, and the uploader moved in from
+ * the top row, which keeps to Install and the sign-in). `savesTo` is where
+ * the signed-in uploader saves (My projects, or Projects with accounts
+ * off), null for a guest's, which only exports.
  */
-function createCard(): HTMLElement {
+function createCard(savesTo: string | null): HTMLElement {
   const a = document.createElement('a');
   a.className = 'card card--new';
   a.href = '/?sculpt=1';
@@ -218,19 +225,26 @@ function createCard(): HTMLElement {
     '<div class="card--new__label">Create</div></div>';
   a.addEventListener('click', (e) => {
     e.preventDefault();
-    openCreateChooser();
+    openCreateChooser(savesTo);
   });
   return a;
 }
 
 /**
- * The ways to start, in a small dialog over the gallery: three buttons
- * stacked, the same width - a new sculpt, a new armature, and the uploader
- * for models and timelapses made elsewhere (owner call).
+ * The ways to start, in a small dialog over the gallery, stacked buttons of
+ * the same width: a new sculpt, a new armature, an OBJ from another app
+ * opened in Sculpt as a new scene, and the uploader for frames made
+ * elsewhere (owner call). Import OBJ is everyone's, as File > Import OBJ
+ * is in Sculpt: nothing about it needs an account. Create timelapse is
+ * everyone's too; what differs is where it ends - a guest's exports one
+ * .html file and uploads nothing, a signed-in one saves to the library.
  */
-function openCreateChooser(): void {
+function openCreateChooser(savesTo: string | null): void {
   const overlay = document.createElement('div');
   overlay.className = 'install-overlay create-overlay';
+  const timelapseHint = savesTo
+    ? `OBJ or GLB frames from another app, as a timelapse or a model, saved to ${savesTo}.`
+    : 'OBJ or GLB frames from another app, played back and exported as one .html file. Nothing is uploaded.';
   overlay.innerHTML = `
     <div class="install-card create-card" role="dialog" aria-modal="true" aria-label="Create">
       <button type="button" class="install-close" aria-label="Close">×</button>
@@ -244,12 +258,18 @@ function openCreateChooser(): void {
           <span class="create-choice__title">New Armature</span>
           <span class="create-choice__hint">A posable figure to reference, or to send to Sculpt as a base.</span>
         </button>
+        <button type="button" class="create-choice" data-kind="obj">
+          <span class="create-choice__title">Import OBJ</span>
+          <span class="create-choice__hint">One .obj file from another app, opened in Sculpt as a new scene.</span>
+        </button>
         <button type="button" class="create-choice" data-kind="timelapse">
-          <span class="create-choice__title">Upload Model(s)</span>
-          <span class="create-choice__hint">OBJ or GLB files from another app: one model, or frames played back as a timelapse.</span>
+          <span class="create-choice__title">Create timelapse</span>
+          <span class="create-choice__hint"></span>
         </button>
       </div>
+      <input type="file" class="create-obj-input" accept=".obj" hidden />
     </div>`;
+  overlay.querySelector<HTMLElement>('[data-kind="timelapse"] .create-choice__hint')!.textContent = timelapseHint;
   const close = (): void => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
@@ -263,11 +283,47 @@ function openCreateChooser(): void {
   overlay.querySelector('.install-close')?.addEventListener('click', close);
   overlay.querySelector('[data-kind="sculpt"]')?.addEventListener('click', () => void startSculpt());
   overlay.querySelector('[data-kind="armature"]')?.addEventListener('click', () => void startArmature());
+  const objInput = overlay.querySelector<HTMLInputElement>('.create-obj-input')!;
+  overlay.querySelector('[data-kind="obj"]')?.addEventListener('click', () => objInput.click());
+  objInput.addEventListener('change', () => {
+    const file = objInput.files?.[0];
+    objInput.value = '';
+    if (file) void importObj(file);
+  });
   overlay.querySelector('[data-kind="timelapse"]')?.addEventListener('click', () => {
     window.location.href = '/create/';
   });
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
+}
+
+/**
+ * Create > Import OBJ: the picked file opens in Sculpt as a new scene, its
+ * one object imported as File > Import OBJ imports one (welded, sized as
+ * every import is). The file goes over in IndexedDB (bridge/objHandoff),
+ * since Sculpt is another page load. Like New Sculpt it replaces the work
+ * in progress, so it asks first when there is some to lose, and tells the
+ * tab it asked (ui/openToken), or Sculpt would ask again.
+ */
+async function importObj(file: File): Promise<void> {
+  if (!/\.obj$/i.test(file.name)) {
+    failNotice(`"${file.name}" is not an .obj file.`);
+    return;
+  }
+  const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
+  const name = handoffs.objName(file.name);
+  const hasWork = await store.hasSavedScene().catch(() => false);
+  const atRisk = (hasWork && !(await inProject(store))) || (await framesKept());
+  if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;
+  let id: string;
+  try {
+    id = (await handoffs.saveObjHandoff({ name: file.name, text: await file.text() })).id;
+  } catch (err) {
+    failNotice(`Could not open "${name}": this browser would not hold the file (${err instanceof Error ? err.message : String(err)}).`);
+    return;
+  }
+  markOpen('obj', id);
+  window.location.href = '/?sculpt=1&obj=1';
 }
 
 /**

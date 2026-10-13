@@ -1433,6 +1433,113 @@ async function memberLibrary(server, o, a, t) {
   t.ok(/^Saved/.test(status) && !!model && model.title === 'Ada model' && model.frameCount === 1 && model.visibility === 'private', `Publish model puts a model in My projects (${status}; ${show(model)})`);
 }
 
+/** A JPEG's width and height, from its first start-of-frame marker; null if it has none. */
+function jpegSize(buf) {
+  if (!buf || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < buf.length) {
+    if (buf[i] !== 0xff) return null;
+    const marker = buf[i + 1];
+    const len = buf.readUInt16BE(i + 2);
+    if (marker >= 0xc0 && marker <= 0xc3) return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5) };
+    i += 2 + len;
+  }
+  return null;
+}
+
+/**
+ * Create timelapse, signed in (owner request): the gallery's Create menu
+ * offers Import OBJ and Create timelapse, and the uploader saves to My
+ * projects - the project's mode and fps, its frames, stages and look, and
+ * a 4:5 picture - then opens My projects; a save the quota cannot take
+ * leaves nothing behind and says so with the server's numbers. The
+ * project goes again at the end, so the parts after see what they did.
+ */
+async function memberCreate(server, o, a, t) {
+  const p = a.page;
+  const uid = (await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id ?? '';
+  const ids = async () => ((await pageJson(p, '/api/me/projects')).body ?? []).map((x) => x.id);
+  const before = await ids();
+  await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+  await p.click('#landing-grid .card--new');
+  const menu = await p.evaluate(() => ({
+    titles: [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent).join(', '),
+    timelapse: document.querySelector('.create-overlay [data-kind="timelapse"] .create-choice__hint')?.textContent ?? '',
+  }));
+  t.ok(
+    menu.titles === 'New Sculpt, New Armature, Import OBJ, Create timelapse' && menu.timelapse === 'OBJ or GLB frames from another app, as a timelapse or a model, saved to My projects.',
+    `signed in as a member, Create offers Import OBJ and a Create timelapse that saves to My projects (${show(menu)})`,
+  );
+  await Promise.all([p.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }), p.click('.create-overlay [data-kind="timelapse"]')]);
+  await p.waitForSelector('#save-project', { timeout: 30_000 });
+  const intro = await p.evaluate(() => document.querySelector('.editor__id')?.textContent ?? '');
+  t.eq(intro, 'Build a timelapse or a model from frames made elsewhere, and save it to My projects, where only you see it.', 'the uploader opens signed in: nothing says nothing is uploaded');
+
+  const frames = [0, 1, 2].map((i) => resolve(`dist/timelapses/demo/frames/sd/000${i}.glb`));
+  const load = async () => {
+    await p.fill('#f-title', 'Ada reel');
+    await p.selectOption('#f-mode', 'timelapse');
+    await p.fill('#f-fps', '6');
+    await p.setInputFiles('#files', frames);
+    await p.waitForFunction(() => !document.querySelector('#save-project').disabled, null, { timeout: 90_000 });
+  };
+  await load();
+  await p.click('#add-stage');
+  await p.fill('.stage-row .stage-name', 'Blockout');
+  await p.fill('.stage-row .stage-frame', '1');
+  await clearNotices(p);
+  await Promise.all([p.waitForURL((u) => u.searchParams.has('me'), { timeout: 90_000 }).catch(() => {}), p.click('#save-project')]);
+  t.ok(new URL(p.url()).searchParams.has('me'), `Save to My projects opens My projects (${p.url()})`);
+  const list = (await pageJson(p, '/api/me/projects')).body ?? [];
+  const made = list.find((x) => !before.includes(x.id));
+  t.ok(
+    !!made && made.title === 'Ada reel' && made.mode === 'timelapse' && made.fps === 6 && made.frameCount === 3 && made.visibility === 'private' && /^p-/.test(made.id),
+    `a private timelapse of the account's own, with its title, fps and three frames (${show(made && { id: made.id, title: made.title, mode: made.mode, fps: made.fps, frameCount: made.frameCount, visibility: made.visibility })})`,
+  );
+  const id = made?.id ?? '';
+  const manifest = (await pageJson(p, `/api/me/projects/${id}`)).body ?? {};
+  t.ok(
+    show(manifest.stages) === show([{ name: 'Blockout', frame: 1, desc: '' }]) && manifest.frames?.length === 3 && !!manifest.lighting && !!manifest.environment && typeof manifest.defaults?.material === 'string',
+    `its stages and look are the project's data (${show({ stages: manifest.stages, frames: manifest.frames?.length, lighting: !!manifest.lighting, defaults: manifest.defaults })})`,
+  );
+  const thumb = await pageBytes(p, `/api/me/media/${id}/thumb.jpg`);
+  t.eq(show(jpegSize(thumb)), show({ width: 800, height: 1000 }), 'and its picture is the 4:5 portrait, 800 x 1000');
+  const stored = await r2(server, `users/${uid}/projects/${id}/`);
+  t.ok([0, 1, 2].every((i) => stored[`users/${uid}/projects/${id}/frames/sd/000${i}.glb`] > 0), `the frames are under the account's folder (${Object.keys(stored).length} files)`);
+  await p.waitForSelector('.card--mine', { timeout: 30_000 }).catch(() => {});
+  const first = await p.evaluate(() => document.querySelector('.card--mine .card__title')?.textContent ?? null);
+  t.eq(first, 'Ada reel', 'and it leads My projects');
+
+  // A quota it cannot fit: nothing is left behind, said with the server's numbers.
+  const setQuota = (mib) =>
+    o.page.evaluate(
+      ([u, q]) => fetch(`/admin/api/users/${u}/quota`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quotaMiB: q }) }).then((r) => r.status),
+      [uid, mib],
+    );
+  const usage = (await pageJson(p, '/api/me')).body?.usage ?? { used: 0, reserved: 0 };
+  t.ok(usage.used + usage.reserved > MiB, `the account holds more than 1 MB already (${mbOf(usage.used + usage.reserved)} MB)`);
+  t.eq(await setQuota(1), 200, "the owner sets the member's quota to 1 MB");
+  const held = (await pageJson(p, '/api/me')).body?.usage ?? { used: 0, reserved: 0 };
+  await p.goto(`${server.base}/create/`, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#save-project', { timeout: 30_000 });
+  await load();
+  const kept = await ids();
+  await p.click('#save-project');
+  const notice = await failedNotice(p);
+  t.eq(
+    notice?.text,
+    `Your storage is full (${mbOf(held.used + held.reserved)} of 1 MB). Nothing was saved; make room in My projects, then try again.`,
+    'a save the quota cannot take says how full the storage is, in the server\'s numbers',
+  );
+  t.ok(new URL(p.url()).pathname === '/create/' && show(await ids()) === show(kept), 'and stays on the page, with no project left behind');
+  t.eq(await setQuota(250), 200, 'the quota is put back');
+
+  // Gone again, so what follows sees the account as it was.
+  const gone = await p.evaluate((x) => fetch(`/api/me/projects/${x}`, { method: 'DELETE' }).then((r) => r.status), id);
+  t.eq(gone, 200, 'the project is deleted again');
+}
+
 /** My projects (/?me): the meter, the cards, rename, download, open, read only offline, delete. */
 async function myProjectsPage(server, a, t) {
   const p = a.page;
@@ -2172,6 +2279,7 @@ export const suites = {
       await part('member library', () => memberLibrary(server, o, a, t));
       await part('my projects', () => myProjectsPage(server, a, t));
       await part('armature projects', () => armatureLibrary(server, o, a, t, { show, r2 }));
+      await part('create timelapse', () => memberCreate(server, o, a, t));
       await part('download my data', () => exportData(server, a, t));
       await part('delete account', () => deleteAccount(server, a, t));
       // The owner's tools over accounts (Batch 9): Invites, Users, Audit.

@@ -16,7 +16,7 @@ const KEY = 'bozzetto-open';
 /** Long enough for the tab to get there; a card clicked and left behind does not count later. */
 const FRESH_MS = 2 * 60 * 1000;
 
-export type OpenKind = 'lib' | 'project' | 'template';
+export type OpenKind = 'lib' | 'project' | 'template' | 'obj';
 
 /** Note that this tab is about to open the scene, having asked (or found nothing to lose). */
 export function markOpen(kind: OpenKind, id: string): void {

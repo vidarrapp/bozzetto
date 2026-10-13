@@ -19,7 +19,7 @@ It installs to an iPad's home screen and works offline, and there are desktop bu
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
 | `/?me`, `/?account` | My projects and Account, once the site has accounts |
-| `/create/` | Uploader for models and timelapses (**Create → Upload Model(s)**), no sign-in |
+| `/create/` | Uploader for models and timelapses (**Create → Create timelapse**): an export for a guest, a save to My projects signed in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
 ## Install as an app
@@ -162,17 +162,17 @@ sign-in, and everything stays on your device.
 
 ## Make your own timelapse
 
-The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. Nothing uploads, and there is no account.
+The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. For a guest nothing uploads, and there is no account; signed in, it saves the result to **My projects** instead (step 6).
 
-1. In the gallery, pick **Create → Upload Model(s)**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
+1. In the gallery, pick **Create → Create timelapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
 2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
 3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
 4. Set up the look in the right-hand panel, then orbit to your angle.
 5. Optionally add **stages** to name key frames. They become scrubber markers.
-6. Press **Export .html** for one self-contained file that opens offline.
+6. Press **Export .html** for one self-contained file that opens offline. Signed in, **Save to My projects** keeps it as a project of your own (frames, stages, look and a picture) and opens My projects; **Export .html** is beside it.
 7. Export MP4 or GIF from **Record reel**.
 
-A single mesh works too: drop one file and get a shareable 3D model on one page.
+A single mesh works too: drop one file and get a shareable 3D model on one page. To sculpt on an OBJ instead, pick **Create → Import OBJ**: it opens in Sculpt as a new scene.
 
 ## Desktop app
 
@@ -218,7 +218,7 @@ of this from real hardware.
 
 ### Gallery
 
-- The site's templates as thumbnail cards, badged **Template**, led by a **Create** tile, whose menu stacks **New Sculpt**, **New Armature** and **Upload Model(s)** (the uploader, for a model or a timelapse), and your own sculpt and armature in progress. A model or a timelapse plays in the viewer; a scene opens in Sculpt as a copy that is yours to keep, with **Save to library**, and never a change to the template.
+- The site's templates as thumbnail cards, badged **Template**, led by a **Create** tile, whose menu stacks **New Sculpt**, **New Armature**, **Import OBJ** (one `.obj` from another app, opened in Sculpt as a new scene) and **Create timelapse** (the uploader, for a model or a timelapse: exported as one file for a guest, saved to My projects signed in), and your own sculpt and armature in progress. A model or a timelapse plays in the viewer; a scene opens in Sculpt as a copy that is yours to keep, with **Save to library**, and never a change to the template.
 - Signed in, the gallery is your whole list, the templates included: private projects carry a **Private** badge and every card a switch to change it, making a project public makes it a template, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see the templates the gallery lists, and nothing else.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
 - **Install** and **Log in**, which becomes **Projects** once signed in, and **Log in** again when the sign-in expires, said once under the title with **Sign in again**. With accounts on, **Sign in** and **Install** for a guest; signed in, **My projects** and an **@handle** menu (**Account**, **Sign out**), and **Owner tools** for the owner. The foot links the Privacy notice and the Terms.
@@ -226,9 +226,10 @@ of this from real hardware.
 
 ### Public editor (`/create/`)
 
-- No sign-in, no backend. Frames are converted in the browser and nothing uploads.
+- For a guest: no sign-in, no backend. Frames are converted in the browser and nothing uploads.
+- Signed in (a member, or the owner), the same page saves: **Save to My projects** (**Save to Projects** with accounts off) creates a private project of the title, mode and fps, uploads the frames with a progress bar, keeps the stages and the look as its data, takes a 4:5 picture (the frame on screen when paused, else the last), and opens My projects. A refusal, the quota's included, is said as Sculpt's Save to library says it, and leaves no half-made project behind.
 - The preview is the real viewer, with the same Render panel as the full editor.
-- Exports a self-contained `.html` with viewer, frames and assets inlined.
+- Exports a self-contained `.html` with viewer, frames and assets inlined, for everyone.
 
 ### Editor (`/admin/`)
 
@@ -312,6 +313,12 @@ updates by release.
 URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a quality tier. `?perfdebug=1` lists the last stalls and heavy operations with their times, and in sculpt mode `?inputdebug=1` logs pen and touch input; both can be on at once, and **Edit → Preferences → Diagnostics** keeps either on without the switch.
 
 ## Changelog
+
+### Unreleased
+
+- **Create, by what you start from.** The gallery's Create menu stacks **New Sculpt**, **New Armature**, **Import OBJ** and **Create timelapse**. **Upload Model(s)** is now **Create timelapse**, and for a guest it is the uploader as it was: one `.html` file, nothing uploaded. Import OBJ is everyone's too, as File → Import OBJ is in Sculpt. The desktop app shows the same menu, and signed in to a server, saves to it.
+- **Import OBJ.** Pick one `.obj` file and it opens in Sculpt as a new scene, the file its one object: welded and sized as an imported object always is, named after the file, and an ordinary sculpt from there (autosave, Save to library). It asks first when there is work in progress on the device, as opening a scene does, and an address followed from anywhere else asks again in Sculpt. The file travels to Sculpt through the browser's own storage, and the address alone imports nothing. A face that names a vertex the file does not have, or a vertex that is not a number, is now left out of every OBJ import, here, in File → Import OBJ and in the uploader, rather than reaching the geometry.
+- **Create timelapse saves to My projects, signed in.** Signed in, the uploader no longer says nothing is uploaded: **Save to My projects** makes a private project of its title, mode (timelapse or model) and fps, uploads the frames with progress (held to the account's caps: 32 MB a frame, 10,000 frames), stores the stages and the look, takes the 4:5, 800 × 1000 picture every card has, and opens My projects. **Export .html** is still beside it. A save that cannot finish takes the project back, and a full quota is said with the server's numbers, as Sculpt's save says it. The owner's saves go to My projects like everyone's; the owner's `/admin/` editor stays for the owner tools.
 
 ### v1.4.2
 

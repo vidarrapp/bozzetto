@@ -936,7 +936,16 @@ export class SculptSession {
     // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
     // circular init order ("cannot access before initialization" at boot).
     const { parseObj } = await import('../../admin/glb');
-    const parsed = parseObj(text, zUp);
+    return this.addParsedOBJ(parseObj(text, zUp), name);
+  }
+
+  /**
+   * An OBJ already parsed (admin/glb parseObj, which keeps only sound
+   * triangles) as a new sculptable object, welded and sized as every
+   * import is: File > Import OBJ, and the gallery's Import OBJ, which
+   * parses at boot to know the file is good before it replaces anything.
+   */
+  addParsedOBJ(parsed: { positions: Float32Array; indices: Uint32Array }, name: string): Multimesh {
     if (!parsed.positions.length || !parsed.indices.length) {
       throw new Error('No geometry found in that OBJ file.');
     }

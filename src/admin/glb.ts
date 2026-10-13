@@ -50,7 +50,33 @@ export function parseObj(text: string, zUp = false): ParsedMesh {
     }
   }
 
-  return { positions: new Float32Array(verts), indices: Uint32Array.from(indices) };
+  return keepSound(new Float32Array(verts), indices);
+}
+
+/**
+ * The triangles of a parsed OBJ that can be drawn and sculpted: each names
+ * three different vertices that exist, at places that are numbers. A file
+ * is text from anywhere, and a face past the vertices (or a `v` line that
+ * is not three numbers) became indices nothing had, or a NaN that spread
+ * through the welding, the bounds and the quantization. Those triangles
+ * are left out, and the rest stand; a sound file loses nothing.
+ */
+function keepSound(positions: Float32Array, indices: number[]): ParsedMesh {
+  const count = positions.length / 3;
+  const finite = (v: number): boolean =>
+    Number.isFinite(positions[v * 3]) && Number.isFinite(positions[v * 3 + 1]) && Number.isFinite(positions[v * 3 + 2]);
+  const ok = (v: number): boolean => Number.isInteger(v) && v >= 0 && v < count && finite(v);
+  const kept: number[] = [];
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const a = indices[i];
+    const b = indices[i + 1];
+    const c = indices[i + 2];
+    if (ok(a) && ok(b) && ok(c) && a !== b && b !== c && a !== c) kept.push(a, b, c);
+  }
+  // A vertex that is not a number is used by no triangle now; zeroed, it
+  // cannot reach a bounding box either.
+  for (let i = 0; i < positions.length; i++) if (!Number.isFinite(positions[i])) positions[i] = 0;
+  return { positions, indices: Uint32Array.from(kept) };
 }
 
 /**

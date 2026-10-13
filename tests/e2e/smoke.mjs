@@ -17,7 +17,7 @@
 // two builds, said on screen. Each gets (page, base, t) - a fresh page,
 // the server's origin, and the check collector.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1904,25 +1904,208 @@ export const suites = {
     t.eq(await page.textContent('.landing__tagline'), 'Pose, sculpt, render and timelapse', 'the tagline');
     const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
     t.ok(!chips.some((c) => /upload/i.test(c)), `the top row has no upload chip (${chips.join(', ')})`);
-    await page.click('#landing-grid .card--new');
-    const stack = await page.evaluate(() => {
-      const bs = [...document.querySelectorAll('.create-overlay .create-choice')];
-      const grid = bs[0]?.parentElement?.getBoundingClientRect();
-      const rs = bs.map((b) => b.getBoundingClientRect());
-      return {
-        titles: bs.map((b) => b.querySelector('.create-choice__title')?.textContent).join(', '),
-        kinds: bs.map((b) => b.dataset.kind).join(','),
-        sameWidth: rs.every((r) => Math.abs(r.width - grid.width) < 2),
-        stacked: rs.every((r, i) => i === 0 || (r.top >= rs[i - 1].bottom && Math.abs(r.left - rs[0].left) < 1)),
-      };
-    });
-    t.eq(stack.titles, 'New Sculpt, New Armature, Upload Model(s)', 'the Create menu offers New Sculpt, New Armature and Upload Model(s), in that order');
-    t.ok(stack.kinds === 'sculpt,armature,timelapse' && stack.sameWidth && stack.stacked, `three buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
+    const menu = async (p) => {
+      await p.click('#landing-grid .card--new');
+      return p.evaluate(() => {
+        const bs = [...document.querySelectorAll('.create-overlay .create-choice')];
+        const grid = bs[0]?.parentElement?.getBoundingClientRect();
+        const rs = bs.map((b) => b.getBoundingClientRect());
+        return {
+          titles: bs.map((b) => b.querySelector('.create-choice__title')?.textContent).join(', '),
+          kinds: bs.map((b) => b.dataset.kind).join(','),
+          timelapse: document.querySelector('.create-overlay [data-kind="timelapse"] .create-choice__hint')?.textContent ?? '',
+          picker: document.querySelector('.create-overlay input[type="file"]')?.accept ?? null,
+          sameWidth: rs.every((r) => Math.abs(r.width - grid.width) < 2),
+          stacked: rs.every((r, i) => i === 0 || (r.top >= rs[i - 1].bottom && Math.abs(r.left - rs[0].left) < 1)),
+        };
+      });
+    };
+    // A guest: Import OBJ is everyone's (nothing about it needs an
+    // account), and Create timelapse is the export-only uploader.
+    const stack = await menu(page);
+    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ, Create timelapse', "a guest's Create menu offers New Sculpt, New Armature, Import OBJ and Create timelapse, in that order");
+    t.ok(stack.kinds === 'sculpt,armature,obj,timelapse' && stack.sameWidth && stack.stacked, `four buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
+    t.ok(/Nothing is uploaded\.$/.test(stack.timelapse) && stack.picker === '.obj', `Create timelapse says nothing is uploaded, and Import OBJ picks an .obj (${stack.timelapse})`);
     await Promise.all([
       page.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
       page.click('.create-overlay [data-kind="timelapse"]'),
     ]);
     t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
+    await page.waitForSelector('#export-html', { timeout: 30_000 });
+    const guestPage = await page.evaluate(() => ({
+      intro: document.querySelector('.editor__id')?.textContent ?? '',
+      heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
+      save: !!document.querySelector('#save-project'),
+    }));
+    t.ok(
+      guestPage.intro === 'Build a timelapse and export it as one self-contained file. Nothing is uploaded.' && guestPage.heads === 'Project,Frames,Stages,Export' && !guestPage.save,
+      `for a guest the uploader is as it was: nothing uploads, and Export is how it ends (${JSON.stringify(guestPage)})`,
+    );
+
+    // Signed in (the owner, with accounts off: whoami answers), the same
+    // four, and Create timelapse saves to Projects.
+    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const fake = fakeProjects();
+    try {
+      await ctx.route(fake.serves, fake.handle);
+      const owner = await ctx.newPage();
+      await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await owner.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+      const ownerMenu = await menu(owner);
+      t.ok(
+        ownerMenu.titles === 'New Sculpt, New Armature, Import OBJ, Create timelapse' && ownerMenu.kinds === 'sculpt,armature,obj,timelapse' && ownerMenu.stacked,
+        `signed in, the menu is New Sculpt, New Armature, Import OBJ and Create timelapse (${ownerMenu.titles})`,
+      );
+      t.eq(ownerMenu.timelapse, 'OBJ or GLB frames from another app, as a timelapse or a model, saved to Projects.', 'and Create timelapse says it saves to the library');
+      await Promise.all([
+        owner.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
+        owner.click('.create-overlay [data-kind="timelapse"]'),
+      ]);
+      await owner.waitForSelector('#save-project', { timeout: 30_000 });
+      const ownerPage = await owner.evaluate(() => ({
+        intro: document.querySelector('.editor__id')?.textContent ?? '',
+        heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
+        buttons: [...document.querySelectorAll('.editor__section:last-of-type button')].map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}`).join(', '),
+      }));
+      t.ok(
+        /^Build a timelapse or a model from frames made elsewhere, and save it to Projects/.test(ownerPage.intro) &&
+          ownerPage.heads === 'Project,Frames,Stages,Save' &&
+          ownerPage.buttons === 'Save to Projects (off), Export .html (off)',
+        `signed in, the uploader saves to the library, Export .html beside it, both waiting for frames (${JSON.stringify(ownerPage)})`,
+      );
+    } finally {
+      await ctx.close();
+    }
+  },
+
+  // Create > Import OBJ (owner request): the picked file opens in Sculpt as
+  // a new scene, its one object imported as File > Import OBJ imports one,
+  // the file carried over in IndexedDB. Work on the device is asked about
+  // first, by the gallery, and by Sculpt when the address came from
+  // anywhere else; the address alone imports nothing.
+  async importObj(_page, base, t) {
+    const dir = mkdtempSync(join(tmpdir(), 'bozzetto-obj-'));
+    // Without the service worker, so the suite's route below sees the
+    // gallery's navigation.
+    const ctx = await _page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    try {
+      // A tetrahedron with a quad cap made of a fan, a face past the
+      // vertices and a vertex that is not a number: the last two are left
+      // out, the rest stands.
+      const tetra = join(dir, 'Tetra piece.obj');
+      writeFileSync(
+        tetra,
+        ['# tetra', 'v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1', 'v nan 0 0', 'f 1 3 2', 'f 1 2 4', 'f 1 4 3', 'f 2 3 4', 'f 1 2 99', 'f 1 2 5', ''].join('\n'),
+      );
+      const cube = join(dir, 'box.obj');
+      writeFileSync(
+        cube,
+        [
+          'v -1 -1 -1', 'v 1 -1 -1', 'v 1 1 -1', 'v -1 1 -1', 'v -1 -1 1', 'v 1 -1 1', 'v 1 1 1', 'v -1 1 1',
+          'f 1 4 3 2', 'f 5 6 7 8', 'f 1 2 6 5', 'f 2 3 7 6', 'f 3 4 8 7', 'f 4 1 5 8', '',
+        ].join('\n'),
+      );
+      const asked = [];
+      let answer = true;
+      page.on('dialog', (d) => {
+        asked.push(d.message());
+        void (answer ? d.accept() : d.dismiss());
+      });
+      const pick = async (p, file) => {
+        await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+        await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+        await p.click('#landing-grid .card--new');
+        await p.setInputFiles('.create-overlay .create-obj-input', file);
+      };
+      const scene = (p) =>
+        p.evaluate(() => {
+          const s = window.__sculpt.session;
+          return {
+            names: s.getMeshes().map((m) => s.getMeshName(m)),
+            tris: s.getMeshes().map((m) => m.getNbTriangles()),
+            search: location.search,
+          };
+        });
+      const booted = (p) => p.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
+
+      // Nothing on the device: no question, straight into Sculpt.
+      await pick(page, tetra);
+      await page.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 30_000 });
+      await booted(page);
+      let now = await scene(page);
+      t.ok(asked.length === 0, `with no work on the device nothing is asked (${JSON.stringify(asked)})`);
+      t.ok(
+        JSON.stringify(now.names) === '["Tetra piece"]' && now.tris[0] > 0 && now.search === '?sculpt=1',
+        `Import OBJ opens Sculpt with the file as the scene's one object, named after it, and the address is left plain (${JSON.stringify(now)})`,
+      );
+      const finite = await page.evaluate(() => [...window.__sculpt.session.getMeshes()[0].getVertices()].every(Number.isFinite));
+      t.ok(finite, 'the vertex that was not a number reached nothing, and the face past the vertices was left out');
+      const undo = await page.evaluate(() => {
+        window.__sculpt.session.undo();
+        return window.__sculpt.session.getMeshes().length;
+      });
+      t.eq(undo, 1, 'the imported object is the floor of history: undo does not take it away');
+      await page.evaluate(() => window.__sculpt.persist.settle());
+      // An ordinary sculpt from here: the autosave has it, and the gallery's In progress card.
+      await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('#landing-grid .card--sculpt', { timeout: 30_000 }).catch(() => {});
+      const card = await page.evaluate(() => document.querySelector('.card--sculpt:not(.card--armature) .card__title')?.textContent ?? null);
+      t.eq(card, 'Your sculpt', "the autosave keeps it, as the gallery's In progress card");
+
+      // Work on the device now: the gallery asks; declined, nothing moves.
+      answer = false;
+      await pick(page, cube);
+      await page.waitForTimeout(500);
+      t.ok(
+        asked.at(-1) === 'Open "box" as a new sculpt? The work in progress on this device will be replaced.' && new URL(page.url()).pathname === '/' && !new URL(page.url()).searchParams.has('sculpt'),
+        `with work on the device the gallery asks first, and declined it stays (${JSON.stringify(asked.at(-1))})`,
+      );
+      // Accepted, the cube is the new scene, and Sculpt does not ask again.
+      answer = true;
+      const before = asked.length;
+      await pick(page, cube);
+      await page.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 30_000 });
+      await booted(page);
+      now = await scene(page);
+      t.ok(JSON.stringify(now.names) === '["box"]' && now.tris[0] >= 12, `accepted, the new scene is the file's object alone (${JSON.stringify(now)})`);
+      t.eq(asked.length - before, 1, 'asked once, by the gallery: Sculpt knows the tab asked');
+      await page.evaluate(() => window.__sculpt.persist.settle());
+
+      // A reload, and the address alone: nothing more is imported.
+      await page.goto(`${base}/?sculpt=1&obj=1`, { waitUntil: 'domcontentloaded' });
+      await booted(page);
+      now = await scene(page);
+      t.ok(JSON.stringify(now.names) === '["box"]' && now.search === '?sculpt=1', `the address alone imports nothing, and the work is as it was (${JSON.stringify(now)})`);
+
+      // An address followed in another tab, with work here: Sculpt asks, as
+      // it does for a link to a scene. The gallery's own tab is held at the
+      // gallery (the navigation answered with nothing), so the file waits.
+      const other = await page.context().newPage();
+      const otherAsked = [];
+      other.on('dialog', (d) => {
+        otherAsked.push(d.message());
+        void d.dismiss();
+      });
+      await page.route((u) => u.searchParams.get('obj') === '1', (r) => r.fulfill({ status: 204, body: '' }));
+      await pick(page, tetra);
+      await page.waitForTimeout(800);
+      await page.unroute((u) => u.searchParams.get('obj') === '1');
+      await other.goto(`${base}/?sculpt=1&obj=1`, { waitUntil: 'domcontentloaded' });
+      await booted(other);
+      now = await scene(other);
+      t.ok(
+        otherAsked[0] === 'Open "Tetra piece" as a new sculpt? The work in progress on this device will be replaced.' && JSON.stringify(now.names) === '["box"]',
+        `a link from elsewhere is asked about at boot; declined, the work stays (${JSON.stringify({ otherAsked, now })})`,
+      );
+      await other.close();
+      t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+    } finally {
+      await ctx.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   },
 
   async armature(page, base, t) {
@@ -1941,7 +2124,7 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New Sculpt, New Armature, Upload Model(s)', 'which offers a new sculpt, a new armature or the uploader');
+    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ, Create timelapse', 'which offers a new sculpt, a new armature, an OBJ or the uploader');
     t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),

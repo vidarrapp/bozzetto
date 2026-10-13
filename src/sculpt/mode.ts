@@ -268,6 +268,44 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       openedExplicitly = false;
     }
   }
+  // An OBJ picked in the gallery's Create > Import OBJ (?obj=1, the file
+  // carried in IndexedDB: bridge/objHandoff): a new scene, the file its
+  // object. It is parsed before anything is replaced, so a file with no
+  // geometry in it costs nothing but its notice; and it replaces the work
+  // on this device as an opened scene does, asked about here unless the
+  // gallery asked already (ui/openToken), as a link to a scene is. Declined,
+  // the work stays and the file is let go.
+  let objMesh: ReturnType<SculptSession['addParsedOBJ']> | null = null;
+  if (!asked && query.get('obj') === '1') {
+    const { takeObjHandoff } = await import('./bridge/objHandoff');
+    const handoff = await takeObjHandoff();
+    if (handoff) {
+      const { parseObj } = await import('../admin/glb');
+      let parsed: ReturnType<typeof parseObj> | null = null;
+      try {
+        parsed = parseObj(handoff.text, handoff.zUp);
+      } catch {
+        parsed = null;
+      }
+      const atStake = (await hasSavedScene()) || (await hasSculptFrames());
+      if (!parsed || !parsed.positions.length || !parsed.indices.length) {
+        bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
+      } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
+        try {
+          objMesh = session.addParsedOBJ(parsed, handoff.name);
+        } catch (err) {
+          bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
+        }
+        // A new scene: the autosave, its reel and its look go, as New
+        // Sculpt's do - once the object stands, so a file that would not
+        // build leaves the work where it was.
+        if (objMesh) await Promise.all([clearSavedScene(), clearSculptFrames(), clearSculptLook()]);
+      }
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('obj');
+    history.replaceState(history.state, '', url);
+  }
   // The desktop app starts clean (owner call): its work lives in files,
   // and a scene that was saved to one has no business coming back on its
   // own. The slot and the reel are cleared so the gallery's in-progress
@@ -275,7 +313,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // sidecar, which is offered below as before.
   if (isDesktop() && !asked) {
     await Promise.all([clearSavedScene(), clearSculptFrames()]);
-  } else if (!saved) {
+  } else if (!saved && !objMesh) {
     let autosaved: SavedScene | null = null;
     try {
       autosaved = await loadSavedScene();
@@ -1650,6 +1688,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // Console/debug handle, mirroring window.__bozzetto:
   //   __sculpt.session.getMesh().getNbVertices(), __sculpt.sync.stats, etc.
+  // The imported OBJ (above) is the new scene: written to the autosave
+  // as soon as the grace allows, and framed.
+  if (objMesh) {
+    persist.markDirty();
+    viewer.frameBounds(liveWorldBox(objMesh as unknown as SculptMesh));
+  }
   // A figure sent over from the Armature mode (?handoff=1): voxelised here,
   // where the remesher lives, and added as an object. A scene with nothing
   // done to it yet (the default sphere) makes way for the figure.

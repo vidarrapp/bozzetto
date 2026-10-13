@@ -11,13 +11,34 @@ import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { validateManifest, type Manifest } from '../types/manifest';
 import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
+import { AuthExpiredError, checkSignIn, libraryProjects, roleOf, uploadFailure, type SignIn } from '../admin/api';
+import { loadConfig, sizeText } from '../net/account';
+import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
+import { signInButton } from '../ui/signIn';
+import { aoWithoutCavity } from '../viewer/Viewer';
 
 /**
- * Public, backend-free editor (`/create`). Drop a sculpt sequence, set up the
- * look in the real viewer, and download one self-contained .html. Frames are
- * converted in the browser and kept in memory (a MemorySource feeds the live
- * preview); nothing is uploaded, saved, or gated. The only output is the file.
+ * The uploader (`/create`, the gallery's Create > Create timelapse). Drop a
+ * sculpt sequence, set up the look in the real viewer, and keep it. Frames
+ * are converted in the browser and kept in memory (a MemorySource feeds the
+ * live preview).
+ *
+ * For a guest it is backend-free: nothing is uploaded, saved, or gated, and
+ * the only output is one self-contained .html. Signed in (a member, a
+ * moderator or the owner) the same page saves to the library: Save to My
+ * projects makes a project on the account's own routes (Projects, on the
+ * owner tools', with accounts off) - its title, mode and fps, the frames
+ * uploaded, the stages and the look as its data, and a 4:5 picture - and
+ * opens My projects; Export .html is still beside it. The owner's /admin/
+ * editor stays for the owner tools.
  */
+
+/** The server's frame list cap (functions/_shared/projects.ts), checked before a byte goes up. */
+const MAX_FRAMES = 10_000;
+/** A member's frame cap (docs/accounts.md §4), when /api/config does not say. */
+const FRAME_BYTES = 32 * 1024 * 1024;
+/** The longest title the server keeps. */
+const MAX_TITLE = 200;
 
 interface Stage {
   name: string;
@@ -57,7 +78,38 @@ async function runAction(btn: HTMLButtonElement, fn: () => Promise<void>): Promi
   }
 }
 
-function main(): void {
+/** A number /api/config gives, or the fallback when it gives none. */
+const limit = (v: unknown, fallback: number): number => (typeof v === 'number' && v > 0 ? v : fallback);
+
+const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+/**
+ * The picture a save sends: the frame on screen when playback is paused
+ * (so pausing on a frame chooses it), else the last - the finished piece -
+ * at the camera as set. Taken by the viewer's captureThumbnail, the 4:5
+ * portrait at 800 x 1000 every picture in the app is; playback is put back
+ * as it was.
+ */
+async function savePicture(p: Viewer): Promise<Blob> {
+  const was = p.timeline.frameIndex();
+  const playing = p.timeline.playing;
+  if (playing) {
+    p.pause();
+    p.jumpTo(p.timeline.frameCount - 1);
+  }
+  for (let i = 0; i < 100 && p.isAwaitingFrame(); i++) await new Promise((r) => setTimeout(r, 30));
+  await nextFrame();
+  try {
+    return await p.captureThumbnail();
+  } finally {
+    if (playing) {
+      p.jumpTo(was);
+      p.play();
+    }
+  }
+}
+
+async function main(): Promise<void> {
   initTheme();
   followPanelOpacity();
   mountThemeToggle();
@@ -65,6 +117,37 @@ function main(): void {
 
   const host = document.getElementById('create');
   if (!host) throw new Error('#create element not found');
+
+  // Who it is for decides how it ends: an export for a guest, a save to
+  // the library for anyone signed in. Suspended or expired, a guest's page.
+  const signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false }));
+  const role = roleOf(signIn);
+  const place = role === 'owner' || role === 'moderator' || role === 'member' ? (signIn.accounts ? 'My projects' : 'Projects') : null;
+  const intro = place
+    ? `Build a timelapse or a model from frames made elsewhere, and save it to ${place}, where only you see it.`
+    : 'Build a timelapse and export it as one self-contained file. Nothing is uploaded.';
+  const finish = place
+    ? `
+          <section class="editor__section">
+            <h3>Save</h3>
+            <p class="muted editor__hint">Set up the look in the right-hand panel, then save: the frames, the stages and the look go to ${place}, with the view as its picture (the frame on screen when paused, else the last). <strong>Export .html</strong> still makes one self-contained file.</p>
+            <div class="editor__row">
+              <button id="save-project" class="btn btn--primary" type="button" disabled>Save to ${place}</button>
+              <button id="export-html" class="btn" type="button" disabled>Export .html</button>
+            </div>
+            <div id="save-progress" class="progress" hidden>
+              <div class="progress__track"><div class="progress__bar" id="save-bar"></div></div>
+              <span id="save-label" class="muted"></span>
+            </div>
+            <div id="reel-mount"></div>
+          </section>`
+    : `
+          <section class="editor__section">
+            <h3>Export</h3>
+            <p class="muted editor__hint">Set up the look in the right-hand panel, then download a self-contained <strong>.html</strong> that opens offline, straight from disk.</p>
+            <button id="export-html" class="btn btn--primary" type="button" disabled>Export .html</button>
+            <div id="reel-mount"></div>
+          </section>`;
 
   host.innerHTML = `
     <div class="editor">
@@ -75,7 +158,7 @@ function main(): void {
         <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>
         <div class="editor__sidebar-body">
           <h1 class="editor__title">Create</h1>
-          <p class="editor__id muted">Build a timelapse and export it as one self-contained file. Nothing is uploaded.</p>
+          <p class="editor__id muted">${intro}</p>
 
           <section class="editor__section">
             <h3>Project</h3>
@@ -111,12 +194,7 @@ function main(): void {
             <button id="add-stage" class="btn" type="button">Add stage</button>
           </section>
 
-          <section class="editor__section">
-            <h3>Export</h3>
-            <p class="muted editor__hint">Set up the look in the right-hand panel, then download a self-contained <strong>.html</strong> that opens offline, straight from disk.</p>
-            <button id="export-html" class="btn btn--primary" type="button" disabled>Export .html</button>
-            <div id="reel-mount"></div>
-          </section>
+          ${finish}
         </div>
       </aside>
     </div>`;
@@ -137,6 +215,7 @@ function main(): void {
   const stagesHost = $('#stages');
   const exportBtn = $<HTMLButtonElement>('#export-html');
   const reelMount = $('#reel-mount');
+  const saveBtn = host.querySelector<HTMLButtonElement>('#save-project');
 
   const memorySource = new MemorySource();
   let frames: FrameMeta[] = [];
@@ -212,6 +291,7 @@ function main(): void {
   async function mountPreview(): Promise<void> {
     disposePreview();
     exportBtn.disabled = true;
+    if (saveBtn) saveBtn.disabled = true;
     reelMount.replaceChildren(); // drop reel controls bound to the old viewer
     previewBox.innerHTML = '';
     if (frames.length === 0) {
@@ -239,6 +319,7 @@ function main(): void {
     });
     reelMount.replaceChildren(mountReelControls(preview));
     exportBtn.disabled = false;
+    if (saveBtn) saveBtn.disabled = saving;
   }
 
   // Live FPS tweak without a remount; title/mode/stages are read at export.
@@ -312,6 +393,143 @@ function main(): void {
     if (e.dataTransfer?.files) void handleFiles([...e.dataTransfer.files]);
   });
 
+  // --- save to the library (signed in) ------------------------------------
+  let saving = false;
+  const saveProgress = host.querySelector<HTMLElement>('#save-progress');
+  const saveBar = host.querySelector<HTMLElement>('#save-bar');
+  const saveLabel = host.querySelector<HTMLElement>('#save-label');
+  const showSave = (text: string, fraction: number | null): void => {
+    if (!saveProgress || !saveBar || !saveLabel) return;
+    saveProgress.hidden = false;
+    saveLabel.textContent = text;
+    if (fraction !== null) saveBar.style.width = `${Math.round(fraction * 100)}%`;
+  };
+
+  /**
+   * Make the project and fill it: created on the library's routes (the
+   * account's own, private, under the server's id; or the owner tools',
+   * private, under an id made from the title), the frames uploaded four at
+   * a time, then its data in one patch - the frame list, which publishes
+   * them, the stages and the look - and its picture. A save that does not
+   * finish takes the project back, as Capture's publish does, so nothing
+   * half-made holds the quota. Answers where to go and what it is called.
+   */
+  async function saveToLibrary(p: Viewer, status: StatusToast): Promise<{ title: string; href: string }> {
+    const client = await libraryProjects();
+    const config = client.scope === 'me' ? await loadConfig() : null;
+    const maxFrames = limit(config?.limits.framesPerProject, MAX_FRAMES);
+    if (frames.length > maxFrames) {
+      throw new Error(`Too many frames (${frames.length.toLocaleString('en-US')}): a project takes at most ${maxFrames.toLocaleString('en-US')}`);
+    }
+    if (client.scope === 'me') {
+      const cap = limit(config?.limits.frameBytes, FRAME_BYTES);
+      const big = frames.findIndex((f) => f.bytes > cap);
+      if (big >= 0) throw new Error(`Frame ${big + 1} is ${sizeText(frames[big].bytes)}: a frame may be at most ${sizeText(cap)}`);
+    }
+    const title = titleInput.value.trim().slice(0, MAX_TITLE) || 'Untitled';
+    const mode = modeSelect.value === 'model' ? 'model' : 'timelapse';
+    const fps = Math.min(30, Math.max(1, Math.round(Number(fpsInput.value) || 4)));
+    const count = frames.length;
+    status.set('Creating project...');
+    showSave('Creating project...', 0);
+    const made = await client.create(
+      client.scope === 'me'
+        ? { title, mode, fps }
+        : { id: `${slug(title).slice(0, 50) || 'timelapse'}-${Math.random().toString(36).slice(2, 8)}`, title, mode, fps, visibility: 'private' },
+    );
+    const id = made.id;
+    try {
+      // Four in flight; the first refusal stops the rest before they start,
+      // and the lanes settle before the project is taken back.
+      let failure: unknown = null;
+      let next = 0;
+      let done = 0;
+      const lane = async (): Promise<void> => {
+        while (failure === null && next < count) {
+          const i = next++;
+          try {
+            await client.uploadFrame(id, i, await memorySource.getBytes(framePath(i)));
+            done += 1;
+            const text = `Uploading frame ${done} of ${count}...`;
+            status.set(text);
+            showSave(text, done / count);
+          } catch (err) {
+            failure ??= err;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, count) }, lane));
+      if (failure !== null) throw failure;
+      status.set('Finishing...');
+      showSave('Finishing...', 1);
+      const look = p.getLook();
+      await client.update(id, {
+        title,
+        mode,
+        fps,
+        frames: frames.map((f, index) => ({ index, tris: f.tris })),
+        stages: collectStages(),
+        lighting: look.lighting,
+        material: look.material,
+        environment: look.environment,
+        ao: aoWithoutCavity(look),
+        presentation: look.presentation,
+        camera: look.camera,
+        defaults: { material: look.materialMode },
+      });
+      await client.uploadThumb(id, await savePicture(p));
+    } catch (err) {
+      await client.remove(id).catch(() => undefined);
+      throw err;
+    }
+    return { title, href: client.scope === 'me' ? '/?me' : '/admin/' };
+  }
+
+  /** How a save that did not happen ended, said as Sculpt's Save to library says it. */
+  const notSaved = (status: StatusToast, err: unknown): void => {
+    const why = err instanceof Error ? err.message.replace(/\.$/, '') : String(err);
+    switch (uploadFailure(err)) {
+      case 'expired': {
+        const again = signInButton('', (ok) => (ok ? void save() : undefined), 'Sign in again', err instanceof AuthExpiredError ? err.via : undefined);
+        status.fail('Your sign-in has expired. Nothing was saved; the frames are still here.', again);
+        break;
+      }
+      case 'suspended':
+        status.fail(`${why}. Nothing was saved.`);
+        break;
+      case 'full':
+        // The server's numbers: "Your storage is full (248 of 250 MB)".
+        status.fail(`${why}. Nothing was saved; make room in ${place}, then try again.`);
+        break;
+      case 'offline':
+        status.fail('No connection. Nothing was saved; try again when you are online.');
+        break;
+      default:
+        status.fail(`Not saved to ${place}: ${why}.`);
+    }
+  };
+
+  async function save(): Promise<void> {
+    if (!preview || !saveBtn || saving || frames.length === 0) return;
+    const p = preview;
+    saving = true;
+    saveBtn.disabled = true;
+    const status = statusToast(`Saving to ${place}...`);
+    try {
+      const { title, href } = await saveToLibrary(p, status);
+      status.done(`Saved to ${place}: ${title}`);
+      showSave(`Saved to ${place}`, 1);
+      window.location.href = href;
+    } catch (err) {
+      if (saveProgress) saveProgress.hidden = true;
+      notSaved(status, err);
+    } finally {
+      saving = false;
+      saveBtn.disabled = !preview;
+    }
+  }
+  saveBtn?.addEventListener('click', () => void save());
+
   // --- export -------------------------------------------------------------
   exportBtn.addEventListener('click', () => {
     if (!preview) return;
@@ -324,4 +542,4 @@ function main(): void {
   });
 }
 
-main();
+void main();

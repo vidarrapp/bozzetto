@@ -100,7 +100,19 @@ function parseObj(text) {
     }
   }
 
-  return { positions: new Float32Array(verts), indices: Uint32Array.from(indices) };
+  // As src/admin/glb.ts keepSound: only triangles of three different
+  // vertices that exist, at places that are numbers.
+  const positions = new Float32Array(verts);
+  const count = positions.length / 3;
+  const ok = (v) =>
+    Number.isInteger(v) && v >= 0 && v < count && [0, 1, 2].every((k) => Number.isFinite(positions[v * 3 + k]));
+  const kept = [];
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const [a, b, c] = [indices[i], indices[i + 1], indices[i + 2]];
+    if (ok(a) && ok(b) && ok(c) && a !== b && b !== c && a !== c) kept.push(a, b, c);
+  }
+  for (let i = 0; i < positions.length; i++) if (!Number.isFinite(positions[i])) positions[i] = 0;
+  return { positions, indices: Uint32Array.from(kept) };
 }
 
 /**
