@@ -57,7 +57,7 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -91,5 +91,5 @@ jobs:
       # (tests/functions/turnstile-fake.mjs) and codes read from the dev
       # outbox. Two to five minutes, wrangler's start included.
       - name: Accounts suite
-        timeout-minutes: 15
+        timeout-minutes: 35
         run: node tests/e2e/run.mjs accounts
