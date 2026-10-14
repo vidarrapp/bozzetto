@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openSculpt } from './lib.mjs';
-import { FILES, bootState, fakeProjects, signInContext, storedFrames, workerActivated } from './smoke.mjs';
+import { FILES, bootState, fakeProjects, signInContext, workerActivated } from './smoke.mjs';
 
 /** Somewhere no page of the app should ever ask. */
 const ELSEWHERE = 'https://attacker.example';
@@ -456,16 +456,15 @@ async function looksAndModels(page, base, t) {
 
 /**
  * `?sculpt=1&lib=<id>` replaces the work on this device - the autosave
- * within seconds, and the reel - and any page can send it. Followed from
- * elsewhere it asks: No boots the work that was here and keeps the reel,
- * Yes opens the scene and the reel goes with the old work. From the
+ * within seconds - and any page can send it. Followed from elsewhere it
+ * asks: No boots the work that was here, Yes opens the scene. From the
  * gallery's card, which asks itself, Sculpt does not ask again. A lib=
  * that is no id opens nothing.
  */
 async function openByAddress(browser, base, t) {
   const ctx = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: 'block' });
   try {
-    // Signed in (the probe faked), so recording is allowed and there is a reel to lose.
+    // Signed in (the probe faked), as the owner opening their own shelf would be.
     await signInContext(ctx);
     const p = await ctx.newPage();
     const errors = [];
@@ -477,7 +476,7 @@ async function openByAddress(browser, base, t) {
       void (answer ? d.accept() : d.dismiss());
     });
     await openSculpt(p, base, '&q=low');
-    await p.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 });
+    await p.waitForFunction(() => !window.__sculpt.publishWindow.chip.hidden, null, { timeout: 30_000 });
     // A scene on the shelf (two objects), and different work in progress (three).
     const entry = await p.evaluate(async () => {
       const s = window.__sculpt;
@@ -487,11 +486,6 @@ async function openByAddress(browser, base, t) {
       await s.persist.flush();
       return { id: e.id, name: e.name };
     });
-    await p.evaluate(() => window.__sculpt.recorder.setEnabled(true));
-    await p.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
-    await p.evaluate(() => window.__sculpt.recorder.setEnabled(false));
-    const reel = await storedFrames(p);
-    t.ok(reel > 0, `there is a reel on this device (${reel} frames)`);
 
     const question = `Open "${entry.name}"? The work in progress on this device will be replaced.`;
     dialogs.length = 0;
@@ -499,7 +493,6 @@ async function openByAddress(browser, base, t) {
     let st = await bootState(p);
     t.eq(dialogs.join(' | '), question, 'followed by its address, a link to a shelf scene asks first');
     t.ok(st.objects === 3 && !/lib=/.test(st.search), `No: the work in progress boots instead, and the link leaves the address (${st.objects} objects, "${st.search}")`);
-    t.eq(await storedFrames(p), reel, 'and the reel stays');
     // Past the autosave's grace, the work is still what the autosave holds.
     await p.waitForTimeout(6500);
     dialogs.length = 0;
@@ -511,7 +504,6 @@ async function openByAddress(browser, base, t) {
     await openSculpt(p, base, `&q=low&lib=${entry.id}`);
     st = await bootState(p);
     t.ok(dialogs.length === 1 && st.objects === 2, `Yes: the scene opens (${st.objects} objects)`);
-    t.eq(await storedFrames(p), 0, 'and the reel of the work it replaced is gone with it');
 
     // From its card: the card asks, Sculpt does not ask again. The scene
     // the Yes opened is written first, and the write waited for (settle):

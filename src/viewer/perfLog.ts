@@ -5,11 +5,10 @@
  * The owner sees an iPad stop for seconds at a time while sculpting a light
  * model, orbiting included, and then recover by itself. That is the main
  * thread held up, not the renderer, and the suspects all run after a stroke
- * (the autosave and the timelapse capture both write to IndexedDB, which
- * Safari is known to block the page on). Rather than guess which, the
- * viewer's render loop records every gap between frames past STALL_MS, and
- * the heavy operations record how long they took and how big the model was,
- * so a freeze reads as "stall 2.41 s" next to "autosave write 2.40 s".
+ * (the autosave writes to IndexedDB, which Safari is known to block the
+ * page on). Rather than guess which, the viewer's render loop records every
+ * gap between frames past STALL_MS, and the heavy operations record how
+ * long they took and how big the model was, so a freeze reads as "stall 2.41 s" next to "autosave write 2.40 s".
  *
  * Always on, because the point is to read it after the fact: a
  * performance.now() either side of work that is expensive anyway, and no

@@ -1,21 +1,24 @@
 import { api, memberProjects, type ProjectsClient, type Visibility } from '../../admin/api';
 import { mergeSceneArrays } from './SceneFile';
-import type { SnapshotRecorder } from './SnapshotRecorder';
+import { encodeMesh } from '../../admin/convert';
 import type { SculptSession } from './SculptSession';
 import { aoWithoutCavity, type LookState } from '../../viewer/Viewer';
 import type { Units } from '../../viewer/units';
 
 /**
- * Publishing sculpts from the Capture window. With accounts off it is the
+ * Publish model, from Sculpt's Publish window: the scene as it stands, as
+ * a one-frame model project. (Bozzetto Web no longer records a timelapse
+ * while you sculpt; Bozzetto Studio does, in the same frame format, which
+ * the /create/ uploader publishes.) With accounts off it is the
  * owner's, to the gallery (WS5 - Cloudflare Access gates every endpoint
  * used here, so a guest reaching these calls just gets refusals, and an
  * owner whose session ran out an AuthExpiredError, which the form answers
  * with Sign in again), under an id and with a visibility chosen. With
  * accounts on it is anyone's signed in, the owner's included, to their own
  * My projects (docs/accounts.md §7): the server picks the id, and the
- * project is private. Both flows follow the editor's sequence exactly:
- * create the project, upload GLBs, patch the frame list, then a
- * best-effort thumbnail.
+ * project is private. Both follow the editor's sequence exactly: create
+ * the project, upload the GLB, patch the frame list, then a best-effort
+ * thumbnail.
  */
 
 /**
@@ -28,15 +31,6 @@ export type PublishTo =
   | { to: 'mine'; title: string };
 
 /** Matches the server's slug rule so failures happen before any upload. */
-/**
- * The server's frames cap (functions/_shared/projects.ts MAX_FRAMES). It is
- * enforced on the metadata PUT, which lands AFTER every frame is already in
- * R2 - so it is checked here, before a single byte goes up, or a long reel
- * would upload for minutes and then fail with an orphaned project left
- * behind.
- */
-export const MAX_GALLERY_FRAMES = 10000;
-
 export const PROJECT_SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 export interface GalleryHooks {
@@ -54,7 +48,7 @@ export interface GalleryHooks {
 }
 
 /**
- * Publish the look alongside the frames, exactly as the editor's "Save look"
+ * Publish the look alongside the frame, exactly as the editor's "Save look"
  * does. Without it a published sculpt opened under the viewer's defaults
  * rather than the lighting it was made in. The AO is the one the viewer
  * can draw: a sculpt made on the cavity, which only sculpt mode has,
@@ -104,7 +98,7 @@ function playedAsMade(presentation: LookState['presentation']): LookState['prese
   return rest;
 }
 
-/** "Timelapse 7 Oct 14:05": the title a publish to My projects gets when none is typed. */
+/** "Model 7 Oct 14:05": the title a publish to My projects gets when none is typed. */
 function defaultTitle(kind: string, when = new Date()): string {
   const p = (n: number): string => String(n).padStart(2, '0');
   const month = when.toLocaleString(undefined, { month: 'short' });
@@ -119,17 +113,15 @@ function defaultTitle(kind: string, when = new Date()): string {
  * quota. The gallery's keeps today's way: what landed stays for the
  * editor.
  */
-async function createFor(
-  target: PublishTo,
-  mode: 'timelapse' | 'model',
-): Promise<{ client: ProjectsClient | null; id: string }> {
+async function createFor(target: PublishTo): Promise<{ client: ProjectsClient | null; id: string }> {
+  const mode = 'model';
   if (target.to === 'gallery') {
     const { id, title, visibility } = target;
     if (!PROJECT_SLUG.test(id)) throw new Error('Id must be a-z, 0-9, hyphens');
     await api.create({ id, title: title || id, mode, fps: 4, visibility });
     return { client: null, id };
   }
-  const title = (target.title || defaultTitle(mode === 'model' ? 'Model' : 'Timelapse')).slice(0, 200);
+  const title = (target.title || defaultTitle('Model')).slice(0, 200);
   const made = await memberProjects.create({ title, mode, fps: 4 });
   return { client: memberProjects, id: made.id };
 }
@@ -152,60 +144,21 @@ async function filling<T>(made: { client: ProjectsClient | null; id: string }, f
   }
 }
 
-/** Walk the capture store into a new timelapse project. */
-export async function saveTimelapseToGallery(
-  recorder: SnapshotRecorder,
-  hooks: GalleryHooks,
-  target: PublishTo,
-  onProgress: (text: string) => void,
-): Promise<string> {
-  // Freeze the set: capture keeps running, and a frame landing mid-upload
-  // must not stretch the walk.
-  const metas = [...recorder.frameMetas()];
-  if (metas.length === 0) throw new Error('No captured frames yet');
-  if (metas.length > MAX_GALLERY_FRAMES) {
-    throw new Error(
-      `Too many frames (${metas.length}); the gallery takes at most ${MAX_GALLERY_FRAMES}. ` +
-        'Clear frames and re-record.',
-    );
-  }
-  onProgress('Creating project...');
-  const made = await createFor(target, 'timelapse');
-  const routes = routesFor(made.client);
-  const { id } = made;
-  return filling(made, async () => {
-    const frames: { index: number; tris: number }[] = [];
-    for (let i = 0; i < metas.length; i++) {
-      onProgress(`Uploading frame ${i + 1}/${metas.length}...`);
-      const bytes = await recorder.readFrame(metas[i].seq);
-      if (!bytes) throw new Error(`Frame ${i} missing from local storage`);
-      await routes.uploadFrame(id, i, bytes);
-      frames.push({ index: i, tris: metas[i].tris });
-    }
-    onProgress('Finishing...');
-    await routes.update(id, { frames, ...lookPatch(hooks) });
-    await uploadThumbBestEffort(routes, id, hooks);
-    return `/?tl=${id}`;
-  });
-}
-
 /** The current merged scene as a one-frame 'model' project. */
 export async function saveModelToGallery(
   session: SculptSession,
-  recorder: SnapshotRecorder,
   hooks: GalleryHooks,
   target: PublishTo,
   onProgress: (text: string) => void,
 ): Promise<string> {
   // With colours: a painted model publishes as painted (owner decision).
-  // Timelapse frames stay colour-free - paint was never envisioned there.
   const merged = mergeSceneArrays(session, true);
   if (!merged) throw new Error('Nothing to save');
   if (target.to === 'gallery' && !PROJECT_SLUG.test(target.id)) throw new Error('Id must be a-z, 0-9, hyphens');
   onProgress('Encoding model...');
-  const glb = await recorder.encodeFrame(merged.positions, merged.indices, merged.colors);
+  const { glb } = await encodeMesh(merged.positions, merged.indices, merged.colors);
   onProgress('Creating project...');
-  const made = await createFor(target, 'model');
+  const made = await createFor(target);
   const routes = routesFor(made.client);
   const { id } = made;
   return filling(made, async () => {

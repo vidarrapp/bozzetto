@@ -16,9 +16,7 @@ import {
   ScenePersist,
   type SculptSettings,
   clearSavedScene,
-  clearSculptFrames,
   hasSavedScene,
-  hasSculptFrames,
   loadSavedScene,
   clearSculptLook,
   loadSculptLook,
@@ -27,11 +25,10 @@ import {
 } from './bridge/ScenePersist';
 import type { SavedScene, SceneLink } from './bridge/ScenePersist';
 import type { BrushSymmetry, SymmetryAxis } from './bridge/symmetry';
-import { SnapshotRecorder, recordingAllowed } from './bridge/SnapshotRecorder';
 import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
-import { presentationPatch, saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
+import { presentationPatch, saveModelToGallery } from './bridge/GallerySave';
 import { unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { failNotice, statusToast } from './ui/statusToast';
@@ -49,7 +46,7 @@ import { InputDebug } from './ui/InputDebug';
 import { perfLog } from '../viewer/perfLog';
 import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
-import { CaptureWindow } from './ui/CaptureWindow';
+import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
@@ -204,13 +201,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       ? `a copy of "${openedName}"`
       : `"${openedName}"`;
   // A scene opened by its address replaces the work on this device: the
-  // autosave is written over within seconds, and the captured frames go.
+  // autosave is written over within seconds.
   // The gallery's cards ask first, but an address is a link like any
   // other, and any page can send one - so the boot asks too, unless the
   // page that sent this tab here asked already, about this same scene.
   // Declined, the work stays and boots as if no link had been followed.
   const askedAlready = sentHere === openKey;
-  if (saved && !askedAlready && ((await hasSavedScene()) || (await hasSculptFrames()))) {
+  if (saved && !askedAlready && (await hasSavedScene())) {
     if (!window.confirm(`Open ${what}? The work in progress on this device will be replaced.`)) {
       saved = null;
       bootLink = null;
@@ -249,14 +246,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
   };
   if (saved) {
-    if (build(saved)) {
-      // An opened scene starts a reel of its own, as File > Open does:
-      // frames recorded on the scene it replaces would otherwise run on
-      // into it, and a publish must never mix two scenes' geometry.
-      // Cleared once the scene stands - one that would not build takes
-      // nothing with it - and before the recorder reads its store.
-      await clearSculptFrames();
-    } else {
+    if (!build(saved)) {
       bootFailure = `Could not open ${what}: the scene is damaged`;
       saved = null;
       bootLink = null;
@@ -286,7 +276,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       } catch {
         parsed = null;
       }
-      const atStake = (await hasSavedScene()) || (await hasSculptFrames());
+      const atStake = await hasSavedScene();
       if (!parsed || !parsed.positions.length || !parsed.indices.length) {
         bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
       } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
@@ -295,10 +285,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         } catch (err) {
           bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
         }
-        // A new scene: the autosave, its reel and its look go, as New
-        // Sculpt's do - once the object stands, so a file that would not
-        // build leaves the work where it was.
-        if (objMesh) await Promise.all([clearSavedScene(), clearSculptFrames(), clearSculptLook()]);
+        // A new scene: the autosave and its look go, as New Sculpt's do -
+        // once the object stands, so a file that would not build leaves
+        // the work where it was.
+        if (objMesh) await Promise.all([clearSavedScene(), clearSculptLook()]);
       }
     }
     const url = new URL(window.location.href);
@@ -574,7 +564,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // sync + extra display mesh sharing the primary's material. Reconciled on
   // every mesh-list or selection change (extract, add, dyntopo, undo).
   let scenePanel: ScenePanel | null = null;
-  let captureWindow: CaptureWindow | null = null;
+  let publishWindow: PublishWindow | null = null;
   let fileMenu: FileMenu | null = null;
   let editMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
@@ -1210,7 +1200,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       status.fail(`Could not save the image: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-  const recorder = new SnapshotRecorder(session);
   const toolbar = new SculptToolbar(input);
   toolbar.onToggleTransform = () => {
     if (gizmo.isActive()) exitTransform();
@@ -1329,13 +1318,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sceneOnDisk = true;
     cleanState = at;
   };
-  const hasWork = (): boolean =>
-    !sceneOnDisk ||
-    session.getStateManager().getCurrentState() !== cleanState ||
-    recorder.frameCount() > 0;
+  const hasWork = (): boolean => !sceneOnDisk || session.getStateManager().getCurrentState() !== cleanState;
   // One implementation of File, behind the web menu and the console
   // handle alike.
-  const fileActions = new FileActions(session, recorder, {
+  const fileActions = new FileActions(session, {
     look: lookBridge,
     decorate: (scene) => {
       library.saveInto(scene);
@@ -1386,10 +1372,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     );
   }
   // Built after File and Edit so its chip lands beside them in the row.
-  // The chip stays hidden until recording is known to be allowed here
-  // (the role probe below).
-  captureWindow = new CaptureWindow(recorder);
-  // Present mode's chip lands beside Capture's (ui/Present).
+  // The chip stays hidden until the role probe below has found a sign-in.
+  publishWindow = new PublishWindow();
+  // Present mode's chip lands beside Publish's (ui/Present).
   const turnCentre = new Vector3();
   /** The middle of the visible scene's box, which the turntable turns about; false with nothing shown. */
   const sceneCentre = (into: Vector3): boolean => {
@@ -1403,7 +1388,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /**
    * Save turntable: one turn about the turntable's axis from this view,
    * at its speed, rendered offline (capture/turntable.ts) - the camera
-   * only, so nothing reaches the timelapse - and handed over as
+   * only, so nothing reaches the scene or its undo - and handed over as
    * `<title>-turntable.mp4` or `.gif`, downloaded.
    */
   const saveTurntable = async (clip: TurntableRequest): Promise<void> => {
@@ -1515,18 +1500,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     statusToast('').done(`Set to scale: "${session.getMeshName(target)}" is ${formatLength(cm / 100)} tall`);
   };
   const scaleBanner = new ScaleBanner(sceneSubjects(session), {
-    apply: (mesh, cm) => {
-      // A timelapse is played back as recorded: frames captured on the old
-      // scale would jump to the new one partway through. They go with the
-      // old scale, said first; declined, nothing changes.
-      const frames = recorder.frameCount();
-      if (frames > 0) {
-        const n = `${frames} captured frame${frames === 1 ? '' : 's'}`;
-        if (!window.confirm(`Set scale clears the ${n}, which are on the old scale. Continue?`)) return;
-        void recorder.clear();
-      }
-      setScale(mesh, cm);
-    },
+    apply: (mesh, cm) => setScale(mesh, cm),
     dismissed: () => {
       session.dismissScale();
       // Kept with the scene, so the offer does not come back on reopening.
@@ -1571,57 +1545,40 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /** Whether the site has accounts, by the latest probe. */
   let accountsHere = false;
   /**
-   * Whether recording can go somewhere here (recordingAllowed), and so
-   * whether the Capture chip shows: once the probe has said "signed in"
-   * in this session - or "signed
-   * in, and the session has since expired", which is still the owner's
-   * device: the reel waits for the sign-in, as it waits for one that lapses
-   * mid-session. A later "guest" does not take it back.
+   * Whether the Publish chip shows: once the probe has said "signed in" in
+   * this session - or "signed in, and the session has since expired",
+   * which is still the owner's device, and the form offers Sign in again.
+   * A later "guest" does not take it back.
    */
   let signedIn = false;
-  const applyRecordingGate = (): void => {
-    const allowed = recordingAllowed({ signedIn });
-    recorder.setAllowed(allowed);
-    captureWindow?.setAvailable(allowed);
-  };
-  applyRecordingGate();
-  // One answer for everything that follows the role: both forms, the File
-  // menu and the recording gate. The forms' "re-check sign-in" runs the
-  // same probe, so an admin whose Access session had lapsed at boot gets
-  // the publish buttons (and Save to library's upload, and the Capture
-  // chip) when they sign in. Capture itself still starts off until the
-  // checkbox turns it on (owner call; see SnapshotRecorder.install).
+  // One answer for everything that follows the role: the form, the File
+  // menu and the Publish chip. The form's "re-check sign-in" runs the same
+  // probe, so an admin whose Access session had lapsed at boot gets the
+  // publish button (and Save to library's upload) when they sign in.
   const probeRole = async (): Promise<Role> => {
     const answer = await checkSignIn();
     const found = roleOf(answer);
     role = found;
     accountsHere = answer.accounts === true;
-    // A suspended account records nothing: there is nowhere for it to go.
+    // A suspended account publishes nothing: there is nowhere for it to go.
     if (found !== 'guest' && found !== 'suspended') signedIn = true;
-    tlForm.setRole(found, accountsHere);
     modelForm.setRole(found, accountsHere);
     fileMenu?.setRole(found, answer.suspended ? suspensionText(answer.suspended.reason) : '', accountsHere);
-    applyRecordingGate();
+    publishWindow?.setAvailable(signedIn);
     return found;
   };
-  const tlForm = galleryForm({
-    buttonLabel: 'Publish timelapse',
-    onSave: (target, progress) => saveTimelapseToGallery(recorder, galleryHooks, target, progress),
-    recheck: probeRole,
-  });
   const modelForm = galleryForm({
     buttonLabel: 'Publish model',
-    onSave: (target, progress) => saveModelToGallery(session, recorder, galleryHooks, target, progress),
+    onSave: (target, progress) => saveModelToGallery(session, galleryHooks, target, progress),
     recheck: probeRole,
   });
-  captureWindow.captureSlot.appendChild(tlForm.root);
-  captureWindow.publishSlot.appendChild(modelForm.root);
+  publishWindow.publishSlot.appendChild(modelForm.root);
   void probeRole();
   // A save that found the sign-in expired, or one that went through after
-  // it had: the probe says which, for the forms and the menu alike.
+  // it had: the probe says which, for the form and the menu alike.
   if (fileMenu) fileMenu.onSignInChange = () => probeRole();
-  // A guest on the web cannot reach the forms' re-check: it lives in the
-  // Capture window, whose chip they do not have. Signing in happens
+  // A guest on the web cannot reach the form's re-check: it lives in the
+  // Publish window, whose chip they do not have. Signing in happens
   // elsewhere (the gallery's Log in, /admin/ in another tab or app), and
   // the page is back in front afterwards, so that is when it asks again -
   // and so does an owner whose sign-in had expired.
@@ -1661,10 +1618,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Autosave giving up must be visible: it used to disable itself on the
   // first storage hiccup with only a console line, and sculpting carried on
   // for hours saving nothing into a scene the user believed was safe. Said
-  // on screen to everyone - a guest has no Capture window to read it in -
-  // and kept in the window, beside the frames that take the storage.
+  // on screen to everyone - a guest has no Publish window to read it in -
+  // and kept in the window too.
   persist.onStopped = (reason) => {
-    captureWindow?.showAutosaveStopped(reason);
+    publishWindow?.showAutosaveStopped(reason);
     statusToast('Autosave stopped').fail(
       reason === 'quota'
         ? 'Autosave stopped: this device is out of storage. Save a file (File menu) to keep this work.'
@@ -1699,9 +1656,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   worldScale.onChange = noteWorkspace;
   input.onBrushSettingsChange = noteWorkspace;
-  // Timelapse capture stacks its edit hooks on top of the autosave's (the
-  // unmount below unwinds in reverse). Install is async (frame index read).
-  void recorder.install();
   // Only the autosave coming back on its own gets the notice, with Start
   // fresh as the way out of it. A scene opened from a library card or from
   // Projects is what was asked for: saying so, with an offer to throw it
@@ -1784,11 +1738,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sync,
     input,
     persist,
-    recorder,
     cursor,
     chrome,
     scenePanel,
-    captureWindow,
+    publishWindow,
     fileMenu,
     editMenu,
     fileActions,
@@ -1884,15 +1837,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     stats.dispose();
     gizmo.dispose();
     // Solo belongs to this visit, not to the scene: every object gets its
-    // own eye back before the last autosave and the recorder let go.
+    // own eye back before the last autosave lets go.
     session.setSolo(false);
-    recorder.dispose(); // before persist: its wraps sit on top of persist's
     persist.dispose();
     sculptPanel?.dispose();
     modelPanel?.dispose();
     scenePanel?.dispose();
     scaleBanner.dispose();
-    captureWindow?.dispose();
+    publishWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
     for (const [, e] of extras) {

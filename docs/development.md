@@ -112,7 +112,7 @@ src/
   sculpt/
     mode.ts                sculpt entry: mounts the session, panels, autosave
     bridge/                the Bozzetto side: input, tools, alphas, persistence
-    ui/                    toolbar, File menu, Capture window, Tool/Model/Scene panels, sliders
+    ui/                    toolbar, File menu, Publish window, Tool/Model/Scene panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
                            Preferences and its settings, touch guards, the

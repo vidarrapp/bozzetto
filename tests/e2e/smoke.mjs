@@ -2,20 +2,20 @@
 // the scene-file round trip, Armature mode from the gallery's Create tile
 // on, Sculpt's input under fingers, the pen, the zoom and the Negative
 // button, the arrow keys in the Scene list, each brush's own size and the
-// World-scale box after an open, capture's default, the autosave's cadence,
-// the two diagnostic overlays, Save to library signed out and signed in
-// (scenes in Projects, visibility) and with the sign-in expired or no
-// network, the service worker on, the templates (copies from the gallery,
-// the Template switch, and what the built worker and policy say of their
-// files), and the sliders: typed values in the Render, Tool and Armature
-// panels and on the brush rail, the Render panel's ranges and defaults,
-// and ambient occlusion's. Then the Capture window and where recording is
-// allowed, the panels' sides on the iPad's screens, Mask and Extract in
-// the Model panel, Delete highest on Rebuild's row, ambient occlusion
-// outside sculpt mode, the environment's rescale and its plate, the key
-// light on L in Armature mode, and an update to the installed app between
-// two builds, said on screen. Each gets (page, base, t) - a fresh page,
-// the server's origin, and the check collector.
+// World-scale box after an open, the old timelapse reel's cleanup, the
+// autosave's cadence, the two diagnostic overlays, Save to library signed
+// out and signed in (scenes in Projects, visibility) and with the sign-in
+// expired or no network, the service worker on, the templates (copies
+// from the gallery, the Template switch, and what the built worker and
+// policy say of their files), and the sliders: typed values in the Render,
+// Tool and Armature panels and on the brush rail, the Render panel's
+// ranges and defaults, and ambient occlusion's. Then the Publish window,
+// the panels' sides on the iPad's screens, Mask and Extract in the Model
+// panel, Delete highest on Rebuild's row, ambient occlusion outside sculpt
+// mode, the environment's rescale and its plate, the key light on L in
+// Armature mode, and an update to the installed app between two builds,
+// said on screen. Each gets (page, base, t) - a fresh page, the server's
+// origin, and the check collector.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1173,26 +1173,7 @@ export const savedToast = (page) =>
     .then((h) => h.jsonValue())
     .catch(() => ({ state: 'none', text: '' }));
 
-/** How many captured frames IndexedDB holds. */
-export const storedFrames = (page) =>
-  page.evaluate(
-    () =>
-      new Promise((ok, fail) => {
-        const req = indexedDB.open('bozzetto-sculpt');
-        req.onerror = () => fail(req.error);
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction('frameMeta');
-          const n = tx.objectStore('frameMeta').count();
-          tx.oncomplete = () => {
-            db.close();
-            ok(n.result);
-          };
-        };
-      }),
-  );
-
-// --- capture: the window, and where recording is allowed -------------------
+// --- the Publish window ----------------------------------------------------
 
 /** The sign-in probe answering as the owner, for every page of a context. */
 export const signInContext = (ctx) =>
@@ -1200,10 +1181,10 @@ export const signInContext = (ctx) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
   );
 
-/** The Capture window and its chip, as the page shows them. */
-const captureState = (page) =>
+/** The Publish window and its chip, as the page shows them. */
+const publishState = (page) =>
   page.evaluate(() => {
-    const w = window.__sculpt.captureWindow;
+    const w = window.__sculpt.publishWindow;
     const r = w.root.getBoundingClientRect();
     const c = w.chip.getBoundingClientRect();
     return {
@@ -1219,7 +1200,7 @@ const captureState = (page) =>
         lit: w.chip.classList.contains('topchip--open'),
       },
       focused: w.root.contains(document.activeElement),
-      stored: sessionStorage.getItem('bozzetto-capture-window'),
+      stored: sessionStorage.getItem('bozzetto-publish-window'),
     };
   });
 const showRect = (r) => `${r.l},${r.t} to ${r.r},${r.b}`;
@@ -2017,7 +1998,7 @@ export const suites = {
         p.evaluate(
           () =>
             new Promise((done) => {
-              const req = indexedDB.open('bozzetto-sculpt', 3);
+              const req = indexedDB.open('bozzetto-sculpt');
               req.onsuccess = () => {
                 const get = req.result.transaction('scene').objectStore('scene').get('current');
                 get.onsuccess = () => done(get.result ? { units: get.result.units ?? null, dismissed: get.result.scaleDismissed ?? null } : null);
@@ -4241,67 +4222,87 @@ export const suites = {
     t.ok(!s.box && !s.on, `a reload brings screen scale back, and the box shows it (${show(s)})`);
   },
 
-  // Timelapse capture starts off for everyone, the signed-in owner included
-  // (owner call). The admin probe answers as the owner here - the test
-  // server has no whoami of its own, so every other suite is a guest - in a
-  // context without a service worker, so the answer reaches every load. A
-  // choice made with the checkbox still stands across a reload, either way.
-  async captureOff(page, base, t) {
+  // The reel the sculpt-side timelapse recorder left on a device goes, once
+  // (Bozzetto Web no longer records; Bozzetto Studio does): the sculpt DB's
+  // upgrade to v4 deletes its two stores, and the stored Record timelapse
+  // choice, the first time this build opens the DB - the gallery's In
+  // progress card does, on load - and leaves the scene store's records be.
+  async reelCleanup(page, base, t) {
     const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
     try {
-      const owner = await ctx.newPage();
+      const p = await ctx.newPage();
       const errors = [];
-      owner.on('pageerror', (e) => errors.push(String(e)));
-      await ctx.route('**/admin/api/whoami', (r) =>
-        r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
+      p.on('pageerror', (e) => errors.push(String(e)));
+      // A device as the last recording build left it: the DB at v3, a frame
+      // in the reel, the choice stored as on. Planted from a page of the
+      // site that runs none of the app.
+      await p.goto(`${base}/legal/privacy.html`, { waitUntil: 'domcontentloaded' });
+      const planted = await p.evaluate(
+        () =>
+          new Promise((ok, fail) => {
+            localStorage.setItem('bozzetto-sculpt-record', 'on');
+            const req = indexedDB.open('bozzetto-sculpt', 3);
+            req.onupgradeneeded = () => {
+              for (const n of ['scene', 'frames', 'frameMeta', 'library', 'libraryData']) req.result.createObjectStore(n);
+            };
+            req.onerror = () => fail(req.error);
+            req.onsuccess = () => {
+              const db = req.result;
+              const tx = db.transaction(['scene', 'frames', 'frameMeta'], 'readwrite');
+              tx.objectStore('frames').put(new ArrayBuffer(4096), 0);
+              tx.objectStore('frameMeta').put({ tris: 12, t: Date.now(), bytes: 4096 }, 0);
+              tx.objectStore('scene').put('kept', 'probe');
+              tx.oncomplete = () => {
+                const out = { version: db.version, stores: [...db.objectStoreNames].join(',') };
+                db.close();
+                ok(out);
+              };
+              tx.onerror = () => fail(tx.error);
+            };
+          }),
       );
-      // Sculpt mode once the probe has answered (the publish forms show
-      // their fields then), with time for the recorder's install - an
-      // IndexedDB read - to finish and for any default to act.
-      const boot = async () => {
-        await openSculpt(owner, base, '&q=low');
-        await owner.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 });
-        await owner.waitForTimeout(1500);
-      };
-      const state = () =>
-        owner.evaluate(() => {
-          const { recorder } = window.__sculpt;
-          const box = [...document.querySelectorAll('.capture-window label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input');
-          return { on: recorder.isEnabled(), box: box.checked, stored: localStorage.getItem('bozzetto-sculpt-record'), frames: recorder.frameCount() };
-        });
-      const show = (s) => `recording ${s.on ? 'on' : 'off'}, box ${s.box ? 'ticked' : 'clear'}, stored ${s.stored}, ${s.frames} frames`;
-      const tick = () =>
-        owner.evaluate(() => {
-          [...document.querySelectorAll('.capture-window label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
-        });
+      t.ok(planted.version === 3 && planted.stores === 'frameMeta,frames,library,libraryData,scene', `set up: a v3 DB holding a reel (${JSON.stringify(planted)})`);
 
-      await boot();
-      let s = await state();
-      t.ok(!s.on && !s.box && s.stored === null && s.frames === 0, `signed in as the owner, capture starts off and records nothing (${show(s)})`);
-      const defaulted = await owner.evaluate(() => {
-        const { recorder } = window.__sculpt;
-        recorder.setAllowed(true);
-        return { allowed: recorder.isAllowed(), on: recorder.isEnabled() };
+      await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+      await p
+        .waitForFunction(async () => (await indexedDB.databases()).some((d) => d.name === 'bozzetto-sculpt' && d.version === 4), null, { timeout: 30_000, polling: 250 })
+        .catch(() => {});
+      const after = await p.evaluate(
+        () =>
+          new Promise((ok, fail) => {
+            const req = indexedDB.open('bozzetto-sculpt');
+            req.onerror = () => fail(req.error);
+            req.onsuccess = () => {
+              const db = req.result;
+              const get = db.transaction('scene').objectStore('scene').get('probe');
+              get.onsuccess = () => {
+                const out = {
+                  version: db.version,
+                  stores: [...db.objectStoreNames].join(','),
+                  probe: get.result ?? null,
+                  choice: localStorage.getItem('bozzetto-sculpt-record'),
+                };
+                db.close();
+                ok(out);
+              };
+            };
+          }),
+      );
+      t.ok(after.version === 4 && after.stores === 'library,libraryData,scene', `the gallery's first load upgrades the DB to v4 without the reel's stores (${after.stores}, v${after.version})`);
+      t.ok(after.probe === 'kept', 'and leaves the scene store as it was');
+      t.eq(after.choice, null, 'the stored Record timelapse choice goes with it');
+
+      // Sculpt opens on the upgraded DB as on any other.
+      await openSculpt(p, base, '&q=low');
+      const saved = await p.evaluate(async () => {
+        const { persist } = window.__sculpt;
+        persist.markDirty();
+        await persist.flush();
+        return (await indexedDB.databases()).find((d) => d.name === 'bozzetto-sculpt')?.version ?? null;
       });
-      t.ok(defaulted.allowed && !defaulted.on, "recording is allowed for the owner, and that alone leaves it off");
-
-      // Ticked, it records: the starting frame first, handed to the worker
-      // and written, which the perf log times.
-      await tick();
-      await owner.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 });
-      s = await state();
-      t.ok(s.on && s.box && s.stored === 'on' && s.frames > 0, `the box turns it on, and it records (${show(s)})`);
-      const timed = await owner.evaluate(() => window.__bozzettoPerf.recent().filter((e) => e.what.startsWith('capture')).map((e) => `${e.what} ${e.ms.toFixed(1)} ms${e.note ? ` (${e.note})` : ''}`));
-      t.ok(timed.some((x) => x.startsWith('capture hand-off')) && timed.some((x) => x.startsWith('capture write')), `the hand-off and the write are in the perf log (${timed.join('; ')})`);
-
-      await boot();
-      s = await state();
-      t.ok(s.on && s.box && s.stored === 'on' && s.frames > 0, `the choice survives a reload (${show(s)})`);
-      await tick();
-      await boot();
-      s = await state();
-      t.ok(!s.on && !s.box && s.stored === 'off', `and so does turning it off again, owner or not (${show(s)})`);
-      t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+      t.eq(saved, 4, 'Sculpt boots and autosaves on it, at v4');
+      t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();
     }
@@ -4598,8 +4599,8 @@ export const suites = {
     t.eq(sent.join(', '), '', 'and nothing was sent to the server');
   },
 
-  // Signed in (the probe and the Functions faked, as captureOff fakes the
-  // probe), Save to library uploads the scene as a private project in parts,
+  // Signed in (the probe and the Functions faked, as publishWindow fakes
+  // the probe), Save to library uploads the scene as a private project in parts,
   // showing its progress, keeps a device copy under the project's id, and
   // remembers the project through a reload, so the next save updates it in
   // place. The gallery shows the project with its Private badge and switch,
@@ -4752,7 +4753,7 @@ export const suites = {
       await chooseFile(owner, 'Keep on this device');
       await owner.waitForFunction(() => [...document.querySelectorAll('.file-menu__note')].some((n) => n.textContent === 'Kept on this device'), null, { timeout: 30_000 });
 
-      // The publish forms: public unless chosen otherwise.
+      // The publish form: public unless chosen otherwise.
       const published = await owner.evaluate(() => {
         const form = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
         const pick = form.querySelector('.gallery-form__visibility');
@@ -4768,13 +4769,9 @@ export const suites = {
       t.ok(published.was === 'public' && published.options === 'public,private', `the publish form offers public or private, public chosen (${published.options})`);
       t.ok(model?.mode === 'model' && model.visibility === 'private', `a model published as private is created private (${JSON.stringify(model)})`);
 
-      // A reel recorded on this scene, kept with recording switched off
-      // again: an opened scene must not inherit it (checked below).
-      await owner.evaluate(() => window.__sculpt.recorder.setEnabled(true));
-      await owner.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
-      await owner.evaluate(() => window.__sculpt.recorder.setEnabled(false));
-      const reel = await storedFrames(owner);
-      t.ok(reel > 0, `a frame is recorded and kept with recording off again (${reel} stored)`);
+      // An edit since the save, so the work is no longer the project's as
+      // saved and the gallery keeps its In progress card (checked below).
+      await owner.evaluate(() => window.__sculpt.persist.markDirty());
 
       // The gallery, as the owner sees it.
       await owner.evaluate(() => window.__sculpt.persist.flush());
@@ -4860,7 +4857,6 @@ export const suites = {
       // Owner call: the scene is what was asked for, so no notice, and no
       // Start fresh offering to throw it away.
       t.ok(opened.toast === '' && !opened.fresh, `and opens without a notice${opened.toast ? ` (said "${opened.toast}")` : ''}`);
-      t.eq(await storedFrames(owner), 0, 'and starts a reel of its own, as File > Open does: the frames recorded before are gone');
       mark = fake.calls.length;
       await boot(`&project=${newId}`);
       opened = await bootState(owner);
@@ -4986,11 +4982,10 @@ export const suites = {
       const gate = await owner.evaluate(() => ({
         signIn: [...document.querySelectorAll('.gallery-form__gate .gallery-form__signin')].filter((b) => !b.hidden).map((b) => b.textContent),
         fields: [...document.querySelectorAll('.gallery-form__fields')].filter((f) => !f.hidden).length,
-        recording: window.__sculpt.recorder.isAllowed(),
-        chip: !window.__sculpt.captureWindow.chip.hidden,
+        chip: !window.__sculpt.publishWindow.chip.hidden,
       }));
-      t.ok(gate.signIn.length === 2 && gate.signIn.every((x) => x === 'Sign in again') && gate.fields === 0, `the publish forms say the sign-in expired and offer Sign in again (${JSON.stringify(gate)})`);
-      t.ok(gate.recording && gate.chip, 'and the owner\'s device still records: the reel waits for the sign-in');
+      t.ok(gate.signIn.length === 1 && gate.signIn[0] === 'Sign in again' && gate.fields === 0, `the publish form says the sign-in expired and offers Sign in again (${JSON.stringify(gate)})`);
+      t.ok(gate.chip, 'and the owner\'s device still has the Publish chip, to reach it');
 
       // Save to library: kept on the device, and said so, with the way back in.
       await owner.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
@@ -5971,16 +5966,19 @@ export const suites = {
     t.ok(s.ao.enabled && s.out === 'gtao' && (await model()) === 'gtao', `a scene saved on GTAO opens on GTAO, and the panel says so (${await model()})`);
   },
 
-  // The Capture window (owner request): a chip in the top row beside File
-  // and Edit, styled like them, opens the capture controls in a window
-  // that floats over the work and blocks none of it. The title bar drags
-  // it, the close button, the chip and Esc (while it has the focus) put
-  // it away, and a pen stroke on the model leaves it open. Where it was
-  // left lasts the session and stays on screen as the window changes
-  // size; it follows the theme, hides with the interface on Tab, and its
-  // title bar keeps the long press and the browser's gestures out. Signed
-  // in through the faked probe, as captureOff is, so the chip is offered.
-  async captureWindow(page, base, t) {
+  // The Publish window: a chip in the top row beside File and Edit, styled
+  // like them, opens Publish model's form in a window that floats over the
+  // work and blocks none of it. It was the Capture window, and holds
+  // nothing about recording now: Bozzetto Web no longer records a
+  // timelapse while you sculpt. The title bar drags it, the close button,
+  // the chip and Esc (while it has the focus) put it away, and a pen
+  // stroke on the model leaves it open. Where it was left lasts the
+  // session and stays on screen as the window changes size; it follows
+  // the theme, hides with the interface on Tab, and its title bar keeps
+  // the long press and the browser's gestures out. Signed in through the
+  // faked probe, so the chip is offered; a guest gets none, until the page
+  // comes back to the front signed in.
+  async publishWindow(page, base, t) {
     const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
     try {
       const owner = await ctx.newPage();
@@ -5989,7 +5987,7 @@ export const suites = {
       await signInContext(ctx);
       const boot = async () => {
         await openForInput(owner, base);
-        await owner.waitForFunction(() => window.__sculpt.captureWindow.isAvailable(), null, { timeout: 30_000 });
+        await owner.waitForFunction(() => window.__sculpt.publishWindow.isAvailable(), null, { timeout: 30_000 });
       };
       await boot();
 
@@ -6001,18 +5999,18 @@ export const suites = {
         };
         const file = document.querySelector('.file-menu--file__chip');
         const edit = document.querySelector('.file-menu--edit__chip');
-        const capture = window.__sculpt.captureWindow.chip;
-        return { chips, like: look(capture) === look(file) && look(capture) === look(edit) };
+        const publish = window.__sculpt.publishWindow.chip;
+        return { chips, like: look(publish) === look(file) && look(publish) === look(edit) };
       });
-      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Capture, Present', 'signed in, the top row has a Capture chip beside File and Edit, Present after it');
+      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Publish, Present', 'signed in, the top row has a Publish chip beside File and Edit, Present after it');
       t.ok(row.like, 'styled as they are');
-      let s = await captureState(owner);
+      let s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
 
-      // Opened from the chip: under it, the chip pressed, and everything the
-      // Capture panel held inside.
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
-      s = await captureState(owner);
+      // Opened from the chip: under it, the chip pressed, and the publish
+      // form inside.
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      s = await publishState(owner);
       t.ok(s.open && s.shown && s.chip.expanded === 'true' && s.chip.lit, `the chip opens it and shows it is open (expanded ${s.chip.expanded})`);
       const column = await owner.evaluate(() => Math.max(...[...document.querySelectorAll('.panel--left')].map((p) => p.offsetLeft + p.offsetWidth)));
       t.ok(
@@ -6020,63 +6018,62 @@ export const suites = {
         `the first time, under the chip and clear of where the left panels open (${showRect(s.rect)}; chip at ${s.chip.l}, panels to ${column})`,
       );
       const holds = await owner.evaluate(() => {
-        const root = window.__sculpt.captureWindow.root;
+        const root = window.__sculpt.publishWindow.root;
         const buttons = [...root.querySelectorAll('button')].filter((b) => b.checkVisibility()).map((b) => b.textContent);
         return {
-          record: [...root.querySelectorAll('label.checkbox')].some((l) => l.textContent.includes('Record timelapse')),
-          readout: root.querySelector('.capture__readout')?.textContent ?? '',
-          clear: buttons.includes('Clear frames'),
-          timelapse: !!root.querySelector('[data-slot="timelapse"] .gallery-form'),
+          title: root.querySelector('.float-window__title')?.textContent ?? '',
+          forms: root.querySelectorAll('.gallery-form').length,
           model: !!root.querySelector('[data-slot="model"] .gallery-form'),
           publish: buttons.filter((b) => /^Publish /.test(b)),
+          recording: /record|timelapse|frames/i.test(root.textContent),
           modal: root.getAttribute('aria-modal'),
-          docked: !!document.querySelector('.panel--capture'),
         };
       });
       t.ok(
-        holds.record && holds.clear && /frames? - /.test(holds.readout) && holds.timelapse && holds.model && holds.publish.join(',') === 'Publish timelapse,Publish model',
-        `it holds Record timelapse, the readout ("${holds.readout}"), Clear frames and both publish forms (${holds.publish.join(', ')})`,
+        holds.title === 'Publish' && holds.forms === 1 && holds.model && holds.publish.join(',') === 'Publish model',
+        `it is titled Publish and holds the one publish form, Publish model (${holds.publish.join(', ')})`,
       );
-      t.ok(holds.modal === 'false' && !holds.docked, 'it is a non-modal window, and the docked Capture panel is gone');
+      t.ok(!holds.recording, 'nothing in it is about recording a timelapse');
+      t.ok(holds.modal === 'false', 'it is a non-modal window');
 
       // The title bar drags it, by the mouse.
-      const title = () => centreOf(owner, '.capture-window .float-window__title');
+      const title = () => centreOf(owner, '.publish-window .float-window__title');
       let from = s.rect;
       let at = await title();
       await owner.mouse.move(...at);
       await owner.mouse.down();
       await owner.mouse.move(at[0] - 150, at[1] + 120, { steps: 5 });
       await owner.mouse.up();
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(s.open && s.rect.l === from.l - 150 && s.rect.t === from.t + 120, `dragged by its title bar, it moves with the pointer (${showRect(from)} to ${showRect(s.rect)})`);
       t.ok(s.focused, 'and has the focus');
       const placed = s.rect;
       t.eq(s.stored, JSON.stringify({ x: placed.l, y: placed.t }), 'where it was left is kept for the session');
 
       // The chip toggles it; it comes back where it was.
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
-      s = await captureState(owner);
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit && !s.focused, 'the chip closes it again, taking the focus with it');
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
-      s = await captureState(owner);
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      s = await publishState(owner);
       t.ok(s.open && s.rect.l === placed.l && s.rect.t === placed.t, `and opens it where it was left (${showRect(s.rect)})`);
 
       // Esc closes it while it has the focus, and only then.
       await owner.evaluate(() => document.activeElement?.blur?.());
       await owner.keyboard.press('Escape');
-      t.ok((await captureState(owner)).open, 'Esc with the focus elsewhere leaves it open');
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window .section h3')));
-      s = await captureState(owner);
+      t.ok((await publishState(owner)).open, 'Esc with the focus elsewhere leaves it open');
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window .section h3')));
+      s = await publishState(owner);
       t.ok(s.focused, 'a press inside gives it the focus');
       await owner.keyboard.press('Escape');
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(!s.open && !s.shown && !s.focused, 'and Esc then closes it');
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window .float-window__close')));
-      t.ok(!(await captureState(owner)).open, 'its close button closes it');
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window .float-window__close')));
+      t.ok(!(await publishState(owner)).open, 'its close button closes it');
 
       // Non-modal: open, a pen stroke on the sphere sculpts, and it stays.
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
       const dev = await devices(owner);
       await owner.keyboard.press('3'); // Standard clay
       const [cx, cy] = await screenOf(owner, 'Sphere');
@@ -6087,7 +6084,7 @@ export const suites = {
       const strokes = await strokeCount(owner);
       await dev.penDrag(path);
       await settle(owner);
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok((await strokeCount(owner)) === strokes + 1 && (await meshSum(owner)) !== sum, 'with the window open, a pen stroke sculpts');
       t.ok(s.open && s.shown, 'and the window stays open');
 
@@ -6101,7 +6098,7 @@ export const suites = {
       at = await title();
       await dev.tap(at);
       const guards = await owner.evaluate(() => {
-        const bar = document.querySelector('.capture-window .float-window__bar');
+        const bar = document.querySelector('.publish-window .float-window__bar');
         const css = getComputedStyle(bar);
         return {
           cancelled: window.__touchDefaults[0] ?? null,
@@ -6112,11 +6109,11 @@ export const suites = {
       });
       t.ok(guards.cancelled === true && guards.touchAction === 'none' && guards.select === 'none', `a touch on the title bar cannot arm a long press or a gesture (${JSON.stringify(guards)})`);
       t.ok(guards.menu, 'nor bring up a context menu');
-      t.ok((await captureState(owner)).open, 'and a tap on it leaves the window open');
-      from = (await captureState(owner)).rect;
+      t.ok((await publishState(owner)).open, 'and a tap on it leaves the window open');
+      from = (await publishState(owner)).rect;
       at = await title();
       await dev.finger(line(at, [at[0] + 60, at[1] + 40], 4));
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(s.rect.l === from.l + 60 && s.rect.t === from.t + 40, `a finger drags it too (${showRect(from)} to ${showRect(s.rect)})`);
       const kept = s.rect;
 
@@ -6127,7 +6124,7 @@ export const suites = {
         owner
           .waitForFunction(
             ([ww, hh]) => {
-              const r = window.__sculpt.captureWindow.root.getBoundingClientRect();
+              const r = window.__sculpt.publishWindow.root.getBoundingClientRect();
               return innerWidth === ww && innerHeight === hh && r.left >= 8 && r.top >= 8 && r.right <= ww - 8 && r.bottom <= hh - 8;
             },
             [w, h],
@@ -6136,20 +6133,20 @@ export const suites = {
           .catch(() => {});
       await owner.setViewportSize({ width: 560, height: 420 });
       await fits(560, 420);
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(s.rect.l >= 8 && s.rect.t >= 8 && s.rect.r <= 552 && s.rect.b <= 412, `a smaller window keeps it on screen (${showRect(s.rect)} in 560x420)`);
       await owner.setViewportSize({ width: 1280, height: 800 });
       await owner
         .waitForFunction(([x, y]) => {
-          const r = window.__sculpt.captureWindow.root.getBoundingClientRect();
+          const r = window.__sculpt.publishWindow.root.getBoundingClientRect();
           return Math.round(r.left) === x && Math.round(r.top) === y;
         }, [kept.l, kept.t], { timeout: 30_000 })
         .catch(() => {});
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(s.rect.l === kept.l && s.rect.t === kept.t, `back at full size it is where it was put (${showRect(s.rect)})`);
 
       // The theme, and Tab.
-      const background = () => owner.evaluate(() => getComputedStyle(window.__sculpt.captureWindow.root).backgroundColor);
+      const background = () => owner.evaluate(() => getComputedStyle(window.__sculpt.publishWindow.root).backgroundColor);
       const ink = await background();
       await owner.evaluate(() => document.querySelector('.theme-toggle').click());
       const paper = await background();
@@ -6157,115 +6154,52 @@ export const suites = {
       t.ok(ink !== paper && (await background()) === ink, `it follows the theme (${ink} in ink, ${paper} in paper)`);
       await owner.evaluate(() => document.activeElement?.blur?.());
       await owner.keyboard.press('Tab');
-      await owner.waitForFunction(() => getComputedStyle(window.__sculpt.captureWindow.root).visibility === 'hidden', null, { timeout: 5000 }).catch(() => {});
-      s = await captureState(owner);
+      await owner.waitForFunction(() => getComputedStyle(window.__sculpt.publishWindow.root).visibility === 'hidden', null, { timeout: 5000 }).catch(() => {});
+      s = await publishState(owner);
       const chromeHidden = await owner.evaluate(() => document.body.classList.contains('chrome-hidden'));
       t.ok(chromeHidden && s.visibility === 'hidden' && s.open, `Tab hides it with the rest of the interface (visibility ${s.visibility})`);
       await owner.keyboard.press('Tab');
-      s = await captureState(owner);
+      s = await publishState(owner);
       t.ok(s.visibility === 'visible' && s.open && s.rect.l === kept.l && s.rect.t === kept.t, 'and Tab again brings it back, open, where it was');
 
       // A reload: the place is the session's.
       await boot();
-      await owner.mouse.click(...(await centreOf(owner, '.capture-window__chip')));
-      s = await captureState(owner);
+      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      s = await publishState(owner);
       t.ok(s.open && s.rect.l === kept.l && s.rect.t === kept.t, `after a reload it opens where it was left (${showRect(s.rect)})`);
       t.ok(!errors.length, `no page errors in the owner's context${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();
     }
-  },
 
-  // Recording only where it can go somewhere (owner call). A guest on the
-  // web gets no Capture chip, and nothing records whatever the stored
-  // choice says - the choice and the frames recorded before are left as
-  // they were, and New clears the frames as it always has; nothing about
-  // recording is offered elsewhere either. Signed in later in the session
-  // (the forms' re-check, or the page coming back to the front), the chip
-  // appears and a stored "on" records.
-  async captureGate(page, base, t) {
-    const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    // A guest gets no Publish chip, and the window cannot be opened; nor is
+    // anything about recording offered in the File menu or the hotkey
+    // guide. Signed in elsewhere meanwhile, the page asks again when it
+    // comes back to the front, and the chip appears.
+    const guestCtx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
     try {
-      const web = await ctx.newPage();
+      const web = await guestCtx.newPage();
       const errors = [];
       web.on('pageerror', (e) => errors.push(String(e)));
-      web.on('dialog', (d) => void d.accept());
-      const recording = () =>
-        web.evaluate(() => {
-          const { recorder, captureWindow } = window.__sculpt;
-          return {
-            allowed: recorder.isAllowed(),
-            on: recorder.isEnabled(),
-            frames: recorder.frameCount(),
-            stored: localStorage.getItem('bozzetto-sculpt-record'),
-            chip: !captureWindow.chip.hidden && getComputedStyle(captureWindow.chip).display !== 'none',
-          };
-        });
-      const show = (r) => `allowed ${r.allowed}, recording ${r.on}, ${r.frames} frames, stored ${r.stored}, chip ${r.chip ? 'shown' : 'hidden'}`;
-
-      // Signed in first: a frame recorded, and the choice stored as "on".
-      await signInContext(ctx);
-      await openSculpt(web, base, '&q=low');
-      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 });
-      await web.evaluate(() => window.__sculpt.recorder.setEnabled(true));
-      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 });
-      let r = await recording();
-      t.ok(r.allowed && r.on && r.chip && r.frames > 0 && r.stored === 'on', `signed in, the chip shows and a stored "on" records (${show(r)})`);
-      const recorded = await storedFrames(web);
-
-      // A guest from here on: the probe finds no session.
-      await ctx.unroute('**/admin/api/whoami');
       await openSculpt(web, base, '&q=low');
       await web.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
-      await web.waitForTimeout(1500); // the recorder's install, and any frame it might wrongly seed
-      r = await recording();
-      t.ok(!r.allowed && !r.on && !r.chip, `a guest on the web gets no Capture chip, and nothing records (${show(r)})`);
-      t.ok(r.stored === 'on' && r.frames === recorded && (await storedFrames(web)) === recorded, `the stored choice and the ${recorded} frame(s) recorded before are left as they were`);
+      let s = await publishState(web);
       const opened = await web.evaluate(() => {
-        const w = window.__sculpt.captureWindow;
+        const w = window.__sculpt.publishWindow;
         w.open();
         return { open: w.isOpen(), shown: getComputedStyle(w.root).display !== 'none' };
       });
-      t.ok(!opened.open && !opened.shown, 'and the window cannot be opened');
-      await web.evaluate(() => {
-        const { session } = window.__sculpt;
-        session.addPrimitive('cube');
-        session.toggleSymmetry();
-      });
-      await web.waitForTimeout(2500);
-      r = await recording();
-      t.ok(r.frames === recorded && (await storedFrames(web)) === recorded, `edits as a guest record nothing, whatever the stored "on" says (${show(r)})`);
+      t.ok(!s.chip.shown && !opened.open && !opened.shown, 'a guest gets no Publish chip, and the window cannot be opened');
       const offered = await offeredText(web);
       t.ok(!/record|timelapse|capture/i.test(offered), 'nothing about recording is offered in the File menu or the hotkey guide');
-
-      // New clears the old frames, as it always has.
-      await chooseFile(web, 'New sculpt');
-      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() === 0, null, { timeout: 30_000 }).catch(() => {});
-      t.eq(await storedFrames(web), 0, 'File > New clears the frames recorded before');
-
-      // Signed in later in the session, through the forms' re-check: the
-      // chip appears, and the stored "on" records.
-      await signInContext(ctx);
-      await web.evaluate(() => document.querySelector('.capture-window [data-slot="model"] .gallery-form__gate button').click());
-      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 }).catch(() => {});
-      await web.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
-      r = await recording();
-      t.ok(r.allowed && r.on && r.chip && r.frames > 0, `signed in through the forms' re-check, the chip appears and recording starts (${show(r)})`);
-
-      // Or by coming back to the page after signing in elsewhere.
-      await ctx.unroute('**/admin/api/whoami');
-      await openSculpt(web, base, '&q=low');
-      await web.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
-      t.ok(!(await recording()).chip, 'signed out again, a reload has no chip');
-      await signInContext(ctx);
+      await signInContext(guestCtx);
       await web.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-      await web.waitForFunction(() => window.__sculpt.recorder.isAllowed(), null, { timeout: 30_000 }).catch(() => {});
-      r = await recording();
-      t.ok(r.allowed && r.chip, `back in front, signed in meanwhile, the page asks again and the chip appears (${show(r)})`);
-      t.ok(!errors.length, `no page errors on the web${errors.length ? `: ${errors.join(' | ')}` : ''}`);
-
+      await web.waitForFunction(() => !window.__sculpt.publishWindow.chip.hidden, null, { timeout: 30_000 }).catch(() => {});
+      s = await publishState(web);
+      t.ok(s.chip.shown, 'back in front, signed in meanwhile, the page asks again and the chip appears');
+      t.ok(!errors.length, `no page errors as a guest${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
-      await ctx.close();
+      await guestCtx.close();
     }
   },
 

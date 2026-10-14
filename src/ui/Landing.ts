@@ -165,9 +165,8 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // one tap from being opened. A device copy of a scene the list already
   // shows is left out: the project's own card stands for it.
   const listed = new Set(projects.map((p) => p.id));
-  // What opening a scene would replace: the sculpt in progress, or a reel
-  // captured on this device (which goes with it, as File > Open's does).
-  const workHere = inProgress !== null || (await framesKept());
+  // What opening a scene would replace: the sculpt in progress.
+  const workHere = inProgress !== null;
   const libraryOpts = { owner, listed, expired: signIn.expired, accounts: signIn.accounts === true, signedIn: !!signIn.me };
   for (const c of await libraryCards(() => void renderLanding(app), workHere, libraryOpts)) {
     grid.appendChild(c);
@@ -309,7 +308,7 @@ async function importObj(file: File): Promise<void> {
   const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
   const name = handoffs.objName(file.name);
   const hasWork = await store.hasSavedScene().catch(() => false);
-  const atRisk = (hasWork && !(await inProject(store))) || (await framesKept());
+  const atRisk = hasWork && !(await inProject(store));
   if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;
   let id: string;
   try {
@@ -325,8 +324,8 @@ async function importObj(file: File): Promise<void> {
 /**
  * Start a fresh sculpt. Sculpt mode restores the autosave on entry, so
  * without this the tile quietly RESUMED the work in progress instead of
- * starting anything new. Ask, then clear the scene and its recording
- * before going in.
+ * starting anything new. Ask, then clear the scene and its look before
+ * going in.
  */
 async function startSculpt(): Promise<void> {
   const store = await import('../sculpt/bridge/ScenePersist');
@@ -343,7 +342,6 @@ async function startSculpt(): Promise<void> {
   }
   if (hasWork) {
     await store.clearSavedScene();
-    await store.clearSculptFrames();
     // The look too: "new" has to mean new. Leaving it behind is how a
     // light set flat in one session kept arriving in the next one, with
     // a fresh sphere lit by it and no obvious cause.
@@ -361,15 +359,6 @@ async function startArmature(): Promise<void> {
   }
   if (hasWork) await store.clearArmature();
   window.location.href = '/?armature=1';
-}
-
-/** Whether captured frames are kept on this device. */
-async function framesKept(): Promise<boolean> {
-  try {
-    return await (await import('../sculpt/bridge/ScenePersist')).hasSculptFrames();
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -467,15 +456,15 @@ async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired
 
 /**
  * Is the sculpt autosave its project's as saved, with nothing else of it
- * only here? A Save to library went up (or the project was opened) and
- * nothing has been edited since (SavedScene.synced), no copy a failed
- * save kept is waiting to go up, and no captured reel would go with it -
- * the project's own card opens the same work. The autosave stays, as the
- * recovery copy it is; it only needs no card of its own.
+ * only here? A Save to library went up (or the project was opened),
+ * nothing has been edited since (SavedScene.synced), and no copy a failed
+ * save kept is waiting to go up - the project's own card opens the same
+ * work. The autosave stays, as the recovery copy it is; it only needs no
+ * card of its own.
  */
 async function inProject(store: typeof import('../sculpt/bridge/ScenePersist')): Promise<boolean> {
   const status = await store.loadSceneStatus();
-  return !!status?.synced && !!status.project && !status.unsent && !(await framesKept());
+  return !!status?.synced && !!status.project && !status.unsent;
 }
 
 /**

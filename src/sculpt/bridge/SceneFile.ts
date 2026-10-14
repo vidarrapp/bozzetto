@@ -261,8 +261,8 @@ function fmt(n: number): string {
 /**
  * The visible scene as one mesh: every object at its CURRENT resolution,
  * matrix baked, concatenated with offset indices. This is the frame payload
- * for capture and gallery saves (one GLB per frame, like every other
- * Bozzetto timelapse). Bounded copies only - no allocation is proportional
+ * of Publish model (one GLB, in the frame format every Bozzetto project
+ * plays). Bounded copies only - no allocation is proportional
  * to anything but the live geometry.
  */
 export function mergeSceneArrays(
@@ -275,9 +275,9 @@ export function mergeSceneArrays(
   colors?: Float32Array;
 } | null {
   // The eye means "not part of the picture": a hidden reference blockout
-  // was being merged into every timelapse frame and every published model
-  // (review finding). The eye, not the flag: solo hides the other objects
-  // only from the view, and a frame recorded under it is still the scene.
+  // was being merged into every published model (review finding). The
+  // eye, not the flag: solo hides the other objects only from the view,
+  // and a model published under it is still the scene.
   const meshes = session.getMeshes().filter((m) => session.eyeVisible(m));
   if (meshes.length === 0) return null;
   let nbV = 0;

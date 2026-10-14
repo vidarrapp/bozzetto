@@ -47,7 +47,7 @@ const plantLegacyAutosave = (page, k) =>
     delete rec.units;
     for (const m of rec.meshes) for (let i = 0; i < 15; i++) if (i % 4 !== 3) m.matrix[i] *= scale;
     await new Promise((done, fail) => {
-      const req = indexedDB.open('bozzetto-sculpt', 3);
+      const req = indexedDB.open('bozzetto-sculpt');
       req.onerror = () => fail(req.error);
       req.onsuccess = () => {
         const tx = req.result.transaction('scene', 'readwrite');
@@ -231,7 +231,7 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.persist.flush());
     const kept = await page.evaluate(async () => {
       const rec = await new Promise((done) => {
-        const req = indexedDB.open('bozzetto-sculpt', 3);
+        const req = indexedDB.open('bozzetto-sculpt');
         req.onsuccess = () => {
           const get = req.result.transaction('scene').objectStore('scene').get('current');
           get.onsuccess = () => done(get.result);

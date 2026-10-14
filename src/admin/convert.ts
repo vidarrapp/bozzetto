@@ -45,6 +45,21 @@ function convertObj(text: string, zUp: boolean): Promise<Frame> {
   });
 }
 
+/**
+ * Encode raw mesh arrays as a frame GLB on the same worker (Sculpt's
+ * Publish model): {positions, indices, colors?} in, transferred, the same
+ * quantised, gzipped GLB out. The arrays are the caller's to give away.
+ */
+export function encodeMesh(positions: Float32Array, indices: Uint32Array, colors?: Float32Array): Promise<Frame> {
+  const id = ++seq;
+  const transfer: Transferable[] = [positions.buffer, indices.buffer];
+  if (colors) transfer.push(colors.buffer);
+  return new Promise<Frame>((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    getWorker().postMessage({ id, positions, indices, colors }, transfer);
+  });
+}
+
 /** Read one input file into a frame GLB: convert .obj, pass .glb through. */
 export async function frameFromFile(file: File, zUp: boolean): Promise<Frame> {
   const name = file.name.toLowerCase();

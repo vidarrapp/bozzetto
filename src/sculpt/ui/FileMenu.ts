@@ -47,7 +47,7 @@ export class FileMenu {
         {
           label: 'New sculpt',
           action: async () => {
-            if (this.actions.hasWork() && !confirm(`Start a new sculpt? ${this.actions.atRisk()} will be lost.`)) return;
+            if (this.actions.hasWork() && !confirm('Start a new sculpt? The current objects will be lost.')) return;
             await this.actions.newScene();
           },
         },
@@ -214,7 +214,7 @@ export class FileMenu {
     try {
       return await this.actions.replaceWith(
         await file.arrayBuffer(),
-        () => !this.actions.hasWork() || confirm(`Open this file? ${this.actions.atRisk()} will be replaced.`),
+        () => !this.actions.hasWork() || confirm('Open this file? The current objects will be replaced.'),
       );
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));

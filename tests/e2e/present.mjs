@@ -4,11 +4,11 @@
 // the Render panel reachable, and Tab's interplay with it (Tab and the
 // toolbar's hide button hide everything, the bar too); the turntable,
 // started and stopped by Space (the play/pause key, rebindable, not while
-// typing), stopped by a press or a touch and never recorded; Save image's
+// typing), stopped by a press or a touch and no edit to the scene; Save image's
 // PNG, at twice the window with nothing of the interface in it; Save
 // turntable's MP4 and GIF, one turn at the slider's speed, at the size and
 // frame rate asked, Cancel leaving no file and the view as it was, the
-// live turntable carrying on and nothing recorded; a publish and a
+// live turntable carrying on and no edit made; a publish and a
 // Save to library from Present storing the camera and the look, the viewer
 // opening the published model at them, and the thumbnail of the presented
 // view; and the iPad's portrait screen, fingers navigating.
@@ -239,12 +239,12 @@ export const suites = {
     await press(page, 'q');
     const before = await ui(page);
     t.ok(before.open.scene && before.open.tool && before.selecting && !before.presenting && before.shown.chip, `set up: Scene and Tool open, the Select tool up, the Present chip in the top row (${show(before)})`);
-    const chipNextToCapture = await page.evaluate(() => {
+    const chipNextToPublish = await page.evaluate(() => {
       const chips = [...document.querySelectorAll('.topbar--left .topchip')];
       const i = chips.findIndex((c) => c.classList.contains('present__chip'));
-      return { order: chips.map((c) => c.textContent).join(','), after: chips[i - 1]?.classList.contains('capture-window__chip') ?? false };
+      return { order: chips.map((c) => c.textContent).join(','), after: chips[i - 1]?.classList.contains('publish-window__chip') ?? false };
     });
-    t.ok(chipNextToCapture.after, `the Present chip sits beside Capture (${chipNextToCapture.order})`);
+    t.ok(chipNextToPublish.after, `the Present chip sits beside Publish (${chipNextToPublish.order})`);
     const title = await page.evaluate(() => document.querySelector('.present__chip').title);
     t.ok(/Shift \+ P/.test(title), `its title names the hotkey ("${title}")`);
 
@@ -357,16 +357,8 @@ export const suites = {
 
     // --- the turntable -----------------------------------------------------
     await press(page, 'Shift+P');
-    const frames0 = await page.evaluate(async () => {
-      const r = window.__sculpt.recorder;
-      r.setAllowed(true);
-      r.setEnabled(true);
-      // Turning recording on captures the scene as it stands, once its idle
-      // slot and the encode come round: wait for that frame, and a moment.
-      for (let i = 0; i < 60 && r.frameCount() === 0; i++) await new Promise((ok) => setTimeout(ok, 500));
-      await new Promise((ok) => setTimeout(ok, 1500));
-      return r.frameCount();
-    });
+    // The turntable moves the camera only: the autosave counts no edit for it.
+    const edits0 = await page.evaluate(() => window.__sculpt.persist.editCount());
     home = await camera(page);
     await page.click('.present-bar__play');
     t.ok(await page.evaluate(() => window.__sculpt.present.isTurning()), 'the play button starts the turntable');
@@ -400,12 +392,11 @@ export const suites = {
     const typed = await page.evaluate(() => document.getElementById('space-field').value);
     t.ok(!(await turning()) && typed === ' ', `not while typing in a field (${JSON.stringify(typed)})`);
     await page.evaluate(() => document.getElementById('space-field').remove());
-    const frames1 = await page.evaluate(async () => {
+    const edits1 = await page.evaluate(async () => {
       await new Promise((ok) => setTimeout(ok, 800));
-      return window.__sculpt.recorder.frameCount();
+      return window.__sculpt.persist.editCount();
     });
-    t.eq(frames1, frames0, 'the turntable records nothing into the timelapse');
-    await page.evaluate(() => window.__sculpt.recorder.setEnabled(false));
+    t.eq(edits1, edits0, 'the turntable is no edit to the scene');
 
     // --- Save image ----------------------------------------------------------
     await page.evaluate(() => window.__sculpt.present.setSpeed(12));
@@ -545,15 +536,8 @@ async function clipChecks(page, base, t) {
     t.ok(!bySpace && (await turning()), 'play/pause is one keymap action: rebound to K, K turns the turntable and Space does not');
     await press(p, 'k');
 
-    // The timelapse records, to show the clip adds nothing to it.
-    const frames0 = await p.evaluate(async () => {
-      const r = window.__sculpt.recorder;
-      r.setAllowed(true);
-      r.setEnabled(true);
-      for (let i = 0; i < 60 && r.frameCount() === 0; i++) await new Promise((ok) => setTimeout(ok, 500));
-      await new Promise((ok) => setTimeout(ok, 1500));
-      return r.frameCount();
-    });
+    // The autosave's edit count, to show the clip adds no edit to the scene.
+    const edits0 = await p.evaluate(() => window.__sculpt.persist.editCount());
     const row = await p.evaluate(() => ({
       format: document.querySelector('.present-bar__format').textContent,
       size: document.querySelector('.present-bar__size').textContent,
@@ -628,12 +612,11 @@ async function clipChecks(page, base, t) {
     const live = await camera(p);
     await p.click('.present-bar__play');
     t.ok(camMoved(back, live) > 1e-4, `afterwards the live turntable turns the view as before (moved ${camMoved(back, live).toExponential(1)})`);
-    const frames1 = await p.evaluate(async () => {
+    const edits1 = await p.evaluate(async () => {
       await new Promise((ok) => setTimeout(ok, 800));
-      return window.__sculpt.recorder.frameCount();
+      return window.__sculpt.persist.editCount();
     });
-    t.eq(frames1, frames0, 'nothing of the clips was recorded into the timelapse');
-    await p.evaluate(() => window.__sculpt.recorder.setEnabled(false));
+    t.eq(edits1, edits0, 'nothing of the clips was an edit to the scene');
     t.ok(!errors.length, `no page errors saving turntables${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   } finally {
     await ctx.close();

@@ -31,7 +31,7 @@ const PLATEAU: Limits = { min: 0, max: 0.95 };
  * about HOW the active tool behaves. Sections: the tool-named brush block
  * (pressure dynamics + feel extras) and Symmetry. Topology, Remesh and Mask
  * moved to the Model panel - they act on the OBJECT, not on the tool. Files
- * live in the top row's File menu, capture in its Capture window, the
+ * live in the top row's File menu, Publish model in its Publish window, the
  * object list in Scene. Opening this collapses Render, the other
  * right-edge panel (see SidePanel's side-scoped protocol).
  */

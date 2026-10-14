@@ -365,7 +365,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         e.preventDefault();
         void (async () => {
           const store = await import('../sculpt/bridge/ScenePersist').catch(() => null);
-          const busy = store ? (await store.hasSavedScene()) || (await store.hasSculptFrames()) : false;
+          const busy = store ? await store.hasSavedScene() : false;
           if (busy && !confirm(`Open "${p.title}"? Your work in progress in Sculpt will be replaced.`)) return;
           // Asked, or nothing to ask about: Sculpt need not ask again (ui/openToken).
           markOpen('project', p.id);

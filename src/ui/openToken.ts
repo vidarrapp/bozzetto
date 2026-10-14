@@ -4,7 +4,7 @@
  * `&project=<id>` or `&template=<id>` (a copy of a template).
  *
  * Opening a scene replaces the work on this device - the autosave is
- * written over seconds later and the captured frames go - and the card
+ * written over seconds later - and the card
  * asks first. But the address is a link like any other, and any page can
  * send one. So Sculpt asks again at boot when the work in progress is at
  * stake, unless it finds this: written by the page that asked, in this

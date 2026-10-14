@@ -2377,7 +2377,7 @@ html.is-page body {
   color: var(--accent);
 }
 
-/* Button columns in the Capture window's sections. */
+/* Button columns in the Publish window's section. */
 .outliner__files {
   display: flex;
   flex-direction: column;
@@ -2389,8 +2389,8 @@ html.is-page body {
   text-align: left;
 }
 
-/* Small readout lines inside the sculpt panels and the Capture window
-   (the frame counter etc.). */
+/* Small readout lines inside the sculpt panels and the Publish window
+   (the autosave note etc.). */
 .sculpt-panel__hint {
   font-family: var(--font-spec);
   font-size: 10px;
@@ -2988,7 +2988,7 @@ body.presenting .scale-banner {
 }
 
 /* The update notice (ui/updates): the bottom-right corner on every page,
-   in the toasts' look. Under the Capture window (20), the hotkey guide and
+   in the toasts' look. Under the Publish window (20), the hotkey guide and
    the menus, over the panels; and wherever something already holds the
    corner, beside it rather than over it (the modifiers below, which
    ui/updateNotice sets from what is on the page). */
@@ -4179,7 +4179,7 @@ body.is-sampling * {
   background: var(--hover);
 }
 
-/* --- floating tool window (sculpt's Capture) ---------------------------- */
+/* --- floating tool window (sculpt's Publish) ---------------------------- */
 
 /* The install card's surface, as a window over the work rather than a
    dialog over a dimmed page: no backdrop, nothing behind it blocked. It

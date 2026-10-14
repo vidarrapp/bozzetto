@@ -54,7 +54,7 @@ interface Page {
   offline: boolean;
   /** Ids this device keeps a copy of, which Sculpt opens offline. */
   copies: Set<string>;
-  /** Whether opening a scene would replace work in progress here (the autosave, or captured frames). */
+  /** Whether opening a scene would replace work in progress here (the autosave). */
   workHere: boolean;
   /** Whether opening an armature would replace the one in progress here. */
   armatureHere: boolean;
@@ -180,7 +180,7 @@ function emptyNote(): HTMLElement {
   return el(
     'p',
     'muted my-projects__empty',
-    "Nothing here yet. In Sculpt, Save to library keeps a scene here (in Armature mode, a posed figure), and the Capture window's Publish keeps a timelapse or a model.",
+    "Nothing here yet. In Sculpt, Save to library keeps a scene here (in Armature mode, a posed figure), and Publish keeps a model. Create timelapse keeps a timelapse or a model made elsewhere.",
   );
 }
 
@@ -194,11 +194,11 @@ async function deviceCopies(): Promise<Set<string>> {
   }
 }
 
-/** Whether opening a scene would replace something here: the sculpt in progress, or frames captured. */
+/** Whether opening a scene would replace something here: the sculpt in progress. */
 async function workInProgress(): Promise<boolean> {
   try {
     const store = await import('../../sculpt/bridge/ScenePersist');
-    return (await store.hasSavedScene()) || (await store.hasSculptFrames());
+    return await store.hasSavedScene();
   } catch {
     return false;
   }

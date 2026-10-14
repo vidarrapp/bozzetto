@@ -11,8 +11,8 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const MAX_TITLE = 200;
 /**
  * Frames in a project, and so one past the highest index a frame may be
- * stored under. The capture clients stop at this many (GallerySave,
- * SnapshotRecorder); a reel at 4 fps is over 40 minutes of it.
+ * stored under. The /create/ uploader stops at this many (src/create);
+ * a timelapse at 4 fps is over 40 minutes of it.
  */
 export const MAX_FRAMES = 10000;
 const MAX_STAGES = 500;

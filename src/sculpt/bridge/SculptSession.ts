@@ -249,9 +249,9 @@ export class SculptSession {
       for (const entry of entries) this.cssWidth = entry.contentRect.width;
     });
     this.sizeObserver.observe(canvas);
-    // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and the
-    // WS5 capture design consumes undo states as timelapse deltas, so history
-    // is worth keeping (a stroke state holds only the touched vertices).
+    // Deeper than upstream's 15: the WS2 fuzz exercises 50-deep undo, and
+    // history is worth keeping (a stroke state holds only the touched
+    // vertices).
     StateManager.STACK_LENGTH = 64;
     this.sculptManager = new SculptManager(this);
     // WS2f review pass: ZBrush-flavored overrides ride the vendor registry
@@ -1600,7 +1600,7 @@ export class SculptSession {
    * said, which is what ending solo puts back. Null while solo is off.
    *
    * View state only: nothing here touches the history, and a save, a copy
-   * or a timelapse frame reads the eye (eyeVisible), never the flag solo
+   * or a published model reads the eye (eyeVisible), never the flag solo
    * set, so neither the autosave nor a .bozz file ever records solo.
    */
   private soloEyes: Map<SculptMesh, boolean> | null = null;

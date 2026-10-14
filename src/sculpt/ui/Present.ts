@@ -4,7 +4,7 @@ import { topbarLeft, topChip } from '../../ui/topbar';
 
 /**
  * Present mode (owner call): the model on its own, for looking at and for
- * showing. Its chip sits in the top row beside Capture, and Shift+P (the
+ * showing. Its chip sits in the top row beside Publish, and Shift+P (the
  * keymap's ui.present, rebindable) or Esc leaves it as well as the chip.
  *
  * Presenting hides what edits - the toolbar, the brush rail and its undo
@@ -21,7 +21,7 @@ import { topbarLeft, topChip } from '../../ui/topbar';
  * subject's vertical axis, at the speed its slider says, which Space (the
  * keymap's play.toggle, the viewer's play/pause) starts and stops and any
  * press or wheel on the view stops; it moves the camera only, so the
- * timelapse never records it - Save image, and Done. Under it, one row
+ * scene and its undo never see it - Save image, and Done. Under it, one row
  * saves the turntable as a clip: one full turn at the slider's speed
  * (36°/s is ten seconds), MP4 or GIF, the window at 1x or 2x
  * (capture/turntable.ts), rendered offline with a progress bar and Cancel

@@ -1,5 +1,4 @@
 import type { SculptSession } from './SculptSession';
-import type { SnapshotRecorder } from './SnapshotRecorder';
 import type { SavedScene, SceneLink } from './ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { packScene, sceneToOBJ, unpackScene } from './SceneFile';
@@ -36,7 +35,7 @@ export interface FileActionHooks {
   adopt(scene: SavedScene): void;
   /**
    * Is there work that exists nowhere else? A session restored from the
-   * autosave, edits since the last save or open, or captured frames.
+   * autosave, or edits since the last save or open.
    */
   hasWork(): boolean;
   /** The scene as it stands, as a token onSceneClean can be handed later. */
@@ -132,7 +131,6 @@ export class FileActions {
 
   constructor(
     private readonly session: SculptSession,
-    private readonly recorder: SnapshotRecorder,
     private readonly hooks: FileActionHooks,
   ) {}
 
@@ -182,26 +180,13 @@ export class FileActions {
     this.unsent = id;
   }
 
-  /** "The current objects and 3 captured frames": what a replace would cost. */
-  atRisk(): string {
-    const frames = this.recorder.frameCount();
-    return frames > 0
-      ? `The current objects and ${frames} captured frame${frames === 1 ? '' : 's'}`
-      : 'The current objects';
-  }
-
   /** The scene was just written somewhere: it is no longer at risk. */
   markClean(): void {
     this.hooks.onSceneClean();
   }
 
-  /**
-   * Start over from a clean sphere. The reel goes too: a timelapse of a
-   * scene you just discarded is not much use, and a publish must never
-   * mix two scenes' geometry.
-   */
+  /** Start over from a clean sphere. */
   async newScene(): Promise<void> {
-    if (this.recorder.frameCount() > 0) await this.recorder.clear();
     this.session.newScene();
     this.generation++;
     // A new scene is nobody's project: saving it must not overwrite one.
@@ -234,8 +219,7 @@ export class FileActions {
 
   /**
    * Replace the scene with a .bozz file's bytes. The file is unpacked
-   * FIRST, so a corrupt one costs nothing - not the question, not the
-   * frames. `ask` runs after that and before anything is touched: the
+   * FIRST, so a corrupt one costs nothing, not even the question. `ask` runs after that and before anything is touched: the
    * front's "are you sure?", when it has one. Resolves false when it said
    * no. `link` is the project the bytes came from; a file has none, so it
    * is saved as a project of its own rather than over the last one.
@@ -247,9 +231,6 @@ export class FileActions {
   ): Promise<boolean> {
     const scene = await unpackScene(bytes);
     if (ask && !(await ask())) return false;
-    // A timelapse belongs to the scene it recorded: frames from the old
-    // one must not ride along into the newly opened work.
-    if (this.recorder.frameCount() > 0) await this.recorder.clear();
     this.hooks.prepare();
     try {
       this.session.replaceScene(scene);

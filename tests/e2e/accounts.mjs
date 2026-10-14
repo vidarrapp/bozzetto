@@ -39,7 +39,7 @@
 // scene packs to, and a second save updates it; a quota the owner lowers
 // refuses the next, which stays on the device with the server's numbers;
 // sessions the owner revokes make the next save Not uploaded, and Sign in
-// again signs in and saves; Capture publishes a model there. My projects:
+// again signs in and saves; Publish model puts a model there. My projects:
 // the meter, rename, download (the .bozz, and a frames zip), open in the
 // viewer and Sculpt, read only offline, delete. Download my data, after
 // confirming it is you, as one zip streamed to a picked file and as a
@@ -1084,9 +1084,9 @@ async function suspension(server, browser, o, t) {
     const gate = await p.evaluate(() => ({
       notes: [...document.querySelectorAll('.gallery-form__gatenote')].map((n) => n.textContent),
       signIn: [...document.querySelectorAll('.gallery-form__signin')].filter((b) => !b.hidden).length,
-      recording: window.__sculpt.recorder.isAllowed(),
+      chip: !window.__sculpt.publishWindow.chip.hidden,
     }));
-    t.ok(gate.notes.every((n) => n === 'Your account is suspended.') && gate.signIn === 0 && !gate.recording, `Sculpt's publish forms say it is suspended, offer no sign-in, and nothing records (${show(gate)})`);
+    t.ok(gate.notes.every((n) => n === 'Your account is suspended.') && gate.signIn === 0 && !gate.chip, `Sculpt's publish form says it is suspended, offers no sign-in, and there is no Publish chip (${show(gate)})`);
     const download = p.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
     await p.click('.file-menu--file__chip');
     await p.click('.file-menu--file button:has-text("Save to library")');
@@ -1222,7 +1222,7 @@ function readZip(buf) {
   return files;
 }
 
-/** The member's own Save to library, with accounts on: a project, again in place, a full quota, an expired sign-in; and Capture. */
+/** The member's own Save to library, with accounts on: a project, again in place, a full quota, an expired sign-in; and Publish model. */
 async function memberLibrary(server, o, a, t) {
   const p = a.page;
   const uid = (await server.call('GET', '/api/dev/user?email=ada%40new.example')).body?.user?.id ?? '';
@@ -1230,18 +1230,18 @@ async function memberLibrary(server, o, a, t) {
   await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});
   const lib = (await fileItems(p)).find((i) => i.label === 'Save to library');
   t.eq(lib?.hint, 'Saves to My projects, where only you see it', 'signed in as a member, Save to library says it saves to My projects');
-  const capture = await p.evaluate(() => {
+  const publish = await p.evaluate(() => {
     const f = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
     return {
       id: !f.querySelector('.gallery-form__input[placeholder="project-id"]').hidden,
       visibility: !f.querySelector('.gallery-form__visibility').hidden,
       where: f.querySelector('.gallery-form__where').textContent,
-      recording: window.__sculpt.recorder.isAllowed() && !window.__sculpt.captureWindow.chip.hidden,
+      chip: !window.__sculpt.publishWindow.chip.hidden,
     };
   });
   t.ok(
-    !capture.id && !capture.visibility && capture.where === 'To My projects, where only you see it.' && capture.recording,
-    `Capture is a member's too: recording is allowed, and its publish asks no id and no visibility (${show(capture)})`,
+    !publish.id && !publish.visibility && publish.where === 'To My projects, where only you see it.' && publish.chip,
+    `Publish is a member's too: the chip shows, and its form asks no id and no visibility (${show(publish)})`,
   );
 
   // The first save: a project of the member's own, with the bytes the scene packed to.
@@ -1365,7 +1365,7 @@ async function memberLibrary(server, o, a, t) {
   copies = await shelf(p);
   t.ok(!copies.some((c) => c.unsent) && (await p.evaluate(() => window.__sculpt.fileActions.unsentCopy)) === null, `and the copy kept on the device is let go (${show(copies)})`);
 
-  // Capture's publish: a model in My projects, under a title alone.
+  // Publish model: a model in My projects, under a title alone.
   await p.evaluate(() => {
     const form = document.querySelector('.sculpt-panel__slot[data-slot="model"] .gallery-form');
     form.querySelector('.gallery-form__input[placeholder="Title (optional)"]').value = 'Ada model';

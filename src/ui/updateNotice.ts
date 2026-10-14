@@ -7,7 +7,7 @@ import { div, onTap } from './dom';
  * this is only how it is shown.
  *
  * It is never in the way. It takes no focus and blocks nothing, it sits
- * under the Capture window, the hotkey guide and the menus, it keeps clear
+ * under the Publish window, the hotkey guide and the menus, it keeps clear
  * of Sculpt's corner button, the viewer's transport and an open right-hand
  * panel (place, below), and it goes with the rest of the interface when Tab
  * hides it, to come back with it.

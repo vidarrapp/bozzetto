@@ -233,10 +233,14 @@ interface SavedSceneV1 {
 
 const DB_NAME = 'bozzetto-sculpt';
 const STORE = 'scene';
-/** WS5 capture: gzipped GLB frame bytes by sequence number. */
-export const FRAMES_STORE = 'frames';
-/** WS5 capture: small per-frame metadata ({tris, t, bytes}) by sequence. */
-export const FRAME_META_STORE = 'frameMeta';
+/**
+ * The stores the sculpt-side timelapse recorder kept its reel in (gzipped
+ * GLB frames, and their metadata), before recording left Bozzetto Web for
+ * Bozzetto Studio. Named only so the upgrade to v4 can delete them.
+ */
+const RETIRED_REEL_STORES = ['frames', 'frameMeta'];
+/** The recorder's Record timelapse choice, in localStorage; removed with the stores. */
+const RETIRED_RECORD_PREF = 'bozzetto-sculpt-record';
 /**
  * The local scene library. Split in two for the same reason the autosave
  * splits its snapshot from its scene: the gallery lists every entry on
@@ -331,18 +335,6 @@ export async function hasSavedScene(): Promise<boolean> {
   }
 }
 
-/**
- * Are there captured frames? The boot asks before an opened scene is let
- * replace them, as it asks about the scene (sculpt/mode.ts).
- */
-export async function hasSculptFrames(): Promise<boolean> {
-  try {
-    return (await withNamedStore(FRAME_META_STORE, 'readonly', (s) => s.count())) > 0;
-  } catch {
-    return false;
-  }
-}
-
 /** The autosave record's status (SceneStatus), or null when there is none. */
 export async function loadSceneStatus(): Promise<SceneStatus | null> {
   try {
@@ -393,8 +385,8 @@ const IDLE_TIMEOUT_MS = 3000;
 /**
  * Consecutive failed writes before autosave gives up on the session. One
  * failure is usually weather, not climate: an iPad app switch freezes the
- * tab and aborts the put the hide flush just started, and the frame
- * recorder can trip the quota between two of its own writes. Giving up on
+ * tab and aborts the put the hide flush just started, and a quota can be
+ * tripped by something else writing at the same moment. Giving up on
  * the first one meant sculpting for hours with nothing being saved and
  * only a console line to show for it.
  */
@@ -403,23 +395,33 @@ const MAX_WRITE_FAILURES = 3;
 const RETRY_GAP_MS = 5000;
 
 /**
- * One DB for all sculpt persistence. v2 added the capture frame stores, v3
- * the scene library. Every version creates whatever is missing rather than
- * branching on oldVersion, so a browser arriving from any earlier version
- * ends up with the full set.
+ * One DB for all sculpt persistence. v2 added the timelapse recorder's
+ * frame stores, v3 the scene library, and v4 deletes the frame stores
+ * again: recording left Bozzetto Web (Bozzetto Studio records now), and a
+ * reel left on a tester's device was up to 500 MB that nothing could read
+ * any more. Deleting a store is only possible in an upgrade, so this is the
+ * one-time cleanup: it runs once per device, the first time anything opens
+ * the DB on this build (the gallery's In progress card does, on load), and
+ * takes the reel with it in the same step. Every version creates whatever
+ * is missing rather than branching on oldVersion, so a browser arriving
+ * from any earlier version ends up with the same set.
  */
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 3);
+    const req = indexedDB.open(DB_NAME, 4);
     req.onupgradeneeded = () => {
-      for (const store of [
-        STORE,
-        FRAMES_STORE,
-        FRAME_META_STORE,
-        LIBRARY_STORE,
-        LIBRARY_DATA_STORE,
-      ]) {
-        if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store);
+      const db = req.result;
+      for (const store of RETIRED_REEL_STORES) {
+        if (db.objectStoreNames.contains(store)) db.deleteObjectStore(store);
+      }
+      // The recorder's stored on/off choice goes with its reel.
+      try {
+        localStorage.removeItem(RETIRED_RECORD_PREF);
+      } catch {
+        // Storage blocked: there is nothing stored to remove either.
+      }
+      for (const store of [STORE, LIBRARY_STORE, LIBRARY_DATA_STORE]) {
+        if (!db.objectStoreNames.contains(store)) db.createObjectStore(store);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -427,7 +429,7 @@ export function openDb(): Promise<IDBDatabase> {
   });
 }
 
-/** Run one request against a named store (shared with the capture store). */
+/** Run one request against a named store (the scene's, or the library's). */
 export async function withNamedStore<T>(
   storeName: string,
   mode: IDBTransactionMode,
@@ -584,21 +586,6 @@ export function validSavedScene(rec: unknown): rec is SavedScene {
     r.active >= 0 &&
     r.active < r.meshes.length
   );
-}
-
-/**
- * Drop every captured timelapse frame. Starting a new sculpt discards the
- * recording with the scene it belongs to - a timelapse of work you just
- * replaced is not much use - matching the File panel's New scene button.
- */
-export async function clearSculptFrames(): Promise<void> {
-  for (const store of [FRAMES_STORE, FRAME_META_STORE]) {
-    try {
-      await withNamedStore(store, 'readwrite', (s) => s.clear());
-    } catch {
-      // Storage unavailable; nothing to clear.
-    }
-  }
 }
 
 export async function clearSavedScene(): Promise<void> {

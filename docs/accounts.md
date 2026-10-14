@@ -497,7 +497,7 @@ The code field is `autocomplete="one-time-code" inputmode="numeric"`.
 - **Full quota:** the scene also stays: "Your storage is full (248 of 250 MB)". Where more than a megabyte is still free, it was this file that would not fit, and the notice says "There is not room for this in your storage (… used)".
 - **Suspended:** downloads a `.bozz`, as a guest's save does, and says why.
 - **A template opened from Projects** (`&scope=admin`, §5) saves back to the template through `/admin/api`.
-- **Capture** publishes to My projects, with no id and no visibility choice. Recording follows "signed in", not "owner".
+- **Publish model** (Sculpt's Publish window) publishes to My projects, with no id and no visibility choice. The Publish button follows "signed in", not "owner". Bozzetto Web no longer records a timelapse while you sculpt (Bozzetto Studio does); a timelapse reaches My projects through the `/create/` uploader's **Save to My projects**.
 
 **Roles.**
 
@@ -668,7 +668,7 @@ As built, the suites are `access-gate`, `accounts-off`, `admin`, `codes`, `confi
   6. Copy a template.
   7. Export the zip.
   8. Delete the account.
-- **As built,** the path also takes in: a code sign-in after a wrong code; the handle and the address changed; codes alone on `127.0.0.1`; a mailed link; a resend; the desktop app's sign-in window; a used-up invite; the legal pages; the owner's Create your account and the second lock; a template edited from Projects; a suspension, as each page tells it; a quota the owner lowers, and sessions the owner revokes, as Save to library meets them; Capture; the owner's Invites, Users and Audit tabs. Before any of it, it checks the build: the worker's rules, the legal pages in the precache, and the policy admitting Turnstile. Copying a template is the `templates` suite's, against mocks.
+- **As built,** the path also takes in: a code sign-in after a wrong code; the handle and the address changed; codes alone on `127.0.0.1`; a mailed link; a resend; the desktop app's sign-in window; a used-up invite; the legal pages; the owner's Create your account and the second lock; a template edited from Projects; a suspension, as each page tells it; a quota the owner lowers, and sessions the owner revokes, as Save to library meets them; Publish model; the owner's Invites, Users and Audit tabs. Before any of it, it checks the build: the worker's rules, the legal pages in the precache, and the policy admitting Turnstile. Copying a template is the `templates` suite's, against mocks.
 - **Desktop.** `desktop.mjs` adds sign-in and sign-out against a local server (Batch 9: 91 checks, 46 of them on the packaged app).
 - **CI.** The accounts suite joins `e2e-smoke` (Batch 10), as a step of its own after the smoke suites.
 
@@ -726,7 +726,7 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
 | 5 | Member storage | `/api/me/projects`, quota uploads, caps, content checks, private media, export, deletion | `functions/api/me/{projects,media,export,delete}/**`, `functions/_shared/{quota,uploads}.ts`, `shared/bozz.ts` | quota, content, isolation, cascade |
 | 6 | Owner tools API | invites, users, audit | `functions/admin/api/{invites,users,audit}/**` | owner tools |
 | 7 | Client: sign-in, account | dialog, Turnstile loader, roles, chips, Account, legal pages | `src/net/account.ts`, `src/ui/account/*`, `src/admin/api.ts`, `src/ui/Landing.ts`, `src/main.ts`, `public/legal/*` | e2e accounts |
-| 8 | Client: My projects, Sculpt | `/?me`, Save to library and Capture for members, export zip, SW rules | `src/ui/account/myProjects.ts`, `src/sculpt/bridge/{FileActions,SceneProjects,GallerySave}.ts`, `src/sculpt/ui/*`, `vite.config.ts` | e2e accounts |
+| 8 | Client: My projects, Sculpt | `/?me`, Save to library and Publish model for members, export zip, SW rules | `src/ui/account/myProjects.ts`, `src/sculpt/bridge/{FileActions,SceneProjects,GallerySave}.ts`, `src/sculpt/ui/*`, `vite.config.ts` | e2e accounts |
 | 9 | Desktop, owner UI | sign-in window, Server settings; admin tabs | `electron/server.cjs`, `src/desktop/ServerSettings.ts`, `src/admin/{invites,users,audit}.ts` | `desktop.mjs`, e2e |
 | 10 | Docs, release | README (Deployment, checklist, Changelog), `docs/accounts.md`, `SECURITY.md`, 0.6.0 | | |
 

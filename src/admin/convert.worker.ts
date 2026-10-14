@@ -4,8 +4,9 @@ import { meshToGLB, objToGLB } from './glb';
 // stays responsive while a sequence is processed. The finished GLB is gzipped
 // here too (quantized int16 geometry deflates well); the viewer inflates by
 // magic sniff, so the bytes stay drop-in wherever a raw .glb was accepted.
-// Sculpt capture (WS5) reuses the same worker with raw arrays instead of OBJ
-// text: {id, positions, indices} in (transferred), the same gzipped GLB out.
+// Sculpt's Publish model reuses the same worker with raw arrays instead of
+// OBJ text: {id, positions, indices, colors?} in (transferred), the same
+// gzipped GLB out (convert.ts encodeMesh).
 const ctx = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
   postMessage: (message: unknown, transfer?: Transferable[]) => void;
