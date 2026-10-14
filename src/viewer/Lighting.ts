@@ -178,6 +178,13 @@ export class Lighting {
 
   private readonly config: Record<LightId, DirLightConfig>;
   private rigRotationDeg = 0;
+  /**
+   * Only the key casts by default (Armature mode, owner call): a preset
+   * picked leaves the fill's and the rim's Casts shadow boxes unticked, and
+   * a record from before version 2 keeps its rim's box as it was saved
+   * rather than having it ticked (applyState). Off everywhere else.
+   */
+  keyOnlyShadows = false;
   /** Distance of lights from the subject centre; set by fitToBounds and setSubjectBounds. */
   private distance = 5;
   private subjectRadius = 1;
@@ -223,6 +230,7 @@ export class Lighting {
     this.config.key = { ...preset.key };
     this.config.fill = { ...preset.fill };
     this.config.rim = { ...preset.rim };
+    if (this.keyOnlyShadows) this.config.fill.castShadow = this.config.rim.castShadow = false;
     this.hemi.intensity = preset.ambient.intensity;
     this.hemi.color = new Color(preset.ambient.sky);
     this.hemi.groundColor = new Color(preset.ambient.ground);
@@ -455,8 +463,10 @@ export class Lighting {
     // lit the far side straight through the model: it casts now, as a new
     // look's does. Every saved look comes through here - the autosave and
     // sculpt's kept look, .bozz files, armatures, published looks and the
-    // viewer's manifests - and one written since is taken as saved.
-    if (!(finite(state.v) && state.v >= LIGHTING_STATE_VERSION)) this.config.rim.castShadow = true;
+    // viewer's manifests - and one written since is taken as saved. In
+    // Armature mode the rim does not cast by default, so an armature's old
+    // record keeps what it saved (keyOnlyShadows).
+    if (!this.keyOnlyShadows && !(finite(state.v) && state.v >= LIGHTING_STATE_VERSION)) this.config.rim.castShadow = true;
     const ambient = state.ambient as Partial<Record<keyof AmbientConfig, unknown>> | undefined;
     if (ambient && typeof ambient === 'object') {
       if (finite(ambient.intensity)) this.hemi.intensity = Math.max(0, ambient.intensity);

@@ -2834,6 +2834,156 @@ export const suites = {
       const chain = (cid) => ik.find((c) => c.id === cid) ?? {};
       t.eq(chain('head').links, 'neck,chest,spine', `${id}: the head chain bends the neck, chest and spine`);
       t.ok(chain('foot.L').at === 0.5 && chain('foot.R').at === 0.5, `${id}: the feet reach from mid-foot (effectorAt ${chain('foot.L').at}, ${chain('foot.R').at})`);
+
+      // The neck turns just above where the back of the neck leaves the
+      // chest (owner report: the realistic male's turned from inside the
+      // chest, and its joint is raised 1.5 cm on load, figures.ts). In the
+      // rest geometry, down the middle: the line where the neck lump's back
+      // surface comes out of the chest lump's top.
+      const neck = await page.evaluate(() => {
+        const arm = window.__armature.armature;
+        const g = arm.mesh.geometry;
+        const pos = g.getAttribute('position');
+        const si = g.getAttribute('skinIndex');
+        const sw = g.getAttribute('skinWeight');
+        const idx = g.getIndex();
+        const names = arm.skeleton.bones.map((b) => b.name.replace(/:part$/, ''));
+        const owner = (i) => {
+          let best = -1;
+          let bw = 0;
+          for (const a of ['X', 'Y', 'Z', 'W']) {
+            const w = sw[`get${a}`](i);
+            if (w > bw) {
+              bw = w;
+              best = si[`get${a}`](i);
+            }
+          }
+          return names[best];
+        };
+        const tris = (name) => {
+          const out = [];
+          for (let k = 0; k < idx.count; k += 3) {
+            const v = [idx.getX(k), idx.getX(k + 1), idx.getX(k + 2)];
+            if (v.every((i) => owner(i) === name)) out.push(v.map((i) => [pos.getX(i), pos.getY(i), pos.getZ(i)]));
+          }
+          return out;
+        };
+        const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        // The nearest hit along a ray (Moller-Trumbore), or null.
+        const cast = (list, o, d) => {
+          let best = null;
+          for (const [a, b, c] of list) {
+            const e1 = sub(b, a);
+            const e2 = sub(c, a);
+            const p = cross(d, e2);
+            const det = dot(e1, p);
+            if (Math.abs(det) < 1e-12) continue;
+            const tv = sub(o, a);
+            const u = dot(tv, p) / det;
+            if (u < 0 || u > 1) continue;
+            const q = cross(tv, e1);
+            const v = dot(d, q) / det;
+            if (v < 0 || u + v > 1) continue;
+            const t = dot(e2, q) / det;
+            if (t > 0 && (best === null || t < best)) best = t;
+          }
+          return best;
+        };
+        const chest = tris('chest');
+        const neckLump = tris('neck');
+        const def = arm.def('neck');
+        const chestTop = (z) => {
+          const t = cast(chest, [0, 3, z], [0, -1, 0]);
+          return t === null ? null : 3 - t;
+        };
+        let backExit = null;
+        for (let y = def.head[1] - 0.08; y < def.head[1] + 0.1 && backExit === null; y += 0.0005) {
+          const t = cast(neckLump, [0, y, -1], [0, 0, 1]);
+          if (t === null) continue;
+          const top = chestTop(t - 1);
+          if (top === null || top < y) backExit = y;
+        }
+        return { pivot: def.head, tail: def.tail, chestTail: arm.def('chest').tail, backExit };
+      });
+      const above = neck.backExit === null ? NaN : neck.pivot[1] - neck.backExit;
+      t.ok(
+        above > 0.005 && above < 0.016,
+        `${id}: the neck turns ${(above * 100).toFixed(1)} cm above where the back of the neck leaves the chest (at ${neck.pivot[1].toFixed(4)} m, the line at ${neck.backExit?.toFixed(4)})`,
+      );
+      if (id === 'mannequin-male-realistic') {
+        // Raised from the file's 1.4217 m, up the neck's own line: the
+        // chest's frame and the head's joint as they were.
+        t.ok(
+          Math.abs(neck.pivot[1] - 1.4367) < 5e-4 && Math.abs(neck.chestTail[1] - 1.4217) < 5e-4 && Math.abs(neck.tail[1] - 1.5235) < 5e-4,
+          `${id}: its neck joint is raised 1.5 cm, to ${neck.pivot[1].toFixed(4)} m, the chest still ending at ${neck.chestTail[1].toFixed(4)} and the head turning at ${neck.tail[1].toFixed(4)}`,
+        );
+      }
+
+      // A wider chest carries the shoulders out with it (owner report: they
+      // stayed inside it). At 130% size each shoulder joint's place on the
+      // chest, in the chest's own frame, is 1.3 times as far out across it
+      // and no higher or lower, both sides; so is the chest's surface beside
+      // it, and the joint keeps its place under that surface.
+      const chestScale = await page.evaluate(() => {
+        const arm = window.__armature.armature;
+        const chest = arm.bones.get('chest');
+        const part = arm.skeleton.bones.indexOf(arm.partBones.get('chest'));
+        const local = (name) => {
+          const w = arm.jointWorld(name);
+          chest.updateWorldMatrix(true, false);
+          return chest.worldToLocal(w).toArray();
+        };
+        const surface = (y, sign) => {
+          arm.mesh.updateMatrixWorld(true);
+          const g = arm.mesh.geometry;
+          const si = g.getAttribute('skinIndex');
+          const sw = g.getAttribute('skinWeight');
+          const v = chest.position.clone();
+          let out = 0;
+          for (let i = 0; i < si.count; i++) {
+            if (si.getX(i) !== part || sw.getX(i) < 0.5) continue;
+            arm.mesh.getVertexPosition(i, v);
+            chest.worldToLocal(arm.mesh.localToWorld(v));
+            if (Math.abs(v.y - y) < 0.03) out = Math.max(out, sign * v.x);
+          }
+          return out;
+        };
+        const read = () => {
+          const L = local('upperarm.L');
+          const R = local('upperarm.R');
+          return { L, R, neck: local('neck'), surfL: surface(L[1], 1), surfR: surface(R[1], -1) };
+        };
+        const symmetry = arm.symmetry;
+        arm.symmetry = false;
+        const before = read();
+        arm.setProportions('chest', { size: 1.3 });
+        const after = read();
+        arm.setProportions('chest', { size: 1 });
+        const back = read();
+        arm.symmetry = symmetry;
+        return { before, after, back };
+      });
+      {
+        const { before: b, after: a, back } = chestScale;
+        const off = (side) =>
+          Math.max(Math.abs(a[side][0] - 1.3 * b[side][0]), Math.abs(a[side][1] - b[side][1]), Math.abs(a[side][2] - 1.3 * b[side][2]));
+        const fmt = (v) => `(${v.map((x) => x.toFixed(3)).join(', ')})`;
+        t.ok(
+          off('L') < 1e-4 && off('R') < 1e-4,
+          `${id}: chest size 130% moves the shoulders out with it: left ${fmt(b.L)} to ${fmt(a.L)}, right ${fmt(b.R)} to ${fmt(a.R)} on the chest`,
+        );
+        t.ok(
+          Math.abs(a.surfL - 1.3 * b.surfL) < 1e-4 && Math.abs(a.surfR - 1.3 * b.surfR) < 1e-4 &&
+            Math.abs(a.surfL - a.L[0] - 1.3 * (b.surfL - b.L[0])) < 1e-4 && Math.abs(a.surfR + a.R[0] - 1.3 * (b.surfR + b.R[0])) < 1e-4,
+          `${id}: and they keep their place under its surface (${(100 * (b.surfL - b.L[0])).toFixed(2)} cm in at 100%, ${(100 * (a.surfL - a.L[0])).toFixed(2)} at 130%; the surface ${b.surfL.toFixed(3)} to ${a.surfL.toFixed(3)} m out)`,
+        );
+        t.ok(
+          Math.abs(a.neck[0] - b.neck[0]) < 1e-4 && Math.abs(a.neck[1] - b.neck[1]) < 1e-4 && off('L') < 1e-4 && Math.max(...[...back.L, ...back.R].map((v, i) => Math.abs(v - [...b.L, ...b.R][i]))) < 1e-6,
+          `${id}: the neck stays on the chest's middle line, and at 100% again the shoulders are back where they were`,
+        );
+      }
     }
 
     // The autosave brings a mannequin back on reload, fetched again.
@@ -5588,6 +5738,105 @@ export const suites = {
     await openPanel(page, 'Render');
     light = await sliderRow(page, 'Render', 'Intensity');
     t.ok((await keyLight(page)).intensity === 6 && light.readout === '6.0' && light.thumb === 5, `and the Render panel shows the light's 6, not what it had before the look (${light.readout}, thumb ${light.thumb})`);
+
+    // R scales the selected part in the view (owner request): a scale
+    // gizmo whose handle along the bone is the part's length and whose two
+    // across it are its size, mirrored under symmetry, one undo step a
+    // drag, the panel's sliders following. With nothing selected R does
+    // nothing.
+    await openPanel(page, 'Armature');
+    await page.evaluate(() => {
+      window.__armature.select(null);
+      document.activeElement?.blur?.();
+    });
+    await page.keyboard.press('r');
+    let g = await page.evaluate(() => ({ ...window.__armature.gizmo(), selected: window.__armature.selected() }));
+    t.ok(g.selected === null && g.attached.length === 0 && g.mode !== 'scale', `with nothing selected R does nothing (mode ${g.mode}, ${g.attached.length} handles)`);
+    await page.keyboard.press('x');
+    await page.evaluate(() => window.__armature.select('thigh.L'));
+    await page.keyboard.press('r');
+    g = await page.evaluate(() => ({ ...window.__armature.gizmo(), symmetry: window.__armature.armature.symmetry }));
+    t.ok(g.mode === 'scale' && g.attached.join(',') === 'scale' && g.symmetry, `R on the left thigh shows the scale gizmo (${g.mode}: ${g.attached.join(',')}), symmetry on`);
+    const props = () =>
+      page.evaluate(() => {
+        const arm = window.__armature.armature;
+        return { L: arm.getProportions('thigh.L'), R: arm.getProportions('thigh.R'), undo: window.__armature.history().undo };
+      });
+    // A handle of the gizmo: along the bone's own axis from the joint, the
+    // first point on the page the gizmo answers to with that handle.
+    const handle = (axis) =>
+      page.evaluate((ax) => {
+        const a = window.__armature;
+        const bone = a.armature.bones.get('thigh.L');
+        bone.updateWorldMatrix(true, false);
+        const at = bone.getWorldPosition(bone.position.clone());
+        const dir = bone.position.clone().setFromMatrixColumn(bone.matrixWorld, ax === 'X' ? 0 : 1).normalize();
+        const o = a.onScreen(at.x, at.y, at.z);
+        // The handle's far end, where a hand takes it: the last point out
+        // along the axis that the gizmo still answers to with that handle.
+        let found = null;
+        for (let d = 0.01; d < 0.6; d += 0.0025) {
+          const p = at.clone().addScaledVector(dir, d);
+          const s = a.onScreen(p.x, p.y, p.z);
+          if (!s) continue;
+          const hit = a.gizmoAxis(Math.round(s[0]), Math.round(s[1]));
+          if (hit === ax) {
+            const len = Math.hypot(s[0] - o[0], s[1] - o[1]);
+            found = { at: [Math.round(s[0]), Math.round(s[1])], dir: [(s[0] - o[0]) / len, (s[1] - o[1]) / len], from: len };
+          } else if (found) break;
+        }
+        return found;
+      }, axis);
+    const pull = async (h, px) => {
+      await page.mouse.move(...h.at);
+      await page.mouse.down();
+      await page.mouse.move(h.at[0] + h.dir[0] * px, h.at[1] + h.dir[1] * px, { steps: 6 });
+      await page.mouse.up();
+      await page.waitForTimeout(100);
+    };
+    const start = await props();
+    const along = await handle('Y');
+    t.ok(!!along, `the gizmo's handle along the thigh is on the page (${along?.at})`);
+    if (along) await pull(along, 40);
+    const longer = await props();
+    row = await sliderRow(page, 'Armature', 'Length');
+    t.ok(
+      longer.L.length > start.L.length + 0.02 && longer.L.size === start.L.size && longer.R.length === longer.L.length && longer.undo === start.undo + 1,
+      `a drag of it lengthens the thigh (${start.L.length} to ${longer.L.length.toFixed(3)}), its size kept, the right thigh following (${longer.R.length.toFixed(3)}), one undo step`,
+    );
+    t.eq(row?.readout, `${Math.round(longer.L.length * 100)}%`, 'and the panel\'s Length slider says so');
+    const across = await handle('X');
+    t.ok(!!across, `the handle across it is on the page (${across?.at})`);
+    if (across) await pull(across, -30);
+    const thinner = await props();
+    row = await sliderRow(page, 'Armature', 'Size');
+    t.ok(
+      thinner.L.size < start.L.size - 0.02 && thinner.L.length === longer.L.length && thinner.R.size === thinner.L.size,
+      `a drag across it in makes the thigh thinner (size ${start.L.size} to ${thinner.L.size.toFixed(3)}), its length kept, the right one following (${thinner.R.size.toFixed(3)})`,
+    );
+    t.eq(row?.readout, `${Math.round(thinner.L.size * 100)}%`, 'and the Size slider follows');
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(100);
+    let back = await props();
+    t.ok(back.L.size === start.L.size && back.R.size === start.R.size && back.L.length === longer.L.length, `Ctrl+Z puts the size back on both sides (${back.L.size}, ${back.R.size})`);
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(100);
+    back = await props();
+    t.ok(back.L.length === start.L.length && back.R.length === start.R.length, `and again the length (${back.L.length}, ${back.R.length})`);
+    // Held at the figure's limits, as the sliders are.
+    const far = await handle('Y');
+    if (far) {
+      // As far as the page goes that way, short of its edge.
+      const room = (i, size) => (far.dir[i] > 0 ? (size - 5 - far.at[i]) / far.dir[i] : far.dir[i] < 0 ? (far.at[i] - 5) / -far.dir[i] : Infinity);
+      await pull(far, Math.min(room(0, 1280), room(1, 800)));
+    }
+    const held = await props();
+    t.ok(held.L.length <= 3 && held.L.length > 1.2, `a long drag is held at the part's limit (length ${held.L.length.toFixed(3)}, at most 3)`);
+    const listed = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.help-guide .help-row')].find((r) => r.textContent.includes('Scale the selected part'));
+      return row ? [...row.querySelectorAll('kbd')].map((k) => k.textContent).join('+') : null;
+    });
+    t.eq(listed, 'R', 'the hotkey guide lists R for scaling the selected part');
   },
 
   // The Render panel's travel and defaults (owner call: most of the old
@@ -6696,6 +6945,61 @@ export const suites = {
   async armatureLight(page, base, t) {
     await openArmature(page, base);
     await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    // Only the key casts by default in Armature mode (owner call); Sculpt
+    // and the viewer keep all three (checked at the end, and in shadows).
+    const casts = () =>
+      page.evaluate(() => {
+        const L = window.__bozzetto.lighting;
+        const box = Object.fromEntries(L.state().map((l) => [l.id, l.castShadow]));
+        return { ...box, live: ['key', 'fill', 'rim'].filter((id) => L.casts(id)).join(','), v: L.serialize().v };
+      });
+    let cast = await casts();
+    t.ok(cast.key && !cast.fill && !cast.rim && cast.live === 'key', `a new armature: the key casts, the fill and the rim do not (casting: ${cast.live})`);
+    const panelBoxes = async () => {
+      await openPanel(page, 'Render');
+      return page.evaluate(() => {
+        const panel = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+        return [...(panel?.querySelectorAll('.light') ?? [])].map((light) => {
+          const box = [...light.querySelectorAll('label.checkbox')].find((l) => l.textContent === 'Casts shadow');
+          return box ? box.querySelector('input').checked : null;
+        });
+      });
+    };
+    const boxes = await panelBoxes();
+    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the Render panel's Casts shadow boxes say so (key, fill, rim: ${boxes.join(', ')})`);
+    // A record saved before the rim cast by default (no version mark),
+    // through File > Open: its boxes as it saved them - the fill ticked, the
+    // rim not - where Sculpt and the viewer would tick the rim.
+    const reopen = (edit) =>
+      page.evaluate(async (how) => {
+        const a = window.__armature;
+        const rec = JSON.parse(await a.pack());
+        const lit = rec.look.lighting;
+        if (how.old) delete lit.v;
+        else lit.v = 2;
+        lit.fill = { ...lit.fill, castShadow: how.fill };
+        if (how.rim === null) delete lit.rim.castShadow;
+        else lit.rim = { ...lit.rim, castShadow: how.rim };
+        // Each box set the other way first, so what it opens with is the file's doing.
+        window.__bozzetto.lighting.setShadow('rim', how.rim === null ? false : !how.rim);
+        await a.open(new File([JSON.stringify(rec)], 'old.armature'));
+      }, edit);
+    await reopen({ old: true, fill: true, rim: false });
+    cast = await casts();
+    t.ok(cast.key && cast.fill && !cast.rim && cast.v === 2, `an old armature (no version mark) keeps what it saved: the fill casting, the rim not (casting: ${cast.live}), and saves again as version ${cast.v}`);
+    await reopen({ old: true, fill: false, rim: null });
+    cast = await casts();
+    t.ok(!cast.fill && !cast.rim, `one with no word on the rim's box at all is not ticked by the old records' rule (casting: ${cast.live})`);
+    await reopen({ old: true, fill: false, rim: true });
+    cast = await casts();
+    t.ok(cast.rim && !cast.fill, `one whose rim was ticked keeps it ticked (casting: ${cast.live})`);
+    await reopen({ old: false, fill: true, rim: true });
+    cast = await casts();
+    t.ok(cast.fill && cast.rim, `and one saved since with both ticked opens with both (casting: ${cast.live})`);
+    // A preset picked here keeps to the key, as the mode's own look does.
+    await page.evaluate(() => window.__bozzetto.lighting.applyPreset('three_point'));
+    cast = await casts();
+    t.ok(cast.key && !cast.fill && !cast.rim, `the Three-point preset picked here casts from the key alone (casting: ${cast.live})`);
     await page.evaluate(() => window.__armature.select('upperarm.L'));
     const state = () =>
       page.evaluate(() => {
@@ -6805,6 +7109,8 @@ export const suites = {
     const [cx, cy] = await screenOf(page, 'Sphere');
     const from = [Math.round(cx), Math.round(cy)];
     const keyOf = () => page.evaluate(() => window.__bozzetto.lighting.state().find((l) => l.id === 'key'));
+    cast = await casts();
+    t.ok(cast.key && cast.fill && cast.rim, `Sculpt's own look still has all three Casts shadow boxes ticked (key ${cast.key}, fill ${cast.fill}, rim ${cast.rim})`);
     const before = await keyOf();
     const sum = await meshSum(page);
     const strokes = await strokeCount(page);

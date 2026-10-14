@@ -313,6 +313,21 @@ export const suites = {
     t.ok(Math.abs(f.groundY - 0.05) < 1e-4, `where the ground is drawn (${f.groundY})`);
     const look = await page.evaluate(() => window.__bozzetto.getLook().presentation.floorOffset);
     t.near(look, 0.05, 1e-9, 'and its look keeps the offset to save');
+    // Set scale's record (the editor's, for a project from before): every frame played by one factor, lifted.
+    await open({ units: 'm', presentation: { ground: 'floor', floorOffset: 0, scale: 0.25, lift: 0.1 } });
+    const played = await page.evaluate(() => {
+      const v = window.__bozzetto;
+      const l = v.frameLocalBounds();
+      return { local: [l.min.y, l.max.y], world: [v.subjectBox.min.y, v.subjectBox.max.y], kept: v.getLook().presentation };
+    });
+    t.ok(
+      Math.abs(played.world[0] - (played.local[0] * 0.25 + 0.1)) < 1e-6 && Math.abs(played.world[1] - (played.local[1] * 0.25 + 0.1)) < 1e-6,
+      `presentation.scale and lift play the frames at that size and height (${played.local.map((x) => x.toFixed(3))} -> ${played.world.map((x) => x.toFixed(3))})`,
+    );
+    t.ok(played.kept.scale === 0.25 && played.kept.lift === 0.1, 'and the look keeps them to save');
+    await open({ units: 'm', presentation: { scale: 1e9, lift: 'x' } });
+    const clamped = await page.evaluate(() => window.__bozzetto.getSubjectTransform());
+    t.ok(clamped.scale === 1e4 && clamped.lift === 0, `a scale past the limit is clamped, and a lift that is no number is none (${JSON.stringify(clamped)})`);
     await page.unroute('**/timelapses/demo/manifest.json');
   },
 

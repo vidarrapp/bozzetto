@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, Plane, Raycaster, RingGeometry, SphereGeometry, Vector2, Vector3, type Object3D } from 'three';
+import { Box3, Group, Mesh, Plane, Raycaster, RingGeometry, SphereGeometry, Vector2, Vector3, Object3D } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { float, normalLocal, positionLocal } from 'three/tsl';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -14,7 +14,7 @@ import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
 import { onMetres } from './units';
-import { fetchFigure, figureById } from './figures';
+import { fetchFigure, figureById, tuneRig } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel } from './ArmaturePanel';
@@ -105,6 +105,7 @@ async function ensureFigure(id: string): Promise<void> {
   const gltf = await getGLTFLoader().parseAsync(bytes.slice(0), '');
   const read = rigFromGLTF(gltf, id, info.label);
   read.rig.id = id;
+  tuneRig(read.rig, info);
   figureReads.set(id, read);
 }
 
@@ -127,6 +128,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // (holdFloor), and the look's Floor offset raises or lowers it.
   const savedFloorOffset = viewer.getFloorOffset();
   viewer.lockFloor(0);
+  // Only the key light casts by default in Armature mode (owner call); the
+  // fill's and the rim's Casts shadow boxes still tick them on, and a look
+  // saved before the rim cast by default keeps its rim as it was saved
+  // (Lighting.keyOnlyShadows). Sculpt and the viewer keep all three.
+  const lighting = viewer.lighting;
+  const casts = (id: 'fill' | 'rim'): boolean => lighting.state().find((l) => l.id === id)?.castShadow ?? true;
+  const castsBefore = { fill: casts('fill'), rim: casts('rim') };
+  lighting.setShadow('fill', false);
+  lighting.setShadow('rim', false);
+  lighting.keyOnlyShadows = true;
   // The Render panel, Help and Preferences all listen for this.
   window.dispatchEvent(
     new CustomEvent('bozzetto:sculptmode', { detail: { active: true, mode: 'armature' } }),
@@ -298,11 +309,25 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   moveTc.mode = 'translate';
   moveTc.space = 'world';
   moveTc.setSize(0.9);
-  const controls = [rotateTc, moveTc];
+  /**
+   * The part's proportions (R): the handle along the bone is its length,
+   * the two across it its size. It drives a stand-in on the bone rather
+   * than the part itself, whose scale is the proportions' to set; the
+   * stand-in's scale is read as a factor on the part as the drag found it.
+   */
+  const scaleTc = new TransformControls(viewer.camera, canvas);
+  scaleTc.mode = 'scale';
+  scaleTc.space = 'local';
+  scaleTc.setSize(0.75);
+  const scaleProxy = new Object3D();
+  scaleProxy.name = 'armature-scale';
+  /** The part's proportions as the drag began. */
+  let scaleFrom: { size: number; length: number } | null = null;
+  const controls = [rotateTc, moveTc, scaleTc];
   const attached = new Set<TransformControls>();
   let dragging = false;
-  /** Which handles the selection gets, as in sculpt mode: t, w, e. */
-  let gizmoMode: 'all' | 'translate' | 'rotate' = 'all';
+  /** Which handles the selection gets, as in sculpt mode: t, w, e, r. */
+  let gizmoMode: 'all' | 'translate' | 'rotate' | 'scale' = 'all';
 
   /**
    * With both controls on the pelvis, the middle belongs to the move
@@ -338,6 +363,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const on = !!(e as unknown as { value: boolean }).value;
       dragging = on;
       viewer.setOrbitEnabled(!on);
+      if (tc === scaleTc) {
+        scaleProxy.scale.set(1, 1, 1);
+        scaleFrom = on && selected ? armature.getProportions(selected) : null;
+      }
       // One control at a time on the root, where both are attached.
       for (const other of controls) if (other !== tc) other.enabled = !on && attached.has(other);
       if (!on) {
@@ -346,7 +375,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       }
     });
     tc.addEventListener('objectChange', () => {
-      if (selectedHandle) handleMoved(selectedHandle);
+      if (tc === scaleTc) scaled();
+      else if (selectedHandle) handleMoved(selectedHandle);
       else afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
     });
   }
@@ -369,6 +399,25 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     refreshPanel();
     scheduleSave();
   };
+  /**
+   * The scale gizmo moved: the selected part's length by the handle along
+   * its bone, its size by whichever handle across it moved further (both
+   * go together, the cross-section being one size), in whole percent,
+   * clamped and mirrored as the panel's sliders are. The panel catches up
+   * when the drag ends.
+   */
+  const scaled = (): void => {
+    if (!selected || !scaleFrom) return;
+    const s = scaleProxy.scale;
+    const across = Math.abs(s.x - 1) >= Math.abs(s.z - 1) ? s.x : s.z;
+    // In whole percent, as the panel's rows read.
+    const pct = (v: number): number => Math.round(v * 100) / 100;
+    armature.setProportions(selected, { size: pct(scaleFrom.size * across), length: pct(scaleFrom.length * s.y) });
+    armature.applyPins();
+    syncHandles();
+    refreshPanel();
+    scheduleSave();
+  };
   // Attached pickers need their matrices before the first hover.
   const placeControls = (): void => {
     for (const tc of controls) if (tc.enabled) tc.getHelper().updateMatrixWorld(true);
@@ -385,6 +434,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       tc.getHelper().visible = false;
     }
     attached.clear();
+    scaleProxy.removeFromParent();
     selectedHandle = null;
     selected = bone && armature.bones.has(bone) ? bone : null;
     if (selected) {
@@ -395,18 +445,24 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       rotateTc.showY = def.kind === 'root' || l.y[1] > l.y[0];
       rotateTc.showZ = def.kind === 'root' || l.z[1] > l.z[0];
       // A bone rotates; the pelvis is the root, so it also moves.
+      // Any part scales (R), the pelvis included.
       const wanted =
-        def.kind === 'root'
-          ? gizmoMode === 'translate'
-            ? [moveTc]
-            : gizmoMode === 'rotate'
-              ? [rotateTc]
-              : controls
-          : [rotateTc];
+        gizmoMode === 'scale'
+          ? [scaleTc]
+          : def.kind === 'root'
+            ? gizmoMode === 'translate'
+              ? [moveTc]
+              : gizmoMode === 'rotate'
+                ? [rotateTc]
+                : [rotateTc, moveTc]
+            : [rotateTc];
       trimFreeRotate(wanted.length > 1);
-      const use = wanted;
-      for (const tc of use) {
-        tc.attach(target);
+      if (gizmoMode === 'scale') {
+        target.add(scaleProxy);
+        scaleProxy.scale.set(1, 1, 1);
+      }
+      for (const tc of wanted) {
+        tc.attach(tc === scaleTc ? scaleProxy : target);
         tc.enabled = true;
         tc.getHelper().visible = true;
         attached.add(tc);
@@ -1544,6 +1600,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         gizmoMode = 'all';
         select(selected ?? armature.root.name);
         break;
+      case 'arm.scale':
+        // A part's own: with none selected (or a ball) it does nothing.
+        if (!selected) break;
+        gizmoMode = 'scale';
+        select(selected);
+        break;
       case 'arm.resetPose':
         armature.resetPose();
         select(selected);
@@ -1633,6 +1695,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       /** Whether the centre still carries the free-rotate sphere. */
       freeRotateOn: freeRotate.length === 0,
     }),
+    /** The gizmo handle a press at this page point would take ('X', 'Y', 'XYZ'...), as a press decides; null for none. */
+    gizmoAxis: (x: number, y: number): string | null => {
+      for (const tc of controls) {
+        if (!tc.enabled) continue;
+        const t = tc as unknown as {
+          _getPointer(ev: { clientX: number; clientY: number; button: number }): { x: number; y: number; button: number };
+          pointerHover(p: { x: number; y: number; button: number }): void;
+          axis: string | null;
+        };
+        t.pointerHover(t._getPointer({ clientX: x, clientY: y, button: 0 }));
+        if (t.axis) return t.axis;
+      }
+      return null;
+    },
     hingePosition: (id: string) => {
       const at = armature.hingeWorld(id, new Vector3());
       return at ? at.toArray() : null;
@@ -1714,6 +1790,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     offAntialias();
     viewer.setAntialias('always');
     viewer.setSculptVisible(true);
+    // The lights' boxes as the mode found them, for whatever comes next.
+    lighting.keyOnlyShadows = false;
+    lighting.setShadow('fill', castsBefore.fill);
+    lighting.setShadow('rim', castsBefore.rim);
     for (const tc of controls) {
       viewer.scene.remove(tc.getHelper());
       tc.dispose();

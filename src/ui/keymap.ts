@@ -112,6 +112,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
+  // The same key in the viewer and the editors' preview: one Preferences
+  // change moves it in all three, as Armature's undo follows Sculpt's.
+  { id: 'view.light', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'view', chord: 'l', hold: true, sameKeyAs: 'light.move' },
   // --- viewer: playback ---
   // One key for both: the viewer's playback, and Present's turntable in Sculpt.
   { id: 'play.toggle', label: 'Play / pause (in Present, the turntable)', group: 'Playback', mode: 'both', chord: 'space' },
@@ -143,6 +146,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'arm.move', label: 'Move the figure (the pelvis, screen-plane centre)', group: 'Armature', mode: 'armature', chord: 'w' },
   { id: 'arm.rotate', label: 'Rotate what is selected', group: 'Armature', mode: 'armature', chord: 'e' },
   { id: 'arm.gizmo', label: 'Move and rotate together', group: 'Armature', mode: 'armature', chord: 't' },
+  { id: 'arm.scale', label: 'Scale the selected part (its size and length)', group: 'Armature', mode: 'armature', chord: 'r' },
   { id: 'arm.aim', label: 'Aim the knee or elbow of the selected limb', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the small ball' },
   { id: 'gesture.armRoot', label: 'Move the whole figure, pinned hands and feet staying put', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the ball in the hips' },
   { id: 'arm.resetPose', label: 'Reset the pose', group: 'Armature', mode: 'armature', chord: 'shift+r' },
