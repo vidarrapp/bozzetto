@@ -4,11 +4,62 @@ import { parseTyped } from '../../ui/sliderEntry';
 import { formatUnitless } from '../../viewer/units';
 
 /** What the banner asks of the mount: the scaling itself, and the dismissal kept with the scene. */
-export interface ScaleBannerHooks {
-  /** Put the scene on real units: `mesh` is `cm` tall, everything else in proportion. */
-  apply(mesh: SculptMesh, cm: number): void;
+export interface ScaleBannerHooks<T = SculptMesh> {
+  /** Put the scene on real units: `subject` is `cm` tall, everything else in proportion. */
+  apply(subject: T, cm: number): void;
   /** The offer was turned down: the scene record keeps that (SavedScene.scaleDismissed). */
   dismissed(): void;
+}
+
+/**
+ * What the banner measures and offers, so one banner serves Sculpt's scene
+ * (its objects) and the editor's project (its one model, whatever frame is
+ * showing): the choices, their names and heights in their own units, and
+ * whether the offer stands at all.
+ */
+export interface ScaleSubjects<T> {
+  /** The objects to pick from, the largest picked to start with. */
+  list(): T[];
+  name(subject: T): string;
+  /** Its height now, in the scene's own units. */
+  height(subject: T): number;
+  /** Its size, for picking the largest (the diagonal of its box). */
+  size(subject: T): number;
+  /** Whether the offer stands: no units yet, and not turned down. */
+  needed(): boolean;
+}
+
+/** The banner's words, where a project is not a scene. */
+export interface ScaleBannerWords {
+  /** The line along the top. */
+  intro: string;
+  /** Not now's tooltip. */
+  dismiss: string;
+  /** Under the form. */
+  hint: string;
+}
+
+const SCENE_WORDS: ScaleBannerWords = {
+  intro: 'This scene has no real-world scale yet. Set it to work in centimetres.',
+  dismiss: 'Keep the scene as it is; this is not offered again for it',
+  hint: 'Everything is scaled by the same amount and set on the floor. Undo history starts over from here.',
+};
+
+/** Sculpt's scene as the banner's subjects: its objects, by their world boxes. */
+export function sceneSubjects(session: SculptSession): ScaleSubjects<SculptMesh> {
+  return {
+    list: () => [...session.getMeshes()],
+    name: (m) => session.getMeshName(m),
+    height: (m) => {
+      const b = m.computeWorldBound();
+      return b[4] - b[1];
+    },
+    size: (m) => {
+      const b = m.computeWorldBound();
+      return Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
+    },
+    needed: () => !session.getUnits() && !session.isScaleDismissed(),
+  };
 }
 
 /** The tallest a typed height may be: a 100 m object is past anything sculpted here. */
@@ -23,32 +74,33 @@ const MAX_CM = 10000;
  * makes it so, set on the floor and marked (the mount's apply). The banner
  * then goes, as it does for a scene that has its scale already.
  */
-export class ScaleBanner {
+export class ScaleBanner<T = SculptMesh> {
   private readonly root: HTMLDivElement;
   private readonly form: HTMLFormElement;
   private readonly select: HTMLSelectElement;
   private readonly height: HTMLInputElement;
   private readonly note: HTMLSpanElement;
   private readonly error: HTMLDivElement;
-  private choices: SculptMesh[] = [];
+  private choices: T[] = [];
 
   constructor(
-    private readonly session: SculptSession,
-    private readonly hooks: ScaleBannerHooks,
+    private readonly subjects: ScaleSubjects<T>,
+    private readonly hooks: ScaleBannerHooks<T>,
+    words: ScaleBannerWords = SCENE_WORDS,
   ) {
     this.root = document.createElement('div');
     this.root.className = 'scale-banner';
     this.root.setAttribute('role', 'region');
     this.root.setAttribute('aria-label', 'Set scale');
-    const words = document.createElement('span');
-    words.className = 'scale-banner__words';
-    words.textContent = 'This scene has no real-world scale yet. Set it to work in centimetres.';
+    const intro = document.createElement('span');
+    intro.className = 'scale-banner__words';
+    intro.textContent = words.intro;
     const open = button('Set scale', 'scale-banner__open');
     const dismiss = button('Not now', 'scale-banner__dismiss');
-    dismiss.title = 'Keep the scene as it is; this is not offered again for it';
+    dismiss.title = words.dismiss;
     const head = document.createElement('div');
     head.className = 'scale-banner__head';
-    head.append(words, open, dismiss);
+    head.append(intro, open, dismiss);
 
     // The form: which object, and how tall it really is.
     this.form = document.createElement('form');
@@ -80,7 +132,7 @@ export class ScaleBanner {
     row.append(this.select, this.height, unit, apply, cancel);
     const hint = document.createElement('div');
     hint.className = 'scale-banner__hint';
-    hint.textContent = 'Everything is scaled by the same amount and set on the floor. Undo history starts over from here.';
+    hint.textContent = words.hint;
     this.form.append(row, this.note, hint, this.error);
     this.select.addEventListener('change', () => this.describe());
 
@@ -105,7 +157,7 @@ export class ScaleBanner {
 
   /** Shown for a scene without units that has not turned the offer down; gone otherwise. */
   refresh(): void {
-    const show = !this.session.getUnits() && !this.session.isScaleDismissed();
+    const show = this.subjects.needed();
     this.root.hidden = !show;
     if (!show) {
       this.form.hidden = true;
@@ -119,12 +171,11 @@ export class ScaleBanner {
 
   /** The form, with the objects listed and the largest picked. */
   openForm(): void {
-    this.choices = [...this.session.getMeshes()];
+    this.choices = this.subjects.list();
     let largest = 0;
     let most = -1;
     this.choices.forEach((m, i) => {
-      const b = m.computeWorldBound();
-      const d = Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
+      const d = this.subjects.size(m);
       if (d > most) {
         most = d;
         largest = i;
@@ -134,7 +185,7 @@ export class ScaleBanner {
       ...this.choices.map((m, i) => {
         const o = document.createElement('option');
         o.value = String(i);
-        o.textContent = this.session.getMeshName(m);
+        o.textContent = this.subjects.name(m);
         return o;
       }),
     );
@@ -149,16 +200,15 @@ export class ScaleBanner {
 
   /** Under the row: how tall the object is now, in the scene's own units. */
   private describe(): void {
-    const mesh = this.choices[Number(this.select.value)];
-    if (!mesh) return;
-    const b = mesh.computeWorldBound();
-    this.note.textContent = `Now ${formatUnitless(b[4] - b[1])} tall.`;
+    const subject = this.choices[Number(this.select.value)];
+    if (subject === undefined) return;
+    this.note.textContent = `Now ${formatUnitless(this.subjects.height(subject))} tall.`;
   }
 
   private submit(): void {
-    const mesh = this.choices[Number(this.select.value)];
+    const subject = this.choices[Number(this.select.value)];
     const cm = parseTyped(this.height.value.replace(/cm$/i, ''));
-    if (!mesh || !this.session.getMeshes().includes(mesh)) {
+    if (subject === undefined || !this.subjects.list().includes(subject)) {
       this.fail('Pick an object in the scene.');
       return;
     }
@@ -166,7 +216,7 @@ export class ScaleBanner {
       this.fail(`Type a height in centimetres, above 0 and up to ${MAX_CM}.`);
       return;
     }
-    this.hooks.apply(mesh, cm);
+    this.hooks.apply(subject, cm);
     this.refresh();
   }
 

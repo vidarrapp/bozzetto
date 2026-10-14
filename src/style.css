@@ -3933,6 +3933,11 @@ body.is-sampling * {
   order: 3;
 }
 
+/* The hotkey guide's button, in the Render panel's Interface section. */
+.panel__hotkeys {
+  align-self: flex-start;
+}
+
 /* "Reset look" sits inside the Lighting section, quieter than a primary
    action: it is an escape hatch, not part of the normal flow. */
 .panel__reset {

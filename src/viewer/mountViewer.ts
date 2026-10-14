@@ -33,14 +33,14 @@ export async function mountViewer(
   if (grade) viewer.setToneMapping(grade as ToneMappingId);
 
   // Build the UI after boot so controls reflect the applied look.
-  const panel = new Panel(viewer);
+  const help = new Help();
+  const panel = new Panel(viewer, { onHotkeys: () => help.toggle() });
   viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;
   // a single-model project has nothing to scrub, so it gets no timeline.
   if (manifest.mode === 'timelapse' && manifest.config.frameCount > 1) {
     new Transport(viewer);
   }
-  const help = new Help();
   const fps = new FpsMeter(viewer);
   // The stall log lives here, not in one mode, so it reads the same over
   // the viewer, Sculpt and Armature (Preferences > Diagnostics, ?perfdebug=1).

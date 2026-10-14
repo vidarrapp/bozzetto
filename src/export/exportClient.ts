@@ -29,6 +29,8 @@ export interface ExportManifest {
   material?: unknown;
   ao?: unknown;
   camera?: unknown;
+  presentation?: unknown;
+  units?: unknown;
 }
 
 /** Overlay the live preview's current look onto a base manifest for export. */
@@ -40,6 +42,10 @@ export function buildExportManifest(base: ExportManifest, p: Viewer): ExportMani
     environment: p.environment.getState(),
     ao: p.getAOState(),
     camera: p.getCameraState(),
+    // The stage as shown, with the played scale and lift where Set scale
+    // gave the project one, and the units it plays on.
+    presentation: p.getStageState(),
+    units: p.manifest.units ?? base.units ?? null,
     defaults: { ...(base.defaults as object), material: p.getMaterial() },
   };
 }

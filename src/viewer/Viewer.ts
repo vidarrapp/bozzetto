@@ -19,7 +19,7 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion } from 'three';
+  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
 import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, mix } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
@@ -46,7 +46,7 @@ import { FrameClock } from './frameClock';
 import { AccumulateNode, stillOffsets } from './accumulate';
 import { AdaptiveQuality, type QualityKnobs } from './adaptive';
 import { settings } from '../ui/settings';
-import { FLOOR_OFFSET_LIMIT, formatDimensions, formatSceneLength } from './units';
+import { FLOOR_OFFSET_LIMIT, formatDimensions, formatSceneLength, type Units } from './units';
 
 /** Output grade choices (Render panel > Camera > Tone mapping). */
 export type ToneMappingId = 'none' | 'neutral' | 'agx' | 'cinematic';
@@ -196,7 +196,22 @@ export interface StageState {
    * looks from before it, which is 0.
    */
   floorOffset?: number;
+  /**
+   * The project's frames as played: one uniform factor about the origin,
+   * then lifted by `lift` metres, every frame alike (the subject root's
+   * matrix). Set scale in the editor writes them for a project from before
+   * real units; absent (1 and 0) everywhere else, and Sculpt's and
+   * Armature's own subjects never read them.
+   */
+  scale?: number;
+  lift?: number;
 }
+
+/** The least and most a project's played scale may be (StageState.scale). */
+export const SUBJECT_SCALE_MIN = 1e-4;
+export const SUBJECT_SCALE_MAX = 1e4;
+/** The farthest the played frames may be lifted, in metres (StageState.lift). */
+const SUBJECT_LIFT_LIMIT = 1e4;
 
 /** Visible ground disc fade (plane-UV radius from the centre): opaque within
  *  INNER, fully transparent by OUTER. The plane extends past OUTER (invisible)
@@ -347,6 +362,15 @@ export class Viewer {
   private readonly timer = new Timer();
 
   private readonly display = new Mesh();
+  /**
+   * The streamed frames' parent: its matrix is the project's played scale
+   * and lift (StageState.scale / lift), the same for every frame, so a
+   * timelapse plays at one size. Identity while a mode brings its own
+   * subject (Sculpt), whose matrices are its own.
+   */
+  private readonly subjectRoot = new Group();
+  private subjectScale = 1;
+  private subjectLift = 0;
   // Stage: one ground plane whose material swaps between a shadow-catcher and a
   // radial-fade studio floor, plus a pedestal box — all sized to the subject.
   private readonly ground = new Mesh();
@@ -762,7 +786,8 @@ export class Viewer {
     // Wireframe overlay shares the display geometry; toggled with "w".
     this.wireframe.material = this.wireMaterial;
     this.wireframe.visible = false;
-    this.scene.add(this.wireframe);
+    this.subjectRoot.add(this.wireframe);
+    this.scene.add(this.subjectRoot);
 
     this.buildPipeline();
 
@@ -818,7 +843,7 @@ export class Viewer {
     const geom = await this.streamer.ensure(start);
     this.display.geometry = geom;
     this.wireframe.geometry = geom;
-    this.scene.add(this.display);
+    this.subjectRoot.add(this.display);
     this.displayedIndex = start;
     this.targetIndex = start;
     this.timeline.setFrame(start);
@@ -827,6 +852,10 @@ export class Viewer {
     // with the presentation below); one from before real units keeps the
     // floor that follows its subject.
     this.floorY = this.manifestFloor();
+    // The played scale (Set scale in the editor) before the fit, which
+    // reads the frame's bounds through it.
+    const shown = (this.manifest.presentation ?? {}) as Partial<StageState>;
+    this.placeSubject(shown.scale, shown.lift);
     this.fitScene(geom);
 
     this.setMaterial(this.currentMode);
@@ -1260,6 +1289,15 @@ export class Viewer {
     return this.manifest.units ? 0 : null;
   }
 
+  /**
+   * Mark the booted project's units (Set scale in the editor): on 'm' its
+   * floor stands fixed at 0, as a project published on real units has it.
+   */
+  setUnits(units: Units | null): void {
+    this.manifest.units = units;
+    this.lockFloor(this.manifestFloor());
+  }
+
   /** Where a fixed floor is - its base plus the Floor offset - or null when it follows the subject. */
   floorHeight(): number | null {
     return this.floorY === null ? null : this.floorY + this.floorOffset;
@@ -1323,7 +1361,61 @@ export class Viewer {
       metalness: this.stageMetalness,
       pedestalScale: this.pedestalScale,
       floorOffset: this.floorOffset,
+      // Only where it says something: a look from Sculpt or Armature, and
+      // a project played as it was made, carry none.
+      ...(!this.inSculpt && (this.subjectScale !== 1 || this.subjectLift !== 0)
+        ? { scale: this.subjectScale, lift: this.subjectLift }
+        : {}),
     };
+  }
+
+  /**
+   * Set scale for a project's frames (the editor's banner): every frame
+   * played `scale` times its size about the origin, then lifted `lift`
+   * metres, and the stage, the light fit and the view refitted to the
+   * result, keeping the view's angle. Kept by getStageState for Save look.
+   */
+  setSubjectTransform(scale: number, lift: number): void {
+    this.placeSubject(scale, lift);
+    this.fitSubjectBounds(this.playedBounds(this.display.geometry), true, true);
+  }
+
+  getSubjectTransform(): { scale: number; lift: number } {
+    return { scale: this.subjectScale, lift: this.subjectLift };
+  }
+
+  /**
+   * The current frame's own bounds, before the played scale: what Set
+   * scale measures the model by.
+   */
+  frameLocalBounds(): Box3 {
+    const geom = this.display.geometry;
+    geom.computeBoundingBox();
+    return (geom.boundingBox ?? new Box3()).clone();
+  }
+
+  /** Put the scale and lift on the frames' parent, clamped; identity while Sculpt holds the display. */
+  private placeSubject(scale: unknown, lift: unknown): void {
+    this.subjectScale = finite(scale) && scale > 0 ? Math.min(SUBJECT_SCALE_MAX, Math.max(SUBJECT_SCALE_MIN, scale)) : 1;
+    this.subjectLift = finite(lift) ? Math.min(SUBJECT_LIFT_LIMIT, Math.max(-SUBJECT_LIFT_LIMIT, lift)) : 0;
+    this.syncSubjectRoot();
+  }
+
+  private syncSubjectRoot(): void {
+    const s = this.inSculpt ? 1 : this.subjectScale;
+    this.subjectRoot.scale.setScalar(s);
+    this.subjectRoot.position.set(0, this.inSculpt ? 0 : this.subjectLift, 0);
+    this.subjectRoot.updateMatrixWorld(true);
+    this.invalidate();
+  }
+
+  /** A frame geometry's bounds in the world: through the played scale and lift. */
+  private playedBounds(geom: BufferGeometry): Box3 {
+    geom.computeBoundingBox();
+    const box = (geom.boundingBox ?? new Box3()).clone();
+    if (box.isEmpty()) return box;
+    this.subjectRoot.updateMatrix();
+    return box.applyMatrix4(this.subjectRoot.matrix);
   }
 
   applyStageState(state: Partial<StageState>): void {
@@ -1947,11 +2039,17 @@ export class Viewer {
 
   /** Frame the current model in place, keeping the view angle (hotkey "f"). */
   focusSubject(): void {
-    const geom = this.display.geometry;
-    geom.computeBoundingBox();
-    if (geom.boundingBox) {
-      this.subjectBox.copy(geom.boundingBox);
+    const box = this.inSculpt ? null : this.playedBounds(this.display.geometry);
+    if (box && !box.isEmpty()) {
+      this.subjectBox.copy(box);
       this.controls.focus(this.subjectBox);
+    } else if (this.inSculpt) {
+      const geom = this.display.geometry;
+      geom.computeBoundingBox();
+      if (geom.boundingBox) {
+        this.subjectBox.copy(geom.boundingBox);
+        this.controls.focus(this.subjectBox);
+      }
     }
     this.invalidate();
   }
@@ -2387,15 +2485,15 @@ export class Viewer {
   // --- internals ---------------------------------------------------------
 
   private fitScene(geom: BufferGeometry): void {
-    geom.computeBoundingBox();
+    const box = this.playedBounds(geom);
     const cam = this.manifest.camera;
     if (cam.position && cam.target) {
       // Bounds first: the restored camera is clamped to this subject's
       // dolly limits, so they have to be this subject's already.
-      this.fitSubjectBounds(geom.boundingBox ?? new Box3(), false);
+      this.fitSubjectBounds(box, false);
       this.controls.setState(cam.position, cam.target);
     } else {
-      this.fitSubjectBounds(geom.boundingBox ?? new Box3(), !!cam.autoFrame);
+      this.fitSubjectBounds(box, !!cam.autoFrame);
     }
 
     this.logAoDebug();
@@ -2532,6 +2630,7 @@ export class Viewer {
     this.display.geometry = geometry;
     this.wireframe.geometry = geometry;
     this.inSculpt = true;
+    this.syncSubjectRoot(); // the sculpt's matrices are its own
     if (wire) this.attachWire(this.display, wire);
     this.wireframe.visible = false; // the sculpt wires take over (setWireframe)
     this.display.matrixAutoUpdate = false;
@@ -2561,6 +2660,7 @@ export class Viewer {
     this.shadowSubject = null;
     this.detachWire(this.display);
     this.inSculpt = false;
+    this.syncSubjectRoot();
     this.wireframe.visible = this.wireframeOn;
     this.display.geometry = saved.geometry;
     this.wireframe.geometry = saved.geometry;

@@ -112,6 +112,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
+  // The same key in the viewer and the editors' preview: one Preferences
+  // change moves it in all three, as Armature's undo follows Sculpt's.
+  { id: 'view.light', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'view', chord: 'l', hold: true, sameKeyAs: 'light.move' },
   // --- viewer: playback ---
   // One key for both: the viewer's playback, and Present's turntable in Sculpt.
   { id: 'play.toggle', label: 'Play / pause (in Present, the turntable)', group: 'Playback', mode: 'both', chord: 'space' },

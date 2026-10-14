@@ -8,6 +8,8 @@ import { mountReelControls } from '../ui/reel';
 import { EditorLayout } from '../ui/editorLayout';
 import { installShortcuts } from '../ui/shortcuts';
 import { FpsMeter } from '../ui/FpsMeter';
+import { Help } from '../ui/Help';
+import { ScaleBanner } from '../sculpt/ui/SetScale';
 import { validateManifest } from '../types/manifest';
 import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
 
@@ -65,6 +67,105 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
   }
 }
 
+/**
+ * The look as a project's blocks, as Save look writes them. One gatherer
+ * for the whole look (Viewer.getLook), shared with sculpt mode's session
+ * save, so the two cannot drift apart; the stage carries the played scale
+ * where Set scale gave the project one.
+ */
+function lookPatch(p: Viewer): Record<string, unknown> {
+  const look = p.getLook();
+  return {
+    lighting: look.lighting,
+    material: look.material,
+    environment: look.environment,
+    ao: look.ao,
+    presentation: look.presentation,
+    camera: look.camera,
+    defaults: { material: look.materialMode },
+  };
+}
+
+/** Not now on Set scale: kept for this tab's session, per project, and nothing stored on the server. */
+const SCALE_NOT_NOW = 'bz.scale.notnow.';
+const notNowHere = new Set<string>();
+function scaleDismissed(id: string): boolean {
+  if (notNowHere.has(id)) return true;
+  try {
+    return sessionStorage.getItem(SCALE_NOT_NOW + id) === '1';
+  } catch {
+    return false;
+  }
+}
+function dismissScale(id: string): void {
+  notNowHere.add(id);
+  try {
+    sessionStorage.setItem(SCALE_NOT_NOW + id, '1');
+  } catch {
+    // Blocked storage: the set above holds it until the page goes.
+  }
+}
+
+/**
+ * Set scale for a project published before real units (owner decision):
+ * the same banner Sculpt offers a scene from before, here over the one
+ * model. The typed height is the current frame's; every frame is played
+ * by the one factor that makes it so (presentation.scale, lifted to stand
+ * on the floor at 0), the project is marked `units: 'm'`, and both are
+ * saved at once, with the look, so the viewer plays it at that size for
+ * everyone. A refusal puts the preview back as it was.
+ */
+function mountScaleBanner(p: Viewer, id: string, title: string): ScaleBanner<string> {
+  const subject = title || id;
+  const height = (): number => {
+    const b = p.frameLocalBounds();
+    return b.isEmpty() ? 0 : (b.max.y - b.min.y) * p.getSubjectTransform().scale;
+  };
+  const banner: ScaleBanner<string> = new ScaleBanner<string>(
+    {
+      list: () => [subject],
+      name: (s) => s,
+      height,
+      size: height,
+      needed: () => !p.manifest.units && !scaleDismissed(id),
+    },
+    {
+      apply: (_s, cm) => void setScale(cm),
+      dismissed: () => dismissScale(id),
+    },
+    {
+      intro: 'This project has no real-world scale yet. Set it to play in centimetres.',
+      dismiss: 'Keep the project as it is; not offered again in this tab',
+      hint: 'Every frame is scaled by the same amount and stood on the floor, then saved with the look.',
+    },
+  );
+  const setScale = async (cm: number): Promise<void> => {
+    const box = p.frameLocalBounds();
+    const f = cm / 100 / (box.max.y - box.min.y);
+    if (!(f > 0) || !Number.isFinite(f)) return;
+    const was = { ...p.getSubjectTransform(), units: p.manifest.units, offset: p.getFloorOffset() };
+    // Marked first, so the refit below lays the floor out fixed at 0.
+    p.setUnits('m');
+    p.setFloorOffset(0);
+    p.setSubjectTransform(f, -f * box.min.y);
+    // A focus lock was a point on the old scale.
+    p.setDoF({ focus: p.getDoFState().focus });
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+    banner.refresh();
+    try {
+      await api.update(id, { ...lookPatch(p), units: 'm' });
+    } catch (err) {
+      p.setUnits(was.units);
+      p.setFloorOffset(was.offset);
+      p.setSubjectTransform(was.scale, was.lift);
+      window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
+      banner.refresh();
+      alert(`Set scale failed: ${failureText(err)}`);
+    }
+  };
+  return banner;
+}
+
 /** The Save look / Save thumbnail actions, pinned to the top of the Render panel. */
 function buildLookActions(p: Viewer, id: string): HTMLElement {
   const sec = document.createElement('section');
@@ -74,18 +175,7 @@ function buildLookActions(p: Viewer, id: string): HTMLElement {
   const saveLook = button('Save look', 'btn btn--primary');
   saveLook.addEventListener('click', () =>
     void runSave(saveLook, async () => {
-      // One gatherer for the whole look (Viewer.getLook), shared with sculpt
-      // mode's session save, so the two cannot drift apart.
-      const look = p.getLook();
-      await api.update(id, {
-        lighting: look.lighting,
-        material: look.material,
-        environment: look.environment,
-        ao: look.ao,
-        presentation: look.presentation,
-        camera: look.camera,
-        defaults: { material: look.materialMode },
-      });
+      await api.update(id, lookPatch(p));
     }),
   );
 
@@ -119,10 +209,16 @@ let preview: Viewer | null = null;
 let panel: Panel | null = null;
 let layout: EditorLayout | null = null;
 let fpsMeter: FpsMeter | null = null;
+let help: Help | null = null;
+let scaleBanner: ScaleBanner<string> | null = null;
 let disposeShortcuts: (() => void) | null = null;
 function disposePreview(): void {
   disposeShortcuts?.();
   disposeShortcuts = null;
+  scaleBanner?.dispose();
+  scaleBanner = null;
+  help?.dispose();
+  help = null;
   fpsMeter?.dispose();
   fpsMeter = null;
   panel?.dispose();
@@ -421,16 +517,22 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
       preserveDrawingBuffer: true,
     });
     await preview.boot();
-    panel = new Panel(preview, { editor: true, actions: buildLookActions(preview, id) });
+    // For the browser console (and the tests), as the viewer exposes its own.
+    (window as unknown as { __bozzetto?: Viewer }).__bozzetto = preview;
+    help = new Help();
+    panel = new Panel(preview, { editor: true, actions: buildLookActions(preview, id), onHotkeys: () => help?.toggle() });
     preview.onDofChange = () => panel?.refreshControls();
     layout?.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
       togglePanel: () => layout?.toggle(),
+      toggleHelp: () => help?.toggle(),
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });
     reelMount.replaceChildren(mountReelControls(preview));
+    // A project from before real units: the Set scale offer (owner tool).
+    scaleBanner = mountScaleBanner(preview, id, titleInput.value.trim() || project.title);
     exportHtml.disabled = false;
   }
 

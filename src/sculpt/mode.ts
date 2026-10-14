@@ -53,7 +53,7 @@ import {
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
-import { ScaleBanner } from './ui/SetScale';
+import { ScaleBanner, sceneSubjects } from './ui/SetScale';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { perfLog } from '../viewer/perfLog';
@@ -1547,7 +1547,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     void storeLook();
     statusToast('').done(`Set to scale: "${session.getMeshName(target)}" is ${formatLength(cm / 100)} tall`);
   };
-  const scaleBanner = new ScaleBanner(session, {
+  const scaleBanner = new ScaleBanner(sceneSubjects(session), {
     apply: (mesh, cm) => {
       // A timelapse is played back as recorded: frames captured on the old
       // scale would jump to the new one partway through. They go with the

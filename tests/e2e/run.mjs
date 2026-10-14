@@ -1,6 +1,6 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
 // armatureProjects.mjs's, latency.mjs's, shadows.mjs's, hardening.mjs's,
-// tweaks.mjs's, units.mjs's, passkeyCheck.mjs's, present.mjs's and
+// tweaks.mjs's, units.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's and
 // accounts.mjs's (which starts the real Functions of its own, with
 // wrangler, beside the static server the rest use).
 //
@@ -23,8 +23,9 @@ import { suites as shadows } from './shadows.mjs';
 import { suites as smoke } from './smoke.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 import { suites as units } from './units.mjs';
+import { suites as viewerTools } from './viewerTools.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...passkeyCheck, ...present, ...accounts };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...accounts };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

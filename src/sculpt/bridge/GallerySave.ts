@@ -86,13 +86,22 @@ export function presentationPatch(look: LookState, presented: boolean, units: Un
     material: look.material,
     environment: look.environment,
     ao: aoWithoutCavity(look),
-    presentation: look.presentation,
+    // Written fresh, and never with a played scale: the frames published
+    // from here are already on the scene's own scale (StageState.scale is
+    // the editor's Set scale for a project from before real units).
+    presentation: playedAsMade(look.presentation),
     camera: look.camera,
     defaults: {
       material: look.materialMode,
       ...(presented && look.toneMapping ? { toneMapping: look.toneMapping } : {}),
     },
   };
+}
+
+/** A stage record without the editor's played scale and lift. */
+function playedAsMade(presentation: LookState['presentation']): LookState['presentation'] {
+  const { scale: _scale, lift: _lift, ...rest } = presentation;
+  return rest;
 }
 
 /** "Timelapse 7 Oct 14:05": the title a publish to My projects gets when none is typed. */
