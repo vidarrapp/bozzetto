@@ -291,7 +291,7 @@ export const suites = {
     await settle(page);
     t.eq(await meshSum(page), sum, 'presenting, a drag across the model leaves every vertex where it was');
     t.eq(await strokeCount(page), strokes, 'and starts no stroke');
-    t.ok(camMoved(home, await camera(page)) > 0.05, `while it orbits the view (moved ${camMoved(home, await camera(page)).toFixed(3)})`);
+    t.ok(camMoved(home, await camera(page)) > 3e-4, `while it orbits the view (moved ${camMoved(home, await camera(page)).toExponential(1)} of its distance)`);
     for (const k of ['2', 't', 'w', 'q', 'x', 'Control+z', 'Control+d', 'Delete', 'ArrowDown']) await press(page, k);
     now = await ui(page);
     t.ok(now.tool === tool && now.gizmo === null && !now.selecting && now.presenting, `the brush, gizmo, select and edit keys do nothing (${show(now)})`);
@@ -373,7 +373,7 @@ export const suites = {
     await page.waitForTimeout(1500);
     const turned = await camera(page);
     const yOf = (c) => c.position[1] - c.target[1];
-    t.ok(camMoved(home, turned) > 0.02 && Math.abs(turned.distance - home.distance) < 1e-3 * home.distance && Math.abs(yOf(turned) - yOf(home)) < 1e-3, `it turns the view about the vertical axis, at the same distance and height (moved ${camMoved(home, turned).toFixed(3)})`);
+    t.ok(camMoved(home, turned) > 1e-4 && Math.abs(turned.distance - home.distance) < 1e-3 * home.distance && Math.abs(yOf(turned) - yOf(home)) < 1e-3, `it turns the view about the vertical axis, at the same distance and height (moved ${camMoved(home, turned).toExponential(1)} of its distance)`);
     await page.evaluate(() => window.__sculpt.present.setSpeed(40));
     t.eq(await page.evaluate(() => document.querySelector('.present-bar__val').textContent), '40°/s', 'the speed slider reads in degrees a second');
     await page.mouse.click(cx + 200, cy + 150);
@@ -588,7 +588,7 @@ async function clipChecks(page, base, t) {
     );
     t.ok(['avc1', 'vp09', 'av01'].includes(info.codec), `in H.264, or VP9/AV1 where the browser has no H.264 encoder (${info.codec})`);
     let back = await camera(p);
-    t.ok(camMoved(home, back) < 1e-4 * home.distance, `the view is back where the turn began (off by ${camMoved(home, back).toExponential(1)})`);
+    t.ok(camMoved(home, back) < 1e-4, `the view is back where the turn began (off by ${camMoved(home, back).toExponential(1)})`);
     const said = await p.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done' && /^Saved Sculpt-turntable\.mp4$/.test(n.textContent)), null, { timeout: 10_000 }).then(() => true).catch(() => false);
     t.ok(said, 'and it says it saved the file');
 
@@ -619,7 +619,7 @@ async function clipChecks(page, base, t) {
     await p.waitForTimeout(1500);
     back = await camera(p);
     const rowBack = await p.evaluate(() => !document.querySelector('.present-bar__clip').closest('[hidden]') && !!document.querySelector('.present-bar__progress').closest('[hidden]'));
-    t.ok(camMoved(before, mid) > 0.01 && camMoved(before, back) < 1e-4 * before.distance, `Cancel puts the view back where it was (moved ${camMoved(before, mid).toFixed(3)} mid-turn, then off by ${camMoved(before, back).toExponential(1)})`);
+    t.ok(camMoved(before, mid) > 5e-5 && camMoved(before, back) < 1e-4, `Cancel puts the view back where it was (moved ${camMoved(before, mid).toExponential(1)} mid-turn, then off by ${camMoved(before, back).toExponential(1)})`);
     t.ok(downloads.length === 0 && rowBack, `and leaves no download, the row back (${show(downloads)})`);
 
     // The live loop runs on: the turntable turns the view.
@@ -627,7 +627,7 @@ async function clipChecks(page, base, t) {
     await p.waitForTimeout(1500);
     const live = await camera(p);
     await p.click('.present-bar__play');
-    t.ok(camMoved(back, live) > 0.02, `afterwards the live turntable turns the view as before (moved ${camMoved(back, live).toFixed(3)})`);
+    t.ok(camMoved(back, live) > 1e-4, `afterwards the live turntable turns the view as before (moved ${camMoved(back, live).toExponential(1)})`);
     const frames1 = await p.evaluate(async () => {
       await new Promise((ok) => setTimeout(ok, 800));
       return window.__sculpt.recorder.frameCount();
@@ -815,11 +815,11 @@ async function ipadChecks(page, base, t) {
     let home = await camera(ipad);
     await dev.finger(path);
     await settle(ipad);
-    t.ok(camMoved(home, await camera(ipad)) > 0.05 && (await meshSum(ipad)) === sum, 'a finger across the model orbits and edits nothing');
+    t.ok(camMoved(home, await camera(ipad)) > 3e-4 && (await meshSum(ipad)) === sum, 'a finger across the model orbits and edits nothing');
     home = await camera(ipad);
     await dev.penDrag(path);
     await settle(ipad);
-    t.ok(camMoved(home, await camera(ipad)) > 0.05 && (await meshSum(ipad)) === sum && (await strokeCount(ipad)) === strokes, 'and so does the pen: no stroke in Present');
+    t.ok(camMoved(home, await camera(ipad)) > 3e-4 && (await meshSum(ipad)) === sum && (await strokeCount(ipad)) === strokes, 'and so does the pen: no stroke in Present');
     home = await camera(ipad);
     await dev.pair(line([cx - 30, cy + 60], [cx - 150, cy + 60], 3), line([cx + 30, cy + 60], [cx + 150, cy + 60], 3));
     await settle(ipad);

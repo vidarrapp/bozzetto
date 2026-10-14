@@ -1,4 +1,5 @@
 import type { LookState } from '../../viewer/Viewer';
+import { FLOOR_OFFSET_LIMIT, isUnits } from '../../viewer/units';
 import { hexColor } from '../../viewer/color';
 import { isProjectId } from '../../net/ids';
 import type { SavedLevel, SavedMesh, SavedScene, SceneLink, SculptSettings } from './ScenePersist';
@@ -279,6 +280,7 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
         roughness: num(stage.roughness, 0, 1),
         metalness: num(stage.metalness, 0, 1),
         pedestalScale: num(stage.pedestalScale, 0.01),
+        floorOffset: num(stage.floorOffset, -FLOOR_OFFSET_LIMIT, FLOOR_OFFSET_LIMIT),
       }),
     ),
     camera: isRec(v.camera)
@@ -323,6 +325,10 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     look: sanitizeLook(scene.look) as LookState | undefined,
     materials: sanitizeMaterials(scene.materials),
     settings: sanitizeSettings(scene.settings),
+    // Anything but the one marker is none: the scene opens as one from
+    // before real units, which is what it would have been read as.
+    units: isUnits(scene.units) ? scene.units : undefined,
+    scaleDismissed: !isUnits(scene.units) && scene.scaleDismissed === true ? true : undefined,
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,

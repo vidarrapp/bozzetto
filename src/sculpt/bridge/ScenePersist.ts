@@ -6,6 +6,7 @@ import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeLook, sanitizeScene } from './sanitize';
+import type { Units } from '../../viewer/units';
 
 /**
  * Workspace preferences that ride with a scene: how the brushes are set up,
@@ -134,6 +135,18 @@ export interface SavedScene {
   materials?: SculptMaterial[];
   /** Brush workspace settings (v4 addition; absent means the defaults). */
   settings?: SculptSettings;
+  /**
+   * The scene's units (src/viewer/units.ts): 'm' in every scene made since
+   * real units, whose objects are in metres and stand on the fixed floor.
+   * Absent in one from before, which opens exactly as it was - its old
+   * sizes, the floor following its subject - and offers Set scale.
+   */
+  units?: Units;
+  /**
+   * The Set scale offer was dismissed for this scene (an unmarked one
+   * only), so it does not come back on the next open.
+   */
+  scaleDismissed?: boolean;
   /**
    * The server project this scene was opened from or last saved to, which
    * is where Save to library writes again. It rides the autosave record so

@@ -78,7 +78,8 @@ export class SculptPanel extends SidePanel {
       const box = checkbox('World-scale size', ws.isEnabled(), (on) => {
         ws.setEnabled(on);
         this.input.refreshBrushCursor();
-        this.refreshBrushValues();
+        // The Size row changes units with the scale: rebuilt.
+        this.refreshBrush();
       });
       this.worldScaleBox = box.querySelector('input');
       sec.appendChild(box);
@@ -164,7 +165,9 @@ export class SculptPanel extends SidePanel {
         1,
         Math.round(this.input.getBrushRadius()),
         (v) => this.input.setBrushRadius(v),
-        { limits: BRUSH_SIZE },
+        // Printed as the rail prints it: pixels, or centimetres in world
+        // scale on real units (InputShell.brushSizeDisplay).
+        { limits: BRUSH_SIZE, ...(this.input.brushSizeDisplay().scale !== 1 ? this.input.brushSizeDisplay() : {}) },
       );
       this.sizeInput = sizeRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(sizeRow);
@@ -556,7 +559,10 @@ export class SculptPanel extends SidePanel {
     // World scale rides the scene record: an opened file can turn it either
     // way, and the box was only ever read when the panel was built.
     const ws = this.input.worldScale;
-    if (this.worldScaleBox && ws) this.worldScaleBox.checked = ws.isEnabled();
+    if (this.worldScaleBox && ws && this.worldScaleBox.checked !== ws.isEnabled()) {
+      this.worldScaleBox.checked = ws.isEnabled();
+      this.refreshBrush(); // the Size row's units with it
+    }
     if (!this.symCheckbox) return; // called before the section is built
     this.symCheckbox.checked = this.session.getSymmetry();
     this.paintAxis();

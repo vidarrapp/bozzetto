@@ -13,6 +13,7 @@ import { sanitizeLook } from '../sculpt/bridge/sanitize';
 import { sceneManifest, templateManifest, unreachable } from '../sculpt/bridge/SceneProjects';
 import type { LookState } from '../viewer/Viewer';
 import type { ArmatureState } from './Armature';
+import { onMetres } from './units';
 import type { ArmatureFile } from './persist';
 
 /**
@@ -135,6 +136,8 @@ export function readArmatureProject(text: string): DecodedArmature {
       state: sanitizeArmatureState(rec.state, figure),
       look: sanitizeLook(rec.look) as LookState | undefined,
       savedAt: finite(rec.savedAt) ? rec.savedAt : Date.now(),
+      // Without the marker the file is on the old scale (armature/units.ts).
+      ...(rec.units === 'm' ? { units: 'm' as const } : {}),
     },
     symmetry: rec.symmetry === true,
     notice,
@@ -175,6 +178,8 @@ export const isProjectRecord = (rec: unknown): boolean =>
 
 /** The armature as the project's file: the figure on top, the state without its preset, gzipped where the browser can. */
 export async function encodeArmatureProject(file: ArmatureFile, symmetry: boolean): Promise<ArrayBuffer> {
+  // An autosave from before real units goes up on metres, as it would open.
+  file = onMetres(file);
   const { preset, v: _v, ...state } = file.state;
   const json = JSON.stringify({
     kind: ARMATURE_PROJECT_KIND,
@@ -185,6 +190,8 @@ export async function encodeArmatureProject(file: ArmatureFile, symmetry: boolea
     symmetry,
     ...(file.look ? { look: file.look } : {}),
     savedAt: file.savedAt,
+    // In metres (src/viewer/units.ts): the file says so, as a scene does.
+    units: 'm',
   });
   const raw = new TextEncoder().encode(json);
   if (typeof CompressionStream === 'undefined') return raw.buffer;

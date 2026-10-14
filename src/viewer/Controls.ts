@@ -88,6 +88,13 @@ export class Controls {
    * with; null until a subject is known, when the camera is left unbounded.
    */
   private radius: number | null = null;
+  /**
+   * The least the far plane may be: how far a fixed floor's disc reaches
+   * from the camera (Viewer.layoutHeldFloor), so a small subject's tight
+   * clip planes do not cut the floor it stands on short. 0 with no floor
+   * of that kind.
+   */
+  private farFloor = 0;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -174,12 +181,17 @@ export class Controls {
     c.maxDistance = Math.max(r * MAX_DISTANCE, this.fitDistance(r) * MAX_OF_FIT);
     const dist = this.camera.position.distanceTo(c.target);
     const near = Math.max(Math.min(r * NEAR_OF_RADIUS, dist * NEAR_OF_DISTANCE), 1e-6);
-    const far = Math.max(r * FAR_OF_RADIUS, c.maxDistance + 2 * r);
+    const far = Math.max(r * FAR_OF_RADIUS, c.maxDistance + 2 * r, this.farFloor);
     if (near !== this.camera.near || far !== this.camera.far) {
       this.camera.near = near;
       this.camera.far = far;
       this.camera.updateProjectionMatrix();
     }
+  }
+
+  /** The far plane's floor (see farFloor); the next syncLimits applies it. */
+  setFarFloor(d: number): void {
+    this.farFloor = Math.max(0, d);
   }
 
   /** A pointer held the view at the last update (a drag, or fingers on the glass). */

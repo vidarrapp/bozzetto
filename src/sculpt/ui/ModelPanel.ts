@@ -20,6 +20,17 @@ import { REMESH_LIMITS, RemeshTooLarge } from '../bridge/remeshBudget';
 import { SidePanel } from './SidePanel';
 import { statusToast } from './statusToast';
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
+import { formatSceneLength } from '../../viewer/units';
+import { voxelGrid } from '../bridge/remeshBudget';
+
+/**
+ * Extract's thickness: the vendor's offset along the normal, in world
+ * units. On real units the slider is in millimetres, up to 3 cm, and
+ * starts at 5 mm - about what the old default of one unit was on its
+ * 48-unit sphere; a scene from before real units keeps those units.
+ */
+const EXTRACT_MM = { min: 0, max: 30, step: 0.5, start: 5 } as const;
+const EXTRACT_LEGACY = { min: 0, max: 6, step: 0.1, start: 1 } as const;
 
 /**
  * The Model panel (owner layout call): everything about the SELECTED
@@ -41,7 +52,18 @@ export class ModelPanel extends SidePanel {
   private remeshResolution = 150;
   /** The voxel grid over the view while the Resolution slider is held. */
   private voxelOverlay: VoxelOverlay | null = null;
-  private extractThickness = 1;
+  /** In world units: metres on real units, the scene's own before them. */
+  private extractThickness = EXTRACT_MM.start / 1000;
+  /** The scale the Extract row was built for, rebuilt when the scene's changes. */
+  private extractOnUnits = true;
+  private extractHost?: HTMLDivElement;
+  /** "One voxel: 1.7 mm" for the active object at the resolution set. */
+  private voxelLine?: HTMLDivElement;
+  /**
+   * The active object's remesh box, read when the object changes rather
+   * than on every step of the slider: it walks every vertex.
+   */
+  private voxelBox: number[] | null = null;
   private topoBody?: HTMLDivElement;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
 
@@ -177,14 +199,21 @@ export class ModelPanel extends SidePanel {
       (v) => {
         this.remeshResolution = v;
         this.session.setRemeshResolution(v); // Merge in the Scene panel reads it too
+        this.refreshVoxel();
         return String(Math.round(v));
       },
       { limits: VOXEL_RESOLUTION },
     );
     remesh.appendChild(res.row);
+    // How big a voxel is on the active object, the size the detail a
+    // remesh keeps comes down to (owner decision: in centimetres).
+    this.voxelLine = div('sculpt-panel__hint muted');
+    this.voxelLine.dataset.role = 'voxel-size';
+    remesh.appendChild(this.voxelLine);
+    this.refreshVoxel(true);
     // The grid this resolution builds on the active object, over the view
     // while the slider is held (owner request).
-    this.voxelOverlay = new VoxelOverlay(this.viewer);
+    this.voxelOverlay = new VoxelOverlay(this.viewer, () => this.session.getUnits());
     showWhileHeld(res.input, this.voxelOverlay, () => this.session.remeshBox());
     const row = div('sculpt-panel__row');
     row.appendChild(
@@ -232,19 +261,9 @@ export class ModelPanel extends SidePanel {
     );
     sec.appendChild(ops);
 
-    sec.appendChild(
-      compactRange(
-        'Extract thickness',
-        0,
-        6,
-        0.1,
-        this.extractThickness,
-        (v) => {
-          this.extractThickness = v;
-        },
-        { limits: AMOUNT },
-      ),
-    );
+    this.extractHost = div('sculpt-panel__extract');
+    sec.appendChild(this.extractHost);
+    this.buildExtract();
     const extractRow = div('sculpt-panel__row');
     extractRow.appendChild(
       this.opButton('Extract masked', () => {
@@ -252,6 +271,49 @@ export class ModelPanel extends SidePanel {
       }),
     );
     sec.appendChild(extractRow);
+  }
+
+  /**
+   * The thickness slider, for the scale the scene is on: millimetres on
+   * real units, the scene's own units before them. Rebuilt when that
+   * changes, the thickness starting over at the new scale's default.
+   */
+  private buildExtract(): void {
+    if (!this.extractHost) return;
+    const real = !!this.session.getUnits();
+    const spec = real ? EXTRACT_MM : EXTRACT_LEGACY;
+    const toWorld = real ? 1 / 1000 : 1;
+    if (real !== this.extractOnUnits) this.extractThickness = spec.start * toWorld;
+    this.extractOnUnits = real;
+    this.extractHost.replaceChildren(
+      compactRange(
+        'Extract thickness',
+        spec.min,
+        spec.max,
+        spec.step,
+        this.extractThickness / toWorld,
+        (v) => {
+          this.extractThickness = v * toWorld;
+        },
+        { limits: AMOUNT, ...(real ? { unit: ' mm' } : {}) },
+      ),
+    );
+  }
+
+  /** The active object's voxel at the resolution set; `remeasure` reads its box again. */
+  private refreshVoxel(remeasure = false): void {
+    if (!this.voxelLine) return;
+    if (remeasure) this.voxelBox = this.session.remeshBox();
+    const box = this.voxelBox;
+    const grid = box && voxelGrid(box, this.remeshResolution);
+    this.voxelLine.hidden = !grid;
+    if (grid) this.voxelLine.textContent = `One voxel: ${formatSceneLength(grid.step, this.session.getUnits())}`;
+  }
+
+  /** The scene's units changed (New, Open, Set scale): Extract's and the voxel's units follow. */
+  refreshUnits(): void {
+    this.buildExtract();
+    this.refreshVoxel(true);
   }
 
   /** The Extract thickness the ctrl+e hotkey should use. */
@@ -363,6 +425,7 @@ export class ModelPanel extends SidePanel {
   refreshState(): void {
     this.dyntopoCheckbox.checked = this.session.isDynamicTopology();
     this.refreshTopology();
+    this.refreshVoxel(true);
   }
 
   override dispose(): void {

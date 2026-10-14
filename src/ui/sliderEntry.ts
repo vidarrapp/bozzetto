@@ -118,7 +118,7 @@ export function parseTyped(text: string): number {
     .trim()
     .replace(/\s+/g, '')
     .replace(/−/g, '-')
-    .replace(/[%°]|px$/gi, '');
+    .replace(/[%°]|px$|cm$|mm$/gi, '');
   if (t.includes(',') && !t.includes('.')) t = t.replace(',', '.');
   if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return NaN;
   return Number(t);

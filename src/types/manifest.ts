@@ -6,6 +6,8 @@
  * asset layout is hardcoded in the viewer.
  */
 
+import { isUnits, type Units } from '../viewer/units';
+
 export type Tier = 'sd' | 'hd';
 
 export interface ManifestConfig {
@@ -94,6 +96,13 @@ export interface Manifest {
   ao: unknown;
   /** Optional presentation (ground shadow, floor, pedestal) when present. */
   presentation: unknown;
+  /**
+   * 'm' when the project's frames are in metres (src/viewer/units.ts): the
+   * viewer then stands them on a fixed floor at 0 plus the presentation's
+   * offset. Null for a project published before real units, which keeps
+   * the floor that follows its subject until it is published again.
+   */
+  units: Units | null;
   config: ManifestConfig;
   defaults: ManifestDefaults;
   camera: ManifestCamera;
@@ -167,6 +176,7 @@ export function validateManifest(data: unknown): Manifest {
     environment: m.environment ?? null,
     ao: m.ao ?? null,
     presentation: m.presentation ?? null,
+    units: isUnits(m.units) ? m.units : null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',

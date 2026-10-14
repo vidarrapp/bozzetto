@@ -3,6 +3,7 @@ import { mergeSceneArrays } from './SceneFile';
 import type { SnapshotRecorder } from './SnapshotRecorder';
 import type { SculptSession } from './SculptSession';
 import { aoWithoutCavity, type LookState } from '../../viewer/Viewer';
+import type { Units } from '../../viewer/units';
 
 /**
  * Publishing sculpts from the Capture window. With accounts off it is the
@@ -48,6 +49,8 @@ export interface GalleryHooks {
    * presentation: then the look's tone mapping goes too (presentationPatch).
    */
   presented?(): boolean;
+  /** The scene's units, which the project's manifest carries (src/viewer/units.ts). */
+  units?(): Units | null;
 }
 
 /**
@@ -58,22 +61,27 @@ export interface GalleryHooks {
  * publishes on GTAO - it went out with no AO at all.
  */
 function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
-  return presentationPatch(hooks.look(), hooks.presented?.() ?? false);
+  return presentationPatch(hooks.look(), hooks.presented?.() ?? false, hooks.units?.() ?? null);
 }
 
 /**
  * A look as a project's manifest blocks: camera (position, target, lens,
  * depth of field), lighting, material (the Sculpt colours / Plain colour
  * switch included), environment (the background with it), AO, the stage
- * (`presentation`) and the material mode (`defaults.material`), which the
- * viewer applies at boot. From Present mode (`presented`) the output grade
- * goes too, as `defaults.toneMapping`, so the project opens graded as it
- * was presented; outside it a publish stays as it was. The server stores
+ * (`presentation`, the Floor offset in it), the material mode
+ * (`defaults.material`) and the scene's units, which the viewer applies at
+ * boot. From Present mode (`presented`) the output grade goes too, as
+ * `defaults.toneMapping`, so the project opens graded as it was presented;
+ * outside it a publish stays as it was. The server stores
  * these blocks as sent (functions/_shared/projects.ts), `defaults` and
  * `camera` merged over what the project had.
  */
-export function presentationPatch(look: LookState, presented: boolean): Record<string, unknown> {
+export function presentationPatch(look: LookState, presented: boolean, units: Units | null): Record<string, unknown> {
   return {
+    // The scale the frames are on: the viewer stands a project in metres
+    // on its fixed floor, and one without the marker (null clears one a
+    // re-publish no longer has) on the floor that follows it.
+    units,
     lighting: look.lighting,
     material: look.material,
     environment: look.environment,

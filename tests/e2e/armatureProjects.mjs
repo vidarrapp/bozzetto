@@ -160,7 +160,9 @@ export async function armatureHistory(page, base, t) {
     const a = window.__armature;
     a.select('forearm.L');
     const n0 = a.history().undo;
-    const input = [...document.querySelectorAll('.panel--armature input[type=range]')][0];
+    // The Joint section's first slider (the Figure section above it has the Floor offset).
+    const joint = [...document.querySelectorAll('.panel--armature .section')].find((sec) => sec.querySelector('h3')?.textContent === 'Joint');
+    const input = joint.querySelector('input[type=range]');
     for (const v of [10, 20, 35, 50, 65]) {
       input.value = String(v);
       input.dispatchEvent(new Event('input', { bubbles: true }));

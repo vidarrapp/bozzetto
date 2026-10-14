@@ -79,6 +79,12 @@ export interface SceneProject {
   media?: string;
   updated_at: number;
   scene?: (SceneMeta & { file: string }) | null;
+  /**
+   * 'm' when the project was published from a scene on real units
+   * (src/viewer/units.ts); null or absent before. A patch sets it with
+   * `units: 'm'` or clears it with null, and the server refuses any other.
+   */
+  units?: 'm' | null;
 }
 
 export interface CreateInput {

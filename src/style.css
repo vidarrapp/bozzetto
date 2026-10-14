@@ -2250,6 +2250,15 @@ html.is-page body {
   border-radius: 6px;
 }
 
+/* The size a primitive comes at, under its name (scenes on real units). */
+.outliner__menu-size {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  color: var(--muted);
+}
+
 .outliner__menu-switch {
   display: flex;
   align-items: center;
@@ -2895,6 +2904,87 @@ body.chrome-hidden .present-bar {
 
 .sculpt-toast__btn:hover {
   background: var(--hover);
+}
+
+/* Set scale (sculpt/ui/SetScale): a scene from before real units says so
+   along the top of the view, in the toasts' look, until it is set or
+   dismissed; the form opens under its line. */
+.scale-banner {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 24px));
+  padding: 10px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  z-index: 30;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+}
+
+.scale-banner[hidden],
+.scale-banner__form[hidden],
+.scale-banner__error[hidden],
+.scale-banner button[hidden] {
+  display: none;
+}
+
+.scale-banner__head,
+.scale-banner__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale-banner__words {
+  flex: 1 1 220px;
+}
+
+.scale-banner__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scale-banner__object,
+.scale-banner__height {
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.scale-banner__object {
+  max-width: 180px;
+}
+
+.scale-banner__height {
+  width: 72px;
+}
+
+.scale-banner__note,
+.scale-banner__hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.scale-banner__error {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+body.presenting .scale-banner {
+  display: none;
 }
 
 /* The update notice (ui/updates): the bottom-right corner on every page,
@@ -3965,6 +4055,26 @@ body.is-sampling * {
 
 .cpick__value {
   text-align: right;
+}
+
+/* The active object's size and the Floor offset, at the panel's foot. */
+.outliner__measure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.outliner__size {
+  font-family: var(--font-spec);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.outliner__size[hidden],
+.outliner__measure .compact[hidden] {
+  display: none;
 }
 
 /* Material assignment, under the Create button (it closes the panel now). */

@@ -141,6 +141,8 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  *   one vertex, positions, colours and materials f32 arrays of three a
  *   vertex, and normals and the three detail vectors the same or null;
  * - names of at most MAX_NAME characters, at most MAX_MATERIALS materials;
+ * - a units marker, where there is one, that is 'm' (src/viewer/units.ts):
+ *   the one scale the app reads a scene on;
  * - at most MAX_SCENE_BYTES unpacked, as readLayout already holds it to.
  *
  * What it cannot see - a face naming a vertex past the last, a matrix that
@@ -231,6 +233,7 @@ export function checkHeader(layout: Layout): void {
       }
     });
   });
+  if (scene.units !== undefined && scene.units !== 'm') throw damaged('units this app does not read');
   const materials = scene.materials;
   if (Array.isArray(materials)) {
     if (materials.length > MAX_MATERIALS) throw damaged(`more than ${MAX_MATERIALS} materials`);

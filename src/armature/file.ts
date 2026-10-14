@@ -34,6 +34,8 @@ export function unpackArmature(text: string): ArmatureFile {
     state: f.state,
     look: f.look,
     savedAt: typeof f.savedAt === 'number' ? f.savedAt : Date.now(),
+    // A file from before real units has no marker, and is on the old scale.
+    ...(f.units === 'm' ? { units: 'm' as const } : {}),
   };
 }
 

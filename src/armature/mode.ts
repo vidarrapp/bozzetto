@@ -12,7 +12,8 @@ import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
-import { Armature, buildArmature, importArmature, type ArmatureState } from './Armature';
+import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
+import { onMetres } from './units';
 import { fetchFigure, figureById } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
@@ -120,9 +121,11 @@ async function ensureFigure(id: string): Promise<void> {
  * the viewer as it always was.
  */
 export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
-  // The floor is held where the figure stands (owner call), so the Render
-  // panel built on the event below offers no pedestal; its height comes
-  // once the figure is built (holdFloor).
+  // The floor is fixed where the figure stands (owner call), as it is in
+  // a sculpt on real units, so the Render panel built on the event below
+  // offers no pedestal; its height comes once the figure is built
+  // (holdFloor), and the look's Floor offset raises or lowers it.
+  const savedFloorOffset = viewer.getFloorOffset();
   viewer.lockFloor(0);
   // The Render panel, Help and Preferences all listen for this.
   window.dispatchEvent(
@@ -174,6 +177,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       bootNotes.push(`That armature could not be opened: ${failureText(err)}`);
     }
   }
+  // On metres, whichever scale it was saved on (armature/units.ts).
+  if (saved) saved = onMetres(saved);
   if (saved?.model) {
     try {
       await parseModel(saved.model);
@@ -216,11 +221,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   }
   let armature = figureFor(wanted);
   /**
-   * The ground, held at the floor a figure stands on as it is built: the
+   * The ground, fixed at the floor a figure stands on as it is built: the
    * lowest point of its feet in the rest pose, which is the height its
    * planting stands feet at too. The four mannequins rest with their soles
-   * at 0, so the floor stays put as one replaces another. Called on a
-   * figure fresh from figureFor, before any pose or placement lands.
+   * at 0, at their files' own sizes, so the floor is at 0 as it is in a
+   * sculpt on real units, and stays put as one replaces another; the
+   * Floor offset raises or lowers it from there. Called on a figure fresh
+   * from figureFor, before any pose or placement lands.
    */
   const holdFloor = (): void => viewer.lockFloor(armature.bounds().min.y);
   holdFloor();
@@ -279,7 +286,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   wash.transparent = true;
   wash.opacity = 0.32;
   wash.depthWrite = false;
-  wash.positionNode = positionLocal.add(normalLocal.mul(float(0.4)));
+  // Eight millimetres off the surface (scene units are metres).
+  wash.positionNode = positionLocal.add(normalLocal.mul(float(0.008 * SCENE_SCALE)));
   let highlight: Mesh | null = null;
 
   const rotateTc = new TransformControls(viewer.camera, canvas);
@@ -519,9 +527,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       ring.visible = true;
     }
   };
-  const HANDLE_RADIUS = 1.9;
+  // The balls' radii in metres (scene units): a reach ball 3.8 cm, an aim
+  // ball 2.6, on a figure about 1.7 m tall.
+  const HANDLE_RADIUS = 0.038 * SCENE_SCALE;
   const SELECTED_SCALE = 1.35;
-  const AIM_RADIUS = 1.3;
+  const AIM_RADIUS = 0.026 * SCENE_SCALE;
   let handlesOn = true;
   const handles = new Map<string, Mesh>();
   const aims = new Map<string, Mesh>();
@@ -1021,6 +1031,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ...(thumb ? { thumb } : {}),
     ...(link ? { project: { ...link } } : {}),
     symmetry: armature.symmetry,
+    units: 'm',
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */
   let link: ArmatureLink | null = bootLink;
@@ -1193,6 +1204,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       } else {
         parsed = unpackArmature(text);
       }
+      parsed = onMetres(parsed);
     } catch (err) {
       alert(err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err));
       return;
@@ -1265,6 +1277,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       resolution,
       look: viewer.getLook(),
       savedAt: Date.now(),
+      units: 'm',
+      floor: viewer.floorHeight() ?? 0,
     });
     await flushSave();
     window.location.href = '/?sculpt=1&handoff=1';
@@ -1710,7 +1724,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.scene.remove(plantGroup);
     plantGeometry.dispose();
     plantMat.dispose();
-    viewer.lockFloor(null);
+    // The floor goes back to what the project under the mode asks for.
+    viewer.setFloorOffset(savedFloorOffset);
+    viewer.lockFloor(viewer.manifestFloor());
     handleGeometry.dispose();
     panel.dispose();
     fileMenu.dispose();

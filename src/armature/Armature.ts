@@ -26,8 +26,13 @@ export interface ImportedFigure {
   boneOrder: string[];
 }
 
-/** Metres to scene units: the default sculpt sphere is about 48 across. */
-export const SCENE_SCALE = 50;
+/**
+ * Metres to scene units: 1, since a scene unit is a metre (owner decision,
+ * src/viewer/units.ts), so a mannequin stands at its file's own height.
+ * It was 50 - the old sculpt scale, its sphere about 48 across - and a
+ * record saved then is read through armature/units.ts.
+ */
+export const SCENE_SCALE = 1;
 
 export interface ArmatureState {
   v: 1;
@@ -65,10 +70,16 @@ const FOOT = /^foot(\.[LR])?$/;
  */
 const GROUND_BAND = 0.015;
 /**
- * How near its target a reach must bring its handle to be done, in scene
- * units: a fifth of a millimetre on the figure.
+ * How near its target a reach must bring its handle to be done, in
+ * metres: a fifth of a millimetre on the figure. This and the other
+ * lengths the solver compares against are in metres, times the figure's
+ * scale where they are used (Armature.len).
  */
-const REACHED = 0.01;
+const REACHED = 0.0002;
+/** A distance too small to steer by: a fiftieth of a millimetre. */
+const TINY = 2e-5;
+/** What a pass must gain to count as getting closer, and the solver's other hair's breadths. */
+const HAIR = 2e-8;
 
 /**
  * A posable figure: the rig's bones as a three.js Bone tree, every block
@@ -130,8 +141,13 @@ export class Armature {
   /** Skeleton index of a part bone -> the bone it belongs to. */
   private readonly partOwner = new Map<number, string>();
 
-  /** Metres to scene units for this figure (the app's, or 1 for an export). */
+  /** Metres to scene units for this figure (1: a scene unit is a metre). */
   readonly scale: number;
+
+  /** A length given in metres, in this figure's scene units. */
+  private len(metres: number): number {
+    return metres * this.scale;
+  }
 
   constructor(rig: RigDefinition, material: Material, scale = SCENE_SCALE, imported?: ImportedFigure) {
     this.scale = scale;
@@ -329,7 +345,7 @@ export class Armature {
       if (box.isEmpty()) continue;
       const size = box.getSize(new Vector3());
       const centre = box.getCenter(new Vector3());
-      const g = new BoxGeometry(Math.max(size.x, 1e-3), Math.max(size.y, 1e-3), Math.max(size.z, 1e-3));
+      const g = new BoxGeometry(Math.max(size.x, this.len(TINY)), Math.max(size.y, this.len(TINY)), Math.max(size.z, this.len(TINY)));
       g.translate(centre.x, centre.y, centre.z);
       this.partGeometry.set(name, g);
     }
@@ -720,7 +736,7 @@ export class Armature {
   ): number | null {
     if (!c.poleRef) return null;
     const axis = new Vector3().subVectors(to, from);
-    if (axis.lengthSq() < 1e-8) return null;
+    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return null;
     axis.normalize();
     // Zero aim is the rig's reference direction, squared up to the limb.
     const ref = new Vector3().fromArray(c.poleRef).applyQuaternion(frame);
@@ -733,7 +749,7 @@ export class Armature {
     zero.normalize();
     const want = new Vector3().subVectors(point, from);
     want.sub(axis.clone().multiplyScalar(want.dot(axis)));
-    if (want.lengthSq() < 1e-6) return null;
+    if (want.lengthSq() < this.len(TINY) ** 2) return null;
     want.normalize();
     const side = new Vector3().crossVectors(zero, want).dot(axis);
     return (Math.atan2(side, zero.dot(want)) * 180) / Math.PI;
@@ -839,7 +855,7 @@ export class Armature {
       this.setFlat(foot);
       this.effectorWorld(foot, tip);
       next.copy(now).add(target).sub(tip);
-      if (next.distanceToSquared(ankle) < 1e-4) break;
+      if (next.distanceToSquared(ankle) < this.len(REACHED) ** 2) break;
       ankle.copy(next);
     }
     return true;
@@ -976,12 +992,12 @@ export class Armature {
       if (twoBone && i < 2) this.aimHinge(c, hingeIndex, target, mirror);
       this.turnLinks(c, target, at, mirror, hinge, null, 1);
       const d = off();
-      if (d < REACHED) return;
+      if (d < this.len(REACHED)) return;
       // The pass that left the point nearest is the one kept. A pass can
       // leave it further off on the way there - the triangle and the aim
       // both move it, and the swings make up for that over the next pass
       // or two - so only the passes after the aim's count as stalling.
-      if (d < least - 1e-6) {
+      if (d < least - this.len(HAIR)) {
         least = d;
         improved = true;
         this.keepPoses(held, best);
@@ -989,7 +1005,7 @@ export class Armature {
       } else if ((!twoBone || i >= 2) && ++stall >= 2) break;
     }
     this.restorePoses(held, best);
-    if (least >= REACHED) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
+    if (least >= this.len(REACHED)) this.settle(c, target, at, mirror, hinge, held, start, improved ? best : null, off);
   }
 
   /**
@@ -1053,7 +1069,7 @@ export class Armature {
     }
     let length = 0;
     for (const n of c.links) length += (this.rest.get(n)?.length ?? 0) * (this.props.get(n)?.length ?? 1);
-    const clearly = Math.max(0.02 * near, 0.01 * length, 1e-3);
+    const clearly = Math.max(0.02 * near, 0.01 * length, this.len(TINY));
     this.restorePoses(held, other < near - clearly ? otherPoses : kept);
   }
 
@@ -1101,7 +1117,7 @@ export class Armature {
     for (let r = 0; r < rounds; r++) {
       chain.sweep(skip);
       const now = chain.off();
-      if (d - now < 1e-6) break;
+      if (d - now < this.len(HAIR)) break;
       d = now;
       chain.forward();
     }
@@ -1189,7 +1205,7 @@ export class Armature {
     this.root.updateMatrixWorld(true);
     const basePos = new Vector3().setFromMatrixPosition(base.matrixWorld);
     const axis = new Vector3().subVectors(target, basePos);
-    if (axis.lengthSq() < 1e-8) return;
+    if (axis.lengthSq() < this.len(TINY / 10) ** 2) return;
     axis.normalize();
     const now = this.aroundLimb(
       c,
@@ -1249,8 +1265,8 @@ export class Armature {
     const a = basePos.distanceTo(kneePos);
     // The hinge-to-tip distance is fixed: nothing between them bends.
     const b = kneePos.distanceTo(tip);
-    if (a < 1e-6 || b < 1e-6) return;
-    const d = Math.min(a + b - 1e-3, Math.max(Math.abs(a - b) + 1e-3, basePos.distanceTo(target)));
+    if (a < this.len(HAIR) || b < this.len(HAIR)) return;
+    const d = Math.min(a + b - this.len(TINY), Math.max(Math.abs(a - b) + this.len(TINY), basePos.distanceTo(target)));
     const cos = Math.min(1, Math.max(-1, (a * a + b * b - d * d) / (2 * a * b)));
     const wanted = (Math.acos(cos) * 180) / Math.PI;
     // What the joint measures NOW, and the change from it - not an absolute
@@ -1323,6 +1339,18 @@ export class Armature {
   /** The bone a skin index (a part bone's place in the skeleton) belongs to. */
   boneOfSkinIndex(i: number): string | null {
     return this.partOwner.get(i) ?? null;
+  }
+
+  /**
+   * How tall the figure stands, in metres: its rest shape's height, at its
+   * file's own size (a mannequin's 1.694 m is 169.4 cm). What the
+   * Armature panel prints; posing and proportions leave it be.
+   */
+  figureHeight(): number {
+    const g = this.mesh.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const b = g.boundingBox!;
+    return b.isEmpty() ? 0 : (b.max.y - b.min.y) / this.scale;
   }
 
   /** World-space bounds of the posed figure. */

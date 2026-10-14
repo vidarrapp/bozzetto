@@ -40,6 +40,15 @@ import type { SculptSession } from './SculptSession';
  */
 const SLIDER_MAX = 500;
 const SLIDER_FLOOR = 1;
+/**
+ * One step of the slider in a scene on real units, in metres (owner
+ * decision: the brush unit follows real sizes). A fifth of a millimetre:
+ * the rail's 5..500 is a radius of 1 mm to 10 cm, a head's pores to a
+ * torso's planes, and a typed size goes past either end. A scene from
+ * before real units keeps the unit it had, a 500th of its subject's
+ * radius, whatever size the subject happened to be.
+ */
+export const REAL_UNIT = 0.0002;
 
 /**
  * The tools a modifier swaps in for a single stroke (InputShell): Smooth
@@ -84,6 +93,8 @@ export class WorldScaleBrush {
      * stroking while a modifier has swapped a stand-in in for it.
      */
     private readonly inHand: () => number,
+    /** Whether the scene is on real units, where the slider's step is REAL_UNIT. */
+    private readonly realUnits: () => boolean = () => false,
   ) {}
 
   isEnabled(): boolean {
@@ -140,12 +151,14 @@ export class WorldScaleBrush {
 
   /**
    * The size control's value. In world mode the slider owns the WORLD
-   * radius, so the same 5..500 travel is reused against the subject's size -
-   * full travel is a brush as wide as the model. That keeps the existing
-   * slider, the B-drag and the [ ] keys driving world size, with no second
-   * widget to keep in step.
+   * radius, so the same 5..500 travel is reused: in steps of REAL_UNIT in
+   * a scene on real units, and against the subject's size in one from
+   * before them - full travel there is a brush as wide as the model. That
+   * keeps the existing slider, the B-drag and the [ ] keys driving world
+   * size, with no second widget to keep in step.
    */
-  private unit(): number {
+  unit(): number {
+    if (this.realUnits()) return REAL_UNIT;
     return Math.max(1e-4, this.subjectRadius()) / SLIDER_MAX;
   }
 
@@ -168,6 +181,18 @@ export class WorldScaleBrush {
   /** The brush in hand's pinned radius in world units (what the strength line is anchored to). */
   worldRadius(): number {
     return this.worldOf(this.inHand());
+  }
+
+  /**
+   * Set scale multiplied the scene by `f`: every brush's world radius goes
+   * with it, so each covers the same share of the work it did.
+   */
+  scaleWorld(f: number): void {
+    if (!(f > 0) || !Number.isFinite(f)) return;
+    this.shared *= f;
+    for (const [i, w] of this.worlds) this.worlds.set(i, w * f);
+    this.sync();
+    this.onChange?.();
   }
 
   /**

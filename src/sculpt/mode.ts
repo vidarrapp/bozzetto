@@ -1,4 +1,7 @@
 import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
+import { mat4 } from 'gl-matrix';
+import { formatLength, LEGACY_ARMATURE_SCALE } from '../viewer/units';
+import type { SculptHandoff } from '../armature/persist';
 import { STUDIO_BG } from '../viewer/Environment';
 import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
@@ -50,6 +53,7 @@ import {
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
+import { ScaleBanner } from './ui/SetScale';
 import { ChromeToggle } from './ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { perfLog } from '../viewer/perfLog';
@@ -122,6 +126,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The vendor asks for a redraw after every change it makes: the loop
   // repaints anyway, but a still frame's smoothing has to start over.
   const session = new SculptSession(camera, canvas, () => viewer.invalidate());
+  // New objects stand on the floor, which is the viewer's: fixed at 0 plus
+  // the scene's Floor offset in a scene on real units (holdFloor below).
+  session.floorHeight = () => viewer.floorHeight() ?? 0;
   // Reload safety: a saved session takes the sphere's place (ScenePersist).
   // A ?lib=<id> link from a gallery card outranks it, and so do a
   // ?project=<id> link to a scene in Projects and a ?template=<id> link to
@@ -349,6 +356,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Every upload is a change to the picture (Viewer.invalidate).
   sync.onChange = () => viewer.invalidate();
   sync.bind(multimesh as unknown as SculptMesh);
+
+  // The floor (owner decision): fixed at 0, raised or lowered by the look's
+  // Floor offset, in a scene on real units; one from before them keeps the
+  // floor that follows its subject, as it had, until Set scale. Before the
+  // subject is fitted, since a fixed floor is not sized by it. Again
+  // whenever the scene's units change (New, Open, Set scale).
+  const holdFloor = (): void => viewer.lockFloor(session.getUnits() ? 0 : null);
+  const savedFloorOffset = viewer.getFloorOffset();
+  holdFloor();
 
   // The display mesh adopts the sculpt geometry (with the vendor mesh's
   // matrix: its normalizeSize scales by matrix, not by baking), so the whole
@@ -1026,7 +1042,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleChrome: () => chrome.handleTab(),
     togglePresent: () => present?.toggle(),
     togglePlay: () => present?.toggleTurning(),
-    extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? 1),
+    extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.005 : 1)),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
@@ -1044,6 +1060,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       return Math.max(1e-3, liveWorldBox(active).getBoundingSphere(new Sphere()).radius);
     },
     () => input.brushInHand(),
+    () => !!session.getUnits(),
   );
   input.worldScale = worldScale;
 
@@ -1361,7 +1378,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     captureThumb: () => viewer.captureThumbnail(),
     // From Present mode, Save to library writes the view and the look as
     // the project's own blocks too (GallerySave.presentationPatch).
-    presentation: () => (present?.isActive() ? presentationPatch(viewer.getLook(), true) : null),
+    presentation: () => (present?.isActive() ? presentationPatch(viewer.getLook(), true, session.getUnits()) : null),
     // A new link must reach the autosave record (it rides the same put as
     // the geometry), or a reload would forget where Save to library goes.
     // Neither is an edit: the scene is as it was (SavedScene.synced). A
@@ -1458,7 +1475,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
     container,
   );
-  scenePanel = new ScenePanel(session, library);
+  scenePanel = new ScenePanel(session, library, {
+    get: () => viewer.getFloorOffset(),
+    set: (metres) => viewer.setFloorOffset(metres),
+  });
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
   scenePanel.onSceneEdit = () => {
@@ -1477,6 +1497,73 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
   };
   modelPanel = new ModelPanel(session, viewer);
+  // New, Open, a restore and Set scale can each move the scene between
+  // real units and the old scale: the floor, the panels' units and the
+  // Set scale offer follow.
+  session.onUnitsChange = () => {
+    holdFloor();
+    scenePanel?.refreshUnits();
+    modelPanel?.refreshUnits();
+    sculptPanel?.refreshBrush();
+    scaleBanner?.refresh();
+  };
+
+  /**
+   * Set scale (owner decision): put a scene from before real units on
+   * them. One factor for everything - `target`'s height becomes `cm` - so
+   * the scene keeps its proportions, about the origin, then lifted so its
+   * lowest point is on the floor. The brushes' world sizes scale with it,
+   * a focus lock lets go, and the view frames the result. The undo
+   * history starts over: its transform states hold matrices on the old
+   * scale, which an undo would put back over the new one.
+   */
+  const setScale = (target: SculptMesh, cm: number): void => {
+    const meshes = session.getMeshes();
+    const height = exactWorldBox(target);
+    const f = cm / 100 / (height.max.y - height.min.y);
+    if (!(f > 0) || !Number.isFinite(f)) return;
+    let lowest = Infinity;
+    for (const m of meshes) lowest = Math.min(lowest, exactWorldBox(m).min.y);
+    // The floor the scene stands on: 0 plus the look's offset.
+    const lift = viewer.getFloorOffset() - f * lowest;
+    const by = mat4.fromTranslation(mat4.create(), [0, lift, 0]);
+    mat4.scale(by, by, [f, f, f]);
+    for (const m of meshes) {
+      const matrix = m.getMatrix() as unknown as mat4;
+      mat4.multiply(matrix, by, matrix);
+    }
+    worldScale.scaleWorld(f);
+    session.clearHistory();
+    session.setUnits('m');
+    // The matrices changed under every display mesh.
+    session.onActiveMeshChange?.();
+    viewer.setDoF({ focus: viewer.getDoFState().focus });
+    const all = new Box3();
+    for (const m of meshes) if (m.isVisible()) all.union(liveWorldBox(m));
+    if (!all.isEmpty()) viewer.frameBounds(all);
+    persist.markDirty();
+    void storeLook();
+    statusToast('').done(`Set to scale: "${session.getMeshName(target)}" is ${formatLength(cm / 100)} tall`);
+  };
+  const scaleBanner = new ScaleBanner(session, {
+    apply: (mesh, cm) => {
+      // A timelapse is played back as recorded: frames captured on the old
+      // scale would jump to the new one partway through. They go with the
+      // old scale, said first; declined, nothing changes.
+      const frames = recorder.frameCount();
+      if (frames > 0) {
+        const n = `${frames} captured frame${frames === 1 ? '' : 's'}`;
+        if (!window.confirm(`Set scale clears the ${n}, which are on the old scale. Continue?`)) return;
+        void recorder.clear();
+      }
+      setScale(mesh, cm);
+    },
+    dismissed: () => {
+      session.dismissScale();
+      // Kept with the scene, so the offer does not come back on reopening.
+      persist.markDirty(false);
+    },
+  });
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
   // each rather than replacing it.
@@ -1510,6 +1597,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       return viewer.getLook();
     },
     presented: () => present?.isActive() ?? false,
+    units: () => session.getUnits(),
   };
   /** Who the page is for, by the latest probe; null before its first answer. */
   let role: Role | null = null;
@@ -1702,8 +1790,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const handoff = await takeHandoff();
     if (handoff) {
       const untouched = !fileActions.hasWork();
+      // A scene with nothing in it yet becomes the figure's, on real
+      // units whatever it was; one with work keeps its own scale.
+      if (untouched) session.setUnits('m');
+      const positions = handoffPositions(handoff, session.getUnits() ? (viewer.floorHeight() ?? 0) : null);
       const voxelise = (resolution: number): ReturnType<SculptSession['addVoxelised']> =>
-        session.addVoxelised(handoff.name, handoff.positions, handoff.indices, resolution);
+        session.addVoxelised(handoff.name, positions, handoff.indices, resolution);
       let added: ReturnType<typeof voxelise>;
       try {
         added = voxelise(handoff.resolution);
@@ -1714,8 +1806,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         // that fits, and says so, rather than not at all.
         if (!(err instanceof RemeshTooLarge)) throw err;
         added = voxelise(err.fits);
-        statusToast('Voxelising the figure...').fail(
-          `The figure was remeshed at ${err.fits}, the most this device can take: ${handoff.resolution} would need about ${formatBytes(err.bytes)}.`,
+        // Said once the page is up: the boot's first frames can hold the
+        // main thread for longer than the notice stays.
+        afterBoot(() =>
+          statusToast('Voxelising the figure...').fail(
+            `The figure was remeshed at ${err.fits}, the most this device can take: ${handoff.resolution} would need about ${formatBytes(err.bytes)}.`,
+          ),
         );
       }
       if (untouched) {
@@ -1749,6 +1845,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     library,
     gizmo, // transform modes, for the console and the tests
     present, // Present mode, its turntable and Save image
+    scaleBanner, // Set scale, for a scene from before real units
+    worldScale, // the brushes' world sizes
+    /** An object's exact world box, as plain arrays (the units suite measures with it). */
+    worldBox: (mesh: SculptMesh) => {
+      const b = exactWorldBox(mesh);
+      return { min: b.min.toArray(), max: b.max.toArray() };
+    },
+    setScale: (mesh: SculptMesh, cm: number) => setScale(mesh, cm),
     // File pipeline, callable from the console/tests without the menu.
     file: {
       pack: async () => (await fileActions.pack()).arrayBuffer(),
@@ -1910,6 +2014,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.dispose();
     modelPanel?.dispose();
     scenePanel?.dispose();
+    scaleBanner.dispose();
     captureWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
@@ -1949,6 +2054,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     lighting.applyState(savedLights);
     lighting.setShadowsMaster(savedShadowsMaster);
     viewer.setGround(savedGround);
+    // The floor goes back to what the project under the mode asks for.
+    session.onUnitsChange = null;
+    viewer.setFloorOffset(savedFloorOffset);
+    viewer.lockFloor(viewer.manifestFloor());
     viewer.environment.setRotation(lighting.getRigRotation());
     viewer.scene.environment = savedEnv;
     viewer.setSculptShading(false);
@@ -2107,6 +2216,27 @@ function openedLabel(opened: ProjectOpen | null): string {
  * The boot notice. With `onFresh` it carries Start fresh, the way out of
  * an autosave nobody asked to resume.
  */
+/**
+ * Run `fn` once the boot overlay has gone and a frame has been drawn: a
+ * notice made before then could spend its whole life behind the overlay,
+ * or out-wait a main thread busy with the first frames.
+ */
+function afterBoot(fn: () => void): void {
+  const go = (): void => {
+    requestAnimationFrame(() => requestAnimationFrame(fn));
+  };
+  if (!document.getElementById('overlay')) {
+    go();
+    return;
+  }
+  const watch = new MutationObserver(() => {
+    if (document.getElementById('overlay')) return;
+    watch.disconnect();
+    go();
+  });
+  watch.observe(document.documentElement, { childList: true, subtree: true });
+}
+
 function bootToast(text: string, onFresh?: () => void): HTMLDivElement {
   const toast = document.createElement('div');
   toast.className = 'sculpt-toast';
@@ -2140,6 +2270,54 @@ function bootToast(text: string, onFresh?: () => void): HTMLDivElement {
     watch.observe(document.documentElement, { childList: true, subtree: true });
   }
   return toast;
+}
+
+/**
+ * A handoff's triangles in the receiving scene's units (owner decision:
+ * the figure keeps its feet on the floor). On real units (`floor` is that
+ * scene's floor height) they are in metres, lifted by the difference
+ * between the floors, so what stood on Armature's floor stands on this
+ * one. In a scene from before real units (`floor` null) they go on that
+ * scene's old scale, 50 units a metre, as a figure always arrived there.
+ * A handoff from before real units is on the old scale already.
+ */
+function handoffPositions(h: SculptHandoff, floor: number | null): Float32Array {
+  const fromMetres = h.units === 'm';
+  const k = floor === null ? (fromMetres ? LEGACY_ARMATURE_SCALE : 1) : fromMetres ? 1 : 1 / LEGACY_ARMATURE_SCALE;
+  const lift = floor === null ? 0 : floor - (h.floor ?? 0) * (fromMetres ? 1 : 1 / LEGACY_ARMATURE_SCALE);
+  if (k === 1 && lift === 0) return h.positions;
+  const out = new Float32Array(h.positions.length);
+  for (let i = 0; i < out.length; i += 3) {
+    out[i] = h.positions[i] * k;
+    out[i + 1] = h.positions[i + 1] * k + lift;
+    out[i + 2] = h.positions[i + 2] * k;
+  }
+  return out;
+}
+
+/**
+ * World-space box of an object's every live vertex through its matrix:
+ * exact, where liveWorldBox's octree bound may run a little loose after
+ * strokes. For a one-off measurement (Set scale), not for a frame.
+ */
+function exactWorldBox(mesh: SculptMesh): Box3 {
+  const v = mesh.getVertices();
+  const m = mesh.getMatrix();
+  const box = new Box3();
+  const p = new Vector3();
+  for (let i = 0, n = mesh.getNbVertices() * 3; i < n; i += 3) {
+    const x = v[i];
+    const y = v[i + 1];
+    const z = v[i + 2];
+    box.expandByPoint(
+      p.set(
+        m[0] * x + m[4] * y + m[8] * z + m[12],
+        m[1] * x + m[5] * y + m[9] * z + m[13],
+        m[2] * x + m[6] * y + m[10] * z + m[14],
+      ),
+    );
+  }
+  return box;
 }
 
 /** World-space box of the live vertex region (over-allocated tail excluded). */

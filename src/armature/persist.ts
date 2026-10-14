@@ -1,6 +1,7 @@
 import { withNamedStore } from '../sculpt/bridge/ScenePersist';
 import type { LookState } from '../viewer/Viewer';
 import type { ArmatureState } from './Armature';
+import type { Units } from '../viewer/units';
 
 /**
  * What an armature keeps between sessions: its state (preset, root, pose,
@@ -38,6 +39,12 @@ export interface ArmatureFile {
    * the gallery card carries. The mode itself starts with it off.
    */
   symmetry?: boolean;
+  /**
+   * 'm' when its positions and camera are in metres (src/viewer/units.ts),
+   * as every record written since real units is. One without it is on the
+   * old 50 units a metre, and is read through armature/units.ts onMetres.
+   */
+  units?: Units;
 }
 
 /**
@@ -53,6 +60,18 @@ export interface SculptHandoff {
   resolution: number;
   look?: LookState;
   savedAt: number;
+  /**
+   * 'm' when the triangles are in metres, the figure at its own height with
+   * its soles on the floor; a handoff from an older build has none and is
+   * at 50 units a metre (sculpt/mode.ts takes either).
+   */
+  units?: Units;
+  /**
+   * The height of the floor the figure stood on in Armature (its base and
+   * the Floor offset), in metres: Sculpt stands the figure on its own
+   * floor by the same measure, so what was on the floor stays on it.
+   */
+  floor?: number;
 }
 
 // The same IndexedDB store the sculpt autosave uses, under keys of its own.

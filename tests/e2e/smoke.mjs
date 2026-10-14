@@ -160,8 +160,8 @@ const limbFolds = (page) =>
 // the arm below it, and the right shoulder, elbow and hand, are from the
 // mirrors of the left's: exactly, or less what they were apart at rest
 // where the arm itself was not turned (the realistic male's arms are a few
-// degrees apart there, and his forearms' limits leave a dragged hand a
-// tenth of a unit from the exact copy).
+// degrees apart there, and his forearms' limits leave a dragged hand two
+// millimetres from the exact copy).
 const clavicleMirror = (page) =>
   page.evaluate(() => {
     const a = window.__armature;
@@ -232,7 +232,8 @@ const clavicleMirror = (page) =>
     out.gizmo = measure();
     rest();
     const hand = a.handlePosition('hand.L');
-    a.reach('hand.L', hand[0] + 15, hand[1] + 25, hand[2] + 15);
+    // 30, 50 and 30 cm (scene units are metres).
+    a.reach('hand.L', hand[0] + 0.3, hand[1] + 0.5, hand[2] + 0.3);
     out.reach = measure();
     out.reach.moved = Math.hypot(...a.handlePosition('hand.L').map((v, i) => v - hand[i]));
     rest();
@@ -244,7 +245,7 @@ const clavicleMirror = (page) =>
 // The hips open wide and cross a little, and the shoulders lift further
 // than they drop (owner report: the hips did the reverse, their side
 // limits the wrong way round, and the clavicles' with them). The left foot
-// swings 22 units out to the side, then 22 across towards the other foot,
+// swings 44 cm out to the side, then 44 across towards the other foot,
 // each time to a point on the arc its own leg sweeps about the hip: the
 // ball keeps its distance from the hip and its height follows, since a leg
 // cannot carry its foot sideways along the ground while the pelvis stays
@@ -279,8 +280,8 @@ const hipsAndShoulders = (page) =>
         other: dist(a.handlePosition('foot.R'), other),
       };
     };
-    const out = swing(22);
-    const across = swing(-22);
+    const out = swing(0.44);
+    const across = swing(-0.44);
     const pitch = () => {
       const head = arm.jointWorld('clavicle.L');
       return (Math.asin(arm.jointWorld('upperarm.L').sub(head).normalize().y) * 180) / Math.PI;
@@ -302,7 +303,7 @@ const hipsAndShoulders = (page) =>
 // Pinned feet under a moving pelvis (owner report: they snapped round).
 // Each scenario poses the figure, pins both feet where they stand and drags
 // the pelvis as its move gizmo does - thirty small steps, each through the
-// gizmo's own change handler - by (10, -15, 0), then by (12, 0, 0) more.
+// gizmo's own change handler - by (20, -30, 0) cm, then by (24, 0, 0) more.
 // Per foot and move: how far the foot ends from its pin; how far a clean
 // solve gets, the same leg reset to rest under the moved pelvis and solved
 // for the pin at length, which says whether the pin is within the leg's
@@ -331,7 +332,7 @@ const pinnedDrags = (page) =>
     const scenarios = {
       'knee bent by a reach': () => {
         const p = a.handlePosition('foot.L');
-        a.reach('foot.L', p[0], p[1] + 10, p[2] + 8);
+        a.reach('foot.L', p[0], p[1] + 0.2, p[2] + 0.16);
       },
       'thigh turned by hand': () => a.turn('thigh.L', -30, 0, 10),
     };
@@ -349,7 +350,7 @@ const pinnedDrags = (page) =>
       a.commit();
       const pins = { L: a.state().pins['foot.L'], R: a.state().pins['foot.R'] };
       out[name] = [];
-      for (const [k, by] of [[10, -15, 0], [12, 0, 0]].entries()) {
+      for (const [k, by] of [[0.2, -0.3, 0], [0.24, 0, 0]].entries()) {
         const worst = { L: 0, R: 0 };
         const last = { L: footQ('L'), R: footQ('R') };
         for (let i = 0; i < 30; i++) {
@@ -407,8 +408,8 @@ const pastReach = (page) =>
     arm.setPinned('foot.R', true);
     a.commit();
     const pin = a.state().pins['foot.L'];
-    a.moveRoot(10, -15, 0, 30);
-    a.moveRoot(12, 0, 0, 30);
+    a.moveRoot(0.2, -0.3, 0, 30);
+    a.moveRoot(0.24, 0, 0, 30);
     const miss = dist(a.handlePosition('foot.L'), pin);
     const names = arm.boneNames();
     const was = names.map((n) => arm.bones.get(n).quaternion.clone());
@@ -467,8 +468,8 @@ const pastReach = (page) =>
 // Planting, on the left foot of a standing figure. Its tilt is how far its
 // rest up, carried through its world rotation, leans from world up; its
 // pose is the foot's own joint angles, untouched while it only follows its
-// shin. Kicked 30 units forward (further than the leg reaches), put back
-// down where it stood, lifted 25; then down again with Plant feet off, and
+// shin. Kicked 60 cm forward (further than the leg reaches), put back
+// down where it stood, lifted 50; then down again with Plant feet off, and
 // the box back on.
 const plantingRun = (page) =>
   page.evaluate(() => {
@@ -490,12 +491,12 @@ const plantingRun = (page) =>
     const start = a.handlePosition('foot.L');
     const out = {};
     let before = pose();
-    a.reach('foot.L', start[0], start[1], start[2] + 30);
+    a.reach('foot.L', start[0], start[1], start[2] + 0.6);
     out.kick = { tilt: tilt(), kept: pose() === before, lifted: lifted() };
     a.reach('foot.L', ...start);
     out.down = { tilt: tilt(), off: off(start) };
     before = pose();
-    a.reach('foot.L', start[0], start[1] + 25, start[2]);
+    a.reach('foot.L', start[0], start[1] + 0.5, start[2]);
     out.lift = { tilt: tilt(), kept: pose() === before };
     box.click();
     out.boxOff = { plant: arm.plantFeet, saved: a.state().plant };
@@ -707,7 +708,10 @@ const camera = (page) =>
     const s = viewer.getCameraState();
     return { position: s.position, target: s.target, distance: Math.hypot(...s.position.map((p, i) => p - s.target[i])) };
   });
-const camMoved = (a, b) => Math.hypot(...a.position.map((p, i) => p - b.position[i]));
+// How far the camera went, as a share of how far it stood from what it
+// looked at: the same reading whatever size the subject is (scenes are in
+// metres now, where a 25 cm sphere is framed from about 40 cm).
+const camMoved = (a, b) => Math.hypot(...a.position.map((p, i) => p - b.position[i])) / a.distance;
 const settle = (page) =>
   page.evaluate(() => {
     window.__sculpt.viewer.haltOrbit();
@@ -1466,26 +1470,30 @@ export const suites = {
   async primitives(page, base, t) {
     await openSculpt(page, base);
     const kinds = ['sphere', 'cube', 'cylinder', 'torus', 'cone', 'capsule', 'plane'];
+    // Real sizes (owner decision), in metres: measured as the Create menu
+    // says, a height or the largest side, on the finished surface.
+    const want = { sphere: 0.25, cube: 0.25, cylinder: 0.25, torus: 0.25, cone: 0.25, capsule: 0.25, plane: 0.5 };
+    const byHeight = new Set(['sphere', 'cube', 'cylinder', 'cone', 'capsule']);
     for (const kind of kinds) {
       const before = await count(page);
       const r = await page.evaluate((k) => {
         const s = window.__sculpt.session;
         const m = s.addPrimitive(k);
-        const mat = m.getMatrix();
         return {
           faces: m.getNbFaces(),
           name: s.getMeshName(m),
           selected: s.getMesh() === m,
-          radius: m.computeLocalRadius() * Math.hypot(mat[0], mat[1], mat[2]),
+          box: window.__sculpt.worldBox(m),
         };
       }, kind);
       t.eq(await count(page), before + 1, `${kind}: one more object`);
       t.ok(r.faces >= 20000, `${kind}: subdivided to ${r.faces} faces`);
       t.ok(r.selected, `${kind}: selected after adding`);
-      // normalizeSize measures the base cage; smooth subdivision then pulls
-      // a sphere or a cone's apex inward, so the finished object sits a
-      // little under the canonical 50.
-      t.ok(r.radius > 40 && r.radius < 50.5, `${kind}: at the canonical size (radius ${r.radius.toFixed(1)})`);
+      const size = r.box.max.map((v, i) => v - r.box.min[i]);
+      const measured = byHeight.has(kind) ? size[1] : Math.max(...size);
+      t.near(measured, want[kind], want[kind] * 0.002, `${kind}: at its real size`);
+      t.near(r.box.min[1], 0, 1e-5, `${kind}: standing on the floor`);
+      t.ok(Math.abs(r.box.min[0] + r.box.max[0]) < 1e-5 && Math.abs(r.box.min[2] + r.box.max[2]) < 1e-5, `${kind}: over the origin`);
       t.ok(/^[A-Z]/.test(r.name), `${kind}: named "${r.name}"`);
     }
     const total = await count(page);
@@ -1508,16 +1516,20 @@ export const suites = {
         faces: m.getNbFaces(),
         levels: m.getNbMeshes ? m.getNbMeshes() : -1,
         selected: s.getMesh() === m,
-        radius: m.computeLocalRadius() * Math.hypot(mat[0], mat[1], mat[2]),
-        translation: [mat[12], mat[13], mat[14]],
+        scale: Math.hypot(mat[0], mat[1], mat[2]),
+        box: window.__sculpt.worldBox(m),
       };
     });
     t.eq(await count(page), before + 1, 'hand: one object added');
     t.eq(hand.name, 'Hand', 'hand: named after the tile');
     t.ok(hand.faces >= 20000, `hand: subdivided to ${hand.faces} faces`);
     t.ok(hand.selected, 'hand: selected');
-    t.near(hand.radius, 50, 0.5, 'hand: at the canonical size');
-    t.near(Math.hypot(...hand.translation), 0, 1e-3, 'hand: centred');
+    // The file is in metres (tools/export-basemeshes.py): 23.5 cm tall,
+    // a little under once smoothed.
+    t.near(hand.scale, 1, 1e-6, 'hand: at its file\'s own size');
+    t.ok(hand.box.max[1] - hand.box.min[1] > 0.22 && hand.box.max[1] - hand.box.min[1] < 0.236, `hand: about 23 cm tall (${((hand.box.max[1] - hand.box.min[1]) * 100).toFixed(1)} cm)`);
+    t.near(hand.box.min[1], 0, 1e-5, 'hand: standing on the floor');
+    t.ok(Math.abs(hand.box.min[0] + hand.box.max[0]) < 0.01 && Math.abs(hand.box.min[2] + hand.box.max[2]) < 0.01, 'hand: over the origin');
 
     // Three parts: a head and its eyes, one undo step, eyes in front (+Z).
     before = await count(page);
@@ -1534,7 +1546,7 @@ export const suites = {
     t.eq(await count(page), before + 3, 'head: three objects added');
     t.eq(head.parts.map((p) => p.name).join(','), 'Head,Eye L,Eye R', 'head: named parts');
     t.ok(head.selected, 'head: the head is selected, not an eye');
-    t.ok(head.parts[1].z > 5 && head.parts[2].z > 5, `head: eyes sit in front (z ${head.parts[1].z.toFixed(1)})`);
+    t.ok(head.parts[1].z > 0.03 && head.parts[2].z > 0.03, `head: eyes sit in front (z ${head.parts[1].z.toFixed(3)} m)`);
     t.ok(head.parts[1].x > 0 && head.parts[2].x < 0, 'head: eye L on +X, eye R on -X');
     t.ok(head.parts[1].faces < 20000, `head: an eye stops early (${head.parts[1].faces} faces)`);
     const eyes = await lastVolumes(page, 3);
@@ -1722,7 +1734,7 @@ export const suites = {
     // sphere is hidden with its eye in the Scene panel, as a user would.
     await page.evaluate(async () => {
       const { session, input } = window.__sculpt;
-      session.addPrimitive('cube').getMatrix()[12] = 110;
+      session.addPrimitive('cube').getMatrix()[12] = 0.55;
       session.addPrimitive('torus');
       const row = [...document.querySelectorAll('.panel--scene .outliner__row')].find(
         (r) => r.querySelector('.outliner__name')?.textContent === 'Sphere',
@@ -2320,11 +2332,11 @@ export const suites = {
     keep.cleared = await tapAt(empty);
     t.ok(!!keep.first.part && keep.first.gizmo !== '', `a tap on the figure selects a part, with its gizmo (${JSON.stringify(keep.first)})`);
     t.ok(
-      keep.offOrbit.turned > 1e-3 && keep.offOrbit.part === keep.first.part && keep.offOrbit.gizmo === keep.first.gizmo,
+      keep.offOrbit.turned > 2e-5 && keep.offOrbit.part === keep.first.part && keep.offOrbit.gizmo === keep.first.gizmo,
       `an orbit begun off the figure turns the view and keeps the selection and its gizmo (${JSON.stringify(keep.offOrbit)})`,
     );
     t.ok(
-      keep.onOrbit.turned > 1e-3 && keep.onOrbit.part === keep.first.part && keep.onOrbit.gizmo === keep.first.gizmo,
+      keep.onOrbit.turned > 2e-5 && keep.onOrbit.part === keep.first.part && keep.onOrbit.gizmo === keep.first.gizmo,
       `so does one begun on another part, which it does not select (${JSON.stringify(keep.onOrbit)})`,
     );
     t.ok(keep.wheel.part === keep.first.part && keep.wheel.gizmo === keep.first.gizmo, `and the wheel (${JSON.stringify(keep.wheel)})`);
@@ -2384,7 +2396,7 @@ export const suites = {
       return out;
     }, [ikDrag.hand]);
     t.ok(midDrag.ball === null && midDrag.part === null && midDrag.gizmo === '', `mid-drag of an IK ball no gizmo comes up (${JSON.stringify(midDrag)})`);
-    t.ok(dragged.picked === 'ik:hand.R' && dragged.handMoved > 1e-3 && dragged.gizmo === '' && dragged.ball === null, `the drag reaches the hand as before (${dragged.handMoved.toFixed(3)} moved), selecting nothing`);
+    t.ok(dragged.picked === 'ik:hand.R' && dragged.handMoved > 2e-5 && dragged.gizmo === '' && dragged.ball === null, `the drag reaches the hand as before (${dragged.handMoved.toFixed(4)} m moved), selecting nothing`);
     t.ok(dragged.undone === ikDrag.state && dragged.redone, 'and is one undo step: undone, the pose is as it was; redone, as the drag left it');
 
     // Dragged, it moves the root in the plane facing the camera, as the
@@ -2428,19 +2440,19 @@ export const suites = {
     const rise = await dragRoot(-40);
     const crouch = await dragRoot(60);
     t.ok(
-      rise.picked === 'root' && rise.rise > 2 && rise.rise > 0.8 * rise.moved && rise.underPointer < 1.5,
-      `dragged 40 px up the screen the figure rises ${rise.rise.toFixed(2)} (of ${rise.moved.toFixed(2)} moved), the ball ${rise.underPointer.toFixed(2)} px from the pointer`,
+      rise.picked === 'root' && rise.rise > 0.04 && rise.rise > 0.8 * rise.moved && rise.underPointer < 1.5,
+      `dragged 40 px up the screen the figure rises ${rise.rise.toFixed(3)} m (of ${rise.moved.toFixed(3)} moved), the ball ${rise.underPointer.toFixed(2)} px from the pointer`,
     );
     t.ok(
-      crouch.rise < -2 && -crouch.rise > 0.8 * crouch.moved && crouch.underPointer < 1.5,
-      `dragged 60 px down it drops ${(-crouch.rise).toFixed(2)} (of ${crouch.moved.toFixed(2)} moved), the ball ${crouch.underPointer.toFixed(2)} px from the pointer`,
+      crouch.rise < -0.04 && -crouch.rise > 0.8 * crouch.moved && crouch.underPointer < 1.5,
+      `dragged 60 px down it drops ${(-crouch.rise).toFixed(3)} m (of ${crouch.moved.toFixed(3)} moved), the ball ${crouch.underPointer.toFixed(2)} px from the pointer`,
     );
     t.ok(
-      Math.max(...crouch.feet) <= 1 && crouch.pinsKept,
-      `and both pinned feet stay on their pins (${crouch.feet.map((v) => v.toFixed(2)).join(' and ')} off)`,
+      Math.max(...crouch.feet) <= 0.02 && crouch.pinsKept,
+      `and both pinned feet stay on their pins (${crouch.feet.map((v) => v.toFixed(4)).join(' and ')} m off)`,
     );
     t.ok(
-      rise.undone < 1e-6 && crouch.undone < 1e-6 && Math.max(...rise.feetBack, ...crouch.feetBack) < 0.01,
+      rise.undone < 1e-6 && crouch.undone < 1e-6 && Math.max(...rise.feetBack, ...crouch.feetBack) < 0.0002,
       `one undo after each drag puts the root back (${rise.undone.toExponential(1)}, ${crouch.undone.toExponential(1)} off), and the feet on their pins`,
     );
 
@@ -2457,17 +2469,18 @@ export const suites = {
         const foot = `${r.side === 'L' ? 'left' : 'right'} foot`;
         const head = `${name}, pelvis ${r.then ? 'then moved' : 'moved'} by (${r.by.join(', ')})`;
         const deg = `${r.worst.toFixed(1)}°`;
-        if (r.clean <= 1 && r.grounded) {
-          t.ok(r.miss <= 1 && r.worst < 5, `${head}: the ${foot} stands on its pin (${r.miss.toFixed(2)} off) and turns at most ${deg} in a step`);
-        } else if (r.clean <= 1) {
-          t.ok(r.miss <= 1, `${head}: the ${foot}, pinned in the air, stays on its pin (${r.miss.toFixed(2)} off), turning with its shin up to ${deg} in a step`);
+        // Two centimetres is near enough to say a foot is on its pin.
+        if (r.clean <= 0.02 && r.grounded) {
+          t.ok(r.miss <= 0.02 && r.worst < 5, `${head}: the ${foot} stands on its pin (${r.miss.toFixed(4)} m off) and turns at most ${deg} in a step`);
+        } else if (r.clean <= 0.02) {
+          t.ok(r.miss <= 0.02, `${head}: the ${foot}, pinned in the air, stays on its pin (${r.miss.toFixed(4)} m off), turning with its shin up to ${deg} in a step`);
         } else {
           const atSide = r.sideLimits.some((l) => Math.abs(l - r.thighSide) < 0.5);
           t.ok(
-            r.miss <= r.clean + 1,
-            `${head}: the ${foot}'s pin is out of the leg's reach - a clean solve ends ${r.clean.toFixed(2)} off it` +
+            r.miss <= r.clean + 0.02,
+            `${head}: the ${foot}'s pin is out of the leg's reach - a clean solve ends ${r.clean.toFixed(3)} m off it` +
               `${atSide ? `, the hip at its side limit (${r.thighSide.toFixed(0)}° of [${r.sideLimits.join(', ')}])` : ''}` +
-              ` - and the drag leaves it ${r.miss.toFixed(2)} off, turning up to ${deg} in a step`,
+              ` - and the drag leaves it ${r.miss.toFixed(3)} m off, turning up to ${deg} in a step`,
           );
         }
       }
@@ -2475,15 +2488,15 @@ export const suites = {
 
     // Feet on the ground stand flat (owner call), and only those.
     const plant = await plantingRun(page);
-    t.ok(plant.kick.tilt > 10 && plant.kick.kept && plant.kick.lifted > 0.75, `kicked 30 forward the left foot leaves the ground (ankle ${plant.kick.lifted.toFixed(1)} up) and turns with its shin (${plant.kick.tilt.toFixed(1)}°), its own pose untouched`);
-    t.ok(plant.down.tilt < 3 && plant.down.off < 1, `put back down it stands flat (${plant.down.tilt.toFixed(1)}° off world up, ${plant.down.off.toFixed(2)} off its mark)`);
-    t.ok(plant.lift.tilt > 10 && plant.lift.kept, `lifted 25 it is no longer held flat: it follows its shin (${plant.lift.tilt.toFixed(1)}°), its pose untouched`);
+    t.ok(plant.kick.tilt > 10 && plant.kick.kept && plant.kick.lifted > 0.015, `kicked 60 cm forward the left foot leaves the ground (ankle ${(plant.kick.lifted * 100).toFixed(1)} cm up) and turns with its shin (${plant.kick.tilt.toFixed(1)}°), its own pose untouched`);
+    t.ok(plant.down.tilt < 3 && plant.down.off < 0.02, `put back down it stands flat (${plant.down.tilt.toFixed(1)}° off world up, ${plant.down.off.toFixed(4)} m off its mark)`);
+    t.ok(plant.lift.tilt > 10 && plant.lift.kept, `lifted 50 cm it is no longer held flat: it follows its shin (${plant.lift.tilt.toFixed(1)}°), its pose untouched`);
     t.ok(plant.boxOff.plant === false && plant.boxOff.saved === false, 'the Plant feet box turns planting off, and the state says so');
-    t.ok(plant.offDown.kept && plant.offDown.tilt > 3 && plant.offDown.off < 1, `with it off, put back down the foot is left as its shin holds it (${plant.offDown.tilt.toFixed(1)}°, its pose untouched)`);
+    t.ok(plant.offDown.kept && plant.offDown.tilt > 3 && plant.offDown.off < 0.02, `with it off, put back down the foot is left as its shin holds it (${plant.offDown.tilt.toFixed(1)}°, its pose untouched)`);
     t.ok(plant.boxOn.plant === true && plant.boxOn.tilt < 3, `ticked again, it takes hold at once (${plant.boxOn.tilt.toFixed(1)}°)`);
 
     // What Plant feet does, side by side (owner report: "no difference with
-    // it off or on"). The pelvis dropped 6 with the feet pinned: the pins
+    // it off or on"). The pelvis dropped 12 cm with the feet pinned: the pins
     // hold both feet on their marks either way, and planting decides only
     // whether they stand flat (on) or tilt with their shins (off). With the
     // feet unpinned they go with the body either way, as planting holds no
@@ -2517,7 +2530,7 @@ export const suites = {
         const ringsBefore = rings();
         const feet0 = ['foot.L', 'foot.R'].map((f) => a.handlePosition(f));
         const q0 = up('foot.L');
-        a.moveRoot(0, -6, 2, 6);
+        a.moveRoot(0, -0.12, 0.04, 6);
         const feet1 = ['foot.L', 'foot.R'].map((f) => a.handlePosition(f));
         const turned = (2 * Math.acos(Math.min(1, Math.abs(q0.dot(up('foot.L')))))) * (180 / Math.PI);
         const moved = Math.max(...feet0.map((p, i) => Math.hypot(...p.map((v, k) => v - feet1[i][k]))));
@@ -2535,16 +2548,16 @@ export const suites = {
       };
     });
     t.ok(
-      plantSide.pinnedOn.moved < 0.5 && plantSide.pinnedOff.moved < 0.5,
-      `pelvis dropped 6, pinned feet stay on their marks with planting on (${plantSide.pinnedOn.moved.toFixed(2)} off) and off (${plantSide.pinnedOff.moved.toFixed(2)} off): pins hold them, not planting`,
+      plantSide.pinnedOn.moved < 0.01 && plantSide.pinnedOff.moved < 0.01,
+      `pelvis dropped 12 cm, pinned feet stay on their marks with planting on (${plantSide.pinnedOn.moved.toFixed(4)} m off) and off (${plantSide.pinnedOff.moved.toFixed(4)} m off): pins hold them, not planting`,
     );
     t.ok(
       plantSide.pinnedOn.turned < 5 && plantSide.pinnedOff.turned > 10,
       `planting on, the left foot stays flat (turned ${plantSide.pinnedOn.turned.toFixed(1)}°); off, it tilts with its shin (${plantSide.pinnedOff.turned.toFixed(1)}°)`,
     );
     t.ok(
-      plantSide.freeOn.moved > 4 && plantSide.freeOff.moved > 4,
-      `unpinned, the feet go with the body either way (${plantSide.freeOn.moved.toFixed(1)} and ${plantSide.freeOff.moved.toFixed(1)})`,
+      plantSide.freeOn.moved > 0.08 && plantSide.freeOff.moved > 0.08,
+      `unpinned, the feet go with the body either way (${plantSide.freeOn.moved.toFixed(3)} and ${plantSide.freeOff.moved.toFixed(3)} m)`,
     );
     t.ok(
       plantSide.pinnedOn.ringsBefore === 'plant:foot.L,plant:foot.R' && plantSide.pinnedOn.ringsAfter === 'plant:foot.L,plant:foot.R' && plantSide.pinnedOff.ringsBefore === '' && plantSide.freeOn.ringsAfter === '',
@@ -2581,8 +2594,8 @@ export const suites = {
     t.ok(stage.asked === 'floor' && !stage.seen.includes('pedestal'), `asked for a pedestal, the viewer keeps the floor, and G cycles past it (${stage.asked}; ${stage.seen.join(', ')})`);
     const standing = [];
     for (const fid of ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized']) {
-      // Each one swapped in after its predecessor was lifted 12 off the floor.
-      await page.evaluate(() => window.__armature.moveRoot(0, 12, 0));
+      // Each one swapped in after its predecessor was lifted 24 cm off the floor.
+      await page.evaluate(() => window.__armature.moveRoot(0, 0.24, 0));
       await page.evaluate((id) => window.__armature.figure(id), fid);
       await page.waitForFunction((id) => window.__armature.armature.rig.id === id, fid, { timeout: 60_000 });
       standing.push(
@@ -2595,8 +2608,8 @@ export const suites = {
     }
     for (const f of standing) {
       t.ok(
-        Math.abs(f.soles - f.floor) < 0.05 && Math.abs(f.plane - f.floor) < 0.05 && Math.abs(f.floor - standing[0].floor) < 0.05,
-        `${f.id}: its soles at ${f.soles.toFixed(3)}, on the floor at ${f.floor.toFixed(3)} (the plane drawn at ${f.plane.toFixed(3)}), the same floor as the first`,
+        Math.abs(f.soles - f.floor) < 0.001 && Math.abs(f.plane - f.floor) < 0.001 && Math.abs(f.floor - standing[0].floor) < 0.001,
+        `${f.id}: its soles at ${f.soles.toFixed(4)} m, on the floor at ${f.floor.toFixed(4)} (the plane drawn at ${f.plane.toFixed(4)}), the same floor as the first`,
       );
     }
     await page.evaluate(() => window.__armature.figure('mannequin-male-realistic'));
@@ -2623,8 +2636,8 @@ export const suites = {
     });
     t.ok(older.first.pins === 'foot.L,foot.R' && older.first.plant === true, `a save with no pins opens with both feet pinned, planting on (${older.first.pins})`);
     t.ok(
-      older.pins === 'foot.L' && older.pinOff < 1e-3 && older.toeGap > 1 && older.plant === true,
-      `a toe-held foot pin moves ${older.toeGap.toFixed(1)} to the middle of the foot (${older.pinOff.toExponential(1)} off it), planting on`,
+      older.pins === 'foot.L' && older.pinOff < 2e-5 && older.toeGap > 0.02 && older.plant === true,
+      `a toe-held foot pin moves ${(older.toeGap * 100).toFixed(1)} cm to the middle of the foot (${older.pinOff.toExponential(1)} m off it), planting on`,
     );
 
     // The four mannequins: fetched, read as rigged models, posable.
@@ -2636,7 +2649,7 @@ export const suites = {
         const arm = a.armature;
         const geo = arm.mesh.geometry;
         const before = a.handlePosition('hand.L');
-        a.reach('hand.L', before[0] + 15, before[1] + 25, before[2] + 15);
+        a.reach('hand.L', before[0] + 0.3, before[1] + 0.5, before[2] + 0.3);
         const after = a.handlePosition('hand.L');
         const top = a.handlePosition('head');
         const sole = a.handlePosition('foot.R');
@@ -2656,8 +2669,8 @@ export const suites = {
       t.eq(r.bones, 19, `${id}: nineteen bones`);
       t.eq(r.chains, 5, `${id}: five reach chains`);
       t.ok(r.skinned && r.verts > 10000, `${id}: a skinned mesh of ${r.verts} vertices`);
-      t.ok(r.height > 60 && r.height < 100, `${id}: head handle ${r.height.toFixed(1)} scene units above the foot`);
-      t.ok(r.moved > 5, `${id}: the left hand reaches (${r.moved.toFixed(1)})`);
+      t.ok(r.height > 1.2 && r.height < 2, `${id}: head handle ${r.height.toFixed(3)} m above the foot`);
+      t.ok(r.moved > 0.1, `${id}: the left hand reaches (${r.moved.toFixed(3)} m)`);
       t.eq(r.preset, id, `${id}: the state names it`);
       t.ok(/mannequin/i.test(r.option), `${id}: listed in the Figure select as "${r.option}"`);
       // The right-hand lumps are the left ones mirrored in the bundle, a
@@ -2681,8 +2694,8 @@ export const suites = {
       const mirror = await clavicleMirror(page);
       for (const [how, m] of Object.entries(mirror)) {
         t.ok(
-          m.clavicle < 0.5 && m.arm < 1 && m.off < 0.25 && (how !== 'reach' || m.moved > 5),
-          `${id}: symmetry on, ${how === 'sliders' ? 'the left clavicle turned by its sliders' : how === 'gizmo' ? 'the right clavicle turned by its gizmo' : `the left hand dragged ${m.moved?.toFixed(1)}`}: the right clavicle ${m.clavicle.toFixed(2)}° off the left's mirror image, the arm ${m.arm.toFixed(2)}°, the shoulder, elbow and hand ${m.off.toFixed(3)} (clavicles L ${m.euler[0]}, R ${m.euler[1]})`,
+          m.clavicle < 0.5 && m.arm < 1 && m.off < 0.005 && (how !== 'reach' || m.moved > 0.1),
+          `${id}: symmetry on, ${how === 'sliders' ? 'the left clavicle turned by its sliders' : how === 'gizmo' ? 'the right clavicle turned by its gizmo' : `the left hand dragged ${m.moved?.toFixed(3)} m`}: the right clavicle ${m.clavicle.toFixed(2)}° off the left's mirror image, the arm ${m.arm.toFixed(2)}°, the shoulder, elbow and hand ${m.off.toFixed(4)} m (clavicles L ${m.euler[0]}, R ${m.euler[1]})`,
         );
       }
 
@@ -2709,12 +2722,12 @@ export const suites = {
         const wide = out.limits[out.side < 0 ? 0 : 1];
         const narrow = across.limits.reduce((p, q) => (Math.abs(p) < Math.abs(q) ? p : q));
         t.ok(
-          out.miss <= 1.5 && out.other < 1e-3,
-          `${id}: swung 22 out to the side the left foot gets there (${out.miss.toFixed(2)} off), the hip open ${deg(out.side)} of its ${deg(wide)}, the right foot where it stood`,
+          out.miss <= 0.03 && out.other < 2e-5,
+          `${id}: swung 44 cm out to the side the left foot gets there (${out.miss.toFixed(4)} m off), the hip open ${deg(out.side)} of its ${deg(wide)}, the right foot where it stood`,
         );
         t.ok(
-          across.miss >= 3 && Math.abs(across.side - narrow) < 0.5 && across.other < 1e-3,
-          `${id}: swung 22 across it stops ${across.miss.toFixed(1)} short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
+          across.miss >= 0.06 && Math.abs(across.side - narrow) < 0.5 && across.other < 2e-5,
+          `${id}: swung 44 cm across it stops ${across.miss.toFixed(3)} m short, the hip at the end of its ${deg(narrow)} across (${deg(across.side)}), the right foot where it stood`,
         );
         t.ok(lift > drop + 5, `${id}: the left shoulder lifts ${lift.toFixed(0)}° and drops ${drop.toFixed(0)}°`);
 
@@ -2723,11 +2736,11 @@ export const suites = {
         const past = await pastReach(page);
         t.ok(
           past.miss <= 1.3 * past.grid,
-          `${id}: a foot pinned past its reach, the hip turned by hand and the pelvis dragged across, ends ${past.miss.toFixed(2)} off its pin, the nearest a coarse grid over the leg's joint angles gets being ${past.grid.toFixed(2)}`,
+          `${id}: a foot pinned past its reach, the hip turned by hand and the pelvis dragged across, ends ${past.miss.toFixed(3)} m off its pin, the nearest a coarse grid over the leg's joint angles gets being ${past.grid.toFixed(3)}`,
         );
         t.ok(
           past.moved <= 1,
-          `${id}: solved again, the same pin turns no joint more than a degree (at most ${past.moved.toFixed(3)}°${past.movedBone ? `, the ${past.movedBone}` : ''}; the foot then ${past.again.toFixed(2)} off)`,
+          `${id}: solved again, the same pin turns no joint more than a degree (at most ${past.moved.toFixed(3)}°${past.movedBone ? `, the ${past.movedBone}` : ''}; the foot then ${past.again.toFixed(3)} m off)`,
         );
       }
 
@@ -2745,11 +2758,11 @@ export const suites = {
         const pct = (v, of) => `${((100 * v) / of).toFixed(0)}%`;
         t.ok(
           knee.ahead > 0.1 * knee.limb && knee.miss < 0.01 * knee.limb,
-          `${id}: knee ${s} folds forward (${knee.ahead.toFixed(1)}, ${pct(knee.ahead, knee.limb)} of the leg, in front of the hip-to-ankle line; the foot ${knee.miss.toFixed(2)} off its mark)`,
+          `${id}: knee ${s} folds forward (${knee.ahead.toFixed(3)} m, ${pct(knee.ahead, knee.limb)} of the leg, in front of the hip-to-ankle line; the foot ${knee.miss.toFixed(4)} off its mark)`,
         );
         t.ok(
           elbow.ahead < -0.1 * elbow.limb && elbow.miss < 0.01 * elbow.limb,
-          `${id}: elbow ${s} folds back (${(-elbow.ahead).toFixed(1)}, ${pct(-elbow.ahead, elbow.limb)} of the arm, behind the shoulder-to-wrist line; the hand ${elbow.miss.toFixed(2)} off its mark)`,
+          `${id}: elbow ${s} folds back (${(-elbow.ahead).toFixed(3)} m, ${pct(-elbow.ahead, elbow.limb)} of the arm, behind the shoulder-to-wrist line; the hand ${elbow.miss.toFixed(4)} off its mark)`,
         );
       }
 
@@ -2845,7 +2858,7 @@ export const suites = {
     await dev.finger(path);
     await settle(page);
     const turned = await camera(page);
-    t.ok(camMoved(home, turned) > 20, `a finger drag across the model orbits (the camera moved ${camMoved(home, turned).toFixed(1)})`);
+    t.ok(camMoved(home, turned) > 0.1, `a finger drag across the model orbits (the camera moved ${camMoved(home, turned).toFixed(3)} of its distance)`);
     t.eq(await meshSum(page), sum, 'and leaves every vertex where it was');
     t.eq(await strokeCount(page), strokes, 'no stroke began');
 
@@ -2854,7 +2867,7 @@ export const suites = {
     await dev.penDrag(path);
     await settle(page);
     t.ok((await meshSum(page)) !== sum && (await strokeCount(page)) === strokes + 1, 'the pen along the same path sculpts');
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and the view stays put');
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'and the view stays put');
 
     // Two fingers still pan and zoom: spread apart, they dolly in.
     await restoreCamera(page, home);
@@ -2887,7 +2900,7 @@ export const suites = {
     await dev.touch('touchEnd', []);
     await settle(page);
     t.ok((await strokeCount(page)) === strokes + 1 && (await meshSum(page)) !== sum, 'a pen landing while a finger orbits takes the stroke');
-    t.ok(camMoved(atPen, await camera(page)) < 1e-3, `and from then on the finger cannot turn the view (moved ${camMoved(atPen, await camera(page)).toExponential(1)})`);
+    t.ok(camMoved(atPen, await camera(page)) < 1e-5, `and from then on the finger cannot turn the view (moved ${camMoved(atPen, await camera(page)).toExponential(1)})`);
     await restoreCamera(page, home);
     strokes = await strokeCount(page);
     await dev.pen('mouseMoved', path[0], false);
@@ -2901,7 +2914,7 @@ export const suites = {
     await dev.touch('touchEnd', []);
     await settle(page);
     t.ok((await strokeCount(page)) === strokes + 1, 'a finger landing mid-stroke neither ends nor restarts it');
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'nor turns the view under the pen');
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'nor turns the view under the pen');
 
     // Edit > Preferences: "Fingers sculpt too" brings the old routing back,
     // live; "Fingers: navigate only" takes it away again.
@@ -2914,14 +2927,14 @@ export const suites = {
     await dev.finger(path);
     await settle(page);
     t.ok((await strokeCount(page)) === strokes + 1 && (await meshSum(page)) !== sum, 'with fingers sculpting, the finger drag sculpts');
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and does not orbit');
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'and does not orbit');
     const navigate = await setFingers(page, 'Fingers: navigate only');
     t.ok(navigate.checked === 'Fingers: navigate only' && navigate.stored === null, `back to navigate only, the stored choice is cleared (${navigate.stored})`);
     await restoreCamera(page, home);
     sum = await meshSum(page);
     await dev.finger(path);
     await settle(page);
-    t.ok((await meshSum(page)) === sum && camMoved(home, await camera(page)) > 20, 'and the finger orbits again');
+    t.ok((await meshSum(page)) === sum && camMoved(home, await camera(page)) > 0.1, 'and the finger orbits again');
   },
 
   // The Select tool and the gizmo under fingers: a finger drag orbits where
@@ -2932,7 +2945,7 @@ export const suites = {
     const dev = await devices(page);
     await page.evaluate(async () => {
       const { session, input } = window.__sculpt;
-      session.addPrimitive('cube').getMatrix()[12] = 110;
+      session.addPrimitive('cube').getMatrix()[12] = 0.55;
       input.hooks.frameAll();
     });
     await settle(page);
@@ -2953,21 +2966,21 @@ export const suites = {
     await settle(page);
     t.eq(fingerMarquee, false, 'a finger dragged across both objects draws no marquee');
     t.eq(await selected(page), before, 'and selects nothing new');
-    t.ok(camMoved(home, await camera(page)) > 20, 'it orbits instead');
+    t.ok(camMoved(home, await camera(page)) > 0.1, 'it orbits instead');
 
     await restoreCamera(page, home);
     const penMarquee = await dev.penDrag(sweep, marquee);
     await settle(page);
     t.eq(penMarquee, true, 'the pen along the same sweep draws the marquee');
     t.eq(await selected(page), 'Cube,Sphere', 'and selects both objects');
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'without moving the view');
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'without moving the view');
 
     const empty = await emptySpot(page);
     t.ok(!!empty, `there is bare canvas to tap (${empty})`);
     await dev.tap(empty);
     await settle(page);
     t.eq(await selected(page), '', 'a finger tap on nothing clears the selection, as a click does');
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'and a tap does not nudge the view');
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'and a tap does not nudge the view');
     await dev.tap(await screenOf(page, 'Sphere'));
     await settle(page);
     t.eq(await selected(page), 'Sphere', 'a finger tap on the sphere selects it');
@@ -2992,14 +3005,14 @@ export const suites = {
     await settle(page);
     const g1 = await gizmo();
     t.ok(Math.hypot(...g1.origin.map((v, i) => v - g0.origin[i])) < 1e-6, 'a finger dragged from the gizmo centre leaves the object where it was');
-    t.ok(camMoved(home, await camera(page)) > 20, 'and orbits');
+    t.ok(camMoved(home, await camera(page)) > 0.1, 'and orbits');
     await restoreCamera(page, home);
     const g2 = await gizmo();
     await dev.penDrag(line(g2.at, [g2.at[0] + 160, g2.at[1]]));
     await settle(page);
     const g3 = await gizmo();
-    t.ok(Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])) > 5, `the pen on the same handle moves the object (by ${Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])).toFixed(1)})`);
-    t.ok(camMoved(home, await camera(page)) < 1e-3, 'without moving the view');
+    t.ok(Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])) > 0.025, `the pen on the same handle moves the object (by ${Math.hypot(...g3.origin.map((v, i) => v - g2.origin[i])).toFixed(3)} m)`);
+    t.ok(camMoved(home, await camera(page)) < 1e-5, 'without moving the view');
     await dev.tap(await screenOf(page, 'Cube'));
     await settle(page);
     const g4 = await gizmo();
@@ -3191,7 +3204,7 @@ export const suites = {
     t.eq(await meshSum(page), sum, 'a pen drag with Move from just outside the outline moves no vertex');
     t.eq(await strokeCount(page), strokes, 'and starts no stroke');
     t.ok(await page.evaluate((u) => window.__sculpt.session.getStateManager().getCurrentState() === u, undo), 'nor leaves an undo step');
-    t.ok(camMoved(home, await camera(page)) > 1, 'it orbits instead, as a pen off the model does with any brush');
+    t.ok(camMoved(home, await camera(page)) > 0.005, 'it orbits instead, as a pen off the model does with any brush');
 
     await restoreCamera(page, home);
     await page.mouse.move(off[0], off[1]);
@@ -3461,7 +3474,7 @@ export const suites = {
     const strokes = await strokeCount(page);
     await dev.penDrag(line(empty, [empty[0] + 60, empty[1] + 20], 2));
     await settle(page);
-    t.ok(camMoved(home, await camera(page)) > 1 && (await strokeCount(page)) === strokes, 'a pen drag off the model orbits, with no stroke');
+    t.ok(camMoved(home, await camera(page)) > 0.005 && (await strokeCount(page)) === strokes, 'a pen drag off the model orbits, with no stroke');
     s = await state();
     t.ok(isArmed(s), `and leaves the arm set (${show(s)})`);
     await restoreCamera(page, home);
@@ -5409,24 +5422,28 @@ export const suites = {
     t.ok(await openPanel(page, 'Tool'), 'the Tool panel opens');
     const held = () => page.evaluate(() => window.__sculpt.input.getBrushRadius());
     const nub = () => page.evaluate(() => parseFloat(document.querySelector('.sculpt-slider[data-kind="size"] .sculpt-slider__nub').style.bottom));
+    // World-scale size on real units: the slider steps a fifth of a
+    // millimetre, and the field and the readout speak centimetres, so 800
+    // steps is 16 cm, and the travel's 500 is 10.
+    const cm = (steps) => String(Number((steps * 0.02).toFixed(2)));
     let row = await sliderRow(page, 'Tool', 'Size');
     const start = Math.round(await held());
     await page.mouse.dblclick(...row.at);
     row = await sliderRow(page, 'Tool', 'Size');
-    t.ok(row.field?.focused && row.field.value === String(start), `a double-click on Size opens its field at the brush's size (${row.field?.value}, held ${start})`);
-    await typeValue(page, '800');
+    t.ok(row.field?.focused && row.field.value === cm(start), `a double-click on Size opens its field at the brush's size in centimetres (${row.field?.value}, held ${start} steps)`);
+    await typeValue(page, '16');
     row = await sliderRow(page, 'Tool', 'Size');
     t.ok(
-      Math.round(await held()) === 800 && row.thumb === 500 && row.readout === '800' && (await nub()) === 100,
-      `800 is kept: the slider pins at 500 and says 800, the rail's nub sits at the top (${(await held()).toFixed(1)}, ${row.readout}, nub ${await nub()}%)`,
+      Math.round(await held()) === 800 && row.thumb === 500 && row.readout === '16.00 cm' && (await nub()) === 100,
+      `16 cm is kept: the slider pins at 10 and says 16, the rail's nub sits at the top (${(await held()).toFixed(1)}, ${row.readout}, nub ${await nub()}%)`,
     );
     await page.keyboard.press('4'); // Inflate
     const inflate = Math.round(await held());
     await page.keyboard.press('3');
     row = await sliderRow(page, 'Tool', 'Size');
     t.ok(
-      inflate === start && Math.round(await held()) === 800 && row.readout === '800' && row.thumb === 500,
-      `Inflate keeps its own size (${inflate}), and back on clay the 800 is still there (${(await held()).toFixed(1)}, ${row.readout})`,
+      inflate === start && Math.round(await held()) === 800 && row.readout === '16.00 cm' && row.thumb === 500,
+      `Inflate keeps its own size (${inflate}), and back on clay the 16 cm is still there (${(await held()).toFixed(1)}, ${row.readout})`,
     );
     await page.evaluate(async () => {
       window.__sized = await window.__sculpt.file.pack();
@@ -5435,16 +5452,16 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.file.open(window.__sized));
     await page.keyboard.press('3');
     row = await sliderRow(page, 'Tool', 'Size');
-    t.ok(Math.round(await held()) === 800 && row.readout === '800', `it rides the scene file (${(await held()).toFixed(1)}, ${row.readout})`);
+    t.ok(Math.round(await held()) === 800 && row.readout === '16.00 cm', `it rides the scene file (${(await held()).toFixed(1)}, ${row.readout})`);
     await page.keyboard.press(']');
-    t.eq(Math.round(await held()), 800, 'the larger-size key leaves a typed 800 alone');
+    t.eq(Math.round(await held()), 800, 'the larger-size key leaves a typed 16 cm alone');
     await page.keyboard.press('[');
     const stepped = await held();
-    t.ok(stepped < 800 && stepped > 500, `the smaller-size key steps down from 800, not from 500 (${stepped.toFixed(1)})`);
+    t.ok(stepped < 800 && stepped > 500, `the smaller-size key steps down from 16 cm, not from 10 (${stepped.toFixed(1)} steps)`);
     row = await sliderRow(page, 'Tool', 'Size');
     await page.mouse.dblclick(...row.at);
     await typeValue(page, '0');
-    t.eq(Math.round(await held()), 1, 'a typed 0 is held to a pixel');
+    t.eq(Math.round(await held()), 1, 'a typed 0 is held to the least step, a fifth of a millimetre');
 
     const track = (kind) =>
       page.evaluate((k) => {
@@ -5458,9 +5475,9 @@ export const suites = {
       });
     await doubleTap(dev, await track('size'));
     let field = await floating();
-    t.ok(field?.focused && field.value === '1' && field.mode === 'decimal', `a double-tap on the rail's size track opens a field beside it, at the brush's size (${JSON.stringify(field)})`);
+    t.ok(field?.focused && field.value === '0.02' && field.mode === 'decimal', `a double-tap on the rail's size track opens a field beside it, at the brush's size in centimetres (${JSON.stringify(field)})`);
     t.eq(Math.round(await held()), 1, 'and the taps themselves left the size alone');
-    await typeValue(page, '120');
+    await typeValue(page, '2.4');
     t.ok(Math.round(await held()) === 120 && !(await floating()), 'what is typed there sizes the brush, and the field goes');
     await doubleTap(dev, await track('strength'));
     field = await floating();
@@ -6220,10 +6237,11 @@ export const suites = {
         [before],
       );
     };
+    // The slider is in millimetres on real units; the vendor takes metres.
     let e = await extract('button', 2);
-    t.ok(e.added === 1 && /^Extracted/.test(e.last) && e.active === 'Sphere' && e.thickness === 2, `Extract masked in the Model panel makes an object of the masked half at its thickness (${e.last}, ${e.thickness}; ${e.active} stays active)`);
+    t.ok(e.added === 1 && /^Extracted/.test(e.last) && e.active === 'Sphere' && Math.abs(e.thickness - 0.002) < 1e-12, `Extract masked in the Model panel makes an object of the masked half at its thickness, 2 mm (${e.last}, ${e.thickness} m; ${e.active} stays active)`);
     e = await extract('key', 0.5);
-    t.ok(e.added === 1 && e.thickness === 0.5, `Ctrl + E extracts at the Model panel's thickness (${e.thickness})`);
+    t.ok(e.added === 1 && Math.abs(e.thickness - 0.0005) < 1e-12, `Ctrl + E extracts at the Model panel's thickness (${e.thickness} m)`);
     const before = await count(page);
     await page.evaluate(() => window.__sculpt.session.undo());
     t.eq(await count(page), before - 1, 'and an undo takes the extraction back');

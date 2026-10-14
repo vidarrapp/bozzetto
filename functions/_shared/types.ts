@@ -48,8 +48,14 @@ export interface ProjectData {
   environment?: unknown;
   /** Ambient-occlusion settings. */
   ao?: unknown;
-  /** Presentation: ground shadow / floor / pedestal. */
+  /** Presentation: ground shadow / floor / pedestal, and the floor's offset. */
   presentation?: unknown;
+  /**
+   * 'm' when the project's geometry is in metres (src/viewer/units.ts): the
+   * viewer stands it on a fixed floor at 0. Absent for a project published
+   * before real units, which keeps the floor that follows its subject.
+   */
+  units?: 'm';
   stages: StageMeta[];
   frames: FrameMeta[];
   /** A scene project's counts and size; absent until its first upload completes. */

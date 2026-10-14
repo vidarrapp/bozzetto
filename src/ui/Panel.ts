@@ -5,6 +5,7 @@ import { colorPicker, type ColorPickerHandle } from './ColorPicker';
 import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
+import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -971,6 +972,22 @@ export class Panel {
     );
     if (!floorHeld) surfaceRows.appendChild(pedestalRow);
     sec.appendChild(surfaceRows);
+    // A project on real units stands on a fixed floor at 0 (owner
+    // decision), which this raises or lowers, in centimetres; saved with
+    // the look as the presentation's floorOffset. Sculpt and Armature keep
+    // theirs in their own panels (Scene, Armature), so it is the viewer's
+    // and the editor's alone here.
+    const floorRow = compactRange(
+      'Floor offset',
+      -100,
+      100,
+      0.5,
+      this.viewer.getFloorOffset() * 100,
+      (cm) => this.viewer.setFloorOffset(cm / 100),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+    );
+    floorRow.classList.add('panel__floor-offset');
+    if (floorHeld && !this.sculpting) sec.appendChild(floorRow);
 
     // Conditional rows in one place, re-run by every select that changes
     // them and by refreshControls (the G key cycles ground externally).
@@ -979,6 +996,7 @@ export class Panel {
       bgColorRow.hidden = bg.value !== 'color';
       surfaceRows.hidden = ground.value !== 'floor' && ground.value !== 'pedestal';
       pedestalRow.hidden = ground.value !== 'pedestal';
+      floorRow.hidden = ground.value === 'off';
     };
     select.addEventListener('change', sync);
     bg.addEventListener('change', sync);

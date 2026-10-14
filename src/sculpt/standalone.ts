@@ -42,6 +42,7 @@ export function sculptStandaloneProject(): { manifest: Manifest; source: MemoryS
     environment: null,
     ao: null,
     presentation: null,
+    units: null,
     config: { frameCount: 1, fps: 1, ext: 'glb', tiers: ['sd'], frameStartIndex: 0 },
     defaults: { frame: 0, playing: false, material: 'lit', lightingPreset: 'three_point' },
     camera: { autoFrame: true },

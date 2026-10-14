@@ -1,6 +1,6 @@
 import type { InputShell } from '../bridge/InputShell';
 import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
-import { holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
+import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
 
 /**
  * Minimal Procreate-style left rail (WS2h review request + undo round): two
@@ -171,10 +171,7 @@ export class BrushSliders {
       if (kind === 'size') this.input.setBrushRadius(Math.exp(LOG_MIN + t * LOG_SPAN));
       else this.input.setBrushIntensity(t);
       // The value beside the nub while it is dragged (owner rule for sliders).
-      const text =
-        kind === 'size'
-          ? `${Math.round(this.input.getBrushRadius())} px`
-          : `${Math.round(this.input.getBrushIntensity() * 100)}%`;
+      const text = kind === 'size' ? this.sizeText() : `${Math.round(this.input.getBrushIntensity() * 100)}%`;
       showSliderBubble(rect.right, rect.bottom - t * rect.height, text, 'right');
     };
     el.addEventListener('pointerdown', (e) => {
@@ -213,12 +210,28 @@ export class BrushSliders {
   }
 
   /**
-   * The typed value for a track, in a field beside its nub: the size in
-   * pixels, the strength in percent, as the drag bubble prints them.
+   * The size as the bubble and the field say it: pixels in screen scale,
+   * the radius in centimetres in world scale on real units (owner
+   * decision), the bare number in a scene from before them.
+   */
+  private sizeText(): string {
+    const { unit, scale } = this.input.brushSizeDisplay();
+    const v = this.input.getBrushRadius() * scale;
+    return `${scale === 1 ? Math.round(v) : formatSliderNumber(v, scale)}${unit}`;
+  }
+
+  /**
+   * The typed value for a track, in a field beside its nub: the size as
+   * the bubble prints it (sizeText), the strength in percent.
    */
   private openField(kind: 'size' | 'strength', el: HTMLElement, nub: HTMLElement): void {
     const size = kind === 'size';
-    const value = size ? Math.round(this.input.getBrushRadius()) : Math.round(this.input.getBrushIntensity() * 100);
+    const display = this.input.brushSizeDisplay();
+    const value = size
+      ? display.scale === 1
+        ? Math.round(this.input.getBrushRadius())
+        : Number(formatSliderNumber(this.input.getBrushRadius() * display.scale, display.scale))
+      : Math.round(this.input.getBrushIntensity() * 100);
     const track = el.getBoundingClientRect();
     const at = nub.getBoundingClientRect();
     openNumberField(
@@ -234,7 +247,9 @@ export class BrushSliders {
       (typed) => {
         const raw = parseTyped(typed);
         if (!Number.isFinite(raw)) return;
-        if (size) this.input.setBrushRadius(holdToLimits(raw, { min: 1, integer: true }));
+        // Back to slider steps from what was typed (centimetres on real
+        // units); a step is the least a brush can be.
+        if (size) this.input.setBrushRadius(holdToLimits(raw / display.scale, { min: 1, integer: true }));
         else this.input.setBrushIntensity(holdToLimits(raw / 100, { min: 0, max: 1 }));
       },
     );

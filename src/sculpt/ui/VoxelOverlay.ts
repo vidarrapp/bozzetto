@@ -9,6 +9,7 @@ import {
   voxelGrid,
   type Box6,
 } from '../bridge/remeshBudget';
+import { formatSceneLength, type Units } from '../../viewer/units';
 
 /** How long the grid stays after a key moves the slider, with no press to end it. */
 const KEY_LINGER_MS = 900;
@@ -27,8 +28,9 @@ const _eye = new Vector3();
  * the brush ring is (BrushCursor): no render pass draws it, so no
  * thumbnail or capture can catch it, and a line is a CSS pixel on every
  * backend. Dense grids fade rather than turn solid, and a caption gives
- * the voxel's size in pixels where the lines are too fine to count, and
- * the memory the remesh would take - or that this device cannot spare it.
+ * the voxel's size - in centimetres or millimetres on real units, and in
+ * pixels where the lines are too fine to count - and the memory the
+ * remesh would take, or that this device cannot spare it.
  */
 export class VoxelOverlay {
   private readonly root: HTMLDivElement;
@@ -37,7 +39,11 @@ export class VoxelOverlay {
   private box: Box6 | null = null;
   private resolution = 0;
 
-  constructor(private readonly viewer: Viewer) {
+  constructor(
+    private readonly viewer: Viewer,
+    /** The scale the grid's box is on: metres, or a scene's own from before real units. */
+    private readonly units: () => Units | null = () => 'm',
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'voxel-overlay';
     this.root.hidden = true;
@@ -172,7 +178,7 @@ export class VoxelOverlay {
     const size = cellPx >= 10 ? String(Math.round(cellPx)) : cellPx.toFixed(1);
     this.caption.textContent = over
       ? `${this.resolution}: about ${formatBytes(bytes)}, more than this device can spare. ${maxRemeshResolution(box, budget)} at most here.`
-      : `${this.resolution} voxels across · one is ${size} px here · about ${formatBytes(bytes)}`;
+      : `${this.resolution} voxels across · one is ${formatSceneLength(step, this.units())}, ${size} px here · about ${formatBytes(bytes)}`;
     this.caption.classList.toggle('voxel-overlay__caption--over', over);
     // Above the grid, kept on the view.
     const cx = lines ? (left + right) / 2 : w / 2;
@@ -184,6 +190,7 @@ export class VoxelOverlay {
       resolution: String(this.resolution),
       lines: String(lines),
       cellPx: cellPx.toFixed(2),
+      step: String(step),
       over: over ? '1' : '0',
     });
   }

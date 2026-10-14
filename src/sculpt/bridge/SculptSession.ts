@@ -46,6 +46,7 @@ import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
+import type { Units } from '../../viewer/units';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -158,6 +159,30 @@ function subdivisionKeys(
 /** What the Scene panel's Create menu can make without a file. */
 export type PrimitiveKind = 'sphere' | 'cube' | 'cylinder' | 'torus' | 'cone' | 'capsule' | 'plane';
 
+/**
+ * How big a primitive is made in a scene on real units (owner decision),
+ * in metres, and which way it is measured: its height, or its largest
+ * side (a torus across, the plane, which stands upright, along its side).
+ * The Create menu prints these.
+ */
+export const PRIMITIVE_SIZES: Record<PrimitiveKind, { size: number; along: 'height' | 'largest' }> = {
+  sphere: { size: 0.25, along: 'height' },
+  cube: { size: 0.25, along: 'height' },
+  cylinder: { size: 0.25, along: 'height' },
+  torus: { size: 0.25, along: 'largest' },
+  cone: { size: 0.25, along: 'height' },
+  capsule: { size: 0.25, along: 'height' },
+  plane: { size: 0.5, along: 'largest' },
+};
+
+/**
+ * What an imported OBJ is fitted to in a scene on real units: its largest
+ * side the default sphere's 25 cm. An OBJ says nothing of its units (a
+ * millimetre file and a metre one look alike), and an import is a base
+ * mesh to work on, not a measured part, as it always was.
+ */
+const IMPORT_SIZE = 0.25;
+
 export class SculptSession {
   // Pointer/action state the vendored tools and picking read directly.
   _mouseX = 0;
@@ -177,6 +202,23 @@ export class SculptSession {
 
   private readonly meshes: SculptMesh[] = [];
   private readonly selectMeshes: SculptMesh[] = [];
+  /**
+   * The scene's units (src/viewer/units.ts): 'm' for one on real units -
+   * every new scene - and null for one from before them, which keeps its
+   * old canonical sizes until Set scale. Read by everything that makes a
+   * new object, so an object added to an old scene is sized as that
+   * scene's others were.
+   */
+  private units: Units | null = 'm';
+  /** The Set scale banner was dismissed for this scene (SavedScene.scaleDismissed). */
+  private scaleDismissed = false;
+  /** Fired when the scene's units change: New, Open, a restore, Set scale. */
+  onUnitsChange: (() => void) | null = null;
+  /**
+   * Where the floor is, for a new object to stand on: the viewer's fixed
+   * floor, which the mount lends. 0 until it does.
+   */
+  floorHeight: () => number = () => 0;
   private mesh: SculptMesh | null = null;
   /** Display names (feeds the stats corner; scene graph/outliner later). */
   private readonly meshNames = new WeakMap<SculptMesh, string>();
@@ -929,7 +971,9 @@ export class SculptSession {
    * dependency-free parser handles triangulation and the Z-up flip; the
    * result goes through the same weld/normalize/adopt path as the
    * primitives, so an import sculpts, persists and undoes like anything
-   * else. NOTE normalizeSize rescales to the canonical sculpt size - an
+   * else. NOTE it is resized - to IMPORT_SIZE across, standing on the
+   * floor, on real units, or to the old canonical size in a scene from
+   * before them - since an OBJ does not say what its units are, and an
    * import is a base mesh to work on, not a measured part.
    */
   async importOBJ(text: string, zUp: boolean, name: string): Promise<Multimesh> {
@@ -1031,7 +1075,7 @@ export class SculptSession {
             : kind === 'capsule'
               ? [new CapsuleGeometry(0.5, 1.0, 8, 24, 4), 'Capsule']
               : [new PlaneGeometry(1.6, 1.6, 24, 24), 'Plane'];
-    return this.meshFromTriGeometry(geom, name);
+    return this.meshFromTriGeometry(geom, name, PRIMITIVE_SIZES[kind]);
   }
 
   /**
@@ -1050,10 +1094,13 @@ export class SculptSession {
   /**
    * The parts of a base-mesh file as objects: the figure first, then its
    * eyes, each pivoting on its own centre, all in ONE undo step. One scale
-   * for all of them, from the whole figure's bound - normalizeSize per part
-   * would blow each eye up to body size - and the parts' offsets carried
-   * on their matrices, so the eyes sit in the sockets and the figure lands
-   * at the canonical sculpt size the primitives use.
+   * for all of them - normalizeSize per part would blow each eye up to
+   * body size - and the parts' offsets carried on their matrices, so the
+   * eyes sit in the sockets. In a scene on real units that scale is 1: the
+   * files are in metres (tools/export-basemeshes.py), so a figure comes at
+   * its own height, standing on the floor. In one from before, it is the
+   * one that puts the whole figure's bound at the old canonical size the
+   * primitives there have, centred, as it always was.
    *
    * The quads come straight through: the multires stack subdivides them the
    * way Blender's Multires would. The figure gets the primitives' ~20k-face
@@ -1075,7 +1122,12 @@ export class SculptSession {
       }
     }
     const radius = 0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-    const scale = Utils.SCALE / (2 * (radius || 1));
+    const scale = this.units ? 1 : Utils.SCALE / (2 * (radius || 1));
+    // On real units the bound's floor goes to the floor, and its middle
+    // over the origin, where a primitive stands; the file centres it there.
+    const lift = this.units
+      ? [-(lo[0] + hi[0]) / 2, this.floorHeight() - lo[1], -(lo[2] + hi[2]) / 2]
+      : [0, 0, 0];
     const meshes: Multimesh[] = [];
     file.parts.forEach((part, k) => {
       const base = new MeshStatic(null);
@@ -1084,13 +1136,32 @@ export class SculptSession {
       base.init();
       const mesh = new Multimesh(base);
       const m = mesh.getMatrix() as unknown as mat4;
-      mat4.fromTranslation(m, [part.offset[0] * scale, part.offset[1] * scale, part.offset[2] * scale]);
+      mat4.fromTranslation(m, [
+        part.offset[0] * scale + lift[0],
+        part.offset[1] * scale + lift[1],
+        part.offset[2] * scale + lift[2],
+      ]);
       mat4.scale(m, m, [scale, scale, scale]);
       this.subdivideClamp(mesh, info.smooth === false, even ? 1000 : k === 0 ? 20000 : 2000);
       const name = !even && k === 0 ? info.label : part.name;
       this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
       meshes.push(mesh);
     });
+    if (this.units) {
+      // The soles, measured on the finished surface: a smooth subdivision
+      // draws the lowest point up off the file's, a few millimetres on a
+      // figure, which would leave it hovering over the floor.
+      let low = Infinity;
+      for (const mesh of meshes) {
+        const v = mesh.getVertices();
+        const m = mesh.getMatrix();
+        for (let i = 0, n = mesh.getNbVertices() * 3; i < n; i += 3) {
+          low = Math.min(low, m[1] * v[i] + m[5] * v[i + 1] + m[9] * v[i + 2] + m[13]);
+        }
+      }
+      const drop = this.floorHeight() - low;
+      if (Number.isFinite(drop)) for (const mesh of meshes) mesh.getMatrix()[13] += drop;
+    }
     this.addNewMeshes(meshes as unknown as SculptMesh[]);
     return meshes[0];
   }
@@ -1107,15 +1178,24 @@ export class SculptSession {
   private addCubePrimitive(): Multimesh {
     const base = this.buildQuadCubeBase();
     const mesh = new Multimesh(base);
-    mesh.normalizeSize();
+    if (!this.units) mesh.normalizeSize();
     this.subdivideClamp(mesh, true);
+    if (this.units) this.standOnFloor(mesh, PRIMITIVE_SIZES.cube);
     this.meshNames.set(mesh, this.uniqueMeshName('Cube'));
     this.addNewMesh(mesh);
     return mesh;
   }
 
-  /** Weld a three triangle geometry and adopt it as a sculptable object. */
-  private meshFromTriGeometry(geom: BufferGeometry, name: string): Multimesh {
+  /**
+   * Weld a three triangle geometry and adopt it as a sculptable object, at
+   * `fit` in a scene on real units (an OBJ: IMPORT_SIZE across), or at the
+   * old canonical size in one from before.
+   */
+  private meshFromTriGeometry(
+    geom: BufferGeometry,
+    name: string,
+    fit: { size: number; along: 'height' | 'largest' } = { size: IMPORT_SIZE, along: 'largest' },
+  ): Multimesh {
     // Position-only weld: uv/normal seams would otherwise crack under
     // sculpting (duplicate vertices along the seam).
     geom.deleteAttribute('normal');
@@ -1126,27 +1206,89 @@ export class SculptSession {
     if (!index) throw new Error('primitive geometry must be indexed');
     const v = new Float32Array(pos.count * 3);
     v.set(pos.array as Float32Array);
-    const nbTris = index.count / 3;
-    const f = new Uint32Array(nbTris * 4);
-    for (let i = 0; i < nbTris; i++) {
-      f[i * 4] = index.getX(i * 3);
-      f[i * 4 + 1] = index.getX(i * 3 + 1);
-      f[i * 4 + 2] = index.getX(i * 3 + 2);
-      f[i * 4 + 3] = Utils.TRI_INDEX;
+    // A triangle the weld folded onto an edge goes: three's capsule and
+    // cone close their poles with rings of zero-area triangles, which the
+    // weld turns into faces naming one vertex twice, and the subdivision
+    // above them made vertices that were not numbers (NaN), which then
+    // spoiled every bound the object was measured by.
+    const all = index.count / 3;
+    const f = new Uint32Array(all * 4);
+    let nbTris = 0;
+    for (let i = 0; i < all; i++) {
+      const a = index.getX(i * 3);
+      const b = index.getX(i * 3 + 1);
+      const c = index.getX(i * 3 + 2);
+      if (a === b || b === c || c === a) continue;
+      f[nbTris * 4] = a;
+      f[nbTris * 4 + 1] = b;
+      f[nbTris * 4 + 2] = c;
+      f[nbTris * 4 + 3] = Utils.TRI_INDEX;
+      nbTris++;
     }
     geom.dispose();
     welded.dispose();
 
     const base = new MeshStatic(null);
     base.setVertices(v);
-    base.setFaces(f);
+    base.setFaces(f.subarray(0, nbTris * 4));
     base.init();
     const mesh = new Multimesh(base);
-    mesh.normalizeSize();
+    if (!this.units) mesh.normalizeSize();
     this.subdivideClamp(mesh);
+    if (this.units) this.standOnFloor(mesh, fit);
     this.meshNames.set(mesh, this.uniqueMeshName(name));
     this.addNewMesh(mesh);
     return mesh;
+  }
+
+  /**
+   * Size a new object and stand it on the floor (a scene on real units):
+   * scaled so its height - or its largest side - is `fit.size` metres, its
+   * lowest point on the floor and its middle over the origin. Measured on
+   * the finished surface, after the subdivision, since smoothing a cube
+   * into a sphere shrinks it.
+   */
+  private standOnFloor(mesh: Multimesh, fit: { size: number; along: 'height' | 'largest' }): void {
+    const v = mesh.getVertices();
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0, n = mesh.getNbVertices() * 3; i < n; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const x = v[i + k];
+        if (x < lo[k]) lo[k] = x;
+        if (x > hi[k]) hi[k] = x;
+      }
+    }
+    const extent = fit.along === 'height' ? hi[1] - lo[1] : Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    const s = fit.size / (extent > 0 ? extent : 1);
+    const m = mesh.getMatrix() as unknown as mat4;
+    mat4.fromTranslation(m, [(-s * (lo[0] + hi[0])) / 2, this.floorHeight() - s * lo[1], (-s * (lo[2] + hi[2])) / 2]);
+    mat4.scale(m, m, [s, s, s]);
+  }
+
+  /** The scene's units: 'm', or null for a scene from before real units. */
+  getUnits(): Units | null {
+    return this.units;
+  }
+
+  /**
+   * Put the scene on a scale (Set scale marks it) and say so. Only the
+   * marker: the objects are scaled by whoever asks (SetScale).
+   */
+  setUnits(units: Units | null): void {
+    if (units === this.units) return;
+    this.units = units;
+    if (units) this.scaleDismissed = false;
+    this.onUnitsChange?.();
+  }
+
+  /** Whether the Set scale banner was dismissed for this scene. */
+  isScaleDismissed(): boolean {
+    return this.scaleDismissed;
+  }
+
+  dismissScale(): void {
+    this.scaleDismissed = true;
   }
 
   /**
@@ -1315,6 +1457,10 @@ export class SculptSession {
       meshes: savedMeshes,
       active: Math.max(0, this.meshes.indexOf(this.mesh)),
       symmetry: this.sculptManager._symmetry,
+      // The marker, where the scene has one: a record without it opens as
+      // a scene from before real units, as one written before it did.
+      ...(this.units ? { units: this.units } : {}),
+      ...(!this.units && this.scaleDismissed ? { scaleDismissed: true } : {}),
     };
   }
 
@@ -1507,8 +1653,13 @@ export class SculptSession {
     this.meshes.length = 0;
     this.selectMeshes.length = 0;
     this.mesh = null;
+    // Every new scene is on real units from the start (owner decision).
+    const was = this.units;
+    this.units = 'm';
+    this.scaleDismissed = false;
     const mesh = this.addSphere();
     this.clearHistory();
+    if (was !== this.units) this.onUnitsChange?.();
     return mesh;
   }
 
@@ -1536,6 +1687,12 @@ export class SculptSession {
     try {
       const active = this.restoreScene(saved);
       this.clearHistory();
+      // The scene's own scale: a record without the marker is from before
+      // real units, and stays as it was (owner decision).
+      const was = this.units;
+      this.units = saved.units === 'm' ? 'm' : null;
+      this.scaleDismissed = !this.units && saved.scaleDismissed === true;
+      if (was !== this.units) this.onUnitsChange?.();
       return active;
     } catch (err) {
       this.meshes.length = 0;
@@ -1760,8 +1917,9 @@ export class SculptSession {
    */
   addSphere(): Multimesh {
     const mesh = new Multimesh(this.buildQuadCubeBase());
-    mesh.normalizeSize();
+    if (!this.units) mesh.normalizeSize();
     this.subdivideClamp(mesh);
+    if (this.units) this.standOnFloor(mesh, PRIMITIVE_SIZES.sphere);
     this.meshNames.set(mesh, this.uniqueMeshName('Sphere'));
     this.addNewMesh(mesh);
     return mesh;

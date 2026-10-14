@@ -46,6 +46,7 @@ import { FrameClock } from './frameClock';
 import { AccumulateNode, stillOffsets } from './accumulate';
 import { AdaptiveQuality, type QualityKnobs } from './adaptive';
 import { settings } from '../ui/settings';
+import { FLOOR_OFFSET_LIMIT, formatDimensions, formatSceneLength } from './units';
 
 /** Output grade choices (Render panel > Camera > Tone mapping). */
 export type ToneMappingId = 'none' | 'neutral' | 'agx' | 'cinematic';
@@ -188,6 +189,13 @@ export interface StageState {
   metalness: number;
   /** Pedestal base scale (width/depth only; height is unaffected). */
   pedestalScale: number;
+  /**
+   * How far the fixed floor sits above (or below) height 0, in metres:
+   * the Floor offset control. Only a fixed floor reads it (lockFloor); an
+   * adaptive one stands under the subject wherever that is. Absent in
+   * looks from before it, which is 0.
+   */
+  floorOffset?: number;
 }
 
 /** Visible ground disc fade (plane-UV radius from the centre): opaque within
@@ -195,6 +203,18 @@ export interface StageState {
  *  so it still catches shadows across its full span. */
 const GROUND_FADE_INNER = 0.2;
 const GROUND_FADE_OUTER = 0.36;
+
+/**
+ * The fixed floor's drawn extent (owner decision): it no longer follows
+ * the subject's size, so it has to read as a floor at any framing. Its
+ * disc fades out at least FIXED_FLOOR_RADIUS metres from the origin - a
+ * room's worth, several metres across - and further once the camera
+ * stands back far enough to see that edge, at FIXED_FLOOR_OF_DISTANCE
+ * times its distance from what it looks at. Only the fade scales; the
+ * floor stays where it is.
+ */
+const FIXED_FLOOR_RADIUS = 3;
+const FIXED_FLOOR_OF_DISTANCE = 2;
 
 /** Default stage-surface PBR (the floor / pedestal share one material). */
 const DEFAULT_STAGE_COLOR = '#c9c4bb';
@@ -348,6 +368,10 @@ export class Viewer {
    * held there is no pedestal, which would move it.
    */
   private floorY: number | null = null;
+  /** The Floor offset (StageState.floorOffset): where a held floor sits above its base. */
+  private floorOffset = 0;
+  /** The held floor's drawn half-width as last laid out, so a frame that changes nothing writes nothing. */
+  private heldFloorRadius = 0;
   private stageColor = DEFAULT_STAGE_COLOR;
   private stageRoughness = DEFAULT_STAGE_ROUGHNESS;
   private stageMetalness = 0;
@@ -525,11 +549,11 @@ export class Viewer {
   /** What the sum is of now (rebuildOutput rebuilds the output when it changes). */
   private accumulateInput: Node | null = null;
   private viewZNode: Node | null = null;
-  /** `?aodebug` in sculpt: R = view distance/400, G = raw occlusion, B = factor. */
+  /** `?aodebug` in sculpt: R = view distance/(8 subject radii), G = raw occlusion, B = factor. */
   private sculptAoDebugNode: Node | null = null;
   /** `?aodebug` in the viewer: the GTAO term as greyscale. */
   private aoDebugNode: Node | null = null;
-  /** `?dofdebug` in viewer: the DoF chain's viewZ as distance/400 greyscale. */
+  /** `?dofdebug` in viewer: the DoF chain's viewZ as distance/(8 subject radii) greyscale. */
   private dofViewZDebugNode: Node | null = null;
   private readonly dofDebug = new URLSearchParams(location.search).has('dofdebug');
   private sculptShading = false;
@@ -718,6 +742,8 @@ export class Viewer {
     // (@types/three doesn't declare `map` on ShadowMaterial, but the renderer
     // reads it; cast to set it.)
     (this.shadowMaterial as ShadowMaterial & { map: Texture | null }).map = null;
+    // One unit square, scaled to the span (layoutStage), so neither a
+    // subject's fit nor a fixed floor's dolly rebuilds a buffer.
     this.ground.geometry = new PlaneGeometry(1, 1);
     this.ground.material = this.shadowMaterial;
     this.ground.rotation.x = -Math.PI / 2;
@@ -797,6 +823,10 @@ export class Viewer {
     this.targetIndex = start;
     this.timeline.setFrame(start);
 
+    // A project in metres stands on the fixed floor at 0 (its offset comes
+    // with the presentation below); one from before real units keeps the
+    // floor that follows its subject.
+    this.floorY = this.manifestFloor();
     this.fitScene(geom);
 
     this.setMaterial(this.currentMode);
@@ -1201,9 +1231,12 @@ export class Viewer {
   }
 
   /**
-   * Hold the ground at world height `y` (Armature mode), or let it follow
-   * the subject again (null). Held, it is not moved by the subject's box,
-   * and a pedestal - which would lower it - becomes the floor.
+   * Fix the ground at world height `y` plus the Floor offset - 0 in a
+   * scene on real units, the soles of Armature's figure (0 for every
+   * mannequin) - or let it follow the subject again (null), as a scene
+   * from before real units has it. Fixed, it is not moved or sized by the
+   * subject's box, and a pedestal - which would lower it - becomes the
+   * floor.
    */
   lockFloor(y: number | null): void {
     this.floorY = y;
@@ -1213,9 +1246,35 @@ export class Viewer {
     this.invalidate();
   }
 
-  /** The ground's held height, or null when it follows the subject. */
+  /** The ground's fixed base (before the offset), or null when it follows the subject. */
   lockedFloor(): number | null {
     return this.floorY;
+  }
+
+  /**
+   * The floor the booted project asks for: fixed at 0 when it is in
+   * metres, else null (it follows the subject). A mode that held the floor
+   * its own way gives it back to this on the way out.
+   */
+  manifestFloor(): number | null {
+    return this.manifest.units ? 0 : null;
+  }
+
+  /** Where a fixed floor is - its base plus the Floor offset - or null when it follows the subject. */
+  floorHeight(): number | null {
+    return this.floorY === null ? null : this.floorY + this.floorOffset;
+  }
+
+  /** Raise or lower the fixed floor (the Floor offset control), in metres. */
+  setFloorOffset(metres: number): void {
+    if (!finite(metres)) return;
+    this.floorOffset = Math.min(FLOOR_OFFSET_LIMIT, Math.max(-FLOOR_OFFSET_LIMIT, metres));
+    this.layoutStage();
+    this.invalidate();
+  }
+
+  getFloorOffset(): number {
+    return this.floorOffset;
   }
 
   /** Cycle off → shadow → floor → pedestal → off (hotkey "g"); no pedestal while the floor is held. */
@@ -1263,6 +1322,7 @@ export class Viewer {
       roughness: this.stageRoughness,
       metalness: this.stageMetalness,
       pedestalScale: this.pedestalScale,
+      floorOffset: this.floorOffset,
     };
   }
 
@@ -1273,6 +1333,9 @@ export class Viewer {
     if (finite(state.roughness)) this.setStageRoughness(Math.min(1, Math.max(0, state.roughness)));
     if (finite(state.metalness)) this.setStageMetalness(Math.min(1, Math.max(0, state.metalness)));
     if (finite(state.pedestalScale) && state.pedestalScale > 0) this.pedestalScale = state.pedestalScale;
+    // A look from before the control has none, and its floor is at 0.
+    const offset = finite(state.floorOffset) ? state.floorOffset : 0;
+    this.floorOffset = Math.min(FLOOR_OFFSET_LIMIT, Math.max(-FLOOR_OFFSET_LIMIT, offset));
     if (GROUND_MODES.includes(state.ground as GroundMode)) {
       this.groundMode = this.floorY !== null && state.ground === 'pedestal' ? 'floor' : state.ground!;
     }
@@ -1322,15 +1385,45 @@ export class Viewer {
     this.pedestal.geometry = new BoxGeometry(footprint, pedH, footprint);
     this.pedestal.position.set(center.x, baseY - pedH / 2, center.z);
 
+    if (this.floorY !== null) {
+      // Fixed (lockFloor): its own size, from the camera (layoutHeldFloor).
+      this.heldFloorRadius = 0;
+      this.layoutHeldFloor();
+      return;
+    }
+    this.controls.setFarFloor(0);
     // Ground sits at the foot of whatever stands on it (the pedestal, or the
     // subject directly). A large span so the shadow-catcher reaches the shadows.
-    // Held by the mode (lockFloor), it is where the mode says, a hair under
-    // so a sole on it does not flicker through.
-    const standY = this.floorY ?? (this.groundMode === 'pedestal' ? baseY - pedH : baseY);
+    const standY = this.groundMode === 'pedestal' ? baseY - pedH : baseY;
     const span = Math.max(size.x, size.z) * 12 + 1;
-    this.ground.geometry.dispose();
-    this.ground.geometry = new PlaneGeometry(span, span);
-    this.ground.position.set(center.x, standY - size.y * (this.floorY !== null ? 0.0002 : 0.001), center.z);
+    this.ground.scale.set(span, span, 1);
+    this.ground.position.set(center.x, standY - size.y * 0.001, center.z);
+  }
+
+  /**
+   * The fixed floor: at its height, centred on the origin, its fade as
+   * wide as FIXED_FLOOR_RADIUS or as the camera's distance asks, whichever
+   * is more. Run once a frame (refitShadows) as well as on a layout, since
+   * a dolly changes the extent; a frame whose extent moved by less than a
+   * percent writes nothing. It sits a hair under its height, so a sole
+   * planted on it does not flicker through.
+   */
+  private layoutHeldFloor(): void {
+    const y = this.floorHeight();
+    if (y === null) return;
+    const radius = Math.max(FIXED_FLOOR_RADIUS, this.controls.targetDistance() * FIXED_FLOOR_OF_DISTANCE);
+    // The clip planes follow the subject; the floor must not be cut short
+    // by them, so the far plane reaches past the disc's farthest edge.
+    this.controls.setFarFloor(Math.hypot(this.camera.position.x, this.camera.position.z) + radius + Math.abs(this.camera.position.y - y));
+    if (Math.abs(radius - this.heldFloorRadius) <= this.heldFloorRadius * 0.01) {
+      if (this.ground.position.y === y - 1e-5) return;
+    } else {
+      this.heldFloorRadius = radius;
+      const span = radius / GROUND_FADE_OUTER;
+      this.ground.scale.set(span, span, 1);
+    }
+    this.ground.position.set(0, y - 1e-5, 0);
+    this.invalidate();
   }
 
   /** Rotate the whole lighting environment — directional rig + HDRI — together. */
@@ -1647,10 +1740,27 @@ export class Viewer {
           ? `f/${this.dofFStop} · ${this.dofFocusPoint ? 'locked' : `focus ${this.dofFocus.toFixed(2)}`}`
           : 'off',
       ],
-      ['subject r', this.subjectRadius.toFixed(1)],
-      ['clip', `${this.camera.near.toFixed(1)}–${this.camera.far.toFixed(0)}`],
+      // In centimetres where the scene is on real units, which is where
+      // its floor is fixed; in the scene's own units where it is not.
+      ['subject', this.subjectSizeText()],
+      [
+        'clip',
+        `${formatSceneLength(this.camera.near, this.realUnits())}–${formatSceneLength(this.camera.far, this.realUnits())}`,
+      ],
       ['env', this.scene.environment ? 'loaded' : 'none'],
     ];
+  }
+
+  /** Whether what is on screen is in metres: a fixed floor goes with real units, everywhere it is held. */
+  private realUnits(): 'm' | null {
+    return this.floorY !== null ? 'm' : null;
+  }
+
+  /** The subject's size, for the diagnostics' size line: "25 × 25 × 25 cm, r 21.7 cm". */
+  private subjectSizeText(): string {
+    const size = this.subjectBox.getSize(new Vector3());
+    const units = this.realUnits();
+    return `${formatDimensions([size.x, size.y, size.z], units)}, r ${formatSceneLength(this.subjectRadius, units)}`;
   }
 
   setAO(state: Partial<AOState>): void {
@@ -2392,6 +2502,9 @@ export class Viewer {
    * frame's smoothing starts over.
    */
   private refitShadows(): void {
+    // The fixed floor first: how far its fade reaches follows the camera,
+    // and the shadow fit reads where the ground is.
+    if (this.floorY !== null) this.layoutHeldFloor();
     this.lighting.setSubjectBounds(this.liveShadowBox());
     this.lighting.setReceiverY(
       this.ground.visible ? this.ground.position.y : this.pedestal.visible ? this.subjectBox.min.y : null,
@@ -2635,6 +2748,10 @@ export class Viewer {
     // pixel - which is why the cavity term never darkened anything.
     const camNearU = uniform(this.camera.near).onRenderUpdate(() => this.camera.near);
     const camFarU = uniform(this.camera.far).onRenderUpdate(() => this.camera.far);
+    // The debug views' depth ramp: eight subject radii to white, which was
+    // the old 400 units at the old sculpt scale, and reads the same on
+    // real units (and on any project's own size).
+    const debugDepthU = uniform(400).onRenderUpdate(() => this.subjectRadius * 8);
     // TSL's generated typings are narrower than the runtime accepts, so the
     // uv/accumulator seams cast through the shared Node type.
     const viewDist = (uvNode: unknown): Node =>
@@ -2692,7 +2809,7 @@ export class Viewer {
     // Diagnostic view for ?aodebug in sculpt: channels expose each stage so a
     // dead cavity can be blamed on depth, ramp or composite in one frame.
     this.sculptAoDebugNode = vec4(
-      (centerDist as unknown as ReturnType<typeof float>).div(float(400)),
+      (centerDist as unknown as ReturnType<typeof float>).div(debugDepthU),
       (occlusion as ReturnType<typeof float>).div(axes.length),
       sculptAo,
       float(1),
@@ -2700,7 +2817,7 @@ export class Viewer {
     // ?aodebug in the viewer: the GTAO term the composite multiplies by, as
     // greyscale (1 = open ... 0 = fully occluded).
     this.aoDebugNode = vec4(vec3(aoTerm), float(1)) as unknown as Node;
-    // ?dofdebug: scene depth as distance/400 greyscale, through the SAME
+    // ?dofdebug: scene depth as distance/(8 radii) greyscale, through the SAME
     // bound-uniform conversion the cavity uses. A model-vs-background
     // gradient proves the depth texture and conversion; note DoF itself
     // keeps getViewZNode() - its contextual camera accessors resolve
@@ -2715,7 +2832,7 @@ export class Viewer {
           camFarU,
         ) as unknown as ReturnType<typeof float>)
           .negate()
-          .div(float(400)),
+          .div(debugDepthU),
       ),
       float(1),
     ) as unknown as Node;

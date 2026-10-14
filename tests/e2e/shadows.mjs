@@ -519,6 +519,11 @@ async function shadowParts(page, base, t, spare) {
     viewer.setSculptMatrix(viewer.camera.matrix.clone().fromArray(m));
     input.hooks.frameAll();
     await viewer.applyLook(look);
+    // The demo has no units marker, so its floor follows it, under the
+    // box (a thousandth of its height under it); Sculpt's is fixed at 0
+    // (drawn 0.01 mm under), raised here to the same place so both fits
+    // reach the same receiver.
+    viewer.setFloorOffset(box.min[1] - (box.max[1] - box.min[1]) * 0.001 + 1e-5);
     viewer.haltOrbit();
   }, [pub.box, pub.look]);
   await frames(page, 4);

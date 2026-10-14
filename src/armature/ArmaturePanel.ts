@@ -1,5 +1,7 @@
 import { div, labelRow, selectEl } from '../ui/dom';
-import { checkbox, numberedRange, section } from '../ui/Panel';
+import { checkbox, compactRange, numberedRange, section } from '../ui/Panel';
+import { setSliderValue, sliderValue } from '../ui/sliderEntry';
+import { FLOOR_OFFSET_LIMIT, formatLength } from '../viewer/units';
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { VOXEL_RESOLUTION, VOXEL_SLIDER } from '../sculpt/ui/ModelPanel';
 import { showWhileHeld, VoxelOverlay } from '../sculpt/ui/VoxelOverlay';
@@ -44,6 +46,9 @@ export class ArmaturePanel extends SidePanel {
   private readonly partBody: HTMLDivElement;
   private readonly pinBoxes = new Map<string, HTMLInputElement>();
   private readonly note: HTMLDivElement;
+  /** The figure's height, and the Floor offset (owner decision: sizes in centimetres). */
+  private readonly heightEl: HTMLDivElement;
+  private readonly floorInput: HTMLInputElement;
   private selected: string | null = null;
   /** Voxel resolution for Send to Sculpt (the Model panel's range). */
   resolution = 120;
@@ -53,7 +58,7 @@ export class ArmaturePanel extends SidePanel {
   constructor(
     private readonly figure: () => Armature,
     private readonly hooks: ArmaturePanelHooks,
-    viewer: Viewer,
+    private readonly viewer: Viewer,
   ) {
     super({ id: 'armature', title: 'Armature', side: 'left', variant: 'panel--armature' });
 
@@ -67,6 +72,23 @@ export class ArmaturePanel extends SidePanel {
     );
     this.presetSel.addEventListener('change', () => this.hooks.preset(this.presetSel.value));
     fig.appendChild(labelRow('Preset', this.presetSel));
+    // How tall the figure stands, at its file's own size, and where the
+    // floor it stands on is: 0 at its soles, raised or lowered here, saved
+    // with the look and carried into Sculpt by Send to Sculpt.
+    this.heightEl = div('sculpt-panel__hint muted armature-panel__height');
+    fig.appendChild(this.heightEl);
+    const floorRow = compactRange(
+      'Floor offset',
+      -100,
+      100,
+      0.5,
+      viewer.getFloorOffset() * 100,
+      (cm) => viewer.setFloorOffset(cm / 100),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+    );
+    floorRow.title = 'Raise or lower the floor the figure stands on';
+    this.floorInput = floorRow.querySelector('input') as HTMLInputElement;
+    fig.appendChild(floorRow);
     const sym = checkbox('Symmetry (x)', figure().symmetry, (on) => this.hooks.symmetry(on));
     this.symBox = sym.querySelector('input') as HTMLInputElement;
     fig.appendChild(sym);
@@ -174,9 +196,17 @@ export class ArmaturePanel extends SidePanel {
     this.refresh(this.selected);
   }
 
+  /** The height line and the Floor offset, from the figure and the look as they stand. */
+  private refreshFigureFacts(): void {
+    this.heightEl.textContent = `Height ${formatLength(this.figure().figureHeight())}`;
+    const cm = this.viewer.getFloorOffset() * 100;
+    if (Math.abs(sliderValue(this.floorInput) - cm) > 1e-6) setSliderValue(this.floorInput, cm);
+  }
+
   /** Rebuild the joint and part sections for a selection (null: none). */
   refresh(selected: string | null): void {
     this.selected = selected;
+    this.refreshFigureFacts();
     this.symBox.checked = this.figure().symmetry;
     this.plantBox.checked = this.figure().plantFeet;
     for (const [id, box] of this.pinBoxes) box.checked = this.figure().isPinned(id);

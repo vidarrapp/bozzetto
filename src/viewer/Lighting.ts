@@ -203,8 +203,9 @@ export class Lighting {
         light.shadow.blurSamples = this.tier.blurSamples;
         light.shadow.bias = -0.0005;
         // A generous normal bias keeps the contact shadow tight to the base of
-        // the subject (matches the dev-tools max that reads best).
-        light.shadow.normalBias = 0.1;
+        // the subject (matches the dev-tools max that reads best); a share
+        // of the subject's radius, set with each fit (applyBlur).
+        light.shadow.normalBias = this.normalBiasShare * this.subjectRadius;
       }
       this.rig.add(light, light.target);
     }
@@ -362,7 +363,9 @@ export class Lighting {
     this.onChange?.();
   }
 
+  /** In world units, as the subject now is; kept as its share of the subject, so it scales with the next one. */
   setNormalBias(normalBias: number): void {
+    this.normalBiasShare = normalBias / this.subjectRadius;
     for (const id of ALL) this.lights[id].shadow.normalBias = normalBias;
     this.onChange?.();
   }
@@ -800,6 +803,9 @@ export class Lighting {
     // six radii, so a tighter one keeps its bias in world terms.
     const range = cam.far - cam.near;
     shadow.bias = range > 0 ? (this.userBias * ref) / range : this.userBias;
+    // The normal bias is a world distance: a share of the subject, or
+    // 0.1 of a metre would swallow a 25 cm sphere's every contact shadow.
+    shadow.normalBias = this.normalBiasShare * this.subjectRadius;
   }
 
   private shadowsMaster = true;
@@ -820,6 +826,12 @@ export class Lighting {
   private fitDirty = true;
   /** The depth bias as set (setBias), before it is scaled to the fit's depth range. */
   private userBias = -0.0005;
+  /**
+   * The normal bias as a share of the subject's radius: 0.1 on the old
+   * sculpt scale's 50-unit subject, which is what it was tuned on, so a
+   * scene on real units casts as one on the old scale did.
+   */
+  private normalBiasShare = 0.002;
   private readonly fits: Record<LightId, ShadowFit> = { key: newFit(), fill: newFit(), rim: newFit() };
   private readonly needs: Record<LightId, ShadowNeed> = { key: newNeed(), fill: newNeed(), rim: newNeed() };
   /** What of the subject is in view (slab), as world points. */

@@ -8,8 +8,9 @@ import Utils from '@sculpt-vendor/misc/Utils';
  * A file is a list of PARTS - a figure and its two eyes, say - each a
  * welded quad mesh with its own centre, plus the offset that puts the parts
  * back together. The app adds the parts as separate objects in one undo
- * step (SculptSession.adoptBaseMesh), scaled together so the figure lands
- * at the canonical sculpt size the primitives use.
+ * step (SculptSession.adoptBaseMesh): at their own size, since the files
+ * are in metres, standing on the floor, in a scene on real units; scaled
+ * together to the old canonical sculpt size in a scene from before them.
  *
  * Files are fetched when a tile is picked, and the service worker precaches
  * the whole library with the app (vite.config.ts), about 9.5 MB, so every

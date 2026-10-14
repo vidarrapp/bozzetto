@@ -1,7 +1,10 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
+import { compactRange } from '../../ui/Panel';
+import { setSliderValue, sliderValue } from '../../ui/sliderEntry';
+import { FLOOR_OFFSET_LIMIT, formatDimensions, formatLength } from '../../viewer/units';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
-import type { PrimitiveKind, SculptSession } from '../bridge/SculptSession';
+import { PRIMITIVE_SIZES, type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
 import { BASE_MESHES, BASE_MESH_GROUPS, baseMeshThumbUrl, type BaseMeshInfo } from '../bridge/basemeshes';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
@@ -19,8 +22,9 @@ import { statusToast } from './statusToast';
  * row, and act on the whole selection; Solo, last in the stack, shows the
  * active object alone (alt+q's twin for a touch screen), and the panel
  * says so on its tab and title bar while it is on. The material row sits
- * under them all. New materials are made from the dropdown's own trailing
- * "New*" entry rather than a separate button. The selected object's own
+ * under them all, then the active object's size and, in a scene on real
+ * units, the Floor offset. New materials are made from the dropdown's own
+ * trailing "New*" entry rather than a separate button. The selected object's own
  * material values, topology and mask are the Model panel's, docked under
  * this one; saving, exporting and capture live in the top row.
  */
@@ -28,6 +32,12 @@ export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
   private matRow?: HTMLDivElement;
+  /** The active object's size (outliner__size) and the Floor offset row. */
+  private readonly sizeEl: HTMLDivElement;
+  private readonly floorRow: HTMLLabelElement;
+  private readonly floorInput: HTMLInputElement;
+  /** The size line follows strokes and the gizmo, which tell the panel nothing: polled. */
+  private readonly sizeTimer: number;
   /** The object whose name is being edited, so refresh keeps the input. */
   private renaming: SculptMesh | null = null;
 
@@ -65,6 +75,8 @@ export class ScenePanel extends SidePanel {
   constructor(
     private readonly session: SculptSession,
     private readonly library?: MaterialLibrary,
+    /** The viewer's fixed floor, which the Floor offset raises or lowers (metres). */
+    private readonly floor?: { get(): number; set(metres: number): void },
   ) {
     super({ id: 'scene', title: 'Scene', side: 'left', variant: 'panel--scene' });
 
@@ -162,6 +174,26 @@ export class ScenePanel extends SidePanel {
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
+    // What the active object measures, and where the floor is (owner
+    // decision: sizes in centimetres, the floor fixed at 0 and offset
+    // here). A scene from before real units has no floor of its own to
+    // offset: it follows the subject until Set scale.
+    const measure = div('outliner__measure');
+    this.sizeEl = div('outliner__size');
+    this.floorRow = compactRange(
+      'Floor offset',
+      -100,
+      100,
+      0.5,
+      (this.floor?.get() ?? 0) * 100,
+      (cm) => this.floor?.set(cm / 100),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+    );
+    this.floorRow.title = 'Raise or lower the floor the scene stands on';
+    this.floorInput = this.floorRow.querySelector('input') as HTMLInputElement;
+    measure.append(this.sizeEl, this.floorRow);
+    this.body.appendChild(measure);
+    this.sizeTimer = window.setInterval(() => this.refreshSize(), 500);
 
     // A collapsing panel must not leave its popup menu armed.
     this.onCollapsedChange = (collapsed) => {
@@ -190,7 +222,9 @@ export class ScenePanel extends SidePanel {
       }
       menu.appendChild(h);
     };
-    head('Primitives');
+    // Each primitive says the size it comes at in a scene on real units;
+    // in one from before, they come at its old sizes and say none.
+    head('Primitives', this.session.getUnits() ? 'real size' : undefined);
     const words = div('outliner__menu-grid outliner__menu-grid--words');
     const primitives: [PrimitiveKind, string][] = [
       ['sphere', 'Sphere'],
@@ -205,7 +239,14 @@ export class ScenePanel extends SidePanel {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'outliner__menu-item';
+      item.dataset.kind = kind;
       item.textContent = label;
+      if (this.session.getUnits()) {
+        const size = document.createElement('span');
+        size.className = 'outliner__menu-size';
+        size.textContent = formatLength(PRIMITIVE_SIZES[kind].size);
+        item.appendChild(size);
+      }
       item.addEventListener('click', () => {
         this.closeMenus();
         this.session.addPrimitive(kind);
@@ -594,6 +635,39 @@ export class ScenePanel extends SidePanel {
     else if (r.bottom > view.bottom) this.body.scrollTop += r.bottom - view.bottom;
   }
 
+  /**
+   * The scene's units changed (New, Open, Set scale): the Create menu's
+   * sizes, the size line and the Floor offset row follow.
+   */
+  refreshUnits(): void {
+    this.closeMenus();
+    this.addMenu.replaceChildren();
+    this.buildCreateMenu();
+    this.refresh();
+  }
+
+  /**
+   * The active object's world size, in centimetres on real units (in its
+   * own units in a scene from before), and the Floor offset as it stands.
+   * The vendor's bound of the octree is cheap to read on any size of mesh.
+   */
+  private refreshSize(): void {
+    const active = this.session.getMesh();
+    const units = this.session.getUnits();
+    this.sizeEl.hidden = !active;
+    if (active) {
+      const b = active.computeWorldBound();
+      const text = `Size ${formatDimensions([b[3] - b[0], b[4] - b[1], b[5] - b[2]], units)}`;
+      if (this.sizeEl.textContent !== text) this.sizeEl.textContent = text;
+    }
+    this.floorRow.hidden = !units || !this.floor;
+    // A typed value or a look restored elsewhere moves it; a held thumb wins.
+    if (this.floor && document.activeElement !== this.floorInput) {
+      const cm = this.floor.get() * 100;
+      if (Math.abs(sliderValue(this.floorInput) - cm) > 1e-6) setSliderValue(this.floorInput, cm);
+    }
+  }
+
   /** Rebuild the object rows from the live scene (list/selection changes). */
   refresh(): void {
     const active = this.session.getMesh();
@@ -676,6 +750,7 @@ export class ScenePanel extends SidePanel {
     // Merge wants two or more; one object has nothing to merge with.
     if (this.mergeBtn) this.mergeBtn.disabled = this.targets().length < 2;
     this.refreshMaterial();
+    if (this.sizeEl) this.refreshSize();
   }
 
   /**
@@ -730,6 +805,7 @@ export class ScenePanel extends SidePanel {
   }
 
   override dispose(): void {
+    clearInterval(this.sizeTimer);
     this.offKeymap();
     this.closeMenus();
     this.mirrorMenu.remove();

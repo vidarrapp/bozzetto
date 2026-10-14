@@ -106,6 +106,7 @@ export async function run({ checks, on, off }) {
   let res = await refused(text(figure({ figure: 'imported' })), 'a figure the app does not have', 422, 'bad_armature');
   t.ok(/figure "imported"/.test(res.json?.reason ?? ''), `the reason names it (${res.json?.reason})`);
   await refused(text(figure({ figure: undefined })), 'no figure at all', 422, 'bad_armature');
+  await refused(text(figure({ units: 'cm' })), 'units other than metres', 422, 'bad_armature');
   res = await refused(text('{"v": 1, "figure": "placeholder-male", "state": {"pose": {"__proto__": {"polluted": true}}}}'), 'a __proto__ key, however deep', 422, 'bad_armature');
   t.ok(/__proto__/.test(res.json?.reason ?? ''), `named as such (${res.json?.reason})`);
   let deep = '1';
@@ -122,6 +123,10 @@ export async function run({ checks, on, off }) {
   r = await alice.call('POST', `/api/me/projects/${id}/armature`, { bytes: concat(new Uint8Array([0xef, 0xbb, 0xbf]), text('\n  '), plain) });
   const stored = await alice.call('GET', `/api/me/media/${id}/armature.json`);
   t.ok(r.status === 200 && stored.bytes.length === plain.length + 6, `plain JSON is taken too, after a byte-order mark and white space (${r.status}, ${stored.bytes.length} bytes stored)`);
+  // In metres (src/viewer/units.ts), as the app writes every file now.
+  const metres = await alice.call('POST', `/api/me/projects/${id}/armature`, { bytes: text(figure({ units: 'm' })) });
+  t.eq(metres.status, 200, 'a file marked in metres is taken');
+  r = await alice.call('POST', `/api/me/projects/${id}/armature`, { bytes: concat(new Uint8Array([0xef, 0xbb, 0xbf]), text('\n  '), plain) });
   r = await alice.call('GET', '/api/me/projects');
   t.eq((r.json ?? []).find((p) => p.id === id)?.bytes, plain.length + 6 + 512, 'and the project weighs what replaced the file, not both');
   t.report();

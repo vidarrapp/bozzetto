@@ -507,6 +507,19 @@ export class InputShell {
   // --- brush value access (side sliders + future palette) -----------------
 
   /**
+   * How the size controls print getBrushRadius's value: times `scale`,
+   * then `unit`. Screen pixels in screen scale; in world scale the radius
+   * itself, in centimetres on real units (owner decision), and the bare
+   * number in a scene from before them, whose units nobody has named. The
+   * typed value goes back through the same pair (sliderEntry).
+   */
+  brushSizeDisplay(): { unit: string; scale: number } {
+    const ws = this.worldScale;
+    if (!ws?.isEnabled()) return { unit: ' px', scale: 1 };
+    return this.session.getUnits() ? { unit: ' cm', scale: ws.unit() * 100 } : { unit: '', scale: 1 };
+  }
+
+  /**
    * Not every tool carries both: Drag, LocalScale and Transform have no
    * _intensity, and Transform has no _radius either. Callers get a usable
    * number rather than undefined; use hasBrushIntensity() to decide

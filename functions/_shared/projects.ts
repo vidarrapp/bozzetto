@@ -294,6 +294,7 @@ export function toManifest(row: ProjectRow, env: Env, base: string = mediaBase(r
     environment: data.environment ?? null,
     ao: data.ao ?? null,
     presentation: data.presentation ?? null,
+    units: data.units ?? null,
     frames: frames.map((f) => ({
       index: f.index,
       // ?v busts the immutable CDN cache when the project is re-saved/re-uploaded.
@@ -480,6 +481,21 @@ function validStages(v: unknown): ProjectData['stages'] {
   });
 }
 
+/**
+ * The units marker a patch sets (src/viewer/units.ts): 'm', or null to
+ * take it away again (a project republished from a scene from before real
+ * units). Anything else is refused rather than stored, since the viewer
+ * reads the one value and would treat any other as none.
+ */
+function validUnits(v: unknown): 'm' | undefined {
+  if (v === null || v === undefined) return undefined;
+  if (v === 'm') return 'm';
+  throw new HttpError("units: expected 'm' or null");
+}
+
+/** The marker as the stored data carries it: there when set, absent otherwise. */
+const unitsOf = (u: 'm' | undefined): { units?: 'm' } => (u ? { units: u } : {});
+
 /** What a patch makes of a row: its data, title, mode and fps, each validated. */
 export interface Patched {
   /** The data as it was, and as it will be. */
@@ -508,6 +524,7 @@ export function patched(row: ProjectRow, patch: Record<string, unknown>): Patche
     environment: 'environment' in patch ? patch.environment : data.environment,
     ao: 'ao' in patch ? patch.ao : data.ao,
     presentation: 'presentation' in patch ? patch.presentation : data.presentation,
+    ...unitsOf('units' in patch ? validUnits(patch.units) : data.units),
     stages: 'stages' in patch ? validStages(patch.stages) : data.stages,
     frames: 'frames' in patch ? validFrames(patch.frames) : data.frames,
     // Written by a completed upload only, never by a patch.

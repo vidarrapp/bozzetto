@@ -698,7 +698,7 @@ export const suites = {
     await page.mouse.up();
     await frames(page, 4);
     const hand1 = await page.evaluate(() => window.__armature.handlePosition('hand.L'));
-    t.ok(Math.hypot(...hand0.map((v, i) => v - hand1[i])) > 1e-3, 'the drag moved the hand');
+    t.ok(Math.hypot(...hand0.map((v, i) => v - hand1[i])) > 2e-5, 'the drag moved the hand');
     t.ok(mid.mode.kind === 'move' && mid.mode.ao === 'off' && mid.mode.fast, `mid-drag the AO is dropped (${show(mid.mode)})`);
     t.eq(mid.refreshes, 0, 'the panel is not rebuilt during the drag');
     t.eq(await page.evaluate(() => window.__refreshes), 1, 'and is rebuilt once when it ends');
