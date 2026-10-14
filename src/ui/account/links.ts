@@ -1,14 +1,10 @@
-import { rememberInvite, signInForDesktopApp } from '../../net/account';
+import { rememberInvite } from '../../net/account';
 
 /**
  * The sign-in links (docs/accounts.md §7), all queries on `/` so the
  * worker's shell answers them offline as well:
  *
- * - `/?signin` opens the sign-in dialog over the gallery; `/?signin=desktop`
- *   is the desktop app's sign-in window (docs/accounts.md §2), whose
- *   session the app goes on to use: its sign-ins say so (net/account
- *   signInForDesktopApp), and the service worker stays out of it
- *   (ui/serviceWorker);
+ * - `/?signin` opens the sign-in dialog over the gallery;
  * - `/?invite=<token>` opens Join, the token moved to this tab's
  *   sessionStorage first;
  * - `/?link=<token>` is a code mail's sign-in link, posted once.
@@ -38,7 +34,6 @@ export function takeAccountLink(): AccountLink | null {
     if (INVITE_TOKEN.test(token)) rememberInvite(token);
     link = { kind: 'join' };
   } else if (params.has('signin')) {
-    if (params.get('signin') === 'desktop') signInForDesktopApp();
     link = { kind: 'signin' };
   }
   const had = ['link', 'invite', 'signin'].filter((k) => params.has(k));

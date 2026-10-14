@@ -633,16 +633,14 @@ export class ScenePersist {
   /** Autosave stopped ITSELF (a full store, or writes that kept failing). */
   onStopped: ((reason: 'quota' | 'error') => void) | null = null;
   /**
-   * A write landed. The desktop shell listens so the window title can show
-   * unsaved changes, and so it can mirror the scene into its crash-recovery
-   * sidecar - which is a copy under userData, never the user's own file.
+   * A write landed, with the scene as written.
    */
   onWrote: ((scene: SavedScene) => void) | null = null;
   /**
    * An edit happened - every source of one funnels through markDirty().
    * Fires before the throttle, so a listener learns about the change the
    * moment it is made rather than when the write lands up to a minute
-   * later; the desktop shell's close guard needs the former. Fires even
+   * later. Fires even
    * after the autosave has disabled itself: the edit is no less real for
    * that.
    */

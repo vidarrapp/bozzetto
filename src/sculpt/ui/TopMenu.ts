@@ -14,8 +14,7 @@ const read = (t: MenuText | undefined): string => (typeof t === 'function' ? t()
 
 /**
  * A top-row menu: a chip beside the gallery link that drops a list of
- * commands. File and Edit are both one of these; the web page's stand-in
- * for the desktop app's native menu bar, over the same commands.
+ * commands. File and Edit are both one of these.
  *
  * Outside press, Escape and Tab close it; arrows walk the items; it hides
  * with the rest of the chrome. Questions and file pickers are the

@@ -73,22 +73,8 @@ function legalPages(outDir: string): void {
   }
 }
 
-/**
- * `--mode desktop` builds for the Electron shell. Four differences, all
- * forced by the shell rather than chosen:
- *   - No service worker. bozzetto://app IS a secure context, so the worker
- *     would happily register and then serve a stale precache inside an app
- *     that already ships its bytes on disk.
- *   - No sourcemaps: 8.5 MB of a 26 MB dist, for a build nobody debugs
- *     through devtools-over-the-wire.
- *   - No /admin entry. The desktop app has no editor; the publish flow
- *     imports src/admin/api.ts directly, which is unaffected.
- *   - A version.json beside the app, for the About panel: the main process
- *     is not built here, so it cannot have the version injected.
- */
 export default defineConfig(({ mode }) => {
-  const desktop = mode === 'desktop';
-  const media = desktop ? '' : mediaOrigin(mode);
+  const media = mediaOrigin(mode);
   // Gallery thumbnails: kept once seen, refreshed behind the cached one.
   const thumbs = {
     cacheName: 'bozzetto-thumbs',
@@ -106,22 +92,9 @@ export default defineConfig(({ mode }) => {
     __BOZZETTO_MEDIA_ORIGIN__: JSON.stringify(media),
   },
   plugins: [
-    // The desktop app's About panel (electron/main.cjs) reads the version
-    // from here, the commit being known only at build time.
-    desktop && {
-      name: 'bozzetto-version-file',
-      generateBundle(): void {
-        this.emitFile({
-          type: 'asset',
-          fileName: 'version.json',
-          source: JSON.stringify({ version: packageVersion(), commit: buildCommit() }),
-        });
-      },
-    },
     // The demo timelapse is a synthetic test fixture - an icosphere
-    // displaced by noise - and it ships nowhere: not in the desktop app,
-    // where a bust nobody sculpted has no business in the user's own
-    // gallery, and not on the live site, which has real work to show.
+    // displaced by noise - and it does not ship on the live site, which
+    // has real work to show.
     //
     // The test suites boot through ?tl=demo, though: it is the only project
     // they can open without a backend. `--mode test` keeps it. A mode
@@ -133,20 +106,19 @@ export default defineConfig(({ mode }) => {
       name: 'bozzetto-legal-pages',
       apply: 'build' as const,
       writeBundle(options: { dir?: string }): void {
-        legalPages(options.dir ?? `${root}${desktop ? 'dist-desktop' : 'dist'}`);
+        legalPages(options.dir ?? `${root}dist`);
       },
     },
     mode !== 'test' && {
       name: 'bozzetto-drop-demo',
       closeBundle(): void {
-        rmSync(`${root}${desktop ? 'dist-desktop' : 'dist'}/timelapses`, {
+        rmSync(`${root}dist/timelapses`, {
           recursive: true,
           force: true,
         });
       },
     },
     VitePWA({
-      disable: desktop,
       // The manifest is hand-written in public/ and linked from every entry
       // html, so the plugin only supplies the service worker.
       injectRegister: null,
@@ -426,16 +398,14 @@ export default defineConfig(({ mode }) => {
   },
   build: {
     target: 'es2020',
-    sourcemap: !desktop,
-    outDir: desktop ? 'dist-desktop' : 'dist',
+    sourcemap: true,
+    outDir: 'dist',
     rollupOptions: {
-      input: desktop
-        ? { main: `${root}index.html`, create: `${root}create/index.html` }
-        : {
-            main: `${root}index.html`,
-            admin: `${root}admin/index.html`,
-            create: `${root}create/index.html`,
-          },
+      input: {
+        main: `${root}index.html`,
+        admin: `${root}admin/index.html`,
+        create: `${root}create/index.html`,
+      },
     },
   },
   };

@@ -1,15 +1,12 @@
 import { div } from './dom';
 import { ACTIONS, chordOf, chordParts, keymap, type ActionDef, type KeyMode } from './keymap';
 import { rangeOf, settings, type OnOff, type SettingsValues } from './settings';
-import { launchOptions, launchState, setLaunchOptions, type LaunchOptions } from '../desktop/launch';
-import { isDesktop } from '../net/origin';
 import { readyToLeave } from './leaving';
 
 /**
  * Preferences: what a finger does, how solid the panels are, how frames are
- * drawn while things move, anti-aliasing and adaptive quality, the desktop
- * app's launch settings (there only), the diagnostic overlays and the
- * passkey check, then the hotkey editor. Every keyed action in
+ * drawn while things move, anti-aliasing and adaptive quality, the
+ * diagnostic overlays and the passkey check, then the hotkey editor. Every keyed action in
  * both modes, with its current chord; click one, press the new key. The
  * keymap is the single source the handlers and the guide read, so a change
  * is live at once and shows up in the guide; the settings store is read
@@ -119,9 +116,6 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     'Adaptive quality',
     'When frames keep missing the display, ambient occlusion, then the shadows, then the resolution are lightened a step at a time, between strokes, and brought back when there is room.',
   );
-  // Only in the desktop app: Chromium switches, applied at the next start.
-  const desktopGroup = launchState() ? desktopRows() : null;
-
   // The overlays that say what a device is doing, kept on across reloads,
   // so the web version needs no URL parameters for them.
   const diagHead = div('prefs__group');
@@ -142,16 +136,13 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     'Pointer and touch events as the browser delivers them, and what Sculpt did with each.',
   );
   // A test page for the accounts to come (docs/accounts.md, batch 0), its
-  // own page so the installed app can open it too. Not in the desktop app,
-  // whose page is at no web address a passkey could belong to.
-  const passkeyCheck = isDesktop()
-    ? null
-    : openRow(
-        'passkeyCheck',
-        'Passkey check…',
-        'Whether this device can sign in with a passkey, in the browser and from the Home Screen, and whether the bot check loads: a test page for the accounts to come. It opens in place of this page.',
-        () => void openPasskeyCheck(),
-      );
+  // own page so the installed app can open it too.
+  const passkeyCheck = openRow(
+    'passkeyCheck',
+    'Passkey check…',
+    'Whether this device can sign in with a passkey, in the browser and from the Home Screen, and whether the bot check loads: a test page for the accounts to come. It opens in place of this page.',
+    () => void openPasskeyCheck(),
+  );
 
   const keysHead = div('prefs__group');
   keysHead.textContent = 'Hotkeys';
@@ -196,12 +187,11 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     aaQuestion,
     antialias.root,
     adaptive.root,
-    ...(desktopGroup ? [desktopGroup.root] : []),
     diagHead,
     meter.root,
     stallLog.root,
     inputLog.root,
-    ...(passkeyCheck ? [passkeyCheck] : []),
+    passkeyCheck,
     keysHead,
     keysBlurb,
     tabs,
@@ -340,7 +330,6 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       antialias.set(settings.get('antialias'));
       opacity.sync();
       for (const t of [adaptive, meter, stallLog, inputLog]) t.sync();
-      void desktopGroup?.sync();
       render();
       root.hidden = false;
       document.body.classList.add('has-modal');
@@ -389,60 +378,6 @@ function choiceGroup<V extends string>(
       for (const [v, input] of inputs) input.checked = v === value;
     },
   };
-}
-
-/**
- * The desktop app's launch settings (launch.json, through launch:get and
- * launch:set): V-sync, and the high-performance GPU where that switch does
- * anything. Both take effect at the next start, and a line says so once
- * what is saved differs from what is running.
- */
-function desktopRows(): { root: HTMLElement; sync: () => Promise<void> } {
-  const root = div('prefs__desktop');
-  root.dataset.setting = 'launch';
-  const head = div('prefs__group');
-  head.textContent = 'Desktop';
-  const row = (key: keyof LaunchOptions, label: string, hint: string): { el: HTMLElement; input: HTMLInputElement } => {
-    const el = document.createElement('label');
-    el.className = 'prefs__choice prefs__toggle';
-    el.dataset.setting = key;
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.addEventListener('change', () => {
-      void setLaunchOptions({ [key]: input.checked }).then(() => sync());
-    });
-    const text = div('prefs__choice-text');
-    const title = div('prefs__choice-title');
-    title.textContent = label;
-    const note = div('prefs__choice-hint');
-    note.textContent = hint;
-    text.append(title, note);
-    el.append(input, text);
-    return { el, input };
-  };
-  const vsync = row(
-    'vsync',
-    'V-sync',
-    'Holds each frame for the display, as a browser does. Off, a frame shows as soon as it is ready, a refresh sooner under the pen, and Bozzetto slows itself to the display when idle or on battery. Takes effect when Bozzetto next starts.',
-  );
-  const gpu = row(
-    'highPerformanceGpu',
-    'Use the high-performance GPU',
-    'On computers with two graphics chips, runs Bozzetto on the faster one. Takes effect when Bozzetto next starts.',
-  );
-  const status = div('dsettings__hint prefs__restart');
-  status.textContent = 'Restart Bozzetto to apply the change.';
-  status.hidden = true;
-  root.append(head, vsync.el, gpu.el, status);
-  const sync = async (): Promise<void> => {
-    const o = await launchOptions();
-    if (!o) return;
-    vsync.input.checked = o.saved.vsync;
-    gpu.input.checked = o.saved.highPerformanceGpu;
-    gpu.el.hidden = !o.gpuSwitch;
-    status.hidden = o.saved.vsync === o.active.vsync && (!o.gpuSwitch || o.saved.highPerformanceGpu === o.active.highPerformanceGpu);
-  };
-  return { root, sync };
 }
 
 /** The settings that are a box to tick. */

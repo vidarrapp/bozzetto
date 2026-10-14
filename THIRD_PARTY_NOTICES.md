@@ -2,12 +2,12 @@
 
 Bozzetto itself is MIT-licensed; see [LICENSE](LICENSE). It ships the
 third-party code and assets below, in the web app (the site, the installed
-app and exported single-file pages) and in the desktop app. Each entry says
+app and exported single-file pages). Each entry says
 what ships, under which licence, and carries the notice text that licence
 asks to be kept with copies.
 
-Build tools that do not end up in what ships (TypeScript, Vite, Wrangler,
-electron-builder and the rest of `devDependencies`) are not listed.
+Build tools that do not end up in what ships (TypeScript, Vite, Wrangler
+and the rest of `devDependencies`) are not listed.
 
 ## Code
 
@@ -244,20 +244,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### Electron and Chromium (desktop app only)
-
-The desktop app is built on Electron (MIT), which embeds Chromium and the
-libraries it uses, each under its own licence. Every desktop build carries
-Electron's licence as `LICENSE.electron.txt` and Chromium's as
-`LICENSES.chromium.html`: beside the executable on Windows and Linux, and in
-`Bozzetto.app/Contents/Resources` on macOS.
-
 ## Fonts
 
 Instrument Serif, JetBrains Mono and Manrope, in `public/assets/fonts/`, are
 under the SIL Open Font License 1.1. Each font's copyright line and the full
-licence are in `public/assets/fonts/licenses/`, which ships beside the fonts
-in both apps.
+licence are in `public/assets/fonts/licenses/`, which ships beside the fonts.
 
 ## Models and images
 

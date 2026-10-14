@@ -100,17 +100,15 @@ const copyLink = (link: SceneLink | null): SceneLink | null =>
 /**
  * Everything File means, with no dialogs in it.
  *
- * One implementation behind three fronts: the web page's File menu, the
- * desktop app's native File menu, and the console handle the tests drive.
- * Each front owns its own questions (a confirm(), a native Save / Don't
- * Save / Cancel) and its own way of moving bytes (a download sheet, a
- * file dialog); what happens to the scene is decided here, once.
+ * One implementation behind two fronts: the web page's File menu and the
+ * console handle the tests drive. Each front owns its own questions and
+ * its own way of moving bytes; what happens to the scene is decided here,
+ * once.
  */
 export class FileActions {
   /**
    * The server project this scene was opened from or last saved to, which
-   * is where Save to library writes when signed in - the web's counterpart
-   * of the desktop document's path. Kept in memory here and in the
+   * is where Save to library writes when signed in. Kept in memory here and in the
    * autosave record (SavedScene.project), never in a .bozz file.
    */
   private linked: SceneLink | null = null;

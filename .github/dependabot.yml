@@ -10,13 +10,7 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      # Electron and its packager move together: one pull request, one
-      # desktop test build.
-      electron:
-        patterns:
-          - electron
-          - electron-builder
-      # The rest of the toolchain. None of it ships in the app.
+      # The toolchain. None of it ships in the app.
       dev-tooling:
         dependency-type: development
     # What does ship (three, mediabunny, gl-matrix, gifenc, the icons) gets

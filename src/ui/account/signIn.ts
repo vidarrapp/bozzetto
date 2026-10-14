@@ -11,7 +11,6 @@ import {
   finishEmailSignIn,
   finishJoin,
   followLink,
-  forDesktopApp,
   forgetInvite,
   getMe,
   handlePasskeyOptions,
@@ -232,23 +231,19 @@ class Dialog {
   private showSignIn(email = ''): void {
     this.clearStep();
     const passkeys = passkeysHere(this.config);
-    // The desktop app's sign-in window leads with the code (§2): passkeys
-    // made in it are unproven, and its autofill would offer this computer's
-    // own. A passkey on a phone, or a security key, still signs in.
-    const desktop = forDesktopApp();
     const form = el('form', 'account-step');
     form.noValidate = true;
     const say = new Say();
     const address = input('email', 'email', {
       // Where the browser can, the field's suggestions offer the passkeys
       // this site has on the device as well as addresses (§3).
-      autocomplete: passkeys && !desktop ? 'username webauthn' : 'username',
+      autocomplete: passkeys ? 'username webauthn' : 'username',
       autocapitalize: 'none',
       spellcheck: 'false',
       placeholder: 'you@example.com',
     });
     address.value = email;
-    const codeFirst = !passkeys || desktop;
+    const codeFirst = !passkeys;
     const codeButton = button('Email me a code', codeFirst ? 'btn btn--primary account-submit' : 'btn account-submit');
     codeButton.type = 'submit';
     const botHost = el('div', 'account-bot');
@@ -258,20 +253,15 @@ class Dialog {
     const before: HTMLElement[] = [];
     const after: HTMLElement[] = [];
     if (passkeys) {
-      const passkeyButton = button('Use a passkey', `btn ${desktop ? '' : 'btn--primary '}account-passkey`);
+      const passkeyButton = button('Use a passkey', 'btn btn--primary account-passkey');
       // The handle, asked for once the browser has offered no passkey.
       const retry = el('form', 'account-step account-retry');
-      if (desktop) {
-        after.push(el('p', 'account-or', 'or'), passkeyButton, el('p', 'account-small', 'On your phone, or a security key.'), retry);
-      } else {
-        before.push(passkeyButton, retry, el('p', 'account-or', 'or'));
-      }
-      this.passkeySignIn(passkeyButton, retry, address, say, { autofill: !desktop });
+      before.push(passkeyButton, retry, el('p', 'account-or', 'or'));
+      this.passkeySignIn(passkeyButton, retry, address, say, { autofill: true });
     } else {
       const why = noPasskeysWhy(this.config);
       if (why) before.push(el('p', 'account-note', `${why}. Sign in with a code sent to your email address.`));
     }
-    if (desktop) before.unshift(el('p', 'account-lede', 'Sign in to your account for the Bozzetto app. This window closes by itself once you are in.'));
     const actions = el('div', 'account-actions');
     actions.append(codeButton);
     form.append(field('Email', address), botHost, actions, say.root);
@@ -478,12 +468,9 @@ class Dialog {
     void prepare();
   }
 
-  /**
-   * Signed in: after a code, a passkey is offered where they work (not in
-   * the desktop app's window, where one made is unproven); then done.
-   */
+  /** Signed in: after a code, a passkey is offered where they work; then done. */
   private signedIn(me: Me, how: 'code' | 'passkey'): void {
-    if (how === 'code' && passkeysHere(this.config) && !forDesktopApp()) this.showOffer(me);
+    if (how === 'code' && passkeysHere(this.config)) this.showOffer(me);
     else this.finish(me);
   }
 

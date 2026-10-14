@@ -32,24 +32,14 @@ import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { presentationPatch, saveModelToGallery, saveTimelapseToGallery } from './bridge/GallerySave';
-import { packScene, unpackScene } from './bridge/SceneFile';
+import { unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { failNotice, statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
 import { suspensionText } from '../net/account';
-import { isDesktop } from '../net/origin';
 import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
 import { beforeLeaving } from '../ui/leaving';
-import {
-  mountDesktop,
-  setDocumentDirty,
-  offerRecovery,
-  clearRecovery as clearDesktopRecovery,
-  desktop,
-  showServerSettings,
-  writeRecovery,
-} from '../desktop';
 import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
@@ -60,7 +50,7 @@ import { perfLog } from '../viewer/perfLog';
 import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
 import { CaptureWindow } from './ui/CaptureWindow';
-import { FileMenu, reportNotUploaded } from './ui/FileMenu';
+import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
@@ -315,14 +305,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     url.searchParams.delete('obj');
     history.replaceState(history.state, '', url);
   }
-  // The desktop app starts clean (owner call): its work lives in files,
-  // and a scene that was saved to one has no business coming back on its
-  // own. The slot and the reel are cleared so the gallery's in-progress
-  // card does not offer them either; a crash still leaves the recovery
-  // sidecar, which is offered below as before.
-  if (isDesktop() && !asked) {
-    await Promise.all([clearSavedScene(), clearSculptFrames()]);
-  } else if (!saved && !objMesh) {
+  if (!saved && !objMesh) {
     let autosaved: SavedScene | null = null;
     try {
       autosaved = await loadSavedScene();
@@ -1211,8 +1194,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * Save image: a PNG of the view at twice the window (twice the device's
    * pixel ratio), held to STILL_MAX_SIDE, its smoothing finished, with no
    * interface in it (Viewer.captureStill). Downloaded on the web as
-   * `<title>.png`; the desktop app asks where through its export dialog,
-   * and the page never names a path.
+   * `<title>.png`.
    */
   const saveImage = async (): Promise<void> => {
     const status = statusToast('Rendering the image...');
@@ -1221,14 +1203,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const ratio = Math.min(Math.max(1, window.devicePixelRatio || 1) * 2, STILL_MAX_SIDE / Math.max(1, w, h));
       const blob = await viewer.captureStill(ratio);
       const name = `${imageName(fileActions.link?.title ?? openedName ?? '')}.png`;
-      const bridge = desktop();
-      if (bridge) {
-        const saved = await bridge.exportBytes(await blob.arrayBuffer(), name, [{ name: 'PNG image', extensions: ['png'] }]);
-        status.done(saved ? `Saved ${saved.name}` : 'Image not saved');
-      } else {
-        downloadBlob(blob, name);
-        status.done(`Saved ${name}`);
-      }
+      downloadBlob(blob, name);
+      status.done(`Saved ${name}`);
     } catch (err) {
       console.warn('sculpt: image not saved', err);
       status.fail(`Could not save the image: ${err instanceof Error ? err.message : String(err)}`);
@@ -1357,8 +1333,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     !sceneOnDisk ||
     session.getStateManager().getCurrentState() !== cleanState ||
     recorder.frameCount() > 0;
-  // One implementation of File, behind the web menu, the desktop app's
-  // native menu and the console handle alike.
+  // One implementation of File, behind the web menu and the console
+  // handle alike.
   const fileActions = new FileActions(session, recorder, {
     look: lookBridge,
     decorate: (scene) => {
@@ -1395,9 +1371,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   });
   fileActions.adoptLink(bootLink);
   fileActions.adoptUnsent(bootUnsent);
-  // The top row's File and Edit menus. The desktop app has native ones
-  // over the same actions, so it goes without.
-  if (!isDesktop()) {
+  // The top row's File and Edit menus.
+  {
     fileMenu = new FileMenu(fileActions);
     editMenu = new TopMenu(
       'Edit',
@@ -1412,7 +1387,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   }
   // Built after File and Edit so its chip lands beside them in the row.
   // The chip stays hidden until recording is known to be allowed here
-  // (the role probe below; the desktop app straight away).
+  // (the role probe below).
   captureWindow = new CaptureWindow(recorder);
   // Present mode's chip lands beside Capture's (ui/Present).
   const turnCentre = new Vector3();
@@ -1429,8 +1404,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * Save turntable: one turn about the turntable's axis from this view,
    * at its speed, rendered offline (capture/turntable.ts) - the camera
    * only, so nothing reaches the timelapse - and handed over as
-   * `<title>-turntable.mp4` or `.gif`: downloaded on the web, through
-   * the export dialog on the desktop.
+   * `<title>-turntable.mp4` or `.gif`, downloaded.
    */
   const saveTurntable = async (clip: TurntableRequest): Promise<void> => {
     const centre = new Vector3();
@@ -1446,15 +1420,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         return;
       }
       const name = `${imageName(fileActions.link?.title ?? openedName ?? '')}-turntable.${clip.format}`;
-      const bridge = desktop();
-      if (bridge) {
-        const filter = clip.format === 'mp4' ? { name: 'MP4 video', extensions: ['mp4'] } : { name: 'GIF animation', extensions: ['gif'] };
-        const saved = await bridge.exportBytes(await blob.arrayBuffer(), name, [filter]);
-        statusToast('').done(saved ? `Saved ${saved.name}` : 'Turntable not saved');
-      } else {
-        downloadBlob(blob, name);
-        statusToast('').done(`Saved ${name}`);
-      }
+      downloadBlob(blob, name);
+      statusToast('').done(`Saved ${name}`);
     } catch (err) {
       console.warn('sculpt: turntable not saved', err);
       failNotice(`Could not save the turntable: ${err instanceof Error ? err.message : String(err)}`);
@@ -1586,9 +1553,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Gallery publishing (WS5): built for everyone, revealed only when the
   // admin probe confirms a Cloudflare Access session - with accounts on,
   // any sign-in, publishing to My projects. Guests keep the device-local
-  // outputs (autosave, scene file, OBJ) - nothing uploads. The same answer
-  // decides what Save to library does.
-  let savesNow: boolean | null = null;
+  // outputs (autosave, scene file, OBJ) - nothing uploads.
   // From Present mode a publish is of the presented view: the turntable
   // stops first, so the look and the picture are of one camera, and the
   // look goes with its grade (GallerySave.presentationPatch).
@@ -1606,23 +1571,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   /** Whether the site has accounts, by the latest probe. */
   let accountsHere = false;
   /**
-   * Whether Save to library goes to a server for `who`: the owner (with
-   * accounts off, whoever Access vouches for), or with accounts on anyone
-   * signed in. An expired sign-in is still that device's: the save is
-   * tried, and kept here when it cannot go.
-   */
-  const savesToServer = (who: Role): boolean => who !== 'guest' && who !== 'suspended';
-  /**
    * Whether recording can go somewhere here (recordingAllowed), and so
-   * whether the Capture chip shows: the desktop app from the start, the
-   * web once the probe has said "signed in" in this session - or "signed
+   * whether the Capture chip shows: once the probe has said "signed in"
+   * in this session - or "signed
    * in, and the session has since expired", which is still the owner's
    * device: the reel waits for the sign-in, as it waits for one that lapses
    * mid-session. A later "guest" does not take it back.
    */
   let signedIn = false;
   const applyRecordingGate = (): void => {
-    const allowed = recordingAllowed({ desktop: isDesktop(), signedIn });
+    const allowed = recordingAllowed({ signedIn });
     recorder.setAllowed(allowed);
     captureWindow?.setAvailable(allowed);
   };
@@ -1638,9 +1596,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const found = roleOf(answer);
     role = found;
     accountsHere = answer.accounts === true;
-    // Whoever saves to a server here: the owner with accounts off, anyone
-    // signed in with them on (docs/accounts.md §7).
-    savesNow = savesToServer(found);
     // A suspended account records nothing: there is nowhere for it to go.
     if (found !== 'guest' && found !== 'suspended') signedIn = true;
     tlForm.setRole(found, accountsHere);
@@ -1672,7 +1627,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // and so does an owner whose sign-in had expired.
   const onReturn = (): void => {
     const signedInNow = role === 'owner' || role === 'moderator' || role === 'member';
-    if (document.visibilityState === 'visible' && !signedInNow && !isDesktop()) void probeRole();
+    if (document.visibilityState === 'visible' && !signedInNow) void probeRole();
   };
   document.addEventListener('visibilitychange', onReturn);
 
@@ -1757,11 +1712,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (saved && !openedExplicitly) {
     toast = bootToast(openedLabel(opened), () => {
       persist.disable();
-      // The desktop sidecar mirrors the autosave; a fresh start that left
-      // it behind would offer the abandoned scene back at the reload.
-      void Promise.all([clearSavedScene(), clearDesktopRecovery()]).then(() =>
-        location.reload(),
-      );
+      void clearSavedScene().then(() => location.reload());
     });
   } else if (saved && opened?.from === 'device') {
     toast = bootToast(openedLabel(opened));
@@ -1868,81 +1819,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   (window as unknown as { __sculpt?: object }).__sculpt = handle;
 
-  // --- the desktop shell -------------------------------------------------
-  // Native File menu, window title and crash recovery, when running inside
-  // Electron. Inert in a browser: mountDesktop returns null and nothing
-  // below it runs. It reuses the same file pipeline the panel buttons and
-  // the tests use, so there is one packing path, not two.
-
-  /**
-   * The desktop app's Save to Library. Signed in to a server, it uploads
-   * as it does on the web - to Projects, or with accounts on to My
-   * projects; without one it keeps the scene on
-   * this device: the app's storage is its own profile, not a browser's,
-   * and File > Save is right beside it for a copy that leaves the machine.
-   * Signed in again from its notice, it goes again.
-   */
-  const desktopSave = async (): Promise<void> => {
-    const saves = savesNow ?? savesToServer(await probeRole());
-    if (!saves) {
-      await fileActions.keepOnDevice();
-      statusToast('Keeping on this device...').done('Kept on this device');
-      return;
-    }
-    const place = await fileActions.place().catch(() => 'Projects');
-    const status = statusToast(`Saving to ${place}...`);
-    try {
-      const link = await fileActions.uploadToProjects((text) => status.set(text));
-      status.done(`Saved to ${place}: ${link.title}`);
-    } catch (err) {
-      reportNotUploaded(status, err, async () => {
-        await probeRole();
-        await desktopSave();
-      });
-    }
-  };
-  const desktopHandle = mountDesktop({
-    pack: () => fileActions.pack().then((b) => b.arrayBuffer()),
-    load: async (bytes) => {
-      await fileActions.replaceWith(bytes);
-    },
-    reset: () => fileActions.newScene(),
-    hasWork,
-    markClean: () => markSceneClean(),
-    saveToLibrary: () => desktopSave(),
-    importObj: (text, zUp, name) => fileActions.importObj(text, zUp, name),
-    objText: () => fileActions.objText(),
-    undo: () => session.undo(),
-    redo: () => session.redo(),
-    showServerSettings: () => void showServerSettings(),
-    // Signed in or out in Server settings: the same probe as the forms'
-    // re-check, so they, the menu and Save to Library follow it.
-    signInChanged: () => void probeRole(),
-    showPreferences: () => showPreferences('sculpt'),
-  });
-  if (desktopHandle) {
-    // The title's dirty dot and the close guard follow the same signal the
-    // Open guard uses, sampled at every edit - not at the autosave write,
-    // which lands seconds later and would leave a window closable with a
-    // stroke it never asked about. Undo back to the clean point clears it.
-    persist.onDirty = () => setDocumentDirty(hasWork());
-    // Mirror each autosave to the crash sidecar. Same bytes as a .bozz
-    // file, written atomically under userData - never through to the open
-    // document, which would make Save meaningless and quitting-without-
-    // saving impossible.
-    persist.onWrote = (scene) => {
-      void packScene(scene)
-        .then((b) => b.arrayBuffer())
-        .then(writeRecovery)
-        .catch(() => undefined);
-    };
-    // A crash left a sidecar. It mirrors the autosave, so when IndexedDB
-    // has just restored the same session there is nothing newer in it and
-    // no question to ask; it is offered only when the autosave came back
-    // empty - a cleared profile, or a store that could not be read.
-    if (!saved) void offerRecovery(handle.file.open);
-  }
-
   // Leaving for the gallery: remember what the work looked like, so the
   // landing page can offer it back as a card. The autosave already keeps the
   // geometry; this is only the picture and the counts that go with it.
@@ -1998,7 +1874,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     window.removeEventListener('pagehide', onLookHide);
     delete (window as unknown as { __sculpt?: object }).__sculpt;
     perfLog.triangles = null; // the session is going; the log keeps its entries
-    desktopHandle?.(); // menu commands and OS opens stop reaching a dead scene
     window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: false } }));
     toast?.remove();
     // Out of Present first, so everything it put away comes back to be disposed.

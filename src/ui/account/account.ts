@@ -32,7 +32,6 @@ import {
   type Passkey,
   type SessionView,
 } from '../../net/account';
-import { isDesktop } from '../../net/origin';
 import { forgetOwnerCaches } from '../../net/ownerCaches';
 import { statusToast } from '../../sculpt/ui/statusToast';
 import { signInAgain } from '../signIn';
@@ -88,8 +87,7 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
     // would lift it: say so, and offer to let the device go.
     chips(signIn, app);
     host.append(el('p', 'account-say', suspensionText(signIn.suspended.reason)));
-    // The desktop app signs out in Server settings, where it signs in.
-    if (!isDesktop()) {
+    {
       const out = button('Sign out', 'btn');
       out.addEventListener('click', () => {
         out.disabled = true;

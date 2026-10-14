@@ -1,6 +1,6 @@
 # Deployment
 
-Running Bozzetto locally is in [development.md](development.md), building and releasing the desktop app in [desktop.md](desktop.md), and the accounts' design in [accounts.md](accounts.md).
+Running Bozzetto locally is in [development.md](development.md), and the accounts' design in [accounts.md](accounts.md).
 
 Bozzetto runs entirely on Cloudflare Pages, Functions, D1 and R2. No server to run yourself.
 

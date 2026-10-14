@@ -43,8 +43,8 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
   if (open) html += '</div>';
   html += `<div class="help-guide__foot"><button type="button" class="help-guide__prefs">Customise hotkeys…</button>`;
   // Which build this is, so "am I on the new one?" has an answer on the
-  // device itself. Checking needs a service worker, which the desktop app
-  // never has: there the version stands alone.
+  // device itself. Checking needs a service worker; without one the
+  // version stands alone.
   html += `<div class="help-guide__version"><span class="help-guide__ver">Bozzetto ${esc(APP_VERSION)}</span>`;
   if (updates) html += `<button type="button" class="help-guide__check">Check for updates</button>`;
   html += `<span class="help-guide__checked" role="status"></span></div>`;

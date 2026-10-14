@@ -84,7 +84,7 @@ function paint(): void {
   }
 }
 
-/** Whether this page can look for updates: a worker is registered, which it never is in the desktop app. */
+/** Whether this page can look for updates: a worker is registered. */
 export function updatesAvailable(): boolean {
   return registration !== null;
 }

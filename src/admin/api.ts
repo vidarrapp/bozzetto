@@ -10,7 +10,7 @@
  * account's quota, and refused in sentences a person can act on.
  */
 
-import { apiFetch, isDesktop, type ApiResult } from '../net/origin';
+import { apiFetch, type ApiResult } from '../net/origin';
 import { forgetOwnerCaches } from '../net/ownerCaches';
 import {
   AccountError,
@@ -472,7 +472,6 @@ function forget(): void {
  * this is the web's question only.
  */
 export function signedInHereBefore(): boolean {
-  if (isDesktop()) return false;
   try {
     const raw = localStorage.getItem(SIGNED_IN_KEY);
     const rec = raw ? (JSON.parse(raw) as { at?: unknown; email?: unknown }) : null;
