@@ -6,9 +6,12 @@
 // is offered Set scale in the editor, which plays every frame by one
 // factor (presentation.scale, lifted onto the floor at 0), marks the
 // project `units: 'm'` and saves both, so the viewer plays it at that
-// height for everyone. Each gets (page, base, t).
+// height for everyone. Tab closes the panels, hides the interface and
+// brings it back, and Esc brings it back, in both as in Sculpt. Each gets
+// (page, base, t).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { chromeChecks } from './lib.mjs';
 
 /** The guide is up, and what its head and rows say. */
 const guideOf = (page) =>
@@ -182,6 +185,9 @@ export const suites = {
     await page.keyboard.up('l');
     const after = await lightAndCamera(page);
     t.ok(after.az === before.az, `losing the window ends the hold: a move after it turns no light (${before.az} -> ${after.az})`);
+    // Tab as in Sculpt (owner decision): close, hide, back, and Esc back;
+    // the transport stays.
+    await chromeChecks(page, t, 'the viewer', { panels: ['.panel--render'], transport: true });
   },
 
   async editorTools(page, base, t) {
@@ -230,6 +236,9 @@ export const suites = {
     await page.evaluate(() => window.__bozzetto.pause());
     await guideChecks(page, t, 'the editor');
     await lightChecks(page, t, 'the editor');
+    // Tab as everywhere, over the preview only: the editor's own top row and
+    // its sidebar of project settings stay.
+    await chromeChecks(page, t, 'the editor', { panels: ['.panel--editor'], keep: ['.editor .topbar', '.editor__sidebar'] });
 
     // --- Set scale --------------------------------------------------------
     const banner = () =>

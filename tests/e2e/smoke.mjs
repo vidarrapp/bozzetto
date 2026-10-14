@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { openArmature, openSculpt, serve } from './lib.mjs';
+import { chromeChecks, openArmature, openSculpt, serve } from './lib.mjs';
 import { armaturePanelSide } from './armatureProjects.mjs';
 
 const count = (page) => page.evaluate(() => window.__sculpt.session.getMeshes().length);
@@ -5835,6 +5835,28 @@ export const suites = {
       return row ? [...row.querySelectorAll('kbd')].map((k) => k.textContent).join('+') : null;
     });
     t.eq(listed, 'R', 'the hotkey guide lists R for scaling the selected part');
+
+    // Tab as in Sculpt (owner decision): both sides close together, then
+    // the interface hides, then it comes back; Esc brings it back too, and
+    // also deselects (Esc's own job here).
+    await page.evaluate(() => window.__armature.select('thigh.L'));
+    await chromeChecks(page, t, 'Armature', { panels: ['.panel--armature', '.panel--render'] });
+    await page.evaluate(() => window.__armature.select('thigh.L'));
+    // A selection may open the panel: Tab until the interface is hidden.
+    for (let i = 0; i < 2 && !(await page.evaluate(() => document.body.classList.contains('chrome-hidden'))); i++) {
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(150);
+    }
+    const hid = await page.evaluate(() => document.body.classList.contains('chrome-hidden'));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    const esc = await page.evaluate(() => ({ hidden: document.body.classList.contains('chrome-hidden'), selected: window.__armature.selected() }));
+    t.ok(hid && !esc.hidden && esc.selected === null, `in Armature Esc both brings the interface back and deselects (hidden ${hid} then ${esc.hidden}, selected ${esc.selected})`);
+    const guide = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.help-guide .help-row')].map((r) => r.textContent);
+      return { tab: rows.filter((r) => /^Tab/.test(r)), esc: rows.filter((r) => /^Esc/.test(r)) };
+    });
+    t.ok(guide.tab.length === 1 && /hide the interface/.test(guide.tab[0]) && guide.esc.some((r) => /Show the interface/.test(r)), `the Armature guide lists Tab once, as Sculpt does, and Esc showing the interface (${JSON.stringify(guide)})`);
   },
 
   // The Render panel's travel and defaults (owner call: most of the old

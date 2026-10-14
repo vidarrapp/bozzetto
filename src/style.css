@@ -2470,15 +2470,24 @@ html.is-page body {
    keyboard user in an invisible focus order with nothing to escape to.
    The zero-duration visibility delay lets the fade finish before the
    elements go inert. */
+/* The same in every mode - the viewer, the editors' preview, Armature and
+   Sculpt: the panels with their docked tabs (the Render, Armature and
+   Sculpt panels), the top row the pages build on the body (the gallery
+   link, File / Edit / Publish / Present, the theme and Help chips, the
+   account chips), the frame meter. An editor's own top row and its sidebar
+   of project settings sit inside .editor, not on the body, and stay: only
+   the preview's chrome goes there. The viewer's transport stays (owner
+   call), so the timeline can still be scrubbed with the rest put away. */
 body.chrome-hidden .panel,
 body.chrome-hidden .float-window,
 body.chrome-hidden .sculpt-toolbar__brushes,
+body.chrome-hidden > .topbar,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .file-menu__chip,
 body.chrome-hidden .file-menu,
 body.chrome-hidden .theme-toggle,
 body.chrome-hidden .help-toggle,
-body.chrome-hidden .transport {
+body.chrome-hidden .fps-meter {
   opacity: 0;
   visibility: hidden;
   transition:
@@ -2487,7 +2496,8 @@ body.chrome-hidden .transport {
 }
 
 /* Deliberately NOT hidden (review call): the brush sliders and undo/redo
-   chips, the Negative button and its group, the object stats, and every
+   chips (Armature's too), the Negative button and its group, the object
+   stats, the viewer's transport, the chrome hint, and every
    toast, tooltip and hotkey guide - all but the update notice, which waits
    for the interface to come back (its own rule). Hiding those left a screen
    you could not work on or read - the standing panels and their docked tabs
@@ -2662,6 +2672,12 @@ body.chrome-hidden .present-bar {
 
 .chrome-hint.is-visible {
   opacity: 1;
+}
+
+/* The viewer's transport stays with the interface hidden: the hint sits
+   above it, where the frame meter clears it, not over the scrubber. */
+body:has(.transport) .chrome-hint {
+  bottom: 96px;
 }
 
 /* Admin-only publish form: slug + title + go + progress line. */

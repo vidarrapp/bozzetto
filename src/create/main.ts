@@ -6,6 +6,7 @@ import { mountReelControls } from '../ui/reel';
 import { EditorLayout } from '../ui/editorLayout';
 import { FpsMeter } from '../ui/FpsMeter';
 import { installShortcuts } from '../ui/shortcuts';
+import { disposePageChrome, pageChrome } from '../ui/ChromeToggle';
 import { initTheme, mountThemeToggle } from '../ui/theme';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
       <div class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></div>
 
       <aside class="editor__sidebar">
-        <button class="editor__sidebar-handle" type="button" title="Hide / show (Tab)">‹</button>
+        <button class="editor__sidebar-handle" type="button" title="Hide / show">‹</button>
         <div class="editor__sidebar-body">
           <h1 class="editor__title">Create</h1>
           <p class="editor__id muted">${intro}</p>
@@ -227,6 +228,7 @@ async function main(): Promise<void> {
   const disposePreview = (): void => {
     disposeShortcuts?.();
     disposeShortcuts = null;
+    disposePageChrome(); // the interface back, and the toggle with the preview
     fpsMeter?.dispose();
     fpsMeter = null;
     panel?.dispose();
@@ -313,7 +315,10 @@ async function main(): Promise<void> {
     layout.attach(panel);
     fpsMeter = new FpsMeter(preview);
     disposeShortcuts = installShortcuts(preview, {
-      togglePanel: () => layout.toggle(),
+      // Tab as everywhere (ChromeToggle): the open panel closes, then the
+      // preview's chrome hides - its panel, tab and chips, never the
+      // sidebar's forms - then it all comes back; Esc brings it back too.
+      toggleChrome: () => pageChrome().handleTab(),
       toggleFps: () => fpsMeter?.toggle(),
       refresh: () => panel?.refreshControls(),
     });

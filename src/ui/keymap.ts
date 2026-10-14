@@ -136,11 +136,6 @@ export const ACTIONS: ActionDef[] = [
   { id: 'material.matcap7', label: 'Matcap 7', group: 'Material', mode: 'view', chord: '8' },
   { id: 'material.matcap8', label: 'Matcap 8', group: 'Material', mode: 'view', chord: '9' },
   { id: 'view.ground', label: 'Cycle ground (shadow / floor / pedestal / off)', group: 'Material', mode: 'view', chord: 'g' },
-  // --- interface ---
-  { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'sculpt', chord: 'tab' },
-  { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'sculpt', chord: 'escape' },
-  { id: 'ui.present', label: 'Present: the model alone, with the Render panel (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
-  { id: 'ui.panel', label: 'Toggle the panel', group: 'Interface', mode: 'view', chord: 'tab' },
   // --- armature mode ------------------------------------------------------
   { id: 'arm.symmetry', label: 'Mirror pose edits to the other side', group: 'Armature', mode: 'armature', chord: 'x' },
   { id: 'arm.move', label: 'Move the figure (the pelvis, screen-plane centre)', group: 'Armature', mode: 'armature', chord: 'w' },
@@ -161,7 +156,15 @@ export const ACTIONS: ActionDef[] = [
   // Sculpt mode's light.move, for the figure: a key of its own (not a
   // gesture row) so Preferences can rebind it as it can sculpt's.
   { id: 'arm.light', label: 'Move the key light (hold + drag: across / up)', group: 'Armature', mode: 'armature', chord: 'l', hold: true },
-  { id: 'arm.panels', label: 'Open or close both panels (Armature and Render)', group: 'Armature', mode: 'armature', chord: 'tab' },
+  // --- interface ---
+  // After the Armature rows, so every mode lists its Interface keys under
+  // one heading, and so Armature's Esc (arm.deselect, the same key) is
+  // found first there; it shows a hidden interface as well (armature/mode).
+  // Tab and Esc are the same in every mode (owner decision): one rebind
+  // moves them everywhere.
+  { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
+  { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
+  { id: 'ui.present', label: 'Present: the model alone, with the Render panel (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },

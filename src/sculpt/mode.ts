@@ -41,7 +41,7 @@ import { SculptToolbar } from './ui/SculptToolbar';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
-import { ChromeToggle } from './ui/ChromeToggle';
+import { pageChrome } from '../ui/ChromeToggle';
 import { InputDebug } from './ui/InputDebug';
 import { perfLog } from '../viewer/perfLog';
 import { settings } from '../ui/settings';
@@ -698,7 +698,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let inputDebug: InputDebug | null = null;
 
   // Tab clears the interface for focused work; the toggle owns the ways back.
-  const chrome = new ChromeToggle();
+  // The page's one toggle, the viewer's (mountViewer): Sculpt adds its
+  // toolbar button to it rather than a second veil of its own.
+  const chrome = pageChrome();
 
   const cursor = new BrushCursor(container);
   // The surface ring is projected SVG: crisp at any DPI on any backend. The
@@ -1860,7 +1862,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     inputDebug?.dispose();
     inputDebug = null;
     sizeObserver.disconnect();
-    chrome.dispose();
+    // The toggle is the viewer's and outlives Sculpt: let go of it, with the
+    // interface showing.
+    chrome.onChange = null;
+    chrome.set(false);
     sliders?.dispose();
     toolbar.dispose();
     input.dispose();

@@ -165,12 +165,12 @@ sign-in, and everything stays on your device.
 | `W` / `E` / `T` | Move the pelvis · rotate the selection · both at once |
 | `R` | Scale the selected part: along the bone its length, across it its size |
 | `Shift`+`R` | Reset the pose |
-| `Esc` | Deselect |
+| `Esc` | Deselect (with the interface hidden, also brings it back) |
 | `Ctrl`+`Z`, `Ctrl`+`Shift`+`Z` | Undo, redo |
 | `Ctrl`+`Enter` | Send to Sculpt |
 | `F` / `A` | Frame the figure |
 | `L` (hold + drag) | Move the key light: across swings it round the figure, up and down raises and lowers it. While `L` is held the drag does nothing else |
-| `Tab` | Open or close both panels, the Armature panel and the Render panel together |
+| `Tab` | Closes panels, the Armature panel and the Render panel together, then hides the interface. `Tab` or `Esc` returns |
 
 ## Make your own timelapse
 
@@ -282,7 +282,8 @@ running, the release and the commit it was built from, as in
 | `Shift`+`W` | Wireframe overlay |
 | `Shift`+`S` | Shadows on / off |
 | `G` | Cycle ground |
-| `Tab` | Show / hide panels |
+| `Tab` | Closes panels, then hides the interface; the timeline stays. `Tab` again returns (in the editors' preview, only the preview's panel and chips go) |
+| `Esc` | Brings the hidden interface back |
 | `H` | Hotkey guide |
 
 ### Sculpt mode
@@ -333,7 +334,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **Move the key light in the viewer and the editor.** Hold **L** and move the pointer, as in Sculpt and Armature: across swings the key light around the model, up and down raises and lowers it, half a degree a pixel. While L is held a press on the view orbits nothing, and the editor's light rows follow once the drag settles. It is one key with Sculpt's in Preferences, so a rebind moves both.
 - **The hotkey guide everywhere.** The editor's preview now has the guide too, on **H** as in the viewer, and the Render panel in both has a **Hotkeys** button under Interface, for a tablet with no keyboard. The guide lists the view's keys and gestures, the light drag among them.
 - **Armature: only the key light casts by default.** A new armature's look has the fill's and the rim's **Casts shadow** boxes unticked, and picking a lighting preset there keeps them so; the boxes still tick them on, and Sculpt and the viewer keep all three casting. An armature saved before the rim cast by default opens with its boxes as it saved them, rather than with the rim ticked as other old looks are.
-- **Armature: `Tab` works both panels.** `Tab` closes the Armature panel and the Render panel together, and opens both again; it used to reach only the Render panel, and left the Armature panel where it was.
+- **`Tab` works the same everywhere.** In the viewer, the editors' preview and Armature, `Tab` now does what it does in Sculpt: the first press closes the open panels (in Armature the Armature panel and the Render panel together), the second hides the interface - the panels and their tabs, the top row of chips, the frame meter - and the next brings it all back, as `Esc` does. The viewer's timeline stays on screen, and in the editors only the preview's chrome goes, never the project settings beside it. `Tab` on a focused control still moves the focus. It is one key in Preferences for every mode, and so is `Esc`; the old **Toggle the panel** and Armature's **Open or close both panels** keys are gone.
 - **Armature: proportions move the joints, and `R` scales a part.** A part's size and length now carry the joints on it: a chest at 130% puts both shoulders 30% further out, at its new surface, where they stayed inside it, wider hips move the hip joints, and the clavicles stretch with the chest. Every figure alike, the blocks and the four mannequins; a saved figure opens with the same pose and proportions, its joints where those proportions now put them. `R` puts a scale gizmo on the selected part: drag the handle along the bone for its length, one across it for its size, held to the same limits as the sliders, mirrored under symmetry, one undo step a drag, the panel's sliders following. With nothing selected `R` does nothing. The hotkey guide and Preferences list it.
 - **Armature: the realistic male's neck turns higher.** Its neck joint sat half a centimetre under where the back of the neck leaves the chest, so a head turn pivoted from inside the chest; it is 1.5 cm higher now, a centimetre above that line, where the other three mannequins have theirs. The neck's direction and the head's joint are as they were, so a saved pose looks the same.
 

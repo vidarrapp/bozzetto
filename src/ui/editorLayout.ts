@@ -78,19 +78,6 @@ export class EditorLayout {
     }
   }
 
-  /** Tab: hide both, or restore the default layout when already hidden. */
-  toggle(): void {
-    const anyOpen = this.sidebarOpen || (this.panel ? !this.panel.isCollapsed() : false);
-    if (anyOpen) {
-      this.setSidebar(false, false);
-      this.panel?.setCollapsed(true);
-    } else {
-      this.panel?.setCollapsed(false);
-      if (!isNarrow()) this.setSidebar(true, false);
-    }
-    this.persist();
-  }
-
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
   }

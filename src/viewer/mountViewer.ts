@@ -7,10 +7,12 @@ import { installShortcuts } from '../ui/shortcuts';
 import { Help } from '../ui/Help';
 import { FpsMeter } from '../ui/FpsMeter';
 import { mountStallLog } from '../ui/diagnostics';
+import { pageChrome } from '../ui/ChromeToggle';
 
 /**
  * Boot a Viewer into `viewport` and wire up the full public UI (panel,
- * transport, help, frame meter, stall log, shortcuts). Shared by the live
+ * transport, help, frame meter, stall log, shortcuts, Tab's hide-the-
+ * interface toggle). Shared by the live
  * entry (main.ts) and the embedded single-file entry so both present an
  * identical viewer.
  */
@@ -44,8 +46,11 @@ export async function mountViewer(
   // The stall log lives here, not in one mode, so it reads the same over
   // the viewer, Sculpt and Armature (Preferences > Diagnostics, ?perfdebug=1).
   mountStallLog();
+  // Tab hides the interface in stages, as in Sculpt (owner decision): the
+  // page's one toggle, which Sculpt and Armature use too when they mount.
+  const chrome = pageChrome();
   installShortcuts(viewer, {
-    togglePanel: () => panel.toggleCollapsed(),
+    toggleChrome: () => chrome.handleTab(),
     toggleHelp: () => help.toggle(),
     toggleFps: () => fps.toggle(),
     refresh: () => panel.refreshControls(),

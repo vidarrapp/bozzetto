@@ -1,24 +1,35 @@
+import { chordLabel, chordOf, keymap } from './keymap';
+
 /**
  * Hide-the-interface mode (Tab), in two stages: the first press tidies -
  * closing whatever panels are open - and a second press, with nothing left
- * open, clears the standing chrome down to a bare working screen.
+ * open, clears the standing chrome down to a bare working screen. The next
+ * press, or Esc, brings it all back.
  *
- * What goes is deliberately narrow (review call): the panels and their
- * docked tabs, the page furniture around them, and the brush row. What
- * STAYS is everything you actually work with or need to read - the brush
- * sliders, undo/redo, the Negative button, the object stats, and any toast,
- * tooltip or hotkey guide that appears. Hiding those made the mode useless
- * rather than minimal; the collapsed tabs were the clutter worth removing.
- * The one notice that goes is the update notice (ui/updates): it needs
- * nothing done this minute, and a clear view is what the mode is for. It
- * comes back with the interface.
+ * One behaviour everywhere (owner decision): the viewer, the editors'
+ * preview, Armature and Sculpt share it. There is one toggle a page
+ * (pageChrome): the viewer mount makes it, and the modes mounted over the
+ * viewer use the same one rather than stacking a second veil and a second
+ * Esc listener on top.
  *
- * Because the toolbar's Negative group survives, so does the hide button
- * sitting in it - which means there is always a visible, labelled control
- * to come back with, on a device with no Tab key as much as anywhere else.
- * That earns the mode its simplicity: no corner glyph, no rescue heuristics.
- * Escape also exits, and the state is never persisted, so a reload always
- * returns a full interface.
+ * What goes is deliberately narrow (review call), and is all in the CSS
+ * under body.chrome-hidden: the panels and their docked tabs, the top row
+ * of chips, the page furniture, the frame meter, and Sculpt's brush row.
+ * What STAYS is everything you actually work with or need to read - the
+ * brush sliders, undo/redo, the Negative button, the object stats, the
+ * viewer's transport (its scrubber), and any toast, tooltip or hotkey guide
+ * that appears. Hiding those made the mode useless rather than minimal;
+ * the collapsed tabs were the clutter worth removing. The one notice that
+ * goes is the update notice (ui/updates): it needs nothing done this
+ * minute, and a clear view is what the mode is for. It comes back with the
+ * interface. In the editors only the preview's chrome goes: their sidebar
+ * of project settings is the page, not the preview's furniture.
+ *
+ * In Sculpt the toolbar's Negative group survives, so does the hide button
+ * sitting in it - a visible, labelled control to come back with, on a
+ * device with no Tab key as much as anywhere else. Escape also exits
+ * everywhere, and the state is never persisted, so a reload always returns
+ * a full interface.
  *
  * Hiding uses `visibility: hidden`, not opacity or a transform: the panels'
  * own collapse is transform-only, which leaves their controls focusable
@@ -35,7 +46,24 @@ const LESSONS_LOUD = 2;
 const LESSONS_QUIET = 5;
 const HINT_LOUD_MS = 5000;
 const HINT_QUIET_MS = 2200;
+/** One count for every mode: the lesson is the same wherever it is learnt. */
 const LESSON_KEY = 'bz.sculpt.chromeLessons';
+
+let shared: ChromeToggle | null = null;
+
+/**
+ * The page's toggle, made on first use. The viewer mount asks first; Sculpt
+ * and Armature, mounted over it, get the same one.
+ */
+export function pageChrome(): ChromeToggle {
+  shared ??= new ChromeToggle();
+  return shared;
+}
+
+/** Drop the page's toggle, if there is one: the interface showing, its listener gone (an editor's preview unmounting). */
+export function disposePageChrome(): void {
+  shared?.dispose();
+}
 
 export class ChromeToggle {
   private hidden = false;
@@ -46,9 +74,14 @@ export class ChromeToggle {
   /** Told when visibility flips: pollers idle, the toolbar button restyles. */
   onChange: ((hidden: boolean) => void) | null = null;
 
-  /** Escape is a one-way door out; it never hides. */
+  /**
+   * Escape (ui.show, rebindable) is a one-way door out; it never hides.
+   * It listens here rather than in each mode's handler, so it answers the
+   * same in all of them; Armature, whose Esc deselects and is claimed
+   * before it gets here, shows the interface itself.
+   */
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && this.hidden) this.set(false);
+    if (this.hidden && isShowKey(e)) this.set(false);
   };
 
   constructor() {
@@ -113,7 +146,9 @@ export class ChromeToggle {
   }
 
   private showHint(ms: number): void {
-    this.hint.textContent = 'Interface hidden - press Tab to bring it back';
+    // The key as bound now, so a rebind in Preferences is what it names.
+    const key = keymap.chordFor('ui.chrome') ?? keymap.chordFor('ui.show');
+    this.hint.textContent = key ? `Interface hidden - press ${chordLabel(key)} to bring it back` : 'Interface hidden';
     this.hint.classList.add('is-visible');
     window.clearTimeout(this.hintTimer);
     this.hintTimer = window.setTimeout(() => {
@@ -131,14 +166,21 @@ export class ChromeToggle {
     window.removeEventListener('keydown', this.onKeyDown);
     document.body.classList.remove(CHROME_HIDDEN_CLASS);
     this.hint.remove();
+    if (shared === this) shared = null;
   }
+}
+
+/** Whether a key event is the show-the-interface key (ui.show, Esc by default). */
+export function isShowKey(e: KeyboardEvent): boolean {
+  const show = keymap.chordFor('ui.show');
+  return !!show && chordOf(e) === show;
 }
 
 /**
  * Collapse every open panel; true if there was anything to collapse. Asks
- * the DOM rather than holding references, because the panels come from two
+ * the DOM rather than holding references, because the panels come from
  * different owners - the Render panel belongs to the viewer mount, the
- * other three to sculpt mode - and neither can see the other's instances.
+ * others to Sculpt or Armature - and none can see the others' instances.
  */
 function closeOpenPanels(): boolean {
   const open = document.querySelectorAll('.panel:not(.panel--collapsed)');

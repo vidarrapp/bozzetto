@@ -137,6 +137,107 @@ export async function openArmature(page, base) {
   await page.waitForTimeout(250);
 }
 
+/**
+ * Tab and Esc over the interface, the same in every mode (owner decision):
+ * with `panels` (selectors) open, Tab closes them all, Tab again hides the
+ * interface (body.chrome-hidden, the panels' tabs and the top chips gone),
+ * Tab again brings it back; hidden again, Esc brings it back. `transport`
+ * says the viewer's transport is there and must stay; `keep` lists
+ * selectors that must stay visible (an editor's own top row and sidebar).
+ * Last, Tab on a focused control in an open panel moves the focus and
+ * hides nothing. Leaves the interface showing and the panels closed.
+ */
+export async function chromeChecks(page, t, where, { panels, transport = false, keep = [] }) {
+  const state = () =>
+    page.evaluate(
+      ([sels, keepSels]) => {
+        const shown = (el) => !!el && getComputedStyle(el).visibility !== 'hidden' && el.getClientRects().length > 0;
+        return {
+          hidden: document.body.classList.contains('chrome-hidden'),
+          open: sels.map((s) => {
+            const p = document.querySelector(s);
+            return !!p && !p.classList.contains('panel--collapsed');
+          }),
+          tabs: sels.map((s) => shown(document.querySelector(`${s} .panel__handle`))),
+          help: shown(document.querySelector('.help-toggle')),
+          chips: [...document.querySelectorAll('body > .topbar .topchip')].filter(shown).map((c) => c.textContent.trim()),
+          transport: shown(document.querySelector('.transport')),
+          kept: keepSels.map((s) => shown(document.querySelector(s))),
+          hint: document.querySelector('.chrome-hint')?.textContent ?? '',
+        };
+      },
+      [panels, keep],
+    );
+  const settle = (pred) =>
+    page
+      .waitForFunction(pred, panels, { timeout: 3000 })
+      .catch(() => {})
+      .then(() => page.waitForTimeout(250));
+  const whenHidden = () =>
+    settle((sels) => document.body.classList.contains('chrome-hidden') && sels.every((s) => getComputedStyle(document.querySelector(`${s} .panel__handle`)).visibility === 'hidden'));
+  const whenShown = () => settle(() => !document.body.classList.contains('chrome-hidden'));
+  const openAll = async () => {
+    await page.evaluate((sels) => {
+      for (const s of sels) {
+        const p = document.querySelector(s);
+        if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle')?.click();
+      }
+      document.activeElement?.blur?.();
+    }, panels);
+    await settle((sels) => sels.every((s) => !document.querySelector(s)?.classList.contains('panel--collapsed')));
+  };
+
+  // No fades: a headless page that draws nothing new runs no transitions,
+  // and the hidden state is what is being checked, not its fade.
+  await page.addStyleTag({ content: '.panel, .panel *, .topbar, .topbar *, .transport, .fps-meter { transition: none !important; }' });
+  await openAll();
+  let s = await state();
+  t.ok(s.open.every(Boolean) && !s.hidden, `${where}: the panels open (${s.open})`);
+  await page.keyboard.press('Tab');
+  await settle((sels) => sels.every((sel) => document.querySelector(sel)?.classList.contains('panel--collapsed')));
+  s = await state();
+  t.ok(s.open.every((o) => !o) && !s.hidden && s.tabs.every(Boolean), `${where}: Tab closes them all, their tabs still there (open ${s.open}, hidden ${s.hidden})`);
+  await page.keyboard.press('Tab');
+  await whenHidden();
+  s = await state();
+  t.ok(s.hidden && s.tabs.every((v) => !v) && !s.help && s.chips.length === 0, `${where}: Tab again hides the interface: the panels' tabs, Help and the top chips go (tabs ${s.tabs}, help ${s.help}, chips ${s.chips.join(', ') || 'none'})`);
+  t.ok(/press Tab to bring it back/.test(s.hint), `${where}: and says how to bring it back ("${s.hint}")`);
+  if (transport) t.ok(s.transport, `${where}: the transport stays`);
+  if (keep.length) t.ok(s.kept.every(Boolean), `${where}: the page's own ${keep.join(', ')} stay (${s.kept})`);
+  await page.keyboard.press('Tab');
+  await whenShown();
+  s = await state();
+  t.ok(!s.hidden && s.tabs.every(Boolean) && s.help, `${where}: Tab again brings it all back (tabs ${s.tabs}, help ${s.help})`);
+  await page.keyboard.press('Tab');
+  await whenHidden();
+  const again = (await state()).hidden;
+  await page.keyboard.press('Escape');
+  await whenShown();
+  s = await state();
+  t.ok(again && !s.hidden && s.tabs.every(Boolean), `${where}: hidden again, Esc brings it back (${again} then ${s.hidden})`);
+
+  // Tab on a focused control is the browser's: the focus moves on.
+  await openAll();
+  const focused = await page.evaluate((sel) => {
+    const input = [...document.querySelectorAll(`${sel} input`)].find((i) => !i.disabled && i.getClientRects().length > 0);
+    input?.setAttribute('data-e2e-focus', '');
+    input?.focus();
+    return !!input && document.activeElement === input;
+  }, panels[0]);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(250);
+  const moved = await page.evaluate(() => {
+    const input = document.querySelector('[data-e2e-focus]');
+    input?.removeAttribute('data-e2e-focus');
+    return document.activeElement !== input && document.activeElement !== document.body;
+  });
+  s = await state();
+  t.ok(focused && moved && !s.hidden && s.open.every(Boolean), `${where}: Tab on a focused control moves the focus and leaves the panels and the interface alone (moved ${moved}, open ${s.open}, hidden ${s.hidden})`);
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await page.keyboard.press('Tab');
+  await settle((sels) => sels.every((sel) => document.querySelector(sel)?.classList.contains('panel--collapsed')));
+}
+
 /** A suite's checks; report() prints them and returns the failure count. */
 export function checks(name) {
   const lines = [];

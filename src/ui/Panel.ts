@@ -25,7 +25,8 @@ export interface PanelOptions {
  * a trimmed Lighting of rotate-rig + ground, View) — the timeline lives in the
  * bottom Transport and the theme toggle is global. The editor variant adds the
  * full lighting rig and an in-panel timeline. Keyboard shortcuts live in
- * installShortcuts; it calls toggleCollapsed()/refreshControls() here.
+ * installShortcuts, which calls refreshControls() here; Tab's close-all reaches it
+ * as PANEL_CLOSE_ALL_EVENT (ChromeToggle).
  */
 export class Panel {
   private readonly root: HTMLDivElement;
@@ -75,7 +76,7 @@ export class Panel {
     if (!this.collapsed) this.setCollapsed(true);
   };
 
-  /** Sculpt's Tab tidies the screen before it clears it (ChromeToggle). */
+  /** Tab tidies the screen before it clears it, in every mode (ChromeToggle). */
   private readonly onCloseAll = (): void => {
     if (!this.collapsed) this.setCollapsed(true);
   };

@@ -1,6 +1,6 @@
 import { div } from '../../ui/dom';
 import { topbarLeft, topChip } from '../../ui/topbar';
-import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
+import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
 
 /** Text that may depend on state: read again each time the menu opens. */
 type MenuText = string | (() => string);

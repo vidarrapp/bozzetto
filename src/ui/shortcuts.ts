@@ -5,8 +5,8 @@ import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { showPreferences } from './Preferences';
 
 export interface ShortcutHandlers {
-  /** Toggle the side panel open/closed (Tab). */
-  togglePanel?: () => void;
+  /** Tab: close the open panels, then hide the interface, then bring it back (ChromeToggle.handleTab). */
+  toggleChrome?: () => void;
   /** Toggle the hotkey guide overlay (H). */
   toggleHelp?: () => void;
   /** Toggle the frame meter (P), which remembers the choice. */
@@ -109,13 +109,17 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         viewer.lighting.setShadowsMaster(!viewer.lighting.getShadowsMaster());
         handlers.refresh?.();
         return;
-      case 'ui.panel':
+      case 'ui.chrome':
         // Shift+Tab, and Tab from anything focusable, belong to the browser:
         // this used to swallow both, killing backward traversal everywhere
         // and stranding anyone who tabbed onto a button.
         if (e.key === 'Tab' && tabShouldMoveFocus(e)) return;
         e.preventDefault();
-        handlers.togglePanel?.();
+        handlers.toggleChrome?.();
+        return;
+      case 'ui.show':
+        // The toggle listens for its own way back (ChromeToggle), the same
+        // in every mode; nothing more to do here.
         return;
       case 'view.light':
         e.preventDefault();

@@ -1,5 +1,5 @@
 import { div, onTap } from '../../ui/dom';
-import { PANEL_CLOSE_ALL_EVENT } from './ChromeToggle';
+import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
 
 /**
  * Shared shell for the docked sculpt panels: the sliding root, the edge
