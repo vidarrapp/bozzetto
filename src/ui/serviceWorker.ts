@@ -71,16 +71,8 @@ async function unregisterAll(): Promise<void> {
 
 export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
-  // The desktop shell serves the app off a custom protocol, which cannot
-  // host a worker - and does not need one, since it already ships its
-  // bytes on disk. Attempting it only logs a failure at every launch.
-  if ((window as { bozzettoDesktop?: unknown }).bozzettoDesktop) return;
   const params = new URLSearchParams(window.location.search);
-  // Nor in the desktop app's sign-in window (/?signin=desktop,
-  // docs/accounts.md §2): a page of the site in a session of the app's,
-  // there to sign in and close, with nothing to keep for offline use.
-  if (params.get('signin') === 'desktop') return;
-  // Nor on the files host: it serves templates' files and sends every
+  // Not on the files host: it serves templates' files and sends every
   // other path to the gallery, and a worker registered there (by someone
   // opening the host's root before the redirect existed) would answer the
   // root with the app shell from its cache, in front of the redirect. One

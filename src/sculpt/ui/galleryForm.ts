@@ -1,6 +1,5 @@
 import { div } from '../../ui/dom';
 import { AuthExpiredError, type Role } from '../../admin/api';
-import { isDesktop } from '../../net/origin';
 import { signInButton } from '../../ui/signIn';
 import type { PublishTo } from '../bridge/GallerySave';
 
@@ -69,11 +68,9 @@ export function galleryForm(opts: {
         // sign in, since that is what was asked. Not in another tab: an
         // installed app cannot reach one (it keeps cookies of its own), so
         // the sign-in happens here (the dialog, with accounts on) or the
-        // page is left and come back to, with the work kept. The desktop
-        // app signs in from its Server menu.
+        // page is left and come back to, with the work kept.
         if (found !== 'guest') return;
-        if (isDesktop()) sayGate('Not signed in: Server > Sign In.', false);
-        else sayGate('Not signed in.', true, 'Sign in');
+        sayGate('Not signed in.', true, 'Sign in');
       })
       .finally(() => {
         gateBtn.disabled = false;

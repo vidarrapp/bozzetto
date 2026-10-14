@@ -1,6 +1,6 @@
 import type { Manifest } from '../types/manifest';
 import { validateManifest } from '../types/manifest';
-import { appAsset, apiFetch, isDesktop } from '../net/origin';
+import { appAsset } from '../net/origin';
 
 /**
  * The seam between the viewer and where its bytes come from (frames, HDRIs,
@@ -21,12 +21,6 @@ export class HttpSource implements AssetSource {
   constructor(private readonly manifestUrl: string) {}
 
   async getManifest(): Promise<Manifest> {
-    if (isDesktop() && !this.manifestUrl.startsWith(window.location.origin)) {
-      const u = new URL(this.manifestUrl);
-      const r = await apiFetch(u.pathname + u.search);
-      if (!r.ok || !r.bytes) throw new Error(`Failed to load manifest (${r.status})`);
-      return validateManifest(JSON.parse(new TextDecoder().decode(r.bytes)));
-    }
     const res = await fetch(this.manifestUrl);
     if (!res.ok) throw new Error(`Failed to load manifest (${res.status})`);
     return validateManifest(await res.json());
@@ -55,18 +49,6 @@ export class HttpSource implements AssetSource {
       return res.arrayBuffer();
     }
     const url = new URL(path, this.manifestUrl).href;
-    // In the desktop shell, frames belonging to a REMOTE project are
-    // cross-origin and a renderer fetch would be refused - the deployment
-    // sends no CORS headers. Those go out through the main process like
-    // every other server call, by their path on the configured server: a
-    // frame named on the files host is served there too, under the same
-    // /m/ path (net/origin serverPath). Frames of the bundled demo resolve
-    // onto the app's own protocol and stay a plain fetch.
-    if (isDesktop() && !url.startsWith(window.location.origin)) {
-      const r = await apiFetch(new URL(url).pathname + new URL(url).search);
-      if (!r.ok || !r.bytes) throw new Error(`Failed to load ${path} (${r.status})`);
-      return r.bytes;
-    }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load ${path} (${res.status})`);
     return res.arrayBuffer();

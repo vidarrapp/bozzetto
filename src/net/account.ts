@@ -8,7 +8,7 @@ import {
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
-import { apiFetch, isDesktop, type ApiResult } from './origin';
+import { apiFetch, type ApiResult } from './origin';
 import { isInstalled } from '../ui/launch';
 
 /**
@@ -107,26 +107,11 @@ export interface Whoami {
 }
 
 /**
- * What a sign-in says it is (docs/accounts.md §2): the web, unless this
- * page is the desktop app's sign-in window, which the app opens at
- * `/?signin=desktop` and whose session cookie it then uses for its own
- * requests (forDesktopApp).
+ * What a sign-in says it is (docs/accounts.md §2). The server also knows
+ * 'desktop', which the retired desktop app's sign-in window sent; sessions
+ * made that way keep the mark until they end.
  */
-let client: 'web' | 'desktop' = 'web';
-
-/**
- * This page is the desktop app's sign-in window (`/?signin=desktop`): its
- * sign-ins say `client: 'desktop'`, a code mail carries no link (it would
- * open the default browser, not this window), and nothing is offered that
- * only a browser can keep - passkeys made here, or the autofill's. A
- * passkey on a phone or a security key still signs in.
- */
-export function signInForDesktopApp(): void {
-  client = 'desktop';
-}
-
-/** Whether this page is the desktop app's sign-in window. */
-export const forDesktopApp = (): boolean => client === 'desktop';
+const client = 'web';
 
 // --- config -------------------------------------------------------------------------------
 
@@ -148,18 +133,6 @@ export function loadConfig(): Promise<AccountsConfig | null> {
     });
   }
   return config;
-}
-
-/**
- * The config asked for again, the copy this page holds let go: for the
- * desktop app, whose server can change under a page that stays open (a
- * server set in Server settings, a sign-in that found accounts switched on
- * since the page loaded). Every caller after this gets the new answer;
- * one already holding the old keeps it.
- */
-export function reloadConfig(): Promise<AccountsConfig | null> {
-  config = null;
-  return loadConfig();
 }
 
 async function fetchConfig(): Promise<AccountsConfig | null> {
@@ -189,11 +162,10 @@ export async function accountsOn(): Promise<boolean> {
 /**
  * Whether passkeys can work on this page. They are bound to the RP ID,
  * which `*.pages.dev` previews and a bare IP address never match, so where
- * the page's host is not it, only email codes are offered (§7). The
- * desktop app signs in through a window of its own (Batch 9).
+ * the page's host is not it, only email codes are offered (§7).
  */
 export function passkeysHere(c: AccountsConfig | null): boolean {
-  return !!c?.rpId && c.rpId === location.hostname && browserSupportsWebAuthn() && !isDesktop();
+  return !!c?.rpId && c.rpId === location.hostname && browserSupportsWebAuthn();
 }
 
 /**
@@ -204,7 +176,6 @@ export function passkeysHere(c: AccountsConfig | null): boolean {
 export function noPasskeysWhy(c: AccountsConfig | null): string | null {
   if (passkeysHere(c)) return null;
   if (!c?.rpId) return 'Passkeys are not set up on this server';
-  if (isDesktop()) return `In the desktop app, passkeys are added in a browser, at ${c.rpId}`;
   if (c.rpId !== location.hostname) return `Passkeys work at ${c.rpId}, not at this address`;
   return 'This browser cannot use passkeys';
 }
@@ -217,7 +188,7 @@ export function noPasskeysWhy(c: AccountsConfig | null): string | null {
  * instead.
  */
 export function wantsLink(): boolean {
-  if (isInstalled() || isDesktop() || forDesktopApp()) return false;
+  if (isInstalled()) return false;
   return !onAppleTouch();
 }
 
@@ -394,7 +365,6 @@ function jsonOf(res: ApiResult): Record<string, unknown> | null {
 /** The refusal a response is. */
 function refusalOf(res: ApiResult): AccountError {
   if (res.signedOut) return new AccessExpiredError();
-  // The desktop's proxy reports no server, or a connection it could not make, as status 0.
   if (res.status === 0) return new AccountError(res.error ?? 'No connection. Check it, then try again.', 0, 'offline');
   const body = jsonOf(res) ?? {};
   const code = typeof body.code === 'string' ? body.code : res.status >= 500 ? 'server' : 'refused';

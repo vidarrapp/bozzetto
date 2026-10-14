@@ -8,8 +8,8 @@ vulnerability reporting: on the repository's **Security** tab, choose
 (<https://github.com/vidarrapp/bozzetto/security/advisories/new>). Please do
 not open a public issue, pull request or discussion for one.
 
-A useful report says what is affected (the site, the account system, the
-desktop app, the release workflow), the version or the commit, the steps to reproduce it, and
+A useful report says what is affected (the site, the account system), the
+version or the commit, the steps to reproduce it, and
 what an attacker gains. A proof of concept helps; keep it to your own data
 and accounts.
 
@@ -24,8 +24,7 @@ Fixes go into the current versions only:
 | What | Supported |
 | --- | --- |
 | The web app, as deployed from `main` | yes |
-| The latest desktop release | yes |
-| Older desktop releases | no: update to the latest |
+| The retired desktop app (releases 0.1.0 to 0.6.2, now withdrawn) | no |
 
 ## Scope
 
@@ -47,11 +46,7 @@ In scope:
   scope whether or not accounts are switched on in production yet; test
   them on your own deployment or on `localhost` (`npm run cf:dev`), with
   accounts of your own.
-- The desktop app: the Electron shell in `electron/`, its `bozzetto://`
-  protocol, the native file handling, and how it talks to a server you point
-  it at.
-- The release pipeline: the workflows in `.github/workflows/`, and the
-  installers, `SHA256SUMS` and provenance attestations they publish.
+- The workflows in `.github/workflows/`.
 
 Out of scope:
 
@@ -60,9 +55,6 @@ Out of scope:
 - A deployment that does not follow `docs/deployment.md` (no Access
   application in front of `/admin`, say), unless that document itself is
   what is wrong.
-- That the desktop builds are unsigned, so macOS and Windows warn before
-  opening them. This is known; check a download against `SHA256SUMS` and its
-  attestation instead (see Releasing in `docs/desktop.md`).
 - Denial of service by volume, and social engineering.
 - Vulnerabilities in a dependency with no demonstrated effect on Bozzetto:
   please report those to the dependency.

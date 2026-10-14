@@ -39,7 +39,7 @@ import {
   type SignIn,
   type Visibility,
 } from '../admin/api';
-import { apiFetch, apiJson, isDesktop } from '../net/origin';
+import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
@@ -102,9 +102,8 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     // the gallery went on offering the owner's things until each one failed.
     chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
     // And the way out (owner request), so a sign-in is not left behind on a
-    // device the owner is done with. The desktop app signs out in Server
-    // settings, where it signs in.
-    if (admin && !isDesktop()) chip(signOutChip());
+    // device the owner is done with.
+    if (admin) chip(signOutChip());
   }
   if (signIn.suspended) {
     // Every time, while it lasts: nothing of the account answers until the
@@ -129,10 +128,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     app.querySelector('.landing__head > div')?.appendChild(note);
   }
 
-  // Published projects come from whichever server is configured. On the web
-  // that is the site itself; in the desktop app it is nothing at all until
-  // someone points it at their own deployment, and an empty shelf is the
-  // right answer there rather than an error. The owner gets the full list,
+  // Published projects come from the site. The owner gets the full list,
   // private projects and scenes included; if it cannot be had (offline with
   // nothing cached) the public one stands in, and the page is a guest's.
   const owned = admin ? await apiJson<ProjectSummary[]>('/admin/api/projects') : null;
@@ -1002,24 +998,11 @@ function setBadges(host: HTMLElement, labels: string[]): void {
 }
 
 /**
- * A server thumbnail, as the two image layers every card draws. On the web
- * its path is the source. The desktop app's page cannot load a server's
- * images itself - its policy allows only its own and blob: images, and the
- * deployment sends no CORS headers - so there the bytes come through the
- * main process like every other server call. No picture: the gradient
- * placeholder stands in.
+ * A server thumbnail, as the two image layers every card draws; its path
+ * is the source. No picture: the gradient placeholder stands in.
  */
 export function setPicture(thumb: HTMLElement, path: string): void {
-  const source = isDesktop()
-    ? apiFetch(path)
-        .then((r) =>
-          r.ok && r.bytes && r.contentType.startsWith('image/')
-            ? URL.createObjectURL(new Blob([r.bytes], { type: r.contentType }))
-            : null,
-        )
-        .catch(() => null)
-    : Promise.resolve(path);
-  void source.then((src) => {
+  void Promise.resolve(path).then((src) => {
     if (!src) return;
     const layer = (cls: string): HTMLImageElement => {
       const img = document.createElement('img');

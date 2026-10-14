@@ -1,6 +1,6 @@
 # Development
 
-Putting the site on Cloudflare is in [deployment.md](deployment.md), building and releasing the desktop app in [desktop.md](desktop.md), and what the app does in the [README](../README.md).
+Putting the site on Cloudflare is in [deployment.md](deployment.md), and what the app does in the [README](../README.md).
 
 ## Getting started
 
@@ -14,7 +14,7 @@ npm run dev      # generates a demo timelapse, then starts Vite
 ```
 
 With no backend running, the viewer falls back to a synthetic bust at `?tl=demo`.
-It is a test fixture and ships in neither the live site nor the desktop app;
+It is a test fixture and does not ship on the live site;
 `npm run build:test` is the build that keeps it, which is what the test suites
 need.
 
@@ -43,10 +43,6 @@ npm run check:functions     # the Functions against a local wrangler pages dev (
 npm run db:migrate          # apply D1 migrations to the remote database
 npm run e2e:build           # test build, then the browser smoke tests (needs Playwright)
 npm run e2e -- <suite ...>  # the smoke tests against the current test build
-npm run desktop             # build and run the desktop app
-npm run build:desktop       # the desktop build alone, into dist-desktop/
-xvfb-run -a node tests/e2e/desktop.mjs  # the desktop app's own suite, on a virtual display
-npm run dist:desktop        # package the desktop app for this platform, into release/
 ```
 
 The Blender scripts behind the base meshes and the mannequins, and the
@@ -85,7 +81,6 @@ npm run export <id>          # writes a self-contained <id>.html
 - Accounts, behind `ACCOUNTS_ENABLED`: members join by invite and sign in with passkeys or six-digit email codes, in a dialog over the page, with Turnstile keeping out bots. Sessions are cookies the page cannot read, and once the owner has an account the owner tools want it signed in as well as Access. Each account keeps its own projects on `/api/me`, which mirror the owner's routes, within a quota (250 MB; the owner's 10 GB); their files come only through a private route that no cache keeps. **Download my data** is zipped in the browser with client-zip, a file at a time, and an account is deleted a step at a time until nothing of it is left.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
 - A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. The other HDRIs, the gallery list and the sign-in answer (with accounts on, the account, without its address, the site's settings and the list of My projects, never their files) are cached as they are used, so an installed app keeps working offline, owner features included; signing out, or a sign-in that has gone, drops what was kept of the account. The kept sign-in answer stands in only when there is no network: an expired sign-in reaches the app as what it is, Cloudflare Access's redirect to its login, and is not taken for being offline. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
-- The desktop build serves the app from a custom protocol (a secure context, which WebGPU and IndexedDB both need) with no Node in the renderer. Server calls go through the main process, so a deployment needs no CORS changes to be publishable to from the app.
 
 ## Project layout
 
@@ -125,7 +120,7 @@ src/
   ui/account/              accounts: the sign-in dialog, Join, Account,
                            My projects, the data download's zip
   create/                  the timelapse uploader's entry
-  desktop/, net/           the desktop shell's renderer side, and where API calls go
+  net/                     where API calls go, and the accounts client
   embed/main.ts            entry for the self-contained single-file export
   export/singleFile.js     pure bundler core shared by the editor and CLI
   admin/
@@ -134,7 +129,6 @@ src/
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
-electron/                  the desktop app: main process, bozzetto:// protocol, server bridge
 public/assets/             matcaps, environments, fonts, brush stencils, base meshes, mannequins
 public/legal/              the Privacy notice and the Terms
 functions/

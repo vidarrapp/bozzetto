@@ -1,6 +1,5 @@
 import { signOut, type Role, type SignIn } from '../../admin/api';
 import { errorText, suspensionText } from '../../net/account';
-import { isDesktop } from '../../net/origin';
 import { TopMenu, type MenuItem } from '../../sculpt/ui/TopMenu';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { installChip } from '../InstallHint';
@@ -37,7 +36,6 @@ export function accountChips(signIn: SignIn, role: Role, signedIn: () => void): 
     const chip = topChip('Suspended') as HTMLButtonElement;
     chip.title = said;
     chip.addEventListener('click', () => failNotice(said));
-    if (isDesktop()) return [chip];
     const out = topChip('Sign out') as HTMLButtonElement;
     out.addEventListener('click', () => {
       out.disabled = true;
@@ -69,9 +67,9 @@ export function accountChips(signIn: SignIn, role: Role, signedIn: () => void): 
     return chips;
   }
   const chips: HTMLElement[] = [topChip('My projects', '/?me')];
-  if (role === 'owner' && !isDesktop()) chips.push(topChip('Owner tools', '/admin/'));
+  if (role === 'owner') chips.push(topChip('Owner tools', '/admin/'));
   const items: MenuItem[] = [{ label: 'Account', action: () => window.location.assign('/?account') }];
-  if (!isDesktop()) {
+  {
     items.push({
       label: 'Sign out',
       action: async () => {

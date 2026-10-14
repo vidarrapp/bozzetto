@@ -1165,7 +1165,10 @@ export const savedToast = (page) =>
         return el && el.dataset.state !== 'running' ? { state: el.dataset.state, text: el.textContent } : null;
       },
       null,
-      { timeout: 60_000 },
+      // A save on the GitHub runner can run past a minute: the scene is
+      // packed and uploaded by a machine about three times slower than
+      // the ones the suites are written on.
+      { timeout: 150_000 },
     )
     .then((h) => h.jsonValue())
     .catch(() => ({ state: 'none', text: '' }));
@@ -1196,37 +1199,6 @@ export const signInContext = (ctx) =>
   ctx.route('**/admin/api/whoami', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'owner@example.com' }) }),
   );
-
-/**
- * The desktop app's bridge, stood in for before the page's own scripts
- * run. isDesktop() asks only whether window.bozzettoDesktop is there, and
- * this answers every call the way an app with no server configured, no
- * recovery file and nothing picked in a dialog would.
- */
-function desktopBridgeStub() {
-  const none = () => () => {};
-  const answers = {
-    version: 'test',
-    platform: 'linux',
-    getServer: async () => ({ url: null, signedIn: false }),
-    setServer: async () => ({ url: null, signedIn: false }),
-    api: async () => ({ ok: false, status: 0, error: 'No server' }),
-    recentFiles: async () => [],
-    readRecovery: async () => null,
-    writeRecovery: async () => true,
-    clearRecovery: async () => true,
-    confirm: async () => true,
-    ask: async () => 0,
-    message: async () => true,
-    setDocument: () => {},
-    saveDone: () => {},
-    onCommand: none,
-    onOpenPath: none,
-  };
-  window.bozzettoDesktop = new Proxy(answers, {
-    get: (o, k) => (k in o ? o[k] : k === 'then' ? undefined : async () => null),
-  });
-}
 
 /** The Capture window and its chip, as the page shows them. */
 const captureState = (page) =>
@@ -6210,12 +6182,9 @@ export const suites = {
   // they were, and New clears the frames as it always has; nothing about
   // recording is offered elsewhere either. Signed in later in the session
   // (the forms' re-check, or the page coming back to the front), the chip
-  // appears and a stored "on" records. The desktop app records signed in
-  // or not: its bridge is stood in for, since isDesktop() asks only
-  // whether window.bozzettoDesktop exists.
+  // appears and a stored "on" records.
   async captureGate(page, base, t) {
     const ctx = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
-    const desk = await page.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
     try {
       const web = await ctx.newPage();
       const errors = [];
@@ -6295,34 +6264,8 @@ export const suites = {
       t.ok(r.allowed && r.chip, `back in front, signed in meanwhile, the page asks again and the chip appears (${show(r)})`);
       t.ok(!errors.length, `no page errors on the web${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 
-      // The desktop app: no sign-in, no server, and the chip from the start.
-      await desk.addInitScript(desktopBridgeStub);
-      const app = await desk.newPage();
-      const appErrors = [];
-      app.on('pageerror', (e) => appErrors.push(String(e)));
-      await openSculpt(app, base, '&q=low');
-      const desktop = await app.evaluate(() => {
-        const { recorder, captureWindow, fileMenu } = window.__sculpt;
-        return {
-          desktop: !!window.bozzettoDesktop,
-          allowed: recorder.isAllowed(),
-          chip: !captureWindow.chip.hidden,
-          row: [...document.querySelectorAll('.topbar--left > *')].filter((c) => !c.hidden).map((c) => c.textContent.trim()).join(', '),
-          fileMenu: !!fileMenu,
-        };
-      });
-      t.ok(desktop.desktop && desktop.allowed && desktop.chip && !desktop.fileMenu, `in the desktop app recording is allowed and the chip shows, with no sign-in (row: ${desktop.row})`);
-      await app.evaluate(() => {
-        const { captureWindow } = window.__sculpt;
-        captureWindow.open();
-        [...captureWindow.root.querySelectorAll('label.checkbox')].find((l) => l.textContent.includes('Record timelapse')).querySelector('input').click();
-      });
-      await app.waitForFunction(() => window.__sculpt.recorder.frameCount() > 0, null, { timeout: 60_000 }).catch(() => {});
-      t.ok(await app.evaluate(() => window.__sculpt.recorder.isEnabled() && window.__sculpt.recorder.frameCount() > 0), 'and the box records there');
-      t.ok(!appErrors.length, `no page errors in the desktop app${appErrors.length ? `: ${appErrors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();
-      await desk.close();
     }
   },
 
@@ -7192,29 +7135,12 @@ export const suites = {
   // which keeps the work (and asks first when the autosave cannot); an
   // install with a file missing says so, and Try again recovers once the
   // file is served. The hotkey guide names the version and checks for
-  // updates; the desktop app names it and checks nothing.
+  // updates.
   async updates(page, base, t) {
     const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
     const OLD = `${pkg.version} (1111111)`;
     const NEW = `${pkg.version} (2222222)`;
     const browser = page.context().browser();
-
-    // The desktop app: no worker, so the version alone, and never a notice.
-    const desk = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
-    try {
-      await desk.addInitScript(desktopBridgeStub);
-      const app = await desk.newPage();
-      await openSculpt(app, base, '&q=low');
-      const g = await app.evaluate(() => ({
-        version: document.querySelector('.help-guide__ver')?.textContent ?? null,
-        check: !!document.querySelector('.help-guide__check'),
-        notice: !!document.querySelector('.update-notice'),
-      }));
-      const shape = new RegExp(`^Bozzetto ${pkg.version.replace(/\./g, '\\.')} \\((?:[0-9a-f]{7,}|dev)\\)$`);
-      t.ok(shape.test(g.version ?? '') && !g.check && !g.notice, `the desktop app's guide names the version and offers no check, and no notice comes (${JSON.stringify(g)})`);
-    } finally {
-      await desk.close();
-    }
 
     const built = Date.now();
     const { dir, older, newer } = await twoBuilds(`1111111${'a'.repeat(33)}`, `2222222${'b'.repeat(33)}`);

@@ -11,13 +11,10 @@ const ROLE_WAIT_MS = 5000;
 
 /**
  * The File menu: a chip in the top row, beside the gallery link, that
- * drops the file commands. The web page's counterpart to the desktop
- * app's native File menu - same commands, same FileActions behind them -
- * and absent in the desktop app, where the native one takes over.
+ * drops the file commands, with FileActions behind them.
  *
- * Questions are asked here, not in FileActions: the web asks with a plain
- * confirm(), the desktop with a Save / Don't Save / Cancel box, and the
- * scene logic underneath is the same either way.
+ * Questions are asked here, not in FileActions: a plain confirm(), and
+ * the scene logic underneath is the same whoever asks.
  */
 export class FileMenu {
   private readonly menu: TopMenu;
@@ -36,8 +33,7 @@ export class FileMenu {
   });
   /**
    * A save found the sign-in expired. The mount asks the probe again, so
-   * the forms and this menu all say so; a desktop sign-in that ended well
-   * is reported the same way. Resolves once the probe has answered.
+   * the forms and this menu all say so. Resolves once the probe has answered.
    */
   onSignInChange: (() => Promise<unknown> | void) | null = null;
 
@@ -249,9 +245,8 @@ export class FileMenu {
 /**
  * How a Save to library that did not upload ended, on its notice: what was
  * kept and where, and the next step - Sign in again, a connection, or the
- * server's own words. Shared by the web's File menu and the desktop app's.
- * `signedIn` hears a sign-in that ended well, in the desktop app's window
- * or the sign-in dialog; `viaOverride` says which sign-in to renew when
+ * server's own words. `signedIn` hears a sign-in that ended well in the
+ * sign-in dialog; `viaOverride` says which sign-in to renew when
  * the caller knows better than the error (ui/signIn).
  */
 export function reportNotUploaded(

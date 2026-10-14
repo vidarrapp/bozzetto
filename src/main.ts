@@ -190,13 +190,11 @@ async function loadProject(
   if (res.ok && !servedHtml && res.bytes) {
     const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
     // Frame paths in an API manifest are root-absolute (/media/...), so they
-    // must resolve against the SERVER, not the app. apiManifestUrl is that
-    // origin on the desktop and the site's own on the web.
-    return { manifest, manifestUrl: await apiManifestUrl(apiPath) };
+    // resolve against the site, which apiManifestUrl says.
+    return { manifest, manifestUrl: apiManifestUrl(apiPath) };
   }
-  // status 0 is "no server configured" on the desktop - the same as a 404
-  // here: nothing is answering, so try the bundled copy.
-  if (!res.ok && res.status !== 404 && res.status !== 0) {
+  // A 404 means nothing is answering for this id: try the bundled copy.
+  if (!res.ok && res.status !== 404) {
     throw new Error(`Failed to load project (${res.status})`);
   }
   // A private project is a 404 publicly. With accounts on, the account
@@ -229,7 +227,7 @@ async function accountManifest(id: string): Promise<{ manifest: Manifest; manife
     const res = await apiFetch(path);
     if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
     const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
-    return { manifest, manifestUrl: await apiManifestUrl(path) };
+    return { manifest, manifestUrl: apiManifestUrl(path) };
   } catch (err) {
     if (err instanceof SceneProjectError) throw err;
     return null;
@@ -248,7 +246,7 @@ async function ownerManifest(id: string): Promise<{ manifest: Manifest; manifest
     const res = await apiFetch(path);
     if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
     const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
-    return { manifest, manifestUrl: await apiManifestUrl(path) };
+    return { manifest, manifestUrl: apiManifestUrl(path) };
   } catch (err) {
     if (err instanceof SceneProjectError) throw err;
     return null;

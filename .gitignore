@@ -12,13 +12,9 @@ wrangler.toml
 # before dev/build). Kept out of git so binaries don't live in history.
 public/timelapses/demo/
 public/assets/matcaps/clay.png
-dist-desktop/
-release/
 
 # Secrets that must never be committed: Wrangler's local variables, env
-# files, code-signing certificates, and npm credentials.
+# files, and npm credentials.
 .dev.vars*
 .env*
-*.p12
-*.pfx
 .npmrc

@@ -7,7 +7,9 @@ A *bozzetto* is the small clay study a sculptor makes before the real piece, whe
 
 Bozzetto is a studio in the browser to pose, sculpt, render and timelapse. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and capture every stage as real geometry to play back as a timelapse you can relight, orbit and scrub. Not a pre-rendered video.
 
-It installs to an iPad's home screen and works offline, and there are desktop builds for macOS, Windows and Linux. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
+It installs to an iPad's home screen and works offline. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
+
+This is Bozzetto Web, the web app and its service. Its desktop counterpart, Bozzetto Studio, is a separate product; see [What is changing](#what-is-changing).
 
 **Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se)**
 
@@ -51,10 +53,10 @@ Pick **Create → New Sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 - **Real-world sizes.** A scene is in metres and the interface says centimetres (millimetres under one): the active object's size under the Scene panel's list, the brush's radius on the rail and in the Tool panel (with World-scale size on), a voxel's size under Remesh and over the grid, Extract's thickness in millimetres. The floor is fixed at 0, a disc several metres across that does not move or resize with the scene, and new objects are placed standing on it; **Floor offset** in the Scene panel raises or lowers it, and is saved with the look and the file.
 - **Create menu** in the Scene panel: seven primitives at real sizes, as the menu says (sphere, cube, cylinder, cone and capsule 25 cm tall, torus 25 cm across, plane 50 cm), and a **base-mesh library**, Blender Studio's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#asset-bundles): male and female figures in realistic and stylized topology, voxel-remeshed blockout figures, heads (realistic, stylized, planar, low-poly cage, blockout), hands, feet, eyes, jaws and skulls. A figure arrives with its eyes as separate objects, one undo step, at its own size (the male realistic body is 169 cm tall), standing on the floor; a blockout arrives as one remeshed shell or, with the menu's switch, as its fifty separate lumps. The files are precached with the app, so the whole library works offline.
 - **Object transforms**: a unified move/rotate/scale gizmo whose centre moves across the screen, single modes on `W`/`E`/`R`, with a settings panel for which handles show. Multi-object scenes with an outliner, whose rows `↑` and `↓` step through (`Shift` extends the selection), a Select tool (`Q`) with marquee and Maya-style modifiers, and duplicate, delete, mirror, radial copies, merge (a voxel union) and the gizmo all working on the whole selection. Locked objects draw as if masked. **Solo** (`Alt`+`Q`, or the Scene panel's **Solo** button) shows the active object alone until you press it again.
-- **Present mode**: the **Present** button in the top row, beside Capture, or `Shift`+`P` (rebindable in Preferences), shows the model on its own. The toolbar, the brush rail, the Scene, Model and Tool panels, the brush ring and the object stats go, and the brushes, the gizmo and every key that edits are locked, while orbit, pan and zoom carry on, fingers included. The Render panel stays for the lights, environment, material (with **Sculpt colours** / **Plain colour**), ambient occlusion, depth of field and background. A bar along the bottom has a **Turntable**, a slow turn about the model's vertical axis at the speed its slider sets, which `Space` (the play/pause key, rebindable in Preferences) starts and stops and any press, touch or wheel on the view stops, and which the timelapse never records; **Save image**, a PNG at twice the window (twice the screen's pixel density, at most 4096 pixels across) with its smoothing finished and no interface in it, downloaded as `<title>.png` or, in the desktop app, saved where its dialog says; and **Done**. Under them one row saves the turntable as a clip: **MP4** or **GIF**, the window at **1×** or **2×** (at most 1920 pixels on the long side for MP4, 1080 for GIF), and **Save turntable**, one full turn from the current view at the turntable's speed (36°/s makes ten seconds), at 30 frames a second for MP4 and 15 for GIF. Each frame is rendered on its own with its smoothing finished, not grabbed from the screen, while a progress bar with **Cancel** stands in for the row; the view is put back afterwards, the clip downloads as `<title>-turntable.mp4` or `.gif` (the desktop app asks where), and nothing reaches the timelapse. `Tab`, or the hide button in the toolbar's corner, hides everything, this bar included, and brings it all back. **Done**, the button or `Esc` puts the interface back as it was, the open panels, the tool and the brush with it. **Save to library** and the Capture window's publish from Present mode store the view (camera position, target and lens) and the whole look, its tone mapping included, as the project's own, so the viewer and its gallery card open the model at that camera and look, and the thumbnail is of the presented view.
+- **Present mode**: the **Present** button in the top row, beside Capture, or `Shift`+`P` (rebindable in Preferences), shows the model on its own. The toolbar, the brush rail, the Scene, Model and Tool panels, the brush ring and the object stats go, and the brushes, the gizmo and every key that edits are locked, while orbit, pan and zoom carry on, fingers included. The Render panel stays for the lights, environment, material (with **Sculpt colours** / **Plain colour**), ambient occlusion, depth of field and background. A bar along the bottom has a **Turntable**, a slow turn about the model's vertical axis at the speed its slider sets, which `Space` (the play/pause key, rebindable in Preferences) starts and stops and any press, touch or wheel on the view stops, and which the timelapse never records; **Save image**, a PNG at twice the window (twice the screen's pixel density, at most 4096 pixels across) with its smoothing finished and no interface in it, downloaded as `<title>.png`; and **Done**. Under them one row saves the turntable as a clip: **MP4** or **GIF**, the window at **1×** or **2×** (at most 1920 pixels on the long side for MP4, 1080 for GIF), and **Save turntable**, one full turn from the current view at the turntable's speed (36°/s makes ten seconds), at 30 frames a second for MP4 and 15 for GIF. Each frame is rendered on its own with its smoothing finished, not grabbed from the screen, while a progress bar with **Cancel** stands in for the row; the view is put back afterwards, the clip downloads as `<title>-turntable.mp4` or `.gif`, and nothing reaches the timelapse. `Tab`, or the hide button in the toolbar's corner, hides everything, this bar included, and brings it all back. **Done**, the button or `Esc` puts the interface back as it was, the open panels, the tool and the brush with it. **Save to library** and the Capture window's publish from Present mode store the view (camera position, target and lens) and the whole look, its tone mapping included, as the project's own, so the viewer and its gallery card open the model at that camera and look, and the thumbnail is of the presented view.
 - **Full render controls** while sculpting: lighting, matcaps, tone mapping, ambient occlusion, depth of field, environment and camera. The look saves with your scene.
 - **Panels**: Scene, the object list, and Model, the active object's material, topology and mask, dock down the left edge; Render and Tool, the active brush's settings, down the right. One panel per edge is open at a time, and an edge's tabs stay clear of each other on every iPad screen.
-- **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery. The **Capture** button in the top row, beside File and Edit, opens a floating window with **Record timelapse**, the frame count, **Clear frames** and the two publish forms. It blocks nothing, so you keep sculpting with it open; drag it by its title bar, and it stays where you put it for the session. Close it with its button, the Capture button or `Esc`. Recording is off until you tick the box, and the device remembers the choice. It only records where the timelapse can go somewhere: signed in on the web or the iPad, including once that sign-in has expired (the reel waits for **Sign in again**), or in the desktop app. A guest on the web has no Capture button and records nothing.
+- **Timelapse capture**: mesh snapshots after each stroke, stored locally, publishable to the gallery. The **Capture** button in the top row, beside File and Edit, opens a floating window with **Record timelapse**, the frame count, **Clear frames** and the two publish forms. It blocks nothing, so you keep sculpting with it open; drag it by its title bar, and it stays where you put it for the session. Close it with its button, the Capture button or `Esc`. Recording is off until you tick the box, and the device remembers the choice. It only records where the timelapse can go somewhere: signed in on the web or the iPad, including once that sign-in has expired (the reel waits for **Sign in again**). A guest has no Capture button and records nothing.
 - **Files**: `.bozz` save and open for the whole scene, plus OBJ import and export.
 - **Scene library**: signed in, **Save to library** stores the scene in Projects on the server, private until you make it public, with its progress shown while it uploads; saving again updates the same project in place, and a copy stays on the device so the scene still opens offline. With accounts on it goes to your own **My projects** instead, whoever you are signed in as, the owner included: private, with no id or visibility to choose, and counted against your storage; when that is full the scene stays on the device, and the notice says how full (for example "Your storage is full (248 of 250 MB)"). Signed out it downloads a `.bozz` file (the share sheet, on an iPad), because browser storage does not survive a reinstall, and **Keep on this device** still puts a scene on the device's own shelf. Saved scenes appear as gallery cards with a thumbnail, object and triangle counts and their size; open one with a tap, rename it in place, delete it when you are done. A card for a scene kept only on the device says so, and signed in it offers **Upload to Projects**. A save whose upload cannot go, because the sign-in has expired or there is no connection, keeps the scene on the device as **Not uploaded**, with **Upload to Projects** on its card, and the notice says which it was; an expired sign-in comes with **Sign in again**, which goes through the login and back to the same scene. Separate from the autosave, which still resumes your work in progress.
 - **Made for iPad**: fingers navigate in every tool, one to orbit and two to pan and zoom, and only the Pencil and the mouse sculpt, select or move objects (**Edit → Preferences** lets fingers sculpt too, for working without a pen). A finger tap still selects in the Select tool and under the gizmo. A resting palm never blocks the Pencil, a long press brings up none of Safari's callouts, loupes or menus, and the touch toolbar covers keyboard-less use. Carving is a tap on **Negative** rather than a finger held on it while you draw, because a fingertip on the glass hides the Pencil from the page until it lifts.
@@ -184,32 +186,28 @@ The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs ent
 
 A single mesh works too: drop one file and get a shareable 3D model on one page. To sculpt on an OBJ instead, pick **Create → Import OBJ**: it opens in Sculpt as a new scene.
 
-## Desktop app
+## What is changing
 
-A packaged build for macOS, Windows and Linux, for when you want Bozzetto as a
-real application: native **Open** and **Save** over `.bozz` files (double-click
-one to open it), a window title that names the open document and marks unsaved
-changes, a save prompt before closing, recent files, and crash recovery.
+Decided 2026-10-14. None of it is in the web app yet; the changelog says
+when each piece lands.
 
-Download it from the [latest release](https://github.com/vidarrapp/bozzetto/releases/latest),
-or from the gallery's **Install** card, which leads with the build for your
-platform. Every environment, base mesh and mannequin ships inside it.
-
-It is local by default and makes no network requests at all. Point it at a
-Bozzetto server under **Server → Server Settings** if you want to publish
-from it; signing in opens a real window. On a server with accounts
-that is the site's own sign-in, which leads with a code by email (a passkey on
-a phone or a security key works too), and Server Settings then says which
-account you are signed in as; on one without, it is Cloudflare Access. Signed
-in, **File → Save to Library** and the Capture window's publishing save to My
-projects on that server (Projects, without accounts), as they do on the web;
-without a server the scene stays on this machine. **Sign Out** ends the
-session on the server as well as in the app.
-
-**Known issue:** after signing in to a server, the app can stop responding
-for a few minutes on some machines when v-sync is off. Turning **V-sync** on
-under **Edit → Preferences → Desktop** avoids it. We are looking for reports
-of this from real hardware.
+- **The Electron desktop app is retired.** Its releases (0.1.0 to 0.6.2)
+  are withdrawn, its code is gone from this repository, and the Install
+  card no longer offers it. The web app is the one product here.
+- **Bozzetto Studio** is the desktop version: a native sculpting and
+  painting application rebuilt in Rust, closed source, in a repository of
+  its own. It will be a public alpha, free of charge until it reaches 1.0,
+  and sold at a fixed price from 1.0 on. Downloads and alpha reports go
+  through [vidarrapp/bozzetto-studio-releases](https://github.com/vidarrapp/bozzetto-studio-releases).
+  Alpha builds are unsigned; files saved by an alpha will open in 1.0.
+- **Timelapse recording moves to Studio.** The web app keeps undo and
+  autosave, and stops recording a timelapse as you sculpt; the Capture
+  window and its reel go with it. The viewer and the gallery keep playing
+  timelapses, and Studio exports the same frame format, so what is made
+  there plays here.
+- **The web app keeps its JavaScript engine.** Studio's Rust core stays
+  closed for now; whether the web app adopts it is revisited once Studio
+  reaches parity.
 
 ## Features
 
@@ -233,7 +231,6 @@ of this from real hardware.
 - Signed in, the gallery is your whole list, the templates included: private projects carry a **Private** badge and every card a switch to change it, making a project public makes it a template, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see the templates the gallery lists, and nothing else.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
 - **Install** and **Log in**, which becomes **Projects** once signed in, and **Log in** again when the sign-in expires, said once under the title with **Sign in again**. With accounts on, **Sign in** and **Install** for a guest; signed in, **My projects** and an **@handle** menu (**Account**, **Sign out**), and **Owner tools** for the owner. The foot links the Privacy notice and the Terms.
-- The **Install** card also offers the desktop app, reading the latest GitHub release so the links never point at a stale version, and leading with the build for the visitor's platform.
 
 ### Public editor (`/create/`)
 
@@ -265,9 +262,7 @@ within 0 to 1, and an angle wraps round.
 Every key below can be changed under **Edit → Preferences** (`Ctrl`+`,`). The
 guide (`H`) shows whatever keys are set. At its foot it names the version
 running, the release and the commit it was built from, as in
-`0.5.3 (2e735c6)`, with **Check for updates** beside it. The desktop app names
-it there and, on macOS, in its About panel, and has nothing to check: it
-updates by release.
+`0.5.3 (2e735c6)`, with **Check for updates** beside it.
 
 | Input | Action |
 | --- | --- |
@@ -327,6 +322,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **The desktop app is retired.** The Electron shell, its renderer side, its release workflow, its test suite and its documentation are removed, and its releases are withdrawn from GitHub. The Install card no longer offers downloads, so it asks GitHub for nothing, and the privacy notice no longer names GitHub. The sign-in dialog has no desktop window variant, Preferences has no Desktop group, and the gallery, Sculpt and the viewer carry no desktop branches. The web app is Bozzetto Web; its desktop counterpart is Bozzetto Studio, a separate product (see What is changing).
 - **Real-world sizes, and a fixed floor.** One unit is a metre now, and the interface speaks centimetres (millimetres under one): object sizes in the Scene panel, the brush's radius with World-scale size on (its slider steps a fifth of a millimetre), the remesh voxel in the Model panel and over the grid, Extract's thickness, the figure's height in the Armature panel, and the viewer's diagnostics. Primitives come at real sizes, as the Create menu says: a 25 cm sphere (the new scene's), cube, cylinder, cone and capsule, a 25 cm torus and a 50 cm plane. Base meshes and the mannequins come at their files' own sizes, the bodies from 162 to 180 cm, with nothing scaling them to a common size any more. The floor is fixed at 0 in Sculpt, Armature and the viewer, a disc several metres across whose fade widens only as the camera stands back, and no longer moves or resizes with the scene; new objects stand on it, figures with their soles on it. **Floor offset** (the Scene panel, the Armature panel, the editor's Render panel) raises or lowers it, saved with the look and the project. Send to Sculpt keeps the figure's feet on Sculpt's floor. The camera's clipping, depth of field, ambient occlusion, the shadow fit (its normal bias too, which was a fixed 0.1 of a unit) and Extract's gap all follow the subject's size, so a 25 cm sphere renders as the old one did.
 - **Scenes from before.** A scene, autosave, `.bozz` file or project without the new `units: 'm'` marker opens exactly as it was, on its old sizes with the floor following it, and offers **Set scale** once in a banner: pick an object (the largest to start with), type how tall it really is in centimetres, and the whole scene is scaled by that one factor, set on the floor and marked; **Not now** keeps it as it is, and the offer away. The undo history starts over at Set scale. An OBJ opened from the gallery's Create → Import OBJ is a scene without it too, at the file's own coordinates, so Set scale asks for its height; File → Import OBJ into a scene on real units fits it to 25 cm. New scenes carry the marker from the start, in the scene record, the `.bozz` header and a published project's manifest (`units`, which the server takes as `'m'` or null and refuses otherwise). A project published without it keeps playing as it did in the viewer until it is published again from a scene that has it, or set to scale in the editor. An Armature autosave, `.armature` file or project from before is read on the old scale it was saved at (50 units a metre), so it opens where it was; files written now say `units: 'm'`.
 - **Set scale for a published project from before.** The editor (`/admin/`) offers the same **Set scale** banner over a timelapse or model published without the marker: type how tall the model really is in centimetres, measured on the frame showing, and every frame plays by that one factor, stood on the floor at 0 (Floor offset 0), and the project is marked. It is saved at once with the look (`presentation.scale` and `presentation.lift` beside the stage, and `units: 'm'`), so the gallery's viewer and the single-file export play it at the new size for everyone; a save that fails puts the preview back and says why. **Not now** keeps it as it is for the rest of the tab's session and stores nothing. Publishing from Sculpt writes the stage fresh, with no played scale, since its frames are on the scene's own.
