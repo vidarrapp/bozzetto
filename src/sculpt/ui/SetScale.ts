@@ -42,7 +42,7 @@ export class ScaleBanner {
     this.root.setAttribute('aria-label', 'Set scale');
     const words = document.createElement('span');
     words.className = 'scale-banner__words';
-    words.textContent = 'This scene is from before real-world sizes. Set its scale to work in centimetres.';
+    words.textContent = 'This scene has no real-world scale yet. Set it to work in centimetres.';
     const open = button('Set scale', 'scale-banner__open');
     const dismiss = button('Not now', 'scale-banner__dismiss');
     dismiss.title = 'Keep the scene as it is; this is not offered again for it';

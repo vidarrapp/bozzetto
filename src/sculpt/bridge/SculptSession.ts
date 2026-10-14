@@ -176,10 +176,13 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, { size: number; along: 'heig
 };
 
 /**
- * What an imported OBJ is fitted to in a scene on real units: its largest
- * side the default sphere's 25 cm. An OBJ says nothing of its units (a
- * millimetre file and a metre one look alike), and an import is a base
- * mesh to work on, not a measured part, as it always was.
+ * What File > Import OBJ fits an OBJ to in a scene on real units: its
+ * largest side the default sphere's 25 cm. An OBJ says nothing of its
+ * units (a millimetre file and a metre one look alike), and an import into
+ * a scene is a base mesh to work on, not a measured part, as it always
+ * was. An OBJ opened from the gallery is not fitted: it opens as a scene
+ * of its own, unmarked at the file's own coordinates, and Set scale asks
+ * for its height (openParsedOBJ).
  */
 const IMPORT_SIZE = 0.25;
 
@@ -974,7 +977,8 @@ export class SculptSession {
    * else. NOTE it is resized - to IMPORT_SIZE across, standing on the
    * floor, on real units, or to the old canonical size in a scene from
    * before them - since an OBJ does not say what its units are, and an
-   * import is a base mesh to work on, not a measured part.
+   * import is a base mesh to work on, not a measured part. (The gallery's
+   * Import OBJ is not resized: openParsedOBJ.)
    */
   async importOBJ(text: string, zUp: boolean, name: string): Promise<Multimesh> {
     // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
@@ -986,17 +990,49 @@ export class SculptSession {
   /**
    * An OBJ already parsed (admin/glb parseObj, which keeps only sound
    * triangles) as a new sculptable object, welded and sized as every
-   * import is: File > Import OBJ, and the gallery's Import OBJ, which
-   * parses at boot to know the file is good before it replaces anything.
+   * import into a scene is (File > Import OBJ); a null `fit` keeps the
+   * file's own coordinates, as the gallery's Import OBJ does
+   * (openParsedOBJ), which parses at boot to know the file is good before
+   * it replaces anything.
    */
-  addParsedOBJ(parsed: { positions: Float32Array; indices: Uint32Array }, name: string): Multimesh {
+  addParsedOBJ(
+    parsed: { positions: Float32Array; indices: Uint32Array },
+    name: string,
+    fit: { size: number; along: 'height' | 'largest' } | null = { size: IMPORT_SIZE, along: 'largest' },
+  ): Multimesh {
     if (!parsed.positions.length || !parsed.indices.length) {
       throw new Error('No geometry found in that OBJ file.');
     }
     const geom = new BufferGeometry();
     geom.setAttribute('position', new BufferAttribute(parsed.positions, 3));
     geom.setIndex(new BufferAttribute(parsed.indices, 1));
-    return this.meshFromTriGeometry(geom, name);
+    return this.meshFromTriGeometry(geom, name, fit);
+  }
+
+  /**
+   * The gallery's Import OBJ (owner decision): the file as a new scene,
+   * left unmarked - units null, the Set scale offer not dismissed - with
+   * the object at the file's own coordinates, neither fitted to IMPORT_SIZE
+   * nor normalised. Nobody knows what the file's units are, so Set scale
+   * asks how tall it really is, and marks the scene then. Called on the
+   * empty session at boot; a file that will not build leaves the units as
+   * they were.
+   */
+  openParsedOBJ(parsed: { positions: Float32Array; indices: Uint32Array }, name: string): Multimesh {
+    const was = this.units;
+    const dismissed = this.scaleDismissed;
+    this.units = null;
+    this.scaleDismissed = false;
+    let mesh: Multimesh;
+    try {
+      mesh = this.addParsedOBJ(parsed, name, null);
+    } catch (err) {
+      this.units = was;
+      this.scaleDismissed = dismissed;
+      throw err;
+    }
+    if (was !== this.units) this.onUnitsChange?.();
+    return mesh;
   }
 
   /**
@@ -1189,12 +1225,13 @@ export class SculptSession {
   /**
    * Weld a three triangle geometry and adopt it as a sculptable object, at
    * `fit` in a scene on real units (an OBJ: IMPORT_SIZE across), or at the
-   * old canonical size in one from before.
+   * old canonical size in one from before. A null `fit` keeps the
+   * geometry's own coordinates either way (the gallery's OBJ, openParsedOBJ).
    */
   private meshFromTriGeometry(
     geom: BufferGeometry,
     name: string,
-    fit: { size: number; along: 'height' | 'largest' } = { size: IMPORT_SIZE, along: 'largest' },
+    fit: { size: number; along: 'height' | 'largest' } | null = { size: IMPORT_SIZE, along: 'largest' },
   ): Multimesh {
     // Position-only weld: uv/normal seams would otherwise crack under
     // sculpting (duplicate vertices along the seam).
@@ -1233,9 +1270,9 @@ export class SculptSession {
     base.setFaces(f.subarray(0, nbTris * 4));
     base.init();
     const mesh = new Multimesh(base);
-    if (!this.units) mesh.normalizeSize();
+    if (!this.units && fit) mesh.normalizeSize();
     this.subdivideClamp(mesh);
-    if (this.units) this.standOnFloor(mesh, fit);
+    if (this.units && fit) this.standOnFloor(mesh, fit);
     this.meshNames.set(mesh, this.uniqueMeshName(name));
     this.addNewMesh(mesh);
     return mesh;

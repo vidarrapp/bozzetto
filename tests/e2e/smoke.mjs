@@ -2012,14 +2012,62 @@ export const suites = {
         tetra,
         ['# tetra', 'v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1', 'v nan 0 0', 'f 1 3 2', 'f 1 2 4', 'f 1 4 3', 'f 2 3 4', 'f 1 2 99', 'f 1 2 5', ''].join('\n'),
       );
+      // A box in a file's own units, millimetres say: 200 across, off to
+      // one side and below the origin, which nothing rescales on the way in.
       const cube = join(dir, 'box.obj');
       writeFileSync(
         cube,
         [
-          'v -1 -1 -1', 'v 1 -1 -1', 'v 1 1 -1', 'v -1 1 -1', 'v -1 -1 1', 'v 1 -1 1', 'v 1 1 1', 'v -1 1 1',
+          'v 200 -300 -100', 'v 400 -300 -100', 'v 400 -100 -100', 'v 200 -100 -100', 'v 200 -300 100', 'v 400 -300 100', 'v 400 -100 100', 'v 200 -100 100',
           'f 1 4 3 2', 'f 5 6 7 8', 'f 1 2 6 5', 'f 2 3 7 6', 'f 3 4 8 7', 'f 4 1 5 8', '',
         ].join('\n'),
       );
+      const units = (p) =>
+        p.evaluate(() => ({
+          units: window.__sculpt.session.getUnits(),
+          banner: !document.querySelector('.scale-banner')?.hidden,
+          box: window.__sculpt.worldBox(window.__sculpt.session.getMeshes()[0]),
+          // No scale and no move: the file's own coordinates.
+          identity: [...window.__sculpt.session.getMeshes()[0].getMatrix()].every((k, i) => Math.abs(k - (i % 5 === 0 ? 1 : 0)) < 1e-9),
+        }));
+      // Within the file's bounds (the subdivision rounds the corners in).
+      // A symmetric shape keeps its middle too.
+      const within = (box, lo, hi, centred = false) =>
+        [0, 1, 2].every(
+          (k) =>
+            box.min[k] >= lo[k] - 1e-3 &&
+            box.max[k] <= hi[k] + 1e-3 &&
+            box.max[k] - box.min[k] > 0.25 * (hi[k] - lo[k]) &&
+            (!centred || Math.abs((box.min[k] + box.max[k]) / 2 - (lo[k] + hi[k]) / 2) < 0.02 * (hi[k] - lo[k])),
+        );
+      // The autosave's record, as the device keeps it.
+      const record = (p) =>
+        p.evaluate(
+          () =>
+            new Promise((done) => {
+              const req = indexedDB.open('bozzetto-sculpt', 3);
+              req.onsuccess = () => {
+                const get = req.result.transaction('scene').objectStore('scene').get('current');
+                get.onsuccess = () => done(get.result ? { units: get.result.units ?? null, dismissed: get.result.scaleDismissed ?? null } : null);
+              };
+            }),
+        );
+      // Whether the camera has the whole box in view, inside its clipping.
+      const inView = (p, box) =>
+        p.evaluate((b) => {
+          const cam = window.__sculpt.viewer.camera;
+          cam.updateMatrixWorld();
+          const v = cam.matrixWorldInverse.elements;
+          const q = cam.projectionMatrix.elements;
+          const out = [];
+          for (const x of [b.min[0], b.max[0]]) for (const y of [b.min[1], b.max[1]]) for (const z of [b.min[2], b.max[2]]) {
+            const e = [x, y, z, 1];
+            const c = [0, 1, 2, 3].map((r) => v[r] * e[0] + v[4 + r] * e[1] + v[8 + r] * e[2] + v[12 + r] * e[3]);
+            const n = [0, 1, 2, 3].map((r) => q[r] * c[0] + q[4 + r] * c[1] + q[8 + r] * c[2] + q[12 + r] * c[3]);
+            out.push(n.slice(0, 3).map((k) => k / n[3]));
+          }
+          return out.every((n) => n.every((k) => k > -1 && k < 1));
+        }, box);
       const asked = [];
       let answer = true;
       page.on('dialog', (d) => {
@@ -2060,7 +2108,21 @@ export const suites = {
         return window.__sculpt.session.getMeshes().length;
       });
       t.eq(undo, 1, 'the imported object is the floor of history: undo does not take it away');
+      // Unmarked, at the file's own coordinates (owner decision): nobody
+      // knows the file's units, so Set scale asks.
+      let u = await units(page);
+      t.ok(u.units === null && u.banner, `the new scene is unmarked, with the Set scale banner (${JSON.stringify(u.units)}, banner ${u.banner})`);
+      t.ok(
+        u.identity && within(u.box, [0, 0, 0], [1, 1, 1]),
+        `the object keeps the file's own coordinates, neither fitted nor normalised (${JSON.stringify(u)})`,
+      );
       await page.evaluate(() => window.__sculpt.persist.settle());
+      let rec = await record(page);
+      t.ok(rec && rec.units === null && rec.dismissed === null, `the autosave carries no marker and no dismissal (${JSON.stringify(rec)})`);
+      await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await booted(page);
+      u = await units(page);
+      t.ok(u.units === null && u.banner, 'reloaded, it is still unmarked and the banner asks again');
       // An ordinary sculpt from here: the autosave has it, and the gallery's In progress card.
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#landing-grid .card--sculpt', { timeout: 30_000 }).catch(() => {});
@@ -2084,7 +2146,38 @@ export const suites = {
       now = await scene(page);
       t.ok(JSON.stringify(now.names) === '["box"]' && now.tris[0] >= 12, `accepted, the new scene is the file's object alone (${JSON.stringify(now)})`);
       t.eq(asked.length - before, 1, 'asked once, by the gallery: Sculpt knows the tab asked');
+      u = await units(page);
+      t.ok(
+        u.units === null && u.banner && u.identity && within(u.box, [200, -300, -100], [400, -100, 100], true),
+        `a box 200 units across, off the origin, opens where the file has it, unmarked (${JSON.stringify(u.box)})`,
+      );
+      await page.waitForTimeout(300);
+      t.ok(await inView(page, u.box), 'and the camera frames it whole, inside its clipping');
+      // Set scale with the real height: 180 cm, on the floor, marked.
+      await page.click('.scale-banner__open');
+      await page.fill('.scale-banner__height', '180');
+      await page.click('.scale-banner__apply');
+      u = await units(page);
+      t.ok(u.units === 'm' && !u.banner, `Set scale marks the scene and the banner goes (${JSON.stringify(u.units)})`);
+      t.near(u.box.max[1] - u.box.min[1], 1.8, 1e-4, 'the object is the 1.80 m typed');
+      t.near(u.box.min[1], 0, 1e-5, 'standing on the floor');
+      await page.waitForTimeout(300);
+      t.ok(await inView(page, u.box), 'framed whole at its new size');
+      // File > Import OBJ into a scene on real units fits to 25 cm on the floor.
+      const fitted = await page.evaluate(async () => {
+        const { session, fileActions, worldBox } = window.__sculpt;
+        await fileActions.importObj(['v 0 0 0', 'v 3 0 0', 'v 0 7 0', 'v 0 0 2', 'f 1 3 2', 'f 1 2 4', 'f 1 4 3', 'f 2 3 4', ''].join('\n'), false, 'fitted');
+        const m = session.getMeshes().find((x) => session.getMeshName(x) === 'fitted');
+        const b = worldBox(m);
+        session.deleteMesh(m);
+        return { units: session.getUnits(), b };
+      });
+      const side = Math.max(...[0, 1, 2].map((k) => fitted.b.max[k] - fitted.b.min[k]));
+      t.near(side, 0.25, 1e-4, 'File > Import OBJ into a scene on real units fits the object to 25 cm');
+      t.near(fitted.b.min[1], 0, 1e-5, 'and stands it on the floor');
       await page.evaluate(() => window.__sculpt.persist.settle());
+      rec = await record(page);
+      t.eq(rec?.units, 'm', 'the autosave is marked once Set scale is answered');
 
       // A reload, and the address alone: nothing more is imported.
       await page.goto(`${base}/?sculpt=1&obj=1`, { waitUntil: 'domcontentloaded' });

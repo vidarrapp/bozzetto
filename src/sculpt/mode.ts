@@ -281,8 +281,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // geometry in it costs nothing but its notice; and it replaces the work
   // on this device as an opened scene does, asked about here unless the
   // gallery asked already (ui/openToken), as a link to a scene is. Declined,
-  // the work stays and the file is let go.
-  let objMesh: ReturnType<SculptSession['addParsedOBJ']> | null = null;
+  // the work stays and the file is let go. The scene opens unmarked, the
+  // object at the file's own coordinates (owner decision): an OBJ does not
+  // say its units, so the Set scale banner asks how tall it really is.
+  let objMesh: ReturnType<SculptSession['openParsedOBJ']> | null = null;
   if (!asked && query.get('obj') === '1') {
     const { takeObjHandoff } = await import('./bridge/objHandoff');
     const handoff = await takeObjHandoff();
@@ -299,7 +301,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
       } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
         try {
-          objMesh = session.addParsedOBJ(parsed, handoff.name);
+          objMesh = session.openParsedOBJ(parsed, handoff.name);
         } catch (err) {
           bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
         }
