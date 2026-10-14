@@ -516,7 +516,8 @@ async function codeSignIn(server, turnstile, a, t) {
 
 /** The Account page: its sections, as signed in. */
 async function openAccount(a) {
-  await a.page.goto(`${a.origin}/?account`, { waitUntil: 'domcontentloaded' });
+  // The page's default 30 seconds ran out once on the GitHub runner.
+  await a.page.goto(`${a.origin}/?account`, { waitUntil: 'domcontentloaded', timeout: 90_000 });
   await a.page.waitForSelector('[data-section="passkeys"]', { timeout: 30_000 });
 }
 

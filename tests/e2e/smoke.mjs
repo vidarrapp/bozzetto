@@ -1165,7 +1165,10 @@ export const savedToast = (page) =>
         return el && el.dataset.state !== 'running' ? { state: el.dataset.state, text: el.textContent } : null;
       },
       null,
-      { timeout: 60_000 },
+      // A save on the GitHub runner can run past a minute: the scene is
+      // packed and uploaded by a machine about three times slower than
+      // the ones the suites are written on.
+      { timeout: 150_000 },
     )
     .then((h) => h.jsonValue())
     .catch(() => ({ state: 'none', text: '' }));
