@@ -325,6 +325,9 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
   const ownerState = await op.evaluate(() => window.__armature.state());
   const guest = await a.ctx.browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
   const g = await guest.newPage();
+  const gErrors = [];
+  g.on('pageerror', (e) => gErrors.push(String(e)));
+  g.on('dialog', (d) => void d.accept());
   try {
     await g.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await g.waitForSelector(`.card--armature-project[data-project="${tpl?.id}"]`, { timeout: 30_000 }).catch(() => {});
@@ -339,7 +342,15 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     t.ok(gcard.badges.join(',') === 'Armature,Template' && /Armature mode/.test(gcard.meta), `a guest's gallery shows it badged Armature and Template, saying it opens in Armature mode (${show(gcard)})`);
     t.eq(gcard.href, `/?armature=1&template=${tpl?.id}`, 'and it opens as a copy');
     await Promise.all([g.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }), g.click(`.card--armature-project[data-project="${tpl?.id}"] .card__thumb`)]);
-    await g.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+    // A cold context on the GitHub runner: nothing of the viewer or the
+    // figure is cached, so this boot is the slowest in the suite. Waited
+    // for as boot() waits, and said with what the page shows when it
+    // does not come, rather than a bare timeout.
+    await g.waitForFunction(() => !!window.__armature || !!document.querySelector('.overlay--error'), null, { timeout: 150_000 }).catch(() => {});
+    const opened = await g.evaluate(() => (window.__armature ? null : document.querySelector('#overlay .overlay__msg')?.textContent ?? 'no overlay'));
+    if (opened) {
+      throw new Error(`the template did not open in Armature mode for a guest: ${opened}; at ${g.url()}; page errors: ${gErrors.join(' | ') || 'none'}`);
+    }
     await g.waitForTimeout(300);
     const copy = await g.evaluate(() => ({ state: window.__armature.state(), link: window.__armature.link() }));
     t.ok(JSON.stringify(copy.state.pose) === JSON.stringify(ownerState.pose) && copy.link === null, `the copy is the template's figure, linked to no project (${Object.keys(copy.state.pose).length} joints, link ${show(copy.link)})`);
