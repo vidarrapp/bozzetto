@@ -28,10 +28,7 @@
 // changed, and refused a second change within 30 days; the address
 // changed by a code to the new one; on 127.0.0.1 only codes are offered;
 // a mailed link signs in the browser that asked; a new code a minute on
-// replaces the one before it; the desktop app's
-// sign-in window (/?signin=desktop) leads with the code, mails no link,
-// offers no passkey, marks its session as the desktop app's and registers
-// no service worker; a used-up invite says so; the legal pages. Then the owner: Create your account on /admin/,
+// replaces the one before it; a used-up invite says so; the legal pages. Then the owner: Create your account on /admin/,
 // a passkey, the second lock opening the dialog by itself and the list
 // coming once signed in; and in Sculpt, a save the second lock refused
 // goes again once signed in from its notice, to My projects, and a scene
@@ -743,59 +740,6 @@ async function until(p, fn, timeout = 15_000) {
     await sleep(200);
   }
   return false;
-}
-
-/**
- * The desktop app's sign-in window (/?signin=desktop, docs/accounts.md §2):
- * the code first and a passkey after it, for a phone or a security key; no
- * autofill; no link in the code mail, which would open another browser; no
- * passkey offered after the code; a session that says it is the desktop
- * app's; and no service worker, which the gallery in the same browser
- * would have registered.
- */
-async function desktopWindow(server, browser, t) {
-  clock.offset += 16 * MINUTE; // a fresh window for the address's mail
-  const w = await browserFor(browser, server.base, { ip: '203.0.113.18', serviceWorkers: 'allow' });
-  try {
-    const p = w.page;
-    await p.goto(`${server.base}/?signin=desktop`, { waitUntil: 'load' });
-    t.ok(await step(p, 'Sign in'), "/?signin=desktop, the desktop app's window, opens the sign-in dialog");
-    const view = await p.evaluate(() => {
-      const card = document.querySelector('.account-card');
-      return {
-        buttons: [...card.querySelectorAll('button')].map((b) => b.textContent).filter((x) => x !== '×'),
-        primary: [...card.querySelectorAll('.btn--primary')].map((b) => b.textContent),
-        focused: document.activeElement?.getAttribute('name') ?? null,
-        autocomplete: card.querySelector('input[name=email]').autocomplete,
-        lede: card.querySelector('.account-lede')?.textContent ?? null,
-      };
-    });
-    t.ok(
-      show(view.buttons.slice(0, 2)) === show(['Email me a code', 'Use a passkey']) &&
-        show(view.primary) === show(['Email me a code']) &&
-        view.focused === 'email' &&
-        view.autocomplete === 'username' &&
-        /closes by itself/.test(view.lede ?? ''),
-      `it leads with the code, a passkey after it, and no autofill on the field (${show(view)})`,
-    );
-    t.ok(!new URL(p.url()).search.includes('signin'), `the link is taken off the address (${new URL(p.url()).search || '(none)'})`);
-    const before = await lastMail(server, 'ada@new.example');
-    await p.fill('.account-card input[name=email]', 'ada@new.example');
-    await p.click('.account-card .account-submit');
-    const mail = await mailAfter(server, 'ada@new.example', before);
-    t.ok(!!codeIn(mail) && !linkIn(mail), `its code mail carries the code and no link ("${mail?.subject}")`);
-    await typeCode(p, codeIn(mail));
-    t.ok(await dialogGone(p), 'the code signs in, with no passkey offered');
-    t.eq(await p.evaluate(() => window.__autofill.asked), 0, 'no autofill was asked for');
-    const session = await p.evaluate(async () => (await (await fetch('/api/me/account')).json()).sessions.find((s) => s.current) ?? null);
-    t.eq(session?.client, 'desktop', "the session is the desktop app's");
-    t.eq(await p.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.length)), 0, 'and the window registered no service worker');
-    await p.goto(`${server.base}/`, { waitUntil: 'load' });
-    t.ok(await until(p, () => navigator.serviceWorker.getRegistrations().then((r) => r.length > 0)), 'where the gallery, in the same browser, registers one');
-    t.ok(!w.errors.length, `no page errors in the desktop window${w.errors.length ? `: ${w.errors.join(' | ')}` : ''}`);
-  } finally {
-    await w.ctx.close();
-  }
 }
 
 /**
@@ -2264,7 +2208,6 @@ export const suites = {
       await part('codes only', () => codesOnly(server, browser, t));
       await part('mailed link', () => mailedLink(server, browser, t));
       await part('code resend', () => codeResend(server, turnstile, browser, t));
-      await part('desktop window', () => desktopWindow(server, browser, t));
       await part('spent invite', () => spentInvite(browser, server.base, t));
       await part('legal pages', () => legalPages(browser, server.base, t));
       // The owner: Create your account, the second lock, Sculpt's saves.

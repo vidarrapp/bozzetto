@@ -3,8 +3,8 @@
 // dropped while things move, the fill and rim shadows held or staggered,
 // and not one build, compile or allocation from pen-down to pen-up); the
 // anti-aliasing that waits for a still view; adaptive quality's ladder;
-// the desktop app's frame pacing as the viewer runs it (desktop.mjs runs
-// it in the app); the Preferences that steer them and the diagnostic
+// the viewer's frame pacing with v-sync off (setPacing, which no browser
+// turns on); the Preferences that steer them and the diagnostic
 // overlays they keep on; the damping's feel at any frame rate; and the
 // measurements behind the work, printed with each run (stroke steps per
 // mesh size, stroke ends, encode time full and fast, the canvas without
@@ -978,8 +978,9 @@ export const suites = {
     }
   },
 
-  // The desktop app's frame pacing, as the viewer runs it (desktop.mjs
-  // runs it in the app): a browser is never paced. With v-sync off the
+  // The viewer's frame pacing (setPacing): a browser is never paced, and
+  // nothing in the app turns it on since the desktop app was retired; the
+  // viewer keeps the loop for a shell that can. With v-sync off the
   // loop runs free while anything happens and paces itself to the display
   // a second after everything stops; input wakes it at once; on battery it
   // stays paced while working too. The meter says which. Nothing is drawn
