@@ -120,7 +120,10 @@ CENTRE_BAND = 1e-3
 # middle, the neck lifted a shelf out of the back under that bend, a rigid
 # lump swinging its lower half the other way. Where the lump meets the
 # chest, the chain rule's joint, kept the base seated but sat down inside
-# the chest and read as off (owner report).
+# the chest and read as off (owner report). Measured since, the realistic
+# male's joint at this share sits half a centimetre under the line at the
+# back, and the app raises it 1.5 cm on load (src/armature/figures.ts,
+# neckRaise); a rebuild that moves it should take that back out.
 NECK_JOINT_AT = 0.32
 
 

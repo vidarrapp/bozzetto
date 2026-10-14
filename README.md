@@ -127,8 +127,11 @@ sign-in, and everything stays on your device.
   raises or lowers it, and **Send to Sculpt** keeps the figure's feet on
   Sculpt's floor.
 - **Proportions.** Per part, *size* scales the cross-section and *length*
-  stretches the part along its bone and moves the child joints with it.
-  Mirrored while symmetry is on.
+  stretches the part along its bone, and the joints on the part move with
+  it: a wider chest carries the shoulders out to its new surface, wider
+  hips the hip joints, a longer one the joint at its end. `R` puts a scale
+  gizmo on the selected part: the handle along the bone is its length, the
+  two across it its size. Mirrored while symmetry is on.
 - **Your own figure.** **File → Load model…** takes a rigged `.glb`: its
   bones become the rig, its skin becomes the shape. Joint limits and reach
   chains are read from the file's custom properties where they exist and
@@ -158,6 +161,7 @@ sign-in, and everything stays on your device.
 | Drag the ball in the hips | Move the whole figure, pinned hands and feet staying put |
 | `X` | Symmetry on / off |
 | `W` / `E` / `T` | Move the pelvis · rotate the selection · both at once |
+| `R` | Scale the selected part: along the bone its length, across it its size |
 | `Shift`+`R` | Reset the pose |
 | `Esc` | Deselect |
 | `Ctrl`+`Z`, `Ctrl`+`Shift`+`Z` | Undo, redo |
@@ -327,6 +331,9 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 - **Set scale for a published project from before.** The editor (`/admin/`) offers the same **Set scale** banner over a timelapse or model published without the marker: type how tall the model really is in centimetres, measured on the frame showing, and every frame plays by that one factor, stood on the floor at 0 (Floor offset 0), and the project is marked. It is saved at once with the look (`presentation.scale` and `presentation.lift` beside the stage, and `units: 'm'`), so the gallery's viewer and the single-file export play it at the new size for everyone; a save that fails puts the preview back and says why. **Not now** keeps it as it is for the rest of the tab's session and stores nothing. Publishing from Sculpt writes the stage fresh, with no played scale, since its frames are on the scene's own.
 - **Move the key light in the viewer and the editor.** Hold **L** and move the pointer, as in Sculpt and Armature: across swings the key light around the model, up and down raises and lowers it, half a degree a pixel. While L is held a press on the view orbits nothing, and the editor's light rows follow once the drag settles. It is one key with Sculpt's in Preferences, so a rebind moves both.
 - **The hotkey guide everywhere.** The editor's preview now has the guide too, on **H** as in the viewer, and the Render panel in both has a **Hotkeys** button under Interface, for a tablet with no keyboard. The guide lists the view's keys and gestures, the light drag among them.
+- **Armature: only the key light casts by default.** A new armature's look has the fill's and the rim's **Casts shadow** boxes unticked, and picking a lighting preset there keeps them so; the boxes still tick them on, and Sculpt and the viewer keep all three casting. An armature saved before the rim cast by default opens with its boxes as it saved them, rather than with the rim ticked as other old looks are.
+- **Armature: proportions move the joints, and `R` scales a part.** A part's size and length now carry the joints on it: a chest at 130% puts both shoulders 30% further out, at its new surface, where they stayed inside it, wider hips move the hip joints, and the clavicles stretch with the chest. Every figure alike, the blocks and the four mannequins; a saved figure opens with the same pose and proportions, its joints where those proportions now put them. `R` puts a scale gizmo on the selected part: drag the handle along the bone for its length, one across it for its size, held to the same limits as the sliders, mirrored under symmetry, one undo step a drag, the panel's sliders following. With nothing selected `R` does nothing. The hotkey guide and Preferences list it.
+- **Armature: the realistic male's neck turns higher.** Its neck joint sat half a centimetre under where the back of the neck leaves the chest, so a head turn pivoted from inside the chest; it is 1.5 cm higher now, a centimetre above that line, where the other three mannequins have theirs. The neck's direction and the head's joint are as they were, so a saved pose looks the same.
 
 - **Create, by what you start from.** The gallery's Create menu stacks **New Sculpt**, **New Armature**, **Import OBJ** and **Create timelapse**. **Upload Model(s)** is now **Create timelapse**, and for a guest it is the uploader as it was: one `.html` file, nothing uploaded. Import OBJ is everyone's too, as File → Import OBJ is in Sculpt. The desktop app shows the same menu, and signed in to a server, saves to it.
 - **Import OBJ.** Pick one `.obj` file and it opens in Sculpt as a new scene, the file its one object: welded, named after the file, and left at the file's own coordinates, since an OBJ does not say what its units are. The scene opens unmarked, so the **Set scale** banner asks how tall the object really is, and marks the scene once answered; from there it is an ordinary sculpt (autosave, Save to library). **File → Import OBJ** into a scene on real units still fits the object to 25 cm and stands it on the floor. It asks first when there is work in progress on the device, as opening a scene does, and an address followed from anywhere else asks again in Sculpt. The file travels to Sculpt through the browser's own storage, and the address alone imports nothing. A face that names a vertex the file does not have, or a vertex that is not a number, is now left out of every OBJ import, here, in File → Import OBJ and in the uploader, rather than reaching the geometry.

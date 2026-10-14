@@ -6,6 +6,7 @@ import {
   BufferGeometry,
   Euler,
   Float32BufferAttribute,
+  Matrix3,
   Matrix4,
   Mesh,
   Quaternion,
@@ -59,6 +60,9 @@ const _q = new Quaternion();
 const _q2 = new Quaternion();
 const _v = new Vector3();
 const _e = new Euler();
+const _m = new Matrix3();
+const _m2 = new Matrix3();
+const _m3 = new Matrix3();
 const RAD = Math.PI / 180;
 
 /** The bones that stand on the ground: the name every rig here gives a foot. */
@@ -89,9 +93,10 @@ const HAIR = 2e-8;
  * its PART bone, and the part's vertices are skinned to that leaf rather
  * than to the bone itself: proportions are a scale on the part bone, and
  * a leaf's scale reaches no child, so a thicker thigh does not thicken the
- * shin and no rotated child ever shears. Length instead moves the child
- * joint out along the bone, which is the one thing about a longer part
- * the rest of the body should notice.
+ * shin and no rotated child ever shears. The child joints move with the
+ * scaled part instead (see layout): out along the bone with its length,
+ * and out across it with its size, so a wider chest carries the shoulders
+ * out to its new surface and wider hips the hip joints.
  *
  * The other is that the pose is kept apart from the rest: a bone's
  * quaternion is rest * pose, and limits and mirroring work on the pose.
@@ -140,6 +145,17 @@ export class Armature {
   private readonly mirrorTwist = new Set<string>();
   /** Skeleton index of a part bone -> the bone it belongs to. */
   private readonly partOwner = new Map<number, string>();
+  /** Each bone's children, by name. */
+  private readonly kids = new Map<string, string[]>();
+  /**
+   * Children that branch off the side of their parent and run across it
+   * rather than on along it or back down it: the clavicles across the
+   * chest. Such a bone is part of its
+   * parent's breadth, so it is scaled with the parent's proportions as well
+   * as its own (see shape), and the shoulder at its end lands where the
+   * scaled chest puts it. Each with its rest turn on its parent, as a matrix.
+   */
+  private readonly carried = new Map<string, Matrix3>();
 
   /** Metres to scene units for this figure (1: a scene unit is a metre). */
   readonly scale: number;
@@ -198,6 +214,25 @@ export class Armature {
     const rootDef = rig.bones.find((b) => !b.parent)!;
     this.root = this.bones.get(rootDef.name)!;
     for (const def of rig.bones) this.limits.set(def.name, this.limitsFor(def, worldQ));
+    for (const def of rig.bones) {
+      if (!def.parent) continue;
+      const list = this.kids.get(def.parent) ?? [];
+      list.push(def.name);
+      this.kids.set(def.parent, list);
+    }
+    for (const def of rig.bones) {
+      // A branch off the side of its parent (one of several children),
+      // more than about 37 degrees off the parent's line either way: the
+      // clavicles on every figure here, the mannequins' sloping down to
+      // the shoulder - never a spine, a neck or a thigh, and never a foot,
+      // which carries on from the end of its shin.
+      if (!def.parent || (this.kids.get(def.parent)?.length ?? 0) < 2) continue;
+      const rest = this.rest.get(def.name)!;
+      const along = new Vector3(0, 1, 0).applyQuaternion(rest.local).y;
+      if (Math.abs(along) < CARRIED_BELOW && rest.length > 0) {
+        this.carried.set(def.name, new Matrix3().setFromMatrix4(new Matrix4().makeRotationFromQuaternion(rest.local)));
+      }
+    }
     for (const def of rig.bones) {
       const other = def.mirror ? worldQ.get(def.mirror) : undefined;
       if (!other) continue;
@@ -524,8 +559,8 @@ export class Armature {
   }
 
   /**
-   * Size scales the part's cross-section, length the part along its bone
-   * and moves the child joints out with it. Mirrored to the other side
+   * Size scales the part's cross-section, length the part along its bone,
+   * and the joints on it move with it (layout). Mirrored to the other side
    * when symmetry is on.
    */
   setProportions(name: string, p: Partial<Proportions>, mirror = this.symmetry): void {
@@ -533,15 +568,54 @@ export class Armature {
     const def = this.defs.get(name);
     if (!cur || !def) return;
     const { size, length } = PROPORTION_LIMITS;
-    if (typeof p.size === 'number') cur.size = Math.min(size.max, Math.max(size.min, p.size));
-    if (typeof p.length === 'number') cur.length = Math.min(length.max, Math.max(length.min, p.length));
-    this.partBones.get(name)!.scale.set(cur.size, cur.length, cur.size);
-    for (const child of this.rig.bones) {
-      if (child.parent !== name) continue;
-      const rest = this.rest.get(child.name)!;
-      this.bones.get(child.name)!.position.set(rest.offset.x, rest.offset.y * cur.length, rest.offset.z);
-    }
+    if (typeof p.size === 'number' && Number.isFinite(p.size)) cur.size = Math.min(size.max, Math.max(size.min, p.size));
+    if (typeof p.length === 'number' && Number.isFinite(p.length)) cur.length = Math.min(length.max, Math.max(length.min, p.length));
+    this.layout(name);
+    for (const kid of this.kids.get(name) ?? []) if (this.carried.has(kid)) this.layout(kid);
     if (mirror && def.mirror) this.setProportions(def.mirror, { ...cur }, false);
+  }
+
+  /**
+   * A part's scale as a matrix in its bone's frame: its size across and
+   * its length along, and for a bone carried across its parent (the
+   * clavicles) the parent's scale as well, turned into this bone's frame.
+   */
+  private shape(name: string, out: Matrix3): Matrix3 {
+    const p = this.props.get(name) ?? { size: 1, length: 1 };
+    out.set(p.size, 0, 0, 0, p.length, 0, 0, 0, p.size);
+    const turn = this.carried.get(name);
+    const parent = this.defs.get(name)?.parent;
+    const q = parent ? this.props.get(parent) : undefined;
+    if (turn && q) {
+      // turn^-1 * parentScale * turn, then this part's own scale.
+      _m2.set(q.size, 0, 0, 0, q.length, 0, 0, 0, q.size);
+      _m2.premultiply(_m.copy(turn).transpose()).multiply(turn);
+      out.premultiply(_m2);
+    }
+    return out;
+  }
+
+  /**
+   * Put a bone's part and the joints on it where its proportions say: the
+   * part bone scaled (it is a leaf, so nothing below inherits it), and each
+   * child's joint at its rest place on this bone scaled the same way, so a
+   * joint on the part's surface stays on the surface. The part is scaled
+   * about its own joint, and so is every child's place: the two agree.
+   */
+  private layout(name: string): void {
+    const m = this.shape(name, new Matrix3());
+    const e = m.elements;
+    this.partBones.get(name)?.scale.set(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[3], e[4], e[5]), Math.hypot(e[6], e[7], e[8]));
+    for (const kid of this.kids.get(name) ?? []) {
+      const rest = this.rest.get(kid)!;
+      this.bones.get(kid)!.position.copy(rest.offset).applyMatrix3(m);
+    }
+  }
+
+  /** How much longer than at rest a bone now is, its parent's scale included (shape). */
+  private stretch(name: string): number {
+    const e = this.shape(name, _m3).elements;
+    return Math.hypot(e[3], e[4], e[5]);
   }
 
   // --- inverse kinematics ------------------------------------------------------------
@@ -1068,7 +1142,7 @@ export class Armature {
       });
     }
     let length = 0;
-    for (const n of c.links) length += (this.rest.get(n)?.length ?? 0) * (this.props.get(n)?.length ?? 1);
+    for (const n of c.links) length += (this.rest.get(n)?.length ?? 0) * this.stretch(n);
     const clearly = Math.max(0.02 * near, 0.01 * length, this.len(TINY));
     this.restorePoses(held, other < near - clearly ? otherPoses : kept);
   }
@@ -1480,6 +1554,14 @@ export class Armature {
  * How far a part may be scaled: the panel's sliders run 0.5 to 2, and a
  * value typed past them is held here (and the same holds for a saved one).
  */
+/**
+ * How near its parent's line a child may run and still count as running on
+ * along it (or back down it, as a thigh from the hips does): the cosine of
+ * the angle, about 37 degrees. A child further off runs across its parent
+ * and is carried by its scale (Armature.carried).
+ */
+const CARRIED_BELOW = 0.8;
+
 export const PROPORTION_LIMITS = {
   size: { min: 0.2, max: 4 },
   length: { min: 0.3, max: 3 },
