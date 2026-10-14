@@ -6,7 +6,7 @@ import type { Viewer } from '../viewer/Viewer';
 import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { STUDIO_BG } from '../viewer/Environment';
 import { keymap } from '../ui/keymap';
-import { isTextEntryTarget } from '../ui/dom';
+import { isTextEntryTarget, tabShouldMoveFocus } from '../ui/dom';
 import { showPreferences } from '../ui/Preferences';
 import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
@@ -1582,7 +1582,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (isTextEntryTarget(e) || document.body.classList.contains('has-modal')) return;
     const action = keymap.actionFor(e, 'armature');
     if (!action) return;
+    // Tab on a focused control moves focus, as everywhere.
+    if (action.id === 'arm.panels' && e.key === 'Tab' && tabShouldMoveFocus(e)) return;
     switch (action.id) {
+      case 'arm.panels': {
+        // Both sides together (owner decision): any panel open closes
+        // them all; none open brings both back. The Render panel is the
+        // viewer's, reached by its id as Present mode reaches it.
+        const render = document.querySelector('.panel--render');
+        const renderOpen = !!render && !render.classList.contains('panel--collapsed');
+        const anyOpen = renderOpen || !panel.isCollapsed();
+        panel.setCollapsed(anyOpen);
+        window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: !anyOpen } }));
+        break;
+      }
       case 'arm.symmetry':
         armature.symmetry = !armature.symmetry;
         panel.refresh(selected);

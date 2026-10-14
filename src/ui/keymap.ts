@@ -161,6 +161,7 @@ export const ACTIONS: ActionDef[] = [
   // Sculpt mode's light.move, for the figure: a key of its own (not a
   // gesture row) so Preferences can rebind it as it can sculpt's.
   { id: 'arm.light', label: 'Move the key light (hold + drag: across / up)', group: 'Armature', mode: 'armature', chord: 'l', hold: true },
+  { id: 'arm.panels', label: 'Open or close both panels (Armature and Render)', group: 'Armature', mode: 'armature', chord: 'tab' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
