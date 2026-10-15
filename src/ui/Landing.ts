@@ -21,7 +21,8 @@
  * With accounts on (docs/accounts.md §7) the top row is the account's: Sign
  * in for a guest, which opens the sign-in dialog over the gallery; My
  * projects and the @handle menu signed in, and Owner tools for the owner
- * (ui/account/menu). The foot links the legal pages.
+ * (ui/account/menu). Community, first in the row for everyone, leads to
+ * members' shared work (`/?community`, §13). The foot links the legal pages.
  */
 
 import { div } from './dom';
@@ -84,8 +85,14 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // itself again for whoever it is for now.
   const again = (): void => void renderLanding(app);
   if (signIn.accounts) {
-    // The account's chips (docs/accounts.md §7): Sign in and Install for a
-    // guest; My projects, Owner tools for the owner, and the @handle menu.
+    // The Community (docs/accounts.md §13) first, for everyone: members'
+    // shared work, which the gallery itself leaves to its own page (the
+    // gallery keeps the templates). Then the account's chips (§7): Sign
+    // in and Install for a guest; My projects, Owner tools for the owner,
+    // and the @handle menu.
+    const community = topChip('Community', '/?community');
+    community.classList.add('community-chip');
+    chip(community);
     for (const c of accountChips(signIn, roleOf(signIn), again)) chip(c);
     app.querySelector('.landing')?.appendChild(legalFoot());
   } else {
@@ -191,7 +198,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
 }
 
 /** The gallery's foot, with accounts on: the legal pages (docs/accounts.md §9). */
-function legalFoot(): HTMLElement {
+export function legalFoot(): HTMLElement {
   const foot = document.createElement('footer');
   foot.className = 'landing__foot';
   const link = (text: string, href: string): HTMLAnchorElement => {

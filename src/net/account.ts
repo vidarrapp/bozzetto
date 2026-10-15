@@ -460,6 +460,47 @@ export function storageFullText(used: number, quota: number): string {
   return `Your storage is full (${sizeOfText(used, quota)})`;
 }
 
+// --- the community (docs/accounts.md §13) ---------------------------------------------
+
+/** Where a project stands in the community gallery, as the server keeps it. */
+export type SharedState = 'none' | 'pending' | 'public' | 'rejected' | 'hidden';
+
+/** POST /api/me/projects/:id/share's answer: where it stands now. */
+export interface ShareStatus {
+  id: string;
+  shared: SharedState;
+  shared_at: number | null;
+  /** Why, while it is rejected or hidden; null otherwise. */
+  review_reason: string | null;
+}
+
+/**
+ * Share one of the account's projects to the community gallery (true: it
+ * goes for review), or withdraw it (false: it leaves at once). Refusals are
+ * AccountErrors with the server's code: 400 bad_request (reason mode), 409
+ * wrong_state (hidden), 429 rate_limited, 401 signin.
+ */
+export const shareProject = (id: string, shared: boolean): Promise<ShareStatus> =>
+  callFor<ShareStatus>('POST', `/api/me/projects/${encodeURIComponent(id)}/share`, { shared });
+
+/** What a report is about, as the server takes it. */
+export type ReportReason = 'nudity' | 'minors' | 'stolen' | 'spam' | 'other';
+
+/** The longest note a report keeps. */
+export const REPORT_NOTE_MAX = 500;
+
+/**
+ * Report a project in the community gallery: 'sent' for a new report (204),
+ * 'again' when this account reported it before (200 {reported: true}).
+ */
+export async function reportProject(id: string, reason: ReportReason, note: string): Promise<'sent' | 'again'> {
+  const body: { reason: ReportReason; note?: string } = { reason };
+  const said = note.trim().slice(0, REPORT_NOTE_MAX);
+  if (said) body.note = said;
+  const { status } = await call<{ reported?: boolean }>('POST', `/api/community/${encodeURIComponent(id)}/report`, body);
+  return status === 204 ? 'sent' : 'again';
+}
+
 // --- export and deletion ---------------------------------------------------------------
 
 /** One of a project's files, as the export names it: under the project, its size, and where to fetch it. */

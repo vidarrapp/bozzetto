@@ -18,6 +18,12 @@ export interface PanelOptions {
    * gets a Hotkeys button for it, the way in where H is out of reach.
    */
   onHotkeys?: () => void;
+  /**
+   * The handle of the member whose work this is, for a project from the
+   * Community (docs/accounts.md §13): "by @handle" under the title, a link
+   * to their page.
+   */
+  author?: string;
 }
 
 /**
@@ -34,6 +40,8 @@ export class Panel {
   private readonly collapseBtn: HTMLButtonElement;
   private readonly handleArrow: HTMLSpanElement;
   private titleEl!: HTMLSpanElement;
+  /** "by @handle" under the title, for a member's work from the Community. */
+  private bylineEl: HTMLAnchorElement | null = null;
   private readonly editor: boolean;
   private collapsed = false;
 
@@ -106,6 +114,7 @@ export class Panel {
       this.titleEl.textContent = this.sculpting
         ? 'Render'
         : this.viewer.manifest.title || 'Bozzetto';
+      if (this.bylineEl) this.bylineEl.hidden = this.sculpting;
     }
   };
 
@@ -227,7 +236,20 @@ export class Panel {
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
     closeBtn.setAttribute('aria-label', 'Hide render panel');
-    header.append(title, closeBtn);
+    if (options.author && !this.editor) {
+      // The title and, under it, who made it: a member's work from the
+      // Community. Hidden while sculpting, when the title is the panel's.
+      const heading = div('panel__heading');
+      const by = document.createElement('a');
+      by.className = 'panel__byline';
+      by.href = `/?u=${encodeURIComponent(options.author)}`;
+      by.textContent = `by @${options.author}`;
+      this.bylineEl = by;
+      heading.append(title, by);
+      header.append(heading, closeBtn);
+    } else {
+      header.append(title, closeBtn);
+    }
     this.root.appendChild(header);
 
     this.bodyEl = div('panel__body');

@@ -21,6 +21,7 @@ This is Bozzetto Web, the web app and its service. Its desktop counterpart, Bozz
 | `/?armature=1` | Armature mode |
 | `/?tl=<id>` | Viewer |
 | `/?me`, `/?account` | My projects and Account, once the site has accounts |
+| `/?community`, `/?u=<handle>` | The Community, and one member's work in it, once the site has accounts |
 | `/create/` | Uploader for models and timelapses (**Create → Create timelapse**): an export for a guest, a save to My projects signed in |
 | `/admin/` | Projects and the full editor, publishes to the gallery |
 
@@ -186,6 +187,14 @@ The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs ent
 
 A single mesh works too: drop one file and get a shareable 3D model on one page. To sculpt on an OBJ instead, pick **Create → Import OBJ**: it opens in Sculpt as a new scene.
 
+## Community
+
+Once the site has accounts, members can share their work for anyone to see. **Community** in the gallery's top row opens it: the shared models and timelapses as cards, newest first, each with its picture, title, author and date, and **Load more** below. A card opens in the viewer; the author's **@handle** opens their page, with everything they have shared.
+
+- **Shared work is to look at.** The viewer shows it as it shows a template, with **by @handle** beside **← Gallery** and under the title, and nothing to download, copy or export.
+- **Share from My projects.** A model or a timelapse has a **Share to Community** switch on its card. The first time, a note says what is shown (the title, your handle, the pictures and the model), that the files stay yours and nothing can be downloaded, and that it must keep to the content policy. A reviewer looks at it first: the card says **Pending review**, then **Public · Community**, or **Rejected** with the reason and **Share again**. Changing a shared project (renaming it, a new picture or new frames) sends it back for review. **Withdraw** takes it out at once. A scene or an armature cannot be shared: publish a model of it first.
+- **Report.** Signed in, **Report…** in the viewer's top row sends a reviewer a report, with a reason and a note if you like. Work two members report is hidden until a reviewer has looked; its author's card says **Hidden, under review**. Guests can write to the address in the terms.
+
 ## What is changing
 
 Decided 2026-10-14. The first and third points have landed (see the
@@ -233,7 +242,7 @@ developed elsewhere.
 - The site's templates as thumbnail cards, badged **Template**, led by a **Create** tile, whose menu stacks **New Sculpt**, **New Armature**, **Import OBJ** (one `.obj` from another app, opened in Sculpt as a new scene) and **Create timelapse** (the uploader, for a model or a timelapse: exported as one file for a guest, saved to My projects signed in), and your own sculpt and armature in progress. A model or a timelapse plays in the viewer; a scene opens in Sculpt as a copy that is yours to keep, with **Save to library**, and never a change to the template.
 - Signed in, the gallery is your whole list, the templates included: private projects carry a **Private** badge and every card a switch to change it, making a project public makes it a template, and the scenes you saved to the library sit beside the device's own, opening in Sculpt, to rename, delete or make public. Guests see the templates the gallery lists, and nothing else.
 - Every card for something kept only in this browser, the work in progress and the scenes kept on the device, says that a reinstall or clearing the browser loses it.
-- **Install** and **Log in**, which becomes **Projects** once signed in, and **Log in** again when the sign-in expires, said once under the title with **Sign in again**. With accounts on, **Sign in** and **Install** for a guest; signed in, **My projects** and an **@handle** menu (**Account**, **Sign out**), and **Owner tools** for the owner. The foot links the Privacy notice and the Terms.
+- **Install** and **Log in**, which becomes **Projects** once signed in, and **Log in** again when the sign-in expires, said once under the title with **Sign in again**. With accounts on, **Community** for everyone, then **Sign in** and **Install** for a guest; signed in, **My projects** and an **@handle** menu (**Account**, **Sign out**), and **Owner tools** for the owner. The foot links the Privacy notice and the Terms.
 
 ### Public editor (`/create/`)
 
@@ -325,6 +334,12 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 ## Changelog
 
 ### Unreleased
+
+- **The Community.** With accounts on, **Community** in the gallery's top row opens `/?community`: the models and timelapses members have shared, newest first, 24 at a time with **Load more**, on the gallery's cards (the 4:5 picture, the title, **@handle**, the date it was approved, model or timelapse). A card opens in the viewer, which says **by @handle** beside **← Gallery** and under the title, and offers nothing to download, copy or export. The gallery itself keeps the templates. Offline, the last copy of the list stands in.
+- **Author pages.** `/?u=<handle>` lists one member's shared work under their handle; a handle nobody has, or an account that is not open, says **No such member**.
+- **Share to Community from My projects.** A model or a timelapse has a **Share to Community** switch, and the card says where it stands: **Pending review**, **Public · Community** (a link to it), **Rejected:** with the reviewer's reason and **Share again**, or **Hidden, under review**, which cannot be shared again until a reviewer has acted. **Withdraw** takes it out at once from any of them. The first share on a device shows a note of what is shown, that the files stay yours and nothing is downloadable, the content policy and what reviewers may do, with **Continue** and **Cancel**. Scenes and armatures say to publish a model of them instead. Renaming a public project sends it back for review, and the card follows.
+- **Report.** Signed in, and not the author, **Report…** in the viewer's top row opens a dialog: what is wrong (the nudity policy, a minor, someone else's work, spam, something else), a note of up to 500 characters if you like, and what happens next; a second report hides the work until a reviewer looks. Reporting the same work again says **You already reported this**. Guests have no button; the terms give the address to write to.
+- **The terms and the privacy notice cover sharing.** The terms gain **Sharing to the community**: view only, the work and its rights stay the author's, Bozzetto may show it while it is shared, review, rejection and removal, reports, withdrawal, and no re-use by others. The privacy notice says the handle appears with shared work, and that a report is kept with the reporter's account for the review. Their version is unchanged.
 
 - **Bozzetto Web no longer records timelapses.** Recording while you sculpt has moved to Bozzetto Studio (see What is changing), which exports the same frame format. The Capture window is gone, with **Record timelapse**, the frame count, **Clear frames** and **Publish timelapse**; **Publish model** stays, in a **Publish** window that opens from a **Publish** button in the same place, beside File and Edit, for anyone signed in. Undo and the autosave are as they were. The viewer, the gallery and My projects still play timelapses, and **Create → Create timelapse** still publishes them. A reel recorded on a device before this is deleted the first time this version loads, with the remembered **Record timelapse** choice, to give the space back. Nothing asks about captured frames any more: opening a scene, **New Sculpt**, File → New and Open, and **Set scale** ask only about the work in progress, and a captured reel no longer keeps the **In progress** card in the gallery.
 - **The desktop app is retired.** The Electron shell, its renderer side, its release workflow, its test suite and its documentation are removed, and its releases are withdrawn from GitHub. The Install card no longer offers downloads, so it asks GitHub for nothing, and the privacy notice no longer names GitHub. The sign-in dialog has no desktop window variant, Preferences has no Desktop group, and the gallery, Sculpt and the viewer carry no desktop branches. The web app is Bozzetto Web; its desktop counterpart is Bozzetto Studio, a separate product (see What is changing).

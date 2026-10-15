@@ -17,6 +17,7 @@ import { signInAgain, signInButton } from '../signIn';
 import { topChip, topbarLeft, topbarRight } from '../topbar';
 import { accountChips } from './menu';
 import { Say, button, el } from './parts';
+import { shareControls } from '../community/share';
 
 /**
  * My projects (`/?me`, docs/accounts.md §7): the account's own work, with
@@ -32,6 +33,8 @@ import { Say, button, el } from './parts';
  *   timelapse or a model. Download: the scene's .bozz, or a zip of the
  *   frames (client-zip). Delete, asked first, from the server and from
  *   this device's shelf.
+ * - Share to Community on a model or a timelapse (ui/community/share,
+ *   §13): the switch, where it stands, Share again and Withdraw.
  *
  * Offline it is read only: the worker's last copy of the list draws the
  * cards (vite.config.ts), Open works for a scene this device has a copy
@@ -319,6 +322,7 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
   const title = card.querySelector<HTMLElement>('.card__title')!;
   const meta = card.querySelector<HTMLElement>('.card__meta')!;
   const actions = card.querySelector<HTMLElement>('.card__actions')!;
+  const body = card.querySelector<HTMLElement>('.card__body')!;
   const badge = el('span', 'card__badge', modeLabel(p));
   card.querySelector('.card__badges')!.appendChild(badge);
   // Through the private route, which every cache leaves alone (vite.config.ts);
@@ -360,6 +364,17 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
   rename.disabled = page.offline;
   remove.disabled = page.offline;
   actions.append(open, download, rename, remove);
+  // Share to Community (docs/accounts.md §13): the switch and where it
+  // stands, or for a scene or an armature what to do instead.
+  const sharing = (): HTMLElement =>
+    shareControls(p, {
+      userId: page.me.id,
+      handle: page.me.handle,
+      offline: page.offline,
+      failed: (what, err) => failed(page, what, err),
+    });
+  let share = sharing();
+  body.appendChild(share);
 
   download.addEventListener('click', () => void downloadProject(page, p, download));
 
@@ -398,6 +413,16 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
         .then(async (row) => {
           p.title = row.title;
           title.textContent = row.title;
+          // A renamed public project goes back for review (§13): the
+          // answer says where it stands now.
+          if (row.shared) {
+            p.shared = row.shared;
+            p.shared_at = row.shared_at ?? null;
+            p.review_reason = row.review_reason ?? null;
+            const next = sharing();
+            share.replaceWith(next);
+            share = next;
+          }
           done();
           // This device's copy goes by the same name.
           const lib = await import('../../sculpt/bridge/SceneLibrary');

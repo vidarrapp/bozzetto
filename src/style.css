@@ -5176,3 +5176,160 @@ body.is-sampling * {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* --- the Community (docs/accounts.md §13): the gallery of members'
+   shared work, author pages, the viewer's credit and Report, and Share
+   to Community on My projects' cards. --- */
+.community-page > .account-say {
+  margin: 0 0 14px;
+}
+
+.card--community {
+  cursor: pointer;
+}
+
+.card__author {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.card__author:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.community__more {
+  display: block;
+  margin: 24px auto 0;
+  padding: 8px 18px;
+}
+
+.community__empty,
+.community__missing {
+  grid-column: 1 / -1;
+}
+
+/* "by @handle" under the viewer's title, in the Render panel. */
+.panel__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.panel__byline {
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.panel__byline:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.viewer-author {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.viewer-report:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.report-card h2 {
+  margin-bottom: 0;
+}
+
+.report-what {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.report-what a {
+  color: var(--accent);
+}
+
+.report-note {
+  resize: vertical;
+  min-height: 64px;
+}
+
+/* My projects: Share to Community under a card's actions. */
+.card__share {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.card__share-status {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-spec);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.card__share[data-shared='public'] .card__share-status {
+  color: var(--text);
+}
+
+.card__share[data-shared='rejected'] .card__share-status,
+.card__share[data-shared='hidden'] .card__share-status {
+  color: var(--accent);
+}
+
+.card__share-link {
+  color: inherit;
+}
+
+.card__share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.card__share-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.card__share-switch input:disabled {
+  cursor: default;
+}
+
+.card__share-hint {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+  font-size: 11px;
+}
+
+.share-note__list {
+  margin: 8px 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.share-note__list li {
+  margin: 6px 0;
+}
+
+.share-note__list a {
+  color: var(--accent);
+}

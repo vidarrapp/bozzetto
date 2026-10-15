@@ -64,6 +64,16 @@ export interface ProjectSummary {
   media?: string;
   /** What its files weigh against the account's quota: on My projects' list (GET /api/me/projects). */
   bytes?: number;
+  /**
+   * Where it stands in the community gallery (docs/accounts.md §13), on My
+   * projects' list: none, pending, public, rejected or hidden. Absent from
+   * a server before the community.
+   */
+  shared?: 'none' | 'pending' | 'public' | 'rejected' | 'hidden';
+  /** When it was sent for review, then approved. */
+  shared_at?: number | null;
+  /** The reviewer's reason, while it is rejected or hidden. */
+  review_reason?: string | null;
 }
 
 /**

@@ -21,6 +21,7 @@ export async function mountViewer(
   manifest: Manifest,
   source: AssetSource,
   onStatus?: (msg: string) => void,
+  opts: { author?: string } = {},
 ): Promise<Viewer> {
   const viewer = await Viewer.create(viewport, manifest, source);
   // Expose for debugging from the browser console, e.g.:
@@ -35,7 +36,8 @@ export async function mountViewer(
 
   // Build the UI after boot so controls reflect the applied look.
   const help = new Help();
-  const panel = new Panel(viewer, { onHotkeys: () => help.toggle() });
+  // A member's work from the Community names its author under the title.
+  const panel = new Panel(viewer, { onHotkeys: () => help.toggle(), author: opts.author });
   viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;
   // a single-model project has nothing to scrub, so it gets no timeline.

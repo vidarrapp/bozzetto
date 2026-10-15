@@ -189,7 +189,8 @@ export default defineConfig(({ mode }) => {
         navigateFallback: '/index.html',
         // Which navigations the worker answers with the app's shell, offline
         // or not: the root, with whatever query it was opened with - the
-        // gallery, ?sculpt=1, ?armature=1, ?tl=<id> - and nothing else. Tested
+        // gallery, ?sculpt=1, ?armature=1, ?tl=<id>, ?me, ?community,
+        // ?u=<handle> - and nothing else. Tested
         // against the path and the query together, hence the query in the
         // pattern. /create/ is answered by its own precached page
         // (create/index.html, which the precache finds for the bare
@@ -216,11 +217,36 @@ export default defineConfig(({ mode }) => {
             // files (/api/me/media/*). No rule below matches them, and this
             // one comes first, as the first rule that matches is the one
             // used, so none added later can: NetworkOnly goes to the network
-            // and stores nothing.
+            // and stores nothing. With them the community's (docs/accounts.md
+            // §13): everything a reviewer reads (/api/mod/*: the queue, the
+            // reports with their notes, unlisted work's files), and the two
+            // writes, Share (/api/me/projects/:id/share) and Report
+            // (/api/community/:id/report), which a cache has no business
+            // answering for.
             urlPattern: ({ url }) =>
               url.origin === self.location.origin &&
-              /^\/api\/(?:auth\/|me\/(?:account|export)(?:\/|$)|me\/media\/)/.test(url.pathname),
+              /^\/api\/(?:auth\/|me\/(?:account|export)(?:\/|$)|me\/media\/|mod(?:\/|$)|me\/projects\/[^/]+\/share$|community\/[^/]+\/report$)/.test(
+                url.pathname,
+              ),
             handler: 'NetworkOnly',
+          },
+          {
+            // The Community and its author pages (docs/accounts.md §13), the
+            // public lists. Network first, not the template list's stale-
+            // while-revalidate: work withdrawn or hidden leaves at once, and
+            // a kept list shown as the live one would go on showing it.
+            // Online the live answer; offline (or slower than the timeout)
+            // the last one, so the pages still draw their cards. A 404 (no
+            // such member) passes through and is never stored.
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin && /^\/api\/community(?:\/u\/[^/]+)?$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'bozzetto-community',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [200] },
+            },
           },
           {
             // My projects (docs/accounts.md §7): the account's own list and

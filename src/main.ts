@@ -17,8 +17,9 @@ import { takeAccountLink } from './ui/account/links';
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
  * the landing gallery, or Sculpt, Armature or the passkey check when asked,
- * and with accounts on the Account page (`?account`) and My projects
- * (`?me`). The sign-in links (`?signin`, `?invite=`, `?link=`) open the
+ * and with accounts on the Account page (`?account`), My projects (`?me`),
+ * the Community (`?community`) and a member's page in it (`?u=<handle>`).
+ * The sign-in links (`?signin`, `?invite=`, `?link=`) open the
  * sign-in dialog over the gallery. Projects load from the API
  * (`/api/projects/:id`); the bundled static demo still works via a
  * fallback so it never depends on the db.
@@ -59,6 +60,18 @@ async function main(): Promise<void> {
   if (!id && params.has('me')) {
     const { renderMyProjects } = await import('./ui/account/myProjects');
     await renderMyProjects(app);
+    return;
+  }
+  // The community gallery and a member's part of it (docs/accounts.md §13),
+  // anyone's to see.
+  if (!id && params.has('community')) {
+    const { renderCommunity } = await import('./ui/community/page');
+    await renderCommunity(app);
+    return;
+  }
+  if (!id && params.has('u')) {
+    const { renderCommunity } = await import('./ui/community/page');
+    await renderCommunity(app, params.get('u') ?? '');
     return;
   }
   if (!id) {
@@ -148,15 +161,22 @@ async function bootViewer(id: string): Promise<void> {
   };
 
   try {
-    const { manifest, manifestUrl } = await loadProject(id, base);
+    const { manifest, manifestUrl, author } = await loadProject(id, base);
     setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
-    const viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus);
+    const viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus, { author });
     overlay?.remove();
     addGalleryLink();
+    // A member's work from the Community (docs/accounts.md §13): who made
+    // it, and Report for a member signed in who is not its author.
+    if (author) {
+      const { mountCommunityCredit } = await import('./ui/community/credit');
+      await mountCommunityCredit(id, author);
+    }
     // WS0 spike entry (dev-only): ?sculpt=1 mounts sculpt mode on the default
     // sphere over this project's stage/lighting. The real entry point ships
-    // with WS5 (see docs/sculpt-mode-implementation.md).
-    if (new URLSearchParams(window.location.search).get('sculpt') === '1') {
+    // with WS5 (see docs/sculpt-mode-implementation.md). Never over someone
+    // else's shared work, which is view only.
+    if (!author && new URLSearchParams(window.location.search).get('sculpt') === '1') {
       const { mountSculptMode } = await import('./sculpt/mode');
       await mountSculptMode(viewer);
     }
@@ -183,15 +203,16 @@ async function bootViewer(id: string): Promise<void> {
 async function loadProject(
   id: string,
   base: string,
-): Promise<{ manifest: Manifest; manifestUrl: string }> {
+): Promise<{ manifest: Manifest; manifestUrl: string; author?: string }> {
   const apiPath = `/api/projects/${encodeURIComponent(id)}`;
   const res = await apiFetch(apiPath);
   const servedHtml = res.contentType.includes('text/html');
   if (res.ok && !servedHtml && res.bytes) {
-    const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
+    const raw = JSON.parse(new TextDecoder().decode(res.bytes)) as unknown;
+    const manifest = viewerManifest(raw);
     // Frame paths in an API manifest are root-absolute (/media/...), so they
     // resolve against the site, which apiManifestUrl says.
-    return { manifest, manifestUrl: apiManifestUrl(apiPath) };
+    return { manifest, manifestUrl: apiManifestUrl(apiPath), author: communityAuthor(raw) };
   }
   // A 404 means nothing is answering for this id: try the bundled copy.
   if (!res.ok && res.status !== 404) {
@@ -251,6 +272,17 @@ async function ownerManifest(id: string): Promise<{ manifest: Manifest; manifest
     if (err instanceof SceneProjectError) throw err;
     return null;
   }
+}
+
+/**
+ * The author's handle when the public answer is a member's work from the
+ * Community (`community: true, author: {handle}`, docs/accounts.md §13);
+ * undefined for a template, or anything else.
+ */
+function communityAuthor(raw: unknown): string | undefined {
+  const r = raw as { community?: unknown; author?: { handle?: unknown } } | null;
+  if (r?.community !== true || typeof r.author?.handle !== 'string' || !r.author.handle) return undefined;
+  return r.author.handle;
 }
 
 class SceneProjectError extends Error {}
