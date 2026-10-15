@@ -16,6 +16,11 @@ import { Say, button, el } from '../ui/account/parts';
  * signed out or deleted from here (the server refuses: 409 owner); an
  * action its status has moved past is refused too (409 wrong_status), and
  * the account is drawn again as it now is.
+ *
+ * Each row also says the account's role, with Make moderator (an active
+ * member) or Make member (a moderator) beside Manage (docs/accounts.md
+ * §13): asked first, then POST /admin/api/users/:id/role, audited by the
+ * server. Moderators review the Community; the owner's role never changes.
  */
 
 export type UserStatus = 'active' | 'suspended' | 'deleting';
@@ -70,8 +75,11 @@ export const usersApi = {
       `${one(id, 'recount')}${after ? `?after=${encodeURIComponent(after)}` : ''}`,
       'POST',
     ),
+  setRole: (id: string, role: 'member' | 'moderator') => ownerCall<UserDetail>(one(id, 'role'), 'POST', { role }),
   finishDeletion: (id: string) => ownerCall<{ done: boolean; remaining: number }>(one(id, 'finish-deletion'), 'POST'),
 };
+
+const ROLE_WORDS: Record<UserView['role'], string> = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
 const STATUS_WORDS: Record<UserStatus, string> = { active: 'active', suspended: 'suspended', deleting: 'being deleted' };
 
@@ -83,13 +91,14 @@ function refusalText(err: unknown, who: string): string {
     const reason = typeof err.body.reason === 'string' ? err.body.reason : '';
     switch (err.code) {
       case 'owner':
-        return 'That is your own account: the owner tools do not suspend it, sign it out everywhere or delete it.';
+        return 'That is your own account: the owner tools do not suspend it, sign it out everywhere, delete it or change its role.';
       case 'wrong_status': {
         const status = err.body.status as UserStatus | undefined;
         return `${who} is ${status && STATUS_WORDS[status] ? STATUS_WORDS[status] : 'not as it was'} now, so that cannot be done. It is shown as it is now.`;
       }
       case 'bad_request':
         if (reason === 'reason') return `Give a reason of up to ${MAX_REASON} characters: it is mailed to them.`;
+        if (reason === 'role') return 'An account can be made a member or a moderator, nothing else.';
         if (reason === 'quotaMiB') return `A quota is a whole number of MiB from 1 to ${MAX_QUOTA_MIB.toLocaleString('en-GB')}.`;
         break;
       case 'not_found':
@@ -184,6 +193,9 @@ class Account {
   private readonly reserved = el('span', 'storage-meter__reserved');
   private readonly usage = el('span', 'admin-row__meta admin-user__usage');
   private readonly manage = button('Manage', 'btn admin-user__manage');
+  private readonly roleCol = el('span', 'admin-row__meta admin-user__rolecol');
+  private readonly roleAction = button('Make moderator', 'btn admin-user__setrole');
+  private readonly roleSay = new Say();
   private readonly detail = el('div', 'admin-user__detail');
   private readonly say = new Say();
   private open = false;
@@ -199,10 +211,12 @@ class Account {
     this.bar.append(this.used, this.reserved);
     main.append(this.title, this.meta, this.bar, this.usage);
     const actions = el('div', 'admin-row__actions');
-    actions.appendChild(this.manage);
+    actions.append(this.roleCol, this.roleAction, this.manage);
     this.row.append(main, actions);
     this.detail.hidden = true;
-    this.root.append(this.row, this.detail);
+    this.roleSay.root.classList.add('admin-user__rolesay');
+    this.root.append(this.row, this.roleSay.root, this.detail);
+    this.roleAction.addEventListener('click', () => void this.changeRole());
     this.manage.setAttribute('aria-expanded', 'false');
     this.manage.addEventListener('click', () => void this.toggle());
     this.draw();
@@ -232,6 +246,54 @@ class Account {
     this.bar.setAttribute('aria-valuemax', String(u.quotaBytes));
     this.bar.setAttribute('aria-valuenow', String(Math.min(u.bytesUsed + u.reserved, u.quotaBytes)));
     this.bar.setAttribute('aria-valuetext', text);
+    this.root.dataset.role = u.role;
+    this.roleCol.textContent = ROLE_WORDS[u.role];
+    // The owner's role never changes; only an active account is made a
+    // moderator, while a moderator is made a member whatever its status.
+    const to = this.nextRole;
+    this.roleAction.hidden = to === null;
+    this.roleAction.textContent = to === 'moderator' ? 'Make moderator' : 'Make member';
+  }
+
+  /** The role the row's action gives, or null where it offers none. */
+  private get nextRole(): 'member' | 'moderator' | null {
+    const u = this.user;
+    if (u.role === 'moderator') return 'member';
+    if (u.role === 'member' && u.status === 'active') return 'moderator';
+    return null;
+  }
+
+  /** Make moderator / Make member: asked first, then the account drawn as the server answers. */
+  private async changeRole(): Promise<void> {
+    const to = this.nextRole;
+    if (!to) return;
+    const asked =
+      to === 'moderator'
+        ? `Make ${this.who} a moderator? They can then review the Community: approve, reject and hide what members share, and read the reports.`
+        : `Make ${this.who} a member again? They stop reviewing at once.`;
+    if (!confirm(asked)) return;
+    this.roleAction.disabled = true;
+    this.roleSay.note('Working…');
+    try {
+      const answer = await asOwner(() => usersApi.setRole(this.user.id, to));
+      if (answer === null) {
+        this.roleSay.error('Not done: the owner tools need you signed in.');
+        return;
+      }
+      this.user = { ...this.user, ...answer };
+      this.draw();
+      this.roleSay.note(to === 'moderator' ? `${this.who} is a moderator now: Review is in their top row.` : `${this.who} is a member again.`);
+    } catch (err) {
+      const text = refusalText(err, this.who);
+      if (err instanceof ApiError && err.code === 'wrong_status' && typeof err.body.status === 'string') {
+        this.user = { ...this.user, status: err.body.status as UserStatus };
+        this.draw();
+      }
+      this.roleSay.error(text);
+    } finally {
+      this.roleAction.disabled = false;
+      this.roleAction.blur();
+    }
   }
 
   private async toggle(): Promise<void> {

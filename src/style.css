@@ -5333,3 +5333,141 @@ body.is-sampling * {
 .share-note__list a {
   color: var(--accent);
 }
+
+/* --- Reviewing the Community (docs/accounts.md §13): the Review chip and
+   its count, the Review page's tabs, cards and history, the viewer's
+   review mode, and the owner tools' role column. --- */
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-chip[aria-current='page'] {
+  background: var(--hover);
+}
+
+.review-chip__count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg, #fff);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.review-page .review-tabs {
+  margin: 0 0 18px;
+}
+
+.review-page > .account-say {
+  margin: 0 0 14px;
+}
+
+.review-card__state {
+  color: var(--text);
+}
+
+.review-card[data-shared='hidden'] .review-card__state,
+.review-card[data-shared='rejected'] .review-card__state {
+  color: var(--accent);
+}
+
+.review-card__reports,
+.review-card__own {
+  margin: 0;
+  font-size: 12px;
+}
+
+.review-reports {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.review-report {
+  overflow-wrap: anywhere;
+}
+
+.review-report__why {
+  color: var(--text);
+}
+
+.review-report__note {
+  display: block;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.review-card__say {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.review-history {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-history__item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--panel-border);
+  overflow-wrap: anywhere;
+}
+
+.review-history__item p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.review-history__project,
+.review-history__reason,
+.review-history__intro {
+  color: var(--muted);
+}
+
+.review-history__title {
+  color: var(--text);
+}
+
+.review-mode,
+.review-own {
+  pointer-events: auto;
+  cursor: default;
+}
+
+.review-mode {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.topbar--left .review-action:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* The top row of the viewer in review mode wraps rather than running off
+   a narrow screen. */
+.topbar--left:has(.review-mode) {
+  flex-wrap: wrap;
+  max-width: calc(100vw - 150px);
+}
+
+.admin-user__rolecol {
+  min-width: 72px;
+}
+
+.admin-user__rolesay {
+  padding: 0 12px 8px;
+}

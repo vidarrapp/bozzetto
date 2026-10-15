@@ -8,7 +8,7 @@ import { installSliderBubble } from './ui/sliderBubble';
 import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
-import { accountsOn } from './net/account';
+import { accountsOn, type SharedState } from './net/account';
 import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
@@ -18,7 +18,9 @@ import { takeAccountLink } from './ui/account/links';
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
  * the landing gallery, or Sculpt, Armature or the passkey check when asked,
  * and with accounts on the Account page (`?account`), My projects (`?me`),
- * the Community (`?community`) and a member's page in it (`?u=<handle>`).
+ * the Community (`?community`), a member's page in it (`?u=<handle>`) and,
+ * for the owner and moderators, the Review page (`?review`) and the viewer
+ * in review mode (`?tl=<id>&review=1`).
  * The sign-in links (`?signin`, `?invite=`, `?link=`) open the
  * sign-in dialog over the gallery. Projects load from the API
  * (`/api/projects/:id`); the bundled static demo still works via a
@@ -69,6 +71,13 @@ async function main(): Promise<void> {
     await renderCommunity(app);
     return;
   }
+  // The reviewers' page (docs/accounts.md §13): anyone else is sent to the
+  // gallery, which says why.
+  if (!id && params.has('review')) {
+    const { renderReview } = await import('./ui/community/review');
+    await renderReview(app);
+    return;
+  }
   if (!id && params.has('u')) {
     const { renderCommunity } = await import('./ui/community/page');
     await renderCommunity(app, params.get('u') ?? '');
@@ -93,7 +102,7 @@ async function main(): Promise<void> {
     showError(document.getElementById('overlay'), new Error('That is not a project link'));
     return;
   }
-  await bootViewer(id);
+  await bootViewer(id, params.get('review') === '1');
 }
 
 /**
@@ -149,7 +158,7 @@ async function bootSculpt(): Promise<void> {
   }
 }
 
-async function bootViewer(id: string): Promise<void> {
+async function bootViewer(id: string, review = false): Promise<void> {
   const viewport = document.getElementById('viewport');
   const overlay = document.getElementById('overlay');
   if (!viewport) throw new Error('#viewport element not found');
@@ -161,10 +170,19 @@ async function bootViewer(id: string): Promise<void> {
   };
 
   try {
-    const { manifest, manifestUrl, author } = await loadProject(id, base);
+    // Review mode (docs/accounts.md §13): a reviewer reads a shared project
+    // in any state through the reviewers' route. Anyone else, or a project
+    // not shared, goes the usual way, where unlisted work is not found.
+    const reviewing = review ? await reviewManifest(id) : null;
+    const { manifest, manifestUrl, author } = reviewing ?? (await loadProject(id, base));
     setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
     const viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus, { author });
     overlay?.remove();
+    if (reviewing) {
+      const { mountReviewBar } = await import('./ui/community/reviewViewer');
+      await mountReviewBar(id, { title: manifest.title, author: author ?? null, shared: reviewing.shared });
+      return;
+    }
     addGalleryLink();
     // A member's work from the Community (docs/accounts.md §13): who made
     // it, and Report for a member signed in who is not its author.
@@ -268,6 +286,31 @@ async function ownerManifest(id: string): Promise<{ manifest: Manifest; manifest
     if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
     const manifest = viewerManifest(JSON.parse(new TextDecoder().decode(res.bytes)));
     return { manifest, manifestUrl: apiManifestUrl(path) };
+  } catch (err) {
+    if (err instanceof SceneProjectError) throw err;
+    return null;
+  }
+}
+
+/**
+ * A shared project's manifest for review (GET /api/mod/projects/:id), its
+ * files on the reviewers' private route, with its author and where it
+ * stands; null for anyone not a reviewer (401, 403), a project not shared
+ * (404), accounts off, or no answer, so the usual path takes over.
+ */
+async function reviewManifest(
+  id: string,
+): Promise<{ manifest: Manifest; manifestUrl: string; author?: string; shared: SharedState } | null> {
+  if (!(await accountsOn().catch(() => false))) return null;
+  const path = `/api/mod/projects/${encodeURIComponent(id)}`;
+  try {
+    const res = await apiFetch(path);
+    if (!res.ok || !res.bytes || !res.contentType.includes('application/json')) return null;
+    const raw = JSON.parse(new TextDecoder().decode(res.bytes)) as { shared?: unknown; author?: { handle?: unknown } | null };
+    const manifest = viewerManifest(raw);
+    const handle = typeof raw.author?.handle === 'string' && raw.author.handle ? raw.author.handle : undefined;
+    const shared = typeof raw.shared === 'string' ? (raw.shared as SharedState) : 'pending';
+    return { manifest, manifestUrl: apiManifestUrl(path), author: handle, shared };
   } catch (err) {
     if (err instanceof SceneProjectError) throw err;
     return null;

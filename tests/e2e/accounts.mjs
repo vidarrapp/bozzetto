@@ -830,7 +830,8 @@ async function legalPages(browser, origin, t) {
       version: /Version 2026-10-08\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       sections: ['content', 'takedown'].filter((id) => document.getElementById(id)),
       text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
-      takedown: [...document.querySelectorAll('#takedown + p a[href^="mailto:"]')].map((a) => a.getAttribute('href')),
+      // The section's paragraphs (Report… in the viewer comes first since §13), each address once.
+      takedown: [...new Set([...document.querySelectorAll('#takedown ~ p a[href^="mailto:"]')].map((a) => a.getAttribute('href')))],
       todo: document.querySelectorAll('.legal__todo').length,
       font: getComputedStyle(document.querySelector('h1')).fontFamily,
       background: getComputedStyle(document.body).backgroundColor,
@@ -1507,7 +1508,7 @@ async function myProjectsPage(server, a, t) {
         title: c.querySelector('.card__title')?.textContent ?? null,
         meta: c.querySelector('.card__meta').textContent,
         badge: c.querySelector('.card__badge').textContent,
-        actions: [...c.querySelectorAll('.card__action')].map((b) => b.textContent),
+        actions: [...c.querySelectorAll('.card__actions .card__action')].map((b) => b.textContent),
       })),
     }));
   let v = await view();
@@ -1583,7 +1584,7 @@ async function myProjectsPage(server, a, t) {
       const c = document.querySelector(`.card--mine[data-project="${id}"]`);
       return {
         open: !!c?.querySelector('.card__open')?.getAttribute('href'),
-        disabled: [...(c?.querySelectorAll('button.card__action') ?? [])].map((b) => b.disabled),
+        disabled: [...(c?.querySelectorAll('.card__actions button.card__action') ?? [])].map((b) => b.disabled),
       };
     }),
   [scene.id, model.id]);

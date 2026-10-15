@@ -501,6 +501,88 @@ export async function reportProject(id: string, reason: ReportReason, note: stri
   return status === 204 ? 'sent' : 'again';
 }
 
+// --- reviewing the community (docs/accounts.md §13) ----------------------------------
+
+/** What a reviewer may do to a shared project. */
+export type ReviewAction = 'approve' | 'reject' | 'hide' | 'unhide' | 'dismiss';
+
+/** The longest reason a review keeps (shown to the author). */
+export const REVIEW_REASON_MAX = 500;
+
+/** A shared project as the reviewers' lists show it (the queue, the Reports tab). */
+export interface ReviewCard {
+  id: string;
+  title: string;
+  mode: string;
+  fps: number;
+  shared: SharedState;
+  shared_at: number | null;
+  updated_at: number;
+  review_reason: string | null;
+  author: { handle: string } | null;
+  /** Open reports of it. */
+  reports: number;
+  /** Its picture, on the reviewers' private route. */
+  thumb: string;
+  media: string;
+}
+
+/** One open report, as the Reports tab lists it. */
+export interface OpenReport {
+  id: string;
+  reason: ReportReason;
+  note: string;
+  reporter: { handle: string };
+  created_at: number;
+}
+
+/** One line of the reviewers' 30-day history. */
+export interface HistoryItem {
+  at: number;
+  /** approve, reject, hide, unhide, dismiss or withdraw. */
+  action: string;
+  actor: { handle: string } | null;
+  /** A hide the reports made, not a reviewer. */
+  auto: boolean;
+  project: { id: string; title: string; shared: SharedState; author: { handle: string } | null } | null;
+  subject: string;
+  /** What the author was shown, while that review is still the project's latest. */
+  reason: string | null;
+}
+
+/** A review's answer: where the project stands now. */
+export interface ReviewAnswer {
+  id: string;
+  shared: SharedState;
+  shared_at: number | null;
+  reviewed_at: number | null;
+  review_reason: string | null;
+}
+
+const mod = (rest: string): string => `/api/mod/${rest}`;
+
+/** GET /api/mod/counts: what the Review chip shows. */
+export const reviewCounts = (): Promise<{ pending: number; reports: number }> => callFor('GET', mod('counts'));
+
+/** GET /api/mod/queue: the projects waiting for review, oldest first, a page after `cursor`. */
+export const reviewQueue = (cursor: string | null = null): Promise<{ items: ReviewCard[]; next: string | null }> =>
+  callFor('GET', mod(`queue${cursor ? `?after=${encodeURIComponent(cursor)}` : ''}`));
+
+/** GET /api/mod/reports: the projects with open reports, the longest-reported first. */
+export const reviewReports = (): Promise<{ items: { project: ReviewCard; reports: OpenReport[] }[] }> => callFor('GET', mod('reports'));
+
+/** GET /api/mod/history: the last 30 days' reviews and withdrawals, newest first. */
+export const reviewHistory = (): Promise<{ items: HistoryItem[] }> => callFor('GET', mod('history'));
+
+/**
+ * POST /api/mod/projects/:id/review: a reviewer's decision. Refusals are
+ * AccountErrors: 409 wrong_state {shared} (someone else acted first), 400
+ * bad_request reason own (the reviewer's own project) or reason (a bad
+ * reason), 404 not_found (no longer shared), 401 signin, 403 forbidden.
+ */
+export const reviewProject = (id: string, action: ReviewAction, reason?: string): Promise<ReviewAnswer> =>
+  callFor('POST', mod(`projects/${encodeURIComponent(id)}/review`), reason === undefined ? { action } : { action, reason });
+
 // --- export and deletion ---------------------------------------------------------------
 
 /** One of a project's files, as the export names it: under the project, its size, and where to fetch it. */

@@ -1,5 +1,5 @@
 import { signOut, type Role, type SignIn } from '../../admin/api';
-import { errorText, suspensionText } from '../../net/account';
+import { errorText, reviewCounts, suspensionText } from '../../net/account';
 import { TopMenu, type MenuItem } from '../../sculpt/ui/TopMenu';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { installChip } from '../InstallHint';
@@ -9,7 +9,8 @@ import { topChip, topbarRight } from '../topbar';
 /**
  * The top row's account chips, with accounts on (docs/accounts.md §7). A
  * guest sees Sign in and Install; signed in, My projects and an @handle
- * menu (Account, Sign out); the owner also gets Owner tools. Someone whose
+ * menu (Account, Sign out); the owner also gets Owner tools, and the owner
+ * and moderators Review, with how much waits for them. Someone whose
  * sign-in expired sees Sign in, as a guest does, and is told once why. A
  * suspended account sees Suspended, which says why, and Sign out, which
  * lets the device go back to being a guest's; no Sign in, which would not
@@ -67,6 +68,7 @@ export function accountChips(signIn: SignIn, role: Role, signedIn: () => void): 
     return chips;
   }
   const chips: HTMLElement[] = [topChip('My projects', '/?me')];
+  if (role === 'owner' || role === 'moderator') chips.push(reviewChip());
   if (role === 'owner') chips.push(topChip('Owner tools', '/admin/'));
   const items: MenuItem[] = [{ label: 'Account', action: () => window.location.assign('/?account') }];
   {
@@ -84,4 +86,36 @@ export function accountChips(signIn: SignIn, role: Role, signedIn: () => void): 
   menu = new TopMenu(`@${me.handle}`, items, 'account-menu', topbarRight());
   chips.push(menu.chip);
   return chips;
+}
+
+/**
+ * Review (docs/accounts.md §13), for the owner and moderators: to the
+ * Review page, with a badge counting what waits - projects pending review
+ * and projects with open reports (GET /api/mod/counts). Asked once as the
+ * page draws, never polled; nothing waiting, or no answer, is no badge.
+ *
+ * Hooks for tests: `.review-chip`, `.review-chip__count`.
+ */
+function reviewChip(): HTMLElement {
+  const chip = topChip('Review', '/?review');
+  chip.classList.add('review-chip');
+  if (new URLSearchParams(window.location.search).has('review')) chip.setAttribute('aria-current', 'page');
+  void reviewCounts()
+    .then(({ pending, reports }) => {
+      const n = pending + reports;
+      if (!(n > 0)) return;
+      const badge = document.createElement('span');
+      badge.className = 'review-chip__count';
+      badge.textContent = String(n);
+      chip.appendChild(badge);
+      chip.setAttribute(
+        'aria-label',
+        `Review: ${pending} pending, ${reports} with open report${reports === 1 ? '' : 's'}`,
+      );
+      chip.title = chip.getAttribute('aria-label') ?? '';
+    })
+    .catch(() => {
+      // No count to be had: the chip still leads to the page.
+    });
+  return chip;
 }

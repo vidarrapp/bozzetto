@@ -190,7 +190,7 @@ export default defineConfig(({ mode }) => {
         // Which navigations the worker answers with the app's shell, offline
         // or not: the root, with whatever query it was opened with - the
         // gallery, ?sculpt=1, ?armature=1, ?tl=<id>, ?me, ?community,
-        // ?u=<handle> - and nothing else. Tested
+        // ?u=<handle>, ?review - and nothing else. Tested
         // against the path and the query together, hence the query in the
         // pattern. /create/ is answered by its own precached page
         // (create/index.html, which the precache finds for the bare

@@ -760,7 +760,7 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
 
 ## 13. Community (phase 3)
 
-Members share their own work to a public **community gallery**, a reviewer approves it, and anyone may then see it. Built server-side in phase 3, batch 1; the pages come in the batches after. Like everything here it sits behind `ACCOUNTS_ENABLED`.
+Members share their own work to a public **community gallery**, a reviewer approves it, and anyone may then see it. Built server-side in phase 3, batch 1; the pages in batches 2 and 3 (**Client**, below). Like everything here it sits behind `ACCOUNTS_ENABLED`.
 
 **What is shared.** Only a project the viewer plays: `mode` `model` or `timelapse`. A scene or an armature is not shared (publish a model of it first). Sharing moves no file: the project stays the member's, under `users/<uid>/projects/<pid>/`, on their quota, and its row stays `visibility = 'private'`; `shared` is what makes it public. The public sees it view only: no copy, no download, no export of anyone else's work. Templates are never shared (`template = 1` means `shared = 'none'`).
 
@@ -823,6 +823,17 @@ Members share their own work to a public **community gallery**, a reviewer appro
 **History** is the audit log's last 30 days joined with the projects still there; `reviewed_*` and `review_reason` stay on the row (a withdrawal keeps them), so nothing needs sweeping.
 
 **Tests.** The `community` function suite: 0004 on a fresh SQLite, accounts off, the list, cursor and author pages, the open routes' predicate on both hosts, sharing and its limit, the write paths' flip, reports and their limit, every reviewer route and action with their refusals, roles, the Template switch, the cascade, and audit rows without personal data; the owner's side of `requireModerator` and a review run on `functions/_shared` directly, since the servers' database has no owner until the `locks` suite makes one.
+
+**Client.** The pages, all behind accounts on and loaded only when asked for (`src/main.ts`):
+
+- **Community** `/?community` and **author pages** `/?u=<handle>` (`src/ui/community/page.ts`): the open lists as cards, Load more on `next`; a **Community** chip on the gallery. The viewer says **by @handle** for approved work and offers **Report…** to a member signed in who is not the author (`credit.ts`).
+- **Share** on My projects' model and timelapse cards, with the state, Withdraw and a first-share note (`share.ts`).
+- **Review** `/?review&tab=queue|reports|history` (`review.ts`), for an active owner or moderator by `GET /api/me`; anyone else is sent to the gallery, which says why. Cards act through `POST /api/mod/projects/:id/review` and redraw from its answer; 409 `wrong_state` redraws from the state it carries ("Someone else changed this; refreshed"), 400 `own` is "You cannot review your own work" (and one's own cards offer no actions).
+- **Review mode** `/?tl=<id>&review=1[&from=reports|history]` (`reviewViewer.ts`): the manifest from `GET /api/mod/projects/:id`, the author, a Reviewing chip with the state, the actions it allows and ← Review. Any refusal falls back to the ordinary viewer path, where unlisted work is not found.
+- The **Review chip** (`src/ui/account/menu.ts`) for owner and moderators in every page's account chips, its badge `pending + reports` from `GET /api/mod/counts`, read once as the page draws.
+- **Owner tools, Users** (`src/admin/users.ts`): a role column, **Make moderator** for an active member and **Make member** for a moderator, confirmed, through the role route.
+- The service worker never keeps `/api/mod/*`; `/?review` is the app's shell like every root query.
+- Tested by the `community` e2e suite (`tests/e2e/community.mjs`), with seeded accounts and sessions on the real Functions.
 
 ## Open questions for the owner
 
