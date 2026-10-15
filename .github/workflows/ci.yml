@@ -89,7 +89,8 @@ jobs:
       # node_modules linked in and a local D1 (tests/e2e/lib.mjs
       # startAccountsServer), with a stand-in for Turnstile's siteverify
       # (tests/functions/turnstile-fake.mjs) and codes read from the dev
-      # outbox. Two to five minutes, wrangler's start included.
-      - name: Accounts suite
-        timeout-minutes: 35
-        run: node tests/e2e/run.mjs accounts
+      # outbox. Two to five minutes, wrangler's start included. The
+      # community suite (share, review, report) runs the same way.
+      - name: Accounts and community suites
+        timeout-minutes: 45
+        run: node tests/e2e/run.mjs accounts community
