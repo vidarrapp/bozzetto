@@ -131,9 +131,12 @@ export const OPEN = `((${LISTED_TEMPLATE}) OR (shared = 'public' AND template = 
  * What a member's write to a project's content or title does to its place
  * in the community gallery (§13): a listed project goes back for review,
  * off the list at once, keeping its shared_at. Every member write path
- * puts this in the statement that writes, so the two land together.
+ * puts this in the statement that writes, so the two land together. The
+ * owner's own work is approved as it is shared, so it stays public through
+ * the owner's edits (the owner reviews everything, their own included).
  */
-export const UNLIST = "shared = CASE WHEN shared = 'public' THEN 'pending' ELSE shared END";
+export const UNLIST =
+  "shared = CASE WHEN shared = 'public' AND NOT EXISTS (SELECT 1 FROM users WHERE users.id = projects.owner_id AND users.role = 'owner') THEN 'pending' ELSE shared END";
 
 /**
  * A scope as SQL. It goes into the query rather than being checked on the
@@ -699,8 +702,8 @@ export async function updateProject(
   // statements moving its bytes require; otherwise anything in scope.
   const { sql, binds } = becomes ? { sql: STILL, binds: still(row) } : where(scope);
   // A template is never shared (§13), so one made here leaves the community
-  // gallery; the owner's own shared project, edited here, goes back for
-  // review as a member's would (UNLIST).
+  // gallery; the owner's own shared project, edited here, stays as it is
+  // (UNLIST: the owner's public work is not sent back for review).
   const shared = template ? "shared = 'none'" : UNLIST;
   const update = env.DB.prepare(
     `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, visibility = ?, template = ?, owner_id = ?, updated_at = ?, ${shared}

@@ -12,6 +12,7 @@ import { authorHref } from '../../net/community';
 import { topChip, topbarLeft } from '../topbar';
 import { signInButton } from '../signIn';
 import { LEGAL, button, el, legalLink } from '../account/parts';
+import { REPORT_REASON_LABELS } from './reviewActions';
 
 /**
  * The viewer's word on a member's work from the Community
@@ -19,15 +20,17 @@ import { LEGAL, button, el, legalLink } from '../account/parts';
  * which leads to the author's page (the Render panel says it under the
  * title too), and Report… for a member signed in who is not the author.
  * A guest gets nothing to click: the terms name the address to write to.
+ * An active owner or moderator also gets a Review chip beside the credit,
+ * which opens the same work in review mode (`&review=1&from=gallery`).
  * Nothing here copies or downloads anything; the viewer offers neither.
  *
- * Hooks for tests: `.viewer-author`, `.viewer-report` (`data-reported`
+ * Hooks for tests: `.viewer-author`, `.viewer-review`, `.viewer-report` (`data-reported`
  * once sent), and the dialog's `.report-overlay`, `select[name=reason]`,
  * `textarea[name=note]`, `.report-send`, `.report-say`.
  */
 export async function mountCommunityCredit(id: string, author: string): Promise<void> {
   const left = topbarLeft();
-  left.querySelectorAll('.viewer-author, .viewer-report').forEach((c) => c.remove());
+  left.querySelectorAll('.viewer-author, .viewer-review, .viewer-report').forEach((c) => c.remove());
   const by = topChip(`by @${author}`, authorHref(author));
   by.classList.add('viewer-author');
   left.appendChild(by);
@@ -35,21 +38,19 @@ export async function mountCommunityCredit(id: string, author: string): Promise<
   if (!(await accountsOn().catch(() => false))) return;
   // Signed in, active, and not the author: anyone else has no Report.
   const me = await getMe().catch(() => null);
-  if (!me || me.status !== 'active' || me.handle.toLowerCase() === author.toLowerCase()) return;
+  if (!me || me.status !== 'active') return;
+  if (me.role === 'owner' || me.role === 'moderator') {
+    const review = topChip('Review', `/?tl=${encodeURIComponent(id)}&review=1&from=gallery`);
+    review.classList.add('viewer-review');
+    review.title = 'Open it in review mode';
+    by.after(review);
+  }
+  if (me.handle.toLowerCase() === author.toLowerCase()) return;
   const report = topChip('Report…') as HTMLButtonElement;
   report.classList.add('viewer-report');
   report.addEventListener('click', () => openReport(id, author, report));
   left.appendChild(report);
 }
-
-/** The reasons a report can give, in the order the dialog offers them. */
-const REASONS: [ReportReason, string][] = [
-  ['nudity', 'Breaks the nudity policy'],
-  ['minors', 'Involves a minor'],
-  ['stolen', "Someone else's work"],
-  ['spam', 'Spam or advertising'],
-  ['other', 'Something else'],
-];
 
 /** Report…: the reason, an optional note, what happens next, and Send. */
 function openReport(id: string, author: string, chip: HTMLButtonElement): void {
@@ -64,11 +65,13 @@ function openReport(id: string, author: string, chip: HTMLButtonElement): void {
 
   const reason = el('select', 'account-input report-reason');
   reason.name = 'reason';
-  for (const [value, label] of REASONS) {
+  for (const [value, label] of REPORT_REASON_LABELS) {
     const o = el('option', '', label);
     o.value = value;
     reason.appendChild(o);
   }
+  // Nothing that accuses is picked beforehand.
+  reason.value = 'other';
   const reasonField = el('label', 'account-field');
   reasonField.append(el('span', 'account-field__label', 'What is wrong with it'), reason);
 

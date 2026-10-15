@@ -568,6 +568,23 @@ export const reviewCounts = (): Promise<{ pending: number; reports: number }> =>
 export const reviewQueue = (cursor: string | null = null): Promise<{ items: ReviewCard[]; next: string | null }> =>
   callFor('GET', mod(`queue${cursor ? `?after=${encodeURIComponent(cursor)}` : ''}`));
 
+/** The Gallery tab's state filter. */
+export type SharedFilter = 'all' | 'public' | 'hidden';
+
+/**
+ * GET /api/mod/shared: what is in the Community now, public or hidden,
+ * newest first, a page after `cursor`; `q` matches the title or the
+ * author's handle (`@name` the handle alone).
+ */
+export function reviewShared(q: string, state: SharedFilter, cursor: string | null = null): Promise<{ items: ReviewCard[]; next: string | null }> {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (state !== 'all') params.set('state', state);
+  if (cursor) params.set('after', cursor);
+  const query = params.toString();
+  return callFor('GET', mod(`shared${query ? `?${query}` : ''}`));
+}
+
 /** GET /api/mod/reports: the projects with open reports, the longest-reported first. */
 export const reviewReports = (): Promise<{ items: { project: ReviewCard; reports: OpenReport[] }[] }> => callFor('GET', mod('reports'));
 

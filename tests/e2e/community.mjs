@@ -13,12 +13,16 @@
 // @bea Report…; @bea reports (reason and note) and is thanked; @cy's report
 // hides it - Hidden in @ada's My projects, gone from the Community; the
 // Reports tab has both reports, Unhide brings it back; a guest sees no
-// Report and no Share; @ada renames it - Pending again; Withdraw takes it
+// Report and no Share; @mo's viewer has a Review chip beside the credit,
+// @bea's and a guest's none; the owner shares their own model (public at
+// once, no queue), finds it in the Gallery tab (the search narrows the
+// list, the address and a reload keep it), hides and unhides it; @ada
+// renames hers - Pending again; unticking the one Share switch takes it
 // out everywhere and the Queue is empty; the History tab has what was
 // done; a plain member opening /?review is sent to the gallery.
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
-import { seedSession, seedUser, seededToken } from '../functions/lib.mjs';
+import { DATA_ONE_FRAME, seedSession, seedUser, seededToken } from '../functions/lib.mjs';
 
 const VIEWPORT = { width: 1280, height: 800 };
 const DAY = 24 * 60 * 60 * 1000;
@@ -32,12 +36,20 @@ const PEOPLE = {
   mo: { id: 'u-mo', handle: 'mo', email: 'mo@example.com', ip: '203.0.113.44' },
 };
 
+/** The owner's own model, seeded. */
+const BOSS_WORK = 'p-bossbust00000000000000000';
+
 function seed(now) {
   const rows = [];
   for (const [name, u] of Object.entries(PEOPLE)) {
     rows.push(seedUser({ id: u.id, handle: u.handle, email: u.email, role: u.role ?? 'member', at: now - DAY }));
     rows.push(seedSession({ name, id: `s-${name}`, user: u.id, created: now - 60_000 }));
   }
+  // The owner's own model, not shared yet: the owner shares it from My projects.
+  rows.push(
+    `INSERT INTO projects (id, title, mode, fps, data, visibility, template, owner_id, storage_prefix, created_at, updated_at)
+     VALUES ('${BOSS_WORK}', 'Boss bust', 'model', 4, '${DATA_ONE_FRAME}', 'private', 0, 'u-boss', 'users/u-boss/projects/${BOSS_WORK}/', ${now - DAY}, ${now - DAY});`,
+  );
   return rows.join('\n');
 }
 
@@ -249,6 +261,15 @@ async function listedAndReported(server, b, g, id, t) {
   t.ok(row.author === 'by @ada' && row.report, `@bea's viewer says by @ada and offers Report… (${show(row)})`);
   await p.click('.viewer-report');
   await p.waitForSelector('.report-overlay', { timeout: 10_000 });
+  const reasons = await p.evaluate(() => {
+    const sel = document.querySelector('.report-overlay select[name=reason]');
+    return { value: sel?.value, labels: [...(sel?.options ?? [])].map((o) => o.textContent) };
+  });
+  t.ok(
+    reasons.value === 'other' &&
+      show(reasons.labels) === show(["Someone else's work", 'Spam or advertising', 'Sexual or pornographic content', 'Involves a minor', 'Something else']),
+    `the dialog starts at Something else, the reasons in order (${show(reasons)})`,
+  );
   await p.selectOption('.report-overlay select[name=reason]', 'stolen');
   await p.fill('.report-overlay textarea[name=note]', 'This is from a museum catalogue');
   await p.click('.report-send');
@@ -316,10 +337,16 @@ async function renameAndWithdraw(a, m, g, id, t) {
   t.ok(q.cards.some((c) => c.id === id && c.shared === 'pending'), `it is in the Queue again (${show(q.cards)})`);
 
   await myCard(a, id);
-  await p.click(`.card--mine[data-project="${id}"] .card__share-withdraw`);
+  const one = await p.evaluate((pid) => {
+    const c = document.querySelector(`.card--mine[data-project="${pid}"]`);
+    return { withdraw: !!c?.querySelector('.card__share-withdraw'), again: !!c?.querySelector('.card__share-again'), switches: c?.querySelectorAll('.card__share-switch input').length };
+  }, id);
+  t.ok(!one.withdraw && !one.again && one.switches === 1, `the card has the one switch, no Withdraw or Share again (${show(one)})`);
+  // Unticking the switch withdraws it.
+  await p.click(`.card--mine[data-project="${id}"] .card__share-switch input`);
   await waitFor(p, (pid) => document.querySelector(`.card--mine[data-project="${pid}"] .card__share`)?.dataset.shared === 'none', id);
   const out = await shareOf(a, id);
-  t.ok(out?.shared === 'none' && out.on === false, `Withdraw takes it out (${show(out)})`);
+  t.ok(out?.shared === 'none' && out.on === false, `unticking Share to Community takes it out (${show(out)})`);
   const empty = await reviewTab(m, 'queue');
   t.ok(empty.cards.length === 0 && empty.empty === 'Nothing is waiting for review.', `the Queue is empty (${show(empty)})`);
   const chip = await reviewChip(m);
@@ -344,6 +371,91 @@ async function renameAndWithdraw(a, m, g, id, t) {
       h.history.some((x) => x.action === 'hide' && /members' reports/.test(x.text)),
     `the History tab has what was done, newest first (${show(actions)})`,
   );
+}
+
+/** The viewer's Review chip: a reviewer has it beside the credit, a member and a guest do not. */
+async function viewerReviewChip(m, b, g, id, t) {
+  await viewer(m, id);
+  const shown = await waitFor(m.page, () => !!document.querySelector('.viewer-review'));
+  const seen = await m.page.evaluate(() => {
+    const chip = document.querySelector('.viewer-review');
+    return { href: chip?.getAttribute('href') ?? null, after: chip?.previousElementSibling?.classList.contains('viewer-author') ?? false };
+  });
+  await rest(m);
+  t.ok(shown && seen.href === `/?tl=${id}&review=1&from=gallery` && seen.after, `@mo's viewer has Review beside the credit, to review mode from the Gallery (${show(seen)})`);
+  for (const x of [b, g]) {
+    await viewer(x, id);
+    await waitFor(x.page, () => !!document.querySelector('.viewer-author'));
+    // The credit's own checks (accounts on, /api/me) come after the credit: give them their time.
+    if (x.who) await waitFor(x.page, () => !!document.querySelector('.viewer-report'));
+    const none = await x.page.evaluate(() => !document.querySelector('.viewer-review'));
+    await rest(x);
+    t.ok(none, `${x.who ? `@${x.who}, a member,` : 'a guest'} has no Review chip in the viewer`);
+  }
+}
+
+/** The owner shares their own work (public at once), then hides and unhides it from the Gallery tab; the search narrows it. */
+async function ownerGallery(o, m, g, t) {
+  const p = o.page;
+  const before = await myCard(o, BOSS_WORK);
+  t.ok(before?.shared === 'none' && before.on === false, `the owner's model, not shared (${show(before)})`);
+  await p.click(`.card--mine[data-project="${BOSS_WORK}"] .card__share-switch input`);
+  await waitFor(p, () => !!document.querySelector('.share-note-overlay'));
+  const note = await p.evaluate(() => document.querySelector('.share-note-overlay')?.textContent ?? '');
+  t.ok(/goes public in the Community at once/.test(note), `the owner's first-share note says it goes public at once (${note.slice(0, 80)}…)`);
+  await p.click('.share-note-continue');
+  await waitFor(p, (pid) => document.querySelector(`.card--mine[data-project="${pid}"] .card__share`)?.dataset.shared === 'public', BOSS_WORK);
+  const now = await shareOf(o, BOSS_WORK);
+  t.ok(now?.shared === 'public' && now.status === 'Public · Community' && now.on, `the owner's share is public at once, no queue (${show(now)})`);
+  const listed = await communityCards(g);
+  t.ok(listed.some((c) => c.id === BOSS_WORK && c.author === 'boss'), `and in the Community (${show(listed)})`);
+
+  const tab = await reviewTab(o, 'gallery');
+  const own = tab.cards.find((c) => c.id === BOSS_WORK);
+  const tabs = await p.evaluate(() => [...document.querySelectorAll('.review-tab')].map((a) => a.dataset.tab));
+  t.ok(show(tabs) === show(['queue', 'gallery', 'reports', 'history']) && tab.current === 'gallery', `the Gallery tab, after Queue (${show(tabs)})`);
+  t.ok(tab.cards.length === 2 && own?.shared === 'public' && own.author === '@boss' && show(own.actions) === show(['Hide…']), `it lists the Community, the owner's own work with Hide… (${show(tab.cards)})`);
+  const intro = await p.evaluate(() => document.querySelector('.landing__tagline')?.textContent ?? '');
+  t.ok(/the owner reviews everything/.test(intro), `the page says the owner reviews everything (${intro})`);
+
+  await p.fill('.review-search', 'boss');
+  await waitFor(p, () => document.querySelectorAll('.review-card').length === 1 && /[?&]q=boss/.test(location.search));
+  let seen = await p.evaluate(() => ({ cards: [...document.querySelectorAll('.review-card')].map((c) => c.dataset.project), search: location.search }));
+  t.ok(show(seen.cards) === show([BOSS_WORK]) && seen.search === '?review&tab=gallery&q=boss', `the search narrows it, and the address keeps it (${show(seen)})`);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.review-card', { timeout: 30_000 }).catch(() => {});
+  seen = await p.evaluate(() => ({ cards: [...document.querySelectorAll('.review-card')].map((c) => c.dataset.project), q: document.querySelector('.review-search')?.value }));
+  t.ok(show(seen.cards) === show([BOSS_WORK]) && seen.q === 'boss', `a reload keeps the search (${show(seen)})`);
+  await p.fill('.review-search', '@ada');
+  await waitFor(p, (bw) => document.querySelectorAll('.review-card').length === 1 && !document.querySelector(`.review-card[data-project="${bw}"]`), BOSS_WORK);
+  seen = await p.evaluate(() => [...document.querySelectorAll('.review-card .card__author')].map((a) => a.textContent));
+  t.ok(show(seen) === show(['@ada']), `@ada: her work alone (${show(seen)})`);
+  await p.fill('.review-search', '');
+  await waitFor(p, () => document.querySelectorAll('.review-card').length === 2);
+
+  await p.click(`.review-card[data-project="${BOSS_WORK}"] .review-action[data-action="hide"]`);
+  await p.waitForSelector('.review-reason-overlay', { timeout: 10_000 });
+  await p.fill('.review-reason-overlay textarea[name=reason]', 'A test of my own');
+  await p.click('.review-reason-send');
+  await waitFor(p, (bw) => document.querySelector(`.review-card[data-project="${bw}"]`)?.dataset.shared === 'hidden', BOSS_WORK);
+  let card = await p.evaluate((bw) => {
+    const c = document.querySelector(`.review-card[data-project="${bw}"]`);
+    return { shared: c?.dataset.shared, state: c?.querySelector('.review-card__state')?.textContent, actions: [...(c?.querySelectorAll('.review-action') ?? [])].map((x) => x.textContent), own: !!c?.querySelector('.review-card__own') };
+  }, BOSS_WORK);
+  t.ok(card.shared === 'hidden' && card.state === 'Hidden: A test of my own' && show(card.actions) === show(['Unhide']) && !card.own, `the owner hides their own work, marked hidden, with Unhide (${show(card)})`);
+  await p.selectOption('.review-filter', 'hidden');
+  await waitFor(p, () => document.querySelectorAll('.review-card').length === 1 && /state=hidden/.test(location.search));
+  const hiddenOnly = await p.evaluate(() => [...document.querySelectorAll('.review-card')].map((c) => c.dataset.project));
+  t.eq(show(hiddenOnly), show([BOSS_WORK]), 'the Hidden filter lists it alone');
+  await p.click(`.review-card[data-project="${BOSS_WORK}"] .review-action[data-action="unhide"]`);
+  await waitFor(p, (bw) => document.querySelector(`.review-card[data-project="${bw}"]`)?.dataset.shared === 'public', BOSS_WORK);
+  card = await p.evaluate((bw) => document.querySelector(`.review-card[data-project="${bw}"]`)?.dataset.shared, BOSS_WORK);
+  t.eq(card, 'public', 'and unhides it');
+
+  // A moderator's Gallery: the owner's work is not theirs, so they may act on it.
+  const mt = await reviewTab(m, 'gallery');
+  const forMo = mt.cards.find((c) => c.id === BOSS_WORK);
+  t.ok(forMo?.shared === 'public' && show(forMo.actions) === show(['Hide…']), `@mo's Gallery lists it too, with Hide… (${show(forMo)})`);
 }
 
 /** A plain member opening /?review is sent to the gallery, which says why; no Review chip. */
@@ -399,8 +511,10 @@ export const suites = {
       await part('share', () => share(a, id, t));
       await part('approve', () => approve(m, id, t));
       await part('listed and reported', () => listedAndReported(server, b, g, id, t));
+      await part('the viewer\'s Review chip', () => viewerReviewChip(m, b, g, id, t));
       await part('hidden by reports', () => hiddenByReports(server, a, c, g, id, t));
       await part('unhide', () => unhide(m, g, id, t));
+      await part('the owner reviews their own, from the Gallery tab', () => ownerGallery(o, m, g, t));
       await part('rename and withdraw', () => renameAndWithdraw(a, m, g, id, t));
       await part('not a reviewer', () => notAReviewer(b, t));
       await part('the owner reviews too', async () => {

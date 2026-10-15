@@ -12,19 +12,20 @@ import { LEGAL, button, el, legalLink } from '../account/parts';
  *
  * - Pending review: sent, waiting for a reviewer.
  * - Public · Community: approved, listed, with a link to it in the viewer.
- * - Rejected: <reason>, with Share again (the switch is off).
+ * - Rejected: <reason> (the switch is off: ticking it shares it again).
  * - Hidden, under review: a reviewer hid it, or two members reported it.
- *   It cannot be shared again until a reviewer has acted; it can be
- *   withdrawn.
+ *   It cannot be shared again until a reviewer has acted; unticking
+ *   withdraws it.
  *
- * Withdraw takes it out at once from any of those. The first share on a
- * device (for an account) shows a note first: what is shown, that the
+ * The switch is the one control: ticking shares, unticking withdraws (at
+ * once, asked first when the work is public or hidden). The owner's share
+ * is approved as it is made, so it goes public at once. The first share on
+ * a device (for an account) shows a note first: what is shown, that the
  * files stay the member's and nothing is downloadable, the content policy,
  * and that reviewers may reject or hide it.
  *
  * Hooks for tests: `.card__share[data-shared]`, `.card__share-switch
- * input`, `.card__share-status`, `.card__share-again`,
- * `.card__share-withdraw`, `.card__share-hint`, and the note's
+ * input`, `.card__share-status`, `.card__share-hint`, and the note's
  * `.share-note-overlay`, `.share-note-continue`, `.share-note-cancel`.
  */
 
@@ -33,6 +34,8 @@ export interface ShareContext {
   userId: string;
   /** The account's handle, as the note says it is shown. */
   handle: string;
+  /** The owner: a share is approved as it is made, so it goes public at once. */
+  owner: boolean;
   /** No connection: the controls show where it stands and change nothing. */
   offline: boolean;
   /** A refusal said on the page; a sign-in gone comes as one the page can mend. */
@@ -73,11 +76,7 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
   box.type = 'checkbox';
   label.append(box, document.createTextNode('Share to Community'));
   const status = el('p', 'card__share-status');
-  const again = button('Share again', 'card__action card__share-again');
-  const withdraw = button('Withdraw', 'card__action card__share-withdraw');
-  const row = el('div', 'card__share-actions');
-  row.append(again, withdraw);
-  root.append(label, status, row);
+  root.append(label, status);
 
   const state = (): SharedState => p.shared ?? 'none';
   const empty = p.frameCount <= 0;
@@ -102,10 +101,6 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
       status.textContent = 'Hidden, under review';
       if (p.review_reason) status.title = p.review_reason;
     }
-    again.hidden = s !== 'rejected';
-    withdraw.hidden = s === 'none';
-    again.disabled = busy || ctx.offline;
-    withdraw.disabled = busy || ctx.offline;
   };
 
   const take = (row: ShareStatus): void => {
@@ -117,13 +112,14 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
   const go = async (on: boolean): Promise<void> => {
     if (busy) return;
     if (on && !noteSeen(ctx.userId)) {
-      if (!(await firstShareNote(ctx.handle))) {
+      if (!(await firstShareNote(ctx.handle, ctx.owner))) {
         paint();
         return;
       }
       markNoteSeen(ctx.userId);
     }
-    if (!on && state() === 'public' && !confirm(`Withdraw "${p.title}" from the Community? It leaves at once.`)) {
+    const out = state() === 'public' ? 'It leaves the Community at once.' : state() === 'hidden' ? 'Sharing it again later sends it for review.' : null;
+    if (!on && out && !confirm(`Withdraw "${p.title}" from the Community? ${out}`)) {
       paint();
       return;
     }
@@ -144,8 +140,6 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
   };
 
   box.addEventListener('change', () => void go(box.checked));
-  again.addEventListener('click', () => void go(true));
-  withdraw.addEventListener('click', () => void go(false));
   paint();
   return root;
 }
@@ -161,7 +155,7 @@ function shareRefusal(err: unknown): unknown {
   if (err.status === 401) return new AuthExpiredError('session');
   if (err.status === 400 && err.reason === 'mode') return said('only a model or a timelapse can be shared. Publish a model of it to share it');
   if (err.status === 409) {
-    return said('it is hidden while a reviewer looks at it, and cannot be shared again until they have. You can withdraw it meanwhile');
+    return said('it is hidden while a reviewer looks at it, and cannot be shared again until they have. Untick Share to Community to withdraw it meanwhile');
   }
   if (err.status === 429) return said(`you have shared as many projects as a day allows. Try again ${inWait(err.retryAfter)}`);
   if (err.status === 404) return said('it is not there any more');
@@ -172,7 +166,7 @@ function shareRefusal(err: unknown): unknown {
  * The first share's note: what sharing shows and means. Resolves true for
  * Continue, false for Cancel (or Escape, or a click beside it).
  */
-function firstShareNote(handle: string): Promise<boolean> {
+function firstShareNote(handle: string, owner: boolean): Promise<boolean> {
   return new Promise((resolve) => {
     const overlay = el('div', 'install-overlay share-note-overlay');
     const card = el('div', 'install-card share-note');
@@ -188,8 +182,9 @@ function firstShareNote(handle: string): Promise<boolean> {
     item(`What is shown: its title, your handle (@${handle}), its pictures and the model itself, for anyone to look at and turn around in the viewer.`);
     item('It stays yours. The files stay in My projects, on your storage, and nothing of it can be downloaded or copied from the Community.');
     item('It must keep to the ', legalLink('content policy', LEGAL.content), '. Artistic nudity in figure work is fine; pornographic content is not.');
-    item('A reviewer looks at it before anyone else sees it, and may turn it down, or hide it later, saying why. Changing it sends it back for review.');
-    item('Withdraw takes it out of the Community at once, whenever you like.');
+    if (owner) item('As the owner you approve your own work: it goes public in the Community at once, and stays public as you change it. Members may still report it.');
+    else item('A reviewer looks at it before anyone else sees it, and may turn it down, or hide it later, saying why. Changing it sends it back for review.');
+    item('Unticking Share to Community takes it out of the Community at once, whenever you like.');
     const go = button('Continue', 'btn btn--primary share-note-continue');
     const cancel = button('Cancel', 'btn share-note-cancel');
     const actions = el('div', 'account-actions');

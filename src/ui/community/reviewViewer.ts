@@ -9,6 +9,7 @@ import {
   allowedActions,
   askReason,
   doneText,
+  mayReview,
   reviewTabHref,
   reviewTabOf,
   sendReview,
@@ -21,8 +22,9 @@ import {
  * the top row - ← Review (to the tab it was opened from, `&from=`), the
  * author's credit, a Reviewing chip saying where the project stands, and
  * Approve, Reject…, Hide…, Unhide or Dismiss as that state allows. Each
- * action redraws the row from the server's answer. On one's own work the
- * row says another reviewer decides, and offers nothing.
+ * action redraws the row from the server's answer. On a moderator's own
+ * work the row says another reviewer decides, and offers nothing; the
+ * owner reviews everything, their own work included.
  *
  * Hooks for tests: `.review-back`, `.viewer-author`, `.review-mode`
  * (`data-shared`), `.review-action[data-action]`.
@@ -46,7 +48,8 @@ export async function mountReviewBar(id: string, project: { title: string; autho
   left.appendChild(chip);
 
   const [me, reports] = await Promise.all([getMe().catch(() => null), reviewReports().catch(() => null)]);
-  const own = !!me && !!author && me.handle.toLowerCase() === author.toLowerCase();
+  // A moderator's own work: another reviewer decides. The owner reviews everything.
+  const own = !!me && !mayReview(me, author);
   let shared = project.shared;
   let open = reports?.items.find((r) => r.project.id === id)?.reports.length ?? 0;
   let busy = false;

@@ -5298,16 +5298,6 @@ body.is-sampling * {
   color: inherit;
 }
 
-.card__share-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.card__share-actions:not(:has(> :not([hidden]))) {
-  display: none;
-}
-
 .card__share-switch input:disabled {
   cursor: default;
 }
@@ -5365,6 +5355,23 @@ body.is-sampling * {
 
 .review-page > .account-say {
   margin: 0 0 14px;
+}
+
+.review-gallery__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.review-gallery__tools .review-search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.review-gallery__tools .review-filter {
+  flex: 0 0 auto;
+  width: auto;
 }
 
 .review-card__state {

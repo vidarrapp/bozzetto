@@ -16,8 +16,9 @@ import { closeReports, getProjectRow, mediaBase } from './projects';
  * A project's `shared` state moves so:
  *
  * - none → pending: its member shares it (and rejected → pending, after a change);
+ *   the owner's goes straight to public, approved by the owner as it is shared;
  * - pending → public: a reviewer approves it; pending → rejected: a reviewer rejects it, with a reason;
- * - public → pending: any write of its member's to its content or title (projects.ts UNLIST);
+ * - public → pending: any write of its member's to its content or title (projects.ts UNLIST), never the owner's;
  * - public → hidden: a reviewer hides it, with a reason, or a second member's open report lands;
  * - hidden → public: a reviewer unhides it;
  * - anything → none: its member withdraws it.
@@ -194,7 +195,8 @@ export async function authorOf(env: Env, row: Pick<ProjectRow, 'owner_id'>): Pro
 /**
  * Share an account's own project to the community gallery, or withdraw it
  * (POST /api/me/projects/:id/share {shared}). Sharing sends it for review
- * (pending) from none or rejected: a model or timelapse only (400 reason
+ * (pending) from none or rejected - the owner's goes public at once
+ * (ownerShare): a model or timelapse only (400 reason
  * mode), at most SHARES a day (429), audited `project.share`. Asking to
  * share what is pending or public already changes nothing; a hidden one is
  * 409 wrong_state, under review until a reviewer acts or the member
@@ -218,8 +220,9 @@ export async function setShared(
     if (!SHARE_MODES.includes(row.mode)) {
       throw new HttpError('Only a model or a timelapse can be shared', 400, 'bad_request', { reason: 'mode' });
     }
-    if (row.shared === 'pending' || row.shared === 'public') return row;
     if (row.shared === 'hidden') throw wrongState(row.shared, 'It is hidden and under review');
+    if (user.role === 'owner') return ownerShare(env, user, row, now, waitUntil);
+    if (row.shared === 'pending' || row.shared === 'public') return row;
     await enforce(env, SHARES, user.id, now, waitUntil);
     const done = { sql: "SELECT 1 FROM projects WHERE id = ? AND shared = 'pending' AND updated_at = ?", binds: [id, now] };
     const [changed] = await env.DB.batch([
@@ -242,6 +245,43 @@ export async function setShared(
     auditStatement(env, { actor: user.id, at: now, action: 'project.withdraw', subject: id, detail: { from: row.shared } }, done),
   ]);
   return settled(env, user, id, changed.meta.changes > 0, (s) => s === 'none');
+}
+
+/**
+ * The owner's share: approved as it is made, since the owner reviews
+ * everything - none, rejected or pending → public, listed from now,
+ * reviewed by the owner. Audited as the two it is, `project.share {from}`
+ * and `project.review {action: 'approve', from, to: 'public'}`, both by
+ * the owner, so the History tab shows the approval. Already public changes
+ * nothing; counted against SHARES as any share is.
+ */
+async function ownerShare(
+  env: Env,
+  user: UserRow,
+  row: ProjectRow,
+  now: number,
+  waitUntil?: (p: Promise<unknown>) => void,
+): Promise<ProjectRow> {
+  if (row.shared === 'public') return row;
+  await enforce(env, SHARES, user.id, now, waitUntil);
+  const id = row.id;
+  const done = {
+    sql: "SELECT 1 FROM projects WHERE id = ? AND shared = 'public' AND reviewed_at = ? AND reviewed_by = ?",
+    binds: [id, now, user.id],
+  };
+  const [changed] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE projects SET shared = 'public', shared_at = ?, review_reason = NULL, reviewed_at = ?, reviewed_by = ?, updated_at = ?
+       WHERE id = ? AND owner_id = ? AND template = 0 AND shared IN ('none', 'rejected', 'pending') AND mode IN ('model', 'timelapse')`,
+    ).bind(now, now, user.id, now, id, user.id),
+    auditStatement(env, { actor: user.id, at: now, action: 'project.share', subject: id, detail: { from: row.shared } }, done),
+    auditStatement(
+      env,
+      { actor: user.id, at: now, action: 'project.review', subject: id, detail: { action: 'approve', from: row.shared, to: 'public' } },
+      done,
+    ),
+  ]);
+  return settled(env, user, id, changed.meta.changes > 0, (s) => s === 'public');
 }
 
 /** The row after a change; if the change found nothing to do, it is fine only if what was asked holds anyway. */
@@ -402,6 +442,76 @@ export async function reviewQueue(env: Env, q: { after: Cursor<string> | null; l
   return { items: shown.map(reviewCard), next: results.length > q.limit && last ? cursorOf(last.shared_at ?? 0, last.id) : null };
 }
 
+/** What the Gallery tab's search may hold, in characters. */
+export const MAX_SEARCH = 100;
+/** The Gallery tab's state filter. */
+export const SHARED_FILTERS = ['all', 'public', 'hidden'] as const;
+export type SharedFilter = (typeof SHARED_FILTERS)[number];
+
+/**
+ * ?q= and ?state= of the Gallery tab: the search trimmed and cut to
+ * MAX_SEARCH characters ('' for none), and the state, `all` when absent;
+ * any other state is 400 bad_request {reason: 'state'}.
+ */
+export function sharedQuery(params: URLSearchParams): { q: string; state: SharedFilter } {
+  const q = [...(params.get('q') ?? '').trim()].slice(0, MAX_SEARCH).join('').trim();
+  const raw = params.get('state');
+  const state = raw === null || raw === '' ? 'all' : raw;
+  if (!(SHARED_FILTERS as readonly string[]).includes(state)) {
+    throw new HttpError(`state: one of ${SHARED_FILTERS.join(', ')}`, 400, 'bad_request', { reason: 'state' });
+  }
+  return { q, state: state as SharedFilter };
+}
+
+/**
+ * The Gallery tab: every project in the Community now - public, or hidden
+ * (by a reviewer or the reports) - newest first (shared_at, then id),
+ * after `after`. `q` matches the title or the author's handle, any
+ * capitals, anywhere in it; `@name` the handle alone. `state` narrows it
+ * to public or hidden. Whatever the author's account's status, as the
+ * queue lists it.
+ */
+export async function listShared(
+  env: Env,
+  q: { after: Cursor<string> | null; limit: number; q: string; state: SharedFilter },
+): Promise<Page<ReviewCard>> {
+  const where = ['p.template = 0'];
+  const binds: unknown[] = [];
+  if (q.state === 'all') where.push("p.shared IN ('public', 'hidden')");
+  else {
+    where.push('p.shared = ?');
+    binds.push(q.state);
+  }
+  const handleOnly = q.q.startsWith('@');
+  const text = handleOnly ? q.q.slice(1).trim() : q.q;
+  // instr() on lower(), not LIKE: D1 refuses a LIKE pattern past 50 bytes
+  // ("too complex"), shorter than a search may be, and instr() takes % and
+  // _ as themselves with nothing to escape. lower() folds ASCII, as LIKE does.
+  if (text) {
+    if (handleOnly) {
+      where.push('instr(lower(u.handle), lower(?)) > 0');
+      binds.push(text);
+    } else {
+      where.push('(instr(lower(p.title), lower(?)) > 0 OR instr(lower(u.handle), lower(?)) > 0)');
+      binds.push(text, text);
+    }
+  }
+  if (q.after) {
+    where.push('(p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))');
+    binds.push(q.after.at, q.after.at, q.after.id);
+  }
+  const { results } = await env.DB.prepare(
+    `SELECT ${REVIEW_COLUMNS} FROM projects p LEFT JOIN users u ON u.id = p.owner_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY p.shared_at DESC, p.id DESC LIMIT ?`,
+  )
+    .bind(...binds, q.limit + 1)
+    .all<ReviewRow>();
+  const shown = results.slice(0, q.limit);
+  const last = shown.at(-1);
+  return { items: shown.map(reviewCard), next: results.length > q.limit && last ? cursorOf(last.shared_at ?? 0, last.id) : null };
+}
+
 /** The open reports there are, at most this many. */
 const MAX_OPEN_REPORTS = 500;
 
@@ -543,9 +653,10 @@ export const REVIEW_ACTIONS: Record<string, Transition> = {
  * - dismiss: pending or public with open reports: the reports dismissed, nothing else.
  *
  * A reason is 1 to 500 characters (400 reason reason). An action the
- * project's state does not allow is 409 wrong_state {shared}; one on the
- * reviewer's own project 400 reason own; a project not shared, or not
- * there, 404. The row's updated_at moves on every change of state.
+ * project's state does not allow is 409 wrong_state {shared}; one on a
+ * moderator's own project 400 reason own (the owner reviews everything,
+ * their own work included); a project not shared, or not there, 404. The
+ * row's updated_at moves on every change of state.
  */
 export async function reviewProject(env: Env, by: UserRow, id: string, body: Record<string, unknown>, now: number): Promise<ProjectRow> {
   const name = typeof body.action === 'string' ? body.action : '';
@@ -556,7 +667,8 @@ export async function reviewProject(env: Env, by: UserRow, id: string, body: Rec
   const reason = t.reason ? cleanText(body.reason, 'reason', true) : null;
   const row = await getProjectRow(env, id, { reviewer: true });
   if (!row) throw notFound();
-  if (row.owner_id === by.id) {
+  // A moderator never acts on their own work; the owner reviews everything, their own included.
+  if (row.owner_id === by.id && by.role !== 'owner') {
     throw new HttpError('Another reviewer decides on your own projects', 400, 'bad_request', { reason: 'own' });
   }
   if (!t.from.includes(row.shared)) throw wrongState(row.shared);

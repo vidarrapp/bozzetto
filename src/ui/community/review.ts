@@ -8,11 +8,13 @@ import {
   reviewHistory,
   reviewQueue,
   reviewReports,
+  reviewShared,
   type HistoryItem,
   type Me,
   type OpenReport,
   type ReviewAction,
   type ReviewCard,
+  type SharedFilter,
 } from '../../net/account';
 import { authorHref } from '../../net/community';
 import { legalFoot, renderLanding, setPicture } from '../Landing';
@@ -27,6 +29,8 @@ import {
   allowedActions,
   askReason,
   doneText,
+  mayReview,
+  reportReasonText,
   reviewTabHref,
   reviewTabOf,
   reviewViewerHref,
@@ -37,25 +41,31 @@ import {
 /**
  * The Review page, `/?review` (docs/accounts.md §13): the owner's and the
  * moderators' place to decide on what members share. Anyone else is sent
- * to the gallery, which says why. Three tabs, plain links like the owner
+ * to the gallery, which says why. Four tabs, plain links like the owner
  * tools' (`?review&tab=`):
  *
  * - Queue: what waits for review, oldest first, 50 at a time with Load
  *   more; Open (the viewer in review mode), Approve, Reject… (a reason).
+ * - Gallery: everything in the Community now, public or hidden, newest
+ *   first, 24 at a time with Load more; a search (title or @handle,
+ *   debounced, kept in the address as `&q=`) and a state filter (`&state=`);
+ *   Open, and Hide… or Unhide.
  * - Reports: each project with open reports, the longest-reported first,
  *   with the reports (reason, note, who, when) and where it stands; Hide…,
  *   Dismiss, Unhide, Reject… as its state allows.
  * - History: the reviews and withdrawals of the last 30 days, newest first.
  *
  * An action redraws its card from the server's answer. Someone else acting
- * first (409) redraws it as it now is, saying so; nobody reviews their own
- * work (the card says so and offers nothing; the server refuses as well).
+ * first (409) redraws it as it now is, saying so; a moderator does not
+ * review their own work (the card says so and offers nothing; the server
+ * refuses as well), while the owner reviews everything, their own included.
  *
  * Hooks for tests: `.review-page[data-tab]`, `.review-tab[data-tab]`,
  * `.review-card[data-project][data-shared]`, `.review-card__state`,
  * `.review-card__reports`, `.review-report`, `.review-action[data-action]`,
  * `.review-card__say`, `.review__more`, `.review__empty`,
- * `.review-history__item[data-action]`, `.review__say`.
+ * `.review-history__item[data-action]`, `.review__say`, and on the Gallery
+ * tab `.review-search`, `.review-filter`.
  */
 export async function renderReview(app: HTMLElement): Promise<void> {
   const config = await loadConfig();
@@ -76,7 +86,7 @@ export async function renderReview(app: HTMLElement): Promise<void> {
   const titles = el('div');
   titles.append(
     el('h1', 'landing__title', 'Review'),
-    el('p', 'landing__tagline', 'What members share waits here for a reviewer. Nobody reviews their own work.'),
+    el('p', 'landing__tagline', 'What members share waits here for a reviewer. Moderators do not review their own work; the owner reviews everything.'),
   );
   head.appendChild(titles);
   const nav = el('nav', 'admin-tabs review-tabs');
@@ -109,6 +119,7 @@ export async function renderReview(app: HTMLElement): Promise<void> {
 
   const ctx: Ctx = { app, me, tab, say };
   if (tab === 'queue') await queueTab(ctx, body);
+  else if (tab === 'gallery') await galleryTab(ctx, body);
   else if (tab === 'reports') await reportsTab(ctx, body);
   else await historyTab(ctx, body);
 }
@@ -187,6 +198,105 @@ async function reportsTab(ctx: Ctx, body: HTMLElement): Promise<void> {
   if (got.items.length === 0) grid.appendChild(el('p', 'muted review__empty', 'No open reports.'));
 }
 
+/** The Gallery tab's state filter, in words. */
+const FILTERS: [SharedFilter, string][] = [
+  ['all', 'All'],
+  ['public', 'Public'],
+  ['hidden', 'Hidden'],
+];
+
+const filterOf = (raw: string | null): SharedFilter => (raw === 'public' || raw === 'hidden' ? raw : 'all');
+
+/** How long the search waits for the typing to stop. */
+const SEARCH_WAIT = 300;
+
+/**
+ * Everything in the Community now, newest first, searched and filtered;
+ * the search and the filter are kept in the address (`&q=`, `&state=`),
+ * so a reload keeps them.
+ */
+async function galleryTab(ctx: Ctx, body: HTMLElement): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  const tools = el('form', 'review-gallery__tools');
+  tools.setAttribute('role', 'search');
+  tools.addEventListener('submit', (e) => e.preventDefault());
+  const search = el('input', 'account-input review-search');
+  search.type = 'search';
+  search.name = 'q';
+  search.maxLength = 100;
+  search.placeholder = 'Search titles or @handles';
+  search.setAttribute('aria-label', 'Search the Community by title or @handle');
+  search.value = params.get('q') ?? '';
+  const filter = el('select', 'account-input review-filter');
+  filter.name = 'state';
+  filter.setAttribute('aria-label', 'Which to show');
+  for (const [value, label] of FILTERS) {
+    const o = el('option', '', label);
+    o.value = value;
+    filter.appendChild(o);
+  }
+  filter.value = filterOf(params.get('state'));
+  tools.append(search, filter);
+  const grid = el('div', 'landing__grid review__grid');
+  const more = button('Load more', 'btn community__more review__more');
+  more.hidden = true;
+  body.append(tools, grid, more);
+
+  let cursor: string | null = null;
+  // Each search starts a new list; an answer to an older one is dropped.
+  let round = 0;
+  const query = (): { q: string; state: SharedFilter } => ({ q: search.value.trim().slice(0, 100), state: filterOf(filter.value) });
+  const load = async (fresh: boolean): Promise<void> => {
+    const mine = fresh ? ++round : round;
+    const { q, state } = query();
+    more.disabled = true;
+    let page;
+    try {
+      page = await reviewShared(q, state, fresh ? null : cursor);
+    } catch (err) {
+      if (mine !== round) return;
+      more.disabled = false;
+      loadFailed(ctx, 'The Community', err);
+      return;
+    }
+    if (mine !== round) return;
+    more.disabled = false;
+    if (fresh) grid.replaceChildren();
+    for (const item of page.items) {
+      if (grid.querySelector(`[data-project="${CSS.escape(item.id)}"]`)) continue;
+      grid.appendChild(new Card(ctx, item, null).root);
+    }
+    if (fresh && page.items.length === 0) {
+      grid.appendChild(el('p', 'muted review__empty', q || state !== 'all' ? 'Nothing in the Community matches.' : 'Nothing is in the Community yet.'));
+    }
+    cursor = page.next;
+    more.hidden = cursor === null;
+  };
+  /** The address follows the search, replaced rather than pushed: a reload keeps it. */
+  const remember = (): void => {
+    const { q, state } = query();
+    let href = reviewTabHref('gallery');
+    if (q) href += `&q=${encodeURIComponent(q)}`;
+    if (state !== 'all') href += `&state=${state}`;
+    window.history.replaceState(null, '', href);
+  };
+  let timer = 0;
+  search.addEventListener('input', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      remember();
+      void load(true);
+    }, SEARCH_WAIT);
+  });
+  filter.addEventListener('change', () => {
+    window.clearTimeout(timer);
+    remember();
+    void load(true);
+  });
+  more.addEventListener('click', () => void load(false));
+  await load(true);
+}
+
 /** Each history line's verb. */
 const DONE: Record<string, string> = {
   approve: 'Approved',
@@ -241,15 +351,6 @@ function historyLine(item: HistoryItem): HTMLElement {
   return li;
 }
 
-/** The words for each report reason, as the Report dialog offers them. */
-const REPORT_REASON: Record<string, string> = {
-  nudity: 'Breaks the nudity policy',
-  minors: 'Involves a minor',
-  stolen: "Someone else's work",
-  spam: 'Spam or advertising',
-  other: 'Something else',
-};
-
 /** One project on the Queue or the Reports tab: drawn again after each action from what the server says. */
 class Card {
   readonly root = el('div', 'card card--library review-card');
@@ -272,8 +373,9 @@ class Card {
     this.draw();
   }
 
+  /** A moderator's own work, which another reviewer decides on; never the owner's. */
   private get own(): boolean {
-    return !!this.item.author && this.item.author.handle.toLowerCase() === this.ctx.me.handle.toLowerCase();
+    return !mayReview(this.ctx.me, this.item.author?.handle ?? null);
   }
 
   private draw(): void {
@@ -304,7 +406,7 @@ class Card {
         for (const r of this.reports) {
           const li = el('li', 'review-report');
           li.dataset.reason = r.reason;
-          li.append(el('span', 'review-report__why', REPORT_REASON[r.reason] ?? r.reason), ` · @${r.reporter.handle} · ${dayOf(r.created_at)}`);
+          li.append(el('span', 'review-report__why', reportReasonText(r.reason)), ` · @${r.reporter.handle} · ${dayOf(r.created_at)}`);
           if (r.note) li.append(el('span', 'review-report__note', r.note));
           list.appendChild(li);
         }
@@ -321,8 +423,11 @@ class Card {
       parts.push(el('p', 'muted review-card__own', 'Your own work: another reviewer decides.'));
     } else {
       // The Reports tab is about the reports: Hide…, Dismiss, Unhide, and
-      // Reject… for pending work; Approve is the Queue's.
-      const offered = allowedActions(p.shared, this.openReports).filter((a) => !(this.reports && a === 'approve'));
+      // Reject… for pending work; Approve is the Queue's. The Gallery tab
+      // hides and unhides.
+      const offered = allowedActions(p.shared, this.openReports).filter((a) =>
+        this.ctx.tab === 'gallery' ? a === 'hide' || a === 'unhide' : !(this.reports && a === 'approve'),
+      );
       for (const action of offered) {
         const b = button(ACTION_LABEL[action], 'card__action review-action');
         b.dataset.action = action;

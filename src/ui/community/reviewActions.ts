@@ -3,6 +3,7 @@ import {
   REVIEW_REASON_MAX,
   errorText,
   reviewProject,
+  type ReportReason,
   type ReviewAction,
   type ReviewAnswer,
   type SharedState,
@@ -24,6 +25,22 @@ export const ACTION_LABEL: Record<ReviewAction, string> = {
   unhide: 'Unhide',
   dismiss: 'Dismiss',
 };
+
+/**
+ * The reasons a report can give, in words, in the order the Report dialog
+ * offers them; the Reports tab says them the same way. The stored codes
+ * stay as they are ('nudity' is the sexual-content reason).
+ */
+export const REPORT_REASON_LABELS: [ReportReason, string][] = [
+  ['stolen', "Someone else's work"],
+  ['spam', 'Spam or advertising'],
+  ['nudity', 'Sexual or pornographic content'],
+  ['minors', 'Involves a minor'],
+  ['other', 'Something else'],
+];
+
+/** A report's reason in words; a code this does not know, as it is. */
+export const reportReasonText = (reason: string): string => REPORT_REASON_LABELS.find(([code]) => code === reason)?.[1] ?? reason;
 
 /** Where a shared project stands, in words. */
 export const STATE_LABEL: Record<SharedState, string> = {
@@ -80,7 +97,7 @@ export async function sendReview(id: string, action: ReviewAction, reason?: stri
       const shared = typeof err.body.shared === 'string' ? (err.body.shared as SharedState) : undefined;
       return { ok: false, text: 'Someone else changed this; refreshed.', shared, noReports: err.body.reports === 0 };
     }
-    if (err.status === 400 && err.reason === 'own') return { ok: false, text: 'You cannot review your own work.' };
+    if (err.status === 400 && err.reason === 'own') return { ok: false, text: 'You cannot review your own work: another reviewer decides.' };
     if (err.status === 400 && err.reason === 'reason') return { ok: false, text: `A reason is 1 to ${REVIEW_REASON_MAX} characters.` };
     if (err.status === 404) return { ok: false, text: 'It is no longer shared: its author withdrew or deleted it.', shared: 'none', gone: true };
     if (err.status === 401) return { ok: false, text: 'Your sign-in has expired.', signedOut: true };
@@ -159,15 +176,23 @@ export function askReason(action: 'reject' | 'hide', title: string, author: stri
   });
 }
 
+/**
+ * Whether a reviewer may act on a project: never a moderator on their own
+ * work; the owner reviews everything, their own included (as the server).
+ */
+export const mayReview = (me: { role: string; handle: string }, author: string | null): boolean =>
+  me.role === 'owner' || !author || author.toLowerCase() !== me.handle.toLowerCase();
+
 /** Where the viewer opens a project for review, and the tab it goes back to. */
 export const reviewViewerHref = (id: string, from: ReviewTab): string =>
   `/?tl=${encodeURIComponent(id)}&review=1${from === 'queue' ? '' : `&from=${from}`}`;
 
 /** The Review page's tabs. */
-export type ReviewTab = 'queue' | 'reports' | 'history';
+export type ReviewTab = 'queue' | 'gallery' | 'reports' | 'history';
 
 export const REVIEW_TABS: [ReviewTab, string][] = [
   ['queue', 'Queue'],
+  ['gallery', 'Gallery'],
   ['reports', 'Reports'],
   ['history', 'History'],
 ];
@@ -177,5 +202,5 @@ export const reviewTabHref = (tab: ReviewTab): string => `/?review&tab=${tab}`;
 
 /** A tab named in an address, or the queue. */
 export function reviewTabOf(raw: string | null): ReviewTab {
-  return raw === 'reports' || raw === 'history' ? raw : 'queue';
+  return raw === 'gallery' || raw === 'reports' || raw === 'history' ? raw : 'queue';
 }

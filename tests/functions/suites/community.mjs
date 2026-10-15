@@ -396,7 +396,7 @@ async function onChecks(checks, on) {
 
   // --- the reviewers ------------------------------------------------------------------------------
   t = checks('functions: community, who may review');
-  for (const path of ['/api/mod/counts', '/api/mod/queue', '/api/mod/reports', '/api/mod/history', `/api/mod/projects/${p1}`]) {
+  for (const path of ['/api/mod/counts', '/api/mod/queue', '/api/mod/shared', '/api/mod/reports', '/api/mod/history', `/api/mod/projects/${p1}`]) {
     const asMember = await bob.call('GET', path);
     const asGuest = await guest.call('GET', path);
     t.ok(asMember.status === 403 && asMember.json?.code === 'forbidden' && asGuest.status === 401 && asGuest.json?.code === 'signin', `${path}: a member 403 forbidden, signed out 401 signin (${asMember.status} ${asGuest.status})`);
@@ -637,10 +637,15 @@ async function onChecks(checks, on) {
   t = checks("functions: community, a reviewer's own project");
   const own = await made(mod, 'The moderator\'s own', 'model');
   await share(mod, own, true);
+  t.eq((await mine(mod, own))?.shared, 'pending', "a moderator's share goes to the queue, as a member's does");
   r = await review(mod, own, { action: 'approve' });
   t.ok(r.status === 400 && r.json?.reason === 'own', `approving one's own: 400 reason own (${r.status} ${r.json?.reason})`);
+  r = await review(mod, own, { action: 'reject', reason: 'Mine' });
+  t.ok(r.status === 400 && r.json?.reason === 'own', `nor any other action on it (${r.status} ${r.json?.reason})`);
   t.eq((await mine(mod, own))?.shared, 'pending', 'it waits for another reviewer');
   t.report();
+
+  await galleryChecks(checks, { bob, mod, guest, made, share, review });
 
   // --- roles ------------------------------------------------------------------------------------
   t = checks('functions: community, roles');
@@ -732,6 +737,82 @@ async function onChecks(checks, on) {
   t.report();
 }
 
+// --- the Gallery tab: GET /api/mod/shared ------------------------------------------------------------
+
+async function galleryChecks(checks, { bob, mod, guest, made, share, review }) {
+  const t = checks('functions: community, the Gallery tab (/api/mod/shared)');
+  const shared = (query = '') => mod.call('GET', `/api/mod/shared${query}`);
+  const idsOf = (r) => (r.json?.items ?? []).map((x) => x.id);
+  // Four of Bob's, approved in this order, so newest first is the reverse;
+  // the titles tell a % and an _ from any character.
+  const titles = ['Bob 100% pure', 'Bob 100 pure', 'Bob snake_case', 'Bob snakeXcase'];
+  const made4 = [];
+  for (const title of titles) {
+    const id = await made(bob, title, 'model');
+    await share(bob, id, true);
+    await review(mod, id, { action: 'approve' });
+    made4.push(id);
+  }
+  const [pct, plain, snake, snakeX] = made4;
+  const newest = [...made4].reverse();
+  let r = await shared();
+  t.ok(r.status === 200 && r.headers.get('cache-control') === 'private, no-store', `a reviewer may read it: private, no-store (${r.status} ${r.headers.get('cache-control')})`);
+  const all = r.json?.items ?? [];
+  t.ok(all.length > 0 && all.every((x) => x.shared === 'public' || x.shared === 'hidden'), `public and hidden alone, no pending, rejected or unshared (${[...new Set(all.map((x) => x.shared))].join(',')})`);
+  t.ok(all.every((x, i) => i === 0 || all[i - 1].shared_at >= x.shared_at), 'newest first');
+  t.ok(all.length <= 24, `24 a page (${all.length})`);
+  const card = all.find((x) => x.id === pct);
+  t.ok(card?.author?.handle === 'cmbob' && card?.media === `/api/mod/media/${pct}` && card?.reports === 0 && card?.title === 'Bob 100% pure', `each as the queue lists one (${JSON.stringify(card)})`);
+  r = await shared('?q=@cmbob');
+  t.eq(idsOf(r).join(','), newest.join(','), '@handle: the author\'s work, newest first');
+  r = await shared('?q=CMBOB');
+  t.eq(idsOf(r).join(','), newest.join(','), 'a plain search matches the handle too, any capitals');
+  r = await shared('?q=@pure');
+  t.eq(idsOf(r).length, 0, '@ matches the handle alone, never a title');
+  r = await shared(`?q=${encodeURIComponent('bob 100')}`);
+  t.eq(idsOf(r).join(','), [plain, pct].join(','), 'a title, any capitals, anywhere in it');
+  r = await shared(`?q=${encodeURIComponent('100%')}`);
+  t.eq(idsOf(r).join(','), pct, 'a % is a %, not any run of characters');
+  r = await shared(`?q=${encodeURIComponent('snake_case')}`);
+  t.eq(idsOf(r).join(','), snake, 'an _ is an _, not any one character');
+  r = await shared(`?q=${encodeURIComponent('  snake_case  ')}`);
+  t.eq(idsOf(r).join(','), snake, 'the search is trimmed');
+  r = await shared(`?q=${'x'.repeat(150)}`);
+  t.ok(r.status === 200 && idsOf(r).length === 0, `a search past 100 characters is cut, not refused (${r.status})`);
+  r = await review(mod, snakeX, { action: 'hide', reason: 'Testing the filter' });
+  t.eq(r.json?.shared, 'hidden', 'one of them hidden');
+  r = await shared('?q=@cmbob');
+  const hiddenCard = (r.json?.items ?? []).find((x) => x.id === snakeX);
+  t.ok(hiddenCard?.shared === 'hidden' && hiddenCard?.review_reason === 'Testing the filter' && idsOf(r).length === 4, `a hidden one is listed, marked hidden, with its reason (${JSON.stringify(hiddenCard?.shared)})`);
+  r = await shared('?q=@cmbob&state=hidden');
+  t.eq(idsOf(r).join(','), snakeX, 'state=hidden: the hidden alone');
+  r = await shared('?q=@cmbob&state=public');
+  t.eq(idsOf(r).join(','), [snake, plain, pct].join(','), 'state=public: the public alone');
+  r = await shared('?q=@cmbob&state=all');
+  t.eq(idsOf(r).length, 4, 'state=all: both');
+  r = await shared('?state=pending');
+  t.ok(r.status === 400 && r.json?.reason === 'state', `any other state: 400 reason state (${r.status} ${r.json?.reason})`);
+  const walked = [];
+  let next = null;
+  for (let i = 0; i < 10; i++) {
+    r = await shared(`?q=@cmbob&limit=1${next ? `&after=${encodeURIComponent(next)}` : ''}`);
+    walked.push(...idsOf(r));
+    next = r.json?.next ?? null;
+    if (!next) break;
+  }
+  t.eq(walked.join(','), newest.join(','), 'one to a page, the cursor walks the same order without a gap or a repeat');
+  r = await shared('?after=nonsense');
+  t.ok(r.status === 400 && r.json?.reason === 'after', `a cursor it never gave: 400 reason after (${r.status})`);
+  r = await shared('?limit=49');
+  t.ok(r.status === 400 && r.json?.reason === 'limit', `a limit past 48: 400 reason limit (${r.status})`);
+  r = await bob.call('GET', '/api/mod/shared?q=@cmbob');
+  const g = await guest.call('GET', '/api/mod/shared');
+  t.ok(r.status === 403 && r.json?.code === 'forbidden' && g.status === 401 && g.json?.code === 'signin', `a member 403, signed out 401 (${r.status} ${g.status})`);
+  await review(mod, snakeX, { action: 'unhide' });
+  for (const id of made4) await share(bob, id, false);
+  t.report();
+}
+
 // --- functions/_shared on a fresh SQLite: the owner as a reviewer -----------------------------------
 
 async function directChecks(checks, repo, compileShared) {
@@ -780,14 +861,28 @@ async function directChecks(checks, repo, compileShared) {
       return `${e.status} ${e.extra?.reason ?? e.code}`;
     }
   };
-  t.eq(await tryReview('d-own', { action: 'approve' }), '400 own', "the owner cannot approve the owner's own");
+  t.eq(await tryReview('d-own', { action: 'approve' }), 'public', "the owner approves the owner's own: the owner reviews everything");
+  t.eq(await tryReview('d-own', { action: 'hide', reason: 'Not yet' }), 'hidden', 'hides it');
+  t.eq(await tryReview('d-own', { action: 'unhide' }), 'public', 'and unhides it');
+  const ownRows = db.prepare("SELECT actor, detail FROM audit_log WHERE subject = 'd-own' ORDER BY id").all();
+  t.ok(ownRows.length === 3 && ownRows.every((x) => x.actor === 'u-own') && JSON.parse(ownRows[1].detail).action === 'hide', `each audited as the owner's (${JSON.stringify(ownRows)})`);
+  insert('d-modown', 'u-mod', 'pending');
+  const moderator = db.prepare("SELECT * FROM users WHERE id = 'u-mod'").get();
+  const modReview = async (id, body) => {
+    try {
+      return (await community.reviewProject(env, moderator, id, body, 1500)).shared;
+    } catch (e) {
+      return `${e.status} ${e.extra?.reason ?? e.code}`;
+    }
+  };
+  t.eq(await modReview('d-modown', { action: 'approve' }), '400 own', "a moderator still never acts on their own");
   t.eq(await tryReview('d-mem', { action: 'approve' }), 'public', "the owner approves a member's");
   const a = db.prepare("SELECT actor, detail FROM audit_log WHERE subject = 'd-mem'").get();
   t.ok(a?.actor === 'u-own' && a?.detail === '{"action":"approve","from":"pending","to":"public"}', `audited as the owner's account (${JSON.stringify(a)})`);
   const DAYS = 24 * 60 * 60 * 1000;
   const kept = await community.reviewHistory(env, 1000 + 30 * DAYS);
   const past = await community.reviewHistory(env, 1001 + 30 * DAYS);
-  t.ok(kept.length === 1 && kept[0].action === 'approve' && past.length === 0, `the history keeps 30 days to the millisecond (${kept.length} ${past.length})`);
+  t.ok(kept.length === 4 && kept.every((x) => x.at === 1000) && past.length === 0, `the history keeps 30 days to the millisecond (${kept.length} ${past.length})`);
   const by = { actor: 'owner@example.com', at: 2000 };
   const tryRole = async (id, role) => {
     try {
@@ -798,5 +893,37 @@ async function directChecks(checks, repo, compileShared) {
   };
   t.eq(await tryRole('u-own', 'member'), '409 owner', "the role route never acts on the owner's own account");
   t.eq(await tryRole('u-mem', 'moderator'), 'moderator', 'and makes a member a moderator');
+
+  // The owner's share is approved as it is made; a moderator's waits.
+  const shareEnv = { DB: env.DB, AUTH_SECRET: 'community-direct-secret' };
+  const projects = await load('projects');
+  const owned = (id, owner, shared = 'none') => insert(id, owner, shared);
+  owned('d-oshare', 'u-own');
+  let after = await community.setShared(shareEnv, owner, 'd-oshare', true, 3000);
+  t.ok(after.shared === 'public' && after.shared_at === 3000 && after.reviewed_by === 'u-own' && after.reviewed_at === 3000, `the owner's share goes public at once, reviewed by the owner (${after.shared} ${after.shared_at} ${after.reviewed_by})`);
+  const shareRows = db.prepare("SELECT actor, action, detail FROM audit_log WHERE subject = 'd-oshare' ORDER BY id").all();
+  t.ok(
+    shareRows.length === 2 && shareRows[0].action === 'project.share' && shareRows[1].action === 'project.review' && shareRows[1].detail === '{"action":"approve","from":"none","to":"public"}' && shareRows.every((x) => x.actor === 'u-own'),
+    `audited as project.share and project.review approve, both the owner's (${JSON.stringify(shareRows)})`,
+  );
+  t.ok((await community.listCommunity(shareEnv, { after: null, limit: 24 })).items.some((x) => x.id === 'd-oshare'), 'listed in the Community');
+  after = await community.setShared(shareEnv, owner, 'd-oshare', true, 3100);
+  t.ok(after.shared_at === 3000 && db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE subject = 'd-oshare'").get().n === 2, 'sharing it again changes and records nothing');
+  owned('d-opend', 'u-own', 'pending');
+  after = await community.setShared(shareEnv, owner, 'd-opend', true, 3200);
+  t.eq(after.shared, 'public', "the owner's work left pending from before goes public on a share");
+  const edit = async (id, who) => {
+    const row = await projects.getProjectRow(shareEnv, id, { member: who });
+    await projects.updateMemberProject(shareEnv, row, projects.patched(row, { title: `${id} renamed` }), 0, 4000);
+    return projects.getProjectRow(shareEnv, id, { member: who });
+  };
+  after = await edit('d-oshare', 'u-own');
+  t.ok(after.shared === 'public' && after.title === 'd-oshare renamed' && after.updated_at === 4000, `an edit of the owner's public work keeps it public (${after.shared} ${after.title})`);
+  owned('d-mpub', 'u-mem', 'public');
+  after = await edit('d-mpub', 'u-mem');
+  t.eq(after.shared, 'pending', "while a member's goes back for review");
+  owned('d-mshare', 'u-mod');
+  after = await community.setShared(shareEnv, moderator, 'd-mshare', true, 3300);
+  t.ok(after.shared === 'pending' && after.reviewed_by === null, `a moderator's share goes to the queue (${after.shared})`);
   t.report();
 }

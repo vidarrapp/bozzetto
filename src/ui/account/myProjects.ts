@@ -34,7 +34,7 @@ import { shareControls } from '../community/share';
  *   frames (client-zip). Delete, asked first, from the server and from
  *   this device's shelf.
  * - Share to Community on a model or a timelapse (ui/community/share,
- *   §13): the switch, where it stands, Share again and Withdraw.
+ *   §13): the one switch (tick to share, untick to withdraw) and where it stands.
  *
  * Offline it is read only: the worker's last copy of the list draws the
  * cards (vite.config.ts), Open works for a scene this device has a copy
@@ -370,6 +370,7 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     shareControls(p, {
       userId: page.me.id,
       handle: page.me.handle,
+      owner: page.me.role === 'owner',
       offline: page.offline,
       failed: (what, err) => failed(page, what, err),
     });
