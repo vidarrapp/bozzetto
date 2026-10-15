@@ -26,6 +26,6 @@ export const onRequestPost: PagesFunction<Env, string, RequestData> = ({ env, re
     const body = await request.arrayBuffer();
     if (body.byteLength === 0) throw new HttpError('empty body', 400, 'bad_request');
     if (body.byteLength > cap) throw new HttpError('A frame may be at most 32 MiB', 413, 'file_too_large');
-    await putMemberFrame(env, user, String(params.id), index, body);
+    await putMemberFrame(env, user, String(params.id), index, body, data.now);
     return answer({ index, size: body.byteLength }, 201);
   });

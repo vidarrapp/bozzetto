@@ -274,6 +274,46 @@ export async function revokeUserSessions(env: Env, id: string, by: Actor): Promi
   return revoked.meta.changes;
 }
 
+/** The roles the owner may give an account: never the owner's own (one owner, made by the bootstrap). */
+const GIVEN_ROLES: readonly Role[] = ['member', 'moderator'];
+
+/** A role from the body: 'member' or 'moderator'; else 400 bad_request {reason: 'role'}. */
+export function givenRole(raw: unknown): Role {
+  if (typeof raw !== 'string' || !(GIVEN_ROLES as readonly string[]).includes(raw)) {
+    throw new HttpError("role: 'member' or 'moderator'", 400, 'bad_request', { reason: 'role' });
+  }
+  return raw as Role;
+}
+
+/**
+ * An account's role (docs/accounts.md §13): a moderator reviews the
+ * community gallery beside the owner; a member does not. Audited
+ * `user.role` with what it was and is; asking for what it already is
+ * changes and records nothing. 409 owner for the owner's own account; an
+ * account made a moderator must be active (409 wrong_status), while one may
+ * be made a member whatever its status. It takes effect on the account's
+ * next request: the role is read with its session every time.
+ */
+export async function setRole(env: Env, id: string, role: Role, by: Actor): Promise<UserDetail> {
+  const user = await accountOf(env, id);
+  notTheOwner(user);
+  if (user.role === role) return after(env, id, by.at);
+  if (role === 'moderator' && user.status !== 'active') throw wrongStatus(user.status);
+  const status = role === 'moderator' ? " AND status = 'active'" : '';
+  const still = { sql: `SELECT 1 FROM users WHERE id = ? AND role = ?${status}`, binds: [id, user.role] };
+  const [, changed] = await env.DB.batch([
+    auditStatement(env, { ...by, action: 'user.role', subject: id, detail: { from: user.role, to: role } }, still),
+    env.DB.prepare(`UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND role = ? AND role <> 'owner'${status}`).bind(
+      role,
+      by.at,
+      id,
+      user.role,
+    ),
+  ]);
+  if (!changed.meta.changes) throw await changedMeanwhile(env, id);
+  return after(env, id, by.at);
+}
+
 /** A quota from the body, in MiB: a whole number from 1 to MAX_QUOTA_MIB; else 400 bad_request {reason: 'quotaMiB'}. */
 export function quotaMiB(raw: unknown): number {
   if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1 || raw > MAX_QUOTA_MIB) {

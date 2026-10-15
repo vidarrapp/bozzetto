@@ -31,6 +31,8 @@ INSERT INTO d1_migrations (name) VALUES ('0001_init.sql'), ('0002_visibility.sql
 
 After a console run of `0003_accounts.sql`, record it the same way: `INSERT INTO d1_migrations (name) VALUES ('0003_accounts.sql');`.
 
+`0004_community.sql` (the community gallery, [accounts.md §13](accounts.md#13-community-phase-3)) goes in the same way, before the code that reads its columns deploys: it only adds (five columns on `projects`, every row starting unshared, and the `reports` table), and the code before it runs on it. Run its statements one at a time in the console, then record it: `INSERT INTO d1_migrations (name) VALUES ('0004_community.sql');`. Staging takes it with `npx wrangler d1 migrations apply bozzetto-staging --remote`. Nothing becomes public by it: a member's work is listed only once they share it and a reviewer approves it, and only with accounts on.
+
 `wrangler.toml` is gitignored. The committed `wrangler.toml.example` is the template, and lists every variable below.
 
 ## Turning on accounts

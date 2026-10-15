@@ -9,6 +9,7 @@ import {
   memberMediaBase,
   orphanedFrames,
   patched,
+  sharedOf,
   toManifest,
   toMemberRow,
   updateMemberProject,
@@ -17,15 +18,16 @@ import { deleteFrames, deleteMemberProject, projectFor } from '../../../_shared/
 
 // GET /api/me/projects/:id - one of the account's projects as owner tools'
 // manifest gives one, its files on the private route
-// (/api/me/media/<id>/...). Anyone else's, a template included, is 404
-// not_found, as one that is not there.
+// (/api/me/media/<id>/...), with where it stands in the community gallery
+// ({shared, shared_at, review_reason}, docs/accounts.md §13). Anyone
+// else's, a template included, is 404 not_found, as one that is not there.
 export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, params, data }) =>
   api(async () => {
     const { user } = requireUser(data.principal);
     const id = String(params.id);
     const row = await getProjectRow(env, id, { member: user.id });
     if (!row) throw new HttpError('Not found', 404, 'not_found');
-    return answer(toManifest(row, env, memberMediaBase(id)));
+    return answer({ ...(toManifest(row, env, memberMediaBase(id)) as object), ...sharedOf(row) });
   });
 
 // PUT /api/me/projects/:id - update it as owner tools update one (title,

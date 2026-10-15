@@ -60,6 +60,19 @@ const ROUTES = [
   ['PUT', '/admin/api/users/u-someone/quota'],
   ['POST', '/admin/api/users/u-someone/recount'],
   ['POST', '/admin/api/users/u-someone/finish-deletion'],
+  // Phase 3's: the community gallery, sharing, reports, the reviewers' routes and roles.
+  ['GET', '/api/community'],
+  ['GET', '/api/community/u/someone'],
+  ['POST', '/api/community/p-someproject/report'],
+  ['POST', '/api/me/projects/p-someproject/share'],
+  ['GET', '/api/mod/counts'],
+  ['GET', '/api/mod/queue'],
+  ['GET', '/api/mod/reports'],
+  ['GET', '/api/mod/history'],
+  ['GET', '/api/mod/projects/p-someproject'],
+  ['POST', '/api/mod/projects/p-someproject/review'],
+  ['GET', '/api/mod/media/p-someproject/thumb.jpg'],
+  ['POST', '/admin/api/users/u-someone/role'],
 ];
 
 export async function run({ checks, off }) {

@@ -1,9 +1,9 @@
 import type { Env } from './env';
-import type { ProjectData, ProjectMode, ProjectRow, SceneMeta, Visibility } from './types';
+import type { ProjectData, ProjectMode, ProjectRow, SceneMeta, SharedState, Visibility } from './types';
 import { type Actor, auditStatement } from './auth/audit';
 import { MEMBER_LIMITS } from './config';
 import { randomId } from './crypto';
-import { filesOrigin } from './env';
+import { accountsOn, filesOrigin } from './env';
 import { HttpError } from './http';
 import { weighUnweighed } from './quota';
 
@@ -101,8 +101,39 @@ export type OwnerScope = { owner: string | null };
  */
 export type MemberScope = { member: string };
 
-/** 'public' is anyone's: the templates the gallery lists. */
-export type Scope = 'public' | OwnerScope | MemberScope;
+/**
+ * A reviewer on /api/mod reaches the projects members have shared, in any
+ * state but 'none' (docs/accounts.md §13): never a template, never a
+ * project its member has not offered.
+ */
+export type ReviewerScope = { reviewer: true };
+
+/**
+ * 'public' is the templates the gallery lists. 'open' is what anyone may
+ * read: those, and with accounts on the members' work approved for the
+ * community gallery (OPEN) - the public manifest and the open file routes
+ * take it, the template list does not.
+ */
+export type Scope = 'public' | 'open' | OwnerScope | MemberScope | ReviewerScope;
+
+/** A listed template: the landing's gallery. */
+const LISTED_TEMPLATE = "template = 1 AND visibility = 'public'";
+
+/**
+ * Anyone's to read (docs/accounts.md §13): a listed template, or a member's
+ * project a reviewer approved for the community gallery while its author's
+ * account is active. A suspended or departing author's work leaves the
+ * public at once and comes back with the account; the row is untouched.
+ */
+export const OPEN = `((${LISTED_TEMPLATE}) OR (shared = 'public' AND template = 0 AND owner_id IN (SELECT id FROM users WHERE status = 'active')))`;
+
+/**
+ * What a member's write to a project's content or title does to its place
+ * in the community gallery (§13): a listed project goes back for review,
+ * off the list at once, keeping its shared_at. Every member write path
+ * puts this in the statement that writes, so the two land together.
+ */
+export const UNLIST = "shared = CASE WHEN shared = 'public' THEN 'pending' ELSE shared END";
 
 /**
  * A scope as SQL. It goes into the query rather than being checked on the
@@ -110,14 +141,19 @@ export type Scope = 'public' | OwnerScope | MemberScope;
  * and a later edit there cannot leak one.
  */
 function where(scope: Scope): { sql: string; binds: (string | null)[] } {
-  if (scope === 'public') return { sql: "template = 1 AND visibility = 'public'", binds: [] };
+  if (scope === 'public') return { sql: LISTED_TEMPLATE, binds: [] };
+  if (scope === 'open') return { sql: OPEN, binds: [] };
   if ('member' in scope) return { sql: 'owner_id = ?', binds: [scope.member] };
+  if ('reviewer' in scope) return { sql: "template = 0 AND shared <> 'none'", binds: [] };
   return { sql: '(template = 1 OR owner_id IS ?)', binds: [scope.owner] };
 }
 
-/** Listed in the gallery, and so anyone's to read. */
-const listed = (row: Pick<ProjectRow, 'template' | 'visibility'>): boolean =>
-  row.template === 1 && row.visibility === 'public';
+/**
+ * Listed in a gallery, and so anyone's to read: a listed template, or with
+ * accounts on a member's project approved for the community gallery (§13).
+ */
+const listed = (row: Pick<ProjectRow, 'template' | 'visibility' | 'shared'>, env: Env): boolean =>
+  (row.template === 1 && row.visibility === 'public') || (row.template === 0 && row.shared === 'public' && accountsOn(env));
 
 const defaultData = (): ProjectData => ({
   defaults: { frame: 0, playing: true, material: 'lit', lightingPreset: 'three_point' },
@@ -154,20 +190,32 @@ export async function listProjects(env: Env, scope: 'public' | OwnerScope): Prom
     // Sort by creation date so the gallery order is stable — editing a project
     // (which bumps updated_at) no longer reshuffles the grid. updated_at is still
     // selected for the thumbnail cache-buster.
-    `SELECT id, title, mode, fps, updated_at, visibility, template,
+    `SELECT id, title, mode, fps, updated_at, visibility, template, shared,
             COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount,
             json_extract(data, '$.scene') AS scene
      FROM projects WHERE ${sql}
      ORDER BY created_at DESC`,
   )
     .bind(...binds)
-    .all<Omit<ProjectSummary, 'scene' | 'template' | 'media'> & { scene: string | null; template: 0 | 1 }>();
-  return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: r.template === 1, media: mediaBase(r, env) }));
+    .all<Omit<ProjectSummary, 'scene' | 'template' | 'media'> & { scene: string | null; template: 0 | 1; shared: SharedState }>();
+  return results.map(({ shared, ...r }) => ({
+    ...r,
+    scene: parseScene(r.scene),
+    template: r.template === 1,
+    media: mediaBase({ ...r, shared }, env),
+  }));
 }
 
-/** One card of My projects: a gallery card, and what its files weigh against the quota. */
+/**
+ * One card of My projects: a gallery card, what its files weigh against the
+ * quota, and where it stands in the community gallery (§13) - the reason a
+ * reviewer gave only while it is rejected or hidden.
+ */
 export interface MemberSummary extends ProjectSummary {
   bytes: number;
+  shared: SharedState;
+  shared_at: number | null;
+  review_reason: string | null;
 }
 
 /**
@@ -176,7 +224,8 @@ export interface MemberSummary extends ProjectSummary {
  */
 export async function listMemberProjects(env: Env, userId: string): Promise<MemberSummary[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id, title, mode, fps, updated_at, visibility, bytes,
+    `SELECT id, title, mode, fps, updated_at, visibility, bytes, shared, shared_at,
+            CASE WHEN shared IN ('rejected', 'hidden') THEN review_reason END AS review_reason,
             COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount,
             json_extract(data, '$.scene') AS scene
      FROM projects WHERE owner_id = ?
@@ -222,7 +271,8 @@ export function getFileRow(env: Env, id: string, scope: Scope): Promise<FileRow 
 }
 
 /**
- * Where a project's files are read from. A listed template's come off the
+ * Where a project's files are read from. A listed template's, and a
+ * member's project approved for the community gallery (§13), come off the
  * open routes, cacheable by anyone: /m/ on the files host (MEDIA_ORIGIN)
  * once there is one, else /media on this origin - the same handler as /m/
  * under the name installed 0.5 desktop apps can reach, whose proxy passes
@@ -231,9 +281,9 @@ export function getFileRow(env: Env, id: string, scope: Scope): Promise<FileRow 
  * fronts, so its manifest points there - and only the owner is ever handed
  * that manifest.
  */
-export function mediaBase(row: Pick<ProjectRow, 'id' | 'template' | 'visibility'>, env: Env): string {
+export function mediaBase(row: Pick<ProjectRow, 'id' | 'template' | 'visibility' | 'shared'>, env: Env): string {
   const id = encodeURIComponent(row.id);
-  if (!listed(row)) return `/admin/api/media/${id}`;
+  if (!listed(row, env)) return `/admin/api/media/${id}`;
   const files = filesOrigin(env);
   return files ? `${files}/m/${id}` : `/media/${id}`;
 }
@@ -266,9 +316,23 @@ export function toOwnerRow(row: ProjectRow, env: Env, base: string = mediaBase(r
   };
 }
 
-/** The same on /api/me: the files on the private route, and what they weigh. */
+/**
+ * The same on /api/me: the files on the private route, what they weigh, and
+ * where the project stands in the community gallery (§13), as My projects
+ * lists it.
+ */
 export function toMemberRow(row: ProjectRow, env: Env): unknown {
-  return { ...(toOwnerRow(row, env, memberMediaBase(row.id)) as object), bytes: row.bytes };
+  return { ...(toOwnerRow(row, env, memberMediaBase(row.id)) as object), bytes: row.bytes, ...sharedOf(row) };
+}
+
+/** A project's community status as its author sees it: the reason only while it is rejected or hidden. */
+export function sharedOf(row: Pick<ProjectRow, 'shared' | 'shared_at' | 'review_reason'>): {
+  shared: SharedState;
+  shared_at: number | null;
+  review_reason: string | null;
+} {
+  const reason = row.shared === 'rejected' || row.shared === 'hidden' ? row.review_reason : null;
+  return { shared: row.shared, shared_at: row.shared_at, review_reason: reason };
 }
 
 /**
@@ -584,7 +648,7 @@ export async function updateMemberProject(
       owner,
     ),
     env.DB.prepare(
-      `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, bytes = MAX(0, bytes - ?), updated_at = ?
+      `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, bytes = MAX(0, bytes - ?), updated_at = ?, ${UNLIST}
        WHERE id = ? AND owner_id = ?`,
     ).bind(p.title, p.mode, p.fps, p.serialised, freed, now, row.id, owner),
   ]);
@@ -634,13 +698,21 @@ export async function updateProject(
   // Becoming a template, the row must still be as it was read, as the
   // statements moving its bytes require; otherwise anything in scope.
   const { sql, binds } = becomes ? { sql: STILL, binds: still(row) } : where(scope);
+  // A template is never shared (§13), so one made here leaves the community
+  // gallery; the owner's own shared project, edited here, goes back for
+  // review as a member's would (UNLIST).
+  const shared = template ? "shared = 'none'" : UNLIST;
   const update = env.DB.prepare(
-    `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, visibility = ?, template = ?, owner_id = ?, updated_at = ?
+    `UPDATE projects SET title = ?, mode = ?, fps = ?, data = ?, visibility = ?, template = ?, owner_id = ?, updated_at = ?, ${shared}
      WHERE ${becomes ? '' : 'id = ? AND '}${sql}`,
   ).bind(title, mode, fps, serialised, visibility, template, owner, Date.now(), ...(becomes ? [] : [id]), ...binds);
   if (becomes) {
-    const done = await env.DB.batch([...handOver(env, row, true, null, by), update]);
-    if (!done.at(-1)?.meta.changes) throw new HttpError('The project changed meanwhile; try again', 409);
+    const done = await env.DB.batch([
+      ...handOver(env, row, true, null, by),
+      update,
+      closeReports(env, id, Date.now(), by.actor, 'SELECT 1 FROM projects WHERE id = ? AND template = 1', [id]),
+    ]);
+    if (!done.at(-2)?.meta.changes) throw new HttpError('The project changed meanwhile; try again', 409);
   } else {
     await update.run();
   }
@@ -722,21 +794,24 @@ export async function setTemplate(
   // moves what it holds (weighUnweighed).
   if (row.owner_id !== owner && (row.owner_id ?? owner) !== null) row = await weighUnweighed(env, row);
   const visibility: Visibility = on ? row.visibility : 'private';
+  // A template is never shared (§13): switched on, the project leaves the
+  // community gallery, and what members reported of it is closed. Off, it
+  // starts unshared, as every project does.
   const done = await env.DB.batch([
     ...handOver(env, row, on, owner, by),
-    env.DB.prepare(`UPDATE projects SET template = ?, owner_id = ?, visibility = ?, updated_at = ? WHERE ${STILL}`).bind(
+    env.DB.prepare(
+      `UPDATE projects SET template = ?, owner_id = ?, visibility = ?, updated_at = ?, shared = 'none', shared_at = NULL WHERE ${STILL}`,
+    ).bind(on ? 1 : 0, owner, visibility, Date.now(), ...still(row)),
+    closeReports(env, id, Date.now(), by.actor, "SELECT 1 FROM projects WHERE id = ? AND template = ? AND shared = 'none'", [
+      id,
       on ? 1 : 0,
-      owner,
-      visibility,
-      Date.now(),
-      ...still(row),
-    ),
+    ]),
   ]);
   const after = (await getProjectRow(env, id, scope)) ?? (await getProjectRow(env, id, { owner }));
   if (!after) throw new HttpError('Not found', 404);
   // Nothing applied: the row changed between the read and the batch. If
   // that change was this one, made by another request, it is done.
-  if (!done.at(-1)?.meta.changes && (after.template === 1) !== on) {
+  if (!done.at(-2)?.meta.changes && (after.template === 1) !== on) {
     throw new HttpError('The project changed meanwhile; try again', 409);
   }
   return after;
@@ -769,8 +844,14 @@ export async function putFrame(
   body: ArrayBuffer,
   scope: OwnerScope,
 ): Promise<string> {
-  const key = prefixFor(await ownedRow(env, id, scope)) + frameFile(index);
+  const row = await ownedRow(env, id, scope);
+  const key = prefixFor(row) + frameFile(index);
   await env.BUCKET.put(key, body, { httpMetadata: { contentType: 'model/gltf-binary' } });
+  // The owner's own project, listed in the community gallery: new content
+  // goes back for review (UNLIST), as a member's frame would send it.
+  if (row.shared === 'public') {
+    await env.DB.prepare(`UPDATE projects SET ${UNLIST}, updated_at = ? WHERE id = ? AND shared = 'public'`).bind(Date.now(), id).run();
+  }
   return key;
 }
 
@@ -791,9 +872,30 @@ export async function putThumb(env: Env, id: string, body: ArrayBuffer, scope: O
   });
   // Bump updated_at so the gallery's ?v cache-buster picks up the new thumbnail.
   const { sql, binds } = where(scope);
-  await env.DB.prepare(`UPDATE projects SET updated_at = ? WHERE id = ? AND ${sql}`)
+  await env.DB.prepare(`UPDATE projects SET updated_at = ?, ${UNLIST} WHERE id = ? AND ${sql}`)
     .bind(Date.now(), id, ...binds)
     .run();
+}
+
+/**
+ * Close the open reports of a project that has left the community gallery
+ * (§13): resolved now, by `by`, as `outcome`. With `onlyIf`, only while
+ * that holds when the statement runs, so in a batch it applies exactly
+ * when the change it follows did.
+ */
+export function closeReports(
+  env: Env,
+  id: string,
+  now: number,
+  by: string,
+  onlyIf?: string,
+  binds: unknown[] = [],
+  outcome: 'dismissed' | 'hidden' | 'removed' = 'removed',
+): D1PreparedStatement {
+  return env.DB.prepare(
+    `UPDATE reports SET resolved_at = ?, resolved_by = ?, outcome = ?
+     WHERE project_id = ? AND resolved_at IS NULL${onlyIf ? ` AND EXISTS (${onlyIf})` : ''}`,
+  ).bind(now, by, outcome, id, ...binds);
 }
 
 // --- scene files --------------------------------------------------------

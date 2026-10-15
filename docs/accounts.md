@@ -136,10 +136,10 @@ type Principal =
 **Roles:**
 
 - `owner`: everything;
-- `moderator`: `content.moderate` (no routes until phase 3) plus own projects;
+- `moderator`: `content.moderate` (reviewing the community gallery, §13) plus own projects;
 - `member`: own projects.
 
-Phase 1 needed no map for these, and has none: `requireUser` (`functions/_shared/auth/api.ts`) admits any signed-in account to its own rows, and `requireAdmin` (`principal.ts`) admits the owner through both locks. A moderator is a member until phase 3 brings the first `content.moderate` route, and `functions/_shared/auth/permissions.ts` with it.
+Phase 1 needed no map for these: `requireUser` (`functions/_shared/auth/api.ts`) admits any signed-in account to its own rows, and `requireAdmin` (`principal.ts`) admits the owner through both locks. Phase 3 brought the first `content.moderate` routes, `/api/mod/*`, and `functions/_shared/auth/permissions.ts` with them: `requireModerator` admits an active owner or moderator on the app session (§13).
 
 | Path | Credential | Grants |
 |---|---|---|
@@ -732,7 +732,7 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
 
 **As built.** Batches 0–9 are done; Batch 10 brought this text, the README, `SECURITY.md` and CI in line, and the version and the release are the owner's. The main files differ from the plan in places:
 
-- **No `functions/_shared/auth/permissions.ts`** (§2, Roles). `GET` and `PATCH /api/me` are in `functions/api/me/[[path]].ts`, not an `index.ts` (§3).
+- **No `functions/_shared/auth/permissions.ts`** in phase 1 (§2, Roles); phase 3 added it (§13). `GET` and `PATCH /api/me` are in `functions/api/me/[[path]].ts`, not an `index.ts` (§3).
 - **Batch 3** added `functions/_shared/auth/{account,api,gate}.ts` (the account's views, the `{error, code}` wrapper and `requireUser`, the `accounts_off` gate) and brought `ratelimit.ts` forward from Batch 4.
 - **Batch 4** put the email flows end to end in `functions/_shared/auth/flows.ts` and invites in `auth/invites.ts`.
 - **Batch 5** added `functions/_shared/{content,deletion}.ts`, and `shared/bozz.ts`, which both tsconfigs include.
@@ -757,6 +757,72 @@ Every batch leaves main deployable with accounts off. It passes `typecheck`, `ty
   - batch 7: browser 14.0.0;
   - batch 8: client-zip 2.5.1.
 - Batch 7 can start against mocks of 3 and 4.
+
+## 13. Community (phase 3)
+
+Members share their own work to a public **community gallery**, a reviewer approves it, and anyone may then see it. Built server-side in phase 3, batch 1; the pages come in the batches after. Like everything here it sits behind `ACCOUNTS_ENABLED`.
+
+**What is shared.** Only a project the viewer plays: `mode` `model` or `timelapse`. A scene or an armature is not shared (publish a model of it first). Sharing moves no file: the project stays the member's, under `users/<uid>/projects/<pid>/`, on their quota, and its row stays `visibility = 'private'`; `shared` is what makes it public. The public sees it view only: no copy, no download, no export of anyone else's work. Templates are never shared (`template = 1` means `shared = 'none'`).
+
+**Data.** `migrations/0004_community.sql` only adds, and the code before it runs on it, so it is applied first, by hand in the console and recorded, as 0003 was (`docs/deployment.md`):
+
+- `projects` gains `shared` (`none`, `pending`, `public`, `rejected`, `hidden`; CHECK, default `none`), `shared_at` (submitted, then approved: the list's order), `reviewed_at`, `reviewed_by` (a user id, no foreign key, so a reviewer's account can go) and `review_reason` (what the author is shown, ≤ 500 characters). Index `(shared, shared_at DESC)`.
+- `reports (id, project_id, reporter_id, reason, note, created_at, resolved_at, resolved_by, outcome)`: `reason` one of `nudity`, `minors`, `stolen`, `spam`, `other`; `note` ≤ 500 characters; `outcome` `dismissed`, `hidden` or `removed`; one per member and project (UNIQUE). Both foreign keys cascade, so deleting a project or an account takes its reports. Index `(resolved_at, created_at)`.
+- 0003's `moderation` column stays the unused stub it was.
+
+**States.**
+
+| From | To | When |
+|---|---|---|
+| none, rejected | pending | the member shares it; `shared_at` = now, the reason cleared |
+| pending | public | a reviewer approves; `shared_at` = now, so the list orders by approval |
+| pending | rejected | a reviewer rejects, with a reason; open reports close as `removed` |
+| public | pending | any write of the member's to its content or title: `PUT` (title, look, frames, stages), a thumbnail, a frame, a scene or armature file; `shared_at` kept |
+| public | hidden | a reviewer hides it, with a reason (open reports close as `hidden`), or a second member's open report lands (the author is shown "Reported by members, awaiting review") |
+| hidden | public | a reviewer unhides it; open reports close as `dismissed`; its place in the list is kept |
+| any | none | the member withdraws it, at once; open reports close as `removed` |
+
+- `updated_at` moves on every change of state, so every `?v=` its files were served under is retired with the old state.
+- Re-sharing a hidden project is refused (409): it is under review until a reviewer acts or the member withdraws it.
+- A reviewer's **dismiss** closes the open reports of a pending or public project and changes nothing else; a hidden one is unhidden instead.
+- The write paths carry the flip in the statement that writes (`UNLIST`, `functions/_shared/projects.ts`), so the two land together. A frame alone does not move `updated_at` (the frame list's `PUT` does), unless the project was listed. Owner tools do the same to the owner's own project.
+- The Template switch on (or owner tools making a project public, which makes it a template) sets `shared = 'none'` and closes its open reports. Off, the project starts unshared.
+- Deleting a project or an account cascades: the lists simply lose it.
+
+**Who sees it.** Anyone's to read, on the open routes and `GET /api/projects/:id`, is `(template = 1 AND visibility = 'public') OR (shared = 'public' AND template = 0 AND owner_id IN (active accounts))` (`OPEN`, used through `publicFiles()` in `functions/_shared/media.ts`). A suspended or departing author's work leaves the public at once and comes back when the account does; the row is untouched. The files are served from the files host like a template's, `?v=` immutable caching and all, and the row is read on every request, so a project hidden, withdrawn, sent back for review or whose author is suspended stops at once, cached or not. With accounts off, nothing shared is served and the routes below answer 404 `accounts_off`.
+
+**Routes.**
+
+| Route | Who | Answers |
+|---|---|---|
+| `GET /api/community?after=&limit=` | anyone | `{items, next}`, newest approval first, 24 a page (1–48); each `{id, title, mode, fps, shared_at, author: {handle}, thumb, media}`, `media` the open routes, `thumb` at the current `?v=`; `next` is `<shared_at>.<id>` or null. `public, max-age=60` |
+| `GET /api/community/u/:handle` | anyone | `{handle, items, next}`: one active member's public work; the handle in any capitals; none, or not active, is 404. `public, max-age=60` |
+| `GET /api/projects/:id` | anyone | as before, and for approved work `community: true, author: {handle}`. `GET /api/projects` stays templates only |
+| `GET /api/me/projects`, `GET /api/me/projects/:id`, the `PUT` answer | the member | gain `shared, shared_at, review_reason` (the reason only while rejected or hidden) |
+| `POST /api/me/projects/:id/share {shared}` | the member | `{id, shared, shared_at, review_reason}`. 400 `reason: mode` for a scene or armature, `reason: shared` for a non-boolean; 404 for another's project or a template (as everywhere on `/api/me`); 409 `wrong_state {shared}` for a hidden one; sharing what is pending or public, or withdrawing what is not shared, changes nothing |
+| `POST /api/community/:id/report {reason, note?}` | a member | 204; 200 `{reported: true}` when this member reported it before; 400 `reason: own` on one's own, `reason`/`note` for a bad value; 404 unless the project is public now |
+| `GET /api/mod/counts` | reviewers | `{pending, reports}`, for the Review chip |
+| `GET /api/mod/queue?after=&limit=` | reviewers | pending, oldest first, 50 a page (1–100): `{id, title, mode, fps, shared, shared_at, updated_at, review_reason, author, reports, thumb, media}`, `media` `/api/mod/media/:id` |
+| `GET /api/mod/reports` | reviewers | `{items: [{project, reports: [{id, reason, note, reporter: {handle}, created_at}]}]}`, the longest-reported first |
+| `GET /api/mod/history` | reviewers | `{items}`: the reviews and withdrawals of the last 30 days, newest first, at most 200, from the audit log, each `{at, action, actor, auto, project, subject, reason}` |
+| `GET /api/mod/projects/:id` | reviewers | the manifest of a shared project in any state but none, files on `/api/mod/media/:id/`, with `shared, shared_at, review_reason, author` |
+| `GET /api/mod/media/:id/<file>` | reviewers | its files: `private, no-store`, CORP `same-origin`, never a download; anyone else the bare 404 |
+| `POST /api/mod/projects/:id/review {action, reason?}` | reviewers | `approve`, `reject` (reason), `hide` (reason), `unhide`, `dismiss`. `{id, shared, shared_at, reviewed_at, review_reason}`. A reason is 1–500 characters (400 `reason: reason`); 409 `wrong_state {shared}` for an action the state does not allow; 400 `reason: own` on the reviewer's own project (any action); 404 if not shared |
+| `POST /admin/api/users/:id/role {role}` | the owner (both locks) | `member` or `moderator` (400 `reason: role` otherwise, never `owner`); the account as `GET /admin/api/users/:id` shows it. 409 `owner` on the owner's own, 409 `wrong_status` to make a non-active account a moderator |
+
+- **Reviewers** are the owner and moderators, on their app session (`requireModerator`): 401 `signin` signed out, 403 `suspended`, 403 `forbidden` for anyone else. `/api/mod/*` is not under `/admin`, since moderators have no Access identity. A role change takes effect on the next request; `GET /api/me` says the role.
+- **Not one's own.** Nobody reviews their own project, the owner included: another reviewer decides.
+- **Paths.** `/api/community` and `/api/mod` answer any path they do not have, or a method a route does not answer, with 404 `not_found`, as `/api/me` does; the list is in `functions/api/community/[[path]].ts` for the reason `/api/me`'s is (§3). `public/_routes.json` already includes `/api/*`, and the files host needs nothing new: it serves `/m/*` with the predicate above.
+
+**Reports.** Signed-in members only, never of their own project, only of one public now, once per member and project for good (a reporter whose report was dismissed does not report it again), 10 a day. The second distinct member's open report hides the project in the same batch, audited as a review by `system:reports`. Open reports wait on the Reports tab until a reviewer dismisses them, hides or unhides the project, or the member withdraws or deletes it.
+
+**Rate limits** (fixed windows, §3; buckets keyed by the account id): shares 20 a day (`share`), counted only when a project goes to pending; reports 10 a day (`report`), counted only for a new report.
+
+**Audit.** `project.share {from}`, `project.withdraw {from}` (by the member), `project.report {reason}` (by the reporter), `project.review {action, from, to}` (by the reviewer, or `system:reports` with `reason: 'reports'`), `user.role {from, to}` (by the owner). No title, note, review reason, address, IP or token is written: a review's reason is free text and stays on the project's row, as a suspension's does on the user's. The History tab shows it from the row while that review is still the project's latest.
+
+**History** is the audit log's last 30 days joined with the projects still there; `reviewed_*` and `review_reason` stay on the row (a withdrawal keeps them), so nothing needs sweeping.
+
+**Tests.** The `community` function suite: 0004 on a fresh SQLite, accounts off, the list, cursor and author pages, the open routes' predicate on both hosts, sharing and its limit, the write paths' flip, reports and their limit, every reviewer route and action with their refusals, roles, the Template switch, the cascade, and audit rows without personal data; the owner's side of `requireModerator` and a review run on `functions/_shared` directly, since the servers' database has no owner until the `locks` suite makes one.
 
 ## Open questions for the owner
 

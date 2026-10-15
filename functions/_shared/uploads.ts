@@ -8,6 +8,7 @@ import {
   FRAMES_DIR,
   SCENE_FILE,
   THUMB_FILE,
+  UNLIST,
   frameFile,
   getProjectRow,
   prefixFor,
@@ -422,7 +423,7 @@ export async function completeSceneUpload(
   // updated_at is the file's ?v=, so a re-save reaches every reader.
   statements.push(
     env.DB.prepare(
-      `UPDATE projects SET bytes = MAX(0, bytes + ?), data = json_set(data, '$.scene', json(?)), updated_at = ?
+      `UPDATE projects SET bytes = MAX(0, bytes + ?), data = json_set(data, '$.scene', json(?)), updated_at = ?, ${UNLIST}
        WHERE id = ? AND ${live}`,
     ).bind(delta, scene, now, row.id, pu.id),
     env.DB.prepare('DELETE FROM pending_uploads WHERE id = ?').bind(pu.id),
@@ -454,7 +455,8 @@ async function putCounted(
   file: string,
   body: ArrayBuffer,
   type: string,
-  now: number | null,
+  now: number,
+  touch: boolean,
 ): Promise<void> {
   const key = prefixFor(row) + file;
   const before = await env.BUCKET.head(key);
@@ -468,9 +470,15 @@ async function putCounted(
   }
   const mine = 'SELECT 1 FROM projects WHERE id = ? AND owner_id = ?';
   await env.DB.batch([
+    // A thumbnail moves updated_at, its ?v=. A frame does not (the frame
+    // list's PUT that follows does), unless the project was listed in the
+    // community gallery: new content goes back for review at once (UNLIST),
+    // and its old ?v= entries are retired with it.
     env.DB.prepare(
-      `UPDATE projects SET bytes = MAX(0, bytes + ?)${now === null ? '' : ', updated_at = ?'} WHERE id = ? AND owner_id = ?`,
-    ).bind(...[delta, ...(now === null ? [] : [now]), row.id, user.id]),
+      `UPDATE projects SET bytes = MAX(0, bytes + ?),
+              updated_at = ${touch ? '?' : "CASE WHEN shared = 'public' THEN ? ELSE updated_at END"}, ${UNLIST}
+       WHERE id = ? AND owner_id = ?`,
+    ).bind(delta, now, row.id, user.id),
     // Reserved ahead, a growth is the account's already, unless the
     // project went; a shrink is given now, if the project is still there.
     delta > 0
@@ -490,10 +498,17 @@ async function putCounted(
 }
 
 /** One frame of an account's project: glTF 2.0, as it is or gzipped (415 otherwise), counted against the quota. */
-export async function putMemberFrame(env: Env, user: UserRow, id: string, index: number, body: ArrayBuffer): Promise<void> {
+export async function putMemberFrame(
+  env: Env,
+  user: UserRow,
+  id: string,
+  index: number,
+  body: ArrayBuffer,
+  now: number = Date.now(),
+): Promise<void> {
   const row = await projectFor(env, { kind: 'member', user }, id);
   await checkFrame(new Uint8Array(body));
-  await putCounted(env, user, row, frameFile(index), body, 'model/gltf-binary', null);
+  await putCounted(env, user, row, frameFile(index), body, 'model/gltf-binary', now, false);
 }
 
 /**
@@ -503,7 +518,7 @@ export async function putMemberFrame(env: Env, user: UserRow, id: string, index:
 export async function putMemberThumb(env: Env, user: UserRow, id: string, body: ArrayBuffer, now: number): Promise<void> {
   const row = await projectFor(env, { kind: 'member', user }, id);
   checkThumb(new Uint8Array(body));
-  await putCounted(env, user, row, THUMB_FILE, body, 'image/jpeg', now);
+  await putCounted(env, user, row, THUMB_FILE, body, 'image/jpeg', now, true);
 }
 
 // --- taking files out ---------------------------------------------------------------------

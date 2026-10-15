@@ -41,6 +41,8 @@ export type ErrorCode =
   | 'handle_taken'
   | 'owner'
   | 'wrong_status'
+  | 'wrong_state'
+  | 'forbidden'
   | 'invite_invalid'
   | 'flow_expired'
   | 'file_too_large'

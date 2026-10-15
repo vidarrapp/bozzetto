@@ -33,7 +33,7 @@ export function base32(bytes: Uint8Array): string {
  * without asking the database whether one is taken, and that guessing one
  * is hopeless.
  */
-export function randomId(kind: 'u' | 'p' | 's' | 'i'): string {
+export function randomId(kind: 'u' | 'p' | 's' | 'i' | 'r'): string {
   return `${kind}-${base32(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 

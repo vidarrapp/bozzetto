@@ -3,7 +3,7 @@ import type { ProjectRow } from './types';
 import { ARMATURE_FILE, ARMATURE_MAX_BYTES } from '../../shared/armature';
 import { checkArmatureFile } from './content';
 import { HttpError } from './http';
-import { prefixFor } from './projects';
+import { UNLIST, prefixFor } from './projects';
 import { refundBytes, reserveBytes } from './quota';
 import { projectFor, type Uploader } from './uploads';
 
@@ -51,7 +51,7 @@ export async function putArmatureFile(
   const owner = user ?? row.owner_id;
   const here = 'SELECT 1 FROM projects WHERE id = ? AND owner_id IS ?';
   const statements: D1PreparedStatement[] = [
-    env.DB.prepare('UPDATE projects SET bytes = MAX(0, bytes + ?), updated_at = ? WHERE id = ? AND owner_id IS ?').bind(
+    env.DB.prepare(`UPDATE projects SET bytes = MAX(0, bytes + ?), updated_at = ?, ${UNLIST} WHERE id = ? AND owner_id IS ?`).bind(
       delta,
       now,
       row.id,

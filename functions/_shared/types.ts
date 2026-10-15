@@ -79,9 +79,25 @@ export interface ProjectRow {
   storage_prefix: string | null;
   /** What its files weigh, as counted against its owner's quota. */
   bytes: number;
-  /** Phase 3's; 'none' until then. */
+  /** 0003's phase-3 stub, never used: `shared` (0004) is what phase 3 built. */
   moderation: string;
+  /** Where the project stands in the community gallery (docs/accounts.md §13); 'none' for a template. */
+  shared: SharedState;
+  /** When it was submitted for review, or approved: the community list's order. */
+  shared_at: number | null;
+  /** When a reviewer last acted on it, and who. */
+  reviewed_at: number | null;
+  reviewed_by: string | null;
+  /** Why it was rejected or hidden, shown to its author. */
+  review_reason: string | null;
 }
+
+/**
+ * A project's place in the community gallery (migrations/0004_community.sql):
+ * not shared; waiting for review; listed; refused, with a reason; or taken
+ * off the list by a reviewer or two members' reports, under review.
+ */
+export type SharedState = 'none' | 'pending' | 'public' | 'rejected' | 'hidden';
 
 export type Role = 'owner' | 'moderator' | 'member';
 export type UserStatus = 'active' | 'suspended' | 'deleting';

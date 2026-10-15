@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { appOrigin, onMediaHost } from './env';
+import { accountsOn, appOrigin, onMediaHost } from './env';
 import { PROJECT_FILE, getFileRow, prefixFor, type FileRow, type Scope } from './projects';
 
 /** What a media route hands over: the request, the bindings, and work to finish after answering. */
@@ -33,7 +33,7 @@ const REVALIDATE = 'public, no-cache';
  * Stream one of a project's R2 objects (a frame, the thumbnail, a scene
  * file), if the asker may see it.
  *
- * Four routes serve these, differing in `scope`. The open ones - /m/* on
+ * Five routes serve these, differing in `scope`. The open ones - /m/* on
  * the files host and this one, and /media/* for the apps installed before
  * /m/ - never look at identity: Cloudflare Access does not front them, so
  * the identity headers there are whatever the client chose to send, and a
@@ -44,9 +44,11 @@ const REVALIDATE = 'public, no-cache';
  * the identity the root middleware read there worth trusting; it reaches
  * whatever owner tools do, and nothing may keep what it sends. An
  * account's own, /api/me/media/*, reaches that account's projects alone
- * (`{member}`), on its session, and is kept nowhere either.
+ * (`{member}`), on its session, and is kept nowhere either. A reviewer's,
+ * /api/mod/media/*, reaches the projects members have shared, in any state
+ * but none (`{reviewer}`, docs/accounts.md §13), and is kept nowhere.
  *
- * On the two private routes `?download=1` makes any file a download named
+ * On the account's and the owner's private routes `?download=1` makes any file a download named
  * after its project (a scene always is one): what My projects' Download
  * and the export zip ask for.
  *
@@ -72,7 +74,7 @@ const REVALIDATE = 'public, no-cache';
 export async function serveMedia(ctx: MediaContext, segments: string[], scope: Scope): Promise<Response> {
   const { request, env } = ctx;
   const url = new URL(request.url);
-  const open = scope === 'public';
+  const open = scope === 'public' || scope === 'open';
   const shared = open ? openHeaders(url, env) : {};
   const [id, ...rest] = segments;
   const file = rest.join('/');
@@ -89,7 +91,7 @@ export async function serveMedia(ctx: MediaContext, segments: string[], scope: S
     open && kind !== 'scene' && kind !== 'armature' && asked !== null && range !== UNSATISFIABLE && !CONDITIONS_R2_ONLY.some((h) => request.headers.has(h))
       ? `${url.origin}/m/${encodeURIComponent(id)}/${file}?v=${encodeURIComponent(asked)}`
       : null;
-  const rowRead = getFileRow(env, id, scope);
+  const rowRead = getFileRow(env, id, open ? publicFiles(env) : scope);
   const hit = cacheKey ? await fromCache(cacheKey, request, range !== null) : null;
   // The row decides who may read and where the file is, so the object can
   // only be asked for once it is known - unless it is where 0.5 put it, as
@@ -106,7 +108,9 @@ export async function serveMedia(ctx: MediaContext, segments: string[], scope: S
     return notFound(shared);
   }
   const current = asked !== null && asked === String(row.updated_at);
-  const download = !open && url.searchParams.get('download') === '1';
+  // A reviewer's view of a member's shared work is view only, as the
+  // public's is (docs/accounts.md §13): no download made of it.
+  const download = !open && !(typeof scope === 'object' && 'reviewer' in scope) && url.searchParams.get('download') === '1';
   const policy = { kind, file, download, row, open, shared, cache: cacheControl(open, kind, current) };
   if (hit && current) return finish(new Response(hit.body, hit), policy);
   discard(hit);
@@ -157,6 +161,17 @@ export async function serveMedia(ctx: MediaContext, segments: string[], scope: S
   }
   return finish(new Response(body, { status: 200, headers }), policy);
 }
+
+/**
+ * What the open routes serve (docs/accounts.md §4, §13): the templates the
+ * gallery lists, and once accounts are on, the members' work approved for
+ * the community gallery while its author's account is active (OPEN in
+ * projects.ts). A shared project is served from the member's own folder,
+ * as a template is from its prefix: nothing is copied or moved. The row is
+ * read on every request, so a project hidden, withdrawn, sent back for
+ * review or its author suspended stops being served at once, cached or not.
+ */
+export const publicFiles = (env: Env): 'public' | 'open' => (accountsOn(env) ? 'open' : 'public');
 
 /** R2 sends an object without its body when a condition did not hold. */
 const hasBody = (o: R2Object | R2ObjectBody): o is R2ObjectBody => 'body' in o;
