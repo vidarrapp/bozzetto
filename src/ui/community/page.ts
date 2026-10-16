@@ -50,7 +50,7 @@ export async function renderCommunity(app: HTMLElement, handle: string | null = 
   const tagline = el(
     'p',
     'landing__tagline',
-    author ? 'Their work in the Community. View only: it stays theirs.' : "Work members have shared, newest first. View only: it stays its author's.",
+    author ? 'Their work in the Community. View only: it stays theirs.' : 'View work shared by our community, all rights reserved by authors.',
   );
   titles.append(title, tagline);
   head.appendChild(titles);
