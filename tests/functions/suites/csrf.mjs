@@ -55,6 +55,9 @@ const ROUTES = [
   '/api/community',
   '/api/community/u/someone',
   '/api/community/p-csrf/report',
+  '/api/community/p-csrf/view',
+  '/api/me/stars',
+  '/api/me/stars/p-csrf',
   '/api/mod/counts',
   '/api/mod/queue',
   '/api/mod/reports',
@@ -175,6 +178,8 @@ export async function run({ checks, off, on }) {
     '/admin/api/users/u-csrf/role',
     '/api/me/projects/p-csrf/share',
     '/api/community/p-csrf/report',
+    '/api/community/p-csrf/view',
+    '/api/me/stars/p-csrf',
     '/api/mod/projects/p-csrf/review',
   ]) {
     const missed = await leaks(on, path);

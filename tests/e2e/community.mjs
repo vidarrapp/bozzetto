@@ -19,7 +19,13 @@
 // list, the address and a reload keep it), hides and unhides it; @ada
 // renames hers - Pending again; unticking the one Share switch takes it
 // out everywhere and the Queue is empty; the History tab has what was
-// done; a plain member opening /?review is sent to the gallery.
+// done; a plain member opening /?review is sent to the gallery. Between
+// the owner's Gallery and the rename: the Community's sort select reorders
+// and its search narrows (the address and a reload keep both); @bea stars
+// from a card and from the viewer, the Starred tab lists both and unstarring
+// takes one off; no star on one's own work; the author sees "N views · N
+// stars" on My projects, @mo on the Gallery tab; a guest sees no star and
+// no count.
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
 import { DATA_ONE_FRAME, seedSession, seedUser, seededToken } from '../functions/lib.mjs';
@@ -458,6 +464,125 @@ async function ownerGallery(o, m, g, t) {
   t.ok(forMo?.shared === 'public' && show(forMo.actions) === show(['Hide…']), `@mo's Gallery lists it too, with Hide… (${show(forMo)})`);
 }
 
+/** The Community's cards in order, once the list has settled on `ready`. */
+const cardIds = (p) => p.evaluate(() => [...document.querySelectorAll('.card--community')].map((c) => c.dataset.project));
+
+/**
+ * Sort, search, stars and counts: the sort select reorders, the search
+ * narrows and a reload keeps both; @bea stars from a card and from the
+ * viewer, finds both under Starred, and unstarring takes one off; @ada has
+ * no star on her own work and sees her counts on My projects; @mo sees
+ * them on the Gallery tab; a guest sees no star and no count.
+ */
+async function sortsAndStars(o, a, b, m, g, id, t) {
+  // A guest: the tools, no stars, no counts.
+  let p = g.page;
+  await communityCards(g);
+  const tools = await p.evaluate(() => ({
+    sorts: [...document.querySelectorAll('.community-sort option')].map((o) => o.textContent),
+    sort: document.querySelector('.community-sort')?.value,
+    search: !!document.querySelector('.community-search'),
+    stars: document.querySelectorAll('.star-toggle').length,
+    counts: document.querySelectorAll('.card__stats').length,
+  }));
+  t.ok(
+    show(tools.sorts) === show(['Newest', 'Oldest', 'Most viewed', 'Most starred']) && tools.sort === 'new' && tools.search && tools.stars === 0 && tools.counts === 0,
+    `the Community has a sort select (Newest first) and a search; a guest sees no star and no count (${show(tools)})`,
+  );
+  const newest = await cardIds(p);
+  t.eq(show(newest), show([BOSS_WORK, id]), 'Newest: the latest approval first');
+  await p.selectOption('.community-sort', 'old');
+  await waitFor(p, (first) => document.querySelector('.card--community')?.dataset.project === first && /sort=old/.test(location.search), id);
+  t.ok(show(await cardIds(p)) === show([id, BOSS_WORK]) && (await p.evaluate(() => location.search)) === '?community&sort=old', 'Oldest reorders the cards, and the address keeps it');
+  await p.selectOption('.community-sort', 'views');
+  await waitFor(p, () => /sort=views/.test(location.search) && !document.querySelector('.community__more:disabled'));
+  t.eq(show(await cardIds(p)), show([id, BOSS_WORK]), "Most viewed: @ada's work, opened before, first");
+  await p.fill('.community-search', 'boss');
+  await waitFor(p, () => document.querySelectorAll('.card--community').length === 1 && /q=boss/.test(location.search));
+  let seen = await p.evaluate(() => ({ cards: [...document.querySelectorAll('.card--community')].map((c) => c.dataset.project), search: location.search }));
+  t.ok(show(seen.cards) === show([BOSS_WORK]) && seen.search === '?community&sort=views&q=boss', `the search narrows it, by title or handle, kept in the address (${show(seen)})`);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.card--community', { timeout: 30_000 }).catch(() => {});
+  seen = await p.evaluate(() => ({ cards: [...document.querySelectorAll('.card--community')].map((c) => c.dataset.project), q: document.querySelector('.community-search')?.value, sort: document.querySelector('.community-sort')?.value }));
+  t.ok(show(seen.cards) === show([BOSS_WORK]) && seen.q === 'boss' && seen.sort === 'views', `a reload keeps the search and the sort (${show(seen)})`);
+  await p.fill('.community-search', '@ada');
+  await waitFor(p, (pid) => document.querySelectorAll('.card--community').length === 1 && !!document.querySelector(`.card--community[data-project="${pid}"]`), id);
+  t.eq(show(await cardIds(p)), show([id]), '@ada: her work alone');
+  await viewer(g, id);
+  await waitFor(g.page, () => !!document.querySelector('.viewer-author'));
+  const guestStar = await g.page.evaluate(() => !!document.querySelector('.viewer-star'));
+  await rest(g);
+  t.ok(!guestStar, "a guest's viewer has no Star");
+
+  // @bea stars the owner's work from its card (it has no frames to play, so not from the viewer).
+  p = b.page;
+  await communityCards(b);
+  const toggles = await p.evaluate(() => [...document.querySelectorAll('.card--community')].map((c) => {
+    const s = c.querySelector('.star-toggle');
+    return { id: c.dataset.project, label: s?.getAttribute('aria-label') ?? null, pressed: s?.getAttribute('aria-pressed') ?? null };
+  }));
+  t.ok(toggles.length === 2 && toggles.every((x) => x.label === 'Star' && x.pressed === 'false'), `a member has Star on each card not theirs, not pressed (${show(toggles)})`);
+  await p.click(`.card--community[data-project="${BOSS_WORK}"] .star-toggle`);
+  const pressed = await p.evaluate((pid) => document.querySelector(`.card--community[data-project="${pid}"] .star-toggle`)?.getAttribute('aria-pressed'), BOSS_WORK);
+  t.eq(pressed, 'true', 'Star turns at once');
+  await p.waitForTimeout(500);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.card--community .star-toggle', { timeout: 30_000 }).catch(() => {});
+  const kept = await p.evaluate((pid) => {
+    const s = document.querySelector(`.card--community[data-project="${pid}"] .star-toggle`);
+    return { pressed: s?.getAttribute('aria-pressed'), label: s?.getAttribute('aria-label') };
+  }, BOSS_WORK);
+  t.ok(kept.pressed === 'true' && kept.label === 'Unstar', `and stays starred after a reload, labelled Unstar (${show(kept)})`);
+  t.ok(await p.evaluate(() => document.querySelectorAll('.card__stats').length === 0), 'a member sees no counts in the Community');
+
+  // ...and @ada's from the viewer.
+  await viewer(b, id);
+  await waitFor(p, () => !!document.querySelector('.viewer-star'));
+  const before = await p.evaluate(() => document.querySelector('.viewer-star')?.getAttribute('aria-pressed'));
+  await p.click('.viewer-star');
+  await waitFor(p, () => document.querySelector('.viewer-star')?.getAttribute('aria-pressed') === 'true');
+  await p.waitForTimeout(500);
+  const starredNow = await p.evaluate(async (pid) => (await (await fetch(`/api/me/stars/${pid}`)).json()).starred, id);
+  await rest(b);
+  t.ok(before === 'false' && starredNow === true, `Star in the viewer, beside the credit, stars it (${before} → ${starredNow})`);
+
+  // Starred lists both, the latest first; unstarring takes one off.
+  await go(b, '?me&tab=starred');
+  await p.waitForSelector('.my-starred .card--community, .my-starred__empty', { timeout: 30_000 }).catch(() => {});
+  let starred = await p.evaluate(() => ({
+    tab: document.querySelector('.my-tab[aria-current=page]')?.dataset.tab,
+    tabs: [...document.querySelectorAll('.my-tab')].map((a) => a.textContent),
+    cards: [...document.querySelectorAll('.my-starred .card--community')].map((c) => c.dataset.project),
+  }));
+  t.ok(starred.tab === 'starred' && show(starred.tabs) === show(['My work', 'Starred']) && show(starred.cards) === show([id, BOSS_WORK]), `My projects' Starred tab lists both, the latest first (${show(starred)})`);
+  await p.click(`.my-starred .card--community[data-project="${BOSS_WORK}"] .star-toggle`);
+  await waitFor(p, (bw) => !document.querySelector(`.my-starred .card--community[data-project="${bw}"]`), BOSS_WORK);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.my-starred .card--community, .my-starred__empty', { timeout: 30_000 }).catch(() => {});
+  starred = await p.evaluate(() => [...document.querySelectorAll('.my-starred .card--community')].map((c) => c.dataset.project));
+  t.eq(show(starred), show([id]), 'Unstar takes it off, for good');
+
+  // @ada: no star on her own work; her counts on My projects.
+  await communityCards(a);
+  const own = await a.page.evaluate((pid) => ({
+    mine: !!document.querySelector(`.card--community[data-project="${pid}"] .star-toggle`),
+    others: document.querySelectorAll('.card--community .star-toggle').length,
+  }), id);
+  t.ok(!own.mine && own.others === 1, `no Star on one's own work, Star on the rest (${show(own)})`);
+  await myCard(a, id);
+  const stats = await a.page.evaluate((pid) => document.querySelector(`.card--mine[data-project="${pid}"] .card__stats`)?.textContent ?? null, id);
+  t.ok(/^[2-9]\d* views · 1 star$/.test(stats ?? ''), `the author sees "N views · N stars" on My projects (${stats})`);
+  await myCard(o, BOSS_WORK);
+  const bossStats = await o.page.evaluate((bw) => document.querySelector(`.card--mine[data-project="${bw}"] .card__stats`)?.textContent ?? null, BOSS_WORK);
+  t.ok(/^\d+ views? · 0 stars$/.test(bossStats ?? ''), `the owner's own: the star taken back (${bossStats})`);
+
+  // @mo: the counts on the Gallery tab.
+  await go(m, '?review&tab=gallery');
+  await m.page.waitForSelector('.review-card .review-card__stats', { timeout: 30_000 }).catch(() => {});
+  const gallery = await m.page.evaluate((pid) => document.querySelector(`.review-card[data-project="${pid}"] .review-card__stats`)?.textContent ?? null, id);
+  t.ok(gallery === stats, `reviewers see the same counts on the Gallery tab (${gallery})`);
+}
+
 /** A plain member opening /?review is sent to the gallery, which says why; no Review chip. */
 async function notAReviewer(b, t) {
   await go(b, '?review');
@@ -515,6 +640,7 @@ export const suites = {
       await part('hidden by reports', () => hiddenByReports(server, a, c, g, id, t));
       await part('unhide', () => unhide(m, g, id, t));
       await part('the owner reviews their own, from the Gallery tab', () => ownerGallery(o, m, g, t));
+      await part('sorts, search, stars and counts', () => sortsAndStars(o, a, b, m, g, id, t));
       await part('rename and withdraw', () => renameAndWithdraw(a, m, g, id, t));
       await part('not a reviewer', () => notAReviewer(b, t));
       await part('the owner reviews too', async () => {

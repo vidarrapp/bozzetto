@@ -284,7 +284,14 @@ async function onChecks(checks, on) {
   t.ok(first?.media === `http://${FILES_HOST}/m/cm-l01` && first?.thumb === `http://${FILES_HOST}/m/cm-l01/thumb.jpg?v=${T - DAY}`, `its files on the files host, as a template's; the thumbnail at its version (${first?.media} ${first?.thumb})`);
   t.eq((await listed('/api/community', 2)).join(','), START.join(','), 'two to a page, the cursor walks the same order without a gap or a repeat');
   r = await guest.call('GET', '/api/community?limit=2');
-  t.ok(r.json?.items?.length === 2 && r.json?.next === `${listedAt(LISTED_ORDER[1])}.${LISTED_ORDER[1]}`, `next is <shared_at>.<id> of the page's last (${r.json?.next})`);
+  const nextOf = (() => {
+    try {
+      return JSON.parse(Buffer.from(r.json?.next ?? '', 'base64url').toString('utf8'));
+    } catch {
+      return null;
+    }
+  })();
+  t.ok(r.json?.items?.length === 2 && JSON.stringify(nextOf) === JSON.stringify({ s: 'new', t: listedAt(LISTED_ORDER[1]), i: LISTED_ORDER[1] }), `next is the sort, shared_at and id of the page's last, as base64url JSON (${JSON.stringify(nextOf)})`);
   r = await guest.call('GET', '/api/community?after=nonsense');
   t.ok(r.status === 400 && r.json?.reason === 'after' && r.headers.get('cache-control') === 'no-store', `a cursor it never gave: 400 reason after, not kept (${r.status} ${r.json?.reason})`);
   r = await guest.call('GET', '/api/community?limit=49');

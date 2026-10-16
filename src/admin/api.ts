@@ -74,6 +74,9 @@ export interface ProjectSummary {
   shared_at?: number | null;
   /** The reviewer's reason, while it is rejected or hidden. */
   review_reason?: string | null;
+  /** Its views and stars in the Community, on My projects' list, for a shared one alone. */
+  views?: number;
+  stars?: number;
 }
 
 /**

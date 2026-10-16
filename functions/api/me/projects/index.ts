@@ -8,7 +8,9 @@ import { createMemberProject, listMemberProjects, toMemberRow } from '../../../_
 // - {id, title, mode, fps, updated_at, visibility, template, frameCount,
 // scene, media} - with `bytes`, what its files weigh against the quota,
 // and `media` the private route its files are read from
-// (/api/me/media/<id>). Never anyone else's; never cached.
+// (/api/me/media/<id>). A shared one (not `none`) also carries its `views`
+// and `stars` in the Community (§13), which only its author sees. Never
+// anyone else's; never cached.
 export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, data }) =>
   api(async () => answer(await listMemberProjects(env, requireUser(data.principal).user.id)));
 

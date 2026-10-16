@@ -219,13 +219,15 @@ export default defineConfig(({ mode }) => {
             // used, so none added later can: NetworkOnly goes to the network
             // and stores nothing. With them the community's (docs/accounts.md
             // §13): everything a reviewer reads (/api/mod/*: the queue, the
-            // reports with their notes, unlisted work's files), and the two
-            // writes, Share (/api/me/projects/:id/share) and Report
-            // (/api/community/:id/report), which a cache has no business
+            // reports with their notes, unlisted work's files), a member's
+            // stars (/api/me/stars, and each one's state and toggle), and the
+            // writes, Share (/api/me/projects/:id/share), Report
+            // (/api/community/:id/report) and a view
+            // (/api/community/:id/view), which a cache has no business
             // answering for.
             urlPattern: ({ url }) =>
               url.origin === self.location.origin &&
-              /^\/api\/(?:auth\/|me\/(?:account|export)(?:\/|$)|me\/media\/|mod(?:\/|$)|me\/projects\/[^/]+\/share$|community\/[^/]+\/report$)/.test(
+              /^\/api\/(?:auth\/|me\/(?:account|export|stars)(?:\/|$)|me\/media\/|mod(?:\/|$)|me\/projects\/[^/]+\/share$|community\/[^/]+\/(?:report|view)$)/.test(
                 url.pathname,
               ),
             handler: 'NetworkOnly',
@@ -238,6 +240,14 @@ export default defineConfig(({ mode }) => {
             // Online the live answer; offline (or slower than the timeout)
             // the last one, so the pages still draw their cards. A 404 (no
             // such member) passes through and is never stored.
+            //
+            // Only a guest's answer is kept: the server marks it `public,
+            // max-age=60`, while a signed-in member's says on each card
+            // what that member starred and is `private, no-store`. Matching
+            // the header exactly keeps every member's answer out of this
+            // cache, so no account's stars are ever shown from it to another
+            // (or to itself, stale); offline, anyone gets the last guest
+            // list, stars unmarked.
             urlPattern: ({ url }) =>
               url.origin === self.location.origin && /^\/api\/community(?:\/u\/[^/]+)?$/.test(url.pathname),
             handler: 'NetworkFirst',
@@ -245,7 +255,7 @@ export default defineConfig(({ mode }) => {
               cacheName: 'bozzetto-community',
               networkTimeoutSeconds: 4,
               expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 7 },
-              cacheableResponse: { statuses: [200] },
+              cacheableResponse: { statuses: [200], headers: { 'cache-control': 'public, max-age=60' } },
             },
           },
           {

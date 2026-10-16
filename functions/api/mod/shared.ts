@@ -9,7 +9,8 @@ import { readCursor } from '../../_shared/owner';
 // GET /api/mod/shared?q=&state=all|public|hidden&after=<shared_at>.<id>&limit=
 // - the Gallery tab (docs/accounts.md §13): every project in the Community
 // now, public or hidden, newest first, 24 a page (limit 1-48), as {items,
-// next}, each as the queue lists one. `q` (trimmed, at most 100
+// next}, each as the queue lists one, with its `views` and `stars` (the
+// counts the public never sees). `q` (trimmed, at most 100
 // characters) matches the title or the author's handle anywhere in it, any
 // capitals; `@name` the handle alone. `state` narrows it (400 reason state
 // otherwise). The owner and moderators alone (401 signin, 403 forbidden).

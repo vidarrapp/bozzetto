@@ -5,14 +5,16 @@ import {
   errorText,
   getMe,
   inWait,
+  isStarred,
   reportProject,
   type ReportReason,
 } from '../../net/account';
-import { authorHref } from '../../net/community';
+import { authorHref, recordView } from '../../net/community';
 import { topChip, topbarLeft } from '../topbar';
 import { signInButton } from '../signIn';
 import { LEGAL, button, el, legalLink } from '../account/parts';
 import { REPORT_REASON_LABELS } from './reviewActions';
+import { starButton } from './star';
 
 /**
  * The viewer's word on a member's work from the Community
@@ -24,16 +26,22 @@ import { REPORT_REASON_LABELS } from './reviewActions';
  * which opens the same work in review mode (`&review=1&from=gallery`).
  * Nothing here copies or downloads anything; the viewer offers neither.
  *
- * Hooks for tests: `.viewer-author`, `.viewer-review`, `.viewer-report` (`data-reported`
- * once sent), and the dialog's `.report-overlay`, `select[name=reason]`,
+ * Opening it here counts a view (recordView; the server keeps one a
+ * visitor a day, never the author's or a reviewer's, and review mode never
+ * comes here). A member signed in who is not the author also gets Star
+ * beside the credit (star.ts), turned as they left it.
+ *
+ * Hooks for tests: `.viewer-author`, `.viewer-star` (a `.star-toggle`),
+ * `.viewer-review`, `.viewer-report` (`data-reported` once sent), and the dialog's `.report-overlay`, `select[name=reason]`,
  * `textarea[name=note]`, `.report-send`, `.report-say`.
  */
 export async function mountCommunityCredit(id: string, author: string): Promise<void> {
   const left = topbarLeft();
-  left.querySelectorAll('.viewer-author, .viewer-review, .viewer-report').forEach((c) => c.remove());
+  left.querySelectorAll('.viewer-author, .viewer-star, .viewer-review, .viewer-report').forEach((c) => c.remove());
   const by = topChip(`by @${author}`, authorHref(author));
   by.classList.add('viewer-author');
   left.appendChild(by);
+  recordView(id);
 
   if (!(await accountsOn().catch(() => false))) return;
   // Signed in, active, and not the author: anyone else has no Report.
@@ -46,6 +54,10 @@ export async function mountCommunityCredit(id: string, author: string): Promise<
     by.after(review);
   }
   if (me.handle.toLowerCase() === author.toLowerCase()) return;
+  // Star: as the member left it, or unstarred when that cannot be read now.
+  const starred = await isStarred(id).catch(() => false);
+  const star = starButton(id, starred, { className: 'topchip viewer-star' });
+  (left.querySelector('.viewer-review') ?? by).after(star);
   const report = topChip('Report…') as HTMLButtonElement;
   report.classList.add('viewer-report');
   report.addEventListener('click', () => openReport(id, author, report));

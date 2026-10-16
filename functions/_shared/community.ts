@@ -2,7 +2,8 @@ import type { Env } from './env';
 import type { ProjectMode, ProjectRow, SharedState, UserRow } from './types';
 import { auditStatement } from './auth/audit';
 import { enforce, type Limit } from './auth/ratelimit';
-import { randomId } from './crypto';
+import { base64url, fromBase64url, randomId } from './crypto';
+import { SESSION_COOKIE, readCookie } from './auth/session';
 import { HttpError, json } from './http';
 import { cursorOf, type Cursor } from './owner';
 import { closeReports, getProjectRow, mediaBase } from './projects';
@@ -92,15 +93,20 @@ export interface CommunityCard {
   thumb: string;
   /** Where its files are read from: the open routes, as a template's. */
   media: string;
+  /** Whether the member asking starred it: only on an answer to a signed-in member, never a count. */
+  starred?: boolean;
 }
 
-interface CardRow {
+/** What a public card is made from. */
+export interface CardRow {
   id: string;
   title: string;
   mode: ProjectMode;
   fps: number;
   shared_at: number;
   updated_at: number;
+  views: number;
+  stars: number;
   handle: string;
 }
 
@@ -115,6 +121,13 @@ const card = (r: CardRow, media: string): CommunityCard => ({
   thumb: `${media}/thumb.jpg?v=${r.updated_at}`,
   media,
 });
+
+/** A public card row as a card, its files on the open routes. */
+export const publicCard = (r: CardRow, env: Env): CommunityCard =>
+  card(r, mediaBase({ id: r.id, template: 0, visibility: 'private', shared: 'public' }, env));
+
+/** What a public card is read from: `p` the project, `u` its author. */
+export const CARD_COLUMNS = 'p.id, p.title, p.mode, p.fps, p.shared_at, p.updated_at, p.views, p.stars, u.handle';
 
 /** ?limit=: a whole number from 1 to `max`, `page` when absent; anything else is 400 bad_request {reason: 'limit'}. */
 export function listLimit(params: URLSearchParams, page = PAGE, max = MAX_PAGE): number {
@@ -134,46 +147,166 @@ export interface Page<T> {
 /** A project id as a list's cursor names it. */
 export const CURSOR_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+/** The orders the public lists come in: newest or oldest approval, most viewed, most starred. */
+export const COMMUNITY_SORTS = ['new', 'old', 'views', 'stars'] as const;
+export type CommunitySort = (typeof COMMUNITY_SORTS)[number];
+
 /**
- * A public list as it is answered: anyone's to see, kept a minute by the
- * browser and any cache between - a project hidden or withdrawn meanwhile
- * may stay on a kept page that long, while its files stop at once.
+ * Where a public list's page ends, for the next to begin after it: the
+ * sort it was made for, the approval time and id of its last card, and for
+ * `views` and `stars` that card's count. Sent as base64url JSON
+ * (`{"s":"views","n":3,"t":…,"i":"p-…"}`), opaque to the client.
  */
-export function communityAnswer<T>(page: Page<T>, extra: Record<string, unknown> = {}): Response {
-  return json({ ...extra, items: page.items, next: page.next }, 200, { 'cache-control': 'public, max-age=60' });
+export interface SortCursor {
+  s: CommunitySort;
+  n?: number;
+  t: number;
+  i: string;
+}
+
+const counted = (sort: CommunitySort): sort is 'views' | 'stars' => sort === 'views' || sort === 'stars';
+
+function encodeSortCursor(c: SortCursor): string {
+  return base64url(new TextEncoder().encode(JSON.stringify(c)));
+}
+
+const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * ?after= of a public list in `sort`, null when there is none. Anything but
+ * a cursor this list gave in this sort - not base64url JSON, a key missing
+ * or extra, a number that is not a whole one, another sort's - is 400
+ * bad_request {reason: 'after'}.
+ */
+export function readSortCursor(params: URLSearchParams, sort: CommunitySort): SortCursor | null {
+  const raw = params.get('after');
+  if (raw === null || raw === '') return null;
+  const bad = (): HttpError => new HttpError('after: not a cursor this list gave', 400, 'bad_request', { reason: 'after' });
+  const bytes = raw.length <= 400 ? fromBase64url(raw) : null;
+  if (!bytes) throw bad();
+  let c: unknown;
+  try {
+    c = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes));
+  } catch {
+    throw bad();
+  }
+  if (!c || typeof c !== 'object' || Array.isArray(c)) throw bad();
+  const o = c as Record<string, unknown>;
+  const keys = Object.keys(o).sort().join(',');
+  const want = counted(sort) ? 'i,n,s,t' : 'i,s,t';
+  if (keys !== want || o.s !== sort || !whole(o.t) || typeof o.i !== 'string' || !CURSOR_ID.test(o.i)) throw bad();
+  if (counted(sort) && !whole(o.n)) throw bad();
+  return counted(sort) ? { s: sort, n: o.n as number, t: o.t, i: o.i } : { s: sort, t: o.t, i: o.i };
 }
 
 /**
- * The community gallery, newest approval first (shared_at, then id), after
- * `after` - or one member's part of it, with `author`. Only what anyone may
- * see: approved, not a template, its author's account active.
+ * The query of a public list: ?sort= (`new` when absent; anything else is
+ * 400 bad_request {reason: 'sort'}), ?q= as the Gallery tab takes it
+ * (searchText), ?after= in that sort, and ?limit=.
+ */
+export function communityQuery(params: URLSearchParams): { sort: CommunitySort; q: string; after: SortCursor | null; limit: number } {
+  const raw = params.get('sort');
+  const sort = raw === null || raw === '' ? 'new' : raw;
+  if (!(COMMUNITY_SORTS as readonly string[]).includes(sort)) {
+    throw new HttpError(`sort: one of ${COMMUNITY_SORTS.join(', ')}`, 400, 'bad_request', { reason: 'sort' });
+  }
+  const s = sort as CommunitySort;
+  return { sort: s, q: searchText(params), after: readSortCursor(params, s), limit: listLimit(params) };
+}
+
+/** Whether a request carries a session cookie: then its answer may say what that member starred, and is nobody else's. */
+export const hasSession = (request: Request): boolean => readCookie(request, SESSION_COOKIE) !== null;
+
+/**
+ * A public list as it is answered. Asked without a session cookie: anyone's
+ * to see, kept a minute by the browser and any cache between (a project
+ * hidden or withdrawn meanwhile may stay on a kept page that long, while
+ * its files stop at once), varying by cookie so a browser that signs in
+ * meanwhile asks again. With one: `private, no-store`, since its cards may
+ * say what that member starred.
+ */
+export function communityAnswer<T>(page: Page<T>, request: Request, extra: Record<string, unknown> = {}): Response {
+  const headers: Record<string, string> = hasSession(request)
+    ? { 'cache-control': 'private, no-store' }
+    : { 'cache-control': 'public, max-age=60', vary: 'Cookie' };
+  return json({ ...extra, items: page.items, next: page.next }, 200, headers);
+}
+
+/** The ORDER BY of each sort, and the condition that begins a page after its cursor. */
+const ORDERS: Record<CommunitySort, { order: string; after: (c: SortCursor) => { sql: string; binds: unknown[] } }> = {
+  new: {
+    order: 'p.shared_at DESC, p.id DESC',
+    after: (c) => ({ sql: '(p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))', binds: [c.t, c.t, c.i] }),
+  },
+  old: {
+    order: 'p.shared_at ASC, p.id ASC',
+    after: (c) => ({ sql: '(p.shared_at > ? OR (p.shared_at = ? AND p.id > ?))', binds: [c.t, c.t, c.i] }),
+  },
+  views: {
+    order: 'p.views DESC, p.shared_at DESC, p.id DESC',
+    after: (c) => ({
+      sql: '(p.views < ? OR (p.views = ? AND (p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))))',
+      binds: [c.n, c.n, c.t, c.t, c.i],
+    }),
+  },
+  stars: {
+    order: 'p.stars DESC, p.shared_at DESC, p.id DESC',
+    after: (c) => ({
+      sql: '(p.stars < ? OR (p.stars = ? AND (p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))))',
+      binds: [c.n, c.n, c.t, c.t, c.i],
+    }),
+  },
+};
+
+/**
+ * The community gallery in `sort` (newest approval first by default, ties
+ * by id), after `after` - or one member's part of it, with `author`. Only
+ * what anyone may see: approved, not a template, its author's account
+ * active. `q` matches the title or the author's handle (`@name` the handle
+ * alone), as the Gallery tab's search does; on an author page
+ * (`titleOnly`) the title alone.
  */
 export async function listCommunity(
   env: Env,
-  q: { after: Cursor<string> | null; limit: number; author?: string },
+  q: { after: SortCursor | null; limit: number; author?: string; sort?: CommunitySort; q?: string; titleOnly?: boolean },
 ): Promise<Page<CommunityCard>> {
+  const sort = q.sort ?? 'new';
   const where = ["p.shared = 'public'", 'p.template = 0', "u.status = 'active'"];
   const binds: unknown[] = [];
   if (q.author) {
     where.push('p.owner_id = ?');
     binds.push(q.author);
   }
+  const match = searchClause(q.q ?? '', q.titleOnly ?? false);
+  if (match) {
+    where.push(match.sql);
+    binds.push(...match.binds);
+  }
   if (q.after) {
-    where.push('(p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))');
-    binds.push(q.after.at, q.after.at, q.after.id);
+    const after = ORDERS[sort].after(q.after);
+    where.push(after.sql);
+    binds.push(...after.binds);
   }
   const { results } = await env.DB.prepare(
-    `SELECT p.id, p.title, p.mode, p.fps, p.shared_at, p.updated_at, u.handle
+    `SELECT ${CARD_COLUMNS}
      FROM projects p JOIN users u ON u.id = p.owner_id
      WHERE ${where.join(' AND ')}
-     ORDER BY p.shared_at DESC, p.id DESC LIMIT ?`,
+     ORDER BY ${ORDERS[sort].order} LIMIT ?`,
   )
     .bind(...binds, q.limit + 1)
     .all<CardRow>();
   const shown = results.slice(0, q.limit);
-  const items = shown.map((r) => card(r, mediaBase({ id: r.id, template: 0, visibility: 'private', shared: 'public' }, env)));
+  const items = shown.map((r) => publicCard(r, env));
   const last = shown.at(-1);
-  return { items, next: results.length > q.limit && last ? cursorOf(last.shared_at, last.id) : null };
+  const next =
+    results.length > q.limit && last
+      ? encodeSortCursor(
+          counted(sort)
+            ? { s: sort, n: sort === 'views' ? last.views : last.stars, t: last.shared_at, i: last.id }
+            : { s: sort, t: last.shared_at, i: last.id },
+        )
+      : null;
+  return { items, next };
 }
 
 /** An active account by its handle, in any capitals: whose author page it is. Null for none. */
@@ -442,8 +575,31 @@ export async function reviewQueue(env: Env, q: { after: Cursor<string> | null; l
   return { items: shown.map(reviewCard), next: results.length > q.limit && last ? cursorOf(last.shared_at ?? 0, last.id) : null };
 }
 
-/** What the Gallery tab's search may hold, in characters. */
+/** What a search may hold, in characters (the Gallery tab's, the Community's). */
 export const MAX_SEARCH = 100;
+
+/** ?q=: trimmed and cut to MAX_SEARCH characters, '' for none. */
+export function searchText(params: URLSearchParams): string {
+  return [...(params.get('q') ?? '').trim()].slice(0, MAX_SEARCH).join('').trim();
+}
+
+/**
+ * Where a search matches, over `p` (the project) and `u` (its author): the
+ * title or the handle, any capitals, anywhere in it; `@name` the handle
+ * alone. `titleOnly` (an author page) the title alone, `@` and all. Null
+ * for no search.
+ */
+export function searchClause(q: string, titleOnly: boolean): { sql: string; binds: unknown[] } | null {
+  const handleOnly = !titleOnly && q.startsWith('@');
+  const text = handleOnly ? q.slice(1).trim() : q;
+  if (!text) return null;
+  // instr() on lower(), not LIKE: D1 refuses a LIKE pattern past 50 bytes
+  // ("too complex"), shorter than a search may be, and instr() takes % and
+  // _ as themselves with nothing to escape. lower() folds ASCII, as LIKE does.
+  if (titleOnly) return { sql: 'instr(lower(p.title), lower(?)) > 0', binds: [text] };
+  if (handleOnly) return { sql: 'instr(lower(u.handle), lower(?)) > 0', binds: [text] };
+  return { sql: '(instr(lower(p.title), lower(?)) > 0 OR instr(lower(u.handle), lower(?)) > 0)', binds: [text, text] };
+}
 /** The Gallery tab's state filter. */
 export const SHARED_FILTERS = ['all', 'public', 'hidden'] as const;
 export type SharedFilter = (typeof SHARED_FILTERS)[number];
@@ -454,7 +610,7 @@ export type SharedFilter = (typeof SHARED_FILTERS)[number];
  * any other state is 400 bad_request {reason: 'state'}.
  */
 export function sharedQuery(params: URLSearchParams): { q: string; state: SharedFilter } {
-  const q = [...(params.get('q') ?? '').trim()].slice(0, MAX_SEARCH).join('').trim();
+  const q = searchText(params);
   const raw = params.get('state');
   const state = raw === null || raw === '' ? 'all' : raw;
   if (!(SHARED_FILTERS as readonly string[]).includes(state)) {
@@ -466,7 +622,7 @@ export function sharedQuery(params: URLSearchParams): { q: string; state: Shared
 /**
  * The Gallery tab: every project in the Community now - public, or hidden
  * (by a reviewer or the reports) - newest first (shared_at, then id),
- * after `after`. `q` matches the title or the author's handle, any
+ * after `after`, each with its views and stars. `q` matches the title or the author's handle, any
  * capitals, anywhere in it; `@name` the handle alone. `state` narrows it
  * to public or hidden. Whatever the author's account's status, as the
  * queue lists it.
@@ -474,7 +630,7 @@ export function sharedQuery(params: URLSearchParams): { q: string; state: Shared
 export async function listShared(
   env: Env,
   q: { after: Cursor<string> | null; limit: number; q: string; state: SharedFilter },
-): Promise<Page<ReviewCard>> {
+): Promise<Page<ReviewCard & { views: number; stars: number }>> {
   const where = ['p.template = 0'];
   const binds: unknown[] = [];
   if (q.state === 'all') where.push("p.shared IN ('public', 'hidden')");
@@ -482,34 +638,27 @@ export async function listShared(
     where.push('p.shared = ?');
     binds.push(q.state);
   }
-  const handleOnly = q.q.startsWith('@');
-  const text = handleOnly ? q.q.slice(1).trim() : q.q;
-  // instr() on lower(), not LIKE: D1 refuses a LIKE pattern past 50 bytes
-  // ("too complex"), shorter than a search may be, and instr() takes % and
-  // _ as themselves with nothing to escape. lower() folds ASCII, as LIKE does.
-  if (text) {
-    if (handleOnly) {
-      where.push('instr(lower(u.handle), lower(?)) > 0');
-      binds.push(text);
-    } else {
-      where.push('(instr(lower(p.title), lower(?)) > 0 OR instr(lower(u.handle), lower(?)) > 0)');
-      binds.push(text, text);
-    }
+  const match = searchClause(q.q, false);
+  if (match) {
+    where.push(match.sql);
+    binds.push(...match.binds);
   }
   if (q.after) {
     where.push('(p.shared_at < ? OR (p.shared_at = ? AND p.id < ?))');
     binds.push(q.after.at, q.after.at, q.after.id);
   }
   const { results } = await env.DB.prepare(
-    `SELECT ${REVIEW_COLUMNS} FROM projects p LEFT JOIN users u ON u.id = p.owner_id
+    `SELECT ${REVIEW_COLUMNS}, p.views, p.stars FROM projects p LEFT JOIN users u ON u.id = p.owner_id
      WHERE ${where.join(' AND ')}
      ORDER BY p.shared_at DESC, p.id DESC LIMIT ?`,
   )
     .bind(...binds, q.limit + 1)
-    .all<ReviewRow>();
+    .all<ReviewRow & { views: number; stars: number }>();
   const shown = results.slice(0, q.limit);
   const last = shown.at(-1);
-  return { items: shown.map(reviewCard), next: results.length > q.limit && last ? cursorOf(last.shared_at ?? 0, last.id) : null };
+  // The counts, for the reviewers' eyes alone: the public lists never carry them.
+  const items = shown.map((r) => ({ ...reviewCard(r), views: r.views, stars: r.stars }));
+  return { items, next: results.length > q.limit && last ? cursorOf(last.shared_at ?? 0, last.id) : null };
 }
 
 /** The open reports there are, at most this many. */

@@ -90,6 +90,10 @@ export interface ProjectRow {
   reviewed_by: string | null;
   /** Why it was rejected or hidden, shown to its author. */
   review_reason: string | null;
+  /** Visitors who opened it in the Community, one a day each (0005, stats.ts). */
+  views: number;
+  /** Members who starred it, kept in step with the stars table. */
+  stars: number;
 }
 
 /**

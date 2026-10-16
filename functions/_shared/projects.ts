@@ -219,6 +219,9 @@ export interface MemberSummary extends ProjectSummary {
   shared: SharedState;
   shared_at: number | null;
   review_reason: string | null;
+  /** Its views and stars in the Community (stats.ts), on a shared one alone: the author sees them, the public never. */
+  views?: number;
+  stars?: number;
 }
 
 /**
@@ -230,13 +233,20 @@ export async function listMemberProjects(env: Env, userId: string): Promise<Memb
     `SELECT id, title, mode, fps, updated_at, visibility, bytes, shared, shared_at,
             CASE WHEN shared IN ('rejected', 'hidden') THEN review_reason END AS review_reason,
             COALESCE(json_array_length(data, '$.frames'), 0) AS frameCount,
-            json_extract(data, '$.scene') AS scene
+            json_extract(data, '$.scene') AS scene, views, stars
      FROM projects WHERE owner_id = ?
      ORDER BY created_at DESC, id`,
   )
     .bind(userId)
-    .all<Omit<MemberSummary, 'scene' | 'template' | 'media'> & { scene: string | null }>();
-  return results.map((r) => ({ ...r, scene: parseScene(r.scene), template: false, media: memberMediaBase(r.id) }));
+    .all<Omit<MemberSummary, 'scene' | 'template' | 'media'> & { scene: string | null; views: number; stars: number }>();
+  return results.map(({ views, stars, ...r }) => ({
+    ...r,
+    scene: parseScene(r.scene),
+    template: false,
+    media: memberMediaBase(r.id),
+    // The counts of a shared one (§13), for its author's eyes.
+    ...(r.shared !== 'none' ? { views, stars } : {}),
+  }));
 }
 
 /** json_extract hands an object back as JSON text. */

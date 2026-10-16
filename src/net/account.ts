@@ -501,6 +501,20 @@ export async function reportProject(id: string, reason: ReportReason, note: stri
   return status === 204 ? 'sent' : 'again';
 }
 
+/**
+ * Star a work in the community gallery (true) or unstar it (false): PUT or
+ * DELETE /api/me/stars/:id, 204 either way, idempotent. Refusals are
+ * AccountErrors: 404 not_found (not public now), 400 bad_request reason own,
+ * 429 rate_limited, 401 signin.
+ */
+export async function setStar(id: string, on: boolean): Promise<void> {
+  await call(on ? 'PUT' : 'DELETE', `/api/me/stars/${encodeURIComponent(id)}`);
+}
+
+/** GET /api/me/stars/:id: whether the member signed in starred it. */
+export const isStarred = async (id: string): Promise<boolean> =>
+  (await callFor<{ starred?: boolean }>('GET', `/api/me/stars/${encodeURIComponent(id)}`)).starred === true;
+
 // --- reviewing the community (docs/accounts.md §13) ----------------------------------
 
 /** What a reviewer may do to a shared project. */
@@ -522,6 +536,9 @@ export interface ReviewCard {
   author: { handle: string } | null;
   /** Open reports of it. */
   reports: number;
+  /** Its views and stars, on the Gallery tab's cards (GET /api/mod/shared) alone. */
+  views?: number;
+  stars?: number;
   /** Its picture, on the reviewers' private route. */
   thumb: string;
   media: string;
@@ -640,6 +657,10 @@ export interface AccountExport {
   sessions: unknown[];
   projects: ExportProject[];
   audit: unknown[];
+  /** The works it starred: {projectId, title (null unless public now), starredAt}. */
+  stars?: unknown[];
+  /** The reports it made: {projectId, reason, note, createdAt, outcome}. */
+  reports?: unknown[];
 }
 
 /** The account's data (needs recent authentication: 401 reauth). */

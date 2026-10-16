@@ -5211,6 +5211,57 @@ body.is-sampling * {
   grid-column: 1 / -1;
 }
 
+/* The sort select and the search, above the cards (the Review page's
+   Gallery tab tools, reused). */
+.community__tools {
+  margin: 0 0 16px;
+}
+
+.community__tools[hidden] {
+  display: none;
+}
+
+/* Star, in the picture's top-right corner of a Community card: a member's
+   favourite, never a count. Always shown, so the state reads at a glance. */
+.card__star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card__star[aria-pressed='true'],
+.viewer-star[aria-pressed='true'] {
+  color: #f5c542;
+}
+
+.card__star:hover,
+.card__star:focus-visible {
+  border-color: var(--accent);
+}
+
+/* The views and stars a work has: its author's (My projects) and the
+   reviewers' (the Gallery tab) to see. */
+.card__stats {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.my-projects .my-tabs {
+  margin: 0 0 18px;
+}
+
 /* "by @handle" under the viewer's title, in the Render panel. */
 .panel__heading {
   display: flex;

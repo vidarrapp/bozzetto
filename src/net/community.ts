@@ -2,9 +2,10 @@ import { apiFetch } from './origin';
 
 /**
  * The community gallery's public lists (docs/accounts.md §13): members'
- * work a reviewer has approved, newest approval first, anyone's to see.
- * The service worker asks the network first and keeps the last answer for
- * offline use (vite.config.ts).
+ * work a reviewer has approved, anyone's to see, in four orders and
+ * searchable. The service worker asks the network first and keeps the last
+ * answer a guest was given for offline use (vite.config.ts); a signed-in
+ * member's answers, which say what they starred, are kept by nothing.
  */
 
 /** One card of the community gallery, as GET /api/community lists it. */
@@ -19,6 +20,8 @@ export interface CommunityItem {
   thumb: string;
   /** Where its files are read from. */
   media: string;
+  /** Whether the member signed in starred it; absent for a guest. */
+  starred?: boolean;
 }
 
 /** A page of a list, and the cursor of the next (null at the end). */
@@ -52,6 +55,7 @@ function itemOf(raw: unknown): CommunityItem | null {
     author: { handle: r.author.handle },
     thumb: typeof r.thumb === 'string' && PICTURE.test(r.thumb) ? r.thumb : '',
     media: typeof r.media === 'string' ? r.media : '',
+    ...(typeof r.starred === 'boolean' ? { starred: r.starred } : {}),
   };
 }
 
@@ -78,14 +82,69 @@ async function ask(path: string): Promise<CommunityAnswer> {
   return { kind: 'page', page: { items, next }, handle };
 }
 
-const after = (cursor: string | null): string => (cursor ? `?after=${encodeURIComponent(cursor)}` : '');
+/** The orders a list comes in, as the server names them. */
+export type CommunitySort = 'new' | 'old' | 'views' | 'stars';
 
-/** GET /api/community: a page of the gallery, after `cursor`. */
-export const communityPage = (cursor: string | null = null): Promise<CommunityAnswer> => ask(`/api/community${after(cursor)}`);
+/** The sort select's options, in order: the first is the default. */
+export const COMMUNITY_SORTS: readonly [CommunitySort, string][] = [
+  ['new', 'Newest'],
+  ['old', 'Oldest'],
+  ['views', 'Most viewed'],
+  ['stars', 'Most starred'],
+];
 
-/** GET /api/community/u/:handle: a page of one member's public work, after `cursor`. */
-export const authorPage = (handle: string, cursor: string | null = null): Promise<CommunityAnswer> =>
-  ask(`/api/community/u/${encodeURIComponent(handle)}${after(cursor)}`);
+/** A sort from the address: one the server takes, else the default. */
+export const sortOf = (raw: string | null): CommunitySort =>
+  COMMUNITY_SORTS.some(([s]) => s === raw) ? (raw as CommunitySort) : 'new';
+
+/** What the longest search is, in characters (the server cuts it there too). */
+export const MAX_SEARCH = 100;
+
+/** How a list is asked for: its order and its search ('' for none). */
+export interface ListQuery {
+  sort: CommunitySort;
+  q: string;
+}
+
+function listPath(base: string, query: ListQuery, cursor: string | null): string {
+  const params = new URLSearchParams();
+  if (query.sort !== 'new') params.set('sort', query.sort);
+  const q = query.q.trim().slice(0, MAX_SEARCH);
+  if (q) params.set('q', q);
+  if (cursor) params.set('after', cursor);
+  const text = params.toString();
+  return text ? `${base}?${text}` : base;
+}
+
+const NEWEST: ListQuery = { sort: 'new', q: '' };
+
+/** GET /api/community: a page of the gallery in `query`'s order and search, after `cursor`. */
+export const communityPage = (query: ListQuery = NEWEST, cursor: string | null = null): Promise<CommunityAnswer> =>
+  ask(listPath('/api/community', query, cursor));
+
+/** GET /api/community/u/:handle: a page of one member's public work (`q` matching titles), after `cursor`. */
+export const authorPage = (handle: string, query: ListQuery = NEWEST, cursor: string | null = null): Promise<CommunityAnswer> =>
+  ask(listPath(`/api/community/u/${encodeURIComponent(handle)}`, query, cursor));
+
+/** GET /api/me/stars: a page of the works the member signed in starred, the latest first. */
+export const starredPage = (cursor: string | null = null): Promise<CommunityAnswer> =>
+  ask(cursor ? `/api/me/stars?after=${encodeURIComponent(cursor)}` : '/api/me/stars');
+
+/**
+ * POST /api/community/:id/view: the viewer opened a work from the
+ * Community. The server decides whether it counts (once a day a visitor,
+ * never the author's or a reviewer's) and always answers 204; nothing here
+ * waits for it or cares how it went.
+ */
+export function recordView(id: string): void {
+  void apiFetch(`/api/community/${encodeURIComponent(id)}/view`, { method: 'POST' }).catch(() => undefined);
+}
+
+/** "12 views · 1 star": what the author and reviewers see of a work's counts. */
+export function statsText(views: number, stars: number): string {
+  const n = (count: number, one: string): string => `${count} ${one}${count === 1 ? '' : 's'}`;
+  return `${n(views, 'view')} · ${n(stars, 'star')}`;
+}
 
 /** Where a member's author page is. */
 export const authorHref = (handle: string): string => `/?u=${encodeURIComponent(handle)}`;

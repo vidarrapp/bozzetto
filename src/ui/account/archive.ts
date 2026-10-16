@@ -6,7 +6,7 @@ import type { ZipFile } from './zip';
  * What goes into "Download my data" and a project's download, as files in
  * a zip (docs/accounts.md §3):
  *
- *   account.json                        the account, its passkeys, sessions and audit rows
+ *   account.json                        the account, its passkeys, sessions, audit rows, stars and reports
  *   projects/<slug>-<id>/project.json   each project's settings and its list of files
  *   projects/<slug>-<id>/scene.bozz     a scene from Sculpt
  *   projects/<slug>-<id>/thumb.jpg      its card's picture
@@ -134,7 +134,8 @@ function readme(data: AccountExport, missing: Missing[]): string {
     'account.json',
     '    Your account: handle, email address, role, dates and the terms you accepted;',
     '    your passkeys (their names, dates and kind; never a key), where you have been',
-    '    signed in, and the audit log\'s rows about the account. It lists each project',
+    '    signed in, the audit log\'s rows about the account, the Community work you',
+    '    starred, and the reports you made (reason, note, outcome). It lists each project',
     '    with its folder.',
     '',
     'projects/<title>-<id>/',

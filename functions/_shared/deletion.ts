@@ -3,6 +3,7 @@ import type { UserRow } from './types';
 import { auditStatement } from './auth/audit';
 import { HANDLE_HOLD } from './auth/handles';
 import { prefixFor } from './projects';
+import { unstarAll } from './stats';
 import { PENDING_KEY, abortPending, type PendingKey } from './uploads';
 
 /**
@@ -141,6 +142,8 @@ export async function continueDeletion(
        ON CONFLICT (handle) DO UPDATE SET until = MAX(until, excluded.until)`,
     ).bind(user.handle, now + HANDLE_HOLD, ...exists.binds),
     auditStatement(env, { actor, action: 'account.deleted', subject: user.id, at: now }, exists),
+    // The stars it gave, and the counts they made (stats.ts).
+    ...unstarAll(env, user.id),
     env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
   return { done: true, remaining: 0 };

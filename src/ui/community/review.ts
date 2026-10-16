@@ -16,7 +16,7 @@ import {
   type ReviewCard,
   type SharedFilter,
 } from '../../net/account';
-import { authorHref } from '../../net/community';
+import { authorHref, statsText } from '../../net/community';
 import { legalFoot, renderLanding, setPicture } from '../Landing';
 import { topChip, topbarLeft, topbarRight } from '../topbar';
 import { accountChips } from '../account/menu';
@@ -49,7 +49,7 @@ import {
  * - Gallery: everything in the Community now, public or hidden, newest
  *   first, 24 at a time with Load more; a search (title or @handle,
  *   debounced, kept in the address as `&q=`) and a state filter (`&state=`);
- *   Open, and Hide… or Unhide.
+ *   each card's views and stars; Open, and Hide… or Unhide.
  * - Reports: each project with open reports, the longest-reported first,
  *   with the reports (reason, note, who, when) and where it stands; Hide…,
  *   Dismiss, Unhide, Reject… as its state allows.
@@ -65,7 +65,8 @@ import {
  * `.review-card__reports`, `.review-report`, `.review-action[data-action]`,
  * `.review-card__say`, `.review__more`, `.review__empty`,
  * `.review-history__item[data-action]`, `.review__say`, and on the Gallery
- * tab `.review-search`, `.review-filter`.
+ * tab `.review-search`, `.review-filter`, `.review-card__stats` (its views and
+ * stars, which only reviewers and the author see).
  */
 export async function renderReview(app: HTMLElement): Promise<void> {
   const config = await loadConfig();
@@ -415,6 +416,8 @@ class Card {
     } else if (p.reports > 0) {
       parts.push(el('p', 'review-card__reports', `${p.reports} open report${p.reports === 1 ? '' : 's'}`));
     }
+    // The Gallery tab's cards carry the counts the public never sees.
+    if (typeof p.views === 'number' && typeof p.stars === 'number') parts.push(el('p', 'card__stats review-card__stats', statsText(p.views, p.stars)));
     const actions = el('div', 'card__actions review-card__actions');
     const open = el('a', 'card__action review-open', 'Open');
     open.href = href;

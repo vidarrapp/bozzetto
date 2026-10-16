@@ -18,6 +18,8 @@ import { topChip, topbarLeft, topbarRight } from '../topbar';
 import { accountChips } from './menu';
 import { Say, button, el } from './parts';
 import { shareControls } from '../community/share';
+import { communityCard } from '../community/page';
+import { starredPage, statsText } from '../../net/community';
 
 /**
  * My projects (`/?me`, docs/accounts.md §7): the account's own work, with
@@ -34,7 +36,15 @@ import { shareControls } from '../community/share';
  *   frames (client-zip). Delete, asked first, from the server and from
  *   this device's shelf.
  * - Share to Community on a model or a timelapse (ui/community/share,
- *   §13): the one switch (tick to share, untick to withdraw) and where it stands.
+ *   §13): the one switch (tick to share, untick to withdraw) and where it
+ *   stands; a shared one's views and stars ("N views · N stars"), which
+ *   only its author sees.
+ *
+ * Two tabs, plain links: **My work** (`/?me`, all of the above) and
+ * **Starred** (`/?me&tab=starred`): the Community works the member starred,
+ * the latest first, as the Community's cards with their Star toggles
+ * (unstarring one takes its card away) and Load more. A work hidden or
+ * withdrawn since drops out of it.
  *
  * Offline it is read only: the worker's last copy of the list draws the
  * cards (vite.config.ts), Open works for a scene this device has a copy
@@ -105,6 +115,12 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
     return;
   }
   titles.appendChild(el('p', 'landing__tagline', `@${me.handle}`));
+  const tab = myTab();
+  host.appendChild(tabsNav(tab));
+  if (tab === 'starred') {
+    await starredTab(host, me);
+    return;
+  }
 
   const meter = new Meter();
   meter.set(me.usage);
@@ -153,6 +169,81 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
     return;
   }
   for (const p of projects) grid.appendChild(projectCard(state, p));
+}
+
+type MyTab = 'work' | 'starred';
+
+/** Which tab the address asks for: `&tab=starred`, else My work. */
+const myTab = (): MyTab => (new URLSearchParams(window.location.search).get('tab') === 'starred' ? 'starred' : 'work');
+
+/** My work and Starred, as plain links. */
+function tabsNav(current: MyTab): HTMLElement {
+  const nav = el('nav', 'admin-tabs my-tabs');
+  nav.setAttribute('aria-label', 'My projects');
+  for (const [name, label, href] of [
+    ['work', 'My work', '/?me'],
+    ['starred', 'Starred', '/?me&tab=starred'],
+  ] as const) {
+    const a = el('a', `admin-tab my-tab${name === current ? ' admin-tab--current' : ''}`, label);
+    a.href = href;
+    a.dataset.tab = name;
+    if (name === current) a.setAttribute('aria-current', 'page');
+    nav.appendChild(a);
+  }
+  return nav;
+}
+
+/**
+ * Starred: the Community works the member starred (GET /api/me/stars), as
+ * the Community's cards, Load more on `next`. Unstarring one takes it off.
+ */
+async function starredTab(host: HTMLElement, me: Me): Promise<void> {
+  const say = new Say();
+  const grid = el('div', 'landing__grid community__grid my-starred');
+  const more = button('Load more', 'btn community__more my-starred__more');
+  more.hidden = true;
+  host.append(say.root, grid, more);
+  const none = (): HTMLElement =>
+    el('p', 'muted community__empty my-starred__empty', 'Nothing starred yet. Star work you like in the Community, and it is kept here.');
+  let cursor: string | null = null;
+  let first = true;
+  const load = async (): Promise<void> => {
+    more.disabled = true;
+    const answer = await starredPage(cursor);
+    more.disabled = false;
+    if (answer.kind !== 'page') {
+      const status = answer.kind === 'failed' ? answer.status : 404;
+      say.error(
+        status === 0
+          ? 'No connection. Your starred work shows when you are online.'
+          : status === 401
+            ? 'Your sign-in has expired.'
+            : `Your starred work could not be loaded (${status}). Try again in a moment.`,
+      );
+      more.hidden = first;
+      return;
+    }
+    say.clear();
+    for (const item of answer.page.items) {
+      if (grid.querySelector(`[data-project="${CSS.escape(item.id)}"]`)) continue;
+      grid.appendChild(
+        communityCard(item, {
+          showAuthor: true,
+          me,
+          unstarred: (card) => {
+            card.remove();
+            if (!grid.querySelector('.card--community')) grid.appendChild(none());
+          },
+        }),
+      );
+    }
+    if (first && answer.page.items.length === 0) grid.appendChild(none());
+    first = false;
+    cursor = answer.page.next;
+    more.hidden = cursor === null;
+  };
+  more.addEventListener('click', () => void load());
+  await load();
 }
 
 /** The top row: back to the gallery on the left, the account's chips on the right. */
@@ -333,6 +424,8 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     meta.textContent = `${modeLabel(p)} · ${contents(p)} · ${sizeText(p.bytes ?? 0)} · ${dayOf(p.updated_at)}`;
   };
   paintMeta();
+  // A shared one's views and stars in the Community: for its author alone.
+  if (typeof p.views === 'number' && typeof p.stars === 'number') meta.after(el('span', 'card__stats', statsText(p.views, p.stars)));
 
   // Open: Sculpt for a scene, the viewer for the rest. Offline, only a
   // scene this device has a copy of can open (Sculpt falls back to it).

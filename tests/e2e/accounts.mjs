@@ -827,7 +827,7 @@ async function legalPages(browser, origin, t) {
     await p.goto(`${origin}/legal/terms.html`, { waitUntil: 'load' });
     const terms = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      version: /Version 2026-10-15\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      version: /Version 2026-10-16\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       sections: ['content', 'takedown'].filter((id) => document.getElementById(id)),
       text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
       // The section's paragraphs (Report… in the viewer comes first since §13), each address once.
@@ -836,7 +836,7 @@ async function legalPages(browser, origin, t) {
       font: getComputedStyle(document.querySelector('h1')).fontFamily,
       background: getComputedStyle(document.body).backgroundColor,
     }));
-    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10-15, with #content and #takedown (${show(terms.sections)})`);
+    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10-16, with #content and #takedown (${show(terms.sections)})`);
     t.ok(
       terms.text.includes('Templates are free to use as starting points for your own work, including commercial work. The template itself may not be redistributed as your own.') &&
         terms.text.includes('Artistic nudity in figure work is allowed.') &&
@@ -849,7 +849,7 @@ async function legalPages(browser, origin, t) {
     await p.goto(`${origin}/legal/privacy.html`, { waitUntil: 'load' });
     const privacy = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      version: /Version 2026-10-15\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      version: /Version 2026-10-16\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
       contact: [...document.querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute('href')),
       todo: document.querySelectorAll('.legal__todo').length,
@@ -857,7 +857,7 @@ async function legalPages(browser, origin, t) {
     }));
     t.ok(
       privacy.title === 'Privacy notice' && privacy.version && privacy.imy && privacy.contact.length === 2 && privacy.contact.every((h) => h === `mailto:${MAIL}`),
-      `the privacy notice, version 2026-10-15, with the contact address written in (${show(privacy.contact)})`,
+      `the privacy notice, version 2026-10-16, with the contact address written in (${show(privacy.contact)})`,
     );
     t.ok(
       ['The database\'s own history, from which it can be restored: 7 days.', 'The log of security events: 12 months.', 'held for 90 days', '48 hours at most', 'Resend\'s logs of the mail it sent you: 30 days.'].every((x) => privacy.text.includes(x)),

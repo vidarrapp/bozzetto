@@ -18,7 +18,9 @@ import { PROJECT_FILE, SCENE_FILE, THUMB_FILE, frameFile, memberMediaBase, prefi
 //    sessions: [{id, client, userAgent, method, createdAt, lastSeenAt, expiresAt, revokedAt, current}],
 //    projects: [{id, title, mode, fps, visibility, createdAt, updatedAt, bytes, data,
 //                files: [{name, size, url}]}],
-//    audit: [{at, actor, action, subject, detail}]}
+//    audit: [{at, actor, action, subject, detail}],
+//    stars: [{projectId, title, starredAt}],
+//    reports: [{projectId, reason, note, createdAt, outcome}]}
 //
 // `files` are what R2 holds under the project, listed: `name` under the
 // project (scene.bozz, thumb.jpg, frames/sd/0000.glb), `size` in bytes,
@@ -26,7 +28,12 @@ import { PROJECT_FILE, SCENE_FILE, THUMB_FILE, frameFile, memberMediaBase, prefi
 // what one request may ask of R2; an account past that (tens of thousands
 // of files) gets `complete: false`, and the projects not listed name their
 // files from their data instead, with `size: null`. `audit` holds the rows
-// about the account and those it acted in, oldest first.
+// about the account and those it acted in, oldest first. `stars` are the
+// works it starred (docs/accounts.md §13), latest first, `title` while the
+// work is public now (anyone may read it then; null otherwise); `reports`
+// the reports it made, oldest first, with the reason code, its own note
+// and the outcome (null while open). Neither names the other members'
+// accounts or what reviewers wrote.
 
 /** R2 listings one export makes, at the most: a thousand files each. */
 const LISTINGS = 40;
@@ -34,7 +41,7 @@ const LISTINGS = 40;
 export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, data }) =>
   api(async () => {
     const { user, session } = requireRecentAuth(data.principal);
-    const [passkeys, sessions, projects, audit, usage] = await env.DB.batch([
+    const [passkeys, sessions, projects, audit, usage, stars, reports] = await env.DB.batch([
       env.DB.prepare(
         'SELECT name, created_at, last_used_at, device_type, backed_up, aaguid FROM credentials WHERE user_id = ? ORDER BY created_at, id',
       ).bind(user.id),
@@ -47,6 +54,15 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, dat
         user.id,
       ),
       env.DB.prepare('SELECT COALESCE(SUM(bytes), 0) AS reserved FROM upload_parts WHERE user_id = ?').bind(user.id),
+      env.DB.prepare(
+        `SELECT s.project_id, s.created_at,
+                CASE WHEN p.shared = 'public' AND p.template = 0 AND u.status = 'active' THEN p.title END AS title
+         FROM stars s JOIN projects p ON p.id = s.project_id LEFT JOIN users u ON u.id = p.owner_id
+         WHERE s.user_id = ? ORDER BY s.created_at DESC, s.project_id DESC`,
+      ).bind(user.id),
+      env.DB.prepare(
+        'SELECT project_id, reason, note, created_at, outcome FROM reports WHERE reporter_id = ? ORDER BY created_at, id',
+      ).bind(user.id),
     ]);
     const rows = (projects.results ?? []) as ProjectRow[];
     const files = await filesOf(env, user.id, rows);
@@ -109,6 +125,14 @@ export const onRequestGet: PagesFunction<Env, string, RequestData> = ({ env, dat
         ...a,
         detail: parse(a.detail),
       })),
+      stars: ((stars.results ?? []) as { project_id: string; created_at: number; title: string | null }[]).map((x) => ({
+        projectId: x.project_id,
+        title: x.title,
+        starredAt: x.created_at,
+      })),
+      reports: (
+        (reports.results ?? []) as { project_id: string; reason: string; note: string; created_at: number; outcome: string | null }[]
+      ).map((x) => ({ projectId: x.project_id, reason: x.reason, note: x.note, createdAt: x.created_at, outcome: x.outcome })),
     };
     return json(body, 200, {
       'cache-control': 'private, no-store',

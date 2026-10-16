@@ -13,11 +13,14 @@ const HOUR = 60 * MINUTE;
 const T = 3_100_000_000_000;
 const ME = 'u-exme000000000000000000000';
 const OTHER = 'u-exother0000000000000000000';
+const MOD = 'u-exmod00000000000000000000';
 
 export const seed = {
   sql: [
     seedUser({ id: ME, handle: 'exme', at: T - 100 * HOUR }),
     seedUser({ id: OTHER, handle: 'exother' }),
+    seedUser({ id: MOD, handle: 'exmod', role: 'moderator' }),
+    seedSession({ name: 'ex-mod', id: 's-exmod', user: MOD, created: T }),
     seedCredential({ credential: { id: 'ex-credential', cose: new Uint8Array([165, 1, 2, 3, 38]) }, user: ME, name: 'Laptop', at: T - 50 * HOUR }),
     seedSession({ name: 'ex-main', id: 's-exmain', user: ME, created: T }),
     seedSession({ name: 'ex-stale', id: 's-exstale', user: ME, created: T - HOUR, ua: 'Old browser' }),
@@ -71,7 +74,8 @@ export async function run({ checks, on }) {
   const x = r.json;
   t.ok(r.status === 200 && r.headers.get('cache-control') === 'private, no-store' && r.headers.get('content-type')?.startsWith('application/json'), `200 JSON, private, no-store (${r.status} ${r.headers.get('cache-control')})`);
   t.ok(x?.format === 'bozzetto-export/1' && x?.exportedAt === clock.now && x?.complete === true, `format, when, and complete (${x?.format} ${x?.complete})`);
-  t.eq(Object.keys(x ?? {}).join(','), 'format,exportedAt,complete,account,passkeys,sessions,projects,audit', 'the sections of §3, in order');
+  t.eq(Object.keys(x ?? {}).join(','), 'format,exportedAt,complete,account,passkeys,sessions,projects,audit,stars,reports', 'the sections of §3, in order');
+  t.ok(JSON.stringify(x?.stars) === '[]' && JSON.stringify(x?.reports) === '[]', 'no stars and no reports yet');
   const a = x?.account;
   t.ok(a?.id === ME && a?.handle === 'exme' && a?.email === 'exme@example.com' && a?.role === 'member' && a?.status === 'active', `the account: id, handle, email, role, status (${JSON.stringify(a && { handle: a.handle, email: a.email })})`);
   t.ok(a?.createdAt === T - 100 * HOUR && a?.termsVersion === '2026-10' && typeof a?.termsAcceptedAt === 'number' && typeof a?.ageConfirmedAt === 'number', 'its dates and the terms it accepted');
@@ -95,5 +99,32 @@ export async function run({ checks, on }) {
   const actions = (x?.audit ?? []).map((row) => `${row.action}:${row.subject}`);
   t.ok(actions.includes(`session.revoke:${ME}`) && !actions.some((s) => s.includes(OTHER) || s.includes('some-project')), `the audit rows about it, and no one else's (${actions.join(', ')})`);
   t.ok(typeof x?.audit?.[0]?.detail === 'object' && x?.audit?.[0]?.detail?.session === 's-exgone', 'each row\'s detail as JSON');
+  t.report();
+
+  // --- the Community: stars and reports (docs/accounts.md §13) ---------------------------------------
+  t = checks('functions: export, stars and reports');
+  const mod = as('ex-mod', '198.51.100.94');
+  const bust = (await other.call('POST', '/api/me/projects', { json: { title: 'Their bust', mode: 'model' } })).json?.id;
+  clock.now += 1000;
+  await other.call('POST', `/api/me/projects/${bust}/share`, { json: { shared: true } });
+  clock.now += 1000;
+  await mod.call('POST', `/api/mod/projects/${bust}/review`, { json: { action: 'approve' } });
+  clock.now += 1000;
+  const starredAt = clock.now;
+  r = await me.call('PUT', `/api/me/stars/${bust}`);
+  clock.now += 1000;
+  const reportedAt = clock.now;
+  const rep = await me.call('POST', `/api/community/${bust}/report`, { json: { reason: 'spam', note: 'Looks copied' } });
+  t.ok(r.status === 204 && rep.status === 204, `a member stars someone's public work and reports it (${r.status} ${rep.status})`);
+  let y = (await me.call('GET', '/api/me/export')).json;
+  t.eq(JSON.stringify(y?.stars), JSON.stringify([{ projectId: bust, title: 'Their bust', starredAt }]), 'stars: {projectId, title, starredAt}, the title while it is public');
+  t.eq(JSON.stringify(y?.reports), JSON.stringify([{ projectId: bust, reason: 'spam', note: 'Looks copied', createdAt: reportedAt, outcome: null }]), 'reports: {projectId, reason, note, createdAt, outcome}, open');
+  const theirs2 = (await other.call('GET', '/api/me/export')).json;
+  t.ok(theirs2 === null || (JSON.stringify(theirs2?.stars ?? []) === '[]' && JSON.stringify(theirs2?.reports ?? []) === '[]'), "the author's export holds neither: they are the member's own");
+  clock.now += 1000;
+  await other.call('POST', `/api/me/projects/${bust}/share`, { json: { shared: false } });
+  y = (await me.call('GET', '/api/me/export')).json;
+  t.ok(y?.stars?.[0]?.projectId === bust && y?.stars?.[0]?.title === null, `withdrawn: the star stays, its title no longer readable (${JSON.stringify(y?.stars)})`);
+  t.eq(y?.reports?.[0]?.outcome, 'removed', 'and the report says how it ended');
   t.report();
 }
