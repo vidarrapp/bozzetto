@@ -7,6 +7,7 @@ import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeLook, sanitizeScene } from './sanitize';
 import type { Units } from '../../viewer/units';
+import type { ObjSource } from './objSource';
 
 /**
  * Workspace preferences that ride with a scene: how the brushes are set up,
@@ -109,6 +110,15 @@ export interface SavedMesh {
    * wrong after a reload would silently eat someone's painting.
    */
   painted?: boolean;
+  /**
+   * The imported OBJ's own numbering, for an object whose level 0 is still
+   * the file's (objSource.ts): what Export OBJ, original numbering writes
+   * it back with. Optional, with a version of its own, so the scene's
+   * version stays 4: a scene without it opens as ever, and a build from
+   * before it reads the scene and leaves the field behind (sanitize.ts
+   * keeps known fields only).
+   */
+  source?: ObjSource;
 }
 
 export interface SavedScene {

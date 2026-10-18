@@ -153,6 +153,13 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     isVisible(): boolean;
     /** Set on dynamic-topology meshes only. */
     isDynamic?: boolean;
+    /** The arrays behind the facade (positions, rings, ...), shared by a Multimesh with its selected level. */
+    getMeshData(): { _verticesXYZ: Float32Array | Float64Array };
+    /** MeshResolution levels only: the level above from this one and its detail vectors. */
+    higherSynthesis?(meshDown: SculptMesh): void;
+    /** MeshResolution levels only: set when a reversion numbered the even vertices apart. */
+    _evenMapping?: boolean;
+    _vertMapping?: Uint32Array | null;
     /** Set on multiresolution meshes only (the level stack). */
     _meshes?: SculptMesh[];
     /** MeshResolution levels only: detail vectors from the last analysis. */
@@ -206,7 +213,13 @@ declare module '@sculpt-vendor/editing/Remesh' {
 }
 
 declare module '@sculpt-vendor/editing/Subdivision' {
-  const Subdivision: { LINEAR: boolean };
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  type Numbers = Float32Array | Float64Array;
+  const Subdivision: {
+    LINEAR: boolean;
+    /** Every vertex of the level above, as the subdivision would place it (no topology built). */
+    partialSubdivision(mesh: SculptMesh, verts: Numbers, colors: Float32Array, materials: Float32Array): void;
+  };
   export default Subdivision;
 }
 

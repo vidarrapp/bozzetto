@@ -1,4 +1,4 @@
-import type { SculptSession } from './SculptSession';
+import type { OriginalNumbering, SculptSession } from './SculptSession';
 import type { SavedScene, SceneLink } from './ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { packScene, sceneToOBJ, unpackScene } from './SceneFile';
@@ -363,6 +363,24 @@ export class FileActions {
   /** The visible scene as Wavefront OBJ text. */
   objText(): string {
     return sceneToOBJ(this.session);
+  }
+
+  /** Where the active object's OBJ numbering stands (SculptSession.originalNumbering). */
+  originalStatus(): OriginalNumbering {
+    return this.session.originalNumbering();
+  }
+
+  /**
+   * The active object's level 0 in the imported OBJ's own numbering, and
+   * the file name it downloads as: `<object>-original.obj`. Throws, saying
+   * why, when the object has no record or its topology has changed.
+   */
+  originalObj(): { name: string; text: string } {
+    const mesh = this.session.getMesh();
+    const text = this.session.exportOriginalOBJ(mesh);
+    // The object's name as a file name: nothing a file system refuses.
+    const base = (mesh ? this.session.getMeshName(mesh) : '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'Imported';
+    return { name: `${base}-original.obj`, text };
   }
 
   /**

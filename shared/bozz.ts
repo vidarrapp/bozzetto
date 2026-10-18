@@ -122,6 +122,18 @@ export const MAX_NAME = 200;
 /** More materials than anyone makes, as sanitize.ts keeps (its MAX_MATERIALS). */
 export const MAX_MATERIALS = 1024;
 
+/**
+ * The ceilings of the record an OBJ import keeps of the file's numbering
+ * (SavedMesh.source, src/sculpt/bridge/objSource.ts), which sanitize.ts
+ * holds a scene to as well: as many file vertices as the largest level
+ * Sculpt makes has, four corners a face for four times that, and the vt
+ * and naming lines of a file a browser could have read.
+ */
+export const MAX_SOURCE_VERTICES = 8_000_000;
+export const MAX_SOURCE_CORNERS = 4 * MAX_SOURCE_VERTICES;
+export const MAX_SOURCE_TEXT_BYTES = 256 * 1024 * 1024;
+export const MAX_SOURCE_LINES = 1_000_000;
+
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -140,6 +152,13 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  *   and a selected level among them, a matrix of 16; per level: at least
  *   one vertex, positions, colours and materials f32 arrays of three a
  *   vertex, and normals and the three detail vectors the same or null;
+ * - an OBJ numbering record (`source`), where an object has one: version
+ *   1, a file vertex count within MAX_SOURCE_VERTICES and a u32 map of
+ *   that many, level 0 as imported the size of the object's, loose positions an f32 array of three a vertex, face sizes
+ *   and corners u32 arrays (at least three corners a face, at most
+ *   MAX_SOURCE_CORNERS), texture corners null or as many as the corners,
+ *   text that is there when its byte count says so, kept-line places null
+ *   or at most MAX_SOURCE_LINES, and a transform of 16 numbers;
  * - names of at most MAX_NAME characters, at most MAX_MATERIALS materials;
  * - a units marker, where there is one, that is 'm' (src/viewer/units.ts):
  *   the one scale the app reads a scene on;
@@ -184,6 +203,41 @@ export function checkHeader(layout: Layout): void {
   const array = (v: unknown, kind: BufferEntry['t'], len: number): boolean => {
     const e = entry(v);
     return !!e && e.t === kind && e.len === len;
+  };
+  /** Whole numbers from `min` to `max`. */
+  const count = (v: unknown, min: number, max: number): v is number =>
+    typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
+  /**
+   * The record an OBJ import keeps (SavedMesh.source), as far as its header
+   * says: what objSource.ts's sanitizeSource asks of it without reading an
+   * array. The arrays' contents (indices within counts, the text's lines)
+   * are the app's to check when it opens the file.
+   */
+  const checkSource = (src: unknown, object: string, nbLevel0: number): void => {
+    const bad = (what: string): never => {
+      throw damaged(`${object} has a bad OBJ numbering record (${what})`);
+    };
+    if (!isRec(src) || src.v !== 1) bad('a version this app does not read');
+    const r = src as Rec;
+    const nbFile = r.nbFileVertices;
+    if (!count(nbFile, 1, MAX_SOURCE_VERTICES)) bad('its vertex count');
+    if (!array(r.toEngine, 'u32', nbFile as number)) bad('its vertex map');
+    if (!array(r.base, 'f32', nbLevel0 * 3)) bad('its level 0');
+    const loose = entry(r.loose);
+    if (!loose || loose.t !== 'f32' || loose.len % 3 !== 0 || loose.len > (nbFile as number) * 3) bad('its loose vertices');
+    const sizes = entry(r.faceSizes);
+    if (!sizes || sizes.t !== 'u32' || sizes.len < 1) bad('its face sizes');
+    const corners = entry(r.faceVerts);
+    if (!corners || corners.t !== 'u32' || corners.len < sizes!.len * 3 || corners.len > MAX_SOURCE_CORNERS) bad('its faces');
+    if (r.faceUVs !== null && !array(r.faceUVs, 'u32', corners!.len)) bad('its texture corners');
+    if (!count(r.nbUVs, 0, MAX_SOURCE_LINES)) bad('its texture coordinate count');
+    if (!count(r.textBytes, 0, MAX_SOURCE_TEXT_BYTES)) bad('its text size');
+    const textBytes = r.textBytes as number;
+    if (textBytes === 0 ? r.text !== null : !array(r.text, 'u32', Math.ceil(textBytes / 4))) bad('its text');
+    const extra = entry(r.extraAt);
+    if (r.extraAt !== null && (!extra || extra.t !== 'u32' || extra.len > MAX_SOURCE_LINES)) bad('its kept lines');
+    const m = r.fileToLocal;
+    if (!Array.isArray(m) || m.length !== 16 || !m.every((x) => typeof x === 'number' && Number.isFinite(x))) bad('its transform');
   };
   const name = (v: unknown, what: string): void => {
     if (typeof v === 'string' && v.length > MAX_NAME) throw damaged(`${what} has a name over ${MAX_NAME} characters`);
@@ -232,6 +286,7 @@ export function checkHeader(layout: Layout): void {
         throw damaged(`${level} has arrays of the wrong kind or size`);
       }
     });
+    if (m.source !== undefined) checkSource(m.source, object, (levels[0] as Rec).nbVertices as number);
   });
   if (scene.units !== undefined && scene.units !== 'm') throw damaged('units this app does not read');
   const materials = scene.materials;

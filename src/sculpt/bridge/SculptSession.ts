@@ -47,6 +47,8 @@ import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
 import type { Units } from '../../viewer/units';
+import type { ParsedObjPolygons } from '../../admin/glb';
+import { buildFromObj, level0ForExport, STALE_MESSAGE, writeOriginalObj, type ObjSource } from './objSource';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -186,6 +188,9 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, { size: number; along: 'heig
  */
 const IMPORT_SIZE = 0.25;
 
+/** Where an object's OBJ numbering stands (SculptSession.originalNumbering). */
+export type OriginalNumbering = 'none' | 'valid' | 'stale';
+
 export class SculptSession {
   // Pointer/action state the vendored tools and picking read directly.
   _mouseX = 0;
@@ -225,6 +230,18 @@ export class SculptSession {
   private mesh: SculptMesh | null = null;
   /** Display names (feeds the stats corner; scene graph/outliner later). */
   private readonly meshNames = new WeakMap<SculptMesh, string>();
+  /**
+   * The file numbering of each object imported from OBJ (objSource.ts),
+   * with the level-0 instance it describes: an operation that puts
+   * another level 0 under the object (Rebuild's reversion, say) leaves
+   * the record behind it, and an undo that puts the old one back makes it
+   * good again. Keyed by the object, so a remesh, a merge or dynamic
+   * topology, which each make a new object, leave the record with the
+   * old one, which an undo brings back.
+   */
+  private readonly sources = new WeakMap<SculptMesh, { source: ObjSource; level0: SculptMesh }>();
+  /** Objects made from one with a record by an operation that rebuilt its topology: the export says why it refuses. */
+  private readonly staleSources = new WeakSet<SculptMesh>();
 
   private readonly stateManager = new StateManager(this);
   private readonly sculptManager: SculptManager;
@@ -864,6 +881,7 @@ export class SculptSession {
     this.setRemeshResolution(resolution);
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
     const newMesh = new Multimesh(this.remeshAt([mesh], mesh, this.remeshBox([mesh]))) as unknown as SculptMesh;
+    this.markStale([mesh], newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -931,6 +949,7 @@ export class SculptSession {
     if (!sources.includes(base)) base = sources[0];
     const t0 = performance.now();
     const merged = new Multimesh(this.remeshAt(sources, base, this.remeshBox(sources)));
+    this.markStale(sources, merged as unknown as SculptMesh);
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
     this.writeSymmetryAxis(this.getSymmetryAxis(), [merged as unknown as SculptMesh]);
     this.stateManager.pushStateAddRemove(merged, sources);
@@ -971,42 +990,60 @@ export class SculptSession {
 
   /**
    * Import an OBJ as a new scene object (File panel). The repo's own
-   * dependency-free parser handles triangulation and the Z-up flip; the
-   * result goes through the same weld/normalize/adopt path as the
-   * primitives, so an import sculpts, persists and undoes like anything
+   * dependency-free parser reads it as the file numbers it (glb.ts
+   * parseObjPolygons), and level 0 is the file's: its vertices in its
+   * order, welded by position, and its quads (objSource.ts), with the
+   * record that writes it back (exportOriginalOBJ). The Z-up turn is the
+   * record's too. The object sculpts, persists and undoes like anything
    * else. NOTE it is resized - to IMPORT_SIZE across, standing on the
    * floor, on real units, or to the old canonical size in a scene from
-   * before them - since an OBJ does not say what its units are, and an
-   * import is a base mesh to work on, not a measured part. (The gallery's
-   * Import OBJ is not resized: openParsedOBJ.)
+   * before them - by its matrix, since an OBJ does not say what its units
+   * are, and an import is a base mesh to work on, not a measured part.
+   * (The gallery's Import OBJ is not resized: openParsedOBJ.)
    */
   async importOBJ(text: string, zUp: boolean, name: string): Promise<Multimesh> {
     // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
     // circular init order ("cannot access before initialization" at boot).
-    const { parseObj } = await import('../../admin/glb');
-    return this.addParsedOBJ(parseObj(text, zUp), name);
+    const { parseObjPolygons } = await import('../../admin/glb');
+    return this.addParsedOBJ(parseObjPolygons(text), zUp, name);
   }
 
   /**
-   * An OBJ already parsed (admin/glb parseObj, which keeps only sound
-   * triangles) as a new sculptable object, welded and sized as every
-   * import into a scene is (File > Import OBJ); a null `fit` keeps the
-   * file's own coordinates, as the gallery's Import OBJ does
-   * (openParsedOBJ), which parses at boot to know the file is good before
-   * it replaces anything.
+   * An OBJ already parsed (glb.ts parseObjPolygons, which keeps only sound
+   * faces) as a new sculptable object, sized as every import into a scene
+   * is (File > Import OBJ); a null `fit` keeps the file's own coordinates,
+   * as the gallery's Import OBJ does (openParsedOBJ), which parses at boot
+   * to know the file is good before it replaces anything.
    */
   addParsedOBJ(
-    parsed: { positions: Float32Array; indices: Uint32Array },
+    parsed: ParsedObjPolygons,
+    zUp: boolean,
     name: string,
     fit: { size: number; along: 'height' | 'largest' } | null = { size: IMPORT_SIZE, along: 'largest' },
   ): Multimesh {
-    if (!parsed.positions.length || !parsed.indices.length) {
+    if (!parsed.positions.length || !parsed.faceSizes.length) {
       throw new Error('No geometry found in that OBJ file.');
     }
-    const geom = new BufferGeometry();
-    geom.setAttribute('position', new BufferAttribute(parsed.positions, 3));
-    geom.setIndex(new BufferAttribute(parsed.indices, 1));
-    return this.meshFromTriGeometry(geom, name, fit);
+    const built = buildFromObj(parsed, zUp);
+    // Built as a restore builds a level (no reordering): level 0 is
+    // numbered as buildFromObj numbered it, which is the file's order.
+    const base = new MeshStatic(null);
+    base.setVertices(built.vertices);
+    base.setFaces(built.faces);
+    Mesh.OPTIMIZE = false;
+    base.init();
+    Mesh.OPTIMIZE = true;
+    if (base.getNbVertices() !== built.vertices.length / 3) throw new Error('No geometry found in that OBJ file.');
+    const mesh = new Multimesh(base);
+    if (!this.units && fit) mesh.normalizeSize();
+    // Every level kept, level 0 the file's: the clamp would drop the
+    // lowest levels of a small file, and with them its numbering.
+    this.subdivideClamp(mesh, false, 20000, true);
+    if (this.units && fit) this.standOnFloor(mesh, fit);
+    if (built.source) this.sources.set(mesh as unknown as SculptMesh, { source: built.source, level0: mesh._meshes[0] });
+    this.meshNames.set(mesh, this.uniqueMeshName(name));
+    this.addNewMesh(mesh);
+    return mesh;
   }
 
   /**
@@ -1018,14 +1055,14 @@ export class SculptSession {
    * empty session at boot; a file that will not build leaves the units as
    * they were.
    */
-  openParsedOBJ(parsed: { positions: Float32Array; indices: Uint32Array }, name: string): Multimesh {
+  openParsedOBJ(parsed: ParsedObjPolygons, zUp: boolean, name: string): Multimesh {
     const was = this.units;
     const dismissed = this.scaleDismissed;
     this.units = null;
     this.scaleDismissed = false;
     let mesh: Multimesh;
     try {
-      mesh = this.addParsedOBJ(parsed, name, null);
+      mesh = this.addParsedOBJ(parsed, zUp, name, null);
     } catch (err) {
       this.units = was;
       this.scaleDismissed = dismissed;
@@ -1033,6 +1070,49 @@ export class SculptSession {
     }
     if (was !== this.units) this.onUnitsChange?.();
     return mesh;
+  }
+
+  /**
+   * Where an object's OBJ numbering stands: 'none' for an object that was
+   * not imported from OBJ, 'stale' when its level 0 is no longer the
+   * file's (a remesh, a merge, dynamic topology, a mirror copy, a level
+   * rebuilt under it), 'valid' when Export OBJ, original numbering can
+   * write it. Subdividing, deleting the highest level and sculpting at any
+   * level keep it.
+   */
+  originalNumbering(mesh: SculptMesh | null = this.mesh): OriginalNumbering {
+    if (!mesh) return 'none';
+    const rec = this.sources.get(mesh);
+    if (!rec) return this.staleSources.has(mesh) ? 'stale' : 'none';
+    const levels = mesh._meshes;
+    if (!levels || levels[0] !== rec.level0 || levels[0].getNbVertices() * 3 !== rec.source.base.length) return 'stale';
+    if (levels.some((l) => l._evenMapping || l._vertMapping)) return 'stale';
+    return 'valid';
+  }
+
+  /**
+   * The object's level 0 as OBJ text in the imported file's numbering
+   * (objSource.ts says what level 0 is when the object has levels above
+   * it). Reads the stack and changes nothing: the level on screen and
+   * every array stay as they were. Throws STALE_MESSAGE when the record
+   * no longer describes the object, and says so when there never was one.
+   */
+  exportOriginalOBJ(mesh: SculptMesh | null = this.mesh): string {
+    const status = this.originalNumbering(mesh);
+    if (status === 'stale') throw new Error(STALE_MESSAGE);
+    const rec = mesh ? this.sources.get(mesh) : undefined;
+    if (status !== 'valid' || !rec || !mesh) throw new Error('This object was not imported from an OBJ file, so it has no original numbering. Use Export OBJ instead.');
+    const mul = mesh as unknown as Multimesh;
+    const t0 = performance.now();
+    const level0 = level0ForExport(mul._meshes, mul._sel, rec.source.base);
+    const text = writeOriginalObj(rec.source, level0);
+    perfLog.record('obj export', performance.now() - t0, 'original numbering');
+    return text;
+  }
+
+  /** `made` replaces objects one of which had a record: its own says the topology is gone. */
+  private markStale(from: SculptMesh[], made: SculptMesh): void {
+    if (from.some((m) => this.sources.has(m) || this.staleSources.has(m))) this.staleSources.add(made);
   }
 
   /**
@@ -1342,6 +1422,7 @@ export class SculptSession {
     const newMesh = !mesh.isDynamic
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
       : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
+    this.markStale([mesh], newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -1534,6 +1615,9 @@ export class SculptSession {
       sel: mul ? mul._sel : 0,
       matrix: new Float32Array(mesh.getMatrix()),
       sym: [...mesh.getSymmetryNormal()],
+      // The file's numbering, while level 0 is still the file's. Its arrays
+      // never change, so the record shares them rather than copy them.
+      ...(this.originalNumbering(mesh) === 'valid' ? { source: this.sources.get(mesh)!.source } : {}),
     };
   }
 
@@ -1749,10 +1833,20 @@ export class SculptSession {
    */
   private buildRestoredMesh(saved: SavedMesh): Multimesh {
     const sel = saved.sel;
+    const source = saved.source;
+    let reflected = false;
     if (mat3.determinant(mat3.fromMat4(mat3.create(), saved.matrix as unknown as mat4)) < 0) {
       saved = this.reflectRecord(saved);
+      reflected = true;
     }
     const mesh = this.buildLevels(saved);
+    // The file's numbering comes back with the object. A reflection baked
+    // into the vertices (a mirror copy) is not the file's level 0 any more.
+    if (source && !reflected && source.base.length === mesh._meshes[0].getNbVertices() * 3) {
+      this.sources.set(mesh as unknown as SculptMesh, { source, level0: mesh._meshes[0] });
+    } else if (source) {
+      this.staleSources.add(mesh as unknown as SculptMesh);
+    }
     // A reflected record comes back on its top level; walk down to where
     // the object was (analysis, which also rebuilds the detail vectors).
     if (mesh._sel !== sel) {
@@ -1985,11 +2079,14 @@ export class SculptSession {
     return base;
   }
 
-  /** Ported from Scene.subdivideClamp with a ~50k-tri clamp; keeps 4 levels. */
-  private subdivideClamp(mesh: Multimesh, linear = false, minFaces = 20000): void {
+  /**
+   * Ported from Scene.subdivideClamp with a ~50k-tri clamp; keeps 4 levels,
+   * or every level with `keepAll` (an OBJ import: level 0 is the file's).
+   */
+  private subdivideClamp(mesh: Multimesh, linear = false, minFaces = 20000, keepAll = false): void {
     Subdivision.LINEAR = !!linear;
     while (mesh.getNbFaces() < minFaces) mesh.addLevel();
-    mesh._meshes.splice(0, Math.min(mesh._meshes.length - 4, 4));
+    if (!keepAll) mesh._meshes.splice(0, Math.min(mesh._meshes.length - 4, 4));
     mesh._sel = mesh._meshes.length - 1;
     Subdivision.LINEAR = false;
   }

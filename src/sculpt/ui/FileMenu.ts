@@ -85,6 +85,18 @@ export class FileMenu {
             downloadBlob(new Blob([this.actions.objText()], { type: 'text/plain' }), stampName('obj'));
           },
         },
+        {
+          // Level 0 of an object imported from OBJ, in the file's own
+          // vertex and face order (objSource.ts). On while the active
+          // object has the record, stale or not: a stale one says why.
+          label: 'Export OBJ, original numbering',
+          hint: () => (this.actions.originalStatus() === 'stale' ? 'The topology has changed since the import' : 'Level 0, numbered as the imported file'),
+          enabled: () => this.actions.originalStatus() !== 'none',
+          action: () => {
+            const { name, text } = this.actions.originalObj();
+            downloadBlob(new Blob([text], { type: 'text/plain' }), name);
+          },
+        },
         { label: 'Import OBJ…', action: () => this.importInput.click() },
         { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
       ],

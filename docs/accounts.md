@@ -362,7 +362,7 @@ ON CONFLICT (upload_id, part) DO UPDATE SET bytes = excluded.bytes;
 - **Scene part 1** must come first and start `1f 8b 08` or `BOZ1`.
   - `DecompressionStream('gzip')` inflates only `8 + headerLen` bytes. The server caps the header at 1 MiB; the client allows 16 MiB.
   - Those bytes pass `readLayout()`, moved unchanged from `SceneFile.ts` to `shared/bozz.ts` (included in both tsconfigs).
-  - Then a new `checkHeader()`: the parts of `validSavedScene` and `sanitize.ts` that need no array contents. That is version, buffer refs in range and used once, array kind and length per mesh field, depth ≤ 32, no `__proto__`, names ≤ 200 characters, ≤ 1,024 materials, a `units` marker, if any, of `'m'`, and ≤ 1 GiB unpacked.
+  - Then a new `checkHeader()`: the parts of `validSavedScene` and `sanitize.ts` that need no array contents. That is version, buffer refs in range and used once, array kind and length per mesh field, depth ≤ 32, no `__proto__`, names ≤ 200 characters, ≤ 1,024 materials, a `units` marker, if any, of `'m'`, an object's OBJ numbering record (`source`), if any, of version 1 with its arrays of the kinds and lengths its counts give and within the `MAX_SOURCE_*` ceilings, and ≤ 1 GiB unpacked.
   - Failure is 422 `bad_scene {reason}`. `unpackScene` runs both checks first too, so they cannot drift.
 - **Scene last part.** Its gzip ISIZE must equal the unpacked size mod 2³².
 - **Thumbnails** start `FF D8 FF`. Frames are `glTF` v2, raw or gzipped.

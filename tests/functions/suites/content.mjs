@@ -38,6 +38,39 @@ export const seed = {
 
 const text = (s) => new TextEncoder().encode(s);
 
+/**
+ * Give the scene's object the record an OBJ import keeps of the file's
+ * numbering (SavedMesh.source), its arrays added to the table: four file
+ * vertices (one no face uses) on the object's three, level 0 as imported,
+ * one triangle with texture coordinates, the
+ * vt lines and one kept line as text, and Z-up's turn. `edit` then has
+ * its way with the record.
+ */
+const withSource = (h, edit) => {
+  const add = (t, len) => {
+    const off = h.buffers.reduce((end, b) => Math.max(end, b.off + b.len * 4), 0);
+    h.buffers.push({ t, off, len });
+    return { __buf: h.buffers.length - 1 };
+  };
+  const source = {
+    v: 1,
+    nbFileVertices: 4,
+    toEngine: add('u32', 4),
+    loose: add('f32', 3),
+    base: add('f32', 9),
+    faceSizes: add('u32', 1),
+    faceVerts: add('u32', 3),
+    faceUVs: add('u32', 3),
+    nbUVs: 3,
+    textBytes: 23,
+    text: add('u32', 6),
+    extraAt: add('u32', 1),
+    fileToLocal: [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  };
+  h.scene.meshes[0].source = source;
+  edit?.(source, h);
+};
+
 export async function run({ checks, on, off, compileShared, repo }) {
   const member = new Browser(on, { ip: '198.51.100.60', clock: { now: T + 60_000 } });
   member.jar.set('__Host-bz_session', seededToken('cn-member'));
@@ -102,6 +135,16 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => (h.scene.materials[0].name = 'm'.repeat(201)) }), /a material has a name over 200/, 'a material named in 201 characters'],
     [bozz({ edit: (h) => (h.scene.materials = Array.from({ length: 1025 }, (_, i) => ({ id: `m${i}`, name: 'M' }))) }), /more than 1024 materials/, '1,025 materials'],
     [bozz({ edit: (h) => (h.scene.units = 'cm') }), /units this app does not read/, 'a units marker that is not metres'],
+    // The OBJ numbering record (SavedMesh.source), one thing wrong at a time.
+    [bozz({ edit: (h) => withSource(h, (src) => (src.v = 2)) }), /OBJ numbering record/, 'an OBJ record of a version there is not'],
+    [bozz({ edit: (h) => withSource(h, (src) => (h.buffers[src.toEngine.__buf].len = 3)) }), /OBJ numbering record/, 'an OBJ record mapping fewer vertices than the file had'],
+    [bozz({ edit: (h) => withSource(h, (src) => (h.buffers[src.base.__buf].len = 6)) }), /OBJ numbering record/, "an OBJ record whose level 0 is not the object's"],
+    [bozz({ edit: (h) => withSource(h, (src) => (h.buffers[src.faceVerts.__buf].t = 'f32')) }), /OBJ numbering record/, 'an OBJ record whose faces are floats'],
+    [bozz({ edit: (h) => withSource(h, (src) => (h.buffers[src.faceUVs.__buf].len = 2)) }), /OBJ numbering record/, 'an OBJ record with texture corners short of its faces'],
+    [bozz({ edit: (h) => withSource(h, (src) => (src.text = null)) }), /OBJ numbering record/, 'an OBJ record that says it has text and has none'],
+    [bozz({ edit: (h) => withSource(h, (src) => (src.fileToLocal = src.fileToLocal.slice(0, 15))) }), /OBJ numbering record/, 'an OBJ record with a transform of 15'],
+    [bozz({ edit: (h) => withSource(h, (src) => (src.nbFileVertices = 4 + 8_000_000)) }), /OBJ numbering record/, 'an OBJ record past the vertex ceiling'],
+    [bozz({ edit: (h) => withSource(h, (src) => (src.faceSizes = [3])) }), /OBJ numbering record/, 'an OBJ record whose face sizes are no array'],
   ];
   for (const [file, reason, what] of cases) {
     const { r } = await send(file);
@@ -113,6 +156,11 @@ export async function run({ checks, on, off, compileShared, repo }) {
   // The units marker (src/viewer/units.ts): a scene in metres says so.
   const { r: metres } = await send(bozz({ edit: (h) => (h.scene.units = 'm') }));
   t.ok(metres.status === 201, `a scene marked in metres is taken (${metres.status} ${metres.json?.reason ?? ''})`);
+  // An object imported from OBJ keeps the file's numbering in the scene.
+  const { r: numbered } = await send(bozz({ edit: (h) => withSource(h) }));
+  t.ok(numbered.status === 201, `a scene with an OBJ numbering record is taken (${numbered.status} ${numbered.json?.reason ?? ''})`);
+  const { r: noUVs } = await send(bozz({ edit: (h) => withSource(h, (src) => Object.assign(src, { faceUVs: null, nbUVs: 0, textBytes: 0, text: null, extraAt: null })) }));
+  t.ok(noUVs.status === 201, `and one without texture coordinates or kept lines (${noUVs.status} ${noUVs.json?.reason ?? ''})`);
   t.report();
 
   // --- the file as a whole ------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import type { SavedLevel, SavedMesh, SavedScene, SceneLink, SculptSettings } fro
 import { DEFAULT_MATERIAL, MATERIAL_ID, type SculptMaterial } from './materials';
 import { isCurveId } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
+import { sanitizeSource } from './objSource';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -122,6 +123,17 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
   }
   // A matrix that is not finite puts the object nowhere, and the camera
   // framing it with it: such an object comes back untransformed instead.
+  // The OBJ numbering record, where there is one: held to the counts it
+  // names and the object's level 0, or the file is refused, as a face past
+  // the vertices refuses it.
+  let source: SavedMesh['source'];
+  if (m.source !== undefined) {
+    try {
+      source = sanitizeSource(m.source, nbV);
+    } catch (err) {
+      fail(`object ${index + 1} has a bad OBJ numbering record: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const matrix = Array.prototype.every.call(m.matrix, (x: unknown) => typeof x === 'number' && Number.isFinite(x))
     ? Float32Array.from(m.matrix)
     : new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -137,6 +149,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     visible: bool(m.visible),
     locked: bool(m.locked),
     painted: bool(m.painted),
+    source,
   });
 }
 

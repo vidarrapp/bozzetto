@@ -53,6 +53,114 @@ export function parseObj(text: string, zUp = false): ParsedMesh {
   return keepSound(new Float32Array(verts), indices);
 }
 
+/** A corner with no texture coordinate (ParsedObjPolygons.faceUVs). */
+export const NO_INDEX = 0xffffffff;
+
+/**
+ * An OBJ as the file numbers it, for Sculpt's imports (owner decision:
+ * level 0 keeps the file's numbering, and Export OBJ, original numbering
+ * writes it back). Nothing is triangulated, welded, renumbered or moved:
+ * every `v` line in file order, each face whole with its file vertex ids
+ * (0-based) and its `vt` ids where it has them, the `vt` lines as they
+ * are written, and the lines that name things (o, g, usemtl, s, mtllib)
+ * with the number of faces before each. `vn`, `l`, `p`, comments and the
+ * rest are not kept. parseObj (the uploader's and the admin converter's)
+ * is left as it is.
+ */
+export interface ParsedObjPolygons {
+  /** Three a `v` line, as written; NaN where a coordinate is not a number. */
+  positions: Float64Array;
+  /** Corners a face, one entry a face. */
+  faceSizes: Uint32Array;
+  /** Each face's file vertex ids, 0-based, faces one after another. */
+  faceVerts: Uint32Array;
+  /** Each corner's `vt` id, 0-based, NO_INDEX where it has none; null when no corner has one. */
+  faceUVs: Uint32Array | null;
+  /** The `vt` lines, verbatim (a carriage return at the end aside). */
+  uvLines: string[];
+  /** The lines that name things, verbatim, and how many faces come before each. */
+  extras: { line: string; at: number }[];
+}
+
+/** The lines Export OBJ, original numbering puts back where they stood. */
+const KEPT_LINE = /^(o|g|usemtl|s|mtllib)(\s|$)/;
+
+/**
+ * Parse an OBJ keeping its numbering (ParsedObjPolygons). A face that
+ * names a vertex the file does not have, or one that is not a number, is
+ * left out, as parseObj leaves its triangles out; a face with a `vt` id
+ * the file does not have keeps its corners and loses its texture
+ * coordinates. A face with fewer than three corners is no face.
+ */
+export function parseObjPolygons(text: string): ParsedObjPolygons {
+  const verts: number[] = [];
+  const uvLines: string[] = [];
+  const extras: { line: string; at: number }[] = [];
+  const faces: { v: number[]; t: number[] }[] = [];
+  let anyUV = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+    const body = line.trim();
+    if (!body || body[0] === '#') continue;
+    const head = body.split(/\s+/, 1)[0];
+    if (head === 'v') {
+      const p = body.split(/\s+/);
+      verts.push(parseFloat(p[1]), parseFloat(p[2]), parseFloat(p[3]));
+    } else if (head === 'vt') {
+      uvLines.push(line);
+    } else if (head === 'f') {
+      const tokens = body.split(/\s+/).slice(1);
+      const vertexCount = verts.length / 3;
+      const uvCount = uvLines.length;
+      const v: number[] = [];
+      const t: number[] = [];
+      for (const tok of tokens) {
+        const [a, b] = tok.split('/');
+        let n = parseInt(a, 10);
+        if (n < 0) n = vertexCount + n; // relative index
+        else n -= 1; // OBJ is 1-based
+        v.push(n);
+        let m = b ? parseInt(b, 10) : NaN;
+        if (m < 0) m = uvCount + m;
+        else m -= 1;
+        t.push(Number.isInteger(m) ? m : -1);
+        if (Number.isInteger(m)) anyUV = true;
+      }
+      faces.push({ v, t });
+    } else if (KEPT_LINE.test(body)) {
+      extras.push({ line, at: faces.length });
+    }
+  }
+  const count = verts.length / 3;
+  const finite = (i: number): boolean =>
+    Number.isFinite(verts[i * 3]) && Number.isFinite(verts[i * 3 + 1]) && Number.isFinite(verts[i * 3 + 2]);
+  const sizes: number[] = [];
+  const fv: number[] = [];
+  const ft: number[] = [];
+  // Faces left out shift the faces after them: a kept line says how many
+  // KEPT faces come before it.
+  const keptBefore: number[] = [];
+  let kept = 0;
+  for (const f of faces) {
+    keptBefore.push(kept);
+    if (f.v.length < 3 || !f.v.every((i) => Number.isInteger(i) && i >= 0 && i < count && finite(i))) continue;
+    const uvOk = f.t.every((i) => i >= 0 && i < uvLines.length);
+    sizes.push(f.v.length);
+    fv.push(...f.v);
+    for (const i of f.t) ft.push(uvOk ? i : NO_INDEX);
+    kept++;
+  }
+  keptBefore.push(kept);
+  return {
+    positions: new Float64Array(verts),
+    faceSizes: Uint32Array.from(sizes),
+    faceVerts: Uint32Array.from(fv),
+    faceUVs: anyUV && ft.some((i) => i !== NO_INDEX) ? Uint32Array.from(ft) : null,
+    uvLines,
+    extras: extras.map((e) => ({ line: e.line, at: keptBefore[e.at] })),
+  };
+}
+
 /**
  * The triangles of a parsed OBJ that can be drawn and sculpted: each names
  * three different vertices that exist, at places that are numbers. A file

@@ -269,19 +269,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const { takeObjHandoff } = await import('./bridge/objHandoff');
     const handoff = await takeObjHandoff();
     if (handoff) {
-      const { parseObj } = await import('../admin/glb');
-      let parsed: ReturnType<typeof parseObj> | null = null;
+      const { parseObjPolygons } = await import('../admin/glb');
+      let parsed: ReturnType<typeof parseObjPolygons> | null = null;
       try {
-        parsed = parseObj(handoff.text, handoff.zUp);
+        parsed = parseObjPolygons(handoff.text);
       } catch {
         parsed = null;
       }
       const atStake = await hasSavedScene();
-      if (!parsed || !parsed.positions.length || !parsed.indices.length) {
+      if (!parsed || !parsed.positions.length || !parsed.faceSizes.length) {
         bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
       } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
         try {
-          objMesh = session.openParsedOBJ(parsed, handoff.name);
+          objMesh = session.openParsedOBJ(parsed, handoff.zUp, handoff.name);
         } catch (err) {
           bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
         }
