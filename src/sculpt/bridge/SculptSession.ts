@@ -1076,8 +1076,8 @@ export class SculptSession {
    * Where an object's OBJ numbering stands: 'none' for an object that was
    * not imported from OBJ, 'stale' when its level 0 is no longer the
    * file's (a remesh, a merge, dynamic topology, a mirror copy, a level
-   * rebuilt under it), 'valid' when Export OBJ, original numbering can
-   * write it. Subdividing, deleting the highest level and sculpting at any
+   * rebuilt under it), 'valid' when Export OBJ writes it (in place of
+   * the triangles) while the object is selected. Subdividing, deleting the highest level and sculpting at any
    * level keep it.
    */
   originalNumbering(mesh: SculptMesh | null = this.mesh): OriginalNumbering {

@@ -372,15 +372,34 @@ export class FileActions {
 
   /**
    * The active object's level 0 in the imported OBJ's own numbering, and
-   * the file name it downloads as: `<object>-original.obj`. Throws, saying
-   * why, when the object has no record or its topology has changed.
+   * the file name it downloads as: `<object>.obj`. Throws, saying why,
+   * when the object has no record or its topology has changed.
    */
   originalObj(): { name: string; text: string } {
     const mesh = this.session.getMesh();
     const text = this.session.exportOriginalOBJ(mesh);
     // The object's name as a file name: nothing a file system refuses.
     const base = (mesh ? this.session.getMeshName(mesh) : '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'Imported';
-    return { name: `${base}-original.obj`, text };
+    return { name: `${base}.obj`, text };
+  }
+
+  /** The active object's name, as the outliner shows it ('' with none). */
+  activeName(): string {
+    const mesh = this.session.getMesh();
+    return mesh ? this.session.getMeshName(mesh) : '';
+  }
+
+  /**
+   * What File > Export OBJ writes (owner decision): the active object's
+   * level 0 in the imported file's numbering when it has that record
+   * (originalObj); otherwise the triangles of every object at the level
+   * on screen, under a stamped name, with `stale` set when the record was
+   * there but the topology has changed since the import.
+   */
+  exportObj(stampedName: string): { name: string; text: string; numbered: boolean; stale: boolean } {
+    const status = this.originalStatus();
+    if (status === 'valid') return { ...this.originalObj(), numbered: true, stale: false };
+    return { name: stampedName, text: this.objText(), numbered: false, stale: status === 'stale' };
   }
 
   /**

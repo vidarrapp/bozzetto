@@ -58,8 +58,8 @@ export const NO_INDEX = 0xffffffff;
 
 /**
  * An OBJ as the file numbers it, for Sculpt's imports (owner decision:
- * level 0 keeps the file's numbering, and Export OBJ, original numbering
- * writes it back). Nothing is triangulated, welded, renumbered or moved:
+ * level 0 keeps the file's numbering, and Export OBJ writes it back while
+ * the object is selected). Nothing is triangulated, welded, renumbered or moved:
  * every `v` line in file order, each face whole with its file vertex ids
  * (0-based) and its `vt` ids where it has them, the `vt` lines as they
  * are written, and the lines that name things (o, g, usemtl, s, mtllib)
@@ -82,7 +82,7 @@ export interface ParsedObjPolygons {
   extras: { line: string; at: number }[];
 }
 
-/** The lines Export OBJ, original numbering puts back where they stood. */
+/** The lines the numbered Export OBJ puts back where they stood. */
 const KEPT_LINE = /^(o|g|usemtl|s|mtllib)(\s|$)/;
 
 /**

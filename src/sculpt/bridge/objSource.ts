@@ -11,8 +11,8 @@ import {
 /**
  * The file's own numbering, kept for an object imported from OBJ (owner
  * decision): level 0 of its stack is the file's vertices and faces, and
- * File > Export OBJ, original numbering writes level 0 back in the file's
- * order, so an artist can bring a model from Maya or 3ds Max, sculpt it
+ * File > Export OBJ, with the object selected, writes level 0 back in the
+ * file's order, so an artist can bring a model from Maya or 3ds Max, sculpt it
  * here and take it back with the same vertex ids (blend shapes, skinning
  * and UVs keyed on vertex order still line up).
  *

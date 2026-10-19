@@ -6,7 +6,7 @@ import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
 type MenuText = string | (() => string);
 
 export type MenuItem =
-  | { label: MenuText; hint?: MenuText; enabled?: () => boolean; action: () => void | Promise<void> }
+  | { label: MenuText; hint?: MenuText; action: () => void | Promise<void> }
   | { label: string; checked: () => boolean; toggle: (on: boolean) => void }
   | { separator: true };
 
@@ -63,7 +63,7 @@ export class TopMenu {
     this.place();
     this.chip.setAttribute('aria-expanded', 'true');
     this.chip.classList.add('topchip--open');
-    this.pop.querySelector<HTMLButtonElement>('.file-menu__item:not(:disabled)')?.focus();
+    this.pop.querySelector<HTMLButtonElement>('.file-menu__item')?.focus();
   }
 
   close(): void {
@@ -117,8 +117,6 @@ export class TopMenu {
     // where that depends on more than its name (signed in or not). Items
     // without one stay plain text.
     const paint = (): void => {
-      // Read again on every open, as the label is: off when there is nothing to do.
-      b.disabled = item.enabled ? !item.enabled() : false;
       const hint = read(item.hint);
       if (!hint) {
         b.textContent = read(item.label);
@@ -176,7 +174,7 @@ export class TopMenu {
       return;
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      const items = [...this.pop.querySelectorAll<HTMLButtonElement>('.file-menu__item:not(:disabled)')];
+      const items = [...this.pop.querySelectorAll<HTMLButtonElement>('.file-menu__item')];
       const i = items.indexOf(document.activeElement as HTMLButtonElement);
       const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
       items[next]?.focus();

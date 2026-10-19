@@ -80,21 +80,16 @@ export class FileMenu {
         },
         { separator: true },
         {
+          // The active object's level 0 in the imported file's own vertex
+          // and face order when it has that record (objSource.ts), else
+          // the triangles of every object as before (owner decision). The
+          // hint says which, before the click.
           label: 'Export OBJ',
+          hint: () => this.exportHint(),
           action: () => {
-            downloadBlob(new Blob([this.actions.objText()], { type: 'text/plain' }), stampName('obj'));
-          },
-        },
-        {
-          // Level 0 of an object imported from OBJ, in the file's own
-          // vertex and face order (objSource.ts). On while the active
-          // object has the record, stale or not: a stale one says why.
-          label: 'Export OBJ, original numbering',
-          hint: () => (this.actions.originalStatus() === 'stale' ? 'The topology has changed since the import' : 'Level 0, numbered as the imported file'),
-          enabled: () => this.actions.originalStatus() !== 'none',
-          action: () => {
-            const { name, text } = this.actions.originalObj();
-            downloadBlob(new Blob([text], { type: 'text/plain' }), name);
+            const out = this.actions.exportObj(stampName('obj'));
+            downloadBlob(new Blob([out.text], { type: 'text/plain' }), out.name);
+            if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
           },
         },
         { label: 'Import OBJ…', action: () => this.importInput.click() },
@@ -140,6 +135,13 @@ export class FileMenu {
   private uploads(role: Role): boolean {
     if (role === 'owner' || role === 'expired') return true;
     return this.accounts && (role === 'member' || role === 'moderator');
+  }
+
+  private exportHint(): string {
+    const status = this.actions.originalStatus();
+    if (status === 'valid') return `Level 0 of "${this.actions.activeName()}", numbered as the imported file`;
+    if (status === 'stale') return 'Every object as triangles: the topology has changed since the import';
+    return 'Every object as triangles, at the level on screen';
   }
 
   private libraryHint(): string {

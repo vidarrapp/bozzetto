@@ -112,8 +112,8 @@ export interface SavedMesh {
   painted?: boolean;
   /**
    * The imported OBJ's own numbering, for an object whose level 0 is still
-   * the file's (objSource.ts): what Export OBJ, original numbering writes
-   * it back with. Optional, with a version of its own, so the scene's
+   * the file's (objSource.ts): what Export OBJ writes it back with
+   * while the object is selected. Optional, with a version of its own, so the scene's
    * version stays 4: a scene without it opens as ever, and a build from
    * before it reads the scene and leaves the field behind (sanitize.ts
    * keeps known fields only).

@@ -3442,14 +3442,6 @@ body.is-sampling * {
   outline: none;
 }
 
-/* A command with nothing to act on (Export OBJ, original numbering for an
-   object that was not imported): shown, so it can be found, but quiet. */
-.file-menu__item:disabled {
-  opacity: 0.45;
-  cursor: default;
-  background: none;
-}
-
 /* The checkbox item draws its own box, on the left where a native menu
    puts its tick, so on and off read at a glance. */
 .file-menu__item--toggle {

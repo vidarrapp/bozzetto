@@ -1,14 +1,15 @@
 // Level 0 of an object imported from OBJ keeps the file's numbering
-// (owner decision), and File > Export OBJ, original numbering writes it
-// back in that numbering: every v line in the file's order, loose ones
+// (owner decision), and File > Export OBJ, with that object selected,
+// writes it back in that numbering: every v line in the file's order, loose ones
 // included, the vt lines as they were, the faces whole (quads, the
 // pentagon), and the o/g/usemtl/s/mtllib lines where they stood. Through
 // both ways in (the gallery's Create > Import OBJ and File > Import OBJ),
 // with Z-up on, after edits at level 0 and above, Set scale, a .bozz save
 // and the autosave; refused once a remesh or a merge has rebuilt the
-// topology. The triangle Export OBJ is left as it was.
+// topology, where Export OBJ writes the triangles with a note saying why.
+// Any other object exports its triangles as before.
 import { gunzipSync } from 'node:zlib';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSculpt } from './lib.mjs';
@@ -128,21 +129,45 @@ export const suites = {
     const booted = (p) => p.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
     page.on('dialog', (d) => void d.accept());
 
-    // --- the File menu: nothing to export on a sphere ------------------------------------
+    // --- the File menu: one Export OBJ, the triangles on a sphere -------------------------
     await openSculpt(page, base);
     // Read with the menu open, as a person sees it: it paints on opening.
     const menuItem = () =>
       page.evaluate(() => {
         const menu = window.__sculpt.fileMenu;
         menu.open();
-        const b = [...document.querySelectorAll('.file-menu--file .file-menu__item')].find((x) => /original numbering/.test(x.textContent));
-        const out = b ? { disabled: b.disabled, text: b.textContent } : null;
+        const all = [...document.querySelectorAll('.file-menu--file .file-menu__item')];
+        const exports = all.filter((x) => /Export OBJ/.test(x.textContent));
+        const b = exports[0];
+        const out = b ? { count: exports.length, label: b.querySelector('.file-menu__label')?.textContent ?? b.textContent, hint: b.querySelector('.file-menu__hint')?.textContent ?? '' } : null;
         menu.close();
         return out;
       });
+    // File > Export OBJ clicked: the download's name and text, and any note it shows.
+    const clickExport = async () => {
+      await page.evaluate(() => document.querySelectorAll('.file-menu__note').forEach((n) => n.remove()));
+      await page.evaluate(() => window.__sculpt.fileMenu.open());
+      const [dl] = await Promise.all([
+        page.waitForEvent('download', { timeout: 10_000 }).catch(() => null),
+        page.evaluate(() => [...document.querySelectorAll('.file-menu--file .file-menu__item')].find((x) => /Export OBJ/.test(x.textContent)).click()),
+      ]);
+      if (!dl) return null;
+      const path = await dl.path();
+      const note = await page.evaluate(() => document.querySelector('.file-menu__note')?.textContent ?? '');
+      return { name: dl.suggestedFilename(), text: path ? readFileSync(path, 'utf8') : '', note };
+    };
+    const TRI = /^# Bozzetto sculpt export\n/;
     let item = await menuItem();
-    t.ok(item && item.disabled, `File has Export OBJ, original numbering, off for an object that was not imported (${JSON.stringify(item)})`);
+    t.ok(
+      item && item.count === 1 && item.label === 'Export OBJ' && /triangles/.test(item.hint),
+      `File has one Export OBJ, its hint saying the triangles for an object that was not imported (${JSON.stringify(item)})`,
+    );
     const triBefore = await page.evaluate(() => window.__sculpt.file.toOBJ());
+    let dl = await clickExport();
+    t.ok(
+      dl && dl.text === triBefore && /\.obj$/.test(dl.name) && !dl.note,
+      `on a sphere it downloads the triangles under a stamped name, with no note (${dl?.name}, ${JSON.stringify(dl?.note)})`,
+    );
 
     // --- File > Import OBJ, Z-up on, into a scene on real units ----------------------
     await page.evaluate(async (src) => window.__sculpt.fileActions.importObj(src, true, 'Prism file'), text);
@@ -163,16 +188,11 @@ export const suites = {
     );
     same(await exportOriginal(), 'File > Import OBJ then export');
     item = await menuItem();
-    t.ok(item && !item.disabled, 'the menu item is on for the imported object');
-    const download = await (async () => {
-      await page.evaluate(() => window.__sculpt.fileMenu.open());
-      const [dl] = await Promise.all([
-        page.waitForEvent('download', { timeout: 10_000 }).catch(() => null),
-        page.evaluate(() => [...document.querySelectorAll('.file-menu--file .file-menu__item')].find((x) => /original numbering/.test(x.textContent)).click()),
-      ]);
-      return dl ? dl.suggestedFilename() : null;
-    })();
-    t.eq(download, 'Prism file-original.obj', 'the menu downloads <object>-original.obj');
+    t.eq(item?.hint, 'Level 0 of "Prism file", numbered as the imported file', 'with the imported object selected, the hint says the numbered export');
+    dl = await clickExport();
+    t.eq(dl?.name, 'Prism file.obj', 'Export OBJ downloads <object>.obj');
+    if (dl) same({ text: dl.text }, 'File > Export OBJ, clicked');
+    t.ok(dl && !dl.note, 'with no note');
 
     // Every vertex moved by one map, written into the level on screen:
     // each v line is where its own vertex went, in the file's units with
@@ -367,7 +387,13 @@ export const suites = {
     out = await exportOriginal();
     t.eq(out.error, STALE, 'after a voxel remesh the numbered export refuses, and says why');
     item = await menuItem();
-    t.ok(item && !item.disabled, 'the menu item stays on, so the reason can be read');
+    t.ok(item && /triangles/.test(item.hint) && /topology has changed/.test(item.hint), `the hint says the triangles, and why (${item?.hint})`);
+    dl = await clickExport();
+    {
+      const tri = await page.evaluate(() => window.__sculpt.file.toOBJ());
+      t.ok(dl && TRI.test(dl.text) && dl.text === tri && /\.obj$/.test(dl.name) && dl.name !== 'Prism.obj', `Export OBJ writes the triangles instead (${dl?.name})`);
+    }
+    t.eq(dl?.note, 'Exported without the original numbering: the topology has changed since the import.', 'and a note says why');
     await page.evaluate(() => window.__sculpt.session.undo());
     same(await exportOriginal(), 'the remesh undone');
     const merged = await page.evaluate(() => {
@@ -390,6 +416,23 @@ export const suites = {
       return { dup: s.originalNumbering(dup), mir: s.originalNumbering(mir), obj: s.originalNumbering(obj) };
     });
     t.ok(copies.dup === 'valid' && copies.mir === 'stale' && copies.obj === 'valid', `a duplicate keeps the record, a mirror copy's is stale (${JSON.stringify(copies)})`);
+    // Another object selected in the same scene: the triangles of every object.
+    const other = await page.evaluate(() => {
+      const s = window.__sculpt.session;
+      const cube = s.addPrimitive('cube');
+      s.setMesh(cube);
+      return { status: window.__sculpt.fileActions.originalStatus(), n: s.getMeshes().length };
+    });
+    item = await menuItem();
+    dl = await clickExport();
+    {
+      const tri = await page.evaluate(() => window.__sculpt.file.toOBJ());
+      const objects = (dl?.text.match(/^o /gm) ?? []).length;
+      t.ok(
+        other.status === 'none' && /triangles/.test(item?.hint ?? '') && dl && TRI.test(dl.text) && dl.text === tri && objects === other.n && !dl.note,
+        `a cube that was not imported, selected: Export OBJ writes every object's triangles, no note (${JSON.stringify(other)}, ${objects} objects, ${item?.hint})`,
+      );
+    }
 
     // --- the gallery's file picker, as a person uses it (Z-up off there) -------------------
     const dir = mkdtempSync(join(tmpdir(), 'bozzetto-objnum-'));
