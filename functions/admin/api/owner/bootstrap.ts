@@ -12,7 +12,7 @@ import { answer, api, readBody } from '../../../_shared/auth/api';
 import { handleProblem, normalizeHandle } from '../../../_shared/auth/handles';
 import { newSession, signInCookies, userAgentOf, withCookies } from '../../../_shared/auth/session';
 
-/** The owner's storage: 10 GiB, where a member has 250 MiB (docs/accounts.md §4). */
+/** The owner's storage: 10 GiB, where a member has 500 MiB (docs/accounts.md §4). */
 const OWNER_QUOTA = 10 * 1024 * 1024 * 1024;
 
 // POST /admin/api/owner/bootstrap {handle, acceptTerms, ageConfirmed} - the

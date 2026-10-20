@@ -725,6 +725,16 @@ html.is-page body {
   min-height: 100%;
 }
 
+/* Firefox: with the root's overflow set, the body's is its own and not the
+   viewport's, so the body (overflow auto, overscroll-behavior none above)
+   became a scroll container of its own that swallowed the wheel instead
+   of passing it up to the page (a tester on Linux could not scroll the
+   gallery). The body is plain content on a page; the root scrolls. */
+html.is-page body {
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+
 #app.app--landing,
 #app.app--page {
   position: static;

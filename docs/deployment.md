@@ -65,7 +65,7 @@ Then, with accounts on, the owner opens `/admin/`, makes the owner's account wit
 
 - **By invite.** An invite link opens **Join**: a handle, an email address, a box to confirm you are 13 or older and accept the Terms, and Cloudflare's bot check; a six-digit code by mail finishes it.
 - **Passkeys and email codes.** Sign in with a passkey (Face ID, Touch ID, a phone or a security key) or a code mailed to you, in a dialog over the page, so the work on it stays put. No passwords.
-- **My projects.** Save to library and Capture keep your work on the server, private to you, in 250 MB of your own, with a meter that shows how much is used. Open, rename, download and delete it from **My projects**, where the list stays readable offline.
+- **My projects.** Save to library and Capture keep your work on the server, private to you, in 500 MB of your own, with a meter that shows how much is used. Open, rename, download and delete it from **My projects**, where the list stays readable offline.
 - **Your data, and leaving.** **Account** changes your handle and address, manages passkeys and where you are signed in, downloads everything the site keeps about you as one zip, and deletes the account with everything in it.
 - **Templates.** The gallery's templates open as copies that are yours to keep.
 - **Owner tools.** Invites, the accounts (suspend, sign out, quota, recount, finish a deletion) and the audit log, on `/admin/`, behind Cloudflare Access and the owner's own account.

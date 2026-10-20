@@ -247,7 +247,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
   }
   t.ok(crossSite.length === 0, `every write from another site is 403 cross_site, the owner's session and Access notwithstanding${crossSite.length ? ` (not: ${crossSite.join('; ')})` : ''}`);
   let m = await detail(MEMBER);
-  t.ok(m?.status === 'active' && m?.quotaBytes === 262144000 && m?.sessions === 2, `the member is as it was: active, its quota, its two sessions (${JSON.stringify(m)})`);
+  t.ok(m?.status === 'active' && m?.quotaBytes === 524288000 && m?.sessions === 2, `the member is as it was: active, its quota, its two sessions (${JSON.stringify(m)})`);
   t.ok((await detail(SUSPENDED))?.status === 'suspended' && (await detail(DELETING))?.status === 'deleting' && (await detail(RECOUNT))?.bytesUsed === 0, 'and so is every other target');
   r = await admin('GET', '/admin/api/invites');
   t.ok(r.json?.invites?.length === invitesBefore && r.json?.invites?.find((i) => i.id === 'i-otseeded')?.state === 'live', `no invite was made, and none withdrawn (${invitesBefore} ${r.json?.invites?.length})`);
@@ -544,13 +544,13 @@ export async function run({ checks, on, off, compileShared, repo }) {
   // --- the quota ----------------------------------------------------------------------------------------
   t = checks("functions: owner tools, an account's quota");
   const quota = (id, json) => admin('PUT', `/admin/api/users/${id}/quota`, { json });
-  r = await quota(MEMBER, { quotaMiB: 500 });
-  t.ok(r.status === 200 && r.json?.quotaBytes === 500 * MiB && r.json?.id === MEMBER, `500 MiB: 200, the account with its new quota (${r.status} ${r.json?.quotaBytes})`);
+  r = await quota(MEMBER, { quotaMiB: 1000 });
+  t.ok(r.status === 200 && r.json?.quotaBytes === 1000 * MiB && r.json?.id === MEMBER, `1000 MiB: 200, the account with its new quota (${r.status} ${r.json?.quotaBytes})`);
   r = await back.call('GET', '/api/me');
-  t.eq(r.json?.usage?.quota, 500 * MiB, 'which the account sees');
+  t.eq(r.json?.usage?.quota, 1000 * MiB, 'which the account sees');
   let qRows = await audited(MEMBER, 'account.quota');
-  t.ok(qRows.length === 1 && qRows[0].actor === owner.id && JSON.stringify(qRows[0].detail) === JSON.stringify({ from: 262144000, to: 500 * MiB }), `audited from the old to the new, in bytes (${JSON.stringify(qRows[0]?.detail)})`);
-  r = await quota(MEMBER, { quotaMiB: 500 });
+  t.ok(qRows.length === 1 && qRows[0].actor === owner.id && JSON.stringify(qRows[0].detail) === JSON.stringify({ from: 524288000, to: 1000 * MiB }), `audited from the old to the new, in bytes (${JSON.stringify(qRows[0]?.detail)})`);
+  r = await quota(MEMBER, { quotaMiB: 1000 });
   qRows = await audited(MEMBER, 'account.quota');
   t.ok(r.status === 200 && qRows.length === 1, `the same again: 200, and nothing recorded (${qRows.length})`);
   for (const value of [0, 102401, 1.5, '500', -5, null, true]) {
@@ -564,8 +564,8 @@ export async function run({ checks, on, off, compileShared, repo }) {
   const lo = await quota(MEMBER, { quotaMiB: 1 });
   const hi = await quota(MEMBER, { quotaMiB: 102400 });
   t.ok(lo.json?.quotaBytes === MiB && hi.json?.quotaBytes === 102400 * MiB, `1 MiB and 100 GiB are the bounds (${lo.json?.quotaBytes} ${hi.json?.quotaBytes})`);
-  await quota(MEMBER, { quotaMiB: 250 });
-  t.eq((await detail(MEMBER))?.quotaBytes, 262144000, 'and back to 250 MiB');
+  await quota(MEMBER, { quotaMiB: 500 });
+  t.eq((await detail(MEMBER))?.quotaBytes, 524288000, 'and back to 500 MiB');
   const ownQuota = (await detail(owner.id))?.quotaBytes;
   r = await quota(owner.id, { quotaMiB: ownQuota / MiB });
   t.ok(r.status === 200 && r.json?.quotaBytes === ownQuota, `the owner's own quota may be set (${r.status} ${r.json?.quotaBytes})`);

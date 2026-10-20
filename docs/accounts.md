@@ -327,7 +327,7 @@ The client zips it with client-zip 2.5.1 (MIT, no dependencies), one file per re
 | Thumbnail | 1 MiB |
 | Projects | 500 |
 | Frames per project | 10,000 |
-| Quota | 250 MiB (owner 10 GiB, adjustable) |
+| Quota | 500 MiB (owner 10 GiB, adjustable; 250 MiB before 2026-10-20) |
 
 **Routes.** Member routes mirror the owner's, so the client swaps a base path:
 
@@ -581,7 +581,7 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
 - One person per account.
 - You keep your work, licensing only its storage and display back to you. Public sharing is opt-in (phase 3).
 - Templates are free to use as starting points for your own work, commercial work included; the template itself may not be redistributed as your own.
-- 250 MB and file checks.
+- 500 MB and file checks.
 - Suspension or removal comes with reasons and a way to object.
 - Swedish law; consumer rights intact.
 

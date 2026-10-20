@@ -827,7 +827,7 @@ async function legalPages(browser, origin, t) {
     await p.goto(`${origin}/legal/terms.html`, { waitUntil: 'load' });
     const terms = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      version: /Version 2026-10-16\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      version: /Version 2026-10-20\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       sections: ['content', 'takedown'].filter((id) => document.getElementById(id)),
       text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
       // The section's paragraphs (Report… in the viewer comes first since §13), each address once.
@@ -836,7 +836,7 @@ async function legalPages(browser, origin, t) {
       font: getComputedStyle(document.querySelector('h1')).fontFamily,
       background: getComputedStyle(document.body).backgroundColor,
     }));
-    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10-16, with #content and #takedown (${show(terms.sections)})`);
+    t.ok(terms.title === 'Terms of use' && terms.version && show(terms.sections) === show(['content', 'takedown']), `the terms, version 2026-10-20, with #content and #takedown (${show(terms.sections)})`);
     t.ok(
       terms.text.includes('Templates are free to use as starting points for your own work, including commercial work. The template itself may not be redistributed as your own.') &&
         terms.text.includes('Artistic nudity in figure work is allowed.') &&
@@ -849,7 +849,7 @@ async function legalPages(browser, origin, t) {
     await p.goto(`${origin}/legal/privacy.html`, { waitUntil: 'load' });
     const privacy = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,
-      version: /Version 2026-10-16\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
+      version: /Version 2026-10-20\./.test(document.querySelector('.legal__meta')?.textContent ?? ''),
       text: document.querySelector('main').textContent.replace(/\s+/g, ' '),
       contact: [...document.querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute('href')),
       todo: document.querySelectorAll('.legal__todo').length,
@@ -857,7 +857,7 @@ async function legalPages(browser, origin, t) {
     }));
     t.ok(
       privacy.title === 'Privacy notice' && privacy.version && privacy.imy && privacy.contact.length === 2 && privacy.contact.every((h) => h === `mailto:${MAIL}`),
-      `the privacy notice, version 2026-10-16, with the contact address written in (${show(privacy.contact)})`,
+      `the privacy notice, version 2026-10-20, with the contact address written in (${show(privacy.contact)})`,
     );
     t.ok(
       ['The database\'s own history, from which it can be restored: 7 days.', 'The log of security events: 12 months.', 'held for 90 days', '48 hours at most', 'Resend\'s logs of the mail it sent you: 30 days.'].every((x) => privacy.text.includes(x)),
@@ -1333,7 +1333,7 @@ async function memberLibrary(server, o, a, t) {
   t.ok(copies.filter((c) => c.unsent).length === 1 && copies.some((c) => c.unsent && c.uploadTo === pid && c.objects === 4), `the scene is on the shelf as Not uploaded, for its project (${show(copies)})`);
   list = (await pageJson(p, '/api/me/projects')).body ?? [];
   t.ok(list.length === 1 && list[0].scene?.objects === 3, 'and nothing changed on the server');
-  t.eq(await setQuota(250), 200, 'the quota is put back');
+  t.eq(await setQuota(500), 200, 'the quota is put back');
   // A save that did not go up leaves its In progress card as it was,
   // beside the Not uploaded copy.
   await p.evaluate(() => window.__sculpt.persist.settle());
@@ -1479,7 +1479,7 @@ async function memberCreate(server, o, a, t) {
     'a save the quota cannot take says how full the storage is, in the server\'s numbers',
   );
   t.ok(new URL(p.url()).pathname === '/create/' && show(await ids()) === show(kept), 'and stays on the page, with no project left behind');
-  t.eq(await setQuota(250), 200, 'the quota is put back');
+  t.eq(await setQuota(500), 200, 'the quota is put back');
 
   // Gone again, so what follows sees the account as it was.
   const gone = await p.evaluate((x) => fetch(`/api/me/projects/${x}`, { method: 'DELETE' }).then((r) => r.status), id);
@@ -1513,7 +1513,7 @@ async function myProjectsPage(server, a, t) {
     }));
   let v = await view();
   t.ok(
-    v.meter === `${mbOf(usage.used)} of 250 MB used` && v.now === usage.used + usage.reserved && v.max === usage.quota,
+    v.meter === `${mbOf(usage.used)} of 500 MB used` && v.now === usage.used + usage.reserved && v.max === usage.quota,
     `My projects' meter says what is stored, of the quota (${v.meter}; ${v.now} of ${v.max})`,
   );
   t.ok(
@@ -1986,7 +1986,7 @@ async function ownerPages(server, browser, o, t) {
       !!cleoRow &&
         cleoRow.id === cleo &&
         /^cleo@example\.com · joined .+ · last seen .+ · 0 projects$/.test(cleoRow.meta) &&
-        cleoRow.usage === '0 of 250 MB used' &&
+        cleoRow.usage === '0 of 500 MB used' &&
         cleoRow.title === '@cleo',
       `each row: handle, address, dates, projects, and storage against the quota (${show(cleoRow && { meta: cleoRow.meta, usage: cleoRow.usage })})`,
     );
@@ -2050,11 +2050,11 @@ async function ownerPages(server, browser, o, t) {
     // Recount: a count that drifted from what R2 holds.
     await manage(p, DRIFT.id);
     let drift = await userRow(p, 'drift');
-    t.eq(drift?.usage, '5 of 250 MB used', 'an account whose count says 5 MB');
+    t.eq(drift?.usage, '5 of 500 MB used', 'an account whose count says 5 MB');
     await p.click(`${rowOf(DRIFT.id)} .admin-user__recount`);
     t.eq(await panelSays(p, DRIFT.id, /Counted again/), 'Counted again: 0 KB, where it said 5 MB.', 'Recount counts what it stores from the files themselves');
     drift = await userRow(p, 'drift');
-    t.eq(drift?.usage, '0 of 250 MB used', 'and the row has the new count');
+    t.eq(drift?.usage, '0 of 500 MB used', 'and the row has the new count');
 
     // The owner's own account: neither suspended nor signed out from here.
     const ownerId = boss?.id ?? '';

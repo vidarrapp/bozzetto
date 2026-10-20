@@ -79,7 +79,7 @@ export async function run({ checks, on }) {
   const a = x?.account;
   t.ok(a?.id === ME && a?.handle === 'exme' && a?.email === 'exme@example.com' && a?.role === 'member' && a?.status === 'active', `the account: id, handle, email, role, status (${JSON.stringify(a && { handle: a.handle, email: a.email })})`);
   t.ok(a?.createdAt === T - 100 * HOUR && a?.termsVersion === '2026-10' && typeof a?.termsAcceptedAt === 'number' && typeof a?.ageConfirmedAt === 'number', 'its dates and the terms it accepted');
-  t.ok(a?.usage?.used === sceneFile.length + frames[0].length + frames[1].length + thumb.length && a?.usage?.quota === 262144000, `and its storage (${JSON.stringify(a?.usage)})`);
+  t.ok(a?.usage?.used === sceneFile.length + frames[0].length + frames[1].length + thumb.length && a?.usage?.quota === 524288000, `and its storage (${JSON.stringify(a?.usage)})`);
   t.eq(JSON.stringify(x?.passkeys), JSON.stringify([{ name: 'Laptop', createdAt: T - 50 * HOUR, lastUsedAt: null, deviceType: 'singleDevice', backedUp: false, aaguid: '00000000-0000-0000-0000-000000000000' }]), 'its passkeys: name, dates, type, AAGUID, and nothing of the key');
   const sessions = Object.fromEntries((x?.sessions ?? []).map((s) => [s.id, s]));
   t.ok(sessions['s-exmain']?.current === true && sessions['s-exstale']?.userAgent === 'Old browser' && sessions['s-exgone']?.revokedAt === T - HOUR && !sessions['s-exother'], `its sessions, revoked ones too, this one marked, no one else's (${Object.keys(sessions).join(', ')})`);

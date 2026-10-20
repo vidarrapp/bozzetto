@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { accountsOn, filesOrigin } from './env';
 
 /** The terms Join asks a new account to accept; a change asks again (phase 2). */
-export const TERMS_VERSION = '2026-10-16';
+export const TERMS_VERSION = '2026-10-20';
 
 const MiB = 1024 * 1024;
 
@@ -22,8 +22,8 @@ export const MEMBER_LIMITS = {
   thumbBytes: 1 * MiB,
   projects: 500,
   framesPerProject: 10_000,
-  /** An account's storage, the users.quota_bytes default (the owner's is 10 GiB). */
-  quotaBytes: 250 * MiB,
+  /** An account's storage, the users.quota_bytes value for a new account, 500 MiB since 2026-10-20 (the owner's is 10 GiB). */
+  quotaBytes: 500 * MiB,
   passkeys: 10,
 } as const;
 

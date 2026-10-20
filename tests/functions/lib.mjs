@@ -340,7 +340,7 @@ export const seededToken = (name) => `bz1_${createHash('sha256').update(`seed:${
 export const sha256hex = (text) => createHash('sha256').update(text).digest('hex');
 
 /** An account, as registration would have made it. */
-export function seedUser({ id, handle, email = `${handle}@example.com`, webauthn = `wa-${handle}`, role = 'member', status = 'active', quota = 262144000, used = 0, at = 0 }) {
+export function seedUser({ id, handle, email = `${handle}@example.com`, webauthn = `wa-${handle}`, role = 'member', status = 'active', quota = 524288000, used = 0, at = 0 }) {
   return `INSERT INTO users (id, handle, email, webauthn_user_id, role, status, quota_bytes, bytes_used, terms_version, terms_accepted_at, age_confirmed_at, created_at, updated_at)
   VALUES (${[id, handle, email, webauthn, role, status, quota, used, '2026-10', at, at, at, at].map(sql).join(', ')});`;
 }

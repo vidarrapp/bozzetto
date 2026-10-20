@@ -98,7 +98,7 @@ export async function run({ checks, on, compileShared, repo }) {
   const main = holding('main');
   let r = await me(main);
   t.ok(r.status === 200 && r.headers.get('cache-control') === 'no-store', `a good session: 200, uncached (${r.status} ${r.headers.get('cache-control')})`);
-  t.eq(JSON.stringify(r.json), JSON.stringify({ id: ALICE, handle: 'ssalice', role: 'member', status: 'active', usage: { used: 5000, reserved: 3345, quota: 262144000 } }), '{id, handle, role, status, usage}, reserved being its uploads in progress');
+  t.eq(JSON.stringify(r.json), JSON.stringify({ id: ALICE, handle: 'ssalice', role: 'member', status: 'active', usage: { used: 5000, reserved: 3345, quota: 524288000 } }), '{id, handle, role, status, usage}, reserved being its uploads in progress');
   const acc = await account(main);
   t.eq(Object.keys(acc ?? {}).join(','), 'email,createdAt,termsVersion,passkeys,sessions', 'the account: {email, createdAt, termsVersion, passkeys, sessions}');
   t.ok(acc?.email === 'ssalice@example.com' && acc?.createdAt === T - 100 * DAY && acc?.termsVersion === '2026-10', `its address, when it was made, and the terms it accepted (${acc?.email} ${acc?.createdAt} ${acc?.termsVersion})`);
