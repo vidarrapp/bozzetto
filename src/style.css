@@ -4762,6 +4762,12 @@ body.is-sampling * {
   color: var(--muted);
 }
 
+.landing__foot .landing__version {
+  margin-left: auto;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
 /* Owner tools with accounts on: Create your account, and the second lock. */
 .admin__bootstrap,
 .admin__lock {

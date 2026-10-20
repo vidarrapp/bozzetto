@@ -25,6 +25,7 @@
  * members' shared work (`/?community`, §13). The foot links the legal pages.
  */
 
+import { APP_VERSION } from './version';
 import { div } from './dom';
 import {
   AuthExpiredError,
@@ -208,6 +209,11 @@ export function legalFoot(): HTMLElement {
     return a;
   };
   foot.append(link('Privacy', LEGAL.privacy), link('Terms', LEGAL.terms), link('Report content', LEGAL.takedown));
+  // The build that is running (owner call), to tell a deploy has landed.
+  const version = document.createElement('span');
+  version.className = 'landing__version';
+  version.textContent = APP_VERSION;
+  foot.append(version);
   return foot;
 }
 
