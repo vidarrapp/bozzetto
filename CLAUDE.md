@@ -6,7 +6,7 @@ Notes for Claude Code sessions working in this repository.
 
 When something needs Vidar's call (a product decision, a confirmation, a
 choice between options), write it down in the repo as well as asking in
-chat. A dashboard reads this list every hour.
+chat. The projects dashboard reads this list on each refresh.
 
 - Put it under the heading `## Open questions for Vidar` in
   `docs/HANDOFF.md`. Create the file or the heading if they do not exist,
