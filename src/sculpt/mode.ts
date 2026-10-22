@@ -646,7 +646,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
 
   /**
-   * Solo (alt+q, or the Scene panel's Solo button and chip): the session
+   * Solo (alt+q, the rail's Solo button, or the Scene panel's chip): the session
    * hides the other objects and keeps their eyes; the display, the gizmo
    * and the panel follow here. View state, so the autosave is not told.
    */
@@ -656,6 +656,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     reconcile();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
     scenePanel?.refresh();
+    sliders?.refreshHistory();
   };
 
   // Dyntopo, undo and subdivision can swap the active mesh instance; follow it.
@@ -740,6 +741,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // History flags move through many routes (strokes, panel ops, keyboard,
     // buttons, restore); polling each frame is cheaper than wiring them all.
     sliders?.refreshHistory();
+    // The channel box follows every route a matrix moves by (the gizmo,
+    // undo, Set scale, a typed value); a compare of sixteen numbers per
+    // object, and only while the box is up and can be seen.
+    sculptPanel?.tickChannels();
     // Present's turntable, before the controls as the coast is.
     present?.tick();
   };
@@ -1217,6 +1222,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     redo: () => session.redo(),
     canUndo: () => session.canUndo(),
     canRedo: () => session.canRedo(),
+  }, {
+    isSolo: () => session.isSolo(),
+    canSolo: () => !!session.getMesh(),
+    toggle: () => setSolo(!session.isSolo()),
   });
   // How the file actions reach the viewer's look, so .bozz files carry it.
   const lookBridge: LookBridge = {

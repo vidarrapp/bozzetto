@@ -1,7 +1,7 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
 // armatureProjects.mjs's, latency.mjs's, shadows.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
-// objNumbering.mjs's, brushCaps.mjs's, clayTabPen.mjs's, and accounts.mjs's and community.mjs's (which start the
+// objNumbering.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's, and accounts.mjs's and community.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -17,6 +17,7 @@ import { checks, launch, serve } from './lib.mjs';
 import { suites as accounts } from './accounts.mjs';
 import { suites as armatureProjects } from './armatureProjects.mjs';
 import { suites as brushCaps } from './brushCaps.mjs';
+import { suites as channelBox } from './channelBox.mjs';
 import { suites as clayTabPen } from './clayTabPen.mjs';
 import { suites as community } from './community.mjs';
 import { suites as hardening } from './hardening.mjs';
@@ -30,7 +31,7 @@ import { suites as tweaks } from './tweaks.mjs';
 import { suites as units } from './units.mjs';
 import { suites as viewerTools } from './viewerTools.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...accounts, ...community };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...accounts, ...community };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

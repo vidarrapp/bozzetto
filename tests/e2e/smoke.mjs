@@ -1824,42 +1824,106 @@ export const suites = {
     );
     t.eq(hidden.saved, 'Sphere:false Cube:false Torus:true', 'and that eye is what a save keeps');
 
-    // The Scene panel's Solo button, the way in without a keyboard: it
-    // toggles, stays pressed while solo is on, names the key, and greys out
-    // with nothing active. The active cube's eye is shut, so solo shows it.
-    const soloButton = (click) =>
-      page.evaluate((press) => {
-        const b = [...document.querySelectorAll('.panel--scene .outliner__actions .outliner__btn')].find((x) => x.textContent === 'Solo');
-        if (press) b.click();
-        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title };
-      }, click);
-    const idle = await soloButton(false);
-    t.ok(
-      idle.pressed === 'false' && !idle.disabled && idle.title.includes('Alt + Q'),
-      `the Scene panel has a Solo button, not pressed, naming its key ("${idle.title}")`,
+    // The Solo button, the way in without a keyboard: on the viewport's
+    // rail, directly above the strength slider (owner call), not in the
+    // Scene panel. It toggles, stays pressed while solo is on, names the
+    // key from the keymap, and greys out with nothing active. The active
+    // cube's eye is shut, so solo shows it.
+    const inScene = await page.evaluate(
+      () => [...document.querySelectorAll('.panel--scene button')].filter((b) => b.textContent.trim() === 'Solo' && !b.classList.contains('outliner__solo')).length,
     );
-    const pressed = await soloButton(true);
+    t.eq(inScene, 0, 'the Scene panel has no Solo button (its chip stays)');
+    const placed = await page.evaluate(() => {
+      const btn = document.querySelector('.sculpt-sliders .sculpt-solobtn');
+      const strength = document.querySelector('.sculpt-slider[data-kind="strength"]');
+      const size = document.querySelector('.sculpt-slider[data-kind="size"]');
+      if (!btn || !strength) return null;
+      const b = btn.getBoundingClientRect();
+      const s = strength.getBoundingClientRect();
+      const z = size.getBoundingClientRect();
+      const glyph = btn.querySelector('i.fi.fi-bs-arrows-to-eye');
+      return {
+        above: b.bottom <= s.top && s.top - b.bottom < 24 && b.top >= z.bottom,
+        next: btn.parentElement.nextElementSibling === strength,
+        glyph: !!glyph && getComputedStyle(glyph, '::before').fontFamily.includes('uicons-bold-straight'),
+      };
+    });
+    t.ok(placed?.above && placed.next, `the Solo button sits on the rail directly above the strength slider (${JSON.stringify(placed)})`);
+    t.ok(placed?.glyph, 'with the bold straight arrows-to-eye glyph');
+    const soloButton = (press) =>
+      page.evaluate(async (how) => {
+        // The rail reads solo once a frame, with the history flags.
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
+        if (how === 'click') b.click();
+        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title };
+      }, press);
+    // A real press: pointer down and up on the button, as a mouse, a pen or
+    // a finger lifts on it.
+    const tapSolo = async () => {
+      const r = await page.evaluate(() => {
+        const b = document.querySelector('.sculpt-sliders .sculpt-solobtn').getBoundingClientRect();
+        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      });
+      await page.mouse.click(r.x, r.y);
+      await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    };
+    const idle = await soloButton(null);
+    t.ok(
+      idle.pressed === 'false' && !idle.disabled && idle.title === 'Solo (Alt+Q)',
+      `not pressed, titled from the keymap (${JSON.stringify(idle)})`,
+    );
+    await tapSolo();
+    const pressed = await soloButton(null);
     const viaButton = await soloState(page);
     t.ok(
       viaButton.solo && pressed.pressed === 'true' && showSolo(viaButton) === 'Sphere:hidden Cube:shown Torus:hidden',
-      `clicked, it turns solo on and stays pressed (${showSolo(viaButton)}, "${pressed.title}")`,
+      `pressed, it turns solo on once and stays pressed (${showSolo(viaButton)})`,
     );
-    const released = await soloButton(true);
+    await tapSolo();
+    const released = await soloButton(null);
     const viaButtonOff = await soloState(page);
     t.ok(
       !viaButtonOff.solo && released.pressed === 'false' && !viaButtonOff.sign && showSolo(viaButtonOff) === 'Sphere:hidden Cube:hidden Torus:shown',
-      `clicked again, it turns solo off and lets go (${showSolo(viaButtonOff)})`,
+      `pressed again, it turns solo off and lets go (${showSolo(viaButtonOff)})`,
     );
-    const greyed = await page.evaluate(() => {
+    // Alt+Q shows on the button within a frame, both ways.
+    await altQ();
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    const keyed = await soloButton(null);
+    await altQ();
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    const unkeyed = await soloButton(null);
+    t.ok(keyed.pressed === 'true' && unkeyed.pressed === 'false', `Alt+Q presses and releases it (${keyed.pressed}, ${unkeyed.pressed})`);
+    // A keyboard's click (detail 0) toggles too, once.
+    await soloButton('click');
+    const clicked = await soloState(page);
+    await soloButton('click');
+    t.ok(clicked.solo && !(await soloState(page)).solo, 'a keyboard click toggles it on and off');
+    const greyed = await page.evaluate(async () => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
       session.setMesh(null);
-      const b = [...document.querySelectorAll('.panel--scene .outliner__actions .outliner__btn')].find((x) => x.textContent === 'Solo');
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
       const disabled = b.disabled;
       session.setMesh(cube);
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
       return { disabled, back: !b.disabled };
     });
     t.ok(greyed.disabled && greyed.back, 'with nothing active the button is disabled, and enabled again after');
+    // Hidden in Present mode, as the rail is.
+    const presentHidden = await page.evaluate(async () => {
+      const { present } = window.__sculpt;
+      const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
+      present.toggle();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const during = getComputedStyle(b).visibility;
+      present.toggle();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      return { during, after: getComputedStyle(b).visibility };
+    });
+    t.ok(presentHidden.during === 'hidden' && presentHidden.after === 'visible', `hidden in Present mode, back after (${JSON.stringify(presentHidden)})`);
   },
 
   async gallery(page, base, t) {

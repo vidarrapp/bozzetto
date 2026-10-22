@@ -11,8 +11,10 @@ import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
 import type { GizmoParts } from '../bridge/transform';
 import type { SculptSession } from '../bridge/SculptSession';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { Viewer } from '../../viewer/Viewer';
 import { SidePanel } from './SidePanel';
+import { ChannelBox } from './ChannelBox';
 
 /** Matches the left rail's range so the two controls agree end to end. */
 const RADIUS_MIN = 5;
@@ -45,6 +47,8 @@ export class SculptPanel extends SidePanel {
   private sizeInput?: HTMLInputElement;
   private strengthInput?: HTMLInputElement;
   private brushHeading: HTMLHeadingElement | null = null;
+  /** The transform's typed rows, up with the Select tool or the gizmo. */
+  private channelBox: ChannelBox | null = null;
 
   constructor(
     private readonly session: SculptSession,
@@ -98,6 +102,8 @@ export class SculptPanel extends SidePanel {
     dyn.replaceChildren();
     this.paintPicker?.dispose();
     this.paintPicker = undefined;
+    this.channelBox?.dispose();
+    this.channelBox = null;
     this.sizeInput = undefined;
     this.strengthInput = undefined;
     // The two tools that are not brushes get their own settings here
@@ -111,12 +117,14 @@ export class SculptPanel extends SidePanel {
     if (uiMode === 'select') {
       if (this.brushHeading) this.brushHeading.textContent = 'Select';
       this.extrasBody.replaceChildren();
+      this.buildChannelBox(dyn);
       this.buildSelectSettings(dyn);
       return;
     }
     if (uiMode === 'transform') {
       if (this.brushHeading) this.brushHeading.textContent = 'Transform';
       this.extrasBody.replaceChildren();
+      this.buildChannelBox(dyn);
       this.buildTransformSettings(dyn);
       return;
     }
@@ -444,6 +452,50 @@ export class SculptPanel extends SidePanel {
     }
   }
 
+  /**
+   * The channel box (ChannelBox), at the head of the Select tool's and the
+   * gizmo's settings. It shows the active object and the rest of the
+   * selection, and edits them on the gizmo's terms: hidden and locked
+   * objects stay put, and an active one of those leaves the box read-only.
+   */
+  private buildChannelBox(body: HTMLElement): void {
+    const session = this.session;
+    const movable = (m: SculptMesh): boolean => m.isVisible() && !session.isLocked(m);
+    this.channelBox = new ChannelBox({
+      targets: () => {
+        const active = session.getMesh();
+        if (!active) return [];
+        if (!movable(active)) return [active];
+        return [active, ...session.getSelectedMeshes().filter((m) => m !== active && movable(m))];
+      },
+      editable: () => {
+        const active = session.getMesh();
+        return !!active && movable(active);
+      },
+      units: () => session.getUnits(),
+      commit: (entries) => this.input.transform?.applyMatrices(entries),
+    });
+    body.appendChild(this.channelBox.el);
+  }
+
+  /**
+   * Once a frame from the mode's tick: the channel box follows the
+   * objects, whatever moved them. Nothing to do while it cannot be seen.
+   */
+  tickChannels(): void {
+    if (!this.channelBox || this.isCollapsed()) return;
+    const cls = document.body.classList;
+    if (cls.contains('chrome-hidden') || cls.contains('presenting')) return;
+    this.channelBox.refresh();
+  }
+
+  /** The channel box's field texts (tx ty tz rx ry rz sx sy sz), or null when it is not up. */
+  channelValues(): string[] | null {
+    if (!this.channelBox) return null;
+    this.channelBox.refresh();
+    return this.channelBox.values();
+  }
+
   /** The Select tool's settings: its modifiers, and the mode (lasso later). */
   private buildSelectSettings(body: HTMLElement): void {
     const mode = selectEl(
@@ -581,6 +633,8 @@ export class SculptPanel extends SidePanel {
   }
 
   override dispose(): void {
+    this.channelBox?.dispose();
+    this.channelBox = null;
     this.session.onSymmetryChange = null;
     super.dispose();
   }

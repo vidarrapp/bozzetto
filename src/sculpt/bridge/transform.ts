@@ -434,12 +434,35 @@ export class TransformGizmo {
     const companions = this.companions;
     this.companions = [];
     if (!mesh) return;
-    const moved: Array<{ mesh: SculptMesh; before: number[]; after: number[] }> = [
+    this.record([
       { mesh, before: this.before.toArray(), after: [...mesh.getMatrix()] },
       ...companions.map((c) => ({ mesh: c.mesh, before: c.start.toArray(), after: [...c.mesh.getMatrix()] })),
-    ];
+    ]);
+  }
+
+  /**
+   * Set matrices from outside a drag (the Tool panel's channel box): each
+   * object takes its new matrix, the display follows, and the whole set is
+   * one undo entry, the same kind a drag pushes. Works with the gizmo up
+   * or not (the Select tool shows the box too). False when nothing moved.
+   */
+  applyMatrices(entries: Array<{ mesh: SculptMesh; after: ArrayLike<number> }>): boolean {
+    const moved = entries.map((e) => ({ mesh: e.mesh, before: [...e.mesh.getMatrix()], after: Array.from(e.after) }));
+    for (const m of moved) {
+      m.mesh.getMatrix().set(m.after);
+      if (this.mesh === m.mesh) {
+        this.proxy.matrix.fromArray(m.mesh.getMatrix());
+        this.proxy.matrix.decompose(this.proxy.position, this.proxy.quaternion, this.proxy.scale);
+      }
+      this.onTransform?.(m.mesh);
+    }
+    return this.record(moved);
+  }
+
+  /** One undo entry for a set of moved matrices, unless none of them moved. */
+  private record(moved: Array<{ mesh: SculptMesh; before: number[]; after: number[] }>): boolean {
     // No movement, no undo entry.
-    if (moved.every((m) => m.before.every((v, i) => Math.abs(v - m.after[i]) < 1e-9))) return;
+    if (moved.every((m) => m.before.every((v, i) => Math.abs(v - m.after[i]) < 1e-9))) return false;
     const write = (which: 'before' | 'after'): void => {
       for (const m of moved) {
         m.mesh.getMatrix().set(m[which]);
@@ -460,6 +483,7 @@ export class TransformGizmo {
         false,
       );
     this.onCommit?.();
+    return true;
   }
 
   /**

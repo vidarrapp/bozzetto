@@ -60,6 +60,25 @@ export function formatDimensions(size: [number, number, number], units: Units | 
   return parts.join(' × ');
 }
 
+/**
+ * A number to a fixed count of decimals with the trailing zeros dropped,
+ * and never "-0": "12.5", "0", "1.25". What a typed field shows.
+ */
+export function trimDecimals(v: number, decimals: number): string {
+  if (!Number.isFinite(v)) return '';
+  const s = trim(v.toFixed(decimals));
+  return s === '-0' ? '0' : s;
+}
+
+/**
+ * A length in metres as a bare number of centimetres, to a tenth: what a
+ * field labelled in cm holds ("25", "169.4", "0.5"). No millimetres, so a
+ * field keeps one unit whatever it holds.
+ */
+export function formatCentimetres(metres: number): string {
+  return trimDecimals(metres * 100, 1);
+}
+
 function trim(s: string): string {
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 }

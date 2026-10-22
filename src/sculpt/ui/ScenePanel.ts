@@ -19,9 +19,9 @@ import { statusToast } from './statusToast';
  * The up and down arrows walk the rows, wrapping at the ends, and pick
  * each as a click would (with Shift, as a shift+click would).
  * Create, Duplicate, Delete, Mirror and Merge stack under the list, one per
- * row, and act on the whole selection; Solo, last in the stack, shows the
- * active object alone (alt+q's twin for a touch screen), and the panel
- * says so on its tab and title bar while it is on. The material row sits
+ * row, and act on the whole selection. Solo (alt+q, or its button on the
+ * viewport's rail above the strength slider) shows the active object
+ * alone, and the panel says so on its tab and title bar while it is on. The material row sits
  * under them all, then the active object's size and, in a scene on real
  * units, the Floor offset. New materials are made from the dropdown's own
  * trailing "New*" entry rather than a separate button. The selected object's own
@@ -48,7 +48,7 @@ export class ScenePanel extends SidePanel {
    */
   onSceneEdit: (() => void) | null = null;
   /**
-   * The Solo button or chip was pressed: the mount turns solo on or off
+   * The Solo chip was pressed: the mount turns solo on or off
    * and syncs the display. Not an edit (solo is view state), so not
    * onSceneEdit.
    */
@@ -57,8 +57,7 @@ export class ScenePanel extends SidePanel {
   private readonly soloChip: HTMLButtonElement;
   private mirrorMenu!: HTMLDivElement;
   private mergeBtn!: HTMLButtonElement;
-  private soloBtn!: HTMLButtonElement;
-  /** A rebind in Preferences re-titles the Solo button and chip at once. */
+  /** A rebind in Preferences re-titles the Solo chip at once. */
   private readonly offKeymap: () => void;
   /** Blockouts arrive as their separate lumps rather than one shell. */
   private blockoutParts = readBlockoutParts();
@@ -161,15 +160,9 @@ export class ScenePanel extends SidePanel {
     mergeBtn.title = 'Merge the selected objects into one (ctrl+j)';
     mergeBtn.addEventListener('click', () => this.mergeSelected());
     this.mergeBtn = mergeBtn;
-    // Solo: alt+q for a touch screen (owner request: sculpting is on an
-    // iPad). It stays pressed while solo is on and greys out with nothing
-    // active, since there is then nothing to show alone.
-    this.soloBtn = document.createElement('button');
-    this.soloBtn.type = 'button';
-    this.soloBtn.className = 'outliner__btn';
-    this.soloBtn.textContent = 'Solo';
-    this.soloBtn.addEventListener('click', () => this.onSolo?.(!this.session.isSolo()));
-    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn, this.soloBtn);
+    // Solo's button lives on the viewport's rail (BrushSliders), above the
+    // strength slider (owner call); the chip by the title stays here.
+    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn);
     footer.appendChild(row);
     this.body.appendChild(footer);
     this.matRow = div('outliner__material');
@@ -677,11 +670,6 @@ export class ScenePanel extends SidePanel {
     const chord = keymap.chordFor('view.solo');
     const key = chord ? chordLabel(chord) : null;
     this.root.classList.toggle('panel--solo', solo);
-    this.soloBtn.disabled = !active;
-    this.soloBtn.setAttribute('aria-pressed', String(solo));
-    this.soloBtn.title = solo
-      ? `Show the other objects again${key ? ` (${key})` : ''}`
-      : `Solo: show the active object alone${key ? ` (${key})` : ''}`;
     this.soloChip.title =
       `Solo: only the active object is showing. Click${key ? ` or press ${key}` : ''} ` +
       'to show the others again.';

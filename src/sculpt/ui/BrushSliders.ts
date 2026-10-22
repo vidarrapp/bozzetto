@@ -1,12 +1,18 @@
 import type { InputShell } from '../bridge/InputShell';
 import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
 import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
+import { onTap } from '../../ui/dom';
+import { chordParts, keymap } from '../../ui/keymap';
+// Flaticon uicons bold straight (fi-bs-*), for the Solo button's glyph; the
+// font only downloads when that glyph first renders. Attribution: README.
+import '@flaticon/flaticon-uicons/css/bold/straight.css';
 
 /**
  * Minimal Procreate-style left rail (WS2h review request + undo round): two
  * thin vertical tracks - brush size on top (log-mapped over 5..500 px so
  * small brushes get room), strength below (linear 0..1) - each just a track
- * and a nub, then undo/redo chips at the foot of the rail, mirroring where
+ * and a nub, the Solo button between them, then undo/redo chips at the foot
+ * of the rail, mirroring where
  * Procreate parks its history arrows. Slider values stay live in both
  * directions: dragging updates the tool (with the centered preview ring),
  * and every other route (digits, b/s drags, wheel keys, tool switches)
@@ -128,14 +134,26 @@ export class HistoryButtons {
   }
 }
 
+/** Solo (view.solo) for the rail's button: the mode owns the state. */
+export interface SoloHooks {
+  isSolo(): boolean;
+  /** Something is active to show alone. */
+  canSolo(): boolean;
+  toggle(): void;
+}
+
 export class BrushSliders {
   private readonly root: HTMLDivElement;
   private readonly nubs: { size: HTMLDivElement; strength: HTMLDivElement };
   private readonly hist: HistoryButtons;
+  private readonly soloBtn: HTMLButtonElement | null = null;
+  private soloState = { on: false, can: false };
+  private readonly offKeymap: () => void = () => {};
 
   constructor(
     private readonly input: InputShell,
     history: HistoryHooks,
+    private readonly solo?: SoloHooks,
   ) {
     this.root = document.createElement('div');
     this.root.className = 'sculpt-sliders';
@@ -143,12 +161,60 @@ export class BrushSliders {
     const strength = this.buildSlider('strength', 'Brush strength');
     this.nubs = { size: size.nub, strength: strength.nub };
     this.hist = new HistoryButtons(history);
-    this.root.append(size.el, strength.el, this.hist.el);
+    this.root.append(size.el);
+    // Solo, directly above the strength track (owner layout call): the
+    // view's one toggle a hand on the rail reaches for, Alt+Q's twin on a
+    // touch screen. Pressed while solo is on; greyed with nothing active.
+    if (solo) {
+      const wrap = document.createElement('div');
+      wrap.className = 'sculpt-solo';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sculpt-histbtn sculpt-solobtn';
+      btn.innerHTML = '<i class="fi fi-bs-arrows-to-eye" aria-hidden="true"></i>';
+      // Matches the state cache's initial values; refresh writes on change.
+      btn.disabled = true;
+      btn.setAttribute('aria-pressed', 'false');
+      onTap(btn, () => {
+        if (!btn.disabled) this.solo?.toggle();
+        this.refreshSolo();
+      });
+      wrap.appendChild(btn);
+      this.root.append(wrap);
+      this.soloBtn = btn;
+      this.titleSolo();
+      this.offKeymap = keymap.onChange(() => this.titleSolo());
+    }
+    this.root.append(strength.el, this.hist.el);
     document.body.appendChild(this.root);
 
     this.input.onBrushChange = () => this.refresh();
     this.refresh();
     this.refreshHistory();
+  }
+
+  /** "Solo (Alt+Q)", from the keymap, so a rebind shows at once. */
+  private titleSolo(): void {
+    if (!this.soloBtn) return;
+    const chord = keymap.chordFor('view.solo');
+    const title = chord ? `Solo (${chordParts(chord).join('+')})` : 'Solo';
+    this.soloBtn.title = title;
+    this.soloBtn.setAttribute('aria-label', title);
+  }
+
+  /** Pressed and enabled as solo stands; the DOM is touched only on change. */
+  private refreshSolo(): void {
+    if (!this.soloBtn || !this.solo) return;
+    const on = this.solo.isSolo();
+    const can = this.solo.canSolo() || on;
+    if (on !== this.soloState.on) {
+      this.soloState.on = on;
+      this.soloBtn.setAttribute('aria-pressed', String(on));
+    }
+    if (can !== this.soloState.can) {
+      this.soloState.can = can;
+      this.soloBtn.disabled = !can;
+    }
   }
 
   private buildSlider(
@@ -265,9 +331,13 @@ export class BrushSliders {
   /** Enable/disable the history chips; DOM is touched only on change. */
   refreshHistory(): void {
     this.hist.refresh();
+    // Solo moves by Alt+Q, the Scene panel's chip and eyes, and active
+    // object changes; polled with the history flags, as cheaply.
+    this.refreshSolo();
   }
 
   dispose(): void {
+    this.offKeymap();
     this.hist.dispose();
     this.input.onBrushChange = null;
     this.root.remove();

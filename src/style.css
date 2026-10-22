@@ -2830,6 +2830,100 @@ body:has(.transport) .chrome-hint {
   cursor: default;
 }
 
+/* Solo on the rail, directly above the strength track (owner layout call):
+   the history chips' look with a Flaticon glyph (fi-bs-arrows-to-eye),
+   lit while solo is on. */
+.sculpt-solo {
+  display: flex;
+  justify-content: center;
+}
+
+.sculpt-solobtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.sculpt-solobtn .fi {
+  font-size: 15px;
+  line-height: 1;
+  display: block;
+}
+
+.sculpt-solobtn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* The channel box (sculpt/ui/ChannelBox.ts): Maya's, nine compact rows at
+   the head of the Select tool's and the gizmo's settings, the name left
+   and the value right, its unit in a narrow column after it. */
+.channel-box {
+  display: grid;
+  gap: 1px;
+  margin: 2px 0 10px;
+}
+
+.channel-box__row {
+  display: grid;
+  grid-template-columns: 1fr 76px 18px;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.channel-box__row:nth-child(3n):not(:last-child) {
+  margin-bottom: 5px;
+}
+
+.channel-box__label {
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.channel-box__value {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 1px 5px;
+  font: inherit;
+  font-family: var(--font-spec);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.channel-box__value:hover:not(:disabled) {
+  border-color: var(--panel-border);
+}
+
+.channel-box__value:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.channel-box__value::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.channel-box__value:disabled {
+  opacity: 0.55;
+}
+
+.channel-box__unit {
+  color: var(--muted);
+  font-size: 10px;
+}
+
 /* Sculpt corner stats: object name + live poly count (top-left). */
 .sculpt-stats {
   position: fixed;
