@@ -134,7 +134,7 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => (h.scene.meshes[0].name = 'n'.repeat(201)) }), /object 1 has a name over 200/, 'an object named in 201 characters'],
     [bozz({ edit: (h) => (h.scene.materials[0].name = 'm'.repeat(201)) }), /a material has a name over 200/, 'a material named in 201 characters'],
     [bozz({ edit: (h) => (h.scene.materials = Array.from({ length: 1025 }, (_, i) => ({ id: `m${i}`, name: 'M' }))) }), /more than 1024 materials/, '1,025 materials'],
-    [bozz({ edit: (h) => (h.scene.units = 'cm') }), /units this app does not read/, 'a units marker that is not metres'],
+    [bozz({ edit: (h) => (h.scene.units = 'ft') }), /units this app does not read/, 'a units marker that is neither centimetres nor metres'],
     // The OBJ numbering record (SavedMesh.source), one thing wrong at a time.
     [bozz({ edit: (h) => withSource(h, (src) => (src.v = 2)) }), /OBJ numbering record/, 'an OBJ record of a version there is not'],
     [bozz({ edit: (h) => withSource(h, (src) => (h.buffers[src.toEngine.__buf].len = 3)) }), /OBJ numbering record/, 'an OBJ record mapping fewer vertices than the file had'],
@@ -153,7 +153,10 @@ export async function run({ checks, on, off, compileShared, repo }) {
   const ok200 = bozz({ edit: (h) => (h.scene.meshes[0].name = 'n'.repeat(200)) });
   const { r: fine } = await send(ok200);
   t.ok(fine.status === 201, `a name of exactly 200 characters is taken (${fine.status} ${fine.json?.reason ?? ''})`);
-  // The units marker (src/viewer/units.ts): a scene in metres says so.
+  // The units marker (src/viewer/units.ts): a scene in centimetres says
+  // so, and one saved while a unit was a metre is still taken.
+  const { r: centimetres } = await send(bozz({ edit: (h) => (h.scene.units = 'cm') }));
+  t.ok(centimetres.status === 201, `a scene marked in centimetres is taken (${centimetres.status} ${centimetres.json?.reason ?? ''})`);
   const { r: metres } = await send(bozz({ edit: (h) => (h.scene.units = 'm') }));
   t.ok(metres.status === 201, `a scene marked in metres is taken (${metres.status} ${metres.json?.reason ?? ''})`);
   // An object imported from OBJ keeps the file's numbering in the scene.

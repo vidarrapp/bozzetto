@@ -190,7 +190,7 @@ export interface StageState {
   /** Pedestal base scale (width/depth only; height is unaffected). */
   pedestalScale: number;
   /**
-   * How far the fixed floor sits above (or below) height 0, in metres:
+   * How far the fixed floor sits above (or below) height 0, in centimetres:
    * the Floor offset control. Only a fixed floor reads it (lockFloor); an
    * adaptive one stands under the subject wherever that is. Absent in
    * looks from before it, which is 0.
@@ -198,7 +198,7 @@ export interface StageState {
   floorOffset?: number;
   /**
    * The project's frames as played: one uniform factor about the origin,
-   * then lifted by `lift` metres, every frame alike (the subject root's
+   * then lifted by `lift` centimetres, every frame alike (the subject root's
    * matrix). Set scale in the editor writes them for a project from before
    * real units; absent (1 and 0) everywhere else, and Sculpt's and
    * Armature's own subjects never read them.
@@ -210,8 +210,8 @@ export interface StageState {
 /** The least and most a project's played scale may be (StageState.scale). */
 export const SUBJECT_SCALE_MIN = 1e-4;
 export const SUBJECT_SCALE_MAX = 1e4;
-/** The farthest the played frames may be lifted, in metres (StageState.lift). */
-const SUBJECT_LIFT_LIMIT = 1e4;
+/** The farthest the played frames may be lifted, in centimetres (StageState.lift). */
+const SUBJECT_LIFT_LIMIT = 1e6;
 
 /** Visible ground disc fade (plane-UV radius from the centre): opaque within
  *  INNER, fully transparent by OUTER. The plane extends past OUTER (invisible)
@@ -222,14 +222,16 @@ const GROUND_FADE_OUTER = 0.36;
 /**
  * The fixed floor's drawn extent (owner decision): it no longer follows
  * the subject's size, so it has to read as a floor at any framing. Its
- * disc fades out at least FIXED_FLOOR_RADIUS metres from the origin - a
+ * disc fades out at least FIXED_FLOOR_RADIUS centimetres from the origin - a
  * room's worth, several metres across - and further once the camera
  * stands back far enough to see that edge, at FIXED_FLOOR_OF_DISTANCE
  * times its distance from what it looks at. Only the fade scales; the
  * floor stays where it is.
  */
-const FIXED_FLOOR_RADIUS = 3;
+const FIXED_FLOOR_RADIUS = 300;
 const FIXED_FLOOR_OF_DISTANCE = 2;
+/** How far under its height the fixed floor is drawn, so a sole on it does not flicker: a hundredth of a millimetre. */
+const FIXED_FLOOR_SINK = 1e-3;
 
 /** Default stage-surface PBR (the floor / pedestal share one material). */
 const DEFAULT_STAGE_COLOR = '#c9c4bb';
@@ -848,7 +850,7 @@ export class Viewer {
     this.targetIndex = start;
     this.timeline.setFrame(start);
 
-    // A project in metres stands on the fixed floor at 0 (its offset comes
+    // A project on real units stands on the fixed floor at 0 (its offset comes
     // with the presentation below); one from before real units keeps the
     // floor that follows its subject.
     this.floorY = this.manifestFloor();
@@ -1281,8 +1283,8 @@ export class Viewer {
   }
 
   /**
-   * The floor the booted project asks for: fixed at 0 when it is in
-   * metres, else null (it follows the subject). A mode that held the floor
+   * The floor the booted project asks for: fixed at 0 when it is on real
+   * units, else null (it follows the subject). A mode that held the floor
    * its own way gives it back to this on the way out.
    */
   manifestFloor(): number | null {
@@ -1290,7 +1292,7 @@ export class Viewer {
   }
 
   /**
-   * Mark the booted project's units (Set scale in the editor): on 'm' its
+   * Mark the booted project's units (Set scale in the editor): on 'cm' its
    * floor stands fixed at 0, as a project published on real units has it.
    */
   setUnits(units: Units | null): void {
@@ -1303,10 +1305,10 @@ export class Viewer {
     return this.floorY === null ? null : this.floorY + this.floorOffset;
   }
 
-  /** Raise or lower the fixed floor (the Floor offset control), in metres. */
-  setFloorOffset(metres: number): void {
-    if (!finite(metres)) return;
-    this.floorOffset = Math.min(FLOOR_OFFSET_LIMIT, Math.max(-FLOOR_OFFSET_LIMIT, metres));
+  /** Raise or lower the fixed floor (the Floor offset control), in centimetres. */
+  setFloorOffset(cm: number): void {
+    if (!finite(cm)) return;
+    this.floorOffset = Math.min(FLOOR_OFFSET_LIMIT, Math.max(-FLOOR_OFFSET_LIMIT, cm));
     this.layoutStage();
     this.invalidate();
   }
@@ -1372,7 +1374,7 @@ export class Viewer {
   /**
    * Set scale for a project's frames (the editor's banner): every frame
    * played `scale` times its size about the origin, then lifted `lift`
-   * metres, and the stage, the light fit and the view refitted to the
+   * centimetres, and the stage, the light fit and the view refitted to the
    * result, keeping the view's angle. Kept by getStageState for Save look.
    */
   setSubjectTransform(scale: number, lift: number): void {
@@ -1508,13 +1510,13 @@ export class Viewer {
     // by them, so the far plane reaches past the disc's farthest edge.
     this.controls.setFarFloor(Math.hypot(this.camera.position.x, this.camera.position.z) + radius + Math.abs(this.camera.position.y - y));
     if (Math.abs(radius - this.heldFloorRadius) <= this.heldFloorRadius * 0.01) {
-      if (this.ground.position.y === y - 1e-5) return;
+      if (this.ground.position.y === y - FIXED_FLOOR_SINK) return;
     } else {
       this.heldFloorRadius = radius;
       const span = radius / GROUND_FADE_OUTER;
       this.ground.scale.set(span, span, 1);
     }
-    this.ground.position.set(0, y - 1e-5, 0);
+    this.ground.position.set(0, y - FIXED_FLOOR_SINK, 0);
     this.invalidate();
   }
 
@@ -1843,9 +1845,9 @@ export class Viewer {
     ];
   }
 
-  /** Whether what is on screen is in metres: a fixed floor goes with real units, everywhere it is held. */
-  private realUnits(): 'm' | null {
-    return this.floorY !== null ? 'm' : null;
+  /** Whether what is on screen is in centimetres: a fixed floor goes with real units, everywhere it is held. */
+  private realUnits(): Units | null {
+    return this.floorY !== null ? 'cm' : null;
   }
 
   /** The subject's size, for the diagnostics' size line: "25 × 25 × 25 cm, r 21.7 cm". */

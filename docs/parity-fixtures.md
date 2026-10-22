@@ -38,8 +38,19 @@ Meshes, built through the session as the app builds them:
 | key | mesh | vertices | faces |
 | --- | --- | --- | --- |
 | `cube` | the quad cube, two linear subdivisions (the Cube primitive's rule), identity matrix | 98 | 96 quads |
-| `sphere` | `addSphere()`, the default sphere, one level down from the top | 6146 | 6144 quads |
-| `plane` | `addPrimitive('plane')`, level 0: triangles, with a boundary | 625 | 1152 triangles |
+| `sphere` | `addSphere()`, the default sphere, one level down from the top: 25 cm tall in its vertices, matrix a translation | 6146 | 6144 quads |
+| `plane` | `addPrimitive('plane')`, level 0: triangles, with a boundary: 50 cm across in its vertices, matrix a translation | 625 | 1152 triangles |
+
+One world unit is a centimetre (October 2026, `src/viewer/units.ts`), and a
+new object's size is built into its vertices with its matrix at scale 1. The
+fixtures were re-recorded for it: the sphere's and the plane's local
+coordinates are their real sizes in centimetres (they used to be three's own
+small sizes under a matrix scale of about 0.3), so every file's positions,
+radii and moves are about 30 to 100 times what they were, the plane's stroke
+path is given on a plane 1.6 across and scaled to the one built
+(`pathSpan`), and every move relative to the mesh's size is as it was: the
+engine has no absolute length in it. The cube is built directly, not as a
+primitive, and is as it was; its files changed with the shared `meta`.
 
 Brushes, each with the defaults the app installs: the bridge brushes
 ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove, StableSmooth,

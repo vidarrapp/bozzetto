@@ -41,14 +41,14 @@ import type { SculptSession } from './SculptSession';
 const SLIDER_MAX = 500;
 const SLIDER_FLOOR = 1;
 /**
- * One step of the slider in a scene on real units, in metres (owner
+ * One step of the slider in a scene on real units, in centimetres (owner
  * decision: the brush unit follows real sizes). A fifth of a millimetre:
  * the rail's 5..500 is a radius of 1 mm to 10 cm, a head's pores to a
  * torso's planes, and a typed size goes past either end. A scene from
  * before real units keeps the unit it had, a 500th of its subject's
  * radius, whatever size the subject happened to be.
  */
-export const REAL_UNIT = 0.0002;
+export const REAL_UNIT = 0.02;
 
 /**
  * The tools a modifier swaps in for a single stroke (InputShell): Smooth

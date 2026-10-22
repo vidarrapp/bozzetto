@@ -30,10 +30,15 @@ import {
  * - the o, g, usemtl, s and mtllib lines, each with the number of faces
  *   before it, so they go back where they stood;
  * - level 0 as the import built it (`base`), and the transform from the
- *   file's space to that level's local space (Z-up's turn). Nothing bakes
- *   a transform into an object's vertices since: Set scale, the fit to
- *   25 cm and the gizmo all move the object's matrix, which the export
- *   leaves out, so it is in the file's own space and units.
+ *   file's space to that level's local space (Z-up's turn);
+ * - the scale folded into the vertices since (`bake`, bakeScale.ts): the
+ *   fit to 25 cm, Set scale and a scene's move from metres to centimetres
+ *   each map the object's local space, and the record composes the maps.
+ *   The export takes level 0 back through them before the file's own
+ *   transform, and a vertex that came back within the floats' rounding of
+ *   where the import put it is written as the file wrote it, so an
+ *   unsculpted object still exports exactly. The gizmo moves the matrix,
+ *   which the export leaves out: it is in the file's own space and units.
  *
  * What level 0 is, for the export: the level whose subdivision gives the
  * surface on the top level, as the top level is on screen or as stepping
@@ -91,6 +96,63 @@ export interface ObjSource {
   extraAt: Uint32Array | null;
   /** File space to level-0 local space, a column-major 4x4. */
   fileToLocal: number[];
+  /**
+   * The local space `base` is in to the object's local space now, a
+   * column-major affine 4x4: what bakeScale folded in since (composeBake).
+   * Absent for none (every record from before it).
+   */
+  bake?: number[];
+}
+
+/** Compose a map of the object's local space (v' = A v, bakeScale.ts) onto the record's `bake`. */
+export function composeBake(src: ObjSource, a: ArrayLike<number>): void {
+  const b = src.bake ?? [...IDENTITY];
+  const out = new Array<number>(16).fill(0);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + r] * b[c * 4 + k];
+      out[c * 4 + r] = sum;
+    }
+  }
+  src.bake = out;
+}
+
+/** The record's level 0 (`base`) in the object's local space now: through `bake`. */
+export function bakedBase(src: ObjSource): Float32Array {
+  const b = src.bake;
+  if (!b) return src.base;
+  const out = new Float32Array(src.base.length);
+  for (let i = 0; i < out.length; i += 3) {
+    const [x, y, z] = apply(b, src.base[i], src.base[i + 1], src.base[i + 2]);
+    out[i] = x;
+    out[i + 1] = y;
+    out[i + 2] = z;
+  }
+  return out;
+}
+
+/**
+ * Level 0 for the export (level0ForExport, in the object's local space
+ * now) back in the space `base` is in, through the inverse of `bake`. A
+ * coordinate that comes back within the floats' rounding of `base` (a few
+ * parts in ten million of the object's size) is `base`'s exactly: the bake
+ * rounded it on the way in, and an unmoved vertex exports as it was read.
+ */
+export function unbakeLevel0(src: ObjSource, level0: Float64Array): Float64Array {
+  const b = src.bake;
+  if (!b) return level0;
+  const back = invertAffine(b) ?? [...IDENTITY];
+  const base = src.base;
+  let size = 0;
+  for (let i = 0; i < base.length; i++) size = Math.max(size, Math.abs(base[i]));
+  const eps = 4e-6 * size;
+  const out = new Float64Array(level0.length);
+  for (let i = 0; i < out.length; i += 3) {
+    const p = apply(back, level0[i], level0[i + 1], level0[i + 2]);
+    for (let k = 0; k < 3; k++) out[i + k] = Math.abs(p[k] - base[i + k]) <= eps ? base[i + k] : p[k];
+  }
+  return out;
 }
 
 /** What an import builds: level 0 for the engine, and the record. */
@@ -292,6 +354,12 @@ export function sanitizeSource(v: unknown, nbEngine: number): ObjSource {
   if (!Array.isArray(m) || m.length !== 16 || !m.every((x) => typeof x === 'number' && Number.isFinite(x))) bad('its transform');
   const mm = m as number[];
   if (mm[3] !== 0 || mm[7] !== 0 || mm[11] !== 0 || mm[15] !== 1 || !invertAffine(mm)) bad('a transform that cannot be undone');
+  const bk = r.bake;
+  if (bk !== undefined) {
+    if (!Array.isArray(bk) || bk.length !== 16 || !bk.every((x) => typeof x === 'number' && Number.isFinite(x))) bad('its folded scale');
+    const bb = bk as number[];
+    if (bb[3] !== 0 || bb[7] !== 0 || bb[11] !== 0 || bb[15] !== 1 || !invertAffine(bb)) bad('a folded scale that cannot be undone');
+  }
   const out: ObjSource = {
     v: 1,
     nbFileVertices: n,
@@ -306,6 +374,7 @@ export function sanitizeSource(v: unknown, nbEngine: number): ObjSource {
     text: text as Uint32Array | null,
     extraAt: extraAt as Uint32Array | null,
     fileToLocal: [...mm],
+    ...(Array.isArray(bk) ? { bake: [...(bk as number[])] } : {}),
   };
   // The text is the lines it says: the vt lines, then one a kept line.
   const nbExtras = out.extraAt?.length ?? 0;

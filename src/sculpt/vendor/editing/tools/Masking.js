@@ -309,8 +309,8 @@ class Masking extends SculptBase {
     var thick = this._thickness;
     // BOZZETTO EDIT: the gap between the surface and the shell was 0.01
     // world units, a fiftieth of a percent of upstream's 100-unit scene.
-    // Scenes are in metres now (src/viewer/units.ts), where 0.01 is a
-    // centimetre: the gap keeps its old share of the object's size instead.
+    // Scenes are on real units now (src/viewer/units.ts), where 0.01 is a
+    // fixed length: the gap keeps its old share of the object's size instead.
     var eps = 0.0002 * mesh.computeLocalRadius() * mesh.getScale();
     if (thick < 0) eps = -eps;
     for (var i = 0; i < nbVerts; ++i) {

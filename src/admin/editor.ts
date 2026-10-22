@@ -13,6 +13,7 @@ import { Help } from '../ui/Help';
 import { ScaleBanner } from '../sculpt/ui/SetScale';
 import { validateManifest } from '../types/manifest';
 import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
+import { UNITS } from '../viewer/units';
 
 interface Stage {
   name: string;
@@ -77,6 +78,10 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
 function lookPatch(p: Viewer): Record<string, unknown> {
   const look = p.getLook();
   return {
+    // The scale those numbers are on: a project stored in metres played
+    // here in centimetres (types/manifest.ts onCentimetres), so a save
+    // marks it 'cm' with them. One without units stays without.
+    ...(p.manifest.units ? { units: p.manifest.units } : {}),
     lighting: look.lighting,
     material: look.material,
     environment: look.environment,
@@ -112,7 +117,7 @@ function dismissScale(id: string): void {
  * the same banner Sculpt offers a scene from before, here over the one
  * model. The typed height is the current frame's; every frame is played
  * by the one factor that makes it so (presentation.scale, lifted to stand
- * on the floor at 0), the project is marked `units: 'm'`, and both are
+ * on the floor at 0), the project is marked `units: 'cm'`, and both are
  * saved at once, with the look, so the viewer plays it at that size for
  * everyone. A refusal puts the preview back as it was.
  */
@@ -142,11 +147,11 @@ function mountScaleBanner(p: Viewer, id: string, title: string): ScaleBanner<str
   );
   const setScale = async (cm: number): Promise<void> => {
     const box = p.frameLocalBounds();
-    const f = cm / 100 / (box.max.y - box.min.y);
+    const f = cm / (box.max.y - box.min.y);
     if (!(f > 0) || !Number.isFinite(f)) return;
     const was = { ...p.getSubjectTransform(), units: p.manifest.units, offset: p.getFloorOffset() };
     // Marked first, so the refit below lays the floor out fixed at 0.
-    p.setUnits('m');
+    p.setUnits(UNITS);
     p.setFloorOffset(0);
     p.setSubjectTransform(f, -f * box.min.y);
     // A focus lock was a point on the old scale.
@@ -154,7 +159,7 @@ function mountScaleBanner(p: Viewer, id: string, title: string): ScaleBanner<str
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
     banner.refresh();
     try {
-      await api.update(id, { ...lookPatch(p), units: 'm' });
+      await api.update(id, { ...lookPatch(p), units: UNITS });
     } catch (err) {
       p.setUnits(was.units);
       p.setFloorOffset(was.offset);

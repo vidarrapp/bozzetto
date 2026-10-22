@@ -48,9 +48,11 @@ import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
-import type { Units } from '../../viewer/units';
+import { CM_PER_M, UNITS, type Units } from '../../viewer/units';
+import { bakeScale, transformLocal } from './bakeScale';
+import { sceneOnCentimetres } from './sceneUnits';
 import type { ParsedObjPolygons } from '../../admin/glb';
-import { buildFromObj, level0ForExport, STALE_MESSAGE, writeOriginalObj, type ObjSource } from './objSource';
+import { bakedBase, buildFromObj, composeBake, level0ForExport, STALE_MESSAGE, unbakeLevel0, writeOriginalObj, type ObjSource } from './objSource';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -92,6 +94,22 @@ export interface HoverSurface {
  * at the pinned commit (18 methods, 6 fields); everything else was GUI or
  * renderer glue and is intentionally absent.
  */
+
+/** The largest side of the box around some positions (three a vertex), 0 for none. */
+function largestSide(p: ArrayLike<number>): number {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const x = p[i + k];
+      if (!Number.isFinite(x)) continue;
+      if (x < lo[k]) lo[k] = x;
+      if (x > hi[k]) hi[k] = x;
+    }
+  }
+  const d = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+  return Number.isFinite(d) ? d : 0;
+}
 
 /** Reverse every face's winding in place: [a b c d] -> [a d c b], [a b c] -> [a c b]. */
 function reverseWinding(faces: Uint32Array): void {
@@ -165,30 +183,43 @@ export type PrimitiveKind = 'sphere' | 'cube' | 'cylinder' | 'torus' | 'cone' | 
 
 /**
  * How big a primitive is made in a scene on real units (owner decision),
- * in metres, and which way it is measured: its height, or its largest
+ * in centimetres, and which way it is measured: its height, or its largest
  * side (a torus across, the plane, which stands upright, along its side).
- * The Create menu prints these.
+ * The Create menu prints these. The size is in the vertices: a new
+ * primitive's matrix is a translation alone (scale 1, no rotation).
  */
 export const PRIMITIVE_SIZES: Record<PrimitiveKind, { size: number; along: 'height' | 'largest' }> = {
-  sphere: { size: 0.25, along: 'height' },
-  cube: { size: 0.25, along: 'height' },
-  cylinder: { size: 0.25, along: 'height' },
-  torus: { size: 0.25, along: 'largest' },
-  cone: { size: 0.25, along: 'height' },
-  capsule: { size: 0.25, along: 'height' },
-  plane: { size: 0.5, along: 'largest' },
+  sphere: { size: 25, along: 'height' },
+  cube: { size: 25, along: 'height' },
+  cylinder: { size: 25, along: 'height' },
+  torus: { size: 25, along: 'largest' },
+  cone: { size: 25, along: 'height' },
+  capsule: { size: 25, along: 'height' },
+  plane: { size: 50, along: 'largest' },
 };
 
 /**
- * What File > Import OBJ fits an OBJ to in a scene on real units: its
- * largest side the default sphere's 25 cm. An OBJ says nothing of its
- * units (a millimetre file and a metre one look alike), and an import into
- * a scene is a base mesh to work on, not a measured part, as it always
- * was. An OBJ opened from the gallery is not fitted: it opens as a scene
- * of its own, unmarked at the file's own coordinates, and Set scale asks
- * for its height (openParsedOBJ).
+ * What File > Import OBJ fits an OBJ to in a scene on real units, when it
+ * is not taken at its own size: its largest side the default sphere's
+ * 25 cm. An OBJ says nothing of its units, but one unit here is a
+ * centimetre, Maya's own, so a file whose largest side reads as 1 cm to
+ * 10 m (IMPORT_KEEP) is taken as it is, at its own coordinates; one past
+ * either end (a metre file of a small part, a millimetre file of a large
+ * one) is fitted, and the import says so. An OBJ opened from the gallery
+ * is never fitted: it opens as a scene of its own, unmarked at the file's
+ * own coordinates, and Set scale asks for its height (openParsedOBJ).
  */
-const IMPORT_SIZE = 0.25;
+export const IMPORT_SIZE = 25;
+/** The largest sides, in centimetres, an import into a scene on real units keeps as the file has them. */
+export const IMPORT_KEEP = { min: 1, max: 1000 } as const;
+
+/** How File > Import OBJ placed a file (importOBJ): at its own size, or fitted to IMPORT_SIZE from `largest`. */
+export interface ImportFit {
+  mesh: Multimesh;
+  fitted: boolean;
+  /** The file's largest side, in its own units. */
+  largest: number;
+}
 
 /** Where an object's OBJ numbering stands (SculptSession.originalNumbering). */
 export type OriginalNumbering = 'none' | 'valid' | 'stale';
@@ -219,7 +250,13 @@ export class SculptSession {
    * new object, so an object added to an old scene is sized as that
    * scene's others were.
    */
-  private units: Units | null = 'm';
+  private units: Units | null = UNITS;
+  /**
+   * The marker the scene last opened had: 'm' for one converted from
+   * metres as it opened (replaceScene), so the mount converts what rides
+   * beside the record the same way (the look kept apart from it).
+   */
+  private openedFrom: 'm' | Units | null = UNITS;
   /** The Set scale banner was dismissed for this scene (SavedScene.scaleDismissed). */
   private scaleDismissed = false;
   /** Fired when the scene's units change: New, Open, a restore, Set scale. */
@@ -1002,25 +1039,31 @@ export class SculptSession {
    * order, welded by position, and its quads (objSource.ts), with the
    * record that writes it back (exportOriginalOBJ). The Z-up turn is the
    * record's too. The object sculpts, persists and undoes like anything
-   * else. NOTE it is resized - to IMPORT_SIZE across, standing on the
-   * floor, on real units, or to the old canonical size in a scene from
-   * before them - by its matrix, since an OBJ does not say what its units
-   * are, and an import is a base mesh to work on, not a measured part.
-   * (The gallery's Import OBJ is not resized: openParsedOBJ.)
+   * else. Its size, on real units: the file's own, at its own coordinates,
+   * when its largest side is 1 cm to 10 m read as centimetres
+   * (IMPORT_KEEP), and otherwise fitted to IMPORT_SIZE across, standing on
+   * the floor, baked into the vertices either way (`fitted` says which);
+   * in a scene from before real units, the old canonical size by its
+   * matrix. (The gallery's Import OBJ is never resized: openParsedOBJ.)
    */
-  async importOBJ(text: string, zUp: boolean, name: string): Promise<Multimesh> {
+  async importOBJ(text: string, zUp: boolean, name: string): Promise<ImportFit> {
     // Lazily: a static sculpt-chunk -> admin-chunk import gave the bundle a
     // circular init order ("cannot access before initialization" at boot).
     const { parseObjPolygons } = await import('../../admin/glb');
-    return this.addParsedOBJ(parseObjPolygons(text), zUp, name);
+    const parsed = parseObjPolygons(text);
+    const largest = largestSide(parsed.positions);
+    const keep = !!this.units && largest >= IMPORT_KEEP.min && largest <= IMPORT_KEEP.max;
+    const mesh = this.addParsedOBJ(parsed, zUp, name, keep ? null : { size: IMPORT_SIZE, along: 'largest' });
+    return { mesh, fitted: !keep, largest };
   }
 
   /**
    * An OBJ already parsed (glb.ts parseObjPolygons, which keeps only sound
-   * faces) as a new sculptable object, sized as every import into a scene
-   * is (File > Import OBJ); a null `fit` keeps the file's own coordinates,
-   * as the gallery's Import OBJ does (openParsedOBJ), which parses at boot
-   * to know the file is good before it replaces anything.
+   * faces) as a new sculptable object, fitted to `fit` (File > Import OBJ
+   * past IMPORT_KEEP); a null `fit` keeps the file's own coordinates with
+   * an identity matrix, as the gallery's Import OBJ does (openParsedOBJ),
+   * which parses at boot to know the file is good before it replaces
+   * anything.
    */
   addParsedOBJ(
     parsed: ParsedObjPolygons,
@@ -1042,12 +1085,14 @@ export class SculptSession {
     Mesh.OPTIMIZE = true;
     if (base.getNbVertices() !== built.vertices.length / 3) throw new Error('No geometry found in that OBJ file.');
     const mesh = new Multimesh(base);
+    if (built.source) this.sources.set(mesh as unknown as SculptMesh, { source: built.source, level0: mesh._meshes[0] });
     if (!this.units && fit) mesh.normalizeSize();
     // Every level kept, level 0 the file's: the clamp would drop the
     // lowest levels of a small file, and with them its numbering.
     this.subdivideClamp(mesh, false, 20000, true);
+    // The fit goes into the vertices, and into the record with them, so
+    // Export OBJ still writes the file's own space (standOnFloor).
     if (this.units && fit) this.standOnFloor(mesh, fit);
-    if (built.source) this.sources.set(mesh as unknown as SculptMesh, { source: built.source, level0: mesh._meshes[0] });
     this.meshNames.set(mesh, this.uniqueMeshName(name));
     this.addNewMesh(mesh);
     return mesh;
@@ -1111,7 +1156,9 @@ export class SculptSession {
     if (status !== 'valid' || !rec || !mesh) throw new Error('This object was not imported from an OBJ file, so it has no original numbering. Use Export OBJ instead.');
     const mul = mesh as unknown as Multimesh;
     const t0 = performance.now();
-    const level0 = level0ForExport(mul._meshes, mul._sel, rec.source.base);
+    // Level 0 now, in the space the import built it in (a scale folded
+    // into the vertices since is taken back out: objSource.ts `bake`).
+    const level0 = unbakeLevel0(rec.source, level0ForExport(mul._meshes, mul._sel, bakedBase(rec.source)));
     const text = writeOriginalObj(rec.source, level0);
     perfLog.record('obj export', performance.now() - t0, 'original numbering');
     return text;
@@ -1219,11 +1266,13 @@ export class SculptSession {
    * eyes, each pivoting on its own centre, all in ONE undo step. One scale
    * for all of them - normalizeSize per part would blow each eye up to
    * body size - and the parts' offsets carried on their matrices, so the
-   * eyes sit in the sockets. In a scene on real units that scale is 1: the
-   * files are in metres (tools/export-basemeshes.py), so a figure comes at
-   * its own height, standing on the floor. In one from before, it is the
-   * one that puts the whole figure's bound at the old canonical size the
-   * primitives there have, centred, as it always was.
+   * eyes sit in the sockets. In a scene on real units the files, which are
+   * in metres (tools/export-basemeshes.py), are taken into the vertices
+   * times 100, so a figure comes at its own height in centimetres with a
+   * matrix that is a translation alone, standing on the floor. In one from
+   * before, it is the matrix scale that puts the whole figure's bound at
+   * the old canonical size the primitives there have, centred, as it
+   * always was.
    *
    * The quads come straight through: the multires stack subdivides them the
    * way Blender's Multires would. The figure gets the primitives' ~20k-face
@@ -1245,24 +1294,29 @@ export class SculptSession {
       }
     }
     const radius = 0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    // On real units: the file's metres in the vertices as centimetres
+    // (`bake`), the matrix unscaled. Before them: the old fit, by matrix.
+    const bake = this.units ? CM_PER_M : 1;
     const scale = this.units ? 1 : Utils.SCALE / (2 * (radius || 1));
     // On real units the bound's floor goes to the floor, and its middle
     // over the origin, where a primitive stands; the file centres it there.
     const lift = this.units
-      ? [-(lo[0] + hi[0]) / 2, this.floorHeight() - lo[1], -(lo[2] + hi[2]) / 2]
+      ? [(-(lo[0] + hi[0]) / 2) * bake, this.floorHeight() - lo[1] * bake, (-(lo[2] + hi[2]) / 2) * bake]
       : [0, 0, 0];
     const meshes: Multimesh[] = [];
     file.parts.forEach((part, k) => {
       const base = new MeshStatic(null);
-      base.setVertices(new Float32Array(part.positions));
+      const positions = new Float32Array(part.positions);
+      if (bake !== 1) for (let i = 0; i < positions.length; i++) positions[i] *= bake;
+      base.setVertices(positions);
       base.setFaces(new Uint32Array(part.faces));
       base.init();
       const mesh = new Multimesh(base);
       const m = mesh.getMatrix() as unknown as mat4;
       mat4.fromTranslation(m, [
-        part.offset[0] * scale + lift[0],
-        part.offset[1] * scale + lift[1],
-        part.offset[2] * scale + lift[2],
+        part.offset[0] * scale * bake + lift[0],
+        part.offset[1] * scale * bake + lift[1],
+        part.offset[2] * scale * bake + lift[2],
       ]);
       mat4.scale(m, m, [scale, scale, scale]);
       this.subdivideClamp(mesh, info.smooth === false, even ? 1000 : k === 0 ? 20000 : 2000);
@@ -1367,10 +1421,14 @@ export class SculptSession {
 
   /**
    * Size a new object and stand it on the floor (a scene on real units):
-   * scaled so its height - or its largest side - is `fit.size` metres, its
-   * lowest point on the floor and its middle over the origin. Measured on
-   * the finished surface, after the subdivision, since smoothing a cube
-   * into a sphere shrinks it.
+   * its height - or its largest side - made `fit.size` centimetres, its
+   * lowest point on the floor and its middle over the origin. The size
+   * and the centring go into the vertices of every level (bakeScale.ts),
+   * and the matrix is the lift alone, so the object's pivot is its centre
+   * and its channel box reads Scale 1 (owner decision). Measured on the
+   * finished surface, after the subdivision, since smoothing a cube into
+   * a sphere shrinks it. An OBJ's record takes the same map, so its
+   * export still writes the file's own space.
    */
   private standOnFloor(mesh: Multimesh, fit: { size: number; along: 'height' | 'largest' }): void {
     const v = mesh.getVertices();
@@ -1385,12 +1443,37 @@ export class SculptSession {
     }
     const extent = fit.along === 'height' ? hi[1] - lo[1] : Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
     const s = fit.size / (extent > 0 ? extent : 1);
-    const m = mesh.getMatrix() as unknown as mat4;
-    mat4.fromTranslation(m, [(-s * (lo[0] + hi[0])) / 2, this.floorHeight() - s * lo[1], (-s * (lo[2] + hi[2])) / 2]);
-    mat4.scale(m, m, [s, s, s]);
+    const a = mat4.fromScaling(mat4.create(), [s, s, s]);
+    a[12] = (-s * (lo[0] + hi[0])) / 2;
+    a[13] = (-s * (lo[1] + hi[1])) / 2;
+    a[14] = (-s * (lo[2] + hi[2])) / 2;
+    this.mapLocal(mesh as unknown as SculptMesh, a);
+    mat4.fromTranslation(mesh.getMatrix() as unknown as mat4, [0, this.floorHeight() + (s * (hi[1] - lo[1])) / 2, 0]);
   }
 
-  /** The scene's units: 'm', or null for a scene from before real units. */
+  /** Map an object's every level by `a` in its local space, an OBJ record with it (bakeScale.ts). */
+  private mapLocal(mesh: SculptMesh, a: mat4): void {
+    transformLocal(mesh, a);
+    const rec = this.sources.get(mesh);
+    if (rec) composeBake(rec.source, a);
+  }
+
+  /**
+   * Fold an object's matrix scale into its vertices (owner decision: Set
+   * scale, opening a scene saved in metres): rotation and translation
+   * stay, the world look is the same, and an OBJ record takes the map so
+   * its export still writes the file's own space. False when there was no
+   * scale to fold. The caller refreshes the display and the history.
+   */
+  bakeMeshScale(mesh: SculptMesh): boolean {
+    const a = bakeScale(mesh);
+    if (!a) return false;
+    const rec = this.sources.get(mesh);
+    if (rec) composeBake(rec.source, a);
+    return true;
+  }
+
+  /** The scene's units: 'cm', or null for a scene from before real units. */
   getUnits(): Units | null {
     return this.units;
   }
@@ -1404,6 +1487,11 @@ export class SculptSession {
     this.units = units;
     if (units) this.scaleDismissed = false;
     this.onUnitsChange?.();
+  }
+
+  /** The marker the scene last opened carried: 'm' when it was converted from metres as it opened. */
+  getOpenedFrom(): 'm' | Units | null {
+    return this.openedFrom;
   }
 
   /** Whether the Set scale banner was dismissed for this scene. */
@@ -1783,7 +1871,8 @@ export class SculptSession {
     this.mesh = null;
     // Every new scene is on real units from the start (owner decision).
     const was = this.units;
-    this.units = 'm';
+    this.units = UNITS;
+    this.openedFrom = UNITS;
     this.scaleDismissed = false;
     const mesh = this.addSphere();
     this.clearHistory();
@@ -1813,12 +1902,23 @@ export class SculptSession {
     this.selectMeshes.length = 0;
     this.mesh = null;
     try {
+      // A record saved in metres comes to centimetres first (its matrices,
+      // its look, its brushes), in place, so whatever reads it after this
+      // reads centimetres; its objects' scale is folded into their
+      // vertices once they stand (owner decision).
+      const from = saved.units ?? null;
+      if (from === 'm') sceneOnCentimetres(saved);
       const active = this.restoreScene(saved);
+      if (from === 'm') {
+        for (const mesh of this.meshes) this.bakeMeshScale(mesh);
+        this.onActiveMeshChange?.();
+      }
       this.clearHistory();
       // The scene's own scale: a record without the marker is from before
       // real units, and stays as it was (owner decision).
       const was = this.units;
-      this.units = saved.units === 'm' ? 'm' : null;
+      this.units = saved.units ? UNITS : null;
+      this.openedFrom = from;
       this.scaleDismissed = !this.units && saved.scaleDismissed === true;
       if (was !== this.units) this.onUnitsChange?.();
       return active;

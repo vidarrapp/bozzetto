@@ -377,6 +377,10 @@ export function retargetGeometry(
     pos.setXYZ(i, pos.getX(i) * scale, pos.getY(i) * scale, pos.getZ(i) * scale);
   }
   pos.needsUpdate = true;
+  // A clone keeps the bounds the file's geometry had: they were in metres,
+  // and stale ones would mis-measure and mis-cull the figure.
+  out.boundingBox = null;
+  out.boundingSphere = null;
   const skin = out.getAttribute('skinIndex');
   if (skin) {
     for (let i = 0; i < skin.count; i++) {

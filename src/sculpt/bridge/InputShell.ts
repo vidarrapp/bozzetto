@@ -527,7 +527,7 @@ export class InputShell {
   brushSizeDisplay(): { unit: string; scale: number } {
     const ws = this.worldScale;
     if (!ws?.isEnabled()) return { unit: ' px', scale: 1 };
-    return this.session.getUnits() ? { unit: ' cm', scale: ws.unit() * 100 } : { unit: '', scale: 1 };
+    return this.session.getUnits() ? { unit: ' cm', scale: ws.unit() } : { unit: '', scale: 1 };
   }
 
   /**

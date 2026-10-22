@@ -338,9 +338,16 @@ export const suites = {
     await handoff(page, text);
     await page.goto(`${base}/?sculpt=1&obj=1`, { waitUntil: 'domcontentloaded' });
     await booted(page);
+    const unscaled = await exportOriginal();
     await page.evaluate(() => window.__sculpt.setScale(window.__sculpt.session.getMesh(), 180));
-    t.eq(await page.evaluate(() => window.__sculpt.session.getUnits()), 'm', 'Set scale marks the scene');
+    t.eq(await page.evaluate(() => window.__sculpt.session.getUnits()), 'cm', 'Set scale marks the scene');
+    const folded = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh().getMatrix();
+      return Math.hypot(m[0], m[1], m[2]);
+    });
+    t.near(folded, 1, 1e-6, 'and folds the scale into the vertices (the matrix at scale 1)');
     same(await exportOriginal(), 'after Set scale');
+    t.ok((await exportOriginal()).text === unscaled.text, 'the export after Set scale is the one before it, character for character');
 
     // --- a .bozz save and reopen, and the autosave ---------------------------------
     const bytes = await page.evaluate(async () => [...new Uint8Array(await window.__sculpt.file.pack())]);
@@ -351,6 +358,25 @@ export const suites = {
     await page.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
     await booted(page);
     same(await exportOriginal(), 'the autosave reloaded');
+
+    // A scene saved while a unit was a metre: its object's matrix scale
+    // (as Set scale left it then) is folded into the vertices as it opens,
+    // and the export is still the file's, character for character.
+    await handoff(page, text);
+    await page.goto(`${base}/?sculpt=1&obj=1`, { waitUntil: 'domcontentloaded' });
+    await booted(page);
+    const asImported = await exportOriginal();
+    const metres = await page.evaluate(async () => {
+      const { file, session } = window.__sculpt;
+      const rec = await file.unpack(await file.pack());
+      rec.units = 'm';
+      for (const m of rec.meshes) for (let c = 0; c < 4; c++) for (let r = 0; r < 3; r++) m.matrix[c * 4 + r] *= 0.0137;
+      await file.open(await file.packRecord(rec));
+      const mat = session.getMesh().getMatrix();
+      return { units: session.getUnits(), scale: Math.hypot(mat[0], mat[1], mat[2]), status: window.__sculpt.fileActions.originalStatus() };
+    });
+    t.ok(metres.units === 'cm' && Math.abs(metres.scale - 1) < 1e-6 && metres.status === 'valid', `a .bozz in metres opens on centimetres, its scale folded in, the record kept (${JSON.stringify(metres)})`);
+    t.ok((await exportOriginal()).text === asImported.text, 'and its export is the file, character for character');
 
     // An older file, written before the record: it opens as it always did.
     const older = (() => {

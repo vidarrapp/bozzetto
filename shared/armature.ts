@@ -15,13 +15,14 @@
  *     "symmetry": false,
  *     "look": { ...the viewer's look },
  *     "savedAt": 1790000000000,
- *     "units": "m"
+ *     "units": "cm"
  *   }
  *
  * `state` is Armature.serialize() less its `preset`, which is `figure`.
- * `units` is 'm' when the positions and the camera are in metres, as every
- * file written since real units is (src/viewer/units.ts); a file without
- * it is on the old 50 units a metre, which the app reads through.
+ * `units` is 'cm' when the positions and the camera are in centimetres, as
+ * every file written now is (src/viewer/units.ts); 'm' in one written
+ * while a unit was a metre, which the app multiplies by 100; and a file
+ * without it is on the old 50 units a metre, which the app reads through.
  * The .armature file a guest downloads is another thing: the autosave
  * record as text (src/armature/file.ts), kept as it was.
  */
@@ -62,7 +63,7 @@ export class ArmatureFileError extends Error {}
  * The file's text, parsed and held to the format's frame: one JSON object,
  * no `__proto__` (nor `constructor`, `prototype`) anywhere in it, no deeper
  * than MAX_DEPTH, `v` 1, a figure named by a string, and no units marker
- * but 'm'. Throws an ArmatureFileError saying what is wrong; whether the
+ * but 'cm' or 'm'. Throws an ArmatureFileError saying what is wrong; whether the
  * figure is one there is, and every field's own shape, are the caller's
  * (the server refuses an unknown figure; the app stands the default in).
  */
@@ -85,7 +86,7 @@ export function parseArmatureProject(text: string): Record<string, unknown> {
   const rec = value as Record<string, unknown>;
   if (rec.v !== 1) throw new ArmatureFileError('This armature file is not version 1');
   if (typeof rec.figure !== 'string' || !rec.figure) throw new ArmatureFileError('This armature file names no figure');
-  if (rec.units !== undefined && rec.units !== 'm') throw new ArmatureFileError('This armature file is in units Bozzetto does not read');
+  if (rec.units !== undefined && rec.units !== 'cm' && rec.units !== 'm') throw new ArmatureFileError('This armature file is in units Bozzetto does not read');
   return rec;
 }
 

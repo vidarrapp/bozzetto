@@ -559,19 +559,20 @@ function validStages(v: unknown): ProjectData['stages'] {
 }
 
 /**
- * The units marker a patch sets (src/viewer/units.ts): 'm', or null to
- * take it away again (a project republished from a scene from before real
- * units). Anything else is refused rather than stored, since the viewer
- * reads the one value and would treat any other as none.
+ * The units marker a patch sets (src/viewer/units.ts): 'cm', what every
+ * publish writes now; 'm', from a client of the weeks a unit was a metre;
+ * or null to take it away again (a project republished from a scene from
+ * before real units). Anything else is refused rather than stored, since
+ * the viewer reads those values and would treat any other as none.
  */
-function validUnits(v: unknown): 'm' | undefined {
+function validUnits(v: unknown): 'cm' | 'm' | undefined {
   if (v === null || v === undefined) return undefined;
-  if (v === 'm') return 'm';
-  throw new HttpError("units: expected 'm' or null");
+  if (v === 'cm' || v === 'm') return v;
+  throw new HttpError("units: expected 'cm', 'm' or null");
 }
 
 /** The marker as the stored data carries it: there when set, absent otherwise. */
-const unitsOf = (u: 'm' | undefined): { units?: 'm' } => (u ? { units: u } : {});
+const unitsOf = (u: 'cm' | 'm' | undefined): { units?: 'cm' | 'm' } => (u ? { units: u } : {});
 
 /** What a patch makes of a row: its data, title, mode and fps, each validated. */
 export interface Patched {

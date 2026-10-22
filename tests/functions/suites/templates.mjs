@@ -134,22 +134,25 @@ export async function run({ checks, off, compileShared, repo }) {
   // --- the units marker (src/viewer/units.ts) --------------------------------------
   t = checks('functions: a manifest carries its units');
   t.eq(reel?.units, null, 'a project published before real units has none');
-  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'm', presentation: { ground: 'floor', floorOffset: 0.05 } } });
+  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'cm', presentation: { ground: 'floor', floorOffset: 5 } } });
   let m = (await call('GET', '/api/projects/tm-reel')).json;
-  t.ok(r.status === 200 && m?.units === 'm' && m?.presentation?.floorOffset === 0.05, `a patch marks it in metres, its floor offset with the presentation (${r.status}, ${m?.units}, ${m?.presentation?.floorOffset})`);
-  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'cm' } });
+  t.ok(r.status === 200 && m?.units === 'cm' && m?.presentation?.floorOffset === 5, `a patch marks it in centimetres, its floor offset with the presentation (${r.status}, ${m?.units}, ${m?.presentation?.floorOffset})`);
+  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'm' } });
   m = (await call('GET', '/api/projects/tm-reel')).json;
-  t.ok(r.status === 400 && /units/.test(r.json?.error ?? r.text ?? '') && m?.units === 'm', `a marker that is not metres is refused, and the one there stays (${r.status} ${r.json?.error ?? ''})`);
+  t.ok(r.status === 200 && m?.units === 'm', `a patch from a client of the metre weeks marks it in metres (${r.status}, ${m?.units})`);
+  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'ft' } });
+  m = (await call('GET', '/api/projects/tm-reel')).json;
+  t.ok(r.status === 400 && /units/.test(r.json?.error ?? r.text ?? '') && m?.units === 'm', `a marker that is neither is refused, and the one there stays (${r.status} ${r.json?.error ?? ''})`);
   r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: null } });
   m = (await call('GET', '/api/projects/tm-reel')).json;
   t.ok(r.status === 200 && m?.units === null, `null takes it away again (${r.status}, ${m?.units})`);
-  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'm' } });
+  r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { units: 'cm' } });
   t.report();
 
   t = checks('functions: manifests name the files host, after a patch');
   r = await owner('PUT', '/admin/api/projects/tm-reel', { json: { title: 'A reel' } });
   m = (await call('GET', '/api/projects/tm-reel')).json;
-  t.eq(m?.units, 'm', 'a patch that says nothing of units keeps them');
+  t.eq(m?.units, 'cm', 'a patch that says nothing of units keeps them');
   t.ok(r.json?.media === base && r.json?.updated_at > v, `an owner tool's answer names the base as well, at the new version (${r.json?.media})`);
   const v2 = r.json?.updated_at;
   t.report();

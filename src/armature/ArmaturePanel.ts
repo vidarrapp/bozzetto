@@ -82,9 +82,9 @@ export class ArmaturePanel extends SidePanel {
       -100,
       100,
       0.5,
-      viewer.getFloorOffset() * 100,
-      (cm) => viewer.setFloorOffset(cm / 100),
-      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+      viewer.getFloorOffset(),
+      (cm) => viewer.setFloorOffset(cm),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT, max: FLOOR_OFFSET_LIMIT } },
     );
     floorRow.title = 'Raise or lower the floor the figure stands on';
     this.floorInput = floorRow.querySelector('input') as HTMLInputElement;
@@ -199,7 +199,7 @@ export class ArmaturePanel extends SidePanel {
   /** The height line and the Floor offset, from the figure and the look as they stand. */
   private refreshFigureFacts(): void {
     this.heightEl.textContent = `Height ${formatLength(this.figure().figureHeight())}`;
-    const cm = this.viewer.getFloorOffset() * 100;
+    const cm = this.viewer.getFloorOffset();
     if (Math.abs(sliderValue(this.floorInput) - cm) > 1e-6) setSliderValue(this.floorInput, cm);
   }
 

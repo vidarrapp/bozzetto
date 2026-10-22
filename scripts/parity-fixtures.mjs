@@ -292,7 +292,7 @@ const MESHES = {
   },
   sphere: {
     construction:
-      "SculptSession.addSphere() (the app's default sphere: the quad cube, Catmull-Clark, on real units it stands 0.25 m on the floor), then deleteHighestLevel() once, leaving the 6144-quad level selected.",
+      "SculptSession.addSphere() (the app's default sphere: the quad cube, Catmull-Clark, on real units 25 cm tall in its vertices (one unit a centimetre), centred on its origin, its matrix the lift onto the floor), then deleteHighestLevel() once, leaving the 6144-quad level selected.",
     build(E, session) {
       const mesh = session.addSphere();
       session.deleteHighestLevel();
@@ -311,13 +311,15 @@ const MESHES = {
   },
   plane: {
     construction:
-      "SculptSession.addPrimitive('plane') (three's PlaneGeometry(1.6, 1.6, 24, 24) welded into triangles, upright facing +z, on real units 0.5 m on the floor), then deleteHighestLevel() three times, leaving level 0: all triangles, with a boundary.",
+      "SculptSession.addPrimitive('plane') (three's PlaneGeometry(1.6, 1.6, 24, 24) welded into triangles, upright facing +z, on real units 50 cm across in its vertices (one unit a centimetre), centred on its origin, its matrix the lift onto the floor), then deleteHighestLevel() three times, leaving level 0: all triangles, with a boundary.",
     build(E, session) {
       const mesh = session.addPrimitive('plane');
       while (session.deleteHighestLevel());
       return mesh;
     },
-    // From inside the plane to its right boundary (x = 0.8 local).
+    // From inside the plane to its right boundary, on a plane 1.6 across
+    // (three's own size): scaled to the plane as built (pathSpan).
+    pathSpan: 1.6,
     path: [
       [0.1, -0.05, 0],
       [0.25, 0.02, 0],
@@ -543,6 +545,10 @@ async function record(E, meshKey, brush, shared) {
 
     // The stroke path in local space, then on screen.
     let localPath = spec.path;
+    if (spec.pathSpan) {
+      const k = (hi[0] - lo[0]) / spec.pathSpan;
+      localPath = spec.path.map((p) => p.map((v) => v * k));
+    }
     if (spec.sphericalPath) {
       const c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
       const rho = (hi[0] - lo[0]) / 2;

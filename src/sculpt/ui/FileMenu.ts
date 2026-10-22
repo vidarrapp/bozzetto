@@ -240,7 +240,8 @@ export class FileMenu {
   async importFile(file: File): Promise<void> {
     try {
       const name = file.name.replace(/\.obj$/i, '').trim() || 'Imported';
-      await this.actions.importObj(await file.text(), this.zUp, name);
+      const note = await this.actions.importObj(await file.text(), this.zUp, name);
+      if (note) statusToast('').done(note);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }

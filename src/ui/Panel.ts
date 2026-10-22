@@ -1029,9 +1029,9 @@ export class Panel {
       -100,
       100,
       0.5,
-      this.viewer.getFloorOffset() * 100,
-      (cm) => this.viewer.setFloorOffset(cm / 100),
-      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+      this.viewer.getFloorOffset(),
+      (cm) => this.viewer.setFloorOffset(cm),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT, max: FLOOR_OFFSET_LIMIT } },
     );
     floorRow.classList.add('panel__floor-offset');
     if (floorHeld && !this.sculpting) sec.appendChild(floorRow);

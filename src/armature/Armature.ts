@@ -28,12 +28,15 @@ export interface ImportedFigure {
 }
 
 /**
- * Metres to scene units: 1, since a scene unit is a metre (owner decision,
- * src/viewer/units.ts), so a mannequin stands at its file's own height.
- * It was 50 - the old sculpt scale, its sphere about 48 across - and a
- * record saved then is read through armature/units.ts.
+ * Metres to scene units: 100, since a scene unit is a centimetre (owner
+ * decision, src/viewer/units.ts). The rigs and the mannequin files are in
+ * metres, and every length given here in metres is multiplied by this
+ * (Armature.len), the mannequin's vertices with them, so a figure stands
+ * at its file's own height in centimetres. It was 50 - the old sculpt
+ * scale, its sphere about 48 across - and then 1, while a unit was a
+ * metre; a record saved on either is read through armature/units.ts.
  */
-export const SCENE_SCALE = 1;
+export const SCENE_SCALE = 100;
 
 export interface ArmatureState {
   v: 1;
@@ -157,7 +160,7 @@ export class Armature {
    */
   private readonly carried = new Map<string, Matrix3>();
 
-  /** Metres to scene units for this figure (1: a scene unit is a metre). */
+  /** Metres to scene units for this figure (100: a scene unit is a centimetre). */
   readonly scale: number;
 
   /** A length given in metres, in this figure's scene units. */
@@ -1416,15 +1419,15 @@ export class Armature {
   }
 
   /**
-   * How tall the figure stands, in metres: its rest shape's height, at its
-   * file's own size (a mannequin's 1.694 m is 169.4 cm). What the
+   * How tall the figure stands, in centimetres: its rest shape's height,
+   * at its file's own size (a mannequin's 1.694 m is 169.4 cm). What the
    * Armature panel prints; posing and proportions leave it be.
    */
   figureHeight(): number {
     const g = this.mesh.geometry;
     if (!g.boundingBox) g.computeBoundingBox();
     const b = g.boundingBox!;
-    return b.isEmpty() ? 0 : (b.max.y - b.min.y) / this.scale;
+    return b.isEmpty() ? 0 : ((b.max.y - b.min.y) / this.scale) * SCENE_SCALE;
   }
 
   /** World-space bounds of the posed figure. */

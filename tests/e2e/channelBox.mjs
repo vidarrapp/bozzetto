@@ -44,7 +44,7 @@ const undoDepth = (page) =>
   });
 
 /**
- * A column-major TRS matrix: t in metres, a rotation of `deg` about Z, and
+ * A column-major TRS matrix: t in centimetres, a rotation of `deg` about Z, and
  * scale s, as the gizmo leaves one.
  */
 const trsZ = (t, deg, s) => {
@@ -113,26 +113,15 @@ export const suites = {
       'Translate X|cm, Translate Y|cm, Translate Z|cm, Rotate X|°, Rotate Y|°, Rotate Z|°, Scale X|, Scale Y|, Scale Z|',
       'nine rows, Translate, Rotate, Scale, in cm and degrees on real units',
     );
-    // A fresh sphere: centred on X and Z, standing on the floor (its
-    // origin is its centre, half its 25 cm up), unturned, and at one even
-    // scale. The scale is not 1: the engine keeps every mesh at its own
-    // canonical size and sizes it to real units with the matrix, so a
-    // 25 cm sphere's matrix scales by about 0.3 (SculptSession's fit).
+    // A fresh sphere (owner decisions): built at its real 25 cm in its
+    // vertices, so its matrix is the lift alone: centred on X and Z, its
+    // origin its centre, half its 25 cm up, unturned, at scale 1.
     const fresh = await shown(page);
-    const half = await page.evaluate(() => {
-      const { session, worldBox } = window.__sculpt;
-      const b = worldBox(session.getMesh());
-      return (b.max[1] - b.min[1]) * 50;
-    });
-    t.ok(
-      fresh?.[0] === '0' && fresh[2] === '0' && Math.abs(Number(fresh[1]) - half) <= 0.1 &&
-        fresh.slice(3, 6).join(' ') === '0 0 0' && fresh[6] === fresh[7] && fresh[7] === fresh[8] && Number(fresh[6]) > 0,
-      `a fresh sphere reads 0 ${half.toFixed(1)} 0, 0 0 0, one even scale (${fresh?.join(' ')})`,
-    );
+    t.eq(fresh?.join(' '), '0 12.5 0 0 0 0 1 1 1', 'a fresh sphere reads Translate 0 12.5 0, Rotate 0 0 0, Scale 1 1 1');
 
     // As a gizmo drag leaves a matrix: moved, turned about Z, scaled
     // unevenly. The fields follow on their own within a frame or two.
-    await setMatrix(page, 'Sphere', trsZ([0.1, 0.2, -0.05], 30, [2, 1, 0.5]));
+    await setMatrix(page, 'Sphere', trsZ([10, 20, -5], 30, [2, 1, 0.5]));
     await frames(page, 3);
     t.eq((await shown(page))?.join(' '), '10 20 -5 0 0 30 2 1 0.5', 'a move, a turn and an uneven scale show live');
 
@@ -142,7 +131,7 @@ export const suites = {
     const depth = await undoDepth(page);
     await type(page, 'tx', '12.5');
     const typed = await matrixOf(page);
-    t.ok(Math.abs(typed[12] - 0.125) < 1e-5, `Translate X 12.5 sets the matrix to 0.125 m (${typed[12]})`);
+    t.ok(Math.abs(typed[12] - 12.5) < 1e-5, `Translate X 12.5 sets the matrix to 12.5 units, a unit a centimetre (${typed[12]})`);
     t.ok(typed.every((v, i) => i === 12 || Math.abs(v - before[i]) < 1e-4), 'and nothing else in it');
     t.eq(await undoDepth(page), depth + 1, 'one undo step');
     t.eq(await page.evaluate(() => document.activeElement?.classList.contains('channel-box__value')), false, 'Enter commits and lets go of the field');
@@ -193,8 +182,8 @@ export const suites = {
     // Several objects: a value they share shows, one that differs is blank;
     // a typed value is set on all, each keeping its own other channels.
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
-    await setMatrix(page, 'Sphere', trsZ([0.1, 0.05, 0], 0, [1, 1, 1]));
-    await setMatrix(page, 'Cube', trsZ([-0.2, 0.05, 0.3], 0, [1, 1, 1]));
+    await setMatrix(page, 'Sphere', trsZ([10, 5, 0], 0, [1, 1, 1]));
+    await setMatrix(page, 'Cube', trsZ([-20, 5, 30], 0, [1, 1, 1]));
     await page.evaluate(() => {
       const { session } = window.__sculpt;
       session.selectSet(['Sphere', 'Cube'].map((n) => session.getMeshes().find((m) => session.getMeshName(m) === n)));
@@ -206,12 +195,12 @@ export const suites = {
     const dm = await undoDepth(page);
     await type(page, 'tx', '7');
     const [sph, cube] = [await matrixOf(page, 'Sphere'), await matrixOf(page, 'Cube')];
-    t.ok(Math.abs(sph[12] - 0.07) < 1e-5 && Math.abs(cube[12] - 0.07) < 1e-5, 'Translate X 7 lands on both');
-    t.ok(Math.abs(sph[14]) < 1e-5 && Math.abs(cube[14] - 0.3) < 1e-5, 'each keeps its own Z');
+    t.ok(Math.abs(sph[12] - 7) < 1e-5 && Math.abs(cube[12] - 7) < 1e-5, 'Translate X 7 lands on both');
+    t.ok(Math.abs(sph[14]) < 1e-5 && Math.abs(cube[14] - 30) < 1e-5, 'each keeps its own Z');
     t.eq(await undoDepth(page), dm + 1, 'one undo step for both');
     await page.evaluate(() => window.__sculpt.session.undo());
     const [sph2, cube2] = [await matrixOf(page, 'Sphere'), await matrixOf(page, 'Cube')];
-    t.ok(Math.abs(sph2[12] - 0.1) < 1e-5 && Math.abs(cube2[12] + 0.2) < 1e-5, 'which undo takes back from both');
+    t.ok(Math.abs(sph2[12] - 10) < 1e-5 && Math.abs(cube2[12] + 20) < 1e-5, 'which undo takes back from both');
 
     // Hidden with the chrome (Tab's), and in Present mode, like the panel.
     const visible = () =>
@@ -233,5 +222,35 @@ export const suites = {
     await frames(page, 3);
     t.ok(!presenting, 'hidden in Present mode');
     t.ok(await page.evaluate(() => window.__sculpt.input.uiMode() === 'select'), 'and the Select tool, box and all, back after');
+
+    // Set scale folds the scale into the vertices: the box reads Scale 1
+    // and the object's real centimetres after it.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const sphere = session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere');
+      session.setUnits(null); // a scene from before real units
+      session.setMesh(sphere);
+      window.__sculpt.setScale(sphere, 40);
+    });
+    await frames(page, 3);
+    const afterSet = await shown(page);
+    t.ok(afterSet?.slice(6).join(' ') === '1 1 1' && afterSet.slice(3, 6).join(' ') === '0 0 0', `after Set scale the sphere reads Scale 1 1 1, its turn kept (${afterSet?.join(' ')})`);
+
+    // A scene saved in metres opens converted, every scale folded in.
+    const bytes = await page.evaluate(async () => {
+      const { session, file, fileActions } = window.__sculpt;
+      await fileActions.newScene();
+      const rec = await file.unpack(await file.pack());
+      for (const m of rec.meshes) for (let c = 0; c < 4; c++) for (let r = 0; r < 3; r++) m.matrix[c * 4 + r] /= 100;
+      rec.units = 'm';
+      void session;
+      return Array.from(new Uint8Array(await file.packRecord(rec)));
+    });
+    await page.evaluate(async (b) => {
+      await window.__sculpt.file.open(new Uint8Array(b).buffer);
+      window.__sculpt.input.enterSelect();
+    }, bytes);
+    await frames(page, 3);
+    t.eq((await shown(page))?.join(' '), '0 12.5 0 0 0 0 1 1 1', 'a sphere saved in metres opens reading 0 12.5 0, 0 0 0, 1 1 1');
   },
 };

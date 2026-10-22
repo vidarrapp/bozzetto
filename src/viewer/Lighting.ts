@@ -813,8 +813,8 @@ export class Lighting {
     // six radii, so a tighter one keeps its bias in world terms.
     const range = cam.far - cam.near;
     shadow.bias = range > 0 ? (this.userBias * ref) / range : this.userBias;
-    // The normal bias is a world distance: a share of the subject, or
-    // 0.1 of a metre would swallow a 25 cm sphere's every contact shadow.
+    // The normal bias is a world distance: a share of the subject, so a
+    // fixed one does not swallow a small subject's every contact shadow.
     shadow.normalBias = this.normalBiasShare * this.subjectRadius;
   }
 

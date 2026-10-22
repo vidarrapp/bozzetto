@@ -41,8 +41,8 @@ export class VoxelOverlay {
 
   constructor(
     private readonly viewer: Viewer,
-    /** The scale the grid's box is on: metres, or a scene's own from before real units. */
-    private readonly units: () => Units | null = () => 'm',
+    /** The scale the grid's box is on: centimetres, or a scene's own from before real units. */
+    private readonly units: () => Units | null = () => 'cm',
   ) {
     this.root = document.createElement('div');
     this.root.className = 'voxel-overlay';

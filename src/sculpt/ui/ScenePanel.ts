@@ -74,8 +74,8 @@ export class ScenePanel extends SidePanel {
   constructor(
     private readonly session: SculptSession,
     private readonly library?: MaterialLibrary,
-    /** The viewer's fixed floor, which the Floor offset raises or lowers (metres). */
-    private readonly floor?: { get(): number; set(metres: number): void },
+    /** The viewer's fixed floor, which the Floor offset raises or lowers (centimetres). */
+    private readonly floor?: { get(): number; set(cm: number): void },
   ) {
     super({ id: 'scene', title: 'Scene', side: 'left', variant: 'panel--scene' });
 
@@ -178,9 +178,9 @@ export class ScenePanel extends SidePanel {
       -100,
       100,
       0.5,
-      (this.floor?.get() ?? 0) * 100,
-      (cm) => this.floor?.set(cm / 100),
-      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT * 100, max: FLOOR_OFFSET_LIMIT * 100 } },
+      this.floor?.get() ?? 0,
+      (cm) => this.floor?.set(cm),
+      { unit: ' cm', limits: { min: -FLOOR_OFFSET_LIMIT, max: FLOOR_OFFSET_LIMIT } },
     );
     this.floorRow.title = 'Raise or lower the floor the scene stands on';
     this.floorInput = this.floorRow.querySelector('input') as HTMLInputElement;
@@ -656,7 +656,7 @@ export class ScenePanel extends SidePanel {
     this.floorRow.hidden = !units || !this.floor;
     // A typed value or a look restored elsewhere moves it; a held thumb wins.
     if (this.floor && document.activeElement !== this.floorInput) {
-      const cm = this.floor.get() * 100;
+      const cm = this.floor.get();
       if (Math.abs(sliderValue(this.floorInput) - cm) > 1e-6) setSliderValue(this.floorInput, cm);
     }
   }

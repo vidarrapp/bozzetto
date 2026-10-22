@@ -1,7 +1,7 @@
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptSession } from '../bridge/SculptSession';
 import { parseTyped } from '../../ui/sliderEntry';
-import { formatUnitless } from '../../viewer/units';
+import { formatUnitless, trimDecimals } from '../../viewer/units';
 
 /** What the banner asks of the mount: the scaling itself, and the dismissal kept with the scene. */
 export interface ScaleBannerHooks<T = SculptMesh> {
@@ -50,16 +50,29 @@ export function sceneSubjects(session: SculptSession): ScaleSubjects<SculptMesh>
   return {
     list: () => [...session.getMeshes()],
     name: (m) => session.getMeshName(m),
-    height: (m) => {
-      const b = m.computeWorldBound();
-      return b[4] - b[1];
-    },
+    // Measured as Set scale measures (every live vertex through the
+    // matrix), so the height it is filled with is the one Apply keeps.
+    height: (m) => exactHeight(m),
     size: (m) => {
       const b = m.computeWorldBound();
       return Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
     },
     needed: () => !session.getUnits() && !session.isScaleDismissed(),
   };
+}
+
+/** An object's world height from every live vertex through its matrix (the octree's bound runs loose). */
+function exactHeight(mesh: SculptMesh): number {
+  const v = mesh.getVertices();
+  const m = mesh.getMatrix();
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0, n = mesh.getNbVertices() * 3; i < n; i += 3) {
+    const y = m[1] * v[i] + m[5] * v[i + 1] + m[9] * v[i + 2] + m[13];
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  return hi > lo ? hi - lo : 0;
 }
 
 /** The tallest a typed height may be: a 100 m object is past anything sculpted here. */
@@ -190,7 +203,6 @@ export class ScaleBanner<T = SculptMesh> {
       }),
     );
     this.select.value = String(largest);
-    this.height.value = '';
     this.error.hidden = true;
     this.root.querySelector<HTMLButtonElement>('.scale-banner__open')!.hidden = true;
     this.form.hidden = false;
@@ -198,16 +210,29 @@ export class ScaleBanner<T = SculptMesh> {
     this.height.focus();
   }
 
-  /** Under the row: how tall the object is now, in the scene's own units. */
+  /**
+   * Under the row: how tall the object is now, in the scene's own units;
+   * and in the field, that height as centimetres, since one unit is one
+   * now (owner decision): a Maya file is already at its size, and Apply as
+   * it stands keeps it so (submit takes the exact height for it).
+   */
   private describe(): void {
     const subject = this.choices[Number(this.select.value)];
     if (subject === undefined) return;
-    this.note.textContent = `Now ${formatUnitless(this.subjects.height(subject))} tall.`;
+    const h = this.subjects.height(subject);
+    this.note.textContent = `Now ${formatUnitless(h)} tall.`;
+    this.prefilled = h > 0 && Number.isFinite(h) ? { text: trimDecimals(h, 1), cm: h } : null;
+    this.height.value = this.prefilled?.text ?? '';
   }
+
+  /** The height the field was filled with, as written and exactly (describe). */
+  private prefilled: { text: string; cm: number } | null = null;
 
   private submit(): void {
     const subject = this.choices[Number(this.select.value)];
-    const cm = parseTyped(this.height.value.replace(/cm$/i, ''));
+    const typed = this.height.value.trim();
+    const cm =
+      this.prefilled && typed === this.prefilled.text ? this.prefilled.cm : parseTyped(typed.replace(/cm$/i, ''));
     if (subject === undefined || !this.subjects.list().includes(subject)) {
       this.fail('Pick an object in the scene.');
       return;

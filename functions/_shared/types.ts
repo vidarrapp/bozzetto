@@ -51,11 +51,13 @@ export interface ProjectData {
   /** Presentation: ground shadow / floor / pedestal, and the floor's offset. */
   presentation?: unknown;
   /**
-   * 'm' when the project's geometry is in metres (src/viewer/units.ts): the
-   * viewer stands it on a fixed floor at 0. Absent for a project published
-   * before real units, which keeps the floor that follows its subject.
+   * 'cm' when the project's world numbers are in centimetres, 'm' when in
+   * metres (src/viewer/units.ts; the viewer converts those as it boots):
+   * either way it stands on a fixed floor at 0. Absent for a project
+   * published before real units, which keeps the floor that follows its
+   * subject.
    */
-  units?: 'm';
+  units?: 'cm' | 'm';
   stages: StageMeta[];
   frames: FrameMeta[];
   /** A scene project's counts and size; absent until its first upload completes. */

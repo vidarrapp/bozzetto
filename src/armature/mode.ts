@@ -14,7 +14,8 @@ import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
-import { onMetres } from './units';
+import { onCentimetres } from './units';
+import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
@@ -189,8 +190,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       bootNotes.push(`That armature could not be opened: ${failureText(err)}`);
     }
   }
-  // On metres, whichever scale it was saved on (armature/units.ts).
-  if (saved) saved = onMetres(saved);
+  // On centimetres, whichever scale it was saved on (armature/units.ts).
+  if (saved) saved = onCentimetres(saved);
   if (saved?.model) {
     try {
       await parseModel(saved.model);
@@ -298,7 +299,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   wash.transparent = true;
   wash.opacity = 0.32;
   wash.depthWrite = false;
-  // Eight millimetres off the surface (scene units are metres).
+  // Eight millimetres off the surface (given in metres, times SCENE_SCALE).
   wash.positionNode = positionLocal.add(normalLocal.mul(float(0.008 * SCENE_SCALE)));
   let highlight: Mesh | null = null;
 
@@ -584,7 +585,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       ring.visible = true;
     }
   };
-  // The balls' radii in metres (scene units): a reach ball 3.8 cm, an aim
+  // The balls' radii in metres, times SCENE_SCALE: a reach ball 3.8 cm, an aim
   // ball 2.6, on a figure about 1.7 m tall.
   const HANDLE_RADIUS = 0.038 * SCENE_SCALE;
   const SELECTED_SCALE = 1.35;
@@ -1088,7 +1089,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ...(thumb ? { thumb } : {}),
     ...(link ? { project: { ...link } } : {}),
     symmetry: armature.symmetry,
-    units: 'm',
+    units: UNITS,
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */
   let link: ArmatureLink | null = bootLink;
@@ -1261,7 +1262,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       } else {
         parsed = unpackArmature(text);
       }
-      parsed = onMetres(parsed);
+      parsed = onCentimetres(parsed);
     } catch (err) {
       alert(err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err));
       return;
@@ -1334,7 +1335,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       resolution,
       look: viewer.getLook(),
       savedAt: Date.now(),
-      units: 'm',
+      units: UNITS,
       floor: viewer.floorHeight() ?? 0,
     });
     await flushSave();

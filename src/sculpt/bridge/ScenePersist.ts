@@ -6,7 +6,7 @@ import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeLook, sanitizeScene } from './sanitize';
-import type { Units } from '../../viewer/units';
+import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 
 /**
@@ -152,12 +152,14 @@ export interface SavedScene {
   /** Brush workspace settings (v4 addition; absent means the defaults). */
   settings?: SculptSettings;
   /**
-   * The scene's units (src/viewer/units.ts): 'm' in every scene made since
-   * real units, whose objects are in metres and stand on the fixed floor.
-   * Absent in one from before, which opens exactly as it was - its old
-   * sizes, the floor following its subject - and offers Set scale.
+   * The scene's units (src/viewer/units.ts): 'cm' in every scene made now,
+   * whose objects are in centimetres and stand on the fixed floor; 'm' in
+   * one saved while a unit was a metre, which is converted to centimetres
+   * as it opens (sceneUnits.ts). Absent in one from before real units,
+   * which opens exactly as it was - its old sizes, the floor following its
+   * subject - and offers Set scale.
    */
-  units?: Units;
+  units?: UnitsMarker;
   /**
    * The Set scale offer was dismissed for this scene (an unmarked one
    * only), so it does not come back on the next open.
@@ -296,7 +298,9 @@ export interface SculptSnapshot {
  */
 export async function saveSculptLook(look: LookState): Promise<void> {
   try {
-    await withStore('readwrite', (s) => s.put(look, LOOK_KEY));
+    // Marked with the units its camera and Floor offset are in, so a look
+    // kept before centimetres can be told apart (loadSculptLook).
+    await withStore('readwrite', (s) => s.put({ ...look, units: UNITS }, LOOK_KEY));
   } catch {
     // Private windows / blocked storage: the look is simply not remembered.
   }
@@ -315,12 +319,20 @@ export async function clearSculptLook(): Promise<void> {
   }
 }
 
-/** The saved sculpt look, or null when there is none. */
-export async function loadSculptLook(): Promise<LookState | null> {
+/**
+ * The saved sculpt look, or null when there is none. `onCentimetres`
+ * says whether its world numbers are in centimetres already: a look kept
+ * before the unit was a centimetre has no marker, and was saved beside a
+ * scene on whatever scale that scene had, which only the mount knows
+ * (SculptSession.getOpenedFrom).
+ */
+export async function loadSculptLook(): Promise<{ look: LookState; onCentimetres: boolean } | null> {
   try {
+    const raw = (await withStore('readonly', (s) => s.get(LOOK_KEY))) as { units?: unknown } | undefined;
     // Through the same reading a file's look gets: the record is only as
     // sound as the looks the session took in before writing it.
-    return (sanitizeLook(await withStore('readonly', (s) => s.get(LOOK_KEY))) as LookState) ?? null;
+    const look = sanitizeLook(raw) as LookState | undefined;
+    return look ? { look, onCentimetres: raw?.units === UNITS } : null;
   } catch {
     return null;
   }

@@ -2,6 +2,8 @@ import type { OriginalNumbering, SculptSession } from './SculptSession';
 import type { SavedScene, SceneLink } from './ScenePersist';
 import type { LookState } from '../../viewer/Viewer';
 import { packScene, sceneToOBJ, unpackScene } from './SceneFile';
+import { IMPORT_SIZE } from './SculptSession';
+import { formatLength } from '../../viewer/units';
 import {
   cacheProjectScene,
   defaultSceneName,
@@ -404,9 +406,14 @@ export class FileActions {
 
   /**
    * Bring an OBJ in as a new sculptable object. `zUp` rotates DCC exports
-   * (Blender and friends) to Y-up on the way in.
+   * (Blender and friends) to Y-up on the way in. Returns what to tell the
+   * user when the file was not taken at its own size (SculptSession
+   * importOBJ: a largest side past 1 cm to 10 m is fitted to 25 cm), or
+   * null when it was.
    */
-  async importObj(text: string, zUp: boolean, name: string): Promise<void> {
-    await this.session.importOBJ(text, zUp, name);
+  async importObj(text: string, zUp: boolean, name: string): Promise<string | null> {
+    const { fitted, largest } = await this.session.importOBJ(text, zUp, name);
+    if (!fitted || !this.session.getUnits()) return null;
+    return `"${name}" is ${formatLength(largest)} across read as centimetres, outside 1 cm to 10 m, so it was fitted to ${formatLength(IMPORT_SIZE)}.`;
   }
 }

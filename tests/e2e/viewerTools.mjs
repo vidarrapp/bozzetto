@@ -5,7 +5,7 @@
 // Armature, and orbits nothing; and a project published before real units
 // is offered Set scale in the editor, which plays every frame by one
 // factor (presentation.scale, lifted onto the floor at 0), marks the
-// project `units: 'm'` and saves both, so the viewer plays it at that
+// project `units: 'cm'` and saves both, so the viewer plays it at that
 // height for everyone. Tab closes the panels, hides the interface and
 // brings it back, and Esc brings it back, in both as in Sculpt. Each gets
 // (page, base, t).
@@ -285,13 +285,13 @@ export const suites = {
     await page.waitForTimeout(300);
     now = await played(page);
     const sent = puts[0] ?? {};
-    const factor = 0.3 / before.local;
+    const factor = 30 / before.local;
     t.ok(
-      sent.units === 'm' && Math.abs(sent.presentation?.scale - factor) < 1e-9 && Number.isFinite(sent.presentation?.lift) && sent.presentation?.floorOffset === 0 && !!sent.lighting && !!sent.camera,
-      `Apply saves the look with presentation.scale ${factor.toFixed(5)}, its lift, floor offset 0, and units 'm', in one write (${JSON.stringify({ units: sent.units, presentation: sent.presentation })})`,
+      sent.units === 'cm' && Math.abs(sent.presentation?.scale - factor) < 1e-9 && Number.isFinite(sent.presentation?.lift) && sent.presentation?.floorOffset === 0 && !!sent.lighting && !!sent.camera,
+      `Apply saves the look with presentation.scale ${factor.toFixed(5)}, its lift, floor offset 0, and units 'cm', in one write (${JSON.stringify({ units: sent.units, presentation: sent.presentation })})`,
     );
-    t.ok(Math.abs(now.height - 0.3) < 1e-6 && Math.abs(now.foot) < 1e-6, `the preview plays it 30 cm tall, standing on 0 (${now.height.toFixed(4)} m, foot ${now.foot})`);
-    t.ok(now.locked === 0 && now.floor === 0 && now.units === 'm', `on the fixed floor at 0 (${JSON.stringify(now)})`);
+    t.ok(Math.abs(now.height - 30) < 1e-4 && Math.abs(now.foot) < 1e-4, `the preview plays it 30 cm tall, standing on 0 (${now.height.toFixed(4)} cm, foot ${now.foot})`);
+    t.ok(now.locked === 0 && now.floor === 0 && now.units === 'cm', `on the fixed floor at 0 (${JSON.stringify(now)})`);
     t.ok(!(await banner()).shown, 'and the offer goes');
     // Save look after keeps the scale.
     puts.length = 0;
@@ -301,7 +301,7 @@ export const suites = {
     // Reopened: the scale and the marker come back from the project, every frame alike.
     await openEditor();
     now = await played(page);
-    t.ok(Math.abs(now.height - 0.3) < 1e-6 && now.units === 'm' && now.locked === 0 && !(await banner()).shown, `reopened, the editor plays it at the new size, marked, offering nothing (${JSON.stringify(now)})`);
+    t.ok(Math.abs(now.height - 30) < 1e-4 && now.units === 'cm' && now.locked === 0 && !(await banner()).shown, `reopened, the editor plays it at the new size, marked, offering nothing (${JSON.stringify(now)})`);
     await page.evaluate(() => window.__bozzetto.jumpTo(10));
     await page.waitForTimeout(800);
     const later = await page.evaluate(() => {
@@ -320,7 +320,7 @@ export const suites = {
     await page.waitForTimeout(250);
     const viewer = await played(page);
     t.ok(
-      Math.abs(viewer.height - 0.3) < 1e-6 && Math.abs(viewer.foot) < 1e-6 && viewer.locked === 0 && viewer.floor === 0,
+      Math.abs(viewer.height - 30) < 1e-4 && Math.abs(viewer.foot) < 1e-4 && viewer.locked === 0 && viewer.floor === 0,
       `the viewer plays it 30 cm tall on the floor at 0 (${JSON.stringify(viewer)})`,
     );
     await page.unroute('**/timelapses/demo/manifest.json');

@@ -6,7 +6,7 @@
  * asset layout is hardcoded in the viewer.
  */
 
-import { isUnits, type Units } from '../viewer/units';
+import { isUnits, toCentimetres, type Units } from '../viewer/units';
 
 export type Tier = 'sd' | 'hd';
 
@@ -97,10 +97,12 @@ export interface Manifest {
   /** Optional presentation (ground shadow, floor, pedestal) when present. */
   presentation: unknown;
   /**
-   * 'm' when the project's frames are in metres (src/viewer/units.ts): the
-   * viewer then stands them on a fixed floor at 0 plus the presentation's
-   * offset. Null for a project published before real units, which keeps
-   * the floor that follows its subject until it is published again.
+   * 'cm' when the project is on real units (src/viewer/units.ts): the
+   * viewer then stands it on a fixed floor at 0 plus the presentation's
+   * offset. A project stored as 'm' (a unit was a metre then) is 'cm' here
+   * already, its world numbers multiplied by 100 as it was read
+   * (onCentimetres). Null for a project published before real units, which
+   * keeps the floor that follows its subject until it is published again.
    */
   units: Units | null;
   config: ManifestConfig;
@@ -167,7 +169,7 @@ export function validateManifest(data: unknown): Manifest {
     ? (m.stages as StageEntry[])
     : [];
 
-  return {
+  return onCentimetres({
     id: m.id as string,
     title: m.title as string,
     mode: m.mode === 'model' ? 'model' : 'timelapse',
@@ -176,7 +178,7 @@ export function validateManifest(data: unknown): Manifest {
     environment: m.environment ?? null,
     ao: m.ao ?? null,
     presentation: m.presentation ?? null,
-    units: isUnits(m.units) ? m.units : null,
+    units: isUnits(m.units) ? 'cm' : null,
     config: {
       frameStartIndex: 0,
       ext: 'glb',
@@ -186,5 +188,39 @@ export function validateManifest(data: unknown): Manifest {
     camera,
     frames: frames as FrameEntry[],
     stages,
+  }, isUnits(m.units) ? toCentimetres(m.units) : 1);
+}
+
+/**
+ * A manifest whose world numbers were stored at `k` centimetres a unit
+ * (100 for a project marked 'm'), in centimetres: the frames are played
+ * `k` times larger (presentation.scale, about the origin, then the lift),
+ * and the floor offset, the saved camera and a focus lock move with them,
+ * so the project looks exactly as it did. Lighting is directions only,
+ * and every other size the viewer derives from the subject. A save from
+ * here (the editor's Save look) writes these numbers and 'cm' with them.
+ */
+function onCentimetres(manifest: Manifest, k: number): Manifest {
+  if (k === 1) return manifest;
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  const times = (v: unknown): unknown => (Array.isArray(v) && v.length === 3 && v.every(num) ? v.map((x) => x * k) : v);
+  const p = manifest.presentation && typeof manifest.presentation === 'object' ? (manifest.presentation as Record<string, unknown>) : null;
+  const presentation = {
+    ...(p ?? {}),
+    scale: (num(p?.scale) && p.scale > 0 ? p.scale : 1) * k,
+    lift: (num(p?.lift) ? p.lift : 0) * k,
+    ...(num(p?.floorOffset) ? { floorOffset: p.floorOffset * k } : {}),
+  };
+  const camera = manifest.camera;
+  const dof = camera.dof;
+  return {
+    ...manifest,
+    presentation,
+    camera: {
+      ...camera,
+      ...(camera.position ? { position: times(camera.position) as number[] } : {}),
+      ...(camera.target ? { target: times(camera.target) as number[] } : {}),
+      ...(dof?.focusPoint ? { dof: { ...dof, focusPoint: times(dof.focusPoint) as [number, number, number] } } : {}),
+    },
   };
 }

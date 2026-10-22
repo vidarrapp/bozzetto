@@ -207,11 +207,9 @@ export class ChannelBox {
     this.hooks.commit(entries);
   }
 
-  /** Engine value to field value: metres to cm on real units, radians to degrees. */
+  /** Engine value to field value: radians to degrees; a translate is centimetres (or units) as it stands. */
   private fieldScale(kind: Kind): number {
-    if (kind === 'r') return DEG;
-    if (kind === 't' && this.hooks.units()) return 100;
-    return 1;
+    return kind === 'r' ? DEG : 1;
   }
 
   private format(kind: Kind, engine: number): string {

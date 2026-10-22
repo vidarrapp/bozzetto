@@ -1,7 +1,7 @@
 import { withNamedStore } from '../sculpt/bridge/ScenePersist';
 import type { LookState } from '../viewer/Viewer';
 import type { ArmatureState } from './Armature';
-import type { Units } from '../viewer/units';
+import type { UnitsMarker } from '../viewer/units';
 
 /**
  * What an armature keeps between sessions: its state (preset, root, pose,
@@ -40,11 +40,13 @@ export interface ArmatureFile {
    */
   symmetry?: boolean;
   /**
-   * 'm' when its positions and camera are in metres (src/viewer/units.ts),
-   * as every record written since real units is. One without it is on the
-   * old 50 units a metre, and is read through armature/units.ts onMetres.
+   * 'cm' when its positions and camera are in centimetres
+   * (src/viewer/units.ts), as every record written now is; 'm' in one
+   * written while a unit was a metre. One without it is on the old 50
+   * units a metre. Both older kinds are read through armature/units.ts
+   * onCentimetres.
    */
-  units?: Units;
+  units?: UnitsMarker;
 }
 
 /**
@@ -61,15 +63,17 @@ export interface SculptHandoff {
   look?: LookState;
   savedAt: number;
   /**
-   * 'm' when the triangles are in metres, the figure at its own height with
-   * its soles on the floor; a handoff from an older build has none and is
-   * at 50 units a metre (sculpt/mode.ts takes either).
+   * 'cm' when the triangles are in centimetres, the figure at its own
+   * height with its soles on the floor; 'm' from a build when a unit was a
+   * metre; a handoff from an older build has none and is at 50 units a
+   * metre (sculpt/mode.ts takes each).
    */
-  units?: Units;
+  units?: UnitsMarker;
   /**
    * The height of the floor the figure stood on in Armature (its base and
-   * the Floor offset), in metres: Sculpt stands the figure on its own
-   * floor by the same measure, so what was on the floor stays on it.
+   * the Floor offset), in the handoff's own units: Sculpt stands the
+   * figure on its own floor by the same measure, so what was on the floor
+   * stays on it.
    */
   floor?: number;
 }

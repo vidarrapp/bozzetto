@@ -52,8 +52,8 @@ export class ModelPanel extends SidePanel {
   private remeshResolution = 150;
   /** The voxel grid over the view while the Resolution slider is held. */
   private voxelOverlay: VoxelOverlay | null = null;
-  /** In world units: metres on real units, the scene's own before them. */
-  private extractThickness = EXTRACT_MM.start / 1000;
+  /** In world units: centimetres on real units, the scene's own before them. */
+  private extractThickness = EXTRACT_MM.start / 10;
   /** The scale the Extract row was built for, rebuilt when the scene's changes. */
   private extractOnUnits = true;
   private extractHost?: HTMLDivElement;
@@ -282,7 +282,7 @@ export class ModelPanel extends SidePanel {
     if (!this.extractHost) return;
     const real = !!this.session.getUnits();
     const spec = real ? EXTRACT_MM : EXTRACT_LEGACY;
-    const toWorld = real ? 1 / 1000 : 1;
+    const toWorld = real ? 1 / 10 : 1;
     if (real !== this.extractOnUnits) this.extractThickness = spec.start * toWorld;
     this.extractOnUnits = real;
     this.extractHost.replaceChildren(

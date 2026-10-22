@@ -72,7 +72,7 @@ function lookPatch(hooks: GalleryHooks): Record<string, unknown> {
  */
 export function presentationPatch(look: LookState, presented: boolean, units: Units | null): Record<string, unknown> {
   return {
-    // The scale the frames are on: the viewer stands a project in metres
+    // The scale the frames are on: the viewer stands a project on real units
     // on its fixed floor, and one without the marker (null clears one a
     // re-publish no longer has) on the floor that follows it.
     units,

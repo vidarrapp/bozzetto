@@ -1,9 +1,10 @@
 import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 } from 'three';
 import { mat4 } from 'gl-matrix';
-import { formatLength, LEGACY_ARMATURE_SCALE } from '../viewer/units';
+import { CM_PER_M, formatLength, LEGACY_ARMATURE_SCALE, UNITS } from '../viewer/units';
+import { lookTimes } from '../viewer/lookUnits';
 import type { SculptHandoff } from '../armature/persist';
 import { STUDIO_BG } from '../viewer/Environment';
-import type { Viewer } from '../viewer/Viewer';
+import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
@@ -29,7 +30,7 @@ import { WorldScaleBrush } from './bridge/worldScale';
 import { TransformGizmo, type GizmoMode, type GizmoParts } from './bridge/transform';
 import { MaterialLibrary, type SculptMaterial } from './bridge/materials';
 import { presentationPatch, saveModelToGallery } from './bridge/GallerySave';
-import { unpackScene } from './bridge/SceneFile';
+import { packScene, unpackScene } from './bridge/SceneFile';
 import { galleryForm } from './ui/galleryForm';
 import { failNotice, statusToast } from './ui/statusToast';
 import { AuthExpiredError, checkSignIn, roleOf, type Role } from '../admin/api';
@@ -544,12 +545,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // what "Reset look" goes back to, and it has to be captured here, while
   // the defaults above are still what the viewer is showing.
   const defaultLook = viewer.getLook();
+  /**
+   * The look kept from the last session. One kept before the unit was a
+   * centimetre has no marker: beside a scene that opened from metres it
+   * was in metres too, and comes to centimetres the same way (times 100);
+   * beside any other it is taken as it is.
+   */
+  const storedLook = async (): Promise<LookState | null> => {
+    const kept = await loadSculptLook();
+    if (!kept) return null;
+    return !kept.onCentimetres && session.getOpenedFrom() === 'm' ? lookTimes(kept.look, CM_PER_M) : kept.look;
+  };
   // ...and then, on top of those defaults, whatever the last session set up.
   // Without this, leaving sculpt mode and coming back reset every look-dev
   // control - the defaults above are only meant for a first visit. A scene
   // opened from a card or from Projects brings the look it was saved under
   // instead, as File > Open does with the same bytes.
-  await applyLookSafely(openedExplicitly && saved?.look ? saved.look : await loadSculptLook());
+  await applyLookSafely(openedExplicitly && saved?.look ? saved.look : await storedLook());
   const onLookReset = (): void => {
     void (async () => {
       await clearSculptLook();
@@ -1024,7 +1036,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleChrome: () => chrome.handleTab(),
     togglePresent: () => present?.toggle(),
     togglePlay: () => present?.toggleTurning(),
-    extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.005 : 1)),
+    extractMasked: () => session.extractMasked(modelPanel?.getExtractThickness() ?? (session.getUnits() ? 0.5 : 1)),
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
@@ -1443,7 +1455,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   );
   scenePanel = new ScenePanel(session, library, {
     get: () => viewer.getFloorOffset(),
-    set: (metres) => viewer.setFloorOffset(metres),
+    set: (cm) => viewer.setFloorOffset(cm),
   });
   // Rename, eye and padlock bypass the undo stack: sync the display side
   // (visibility, the stats corner name) and let the autosave know directly.
@@ -1478,15 +1490,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * Set scale (owner decision): put a scene from before real units on
    * them. One factor for everything - `target`'s height becomes `cm` - so
    * the scene keeps its proportions, about the origin, then lifted so its
-   * lowest point is on the floor. The brushes' world sizes scale with it,
-   * a focus lock lets go, and the view frames the result. The undo
-   * history starts over: its transform states hold matrices on the old
-   * scale, which an undo would put back over the new one.
+   * lowest point is on the floor. Each object's scale is then folded into
+   * its vertices (owner decision: the channel box reads Scale 1 and real
+   * centimetres). The brushes' world sizes scale with it, a focus lock
+   * lets go, and the view frames the result. The undo history starts
+   * over: its states hold matrices and vertices on the old scale, which
+   * an undo would put back over the new one.
    */
   const setScale = (target: SculptMesh, cm: number): void => {
     const meshes = session.getMeshes();
     const height = exactWorldBox(target);
-    const f = cm / 100 / (height.max.y - height.min.y);
+    const f = cm / (height.max.y - height.min.y);
     if (!(f > 0) || !Number.isFinite(f)) return;
     let lowest = Infinity;
     for (const m of meshes) lowest = Math.min(lowest, exactWorldBox(m).min.y);
@@ -1497,10 +1511,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     for (const m of meshes) {
       const matrix = m.getMatrix() as unknown as mat4;
       mat4.multiply(matrix, by, matrix);
+      session.bakeMeshScale(m);
     }
     worldScale.scaleWorld(f);
     session.clearHistory();
-    session.setUnits('m');
+    session.setUnits(UNITS);
     // The matrices changed under every display mesh.
     session.onActiveMeshChange?.();
     viewer.setDoF({ focus: viewer.getDoFState().focus });
@@ -1509,7 +1524,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (!all.isEmpty()) viewer.frameBounds(all);
     persist.markDirty();
     void storeLook();
-    statusToast('').done(`Set to scale: "${session.getMeshName(target)}" is ${formatLength(cm / 100)} tall`);
+    statusToast('').done(`Set to scale: "${session.getMeshName(target)}" is ${formatLength(cm)} tall`);
   };
   const scaleBanner = new ScaleBanner(sceneSubjects(session), {
     apply: (mesh, cm) => setScale(mesh, cm),
@@ -1711,7 +1726,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const untouched = !fileActions.hasWork();
       // A scene with nothing in it yet becomes the figure's, on real
       // units whatever it was; one with work keeps its own scale.
-      if (untouched) session.setUnits('m');
+      if (untouched) session.setUnits(UNITS);
       const positions = handoffPositions(handoff, session.getUnits() ? (viewer.floorHeight() ?? 0) : null);
       const voxelise = (resolution: number): ReturnType<SculptSession['addVoxelised']> =>
         session.addVoxelised(handoff.name, positions, handoff.indices, resolution);
@@ -1779,6 +1794,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       },
       /** Unpack without applying, for tests that inspect a record. */
       unpack: (bytes: ArrayBuffer) => fileActions.unpack(bytes),
+      /** Pack a record as a .bozz, for tests that write one by hand (an older scale, say). */
+      packRecord: async (scene: SavedScene) => (await packScene(scene)).arrayBuffer(),
       toOBJ: () => fileActions.objText(),
     },
   };
@@ -2119,16 +2136,18 @@ function bootToast(text: string, onFresh?: () => void): HTMLDivElement {
 /**
  * A handoff's triangles in the receiving scene's units (owner decision:
  * the figure keeps its feet on the floor). On real units (`floor` is that
- * scene's floor height) they are in metres, lifted by the difference
+ * scene's floor height) they are in centimetres, lifted by the difference
  * between the floors, so what stood on Armature's floor stands on this
- * one. In a scene from before real units (`floor` null) they go on that
- * scene's old scale, 50 units a metre, as a figure always arrived there.
- * A handoff from before real units is on the old scale already.
+ * one. A handoff says its own units: 'cm' now, 'm' from when a unit was a
+ * metre (times 100), and none from before real units, at 50 units a metre
+ * (2 cm a unit). In a scene from before real units (`floor` null) they go
+ * on that scene's old scale, 50 units a metre, as a figure always arrived
+ * there.
  */
 function handoffPositions(h: SculptHandoff, floor: number | null): Float32Array {
-  const fromMetres = h.units === 'm';
-  const k = floor === null ? (fromMetres ? LEGACY_ARMATURE_SCALE : 1) : fromMetres ? 1 : 1 / LEGACY_ARMATURE_SCALE;
-  const lift = floor === null ? 0 : floor - (h.floor ?? 0) * (fromMetres ? 1 : 1 / LEGACY_ARMATURE_SCALE);
+  const toCm = h.units === 'cm' ? 1 : h.units === 'm' ? CM_PER_M : CM_PER_M / LEGACY_ARMATURE_SCALE;
+  const k = floor === null ? toCm / (CM_PER_M / LEGACY_ARMATURE_SCALE) : toCm;
+  const lift = floor === null ? 0 : floor - (h.floor ?? 0) * toCm;
   if (k === 1 && lift === 0) return h.positions;
   const out = new Float32Array(h.positions.length);
   for (let i = 0; i < out.length; i += 3) {
