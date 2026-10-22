@@ -32,7 +32,9 @@ import { mat3, mat4, vec3 } from 'gl-matrix';
 import {
   ClayStripsBrush,
   CreaseBrush,
+  FlattenBrush,
   PaintBlurBrush,
+  PaintBrush,
   PolishBrush,
   RakeBrush,
   StableSmooth,
@@ -288,6 +290,11 @@ export class SculptSession {
     // Crease with its pinch and crest exposed; upstream's numbers are the
     // defaults, so it feels the same until a slider moves.
     this.sculptManager._tools[Enums.Tools.CREASE] = new CreaseBrush(this) as unknown as SculptTool;
+    // Flatten and Paint with their per-dab step capped at 1: a full pen
+    // press doubles the slider here, and past 1 Flatten crosses the plane
+    // (dents) and Paint's blend extrapolates past the colour.
+    this.sculptManager._tools[Enums.Tools.FLATTEN] = new FlattenBrush(this) as unknown as SculptTool;
+    this.sculptManager._tools[Enums.Tools.PAINT] = new PaintBrush(this) as unknown as SculptTool;
     // Paint dabs close together (owner call): a brush stroke, not a row of stamps.
     this.sculptManager.getTool(Enums.Tools.PAINT)._spacing = 0.05;
     // Shift over the paint brush blurs the paint, the way it smooths

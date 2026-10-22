@@ -11,7 +11,7 @@ coming out.
 ```bash
 node scripts/parity-fixtures.mjs [outDir]            # record (default scratchpad/parity, gitignored)
 node scripts/parity-fixtures.mjs [outDir] --verify   # re-run, compare to outDir within 1e-6
-node scripts/parity-fixtures.mjs out --only=Paint,Drag --tol=1e-9
+node scripts/parity-fixtures.mjs out --only=PaintBrush,Drag --tol=1e-9
 ```
 
 It needs `npm ci` and nothing else: no build, no browser. The real sources
@@ -43,8 +43,10 @@ Meshes, built through the session as the app builds them:
 
 Brushes, each with the defaults the app installs: the bridge brushes
 ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove, StableSmooth,
-RakeBrush and PaintBlurBrush, and the vendored Flatten, Inflate, Pinch, Drag,
-Paint and Masking. Symmetry is off and dynamic topology is off. Every brush
+RakeBrush, FlattenBrush, PaintBrush and PaintBlurBrush, and the vendored
+Inflate, Pinch, Drag and Masking. FlattenBrush and PaintBrush are the
+vendored Flatten and Paint with the per-dab intensity capped at 1 (fixtures
+recorded before that were named `Flatten.*` and `Paint.*`). Symmetry is off and dynamic topology is off. Every brush
 has the same world radius on a mesh (0.3 of its world extent), as world-scale
 sizing starts them; the pixel radius that gives it on the fixed camera is in
 `brush.radius`.

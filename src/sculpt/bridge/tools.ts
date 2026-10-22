@@ -192,6 +192,74 @@ export class StableSmooth extends Smooth {
 }
 
 /**
+ * Flatten with its per-dab step capped at the plane (overshoot bug, the
+ * StableSmooth class). Each vertex moves `distToPlane * intensity` toward
+ * the area plane, so at intensity 1 it lands exactly on it; Bozzetto's
+ * pressure dynamics double the slider at a full press, and the default
+ * 0.75 reached 1.5 - a vertex near the centre crossed to the far side of
+ * the plane, where later dabs skip it (`distToPlane * comp > 0`), and the
+ * stroke left dents. Everything else - negative, falloff, proxy - is the
+ * upstream loop.
+ */
+export class FlattenBrush extends Flatten {
+  constructor(session: SculptSession) {
+    super(session);
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js):
+   * identical loop with the intensity capped at 1 (exactly-on-plane).
+   */
+  override flatten(
+    iVertsInRadius: Uint32Array,
+    aNormal: number[],
+    aCenter: number[],
+    center: number[],
+    radiusSquared: number,
+    intensity: number,
+    picking: Picking,
+  ): void {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const mAr = mesh.getMaterials();
+    const radius = Math.sqrt(radiusSquared);
+    const vProxy =
+      this._accumulate === false && this._lockPosition === false ? mesh.getVerticesProxy() : vAr;
+    const cx = center[0];
+    const cy = center[1];
+    const cz = center[2];
+    const ax = aCenter[0];
+    const ay = aCenter[1];
+    const az = aCenter[2];
+    const anx = aNormal[0];
+    const any = aNormal[1];
+    const anz = aNormal[2];
+    const comp = this._negative ? -1.0 : 1.0;
+    // CHANGED: past 1 the step overshoots the plane (upstream uses intensity as is).
+    const k = Math.min(1, intensity);
+    for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
+      const ind = iVertsInRadius[i] * 3;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      const distToPlane = (vx - ax) * anx + (vy - ay) * any + (vz - az) * anz;
+      if (distToPlane * comp > 0.0) continue;
+      const dx = vProxy[ind] - cx;
+      const dy = vProxy[ind + 1] - cy;
+      const dz = vProxy[ind + 2] - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist >= 1.0) continue;
+      let fallOff = dist * dist;
+      fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * dist + 1.0;
+      fallOff *= distToPlane * k * mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      vAr[ind] -= anx * fallOff;
+      vAr[ind + 1] -= any * fallOff;
+      vAr[ind + 2] -= anz * fallOff;
+    }
+  }
+}
+
+/**
  * Polish, modelled on ZBrush's hPolish (owner request, replacing Twist).
  *
  * v2, after iPad testing read as "flatten/carve that runs edges over":
@@ -727,6 +795,84 @@ export class CreaseBrush extends Crease {
   }
 }
 
+
+/**
+ * Paint with its blend weight capped at 1 (overshoot bug, the
+ * StableSmooth class). Each dab lerps a vertex's colour (and, when
+ * written, roughness/metalness) toward the brush's by
+ * `pow(1 - d, softness) * intensity * mask * alpha`; with the pressure
+ * dynamics a full press doubled the 0.75 default to 1.5, the complement
+ * went negative and the lerp EXTRAPOLATED past the target colour. The
+ * other factors are each in [0, 1] (d is clamped to 1, softness = 2(1 -
+ * hardness) >= 0 for the 0..1 hardness slider, the mask and the stencil
+ * are 0..1), so capping the intensity caps the weight. Everything else -
+ * the eyedropper, the fill, the write flags mode.ts sets - is upstream's.
+ */
+export class PaintBrush extends Paint {
+  constructor(session: SculptSession) {
+    super(session);
+  }
+
+  /**
+   * BOZZETTO EDIT of upstream Paint.paint (vendor Paint.js): identical
+   * loop with the intensity capped at 1, so the blend never extrapolates.
+   */
+  override paint(
+    iVerts: Uint32Array,
+    center: number[],
+    radiusSquared: number,
+    intensity: number,
+    hardness: number,
+    picking: Picking,
+  ): void {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const cAr = mesh.getColors();
+    const mAr = mesh.getMaterials();
+    const color = this._color;
+    const roughness = this._material[0];
+    const metallic = this._material[1];
+    const radius = Math.sqrt(radiusSquared);
+    const cr = color[0];
+    const cg = color[1];
+    const cb = color[2];
+    const cx = center[0];
+    const cy = center[1];
+    const cz = center[2];
+    const softness = 2 * (1 - hardness);
+    // CHANGED: past 1 the blend extrapolates past the target (upstream uses intensity as is).
+    const k = Math.min(1, intensity);
+    for (let i = 0, l = iVerts.length; i < l; ++i) {
+      const ind = iVerts[i] * 3;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      const dx = vx - cx;
+      const dy = vy - cy;
+      const dz = vz - cz;
+      let dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist > 1) dist = 1.0;
+
+      let fallOff = Math.pow(1 - dist, softness);
+      fallOff *= k * mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      const fallOffCompl = 1.0 - fallOff;
+
+      if (this._writeAlbedo) {
+        cAr[ind] = cAr[ind] * fallOffCompl + cr * fallOff;
+        cAr[ind + 1] = cAr[ind + 1] * fallOffCompl + cg * fallOff;
+        cAr[ind + 2] = cAr[ind + 2] * fallOffCompl + cb * fallOff;
+      }
+
+      if (this._writeRoughness) {
+        mAr[ind] = mAr[ind] * fallOffCompl + roughness * fallOff;
+      }
+
+      if (this._writeMetalness) {
+        mAr[ind + 1] = mAr[ind + 1] * fallOffCompl + metallic * fallOff;
+      }
+    }
+  }
+}
 
 /**
  * The paint brush's blur: what shift does over the paint brush, the way

@@ -518,9 +518,20 @@ declare module '@sculpt-vendor/editing/tools/Paint' {
     _writeAlbedo: boolean;
     _writeRoughness: boolean;
     _writeMetalness: boolean;
+    /** Roughness, metalness, (unused) masking the stroke writes when its flags allow. */
+    _material: Float32Array;
     constructor(main: unknown);
     getMesh(): SculptMesh;
     stroke(picking: Picking): void;
+    /** The per-dab colour blend; Bozzetto's PaintBrush overrides this. */
+    paint(
+      iVerts: Uint32Array,
+      center: number[],
+      radiusSquared: number,
+      intensity: number,
+      hardness: number,
+      picking: Picking,
+    ): void;
     /** Fill every unmasked vertex with the paint colour (one undo entry). */
     paintAll(): void;
     dynamicTopology(picking: Picking): Uint32Array;

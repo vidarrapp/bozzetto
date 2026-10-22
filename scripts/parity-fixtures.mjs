@@ -372,11 +372,11 @@ const BRUSHES = [
   { name: 'StableSmooth', tool: 'SMOOTH', bridge: true, mode: 'dab' },
   { name: 'RakeBrush', tool: 'RAKE', bridge: true, mode: 'dab' },
   { name: 'PaintBlurBrush', tool: 'PAINT_BLUR', bridge: true, mode: 'dab', colors: true },
-  { name: 'Flatten', tool: 'FLATTEN', mode: 'dab' },
+  { name: 'FlattenBrush', tool: 'FLATTEN', bridge: true, mode: 'dab' },
   { name: 'Inflate', tool: 'INFLATE', mode: 'dab' },
   { name: 'Pinch', tool: 'PINCH', mode: 'dab' },
   { name: 'Drag', tool: 'DRAG', mode: 'drag' },
-  { name: 'Paint', tool: 'PAINT', mode: 'dab', colors: true },
+  { name: 'PaintBrush', tool: 'PAINT', bridge: true, mode: 'dab', colors: true },
   { name: 'Masking', tool: 'MASKING', mode: 'dab', mask: true },
 ];
 
@@ -450,7 +450,7 @@ function appInstall(E, session) {
 }
 
 const APP_INSTALL_NOTES = [
-  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, PaintBlurBrush, StableSmooth; Paint._spacing = 0.05) and loadBrushAlphas().',
+  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05) and loadBrushAlphas().',
   'InputShell.install: DynamicsStore.install() (per-brush pressure: Crease and Paint size 1 strength 1, Drag 0/0, the rest size 0 strength 1, linear curves); Crease._negative = false.',
   'mode.ts: Paint._writeRoughness = Paint._writeMetalness = false.',
   'InputShell.selectBrush(BRUSH): _clay = true (already the default).',
