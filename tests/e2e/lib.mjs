@@ -144,8 +144,10 @@ export async function openArmature(page, base) {
  * Tab again brings it back; hidden again, Esc brings it back. `transport`
  * says the viewer's transport is there and must stay; `keep` lists
  * selectors that must stay visible (an editor's own top row and sidebar).
- * Last, Tab on a focused control in an open panel moves the focus and
- * hides nothing. Leaves the interface showing and the panels closed.
+ * Last, Tab in a text field in an open panel moves the focus and hides
+ * nothing, while Tab on a focused button, checkbox or slider closes the
+ * panels and drops the focus (Shift+Tab still moves it). Leaves the
+ * interface showing and the panels closed.
  */
 export async function chromeChecks(page, t, where, { panels, transport = false, keep = [] }) {
   const state = () =>
@@ -216,13 +218,25 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
   s = await state();
   t.ok(again && !s.hidden && s.tabs.every(Boolean), `${where}: hidden again, Esc brings it back (${again} then ${s.hidden})`);
 
-  // Tab on a focused control is the browser's: the focus moves on.
+  // Tab on a text field is the browser's: the focus moves on. A panel
+  // with none of its own gets a stand-in field, which is what the rule is
+  // about (a field you type into), not which panel has one.
   await openAll();
   const focused = await page.evaluate((sel) => {
-    const input = [...document.querySelectorAll(`${sel} input`)].find((i) => !i.disabled && i.getClientRects().length > 0);
-    input?.setAttribute('data-e2e-focus', '');
-    input?.focus();
-    return !!input && document.activeElement === input;
+    const panel = document.querySelector(sel);
+    let input = [...panel.querySelectorAll('input, textarea')].find(
+      (i) => !i.disabled && i.getClientRects().length > 0 && (i.tagName === 'TEXTAREA' || !/^(checkbox|radio|range|button|submit|reset|color|file)$/.test(i.type)),
+    );
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.setAttribute('data-e2e-standin', '');
+      // First in the panel, so there is somewhere for Tab to go after it.
+      (panel.querySelector('.panel__body') ?? panel).prepend(input);
+    }
+    input.setAttribute('data-e2e-focus', '');
+    input.focus();
+    return document.activeElement === input;
   }, panels[0]);
   await page.keyboard.press('Tab');
   await page.waitForTimeout(250);
@@ -231,11 +245,55 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
     input?.removeAttribute('data-e2e-focus');
     return document.activeElement !== input && document.activeElement !== document.body;
   });
+  await page.evaluate(() => document.querySelector('[data-e2e-standin]')?.remove());
   s = await state();
-  t.ok(focused && moved && !s.hidden && s.open.every(Boolean), `${where}: Tab on a focused control moves the focus and leaves the panels and the interface alone (moved ${moved}, open ${s.open}, hidden ${s.hidden})`);
+  t.ok(focused && moved && !s.hidden && s.open.every(Boolean), `${where}: Tab in a text field moves the focus and leaves the panels and the interface alone (moved ${moved}, open ${s.open}, hidden ${s.hidden})`);
+
+  // A button, checkbox or slider that kept focus after a click does not
+  // keep Tab (owner call): Tab closes the panels and lets go of the focus.
+  // Shift+Tab is still the browser's from anywhere.
+  for (const kind of ['button', 'input[type="checkbox"]', 'input[type="range"]']) {
+    await openAll();
+    const had = await page.evaluate(
+      ([sels, k]) => {
+        for (const sel of sels) {
+          const el = [...document.querySelectorAll(`${sel} ${k}`)].find((i) => !i.disabled && i.getClientRects().length > 0 && !i.classList.contains('panel__handle'));
+          if (el) {
+            el.setAttribute('data-e2e-focus', '');
+            el.focus();
+            return document.activeElement === el;
+          }
+        }
+        return null;
+      },
+      [panels, kind],
+    );
+    if (had === null) continue; // this mode's panels have none
+    await page.keyboard.press('Shift+Tab');
+    await page.waitForTimeout(150);
+    const back = await page.evaluate(() => {
+      const el = document.querySelector('[data-e2e-focus]');
+      const movedOn = document.activeElement !== el && document.activeElement !== document.body;
+      el?.focus();
+      return { movedOn, refocused: document.activeElement === el };
+    });
+    s = await state();
+    t.ok(had && back.movedOn && !s.hidden && s.open.every(Boolean), `${where}: Shift+Tab on a focused ${kind} still moves the focus (moved ${back.movedOn}, open ${s.open})`);
+    await page.keyboard.press('Tab');
+    await settle((sels) => sels.every((sel) => document.querySelector(sel)?.classList.contains('panel--collapsed')));
+    const after = await page.evaluate(() => {
+      const el = document.querySelector('[data-e2e-focus]');
+      el?.removeAttribute('data-e2e-focus');
+      return { focusGone: document.activeElement === document.body || document.activeElement === null, still: document.activeElement === el };
+    });
+    s = await state();
+    t.ok(back.refocused && s.open.every((o) => !o) && !s.hidden && after.focusGone, `${where}: Tab on a focused ${kind} closes the panels and lets go of the focus (open ${s.open}, focus gone ${after.focusGone})`);
+  }
   await page.evaluate(() => document.activeElement?.blur?.());
-  await page.keyboard.press('Tab');
-  await settle((sels) => sels.every((sel) => document.querySelector(sel)?.classList.contains('panel--collapsed')));
+  if ((await state()).open.some(Boolean)) {
+    await page.keyboard.press('Tab');
+    await settle((sels) => sels.every((sel) => document.querySelector(sel)?.classList.contains('panel--collapsed')));
+  }
 }
 
 /** A suite's checks; report() prints them and returns the failure count. */

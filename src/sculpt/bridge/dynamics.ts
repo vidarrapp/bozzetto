@@ -130,9 +130,24 @@ export class DynamicsStore {
       const d = this.get(this.currentTool());
       return swing(d.sizeCurve, d.size);
     };
+    // The clay layer's pressure term (owner call): the pen's pressure on
+    // the strength curve's 0..1 scale, NOT the 0..2 factor above, so a full
+    // press lays the whole layer and a feather none. The strength amount
+    // scales it toward 1 as it does the factor, so a brush whose strength
+    // ignores pressure keeps a constant layer too. A mouse or a finger has
+    // no pressure (Tablet holds a stand-in 0.5 for them): full layer.
+    const origLayer = Tablet.getPressureLayer;
+    Tablet.getPressureLayer = () => {
+      if (!Tablet.pen) return 1;
+      const d = this.get(this.currentTool());
+      if (d.strength <= 0) return 1;
+      const p = CURVES[d.strengthCurve](Math.min(1, Math.max(0, Tablet.pressure)));
+      return 1 + d.strength * (p - 1);
+    };
     this.restore = () => {
       Tablet.getPressureIntensity = origIntensity;
       Tablet.getPressureRadius = origRadius;
+      Tablet.getPressureLayer = origLayer;
     };
   }
 

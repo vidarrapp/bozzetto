@@ -5,7 +5,7 @@ import { DynamicsStore } from './dynamics';
 import { ALPHA_SETS, type AlphaSet } from './alphas';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
-import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from '../../ui/dom';
+import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShouldMoveFocus } from '../../ui/dom';
 import { keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
 import { KEY_DRAG_DEG_PER_PX } from '../../viewer/Lighting';
@@ -140,6 +140,14 @@ type AdjustMode = 'radius' | 'intensity' | null;
 const RADIUS_MIN = 5;
 const RADIUS_MAX = 500;
 const RADIUS_FLOOR = 1;
+/**
+ * The scene record's spacing revision: 1 since clay's default spacing went
+ * from upstream's 0.15 to 0.1, which a record without it holds as a stored
+ * value (see loadSpacing).
+ */
+export const SPACING_REV = 1;
+const LEGACY_CLAY_SPACING = 0.15;
+
 /** Dab spacing's floor: any tighter and a stroke lays down so many dabs it stalls. */
 const SPACING_MIN = 0.02;
 
@@ -459,12 +467,15 @@ export class InputShell {
     // the start of one. Trust the pen; a zero should mean a no-op dab.
     if (e.pointerType === 'pen') {
       Tablet.pressure = Math.min(1, Math.max(0, e.pressure));
+      Tablet.pen = true;
       return;
     }
     // Mouse and plain touch carry no usable pressure (a mouse reports a
     // flat 0.5 while held, touch usually 0), so they stay at the neutral
-    // value that leaves strength on the slider setting.
+    // value that leaves strength on the slider setting. Not a pen: what
+    // reads pressure as an amount (the clay layer) takes it as full.
     Tablet.pressure = 0.5;
+    Tablet.pen = false;
   }
 
   /** Mirror upstream setMousePosition: device pixels relative to the canvas. */
@@ -611,10 +622,18 @@ export class InputShell {
     return out;
   }
 
-  loadSpacing(table: Record<number, number> | undefined): void {
-    if (!table) return;
+  /**
+   * `rev` is the scene's spacingRev. Scenes record every tool's spacing,
+   * changed or not, so one saved before clay's default went from 0.15 to
+   * 0.1 (rev absent) carries the old default as if it had been chosen; that
+   * value is passed over there, and the brush keeps its new default. Any
+   * other spacing it holds was the sculptor's, and comes back.
+   */
+  loadSpacing(table: Record<number, number> | undefined, rev?: number): void {
+    if (!table || typeof table !== 'object') return;
     const tools = this.session.getSculptManager()._tools;
     for (const [idx, value] of Object.entries(table)) {
+      if (!(Number(rev) >= SPACING_REV) && Number(idx) === Enums.Tools.BRUSH && value === LEGACY_CLAY_SPACING) continue;
       const tool = tools[Number(idx)];
       if (tool && typeof tool._spacing === 'number' && Number.isFinite(value)) {
         tool._spacing = Math.max(SPACING_MIN, value);
@@ -1212,6 +1231,13 @@ export class InputShell {
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
     if (e.pointerType === 'touch' && this.fingerMove(e)) return;
+    // A mouse or pen orbit whose button is up without a pointerup having
+    // come (a pen's release lost on the way): the orbit is over. The
+    // camera's side of it ends in Controls, on the same rule.
+    if (this.orbitPointer === e.pointerId && e.pointerType !== 'touch' && (e.buttons & 1) === 0) {
+      this.orbitPointer = -1;
+      this.hooks.orbitEnd();
+    }
     const s = this.session;
     const prevAbsX = this.lastAbsX;
     const prevAbsY = this.lastAbsY;
@@ -1421,6 +1447,7 @@ export class InputShell {
     this.restoreStrokeTool();
     this.spendArm();
     Tablet.pressure = 0.5; // neutral, so hover picking never sees stale pressure
+    Tablet.pen = false;
     s._action = Enums.Action.NOTHING;
     s.render();
   };
@@ -1767,7 +1794,9 @@ export class InputShell {
     // A focused checkbox/slider/select keeps its PLAIN keys (space toggles,
     // arrows slide), but modifier chords stay hotkeys: after clicking a
     // panel checkbox, ctrl+z must still undo rather than go quietly dead.
-    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey) return;
+    // Tab is not one of their keys: it goes on to the chrome check below
+    // (a select keeps it there).
+    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const s = this.session;
 
     // Keep Firefox from opening the menu bar on the negative modifier.
@@ -1794,7 +1823,8 @@ export class InputShell {
     }
 
     // Tab clears the screen for focused work - but only when Tab is not
-    // busy being Tab (see tabShouldMoveFocus).
+    // busy being Tab: Shift+Tab, a text field, a select or a modal (see
+    // tabShouldMoveFocus).
     if (action.id === 'ui.chrome' && e.key === 'Tab' && tabShouldMoveFocus(e)) return;
 
     // Undo, the steps and the turntable DO repeat; everything else is a
@@ -1810,6 +1840,7 @@ export class InputShell {
 
     switch (action.id) {
       case 'ui.chrome':
+        if (e.key === 'Tab') releaseFocusForChrome();
         this.hooks.toggleChrome();
         return this.claim(e);
       case 'ui.present':
@@ -2027,6 +2058,11 @@ export class InputShell {
   /** Window lost focus: every held-key mode ends, since no keyup will come. */
   private readonly onWindowBlur = (): void => {
     if (this.adjust) this.endAdjust();
+    // Controls ends the camera drag on blur too; the orbit is over.
+    if (this.orbitPointer !== -1) {
+      this.orbitPointer = -1;
+      this.hooks.orbitEnd();
+    }
     this.endMarquee();
     this.resetFingers();
     this.lKeyHeld = false;

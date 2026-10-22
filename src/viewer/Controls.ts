@@ -52,6 +52,21 @@ const VELOCITY_TAU = 0.05;
 /** OrbitControls' state with no pointer holding the view. */
 const STATE_NONE = -1;
 
+/** What OrbitControls keeps of the pointers holding it (three r184). */
+interface OrbitPointers {
+  _pointers: number[];
+  _pointerPositions: Record<number, unknown>;
+  _onPointerMove: (e: PointerEvent) => void;
+  _onPointerUp: (e: PointerEvent) => void;
+}
+
+/** The `buttons` bit of a `button` number (0 left 1, 1 middle 4, 2 right 2, then back/forward). */
+export function buttonMask(button: number): number {
+  if (button === 1) return 4;
+  if (button === 2) return 2;
+  return button >= 0 && button < 16 ? 1 << button : 0;
+}
+
 /** A per-60 Hz-frame damping share, for a frame that took `dt` seconds. */
 export function dampingFor(perFrame60: number, dt: number): number {
   return 1 - Math.pow(1 - perFrame60, Math.max(0, dt) * 60);
@@ -111,6 +126,136 @@ export class Controls {
     controls.dampingFactor = 0.08;
     controls.zoomSpeed = 0.9;
     this.controls = controls;
+    this.domElement = domElement;
+    // Before OrbitControls on the press (the window's capture phase runs
+    // ahead of the canvas), after it to see what it started, and on the
+    // window for every way a drag can end without its pointerup.
+    window.addEventListener('pointerdown', this.onPressFirst, true);
+    domElement.addEventListener('pointerdown', this.onPressAfter);
+    window.addEventListener('pointermove', this.onAnyMove, true);
+    window.addEventListener('pointerup', this.onAnyUp, true);
+    window.addEventListener('pointercancel', this.onAnyCancel, true);
+    domElement.addEventListener('lostpointercapture', this.onLostCapture);
+    window.addEventListener('blur', this.onWindowBlur);
+  }
+
+  private readonly domElement: HTMLElement;
+  /**
+   * The mouse or pen drag OrbitControls is running: its pointer and the
+   * `buttons` bit of the button that began it. A pen's barrel button can
+   * let go without a pointerup (Windows 11 Ink: the release arrives as the
+   * hover's pointermove, buttons 0, or as an up from another pointer), and
+   * OrbitControls, which never reads `buttons` on a move, then held the
+   * view for good - every hover move turned it, with no way out short of
+   * leaving the page. So the drag ends here as soon as the button that
+   * began it is no longer down, whatever does or does not arrive.
+   */
+  private drag: { pointerId: number; mask: number } | null = null;
+  /** The button map to put back after a pen barrel press borrowed it. */
+  private savedButtons: OrbitControls['mouseButtons'] | null = null;
+
+  /**
+   * A pen's barrel button pans (owner call), whichever number its driver
+   * reports it as: middle (button 1, buttons 4) or right (button 2,
+   * buttons 2), where a right press would otherwise dolly. OrbitControls
+   * reads the map once, on the press; it goes back after.
+   */
+  private readonly onPressFirst = (e: PointerEvent): void => {
+    this.restoreButtons();
+    if (e.pointerType !== 'pen' || (e.button !== 1 && e.button !== 2)) return;
+    if (e.target !== this.domElement) return;
+    this.savedButtons = { ...this.controls.mouseButtons };
+    this.controls.mouseButtons = { LEFT: this.savedButtons.LEFT, MIDDLE: MOUSE.PAN, RIGHT: MOUSE.PAN };
+  };
+
+  private readonly onPressAfter = (e: PointerEvent): void => {
+    this.restoreButtons();
+    if (e.pointerType === 'touch') return;
+    const c = this.controls as unknown as OrbitInternals & OrbitPointers;
+    // Only a press OrbitControls took (the sculpt shell keeps a stroke's).
+    if (c.state === STATE_NONE || !c._pointers.includes(e.pointerId)) return;
+    this.drag = { pointerId: e.pointerId, mask: buttonMask(e.button) };
+  };
+
+  private restoreButtons(): void {
+    if (!this.savedButtons) return;
+    this.controls.mouseButtons = this.savedButtons;
+    this.savedButtons = null;
+  }
+
+  /**
+   * A move from a mouse or pen whose buttons no longer include the one
+   * that began the drag ends it (a hovering pen reports buttons 0). Not a
+   * finger's: touch navigation is OrbitControls' own and ends on its lifts.
+   * Nothing re-enters another mode when the button set changes mid-drag:
+   * a pan stays a pan until its button goes, and then the drag is over.
+   */
+  private readonly onAnyMove = (e: PointerEvent): void => {
+    const d = this.drag;
+    if (!d || e.pointerType === 'touch') return;
+    if ((e.buttons & d.mask) === 0) this.endDrag();
+  };
+
+  /**
+   * The drag's own pointerup is OrbitControls' to handle. An up from some
+   * other mouse or pen pointer (the barrel's release reported under
+   * another id) that leaves the drag's button up ends it here: let
+   * through, OrbitControls would drop no pointer and fall back to a
+   * one-finger rotate on the one it still holds.
+   */
+  private readonly onAnyUp = (e: PointerEvent): void => {
+    const d = this.drag;
+    if (!d) return;
+    if (e.pointerId === d.pointerId) {
+      this.drag = null;
+      return;
+    }
+    if (e.pointerType !== 'touch' && (e.buttons & d.mask) === 0) this.endDrag();
+  };
+
+  private readonly onAnyCancel = (e: PointerEvent): void => {
+    if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag();
+  };
+
+  private readonly onLostCapture = (e: PointerEvent): void => {
+    if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag();
+  };
+
+  private readonly onWindowBlur = (): void => {
+    if (this.drag) this.endDrag();
+  };
+
+  /**
+   * End the mouse or pen drag as OrbitControls' own pointerup would: its
+   * pointers dropped, its document listeners off, the capture let go, its
+   * state none. Done by hand rather than through its handler, which
+   * releases the capture before anything else and throws there for a
+   * pointer the browser no longer has.
+   */
+  private endDrag(): void {
+    this.drag = null;
+    const c = this.controls as unknown as OrbitInternals & OrbitPointers;
+    for (const id of c._pointers) {
+      try {
+        if (this.domElement.hasPointerCapture(id)) this.domElement.releasePointerCapture(id);
+      } catch {
+        // A pointer the browser has already forgotten holds no capture.
+      }
+    }
+    c._pointers.length = 0;
+    c._pointerPositions = {};
+    const doc = this.domElement.ownerDocument;
+    doc.removeEventListener('pointermove', c._onPointerMove);
+    doc.removeEventListener('pointerup', c._onPointerUp);
+    if (c.state !== STATE_NONE) {
+      c.state = STATE_NONE;
+      this.controls.dispatchEvent({ type: 'end' });
+    }
+  }
+
+  /** Whether a mouse or pen navigation drag is under way (the tests read it). */
+  isDragging(): boolean {
+    return this.drag !== null;
   }
 
   /** Frame `box` from the default viewing direction (initial load). */
@@ -387,6 +532,14 @@ export class Controls {
   }
 
   dispose(): void {
+    window.removeEventListener('pointerdown', this.onPressFirst, true);
+    this.domElement.removeEventListener('pointerdown', this.onPressAfter);
+    window.removeEventListener('pointermove', this.onAnyMove, true);
+    window.removeEventListener('pointerup', this.onAnyUp, true);
+    window.removeEventListener('pointercancel', this.onAnyCancel, true);
+    this.domElement.removeEventListener('lostpointercapture', this.onLostCapture);
+    window.removeEventListener('blur', this.onWindowBlur);
+    this.restoreButtons();
     this.controls.dispose();
   }
 }

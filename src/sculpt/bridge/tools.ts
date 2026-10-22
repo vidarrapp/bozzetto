@@ -26,13 +26,24 @@ import type { SculptSession } from './SculptSession';
 const MOVE_FALLOFF_POW = 1.0;
 
 /**
- * Clay strips: plateau fraction of the radius at full strength, and the
- * strip layer height as a fraction of the radius (upstream 0.1). Both sit
- * at their slider extremes by review call - the widest flat top and the
- * thinnest layer, which is the flattest, most ribbon-like default.
+ * Clay strips (owner call): plateau fraction of the radius at full
+ * strength, the strip layer height as a fraction of the radius at full pen
+ * pressure (upstream 0.1; the layer follows pressure, and a mouse lays all
+ * of it), and the dab spacing.
  */
+const CLAY_PLATEAU = 0.8;
+const CLAY_LAYER = 0.1;
+const CLAY_SPACING = 0.1;
+
 /** A rake's default dab spacing: close enough for the tines to comb. */
 const RAKE_SPACING = 0.06;
+/**
+ * The rake's own plateau and layer: the clay values from before the clay
+ * brush went to a pressure-driven 0.1 layer (the thinnest the slider
+ * offers). The rake's layer is fixed, not pressure-driven.
+ */
+const RAKE_PLATEAU = 0.8;
+const RAKE_LAYER = 0.01;
 
 /**
  * Crease defaults (owner-tuned): the sharpest crest the slider offers and
@@ -42,10 +53,6 @@ const CREASE_PROFILE = 12; // the sharpest the slider offers (owner call)
 const CREASE_PINCH = 0.625; // a quarter of the slider's 0-2.5 (owner call)
 /** Crease dab spacing: close, so a cut reads as one line (owner call). */
 const CREASE_SPACING = 0.05;
-
-const STRIPS_PLATEAU = 0.8;
-/** The thinnest layer the slider offers (owner call: start there). */
-const STRIPS_LAYER = 0.01;
 
 /**
  * Polish (hPolish-inspired, replaces Twist on 9):
@@ -513,27 +520,45 @@ export class PolishBrush extends Flatten {
 
 /**
  * The Standard brush as clay strips (review request): flat-topped falloff
- * (full strength across STRIPS_PLATEAU of the radius, quartic tail after)
- * and a thicker build plane, so strokes lay down ribbon-like layers
- * instead of soft mounds.
+ * (full strength across CLAY_PLATEAU of the radius, quartic tail after)
+ * and a build plane raised by the layer, so strokes lay down ribbon-like
+ * layers instead of soft mounds.
  */
 export class ClayStripsBrush extends Brush {
   /** Flat-top fraction of the radius at full strength (WS4 slider). */
-  plateau = STRIPS_PLATEAU;
-  /** Strip layer height as a fraction of the radius (WS4 slider). */
-  layer = STRIPS_LAYER;
+  plateau = CLAY_PLATEAU;
+  /** Strip layer height as a fraction of the radius, at full pressure (WS4 slider). */
+  layer = CLAY_LAYER;
+  /**
+   * Whether the layer height follows pen pressure (owner call: clay does,
+   * the rake keeps a fixed layer). The plane offset is then
+   * layer x radius x p, p the pressure on the strength curve's 0..1 scale
+   * (Tablet.getPressureLayer, 1 for a mouse or a finger).
+   */
+  protected layerFollowsPressure = true;
+  /** The last clay dab's plane offset in local units (the parity recorder reads it). */
+  lastLayerOffset = 0;
 
   constructor(session: SculptSession) {
     super(session);
     // No stencil until one is picked. Upstream leaves the NUMBER 0 here,
     // which behaves as none but is not none - see InputShell.getToolAlpha.
     this._idAlpha = null;
+    // Closer than upstream's 0.15 (owner call): the strips read as one
+    // ribbon rather than a row of stamps.
+    this._spacing = CLAY_SPACING;
+  }
+
+  /** The layer's pressure term p, 0..1: 1 when the layer is fixed or nothing reports pressure. */
+  layerPressure(): number {
+    if (!this.layerFollowsPressure) return 1;
+    return Tablet.getPressureLayer ? Tablet.getPressureLayer() : 1;
   }
 
   /**
    * BOZZETTO EDIT of upstream Brush.stroke (vendor Brush.js): identical
-   * flow; the clay branch raises the layer plane to STRIPS_LAYER x radius
-   * (upstream 0.1) and flattens with the plateau falloff below.
+   * flow; the clay branch raises the layer plane to layer x radius x p
+   * (upstream 0.1 x radius) and flattens with the plateau falloff below.
    */
   override stroke(picking: Picking): void {
     let iVertsInRadius = picking.getPickedVertices();
@@ -565,7 +590,9 @@ export class ClayStripsBrush extends Brush {
       const aCenter = this._lockPosition
         ? picking.getIntersectionPoint().slice()
         : this.areaCenter(iVertsFront);
-      const off = Math.sqrt(r2) * this.layer; // CHANGED (upstream 0.1)
+      // CHANGED (upstream 0.1 x radius, no pressure term).
+      const off = Math.sqrt(r2) * this.layer * this.layerPressure();
+      this.lastLayerOffset = off;
       vec3.scaleAndAdd(
         aCenter as unknown as vec3,
         aCenter as unknown as vec3,
@@ -617,7 +644,7 @@ export class ClayStripsBrush extends Brush {
   /**
    * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js):
    * identical projection loop with a plateau falloff - full strength out
-   * to STRIPS_PLATEAU of the radius, the upstream quartic beyond it.
+   * to the plateau fraction of the radius, the upstream quartic beyond it.
    */
   private flattenStrips(
     iVertsInRadius: Uint32Array,
@@ -690,8 +717,12 @@ export class ClayStripsBrush extends Brush {
 export class RakeBrush extends ClayStripsBrush {
   constructor(session: SculptSession) {
     super(session);
+    // Its own values, not clay's: the rake's layer stays fixed and thin.
+    this.plateau = RAKE_PLATEAU;
+    this.layer = RAKE_LAYER;
+    this.layerFollowsPressure = false;
     this._idAlpha = DEFAULT_RAKE_ALPHA;
-    // Tighter than the 0.15 default: at wider spacing the tines break into
+    // Tighter than clay's 0.1: at wider spacing the tines break into
     // separate stamps instead of drawing continuous grooves.
     this._spacing = RAKE_SPACING;
     // Full strength by default, where clay sits lower. Measured on a

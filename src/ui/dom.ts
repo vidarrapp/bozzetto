@@ -45,17 +45,33 @@ export function isFormControlTarget(e: KeyboardEvent): boolean {
 
 /**
  * True when a Tab press should do its normal job - moving focus - instead
- * of acting as a hotkey. Tab is the only key the app binds that already
- * means something to the browser, so it may only be claimed when focus is
- * nowhere in particular (the body, or the non-focusable canvas) and the
- * user is going forward. Without this a keyboard user tabbing through the
- * panels gets stuck: there is no focus trap to escape and no focus ring to
- * show where they are.
+ * of acting as the chrome toggle (owner call). Shift+Tab always moves
+ * focus, so keyboard traversal keeps a way through the panels. Plain Tab
+ * keeps its browser meaning only where focus is in something Tab belongs
+ * to: a field you type into (a text input, a textarea, contenteditable), a
+ * select, or anything inside a modal dialog. A button, checkbox, slider or
+ * list row that merely kept focus after a click does not hold on to Tab:
+ * it used to, so after Create in the Scene panel (the clicked button keeps
+ * focus) Tab walked the buttons instead of closing the panels.
  */
 export function tabShouldMoveFocus(e: KeyboardEvent): boolean {
   if (e.shiftKey) return true;
-  const a = document.activeElement;
-  return !!a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS';
+  if (document.body.classList.contains('has-modal')) return true;
+  const a = document.activeElement as HTMLElement | null;
+  if (!a || a === document.body || a === document.documentElement) return false;
+  if (isTextField(a) || a.tagName === 'SELECT') return true;
+  return !!a.closest('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"]');
+}
+
+/**
+ * Before Tab acts on the chrome: drop focus from whatever control kept it
+ * (a clicked button), so the next Tab finds focus nowhere in particular
+ * and means the same thing again, and no hidden control holds the focus
+ * ring while the interface is away.
+ */
+export function releaseFocusForChrome(): void {
+  const a = document.activeElement as HTMLElement | null;
+  if (a && a !== document.body && a !== document.documentElement && typeof a.blur === 'function') a.blur();
 }
 
 /**

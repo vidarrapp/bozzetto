@@ -451,7 +451,7 @@ function appInstall(E, session) {
 
 const APP_INSTALL_NOTES = [
   'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05) and loadBrushAlphas().',
-  'InputShell.install: DynamicsStore.install() (per-brush pressure: Crease and Paint size 1 strength 1, Drag 0/0, the rest size 0 strength 1, linear curves); Crease._negative = false.',
+  'InputShell.install: DynamicsStore.install() (per-brush pressure: Crease and Paint size 1 strength 1, Drag 0/0, the rest size 0 strength 1, linear curves; Tablet.getPressureLayer for the clay layer); Crease._negative = false. InputShell.feedPressure: Tablet.pen = true for a pen event (here, every press and move).',
   'mode.ts: Paint._writeRoughness = Paint._writeMetalness = false.',
   'InputShell.selectBrush(BRUSH): _clay = true (already the default).',
   'PaintBlur is the shift swap over Paint (InputShell): it takes Paint._radius, _intensity and _hardness at the press.',
@@ -575,8 +575,10 @@ async function record(E, meshKey, brush, shared) {
     };
     const pressureState = () => ({
       pressure: E.Tablet.pressure,
+      pen: !!E.Tablet.pen,
       pressureIntensity: E.Tablet.getPressureIntensity(),
       pressureRadius: E.Tablet.getPressureRadius(),
+      pressureLayer: E.Tablet.getPressureLayer ? E.Tablet.getPressureLayer() : 1,
     });
     const pickState = (p) => ({
       intersection: arr(p.getIntersectionPoint()),
@@ -619,7 +621,14 @@ async function record(E, meshKey, brush, shared) {
           picked: arr(p.getPickedVertices()),
         };
         if (brush.mode === 'drag') d.dragDir = arr(tool._dragDir);
+        // The clay family's build plane: layer x radius x layerPressure
+        // (1 for the rake, whose layer is fixed), as the dab used it.
+        if ('lastLayerOffset' in tool) {
+          d.layerPressure = tool.layerPressure();
+          tool.lastLayerOffset = NaN;
+        }
         const out = orig(p, sym);
+        if ('lastLayerOffset' in tool) d.layerOffset = Number.isNaN(tool.lastLayerOffset) ? null : tool.lastLayerOffset;
         if (alpha()) {
           d.alpha = {
             id: tool._idAlpha,
@@ -638,9 +647,11 @@ async function record(E, meshKey, brush, shared) {
     const params = toolParams(tool);
     const dyn = { ...dynamics.get(index) };
 
-    // Press.
+    // Press. The pressures are a pen's (InputShell sets Tablet.pen per
+    // event; a mouse would read as full pressure for the clay layer).
     const [px, py] = screenPath[0];
     E.Tablet.pressure = 0.5;
+    E.Tablet.pen = true;
     session._mouseX = px;
     session._mouseY = py;
     mouse = [px, py];
@@ -690,6 +701,7 @@ async function record(E, meshKey, brush, shared) {
     session.getStateManager().cleanNoop();
     session._action = E.Enums.Action.NOTHING;
     E.Tablet.pressure = 0.5;
+    E.Tablet.pen = false;
 
     const output = snapshotMesh(mesh);
     const res = {
@@ -759,7 +771,7 @@ const FORMAT = {
   faces: 'input.faces is the engine face array: 4 indices per face. A quad is [a, b, c, d]; a triangle is [a, b, c, TRI_INDEX] with TRI_INDEX = 4294967295 (Utils.TRI_INDEX). Winding is the engine order (counter-clockwise seen from outside). Faces do not change during a fixture.',
   materials: 'materials are per-vertex triples [roughness, metalness, mask]; mask 1 = unmasked, 0 = fully masked. Every falloff is multiplied by the mask. materialsUniform gives the one triple every vertex has when they are all equal.',
   colors: 'colors are per-vertex linear RGB triples. Every fixture starts from a two-tone colouring (x < the local bounds centre: [0.8, 0.3, 0.2], else [0.2, 0.4, 0.9]).',
-  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure and the Tablet factors, and alpha state for a stencilled brush (taken after the dab, as getAlpha used it). press is the pointer-down, which is not a dab except for Drag.',
+  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for the clay family (ClayStripsBrush, RakeBrush) layerPressure (the term the dab used: pressureLayer for clay, 1 for the rake) and layerOffset (the build plane offset along the area normal, local units: layer * radiusLocal * layerPressure, negated in the loop when _negative), and alpha state for a stencilled brush (taken after the dab, as getAlpha used it). press is the pointer-down, which is not a dab except for Drag.',
   moves: 'moves are the pointer positions after the press (device px on the fixed camera), with the local-space point each was aimed at (localTarget) where the path is on the surface.',
   output: 'output holds the state after the stroke ended: positions and normals always, colors/materials/mask where the brush writes them.',
 };
@@ -798,7 +810,7 @@ async function main() {
       bridgeTools: 'src/sculpt/bridge/tools.ts',
       bridgeConstants: bridgeConstants(),
       TRI_INDEX: E.Utils.TRI_INDEX,
-      tablet: 'Tablet.getPressureIntensity/getPressureRadius are replaced by DynamicsStore.install: factor = 1 + amount * (curve(pressure) * 2 - 1), amount per brush and channel (meta.brushes[].dynamics), curve linear by default.',
+      tablet: 'Tablet.getPressureIntensity/getPressureRadius are replaced by DynamicsStore.install: factor = 1 + amount * (curve(pressure) * 2 - 1), amount per brush and channel (meta.brushes[].dynamics), curve linear by default. DynamicsStore.install also adds Tablet.getPressureLayer, the clay layer\'s pressure term: 1 when Tablet.pen is false (a mouse or a finger) or the strength amount is 0, else 1 + strengthAmount * (strengthCurve(pressure) - 1), on the 0..1 scale (linear at full amount: the pressure itself). Every stroke here is a pen (Tablet.pen = true).',
       appInstall: APP_INSTALL_NOTES,
     },
     pressures: { press: 0.5, moves: PRESSURES },

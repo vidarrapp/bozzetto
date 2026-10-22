@@ -7,7 +7,7 @@ import type { Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
-import { InputShell } from './bridge/InputShell';
+import { InputShell, SPACING_REV } from './bridge/InputShell';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { SculptSession } from './bridge/SculptSession';
@@ -1243,6 +1243,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     dynamics: input.dynamics.serialize(),
     paintColor: paintColorOf(),
     spacing: input.serializeSpacing(),
+    spacingRev: SPACING_REV,
     alphas: input.serializeAlphas(),
     symmetry: session.symmetry.serialize(),
   });
@@ -1273,7 +1274,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       worldScale.restore(settings.worldScale, settings.worldRadius);
       worldScale.loadSizes(settings.radius);
       input.dynamics.load(settings.dynamics);
-      input.loadSpacing(settings.spacing);
+      input.loadSpacing(settings.spacing, settings.spacingRev);
       input.loadAlphas(settings.alphas, settings.rakeAlpha);
       if (settings.paintColor) setPaintColorOn(settings.paintColor);
       input.refreshBrushCursor();

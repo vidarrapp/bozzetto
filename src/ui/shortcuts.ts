@@ -1,5 +1,5 @@
 import type { Viewer } from '../viewer/Viewer';
-import { isFormControlTarget, isTextEntryTarget, tabShouldMoveFocus } from './dom';
+import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShouldMoveFocus } from './dom';
 import { keymap } from './keymap';
 import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { showPreferences } from './Preferences';
@@ -74,7 +74,9 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
     // Plain keys on a focused form control (space on a checkbox, arrows on
     // a slider) belong to it; chords still reach here.
     if (isTextEntryTarget(e)) return;
-    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey) return;
+    // Tab is not one of a checkbox's or slider's own keys: it goes on to
+    // the chrome check below (a select keeps it there).
+    if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const action = keymap.actionFor(e, 'view');
     if (!action) return;
     if (e.repeat && !action.repeat) return;
@@ -110,11 +112,12 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
         handlers.refresh?.();
         return;
       case 'ui.chrome':
-        // Shift+Tab, and Tab from anything focusable, belong to the browser:
-        // this used to swallow both, killing backward traversal everywhere
-        // and stranding anyone who tabbed onto a button.
+        // Shift+Tab, and Tab in a text field, a select or a modal, belong
+        // to the browser (see tabShouldMoveFocus); a button that kept focus
+        // after a click does not keep Tab.
         if (e.key === 'Tab' && tabShouldMoveFocus(e)) return;
         e.preventDefault();
+        if (e.key === 'Tab') releaseFocusForChrome();
         handlers.toggleChrome?.();
         return;
       case 'ui.show':

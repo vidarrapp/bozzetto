@@ -49,8 +49,18 @@ declare module '@sculpt-vendor/misc/Tablet' {
     radiusFactor: number;
     intensityFactor: number;
     pressure: number;
+    /**
+     * Bozzetto: whether `pressure` is a pen's own reading (InputShell sets
+     * it per event). A mouse or a finger reports none, and stays at 0.5.
+     */
+    pen?: boolean;
     getPressureIntensity(): number;
     getPressureRadius(): number;
+    /**
+     * Bozzetto (DynamicsStore.install): the pen pressure on the strength
+     * curve's 0..1 scale, for the clay layer; 1 when no pen reports one.
+     */
+    getPressureLayer?(): number;
   };
   export default Tablet;
 }

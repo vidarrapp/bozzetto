@@ -303,6 +303,9 @@ export class SculptPanel extends SidePanel {
           { limits: AMOUNT },
         ),
       );
+      const layerHint = div('sculpt-panel__hint muted');
+      layerHint.textContent = 'The layer height follows pen pressure: a full press lays the whole layer. A mouse always lays all of it.';
+      extras.appendChild(layerHint);
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
       // balance between them. Profile is the crest's exponent - a knife

@@ -55,7 +55,17 @@ The stroke: a press and five pointer moves. For the surface brushes the
 pointer follows a fixed path across the mesh (over the cube's right edge,
 onto the plane's right boundary), one dab per move. Move and Drag pull off the
 surface instead. Pressure is 0.5 at the press and 0.5, 0.65, 0.8, 0.4, 0.5 on
-the moves, which matters for the brushes whose dynamics use it.
+the moves, which matters for the brushes whose dynamics use it. The
+pressures are a pen's (`Tablet.pen` is set, as InputShell sets it for a
+pen event): a mouse or a finger reports no pressure, and the clay layer
+then takes the full term, 1.
+
+The pressure terms (`meta.engine.tablet`): the strength and size factors are
+`1 + amount * (curve(pressure) * 2 - 1)`, from 0 to 2 at full amount. The
+clay layer's term is on the 0..1 scale instead: `1 + amount *
+(curve(pressure) - 1)` with the strength channel's amount and curve, which at
+the default full amount and linear curve is the pressure itself; it is 1 for
+a mouse or a finger, or when the strength amount is 0.
 
 ## The camera and the dabs
 
@@ -75,8 +85,16 @@ Picking state at that moment, all in mesh local space:
 - `radiusLocal2` (what the loops use) and `radiusLocal`, and the world radius
   and screen radius they came from (`radiusWorld2`, `screenRadius`).
 - `picked`: the vertex indices in the order the engine walks them.
-- `pressure`, and the factors it gave (`pressureIntensity`,
-  `pressureRadius`); `intensity` is the tool's strength times the factor.
+- `pressure`, `pen` (always true here: the strokes are a pen's), and the
+  factors it gave (`pressureIntensity`, `pressureRadius`, and
+  `pressureLayer`, the clay layer's pressure term); `intensity` is the
+  tool's strength times the factor.
+- Clay and Rake: `layerPressure`, the layer term the dab used, and
+  `layerOffset`, how far the build plane sits off the area centre along the
+  area normal, in local units: `layer * radiusLocal * layerPressure`
+  (negated in the loop when `_negative`). Clay's layer follows pressure, so
+  its `layerPressure` is `pressureLayer`; the rake's layer is fixed and its
+  `layerPressure` is 1.
 - Drag: `dragDir`. VolumetricMove: `center` (the press), `moveDir`.
 - Rake: `alpha`, the stencil frame after the dab (`origin`, `side`,
   `lookAt`). The stencil itself is in `alpha-rake06.json`.
@@ -139,7 +157,8 @@ parameters.
 ## Re-recording
 
 The fixtures describe the engine at `meta.webCommit`. Re-record them whenever
-a brush changes. The clay brush's tuning (`STRIPS_PLATEAU`, `STRIPS_LAYER`)
-is about to change, so the ClayStripsBrush fixtures, and RakeBrush's, which
-is the clay brush through a stencil, must be re-recorded after that.
-`--verify` against the old files shows what moved.
+a brush changes; `--verify` against the old files shows what moved. The
+clay brush and the rake have their own constants (`CLAY_*`, `RAKE_*` in
+`meta.engine.bridgeConstants`): clay is spacing 0.1, plateau 0.8 and a
+pressure-driven layer of 0.1; the rake keeps spacing 0.06, plateau 0.8 and a
+fixed layer of 0.01. Retuning one re-records only its own fixtures.

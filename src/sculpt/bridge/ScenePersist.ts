@@ -35,6 +35,12 @@ export interface SculptSettings {
   paintColor?: string;
   /** Per-tool dab spacing (fraction of the radius), by vendor tool index. */
   spacing?: Record<number, number>;
+  /**
+   * Which defaults `spacing` was written against (InputShell.SPACING_REV).
+   * Absent before clay's spacing went to 0.1: such a record's clay 0.15 is
+   * the old default, not a choice, and is not restored.
+   */
+  spacingRev?: number;
   /** Per-tool stencil choice, by vendor tool index; null is "no stencil". */
   alphas?: Record<number, string | null>;
   /** The rake's stencil, from before alphas went per-tool. Read, not written. */
