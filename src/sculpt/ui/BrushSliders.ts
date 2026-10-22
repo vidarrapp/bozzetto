@@ -169,7 +169,9 @@ export class BrushSliders {
       wrap.className = 'sculpt-solo';
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'sculpt-histbtn sculpt-solobtn';
+      // Its own class, styled like the history chips: .sculpt-histbtn means
+      // undo or redo, and Solo sharing it made it the first match for them.
+      btn.className = 'sculpt-solobtn';
       btn.innerHTML = '<i class="fi fi-bs-arrows-to-eye" aria-hidden="true"></i>';
       // Matches the state cache's initial values; refresh writes on change.
       btn.disabled = true;

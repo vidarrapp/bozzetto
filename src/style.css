@@ -2798,7 +2798,8 @@ body:has(.transport) .chrome-hint {
   align-items: center;
 }
 
-.sculpt-histbtn {
+.sculpt-histbtn,
+.sculpt-solobtn {
   width: 30px;
   height: 30px;
   padding: 5px;
@@ -2820,18 +2821,22 @@ body:has(.transport) .chrome-hint {
 }
 
 .sculpt-histbtn:not(:disabled):hover,
-.sculpt-histbtn:not(:disabled):active {
+.sculpt-histbtn:not(:disabled):active,
+.sculpt-solobtn:not(:disabled):hover,
+.sculpt-solobtn:not(:disabled):active {
   border-color: var(--accent);
   color: var(--text);
 }
 
-.sculpt-histbtn:disabled {
+.sculpt-histbtn:disabled,
+.sculpt-solobtn:disabled {
   opacity: 0.3;
   cursor: default;
 }
 
 /* Solo at the head of the rail, above both tracks (owner layout call):
-   the history chips' shape with a Flaticon glyph (fi-bs-arrows-to-eye).
+   the history chips' shape with a Flaticon glyph (fi-bs-arrows-to-eye),
+   under its own class: .sculpt-histbtn is the undo/redo chips alone.
    Off it is faded like an idle redo chip; on it is a dark glyph on the
    accent. */
 .sculpt-solo {
@@ -3375,6 +3380,7 @@ body.is-sampling * {
 .sculpt-toolbar__btn,
 .sculpt-slider,
 .sculpt-histbtn,
+.sculpt-solobtn,
 .outliner__btn,
 .panel__handle,
 .float-window__bar,
@@ -3386,7 +3392,8 @@ body.is-sampling * {
 }
 
 .sculpt-toolbar__btn *,
-.sculpt-histbtn * {
+.sculpt-histbtn *,
+.sculpt-solobtn * {
   -webkit-user-drag: none;
   pointer-events: none;
 }
