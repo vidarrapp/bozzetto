@@ -18,3 +18,7 @@ public/assets/matcaps/clay.png
 .dev.vars*
 .env*
 .npmrc
+
+# Local output of scripts, such as the brush parity fixtures
+# (scripts/parity-fixtures.mjs, docs/parity-fixtures.md).
+/scratchpad/

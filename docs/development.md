@@ -48,6 +48,10 @@ npm run e2e -- <suite ...>  # the smoke tests against the current test build
 The Blender scripts behind the base meshes and the mannequins, and the
 `rig:*` scripts beside them, are described in `tools/README.md`.
 
+`node scripts/parity-fixtures.mjs` records the sculpt brushes' exact output as
+JSON fixtures, for testing a port of the brushes against; see
+[parity-fixtures.md](parity-fixtures.md).
+
 ### URL switches
 
 Beside the ones under Controls in the [README](../README.md#controls), `?canvasmsaa=1` gives the canvas its own MSAA again, as it had before, to compare a frame against.
@@ -150,6 +154,7 @@ scripts/
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
   export-single-file.mjs   CLI: timelapse to a self-contained .html
+  parity-fixtures.mjs      CLI: the sculpt brushes' exact output as JSON fixtures
 tools/
   export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
   build-mannequins.py      Blender: the bundle's figures rigged into public/assets/armature
