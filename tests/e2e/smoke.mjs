@@ -1843,12 +1843,13 @@ export const suites = {
       const z = size.getBoundingClientRect();
       const glyph = btn.querySelector('i.fi.fi-bs-arrows-to-eye');
       return {
-        above: b.bottom <= s.top && s.top - b.bottom < 24 && b.top >= z.bottom,
-        next: btn.parentElement.nextElementSibling === strength,
+        above: b.bottom <= z.top && z.top - b.bottom < 24 && z.bottom <= s.top,
+        next: btn.parentElement.nextElementSibling === size,
+        offFaded: btn.getAttribute('aria-pressed') !== 'false' || Number(getComputedStyle(btn).opacity) < 0.5,
         glyph: !!glyph && getComputedStyle(glyph, '::before').fontFamily.includes('uicons-bold-straight'),
       };
     });
-    t.ok(placed?.above && placed.next, `the Solo button sits on the rail directly above the strength slider (${JSON.stringify(placed)})`);
+    t.ok(placed?.above && placed.next && placed.offFaded, `the Solo button heads the rail above both sliders, faded while off (${JSON.stringify(placed)})`);
     t.ok(placed?.glyph, 'with the bold straight arrows-to-eye glyph');
     const soloButton = (press) =>
       page.evaluate(async (how) => {

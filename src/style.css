@@ -2830,9 +2830,10 @@ body:has(.transport) .chrome-hint {
   cursor: default;
 }
 
-/* Solo on the rail, directly above the strength track (owner layout call):
-   the history chips' look with a Flaticon glyph (fi-bs-arrows-to-eye),
-   lit while solo is on. */
+/* Solo at the head of the rail, above both tracks (owner layout call):
+   the history chips' shape with a Flaticon glyph (fi-bs-arrows-to-eye).
+   Off it is faded like an idle redo chip; on it is a dark glyph on the
+   accent. */
 .sculpt-solo {
   display: flex;
   justify-content: center;
@@ -2851,10 +2852,21 @@ body:has(.transport) .chrome-hint {
   display: block;
 }
 
-.sculpt-solobtn[aria-pressed='true'] {
+.sculpt-solobtn[aria-pressed='false'] {
+  opacity: 0.3;
+}
+
+.sculpt-solobtn[aria-pressed='false']:not(:disabled):hover {
+  opacity: 0.8;
+}
+
+.sculpt-solobtn[aria-pressed='true'],
+.sculpt-solobtn[aria-pressed='true']:hover,
+.sculpt-solobtn[aria-pressed='true']:active {
+  opacity: 1;
   border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
+  background: var(--accent);
+  color: #1b1714;
 }
 
 /* The channel box (sculpt/ui/ChannelBox.ts): Maya's, nine compact rows at

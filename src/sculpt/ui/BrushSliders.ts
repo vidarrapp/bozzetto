@@ -161,8 +161,7 @@ export class BrushSliders {
     const strength = this.buildSlider('strength', 'Brush strength');
     this.nubs = { size: size.nub, strength: strength.nub };
     this.hist = new HistoryButtons(history);
-    this.root.append(size.el);
-    // Solo, directly above the strength track (owner layout call): the
+    // Solo, at the head of the rail above both tracks (owner layout call): the
     // view's one toggle a hand on the rail reaches for, Alt+Q's twin on a
     // touch screen. Pressed while solo is on; greyed with nothing active.
     if (solo) {
@@ -185,7 +184,7 @@ export class BrushSliders {
       this.titleSolo();
       this.offKeymap = keymap.onChange(() => this.titleSolo());
     }
-    this.root.append(strength.el, this.hist.el);
+    this.root.append(size.el, strength.el, this.hist.el);
     document.body.appendChild(this.root);
 
     this.input.onBrushChange = () => this.refresh();
