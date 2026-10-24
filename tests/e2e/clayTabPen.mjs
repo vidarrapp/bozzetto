@@ -253,7 +253,7 @@ export const suites = {
     t.ok(defaults.rake.spacing === 0.06 && defaults.rake.curve === 'round' && defaults.rake.tines === 4 && defaults.rake.layer === undefined, `the tine rake keeps its own spacing 0.06, four Round tines and no clay layer (${JSON.stringify(defaults.rake)})`);
     t.eq(defaults.current, defaults.clayIndex, 'key 3 is the clay brush');
 
-    // The panel's layer slider reaches past 0.1 and says it follows pressure.
+    // The panel's layer slider reaches past 0.1, with no hint under it.
     await page.evaluate(() => {
       const p = document.querySelector('.panel--sculpt');
       if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle')?.click();
@@ -266,7 +266,7 @@ export const suites = {
       return { min: Number(input?.min), max: Number(input?.max), value: Number(input?.value), hint };
     });
     t.ok(slider.min <= 0.01 && slider.max >= 0.3 && Math.abs(slider.value - 0.1) < 1e-9, `the Strip layer slider sits at 0.1 well inside its range (${JSON.stringify(slider)})`);
-    t.ok(/follows pen pressure/.test(slider.hint) && /mouse/.test(slider.hint), `and its hint says the layer follows pressure, a mouse laying all of it ("${slider.hint}")`);
+    t.ok(!/layer height|follows pen pressure/.test(slider.hint), `and no hint under it (owner call, 2026-10-24: "${slider.hint}")`);
 
     const full = await page.evaluate(clayDab, { pen: true, pressure: 1 });
     const half = await page.evaluate(clayDab, { pen: true, pressure: 0.5 });

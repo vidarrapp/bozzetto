@@ -220,6 +220,7 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
           tines: num(v.rake.tines, 0, 64),
           width: num(v.rake.width, 0, 1),
           depth: num(v.rake.depth, 0, 1),
+          scrape: num(v.rake.scrape, 0, 1),
           plateau: num(v.rake.plateau, 0, 1),
           taper: num(v.rake.taper, 0, 1),
           invert: bool(v.rake.invert),

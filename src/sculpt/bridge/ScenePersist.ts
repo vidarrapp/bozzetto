@@ -70,6 +70,8 @@ export interface SavedRake {
   tines?: number;
   width?: number;
   depth?: number;
+  scrape?: number;
+  /** A record from before Scrape (2026-10-24): read as the scrape, at the same value. */
   plateau?: number;
   taper?: number;
   invert?: boolean;

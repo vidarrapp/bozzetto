@@ -48,7 +48,7 @@ const CLAY_SPACING = 0.1;
  * continuous groove at a normal stroke speed.
  */
 const RAKE_SPACING = 0.06;
-/** The rake's strength by default: how far one dab takes a groove toward its depth. */
+/** The rake's strength by default: one stroke at it cuts the whole Depth (RakeBrush). */
 const RAKE_STRENGTH = 0.6;
 /** The rake's tine count limits. */
 export const RAKE_TINES_MIN = 2;
@@ -700,18 +700,22 @@ export interface RakeSettings {
   tines: number;
   /** The fraction of each tine's slot the tine fills, 0.1..1. */
   width: number;
-  /** Groove depth as a fraction of the radius, at full pressure. */
+  /** Groove depth one stroke cuts, as a fraction of the radius, at full pressure. */
   depth: number;
   /**
-   * Plateau (owner name): how far the ridges between the tines are
-   * levelled toward the plane, 0 (grooves only) to 1 (levelled onto it).
+   * Scrape (owner name, October 2026, replacing Plateau): how hard each dab
+   * pulls the footprint toward its plane before the tines cut, 0 (the
+   * tines follow the form) to 1 (scrapes flat, grooves cut into the flat).
    */
-  plateau: number;
+  scrape: number;
   /** How much the outer tines' depth fades toward the rake's edges, 0..1. */
   taper: number;
   /** Raise ridges instead of carving grooves. */
   invert: boolean;
 }
+
+/** Settings as a scene may carry them: a record from before Scrape has `plateau`. */
+export type RakeSettingsIn = Partial<RakeSettings> & { plateau?: number };
 
 export interface RakePreset extends RakeSettings {
   id: string;
@@ -722,31 +726,50 @@ export interface RakePreset extends RakeSettings {
 
 /** The rake presets (owner call): picking one sets every knob and the tine profile. */
 export const RAKE_PRESETS: readonly RakePreset[] = [
-  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, depth: 0.05, plateau: 0.5, taper: 0, invert: false, profile: 'v' },
-  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, depth: 0.04, plateau: 0.5, taper: 0, invert: false, profile: 'round' },
-  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, depth: 0.1, plateau: 0.5, taper: 0, invert: false, profile: 'round' },
-  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, depth: 0.08, plateau: 0.5, taper: 0, invert: false, profile: 'flat' },
-  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, depth: 0.05, plateau: 1, taper: 0, invert: false, profile: 'flat' },
+  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, depth: 0.05, scrape: 0.15, taper: 0, invert: false, profile: 'v' },
+  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, depth: 0.04, scrape: 0.1, taper: 0, invert: false, profile: 'round' },
+  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, depth: 0.1, scrape: 0.25, taper: 0, invert: false, profile: 'round' },
+  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, depth: 0.08, scrape: 0.5, taper: 0, invert: false, profile: 'flat' },
+  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, depth: 0.05, scrape: 1, taper: 0, invert: false, profile: 'flat' },
 ];
 export const DEFAULT_RAKE_PRESET = 'coarse';
+
+/**
+ * One stroke's cut, summed over its dabs, at the default strength: the
+ * along falloff (the quartic over the chord, w / chord) summed over dabs
+ * `step` apart is about chord x radius / step x the quartic's integral
+ * over [-1, 1], which is 2 x 0.6 = 1.2. So a dab cuts its share times
+ * step / (1.2 x chord x radius), and the dabs of one stroke add up to the
+ * whole depth, whatever the spacing and on every tine.
+ */
+const RAKE_ALONG_INTEGRAL = 1.2;
+/** The chord the spacing factor divides by, at least this (the disc's rim). */
+const RAKE_MIN_CHORD = 0.2;
 
 /** What the last rake dab used, per its picking side (the parity recorder and the tests read it). */
 export interface RakeDab {
   tines: number;
   width: number;
   depth: number;
-  plateau: number;
+  scrape: number;
   taper: number;
   invert: boolean;
-  /** Groove depth this dab carved to, local units: depth x radius x pressure term. */
+  /** The cut one stroke adds up to, local units: depth x radius x pressure term (x strength / default). */
   depthLocal: number;
   pressureTerm: number;
+  /** The strength term: min(1, strength) / RAKE_STRENGTH, 1 at the default. */
+  strengthTerm: number;
+  /** The distance from the previous dab (or the press), local units, held to the radius. */
+  stepLocal: number;
+  /** step / (RAKE_ALONG_INTEGRAL x radius): the dab's share of a stroke, before the chord. */
+  spacingFactor: number;
   /** The unit axis the tines are laid across (surface tangent, perpendicular to the stroke). */
   across: [number, number, number];
   /** The unit stroke direction in the tangent plane. */
   along: [number, number, number];
   /** Where the direction came from: the last dab, the press, or the previous stroke's axis. */
   directionFrom: 'previous-dab' | 'press' | 'previous-stroke' | 'fallback';
+  /** The plane the dab scrapes toward and cuts along: fitted to the form (see the class comment). */
   areaNormal: [number, number, number];
   areaCenter: [number, number, number];
 }
@@ -767,45 +790,63 @@ const tangent = (v: Vec3, n: Vec3): Vec3 => {
 /**
  * The tine rake (owner call, October 2026, replacing the stencil rake): N
  * tines laid across the brush, perpendicular to the stroke, each carving
- * its own groove.
+ * its own groove. Since 2026-10-24 (owner call) a standard brush, not a
+ * clay one: each dab displaces, it does not aim for a target, so Invert
+ * raises ridges on any form and a second pass cuts deeper.
  *
- * The frame, per dab: the area normal of the front vertices, and the
- * stroke direction - from the previous dab's intersection to this one, in
- * the surface tangent plane, as the stencil frame upstream builds in
- * Picking.updateAlpha. The first dab of a stroke takes it from the press
- * point, which is the drag direction on the surface; when that is too
- * short to point anywhere it keeps the previous stroke's across axis (and,
- * on a brush's very first stroke, any tangent). The across axis is the
- * normal crossed with the direction. The mirrored side keeps its own frame
- * (the mirrored picking's points give the mirrored direction).
+ * The frame, per dab: the stroke direction - from the previous dab's
+ * intersection to this one, in the surface tangent plane, as the stencil
+ * frame upstream builds in Picking.updateAlpha. The first dab of a stroke
+ * takes it from the press point, which is the drag direction on the
+ * surface; when that is too short to point anywhere it keeps the previous
+ * stroke's across axis (and, on a brush's very first stroke, any tangent).
+ * The across axis is the normal crossed with the direction. The mirrored
+ * side keeps its own frame (the mirrored picking's points give the
+ * mirrored direction).
  *
- * Per vertex, in ONE pass over the vertices in the radius (positions as
- * they were when the stroke first touched them): its across coordinate u
- * in [-1, 1] of the radius, its nearest tine k (centre at (k + 0.5) / N x
- * 2 - 1), and t = |u - centre| / (width / N), the distance from the tine's
- * middle over its half-width. The tine profile curve gives the weight at
- * t (0 past the tine). Along the stroke the usual quartic falloff applies,
- * over the vertex's distance along the stroke as a fraction of the chord
- * of the disc at u, so every tine gets a whole falloff and the dabs blend
- * into continuous grooves.
+ * The normal: the area normal of the front vertices (not the picked one,
+ * which is a single face's and on a groove just cut tilts with its flank),
+ * refined by a least-squares plane through the FORM: the positions with
+ * this stroke's own cuts taken back out (below). On a curved form that is
+ * the form's normal at the dab, so the tines cut straight in, and the
+ * grooves already cut do not tilt it. The plane goes through the
+ * mask-weighted centre of the same positions.
  *
- * The groove is a target, not a push: each vertex moves toward depth x
- * radius x profile(t) x taper x pressure below the area plane (above it
- * with Invert), by the along falloff x strength (capped at 1) per dab, and
- * only ever inward, as clay strips only ever build. Overlapping dabs
- * converge on the depth instead of piling up. Between the tines (where
- * the profile is 0) the target is the vertex's own height at the stroke's
- * start times (1 - Plateau) when it stood proud of the plane, so Plateau
- * 0 cuts grooves only and Plateau 1 levels the ridges onto the plane;
- * across a tine's flank the two targets blend by the profile weight.
- * Pressure scales the depth as it does the clay layer (Tablet's layer
- * term: a mouse or a finger is full).
+ * Per vertex, in one pass over the vertices in the radius:
+ *
+ * 1. Scrape: the form pulled toward the plane by min(1, scrape x quartic
+ *    x strength) (clay strips' flatten, from both sides, capped so it
+ *    lands on the plane and never passes it). The cut this stroke already
+ *    made rides along, so the scrape planes the form under the grooves and
+ *    never fills them back in.
+ * 2. Cut: its across coordinate u in [-1, 1] of the radius, its nearest
+ *    tine k (centre at (k + 0.5) / N x 2 - 1), and t = |u - centre| /
+ *    (width / N), the distance from the tine's middle over its half-width.
+ *    The tine profile curve gives the weight at t (0 past the tine). Along
+ *    the stroke the quartic applies over the vertex's distance along the
+ *    stroke as a fraction of the chord of the disc at u. The vertex moves
+ *    along the normal by depth x radius x profile(t) x taper x along
+ *    falloff x pressure term x strength term x step / (1.2 x chord x
+ *    radius): inward, outward with Invert (or the stroke's Ctrl), and
+ *    every dab adds to the last, as the Standard brush does.
+ *
+ * The last factor is the spacing compensation (RAKE_ALONG_INTEGRAL): one
+ * stroke at the default strength and full pressure cuts depth x radius,
+ * whatever the spacing or the stroke speed, so Depth means one pass.
+ * Pressure scales it once, through the clay layer's term (Tablet's layer
+ * term: a mouse or a finger is full); the strength slider scales it as a
+ * multiple of its default, capped at 1.
+ *
+ * Positions follow the Standard brush (vendor Brush.brush): distances are
+ * measured on the stroke-start positions (the proxy) when _accumulate is
+ * off and on the current ones when it is on (the default), and the moves
+ * add to the current positions.
  */
 export class RakeBrush extends Brush {
   tines = 4;
   tineWidth = 0.7;
   depth = 0.1;
-  plateau = 0.5;
+  scrape = 0.25;
   taper = 0;
   invert = false;
   /** The tine cross-section (the Tool panel's curve). */
@@ -819,13 +860,22 @@ export class RakeBrush extends Brush {
   private readonly prevAcross: { main: Vec3 | null; sym: Vec3 | null } = { main: null, sym: null };
   private readonly fromPress = { main: false, sym: false };
 
+  /**
+   * This stroke's cut per vertex (what the tines moved it by), with the
+   * position it left the vertex at and the stroke it belongs to. An entry
+   * counts only for this stroke and while the vertex is still where the
+   * rake left it: dynamic topology renumbers and moves vertices, and an
+   * entry that no longer matches is a vertex the rake has not cut.
+   */
+  private cutVec = new Float32Array(0);
+  private cutPos = new Float32Array(0);
+  private cutStroke = new Uint32Array(0);
+  private strokeId = 0;
+
   constructor(session: SculptSession) {
     super(session);
     this._idAlpha = null;
     this._clay = false;
-    // The rake keeps its own proxy (the stroke-start positions) whatever
-    // _accumulate says: the Plateau levels against them.
-    this._accumulate = false;
     this._spacing = RAKE_SPACING;
     this._intensity = RAKE_STRENGTH;
     this.applyPreset(DEFAULT_RAKE_PRESET);
@@ -842,21 +892,25 @@ export class RakeBrush extends Brush {
   }
 
   settings(): RakeSettings {
-    return { tines: this.tines, width: this.tineWidth, depth: this.depth, plateau: this.plateau, taper: this.taper, invert: this.invert };
+    return { tines: this.tines, width: this.tineWidth, depth: this.depth, scrape: this.scrape, taper: this.taper, invert: this.invert };
   }
 
-  /** Set knobs (each held to its range); a preset id no longer describes them unless they match it. */
-  set(s: Partial<RakeSettings>): void {
+  /**
+   * Set knobs (each held to its range); a preset id no longer describes
+   * them unless they match it. A `plateau` (a record from before Scrape)
+   * sets the scrape, at the same value, when no `scrape` comes with it.
+   */
+  set(s: RakeSettingsIn): void {
     const num = (v: unknown, lo: number, hi: number, cur: number): number =>
       typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : cur;
     this.tines = Math.round(num(s.tines, RAKE_TINES_MIN, RAKE_TINES_MAX, this.tines));
     this.tineWidth = num(s.width, 0.1, 1, this.tineWidth);
     this.depth = num(s.depth, 0, 1, this.depth);
-    this.plateau = num(s.plateau, 0, 1, this.plateau);
+    this.scrape = num(s.scrape, 0, 1, num(s.plateau, 0, 1, this.scrape));
     this.taper = num(s.taper, 0, 1, this.taper);
     if (typeof s.invert === 'boolean') this.invert = s.invert;
     const p = RAKE_PRESETS.find((x) => x.id === this.presetId);
-    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.depth === this.depth && p.plateau === this.plateau && p.taper === this.taper && p.invert === this.invert;
+    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.depth === this.depth && p.scrape === this.scrape && p.taper === this.taper && p.invert === this.invert;
     if (!same) this.presetId = null;
   }
 
@@ -868,6 +922,8 @@ export class RakeBrush extends Brush {
   override start(ctrl: boolean): boolean {
     this.prev.main = null;
     this.prev.sym = null;
+    // A new stroke: every cut entry from before is the form now.
+    this.strokeId = (this.strokeId + 1) >>> 0 || 1;
     const ok = super.start(ctrl);
     if (!ok) return ok;
     // The press is where the first dab's direction comes from.
@@ -881,13 +937,13 @@ export class RakeBrush extends Brush {
     return ok;
   }
 
+  /** BOZZETTO EDIT of upstream Brush.stroke (vendor Brush.js): the same flow, the rake's frame and loop. */
   override stroke(picking: Picking): void {
     const session = this._main as SculptSession;
     let iVertsInRadius = picking.getPickedVertices();
     const intensity = this._intensity * Tablet.getPressureIntensity();
 
-    // The stroke-start positions, before the undo push flags the vertices.
-    if (!this._lockPosition) this.updateProxy(iVertsInRadius);
+    if (!this._accumulate && !this._lockPosition) this.updateProxy(iVertsInRadius);
     session.getStateManager().pushVertices(iVertsInRadius);
     if (!this._lockPosition) iVertsInRadius = this.dynamicTopology(picking);
 
@@ -901,14 +957,16 @@ export class RakeBrush extends Brush {
     const side = picking === session.getPickingSymmetry() ? ('sym' as const) : ('main' as const);
     const c = picking.getIntersectionPoint().slice(0, 3) as Vec3;
 
-    // The stroke direction, in the tangent plane.
+    // The stroke direction, in the tangent plane, and the step it took.
     let along: Vec3 | null = null;
     let from: RakeDab['directionFrom'] = 'fallback';
     const prev = this.prev[side];
     const radius = Math.sqrt(picking.getLocalRadius2());
+    let step = 0;
     if (prev) {
       const d: Vec3 = [c[0] - prev[0], c[1] - prev[1], c[2] - prev[2]];
-      if (Math.hypot(d[0], d[1], d[2]) > radius * 1e-4) {
+      step = Math.min(radius, Math.hypot(d[0], d[1], d[2]));
+      if (step > radius * 1e-4) {
         along = norm3(tangent(d, n));
         if (along) from = this.fromPress[side] ? 'press' : 'previous-dab';
       }
@@ -929,10 +987,31 @@ export class RakeBrush extends Brush {
     this.fromPress[side] = false;
     this.prevAcross[side] = across;
 
-    this.rake(iVertsInRadius, iVertsFront, n, c, across, along as Vec3, radius, intensity, from);
+    this.rake(iVertsInRadius, iVertsFront, n, c, across, along as Vec3, radius, step, intensity, from);
 
     const mesh = this.getMesh();
     mesh.updateGeometry(mesh.getFacesFromVertices(iVertsInRadius), iVertsInRadius);
+  }
+
+  /** The cut tables, at least `nb` vertices long (kept across strokes, grown with slack). */
+  private cutTables(nb: number): void {
+    if (this.cutStroke.length >= nb) return;
+    const len = Math.ceil(nb * 1.25) + 64;
+    const vec = new Float32Array(len * 3);
+    vec.set(this.cutVec);
+    const pos = new Float32Array(len * 3);
+    pos.set(this.cutPos);
+    const id = new Uint32Array(len);
+    id.set(this.cutStroke);
+    this.cutVec = vec;
+    this.cutPos = pos;
+    this.cutStroke = id;
+  }
+
+  /** Whether vertex `ind / 3` carries a cut from this stroke and still sits where the rake left it. */
+  private hasCut(ind: number, vAr: Float32Array): boolean {
+    const p = this.cutPos;
+    return this.cutStroke[ind / 3] === this.strokeId && p[ind] === vAr[ind] && p[ind + 1] === vAr[ind + 1] && p[ind + 2] === vAr[ind + 2];
   }
 
   /** The one pass over the vertices in the radius (see the class comment). */
@@ -944,45 +1023,56 @@ export class RakeBrush extends Brush {
     across0: Vec3,
     along0: Vec3,
     radius: number,
+    step: number,
     intensity: number,
     from: RakeDab['directionFrom'],
   ): void {
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
     const mAr = mesh.getMaterials();
-    const vProxy = this._lockPosition ? vAr : mesh.getVerticesProxy();
+    // As vendor Brush.brush: distances on the stroke-start positions
+    // unless the brush accumulates.
+    const vProxy = this._accumulate || this._lockPosition ? vAr : mesh.getVerticesProxy();
+    this.cutTables(mesh.getNbVertices());
+    const cut = this.cutVec;
 
-    // The plane: the area normal through the stroke-start centre of the
-    // front vertices, so the grooves already cut do not drag it down.
+    // The form: the front vertices' positions with this stroke's cut taken out.
+    const nf = iFront.length;
+    const fp = new Float64Array(nf * 3);
+    for (let i = 0; i < nf; ++i) {
+      const ind = iFront[i] * 3;
+      const had = this.hasCut(ind, vAr);
+      fp[i * 3] = had ? vAr[ind] - cut[ind] : vAr[ind];
+      fp[i * 3 + 1] = had ? vAr[ind + 1] - cut[ind + 1] : vAr[ind + 1];
+      fp[i * 3 + 2] = had ? vAr[ind + 2] - cut[ind + 2] : vAr[ind + 2];
+    }
+
+    // The plane's centre: the mask-weighted mean of the form.
     let ax = 0;
     let ay = 0;
     let az = 0;
     let acc = 0;
-    for (let i = 0, l = iFront.length; i < l; ++i) {
-      const ind = iFront[i] * 3;
-      const f = mAr[ind + 2];
-      ax += vProxy[ind] * f;
-      ay += vProxy[ind + 1] * f;
-      az += vProxy[ind + 2] * f;
+    for (let i = 0; i < nf; ++i) {
+      const f = mAr[iFront[i] * 3 + 2];
+      ax += fp[i * 3] * f;
+      ay += fp[i * 3 + 1] * f;
+      az += fp[i * 3 + 2] * f;
       acc += f;
     }
     if (acc <= 0) return;
     ax /= acc;
     ay /= acc;
     az /= acc;
-    // And its normal fitted to those positions too (least squares, as a
-    // height over the area normal's tangent plane): the area normal alone
-    // reads the current normals, which the grooves just cut tilt toward
-    // the stroke's start, and the grooves came out deeper than asked.
+    // Its normal: the area normal, refined by a least-squares fit to the
+    // same positions (as a height over the area normal's tangent plane).
     let sxx = 0;
     let sxy = 0;
     let syy = 0;
     let sxz = 0;
     let syz = 0;
-    for (let i = 0, l = iFront.length; i < l; ++i) {
-      const ind = iFront[i] * 3;
-      const f = mAr[ind + 2];
-      const d: Vec3 = [vProxy[ind] - ax, vProxy[ind + 1] - ay, vProxy[ind + 2] - az];
+    for (let i = 0; i < nf; ++i) {
+      const f = mAr[iFront[i] * 3 + 2];
+      const d: Vec3 = [fp[i * 3] - ax, fp[i * 3 + 1] - ay, fp[i * 3 + 2] - az];
       const x = dot3(d, across0);
       const y = dot3(d, along0);
       const z = dot3(d, n0);
@@ -1005,11 +1095,13 @@ export class RakeBrush extends Brush {
     const N = this.tines;
     const halfWidth = this.tineWidth / N;
     const pressure = this.pressureTerm();
-    const depth = this.depth * radius * pressure;
+    const strengthTerm = Math.min(1, this._intensity) / RAKE_STRENGTH;
+    const depth = this.depth * radius * pressure * strengthTerm;
+    const spacingFactor = step / (RAKE_ALONG_INTEGRAL * radius);
+    // Inward (down the normal) unless inverted; the stroke's Ctrl flips it too.
     const comp = this.invert !== this._negative ? -1.0 : 1.0;
-    const keep = 1 - this.plateau;
+    const scrape = this.scrape;
     const taper = this.taper;
-    const k = Math.min(1, intensity);
     const curve = this.curve;
     const [nx, ny, nz] = n;
     const [ux, uy, uz] = across;
@@ -1020,17 +1112,23 @@ export class RakeBrush extends Brush {
       tines: N,
       width: this.tineWidth,
       depth: this.depth,
-      plateau: this.plateau,
+      scrape,
       taper,
       invert: comp < 0,
       depthLocal: depth,
       pressureTerm: pressure,
+      strengthTerm,
+      stepLocal: step,
+      spacingFactor,
       across,
       along,
       directionFrom: from,
       areaNormal: n,
       areaCenter: [ax, ay, az],
     };
+    const stamp = this.cutStroke;
+    const pos = this.cutPos;
+    const id = this.strokeId;
     for (let i = 0, l = iVerts.length; i < l; ++i) {
       const ind = iVerts[i] * 3;
       const px = vProxy[ind] - cx;
@@ -1038,9 +1136,26 @@ export class RakeBrush extends Brush {
       const pz = vProxy[ind + 2] - cz;
       const dist = Math.sqrt(px * px + py * py + pz * pz) * inv;
       if (dist >= 1.0) continue;
+      const mask = mAr[ind + 2];
+      if (mask <= 0) continue;
+      const had = this.hasCut(ind, vAr);
+      let kx = had ? cut[ind] : 0;
+      let ky = had ? cut[ind + 1] : 0;
+      let kz = had ? cut[ind + 2] : 0;
+      let vx = vAr[ind];
+      let vy = vAr[ind + 1];
+      let vz = vAr[ind + 2];
+      // 1. Scrape the form toward the plane, the cut riding along.
+      if (scrape > 0) {
+        const rate = Math.min(1, scrape * quartic(dist) * intensity * mask);
+        const h = (vx - kx - ax) * nx + (vy - ky - ay) * ny + (vz - kz - az) * nz;
+        vx -= nx * h * rate;
+        vy -= ny * h * rate;
+        vz -= nz * h * rate;
+      }
+      // 2. Cut: the nearest tine and how far across it the vertex sits.
       const u = (px * ux + py * uy + pz * uz) * inv;
       const w = (px * wx + py * wy + pz * wz) * inv;
-      // The nearest tine and how far across it the vertex sits.
       let slot = Math.floor(((u + 1) * N) / 2);
       if (slot < 0) slot = 0;
       else if (slot > N - 1) slot = N - 1;
@@ -1048,22 +1163,31 @@ export class RakeBrush extends Brush {
       const t = Math.abs(u - centre) / halfWidth;
       const prof = t < 1 ? curve.sample(t) : 0;
       // Along the stroke: the quartic over the chord of the disc at u.
-      const chord = Math.sqrt(Math.max(1e-12, 1 - u * u));
-      const aw = Math.abs(w) / chord;
+      const chord = Math.sqrt(Math.max(0, 1 - u * u));
+      const aw = Math.abs(w) / Math.max(1e-6, chord);
       const alongFall = aw >= 1 ? 0 : quartic(aw);
-      const rate = Math.min(1, alongFall * k * mAr[ind + 2]);
-      if (rate <= 0) continue;
-      // Heights over the plane, signed so that "in" is down (up with Invert).
-      const h0 = ((vProxy[ind] - ax) * nx + (vProxy[ind + 1] - ay) * ny + (vProxy[ind + 2] - az) * nz) * comp;
-      const h = ((vAr[ind] - ax) * nx + (vAr[ind + 1] - ay) * ny + (vAr[ind + 2] - az) * nz) * comp;
-      const base = h0 > 0 ? h0 * keep : h0;
-      const groove = -depth * prof * (1 - taper * Math.abs(centre));
-      const target = base + (groove - base) * prof;
-      if (h <= target) continue; // only ever inward
-      const step = (target - h) * rate * comp;
-      vAr[ind] += nx * step;
-      vAr[ind + 1] += ny * step;
-      vAr[ind + 2] += nz * step;
+      const amount = prof * alongFall > 0 ? -comp * depth * prof * (1 - taper * Math.abs(centre)) * alongFall * mask * (spacingFactor / Math.max(RAKE_MIN_CHORD, chord)) : 0;
+      if (amount !== 0) {
+        vx += nx * amount;
+        vy += ny * amount;
+        vz += nz * amount;
+        kx += nx * amount;
+        ky += ny * amount;
+        kz += nz * amount;
+      }
+      vAr[ind] = vx;
+      vAr[ind + 1] = vy;
+      vAr[ind + 2] = vz;
+      if (amount !== 0 || had) {
+        // Read back: the entry holds the position exactly as stored.
+        cut[ind] = kx;
+        cut[ind + 1] = ky;
+        cut[ind + 2] = kz;
+        pos[ind] = vAr[ind];
+        pos[ind + 1] = vAr[ind + 1];
+        pos[ind + 2] = vAr[ind + 2];
+        stamp[ind / 3] = id;
+      }
     }
   }
 }

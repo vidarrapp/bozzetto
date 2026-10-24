@@ -206,60 +206,83 @@ fixtures' mask of 1.
 ## The tine rake's dab
 
 The rake (`RakeBrush`) lays `tines` tines across the brush, perpendicular
-to the stroke, and carves a groove under each. Each dab's record holds:
+to the stroke, and cuts a groove under each. Since 2026-10-24 it is a
+standard brush, not a clay one: each dab displaces along the normal and the
+dabs add up (a second pass cuts deeper), where it used to move each vertex
+toward a target height over a plane. Each dab's record holds:
 
 ```
-tines, width, depth, plateau, taper the knobs as the dab used them
+tines, width, depth, scrape, taper the knobs as the dab used them
 invert         the effective direction (Invert, flipped by _negative)
 pressureTerm   the depth's pressure term (the clay layer's: pressureLayer)
-depthLocal     depth * radiusLocal * pressureTerm, local units
+strengthTerm   min(1, _intensity) / RAKE_STRENGTH (1 at the default 0.6)
+depthLocal     depth * radiusLocal * pressureTerm * strengthTerm, local
+               units: what one stroke cuts
+stepLocal      |intersection - previous intersection| (the press point for
+               the first dab of a stroke), held to radiusLocal
+spacingFactor  stepLocal / (RAKE_ALONG_INTEGRAL * radiusLocal), the
+               dab's share of a stroke before the chord (RAKE_ALONG_INTEGRAL
+               = 1.2, the quartic's integral over [-1, 1])
 across         the unit axis the tines are laid along (tangent, across the stroke)
 along          the unit stroke direction (along = across x areaNormal)
 directionFrom  'press' (first dab: from the press point), 'previous-dab',
                'previous-stroke' (too short to point: the last axis kept) or
                'fallback' (any tangent, the brush's very first stroke)
-areaNormal     the plane's normal, fitted to the stroke-start positions
+areaNormal     the plane's normal, fitted to the form (below)
 areaCenter     the plane's point: the mask-weighted mean of the front
-               vertices' stroke-start positions
+               vertices' form positions
 ```
 
-The frame: `n0` is the engine's area normal of the front vertices; the
-direction is the intersection minus the previous dab's (the press point for
-the first dab of a stroke), made tangent to `n0`; `across0 = n0 x along0`.
-The plane's point is `areaCenter` above. Its normal is `n0` corrected by a
-least-squares fit of the stroke-start positions' height over `n0` against
-their `across0` and `along0` coordinates (mask-weighted sums
-`Sxx, Sxy, Syy, Sxz, Syz`; `a, b` solve the 2x2 system;
-`areaNormal = normalize(n0 - a * across0 - b * along0)`), and `across`
-is `across0` made tangent to it, `along = across x areaNormal`.
+The form: a vertex's current position minus the cut this stroke has made
+there (`cut`, the sum of the cut moves below, kept per vertex for the
+stroke; it starts at 0 on every vertex at the press, and an entry no longer
+counts once the vertex is not where the rake left it, as after dynamic
+topology). The frame: `n0` is the engine's area normal of the front
+vertices; the direction is the intersection minus the previous dab's (the
+press point for the first dab of a stroke), made tangent to `n0`;
+`across0 = n0 x along0`. The plane's point is `areaCenter` above. Its
+normal is `n0` corrected by a least-squares fit of the form positions'
+height over `n0` against their `across0` and `along0` coordinates
+(mask-weighted sums `Sxx, Sxy, Syy, Sxz, Syz`; `a, b` solve the 2x2 system;
+`areaNormal = normalize(n0 - a * across0 - b * along0)`), and `across` is
+`across0` made tangent to it, `along = across x areaNormal`. The cuts go
+along `areaNormal` (the engine's area normal over the picked one: one
+face's normal tilts with the flank of a groove just cut; the fitted one is
+the form's at the dab, so on a curved form the tines cut straight in).
 
-Per vertex in `picked` (positions `p` are the proxy, the stroke-start
-positions; `v` the current ones; `r` = radiusLocal; `c` = intersection):
+Per vertex in `picked` (positions `p` are what the distances read: the
+current positions while `_accumulate` is on, the default, and the
+stroke-start proxy when it is off, as vendor `Brush.brush`; `v` the current
+ones; `r` = radiusLocal; `c` = intersection; `n` = areaNormal):
 
 ```
-dist = |p - c| / r;  skip if dist >= 1
+dist = |p - c| / r;  skip if dist >= 1 or mask <= 0
+// 1. scrape: the form toward the plane, the cut riding along
+if scrape > 0:
+  rate = min(1, scrape * q(dist) * intensity * mask)
+  v -= n * ((v - cut - areaCenter) . n) * rate
+// 2. cut
 u = (p - c) . across / r;  w = (p - c) . along / r
 k = clamp(floor((u + 1) * tines / 2), 0, tines - 1)
 centre = (k + 0.5) / tines * 2 - 1
 t = |u - centre| / (width / tines)
 prof = t < 1 ? tineProfile(t) : 0
-alongFall = q(min(1, |w| / sqrt(max(1e-12, 1 - u^2))))
-rate = min(1, alongFall * min(1, intensity) * mask);  skip if rate <= 0
+chord = sqrt(max(0, 1 - u^2))
+alongFall = |w| / max(1e-6, chord) >= 1 ? 0 : q(|w| / max(1e-6, chord))
 s = invert ? -1 : 1
-h0 = s * (p - areaCenter) . areaNormal      stroke-start height
-h  = s * (v - areaCenter) . areaNormal      current height
-base = h0 > 0 ? h0 * (1 - plateau) : h0
-groove = -depthLocal * prof * (1 - taper * |centre|)
-target = base + (groove - base) * prof
-if h > target: v += areaNormal * s * (target - h) * rate
+amount = -s * depthLocal * prof * (1 - taper * |centre|) * alongFall * mask
+         * spacingFactor / max(RAKE_MIN_CHORD, chord)
+v += n * amount;  cut += n * amount
 ```
 
-So a groove converges on its depth rather than piling up dab on dab, the
-surface only ever moves inward (outward with Invert), and between the tines
-a ridge standing proud of the plane comes down to `1 - plateau` of its height (Plateau, the rake's knob: 0
-cuts grooves only, 1 levels the ridges onto the plane).
-The rake keeps `_accumulate = false` and runs `updateProxy` on every dab
-itself.
+`intensity` is the dab's (`_intensity * pressureIntensity`). The spacing
+factor: a vertex's along falloff summed over dabs `stepLocal` apart is
+about `chord * r / stepLocal * 1.2`, so `spacingFactor / chord` makes one
+stroke add up to `depthLocal` on every tine, whatever the spacing or the
+stroke speed (RAKE_MIN_CHORD = 0.2 holds the factor at the disc's rim).
+Scrape 0 leaves the form as it was between the grooves; 1 planes the
+footprint onto the plane and cuts the grooves into the flat. A scene's
+saved `plateau`, from before Scrape, is read as the scrape.
 
 ## JSON layout
 
@@ -305,9 +328,9 @@ parameters.
   the plain mean of its ring's face normals. After each dab the engine
   updates the face and vertex normals of what it touched, and the next dab
   reads them (front test, area normal, picked normal, Polish's gate).
-- Proxy positions: Inflate, Crease and the Rake (and Clay with accumulate
-  off) read `vProxy`, the position of each vertex when the stroke first
-  touched it.
+- Proxy positions: Inflate and Crease (and Clay and the Rake with
+  accumulate off) read `vProxy`, the position of each vertex when the
+  stroke first touched it.
 - VolumetricMove is not cumulative: each update puts the picked vertices back
   to their press positions and applies the latest `moveDir`.
 - Drag stamps from the previous pointer position, one event behind.
@@ -321,8 +344,9 @@ a brush changes; `--verify` against the old files shows what moved. The
 clay brush and the rake have their own constants (`CLAY_*`, `RAKE_*` in
 `meta.engine.bridgeConstants`): clay is spacing 0.1, the Plateau curve and a
 pressure-driven layer of 0.1; the rake is spacing 0.06, strength 0.6 and the
-Coarse preset (4 Round tines, width 0.7, depth 0.1, Plateau 0.5, no
-taper). Retuning one re-records only its own fixtures.
+Coarse preset (4 Round tines, width 0.7, depth 0.1, Scrape 0.25, no
+taper), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD for its spacing
+factor. Retuning one re-records only its own fixtures.
 
 October 2026: the brushes moved onto profile curves and the stencil rake
 became the tine rake. Clay, Crease, Polish, Paint and PaintBlur recorded the
@@ -335,3 +359,10 @@ anchors with handles (owner feedback: too many points to edit). Every
 brush recorded the same outputs bit for bit (`--verify --outputs --tol=0`
 against a recording made just before); `brush.params.curve` holds
 `anchors` where it held `points`.
+
+2026-10-24: the rake became a standard brush (owner feedback: Invert only
+raised ridges where the surface lay below the fitted plane), and Scrape
+replaced Plateau. Only the Rake's files changed: every other brush recorded
+the same outputs and dabs bit for bit (`--verify --outputs --tol=0` against
+a recording made just before; their meta changed with the rake's new
+constants).

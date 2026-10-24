@@ -166,8 +166,7 @@ export class SculptPanel extends SidePanel {
       // the Render panel's background and light swatches do.
       installSwatchPick(this.paintPicker, this.viewer, (hex) => this.input.setPaintColor(hex));
       const hint = div('sculpt-panel__hint muted');
-      hint.textContent =
-        'Alt + click picks a colour off the model. Drag the swatch onto the view to pick from the screen.';
+      hint.textContent = 'Alt+click for color picker';
       dyn.appendChild(hint);
     }
     // Radius and strength are per tool (the vendored core keeps both, and
@@ -310,9 +309,6 @@ export class SculptPanel extends SidePanel {
           { limits: AMOUNT },
         ),
       );
-      const layerHint = div('sculpt-panel__hint muted');
-      layerHint.textContent = 'The layer height follows pen pressure: a full press lays the whole layer. A mouse always lays all of it.';
-      extras.appendChild(layerHint);
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
       // balance between them. The crest is a curve (Sharp the knife line it
@@ -392,7 +388,8 @@ export class SculptPanel extends SidePanel {
 
   /**
    * The tine rake's rows: its presets, the tine count and width, the
-   * depth, the Plateau (how far the ridges between are levelled), the taper, Invert, and
+   * depth, the Scrape (how flat each dab planes the footprint before the
+   * tines cut), the taper, Invert, and
    * the tine's own profile. A preset sets them all; any of them can move
    * after.
    */
@@ -431,7 +428,7 @@ export class SculptPanel extends SidePanel {
     knob('Tines', RAKE_TINES_MIN, RAKE_TINES_MAX, 1, rake.tines, (v) => rake.set({ tines: v }), { min: RAKE_TINES_MIN, max: RAKE_TINES_MAX, integer: true });
     knob('Tine width', 0.1, 1, 0.05, rake.tineWidth, (v) => rake.set({ width: v }), { min: 0.1, max: 1 });
     knob('Depth', 0, 0.3, 0.01, rake.depth, (v) => rake.set({ depth: v }), { min: 0, max: 1 });
-    knob('Plateau', 0, 1, 0.05, rake.plateau, (v) => rake.set({ plateau: v }), FRACTION);
+    knob('Scrape', 0, 1, 0.05, rake.scrape, (v) => rake.set({ scrape: v }), FRACTION);
     knob('Taper', 0, 1, 0.05, rake.taper, (v) => rake.set({ taper: v }), FRACTION);
     extras.appendChild(
       checkbox('Invert (raise ridges)', rake.invert, (on) => {
@@ -440,9 +437,6 @@ export class SculptPanel extends SidePanel {
       }),
     );
     extras.appendChild(this.curveRow('Tine profile', 'Tine profile', rake.curve));
-    const hint = div('sculpt-panel__hint muted');
-    hint.textContent = 'Depth follows pen pressure, as the clay layer does. Plateau levels the ridges between the tines toward the surface: 0 cuts grooves only.';
-    extras.appendChild(hint);
   }
 
   /**
