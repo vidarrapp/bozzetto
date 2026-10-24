@@ -7,4 +7,4 @@
 - [x] 2026-10-24: Clay without alphas: replace the Strip plateau slider with a profile curve or keep both. Decided 2026-10-24: replace it, the default preset being today's plateau shape
 - [x] 2026-10-24: Move Crease, Polish and Paint's falloffs to profile curves now or later. Decided 2026-10-24: now
 - [x] 2026-10-24: Rake flatten control: one "Scrape" slider replacing Plateau, or keep Plateau beside it. Decided 2026-10-24: Scrape, replacing Plateau
-- [ ] 2026-10-24: Smooth on voxel-remeshed surfaces: build a "Surface" smooth mode (fit a local surface to neighbours by distance and project onto it, plus a light tangential relax) as Smooth's default, keeping today's "Average" as an option (blocks: the smooth rework)
+- [x] 2026-10-24: Smooth on voxel-remeshed surfaces: a "Surface" smooth mode as default or as an option. Decided 2026-10-24: an option; "Average" stays the default
