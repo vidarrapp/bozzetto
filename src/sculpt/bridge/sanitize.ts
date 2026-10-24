@@ -5,7 +5,7 @@ import { isProjectId } from '../../net/ids';
 import type { SavedLevel, SavedMesh, SavedScene, SceneLink, SculptSettings } from './ScenePersist';
 import { DEFAULT_MATERIAL, MATERIAL_ID, type SculptMaterial } from './materials';
 import { isCurveId } from './dynamics';
-import { parseProfile, serializeProfile } from './profile';
+import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } from './profile';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 
@@ -204,10 +204,15 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
     paintColor: color(v.paintColor),
     spacing: toolTable(v.spacing, sized),
     // The brush alphas are retired: a record's `alphas` and `rakeAlpha`
-    // are not carried over. Curves come back as their parsed points.
-    curves: toolTable(v.curves, (c) => {
-      const pts = parseProfile(c);
-      return pts ? serializeProfile(pts) : undefined;
+    // are not carried over. Curves come back parsed: a curvesRev 2 curve
+    // as its anchors made valid (2 to 8, finite, clamped, every handle
+    // within its segment), a curvesRev 1 point list as its points, which
+    // the tool converts when it loads it (ProfileCurve.load).
+    curves: toolTable(v.curves, (c): StoredCurve | [number, number][] | undefined => {
+      const a = parseStoredCurve(c);
+      if (a) return serializeAnchors(a);
+      const pts = parseV1Points(c);
+      return pts ? pts.map((p): [number, number] => [p.t, p.v]) : undefined;
     }),
     curvesRev: num(v.curvesRev, 0),
     rake: isRec(v.rake)

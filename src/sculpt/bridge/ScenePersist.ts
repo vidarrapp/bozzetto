@@ -5,6 +5,7 @@ import { formatMs, perfLog } from '../../viewer/perfLog';
 import type { SculptMaterial } from './materials';
 import type { BrushDynamics } from './dynamics';
 import type { BrushSymmetry } from './symmetry';
+import type { StoredCurve } from './profile';
 import { sanitizeLook, sanitizeScene } from './sanitize';
 import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
@@ -42,13 +43,16 @@ export interface SculptSettings {
    */
   spacingRev?: number;
   /**
-   * Per-tool profile curves (profile.ts), by vendor tool index: each the
-   * curve's control points as [t, v] pairs. A tool left out is on its
-   * default preset. Scenes from before the curves (and before the brush
-   * alphas were retired) carried `alphas` and `rakeAlpha` instead: those
-   * are dropped on read, without error.
+   * Per-tool profile curves (profile.ts), by vendor tool index. curvesRev
+   * 2: each the curve's Bezier anchors, `{ anchors: [{ t, v, in: [t, v],
+   * out: [t, v], corner }] }`. curvesRev 1 (the first build with curves)
+   * held [t, v] point lists instead; one still reads, as its preset when
+   * it is one, else fitted to at most six anchors. A tool left out is on
+   * its default preset. Scenes from before the curves (and before the
+   * brush alphas were retired) carried `alphas` and `rakeAlpha` instead:
+   * those are dropped on read, without error.
    */
-  curves?: Record<number, [number, number][]>;
+  curves?: Record<number, StoredCurve | [number, number][]>;
   /** The curves' format revision (profile.ts PROFILE_REV); a later one is not read. */
   curvesRev?: number;
   /** The tine rake's knobs and the preset they came from (null once edited). */

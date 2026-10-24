@@ -335,14 +335,15 @@ const PARAM_FIELDS = [
 
 /**
  * A tool's profile curve (src/sculpt/bridge/profile.ts): the preset its
- * points are exactly (null once edited), the control points, whether the
- * preset's exact kernel stands in for the table, and the baked table.
+ * anchors are exactly (null once edited), the Bezier anchors with their
+ * handles (the scene file's curvesRev 2 form), whether the preset's exact
+ * kernel stands in for the table, and the baked table.
  */
 function curveRecord(curve) {
   return {
     preset: curve.presetId,
-    points: curve.serialize(),
-    exactKernel: curve.presetId !== null && curve.presets.find((p) => p.id === curve.presetId)?.kernel !== undefined,
+    anchors: curve.serialize().anchors,
+    exactKernel: curve.exactKernel,
     table: Array.from(curve.lut),
   };
 }
@@ -699,7 +700,7 @@ const FORMAT = {
   dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for ClayStripsBrush layerPressure (the term the dab used, pressureLayer) and layerOffset (the build plane offset along the area normal, local units: layer * radiusLocal * layerPressure, negated in the loop when _negative), and for RakeBrush rake: the tine rake dab (tines, width, depth, plateau, taper, invert as the dab applied it, depthLocal = depth * radiusLocal * pressureTerm, the across axis and stroke direction (along) it laid the tines on, where that direction came from, and the area plane, areaNormal and areaCenter, the latter over the stroke-start positions). press is the pointer-down, which is not a dab except for Drag.',
   moves: 'moves are the pointer positions after the press (device px on the fixed camera), with the local-space point each was aimed at (localTarget) where the path is on the surface.',
   output: 'output holds the state after the stroke ended: positions and normals always, colors/materials/mask where the brush writes them.',
-  curves: 'brush.params.curve, for the brushes on a profile curve (ClayStripsBrush, CreaseBrush, PolishBrush, PaintBrush and PaintBlurBrush, which reads PaintBrush\'s, and RakeBrush\'s tine profile): preset (the preset id the points are exactly, or null), points ([t, v] pairs, t from the dab centre 0 to its edge 1, sorted, the ends at 0 and 1), exactKernel (true when the preset\'s closed form is evaluated instead of the table, see docs/parity-fixtures.md), table (256 weights at t = i / 255, the monotone cubic or the kernel baked; a loop reads it with linear interpolation).',
+  curves: 'brush.params.curve, for the brushes on a profile curve (ClayStripsBrush, CreaseBrush, PolishBrush, PaintBrush and PaintBlurBrush, which reads PaintBrush\'s, and RakeBrush\'s tine profile): preset (the preset id the anchors are exactly, or null), anchors (the cubic Bezier: [{t, v, in: [t, v], out: [t, v], corner}], t from the dab centre 0 to its edge 1, sorted, the ends at 0 and 1, the first without in and the last without out, every handle\'s t within its segment), exactKernel (true when the preset\'s closed form is evaluated instead of the table, see docs/parity-fixtures.md), table (256 weights at t = i / 255, the Bezier or the kernel baked; a loop reads it with linear interpolation).',
 };
 
 async function main() {

@@ -2418,6 +2418,18 @@ html.is-page body {
   fill: var(--accent);
 }
 
+.curve-editor__handle-line {
+  stroke: var(--muted);
+  stroke-width: 0.5;
+}
+
+.curve-editor__handle {
+  fill: var(--panel-bg);
+  stroke: var(--text);
+  stroke-width: 0.8;
+  cursor: grab;
+}
+
 .curve-editor__point:focus {
   outline: none;
   stroke: var(--accent);

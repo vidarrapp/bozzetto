@@ -2,7 +2,7 @@ import { Color } from 'three';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
-import { PROFILE_REV, ProfileCurve } from './profile';
+import { PROFILE_REV, ProfileCurve, type StoredCurve } from './profile';
 import { DEFAULT_RAKE_PRESET, RAKE_PRESETS, RakeBrush } from './tools';
 import type { SavedRake } from './ScenePersist';
 import type { WorldScaleBrush } from './worldScale';
@@ -658,9 +658,9 @@ export class InputShell {
     return c instanceof ProfileCurve ? c : null;
   }
 
-  /** Every curve tool's points, for the scene record (SculptSettings.curves). */
-  serializeCurves(): Record<number, [number, number][]> {
-    const out: Record<number, [number, number][]> = {};
+  /** Every curve tool's anchors, for the scene record (SculptSettings.curves). */
+  serializeCurves(): Record<number, StoredCurve> {
+    const out: Record<number, StoredCurve> = {};
     for (const idx of InputShell.CURVE_TOOLS) {
       const c = this.toolCurve(idx);
       if (c) out[idx] = c.serialize();
@@ -671,8 +671,10 @@ export class InputShell {
   /**
    * Restore the curves from a scene record. A tool the table leaves out,
    * or whose entry does not parse, goes back to its default preset (a
-   * scene from before the curves made every brush with its default). A
-   * record of a later revision than this build reads is left alone.
+   * scene from before the curves made every brush with its default). An
+   * entry is either form, curvesRev 2's anchors or curvesRev 1's points
+   * (ProfileCurve.load tells them apart). A record of a later revision
+   * than this build reads is left alone.
    * Silently, like loadSpacing: restoring is not an edit.
    */
   loadCurves(table: Record<number, unknown> | undefined, rev?: number): void {
@@ -1790,7 +1792,7 @@ export class InputShell {
     // Tab is not one of their keys: it goes on to the chrome check below
     // (a select keeps it there).
     if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
-    // A focused profile-curve point is a slider too: its arrows move it and
+    // A focused profile-curve anchor is a slider too: its arrows move it and
     // Delete removes it (CurveEditor).
     if ((e.target as Element | null)?.closest?.('.curve-editor__plot') && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const s = this.session;

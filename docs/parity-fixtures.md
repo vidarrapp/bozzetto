@@ -125,27 +125,41 @@ curve object) and the Rake's tines weigh each vertex by a profile curve
 `brush.params.curve`:
 
 ```
-preset       the preset id the points are exactly, or null once edited
-points       [[t, v], ...]: 2 to 16 control points, t from the dab centre (0)
-             to its edge (1), sorted, the first at t = 0 and the last at 1,
-             v the weight there, all in [0, 1]
+preset       the preset id the anchors are exactly, or null once edited
+anchors      [{t, v, in: [t, v], out: [t, v], corner}, ...]: 2 to 8 anchors,
+             t from the dab centre (0) to its edge (1), sorted, the first at
+             t = 0 and the last at 1, v the weight there, both in [0, 1];
+             in and out the handles as absolute plot points (the first
+             anchor has no in, the last no out); corner present (true) only
+             on a corner anchor. This is the scene file's curvesRev 2 form.
 exactKernel  true when the preset's closed form stands in for the table
 table        256 weights, table[i] = curve(i / 255)
 ```
 
-The curve between the points is a monotone cubic (Fritsch-Carlson): Hermite
-segments whose tangents are the average of the neighbouring secants (0 where
-they differ in sign, and at the ends the end secant), scaled back where
-`alpha^2 + beta^2 > 9` so that no segment overshoots its two points. A brush
-loop reads the table: `t` clamped to [0, 1], `x = t * 255`, `i = floor(x)`,
+Between two anchors A and B the curve is the cubic Bezier with control
+points A, A.out, B.in, B: `x(s)` from the t's and `y(s)` from the v's,
+`s` in [0, 1]. Every handle's t lies within its segment
+(`A.t <= A.out.t <= B.t`, `A.t <= B.in.t <= B.t`), which keeps `x(s)`
+non-decreasing, so the curve is a function of t. The weight at t is
+`clamp(y(s), 0, 1)` where `x(s) = t`, solved per segment by Newton from
+`s = (t - A.t) / (B.t - A.t)`, keeping the bracket and bisecting when a
+step leaves it (to `|x(s) - t| < 1e-14`). A handle's v may leave [0, 1]
+(to -0.5 .. 1.5); the weight never does. A brush loop reads the table: `t`
+clamped to [0, 1], `x = t * 255`, `i = floor(x)`,
 `table[i] + (table[i + 1] - table[i]) * (x - i)`.
 
-While a curve's points are exactly a preset's that carries a closed form
+The fixtures recorded before the Bezier anchors (curvesRev 1, one day in
+October 2026) held `points` instead, [t, v] pairs read through a monotone
+cubic; the brushes' outputs are the same in both (below).
+
+While a curve's anchors are exactly a preset's that carries a closed form
 (`exactKernel`), the loop evaluates that form instead, and `table` holds it
-baked. Every default preset is one, and each is the falloff the brush had
-before the curves, operation for operation, which is why the default
-brushes' outputs did not move by a single bit when the curves came in
-(`--verify --outputs --tol=0` against a recording from before):
+baked: the kernel is the truth, and the preset's anchors are how the editor
+draws it and where an edit starts. Every default preset is one, and each is
+the falloff the brush had before the curves, operation for operation, which
+is why the default brushes' outputs did not move by a single bit when the
+curves came in, nor when the curves became Bezier anchors
+(`--verify --outputs --tol=0` against a recording from before each):
 
 | brush | default preset | closed form, `q(d) = 3d^4 - 4d^3 + 1` |
 | --- | --- | --- |
@@ -154,6 +168,35 @@ brushes' outputs did not move by a single bit when the curves came in
 | PolishBrush | `default` | `d <= 0.35 ? 1 : q((d - 0.35) / (1 - 0.35))` |
 | PaintBrush, PaintBlurBrush | `default` | `pow(1 - d, 2 * (1 - 0.75))` |
 | RakeBrush (tine profile) | `round` (Coarse) | `sqrt(1 - t^2)` |
+
+The presets' anchors are fitted to their kernels (two to four anchors,
+minimising the largest difference over t, handles rounded to four places).
+The largest difference between a preset's Bezier and its kernel, over
+200001 evenly spaced t:
+
+| tool | preset | anchors | max difference |
+| --- | --- | --- | --- |
+| Clay | Plateau | 4 | 2.9e-4 |
+| Clay | Soft | 3 | 1.3e-4 |
+| Clay | Flat | 2 | exact |
+| Clay | Round | 2 | 1.9e-4 |
+| Crease | Sharp | 4 | 1.8e-3 |
+| Crease | Medium | 4 | 5.0e-4 |
+| Crease | Soft | 3 | 1.3e-4 |
+| Polish | Default | 4 | 2.2e-4 |
+| Polish | Wide | 4 | 1.6e-4 |
+| Polish | Narrow | 3 | 1.1e-3 |
+| Paint | Hard | 3 | 9.3e-3 to t = 0.999; 0.17 in the last thousandth, where `(1 - d)^0.1` falls from 0.5 to 0 |
+| Paint | Default | 2 | 2.1e-5 |
+| Paint | Soft | 2 | exact |
+| Paint | Airbrush | 2 | 1.9e-5 |
+| Rake tine | Round | 2 | 1.9e-4 |
+| Rake tine | V | 2 | exact |
+| Rake tine | Flat | 4 | 3.2e-4 |
+| Rake tine | Soft | 3 | 1.3e-4 |
+
+Only an edited curve is read from its table, so these differences never
+reach a brush on a preset.
 
 Every weight is still multiplied by the mask (`materials[i*3+2]`), the
 crease's crest included: before, the mask sat inside the crest's power,
@@ -286,3 +329,9 @@ became the tine rake. Clay, Crease, Polish, Paint and PaintBlur recorded the
 same outputs bit for bit (their parameter records changed: `plateau` and
 `profile` gave way to `curve`); the Rake's files are a new brush, and
 `alpha-rake06.json` is gone with the stencils.
+
+October 2026, the day after: the profile curves became cubic Bezier
+anchors with handles (owner feedback: too many points to edit). Every
+brush recorded the same outputs bit for bit (`--verify --outputs --tol=0`
+against a recording made just before); `brush.params.curve` holds
+`anchors` where it held `points`.
