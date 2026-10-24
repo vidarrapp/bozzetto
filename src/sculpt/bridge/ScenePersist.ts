@@ -41,16 +41,35 @@ export interface SculptSettings {
    * the old default, not a choice, and is not restored.
    */
   spacingRev?: number;
-  /** Per-tool stencil choice, by vendor tool index; null is "no stencil". */
-  alphas?: Record<number, string | null>;
-  /** The rake's stencil, from before alphas went per-tool. Read, not written. */
-  rakeAlpha?: string;
+  /**
+   * Per-tool profile curves (profile.ts), by vendor tool index: each the
+   * curve's control points as [t, v] pairs. A tool left out is on its
+   * default preset. Scenes from before the curves (and before the brush
+   * alphas were retired) carried `alphas` and `rakeAlpha` instead: those
+   * are dropped on read, without error.
+   */
+  curves?: Record<number, [number, number][]>;
+  /** The curves' format revision (profile.ts PROFILE_REV); a later one is not read. */
+  curvesRev?: number;
+  /** The tine rake's knobs and the preset they came from (null once edited). */
+  rake?: SavedRake;
   /**
    * Per-brush mirror sculpting: on/off and the axis, by vendor tool index.
    * Absent in scenes from before symmetry went per-brush; the scene-wide
    * flag and the active object's axis seed every brush then.
    */
   symmetry?: Record<number, BrushSymmetry>;
+}
+
+/** The tine rake's settings in a scene record (RakeBrush.settings, its preset id). */
+export interface SavedRake {
+  tines?: number;
+  width?: number;
+  depth?: number;
+  plateau?: number;
+  taper?: number;
+  invert?: boolean;
+  preset?: string | null;
 }
 
 /**

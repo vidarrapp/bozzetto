@@ -1,12 +1,23 @@
 import Enums from '@sculpt-vendor/misc/Enums';
-import { div, labelRow, selectEl } from '../../ui/dom';
+import { div, labelRow, onTap, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 import { colorPicker, type ColorPickerHandle } from '../../ui/ColorPicker';
 import { installSwatchPick } from '../../ui/swatchPick';
 import { CURVE_OPTIONS, type CurveId } from '../bridge/dynamics';
-import { alphaThumbUrl } from '../bridge/alphas';
-import { ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove } from '../bridge/tools';
+import {
+  ClayStripsBrush,
+  CreaseBrush,
+  PaintBrush,
+  PolishBrush,
+  RAKE_PRESETS,
+  RAKE_TINES_MAX,
+  RAKE_TINES_MIN,
+  RakeBrush,
+  VolumetricMove,
+} from '../bridge/tools';
+import type { ProfileCurve } from '../bridge/profile';
+import { CurveEditor } from './CurveEditor';
 import { TOOL_NAMES } from './SculptToolbar';
 import type { InputShell } from '../bridge/InputShell';
 import type { GizmoParts } from '../bridge/transform';
@@ -25,8 +36,6 @@ const FRACTION: Limits = { min: 0, max: 1 }; // a strength, a pressure amount, a
 const AMOUNT: Limits = { min: 0 };
 /** A brush radius: a whole pixel at least, and as large as anyone types. */
 const BRUSH_SIZE: Limits = { min: 1, integer: true };
-/** Under one a falloff's flat top reaches the rim and its slope divides by zero. */
-const PLATEAU: Limits = { min: 0, max: 0.95 };
 
 /**
  * The Tool palette (WS4/WS5, renamed from Sculpt by owner call): everything
@@ -284,20 +293,10 @@ export class SculptPanel extends SidePanel {
         ),
       );
     } else if (tool === Enums.Tools.BRUSH) {
+      // The strip's falloff is a curve now (owner call): its Plateau preset
+      // is the old plateau slider's 0.8, and the clay stencils went with it.
       const strips = manager.getTool(tool) as unknown as ClayStripsBrush;
-      extras.appendChild(
-        compactRange(
-          'Strip plateau',
-          0,
-          0.8,
-          0.05,
-          strips.plateau,
-          (v) => {
-            strips.plateau = v;
-          },
-          { limits: PLATEAU },
-        ),
-      );
+      extras.appendChild(this.curveRow('Profile', 'Clay profile', strips.curve));
       extras.appendChild(
         compactRange(
           'Strip layer',
@@ -316,26 +315,12 @@ export class SculptPanel extends SidePanel {
       extras.appendChild(layerHint);
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
-      // balance between them. Profile is the crest's exponent - a knife
-      // line at 12, a broad trough at 1 - shown sharp-to-soft like the
-      // Move falloff, so the slider runs the exponent backwards. Pinch is
-      // the sideways gather; at 0 it carves a groove without drawing the
+      // balance between them. The crest is a curve (Sharp the knife line it
+      // has always defaulted to, Soft a broad trough); Pinch is the
+      // sideways gather; at 0 it carves a groove without drawing the
       // surface in, which is a different tool entirely.
       const crease = manager.getTool(tool) as unknown as CreaseBrush;
-      extras.appendChild(
-        // The exponent is 13 minus this, and has to stay above zero.
-        compactRange(
-          'Profile (sharp-soft)',
-          1,
-          12,
-          0.5,
-          13 - crease.profile,
-          (v) => {
-            crease.profile = 13 - v;
-          },
-          { limits: { max: 12.9 } },
-        ),
-      );
+      extras.appendChild(this.curveRow('Profile', 'Crease profile', crease.curve));
       extras.appendChild(
         compactRange(
           'Pinch',
@@ -352,10 +337,10 @@ export class SculptPanel extends SidePanel {
     } else if (tool === Enums.Tools.TWIST) {
       // Polish lives in the old Twist slot. Plane lock is the flatten-vs-
       // follow trade: locked planarizes chatter hardest, loose rides
-      // gentle curvature without flattening it. Plateau and build-up shape
-      // how a stroke lays its polish down: a small plateau and a low
-      // build-up smooth the effect across the stroke instead of stepping
-      // it (owner feedback).
+      // gentle curvature without flattening it. The profile and build-up
+      // shape how a stroke lays its polish down: a small plateau (the
+      // Default curve) and a low build-up smooth the effect across the
+      // stroke instead of stepping it (owner feedback).
       const polish = manager.getTool(tool) as unknown as PolishBrush;
       extras.appendChild(
         // The brush itself holds the lock under 0.95.
@@ -371,19 +356,7 @@ export class SculptPanel extends SidePanel {
           { limits: { min: 0, max: 0.95 } },
         ),
       );
-      extras.appendChild(
-        compactRange(
-          'Plateau',
-          0,
-          0.8,
-          0.05,
-          polish.plateau,
-          (v) => {
-            polish.plateau = v;
-          },
-          { limits: PLATEAU },
-        ),
-      );
+      extras.appendChild(this.curveRow('Profile', 'Polish profile', polish.curve));
       extras.appendChild(
         compactRange(
           'Build-up',
@@ -398,58 +371,78 @@ export class SculptPanel extends SidePanel {
         ),
       );
     } else if (tool === Enums.Tools.PAINT) {
-      // The paint falloff, from the vendor's hardness: 1 is a hard-edged
-      // stamp, 0 fades from the centre. Shown sharp-to-soft like the rest.
-      const paint = manager.getTool(tool);
-      extras.appendChild(
-        compactRange(
-          'Profile (sharp-soft)',
-          0,
-          1,
-          0.05,
-          1 - (paint._hardness ?? 0.75),
-          (v) => {
-            paint._hardness = 1 - v;
-          },
-          { limits: FRACTION },
-        ),
-      );
+      // The paint falloff, a curve in place of the vendor's hardness (its
+      // Default preset is hardness 0.75). Shift's blur shares it.
+      const paint = manager.getTool(tool) as unknown as PaintBrush;
+      extras.appendChild(this.curveRow('Profile', 'Paint profile', paint.curve));
+    } else if (tool === Enums.Tools.RAKE) {
+      this.buildRake(extras, manager.getTool(tool) as unknown as RakeBrush);
     }
+  }
 
-    // Brush stencils, for whichever tools declare a set: the rake, where
-    // the stencil is the tool, and clay, where it is off until you reach
-    // for it. Pictures rather than names - "bars" and "fine bars" mean
-    // nothing next to seeing the tines.
-    const alphaSet = this.input.alphaSetFor(tool);
-    if (alphaSet) {
-      const grid = div('matcap-grid matcap-grid--alpha');
-      const current = this.input.getToolAlpha(tool);
-      const swatch = (id: string | null, label: string): HTMLButtonElement => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'matcap-swatch matcap-swatch--square';
-        if (id === current) btn.classList.add('matcap-swatch--on');
-        btn.title = label;
-        btn.setAttribute('aria-label', `Brush alpha ${label}`);
-        if (id === null) {
-          btn.classList.add('matcap-swatch--none');
-        } else {
-          const img = document.createElement('img');
-          img.src = alphaThumbUrl(id);
-          img.alt = '';
-          img.draggable = false;
-          btn.appendChild(img);
-        }
-        btn.addEventListener('click', () => {
-          this.input.setToolAlpha(id, tool);
-          this.refreshBrush();
-        });
-        return btn;
-      };
-      if (alphaSet.allowNone) grid.appendChild(swatch(null, 'None'));
-      for (const alpha of alphaSet.alphas) grid.appendChild(swatch(alpha.id, alpha.label));
-      extras.appendChild(labelRow('Alpha', grid));
+  /** A profile curve's editor under its caption; an edit schedules the autosave. */
+  private curveRow(caption: string, label: string, curve: ProfileCurve): HTMLDivElement {
+    const row = div('sculpt-panel__curve');
+    const head = div('sculpt-panel__curve-label');
+    head.textContent = caption;
+    const editor = new CurveEditor(curve, { label, onCommit: () => this.input.onBrushSettingsChange?.() });
+    row.append(head, editor.root);
+    return row;
+  }
+
+  /**
+   * The tine rake's rows: its presets, the tine count and width, the
+   * depth, the Plateau (how far the ridges between are levelled), the taper, Invert, and
+   * the tine's own profile. A preset sets them all; any of them can move
+   * after.
+   */
+  private buildRake(extras: HTMLElement, rake: RakeBrush): void {
+    const changed = (): void => {
+      for (const b of presets.querySelectorAll<HTMLButtonElement>('button')) {
+        b.classList.toggle('sculpt-panel__btn--on', b.dataset.preset === rake.presetId);
+      }
+      this.input.onBrushSettingsChange?.();
+    };
+    const presets = div('sculpt-panel__row sculpt-panel__presets');
+    for (const p of RAKE_PRESETS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sculpt-panel__btn';
+      b.textContent = p.label;
+      b.dataset.preset = p.id;
+      b.setAttribute('aria-label', `Rake preset ${p.label}`);
+      if (p.id === rake.presetId) b.classList.add('sculpt-panel__btn--on');
+      onTap(b, () => {
+        rake.applyPreset(p.id);
+        this.input.onBrushSettingsChange?.();
+        this.refreshBrush();
+      });
+      presets.appendChild(b);
     }
+    extras.appendChild(presets);
+    const knob = (label: string, min: number, max: number, step: number, value: number, set: (v: number) => void, limits: Limits): void => {
+      extras.appendChild(
+        compactRange(label, min, max, step, value, (v) => {
+          set(v);
+          changed();
+        }, { limits }),
+      );
+    };
+    knob('Tines', RAKE_TINES_MIN, RAKE_TINES_MAX, 1, rake.tines, (v) => rake.set({ tines: v }), { min: RAKE_TINES_MIN, max: RAKE_TINES_MAX, integer: true });
+    knob('Tine width', 0.1, 1, 0.05, rake.tineWidth, (v) => rake.set({ width: v }), { min: 0.1, max: 1 });
+    knob('Depth', 0, 0.3, 0.01, rake.depth, (v) => rake.set({ depth: v }), { min: 0, max: 1 });
+    knob('Plateau', 0, 1, 0.05, rake.plateau, (v) => rake.set({ plateau: v }), FRACTION);
+    knob('Taper', 0, 1, 0.05, rake.taper, (v) => rake.set({ taper: v }), FRACTION);
+    extras.appendChild(
+      checkbox('Invert (raise ridges)', rake.invert, (on) => {
+        rake.set({ invert: on });
+        changed();
+      }),
+    );
+    extras.appendChild(this.curveRow('Tine profile', 'Tine profile', rake.curve));
+    const hint = div('sculpt-panel__hint muted');
+    hint.textContent = 'Depth follows pen pressure, as the clay layer does. Plateau levels the ridges between the tines toward the surface: 0 cuts grooves only.';
+    extras.appendChild(hint);
   }
 
   /**

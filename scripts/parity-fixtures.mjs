@@ -5,28 +5,27 @@
 //
 //   node scripts/parity-fixtures.mjs [outDir]            record (default scratchpad/parity)
 //   node scripts/parity-fixtures.mjs [outDir] --verify   re-run and compare to outDir
-//   options: --tol=1e-6 (verify tolerance), --only=<brush>[,<brush>] (subset)
+//   options: --tol=1e-6 (verify tolerance), --only=<brush>[,<brush>] (subset),
+//            --outputs (verify the meshes out and the dabs only, not the
+//            parameter records and meta: for a change that renames knobs
+//            but must not move a vertex)
 //
 // Runs under plain Node: the vendored SculptGL core is render-less (its
 // Mesh has no GL buffers here), so the real sources - SculptSession with
 // its tool table, the bridge brushes, the vendored tools, Picking - are
 // bundled with esbuild (already installed: wrangler depends on it, and
 // Vite 8 takes it as a peer) and driven directly. The few browser globals
-// the modules touch are stubbed below; the brush stencil PNGs are decoded
-// here, byte for byte as the browser does for these 8-bit greyscale
-// files. The camera is a fixed,
+// the modules touch are stubbed below. The camera is a fixed,
 // double-precision orthographic one (the engine only ever calls
 // project/unproject on it), so nothing depends on a viewport or a GPU.
 //
 // No randomness and no wall clock: two runs write identical files.
 
 import { execSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { inflateSync } from 'node:zlib';
 
 const repo = fileURLToPath(new URL('..', import.meta.url));
 
@@ -42,82 +41,16 @@ for (const a of argv) {
   } else positional.push(a);
 }
 if (flags.has('help')) {
-  console.log('usage: node scripts/parity-fixtures.mjs [outDir] [--verify] [--tol=1e-6] [--only=Brush,...]');
+  console.log('usage: node scripts/parity-fixtures.mjs [outDir] [--verify [--outputs]] [--tol=1e-6] [--only=Brush,...]');
   process.exit(0);
 }
 const outDir = resolve(positional[0] ?? join(repo, 'scratchpad', 'parity'));
 const verify = flags.has('verify');
 const tol = flags.has('tol') ? Number(flags.get('tol')) : 1e-6;
 const only = typeof flags.get('only') === 'string' ? new Set(flags.get('only').split(',')) : null;
+const outputsOnly = flags.has('outputs');
 
 // --- browser globals the modules touch ---------------------------------------
-
-/** Decode an 8-bit, non-interlaced PNG to RGBA, as a canvas would. */
-function decodePng(buf) {
-  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG');
-  let i = 8;
-  let w = 0;
-  let h = 0;
-  let depth = 0;
-  let type = 0;
-  let interlace = 0;
-  const idat = [];
-  while (i < buf.length) {
-    const len = buf.readUInt32BE(i);
-    const tag = buf.toString('latin1', i + 4, i + 8);
-    const body = buf.subarray(i + 8, i + 8 + len);
-    if (tag === 'IHDR') {
-      w = body.readUInt32BE(0);
-      h = body.readUInt32BE(4);
-      depth = body[8];
-      type = body[9];
-      interlace = body[12];
-    } else if (tag === 'IDAT') idat.push(body);
-    else if (tag === 'gAMA' || tag === 'iCCP' || tag === 'sRGB' || tag === 'cHRM') {
-      // A colour-managed file could decode differently in a browser.
-      throw new Error(`PNG carries ${tag}: decode would not match the browser`);
-    }
-    i += 12 + len;
-  }
-  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[type];
-  if (depth !== 8 || !channels || interlace) throw new Error(`unsupported PNG (depth ${depth}, type ${type}, interlace ${interlace})`);
-  const raw = inflateSync(Buffer.concat(idat));
-  const stride = w * channels;
-  const px = new Uint8Array(stride * h);
-  for (let y = 0; y < h; y++) {
-    const f = raw[y * (stride + 1)];
-    const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
-    const row = px.subarray(y * stride, (y + 1) * stride);
-    const up = y > 0 ? px.subarray((y - 1) * stride, y * stride) : new Uint8Array(stride);
-    for (let x = 0; x < stride; x++) {
-      const a = x >= channels ? row[x - channels] : 0;
-      const b = up[x];
-      const c = x >= channels ? up[x - channels] : 0;
-      let v = src[x];
-      if (f === 1) v += a;
-      else if (f === 2) v += b;
-      else if (f === 3) v += (a + b) >> 1;
-      else if (f === 4) {
-        const p = a + b - c;
-        const pa = Math.abs(p - a);
-        const pb = Math.abs(p - b);
-        const pc = Math.abs(p - c);
-        v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-      } else if (f !== 0) throw new Error(`bad PNG filter ${f}`);
-      row[x] = v & 255;
-    }
-  }
-  const rgba = new Uint8ClampedArray(w * h * 4);
-  for (let p = 0; p < w * h; p++) {
-    const s = p * channels;
-    const g = channels <= 2;
-    rgba[p * 4] = px[s];
-    rgba[p * 4 + 1] = g ? px[s] : px[s + 1];
-    rgba[p * 4 + 2] = g ? px[s] : px[s + 2];
-    rgba[p * 4 + 3] = channels === 2 ? px[s + 1] : channels === 4 ? px[s + 3] : 255;
-  }
-  return { width: w, height: h, data: rgba };
-}
 
 function installGlobals() {
   globalThis.window ??= globalThis;
@@ -125,33 +58,6 @@ function installGlobals() {
     observe() {}
     unobserve() {}
     disconnect() {}
-  };
-  // alphas.ts fetches /assets/alphas/<id>.png: served from public/.
-  globalThis.fetch = async (url) => {
-    const file = join(repo, 'public', String(url).replace(/^\/+/, ''));
-    if (!existsSync(file)) return { ok: false, status: 404 };
-    const bytes = readFileSync(file);
-    return { ok: true, status: 200, blob: async () => ({ bytes }) };
-  };
-  globalThis.createImageBitmap = async (blob) => {
-    const img = decodePng(blob.bytes);
-    return { ...img, close() {} };
-  };
-  globalThis.document ??= {
-    createElement(tag) {
-      if (tag !== 'canvas') throw new Error(`no ${tag} here`);
-      let img = null;
-      return {
-        width: 0,
-        height: 0,
-        getContext: () => ({
-          drawImage(bitmap) {
-            img = bitmap;
-          },
-          getImageData: () => ({ data: img.data }),
-        }),
-      };
-    },
   };
 }
 
@@ -167,7 +73,6 @@ async function loadEngine() {
   const entry = `
     export { SculptSession } from './src/sculpt/bridge/SculptSession';
     export { DynamicsStore } from './src/sculpt/bridge/dynamics';
-    export { loadBrushAlphas, DEFAULT_RAKE_ALPHA } from './src/sculpt/bridge/alphas';
     export { default as Multimesh } from '@sculpt-vendor/mesh/multiresolution/Multimesh';
     export { default as Subdivision } from '@sculpt-vendor/editing/Subdivision';
     export { default as Picking } from '@sculpt-vendor/math3d/Picking';
@@ -413,14 +318,34 @@ const PARAM_FIELDS = [
   '_writeRoughness',
   '_writeMetalness',
   '_pickColor',
-  'plateau',
   'layer',
   'gain',
   'planeLock',
-  'profile',
   'pinch',
   'falloffPow',
+  // The tine rake.
+  'tines',
+  'tineWidth',
+  'depth',
+  'plateau',
+  'taper',
+  'invert',
+  'presetId',
 ];
+
+/**
+ * A tool's profile curve (src/sculpt/bridge/profile.ts): the preset its
+ * points are exactly (null once edited), the control points, whether the
+ * preset's exact kernel stands in for the table, and the baked table.
+ */
+function curveRecord(curve) {
+  return {
+    preset: curve.presetId,
+    points: curve.serialize(),
+    exactKernel: curve.presetId !== null && curve.presets.find((p) => p.id === curve.presetId)?.kernel !== undefined,
+    table: Array.from(curve.lut),
+  };
+}
 
 function toolParams(tool) {
   const out = {};
@@ -430,6 +355,7 @@ function toolParams(tool) {
     if (typeof v === 'function') continue; // Pinch.pinch, Crease.crease: methods, not settings
     out[f] = ArrayBuffer.isView(v) ? Array.from(v) : v === undefined ? null : v;
   }
+  if (tool.curve && typeof tool.curve.serialize === 'function') out.curve = curveRecord(tool.curve);
   return out;
 }
 
@@ -453,11 +379,11 @@ function appInstall(E, session) {
 }
 
 const APP_INSTALL_NOTES = [
-  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05) and loadBrushAlphas().',
+  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05; PaintBlurBrush.curve = PaintBrush.curve, one shared object).',
   'InputShell.install: DynamicsStore.install() (per-brush pressure: Crease and Paint size 1 strength 1, Drag 0/0, the rest size 0 strength 1, linear curves; Tablet.getPressureLayer for the clay layer); Crease._negative = false. InputShell.feedPressure: Tablet.pen = true for a pen event (here, every press and move).',
   'mode.ts: Paint._writeRoughness = Paint._writeMetalness = false.',
   'InputShell.selectBrush(BRUSH): _clay = true (already the default).',
-  'PaintBlur is the shift swap over Paint (InputShell): it takes Paint._radius, _intensity and _hardness at the press.',
+  'PaintBlur is the shift swap over Paint (InputShell): it takes Paint._radius and _intensity at the press, and reads Paint\'s own profile curve.',
   'Masking is the ctrl swap: _negative = !altKey = true (masks).',
   'World-scale sizing (worldScale.ts) puts every brush, stand-ins included, on one world radius at mount; here each tool._radius (px) is set so that radius is radiusOfExtent * the mesh world extent on the fixed camera.',
   'Symmetry off (SculptManager._symmetry = false). Dynamic topology off (Multimesh, static).',
@@ -508,7 +434,7 @@ function bridgeConstants() {
 
 // --- one brush on one mesh -----------------------------------------------------
 
-async function record(E, meshKey, brush, shared) {
+async function record(E, meshKey, brush) {
   const spec = MESHES[meshKey];
   const T = E.Enums.Tools;
   const index = T[brush.tool];
@@ -520,7 +446,6 @@ async function record(E, meshKey, brush, shared) {
     unproject: (x, y, z) => camHolder.cam.unproject(x, y, z),
   };
   const session = new E.SculptSession(camera, canvas, () => {});
-  await E.loadBrushAlphas();
   const dynamics = appInstall(E, session);
   try {
     const mesh = spec.build(E, session);
@@ -567,19 +492,15 @@ async function record(E, meshKey, brush, shared) {
     const pixelRadius = worldRadius / cam.s / session.getPixelRatio();
     tool._radius = pixelRadius;
     if (index === T.PAINT_BLUR) {
-      // The shift swap over Paint (InputShell): Paint's size, strength and profile.
+      // The shift swap over Paint (InputShell): Paint's size and strength;
+      // the profile curve is Paint's own object already (SculptSession).
       const paint = manager.getTool(T.PAINT);
       tool._radius = paint._radius = pixelRadius;
       tool._intensity = paint._intensity ?? 0.75;
-      tool._hardness = paint._hardness ?? 0.75;
     }
     if (index === T.MASKING) tool._negative = true; // ctrl, no alt
 
     const picking = session.getPicking();
-    const alpha = () => {
-      const a = E.Picking.ALPHAS[tool._idAlpha];
-      return a && a._texture ? a : null;
-    };
     const pressureState = () => ({
       pressure: E.Tablet.pressure,
       pen: !!E.Tablet.pen,
@@ -628,21 +549,19 @@ async function record(E, meshKey, brush, shared) {
           picked: arr(p.getPickedVertices()),
         };
         if (brush.mode === 'drag') d.dragDir = arr(tool._dragDir);
-        // The clay family's build plane: layer x radius x layerPressure
-        // (1 for the rake, whose layer is fixed), as the dab used it.
+        // Clay's build plane: layer x radius x layerPressure, as the dab used it.
         if ('lastLayerOffset' in tool) {
           d.layerPressure = tool.layerPressure();
           tool.lastLayerOffset = NaN;
         }
+        if ('lastDab' in tool) tool.lastDab = null;
         const out = orig(p, sym);
         if ('lastLayerOffset' in tool) d.layerOffset = Number.isNaN(tool.lastLayerOffset) ? null : tool.lastLayerOffset;
-        if (alpha()) {
-          d.alpha = {
-            id: tool._idAlpha,
-            origin: arr(p._alphaOrigin),
-            side: p._alphaSide,
-            lookAt: arr(p._alphaLookAt),
-          };
+        if ('lastDab' in tool) {
+          // The tine rake's dab: its knobs, the depth it carved to, and the
+          // frame (across axis, stroke direction, plane) it laid the tines in.
+          d.rake = tool.lastDab ? { ...tool.lastDab } : null;
+          tool.lastDab = null;
         }
         dabs.push(d);
         return out;
@@ -762,7 +681,6 @@ async function record(E, meshKey, brush, shared) {
       res.input.mask = input.materials.filter((_, i) => i % 3 === 2);
       res.output.mask = output.materials.filter((_, i) => i % 3 === 2);
     }
-    if (alpha()) res.brush.alpha = shared.alphaRef(tool._idAlpha, alpha());
     return res;
   } finally {
     dynamics.dispose();
@@ -778,36 +696,15 @@ const FORMAT = {
   faces: 'input.faces is the engine face array: 4 indices per face. A quad is [a, b, c, d]; a triangle is [a, b, c, TRI_INDEX] with TRI_INDEX = 4294967295 (Utils.TRI_INDEX). Winding is the engine order (counter-clockwise seen from outside). Faces do not change during a fixture.',
   materials: 'materials are per-vertex triples [roughness, metalness, mask]; mask 1 = unmasked, 0 = fully masked. Every falloff is multiplied by the mask. materialsUniform gives the one triple every vertex has when they are all equal.',
   colors: 'colors are per-vertex linear RGB triples. Every fixture starts from a two-tone colouring (x < the local bounds centre: [0.8, 0.3, 0.2], else [0.2, 0.4, 0.9]).',
-  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for the clay family (ClayStripsBrush, RakeBrush) layerPressure (the term the dab used: pressureLayer for clay, 1 for the rake) and layerOffset (the build plane offset along the area normal, local units: layer * radiusLocal * layerPressure, negated in the loop when _negative), and alpha state for a stencilled brush (taken after the dab, as getAlpha used it). press is the pointer-down, which is not a dab except for Drag.',
+  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for ClayStripsBrush layerPressure (the term the dab used, pressureLayer) and layerOffset (the build plane offset along the area normal, local units: layer * radiusLocal * layerPressure, negated in the loop when _negative), and for RakeBrush rake: the tine rake dab (tines, width, depth, plateau, taper, invert as the dab applied it, depthLocal = depth * radiusLocal * pressureTerm, the across axis and stroke direction (along) it laid the tines on, where that direction came from, and the area plane, areaNormal and areaCenter, the latter over the stroke-start positions). press is the pointer-down, which is not a dab except for Drag.',
   moves: 'moves are the pointer positions after the press (device px on the fixed camera), with the local-space point each was aimed at (localTarget) where the path is on the surface.',
   output: 'output holds the state after the stroke ended: positions and normals always, colors/materials/mask where the brush writes them.',
+  curves: 'brush.params.curve, for the brushes on a profile curve (ClayStripsBrush, CreaseBrush, PolishBrush, PaintBrush and PaintBlurBrush, which reads PaintBrush\'s, and RakeBrush\'s tine profile): preset (the preset id the points are exactly, or null), points ([t, v] pairs, t from the dab centre 0 to its edge 1, sorted, the ends at 0 and 1), exactKernel (true when the preset\'s closed form is evaluated instead of the table, see docs/parity-fixtures.md), table (256 weights at t = i / 255, the monotone cubic or the kernel baked; a loop reads it with linear interpolation).',
 };
 
 async function main() {
   const E = await loadEngine();
   const git = gitInfo();
-  const alphaFiles = new Map();
-  const shared = {
-    alphaRef(id, a) {
-      const bytes = Buffer.from(a._texture.buffer, a._texture.byteOffset, a._texture.byteLength);
-      const sha256 = createHash('sha256').update(bytes).digest('hex');
-      const file = `alpha-${id}.json`;
-      alphaFiles.set(file, {
-        id,
-        source: `public/assets/alphas/${id}.png (red channel, as alphas.ts reads it)`,
-        width: a._width,
-        height: a._height,
-        ratioX: a._ratioX,
-        ratioY: a._ratioY,
-        sha256,
-        bytesBase64: bytes.toString('base64'),
-        sampling:
-          'Picking.getAlpha: xn = ratioY * (lookAt row 0 . [x,y,z,1]) / side (negated side for the mirrored picking), yn = ratioX * (lookAt row 1 . [x,y,z,1]) / side; 0 outside |xn|,|yn| <= 1; else texture[(int)((0.5 - xn/2) * width) + width * (int)((0.5 - yn/2) * height)] / 255.',
-      });
-      return { id, file, sha256, width: a._width, height: a._height };
-    },
-  };
-
   const meta = {
     ...git,
     generator: 'scripts/parity-fixtures.mjs',
@@ -829,7 +726,7 @@ async function main() {
   for (const brush of BRUSHES) {
     if (only && !only.has(brush.name)) continue;
     for (const meshKey of Object.keys(MESHES)) {
-      const r = await record(E, meshKey, brush, shared);
+      const r = await record(E, meshKey, brush);
       brushParams[brush.name] = { toolSlot: r.brush.toolSlot, toolIndex: r.brush.toolIndex, className: r.brush.className, params: r.brush.params, dynamics: r.brush.dynamics };
       results.set(`${brush.name}.${meshKey}.json`, r);
     }
@@ -840,7 +737,6 @@ async function main() {
   for (const [name, r] of results) {
     files.set(name, { format: FORMAT, meta: { ...meta, brushes: { [r.brush.name]: brushParams[r.brush.name] } }, ...r });
   }
-  for (const [name, a] of alphaFiles) files.set(name, a);
   files.set('index.json', {
     meta: { ...meta, brushes: brushParams },
     files: [...results.entries()].map(([name, r]) => ({
@@ -850,12 +746,14 @@ async function main() {
       nbVertices: r.mesh.nbVertices,
       dabs: r.dabs.length,
     })),
-    alphas: [...alphaFiles.keys()],
   });
 
   if (verify) return verifyAgainst(files);
 
   mkdirSync(outDir, { recursive: true });
+  // Files an earlier recording made that this one does not (alpha-rake06.json
+  // from before the alphas were retired) would read as part of it.
+  for (const n of readdirSync(outDir)) if (n.endsWith('.json') && !files.has(n)) rmSync(join(outDir, n));
   let total = 0;
   for (const [name, body] of files) {
     const text = JSON.stringify(body) + '\n';
@@ -919,7 +817,12 @@ function verifyAgainst(files) {
     const recorded = JSON.parse(readFileSync(join(outDir, name), 'utf8'));
     if (name === 'index.json' && only) continue;
     const out = { bad: [], max: 0 };
-    compare(now, recorded, '', out, ignore);
+    if (outputsOnly) {
+      // What the brush did, not how its knobs are recorded.
+      const pick = (r) => (r && r.output ? { input: r.input, press: r.press, moves: r.moves, dabs: r.dabs, output: r.output } : null);
+      if (!pick(recorded)) continue;
+      compare(pick(now), pick(recorded), '', out, ignore);
+    } else compare(now, recorded, '', out, ignore);
     const prov = recorded.meta && recorded.meta.webCommit !== now.meta.webCommit ? ` (recorded at ${recorded.meta.webCommit?.slice(0, 7)}, now ${now.meta.webCommit?.slice(0, 7)})` : '';
     if (out.bad.length) {
       failed++;

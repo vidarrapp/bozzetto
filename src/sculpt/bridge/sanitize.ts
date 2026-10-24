@@ -5,6 +5,7 @@ import { isProjectId } from '../../net/ids';
 import type { SavedLevel, SavedMesh, SavedScene, SceneLink, SculptSettings } from './ScenePersist';
 import { DEFAULT_MATERIAL, MATERIAL_ID, type SculptMaterial } from './materials';
 import { isCurveId } from './dynamics';
+import { parseProfile, serializeProfile } from './profile';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 
@@ -202,8 +203,24 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
     ) as SculptSettings['dynamics'],
     paintColor: color(v.paintColor),
     spacing: toolTable(v.spacing, sized),
-    alphas: toolTable(v.alphas, (a) => (a === null ? null : str(a, 64))),
-    rakeAlpha: str(v.rakeAlpha, 64),
+    // The brush alphas are retired: a record's `alphas` and `rakeAlpha`
+    // are not carried over. Curves come back as their parsed points.
+    curves: toolTable(v.curves, (c) => {
+      const pts = parseProfile(c);
+      return pts ? serializeProfile(pts) : undefined;
+    }),
+    curvesRev: num(v.curvesRev, 0),
+    rake: isRec(v.rake)
+      ? defined({
+          tines: num(v.rake.tines, 0, 64),
+          width: num(v.rake.width, 0, 1),
+          depth: num(v.rake.depth, 0, 1),
+          plateau: num(v.rake.plateau, 0, 1),
+          taper: num(v.rake.taper, 0, 1),
+          invert: bool(v.rake.invert),
+          preset: v.rake.preset === null ? null : str(v.rake.preset, 32),
+        })
+      : undefined,
     symmetry: toolTable(v.symmetry, (s): BrushSymmetry | undefined => {
       if (!isRec(s)) return undefined;
       const axis = oneOf(s.axis, ['x', 'y', 'z'] as const);

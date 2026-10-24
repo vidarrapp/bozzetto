@@ -40,7 +40,6 @@ import {
   StableSmooth,
   VolumetricMove,
 } from './tools';
-import { loadBrushAlphas } from './alphas';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -321,8 +320,7 @@ export class SculptSession {
     ) as unknown as SculptTool;
     this.sculptManager._tools[Enums.Tools.TWIST] = new PolishBrush(this) as unknown as SculptTool;
     // Rake takes digit 7 (owner call); Smooth keeps its own slot because
-    // holding shift still swaps to it mid-stroke. Its stencils decode in
-    // the background - until they land a rake stroke is plain clay.
+    // holding shift still swaps to it mid-stroke. The tine rake (tools.ts).
     this.sculptManager._tools[Enums.Tools.RAKE] = new RakeBrush(this) as unknown as SculptTool;
     // Crease with its pinch and crest exposed; upstream's numbers are the
     // defaults, so it feels the same until a slider moves.
@@ -336,8 +334,11 @@ export class SculptSession {
     this.sculptManager.getTool(Enums.Tools.PAINT)._spacing = 0.05;
     // Shift over the paint brush blurs the paint, the way it smooths
     // elsewhere; the swap lives in InputShell beside the smooth one.
-    this.sculptManager._tools[Enums.Tools.PAINT_BLUR] = new PaintBlurBrush(this) as unknown as SculptTool;
-    void loadBrushAlphas();
+    const blur = new PaintBlurBrush(this);
+    // The blur reads Paint's own profile curve, so the ring under the pen
+    // means the same with shift held (it used to take Paint's hardness).
+    blur.curve = (this.sculptManager.getTool(Enums.Tools.PAINT) as unknown as PaintBrush).curve;
+    this.sculptManager._tools[Enums.Tools.PAINT_BLUR] = blur as unknown as SculptTool;
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
     this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(

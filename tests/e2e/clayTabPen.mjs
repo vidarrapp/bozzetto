@@ -1,7 +1,8 @@
 // Three owner items, one suite each:
 //
-// clayLayer: the clay brush's new defaults (spacing 0.1, plateau 0.8,
-//   layer 0.1, the rake keeping its own 0.06 / 0.8 / 0.01), and the layer
+// clayLayer: the clay brush's new defaults (spacing 0.1, the Plateau
+//   profile curve - the old 0.8 plateau - and layer 0.1; the tine rake
+//   keeps its own spacing 0.06), and the layer
 //   height following pen pressure: a pen dab at half pressure raises the
 //   plane half as far as one at full pressure, and a mouse dab lays the
 //   whole layer. A stored scene from before the new spacing does not
@@ -243,13 +244,13 @@ export const suites = {
       const m = session.getSculptManager();
       const pick = (i) => {
         const tool = m.getTool(i);
-        return { spacing: tool._spacing, plateau: tool.plateau, layer: tool.layer, pressure: tool.layerPressure?.() };
+        return { spacing: tool._spacing, curve: tool.curve?.presetId, layer: tool.layer, tines: tool.tines, pressure: tool.layerPressure?.() };
       };
       // Enums.Tools: BRUSH 0 (clay), RAKE 13.
       return { clay: pick(0), rake: pick(13), clayIndex: 0, current: window.__sculpt.input.currentToolIndex() };
     });
-    t.ok(defaults.clay.spacing === 0.1 && defaults.clay.plateau === 0.8 && defaults.clay.layer === 0.1, `clay installs spacing 0.1, plateau 0.8, layer 0.1 (${JSON.stringify(defaults.clay)})`);
-    t.ok(defaults.rake.spacing === 0.06 && defaults.rake.plateau === 0.8 && defaults.rake.layer === 0.01, `the rake keeps its own 0.06, 0.8, 0.01 (${JSON.stringify(defaults.rake)})`);
+    t.ok(defaults.clay.spacing === 0.1 && defaults.clay.curve === 'plateau' && defaults.clay.layer === 0.1, `clay installs spacing 0.1, the Plateau curve, layer 0.1 (${JSON.stringify(defaults.clay)})`);
+    t.ok(defaults.rake.spacing === 0.06 && defaults.rake.curve === 'round' && defaults.rake.tines === 4 && defaults.rake.layer === undefined, `the tine rake keeps its own spacing 0.06, four Round tines and no clay layer (${JSON.stringify(defaults.rake)})`);
     t.eq(defaults.current, defaults.clayIndex, 'key 3 is the clay brush');
 
     // The panel's layer slider reaches past 0.1 and says it follows pressure.

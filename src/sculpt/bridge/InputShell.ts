@@ -2,7 +2,9 @@ import { Color } from 'three';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
-import { ALPHA_SETS, type AlphaSet } from './alphas';
+import { PROFILE_REV, ProfileCurve } from './profile';
+import { DEFAULT_RAKE_PRESET, RAKE_PRESETS, RakeBrush } from './tools';
+import type { SavedRake } from './ScenePersist';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShouldMoveFocus } from '../../ui/dom';
@@ -642,75 +644,65 @@ export class InputShell {
   }
 
   /**
-   * Brush stencils, per tool. Which tools offer one is declared in
-   * ALPHA_SETS; a tool with no entry gets no alpha row and never carries
-   * an _idAlpha, so nothing changes for the brushes that don't want one.
+   * The tools with a profile curve (profile.ts), by vendor index: clay,
+   * crease, polish (the Twist slot), paint and the rake's tines. Paint's
+   * blur shares Paint's curve object, so it is not listed on its own.
    */
-  alphaSetFor(tool?: number): AlphaSet | null {
-    return ALPHA_SETS[tool ?? this.currentToolIndex()] ?? null;
-  }
+  static readonly CURVE_TOOLS: readonly number[] = [Enums.Tools.BRUSH, Enums.Tools.CREASE, Enums.Tools.TWIST, Enums.Tools.PAINT, Enums.Tools.RAKE];
 
-  /**
-   * The tool's stencil, or null for "no stencil" - a plain brush.
-   *
-   * The vendored constructors set _idAlpha to the NUMBER 0, left over from
-   * when the registry was indexed rather than named. Picking.ALPHAS[0] is
-   * undefined so it already behaves as "none", but it is not null, and a
-   * picker comparing ids would find neither the off swatch nor a stencil
-   * selected. Anything that is not a registered name reads as none.
-   */
-  getToolAlpha(tool?: number): string | null {
+  /** A tool's profile curve, or null for a tool without one. */
+  toolCurve(tool?: number): ProfileCurve | null {
     const idx = tool ?? this.currentToolIndex();
-    if (!ALPHA_SETS[idx]) return null;
-    const id = this.session.getSculptManager().getTool(idx)?._idAlpha;
-    return typeof id === 'string' ? id : null;
+    if (!InputShell.CURVE_TOOLS.includes(idx)) return null;
+    const c = (this.session.getSculptManager().getTool(idx) as unknown as { curve?: unknown })?.curve;
+    return c instanceof ProfileCurve ? c : null;
   }
 
-  setToolAlpha(id: string | null, tool?: number): void {
-    if (this.applyToolAlpha(id, tool ?? this.currentToolIndex())) {
-      this.onBrushSettingsChange?.();
+  /** Every curve tool's points, for the scene record (SculptSettings.curves). */
+  serializeCurves(): Record<number, [number, number][]> {
+    const out: Record<number, [number, number][]> = {};
+    for (const idx of InputShell.CURVE_TOOLS) {
+      const c = this.toolCurve(idx);
+      if (c) out[idx] = c.serialize();
     }
-  }
-
-  /**
-   * The write itself, without announcing it. Refuses a stencil the tool
-   * does not offer, and refuses "off" where the stencil is the point of
-   * the tool - both arrive from restored scenes as readily as from the
-   * panel, and a scene saved against a stencil since retired should leave
-   * the tool on its default rather than on a dead id.
-   */
-  private applyToolAlpha(id: string | null, idx: number): boolean {
-    const set = ALPHA_SETS[idx];
-    if (!set) return false;
-    if (id === null ? !set.allowNone : !set.alphas.some((a) => a.id === id)) return false;
-    const brush = this.session.getSculptManager().getTool(idx);
-    if (!brush) return false;
-    brush._idAlpha = id;
-    return true;
-  }
-
-  /** Every alpha-capable tool's choice, for the scene record. */
-  serializeAlphas(): Record<number, string | null> {
-    const out: Record<number, string | null> = {};
-    for (const idx of Object.keys(ALPHA_SETS)) out[Number(idx)] = this.getToolAlpha(Number(idx));
     return out;
   }
 
   /**
-   * Restore the per-tool choices. `legacy` carries the single rake stencil
-   * from scenes saved before alphas went per-tool. setToolAlpha drops
-   * anything the tool no longer offers, so a retired stencil leaves that
-   * tool on its default rather than on a dead id.
+   * Restore the curves from a scene record. A tool the table leaves out,
+   * or whose entry does not parse, goes back to its default preset (a
+   * scene from before the curves made every brush with its default). A
+   * record of a later revision than this build reads is left alone.
+   * Silently, like loadSpacing: restoring is not an edit.
    */
-  loadAlphas(table: Record<number, string | null> | undefined, legacy?: string): void {
-    // Silently, like loadSpacing and dynamics.load: restoring a scene is
-    // not a change to it, and announcing it would schedule an autosave of
-    // what was just read back.
-    if (!table) {
-      if (legacy) this.applyToolAlpha(legacy, Enums.Tools.RAKE);
-      return;
+  loadCurves(table: Record<number, unknown> | undefined, rev?: number): void {
+    if (rev !== undefined && rev > PROFILE_REV) return;
+    for (const idx of InputShell.CURVE_TOOLS) {
+      const c = this.toolCurve(idx);
+      if (!c) continue;
+      const entry = table && typeof table === 'object' ? table[idx] : undefined;
+      if (entry === undefined || !c.load(entry)) c.reset();
     }
-    for (const [idx, id] of Object.entries(table)) this.applyToolAlpha(id ?? null, Number(idx));
+  }
+
+  /** The tine rake's knobs and preset, for the scene record. */
+  serializeRake(): SavedRake | undefined {
+    const rake = this.session.getSculptManager().getTool(Enums.Tools.RAKE) as unknown as RakeBrush | undefined;
+    if (!(rake instanceof RakeBrush)) return undefined;
+    return { ...rake.settings(), preset: rake.presetId };
+  }
+
+  /**
+   * Restore the rake's knobs; a scene without them puts the rake on its
+   * default preset. The preset sets the tine profile too, so this runs
+   * before loadCurves, whose stored curve then wins.
+   */
+  loadRake(saved: SavedRake | undefined): void {
+    const rake = this.session.getSculptManager().getTool(Enums.Tools.RAKE) as unknown as RakeBrush | undefined;
+    if (!(rake instanceof RakeBrush)) return;
+    const preset = saved && typeof saved.preset === 'string' && RAKE_PRESETS.some((p) => p.id === saved.preset) ? saved.preset : DEFAULT_RAKE_PRESET;
+    rake.applyPreset(preset);
+    if (saved) rake.set(saved);
   }
 
   // --- the Select tool -----------------------------------------------------
@@ -1048,7 +1040,8 @@ export class InputShell {
         const blur = s.getSculptManager().getTool(tools.PAINT_BLUR);
         blur._radius = paint._radius;
         blur._intensity = paint._intensity ?? 0.75;
-        blur._hardness = paint._hardness ?? 0.75;
+        // The profile needs no copy: the blur holds Paint's own curve
+        // (SculptSession wires it), as it used to take Paint's hardness.
         s.getSculptManager().setToolIndex(tools.PAINT_BLUR);
       } else {
         s.getSculptManager().setToolIndex(tools.SMOOTH);
@@ -1797,6 +1790,9 @@ export class InputShell {
     // Tab is not one of their keys: it goes on to the chrome check below
     // (a select keeps it there).
     if (isFormControlTarget(e) && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
+    // A focused profile-curve point is a slider too: its arrows move it and
+    // Delete removes it (CurveEditor).
+    if ((e.target as Element | null)?.closest?.('.curve-editor__plot') && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') return;
     const s = this.session;
 
     // Keep Firefox from opening the menu bar on the negative modifier.

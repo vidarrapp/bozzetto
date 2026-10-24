@@ -133,8 +133,8 @@ export default defineConfig(({ mode }) => {
       // nothing; a sculpt session keeps its worker to the end.
       registerType: 'prompt',
       workbox: {
-        // The shell - JS, CSS, fonts and the small PNGs (matcaps, brush
-        // stencils, base-mesh thumbnails, icons) - and what new work starts
+        // The shell - JS, CSS, fonts and the small PNGs (matcaps,
+        // base-mesh thumbnails, icons) - and what new work starts
         // from. Source maps and the demo timelapse stay out: precaching
         // either is bytes nobody needs offline.
         globPatterns: [

@@ -115,7 +115,7 @@ src/
     figures.ts             the mannequins
   sculpt/
     mode.ts                sculpt entry: mounts the session, panels, autosave
-    bridge/                the Bozzetto side: input, tools, alphas, persistence
+    bridge/                the Bozzetto side: input, tools, profile curves, persistence
     ui/                    toolbar, File menu, Publish window, Tool/Model/Scene panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
@@ -133,7 +133,7 @@ src/
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
-public/assets/             matcaps, environments, fonts, brush stencils, base meshes, mannequins
+public/assets/             matcaps, environments, fonts, base meshes, mannequins
 public/legal/              the Privacy notice and the Terms
 functions/
   _middleware.ts           runs first for every Function: the files host, cross-site

@@ -289,7 +289,7 @@ async function sceneFiles(page, base, t) {
     page,
     `rec.materials = 'not a list';
      rec.meshes[0].materialId = 12345;
-     rec.settings = { worldScale: 'yes', worldRadius: 'big', dynamics: { 3: null, 4: { sizeCurve: '__proto__' } }, spacing: 'wide', alphas: 5, symmetry: { 1: 'x' }, paintColor: { r: 1 } };
+     rec.settings = { worldScale: 'yes', worldRadius: 'big', dynamics: { 3: null, 4: { sizeCurve: '__proto__' } }, spacing: 'wide', alphas: 5, curves: { 0: 'x', 6: [[0, 'a'], [1, 0]], 99: [[0, 1], [1, 0]] }, curvesRev: 'one', rake: 7, symmetry: { 1: 'x' }, paintColor: { r: 1 } };
      return rec;`,
   );
   await openForInput(page, base);

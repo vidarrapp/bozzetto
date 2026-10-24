@@ -571,6 +571,8 @@ declare module '@sculpt-vendor/editing/tools/Brush' {
     constructor(main: unknown);
     getMesh(): SculptMesh;
     stroke(picking: Picking): void;
+    start(ctrl: boolean): boolean;
+    end(): void;
     updateProxy(iVerts: Uint32Array): void;
     dynamicTopology(picking: Picking): Uint32Array;
     getFrontVertices(iVerts: Uint32Array, eyeDir: number[]): Uint32Array;
