@@ -316,10 +316,17 @@ function stopServer(server) {
  * middleware as '../_middleware'.
  */
 async function compileShared(dir) {
-  const { default: ts } = await import('typescript');
+  // esbuild, which wrangler depends on and bundles the Functions with:
+  // TypeScript 7's package is the native compiler and has no
+  // transpileModule any more.
+  const { transformSync } = await import('esbuild');
   const transpile = (from, to) => {
-    const { outputText } = ts.transpileModule(readFileSync(from, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true },
+    const { code: outputText } = transformSync(readFileSync(from, 'utf8'), {
+      loader: 'ts',
+      format: 'esm',
+      target: 'es2022',
+      sourcefile: from,
+      tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
     });
     const linked = outputText
       .replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, '$1$2.mjs$3')

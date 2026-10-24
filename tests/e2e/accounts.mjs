@@ -901,7 +901,10 @@ function build(dist, t) {
   const scripts = readdirSync(join(dist, 'assets')).filter((f) => f.endsWith('.js'));
   const purges = scripts.some((f) => {
     const js = readFileSync(join(dist, 'assets', f), 'utf8');
-    return js.includes('"bozzetto-my-projects"') && js.includes('"bozzetto-owner-projects"') && js.includes('"bozzetto-me"');
+    // Any quote: Vite 8's minifier (Oxc) writes string literals as
+    // template literals, `bozzetto-me`, where esbuild wrote "bozzetto-me".
+    const named = (name) => new RegExp(`["'\`]${name}["'\`]`).test(js);
+    return named('bozzetto-my-projects') && named('bozzetto-owner-projects') && named('bozzetto-me');
   });
   t.ok(purges, 'and the app names that cache among the ones a sign-out drops (ownerCaches.ts)');
   const worker = readFileSync(join(dist, 'sw.js'), 'utf8');

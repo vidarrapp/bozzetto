@@ -10,10 +10,11 @@
 // Runs under plain Node: the vendored SculptGL core is render-less (its
 // Mesh has no GL buffers here), so the real sources - SculptSession with
 // its tool table, the bridge brushes, the vendored tools, Picking - are
-// bundled with esbuild (Vite's own, already installed) and driven
-// directly. The few browser globals the modules touch are stubbed below;
-// the brush stencil PNGs are decoded here, byte for byte as the browser
-// does for these 8-bit greyscale files. The camera is a fixed,
+// bundled with esbuild (already installed: wrangler depends on it, and
+// Vite 8 takes it as a peer) and driven directly. The few browser globals
+// the modules touch are stubbed below; the brush stencil PNGs are decoded
+// here, byte for byte as the browser does for these 8-bit greyscale
+// files. The camera is a fixed,
 // double-precision orthographic one (the engine only ever calls
 // project/unproject on it), so nothing depends on a viewport or a GPU.
 //
@@ -161,7 +162,7 @@ async function loadEngine() {
   try {
     esbuild = await import('esbuild');
   } catch {
-    throw new Error('esbuild not found (it comes with vite): run npm ci');
+    throw new Error('esbuild not found (it comes with wrangler): run npm ci');
   }
   const entry = `
     export { SculptSession } from './src/sculpt/bridge/SculptSession';

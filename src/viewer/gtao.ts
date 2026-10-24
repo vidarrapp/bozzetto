@@ -7,6 +7,7 @@ import {
   acos,
   add,
   clamp,
+  context,
   cos,
   cross,
   div,
@@ -48,6 +49,12 @@ interface GTAOInternals {
   _temporalDirection: Node;
   _material: { fragmentNode: Node; needsUpdate: boolean };
   _textureNode: Node;
+  _resolution: Node;
+  // r186: updateBefore rebuilds the material from these whenever the
+  // sample count changes (three bakes the count into its shader).
+  _ao: (() => Node) | null;
+  _currentSamples: number;
+  _sharedContext: unknown;
 }
 
 // TSL's generated typings are far narrower than what the node system
@@ -58,7 +65,7 @@ const loop: N = Loop;
 const texSize: N = textureSize;
 
 /**
- * three's Ground-Truth AO (r184) with one thing changed: how far a sample
+ * three's Ground-Truth AO (as of r184) with one thing changed: how far a sample
  * may be from the point it shades and still count as an occluder.
  *
  * three counts a sample in full whenever its view-space depth is within
@@ -74,7 +81,11 @@ const texSize: N = textureSize;
  * no longer darkens anything, and the term fades out instead of ending.
  *
  * The rest - the horizon search, the slice integral, the step falloff, the
- * noise - is three's code as it stands, so `thickness` goes unused.
+ * noise - is three's r184 code, so `thickness` goes unused. r186 rewrote
+ * three's own shader (quadratic steps, a squared sphere falloff, a
+ * closed-form integral); this one keeps r184's, which the AO suites and
+ * the tuning above were measured against, and only follows the renamed
+ * internals (_resolution, _ao).
  */
 class SoftGTAONode extends GTAONode {
   /**
@@ -130,7 +141,7 @@ class SoftGTAONode extends GTAONode {
 
       const noiseResolution: N = texSize(self._noiseNode, 0);
       let noiseUv: N = vec2(uvNode.x, uvNode.y.oneMinus());
-      noiseUv = noiseUv.mul((this.resolution as N).div(noiseResolution));
+      noiseUv = noiseUv.mul((self._resolution as N).div(noiseResolution));
       const noiseTexel: N = sampleNoise(noiseUv);
       const randomVec: N = noiseTexel.xyz.mul(2.0).sub(1.0);
       const tangent: N = vec3(randomVec.xy, 0.0).normalize();
@@ -198,7 +209,16 @@ class SoftGTAONode extends GTAONode {
       return ao;
     });
 
-    self._material.fragmentNode = (occlusion() as N).context((builder as N).getSharedContext());
+    // As three's setup leaves it (r186): its updateBefore rebuilds the
+    // material from _ao whenever samples.value differs from
+    // _currentSamples, so both must be this shader's, or the first frame
+    // would call a null _ao. This shader reads the count as a uniform, so
+    // the rebuild is not needed here, only harmless.
+    self._ao = occlusion as N;
+    self._sharedContext = (builder as N).getSharedContext();
+    self._currentSamples = (this.samples as N).value;
+    (self._material as N).contextNode = context(self._sharedContext as N);
+    self._material.fragmentNode = occlusion() as N;
     self._material.needsUpdate = true;
     return self._textureNode;
   }

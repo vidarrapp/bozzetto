@@ -436,7 +436,7 @@ export default defineConfig(({ mode }) => {
     target: 'es2020',
     sourcemap: true,
     outDir: 'dist',
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: `${root}index.html`,
         admin: `${root}admin/index.html`,

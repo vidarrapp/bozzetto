@@ -17,7 +17,7 @@ node scripts/parity-fixtures.mjs out --only=PaintBrush,Drag --tol=1e-9
 It needs `npm ci` and nothing else: no build, no browser. The real sources
 (`SculptSession` with its tool table, the bridge brushes in
 `src/sculpt/bridge/tools.ts`, the vendored SculptGL tools and `Picking`) are
-bundled with esbuild (installed with Vite) and run under Node. The vendored
+bundled with esbuild (installed with wrangler) and run under Node. The vendored
 core is render-less, so the only browser pieces are stubbed: a no-op
 `ResizeObserver`, and `fetch`, `createImageBitmap` and a canvas that serve
 and decode the brush stencils from `public/assets/alphas` (8-bit greyscale

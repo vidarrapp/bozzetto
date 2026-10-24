@@ -38,7 +38,7 @@ export default defineConfig({
       formats: ['iife'],
       fileName: () => 'viewer.js',
     },
-    rollupOptions: {
+    rolldownOptions: {
       output: { assetFileNames: 'embed.css' },
     },
   },

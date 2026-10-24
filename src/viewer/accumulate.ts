@@ -5,7 +5,8 @@ import { NodeUpdateType, passTexture } from 'three/tsl';
 // The published TSL typings are narrower than what the runtime accepts.
 type N = any;
 
-const _quad = /*@__PURE__*/ new QuadMesh();
+// r186 types the material as required; each pass sets its own before drawing.
+const _quad = /*@__PURE__*/ new QuadMesh(new NodeMaterial());
 const _size = /*@__PURE__*/ new Vector2();
 // Reused between passes, as three's own pass nodes do; filled on first use.
 let _state = undefined as unknown as ReturnType<typeof RendererUtils.resetRendererState>;

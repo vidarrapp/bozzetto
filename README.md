@@ -341,6 +341,10 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ## Changelog
 
+### Unreleased
+
+- **Dependencies brought up to date.** three.js 0.186 (from 0.184; the ambient occlusion keeps its own soft-falloff shader, following three's renamed internals), and the build and test tooling: Vite 8 with vite-plugin-pwa 2, TypeScript 7, wrangler 4 and the Workers types 5. The service worker keeps the same caching rules, and the sculpt engine's output is identical.
+
 ### v0.6.3
 
 **The community gallery, centimetres and a channel box, and the OBJ round-trip.** The web app's version is now the one in the gallery's footer; the v1.4 releases below were the web side of desktop 0.6.0 to 0.6.2.

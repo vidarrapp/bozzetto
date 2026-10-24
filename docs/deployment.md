@@ -6,7 +6,7 @@ Bozzetto runs entirely on Cloudflare Pages, Functions, D1 and R2. No server to r
 
 Hosted on [Cloudflare Pages](https://pages.cloudflare.com/) through the GitHub integration, so every push to `main` builds and deploys.
 
-- Build command `npm run build`, output directory `dist`, with the build variable `NODE_VERSION=22`: the passkey library and its certificate parser need Node 20 or later, and CI builds on 22.
+- Build command `npm run build`, output directory `dist`, with the build variable `NODE_VERSION=22`: the passkey library and its certificate parser need Node 20 or later, the build tooling (Vite 8, wrangler 4) Node 22.12 or later, and CI builds on 22.
 - The `prebuild` step generates the demo timelapse, so those assets ship without being committed.
 - Bindings (Pages → Settings → Functions): a D1 database bound as `DB` and an R2 bucket bound as `BUCKET`. Apply migrations with `npm run db:migrate`, before the code that needs them deploys: from `0002_visibility.sql` on, every list, manifest and media read asks for the `visibility` column, and from `0003_accounts.sql` on, the gallery lists templates, which 0003 makes of every public project, so it shows the same set as before. 0003 only adds, and 0.5.5 runs on it. It is applied in production, through the console and recorded; staging takes it with `npx wrangler d1 migrations apply bozzetto-staging --remote`, from a `wrangler.toml` that names that database.
 - Functions run on `/api/*`, `/admin/api/*`, `/admin/login`, `/media/*` and `/m/*` only, which `public/_routes.json` lists. Without it, the root middleware (`functions/_middleware.ts`) would run for every static file, each billed as a Functions request. A Function on any other path never runs until the file names it.
