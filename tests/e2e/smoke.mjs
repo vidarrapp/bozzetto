@@ -4010,7 +4010,7 @@ export const suites = {
 
     // In view: a short window, so the panel's body scrolls; scrolled to its
     // foot, the rows are out of sight, and a step brings the active one in.
-    await page.setViewportSize({ width: 1280, height: 600 });
+    await page.setViewportSize({ width: 1280, height: 380 });
     const where = () =>
       page.evaluate(() => {
         const body = document.querySelector('.panel--scene .panel__body');
@@ -4031,6 +4031,151 @@ export const suites = {
     const next = await press('ArrowDown');
     const shown = await where();
     t.ok(shown.inside && shown.scrollTop < hidden.scrollTop, `a step to the ${next} scrolls its row into view (scrollTop ${shown.scrollTop})`);
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // The panel (owner layout call): Create above the list, the material
+    // directly under it, no other buttons and no size line; the active
+    // row's trash in the rust accent, in both themes.
+    await page.evaluate(() => {
+      const { session, scenePanel } = window.__sculpt;
+      for (const m of session.getMeshes()) {
+        session.setLocked(m, false);
+        session.setMeshVisible(m, true);
+      }
+      scenePanel.refresh();
+    });
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector('.panel--scene');
+      const order = [...panel.querySelector('.panel__body').children].map((c) => c.classList[0]);
+      const probe = document.createElement('span');
+      document.body.appendChild(probe);
+      const rust = (v) => {
+        probe.style.color = `var(${v})`;
+        return getComputedStyle(probe).color;
+      };
+      const trash = () => getComputedStyle(panel.querySelector('.outliner__icon--danger')).color;
+      const dark = { trash: trash(), accent: rust('--accent') };
+      const was = document.documentElement.dataset.theme;
+      document.documentElement.dataset.theme = 'light';
+      const light = { trash: trash(), accent: rust('--accent') };
+      if (was === undefined) delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = was;
+      probe.remove();
+      return {
+        order: order.join(','),
+        buttons: [...panel.querySelectorAll('.outliner__btn')].map((b) => b.textContent).join(','),
+        size: !!panel.querySelector('.outliner__size'),
+        dark,
+        light,
+      };
+    });
+    t.eq(layout.order, 'outliner__header,outliner,outliner__material,outliner__measure', 'the Scene panel is Create, the list, the material, then the floor');
+    t.ok(layout.buttons === 'Create' && !layout.size, `Create is its one button, and there is no size line (${layout.buttons})`);
+    t.ok(
+      layout.dark.trash === layout.dark.accent && layout.light.trash === layout.light.accent && layout.dark.accent !== layout.light.accent,
+      `the trash is in the rust accent in both themes (${layout.dark.trash}, ${layout.light.trash})`,
+    );
+
+    // The Edit menu has what the panel's buttons were, with their hotkeys.
+    const editItems = () =>
+      page.evaluate(() => {
+        const { editMenu } = window.__sculpt;
+        editMenu.open();
+        const out = [...editMenu.pop.children]
+          .filter((c) => !c.classList.contains('file-menu__sep'))
+          .map((c) => {
+            const name = (c.querySelector('.file-menu__label') ?? c).textContent;
+            const key = c.querySelector('.file-menu__key')?.textContent;
+            const off = c.matches('button') ? c.disabled : [...c.querySelectorAll('button')].every((b) => b.disabled);
+            const choices = c.matches('.file-menu__choices') ? `[${[...c.querySelectorAll('button')].map((b) => b.textContent).join(' ')}]` : '';
+            return `${name}${choices}${key ? ` (${key})` : ''}${off ? ' off' : ''}`;
+          });
+        editMenu.close();
+        return out.join('; ');
+      });
+    const pickOne = (n) =>
+      page.evaluate((name) => {
+        const { session } = window.__sculpt;
+        session.selectSet([session.getMeshes().find((m) => session.getMeshName(m) === name)]);
+      }, n);
+    await pickOne('Torus');
+    t.eq(
+      await editItems(),
+      'Undo; Redo; Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Preferences\u2026',
+      'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys; Merge off with one object',
+    );
+    // Its items, pressed as a pointer would.
+    const menuPress = async (label, choice) => {
+      await page.evaluate(() => window.__sculpt.editMenu.open());
+      const sel = await page.evaluate(
+        ([l, c]) => {
+          const pop = window.__sculpt.editMenu.pop;
+          const host = [...pop.children].find((e) => (e.querySelector('.file-menu__label') ?? e).textContent.startsWith(l));
+          const b = c ? [...host.querySelectorAll('button')].find((x) => x.textContent === c) : host;
+          b.dataset.testPress = '1';
+          return '[data-test-press="1"]';
+        },
+        [label, choice],
+      );
+      await page.click(sel);
+      await page.evaluate(() => document.querySelector('[data-test-press]')?.removeAttribute('data-test-press'));
+    };
+    const tally = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        return {
+          n: session.getMeshes().length,
+          selected: session.getSelectedMeshes().map((m) => session.getMeshName(m)).sort().join(','),
+          open: window.__sculpt.editMenu.isOpen(),
+        };
+      });
+    let tl = await tally();
+    const n0 = tl.n;
+    await menuPress('Duplicate');
+    tl = await tally();
+    t.ok(tl.n === n0 + 1 && !tl.open && tl.selected !== 'Torus', `Edit > Duplicate copies the torus, selects the copy and closes the menu (${tl.n} objects; ${tl.selected})`);
+    await menuPress('Mirror', 'X');
+    tl = await tally();
+    t.eq(tl.n, n0 + 2, 'Edit > Mirror > X adds a mirrored copy');
+    await menuPress('Radial', '\u00d73');
+    tl = await tally();
+    t.eq(tl.n, n0 + 4, 'Edit > Radial copies > \u00d73 adds two copies round the axis');
+    page.once('dialog', (d) => d.accept());
+    await menuPress('Delete');
+    tl = await tally();
+    t.eq(tl.n, n0 + 2, 'Edit > Delete deletes the selection (the two radial copies), after asking');
+    // Merge: two selected light it up, in the Edit menu and under Remesh in
+    // the Model panel alike, and either one merges.
+    const mergeBtn = () =>
+      page.evaluate(() => {
+        const sec = [...document.querySelectorAll('.panel--model .section')].find((x) => x.querySelector('h3')?.textContent === 'Remesh');
+        const b = [...(sec?.querySelectorAll('button') ?? [])].find((x) => x.textContent === 'Merge');
+        return b ? { disabled: b.disabled } : null;
+      });
+    await pickOne('Torus');
+    const lone = await mergeBtn();
+    t.ok(lone && lone.disabled, `the Model panel has Merge under Remesh, off with one object (${JSON.stringify(lone)})`);
+    const pickTwo = (a, b) =>
+      page.evaluate(([x, y]) => {
+        const { session } = window.__sculpt;
+        const find = (n) => session.getMeshes().find((m) => session.getMeshName(m) === n);
+        session.selectSet([find(x), find(y)]);
+      }, [a, b]);
+    await pickTwo('Sphere', 'Cube');
+    const pair = await mergeBtn();
+    t.ok(pair && !pair.disabled, 'with two selected it is on');
+    t.ok(/Merge \(Ctrl \+ J\);/.test(await editItems()), 'and so is the Edit menu\'s');
+    tl = await tally();
+    await page.evaluate(() => {
+      const sec = [...document.querySelectorAll('.panel--model .section')].find((x) => x.querySelector('h3')?.textContent === 'Remesh');
+      [...sec.querySelectorAll('button')].find((x) => x.textContent === 'Merge').click();
+    });
+    const merged = await tally();
+    t.eq(merged.n, tl.n - 1, 'the Model panel\'s Merge merges the two into one');
+    await page.evaluate(() => window.__sculpt.session.undo());
+    await pickTwo('Sphere', 'Cube');
+    await menuPress('Merge');
+    t.eq((await tally()).n, tl.n - 1, 'and so does the Edit menu\'s');
   },
 
   async brushSize(page, base, t) {

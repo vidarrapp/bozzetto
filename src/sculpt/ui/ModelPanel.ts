@@ -65,6 +65,9 @@ export class ModelPanel extends SidePanel {
    */
   private voxelBox: number[] | null = null;
   private topoBody?: HTMLDivElement;
+  private mergeBtn?: HTMLButtonElement;
+  /** Merge, under Remesh: the Edit menu's Merge (the mount wires it to the Scene panel's). */
+  onMerge: (() => void) | null = null;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
 
   constructor(
@@ -198,7 +201,7 @@ export class ModelPanel extends SidePanel {
       this.remeshResolution,
       (v) => {
         this.remeshResolution = v;
-        this.session.setRemeshResolution(v); // Merge in the Scene panel reads it too
+        this.session.setRemeshResolution(v); // Merge (Edit menu, and below) reads it too
         this.refreshVoxel();
         return String(Math.round(v));
       },
@@ -227,6 +230,13 @@ export class ModelPanel extends SidePanel {
         }
       }),
     );
+    // Merge goes through the same voxel grid, at this resolution, so it
+    // sits beside the remesh as well as in the Edit menu (owner call).
+    // Needs two objects, so it greys out until there are.
+    this.mergeBtn = this.opButton('Merge', () => this.onMerge?.());
+    this.mergeBtn.title = 'Merge the selected objects into one (ctrl+j)';
+    this.mergeBtn.disabled = true;
+    row.appendChild(this.mergeBtn);
     remesh.appendChild(row);
   }
 
@@ -314,6 +324,11 @@ export class ModelPanel extends SidePanel {
   refreshUnits(): void {
     this.buildExtract();
     this.refreshVoxel(true);
+  }
+
+  /** Merge's button follows the selection: two objects or more. */
+  setMergeEnabled(on: boolean): void {
+    if (this.mergeBtn) this.mergeBtn.disabled = !on;
   }
 
   /** The Extract thickness the ctrl+e hotkey should use. */

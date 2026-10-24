@@ -50,6 +50,7 @@ import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
 import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
+import { chordLabel, keymap } from '../ui/keymap';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
 import { FileActions, type LookBridge } from './bridge/FileActions';
@@ -1390,11 +1391,53 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // The top row's File and Edit menus.
   {
     fileMenu = new FileMenu(fileActions);
+    // The hotkey bound to an action, as the guide writes it; '' when unbound.
+    const keyFor = (id: string) => (): string => {
+      const chord = keymap.chordFor(id);
+      return chord ? chordLabel(chord) : '';
+    };
+    // What used to be the Scene panel's buttons (owner call: only Create
+    // stays there), each on the whole selection as before.
+    const acts = (): boolean => !!scenePanel?.hasTargets();
     editMenu = new TopMenu(
       'Edit',
       [
         { label: 'Undo', action: () => session.undo() },
         { label: 'Redo', action: () => session.redo() },
+        { separator: true },
+        { label: 'Duplicate', enabled: acts, action: () => scenePanel?.duplicateSelected() },
+        { label: 'Delete', key: keyFor('scene.delete'), enabled: acts, action: () => scenePanel?.deleteSelected() },
+        {
+          label: 'Merge',
+          key: keyFor('scene.merge'),
+          enabled: () => !!scenePanel?.canMerge(),
+          action: () => scenePanel?.mergeSelected(),
+        },
+        // Mirror: a copy across a world axis; the hotkey takes the brush's
+        // symmetry axis.
+        {
+          label: 'Mirror',
+          key: keyFor('scene.mirror'),
+          enabled: acts,
+          choices: () =>
+            (['x', 'y', 'z'] as const).map((axis) => ({
+              label: axis.toUpperCase(),
+              title: `Mirror the selected objects across ${axis.toUpperCase()}`,
+              action: () => scenePanel?.mirrorActive(axis),
+            })),
+        },
+        // Radial copies: a ring around the brush's symmetry axis, which the
+        // Tool panel can change between opens.
+        {
+          label: () => `Radial copies around ${session.getSymmetryAxis().toUpperCase()}`,
+          enabled: acts,
+          choices: () =>
+            [3, 4, 5, 6, 8, 12].map((count) => ({
+              label: `\u00d7${count}`,
+              title: `${count} copies around ${session.getSymmetryAxis().toUpperCase()}`,
+              action: () => scenePanel?.radialActive(count),
+            })),
+        },
         { separator: true },
         { label: 'Preferences…', action: () => showPreferences('sculpt') },
       ],
@@ -1472,6 +1515,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     session.render();
   };
   scenePanel.onSolo = (on) => setSolo(on);
+  // The Model panel's Merge (under Remesh) is the Edit menu's, and greys
+  // out with it until two objects are selected.
+  scenePanel.onRefresh = () => modelPanel?.setMergeEnabled(!!scenePanel?.canMerge());
   sculptPanel = new SculptPanel(session, input, viewer);
   sculptPanel.onGizmoParts = (parts) => {
     try {
@@ -1481,6 +1527,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
   };
   modelPanel = new ModelPanel(session, viewer);
+  modelPanel.onMerge = () => scenePanel?.mergeSelected();
+  modelPanel.setMergeEnabled(scenePanel.canMerge());
   // New, Open, a restore and Set scale can each move the scene between
   // real units and the old scale: the floor, the panels' units and the
   // Set scale offer follow.

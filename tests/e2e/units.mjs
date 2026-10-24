@@ -153,8 +153,10 @@ export const suites = {
       `its size is in its vertices: the matrix is a translation alone (${sphereMatrix.map((v) => +v.toFixed(3)).join(' ')})`,
     );
     t.ok(Math.abs(sphereMatrix[12]) < 1e-6 && Math.abs(sphereMatrix[13] - 12.5) < 1e-3 && Math.abs(sphereMatrix[14]) < 1e-6, `and its pivot is its centre, 12.5 cm up (${sphereMatrix.slice(12, 15).join(', ')})`);
-    const sizeLine = await page.evaluate(() => document.querySelector('.panel--scene .outliner__size')?.textContent ?? '');
-    t.eq(sizeLine, 'Size 25 × 25 × 25 cm', 'the Scene panel gives its size in centimetres');
+    // The size line is gone from the Scene panel (owner call); the channel
+    // box shows the transform.
+    const sizeLine = await page.evaluate(() => !!document.querySelector('.panel--scene .outliner__size'));
+    t.ok(!sizeLine, 'the Scene panel has no size line');
     const labels = await page.evaluate(() =>
       [...document.querySelectorAll('.outliner__menu-grid--words .outliner__menu-item')].map((b) => `${b.dataset.kind}:${b.querySelector('.outliner__menu-size')?.textContent ?? ''}`),
     );
@@ -269,14 +271,12 @@ export const suites = {
       units: window.__sculpt.session.getUnits(),
       banner: !document.querySelector('.scale-banner')?.hidden,
       locked: window.__sculpt.viewer.lockedFloor(),
-      size: document.querySelector('.panel--scene .outliner__size')?.textContent ?? '',
     }));
     box = await activeBox(page);
     t.eq(legacy.units, null, 'an autosave without the marker opens as a scene from before real units');
     t.near(box.max[1] - box.min[1], 50, 0.1, 'exactly as it was (the sphere 50 units tall)');
     t.eq(legacy.locked, null, 'with the floor that follows its subject');
     t.ok(legacy.banner, 'and the Set scale banner');
-    t.ok(/units$/.test(legacy.size), `its sizes in its own units (${legacy.size})`);
     await page.click('.scale-banner__open');
     const picked = await page.evaluate(() => document.querySelector('.scale-banner__object')?.selectedOptions[0]?.textContent);
     t.eq(picked, 'Sphere', 'Set scale picks the largest object');

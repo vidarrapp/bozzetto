@@ -1,7 +1,7 @@
 import { div, labelRow, selectEl } from '../../ui/dom';
 import { compactRange } from '../../ui/Panel';
 import { setSliderValue, sliderValue } from '../../ui/sliderEntry';
-import { FLOOR_OFFSET_LIMIT, formatDimensions, formatLength } from '../../viewer/units';
+import { FLOOR_OFFSET_LIMIT, formatLength } from '../../viewer/units';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { SidePanel } from './SidePanel';
 import { PRIMITIVE_SIZES, type PrimitiveKind, type SculptSession } from '../bridge/SculptSession';
@@ -18,26 +18,27 @@ import { statusToast } from './statusToast';
  * double-click renames in place - and, on the active row, a trash can.
  * The up and down arrows walk the rows, wrapping at the ends, and pick
  * each as a click would (with Shift, as a shift+click would).
- * Create, Duplicate, Delete, Mirror and Merge stack under the list, one per
- * row, and act on the whole selection. Solo (alt+q, or its button on the
+ * Create is the panel's one button, above the list (owner call);
+ * Duplicate, Delete, Mirror, Radial copies and Merge are the Edit menu's
+ * (Merge also the Model panel's, under Remesh), and act on the whole
+ * selection through the methods here. Solo (alt+q, or its button on the
  * viewport's rail above the strength slider) shows the active object
- * alone, and the panel says so on its tab and title bar while it is on. The material row sits
- * under them all, then the active object's size and, in a scene on real
+ * alone, and the panel says so on its tab and title bar while it is on.
+ * The material row sits directly under the list, then, in a scene on real
  * units, the Floor offset. New materials are made from the dropdown's own
- * trailing "New*" entry rather than a separate button. The selected object's own
- * material values, topology and mask are the Model panel's, docked under
- * this one; saving, exporting and capture live in the top row.
+ * trailing "New*" entry rather than a separate button. The selected
+ * object's own material values, topology and mask are the Model panel's,
+ * docked under this one; saving, exporting and capture live in the top row.
  */
 export class ScenePanel extends SidePanel {
   private readonly listEl: HTMLDivElement;
   private readonly addMenu: HTMLDivElement;
   private matRow?: HTMLDivElement;
-  /** The active object's size (outliner__size) and the Floor offset row. */
-  private readonly sizeEl: HTMLDivElement;
+  /** The Floor offset row. */
   private readonly floorRow: HTMLLabelElement;
   private readonly floorInput: HTMLInputElement;
-  /** The size line follows strokes and the gizmo, which tell the panel nothing: polled. */
-  private readonly sizeTimer: number;
+  /** The Floor offset follows a look restored elsewhere, which tells the panel nothing: polled. */
+  private readonly floorTimer: number;
   /** The object whose name is being edited, so refresh keeps the input. */
   private renaming: SculptMesh | null = null;
 
@@ -53,10 +54,13 @@ export class ScenePanel extends SidePanel {
    * onSceneEdit.
    */
   onSolo: ((on: boolean) => void) | null = null;
+  /**
+   * After every refresh (the list or the selection changed): the Model
+   * panel's Merge follows whether there is anything to merge.
+   */
+  onRefresh: (() => void) | null = null;
 
   private readonly soloChip: HTMLButtonElement;
-  private mirrorMenu!: HTMLDivElement;
-  private mergeBtn!: HTMLButtonElement;
   /** A rebind in Preferences re-titles the Solo chip at once. */
   private readonly offKeymap: () => void;
   /** Blockouts arrive as their separate lumps rather than one shell. */
@@ -65,10 +69,7 @@ export class ScenePanel extends SidePanel {
   /** Any press outside the popup dismisses it, menu-style. */
   private readonly onDocPointerDown = (e: Event): void => {
     const t = e.target as Node;
-    const inside =
-      (!this.addMenu.hidden && this.addMenu.contains(t)) ||
-      (!this.mirrorMenu.hidden && this.mirrorMenu.contains(t));
-    if (!inside) this.closeMenus();
+    if (this.addMenu.hidden || !this.addMenu.contains(t)) this.closeMenus();
   };
 
   constructor(
@@ -94,12 +95,10 @@ export class ScenePanel extends SidePanel {
     tabNote.textContent = 'Solo';
     this.tabLabel.after(tabNote);
 
-    this.listEl = div('outliner');
-    this.body.appendChild(this.listEl);
-
-    // Create sits directly under the object list it adds to, with the
-    // selection's material line beneath it (owner layout call).
-    const footer = div('outliner__footer');
+    // Create sits above the object list it adds to (owner layout call),
+    // the panel's one button: the rest of what you do to the list is the
+    // Edit menu's.
+    const header = div('outliner__header');
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'outliner__btn outliner__btn--wide';
@@ -118,61 +117,18 @@ export class ScenePanel extends SidePanel {
       if (this.addMenu.hidden) this.openMenu(this.addMenu, addBtn);
       else this.closeMenus();
     });
-    footer.append(addBtn);
-    // Duplicate, Delete and Mirror under Create (owner call): the things
-    // you do to the list, in one place, one per row. Each takes the whole
-    // selection.
-    const row = div('outliner__actions');
-    const dupBtn = document.createElement('button');
-    dupBtn.type = 'button';
-    dupBtn.className = 'outliner__btn';
-    dupBtn.textContent = 'Duplicate';
-    dupBtn.addEventListener('click', () => this.duplicateSelected());
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'outliner__btn';
-    delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', () => this.deleteSelected());
-    // Mirror: a copy across a world axis, or a ring of copies around one
-    // (owner call). Its own popup, the way Create has one.
-    const mirrorBtn = document.createElement('button');
-    mirrorBtn.type = 'button';
-    mirrorBtn.className = 'outliner__btn';
-    mirrorBtn.textContent = 'Mirror';
-    this.mirrorMenu = div('outliner__menu');
-    this.mirrorMenu.hidden = true;
-    document.body.appendChild(this.mirrorMenu);
-    mirrorBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.mirrorMenu.hidden) {
-        this.buildMirrorMenu();
-        this.openMenu(this.mirrorMenu, mirrorBtn);
-      } else {
-        this.closeMenus();
-      }
-    });
-    // Merge: the selection into one object, through voxel space (owner
-    // request). Needs two objects, so it greys out until there are.
-    const mergeBtn = document.createElement('button');
-    mergeBtn.type = 'button';
-    mergeBtn.className = 'outliner__btn';
-    mergeBtn.textContent = 'Merge';
-    mergeBtn.title = 'Merge the selected objects into one (ctrl+j)';
-    mergeBtn.addEventListener('click', () => this.mergeSelected());
-    this.mergeBtn = mergeBtn;
-    // Solo's button lives on the viewport's rail (BrushSliders), above the
-    // strength slider (owner call); the chip by the title stays here.
-    row.append(dupBtn, delBtn, mirrorBtn, mergeBtn);
-    footer.appendChild(row);
-    this.body.appendChild(footer);
+    header.append(addBtn);
+    this.body.appendChild(header);
+
+    this.listEl = div('outliner');
+    this.body.appendChild(this.listEl);
+    // The selection's material, directly under the list (owner call).
     this.matRow = div('outliner__material');
     this.body.appendChild(this.matRow);
-    // What the active object measures, and where the floor is (owner
-    // decision: sizes in centimetres, the floor fixed at 0 and offset
+    // Where the floor is (owner decision: the floor fixed at 0 and offset
     // here). A scene from before real units has no floor of its own to
     // offset: it follows the subject until Set scale.
     const measure = div('outliner__measure');
-    this.sizeEl = div('outliner__size');
     this.floorRow = compactRange(
       'Floor offset',
       -100,
@@ -184,9 +140,9 @@ export class ScenePanel extends SidePanel {
     );
     this.floorRow.title = 'Raise or lower the floor the scene stands on';
     this.floorInput = this.floorRow.querySelector('input') as HTMLInputElement;
-    measure.append(this.sizeEl, this.floorRow);
+    measure.append(this.floorRow);
     this.body.appendChild(measure);
-    this.sizeTimer = window.setInterval(() => this.refreshSize(), 500);
+    this.floorTimer = window.setInterval(() => this.refreshFloor(), 500);
 
     // A collapsing panel must not leave its popup menu armed.
     this.onCollapsedChange = (collapsed) => {
@@ -348,14 +304,15 @@ export class ScenePanel extends SidePanel {
     menu.hidden = false;
     // Measured after unhiding so the height is real. Opens BESIDE the panel
     // rather than over it - the object list is the thing you are adding to,
-    // so covering it while choosing reads badly - and falls back to above
-    // the button if there is no room to the right.
+    // so covering it while choosing reads badly - level with the button at
+    // the top of the panel, and falls back to below the button if there is
+    // no room to the right.
     const h = menu.offsetHeight;
     const w = menu.offsetWidth;
     const right = panel.right + 6;
     const fitsRight = right + w <= window.innerWidth - 8;
     const left = fitsRight ? right : Math.max(8, btn.left);
-    const wanted = fitsRight ? btn.bottom - h : btn.top - 6 - h;
+    const wanted = fitsRight ? btn.top : btn.bottom + 6;
     const top = Math.min(window.innerHeight - h - 8, Math.max(8, wanted));
     menu.style.left = `${Math.round(left)}px`;
     menu.style.top = `${Math.round(top)}px`;
@@ -364,36 +321,17 @@ export class ScenePanel extends SidePanel {
 
   private closeMenus(): void {
     this.addMenu.hidden = true;
-    this.mirrorMenu.hidden = true;
     document.removeEventListener('pointerdown', this.onDocPointerDown, true);
   }
 
-  /**
-   * The Mirror menu, rebuilt on open because the radial entries name the
-   * object's symmetry axis, which the Tool panel can change between opens.
-   */
-  private buildMirrorMenu(): void {
-    this.mirrorMenu.replaceChildren();
-    const item = (label: string, onPick: () => void): void => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'outliner__menu-item';
-      b.textContent = label;
-      b.addEventListener('click', () => {
-        this.closeMenus();
-        onPick();
-      });
-      this.mirrorMenu.appendChild(b);
-    };
-    for (const axis of ['x', 'y', 'z'] as const) {
-      item(`Mirror ${axis.toUpperCase()}`, () => this.mirrorActive(axis));
-    }
-    const sep = div('outliner__menu-sep');
-    this.mirrorMenu.appendChild(sep);
-    const axis = this.session.getSymmetryAxis().toUpperCase();
-    for (const count of [3, 4, 5, 6, 8, 12]) {
-      item(`Radial ×${count} around ${axis}`, () => this.radialActive(count));
-    }
+  /** Whether there is anything for Duplicate, Delete, Mirror and Radial copies to act on. */
+  hasTargets(): boolean {
+    return this.targets().length > 0;
+  }
+
+  /** Whether Merge has something to do: two objects or more selected. */
+  canMerge(): boolean {
+    return this.targets().length >= 2;
   }
 
   /** What an action applies to: the selection, or the active object alone. */
@@ -630,7 +568,7 @@ export class ScenePanel extends SidePanel {
 
   /**
    * The scene's units changed (New, Open, Set scale): the Create menu's
-   * sizes, the size line and the Floor offset row follow.
+   * sizes and the Floor offset row follow.
    */
   refreshUnits(): void {
     this.closeMenus();
@@ -639,20 +577,9 @@ export class ScenePanel extends SidePanel {
     this.refresh();
   }
 
-  /**
-   * The active object's world size, in centimetres on real units (in its
-   * own units in a scene from before), and the Floor offset as it stands.
-   * The vendor's bound of the octree is cheap to read on any size of mesh.
-   */
-  private refreshSize(): void {
-    const active = this.session.getMesh();
+  /** The Floor offset as it stands, shown only in a scene on real units. */
+  private refreshFloor(): void {
     const units = this.session.getUnits();
-    this.sizeEl.hidden = !active;
-    if (active) {
-      const b = active.computeWorldBound();
-      const text = `Size ${formatDimensions([b[3] - b[0], b[4] - b[1], b[5] - b[2]], units)}`;
-      if (this.sizeEl.textContent !== text) this.sizeEl.textContent = text;
-    }
     this.floorRow.hidden = !units || !this.floor;
     // A typed value or a look restored elsewhere moves it; a held thumb wins.
     if (this.floor && document.activeElement !== this.floorInput) {
@@ -735,10 +662,9 @@ export class ScenePanel extends SidePanel {
         return row;
       }),
     );
-    // Merge wants two or more; one object has nothing to merge with.
-    if (this.mergeBtn) this.mergeBtn.disabled = this.targets().length < 2;
     this.refreshMaterial();
-    if (this.sizeEl) this.refreshSize();
+    if (this.floorRow) this.refreshFloor();
+    this.onRefresh?.();
   }
 
   /**
@@ -793,10 +719,9 @@ export class ScenePanel extends SidePanel {
   }
 
   override dispose(): void {
-    clearInterval(this.sizeTimer);
+    clearInterval(this.floorTimer);
     this.offKeymap();
     this.closeMenus();
-    this.mirrorMenu.remove();
     this.addMenu.remove();
     super.dispose();
   }

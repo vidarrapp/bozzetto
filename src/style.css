@@ -2061,7 +2061,8 @@ html.is-page body {
 }
 
 /* Row icons: eye, padlock, trash. Quiet until hovered; the padlock lights
-   up while a lock is on, the trash warns. */
+   up while a lock is on; the trash is in the rust accent, the panel's only
+   way to delete (Delete itself is in the Edit menu). */
 .outliner__icon {
   flex: none;
   width: 26px;
@@ -2094,16 +2095,21 @@ html.is-page body {
   color: var(--accent-hover);
 }
 
-.outliner__icon--danger:hover {
-  color: #e5484d;
+.outliner__icon--danger {
+  opacity: 0.9;
+  color: var(--accent);
 }
 
-.outliner__footer {
+.outliner__icon--danger:hover {
+  opacity: 1;
+  color: var(--accent-hover);
+}
+
+/* Create, above the list: the panel's one button. */
+.outliner__header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px 10px;
-  border-top: 1px solid var(--panel-border);
+  padding: 8px 8px 6px;
 }
 
 .outliner__btn {
@@ -3657,6 +3663,62 @@ body.is-sampling * {
   border-color: var(--accent);
 }
 
+/* Greyed out while there is nothing for it to act on (Delete with no
+   selection); the arrows skip it. */
+.file-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.file-menu__item:disabled:hover {
+  background: none;
+}
+
+/* A label with its hotkey at the right, quieter, as a native menu has it. */
+.file-menu__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.file-menu__key {
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* A choice row (Mirror X Y Z, the radial counts): the label, then a small
+   button per choice. */
+.file-menu__choices {
+  padding: 6px 12px 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.file-menu__choices--off {
+  opacity: 0.4;
+}
+
+.file-menu__choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.file-menu .file-menu__choice {
+  width: auto;
+  min-width: 34px;
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  text-align: center;
+}
+
+.file-menu__choices--off .file-menu__choice:disabled {
+  opacity: 1;
+}
+
 .file-menu__sep {
   height: 1px;
   margin: 4px 6px;
@@ -4269,7 +4331,7 @@ body.is-sampling * {
   text-align: right;
 }
 
-/* The active object's size and the Floor offset, at the panel's foot. */
+/* The Floor offset, at the panel's foot. */
 .outliner__measure {
   display: flex;
   flex-direction: column;
@@ -4278,37 +4340,21 @@ body.is-sampling * {
   border-top: 1px solid var(--panel-border);
 }
 
-.outliner__size {
-  font-family: var(--font-spec);
-  font-size: 11px;
-  color: var(--muted);
+.outliner__measure:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
-.outliner__size[hidden],
 .outliner__measure .compact[hidden] {
   display: none;
 }
 
-/* Material assignment, under the Create button (it closes the panel now). */
+/* Material assignment, directly under the object list. */
 .outliner__material {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 4px 8px 10px;
   border-top: 1px solid var(--panel-border);
-}
-
-/* Duplicate, Delete, Mirror, Merge and Solo stack under Create, one per
-   row (owner call: squeezed into one row the labels clipped and Mirror
-   fell off the end). */
-.outliner__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.outliner__actions .outliner__btn {
-  width: 100%;
 }
 
 .outliner__btn--wide {
