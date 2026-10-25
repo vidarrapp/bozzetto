@@ -57,6 +57,10 @@ export interface SculptSettings {
   curvesRev?: number;
   /** The tine rake's knobs and the preset they came from (null once edited). */
   rake?: SavedRake;
+  /** The Smooth brush's mode (Average or Surface) and Surface's relax. */
+  smooth?: SavedSmooth;
+  /** The smooth record's revision (SMOOTH_REV); a later one is not read. */
+  smoothRev?: number;
   /**
    * Per-brush mirror sculpting: on/off and the axis, by vendor tool index.
    * Absent in scenes from before symmetry went per-brush; the scene-wide
@@ -77,6 +81,15 @@ export interface SavedRake {
   invert?: boolean;
   preset?: string | null;
 }
+
+/** The Smooth brush in a scene record (StableSmooth.smoothSettings). */
+export interface SavedSmooth {
+  mode?: 'average' | 'surface';
+  /** Surface mode's tangential relax, 0 to 1. */
+  relax?: number;
+}
+/** SculptSettings.smoothRev: 1 the first record of the mode and relax (2026-10-24). */
+export const SMOOTH_REV = 1;
 
 /**
  * Reload-safe sculpting: the active mesh autosaves to IndexedDB so a page

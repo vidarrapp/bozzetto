@@ -278,6 +278,8 @@ const BRUSHES = [
   { name: 'PolishBrush', tool: 'TWIST', bridge: true, mode: 'dab' },
   { name: 'VolumetricMove', tool: 'MOVE', bridge: true, mode: 'move' },
   { name: 'StableSmooth', tool: 'SMOOTH', bridge: true, mode: 'dab' },
+  // The Smooth brush in its Surface mode (src/sculpt/bridge/surfaceSmooth.ts).
+  { name: 'StableSmooth-surface', tool: 'SMOOTH', bridge: true, mode: 'dab', setup: (tool) => tool.setSmooth({ mode: 'surface' }) },
   { name: 'RakeBrush', tool: 'RAKE', bridge: true, mode: 'dab' },
   { name: 'PaintBlurBrush', tool: 'PAINT_BLUR', bridge: true, mode: 'dab', colors: true },
   { name: 'FlattenBrush', tool: 'FLATTEN', bridge: true, mode: 'dab' },
@@ -331,6 +333,9 @@ const PARAM_FIELDS = [
   'taper',
   'invert',
   'presetId',
+  // Smooth: Average or Surface, and Surface's tangential relax.
+  'smoothMode',
+  'relax',
 ];
 
 /**
@@ -388,6 +393,7 @@ const APP_INSTALL_NOTES = [
   'Masking is the ctrl swap: _negative = !altKey = true (masks).',
   'World-scale sizing (worldScale.ts) puts every brush, stand-ins included, on one world radius at mount; here each tool._radius (px) is set so that radius is radiusOfExtent * the mesh world extent on the fixed camera.',
   'Symmetry off (SculptManager._symmetry = false). Dynamic topology off (Multimesh, static).',
+  'StableSmooth-surface is the Smooth tool (StableSmooth, the SMOOTH slot) with setSmooth({ mode: \'surface\' }) and the default relax; StableSmooth is the same tool on its default Average mode.',
 ];
 
 // --- recording helpers -------------------------------------------------------
@@ -425,11 +431,17 @@ function gitInfo() {
   };
 }
 
-/** Numeric constants declared at the top level of the bridge tools (STRIPS_*, POLISH_*, CREASE_*, ...). */
+/**
+ * Numeric constants declared at the top level of the bridge tools
+ * (STRIPS_*, POLISH_*, CREASE_*, ...), and the Smooth brush's Surface mode
+ * constants (SURFACE_*, exported from surfaceSmooth.ts).
+ */
 function bridgeConstants() {
   const src = readFileSync(join(repo, 'src/sculpt/bridge/tools.ts'), 'utf8');
   const out = {};
   for (const m of src.matchAll(/^const ([A-Z][A-Z0-9_]*) = (-?[0-9.]+(?:e-?[0-9]+)?);/gm)) out[m[1]] = Number(m[2]);
+  const surface = readFileSync(join(repo, 'src/sculpt/bridge/surfaceSmooth.ts'), 'utf8');
+  for (const m of surface.matchAll(/^export const (SURFACE_[A-Z0-9_]*) = (-?[0-9.]+(?:e-?[0-9]+)?);/gm)) out[m[1]] = Number(m[2]);
   return out;
 }
 
@@ -489,6 +501,7 @@ async function record(E, meshKey, brush) {
     const manager = session.getSculptManager();
     manager.setToolIndex(index);
     const tool = manager.getTool(index);
+    if (brush.setup) brush.setup(tool);
     const worldRadius = spec.radiusOfExtent * extent;
     const pixelRadius = worldRadius / cam.s / session.getPixelRatio();
     tool._radius = pixelRadius;
@@ -563,6 +576,13 @@ async function record(E, meshKey, brush) {
           // frame (across axis, stroke direction, plane) it laid the tines in.
           d.rake = tool.lastDab ? { ...tool.lastDab } : null;
           tool.lastDab = null;
+        }
+        if (tool.smoothMode === 'surface' && tool.lastSurfaceDab) {
+          // The Surface smooth's counts for the dab (not its time: the
+          // files are deterministic).
+          const { ms, ...counts } = tool.lastSurfaceDab;
+          void ms;
+          d.surface = counts;
         }
         dabs.push(d);
         return out;

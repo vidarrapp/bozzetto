@@ -14,7 +14,10 @@ import {
   RAKE_TINES_MAX,
   RAKE_TINES_MIN,
   RakeBrush,
+  SMOOTH_MODES,
+  StableSmooth,
   VolumetricMove,
+  type SmoothMode,
 } from '../bridge/tools';
 import type { ProfileCurve } from '../bridge/profile';
 import { CurveEditor } from './CurveEditor';
@@ -373,7 +376,40 @@ export class SculptPanel extends SidePanel {
       extras.appendChild(this.curveRow('Profile', 'Paint profile', paint.curve));
     } else if (tool === Enums.Tools.RAKE) {
       this.buildRake(extras, manager.getTool(tool) as unknown as RakeBrush);
+    } else if (tool === Enums.Tools.SMOOTH) {
+      const smooth = manager.getTool(tool) as unknown as StableSmooth;
+      if (smooth instanceof StableSmooth) this.buildSmooth(extras, smooth);
     }
+  }
+
+  /**
+   * Smooth's Mode (owner call, 2026-10-24): Average, the umbrella average
+   * it always was (the default), or Surface, which fits the surface by
+   * distance and evens the triangles with a light Relax, the row shown in
+   * Surface only. Shift's smoothing from any brush uses the mode set here.
+   */
+  private buildSmooth(extras: HTMLElement, smooth: StableSmooth): void {
+    const mode = selectEl(SMOOTH_MODES, smooth.smoothMode);
+    mode.setAttribute('aria-label', 'Smooth mode');
+    const relax = compactRange(
+      'Relax',
+      0,
+      1,
+      0.05,
+      smooth.relax,
+      (v) => {
+        smooth.setSmooth({ relax: v });
+        this.input.onBrushSettingsChange?.();
+      },
+      { limits: FRACTION },
+    );
+    relax.hidden = smooth.smoothMode !== 'surface';
+    mode.addEventListener('change', () => {
+      smooth.setSmooth({ mode: mode.value as SmoothMode });
+      relax.hidden = smooth.smoothMode !== 'surface';
+      this.input.onBrushSettingsChange?.();
+    });
+    extras.append(labelRow('Mode', mode), relax);
   }
 
   /** A profile curve's editor under its caption; an edit schedules the autosave. */

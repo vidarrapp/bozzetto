@@ -16,6 +16,7 @@ import { SculptSession } from './bridge/SculptSession';
 import { formatBytes, RemeshTooLarge } from './bridge/remeshBudget';
 import {
   ScenePersist,
+  SMOOTH_REV,
   type SculptSettings,
   clearSavedScene,
   hasSavedScene,
@@ -1270,6 +1271,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     curves: input.serializeCurves(),
     curvesRev: PROFILE_REV,
     rake: input.serializeRake(),
+    smooth: input.serializeSmooth(),
+    smoothRev: SMOOTH_REV,
     symmetry: session.symmetry.serialize(),
   });
   /**
@@ -1304,6 +1307,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // stored curve then replaces.
       input.loadRake(settings.rake);
       input.loadCurves(settings.curves, settings.curvesRev);
+      input.loadSmooth(settings.smooth, settings.smoothRev);
       if (settings.paintColor) setPaintColorOn(settings.paintColor);
       input.refreshBrushCursor();
       sculptPanel?.refreshBrush();

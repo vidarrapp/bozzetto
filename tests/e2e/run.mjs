@@ -2,7 +2,7 @@
 // armatureProjects.mjs's, latency.mjs's, shadows.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // objNumbering.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
-// profileCurves.mjs's, tineRake.mjs's, and accounts.mjs's and community.mjs's (which start the
+// profileCurves.mjs's, tineRake.mjs's, surfaceSmooth.mjs's, and accounts.mjs's and community.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -29,12 +29,13 @@ import { suites as present } from './present.mjs';
 import { suites as profileCurves } from './profileCurves.mjs';
 import { suites as shadows } from './shadows.mjs';
 import { suites as smoke } from './smoke.mjs';
+import { suites as surfaceSmooth } from './surfaceSmooth.mjs';
 import { suites as tineRake } from './tineRake.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 import { suites as units } from './units.mjs';
 import { suites as viewerTools } from './viewerTools.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...accounts, ...community };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...surfaceSmooth, ...accounts, ...community };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {
