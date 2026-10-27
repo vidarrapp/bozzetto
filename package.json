@@ -35,7 +35,7 @@
     "client-zip": "2.5.1",
     "gifenc": "^1.0.3",
     "gl-matrix": "^3.4.4",
-    "mediabunny": "^1.61.4",
+    "mediabunny": "^1.61.6",
     "three": "^0.186.1"
   },
   "devDependencies": {
