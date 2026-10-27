@@ -108,7 +108,7 @@ From a blank project to a published timelapse.
 4. **Add your frames.** Drop the sequence on the dropzone. Tick **OBJ files are Z-up** for Blender and most DCC exports. They convert and upload together.
 5. **Set up the look.** Pick lighting, material and environment, orbit to your angle, then press **Save look**.
 6. **Annotate and finish.** Add stages to mark key frames, then **Save thumbnail**. It is live at `/?tl=<id>`.
-7. **Share it.** Send the link, or press **Export .html** for one self-contained file that opens offline.
+7. **Share it.** Send the link. The reel controls make a GIF or MP4 of it.
 
 ### From the command line
 
@@ -117,7 +117,6 @@ Build a timelapse without the editor or a database:
 ```bash
 node scripts/obj-to-timelapse.mjs <inputDir> <id> [--fps=4] [--title="..."] [--z-up]
 npm run build
-npm run export <id>          # writes a self-contained <id>.html
 ```
 
 ## Platform
@@ -168,11 +167,9 @@ src/
                            My projects, the data download's zip
   create/                  the timelapse uploader's entry
   net/                     where API calls go, and the accounts client
-  embed/main.ts            entry for the self-contained single-file export
-  export/singleFile.js     pure bundler core shared by the editor and CLI
   admin/
     main.ts                editor router (list / per-project)
-    editor.ts              project editor: upload, preview, look, stages, export
+    editor.ts              project editor: upload, preview, look, stages, reel
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
@@ -197,7 +194,6 @@ scripts/
   app-version.mjs          the version a build says it is: package.json's + the commit
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
-  export-single-file.mjs   CLI: timelapse to a self-contained .html
   parity-fixtures.mjs      CLI: the sculpt brushes' exact output as JSON fixtures
 tools/
   quadriflow-wasm/         build.sh and qf_wasm.cpp: QuadriFlow to public/quadriflow

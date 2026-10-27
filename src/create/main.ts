@@ -11,7 +11,6 @@ import { initTheme, mountThemeToggle } from '../ui/theme';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { validateManifest, type Manifest } from '../types/manifest';
-import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
 import { AuthExpiredError, checkSignIn, libraryProjects, roleOf, uploadFailure, type SignIn } from '../admin/api';
 import { loadConfig, sizeText } from '../net/account';
 import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
@@ -24,14 +23,16 @@ import { aoWithoutCavity } from '../viewer/Viewer';
  * are converted in the browser and kept in memory (a MemorySource feeds the
  * live preview).
  *
- * For a guest it is backend-free: nothing is uploaded, saved, or gated, and
- * the only output is one self-contained .html. Signed in (a member, a
- * moderator or the owner) the same page saves to the library: Save to My
- * projects makes a project on the account's own routes (Projects, on the
- * owner tools', with accounts off) - its title, mode and fps, the frames
- * uploaded, the stages and the look as its data, and a 4:5 picture - and
- * opens My projects; Export .html is still beside it. The owner's /admin/
- * editor stays for the owner tools.
+ * For a guest it is backend-free: nothing is uploaded, saved, or gated;
+ * the reel's GIF and MP4 are what it makes, and Sign in (with accounts on)
+ * turns the page into a signed-in one without losing the frames. Signed in
+ * (a member, a moderator or the owner) the same page saves to the library:
+ * Save to My projects makes a project on the account's own routes
+ * (Projects, on the owner tools', with accounts off) - its title, mode and
+ * fps, the frames uploaded, the stages and the look as its data, and a 4:5
+ * picture - and opens My projects, where it is viewed and shared. The
+ * single-file .html export is gone (cloud viewing and sharing replace it).
+ * The owner's /admin/ editor stays for the owner tools.
  */
 
 /** The server's frame list cap (functions/_shared/projects.ts), checked before a byte goes up. */
@@ -59,25 +60,6 @@ const slug = (s: string): string =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 const framePath = (i: number): string => `frames/sd/${String(i).padStart(4, '0')}.glb`;
-
-/** Button feedback for the export action: disable, flash done, alert on error. */
-async function runAction(btn: HTMLButtonElement, fn: () => Promise<void>): Promise<void> {
-  btn.dataset.idle ??= btn.textContent ?? '';
-  const idle = btn.dataset.idle;
-  btn.disabled = true;
-  btn.textContent = 'Working…';
-  try {
-    await fn();
-    btn.textContent = 'Exported ✓';
-    window.clearTimeout(Number(btn.dataset.timer));
-    btn.dataset.timer = String(window.setTimeout(() => (btn.textContent = idle), 1800));
-  } catch (err) {
-    btn.textContent = idle;
-    alert(`Export failed: ${(err as Error).message}`);
-  } finally {
-    btn.disabled = false;
-  }
-}
 
 /** A number /api/config gives, or the fallback when it gives none. */
 const limit = (v: unknown, fallback: number): number => (typeof v === 'number' && v > 0 ? v : fallback);
@@ -119,34 +101,40 @@ async function main(): Promise<void> {
   const host = document.getElementById('create');
   if (!host) throw new Error('#create element not found');
 
-  // Who it is for decides how it ends: an export for a guest, a save to
-  // the library for anyone signed in. Suspended or expired, a guest's page.
+  // Who it is for decides how it ends: a save to the library for anyone
+  // signed in; for a guest, the reel, and Sign in where the site has
+  // accounts. Suspended or expired, a guest's page.
   const signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false }));
-  const role = roleOf(signIn);
-  const place = role === 'owner' || role === 'moderator' || role === 'member' ? (signIn.accounts ? 'My projects' : 'Projects') : null;
-  const intro = place
-    ? `Build a timelapse or a model from frames made elsewhere, and save it to ${place}, where only you see it.`
-    : 'Build a timelapse and export it as one self-contained file. Nothing is uploaded.';
-  const finish = place
-    ? `
-          <section class="editor__section">
-            <h3>Save</h3>
-            <p class="muted editor__hint">Set up the look in the right-hand panel, then save: the frames, the stages and the look go to ${place}, with the view as its picture (the frame on screen when paused, else the last). <strong>Export .html</strong> still makes one self-contained file.</p>
+  const placeOf = (s: SignIn): string | null => {
+    const role = roleOf(s);
+    return role === 'owner' || role === 'moderator' || role === 'member' ? (s.accounts ? 'My projects' : 'Projects') : null;
+  };
+  let place = placeOf(signIn);
+  const introText = (at: string | null): string =>
+    at
+      ? `Build a timelapse or a model from frames made elsewhere, and save it to ${at}, where only you see it.`
+      : signIn.accounts
+        ? 'Build a timelapse or a model from frames made elsewhere. Sign in to save it to My projects and share it. Nothing is uploaded until then.'
+        : 'Build a timelapse or a model from frames made elsewhere, and make a GIF or MP4 of it. Nothing is uploaded.';
+  /** The Save section's own content, signed in: the button, its progress. */
+  const saveBody = (at: string): string => `
+            <p class="muted editor__hint">Set up the look in the right-hand panel, then save: the frames, the stages and the look go to ${at}, with the view as its picture (the frame on screen when paused, else the last).</p>
             <div class="editor__row">
-              <button id="save-project" class="btn btn--primary" type="button" disabled>Save to ${place}</button>
-              <button id="export-html" class="btn" type="button" disabled>Export .html</button>
+              <button id="save-project" class="btn btn--primary" type="button" disabled>Save to ${at}</button>
             </div>
             <div id="save-progress" class="progress" hidden>
               <div class="progress__track"><div class="progress__bar" id="save-bar"></div></div>
               <span id="save-label" class="muted"></span>
-            </div>
-            <div id="reel-mount"></div>
-          </section>`
-    : `
+            </div>`;
+  const guestBody = signIn.accounts
+    ? `
+            <p class="muted editor__hint">Sign in to save the frames, the stages and the look to My projects, where you can view and share them. The frames stay here while you do.</p>
+            <div class="editor__row" id="save-signin"></div>`
+    : '';
+  const finish = `
           <section class="editor__section">
-            <h3>Export</h3>
-            <p class="muted editor__hint">Set up the look in the right-hand panel, then download a self-contained <strong>.html</strong> that opens offline, straight from disk.</p>
-            <button id="export-html" class="btn btn--primary" type="button" disabled>Export .html</button>
+            <h3>${place || signIn.accounts ? 'Save' : 'Export'}</h3>
+            <div id="save-body">${place ? saveBody(place) : guestBody}</div>
             <div id="reel-mount"></div>
           </section>`;
 
@@ -159,7 +147,7 @@ async function main(): Promise<void> {
         <button class="editor__sidebar-handle" type="button" title="Hide / show">‹</button>
         <div class="editor__sidebar-body">
           <h1 class="editor__title">Create</h1>
-          <p class="editor__id muted">${intro}</p>
+          <p class="editor__id muted" id="create-intro">${introText(place)}</p>
 
           <section class="editor__section">
             <h3>Project</h3>
@@ -214,9 +202,8 @@ async function main(): Promise<void> {
   const memWarn = $('#mem-warn');
   const zup = $<HTMLInputElement>('#zup');
   const stagesHost = $('#stages');
-  const exportBtn = $<HTMLButtonElement>('#export-html');
   const reelMount = $('#reel-mount');
-  const saveBtn = host.querySelector<HTMLButtonElement>('#save-project');
+  let saveBtn = host.querySelector<HTMLButtonElement>('#save-project');
 
   const memorySource = new MemorySource();
   let frames: FrameMeta[] = [];
@@ -292,7 +279,6 @@ async function main(): Promise<void> {
   // --- preview ------------------------------------------------------------
   async function mountPreview(): Promise<void> {
     disposePreview();
-    exportBtn.disabled = true;
     if (saveBtn) saveBtn.disabled = true;
     reelMount.replaceChildren(); // drop reel controls bound to the old viewer
     previewBox.innerHTML = '';
@@ -323,11 +309,10 @@ async function main(): Promise<void> {
       refresh: () => panel?.refreshControls(),
     });
     reelMount.replaceChildren(mountReelControls(preview));
-    exportBtn.disabled = false;
     if (saveBtn) saveBtn.disabled = saving;
   }
 
-  // Live FPS tweak without a remount; title/mode/stages are read at export.
+  // Live FPS tweak without a remount; title/mode/stages are read at save.
   fpsInput.addEventListener('change', () => preview?.setFps(Number(fpsInput.value) || 4));
 
   // --- frame upload pipeline ---------------------------------------------
@@ -400,9 +385,9 @@ async function main(): Promise<void> {
 
   // --- save to the library (signed in) ------------------------------------
   let saving = false;
-  const saveProgress = host.querySelector<HTMLElement>('#save-progress');
-  const saveBar = host.querySelector<HTMLElement>('#save-bar');
-  const saveLabel = host.querySelector<HTMLElement>('#save-label');
+  let saveProgress = host.querySelector<HTMLElement>('#save-progress');
+  let saveBar = host.querySelector<HTMLElement>('#save-bar');
+  let saveLabel = host.querySelector<HTMLElement>('#save-label');
   const showSave = (text: string, fraction: number | null): void => {
     if (!saveProgress || !saveBar || !saveLabel) return;
     saveProgress.hidden = false;
@@ -535,16 +520,36 @@ async function main(): Promise<void> {
   }
   saveBtn?.addEventListener('click', () => void save());
 
-  // --- export -------------------------------------------------------------
-  exportBtn.addEventListener('click', () => {
-    if (!preview) return;
-    const p = preview;
-    void runAction(exportBtn, async () => {
-      const manifest = buildExportManifest(buildManifest(), p);
-      const html = await buildExportHtml(manifest, memorySource);
-      downloadBlob(new Blob([html], { type: 'text/html' }), `${slug(titleInput.value) || 'timelapse'}.html`);
-    });
-  });
+  // --- sign in (a guest, with accounts on) -------------------------------
+  // Signed in in the dialog over the page, which stays where it is: the
+  // Save section takes the signed-in form, and the frames and the look stay.
+  const signInMount = host.querySelector<HTMLElement>('#save-signin');
+  if (signInMount) {
+    signInMount.append(
+      signInButton(
+        'btn btn--primary',
+        (ok) => {
+          if (!ok) return;
+          void checkSignIn()
+            .catch((): SignIn => ({ email: null, expired: false }))
+            .then((now) => {
+              const at = placeOf(now);
+              if (!at) return;
+              place = at;
+              $('#create-intro').textContent = introText(at);
+              $('#save-body').innerHTML = saveBody(at);
+              saveBtn = $<HTMLButtonElement>('#save-project');
+              saveProgress = $('#save-progress');
+              saveBar = $('#save-bar');
+              saveLabel = $('#save-label');
+              saveBtn.disabled = !preview || saving;
+              saveBtn.addEventListener('click', () => void save());
+            });
+        },
+        'Sign in',
+      ),
+    );
+  }
 }
 
 void main();

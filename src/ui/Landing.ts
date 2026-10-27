@@ -244,15 +244,15 @@ function createCard(savesTo: string | null): HTMLElement {
  * opened in Sculpt as a new scene, and the uploader for frames made
  * elsewhere (owner call). Import OBJ is everyone's, as File > Import OBJ
  * is in Sculpt: nothing about it needs an account. Create timelapse is
- * everyone's too; what differs is where it ends - a guest's exports one
- * .html file and uploads nothing, a signed-in one saves to the library.
+ * everyone's too; what differs is where it ends - a guest's uploads
+ * nothing and offers Sign in, a signed-in one saves to the library.
  */
 function openCreateChooser(savesTo: string | null): void {
   const overlay = document.createElement('div');
   overlay.className = 'install-overlay create-overlay';
   const timelapseHint = savesTo
     ? `OBJ or GLB frames from another app, as a timelapse or a model, saved to ${savesTo}.`
-    : 'OBJ or GLB frames from another app, played back and exported as one .html file. Nothing is uploaded.';
+    : 'OBJ or GLB frames from another app, played back as a timelapse or a model. Nothing is uploaded.';
   overlay.innerHTML = `
     <div class="install-card create-card" role="dialog" aria-modal="true" aria-label="Create">
       <button type="button" class="install-close" aria-label="Close">×</button>

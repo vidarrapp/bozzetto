@@ -221,7 +221,7 @@ export const suites = {
     });
     const openEditor = async () => {
       await page.goto(`${base}/admin/?p=${id}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => !!document.querySelector('.panel--editor') && !!document.querySelector('#export-html:not([disabled])'), null, { timeout: 90_000 });
+      await page.waitForFunction(() => !!document.querySelector('.panel--editor') && !!document.querySelector('#reel-mount')?.firstElementChild, null, { timeout: 90_000 });
       // Held on the first frame, which Set scale measures and boot shows.
       await page.evaluate(() => {
         window.__bozzetto.pause();

@@ -1,6 +1,6 @@
 /**
  * The one way Bozzetto hands a generated file to the browser. There were
- * three copies of this, and the one behind the single-file export - the
+ * three copies of this, and the one behind the single-file export (since dropped) - the
  * biggest download of the lot, hundreds of megabytes for a guest on an
  * iPad - was the weakest: it never appended the anchor and revoked the
  * object URL after a second, which on Safari can outrun the download

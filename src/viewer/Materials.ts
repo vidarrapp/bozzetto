@@ -64,11 +64,6 @@ function matcapUrl(url: string): string {
   return `${url}?v=${ASSET_VERSION}`;
 }
 
-/** Asset paths the matcap modes need embedded in a self-contained export. */
-export function matcapAssetUrls(): string[] {
-  return MATCAPS.map((m) => matcapUrl(m.url));
-}
-
 /**
  * Material registry (design doc §8, §9).
  *
@@ -413,7 +408,7 @@ export class Materials {
 /**
  * Load a matcap texture through the asset source. Returns an empty texture
  * immediately and fills it once the bytes arrive (decoded via a blob URL, so it
- * works over the network and from an embedded base64 registry alike).
+ * works over the network and from memory alike).
  */
 function loadMatcap(source: AssetSource, path: string, onLoad: () => void): Texture {
   const tex = new Texture();

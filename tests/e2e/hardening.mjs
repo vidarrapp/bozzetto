@@ -11,14 +11,8 @@
 // thumbnail and keeps the files host's, never keeps the sign-in
 // ceremonies, the account or a member's files, forgets the owner's lists
 // when the sign-in goes, answers only the app's own pages offline, and
-// ?nosw asks. ?tl= takes ids only. A single-file export carries a
-// Content-Security-Policy and still plays. Sign out clears what the device
-// kept and goes through Access's logout.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+// ?nosw asks. ?tl= takes ids only. Sign out clears what the device kept
+// and goes through Access's logout.
 import { openSculpt } from './lib.mjs';
 import { FILES, bootState, fakeProjects, signInContext, workerActivated } from './smoke.mjs';
 
@@ -357,8 +351,7 @@ function triangle(edit) {
 }
 
 /**
- * A published project's look, as its manifest carries it (and a single-file
- * export's registry): colours that are CSS url()s reach no style, and the
+ * A published project's look, as its manifest carries it: colours that are CSS url()s reach no style, and the
  * frames' glTF asks for nothing from elsewhere - a texture there is left
  * out, a buffer there fails that frame, and the viewer plays on.
  */
@@ -759,93 +752,6 @@ async function workerAndSignOut(browser, base, t) {
   }
 }
 
-// --- the single-file export ---------------------------------------------
-
-/** The viewer bundle a single-file export inlines, built as `npm run build` builds it, into `outDir`. */
-function buildEmbed(outDir) {
-  const repo = fileURLToPath(new URL('../..', import.meta.url));
-  const vite = join(repo, 'node_modules', 'vite', 'bin', 'vite.js');
-  const args = [vite, 'build', '--config', 'vite.embed.config.ts', '--outDir', outDir, '--emptyOutDir', '--logLevel', 'error'];
-  return new Promise((ok, fail) => {
-    const p = spawn(process.execPath, args, { cwd: repo, stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    p.stderr.on('data', (d) => (err += d));
-    p.on('error', fail);
-    p.on('exit', (code) => (code === 0 ? ok() : fail(new Error(`the embed build failed (${code}): ${err.slice(-1500)}`))));
-  });
-}
-
-const POLICY =
-  "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src blob: data:; " +
-  "connect-src blob: data:; worker-src blob:; media-src blob:; base-uri 'none'; form-action 'none'";
-
-/**
- * The uploader's export with the real viewer inlined: it carries the
- * policy, and opened from disk it plays - every frame, matcap and the
- * viewer's WebAssembly from inside the file - with nothing refused that
- * the file carries and no request leaving it.
- */
-async function singleFile(browser, base, t) {
-  const dir = mkdtempSync(join(tmpdir(), 'bozzetto-export-'));
-  const ctx = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: 'block' });
-  try {
-    await buildEmbed(join(dir, 'embed'));
-    const p = await ctx.newPage();
-    const errors = [];
-    p.on('pageerror', (e) => errors.push(String(e)));
-    await p.route('**/embed/viewer.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: readFileSync(join(dir, 'embed', 'viewer.js')) }));
-    await p.route('**/embed/embed.css', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: readFileSync(join(dir, 'embed', 'embed.css')) }));
-    await p.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
-    const frames = [0, 1, 2, 3].map((i) => resolve(`dist/timelapses/demo/frames/sd/000${i}.glb`));
-    await p.setInputFiles('#files', frames);
-    await p.waitForFunction(() => !document.querySelector('#export-html').disabled, null, { timeout: 120_000 });
-    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 60_000 }), p.click('#export-html')]);
-    const html = readFileSync(await download.path(), 'utf8');
-    const meta = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)" \/>/)?.[1] ?? null;
-    t.eq(meta, POLICY, 'the export carries its Content-Security-Policy');
-    t.ok(html.indexOf('Content-Security-Policy') < html.indexOf('<script'), 'ahead of every script in the file');
-
-    const file = join(dir, 'export.html');
-    writeFileSync(file, html);
-    // The uploader's preview renders on: closed, it leaves the export the machine.
-    await p.close();
-    const view = await ctx.newPage();
-    const viewErrors = [];
-    view.on('pageerror', (e) => viewErrors.push(String(e)));
-    const requests = [];
-    view.on('request', (r) => {
-      if (!/^(file|blob|data):/.test(r.url())) requests.push(r.url());
-    });
-    await view.addInitScript(() => {
-      window.__violations = [];
-      document.addEventListener('securitypolicyviolation', (e) => window.__violations.push(`${e.effectiveDirective} ${e.blockedURI}`));
-    });
-    await view.goto(pathToFileURL(file).href, { waitUntil: 'commit' });
-    await view.waitForFunction(() => !!window.__bozzetto?.timeline && !document.getElementById('overlay'), null, { timeout: 180_000 });
-    const first = await view.evaluate(() => window.__bozzetto.timeline.frameIndex());
-    const seen = new Set([first]);
-    for (let i = 0; i < 40 && seen.size < 3; i++) {
-      await view.waitForTimeout(250);
-      seen.add(await view.evaluate(() => window.__bozzetto.timeline.frameIndex()));
-    }
-    const played = await view.evaluate(() => ({
-      playing: window.__bozzetto.timeline.playing,
-      frames: window.__bozzetto.manifest.config.frameCount,
-      violations: window.__violations,
-    }));
-    t.ok(played.playing && played.frames === 4 && seen.size >= 2, `opened from disk, it plays: frames ${[...seen].join(', ')} of ${played.frames}`);
-    // What the file does not carry (its fonts, the matcap picker's
-    // thumbnails) is refused where it would only have failed to load.
-    const refused = played.violations.filter((v) => !/ file(:|$)/.test(v));
-    t.ok(!refused.length, `the policy refuses nothing the file carries${refused.length ? `: ${refused.join(', ')}` : ` (${played.violations.length} refusals of files it does not carry)`}`);
-    t.ok(!requests.length, `and nothing leaves the file${requests.length ? `: ${requests.join(', ')}` : ''}`);
-    t.ok(!errors.length && !viewErrors.length, `no page errors exporting or playing${[...errors, ...viewErrors].length ? `: ${[...errors, ...viewErrors].join(' | ')}` : ''}`);
-  } finally {
-    await ctx.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 // --- the suite ----------------------------------------------------------
 
 export const suites = {
@@ -868,6 +774,5 @@ export const suites = {
     await part('looks and models', () => looksAndModels(page, base, t));
     await part('opening by address', () => openByAddress(browser, base, t));
     await part('the worker and signing out', () => workerAndSignOut(browser, base, t));
-    await part('the single-file export', () => singleFile(browser, base, t));
   },
 };

@@ -182,14 +182,14 @@ sign-in, and everything stays on your device.
 
 ## Make your own timelapse
 
-The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. For a guest nothing uploads, and there is no account; signed in, it saves the result to **My projects** instead (step 6).
+The public editor at [`/create`](https://bozzetto.vidarrapp.se/create/) runs entirely in your browser. For a guest nothing uploads; signed in, it saves the result to **My projects**, where it is viewed and shared (step 6).
 
 1. In the gallery, pick **Create → Create timelapse**, or open [`/create`](https://bozzetto.vidarrapp.se/create/) directly.
 2. Drop in `.obj` or `.glb` files, one per stage, named so they sort in order. Tick **OBJ files are Z-up** for Blender and most DCC exports.
 3. Set a title, pick **Timelapse** or **Model**, and set the playback FPS.
 4. Set up the look in the right-hand panel, then orbit to your angle.
 5. Optionally add **stages** to name key frames. They become scrubber markers.
-6. Press **Export .html** for one self-contained file that opens offline. Signed in, **Save to My projects** keeps it as a project of your own (frames, stages, look and a picture) and opens My projects; **Export .html** is beside it.
+6. Signed in, **Save to My projects** keeps it as a project of your own (frames, stages, look and a picture) and opens My projects, where you view and share it. A guest gets **Sign in** here, and the frames stay on the page while they sign in.
 7. Export MP4 or GIF from **Record reel**.
 
 A single mesh works too: drop one file and get a shareable 3D model on one page. To sculpt on an OBJ instead, pick **Create → Import OBJ**: it opens in Sculpt as a new scene.
@@ -227,8 +227,8 @@ developed elsewhere.
   records a timelapse while you sculpt; it keeps undo and autosave, and
   **Publish model**. Bozzetto Studio records, and exports the same
   quantised GLB frame format. The viewer and the gallery keep playing
-  timelapses, the `/create/` uploader keeps publishing them (an export for
-  a guest, **Save to My projects** signed in), and the server keeps
+  timelapses, the `/create/` uploader keeps publishing them (**Save to My
+  projects**, signed in), and the server keeps
   timelapse projects as they are, so what is made in Studio plays here.
 - **The web app keeps its JavaScript engine.** Studio's Rust core stays
   closed for now; whether the web app adopts it is revisited once Studio
@@ -259,10 +259,9 @@ developed elsewhere.
 
 ### Public editor (`/create/`)
 
-- For a guest: no sign-in, no backend. Frames are converted in the browser and nothing uploads.
+- For a guest: no backend. Frames are converted in the browser and nothing uploads; **Sign in** turns the page into the signed-in one, frames kept.
 - Signed in (a member, or the owner), the same page saves: **Save to My projects** (**Save to Projects** with accounts off) creates a private project of the title, mode and fps, uploads the frames with a progress bar, keeps the stages and the look as its data, takes a 4:5 picture (the frame on screen when paused, else the last), and opens My projects. A refusal, the quota's included, is said as Sculpt's Save to library says it, and leaves no half-made project behind.
 - The preview is the real viewer, with the same Render panel as the full editor.
-- Exports a self-contained `.html` with viewer, frames and assets inlined, for everyone.
 
 ### Editor (`/admin/`)
 
@@ -272,7 +271,6 @@ developed elsewhere.
 - Mark stages, capture any frame as the gallery thumbnail, and rename or re-configure from **Settings**.
 - Every project is public or private: **Settings** has the choice, and so does each row of the project list. Public makes it a template, the site's rather than yours. Each row also has a **Template** switch: on, the project belongs to no one, and **Private** says whether the gallery lists it; off, it is yours again, and private. Publishing from Sculpt asks too, public unless you choose otherwise. Scenes saved from Sculpt are listed as well, and open there; a template's opens the template itself, to edit.
 - **Record reel** exports the timelapse or a turntable spin as MP4 or GIF, up to 1080p, with a choice of aspect.
-- Export a self-contained `.html` that opens offline.
 - With accounts on, the owner tools' tabs: **Invites**, **Users** (each account's role, storage and status, with **Make moderator** or **Make member** beside **Manage**, asked first) and **Audit**.
 
 ## Controls
@@ -349,6 +347,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **The single-file export is gone.** **Export .html** is no longer in the `/create/` uploader or the owner's editor, and `npm run export` and the embed build are removed: a project saved to **My projects** is viewed and shared from the site, and `.bozz` and OBJ remain for taking work away (USD with Bozzetto Studio). A guest on `/create/` gets **Sign in** in its place, which keeps the frames on the page; **Record reel** still makes an MP4 or GIF for everyone. Files exported before keep opening from disk as they did.
 - **Quad remesh.** The Model panel has a **Quad remesh** section under Remesh: QuadriFlow (BSD-3, compiled to WebAssembly) rebuilds the active object as quads near a **Target faces** count (500 to 50000, from a quarter of its faces), with **Keep sharp edges**, **Keep open borders** and **Adaptive quad size**, all off to start with. It runs in a worker with a progress bar, its stage and **Cancel**, the object locked meanwhile, and replaces the object as one level in one undo step, keeping its name, transform, material, colours and symmetry, the mask cleared; an OBJ's original numbering goes stale, as after a voxel remesh. The surface is tidied first (welds, empty and repeated faces, crumbs, parts that only touch cut apart), and one that is not manifold is refused with a note to voxel remesh it first. QuadriFlow's files (about 0.7 MB) are fetched on first use and kept by the service worker for offline use, outside the install's precache. The licences of QuadriFlow and what is compiled in with it are in THIRD_PARTY_NOTICES.md.
 - **A tidier Scene panel.** **Create** sits above the object list now, and the material dropdown directly under it. **Duplicate**, **Delete**, **Mirror** (X, Y, Z) and **Radial copies** (3 to 12 around the symmetry axis) move to the **Edit** menu, with their hotkeys shown (`Del`, `Ctrl`+`M`), and are greyed out when there is nothing to act on. **Merge** moves there too (`Ctrl`+`J`), and also sits beside **Voxel remesh** under the Model panel's **Remesh**, both on only with two objects or more selected. The trash can on the active row is in the rust accent. The active object's size line is gone from the Scene panel; the channel box shows the transform. The keys are unchanged.
 - **Profile curves.** The brushes' falloffs are curves you draw, in a small editor in the Tool panel with a row of presets. A curve is a Bezier through a few anchors with handles: drag an anchor or a handle, tap the curve or the plot to add an anchor, double-tap an anchor for a corner, drag an anchor out of the box to remove it. Pen, mouse and finger all work, and the arrow keys move a focused anchor. Each brush's curve is saved with the scene; a scene from before opens on the defaults, and a curve saved by the first build with curves (a list of points) opens as its preset, or as a few anchors that follow it closely.

@@ -67,7 +67,7 @@ export class FrameStreamer {
   onResident: (() => void) | null = null;
 
   constructor(
-    /** Where frame bytes come from (network or embedded). */
+    /** Where frame bytes come from (network or memory). */
     private readonly source: AssetSource,
     /** Frames in ordinal order (index 0 = first frame). */
     private readonly frames: FrameEntry[],
@@ -276,7 +276,7 @@ export class FrameStreamer {
       this.tier === 'hd' && frame.hd ? frame.hd : frame.sd;
 
     // Parse from bytes (not a URL) so the same path works whether the bytes
-    // arrive over the network or from an embedded base64 registry. Frames from
+    // arrive over the network or from memory. Frames from
     // the converters arrive gzipped; sniffing (rather than trusting the
     // extension) keeps every pre-compression file loading unchanged.
     const bytes = await this.source.getBytes(path);

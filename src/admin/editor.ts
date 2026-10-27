@@ -12,7 +12,6 @@ import { FpsMeter } from '../ui/FpsMeter';
 import { Help } from '../ui/Help';
 import { ScaleBanner } from '../sculpt/ui/SetScale';
 import { validateManifest } from '../types/manifest';
-import { buildExportManifest, buildExportHtml, downloadBlob } from '../export/exportClient';
 import { UNITS } from '../viewer/units';
 
 interface Stage {
@@ -333,10 +332,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
           <section class="editor__section">
             <h3>Export</h3>
-            <p class="muted editor__hint">Download one self-contained <strong>.html</strong> with the current look, frames and assets inlined. It opens offline, straight from disk.</p>
-            <div class="editor__row">
-              <button id="export-html" class="btn" type="button" disabled>Export .html</button>
-            </div>
             <div id="reel-mount"></div>
           </section>
         </div>
@@ -481,12 +476,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
   // --- preview + lighting -------------------------------------------------
   // Save look / Save thumbnail live at the top of the right-hand Render panel
   // (built in mountPreview, where the live preview exists).
-  const exportHtml = $<HTMLButtonElement>('#export-html');
-  exportHtml.addEventListener('click', () => {
-    if (!preview) return;
-    void runSave(exportHtml, () => exportSingleFile(id, preview!));
-  });
-
   /** Grab frame 0 as the default gallery thumbnail (best-effort) after upload. */
   async function captureDefaultThumb(): Promise<void> {
     if (!preview) return;
@@ -504,7 +493,6 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
   async function mountPreview(): Promise<void> {
     disposePreview();
-    exportHtml.disabled = true;
     reelMount.replaceChildren(); // drop reel controls bound to the old viewer
     const box = $('#preview');
     box.innerHTML = '';
@@ -543,20 +531,7 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
     reelMount.replaceChildren(mountReelControls(preview));
     // A project from before real units: the Set scale offer (owner tool).
     scaleBanner = mountScaleBanner(preview, id, titleInput.value.trim() || project.title);
-    exportHtml.disabled = false;
   }
 
   await mountPreview();
-}
-
-/**
- * Gather the live preview into a self-contained .html and download it. The
- * exported manifest carries the current preview look (no Save needed); frames,
- * matcaps and the HDRI are inlined by the shared export client.
- */
-async function exportSingleFile(id: string, p: Viewer): Promise<void> {
-  const raw = (await api.get(id)) as Record<string, unknown> & { frames: { sd: string }[] };
-  const manifest = buildExportManifest(raw, p);
-  const html = await buildExportHtml(manifest, new HttpSource(manifestUrl(id)));
-  downloadBlob(new Blob([html], { type: 'text/html' }), `${id}.html`);
 }

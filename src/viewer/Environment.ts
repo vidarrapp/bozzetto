@@ -79,11 +79,6 @@ export const ENVIRONMENTS: EnvConfig[] = [
   { id: 'plaza', label: 'Outdoor plaza', file: '/assets/env/plaza.hdr' },
 ];
 
-/** Asset path of an HDRI by id, for embedding in a self-contained export. */
-export function envAssetUrl(id: string): string | null {
-  return ENVIRONMENTS.find((e) => e.id === id)?.file ?? null;
-}
-
 /**
  * Image-based lighting + scene background. Loads an equirectangular .hdr,
  * prefilters it with PMREM for `scene.environment` (PBR irradiance +
@@ -251,7 +246,7 @@ export class Environment {
 
   /**
    * Every saved environment comes back through here - a project's manifest
-   * at boot (published, and the single-file export's), and every look
+   * at boot (published), and every look
    * through Viewer.applyLook (sculpt's, kept between visits beside the
    * autosave; .bozz files and gallery scenes; armatures and their files) -
    * so this is where the rescale is undone for records written before it. One without the version mark has its intensity in
