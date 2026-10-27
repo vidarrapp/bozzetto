@@ -38,11 +38,11 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261013.1",
+    "@cloudflare/workers-types": "^5.20261019.1",
     "@types/three": "^0.186.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.151.3"
   }
 }
