@@ -1528,6 +1528,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   modelPanel = new ModelPanel(session, viewer);
   modelPanel.onMerge = () => scenePanel?.mergeSelected();
+  // A quad remesh holds its object while it runs: drawn as locked, the
+  // gizmo let go of it, and the outliner and the panels refreshed.
+  modelPanel.onQuadBusy = () => {
+    reconcile();
+    if (gizmo.isActive()) gizmo.attach(gizmoTarget());
+    scenePanel?.refresh();
+  };
   modelPanel.setMergeEnabled(scenePanel.canMerge());
   // New, Open, a restore and Set scale can each move the scene between
   // real units and the old scale: the floor, the panels' units and the

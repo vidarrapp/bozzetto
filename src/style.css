@@ -2473,6 +2473,24 @@ html.is-page body {
   text-align: left;
 }
 
+/* Quad remesh's run (Model panel): the stage over a bar with Cancel. */
+.sculpt-panel__quad-progress {
+  margin-top: 6px;
+}
+
+.sculpt-panel__quad-bar {
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-top: 0;
+}
+
+.sculpt-panel__progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
 /* Small readout lines inside the sculpt panels and the Publish window
    (the autosave note etc.). */
 .sculpt-panel__hint {

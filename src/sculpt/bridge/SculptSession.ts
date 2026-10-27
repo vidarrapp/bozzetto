@@ -47,6 +47,7 @@ import type { SavedLevel, SavedMesh, SavedScene } from './ScenePersist';
 import { SymmetryStore, type SymmetryAxis } from './symmetry';
 import { perfLog } from '../../viewer/perfLog';
 import { boxOfPositions, checkRemesh, REMESH_LIMITS } from './remeshBudget';
+import { PointGrid } from './quadMesh';
 import { CM_PER_M, UNITS, type Units } from '../../viewer/units';
 import { bakeScale, transformLocal } from './bakeScale';
 import { sceneOnCentimetres } from './sceneUnits';
@@ -935,6 +936,124 @@ export class SculptSession {
     return true;
   }
 
+  // --- Quad remesh (QuadriFlow, in a worker: quadRemesh.ts) ---------------
+
+  /**
+   * Objects a quad remesh is running on (by id, as the padlock keeps
+   * them): locked against strokes and the gizmo while it runs, as the
+   * padlock locks them, without touching the padlock's own state, which is
+   * the user's and is what a save records.
+   */
+  private readonly busyIds = new Set<number>();
+
+  setQuadBusy(mesh: SculptMesh, busy: boolean): void {
+    if (busy) this.busyIds.add(mesh.getID());
+    else this.busyIds.delete(mesh.getID());
+  }
+
+  isQuadBusy(mesh: SculptMesh): boolean {
+    return this.busyIds.has(mesh.getID());
+  }
+
+  /**
+   * What a quad remesh of this object would start from, and the stamp
+   * that says whether it is still the same when the result comes back:
+   * the surface on screen (the selected level of a multiresolution stack,
+   * with the detail sculpted there; level 0 alone holds none of it until
+   * the stack steps down), in local space, copied, for the worker to have.
+   */
+  quadRemeshInput(mesh: SculptMesh | null = this.mesh): { positions: Float32Array; faces: Uint32Array; stamp: string; nbFaces: number } | null {
+    if (!mesh) return null;
+    const nbV = mesh.getNbVertices();
+    const nbF = mesh.getNbFaces();
+    if (!nbV || !nbF) return null;
+    return {
+      positions: new Float32Array(mesh.getVertices().subarray(0, nbV * 3)),
+      faces: new Uint32Array(mesh.getFaces().subarray(0, nbF * 4)),
+      stamp: this.quadStamp(mesh),
+      nbFaces: nbF,
+    };
+  }
+
+  /**
+   * A cheap fingerprint of an object's surface: its counts, its level,
+   * and a weighted sum over up to 200k of its coordinates. Changed by any
+   * stroke, undo, level step or topology change that a quad remesh
+   * started before it would otherwise write over.
+   */
+  private quadStamp(mesh: SculptMesh): string {
+    const v = mesh.getVertices();
+    const n = mesh.getNbVertices() * 3;
+    const stride = Math.max(1, Math.floor(n / 200000));
+    let sum = 0;
+    for (let i = 0; i < n; i += stride) sum += v[i] * ((i % 7) + 1);
+    const mul = mesh as unknown as Multimesh;
+    return `${mesh.getNbVertices()}:${mesh.getNbFaces()}:${mul._meshes ? `${mul._sel}/${mul._meshes.length}` : 'dyn'}:${sum}`;
+  }
+
+  /**
+   * Put a quad remesh's result in the object's place (as voxelRemesh
+   * does): a new single-level object with the old one's id (so its
+   * material and padlock follow), name, transform and symmetry plane, its
+   * colours, roughness and metalness carried over from the nearest point
+   * of the surface it was made from, and the mask cleared. One undo step
+   * puts the old object back as it was; an OBJ numbering it carried is
+   * marked stale. Refused, with nothing changed, when the object is gone
+   * or has changed since the run started (`stamp`).
+   */
+  applyQuadRemesh(mesh: SculptMesh, stamp: string, positions: Float32Array, faces: Uint32Array): Multimesh {
+    if (!this.meshes.includes(mesh)) throw new Error('The object was removed while Quad remesh ran, so the result was not applied.');
+    if (this.quadStamp(mesh) !== stamp) throw new Error('The object changed while Quad remesh ran, so the result was not applied. Run it again.');
+    const t0 = performance.now();
+    const base = new MeshStatic(null);
+    base.setID(mesh.getID());
+    base.setVertices(positions);
+    base.setFaces(faces);
+    // The vendor's render settings and transform calls, which the type
+    // declarations leave out (Remesh.js createMesh does the same).
+    const vend = base as unknown as { setRenderData(d: unknown): void; copyTransformData(m: SculptMesh): void };
+    vend.setRenderData((mesh as unknown as { getRenderData(): unknown }).getRenderData());
+    base.init();
+    // The transform as it stands now, symmetry plane included.
+    vend.copyTransformData(mesh);
+    // Colours and PBR by the nearest point of the surface remeshed; the
+    // mask starts over (1 is unmasked).
+    const srcV = mesh.getVertices().subarray(0, mesh.getNbVertices() * 3);
+    const srcC = mesh.getColors();
+    const srcM = mesh.getMaterials();
+    const grid = new PointGrid(srcV);
+    const v = base.getVertices();
+    const c = base.getColors();
+    const m = base.getMaterials();
+    for (let i = 0, n = base.getNbVertices(); i < n; i++) {
+      const j = grid.nearest(v[i * 3], v[i * 3 + 1], v[i * 3 + 2]);
+      if (j < 0) continue;
+      c[i * 3] = srcC[j * 3];
+      c[i * 3 + 1] = srcC[j * 3 + 1];
+      c[i * 3 + 2] = srcC[j * 3 + 2];
+      m[i * 3] = srcM[j * 3];
+      m[i * 3 + 1] = srcM[j * 3 + 1];
+      m[i * 3 + 2] = 1;
+    }
+    base.updateDuplicateColorsAndMaterials();
+    const newMesh = new Multimesh(base) as unknown as SculptMesh;
+    this.markStale([mesh], newMesh);
+    const name = this.meshNames.get(mesh);
+    if (name) this.meshNames.set(newMesh, name);
+    if (!mesh.isVisible()) newMesh.setVisible(false);
+    this.stateManager.pushStateAddRemove(newMesh, mesh);
+    const sel = this.selectMeshes.indexOf(mesh);
+    if (sel >= 0) this.selectMeshes[sel] = newMesh;
+    const wasActive = this.mesh === mesh;
+    this.replaceMesh(mesh, newMesh);
+    // Not the active object any more (another was picked while it ran):
+    // the display and the outliner still follow the swap.
+    if (!wasActive) this.activeChanged();
+    this.render();
+    perfLog.record('quad remesh', performance.now() - t0, `${base.getNbFaces()} faces applied`);
+    return newMesh as unknown as Multimesh;
+  }
+
   /**
    * A new object from world-space triangles, through the voxel remesh at
    * the given resolution: the Armature mode's Send to Sculpt. The blocks
@@ -1704,7 +1823,7 @@ export class SculptSession {
     return {
       name: this.getMeshName(mesh),
       visible: this.eyeVisible(mesh),
-      locked: this.isLocked(mesh),
+      locked: this.isPadlocked(mesh),
       nbBaseFaces,
       baseFaces: new Uint32Array(base.getFaces().subarray(0, nbBaseFaces * 4)),
       levels,
@@ -1752,6 +1871,12 @@ export class SculptSession {
   private readonly lockedIds = new Set<number>();
 
   isLocked(mesh: SculptMesh): boolean {
+    // A quad remesh running on it locks it too (setQuadBusy).
+    return this.lockedIds.has(mesh.getID()) || this.busyIds.has(mesh.getID());
+  }
+
+  /** The padlock alone, as the user set it (what a save records). */
+  isPadlocked(mesh: SculptMesh): boolean {
     return this.lockedIds.has(mesh.getID());
   }
 

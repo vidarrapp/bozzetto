@@ -22,6 +22,19 @@ import { statusToast } from './statusToast';
 import { showWhileHeld, VoxelOverlay } from './VoxelOverlay';
 import { formatSceneLength } from '../../viewer/units';
 import { voxelGrid } from '../bridge/remeshBudget';
+import {
+  defaultQuadTarget,
+  QUAD_TARGET,
+  quadRemesh,
+  QuadRemeshError,
+  type QuadRemeshJob,
+  type QuadRemeshProgress,
+  type QuadRemeshResult,
+} from '../bridge/quadRemesh';
+import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+
+/** Target faces: the slider's travel (in single faces) and the typed value's limits. */
+const QUAD_LIMITS: Limits = { min: QUAD_TARGET.min, max: QUAD_TARGET.max, integer: true };
 
 /**
  * Extract's thickness: the vendor's offset along the normal, in world
@@ -70,6 +83,32 @@ export class ModelPanel extends SidePanel {
   onMerge: (() => void) | null = null;
   private dynDetailRows: Array<{ row: HTMLLabelElement; input: HTMLInputElement }> = [];
 
+  // Quad remesh (QuadriFlow in a worker, bridge/quadRemesh.ts).
+  private quadTarget: number = QUAD_TARGET.min;
+  /** The object the target's default was taken from (by id): another one resets it. */
+  private quadTargetFor = -1;
+  private quadSharp = false;
+  private quadBoundary = false;
+  /** Owner decision: offered, off by default. */
+  private quadAdaptive = false;
+  private quadTargetInput?: HTMLInputElement;
+  private quadButton?: HTMLButtonElement;
+  private quadProgressRow?: HTMLDivElement;
+  private quadBar?: HTMLProgressElement;
+  private quadStage?: HTMLDivElement;
+  /** The run under way, and the object it is on. */
+  private quadJob: { job: QuadRemeshJob; mesh: SculptMesh } | null = null;
+  /** The last run's stages as they arrived, and its result (for the console and the tests). */
+  quadStages: QuadRemeshProgress[] = [];
+  lastQuad: (Omit<QuadRemeshResult, 'positions' | 'faces'> & { faces: number }) | null = null;
+  /**
+   * A quad remesh started or ended on an object (mode.ts redraws it as
+   * locked, and the outliner and the gizmo follow).
+   */
+  onQuadBusy: (() => void) | null = null;
+  /** Set once the mode is left: a run it cancelled says nothing afterwards. */
+  private disposed = false;
+
   constructor(
     private readonly session: SculptSession,
     private readonly viewer: Viewer,
@@ -83,6 +122,7 @@ export class ModelPanel extends SidePanel {
     this.buildMaterial(this.body);
     this.buildTopology(this.body);
     this.buildRemesh(this.body);
+    this.buildQuadRemesh(this.body);
     this.buildMask(this.body);
     this.refreshTopology();
   }
@@ -238,6 +278,146 @@ export class ModelPanel extends SidePanel {
     this.mergeBtn.disabled = true;
     row.appendChild(this.mergeBtn);
     remesh.appendChild(row);
+  }
+
+  // --- Quad remesh ----------------------------------------------------------
+
+  /**
+   * QuadriFlow's quad remesh of the active object, under Remesh: a target
+   * face count (a quarter of the object's faces to start with, 500 to
+   * 50000), its three options, and the button, greyed out over a progress
+   * bar with the stage and Cancel while it runs. The run is in a worker,
+   * so the interface stays usable; the object it is on is locked against
+   * strokes and the gizmo until it ends (SculptSession.setQuadBusy), and a
+   * result for an object that changed anyway is refused.
+   */
+  private buildQuadRemesh(body: HTMLElement): void {
+    const sec = section(body, 'Quad remesh');
+    sec.dataset.role = 'quad-remesh';
+    const target = this.numberedRange(
+      'Target faces',
+      QUAD_TARGET.min,
+      QUAD_TARGET.max,
+      1,
+      this.quadTarget,
+      (v) => {
+        this.quadTarget = Math.round(v);
+        return String(this.quadTarget);
+      },
+      { limits: QUAD_LIMITS },
+    );
+    this.quadTargetInput = target.input;
+    sec.appendChild(target.row);
+    sec.append(
+      checkbox('Keep sharp edges', this.quadSharp, (on) => {
+        this.quadSharp = on;
+      }),
+      checkbox('Keep open borders', this.quadBoundary, (on) => {
+        this.quadBoundary = on;
+      }),
+      checkbox('Adaptive quad size', this.quadAdaptive, (on) => {
+        this.quadAdaptive = on;
+      }),
+    );
+    const row = div('sculpt-panel__row');
+    this.quadButton = this.opButton('Quad remesh', () => void this.runQuadRemesh());
+    this.quadButton.title = 'Rebuild the active object as quads (QuadriFlow)';
+    row.appendChild(this.quadButton);
+    sec.appendChild(row);
+    // While it runs: the stage, the bar and Cancel.
+    this.quadProgressRow = div('sculpt-panel__quad-progress');
+    this.quadProgressRow.hidden = true;
+    this.quadStage = div('sculpt-panel__hint');
+    this.quadStage.dataset.role = 'quad-stage';
+    this.quadBar = document.createElement('progress');
+    this.quadBar.className = 'sculpt-panel__progress';
+    this.quadBar.max = 100;
+    this.quadBar.value = 0;
+    this.quadBar.setAttribute('aria-label', 'Quad remesh progress');
+    const cancel = this.opButton('Cancel', () => this.quadJob?.job.cancel());
+    const bar = div('sculpt-panel__row sculpt-panel__quad-bar');
+    bar.append(this.quadBar, cancel);
+    this.quadProgressRow.append(this.quadStage, bar);
+    sec.appendChild(this.quadProgressRow);
+    this.refreshQuadTarget();
+  }
+
+  /** The target's default follows the active object: a quarter of its faces, 500 to 50000. */
+  private refreshQuadTarget(): void {
+    const mesh = this.session.getMesh();
+    if (!mesh || !this.quadTargetInput || mesh.getID() === this.quadTargetFor) return;
+    this.quadTargetFor = mesh.getID();
+    this.quadTarget = defaultQuadTarget(mesh.getNbFaces());
+    setSliderValue(this.quadTargetInput, this.quadTarget);
+  }
+
+  private showQuadProgress(p: QuadRemeshProgress | null): void {
+    if (!this.quadProgressRow || !this.quadButton || !this.quadBar || !this.quadStage) return;
+    this.quadProgressRow.hidden = !p;
+    this.quadButton.disabled = !!p;
+    if (!p) return;
+    this.quadBar.value = p.percent;
+    this.quadStage.textContent = `${p.label}... ${Math.round(p.percent)}%`;
+  }
+
+  /** Quad remesh the active object with the panel's settings; resolves when it has ended. */
+  async runQuadRemesh(): Promise<boolean> {
+    const mesh = this.session.getMesh();
+    if (!mesh || this.quadJob) return false;
+    if (this.session.isPadlocked(mesh)) {
+      statusToast('').fail('This object is locked. Unlock it in the Scene panel to quad remesh it.');
+      return false;
+    }
+    const input = this.session.quadRemeshInput(mesh);
+    if (!input) return false;
+    const opts = { target: this.quadTarget, sharp: this.quadSharp, boundary: this.quadBoundary, adaptive: this.quadAdaptive, seed: 0 };
+    this.quadStages = [];
+    this.lastQuad = null;
+    const job = quadRemesh(input.positions, input.faces, opts, (p) => {
+      this.quadStages.push(p);
+      if (this.quadJob?.job === job) this.showQuadProgress(p);
+    });
+    this.quadJob = { job, mesh };
+    this.session.setQuadBusy(mesh, true);
+    this.onQuadBusy?.();
+    this.showQuadProgress({ stage: -2, name: 'module', label: 'Loading QuadriFlow', percent: 0 });
+    let ok = false;
+    try {
+      const r = await job.promise;
+      this.session.setQuadBusy(mesh, false);
+      this.session.applyQuadRemesh(mesh, input.stamp, r.positions, r.faces);
+      this.lastQuad = { quads: r.quads, triangles: r.triangles, report: r.report, args: r.args, ms: r.ms, faces: r.quads + r.triangles };
+      const shape = r.triangles ? `${r.quads} quads and ${r.triangles} triangles` : `${r.quads} quads`;
+      statusToast('').done(`Quad remesh: ${shape} (${(r.ms.total / 1000).toFixed(1)} s)`);
+      ok = true;
+    } catch (err) {
+      if (this.disposed) {
+        // Left with the mode: nothing to say, and nothing was applied.
+      } else if (err instanceof QuadRemeshError && err.kind === 'cancelled') {
+        statusToast('').done('Quad remesh cancelled; the object is as it was.');
+      } else {
+        statusToast('').fail(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      this.session.setQuadBusy(mesh, false);
+      if (this.quadJob?.job === job) this.quadJob = null;
+      if (!this.disposed) {
+        this.showQuadProgress(null);
+        this.onQuadBusy?.();
+        this.refreshState();
+      }
+    }
+    return ok;
+  }
+
+  /** Whether a quad remesh is running (the tests and mode.ts's leave). */
+  isQuadRunning(): boolean {
+    return !!this.quadJob;
+  }
+
+  /** Cancel a quad remesh under way (leaving the mode, the tests). */
+  cancelQuadRemesh(): void {
+    this.quadJob?.job.cancel();
   }
 
   // --- Mask (moved from the Tool panel) -------------------------------------
@@ -441,9 +621,14 @@ export class ModelPanel extends SidePanel {
     this.dyntopoCheckbox.checked = this.session.isDynamicTopology();
     this.refreshTopology();
     this.refreshVoxel(true);
+    this.refreshQuadTarget();
   }
 
   override dispose(): void {
+    // A run under way ends with the mode; its object is left as it was.
+    this.onQuadBusy = null;
+    this.disposed = true;
+    this.cancelQuadRemesh();
     this.albedoPicker?.dispose();
     this.albedoPicker = null;
     this.voxelOverlay?.dispose();

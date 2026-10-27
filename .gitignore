@@ -22,3 +22,7 @@ public/assets/matcaps/clay.png
 # Local output of scripts, such as the brush parity fixtures
 # (scripts/parity-fixtures.mjs, docs/parity-fixtures.md).
 /scratchpad/
+
+# QuadriFlow's sources and headers as tools/quadriflow-wasm/build.sh
+# fetches them (its default QF_WORK).
+tools/quadriflow-wasm/.work/

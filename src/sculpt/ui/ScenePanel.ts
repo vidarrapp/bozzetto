@@ -607,7 +607,9 @@ export class ScenePanel extends SidePanel {
       ...this.session.getMeshes().map((mesh) => {
         const row = div('outliner__row');
         const visible = mesh.isVisible();
-        const locked = this.session.isLocked(mesh);
+        // The padlock is the user's: a quad remesh's own hold while it
+        // runs (SculptSession.setQuadBusy) does not show on it.
+        const locked = this.session.isPadlocked(mesh);
         if (mesh === active) row.classList.add('outliner__row--active');
         // The Select tool's selection, beside the active object's row.
         else if (selected.has(mesh)) row.classList.add('outliner__row--selected');

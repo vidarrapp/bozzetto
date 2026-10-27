@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { VitePWA } from 'vite-plugin-pwa';
 import { appVersion, buildCommit, packageVersion } from './scripts/app-version.mjs';
 
@@ -42,6 +43,21 @@ function mediaOrigin(mode: string): string {
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * The QuadriFlow build in public/quadriflow (tools/quadriflow-wasm), by
+ * content: the worker asks for its two files with this as ?v=, so a new
+ * build is a new address and the runtime cache, which keeps them once
+ * used, never answers with the old wasm under the new script.
+ */
+function quadriflowVersion(): string {
+  const hash = createHash('sha256');
+  for (const name of ['quadriflow.mjs', 'quadriflow.wasm']) {
+    const file = join(root, 'public', 'quadriflow', name);
+    hash.update(existsSync(file) ? readFileSync(file) : 'missing');
+  }
+  return hash.digest('hex').slice(0, 12);
+}
 
 /** The source path every page links the app's stylesheet by; a build names it by its hash. */
 const STYLESHEET_SOURCE = '<link rel="stylesheet" href="/src/style.css" />';
@@ -90,6 +106,8 @@ export default defineConfig(({ mode }) => {
     __BOZZETTO_VERSION__: JSON.stringify(appVersion()),
     // The files host, so the page can tell it is on it (ui/serviceWorker).
     __BOZZETTO_MEDIA_ORIGIN__: JSON.stringify(media),
+    // The QuadriFlow build's hash, its files' ?v= (quadriflowVersion).
+    __QUADRIFLOW_VERSION__: JSON.stringify(quadriflowVersion()),
   },
   plugins: [
     // The demo timelapse is a synthetic test fixture - an icosphere
@@ -344,6 +362,21 @@ export default defineConfig(({ mode }) => {
             options: {
               cacheName: 'bozzetto-env',
               expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 90 },
+            },
+          },
+          {
+            // QuadriFlow for Quad remesh (public/quadriflow, about 0.7 MB:
+            // the script 70 KB, the wasm 600 KB), fetched the first time a
+            // quad remesh runs and kept from then on, so it works offline
+            // after one use without adding to every install. Asked for with
+            // the build's hash as ?v= (quadriflowVersion), so a new build is
+            // a new entry; the old one ages out of the two kept.
+            urlPattern: ({ url }) => url.origin === self.location.origin && /^\/quadriflow\/quadriflow\.(?:mjs|wasm)$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'bozzetto-quadriflow',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [200] },
             },
           },
           {

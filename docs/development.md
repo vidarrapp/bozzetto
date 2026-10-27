@@ -48,6 +48,48 @@ npm run e2e -- <suite ...>  # the smoke tests against the current test build
 The Blender scripts behind the base meshes and the mannequins, and the
 `rig:*` scripts beside them, are described in `tools/README.md`.
 
+### QuadriFlow (Quad remesh)
+
+Sculpt's Quad remesh runs [QuadriFlow](https://github.com/hjwdzh/QuadriFlow)
+compiled to WebAssembly. The build is committed in `public/quadriflow/`
+(`quadriflow.mjs`, an ES module factory named `QuadriFlow` for a worker,
+and `quadriflow.wasm`), so `npm run build` needs no C++ toolchain. To
+rebuild it, after changing `tools/quadriflow-wasm/qf_wasm.cpp` or moving
+the pinned commit:
+
+```bash
+# Emscripten (any recent emsdk; 6.0.13 built the committed files)
+git clone https://github.com/emscripten-core/emsdk && cd emsdk
+./emsdk install latest && ./emsdk activate latest && source ./emsdk_env.sh
+cd -
+# Eigen 3 and Boost headers (Debian/Ubuntu: libeigen3-dev, libboost-dev)
+tools/quadriflow-wasm/build.sh
+```
+
+`build.sh` clones QuadriFlow into `tools/quadriflow-wasm/.work/` (ignored
+by git; `QF_WORK` puts it elsewhere), checks out the pinned commit
+`810b7a0`, writes LEMON's config header, and compiles QuadriFlow's sources,
+LEMON's `base.cc` and `qf_wasm.cpp` with `-O3`, `EIGEN_MPL2_ONLY` (only the
+MPL-2.0 parts of Eigen) and C++ exceptions on, into
+`public/quadriflow/quadriflow.{mjs,wasm}`. The headers are found through
+`EIGEN_INCLUDE` (default `/usr/include/eigen3`) and `BOOST_INCLUDE`
+(default `/usr/include`; only Boost Graph and what it includes are used,
+so a folder holding just a `boost` link to the system's headers will do).
+`QF_OUT` writes elsewhere, and `QF_ENV=node` builds for Node, for trying
+the module from a script. Flow is solved with Boykov-Kolmogorov max flow,
+QuadriFlow's default; the min-cost-flow and SAT options are not built.
+
+`qf_wasm.cpp` is QuadriFlow's `main.cpp` pipeline as one exported call,
+`qf_run(in_obj_path, out_obj_path, faces, sharp, boundary, adaptive, seed)`,
+over Emscripten's in-memory file system, reporting each stage through
+`Module.onStage(index, name)`: load, initialize, orientations, slope (with
+adaptive sizing only), scale, positions, index map, write. The page side
+is `src/sculpt/bridge/quadRemesh.ts` and its worker; the input cleanup is
+`quadMesh.ts`. A new build changes the files' content hash, which the
+worker asks for them by, so installs fetch the new pair on next use. The
+licences of everything compiled in are in `THIRD_PARTY_NOTICES.md`;
+update them if the build takes in anything new.
+
 `node scripts/parity-fixtures.mjs` records the sculpt brushes' exact output as
 JSON fixtures, for testing a port of the brushes against; see
 [parity-fixtures.md](parity-fixtures.md).
@@ -84,7 +126,7 @@ npm run export <id>          # writes a self-contained <id>.html
 - Admin writes sit behind Cloudflare Access, and so does every read of a private project: the public list, manifests and `/media` serve public projects only, and a private project's files come through `/admin/api/media`, so one cannot be fetched by guessing its id. Public reads and the viewer are open.
 - Accounts, behind `ACCOUNTS_ENABLED`: members join by invite and sign in with passkeys or six-digit email codes, in a dialog over the page, with Turnstile keeping out bots. Sessions are cookies the page cannot read, and once the owner has an account the owner tools want it signed in as well as Access. Each account keeps its own projects on `/api/me`, which mirror the owner's routes, within a quota (250 MB; the owner's 10 GB); their files come only through a private route that no cache keeps. **Download my data** is zipped in the browser with client-zip, a file at a time, and an account is deleted a step at a time until nothing of it is left.
 - A dependency-free Node CLI (`scripts/obj-to-timelapse.mjs`) builds the same frame format offline.
-- A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. The other HDRIs, the gallery list and the sign-in answer (with accounts on, the account, without its address, the site's settings and the list of My projects, never their files) are cached as they are used, so an installed app keeps working offline, owner features included; signing out, or a sign-in that has gone, drops what was kept of the account. The kept sign-in answer stands in only when there is no network: an expired sign-in reaches the app as what it is, Cloudflare Access's redirect to its login, and is not taken for being offline. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
+- A service worker precaches about 20 MB: the app shell with its fonts, the base-mesh library, the mannequins and the default environment. QuadriFlow for Quad remesh (`public/quadriflow/`, about 0.7 MB) is not in the precache: the worker keeps it in a runtime cache (`bozzetto-quadriflow`, cache first) the first time a quad remesh fetches it, asked for with its build's content hash as `?v=` (`quadriflowVersion` in `vite.config.ts`), so a new build is a new entry and quad remesh works offline after one use. The other HDRIs, the gallery list and the sign-in answer (with accounts on, the account, without its address, the site's settings and the list of My projects, never their files) are cached as they are used, so an installed app keeps working offline, owner features included; signing out, or a sign-in that has gone, drops what was kept of the account. The kept sign-in answer stands in only when there is no network: an expired sign-in reaches the app as what it is, Cloudflare Access's redirect to its login, and is not taken for being offline. `?nosw` unregisters it and stays off (`?sw` re-enables), so a bad cache is a link rather than a reinstall.
 
 ## Project layout
 
@@ -115,7 +157,8 @@ src/
     figures.ts             the mannequins
   sculpt/
     mode.ts                sculpt entry: mounts the session, panels, autosave
-    bridge/                the Bozzetto side: input, tools, profile curves, persistence
+    bridge/                the Bozzetto side: input, tools, profile curves, persistence,
+                           quad remesh (quadRemesh.ts and its worker)
     ui/                    toolbar, File menu, Publish window, Tool/Model/Scene panels, sliders
     vendor/                vendored SculptGL editing core (MIT)
   ui/                      Panel, Transport, Help, FpsMeter, theme, Landing,
@@ -134,6 +177,7 @@ src/
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
 public/assets/             matcaps, environments, fonts, base meshes, mannequins
+public/quadriflow/         QuadriFlow compiled to WebAssembly (tools/quadriflow-wasm)
 public/legal/              the Privacy notice and the Terms
 functions/
   _middleware.ts           runs first for every Function: the files host, cross-site
@@ -156,6 +200,7 @@ scripts/
   export-single-file.mjs   CLI: timelapse to a self-contained .html
   parity-fixtures.mjs      CLI: the sculpt brushes' exact output as JSON fixtures
 tools/
+  quadriflow-wasm/         build.sh and qf_wasm.cpp: QuadriFlow to public/quadriflow
   export-basemeshes.py     Blender: the CC0 base-mesh bundle to public/assets/basemeshes
   build-mannequins.py      Blender: the bundle's figures rigged into public/assets/armature
   blender_armature.py      Blender: the armature rig, to model against
