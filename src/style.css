@@ -3785,6 +3785,56 @@ body.is-sampling * {
 /* Preferences: the settings and the hotkey editor, on the server-settings
    card. The body scrolls as one, so the buttons stay on screen however
    many groups sit above the hotkeys. */
+/* The Preferences window: its own window over everything (the frame
+   meter, the panels and the top row included), on a solid card that the
+   Panel opacity preference never thins. These rules were shared with the
+   retired desktop app's server settings and went with it. */
+.dsettings {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.dsettings[hidden] {
+  display: none;
+}
+
+.dsettings__card {
+  width: min(460px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+}
+
+.dsettings__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.dsettings__blurb,
+.dsettings__hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dsettings__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dsettings__primary {
+  margin-left: auto;
+}
+
 .prefs__card {
   position: relative;
   width: min(560px, 92vw);

@@ -434,7 +434,12 @@ declare module '@sculpt-vendor/editing/tools/Smooth' {
     _intensity: number;
     _culling: boolean;
     _tangent: boolean;
+    _lockPosition: boolean;
+    _idAlpha: string | number | null;
     constructor(main: unknown);
+    getMesh(): import('@sculpt-vendor/mesh/Mesh').SculptMesh;
+    updateProxy(iVerts: Uint32Array): void;
+    getFrontVertices(iVerts: Uint32Array, eyeDir: number[]): Uint32Array;
     stroke(picking: Picking): void;
     smooth(iVerts: Uint32Array, intensity: number, picking?: Picking): void;
     smoothTangent(iVerts: Uint32Array, intensity: number, picking?: Picking): void;

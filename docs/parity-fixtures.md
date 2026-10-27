@@ -59,8 +59,9 @@ engine has no absolute length in it. The cube is built directly, not as a
 primitive, and is as it was; its files changed with the shared `meta`.
 
 Brushes, each with the defaults the app installs: the bridge brushes
-ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove, StableSmooth,
-RakeBrush, FlattenBrush, PaintBrush and PaintBlurBrush, and the vendored
+ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove, StableSmooth
+(on its default Average mode), StableSmooth-surface (the same tool in its
+Surface mode, below), RakeBrush, FlattenBrush, PaintBrush and PaintBlurBrush, and the vendored
 Inflate, Pinch, Drag and Masking. FlattenBrush and PaintBrush are the
 vendored Flatten and Paint with the per-dab intensity capped at 1 (fixtures
 recorded before that were named `Flatten.*` and `Paint.*`). Symmetry is off and dynamic topology is off. Every brush
@@ -284,6 +285,54 @@ Scrape 0 leaves the form as it was between the grooves; 1 planes the
 footprint onto the plane and cuts the grooves into the flat. A scene's
 saved `plateau`, from before Scrape, is read as the scrape.
 
+## Smooth's Surface mode
+
+`StableSmooth-surface.*` is the Smooth tool (the SMOOTH slot) after
+`setSmooth({ mode: 'surface' })`, the default Relax 0.25; `brush.params`
+records `smoothMode` and `relax` (and `_accumulate`, true), and each dab
+`surface`: its counts (`vertices`, `gathered`, `quadric`, `plane`,
+`normalFallback`, `meanNeighbours`). The constants are `SURFACE_*` in
+`meta.engine.bridgeConstants` (from `src/sculpt/bridge/surfaceSmooth.ts`).
+`StableSmooth.*` (Average) did not change by a bit when the mode came in.
+
+Per dab (`picked` the dab's vertices, after `_culling`; `p` the fit's
+positions, the current ones, or with `_accumulate` false the stroke-start
+proxy for vertices this stroke has touched; `x` the current ones; all in
+doubles, written to float32 at the end of each pass):
+
+```
+lbar_i    mean of |p_j - p_i| over the 1-ring (ring order); the dab's mean
+          stands in for a vertex with none
+gathered  intersectSphere(c, (r + m)^2) faces -> vertices, kept when
+          |x - c| < r + m, m = min(r, SURFACE_K * max(lbar) * 1.3^2)
+grid      cubic cells of SURFACE_K * mean(lbar) over the gathered p
+          (grown 1.5x while over 1048576 cells), counting-sorted
+per vertex i, s = min(1, intensity) * mask_i * alpha(x_i); skip if s <= 0
+  n_i     the unit vertex normal
+  N       gathered points within r_i = SURFACE_K * lbar_i of p_i, not i,
+          with normal . n_i > 0; while |N| < 12, r_i *= 1.3 (twice at most);
+          past 30 the 30 nearest (quickselect), h = 1.15 * the farthest,
+          else h = r_i; fewer than 3: the vertex stays
+  w       x = d^2 / h^2, w = (1 - x)(1 - 0.488 x)  (the Gaussian
+          (e^-x - e^-1) / (1 - e^-1) within 0.009)
+  plane   weighted centroid m and covariance of (p - p_i) / h; the
+          normal is the smallest eigenvector (closed form), turned to
+          agree with n_i; if l0 > 0.5 l1 (or undefined), n_i instead
+  frame   t1 = (1,0,0) made tangent if |n.x| < 0.9 else (0,1,0); t2 = n x t1
+  fit     if |N| >= 6 and l1 / l2 >= 0.05: weighted least squares of
+          h(u,v) = a u^2 + b uv + c v^2 + d u + e v + f over the points'
+          (u, v, height) about m, 6x6 Cholesky; refused (the plane, h = 0)
+          when a pivot is not positive or max/min pivot > 1e8
+  move    (u, v, height) of x_i about m in units of h;
+          delta = clamp(h(u, v) - height, -1, 1) * h * s; x_i += n * delta
+relax (relax > 0, not on a boundary): c_i = the area-weighted centroid of
+  the 1-ring faces' triangles (a quad as (a,b,c), (a,c,d)) on the moved
+  positions; x_i += relax * s * (c_i - x_i) with its n component removed
+```
+
+Both passes compute every vertex from the positions before the pass, then
+write them all.
+
 ## JSON layout
 
 ```
@@ -366,3 +415,11 @@ replaced Plateau. Only the Rake's files changed: every other brush recorded
 the same outputs and dabs bit for bit (`--verify --outputs --tol=0` against
 a recording made just before; their meta changed with the rake's new
 constants).
+
+2026-10-27: Smooth got a Surface mode (owner call, 2026-10-24: an
+option, Average the default). `StableSmooth-surface.*` are new files; every
+other brush, StableSmooth (Average) included, recorded the same outputs and
+dabs bit for bit (`--verify --outputs --tol=0` against a recording made
+just before, at f5159c6); StableSmooth's parameter record gained
+`smoothMode`, `relax` and `_accumulate`, and the meta the `SURFACE_*`
+constants.

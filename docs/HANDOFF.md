@@ -10,3 +10,4 @@
 - [x] 2026-10-24: Smooth on voxel-remeshed surfaces: a "Surface" smooth mode as default or as an option. Decided 2026-10-24: an option; "Average" stays the default
 - [x] 2026-10-24: QuadriFlow's flow solver in Bozzetto Web. Decided 2026-10-24: Boykov-Kolmogorov max flow (QuadriFlow's default path, no network-simplex min-cost flow, no Gurobi); the heavier solving is for Studio
 - [x] 2026-10-24: Quad remesh in Bozzetto Web: offer QuadriFlow's adaptive quad sizing as an option. Decided 2026-10-24: include it, off by default
+- [x] 2026-10-27: Where Smooth's Mode and Relax go. Decided 2026-10-27: a Smooth group in every brush's Tool panel, one shared setting for all tools

@@ -227,6 +227,14 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
           preset: v.rake.preset === null ? null : str(v.rake.preset, 32),
         })
       : undefined,
+    smooth: isRec(v.smooth)
+      ? defined({
+          mode: oneOf(v.smooth.mode, ['average', 'surface'] as const),
+          relax: num(v.smooth.relax, 0, 1),
+          strength: num(v.smooth.strength, 0, 1),
+        })
+      : undefined,
+    smoothRev: num(v.smoothRev, 0),
     symmetry: toolTable(v.symmetry, (s): BrushSymmetry | undefined => {
       if (!isRec(s)) return undefined;
       const axis = oneOf(s.axis, ['x', 'y', 'z'] as const);

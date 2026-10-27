@@ -3,8 +3,9 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
 import { PROFILE_REV, ProfileCurve, type StoredCurve } from './profile';
-import { DEFAULT_RAKE_PRESET, RAKE_PRESETS, RakeBrush } from './tools';
-import type { SavedRake } from './ScenePersist';
+import { DEFAULT_RAKE_PRESET, RAKE_PRESETS, RakeBrush, SMOOTH_STRENGTH, StableSmooth } from './tools';
+import { SURFACE_RELAX } from './surfaceSmooth';
+import { SMOOTH_REV, type SavedRake, type SavedSmooth } from './ScenePersist';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShouldMoveFocus } from '../../ui/dom';
@@ -705,6 +706,27 @@ export class InputShell {
     const preset = saved && typeof saved.preset === 'string' && RAKE_PRESETS.some((p) => p.id === saved.preset) ? saved.preset : DEFAULT_RAKE_PRESET;
     rake.applyPreset(preset);
     if (saved) rake.set(saved);
+  }
+
+  /** The Smooth brush's mode, relax and strength, for the scene record (SculptSettings.smooth). */
+  serializeSmooth(): SavedSmooth | undefined {
+    const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
+    if (!(smooth instanceof StableSmooth)) return undefined;
+    return smooth.smoothSettings();
+  }
+
+  /**
+   * Restore the Smooth brush's mode, relax and strength; a scene without
+   * them (or from before them) puts it back on Average with the default
+   * relax and strength. A record of a later revision than this build
+   * reads is left alone, as the curves are.
+   */
+  loadSmooth(saved: SavedSmooth | undefined, rev?: number): void {
+    if (rev !== undefined && rev > SMOOTH_REV) return;
+    const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
+    if (!(smooth instanceof StableSmooth)) return;
+    smooth.setSmooth({ mode: 'average', relax: SURFACE_RELAX, strength: SMOOTH_STRENGTH });
+    if (saved) smooth.setSmooth(saved);
   }
 
   // --- the Select tool -----------------------------------------------------

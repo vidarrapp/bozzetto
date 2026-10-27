@@ -223,10 +223,25 @@ async function penChecks(page, t, where) {
   ]);
   t.ok(r[2].state === -1 && moved(r[5], r[3]) < 1e-9, `${where}: an up under another id ends the pan rather than rotating (state ${r[2].state})`);
 
+  // Firefox and Zen on Windows (owner's log, 2026-10-27): the capture is
+  // taken back a few frames into a drag with the button still down, and
+  // mouse moves with no buttons arrive among a pen's. Neither ends the drag.
+  r = await run([
+    ['pointerdown', X, Y, 1, 4],
+    ['pointermove', X + 20, Y, -1, 4],
+    ['lostpointercapture', X + 20, Y, -1, 4],
+    ['pointermove', X + 25, Y, -1, 0, { pointerId: 2, pointerType: 'mouse', target: 'window' }],
+    ['halt'],
+    ['pointermove', X + 120, Y + 40, -1, 4],
+    ['frames', 20],
+  ]);
+  t.ok(r[2].state === 2 && r[3].state === 2 && moved(r[6], r[4]) > 1e-6, `${where}: a lost capture with the button still down and a stray buttonless mouse move leave the pan going (state ${r[2].state}, ${r[3].state})`);
+  await run([['pointerup', X + 120, Y + 40, 1, 0]]);
+
   // Cancel, lost capture and the window going away end it too.
   for (const [label, end] of [
     ['pointercancel', ['pointercancel', X + 30, Y, -1, 0]],
-    ['lostpointercapture', ['lostpointercapture', X + 30, Y, -1, 4]],
+    ['a lost capture once the button is up', ['lostpointercapture', X + 30, Y, -1, 0]],
     ['a window blur', ['blur']],
   ]) {
     r = await run([['pointerdown', X, Y, 1, 4], ['pointermove', X + 20, Y, -1, 4], end, ['halt'], ['pointermove', X + 120, Y + 40, -1, 4], ['frames', 20]]);

@@ -193,6 +193,10 @@ export class Controls {
   private readonly onAnyMove = (e: PointerEvent): void => {
     const d = this.drag;
     if (!d || e.pointerType === 'touch') return;
+    // Only the drag's own pointer: Firefox on Windows interleaves mouse
+    // moves (buttons 0) with a Wacom pen's, and one of those must not end
+    // a pen drag on its first move.
+    if (e.pointerId !== d.pointerId) return;
     if ((e.buttons & d.mask) === 0) this.endDrag();
   };
 
@@ -217,8 +221,17 @@ export class Controls {
     if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag();
   };
 
+  /**
+   * A lost capture ends the drag only once its button is up. Firefox and
+   * Zen on Windows take a pen's capture back a few frames into a drag with
+   * the tip still down (the owner's log: lostpointercapture pen b1, 80 ms
+   * after the press); OrbitControls follows the moves on the document
+   * anyway, so the orbit carries on.
+   */
   private readonly onLostCapture = (e: PointerEvent): void => {
-    if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag();
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if ((e.buttons & d.mask) === 0) this.endDrag();
   };
 
   private readonly onWindowBlur = (): void => {
