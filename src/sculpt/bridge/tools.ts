@@ -25,6 +25,8 @@ export const SMOOTH_MODES: readonly (readonly [SmoothMode, string])[] = [
   ['average', 'Average'],
   ['surface', 'Surface'],
 ];
+/** The Smooth brush's strength out of the box (the vendor's own default). */
+export const SMOOTH_STRENGTH = 0.75;
 
 /**
  * Bridge tool subclasses (WS2f behavior pass). Vendor code stays untouched;
@@ -225,15 +227,20 @@ export class StableSmooth extends Smooth {
     return this.surface.last;
   }
 
-  /** Mode and relax, as the scene record keeps them. */
-  smoothSettings(): { mode: SmoothMode; relax: number } {
-    return { mode: this.smoothMode, relax: this.relax };
+  /**
+   * Mode, relax and strength, as the scene record keeps them. One set for
+   * every brush (owner call, 2026-10-27): Shift's smoothing is this tool
+   * whichever brush is in hand, and each brush's Smooth group edits it.
+   */
+  smoothSettings(): { mode: SmoothMode; relax: number; strength: number } {
+    return { mode: this.smoothMode, relax: this.relax, strength: this._intensity };
   }
 
-  /** Set either, each checked; anything else is ignored. */
-  setSmooth(s: { mode?: unknown; relax?: unknown }): void {
+  /** Set any of them, each checked; anything else is ignored. */
+  setSmooth(s: { mode?: unknown; relax?: unknown; strength?: unknown }): void {
     if (s.mode === 'average' || s.mode === 'surface') this.smoothMode = s.mode;
     if (typeof s.relax === 'number' && Number.isFinite(s.relax)) this.relax = Math.min(1, Math.max(0, s.relax));
+    if (typeof s.strength === 'number' && Number.isFinite(s.strength)) this._intensity = Math.min(1, Math.max(0, s.strength));
   }
 
   /**

@@ -231,6 +231,7 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
       ? defined({
           mode: oneOf(v.smooth.mode, ['average', 'surface'] as const),
           relax: num(v.smooth.relax, 0, 1),
+          strength: num(v.smooth.strength, 0, 1),
         })
       : undefined,
     smoothRev: num(v.smoothRev, 0),

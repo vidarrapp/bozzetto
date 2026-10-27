@@ -26,8 +26,15 @@
 // - the defaults: Average, Relax 0.25; the Tool panel on Smooth: a Mode
 //   select (Average, Surface) and a Relax slider shown only in Surface;
 // - Shift's smoothing from another brush uses the Smooth tool's mode;
-// - mode and relax ride the scene file; a scene without them opens on
-//   Average, and a record of a later revision is left alone.
+// - the Smooth (Shift) group (owner call, 2026-10-27): on every brush
+//   Shift smooths from (Clay, Rake, Crease checked), not on Paint (Shift
+//   blurs there), Mask or the Select tool; Strength, Mode and Relax (in
+//   Surface only) are the Smooth tool's own, one set for all brushes:
+//   Surface chosen on Clay's panel shows on the Rake's, and a Shift
+//   stroke from Clay then smooths in Surface;
+// - mode, relax and strength ride the scene file; a scene without them
+//   opens on Average, Relax 0.25, strength 0.75, and a record of a later
+//   revision is left alone.
 // Average itself is unchanged, bit for bit: scripts/parity-fixtures.mjs
 // --verify --outputs --tol=0 against a recording from before the mode
 // (docs/parity-fixtures.md).
@@ -35,6 +42,10 @@ import { openForInput, openPanel, screenOf } from './smoke.mjs';
 
 const SMOOTH = 3; // Enums.Tools.SMOOTH
 const CLAY = 0; // Enums.Tools.BRUSH
+const CREASE = 6;
+const PAINT = 8;
+const MASKING = 10;
+const RAKE = 13;
 
 /** The Smooth tool's mode and relax, and the active mesh's vertex count. */
 const smoothState = (page) =>
@@ -573,14 +584,95 @@ export const suites = {
     const shiftA = await shiftStroke();
     t.ok(!shiftA.surfaceDab && shiftA.tool === CLAY, `and in Average while it is set to that (${JSON.stringify(shiftA)})`);
 
+    // --- the Smooth (Shift) group in every brush's Tool panel --------------------
+    const group = () =>
+      page.evaluate(() => {
+        const sec = document.querySelector('.panel--sculpt .sculpt-panel__shift-smooth');
+        if (!sec) return { exists: false };
+        const sel = sec.querySelector('select[aria-label="Shift smooth mode"]');
+        const strength = sec.querySelector('[data-smooth="strength"] input[type=range]');
+        const relax = sec.querySelector('[data-smooth="relax"]');
+        return {
+          exists: true,
+          shown: !sec.hidden,
+          heading: sec.querySelector('h3')?.textContent,
+          last: sec.parentElement.lastElementChild === sec,
+          mode: sel?.value,
+          strength: strength ? Number(strength.value) : null,
+          relaxShown: !!relax && !relax.hidden,
+          relaxValue: relax ? Number(relax.querySelector('input').value) : null,
+        };
+      });
+    const pick = (idx) => page.evaluate((i) => window.__sculpt.input.selectBrush(i), idx);
+    const shownOn = {};
+    for (const [name, idx] of [['Clay', CLAY], ['Rake', RAKE], ['Crease', CREASE], ['Paint', PAINT], ['Mask', MASKING], ['Smooth', SMOOTH]]) {
+      await pick(idx);
+      shownOn[name] = (await group()).shown;
+    }
+    await page.evaluate(() => window.__sculpt.input.enterSelect());
+    shownOn.Select = (await group()).shown;
+    await page.evaluate(() => window.__sculpt.input.exitSelect());
+    t.ok(
+      shownOn.Clay && shownOn.Rake && shownOn.Crease && !shownOn.Paint && !shownOn.Mask && !shownOn.Select && !shownOn.Smooth,
+      `the Smooth group shows on the brushes Shift smooths from and not on Paint, Mask, Select or Smooth itself (${JSON.stringify(shownOn)})`,
+    );
+    await pick(CLAY);
+    const gA = await group();
+    t.ok(
+      gA.heading === 'Smooth (Shift)' && gA.last && gA.mode === 'average' && gA.strength === 0.75 && !gA.relaxShown,
+      `on Clay: "Smooth (Shift)" at the foot of the panel, Strength 0.75, Mode Average, no Relax (${JSON.stringify(gA)})`,
+    );
+    await page.evaluate(() => {
+      const sec = document.querySelector('.panel--sculpt .sculpt-panel__shift-smooth');
+      const sel = sec.querySelector('select[aria-label="Shift smooth mode"]');
+      sel.value = 'surface';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const s = sec.querySelector('[data-smooth="strength"] input[type=range]');
+      s.value = '0.4';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const gS = await group();
+    const tS = await page.evaluate((idx) => window.__sculpt.session.getSculptManager().getTool(idx).smoothSettings(), SMOOTH);
+    t.ok(
+      gS.relaxShown && gS.relaxValue === 0.6 && tS.mode === 'surface' && tS.strength === 0.4,
+      `Surface on Clay's group shows Relax (${gS.relaxValue}) and sets the Smooth tool, strength with it (${JSON.stringify(tS)})`,
+    );
+    await pick(RAKE);
+    const gR = await group();
+    t.ok(gR.shown && gR.mode === 'surface' && gR.strength === 0.4 && gR.relaxShown && gR.relaxValue === 0.6, `the Rake's group shows the same settings (${JSON.stringify(gR)})`);
+    await pick(CLAY);
+    const shiftG = await shiftStroke();
+    t.ok(shiftG.surfaceDab && shiftG.tool === CLAY, `a Shift stroke from Clay smooths in the Surface mode its group set (${JSON.stringify(shiftG)})`);
+    await page.evaluate(() => {
+      const sel = document.querySelector('.panel--sculpt .sculpt-panel__shift-smooth select[aria-label="Shift smooth mode"]');
+      sel.value = 'average';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const gB = await group();
+    t.ok(!gB.relaxShown && (await smoothState(page)).mode === 'average', `back on Average the Relax row folds away (${JSON.stringify(gB)})`);
+    // Saved with the scene: what the group set comes back with it.
+    const viaGroup = await page.evaluate(async (idx) => {
+      const { file, session } = window.__sculpt;
+      const tool = session.getSculptManager().getTool(idx);
+      const bytes = await file.pack();
+      tool.setSmooth({ mode: 'surface', relax: 0.9, strength: 0.9 });
+      await file.open(bytes);
+      return tool.smoothSettings();
+    }, SMOOTH);
+    const gO = await group();
+    t.ok(
+      viaGroup.mode === 'average' && viaGroup.relax === 0.6 && viaGroup.strength === 0.4 && gO.shown && gO.strength === 0.4 && gO.mode === 'average',
+      `the group's values ride the scene file and the group shows them after opening it (${JSON.stringify(viaGroup)}, ${JSON.stringify(gO)})`,
+    );
+
     // --- the scene file -----------------------------------------------------------
     const saved = await page.evaluate(async (idx) => {
       const { file, session } = window.__sculpt;
       const tool = session.getSculptManager().getTool(idx);
-      tool.setSmooth({ mode: 'surface', relax: 0.6 });
+      tool.setSmooth({ mode: 'surface', relax: 0.6, strength: 0.3 });
       const bytes = await file.pack();
       const rec = await file.unpack(bytes);
-      tool.setSmooth({ mode: 'average', relax: 0.25 });
+      tool.setSmooth({ mode: 'average', relax: 0.25, strength: 0.75 });
       await file.open(bytes);
       const back = tool.smoothSettings();
       // A scene from before the mode: Average and the default relax.
@@ -599,15 +691,15 @@ export const suites = {
       const kept = tool.smoothSettings();
       // A bad value sanitizes away.
       const bad = structuredClone(rec);
-      bad.settings.smooth = { mode: 'sideways', relax: 7 };
+      bad.settings.smooth = { mode: 'sideways', relax: 7, strength: -2 };
       await file.open(await file.packRecord(bad));
       const mended = tool.smoothSettings();
       return { stored: rec.settings.smooth, rev: rec.settings.smoothRev, back, legacy, kept, mended };
     }, SMOOTH);
-    t.ok(saved.stored?.mode === 'surface' && saved.stored?.relax === 0.6 && saved.rev === 1, `the scene record holds the mode and relax, revision 1 (${JSON.stringify(saved.stored)}, ${saved.rev})`);
-    t.ok(saved.back.mode === 'surface' && saved.back.relax === 0.6, `and they come back with the scene (${JSON.stringify(saved.back)})`);
-    t.ok(saved.legacy.mode === 'average' && saved.legacy.relax === 0.25, `a scene from before them opens on Average, Relax 0.25 (${JSON.stringify(saved.legacy)})`);
+    t.ok(saved.stored?.mode === 'surface' && saved.stored?.relax === 0.6 && saved.stored?.strength === 0.3 && saved.rev === 1, `the scene record holds the mode, relax and strength, revision 1 (${JSON.stringify(saved.stored)}, ${saved.rev})`);
+    t.ok(saved.back.mode === 'surface' && saved.back.relax === 0.6 && saved.back.strength === 0.3, `and they come back with the scene (${JSON.stringify(saved.back)})`);
+    t.ok(saved.legacy.mode === 'average' && saved.legacy.relax === 0.25 && saved.legacy.strength === 0.75, `a scene from before them opens on Average, Relax 0.25, strength 0.75 (${JSON.stringify(saved.legacy)})`);
     t.ok(saved.kept.mode === 'surface' && saved.kept.relax === 0.4, `a record of a later revision is left alone (${JSON.stringify(saved.kept)})`);
-    t.ok(saved.mended.mode === 'average' && saved.mended.relax === 1, `an unknown mode is dropped and the relax held to 0..1 (${JSON.stringify(saved.mended)})`);
+    t.ok(saved.mended.mode === 'average' && saved.mended.relax === 1 && saved.mended.strength === 0, `an unknown mode is dropped and the relax and strength held to 0..1 (${JSON.stringify(saved.mended)})`);
   },
 };

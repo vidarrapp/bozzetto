@@ -75,6 +75,7 @@ export class SculptPanel extends SidePanel {
     };
     this.buildBrush(this.body);
     this.buildSymmetry(this.body);
+    this.buildShiftSmooth(this.body);
   }
 
   // --- Brush: per-brush pressure dynamics + active-tool extras ------------
@@ -126,6 +127,8 @@ export class SculptPanel extends SidePanel {
     // mirrors anything (a mirrored selection is a maybe for later), so
     // the section shows for brushes only, with the active brush's values.
     if (this.symSection) this.symSection.hidden = uiMode !== 'brush';
+    // Shift's Smooth settings ride every brush that Shift smooths from.
+    this.fillShiftSmooth(uiMode === 'brush' ? tool : -1);
     if (uiMode === 'select') {
       if (this.brushHeading) this.brushHeading.textContent = 'Select';
       this.extrasBody.replaceChildren();
@@ -386,11 +389,12 @@ export class SculptPanel extends SidePanel {
    * Smooth's Mode (owner call, 2026-10-24): Average, the umbrella average
    * it always was (the default), or Surface, which fits the surface by
    * distance and evens the triangles with a light Relax, the row shown in
-   * Surface only. Shift's smoothing from any brush uses the mode set here.
+   * Surface only. Shift's smoothing from any brush uses the mode set here;
+   * the same rows head every other brush's Smooth group (fillShiftSmooth).
    */
-  private buildSmooth(extras: HTMLElement, smooth: StableSmooth): void {
+  private buildSmooth(extras: HTMLElement, smooth: StableSmooth, label = 'Smooth mode'): void {
     const mode = selectEl(SMOOTH_MODES, smooth.smoothMode);
-    mode.setAttribute('aria-label', 'Smooth mode');
+    mode.setAttribute('aria-label', label);
     const relax = compactRange(
       'Relax',
       0,
@@ -403,6 +407,7 @@ export class SculptPanel extends SidePanel {
       },
       { limits: FRACTION },
     );
+    relax.dataset.smooth = 'relax';
     relax.hidden = smooth.smoothMode !== 'surface';
     mode.addEventListener('change', () => {
       smooth.setSmooth({ mode: mode.value as SmoothMode });
@@ -410,6 +415,67 @@ export class SculptPanel extends SidePanel {
       this.input.onBrushSettingsChange?.();
     });
     extras.append(labelRow('Mode', mode), relax);
+  }
+
+  // --- Smooth (Shift): one shared setting for every brush ------------------
+
+  private smoothSection: HTMLElement | null = null;
+  private smoothBody: HTMLDivElement | null = null;
+  private smoothStrengthInput?: HTMLInputElement;
+
+  /**
+   * The Smooth group (owner call, 2026-10-27): Smooth has no toolbar slot
+   * or key since the Rake took 7 and is used through Shift from the brush
+   * in hand, so its settings sit at the foot of every brush's Tool panel.
+   * They are the Smooth tool's own values, one set for all brushes: a
+   * change on Clay's panel shows on the Rake's.
+   */
+  private buildShiftSmooth(body: HTMLElement): void {
+    const sec = section(body, 'Smooth (Shift)');
+    sec.classList.add('sculpt-panel__shift-smooth');
+    this.smoothSection = sec;
+    this.smoothBody = div('sculpt-panel__shift-smooth-rows');
+    sec.appendChild(this.smoothBody);
+    this.fillShiftSmooth(this.input.uiMode() === 'brush' ? this.input.currentToolIndex() : -1);
+  }
+
+  /**
+   * Whether Shift smooths from `tool` (InputShell's swap): every brush but
+   * Paint, where Shift blurs the paint instead. Smooth itself has these
+   * rows in its own settings, and Paint blur and Mask are not brushes the
+   * toolbar offers (Mask is Ctrl's stand-in).
+   */
+  private static shiftSmooths(tool: number): boolean {
+    const t = Enums.Tools;
+    return tool >= 0 && tool !== t.PAINT && tool !== t.PAINT_BLUR && tool !== t.MASKING && tool !== t.SMOOTH;
+  }
+
+  /** Rebuild the Smooth group from the tool's values, or hide it (`tool` -1: not a brush). */
+  private fillShiftSmooth(tool: number): void {
+    const sec = this.smoothSection;
+    const rows = this.smoothBody;
+    if (!sec || !rows) return; // the first refreshBrush runs before the group exists
+    rows.replaceChildren();
+    this.smoothStrengthInput = undefined;
+    const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
+    sec.hidden = !SculptPanel.shiftSmooths(tool) || !(smooth instanceof StableSmooth);
+    if (sec.hidden || !(smooth instanceof StableSmooth)) return;
+    const strength = compactRange(
+      'Strength',
+      0,
+      1,
+      0.01,
+      Number(smooth._intensity.toFixed(2)),
+      (v) => {
+        smooth.setSmooth({ strength: v });
+        this.input.onBrushSettingsChange?.();
+      },
+      { limits: FRACTION },
+    );
+    strength.dataset.smooth = 'strength';
+    this.smoothStrengthInput = strength.querySelector('input') as HTMLInputElement;
+    rows.appendChild(strength);
+    this.buildSmooth(rows, smooth, 'Shift smooth mode');
   }
 
   /** A profile curve's editor under its caption; an edit schedules the autosave. */
@@ -627,6 +693,10 @@ export class SculptPanel extends SidePanel {
     // Through the slider's own value, so a size typed past 500 reads as itself.
     if (this.sizeInput) setSliderValue(this.sizeInput, Math.round(this.input.getBrushRadius()));
     if (this.strengthInput) setSliderValue(this.strengthInput, Number(this.input.getBrushIntensity().toFixed(2)));
+    const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
+    if (this.smoothStrengthInput && smooth instanceof StableSmooth) {
+      setSliderValue(this.smoothStrengthInput, Number(smooth._intensity.toFixed(2)));
+    }
   }
 
   /**
