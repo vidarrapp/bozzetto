@@ -17,6 +17,14 @@ import {
   quartic,
 } from './profile';
 import type { SculptSession } from './SculptSession';
+import { SURFACE_RELAX, SurfaceSmoother, type SurfaceDabStats } from './surfaceSmooth';
+
+/** The Smooth brush's modes (StableSmooth.smoothMode). */
+export type SmoothMode = 'average' | 'surface';
+export const SMOOTH_MODES: readonly (readonly [SmoothMode, string])[] = [
+  ['average', 'Average'],
+  ['surface', 'Surface'],
+];
 
 /**
  * Bridge tool subclasses (WS2f behavior pass). Vendor code stays untouched;
@@ -190,8 +198,75 @@ export class VolumetricMove extends Move {
  * meaningless.
  */
 export class StableSmooth extends Smooth {
+  /**
+   * Average (the vendor umbrella average, the default) or Surface (owner
+   * call, 2026-10-24: an option): a local surface fitted by distance and
+   * the vertex projected onto it, then a light tangential relax
+   * (surfaceSmooth.ts). Shift's smoothing from any brush is this tool, so
+   * it smooths in whichever mode is set here.
+   */
+  smoothMode: SmoothMode = 'average';
+  /** Surface mode's tangential relax, 0 to 1, a fraction of the smoothing weight. */
+  relax = SURFACE_RELAX;
+  /**
+   * Vendor Smooth reads the current positions, and so does Surface mode
+   * by default; with this false (as Brush's switch) its fit reads the
+   * stroke-start proxy instead. The Average mode never reads it.
+   */
+  _accumulate = true;
+  private readonly surface = new SurfaceSmoother();
+
   constructor(session: SculptSession) {
     super(session);
+  }
+
+  /** The last Surface dab's counts and time (tests, measurements). */
+  get lastSurfaceDab(): SurfaceDabStats | null {
+    return this.surface.last;
+  }
+
+  /** Mode and relax, as the scene record keeps them. */
+  smoothSettings(): { mode: SmoothMode; relax: number } {
+    return { mode: this.smoothMode, relax: this.relax };
+  }
+
+  /** Set either, each checked; anything else is ignored. */
+  setSmooth(s: { mode?: unknown; relax?: unknown }): void {
+    if (s.mode === 'average' || s.mode === 'surface') this.smoothMode = s.mode;
+    if (typeof s.relax === 'number' && Number.isFinite(s.relax)) this.relax = Math.min(1, Math.max(0, s.relax));
+  }
+
+  /**
+   * Average: the vendor stroke, untouched. Surface: BOZZETTO EDIT of
+   * upstream Smooth.stroke (vendor Smooth.js), the same flow (undo push,
+   * culling, alpha) with the smoother's pass in place of the average.
+   */
+  override stroke(picking: Picking): void {
+    if (this.smoothMode !== 'surface') {
+      super.stroke(picking);
+      return;
+    }
+    let iVertsInRadius = picking.getPickedVertices();
+    const intensity = this._intensity * Tablet.getPressureIntensity();
+    const useProxy = this._accumulate === false && !this._lockPosition;
+    // Before the undo push, which flags the vertices as this stroke's.
+    if (useProxy) this.updateProxy(iVertsInRadius);
+    (this._main as SculptSession).getStateManager().pushVertices(iVertsInRadius);
+    if (this._culling) iVertsInRadius = this.getFrontVertices(iVertsInRadius, picking.getEyeDirection());
+    picking.updateAlpha(this._lockPosition);
+    picking.setIdAlpha(this._idAlpha);
+    const mesh = this.getMesh();
+    this.surface.run(
+      mesh,
+      iVertsInRadius,
+      intensity,
+      picking.getIntersectionPoint(),
+      Math.sqrt(picking.getLocalRadius2()),
+      (x, y, z) => picking.getAlpha(x, y, z),
+      useProxy,
+      this.relax,
+    );
+    mesh.updateGeometry(mesh.getFacesFromVertices(iVertsInRadius), iVertsInRadius);
   }
 
   override smooth(iVerts: Uint32Array, intensity: number, picking?: Picking): void {

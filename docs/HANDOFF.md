@@ -10,3 +10,4 @@
 - [x] 2026-10-24: Smooth on voxel-remeshed surfaces: a "Surface" smooth mode as default or as an option. Decided 2026-10-24: an option; "Average" stays the default
 - [x] 2026-10-24: QuadriFlow's flow solver in Bozzetto Web. Decided 2026-10-24: Boykov-Kolmogorov max flow (QuadriFlow's default path, no network-simplex min-cost flow, no Gurobi); the heavier solving is for Studio
 - [x] 2026-10-24: Quad remesh in Bozzetto Web: offer QuadriFlow's adaptive quad sizing as an option. Decided 2026-10-24: include it, off by default
+- [ ] 2026-10-27: Smooth has no toolbar slot or hotkey since the Rake took 7, so its Tool panel (where the new Mode and Relax live) only shows if Smooth is selected from code. Where should Mode and Relax go: a "Shift smooth" group (Mode, Relax) in every brush's Tool panel, Smooth back on the toolbar or a hotkey, or both? (blocks: choosing Surface mode from the interface)
