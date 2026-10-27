@@ -1,9 +1,9 @@
 // The owner's tweaks batch. A published sculpt shows its own colours or,
 // picked in the Render panel, one plain colour that the albedo sets, and
-// the choice rides the look, a project's manifest and the single-file
-// export, while Sculpt mode always shows its paint. The background's and
-// every light's swatch picks a colour off the view when dragged onto it,
-// as the paint brush's does, in Sculpt, Armature and the editors' preview:
+// the choice rides the look and a project's manifest, while Sculpt mode
+// always shows its paint. The background's and every light's swatch
+// picks a colour off the view when dragged onto it, as the paint brush's
+// does, in Sculpt, Armature and the editors' preview:
 // live while dragged, cancelled by a release off the view. The colour
 // picker is twice the size, opens beside its panel on an upright iPad,
 // and has no H row; its S and V rows take typed values. The remesh
@@ -11,7 +11,7 @@
 // in Sculpt and Armature, up to 512, and a remesh this device cannot
 // spare the memory for is refused with the reason (navigator.deviceMemory,
 // overridden here) instead of ending the tab.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { openArmature, openSculpt } from './lib.mjs';
@@ -326,26 +326,19 @@ export const suites = {
     await page.unroute(/painted\.glb/);
 
     // The editors' preview (the uploader's here; the admin editor builds
-    // the same panel and export) and its single-file export.
+    // the same panel).
     const dir = mkdtempSync(join(tmpdir(), 'bozzetto-painted-'));
     try {
       const file = join(dir, 'painted.glb');
       writeFileSync(file, painted);
       await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
       await page.setInputFiles('#files', file);
-      await page.waitForFunction(() => !document.querySelector('#export-html').disabled, null, { timeout: 90_000 });
+      await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
       rows = await materialRows(page);
       t.ok(rows.colour === 'sculpt' && !rows.albedo, `the uploader's preview offers the switch for a painted model (${JSON.stringify(rows)})`);
       await pickColour(page, 'plain');
       await page.evaluate(() => window.__bozzetto.materials.setAlbedo('#2a5cff'));
       t.ok(bluish(await middle(page)), 'and renders Plain colour in its albedo');
-      await page.route('**/embed/viewer.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* viewer */' }));
-      await page.route('**/embed/embed.css', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '/* css */' }));
-      const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.click('#export-html')]);
-      const html = readFileSync(await download.path(), 'utf8');
-      const registry = JSON.parse(html.match(/window\.__BOZZETTO__=(.*?);<\/script>/s)?.[1] ?? 'null');
-      const exported = registry?.manifest?.material;
-      t.ok(exported?.vertexColors === false && exported.albedo === '#2a5cff', `its single-file export carries Plain colour and the albedo (${JSON.stringify(exported)})`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -454,7 +447,7 @@ export const suites = {
     // The editors' preview: the uploader's, whose Render panel is the admin editor's.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
     await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await page.waitForFunction(() => !document.querySelector('#export-html').disabled, null, { timeout: 90_000 });
+    await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
     await page.evaluate(() => {
       const p = document.querySelector('.panel--editor');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Background').querySelector('select');

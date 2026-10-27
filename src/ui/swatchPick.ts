@@ -6,8 +6,8 @@ import { TAP_CLICK_MS } from './dom';
  * The cursor while a swatch picks. An eyedropper is on its way from the
  * owner; until then the Pinch brush's icon (Flaticon uicons fi-ss-compress,
  * as on the sculpt toolbar) stands in, its four corners closing on the
- * pixel being read. Inlined as a path, so the viewer and the single-file
- * export need not load the icon font for one glyph. An `eyedropper.svg`
+ * pixel being read. Inlined as a path, so the viewer need not load the
+ * icon font for one glyph. An `eyedropper.svg`
  * dropped into src/sculpt/ui/icons replaces it at build time, as the
  * toolbar's overrides do (see the README there).
  */

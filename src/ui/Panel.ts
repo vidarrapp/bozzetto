@@ -367,7 +367,7 @@ export class Panel {
    * Building the section shows the model the viewer is on and changes
    * nothing; only a pick in the list writes. It used to apply its own
    * starting model on every build, and that model was Cavity, so the
-   * viewer, the editors' previews, their single-file exports and Armature
+   * viewer, the editors' previews, the single-file exports and Armature
    * mode all lost their AO whatever had been saved.
    */
   private buildAOSection(body: HTMLElement): void {

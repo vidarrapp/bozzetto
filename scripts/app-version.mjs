@@ -1,7 +1,7 @@
 /**
  * The version a build says it is: package.json's version and the commit it
- * was built from, as "0.5.3 (2e735c6)". Vite injects it (vite.config.ts,
- * vite.embed.config.ts) for the hotkey guide and the update notices, and the
+ * was built from, as "0.5.3 (2e735c6)". Vite injects it (vite.config.ts)
+ * for the hotkey guide and the update notices, and the
  * desktop build writes it beside the app for the About panel.
  *
  * package.json's version alone moves only with a desktop release, while the

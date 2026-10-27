@@ -125,7 +125,7 @@ src/sculpt/
 Build/config changes `[Proposal]`:
 
 1. Codemod vendor imports once: SculptGL uses bare root paths (`from 'mesh/Mesh'`). Rewrite mechanically to a single prefix: `from '@sculpt-vendor/mesh/Mesh'` for the five vendored roots. One sed pass, committed separately so the vendor drop stays diffable against upstream.
-2. `vite.config.ts` AND `vite.embed.config.ts`: `resolve.alias['@sculpt-vendor'] = '/src/sculpt/vendor'`.
+2. `vite.config.ts`: `resolve.alias['@sculpt-vendor'] = '/src/sculpt/vendor'`.
 3. `tsconfig.json`: add `"paths": { "@sculpt-vendor/*": ["./src/sculpt/vendor/*"] }`. Keep `allowJs` off: tsc then ignores the vendored `.js` (typecheck stays green and strict for everything else) while Vite bundles it. The bridge imports vendor modules through the ambient declarations in `types/sculptgl.d.ts`, which only need to cover the seam surface (Mesh, SculptManager, Tools/Enums, StateManager, Picking, MeshStatic/MeshDynamic/Multimesh constructors). `[Verified tsconfig: strict, include ["src"], moduleResolution bundler]`
 4. New runtime deps: `gl-matrix` (vendor core uses it throughout). `hammerjs` only if WS2 keeps SculptGL's touch handling; see 6.3. No `file-saver`, no `raw-loader` (the glsl concern died with `src/render/`).
 

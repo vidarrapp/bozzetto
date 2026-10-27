@@ -1397,6 +1397,41 @@ function jpegSize(buf) {
 }
 
 /**
+ * Create timelapse for a guest, with accounts on: the single-file export
+ * is gone (owner call, 2026-10-27), so the uploader ends in Sign in, which
+ * opens the dialog over the page and keeps the frames dropped on it.
+ */
+async function guestCreate(browser, origin, t) {
+  const g = await browserFor(browser, origin, { ip: '203.0.113.18' });
+  try {
+    const p = g.page;
+    await p.goto(`${origin}/create/`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('#save-signin button', { timeout: 30_000 });
+    const page = await p.evaluate(() => ({
+      intro: document.querySelector('.editor__id')?.textContent ?? '',
+      button: document.querySelector('#save-signin button')?.textContent ?? '',
+      save: !!document.querySelector('#save-project'),
+      exported: !!document.querySelector('#export-html'),
+    }));
+    t.ok(
+      page.intro === 'Build a timelapse or a model from frames made elsewhere. Sign in to save it to My projects and share it. Nothing is uploaded until then.' &&
+        page.button === 'Sign in' &&
+        !page.save &&
+        !page.exported,
+      `a guest's uploader offers Sign in, with no Save and no Export .html (${show(page)})`,
+    );
+    await p.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await p.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
+    await p.click('#save-signin button');
+    t.ok(await p.waitForSelector('.account-card', { timeout: 15_000 }).then(() => true, () => false), 'Sign in opens the dialog');
+    const kept = await p.evaluate(() => ({ path: location.pathname, frames: document.querySelector('#frame-count')?.textContent ?? '' }));
+    t.ok(kept.path === '/create/' && kept.frames === '\u00b7 1 frame', `over the page, which keeps its frame (${show(kept)})`);
+  } finally {
+    await g.ctx.close();
+  }
+}
+
+/**
  * Create timelapse, signed in (owner request): the gallery's Create menu
  * offers Import OBJ and Create timelapse, and the uploader saves to My
  * projects - the project's mode and fps, its frames, stages and look, and
@@ -2227,6 +2262,7 @@ export const suites = {
       await part('member library', () => memberLibrary(server, o, a, t));
       await part('my projects', () => myProjectsPage(server, a, t));
       await part('armature projects', () => armatureLibrary(server, o, a, t, { show, r2 }));
+      await part('guest create', () => guestCreate(browser, server.base, t));
       await part('create timelapse', () => memberCreate(server, o, a, t));
       await part('download my data', () => exportData(server, a, t));
       await part('delete account', () => deleteAccount(server, a, t));

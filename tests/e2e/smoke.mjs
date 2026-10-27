@@ -1920,7 +1920,7 @@ export const suites = {
       });
     };
     // A guest: Import OBJ is everyone's (nothing about it needs an
-    // account), and Create timelapse is the export-only uploader.
+    // account), and Create timelapse is the uploader that uploads nothing.
     const stack = await menu(page);
     t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ, Create timelapse', "a guest's Create menu offers New Sculpt, New Armature, Import OBJ and Create timelapse, in that order");
     t.ok(stack.kinds === 'sculpt,armature,obj,timelapse' && stack.sameWidth && stack.stacked, `four buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
@@ -1930,15 +1930,19 @@ export const suites = {
       page.click('.create-overlay [data-kind="timelapse"]'),
     ]);
     t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
-    await page.waitForSelector('#export-html', { timeout: 30_000 });
+    await page.waitForSelector('#reel-mount', { state: 'attached', timeout: 30_000 });
     const guestPage = await page.evaluate(() => ({
       intro: document.querySelector('.editor__id')?.textContent ?? '',
       heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
       save: !!document.querySelector('#save-project'),
+      exported: !!document.querySelector('#export-html'),
     }));
     t.ok(
-      guestPage.intro === 'Build a timelapse and export it as one self-contained file. Nothing is uploaded.' && guestPage.heads === 'Project,Frames,Stages,Export' && !guestPage.save,
-      `for a guest the uploader is as it was: nothing uploads, and Export is how it ends (${JSON.stringify(guestPage)})`,
+      guestPage.intro === 'Build a timelapse or a model from frames made elsewhere, and make a GIF or MP4 of it. Nothing is uploaded.' &&
+        guestPage.heads === 'Project,Frames,Stages,Export' &&
+        !guestPage.save &&
+        !guestPage.exported,
+      `for a guest nothing uploads, the reel is how it ends, and the single-file export is gone (${JSON.stringify(guestPage)})`,
     );
 
     // Signed in (the owner, with accounts off: whoami answers), the same
@@ -1969,8 +1973,8 @@ export const suites = {
       t.ok(
         /^Build a timelapse or a model from frames made elsewhere, and save it to Projects/.test(ownerPage.intro) &&
           ownerPage.heads === 'Project,Frames,Stages,Save' &&
-          ownerPage.buttons === 'Save to Projects (off), Export .html (off)',
-        `signed in, the uploader saves to the library, Export .html beside it, both waiting for frames (${JSON.stringify(ownerPage)})`,
+          ownerPage.buttons === 'Save to Projects (off)',
+        `signed in, the uploader saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
       );
     } finally {
       await ctx.close();
@@ -6859,8 +6863,7 @@ export const suites = {
   // draws - so the viewer, the editors and Armature mode had no AO at all.
   // Now GTAO is on by default at its calibrated values, a saved GTAO or Off
   // comes back as saved, the panel offers GTAO and Off there (Cavity only
-  // in sculpt mode), and the uploader's preview and its single-file export
-  // keep it. An armature saved on the old forced cavity comes back on GTAO.
+  // in sculpt mode), and the uploader's preview keeps it. An armature saved on the old forced cavity comes back on GTAO.
   async aoViewer(page, base, t) {
     const aoState = () =>
       page.evaluate(() => {
@@ -6938,24 +6941,15 @@ export const suites = {
     s = await aoState();
     t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.model})`);
 
-    // The uploader's preview, and its single-file export.
+    // The uploader's preview.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
     await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await page.waitForFunction(() => !document.querySelector('#export-html').disabled, null, { timeout: 90_000 });
+    await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
     const preview = await page.evaluate(() => {
       const sel = [...document.querySelectorAll('.panel--editor label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
       return { options: sel ? [...sel.options].map((o) => o.value).join(',') : null, model: sel?.value ?? null };
     });
     t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the uploader's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
-    // The embedded viewer's own bundle comes from the full build; the test
-    // build does not make it, and only the manifest matters here.
-    await page.route('**/embed/viewer.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* viewer */' }));
-    await page.route('**/embed/embed.css', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '/* css */' }));
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.click('#export-html')]);
-    const html = readFileSync(await download.path(), 'utf8');
-    const registry = JSON.parse(html.match(/window\.__BOZZETTO__=(.*?);<\/script>/s)?.[1] ?? 'null');
-    const exported = registry?.manifest?.ao;
-    t.ok(exported?.enabled === true && exported.intensity === AO_DEFAULT.intensity && exported.radius === AO_DEFAULT.radius, `and its single-file export carries GTAO on (${JSON.stringify(exported)})`);
   },
 
   // The environment's intensity on a usable scale (owner call: at the
@@ -6967,7 +6961,7 @@ export const suites = {
   // rescale has no version mark and is read on the old scale - through a
   // look, the way every saved look, autosave, .bozz file and armature
   // comes back, and through a project's manifest, the way a published
-  // project and a single-file export do - and renders the light and the
+  // project does - and renders the light and the
   // plate it rendered before; a new record round-trips.
   async envScale(page, base, t) {
     await openSculpt(page, base, '&q=low');

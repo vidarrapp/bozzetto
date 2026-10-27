@@ -1,8 +1,8 @@
 # Third-party notices
 
 Bozzetto itself is MIT-licensed; see [LICENSE](LICENSE). It ships the
-third-party code and assets below, in the web app (the site, the installed
-app and exported single-file pages). Each entry says
+third-party code and assets below, in the web app (the site and the
+installed app). Each entry says
 what ships, under which licence, and carries the notice text that licence
 asks to be kept with copies.
 

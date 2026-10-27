@@ -12,9 +12,7 @@ import { pageChrome } from '../ui/ChromeToggle';
 /**
  * Boot a Viewer into `viewport` and wire up the full public UI (panel,
  * transport, help, frame meter, stall log, shortcuts, Tab's hide-the-
- * interface toggle). Shared by the live
- * entry (main.ts) and the embedded single-file entry so both present an
- * identical viewer.
+ * interface toggle), as the live entry (main.ts) presents it.
  */
 export async function mountViewer(
   viewport: HTMLElement,

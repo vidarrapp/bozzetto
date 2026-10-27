@@ -6,9 +6,9 @@ import { appAsset } from '../net/origin';
  * The seam between the viewer and where its bytes come from (frames, HDRIs,
  * matcaps). Everything the viewer loads is a manifest path or an absolute
  * asset path; an AssetSource turns that path into bytes. Two implementations
- * exist: HttpSource (the live site, over the network) and EmbeddedSource (a
- * self-contained single-file export, reading inlined base64). The viewer is
- * unaware of which it has, so the same code runs online and offline.
+ * exist: HttpSource (the live site, over the network) and MemorySource (the
+ * /create editor, frames held in memory). The viewer is unaware of which it
+ * has.
  */
 export interface AssetSource {
   getManifest(): Promise<Manifest>;
@@ -52,31 +52,6 @@ export class HttpSource implements AssetSource {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load ${path} (${res.status})`);
     return res.arrayBuffer();
-  }
-}
-
-/** The shape injected as `window.__BOZZETTO__` by a single-file export. */
-export interface EmbeddedRegistry {
-  /** The raw (unvalidated) manifest object. */
-  manifest: unknown;
-  /** Asset bytes as base64, keyed by the exact path the viewer requests. */
-  assets: Record<string, string>;
-}
-
-/** Offline source: everything is inlined as base64, nothing touches the network. */
-export class EmbeddedSource implements AssetSource {
-  constructor(private readonly registry: EmbeddedRegistry) {}
-
-  async getManifest(): Promise<Manifest> {
-    return validateManifest(this.registry.manifest);
-  }
-
-  async getBytes(path: string): Promise<ArrayBuffer> {
-    // Keys are stored without a query string, so a cache-busting `?v=` on a
-    // matcap (or a `?v=` frame version) still resolves to the embedded bytes.
-    const b64 = this.registry.assets[path] ?? this.registry.assets[stripQuery(path)];
-    if (b64 === undefined) throw new Error(`Embedded asset not found: ${path}`);
-    return base64ToArrayBuffer(b64);
   }
 }
 
@@ -139,11 +114,4 @@ export async function loadViaBlob<T>(
   } finally {
     URL.revokeObjectURL(url);
   }
-}
-
-function base64ToArrayBuffer(b64: string): ArrayBuffer {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes.buffer;
 }

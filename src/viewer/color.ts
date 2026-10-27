@@ -2,13 +2,13 @@ import { Color } from 'three';
 
 /**
  * Colours that arrive from outside: a .bozz file, the autosave, a saved
- * look, a project's manifest, a single-file export's registry.
+ * look, a project's manifest.
  *
  * Every colour the app writes is `#rrggbb`, but nothing made the ones it
  * reads be. A light's or the backdrop's colour went straight into a panel
  * swatch's `style.background`, so a look carrying
  * `"bgColor": "url(https://elsewhere/p)"` had the browser of everyone who
- * opened it fetch that address, single-file exports included. So a colour
+ * opened it fetch that address. So a colour
  * is read through three.js, which understands every form the app could
  * have meant (hex, `rgb()`, `hsl()`, the CSS names), and written back as
  * `#rrggbb`; anything three.js cannot read is `fallback` instead.

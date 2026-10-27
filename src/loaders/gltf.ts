@@ -18,8 +18,8 @@ let loader: GLTFLoader | null = null;
  * anything as a buffer's or an image's `uri`, and the loader would fetch
  * it: a timelapse frame or a figure saying "https://elsewhere/p.bin" had
  * every viewer's browser ask that server for it. Paths on this site stay
- * allowed; nothing else is fetched. A page whose origin is opaque (a
- * single-file export opened from disk) has no paths of its own.
+ * allowed; nothing else is fetched. A page whose origin is opaque has no
+ * paths of its own.
  */
 export function allowedGltfUrl(url: string): boolean {
   if (url.startsWith('blob:') || url.startsWith('data:')) return true;
