@@ -3034,10 +3034,22 @@ export const suites = {
       }
     }
 
-    // The autosave brings a mannequin back on reload, fetched again.
-    await page.evaluate(() => window.__armature.save());
+    // The autosave brings a mannequin back on reload, fetched again, turned
+    // as it was: restore once put the root back to rest after setting it.
+    const turnedTo = await page.evaluate(() => {
+      const a = window.__armature.armature;
+      const turn = a.root.quaternion.clone().set(0.0593, 0.1492, 0.009, 0.987).normalize();
+      a.root.quaternion.premultiply(turn);
+      window.__armature.save();
+      return a.root.quaternion.toArray();
+    });
     await openArmature(page, base);
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), ids[3], 'the mannequin survives a reload');
+    const turnedBack = await page.evaluate(() => window.__armature.armature.root.quaternion.toArray());
+    t.ok(
+      Math.abs(turnedTo.reduce((d, x, i) => d + x * turnedBack[i], 0)) > 1 - 1e-9,
+      `and keeps its turn: (${turnedTo.map((x) => x.toFixed(4)).join(', ')}) saved, (${turnedBack.map((x) => x.toFixed(4)).join(', ')}) back`,
+    );
     await page.evaluate(() => window.__armature.figure('placeholder-male'));
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'and the blocks come back on request');
     const blockHips = await rootBall(page);

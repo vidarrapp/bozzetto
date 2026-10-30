@@ -1513,10 +1513,6 @@ export class Armature {
    * than what was saved.
    */
   restore(state: ArmatureState): void {
-    if (state.root) {
-      this.root.position.fromArray(state.root.position);
-      this.root.quaternion.fromArray(state.root.quaternion);
-    }
     this.clearPose();
     for (const name of this.props.keys()) this.setProportions(name, { size: 1, length: 1 }, false);
     for (const [name, p] of Object.entries(state.proportions ?? {})) {
@@ -1524,6 +1520,13 @@ export class Armature {
     }
     for (const [name, e] of Object.entries(state.pose ?? {})) {
       if (this.pose.has(name) && Array.isArray(e)) this.setPoseEuler(name, e[0], e[1], e[2], false);
+    }
+    // The root last: its saved turn is the whole of it, rest and pose and
+    // placement, and clearPose and the root's own pose above would put it
+    // back to rest times pose, losing the figure's turn.
+    if (state.root) {
+      this.root.position.fromArray(state.root.position);
+      this.root.quaternion.fromArray(state.root.quaternion);
     }
     this.aims.clear();
     for (const [id, a] of Object.entries(state.aims ?? {})) {
