@@ -14,3 +14,5 @@
 - [x] 2026-10-31: Strength in centimetres for the brushes that push the surface. Decided 2026-10-31: yes; Clay, Inflate, Crease, Rake, Move and Drag get 0 to 5 cm, the capped brushes keep 0 to 1
 - [x] 2026-10-31: Strength indicator shown always or only while adjusting. Decided 2026-10-31: only while adjusting strength
 - [x] 2026-10-31: Edge-loop mask with Ctrl+Shift drag. Decided 2026-10-31: as proposed; true edge loops on quads, and a geodesic ring on triangle meshes as well
+- [ ] 2026-10-31: Poly groups, how they are made: from the mask (Ctrl+W, as in ZBrush), from an imported OBJ's g/o lines, and split by angle; any others wanted (blocks: poly groups)
+- [ ] 2026-10-31: Poly groups, hiding: Ctrl+Shift+click a group to show it alone, Ctrl+Shift+click it again to hide it and show the rest, Ctrl+Shift+click empty space to show all; Ctrl+Shift+drag stays the edge-loop mask. Plus a Groups list in the Model panel with show/hide, rename and delete (blocks: poly groups)
