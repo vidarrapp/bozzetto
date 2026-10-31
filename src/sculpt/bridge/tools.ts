@@ -937,6 +937,12 @@ export class RakeBrush extends Brush {
   presetId: string | null = null;
   /** The last dab, per side (the parity recorder and the tests read it). */
   lastDab: RakeDab | null = null;
+  /**
+   * The across axis this stroke's last dab on the main side laid its tines
+   * on (local space, unit, in the area normal's tangent plane), or null
+   * before the stroke's first dab. The brush cursor draws the tines on it.
+   */
+  strokeAcross: Readonly<Vec3> | null = null;
 
   private readonly prev: { main: Vec3 | null; sym: Vec3 | null } = { main: null, sym: null };
   private readonly prevAcross: { main: Vec3 | null; sym: Vec3 | null } = { main: null, sym: null };
@@ -1004,6 +1010,7 @@ export class RakeBrush extends Brush {
   override start(ctrl: boolean): boolean {
     this.prev.main = null;
     this.prev.sym = null;
+    this.strokeAcross = null;
     // A new stroke: every cut entry from before is the form now.
     this.strokeId = (this.strokeId + 1) >>> 0 || 1;
     const ok = super.start(ctrl);
@@ -1068,6 +1075,7 @@ export class RakeBrush extends Brush {
     this.prev[side] = c;
     this.fromPress[side] = false;
     this.prevAcross[side] = across;
+    if (side === 'main') this.strokeAcross = across;
 
     this.rake(iVertsInRadius, iVertsFront, n, c, across, along as Vec3, radius, step, intensity, from);
 

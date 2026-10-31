@@ -23,7 +23,13 @@
 // - the Tool panel: the presets set the knobs (Scrape among them) and the
 //   tine profile, a knob moved after unlights the preset, the rake's
 //   settings ride the scene file, and a record from before Scrape, with
-//   a `plateau`, opens with it as the scrape.
+//   a `plateau`, opens with it as the scrape;
+// - the brush cursor: with the Rake in hand, hovering the plane draws one
+//   circle per tine (4 for Coarse, 12 for Comb) inside a faint ring, at
+//   the tines' spacing and half-width, laid across the hover motion (a
+//   jitter barely turns them) and across the drag mid-stroke, on the
+//   stroke's own axis; Taper fades the outer circles; other brushes draw
+//   the single ring.
 import { openForInput, openPanel } from './smoke.mjs';
 
 const RAKE = 13; // Enums.Tools.RAKE
@@ -249,6 +255,120 @@ function bend(pts) {
   return sxz / sxx;
 }
 
+/**
+ * In the page: the plane back to rest and alone in view's reach, the Rake's
+ * preset and knobs set, and where the plane's middle is on the page.
+ */
+function cursorSetup({ preset, knobs = {} }) {
+  const { session } = window.__sculpt;
+  const mesh = session.getMeshes().find((m) => m.__rakePlane);
+  const v = mesh.getVertices();
+  v.set(mesh.__rest);
+  mesh.updateGeometry();
+  mesh.updateBuffers?.();
+  session.setMesh(mesh);
+  const tool = session.getSculptManager().getTool(13);
+  if (preset) tool.applyPreset(preset);
+  tool.set(knobs);
+  const m = mesh.getMatrix();
+  const [x, y] = session.getCamera().project([m[12], m[13], m[14]]);
+  const rect = session.getCanvas().getBoundingClientRect();
+  return [rect.left + x, rect.top + y];
+}
+
+/**
+ * In the page: what the cursor draws. The ring's and the tine circles'
+ * screen points, per closed loop, the probe, the classes, and the world
+ * direction of a screen move `dir` (px) at `at` (page px) on the plane.
+ */
+function cursorRead({ at, dir }) {
+  const { session, input } = window.__sculpt;
+  const root = document.querySelector('.sculpt-cursor');
+  const loops = (d) =>
+    (d || '')
+      .split('M')
+      .filter((x) => x.trim())
+      .map((x) =>
+        x
+          .replace('Z', '')
+          .split('L')
+          .map((p) => p.trim().split(/\s+/).map(Number)),
+      );
+  const ring = root.querySelector('.sculpt-cursor__ring--main');
+  const tines = root.querySelector('.sculpt-cursor__tines');
+  const probe = input.cursor.tineProbe;
+  const out = {
+    mode: root.dataset.mode,
+    rake: root.classList.contains('is-rake'),
+    ring: loops(ring.getAttribute('d')),
+    ringOpacity: Number(getComputedStyle(ring).opacity),
+    tines: loops(tines.getAttribute('d')),
+    stops: [...root.querySelectorAll('.sculpt-cursor__tine-stop')].map((x) => Number(x.getAttribute('stop-opacity') ?? 1)),
+    probe: probe && { ...probe, across: [...probe.across] },
+  };
+  if (at && dir) {
+    // The world points under the two screen points, through the picking
+    // (the plane is alone in reach).
+    const rect = session.getCanvas().getBoundingClientRect();
+    const pk = session.getPicking();
+    const mesh = session.getMeshes().find((m) => m.__rakePlane);
+    const m = mesh.getMatrix();
+    const world = (x, y) => {
+      pk.intersectionMouseMesh(mesh, x - rect.left, y - rect.top);
+      const p = pk.getIntersectionPoint();
+      return [0, 1, 2].map((k) => m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]);
+    };
+    const a = world(at[0] - dir[0], at[1] - dir[1]);
+    const b = world(at[0] + dir[0], at[1] + dir[1]);
+    const d = b.map((x, k) => x - a[k]);
+    const l = Math.hypot(...d);
+    out.motion = d.map((x) => x / l);
+  }
+  const tool = session.getSculptManager().getTool(13);
+  if (tool.strokeAcross) {
+    const m = session.getPicking().getMesh().getMatrix();
+    const a = tool.strokeAcross;
+    const w = [0, 1, 2].map((k) => m[k] * a[0] + m[4 + k] * a[1] + m[8 + k] * a[2]);
+    const l = Math.hypot(...w);
+    out.strokeAcross = w.map((x) => x / l);
+  }
+  return out;
+}
+
+/** A loop's centre (its points' mean) and its largest reach from it. */
+function loopShape(pts) {
+  const c = [0, 1].map((k) => pts.reduce((a, p) => a + p[k], 0) / pts.length);
+  return { c, r: Math.max(...pts.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1]))) };
+}
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const frames = (page, n = 3) =>
+  page.evaluate(
+    (k) =>
+      new Promise((done) => {
+        const step = (i) => (i ? requestAnimationFrame(() => step(i - 1)) : done());
+        step(k);
+      }),
+    n,
+  );
+
+/** The tine circles against the ring: their count, spacing and size as shares of the ring's reach. */
+function tineLayout(c) {
+  const ring = loopShape(c.ring[0] ?? [[0, 0]]);
+  const shapes = c.tines.map(loopShape);
+  // In order along the row: by their projection on the first-to-last line.
+  const first = shapes[0]?.c ?? [0, 0];
+  const last = shapes[shapes.length - 1]?.c ?? [0, 0];
+  const gaps = [];
+  for (let i = 1; i < shapes.length; i++) gaps.push(Math.hypot(shapes[i].c[0] - shapes[i - 1].c[0], shapes[i].c[1] - shapes[i - 1].c[1]) / ring.r);
+  const mid = [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2];
+  return {
+    n: shapes.length,
+    gaps,
+    sizes: shapes.map((s) => s.r / ring.r),
+    centred: Math.hypot(mid[0] - ring.c[0], mid[1] - ring.c[1]) / ring.r,
+  };
+}
+
 export const suites = {
   async tineRake(page, base, t) {
     await openForInput(page, base);
@@ -326,6 +446,91 @@ export const suites = {
     };
     t.ok(ratio(flat) > 0.85, `without taper the outer grooves are as deep as the inner (${ratio(flat).toFixed(2)})`);
     t.ok(ratio(taper) < 0.5, `with Taper 1 they are much shallower (${ratio(taper).toFixed(2)} of the inner ones)`);
+
+    // --- the brush cursor: one circle per tine ------------------------------------
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('7');
+    const mid = await page.evaluate(cursorSetup, { preset: 'coarse' });
+    // Hover sideways onto the plane's middle.
+    const hover = async (from, to, steps = 8) => {
+      await page.mouse.move(...from);
+      await page.mouse.move(...to, { steps });
+      await frames(page);
+    };
+    await hover([mid[0] - 80, mid[1]], mid);
+    let c = await page.evaluate(cursorRead, { at: mid, dir: [20, 0] });
+    let lay = tineLayout(c);
+    t.ok(c.mode === 'surface' && c.rake && c.probe?.count === 4 && c.probe.source === 'hover', `hovering the plane with the Rake (Coarse) draws its tines (mode ${c.mode}, ${JSON.stringify(c.probe)})`);
+    t.eq(lay.n, 4, `four circles, one per tine (${lay.n})`);
+    t.ok(lay.gaps.length === 3 && lay.gaps.every((g) => Math.abs(g / 0.5 - 1) < 0.15) && lay.centred < 0.05, `spaced a slot apart, 2 / 4 of the radius, around the middle (${lay.gaps.map((g) => g.toFixed(3)).join(', ')})`);
+    t.ok(lay.sizes.every((r) => Math.abs(r / (0.7 / 4) - 1) < 0.15), `each the tine's half-width, 0.7 / 4 of the radius (${lay.sizes.map((r) => r.toFixed(3)).join(', ')})`);
+    t.ok(c.ring.length === 1 && c.ringOpacity < 0.5, `inside the brush ring, drawn faint (opacity ${c.ringOpacity})`);
+    t.ok(Math.abs(dot3(c.probe.across, c.motion)) < 0.1, `laid across the hover motion, on the surface (across . motion ${dot3(c.probe.across, c.motion).toFixed(3)})`);
+    const sideways = c.probe.across;
+
+    // A jitter barely turns them; a move down turns them across it.
+    await page.mouse.move(mid[0], mid[1] + 1);
+    await frames(page);
+    c = await page.evaluate(cursorRead, {});
+    const jitter = (Math.acos(Math.min(1, Math.abs(dot3(c.probe.across, sideways)))) * 180) / Math.PI;
+    t.ok(jitter < 10, `a 1 px jitter down turns them ${jitter.toFixed(1)} degrees`);
+    await hover([mid[0], mid[1] - 80], mid);
+    c = await page.evaluate(cursorRead, { at: mid, dir: [0, 20] });
+    const turn = (Math.acos(Math.min(1, Math.abs(dot3(c.probe.across, sideways)))) * 180) / Math.PI;
+    t.ok(Math.abs(dot3(c.probe.across, c.motion)) < 0.15 && turn > 60, `hovering downward turns them across that (across . motion ${dot3(c.probe.across, c.motion).toFixed(3)}, turned ${turn.toFixed(0)} degrees)`);
+    t.eq(tineLayout(c).n, 4, 'still four');
+
+    // Mid-stroke: the stroke's own across axis, and the tines stay drawn.
+    // The drag's direction on the plane, measured before it cuts (the
+    // picking is the stroke's own once it starts). The drag cuts nothing
+    // (Depth 0, Scrape 0): the rake aims each dab from the last one's
+    // picked point, and grooves cut under the pointer would move those
+    // points and turn its axis a little off the drag.
+    await page.evaluate(cursorSetup, { preset: 'coarse', knobs: { depth: 0, scrape: 0 } });
+    const { motion: diagonal } = await page.evaluate(cursorRead, { at: [mid[0] + 10, mid[1] + 10], dir: [10, 10] });
+    await page.mouse.move(mid[0] - 30, mid[1] - 30);
+    await page.mouse.down();
+    await page.mouse.move(mid[0] + 30, mid[1] + 30, { steps: 10 });
+    await page.waitForTimeout(300);
+    await page.mouse.move(mid[0] + 34, mid[1] + 34, { steps: 2 });
+    c = await page.evaluate(cursorRead, {});
+    c.motion = diagonal;
+    await page.mouse.up();
+    await frames(page);
+    t.ok(c.probe?.source === 'stroke' && c.strokeAcross && Math.abs(dot3(c.probe.across, c.strokeAcross)) > 0.97, `mid-stroke they lie on the rake's own across axis (${c.probe?.source}, across . stroke's ${c.strokeAcross ? dot3(c.probe.across, c.strokeAcross).toFixed(4) : 'none'})`);
+    t.ok(Math.abs(dot3(c.probe.across, c.motion)) < 0.1 && tineLayout(c).n === 4, `across the diagonal drag (across . drag ${dot3(c.probe.across, c.motion).toFixed(3)}), all four still drawn under the stroke`);
+    c = await page.evaluate(cursorRead, {});
+    t.ok(c.probe?.source === 'hover', `after the stroke the hover motion lays them again (${c.probe?.source})`);
+
+    // Comb: twelve. (The stroke may have turned the view's pivot: the
+    // plane's middle is read again.)
+    const mid2 = await page.evaluate(cursorSetup, { preset: 'comb' });
+    mid[0] = mid2[0];
+    mid[1] = mid2[1];
+    await hover([mid[0] - 80, mid[1]], mid);
+    c = await page.evaluate(cursorRead, {});
+    lay = tineLayout(c);
+    t.ok(lay.n === 12 && c.probe.count === 12, `Comb draws twelve circles (${lay.n})`);
+    t.ok(lay.gaps.every((g) => Math.abs(g / (2 / 12) - 1) < 0.15) && lay.sizes.every((r) => Math.abs(r / (0.5 / 12) - 1) < 0.2), `2 / 12 of the radius apart, each 0.5 / 12 of it (gaps ${Math.min(...lay.gaps).toFixed(3)}..${Math.max(...lay.gaps).toFixed(3)}, sizes ${Math.min(...lay.sizes).toFixed(3)}..${Math.max(...lay.sizes).toFixed(3)})`);
+    // Taper: the outer circles fade (opacity), their size kept.
+    await page.evaluate(cursorSetup, { preset: 'coarse', knobs: { taper: 0.6 } });
+    await page.mouse.move(mid[0] + 2, mid[1]);
+    await frames(page);
+    c = await page.evaluate(cursorRead, {});
+    lay = tineLayout(c);
+    t.ok(c.stops.join() === `${0.2 + 0.8 * 0.4},1,${0.2 + 0.8 * 0.4}` && lay.sizes.every((r) => Math.abs(r / (0.7 / 4) - 1) < 0.15), `Taper 0.6 fades the circles toward the rim (stop opacities ${c.stops.join(', ')}), the same size`);
+    await page.evaluate(cursorSetup, { preset: 'coarse' });
+
+    // Other brushes: the single ring.
+    for (const key of ['3', '1', '6']) {
+      await page.keyboard.press(key);
+      await page.mouse.move(mid[0] - 2, mid[1]);
+      await page.mouse.move(mid[0], mid[1]);
+      await frames(page);
+      c = await page.evaluate(cursorRead, {});
+      t.ok(c.mode === 'surface' && !c.rake && c.tines.length === 0 && c.probe === null && c.ring.length === 1 && c.ringOpacity > 0.8, `brush ${key} shows the single ring, no tines (${c.tines.length} circles, ring opacity ${c.ringOpacity})`);
+    }
+    await page.keyboard.press('7');
 
     // --- the sphere: a curved, convex form ----------------------------------------
     const onSphere = { sphere: true, radius: 0.5, span: 0.6 };

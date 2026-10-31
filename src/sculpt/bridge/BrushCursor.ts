@@ -14,11 +14,38 @@
  * displays; an SVG stroke stays a crisp CSS-pixel width on every backend,
  * and one code path now styles, dims and hides all cursor pieces.
  *
+ * With the Rake in hand (setTines) the ring is drawn faint and one small
+ * circle per tine sits inside it, on the rake's across axis (see
+ * renderTines).
+ *
  * Visibility policy lives in InputShell; this class renders what it is
  * told. `root.dataset.mode` mirrors the active representation for tests.
  */
 
 const RING_SEGMENTS = 48;
+/** Points per tine circle: small circles, so fewer than the ring. */
+const TINE_SEGMENTS = 16;
+/** How far one hover move (a full one, TINE_TURN_PX or more) turns the tines' direction toward its own. */
+const TINE_TURN_RATE = 0.35;
+/** A move this long (CSS px) counts in full; shorter ones count in proportion, so jitter barely turns the tines. */
+const TINE_TURN_PX = 6;
+/** The tapered tines' opacity floor: an outer tine of Taper 1 still shows. */
+const TINE_FADE_FLOOR = 0.2;
+/** Gradient ids, unique per cursor in the document. */
+let tineGradientSeq = 0;
+
+/** What the cursor last drew for the rake's tines (the tests read it). */
+export interface TineProbe {
+  count: number;
+  width: number;
+  taper: number;
+  /** Where the across axis came from: the stroke's own dabs, or the hover motion. */
+  source: 'stroke' | 'hover';
+  /** The across axis, world space, unit. */
+  across: [number, number, number];
+  /** Each tine circle's world radius: the brush's x width / count. */
+  radius: number;
+}
 
 type StrokeStyle = null | 'dot' | 'dim';
 
@@ -38,6 +65,9 @@ export class BrushCursor {
   private readonly screenRing: SVGCircleElement;
   private readonly dot: SVGCircleElement;
   private readonly strength: SVGLineElement;
+  private readonly tinePath: SVGPathElement;
+  private readonly tineGradient: SVGLinearGradientElement;
+  private readonly tineStops: SVGStopElement[];
 
   private projector: CursorProjector | null = null;
   private surface: SurfaceState | null = null;
@@ -57,6 +87,26 @@ export class BrushCursor {
   /** The mid-stroke reduction in force (setStrokeStyle). */
   private strokeStyle: StrokeStyle = null;
 
+  // The rake's tines (setTines): 0 tines is any other brush.
+  private tineCount = 0;
+  private tineWidth = 0;
+  private tineTaper = -1;
+  /** The stroke's across axis (world), while a rake stroke has one: setTineAxis. */
+  private strokeAxis: [number, number, number] = [0, 0, 0];
+  private hasStrokeAxis = false;
+  /**
+   * The hover direction on screen, smoothed: an axis, not an arrow (a
+   * stroke back and forth lays the tines the same way), so it is kept as
+   * the doubled angle's cosine and sine and averaged in that form. Starts
+   * on the screen horizontal.
+   */
+  private hoverC2 = 1;
+  private hoverS2 = 0;
+  private lastMoveX = NaN;
+  private lastMoveY = NaN;
+  /** The tines last drawn, or null when none were (the tests read it). */
+  tineProbe: TineProbe | null = null;
+
   constructor(container: HTMLElement) {
     const NS = 'http://www.w3.org/2000/svg';
     this.root = document.createElementNS(NS, 'svg');
@@ -74,7 +124,26 @@ export class BrushCursor {
     this.dot.setAttribute('r', '2.5');
     this.strength = document.createElementNS(NS, 'line');
     this.strength.setAttribute('class', 'sculpt-cursor__strength');
-    this.root.append(this.ghostPath, this.ringPath, this.screenRing, this.dot, this.strength);
+    // The rake's tines: every circle in one path, faded toward the edges
+    // by a gradient laid along the across axis when there is a taper.
+    const defs = document.createElementNS(NS, 'defs');
+    this.tineGradient = document.createElementNS(NS, 'linearGradient');
+    const gradientId = `sculpt-cursor-tines-${++tineGradientSeq}`;
+    this.tineGradient.setAttribute('id', gradientId);
+    this.tineGradient.setAttribute('gradientUnits', 'userSpaceOnUse');
+    this.tineStops = [0, 0.5, 1].map((offset) => {
+      const stop = document.createElementNS(NS, 'stop');
+      stop.setAttribute('class', 'sculpt-cursor__tine-stop');
+      stop.setAttribute('offset', String(offset));
+      this.tineGradient.appendChild(stop);
+      return stop;
+    });
+    defs.appendChild(this.tineGradient);
+    this.tinePath = document.createElementNS(NS, 'path');
+    this.tinePath.setAttribute('class', 'sculpt-cursor__tines');
+    this.tinePath.setAttribute('stroke', `url(#${gradientId})`);
+    this.ringPath.classList.add('sculpt-cursor__ring--main');
+    this.root.append(defs, this.ghostPath, this.ringPath, this.tinePath, this.screenRing, this.dot, this.strength);
     container.appendChild(this.root);
     this.applyMode('hidden');
   }
@@ -87,6 +156,9 @@ export class BrushCursor {
   /** Track the pointer (CSS px, container-relative), unless anchored. */
   moveTo(x: number, y: number): void {
     if (this.anchored) return;
+    this.turnTines(x - this.lastMoveX, y - this.lastMoveY);
+    this.lastMoveX = x;
+    this.lastMoveY = y;
     this.x = x;
     this.y = y;
     if (this.mode === 'screen') this.renderScreen();
@@ -183,6 +255,55 @@ export class BrushCursor {
     else if (this.mode === 'screen') this.renderScreen();
   }
 
+  /**
+   * The rake's tines (count, width as a fraction of each tine's slot,
+   * taper 0..1), or a count of 0 for every other brush: the plain ring.
+   * Cheap to call every move: nothing changes unless a value did.
+   */
+  setTines(count: number, width: number, taper: number): void {
+    if (count === this.tineCount && width === this.tineWidth && taper === this.tineTaper) return;
+    const was = this.tineCount;
+    this.tineCount = count > 0 ? count : 0;
+    this.tineWidth = width;
+    this.tineTaper = taper;
+    if ((was > 0) !== (this.tineCount > 0)) this.root.classList.toggle('is-rake', this.tineCount > 0);
+    if (this.tineCount > 0) {
+      // The depth fades as 1 - taper x |centre| across the rake: the
+      // opacity follows it, linear from the middle out to the rim.
+      const edge = TINE_FADE_FLOOR + (1 - TINE_FADE_FLOOR) * (1 - Math.min(1, Math.max(0, taper)));
+      this.tineStops[0].setAttribute('stop-opacity', String(edge));
+      this.tineStops[1].setAttribute('stop-opacity', '1');
+      this.tineStops[2].setAttribute('stop-opacity', String(edge));
+    }
+    if (this.mode === 'surface') this.renderSurface();
+  }
+
+  /**
+   * The across axis a rake stroke is laying its tines on (world space),
+   * or null to go back to the hover direction (the stroke ended, or has
+   * not dabbed yet).
+   */
+  setTineAxis(axis: readonly [number, number, number] | null): void {
+    if (axis) {
+      this.strokeAxis[0] = axis[0];
+      this.strokeAxis[1] = axis[1];
+      this.strokeAxis[2] = axis[2];
+    }
+    this.hasStrokeAxis = !!axis;
+  }
+
+  /** One pointer move's turn of the hover direction (see hoverC2). */
+  private turnTines(dx: number, dy: number): void {
+    const len = Math.hypot(dx, dy);
+    if (!(len >= 0.5)) return; // the first move (NaN), or a still pointer
+    const k = TINE_TURN_RATE * Math.min(1, len / TINE_TURN_PX);
+    // cos 2a and sin 2a of the move's angle a.
+    const c = dx / len;
+    const s = dy / len;
+    this.hoverC2 += (c * c - s * s - this.hoverC2) * k;
+    this.hoverS2 += (2 * c * s - this.hoverS2) * k;
+  }
+
   /** Smooth active (tool 7 or held shift): the whole cursor turns blue. */
   setSmoothing(on: boolean): void {
     this.root.classList.toggle('is-smooth', on);
@@ -210,6 +331,7 @@ export class BrushCursor {
     this.root.dataset.mode = mode;
     this.root.style.display = mode === 'hidden' ? 'none' : '';
     this.ringPath.style.display = mode === 'surface' ? '' : 'none';
+    this.tinePath.style.display = mode === 'surface' ? '' : 'none';
     // The strength line draws in both live modes, so keyboard intensity
     // nudges read on the flashed screen ring too (hover-less pencils).
     this.strength.style.display = mode === 'hidden' ? 'none' : '';
@@ -292,6 +414,7 @@ export class BrushCursor {
     if (this.strokeStyle !== 'dot') {
       this.ringPath.setAttribute('d', this.ringPathData(s.point, s.normal, s.worldRadius));
     }
+    this.renderTines(s);
     // The mirrored ring rides the same projection; an empty d hides it.
     this.ghostPath.setAttribute(
       'd',
@@ -316,6 +439,149 @@ export class BrushCursor {
     } else {
       this.strength.style.visibility = 'hidden';
     }
+  }
+
+  /**
+   * The rake's tines: N circles in the tangent plane, centred on the across
+   * axis at (k + 0.5) / N x 2 - 1 of the radius, each the tine's
+   * half-width, radius x width / N, as RakeBrush cuts them. The across
+   * axis is the stroke's own while a stroke has one (setTineAxis); on
+   * hover it is perpendicular to the smoothed pointer motion, carried onto
+   * the surface through the projection.
+   */
+  private renderTines(s: SurfaceState): void {
+    const N = this.tineCount;
+    const project = this.projector;
+    if (!N || !project) {
+      if (this.tineProbe) {
+        this.tinePath.setAttribute('d', '');
+        this.tineProbe = null;
+      }
+      return;
+    }
+    // Hidden with the ring under the dot-only reduction.
+    if (this.strokeStyle === 'dot') return;
+    const r = s.worldRadius;
+    const [px, py, pz] = s.point;
+    let [nx, ny, nz] = s.normal;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+    // The across axis, a, in the tangent plane.
+    let ax = 0;
+    let ay = 0;
+    let az = 0;
+    let fromStroke = false;
+    if (this.hasStrokeAxis) {
+      // The rake's own axis, as is: it lies in the plane the rake fitted
+      // to the form, which a groove just cut can tilt the picked face's
+      // normal away from. Only one along the normal is no axis.
+      const [x, y, z] = this.strokeAxis;
+      const l = Math.hypot(x, y, z);
+      fromStroke = l > 1e-9 && Math.abs(x * nx + y * ny + z * nz) < 0.9 * l;
+      if (fromStroke) {
+        ax = x;
+        ay = y;
+        az = z;
+      }
+    }
+    if (!fromStroke) {
+      // A tangent basis (e, f), as the ring's.
+      let ex = 1;
+      let ey = 0;
+      let ez = 0;
+      if (Math.abs(ny) < 0.98) {
+        const l = Math.hypot(nz, nx) || 1;
+        ex = nz / l;
+        ez = -nx / l;
+      }
+      const fx = ny * ez - nz * ey;
+      const fy = nz * ex - nx * ez;
+      const fz = nx * ey - ny * ex;
+      // The screen direction, carried onto the surface: solve J [a b] = d
+      // with J the screen images of e and f.
+      const half = Math.atan2(this.hoverS2, this.hoverC2) / 2;
+      const dx = Math.cos(half);
+      const dy = Math.sin(half);
+      const c0 = project(s.point);
+      const c1 = project([px + ex * r, py + ey * r, pz + ez * r]);
+      const c2 = project([px + fx * r, py + fy * r, pz + fz * r]);
+      let wx = ex;
+      let wy = ey;
+      let wz = ez;
+      if (c0 && c1 && c2) {
+        const j1x = c1[0] - c0[0];
+        const j1y = c1[1] - c0[1];
+        const j2x = c2[0] - c0[0];
+        const j2y = c2[1] - c0[1];
+        const det = j1x * j2y - j2x * j1y;
+        if (Math.abs(det) > 1e-6 * (j1x * j1x + j1y * j1y + j2x * j2x + j2y * j2y)) {
+          const a = (dx * j2y - j2x * dy) / det;
+          const b = (j1x * dy - dx * j1y) / det;
+          wx = ex * a + fx * b;
+          wy = ey * a + fy * b;
+          wz = ez * a + fz * b;
+        }
+      }
+      // Across = normal x along.
+      ax = ny * wz - nz * wy;
+      ay = nz * wx - nx * wz;
+      az = nx * wy - ny * wx;
+    }
+    const aLen = Math.hypot(ax, ay, az) || 1;
+    ax /= aLen;
+    ay /= aLen;
+    az /= aLen;
+    // Along = across x normal: the circles' second axis.
+    let bx = ay * nz - az * ny;
+    let by = az * nx - ax * nz;
+    let bz = ax * ny - ay * nx;
+    const bLen = Math.hypot(bx, by, bz) || 1;
+    bx /= bLen;
+    by /= bLen;
+    bz /= bLen;
+    const tr = (r * this.tineWidth) / N;
+    let d = '';
+    for (let k = 0; k < N; k++) {
+      const u = (((k + 0.5) / N) * 2 - 1) * r;
+      const cx = px + ax * u;
+      const cy = py + ay * u;
+      const cz = pz + az * u;
+      let started = false;
+      for (let i = 0; i < TINE_SEGMENTS; i++) {
+        const t = (i / TINE_SEGMENTS) * Math.PI * 2;
+        const ca = Math.cos(t) * tr;
+        const sa = Math.sin(t) * tr;
+        const pt = project([cx + ax * ca + bx * sa, cy + ay * ca + by * sa, cz + az * ca + bz * sa]);
+        if (!pt) {
+          started = false;
+          continue;
+        }
+        d += `${started ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`;
+        started = true;
+      }
+      if (started) d += 'Z';
+    }
+    this.tinePath.setAttribute('d', d);
+    // The taper's fade runs along the across axis, rim to rim.
+    const g0 = project([px - ax * r, py - ay * r, pz - az * r]);
+    const g1 = project([px + ax * r, py + ay * r, pz + az * r]);
+    if (g0 && g1) {
+      this.tineGradient.setAttribute('x1', g0[0].toFixed(1));
+      this.tineGradient.setAttribute('y1', g0[1].toFixed(1));
+      this.tineGradient.setAttribute('x2', g1[0].toFixed(1));
+      this.tineGradient.setAttribute('y2', g1[1].toFixed(1));
+    }
+    const probe = this.tineProbe ?? (this.tineProbe = { count: 0, width: 0, taper: 0, source: 'hover', across: [0, 0, 0], radius: 0 });
+    probe.count = N;
+    probe.width = this.tineWidth;
+    probe.taper = this.tineTaper;
+    probe.source = fromStroke ? 'stroke' : 'hover';
+    probe.across[0] = ax;
+    probe.across[1] = ay;
+    probe.across[2] = az;
+    probe.radius = tr;
   }
 
   private renderScreen(): void {

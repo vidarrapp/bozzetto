@@ -512,11 +512,47 @@ export class InputShell {
     // _radius (dab spacing especially) have to see the current value.
     this.worldScale?.sync();
     const tool = this.currentTool();
+    this.syncCursorTines();
     this.cursor.setBrush(tool._radius, typeof tool._intensity === 'number' ? tool._intensity : null);
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld);
     this.onBrushChange?.();
   }
+
+  /**
+   * The Rake's tines into the cursor (one circle per tine), or none for
+   * every other brush and while Shift smooths. Read on every ring update,
+   * so a knob moved in the Tool panel shows on the next move.
+   */
+  private syncCursorTines(): void {
+    const manager = this.session.getSculptManager();
+    if (manager.getToolIndex() === Enums.Tools.RAKE && !this.shiftHeld) {
+      const rake = manager.getCurrentTool() as unknown as RakeBrush;
+      this.cursor.setTines(rake.tines, rake.tineWidth, rake.taper);
+    } else {
+      this.cursor.setTines(0, 0, 0);
+    }
+  }
+
+  /** A rake stroke's across axis, in world space, into the cursor (null before its first dab). */
+  private syncCursorTineAxis(): void {
+    const manager = this.session.getSculptManager();
+    const rake = manager.getToolIndex() === Enums.Tools.RAKE ? (manager.getCurrentTool() as unknown as RakeBrush) : null;
+    const a = rake?.strokeAcross;
+    const mesh = this.session.getPicking().getMesh();
+    if (!a || !mesh) {
+      this.cursor.setTineAxis(null);
+      return;
+    }
+    const m = mesh.getMatrix();
+    const w = this.tineAxisWorld;
+    w[0] = m[0] * a[0] + m[4] * a[1] + m[8] * a[2];
+    w[1] = m[1] * a[0] + m[5] * a[1] + m[9] * a[2];
+    w[2] = m[2] * a[0] + m[6] * a[1] + m[10] * a[2];
+    this.cursor.setTineAxis(w);
+  }
+
+  private readonly tineAxisWorld: [number, number, number] = [0, 0, 0];
 
   // --- brush value access (side sliders + future palette) -----------------
 
@@ -1175,8 +1211,10 @@ export class InputShell {
     // brushes keep the center dot only; Smooth keeps a dimmed ring. The
     // reduction waits a beat so hover-less pencils see the outline land.
     const strokeTool = s.getSculptManager().getToolIndex();
+    // The Rake keeps its tines too (over a faint ring): where the grooves
+    // run is the thing to watch.
     const strokeStyle =
-      strokeTool === Enums.Tools.SMOOTH || strokeTool === Enums.Tools.PAINT_BLUR
+      strokeTool === Enums.Tools.SMOOTH || strokeTool === Enums.Tools.PAINT_BLUR || strokeTool === Enums.Tools.RAKE
         ? ('dim' as const)
         : ('dot' as const);
     clearTimeout(this.strokeReduceTimer);
@@ -1360,6 +1398,8 @@ export class InputShell {
 
     // The stroke just refreshed picking; reuse it for the ring (no re-pick).
     const strokeSurf = s.hoverSurface(false);
+    this.syncCursorTines();
+    this.syncCursorTineAxis();
     this.cursor.setSurface(
       strokeSurf ? strokeSurf.point : null,
       strokeSurf?.normal,
@@ -1385,6 +1425,8 @@ export class InputShell {
     if (this.pointerId !== -1 || s._action !== Enums.Action.NOTHING) return;
     if (this.presenting || this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld) return;
     const surf = s.hoverSurface(true);
+    this.syncCursorTines();
+    this.cursor.setTineAxis(null);
     if (surf) {
       // The mirror rides along on HOVER only: it shows where symmetry
       // will put the other half (and is the one always-visible sign that
@@ -1451,6 +1493,7 @@ export class InputShell {
     this.pointerId = -1;
     this.strokePointerType = '';
     clearTimeout(this.strokeReduceTimer);
+    this.cursor.setTineAxis(null);
     this.cursor.setStrokeStyle(null);
 
     if (s._action === Enums.Action.SCULPT_EDIT) {
@@ -1732,6 +1775,7 @@ export class InputShell {
       if (edit) this.hooks.focusEdit(edit);
     }
     clearTimeout(this.strokeReduceTimer);
+    this.cursor.setTineAxis(null);
     this.cursor.setStrokeStyle(null);
     this.restoreStrokeTool();
     this.spendArm();
