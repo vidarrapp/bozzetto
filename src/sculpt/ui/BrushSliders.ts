@@ -10,7 +10,8 @@ import '@flaticon/flaticon-uicons/css/bold/straight.css';
 /**
  * Minimal Procreate-style left rail (WS2h review request + undo round): two
  * thin vertical tracks - brush size on top (log-mapped over 5..500 px so
- * small brushes get room), strength below (linear 0..1) - each just a track
+ * small brushes get room), strength below (linear: 0 to 5 cm for the
+ * brushes whose strength is a length, 0..1 for the rest) - each just a track
  * and a nub, the Solo button between them, then undo/redo chips at the foot
  * of the rail, mirroring where
  * Procreate parks its history arrows. Slider values stay live in both
@@ -236,9 +237,14 @@ export class BrushSliders {
       const rect = el.getBoundingClientRect();
       const t = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top) / rect.height));
       if (kind === 'size') this.input.setBrushRadius(Math.exp(LOG_MIN + t * LOG_SPAN));
-      else this.input.setBrushIntensity(t);
+      else {
+        // In the strength's own steps over its travel: hundredths of 1, or
+        // of a centimetre over 0 to 5 cm.
+        const spec = this.input.strengthSpec();
+        this.input.setBrushIntensity(Math.round((t * spec.max) / spec.step) * spec.step);
+      }
       // The value beside the nub while it is dragged (owner rule for sliders).
-      const text = kind === 'size' ? this.sizeText() : `${Math.round(this.input.getBrushIntensity() * 100)}%`;
+      const text = kind === 'size' ? this.sizeText() : this.input.strengthText();
       showSliderBubble(rect.right, rect.bottom - t * rect.height, text, 'right');
     };
     el.addEventListener('pointerdown', (e) => {
@@ -289,16 +295,20 @@ export class BrushSliders {
 
   /**
    * The typed value for a track, in a field beside its nub: the size as
-   * the bubble prints it (sizeText), the strength in percent.
+   * the bubble prints it (sizeText), the strength in cm for a brush whose
+   * strength is a length (to 50 cm), else in percent (to 100%).
    */
   private openField(kind: 'size' | 'strength', el: HTMLElement, nub: HTMLElement): void {
     const size = kind === 'size';
     const display = this.input.brushSizeDisplay();
+    const strength = this.input.strengthSpec();
     const value = size
       ? display.scale === 1
         ? Math.round(this.input.getBrushRadius())
         : Number(formatSliderNumber(this.input.getBrushRadius() * display.scale, display.scale))
-      : Math.round(this.input.getBrushIntensity() * 100);
+      : strength.cm
+        ? Number(formatSliderNumber(this.input.getBrushIntensity(), strength.step))
+        : Math.round(this.input.getBrushIntensity() * 100);
     const track = el.getBoundingClientRect();
     const at = nub.getBoundingClientRect();
     openNumberField(
@@ -312,11 +322,14 @@ export class BrushSliders {
         return () => field.remove();
       },
       (typed) => {
-        const raw = parseTyped(typed);
+        // Millimetres typed into a field in centimetres are read as such.
+        const cm = size ? display.unit.trim() === 'cm' : strength.cm && strength.unit.trim() === 'cm';
+        const raw = parseTyped(typed, cm ? 'cm' : undefined);
         if (!Number.isFinite(raw)) return;
         // Back to slider steps from what was typed (centimetres on real
         // units); a step is the least a brush can be.
         if (size) this.input.setBrushRadius(holdToLimits(raw / display.scale, { min: 1, integer: true }));
+        else if (strength.cm) this.input.setBrushIntensity(holdToLimits(raw, { min: 0, max: strength.limit }));
         else this.input.setBrushIntensity(holdToLimits(raw / 100, { min: 0, max: 1 }));
       },
     );
@@ -326,7 +339,8 @@ export class BrushSliders {
   private refresh(): void {
     const tSize = (Math.log(this.input.getBrushRadius()) - LOG_MIN) / LOG_SPAN;
     this.nubs.size.style.bottom = `${(Math.min(1, Math.max(0, tSize)) * 100).toFixed(1)}%`;
-    this.nubs.strength.style.bottom = `${(this.input.getBrushIntensity() * 100).toFixed(1)}%`;
+    const tStrength = this.input.getBrushIntensity() / this.input.strengthSpec().max;
+    this.nubs.strength.style.bottom = `${(Math.min(1, Math.max(0, tStrength)) * 100).toFixed(1)}%`;
   }
 
   /** Enable/disable the history chips; DOM is touched only on change. */

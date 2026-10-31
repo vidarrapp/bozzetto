@@ -656,6 +656,27 @@ export class ProfileCurve {
     return lut[i] + (lut[i + 1] - lut[i]) * (x - i);
   }
 
+  private integralAt = -1;
+  private integralValue = 0;
+
+  /**
+   * The curve's integral along a line through the dab centre, from rim to
+   * rim: 2 x the integral of sample(t) over [0, 1] (Simpson's rule, 512
+   * intervals, on what the loops read). A dab's falloff summed over a
+   * stroke's dabs `step` apart is about radius / step x this, which is how
+   * the brushes whose Strength is a length share one stroke out among its
+   * dabs. Cached until the curve changes.
+   */
+  lineIntegral(): number {
+    if (this.integralAt === this.revision) return this.integralValue;
+    const n = 512;
+    let s = this.sample(0) + this.sample(1);
+    for (let i = 1; i < n; i++) s += (i % 2 ? 4 : 2) * this.sample(i / n);
+    this.integralValue = (2 * s) / (3 * n);
+    this.integralAt = this.revision;
+    return this.integralValue;
+  }
+
   /** Whether the brush reads the preset's closed form rather than the table. */
   get exactKernel(): boolean {
     return this.kernel !== null;

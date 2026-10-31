@@ -55,6 +55,17 @@ export interface SculptSettings {
   curves?: Record<number, StoredCurve | [number, number][]>;
   /** The curves' format revision (profile.ts PROFILE_REV); a later one is not read. */
   curvesRev?: number;
+  /**
+   * Per-brush Strength, by vendor tool index (InputShell.serializeStrength):
+   * in cm for Clay, Inflate, Crease and the Rake, 0..1 for the rest.
+   */
+  strength?: Record<number, number>;
+  /**
+   * The strength table's revision (InputShell.STRENGTH_REV): 1 since those
+   * four went to cm (2026-10-31). A table without it is read as 0..1
+   * fractions and converted; a later one is not read.
+   */
+  strengthRev?: number;
   /** The tine rake's knobs and the preset they came from (null once edited). */
   rake?: SavedRake;
   /** The Smooth brush's mode (Average or Surface), Surface's relax and its strength. */
@@ -73,6 +84,9 @@ export interface SculptSettings {
 export interface SavedRake {
   tines?: number;
   width?: number;
+  /** The groove one stroke cuts, cm (the Rake's Strength, since 2026-10-31). */
+  strength?: number;
+  /** A record from before the strength in cm: the groove as a fraction of the radius (RakeBrush.set). */
   depth?: number;
   scrape?: number;
   /** A record from before Scrape (2026-10-24): read as the scrape, at the same value. */

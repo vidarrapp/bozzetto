@@ -32,6 +32,7 @@ import { mat3, mat4, vec3 } from 'gl-matrix';
 import {
   ClayStripsBrush,
   CreaseBrush,
+  InflateBrush,
   FlattenBrush,
   PaintBlurBrush,
   PaintBrush,
@@ -326,6 +327,9 @@ export class SculptSession {
     // Crease with its pinch and crest exposed; upstream's numbers are the
     // defaults, so it feels the same until a slider moves.
     this.sculptManager._tools[Enums.Tools.CREASE] = new CreaseBrush(this) as unknown as SculptTool;
+    // Inflate with its strength in cm (owner call, 2026-10-31), as Clay,
+    // Crease and the Rake: how far one stroke pushes the surface.
+    this.sculptManager._tools[Enums.Tools.INFLATE] = new InflateBrush(this) as unknown as SculptTool;
     // Flatten and Paint with their per-dab step capped at 1: a full pen
     // press doubles the slider here, and past 1 Flatten crosses the plane
     // (dents) and Paint's blend extrapolates past the colour.

@@ -5910,10 +5910,23 @@ export const suites = {
     t.eq(Math.round(await held()), 1, 'and the taps themselves left the size alone');
     await typeValue(page, '2.4');
     t.ok(Math.round(await held()) === 120 && !(await floating()), 'what is typed there sizes the brush, and the field goes');
+    // Clay's strength is a length (owner call, 2026-10-31): its field is in
+    // centimetres, held to 50; a capped brush's (Flatten) is in percent.
+    await doubleTap(dev, await track('strength'));
+    field = await floating();
+    const strengthCm = await page.evaluate(() => window.__sculpt.input.getBrushIntensity());
+    t.ok(field?.focused && field.value === String(strengthCm) && strengthCm === 1.5, `clay's strength track's field is in centimetres (${field?.value}, ${strengthCm} cm)`);
+    await typeValue(page, '150');
+    t.eq(await page.evaluate(() => window.__sculpt.input.getBrushIntensity()), 50, 'and a strength in cm is held to 50 cm');
+    await doubleTap(dev, await track('strength'));
+    await typeValue(page, '4 mm');
+    t.eq(await page.evaluate(() => window.__sculpt.input.getBrushIntensity()), 0.4, 'a strength typed in millimetres is read as such (4 mm, 0.4 cm)');
+    await page.evaluate(() => window.__sculpt.input.setBrushIntensity(1.5));
+    await page.keyboard.press('6'); // Flatten
     await doubleTap(dev, await track('strength'));
     field = await floating();
     const strength = Math.round((await page.evaluate(() => window.__sculpt.input.getBrushIntensity())) * 100);
-    t.ok(field?.focused && field.value === String(strength), `the strength track's field is in percent (${field?.value}, ${strength}%)`);
+    t.ok(field?.focused && field.value === String(strength), `a capped brush's strength track's field is in percent (${field?.value}, ${strength}%)`);
     await typeValue(page, '150');
     t.eq(await page.evaluate(() => window.__sculpt.input.getBrushIntensity()), 1, 'and a strength is held to 100%');
   },

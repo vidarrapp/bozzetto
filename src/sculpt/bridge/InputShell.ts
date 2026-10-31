@@ -3,12 +3,26 @@ import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import { DynamicsStore } from './dynamics';
 import { PROFILE_REV, ProfileCurve, type StoredCurve } from './profile';
-import { DEFAULT_RAKE_PRESET, RAKE_PRESETS, RakeBrush, SMOOTH_STRENGTH, StableSmooth } from './tools';
+import {
+  DEFAULT_RAKE_PRESET,
+  RAKE_PRESETS,
+  RakeBrush,
+  SMOOTH_STRENGTH,
+  STRENGTH_CM_LIMIT,
+  STRENGTH_CM_MAX,
+  STRENGTH_CM_SLIDER_STEP,
+  STRENGTH_CM_STEP,
+  StableSmooth,
+  isStrengthCm,
+  legacyStrengthCm,
+  strengthPressureTerm,
+} from './tools';
 import { SURFACE_RELAX } from './surfaceSmooth';
 import { SMOOTH_REV, type SavedRake, type SavedSmooth } from './ScenePersist';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
 import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShouldMoveFocus } from '../../ui/dom';
+import { formatSliderNumber } from '../../ui/sliderEntry';
 import { keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
 import { KEY_DRAG_DEG_PER_PX } from '../../viewer/Lighting';
@@ -183,8 +197,45 @@ const GESTURE_GRACE_MS = 250;
 const STROKE_END_LOG_MS = 16;
 /** Screen-ring feedback duration for keyboard size/strength nudges. */
 const NUDGE_FLASH_MS = 450;
-/** Wheel-key steps (TourBox et al.): intensity per tick; size is ~6%. */
+/**
+ * Wheel-key steps (TourBox et al.): a 0..1 strength's per tick (the ; and '
+ * keys too), and a strength in cm steps STRENGTH_CM_STEP; size is ~6%.
+ */
 const INTENSITY_STEP = 0.03;
+/**
+ * The hold-s drag: a 0..1 strength moves this much per pixel, a strength in
+ * cm STRENGTH_CM_MAX / 200 per pixel (the slider's travel over 200 px, as
+ * the fraction's).
+ */
+const INTENSITY_DRAG_PER_PX = 0.005;
+/**
+ * The strength indicator (owner call, 2026-10-31) shows only while the
+ * strength is being adjusted: s held, a strength slider dragged, the ; '
+ * keys pressed, and this long after the last change.
+ */
+const STRENGTH_LINGER_MS = 900;
+/**
+ * The scene record's strength revision (SculptSettings.strengthRev): 1
+ * since Clay, Inflate, Crease and the Rake took their strength in cm. A
+ * table without it holds 0..1 fractions (legacyStrengthCm).
+ */
+export const STRENGTH_REV = 1;
+
+/** How a brush's Strength is measured and shown (InputShell.strengthSpec). */
+export interface StrengthSpec {
+  /** A length in cm (Clay, Inflate, Crease, the Rake), or a 0..1 fraction. */
+  cm: boolean;
+  /** The sliders' travel: 0 to this. */
+  max: number;
+  /** What a typed value is held to: 0 to this. */
+  limit: number;
+  /** The sliders' step. */
+  step: number;
+  /** The ; and ' keys' step. */
+  keyStep: number;
+  /** Printed after a cm value: ' cm' on real units, nothing in a scene from before them. */
+  unit: string;
+}
 /**
  * Turntable stepping, retuned after wheel testing: a degree per tick was
  * too coarse to creep with and 8 degrees too slow to spin with, so the base
@@ -514,9 +565,34 @@ export class InputShell {
     const tool = this.currentTool();
     this.syncCursorTines();
     this.cursor.setBrush(tool._radius, typeof tool._intensity === 'number' ? tool._intensity : null);
+    this.syncCursorStrength();
     const idx = this.session.getSculptManager().getToolIndex();
     this.cursor.setSmoothing(idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || this.shiftHeld);
     this.onBrushChange?.();
+  }
+
+  /**
+   * What the strength indicator draws for the brush in hand (BrushCursor
+   * setStrength): for a strength in cm, a line along the normal as tall as
+   * a stroke pushes at the current pressure (a pen's when one is pressed,
+   * else full: a mouse, a finger or a hovering pen), with the value beside
+   * it; for a 0..1 strength the value alone. The brush's world radius lets
+   * the screen ring off the model draw the line to the same scale.
+   */
+  private syncCursorStrength(): void {
+    const tool = this.currentTool();
+    if (typeof tool._intensity !== 'number') {
+      this.cursor.setStrength(null);
+      return;
+    }
+    const spec = this.strengthSpec();
+    if (!spec.cm) {
+      this.cursor.setStrength({ length: null, label: this.strengthText(), worldRadius: 0 });
+      return;
+    }
+    const pressure = Tablet.pen && Tablet.pressure > 0 ? strengthPressureTerm() : 1;
+    const worldRadius = this.worldScale?.isEnabled() ? this.worldScale.worldRadius() : this.session.getPicking().getWorldRadius();
+    this.cursor.setStrength({ length: tool._intensity * pressure, label: this.strengthText(), worldRadius });
   }
 
   /**
@@ -587,6 +663,25 @@ export class InputShell {
   getBrushIntensity(): number {
     const i = this.currentTool()._intensity;
     return typeof i === 'number' ? i : 0;
+  }
+
+  /**
+   * How the brush in hand's Strength is measured (owner call, 2026-10-31):
+   * a length in cm for the brushes that push the surface (Clay, Inflate,
+   * Crease, the Rake), 0 to 5 on the sliders and up to 50 typed; a 0..1
+   * fraction for the rest, the capped brushes and Move.
+   */
+  strengthSpec(tool: number = this.currentToolIndex()): StrengthSpec {
+    if (isStrengthCm(this.session.getSculptManager().getTool(tool))) {
+      return { cm: true, max: STRENGTH_CM_MAX, limit: STRENGTH_CM_LIMIT, step: STRENGTH_CM_SLIDER_STEP, keyStep: STRENGTH_CM_STEP, unit: this.session.getUnits() ? ' cm' : '' };
+    }
+    return { cm: false, max: 1, limit: 1, step: 0.01, keyStep: INTENSITY_STEP, unit: '' };
+  }
+
+  /** The strength as the rail's bubble and the indicator print it: "0.30 cm", or "75%". */
+  strengthText(v = this.getBrushIntensity()): string {
+    const spec = this.strengthSpec();
+    return spec.cm ? `${formatSliderNumber(v, spec.step)}${spec.unit}` : `${Math.round(v * 100)}%`;
   }
 
   /** Whether the paint brush is the active tool (drives its palette rows). */
@@ -927,9 +1022,87 @@ export class InputShell {
   }
 
   setBrushIntensity(v: number): void {
-    this.currentTool()._intensity = Math.min(1, Math.max(0, v));
+    this.applyIntensity(v);
     this.syncCursorBrush();
     this.centerFlash();
+    this.showStrength();
+  }
+
+  /**
+   * Set the brush in hand's strength, held to its own limits (0..1, or 0 to
+   * 50 cm); the Rake re-reads its preset, whose strength it may no longer
+   * be. Strength rides the scene record: the autosave hears of it.
+   */
+  private applyIntensity(v: number): void {
+    const tool = this.currentTool();
+    if (typeof tool._intensity !== 'number' || !Number.isFinite(v)) return;
+    // To a billionth: a slider's steps land on 0.3, not 0.30000000000000004,
+    // so the Rake's preset still knows its strength.
+    tool._intensity = Math.round(Math.min(this.strengthSpec().limit, Math.max(0, v)) * 1e9) / 1e9;
+    const rake = tool as unknown as RakeBrush;
+    if (rake instanceof RakeBrush) rake.set({});
+    this.onBrushSettingsChange?.();
+  }
+
+  private strengthTimer = 0;
+
+  /**
+   * The strength indicator, up: held while s is, else until
+   * STRENGTH_LINGER_MS after the last change (owner call, 2026-10-31: it
+   * shows only while the strength is being adjusted).
+   */
+  private showStrength(): void {
+    window.clearTimeout(this.strengthTimer);
+    this.cursor.setStrengthShown(true);
+    if (this.adjust === 'intensity') return;
+    this.strengthTimer = window.setTimeout(() => {
+      if (this.adjust !== 'intensity') this.cursor.setStrengthShown(false);
+    }, STRENGTH_LINGER_MS);
+  }
+
+  /** Every brush's strength, for the scene record (SculptSettings.strength, in its strengthRev units). */
+  serializeStrength(): Record<number, number> {
+    const out: Record<number, number> = {};
+    const tools = this.session.getSculptManager()._tools;
+    for (let i = 0; i < tools.length; i++) {
+      // Smooth's strength rides its own record; the stand-ins take theirs
+      // from the brush in hand (Paint blur) or keep the vendor's (Mask).
+      if (i === Enums.Tools.SMOOTH || i === Enums.Tools.PAINT_BLUR || i === Enums.Tools.MASKING) continue;
+      const v = tools[i]?._intensity;
+      if (typeof v === 'number' && Number.isFinite(v)) out[i] = v;
+    }
+    return out;
+  }
+
+  /**
+   * Restore the strengths from a scene record, each held to its brush's
+   * limits; a brush the table leaves out keeps what it has. `rev` is the
+   * record's strengthRev: without it the table holds 0..1 fractions, and a
+   * brush whose strength is in cm now takes the cm that fraction of its
+   * default works out to at the default size (legacyStrengthCm), never past
+   * the slider's travel. A record of a later revision than this build reads
+   * is left alone. Silently: restoring is not an edit.
+   */
+  loadStrength(table: Record<number, number> | undefined, rev?: number): void {
+    if (!table || typeof table !== 'object') return;
+    if (rev !== undefined && rev > STRENGTH_REV) return;
+    const tools = this.session.getSculptManager()._tools;
+    for (const [key, value] of Object.entries(table)) {
+      const idx = Number(key);
+      const tool = tools[idx];
+      if (!tool || typeof tool._intensity !== 'number' || typeof value !== 'number' || !Number.isFinite(value)) continue;
+      if (idx === Enums.Tools.SMOOTH || idx === Enums.Tools.PAINT_BLUR || idx === Enums.Tools.MASKING) continue;
+      const spec = this.strengthSpec(idx);
+      let v = value;
+      if (spec.cm && !(Number(rev) >= 1)) {
+        const cm = legacyStrengthCm(idx, value);
+        if (cm === null) continue;
+        v = cm;
+      }
+      tool._intensity = Math.min(spec.limit, Math.max(0, v));
+      const rake = tool as unknown as RakeBrush;
+      if (rake instanceof RakeBrush) rake.set({});
+    }
   }
 
   /** Preview ring mid-viewport while a slider drags (Procreate-style). */
@@ -1328,12 +1501,15 @@ export class InputShell {
       const dy = this.adjustLastY - e.clientY;
       this.adjustLastX = e.clientX;
       this.adjustLastY = e.clientY;
-      const tool = this.currentTool();
       if (this.adjust === 'radius') {
         const r = this.getBrushRadius();
         this.setBrushRadius(nudgeWithin(r, r + dx, RADIUS_MIN, RADIUS_MAX));
-      } else {
-        tool._intensity = Math.min(1, Math.max(0, tool._intensity + dy * 0.005));
+      } else if (dy !== 0) {
+        // Up is stronger, over the slider's travel in 200 px; a strength
+        // typed past the travel is not yanked back inside it.
+        const spec = this.strengthSpec();
+        const i = this.getBrushIntensity();
+        this.applyIntensity(nudgeWithin(i, i + dy * INTENSITY_DRAG_PER_PX * spec.max, 0, spec.max));
       }
       this.syncCursorBrush();
       return;
@@ -1922,7 +2098,7 @@ export class InputShell {
         return this.claim(e);
       case 'brush.strengthDown':
       case 'brush.strengthUp':
-        this.nudgeIntensity((action.id === 'brush.strengthUp' ? 1 : -1) * INTENSITY_STEP);
+        this.nudgeIntensity(action.id === 'brush.strengthUp' ? 1 : -1);
         return this.claim(e);
       case 'view.turnLeft':
       case 'view.turnRight': {
@@ -2098,11 +2274,17 @@ export class InputShell {
     this.cursor.flashScreen(NUDGE_FLASH_MS);
   }
 
-  private nudgeIntensity(delta: number): void {
-    const tool = this.currentTool();
-    tool._intensity = Math.min(1, Math.max(0, tool._intensity + delta));
+  /** One step of strength, up (1) or down (-1): STRENGTH_CM_STEP for a strength in cm, else INTENSITY_STEP. */
+  private nudgeIntensity(dir: number): void {
+    if (!this.hasBrushIntensity()) return;
+    const spec = this.strengthSpec();
+    const i = this.getBrushIntensity();
+    // On the step's grid, so a few presses from 0.32 read 0.35, 0.40.
+    const next = spec.cm ? (Math.round(i / spec.keyStep) + dir) * spec.keyStep : i + dir * spec.keyStep;
+    this.applyIntensity(nudgeWithin(i, Math.round(next * 1e6) / 1e6, 0, spec.max));
     this.syncCursorBrush();
     this.cursor.flashScreen(NUDGE_FLASH_MS);
+    this.showStrength();
   }
 
   private beginAdjust(mode: Exclude<AdjustMode, null>): void {
@@ -2111,12 +2293,16 @@ export class InputShell {
     this.cursor.beginAnchorScale(this.currentTool()._radius);
     this.cursor.setAnchored(true);
     this.syncCursorBrush();
+    if (mode === 'intensity') this.showStrength();
   }
 
   private endAdjust(): void {
+    const was = this.adjust;
     this.adjust = null;
     this.adjustPointer = -1;
     this.cursor.setAnchored(false);
+    // The indicator lingers a moment after s goes up.
+    if (was === 'intensity') this.showStrength();
   }
 
   /** Window lost focus: every held-key mode ends, since no keyup will come. */

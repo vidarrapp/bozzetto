@@ -4,10 +4,15 @@
  * by PROJECTING a world-space circle to screen each update:
  *
  * - On a surface hit: a ring around the picked point in the tangent plane,
- *   at the true world brush radius, plus a center dot and a strength line
- *   along the normal (length = radius x intensity).
+ *   at the true world brush radius, plus a center dot.
  * - Off the mesh (only when the caller asks: the b/s size adjustment and
  *   the slider and keyboard nudges): a screen-space ring at the pointer.
+ * - The strength indicator (owner call, 2026-10-31), only while the
+ *   strength is being adjusted (setStrengthShown; InputShell decides when):
+ *   for a brush whose strength is a length, a line from the centre along
+ *   the surface normal as tall as a stroke pushes (setStrength), with the
+ *   value beside it; for a 0..1 strength (the capped brushes, Move) the
+ *   value alone, no line, since that strength is no height.
  *
  * Projection replaced the old scene-side Line ring deliberately: WebGPU
  * caps GL lines at one device pixel, which vanished on high-resolution
@@ -49,6 +54,30 @@ export interface TineProbe {
 
 type StrokeStyle = null | 'dot' | 'dim';
 
+/** What the strength indicator last drew (the tests read it). */
+export interface StrengthProbe {
+  shown: boolean;
+  /** The line's world length (null: a 0..1 strength, no line). */
+  length: number | null;
+  label: string;
+  /** The line's ends on screen, CSS px (null when no line is drawn). */
+  from: [number, number] | null;
+  to: [number, number] | null;
+  /** The surface point and unit normal the line stands on (null in screen mode). */
+  point: [number, number, number] | null;
+  normal: [number, number, number] | null;
+}
+
+/** The strength indicator's content (InputShell.syncCursorStrength). */
+export interface StrengthInfo {
+  /** World length of the line: strength in cm x the pressure term; null for a 0..1 strength. */
+  length: number | null;
+  /** The value beside it: "0.30 cm", "75%". */
+  label: string;
+  /** The brush's world radius, to scale the line on the screen ring off the model (0: unknown). */
+  worldRadius: number;
+}
+
 /** World -> container CSS px; null when the point is behind the camera. */
 export type CursorProjector = (p: [number, number, number]) => [number, number] | null;
 
@@ -65,6 +94,7 @@ export class BrushCursor {
   private readonly screenRing: SVGCircleElement;
   private readonly dot: SVGCircleElement;
   private readonly strength: SVGLineElement;
+  private readonly strengthLabel: SVGTextElement;
   private readonly tinePath: SVGPathElement;
   private readonly tineGradient: SVGLinearGradientElement;
   private readonly tineStops: SVGStopElement[];
@@ -79,9 +109,12 @@ export class BrushCursor {
   private x = 0;
   private y = 0;
   private radiusCss = 50;
-  private intensity = 0.5;
-  /** False for tools without a strength (Drag): no line to draw. */
-  private hasStrength = true;
+  /** The indicator's content, or null for a tool without a strength (Drag). */
+  private strengthInfo: StrengthInfo | null = null;
+  /** Whether the strength is being adjusted, which is when the indicator shows. */
+  private strengthShown = false;
+  /** What the indicator last drew (the tests read it). */
+  readonly strengthProbe: StrengthProbe = { shown: false, length: null, label: '', from: null, to: null, point: null, normal: null };
   private lastAnchorCss = 0;
   private anchorWorldRadius = 0;
   /** The mid-stroke reduction in force (setStrokeStyle). */
@@ -124,6 +157,8 @@ export class BrushCursor {
     this.dot.setAttribute('r', '2.5');
     this.strength = document.createElementNS(NS, 'line');
     this.strength.setAttribute('class', 'sculpt-cursor__strength');
+    this.strengthLabel = document.createElementNS(NS, 'text');
+    this.strengthLabel.setAttribute('class', 'sculpt-cursor__strength-label');
     // The rake's tines: every circle in one path, faded toward the edges
     // by a gradient laid along the across axis when there is a taper.
     const defs = document.createElementNS(NS, 'defs');
@@ -143,7 +178,7 @@ export class BrushCursor {
     this.tinePath.setAttribute('class', 'sculpt-cursor__tines');
     this.tinePath.setAttribute('stroke', `url(#${gradientId})`);
     this.ringPath.classList.add('sculpt-cursor__ring--main');
-    this.root.append(defs, this.ghostPath, this.ringPath, this.tinePath, this.screenRing, this.dot, this.strength);
+    this.root.append(defs, this.ghostPath, this.ringPath, this.tinePath, this.screenRing, this.dot, this.strength, this.strengthLabel);
     container.appendChild(this.root);
     this.applyMode('hidden');
   }
@@ -240,19 +275,31 @@ export class BrushCursor {
   }
 
   /**
-   * Update to the tool's screen radius (CSS px) and strength (0..1). A
-   * null strength is a tool with none (Drag moves as far as the pointer
-   * goes): the strength line is not drawn at all rather than drawn wrong.
+   * Update to the tool's screen radius (CSS px). Its strength is
+   * setStrength's: a tool with none (Drag moves as far as the pointer
+   * goes) draws no indicator at all rather than one drawn wrong.
    */
   setBrush(radiusCss: number, intensity: number | null): void {
-    this.hasStrength = intensity !== null;
-    this.intensity = Math.min(1, Math.max(0, intensity ?? 0));
+    if (intensity === null) this.strengthInfo = null;
     this.radiusCss = Math.max(2, radiusCss);
     if (this.anchored && this.surface && this.lastAnchorCss > 0 && this.anchorWorldRadius > 0) {
       this.surface.worldRadius = this.anchorWorldRadius * (this.radiusCss / this.lastAnchorCss);
     }
     if (this.mode === 'surface') this.renderSurface();
     else if (this.mode === 'screen') this.renderScreen();
+  }
+
+  /** The strength indicator's content (null: a tool without a strength). Drawn while shown. */
+  setStrength(info: StrengthInfo | null): void {
+    this.strengthInfo = info;
+    this.renderStrength();
+  }
+
+  /** Show or hide the strength indicator (InputShell: only while the strength is adjusted). */
+  setStrengthShown(on: boolean): void {
+    if (on === this.strengthShown) return;
+    this.strengthShown = on;
+    this.renderStrength();
   }
 
   /**
@@ -332,10 +379,10 @@ export class BrushCursor {
     this.root.style.display = mode === 'hidden' ? 'none' : '';
     this.ringPath.style.display = mode === 'surface' ? '' : 'none';
     this.tinePath.style.display = mode === 'surface' ? '' : 'none';
-    // The strength line draws in both live modes, so keyboard intensity
-    // nudges read on the flashed screen ring too (hover-less pencils).
-    this.strength.style.display = mode === 'hidden' ? 'none' : '';
     this.screenRing.style.display = mode === 'screen' ? '' : 'none';
+    // The strength indicator draws in both live modes, so keyboard nudges
+    // read on the flashed screen ring too (hover-less pencils).
+    this.renderStrength();
   }
 
   /** Project the world-space ring/dot/strength line into the SVG. */
@@ -397,7 +444,6 @@ export class BrushCursor {
     const s = this.surface;
     const project = this.projector;
     if (!s || !project) return;
-    const [px, py, pz] = s.point;
     const center = project(s.point);
     if (!center) {
       // Behind the camera: blank the overlay but keep mode + cache so a
@@ -423,21 +469,71 @@ export class BrushCursor {
 
     this.dot.setAttribute('cx', String(center[0]));
     this.dot.setAttribute('cy', String(center[1]));
+    this.renderStrength();
+  }
 
-    // The strength line points along the surface normal, scaled by the
-    // brush intensity.
-    const [rawX, rawY, rawZ] = s.normal;
-    const nLen = Math.hypot(rawX, rawY, rawZ) || 1;
-    const tipLen = (s.worldRadius * this.intensity) / nLen;
-    const tip = project([px + rawX * tipLen, py + rawY * tipLen, pz + rawZ * tipLen]);
-    if (tip && this.hasStrength) {
-      this.strength.setAttribute('x1', String(center[0]));
-      this.strength.setAttribute('y1', String(center[1]));
-      this.strength.setAttribute('x2', String(tip[0]));
-      this.strength.setAttribute('y2', String(tip[1]));
-      this.strength.style.visibility = '';
+  /**
+   * The strength indicator, while shown: on the surface, a line from the
+   * centre along the unit normal, the strength's world length (a stroke's
+   * push at the current pressure); on the screen ring off the model, a
+   * vertical line scaled as the ring is (the brush's world radius to its
+   * screen radius). The value sits beside the line's tip, or beside the
+   * dot for a 0..1 strength, which draws no line.
+   */
+  private renderStrength(): void {
+    const info = this.strengthInfo;
+    const probe = this.strengthProbe;
+    const live = this.strengthShown && !!info && (this.mode === 'surface' || this.mode === 'screen');
+    probe.shown = live;
+    probe.length = info?.length ?? null;
+    probe.label = info?.label ?? '';
+    probe.from = null;
+    probe.to = null;
+    probe.point = null;
+    probe.normal = null;
+    if (!live || !info) {
+      this.strength.style.display = 'none';
+      this.strengthLabel.style.display = 'none';
+      return;
+    }
+    let from: [number, number] | null = null;
+    let to: [number, number] | null = null;
+    if (this.mode === 'surface' && this.surface && this.projector) {
+      const s = this.surface;
+      from = this.projector(s.point);
+      if (from && info.length !== null) {
+        const [nx, ny, nz] = s.normal;
+        const l = Math.hypot(nx, ny, nz) || 1;
+        const n: [number, number, number] = [nx / l, ny / l, nz / l];
+        const h = info.length;
+        to = this.projector([s.point[0] + n[0] * h, s.point[1] + n[1] * h, s.point[2] + n[2] * h]);
+        probe.point = [s.point[0], s.point[1], s.point[2]];
+        probe.normal = n;
+      }
+    } else if (this.mode === 'screen') {
+      from = [this.x, this.y];
+      if (info.length !== null && info.worldRadius > 0) to = [this.x, this.y - (this.radiusCss * info.length) / info.worldRadius];
+    }
+    if (from && to) {
+      this.strength.setAttribute('x1', from[0].toFixed(1));
+      this.strength.setAttribute('y1', from[1].toFixed(1));
+      this.strength.setAttribute('x2', to[0].toFixed(1));
+      this.strength.setAttribute('y2', to[1].toFixed(1));
+      this.strength.style.display = '';
+      probe.from = from;
+      probe.to = to;
     } else {
-      this.strength.style.visibility = 'hidden';
+      this.strength.style.display = 'none';
+    }
+    if (from) {
+      // Beside the tip, or the dot; to the right, clear of the line.
+      const at = to ?? from;
+      this.strengthLabel.setAttribute('x', (at[0] + 8).toFixed(1));
+      this.strengthLabel.setAttribute('y', (at[1] + 4).toFixed(1));
+      this.strengthLabel.textContent = info.label;
+      this.strengthLabel.style.display = '';
+    } else {
+      this.strengthLabel.style.display = 'none';
     }
   }
 
@@ -590,11 +686,7 @@ export class BrushCursor {
     this.screenRing.setAttribute('r', String(this.radiusCss));
     this.dot.setAttribute('cx', String(this.x));
     this.dot.setAttribute('cy', String(this.y));
-    this.strength.setAttribute('x1', String(this.x));
-    this.strength.setAttribute('y1', String(this.y));
-    this.strength.setAttribute('x2', String(this.x));
-    this.strength.setAttribute('y2', String(this.y - this.radiusCss * this.intensity));
-    this.strength.style.visibility = '';
+    this.renderStrength();
   }
 
   dispose(): void {

@@ -2,7 +2,8 @@
 // N tines across the brush, perpendicular to the stroke, each cutting a
 // groove. Since 2026-10-24 a standard brush (owner call): each dab
 // displaces along the normal and the dabs add up, so one stroke cuts the
-// Depth, a second cuts deeper, and Invert raises ridges on any form.
+// Strength (in cm since 2026-10-31, where it was a Depth, a fraction of the
+// radius), a second cuts deeper, and Invert raises ridges on any form.
 // Scrape (replacing Plateau) planes the footprint before the tines cut;
 // Taper fades the outer tines; pressure scales the depth.
 //
@@ -11,8 +12,8 @@
 // on a sphere primitive, across its front:
 // - a stroke with N tines leaves N grooves (local minima across it), for
 //   two tine counts on the plane and on the sphere;
-// - one stroke at the default spacing and full pressure cuts about depth
-//   x radius, and a second pass cuts deeper;
+// - one stroke at the default spacing and full pressure cuts about the
+//   strength, 0.3 cm on Coarse, and a second pass cuts deeper;
 // - depth follows pen pressure (half the press, half the groove);
 // - Invert raises N ridges on the plane and on the sphere: a convex form,
 //   where the old clay-style rake raised nothing;
@@ -20,10 +21,12 @@
 //   1 planes it flat; on a rippled plane, Scrape 0 leaves the ripples and
 //   1 levels them, the grooves cut into the flat;
 // - Taper makes the outer grooves shallower than the inner ones;
-// - the Tool panel: the presets set the knobs (Scrape among them) and the
-//   tine profile, a knob moved after unlights the preset, the rake's
-//   settings ride the scene file, and a record from before Scrape, with
-//   a `plateau`, opens with it as the scrape;
+// - the Tool panel: no Depth row; the presets set the knobs (Scrape and the
+//   strength in cm among them) and the tine profile, a knob moved after
+//   unlights the preset, the rake's settings ride the scene file, a record
+//   from before Scrape, with a `plateau`, opens with it as the scrape, and
+//   one from before the strength in cm, with a `depth`, opens with that
+//   fraction of 3 cm as the strength;
 // - the brush cursor: with the Rake in hand, hovering the plane draws one
 //   circle per tine (4 for Coarse, 12 for Comb) inside a faint ring, at
 //   the tines' spacing and half-width, laid across the hover motion (a
@@ -393,7 +396,7 @@ export const suites = {
         `the tines lie across the stroke (across ${s.dab.across.map((x) => x.toFixed(2))}, the first dab aimed from the press)`,
       );
       if (tines === 4) {
-        t.ok(Math.abs(deepest(s) - s.reach) < 0.25 * s.reach, `one stroke at the default spacing cuts about depth x radius (${deepest(s).toFixed(3)} for ${s.reach.toFixed(3)})`);
+        t.ok(Math.abs(s.reach - 0.3) < 1e-9 && Math.abs(deepest(s) - s.reach) < 0.25 * s.reach, `one stroke at the default spacing cuts about the strength, 0.3 cm (${deepest(s).toFixed(3)} for ${s.reach.toFixed(3)})`);
         t.ok(Math.max(...s.col.map(([, , h]) => h)) < 1e-4, 'and raises nothing');
         t.ok(Math.abs(s.dab.spacingFactor * 1.2 - s.dab.stepLocal / s.r) < 1e-6 && Math.abs(s.dab.stepLocal / s.r - 0.06) < 0.02, `each dab cuts its share, step / (1.2 x radius) (step ${(s.dab.stepLocal / s.r).toFixed(3)} of the radius)`);
       }
@@ -483,10 +486,10 @@ export const suites = {
     // Mid-stroke: the stroke's own across axis, and the tines stay drawn.
     // The drag's direction on the plane, measured before it cuts (the
     // picking is the stroke's own once it starts). The drag cuts nothing
-    // (Depth 0, Scrape 0): the rake aims each dab from the last one's
+    // (Strength 0, Scrape 0): the rake aims each dab from the last one's
     // picked point, and grooves cut under the pointer would move those
     // points and turn its axis a little off the drag.
-    await page.evaluate(cursorSetup, { preset: 'coarse', knobs: { depth: 0, scrape: 0 } });
+    await page.evaluate(cursorSetup, { preset: 'coarse', knobs: { strength: 0, scrape: 0 } });
     const { motion: diagonal } = await page.evaluate(cursorRead, { at: [mid[0] + 10, mid[1] + 10], dir: [10, 10] });
     await page.mouse.move(mid[0] - 30, mid[1] - 30);
     await page.mouse.down();
@@ -541,21 +544,21 @@ export const suites = {
       const g = dips(s.col, 0.5 * s.reach, s.r / tines);
       t.ok(s.hitPlane && s.count > 20 && s.col.length > 20, `the ${tines}-tine stroke lands on the sphere (${s.count} dabs, ${s.col.length} vertices in the column, radius ${(s.r / s.R).toFixed(2)} of the sphere's)`);
       t.eq(g.length, tines, `${tines} tines cut ${tines} grooves into the sphere (at ${g.map(([y, , h]) => `${(y / s.r).toFixed(2)}:${(h / s.reach).toFixed(2)}`).join(', ')})`);
-      t.ok(Math.abs(deepest(s) - s.reach) < 0.25 * s.reach, `about depth x radius deep (${deepest(s).toFixed(4)} for ${s.reach.toFixed(4)})`);
+      t.ok(Math.abs(deepest(s) - s.reach) < 0.25 * s.reach, `about the strength deep (${deepest(s).toFixed(4)} for ${s.reach.toFixed(4)})`);
     }
     // The regression: Invert on a convex form raises even ridges of the
     // depth asked (the old rake aimed each vertex at a height over a plane
     // fitted per dab, raising only what lay below it: on a sphere, a
     // ridge's height came from how far below the passing dabs' planes it
     // sat, the outer ones 2.5 times the depth here, the inner ones 1.1).
-    const sInv = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { depth: 0.04, scrape: 0, invert: true } });
+    const sInv = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { strength: 0.25, scrape: 0, invert: true } });
     const ridges = dips(flip(sInv.col), 0.5 * sInv.reach, sInv.r / 4);
     const rise = Math.max(...sInv.col.map(([, , h]) => h));
     t.ok(
       ridges.length === 4 && ridges.every(([, , h]) => Math.abs(-h / sInv.reach - 1) < 0.25),
-      `Invert raises 4 ridges on the sphere, each depth x radius above the surface, within a quarter (at ${ridges.map(([y, , h]) => `${(y / sInv.r).toFixed(2)}:${(-h / sInv.reach).toFixed(2)}`).join(', ')} of the radius and the depth)`,
+      `Invert raises 4 ridges on the sphere, each the strength above the surface, within a quarter (at ${ridges.map(([y, , h]) => `${(y / sInv.r).toFixed(2)}:${(-h / sInv.reach).toFixed(2)}`).join(', ')} of the radius and the depth)`,
     );
-    t.ok(rise > 0.75 * sInv.reach && Math.min(...sInv.col.map(([, , h]) => h)) > -1e-3 * sInv.R, `standing about depth x radius proud of the surface (${rise.toFixed(4)} for ${sInv.reach.toFixed(4)})`);
+    t.ok(rise > 0.75 * sInv.reach && Math.min(...sInv.col.map(([, , h]) => h)) > -1e-3 * sInv.R, `standing about the strength proud of the surface (${rise.toFixed(4)} for ${sInv.reach.toFixed(4)})`);
     // Scrape: the curvature between the grooves kept at 0, planed at 1.
     const s0 = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { width: 0.4, scrape: 0 } });
     const s1 = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { width: 0.4, scrape: 1 } });
@@ -583,8 +586,8 @@ export const suites = {
       };
     });
     t.ok(
-      ['Tines', 'Tine width', 'Depth', 'Scrape', 'Taper'].every((c) => rows.captions.includes(c)) && !rows.captions.includes('Plateau') && rows.invert && rows.curves.join() === 'Tine profile',
-      `the rake's rows: ${rows.captions.join(', ')}, Invert, ${rows.curves.join()}`,
+      ['Strength', 'Tines', 'Tine width', 'Scrape', 'Taper'].every((c) => rows.captions.includes(c)) && !rows.captions.includes('Plateau') && !rows.captions.includes('Depth') && rows.invert && rows.curves.join() === 'Tine profile',
+      `the rake's rows, with no Depth (the Strength is the groove, in cm): ${rows.captions.join(', ')}, Invert, ${rows.curves.join()}`,
     );
     t.ok(!rows.hints.some((h) => /Depth follows|Plateau/.test(h)), `and no depth hint under them (owner call, 2026-10-24: ${JSON.stringify(rows.hints)})`);
     t.ok(rows.presets.join() === 'Fine,Comb,Coarse,Chisel,Scraper' && rows.tinePresets.join() === 'Round,V,Flat,Soft', `its presets (${rows.presets.join(', ')}) and the tine profiles (${rows.tinePresets.join(', ')})`);
@@ -598,17 +601,39 @@ export const suites = {
       return page.evaluate(() => {
         const tool = window.__sculpt.session.getSculptManager().getTool(13);
         const slider = (c) => Number([...document.querySelectorAll('.panel--sculpt label.compact')].find((r) => r.firstElementChild?.textContent === c)?.querySelector('input')?.value);
-        return { ...tool.settings(), curve: tool.curve.presetId, preset: tool.presetId, slider: slider('Tines'), scrapeSlider: slider('Scrape'), lit: document.querySelector('.panel--sculpt .sculpt-panel__presets .sculpt-panel__btn--on')?.textContent };
+        return {
+          ...tool.settings(),
+          intensity: tool._intensity,
+          curve: tool.curve.presetId,
+          preset: tool.presetId,
+          slider: slider('Tines'),
+          scrapeSlider: slider('Scrape'),
+          strengthSlider: slider('Strength'),
+          rail: parseFloat(document.querySelector('.sculpt-slider[data-kind="strength"] .sculpt-slider__nub').style.bottom),
+          lit: document.querySelector('.panel--sculpt .sculpt-panel__presets .sculpt-panel__btn--on')?.textContent,
+        };
       });
     };
-    const want = { Fine: [8, 'v', 0.15], Comb: [12, 'round', 0.1], Coarse: [4, 'round', 0.25], Chisel: [3, 'flat', 0.5], Scraper: [5, 'flat', 1] };
-    for (const [label, [tines, curve, scrape]] of Object.entries(want)) {
+    const want = { Fine: [8, 'v', 0.15, 0.15], Comb: [12, 'round', 0.1, 0.12], Coarse: [4, 'round', 0.25, 0.3], Chisel: [3, 'flat', 0.5, 0.25], Scraper: [5, 'flat', 1, 0.15] };
+    for (const [label, [tines, curve, scrape, cm]] of Object.entries(want)) {
       const got = await pick(label);
       t.ok(
         got.tines === tines && got.curve === curve && got.scrape === scrape && got.taper === 0 && got.preset === label.toLowerCase() && got.slider === tines && got.scrapeSlider === scrape && got.lit === label,
         `${label}: ${tines} ${curve} tines, Scrape ${scrape}, the sliders and the lit button with it (${JSON.stringify(got)})`,
       );
+      t.ok(
+        got.strength === cm && got.intensity === cm && got.strengthSlider === cm && Math.abs(got.rail - (cm / 5) * 100) < 0.11,
+        `${label} sets the strength to ${cm} cm, the Tool panel's Strength and the rail's nub with it (${got.intensity}, slider ${got.strengthSlider}, nub ${got.rail}%)`,
+      );
     }
+    // The strength moved from the rail unlights the preset, as a knob does.
+    const strengthMoved = await page.evaluate(() => {
+      const { input, session } = window.__sculpt;
+      const tool = session.getSculptManager().getTool(13);
+      input.setBrushIntensity(0.4);
+      return { strength: tool._intensity, preset: tool.presetId, lit: document.querySelectorAll('.panel--sculpt .sculpt-panel__presets .sculpt-panel__btn--on').length };
+    });
+    t.ok(strengthMoved.strength === 0.4 && strengthMoved.preset === null && strengthMoved.lit === 0, `a strength moved off the preset's (the rail, 0.4 cm) unlights it (${JSON.stringify(strengthMoved)})`);
     await pick('Chisel');
     // A knob moved after: the preset unlights, the value holds.
     const moved = await page.evaluate(() => {
@@ -639,11 +664,14 @@ export const suites = {
       const tool = window.__sculpt.session.getSculptManager().getTool(13);
       const rec = await file.unpack(await file.pack());
       rec.settings.rake = { tines: 6, width: 0.5, depth: 0.07, plateau: 0.35, taper: 0, invert: false, preset: null };
+      delete rec.settings.strength;
+      delete rec.settings.strengthRev;
       await file.open(await file.packRecord(rec));
       const mapped = { ...tool.settings(), preset: tool.presetId };
       tool.set({ plateau: 0.8 });
       return { mapped, direct: tool.scrape };
     });
     t.ok(legacy.mapped.scrape === 0.35 && legacy.mapped.tines === 6 && !('plateau' in legacy.mapped) && legacy.direct === 0.8, `a saved rake with a plateau opens with it as the scrape (${JSON.stringify(legacy)})`);
+    t.ok(Math.abs(legacy.mapped.strength - 0.21) < 1e-9 && !('depth' in legacy.mapped), `and its depth 0.07 (of the radius) as the strength, 0.07 x 3 cm = 0.21 cm (${legacy.mapped.strength})`);
   },
 };

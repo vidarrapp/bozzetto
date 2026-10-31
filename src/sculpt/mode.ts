@@ -8,7 +8,7 @@ import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
-import { InputShell, SPACING_REV } from './bridge/InputShell';
+import { InputShell, SPACING_REV, STRENGTH_REV } from './bridge/InputShell';
 import { PROFILE_REV } from './bridge/profile';
 import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
@@ -1270,6 +1270,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     spacingRev: SPACING_REV,
     curves: input.serializeCurves(),
     curvesRev: PROFILE_REV,
+    strength: input.serializeStrength(),
+    strengthRev: STRENGTH_REV,
     rake: input.serializeRake(),
     smooth: input.serializeSmooth(),
     smoothRev: SMOOTH_REV,
@@ -1306,6 +1308,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // The rake's preset first: it sets the tine profile, which the
       // stored curve then replaces.
       input.loadRake(settings.rake);
+      // After the rake's preset, which sets the rake's strength too.
+      input.loadStrength(settings.strength, settings.strengthRev);
       input.loadCurves(settings.curves, settings.curvesRev);
       input.loadSmooth(settings.smooth, settings.smoothRev);
       if (settings.paintColor) setPaintColorOn(settings.paintColor);

@@ -59,10 +59,12 @@ engine has no absolute length in it. The cube is built directly, not as a
 primitive, and is as it was; its files changed with the shared `meta`.
 
 Brushes, each with the defaults the app installs: the bridge brushes
-ClayStripsBrush, CreaseBrush, PolishBrush, VolumetricMove, StableSmooth
-(on its default Average mode), StableSmooth-surface (the same tool in its
-Surface mode, below), RakeBrush, FlattenBrush, PaintBrush and PaintBlurBrush, and the vendored
-Inflate, Pinch, Drag and Masking. FlattenBrush and PaintBrush are the
+ClayStripsBrush, CreaseBrush, InflateBrush, PolishBrush, VolumetricMove,
+StableSmooth (on its default Average mode), StableSmooth-surface (the same
+tool in its Surface mode, below), RakeBrush, FlattenBrush, PaintBrush and
+PaintBlurBrush, and the vendored Pinch, Drag and Masking. InflateBrush is
+the vendored Inflate with its strength in centimetres (below; fixtures
+recorded before 2026-10-31 were named `Inflate.*`). FlattenBrush and PaintBrush are the
 vendored Flatten and Paint with the per-dab intensity capped at 1 (fixtures
 recorded before that were named `Flatten.*` and `Paint.*`). Symmetry is off and dynamic topology is off. Every brush
 has the same world radius on a mesh (0.3 of its world extent), as world-scale
@@ -108,10 +110,11 @@ Picking state at that moment, all in mesh local space:
   `pressureLayer`, the clay layer's pressure term); `intensity` is the
   tool's strength times the factor.
 - Clay: `layerPressure`, the layer term the dab used, and `layerOffset`, how
-  far the build plane sits off the area centre along the area normal, in
-  local units: `layer * radiusLocal * layerPressure` (negated in the loop
-  when `_negative`). The layer follows pressure, so `layerPressure` is
+  far the build plane sits off the form's plane along its normal, in local
+  units: `strengthCm * layerPressure / scale` (negated in the loop when
+  `_negative`). The layer follows pressure, so `layerPressure` is
   `pressureLayer`.
+- Clay, Crease and Inflate: `strength`, the dab's strength terms (below).
 - Drag: `dragDir`. VolumetricMove: `center` (the press), `moveDir`.
 - Rake: `rake`, the tine rake's dab (below).
 
@@ -204,6 +207,62 @@ crease's crest included: before, the mask sat inside the crest's power,
 `pow(q * mask, 12)`; it is outside now, `curve(d) * mask`, the same at the
 fixtures' mask of 1.
 
+## Strength in centimetres
+
+Since 2026-10-31 (owner call) the Strength of ClayStripsBrush, CreaseBrush,
+InflateBrush and RakeBrush is a length: how far one stroke at full pressure
+moves the surface at the brush centre, in centimetres (world units),
+whatever the brush's size. Their `_intensity` holds it, and
+`brush.params` records `strengthUnit: 'cm'` and `strengthCm` (the same
+number). The defaults: Clay 1.5, Crease 0.75, Inflate 0.5, the Rake 0.3 (its
+Coarse preset). Every other brush keeps its 0..1 strength, recorded as
+before.
+
+The pressure term is the clay layer's, `pressureLayer` (0..1, 1 for a mouse
+or a finger), and one stroke's move in local units is
+`strokeLocal = strengthCm * pressureLayer / scale` (`scale` the mesh
+matrix's, `mesh.scale`; 1 in every fixture here). Each dab's `strength`
+record:
+
+```
+strengthCm     the strength
+pressureTerm   pressureLayer at the dab
+strokeLocal    strengthCm * pressureTerm / scale
+stepLocal      |intersection - previous intersection| (the press point for
+               a stroke's first dab), held to radiusLocal; per symmetry side
+integral       the falloff's integral across the dab through its centre,
+               over [-1, 1]: 1.2 for the quartic (Inflate), the crest
+               curve's for Crease (2 * Simpson's rule over 512 intervals of
+               curve.sample on [0, 1])
+spacingFactor  stepLocal / (integral * radiusLocal)
+amountLocal    strokeLocal * spacingFactor: the dab's move at the centre
+```
+
+The dabs of a stroke share it out as the rake's do: a point on the stroke's
+line gets the falloff summed over dabs `stepLocal` apart, about
+`radiusLocal / stepLocal * integral` of it, so the stroke adds up to
+`strokeLocal` at any spacing.
+
+- InflateBrush: upstream's loop with `deformIntensity = amountLocal`
+  (negated when `_negative`) where upstream had `intensity * radius * 0.1`.
+- CreaseBrush: the crest is `curve(d) * mask * amountLocal` (negated when
+  `_negative`) where upstream had `pow(q, 5) * 0.07 * intensity * radius`;
+  the gather is `q(d) * mask * pinch * amountLocal / radiusLocal` (upstream
+  `q(d) * 0.07 * intensity`).
+- ClayStripsBrush: the target is not shared out. Its record's
+  `strokeLocal` is the layer (`layerOffset`), the step terms 0. The build
+  plane is fitted to the FORM, the front vertices' positions with this
+  stroke's build taken out (`built`, kept per vertex as the rake keeps its
+  `cut`, and void for a vertex no longer where the brush left it): its
+  point the mask-weighted mean of the form, its normal the area normal
+  `n0` refined by the same least-squares fit as the rake's, on the axes
+  `a0 = normalize(tangent((1, 0, 0) if |n0.x| < 0.9 else (0, 1, 0), n0))`
+  and `b0 = n0 x a0`. The plane is that point plus `layerOffset` along the
+  normal. Per vertex (upstream Flatten.flatten's loop): skipped when on
+  the far side of the plane or `dist >= 1`; else
+  `v -= n * (curve(dist) * ((v - point) . n) * mask)`, the full rate (no
+  intensity), and the move is added to the vertex's `built`.
+
 ## The tine rake's dab
 
 The rake (`RakeBrush`) lays `tines` tines across the brush, perpendicular
@@ -213,12 +272,12 @@ dabs add up (a second pass cuts deeper), where it used to move each vertex
 toward a target height over a plane. Each dab's record holds:
 
 ```
-tines, width, depth, scrape, taper the knobs as the dab used them
+tines, width, strength, scrape, taper the knobs as the dab used them
+               (strength in cm, the groove one stroke cuts)
 invert         the effective direction (Invert, flipped by _negative)
 pressureTerm   the depth's pressure term (the clay layer's: pressureLayer)
-strengthTerm   min(1, _intensity) / RAKE_STRENGTH (1 at the default 0.6)
-depthLocal     depth * radiusLocal * pressureTerm * strengthTerm, local
-               units: what one stroke cuts
+depthLocal     strength * pressureTerm / scale, local units: what one
+               stroke cuts
 stepLocal      |intersection - previous intersection| (the press point for
                the first dab of a stroke), held to radiusLocal
 spacingFactor  stepLocal / (RAKE_ALONG_INTEGRAL * radiusLocal), the
@@ -260,7 +319,7 @@ ones; `r` = radiusLocal; `c` = intersection; `n` = areaNormal):
 dist = |p - c| / r;  skip if dist >= 1 or mask <= 0
 // 1. scrape: the form toward the plane, the cut riding along
 if scrape > 0:
-  rate = min(1, scrape * q(dist) * intensity * mask)
+  rate = min(1, scrape * q(dist) * 0.6 * pressureIntensity * mask)
   v -= n * ((v - cut - areaCenter) . n) * rate
 // 2. cut
 u = (p - c) . across / r;  w = (p - c) . along / r
@@ -276,8 +335,9 @@ amount = -s * depthLocal * prof * (1 - taper * |centre|) * alongFall * mask
 v += n * amount;  cut += n * amount
 ```
 
-`intensity` is the dab's (`_intensity * pressureIntensity`). The spacing
-factor: a vertex's along falloff summed over dabs `stepLocal` apart is
+The scrape's rate takes RAKE_SCRAPE_STRENGTH, 0.6 (the strength it
+scaled with by default before the strength went to cm), times the dab's
+`pressureIntensity`. The spacing factor: a vertex's along falloff summed over dabs `stepLocal` apart is
 about `chord * r / stepLocal * 1.2`, so `spacingFactor / chord` makes one
 stroke add up to `depthLocal` on every tine, whatever the spacing or the
 stroke speed (RAKE_MIN_CHORD = 0.2 holds the factor at the disc's rim).
@@ -392,10 +452,11 @@ The fixtures describe the engine at `meta.webCommit`. Re-record them whenever
 a brush changes; `--verify` against the old files shows what moved. The
 clay brush and the rake have their own constants (`CLAY_*`, `RAKE_*` in
 `meta.engine.bridgeConstants`): clay is spacing 0.1, the Plateau curve and a
-pressure-driven layer of 0.1; the rake is spacing 0.06, strength 0.6 and the
-Coarse preset (4 Round tines, width 0.7, depth 0.1, Scrape 0.25, no
-taper), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD for its spacing
-factor. Retuning one re-records only its own fixtures.
+pressure-driven layer of 1.5 cm (its strength); the rake is spacing 0.06 and
+the Coarse preset (4 Round tines, width 0.7, strength 0.3 cm, Scrape 0.25,
+no taper), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD for its spacing
+factor and RAKE_SCRAPE_STRENGTH for its scrape. Retuning one re-records
+only its own fixtures.
 
 October 2026: the brushes moved onto profile curves and the stencil rake
 became the tine rake. Clay, Crease, Polish, Paint and PaintBlur recorded the
@@ -423,3 +484,12 @@ dabs bit for bit (`--verify --outputs --tol=0` against a recording made
 just before, at f5159c6); StableSmooth's parameter record gained
 `smoothMode`, `relax` and `_accumulate`, and the meta the `SURFACE_*`
 constants.
+
+2026-10-31: Strength in centimetres (owner call) for Clay, Inflate, Crease
+and the Rake (above), and clay's build plane fitted to the form.
+ClayStripsBrush, CreaseBrush, InflateBrush (was `Inflate.*`) and RakeBrush
+were re-recorded; their `brush.params` record `strengthUnit` and
+`strengthCm`, and their dabs `strength` (the Rake's `rake.strength` in place
+of `depth` and `strengthTerm`). Every other brush recorded the same outputs
+and dabs bit for bit (`--verify --outputs --tol=0` against a recording made
+just before, at 03a04b9).

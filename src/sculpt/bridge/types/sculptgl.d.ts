@@ -139,6 +139,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     getNbQuads(): number;
     getNbEdges(): number;
     getMatrix(): Float32Array;
+    /** The matrix's scale (its first column's length): world units per local unit. */
+    getScale(): number;
     /**
      * The octree's local AABB transformed by the mesh matrix, as
      * [minX, minY, minZ, maxX, maxY, maxZ], written into the mesh's own
@@ -501,6 +503,7 @@ declare module '@sculpt-vendor/editing/tools/Crease' {
     _lockPosition: boolean;
     constructor(main: unknown);
     getMesh(): SculptMesh;
+    start(ctrl: boolean): boolean;
     stroke(picking: Picking): void;
     /** The pinch+crest loop; Bozzetto's CreaseBrush overrides this. */
     crease(
@@ -513,6 +516,29 @@ declare module '@sculpt-vendor/editing/tools/Crease' {
     ): void;
   }
   export default Crease;
+}
+
+declare module '@sculpt-vendor/editing/tools/Inflate' {
+  import type Picking from '@sculpt-vendor/math3d/Picking';
+  import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+  class Inflate {
+    _main: unknown;
+    _radius: number;
+    _intensity: number;
+    _negative: boolean;
+    _culling: boolean;
+    _idAlpha: string | number | null;
+    /** BOZZETTO EDIT in SculptBase: dab spacing, a fraction of the radius. */
+    _spacing: number;
+    _lockPosition: boolean;
+    constructor(main: unknown);
+    getMesh(): SculptMesh;
+    start(ctrl: boolean): boolean;
+    stroke(picking: Picking): void;
+    /** The push along the normals; Bozzetto's InflateBrush overrides this. */
+    inflate(iVerts: Uint32Array, center: number[], radiusSquared: number, intensity: number, picking: Picking): void;
+  }
+  export default Inflate;
 }
 
 declare module '@sculpt-vendor/editing/tools/Paint' {

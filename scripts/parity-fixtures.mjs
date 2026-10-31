@@ -283,7 +283,7 @@ const BRUSHES = [
   { name: 'RakeBrush', tool: 'RAKE', bridge: true, mode: 'dab' },
   { name: 'PaintBlurBrush', tool: 'PAINT_BLUR', bridge: true, mode: 'dab', colors: true },
   { name: 'FlattenBrush', tool: 'FLATTEN', bridge: true, mode: 'dab' },
-  { name: 'Inflate', tool: 'INFLATE', mode: 'dab' },
+  { name: 'InflateBrush', tool: 'INFLATE', bridge: true, mode: 'dab' },
   { name: 'Pinch', tool: 'PINCH', mode: 'dab' },
   { name: 'Drag', tool: 'DRAG', mode: 'drag' },
   { name: 'PaintBrush', tool: 'PAINT', bridge: true, mode: 'dab', colors: true },
@@ -320,7 +320,9 @@ const PARAM_FIELDS = [
   '_writeRoughness',
   '_writeMetalness',
   '_pickColor',
-  'layer',
+  // Clay, Inflate, Crease and the Rake: 'cm', their _intensity a length
+  // (recorded again as strengthCm).
+  'strengthUnit',
   'gain',
   'planeLock',
   'pinch',
@@ -328,7 +330,6 @@ const PARAM_FIELDS = [
   // The tine rake.
   'tines',
   'tineWidth',
-  'depth',
   'scrape',
   'taper',
   'invert',
@@ -361,6 +362,7 @@ function toolParams(tool) {
     if (typeof v === 'function') continue; // Pinch.pinch, Crease.crease: methods, not settings
     out[f] = ArrayBuffer.isView(v) ? Array.from(v) : v === undefined ? null : v;
   }
+  if (tool.strengthUnit === 'cm') out.strengthCm = tool._intensity;
   if (tool.curve && typeof tool.curve.serialize === 'function') out.curve = curveRecord(tool.curve);
   return out;
 }
@@ -385,7 +387,7 @@ function appInstall(E, session) {
 }
 
 const APP_INSTALL_NOTES = [
-  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05; PaintBlurBrush.curve = PaintBrush.curve, one shared object).',
+  'SculptSession constructor: the tool table (VolumetricMove, ClayStripsBrush, PolishBrush in the TWIST slot, RakeBrush, CreaseBrush, InflateBrush, FlattenBrush, PaintBrush, PaintBlurBrush, StableSmooth; PaintBrush._spacing = 0.05; PaintBlurBrush.curve = PaintBrush.curve, one shared object).',
   'InputShell.install: DynamicsStore.install() (per-brush pressure: Crease and Paint size 1 strength 1, Drag 0/0, the rest size 0 strength 1, linear curves; Tablet.getPressureLayer for the clay layer); Crease._negative = false. InputShell.feedPressure: Tablet.pen = true for a pen event (here, every press and move).',
   'mode.ts: Paint._writeRoughness = Paint._writeMetalness = false.',
   'InputShell.selectBrush(BRUSH): _clay = true (already the default).',
@@ -563,13 +565,19 @@ async function record(E, meshKey, brush) {
           picked: arr(p.getPickedVertices()),
         };
         if (brush.mode === 'drag') d.dragDir = arr(tool._dragDir);
-        // Clay's build plane: layer x radius x layerPressure, as the dab used it.
+        // Clay's build plane: strength (cm) x layerPressure / mesh scale, as the dab used it.
         if ('lastLayerOffset' in tool) {
           d.layerPressure = tool.layerPressure();
           tool.lastLayerOffset = NaN;
         }
         if ('lastDab' in tool) tool.lastDab = null;
+        if ('lastStrengthDab' in tool) tool.lastStrengthDab = null;
         const out = orig(p, sym);
+        // Clay, Inflate and Crease: the strength in cm and the dab's share of it.
+        if ('lastStrengthDab' in tool) {
+          d.strength = tool.lastStrengthDab ? { ...tool.lastStrengthDab } : null;
+          tool.lastStrengthDab = null;
+        }
         if ('lastLayerOffset' in tool) d.layerOffset = Number.isNaN(tool.lastLayerOffset) ? null : tool.lastLayerOffset;
         if ('lastDab' in tool) {
           // The tine rake's dab: its knobs, the depth it carved to, and the
@@ -717,7 +725,7 @@ const FORMAT = {
   faces: 'input.faces is the engine face array: 4 indices per face. A quad is [a, b, c, d]; a triangle is [a, b, c, TRI_INDEX] with TRI_INDEX = 4294967295 (Utils.TRI_INDEX). Winding is the engine order (counter-clockwise seen from outside). Faces do not change during a fixture.',
   materials: 'materials are per-vertex triples [roughness, metalness, mask]; mask 1 = unmasked, 0 = fully masked. Every falloff is multiplied by the mask. materialsUniform gives the one triple every vertex has when they are all equal.',
   colors: 'colors are per-vertex linear RGB triples. Every fixture starts from a two-tone colouring (x < the local bounds centre: [0.8, 0.3, 0.2], else [0.2, 0.4, 0.9]).',
-  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for ClayStripsBrush layerPressure (the term the dab used, pressureLayer) and layerOffset (the build plane offset along the area normal, local units: layer * radiusLocal * layerPressure, negated in the loop when _negative), and for RakeBrush rake: the tine rake dab (tines, width, depth, scrape, taper, invert as the dab applied it, depthLocal = depth * radiusLocal * pressureTerm * strengthTerm, what one stroke cuts, pressureTerm, strengthTerm = min(1, _intensity) / 0.6, stepLocal (the distance from the previous dab or the press, held to the radius), spacingFactor = stepLocal / (1.2 * radiusLocal), the across axis and stroke direction (along) it laid the tines on, where that direction came from, and the plane, areaNormal and areaCenter, fitted to the form: the front vertices with the cut of this stroke taken out). press is the pointer-down, which is not a dab except for Drag.',
+  dabs: 'dabs lists every call the engine made to the tool (stroke(picking), or for VolumetricMove move()), in order, with the Picking state at that moment: intersection (the dab centre the loops use), normal (picked normal, interpolated vertex normals of the picked face), eyeDirection, radiusLocal2 (what the loops use), the world radius it came from, picked (the vertex indices in the order the engine iterates them), pressure, pen and the Tablet factors (pressureIntensity, pressureRadius, pressureLayer), for ClayStripsBrush layerPressure (the term the dab used, pressureLayer) and layerOffset (the build plane offset along the fitted form normal, local units: strengthCm * layerPressure / mesh scale, negated in the loop when _negative), for ClayStripsBrush, CreaseBrush and InflateBrush strength (strengthCm, pressureTerm, strokeLocal = strengthCm * pressureTerm / mesh scale, what one stroke moves the centre by, stepLocal, integral (the falloff across the dab through its centre: 1.2 for the quartic, the crest curve\'s for Crease), spacingFactor = stepLocal / (integral * radiusLocal), amountLocal = strokeLocal * spacingFactor, the dab\'s own move at the centre; Clay\'s step terms are 0, its layer is a target), and for RakeBrush rake: the tine rake dab (tines, width, strength (cm), scrape, taper, invert as the dab applied it, depthLocal = strength * pressureTerm / mesh scale, what one stroke cuts, pressureTerm, stepLocal (the distance from the previous dab or the press, held to the radius), spacingFactor = stepLocal / (1.2 * radiusLocal), the across axis and stroke direction (along) it laid the tines on, where that direction came from, and the plane, areaNormal and areaCenter, fitted to the form: the front vertices with the cut of this stroke taken out). press is the pointer-down, which is not a dab except for Drag.',
   moves: 'moves are the pointer positions after the press (device px on the fixed camera), with the local-space point each was aimed at (localTarget) where the path is on the surface.',
   output: 'output holds the state after the stroke ended: positions and normals always, colors/materials/mask where the brush writes them.',
   curves: 'brush.params.curve, for the brushes on a profile curve (ClayStripsBrush, CreaseBrush, PolishBrush, PaintBrush and PaintBlurBrush, which reads PaintBrush\'s, and RakeBrush\'s tine profile): preset (the preset id the anchors are exactly, or null), anchors (the cubic Bezier: [{t, v, in: [t, v], out: [t, v], corner}], t from the dab centre 0 to its edge 1, sorted, the ends at 0 and 1, the first without in and the last without out, every handle\'s t within its segment), exactKernel (true when the preset\'s closed form is evaluated instead of the table, see docs/parity-fixtures.md), table (256 weights at t = i / 255, the Bezier or the kernel baked; a loop reads it with linear interpolation).',

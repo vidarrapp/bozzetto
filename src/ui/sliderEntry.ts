@@ -111,17 +111,17 @@ export function holdToLimits(v: number, limits: Limits = {}): number {
 /**
  * What was typed, as a number: a comma for the decimal point (an iPad in
  * much of Europe offers one), a typographic minus, and a unit or a percent
- * sign left on, all go. Anything else that is not a number is NaN.
+ * sign left on, all go. Anything else that is not a number is NaN. A field
+ * in centimetres (`unit` 'cm': a brush's size or strength on real units)
+ * reads a value typed in millimetres as millimetres: "3 mm" is 0.3.
  */
-export function parseTyped(text: string): number {
-  let t = text
-    .trim()
-    .replace(/\s+/g, '')
-    .replace(/−/g, '-')
-    .replace(/[%°]|px$|cm$|mm$/gi, '');
+export function parseTyped(text: string, unit?: string): number {
+  let t = text.trim().replace(/\s+/g, '').replace(/−/g, '-');
+  const mm = unit === 'cm' && /mm$/i.test(t);
+  t = t.replace(/[%°]|px$|cm$|mm$/gi, '');
   if (t.includes(',') && !t.includes('.')) t = t.replace(',', '.');
   if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return NaN;
-  return Number(t);
+  return mm ? Number(t) / 10 : Number(t);
 }
 
 /** Two presses this close in time and place are one double press. */
@@ -297,7 +297,7 @@ export function typedSlider(input: HTMLInputElement, spec: TypedSlider, value: n
         };
       },
       (typed) => {
-        const raw = parseTyped(typed);
+        const raw = parseTyped(typed, input.dataset.unit?.trim());
         if (!Number.isFinite(raw)) return;
         const v = holdToLimits(raw / scale, spec.limits);
         setSliderValue(input, v);

@@ -258,7 +258,7 @@ export const suites = {
     });
     t.ok(ui.editors === 1 && ui.presets.join() === 'Plateau,Soft,Flat,Round' && ui.on === 'Plateau', `clay shows one curve with its presets, Plateau lit (${JSON.stringify(ui.presets)}, on ${ui.on})`);
     t.ok(ui.anchors === 4 && ui.handles === 6, `Plateau is drawn as 4 anchors and their 6 handles (${ui.anchors}, ${ui.handles})`);
-    t.ok(!ui.plateauRow && ui.layerRow && !ui.alphaRow, `the Strip plateau slider and the Alpha row are gone, Strip layer stays (${JSON.stringify(ui)})`);
+    t.ok(!ui.plateauRow && !ui.layerRow && !ui.alphaRow, `the Strip plateau slider and the Alpha row are gone, and Strip layer too since 2026-10-31, the layer being the Strength in cm (${JSON.stringify(ui)})`);
     t.ok(ui.touchAction === 'none', `the plot takes its touches (touch-action ${ui.touchAction})`);
 
     // A preset applies.

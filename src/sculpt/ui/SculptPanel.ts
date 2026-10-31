@@ -58,6 +58,8 @@ export class SculptPanel extends SidePanel {
   private axisButtons: HTMLButtonElement[] = [];
   private sizeInput?: HTMLInputElement;
   private strengthInput?: HTMLInputElement;
+  /** The Rake's preset row, while the Rake's rows are up. */
+  private rakePresets: HTMLDivElement | null = null;
   private brushHeading: HTMLHeadingElement | null = null;
   /** The transform's typed rows, up with the Select tool or the gizmo. */
   private channelBox: ChannelBox | null = null;
@@ -225,15 +227,21 @@ export class SculptPanel extends SidePanel {
     // Drag has no strength at all: no slider for it, and no pressure to
     // drive it with either.
     if (this.input.hasBrushIntensity()) {
+      // A length in cm for the brushes that push the surface (owner call,
+      // 2026-10-31): how far one stroke at full pressure moves it at the
+      // brush centre, 0 to 5 cm on the travel and up to 50 typed. The
+      // capped brushes and Move keep 0 to 1.
+      const spec = this.input.strengthSpec();
       const strengthRow = compactRange(
         'Strength',
         0,
-        1,
-        0.01,
+        spec.max,
+        spec.step,
         this.input.getBrushIntensity(),
         (v) => this.input.setBrushIntensity(v),
-        { limits: FRACTION },
+        spec.cm ? { limits: { min: 0, max: spec.limit }, unit: spec.unit } : { limits: FRACTION },
       );
+      strengthRow.dataset.strength = spec.cm ? 'cm' : 'fraction';
       this.strengthInput = strengthRow.querySelector('input') as HTMLInputElement;
       dyn.appendChild(strengthRow);
       const strengthCurveRow = labelRow(
@@ -300,21 +308,10 @@ export class SculptPanel extends SidePanel {
     } else if (tool === Enums.Tools.BRUSH) {
       // The strip's falloff is a curve now (owner call): its Plateau preset
       // is the old plateau slider's 0.8, and the clay stencils went with it.
+      // The layer's height is the Strength, in cm (2026-10-31): the Strip
+      // layer slider, a fraction of the radius, went with that.
       const strips = manager.getTool(tool) as unknown as ClayStripsBrush;
       extras.appendChild(this.curveRow('Profile', 'Clay profile', strips.curve));
-      extras.appendChild(
-        compactRange(
-          'Strip layer',
-          0.01,
-          0.5,
-          0.01,
-          strips.layer,
-          (v) => {
-            strips.layer = v;
-          },
-          { limits: AMOUNT },
-        ),
-      );
     } else if (tool === Enums.Tools.CREASE) {
       // A crease is a pinch and a crest, and upstream hardcoded the
       // balance between them. The crest is a curve (Sharp the knife line it
@@ -490,9 +487,10 @@ export class SculptPanel extends SidePanel {
 
   /**
    * The tine rake's rows: its presets, the tine count and width, the
-   * depth, the Scrape (how flat each dab planes the footprint before the
-   * tines cut), the taper, Invert, and
-   * the tine's own profile. A preset sets them all; any of them can move
+   * Scrape (how flat each dab planes the footprint before the tines cut),
+   * the taper, Invert, and the tine's own profile. The groove's depth is
+   * the Strength above, in cm (2026-10-31: the Depth row went with that).
+   * A preset sets them all, the strength included; any of them can move
    * after.
    */
   private buildRake(extras: HTMLElement, rake: RakeBrush): void {
@@ -515,10 +513,13 @@ export class SculptPanel extends SidePanel {
         rake.applyPreset(p.id);
         this.input.onBrushSettingsChange?.();
         this.refreshBrush();
+        // The rail's strength nub, which the preset moved too.
+        this.input.onBrushChange?.();
       });
       presets.appendChild(b);
     }
     extras.appendChild(presets);
+    this.rakePresets = presets;
     const knob = (label: string, min: number, max: number, step: number, value: number, set: (v: number) => void, limits: Limits): void => {
       extras.appendChild(
         compactRange(label, min, max, step, value, (v) => {
@@ -529,7 +530,6 @@ export class SculptPanel extends SidePanel {
     };
     knob('Tines', RAKE_TINES_MIN, RAKE_TINES_MAX, 1, rake.tines, (v) => rake.set({ tines: v }), { min: RAKE_TINES_MIN, max: RAKE_TINES_MAX, integer: true });
     knob('Tine width', 0.1, 1, 0.05, rake.tineWidth, (v) => rake.set({ width: v }), { min: 0.1, max: 1 });
-    knob('Depth', 0, 0.3, 0.01, rake.depth, (v) => rake.set({ depth: v }), { min: 0, max: 1 });
     knob('Scrape', 0, 1, 0.05, rake.scrape, (v) => rake.set({ scrape: v }), FRACTION);
     knob('Taper', 0, 1, 0.05, rake.taper, (v) => rake.set({ taper: v }), FRACTION);
     extras.appendChild(
@@ -693,6 +693,13 @@ export class SculptPanel extends SidePanel {
     // Through the slider's own value, so a size typed past 500 reads as itself.
     if (this.sizeInput) setSliderValue(this.sizeInput, Math.round(this.input.getBrushRadius()));
     if (this.strengthInput) setSliderValue(this.strengthInput, Number(this.input.getBrushIntensity().toFixed(2)));
+    // The rake's preset lights while the strength is still the preset's.
+    const rake = this.session.getSculptManager().getTool(Enums.Tools.RAKE) as unknown as RakeBrush | undefined;
+    if (this.rakePresets?.isConnected && rake) {
+      for (const b of this.rakePresets.querySelectorAll<HTMLButtonElement>('button')) {
+        b.classList.toggle('sculpt-panel__btn--on', b.dataset.preset === rake.presetId);
+      }
+    }
     const smooth = this.session.getSculptManager().getTool(Enums.Tools.SMOOTH) as unknown as StableSmooth | undefined;
     if (this.smoothStrengthInput && smooth instanceof StableSmooth) {
       setSliderValue(this.smoothStrengthInput, Number(smooth._intensity.toFixed(2)));

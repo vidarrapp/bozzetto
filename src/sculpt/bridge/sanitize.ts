@@ -39,6 +39,13 @@ type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** A finite number, clamped to [min, max]; undefined for anything else. */
+/**
+ * The most a brush's strength can be: 50 cm, typed (tools.ts
+ * STRENGTH_CM_LIMIT; not imported, which would bring the vendored brushes
+ * into every reader of a record).
+ */
+const STRENGTH_LIMIT = 50;
+
 function num(v: unknown, min = -Infinity, max = Infinity): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : undefined;
 }
@@ -215,10 +222,15 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
       return pts ? pts.map((p): [number, number] => [p.t, p.v]) : undefined;
     }),
     curvesRev: num(v.curvesRev, 0),
+    // Each held to the widest a strength can be (cm, typed); the brush
+    // holds its own to its limits when it loads them.
+    strength: toolTable(v.strength, (x) => num(x, 0, STRENGTH_LIMIT)),
+    strengthRev: num(v.strengthRev, 0),
     rake: isRec(v.rake)
       ? defined({
           tines: num(v.rake.tines, 0, 64),
           width: num(v.rake.width, 0, 1),
+          strength: num(v.rake.strength, 0, STRENGTH_LIMIT),
           depth: num(v.rake.depth, 0, 1),
           scrape: num(v.rake.scrape, 0, 1),
           plateau: num(v.rake.plateau, 0, 1),

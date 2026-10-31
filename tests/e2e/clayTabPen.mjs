@@ -1,12 +1,12 @@
 // Three owner items, one suite each:
 //
-// clayLayer: the clay brush's new defaults (spacing 0.1, the Plateau
-//   profile curve - the old 0.8 plateau - and layer 0.1; the tine rake
-//   keeps its own spacing 0.06), and the layer
-//   height following pen pressure: a pen dab at half pressure raises the
-//   plane half as far as one at full pressure, and a mouse dab lays the
-//   whole layer. A stored scene from before the new spacing does not
-//   shadow it.
+// clayLayer: the clay brush's defaults (spacing 0.1, the Plateau profile
+//   curve - the old 0.8 plateau - and since 2026-10-31 a strength of 1.5
+//   cm, the layer's height, with no Strip layer slider; the tine rake
+//   keeps its own spacing 0.06), and the layer height following pen
+//   pressure: a pen dab at half pressure raises the plane half as far as
+//   one at full pressure, and a mouse dab lays the whole layer. A stored
+//   scene from before the new spacing does not shadow it.
 // tabAfterCreate: Tab after creating an object in the Scene panel closes
 //   the panels (a clicked button no longer keeps Tab), and Shift+Tab still
 //   moves the focus.
@@ -58,10 +58,10 @@ function clayDab({ pen, pressure }) {
   const symmetry = manager._symmetry;
   const intensity = tool._intensity;
   manager._symmetry = false;
-  // Strength 1: half pressure is factor 1 and full pressure 2, both capped
-  // at 1 in the flatten, so the strength term is the same for every dab
-  // here and only the layer term differs.
-  tool._intensity = 1;
+  // The layer is the strength, 0.3 cm here: the full rate lands the
+  // plateau's vertex on the plane in one dab, so only the layer term
+  // differs between the dabs.
+  tool._intensity = 0.3;
   const d = input.dynamics.get(input.currentToolIndex());
   d.strength = 1;
   d.strengthCurve = 'linear';
@@ -79,7 +79,7 @@ function clayDab({ pen, pressure }) {
     tool.updateRender();
     manager.end();
     session.getStateManager().cleanNoop();
-    return { hitPlane, rise: Math.abs(v[ind + 2]), off: tool.lastLayerOffset, r, layer: tool.layer, factor: tablet.getPressureLayer() };
+    return { hitPlane, rise: Math.abs(v[ind + 2]), off: tool.lastLayerOffset, r, strength: tool._intensity, factor: tablet.getPressureLayer() };
   } finally {
     tablet.pressure = 0.5;
     tablet.pen = false;
@@ -259,39 +259,45 @@ export const suites = {
       const m = session.getSculptManager();
       const pick = (i) => {
         const tool = m.getTool(i);
-        return { spacing: tool._spacing, curve: tool.curve?.presetId, layer: tool.layer, tines: tool.tines, pressure: tool.layerPressure?.() };
+        return { spacing: tool._spacing, curve: tool.curve?.presetId, strength: tool._intensity, unit: tool.strengthUnit, layer: tool.layer, tines: tool.tines, pressure: tool.layerPressure?.() };
       };
       // Enums.Tools: BRUSH 0 (clay), RAKE 13.
       return { clay: pick(0), rake: pick(13), clayIndex: 0, current: window.__sculpt.input.currentToolIndex() };
     });
-    t.ok(defaults.clay.spacing === 0.1 && defaults.clay.curve === 'plateau' && defaults.clay.layer === 0.1, `clay installs spacing 0.1, the Plateau curve, layer 0.1 (${JSON.stringify(defaults.clay)})`);
+    t.ok(
+      defaults.clay.spacing === 0.1 && defaults.clay.curve === 'plateau' && defaults.clay.strength === 1.5 && defaults.clay.unit === 'cm' && defaults.clay.layer === undefined,
+      `clay installs spacing 0.1, the Plateau curve, a strength of 1.5 cm and no layer fraction (${JSON.stringify(defaults.clay)})`,
+    );
     t.ok(defaults.rake.spacing === 0.06 && defaults.rake.curve === 'round' && defaults.rake.tines === 4 && defaults.rake.layer === undefined, `the tine rake keeps its own spacing 0.06, four Round tines and no clay layer (${JSON.stringify(defaults.rake)})`);
     t.eq(defaults.current, defaults.clayIndex, 'key 3 is the clay brush');
 
-    // The panel's layer slider reaches past 0.1, with no hint under it.
+    // The Strip layer slider is gone (owner call, 2026-10-31: the layer is
+    // the Strength, in cm), and no hint is left under the curve.
     await page.evaluate(() => {
       const p = document.querySelector('.panel--sculpt');
       if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle')?.click();
     });
     await page.waitForTimeout(300);
     const slider = await page.evaluate(() => {
-      const row = [...document.querySelectorAll('.panel--sculpt label')].find((l) => /Strip layer/.test(l.textContent));
+      const layer = [...document.querySelectorAll('.panel--sculpt label')].some((l) => /Strip layer/.test(l.textContent));
+      const row = [...document.querySelectorAll('.panel--sculpt label.compact')].find((l) => l.firstElementChild?.textContent === 'Strength');
       const input = row?.querySelector('input[type="range"]');
       const hint = [...document.querySelectorAll('.panel--sculpt .sculpt-panel__hint')].map((h) => h.textContent).join(' | ');
-      return { min: Number(input?.min), max: Number(input?.max), value: Number(input?.value), hint };
+      return { layer, min: Number(input?.min), max: Number(input?.max), value: Number(input?.value), unit: input?.dataset.unit, hint };
     });
-    t.ok(slider.min <= 0.01 && slider.max >= 0.3 && Math.abs(slider.value - 0.1) < 1e-9, `the Strip layer slider sits at 0.1 well inside its range (${JSON.stringify(slider)})`);
+    t.ok(!slider.layer, 'the Strip layer slider is gone');
+    t.ok(slider.min === 0 && slider.max === 5 && slider.value === 1.5 && slider.unit === ' cm', `the Strength row is the layer, in cm, at 1.5 of 0..5 (${JSON.stringify(slider)})`);
     t.ok(!/layer height|follows pen pressure/.test(slider.hint), `and no hint under it (owner call, 2026-10-24: "${slider.hint}")`);
 
     const full = await page.evaluate(clayDab, { pen: true, pressure: 1 });
     const half = await page.evaluate(clayDab, { pen: true, pressure: 0.5 });
     const mouse = await page.evaluate(clayDab, { pen: false, pressure: 0.5 });
     t.ok(full.hitPlane && half.hitPlane && mouse.hitPlane, 'the dabs land on the plane');
-    t.near(full.off / full.r, 0.1, 1e-9, `a pen at full pressure raises the plane 0.1 of the radius (${(full.off / full.r).toFixed(4)})`);
-    t.near(half.off / half.r, 0.05, 1e-9, `at half pressure 0.05 (${(half.off / half.r).toFixed(4)})`);
+    t.near(full.off, 0.3, 1e-9, `a pen at full pressure raises the plane by the strength, 0.3 cm (${full.off.toFixed(4)})`);
+    t.near(half.off, 0.15, 1e-9, `at half pressure 0.15 cm (${half.off.toFixed(4)})`);
     t.near(full.rise, full.off, 1e-5, `and the plateau's vertex rises to the plane (${full.rise.toExponential(3)} for ${full.off.toExponential(3)})`);
     t.ok(half.rise < full.rise * 0.6 && Math.abs(half.rise - full.rise / 2) < 1e-5, `the half-pressure dab raises half as far, by the layer term alone (${half.rise.toExponential(3)} against ${full.rise.toExponential(3)})`);
-    t.ok(mouse.factor === 1 && Math.abs(mouse.off / mouse.r - 0.1) < 1e-9 && Math.abs(mouse.rise - full.rise) < 1e-5, `a mouse (Tablet's stand-in 0.5) lays the full layer (factor ${mouse.factor}, ${(mouse.off / mouse.r).toFixed(4)})`);
+    t.ok(mouse.factor === 1 && Math.abs(mouse.off - 0.3) < 1e-9 && Math.abs(mouse.rise - full.rise) < 1e-5, `a mouse (Tablet's stand-in 0.5) lays the full layer (factor ${mouse.factor}, ${mouse.off.toFixed(4)} cm)`);
 
     // A real mouse press through InputShell: the Tablet knows it is no pen.
     const real = await page.evaluate(() => {
@@ -308,7 +314,7 @@ export const suites = {
       const own = tool.stroke;
       tool.stroke = function (picking, sym) {
         const out = own.call(this, picking, sym);
-        seen.push({ pen: tablet.pen, ratio: this.lastLayerOffset / Math.sqrt(picking.getLocalRadius2()) });
+        seen.push({ pen: tablet.pen, off: this.lastLayerOffset, strength: this._intensity });
         return out;
       };
       window.__claySeen = { seen, restore: () => (tool.stroke = own) };
@@ -323,7 +329,7 @@ export const suites = {
       s.restore();
       return s.seen;
     });
-    t.ok(seen.length > 0 && seen.every((s) => s.pen === false && Math.abs(s.ratio - 0.1) < 1e-9), `a real mouse stroke lays the full 0.1 layer on every dab (${seen.length} dabs, ${JSON.stringify(seen.slice(0, 2))})`);
+    t.ok(seen.length > 0 && seen.every((s) => s.pen === false && s.strength === 1.5 && Math.abs(s.off - 1.5) < 1e-9), `a real mouse stroke lays the full 1.5 cm layer on every dab (${seen.length} dabs, ${JSON.stringify(seen.slice(0, 2))})`);
 
     // A scene saved before the new spacing (no spacingRev) carries clay's
     // old default 0.15 for every tool; it does not shadow the new 0.1. A

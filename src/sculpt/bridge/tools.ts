@@ -4,7 +4,9 @@ import Brush from '@sculpt-vendor/editing/tools/Brush';
 import Flatten from '@sculpt-vendor/editing/tools/Flatten';
 import Smooth from '@sculpt-vendor/editing/tools/Smooth';
 import Crease from '@sculpt-vendor/editing/tools/Crease';
+import Inflate from '@sculpt-vendor/editing/tools/Inflate';
 import Paint from '@sculpt-vendor/editing/tools/Paint';
+import Enums from '@sculpt-vendor/misc/Enums';
 import Tablet from '@sculpt-vendor/misc/Tablet';
 import type Picking from '@sculpt-vendor/math3d/Picking';
 import {
@@ -44,22 +46,54 @@ export const SMOOTH_STRENGTH = 0.75;
 const MOVE_FALLOFF_POW = 1.0;
 
 /**
- * Clay strips (owner call): the strip layer height as a fraction of the
- * radius at full pen pressure (upstream 0.1; the layer follows pressure,
- * and a mouse lays all of it), and the dab spacing. The falloff is the
- * clay profile curve, whose default "Plateau" preset is the old plateau:
- * full strength to 0.8 of the radius, the quartic after (profile.ts).
+ * Strength as a length (owner call, 2026-10-31). For the brushes that push
+ * the surface - Clay, Inflate, Crease and the Rake - Strength is how far one
+ * stroke at full pressure moves the surface at the brush centre, in
+ * centimetres (world units; a scene from before real units names none),
+ * whatever the brush's size. The slider runs 0 to STRENGTH_CM_MAX; a typed
+ * value may go to STRENGTH_CM_LIMIT. The brushes whose strength is a capped
+ * fraction (Smooth, Flatten, Polish, Pinch, Paint, the paint blur, Mask)
+ * keep 0 to 1, and so do Move and Drag, which follow the pointer.
  */
-const CLAY_LAYER = 0.1;
+export const STRENGTH_CM_MAX = 5;
+export const STRENGTH_CM_LIMIT = 50;
+/** The cm strength's step on the ; ' keys (and the s drag's feel); the sliders step a hundredth. */
+export const STRENGTH_CM_STEP = 0.05;
+/** The cm strength's step on the sliders: fine enough for every preset's (the Rake's Comb is 0.12). */
+export const STRENGTH_CM_SLIDER_STEP = 0.01;
+/**
+ * The brush radius, in centimetres, the cm defaults were measured at: the
+ * default brush on the default 25 cm sphere (about 3 cm at the default
+ * view). A strength saved as a fraction from before converts through it.
+ */
+export const STRENGTH_CALIBRATION_RADIUS = 3;
+
+/**
+ * Clay strips (owner call): the dab spacing, and since 2026-10-31 the
+ * strength in cm (the layer one stroke lays, at full pressure; the layer
+ * follows pressure, and a mouse lays all of it). 1.5 cm is what a stroke
+ * at the old defaults (layer 0.1 of the radius, strength 0.5) built up to
+ * at the default size. The falloff is the clay profile curve, whose
+ * default "Plateau" preset is the old plateau: full strength to 0.8 of the
+ * radius, the quartic after (profile.ts).
+ */
+const CLAY_STRENGTH = 1.5;
 const CLAY_SPACING = 0.1;
+
+/** Inflate's strength in cm: a stroke at the old 0.3 pushed about 0.55 cm at the default size. */
+const INFLATE_STRENGTH = 0.5;
 
 /**
  * The tine rake's dab spacing: tight, so each tine's dabs blend into one
  * continuous groove at a normal stroke speed.
  */
 const RAKE_SPACING = 0.06;
-/** The rake's strength by default: one stroke at it cuts the whole Depth (RakeBrush). */
-const RAKE_STRENGTH = 0.6;
+/**
+ * The scrape's rate factor, in place of the strength it used to scale with
+ * (the old default strength): Strength is the groove depth now, and the
+ * scrape keeps the rate it had at the default.
+ */
+const RAKE_SCRAPE_STRENGTH = 0.6;
 /** The rake's tine count limits. */
 export const RAKE_TINES_MIN = 2;
 export const RAKE_TINES_MAX = 12;
@@ -72,6 +106,8 @@ export const RAKE_TINES_MAX = 12;
 const CREASE_PINCH = 0.625; // a quarter of the slider's 0-2.5 (owner call)
 /** Crease dab spacing: close, so a cut reads as one line (owner call). */
 const CREASE_SPACING = 0.05;
+/** Crease's strength in cm: a stroke at the old 0.5 raised about 0.75 cm at the default size. */
+const CREASE_STRENGTH = 0.75;
 
 /**
  * Polish (hPolish-inspired, replaces Twist on 9):
@@ -115,6 +151,179 @@ const POLISH_MIN_GRIP = 8;
  * walls pass, and gentle curvature is nowhere near the line.
  */
 const POLISH_NORMAL_COS = 0.5;
+
+type Vec3 = [number, number, number];
+type Side = 'main' | 'sym';
+
+/** A brush whose Strength (`_intensity`) is a length in cm (see STRENGTH_CM_MAX). */
+export interface StrengthCmBrush {
+  readonly strengthUnit: 'cm';
+  /** Its strength out of the box, cm. */
+  readonly defaultStrength: number;
+}
+
+/** Whether a tool's Strength is a length in cm rather than a 0..1 fraction. */
+export function isStrengthCm(tool: unknown): tool is StrengthCmBrush {
+  return !!tool && (tool as Partial<StrengthCmBrush>).strengthUnit === 'cm';
+}
+
+/**
+ * The cm brushes' pressure term, 0..1: the clay layer's (Tablet's layer
+ * term, on the strength curve; a mouse or a finger is full), so a full
+ * press moves the surface by the strength and a lighter one less, and a
+ * press past full never overshoots it.
+ */
+export function strengthPressureTerm(): number {
+  return Tablet.getPressureLayer ? Tablet.getPressureLayer() : 1;
+}
+
+/**
+ * The old strength fractions' defaults and the cm each now starts at (the
+ * calibration at the default size, STRENGTH_CALIBRATION_RADIUS): a
+ * fraction saved from before converts in proportion (legacyStrengthCm).
+ * The rake's fraction scaled its depth as a multiple of 0.6, capped at 1.
+ */
+const LEGACY_STRENGTH: Record<number, { fraction: number; cm: number }> = {
+  [Enums.Tools.BRUSH]: { fraction: 0.5, cm: CLAY_STRENGTH },
+  [Enums.Tools.INFLATE]: { fraction: 0.3, cm: INFLATE_STRENGTH },
+  [Enums.Tools.CREASE]: { fraction: 0.5, cm: CREASE_STRENGTH },
+  [Enums.Tools.RAKE]: { fraction: 0.6, cm: 0.3 },
+};
+
+/**
+ * A strength saved as a 0..1 fraction (before 2026-10-31) for a brush whose
+ * strength is in cm now, in cm: the same multiple of the default it was,
+ * held to the slider's travel so an old value never comes back absurd.
+ * Null for a tool that has no such conversion.
+ */
+export function legacyStrengthCm(tool: number, fraction: number): number | null {
+  const cal = LEGACY_STRENGTH[tool];
+  if (!cal || !Number.isFinite(fraction)) return null;
+  const f = Math.min(1, Math.max(0, fraction));
+  return Math.min(STRENGTH_CM_MAX, (cal.cm * f) / cal.fraction);
+}
+
+/** The quartic falloff's integral across a dab through its centre, over [-1, 1]: 2 x 0.6. */
+const QUARTIC_LINE_INTEGRAL = 1.2;
+
+/** What a cm brush's last dab used (the parity recorder and the tests read it). */
+export interface StrengthDab {
+  /** The strength, cm. */
+  strengthCm: number;
+  /** The pressure term, 0..1 (strengthPressureTerm). */
+  pressureTerm: number;
+  /** What one stroke moves the centre by, local units: strength x pressure term / the mesh's scale. */
+  strokeLocal: number;
+  /** The distance from the previous dab (or the press), local units, held to the radius. */
+  stepLocal: number;
+  /** The falloff's integral across the dab through its centre (ProfileCurve.lineIntegral; 1.2 for the quartic). */
+  integral: number;
+  /** step / (integral x radius): the dab's share of a stroke. */
+  spacingFactor: number;
+  /** The dab's own move at the centre, local units: strokeLocal x spacingFactor. */
+  amountLocal: number;
+}
+
+/**
+ * Where each side's last dab was (the press, for a stroke's first): the
+ * step a dab took, which is its share of the stroke (StrengthDab), as the
+ * rake measures it. Mirrored dabs keep their own.
+ */
+class DabSteps {
+  private readonly prev: Record<Side, Vec3 | null> = { main: null, sym: null };
+
+  /** At the press, once SculptBase.start has picked both sides. */
+  begin(session: SculptSession): void {
+    this.prev.main = session.getPicking().getIntersectionPoint().slice(0, 3) as Vec3;
+    this.prev.sym = session.getSculptManager().getSymmetry()
+      ? (session.getPickingSymmetry().getIntersectionPoint().slice(0, 3) as Vec3)
+      : null;
+  }
+
+  clear(): void {
+    this.prev.main = null;
+    this.prev.sym = null;
+  }
+
+  /** The step from the side's previous dab to `c`, held to the radius (0 with none), and `c` kept. */
+  step(side: Side, c: Vec3, radius: number): number {
+    const p = this.prev[side];
+    this.prev[side] = c;
+    return p ? Math.min(radius, Math.hypot(c[0] - p[0], c[1] - p[1], c[2] - p[2])) : 0;
+  }
+}
+
+/** Which side of the symmetry a picking dabs for. */
+const sideOf = (session: SculptSession, picking: Picking): Side => (picking === session.getPickingSymmetry() ? 'sym' : 'main');
+
+/**
+ * This stroke's move per vertex (what the brush moved it by), with the
+ * position it left the vertex at and the stroke it belongs to: a vertex's
+ * FORM is its position with this stroke's move taken back out. An entry
+ * counts only for this stroke and while the vertex is still where the
+ * brush left it: dynamic topology renumbers and moves vertices, and an
+ * entry that no longer matches is a vertex the stroke has not moved. The
+ * rake keeps its cut here; clay its build, so a stroke lays one layer
+ * over the form it started on.
+ */
+class StrokeMoves {
+  vec = new Float32Array(0);
+  private pos = new Float32Array(0);
+  private stroke = new Uint32Array(0);
+  private id = 0;
+
+  /** A new stroke: every entry from before is the form now. */
+  begin(): void {
+    this.id = (this.id + 1) >>> 0 || 1;
+  }
+
+  /** The tables, at least `nb` vertices long (kept across strokes, grown with slack). */
+  ensure(nb: number): void {
+    if (this.stroke.length >= nb) return;
+    const len = Math.ceil(nb * 1.25) + 64;
+    const vec = new Float32Array(len * 3);
+    vec.set(this.vec);
+    const pos = new Float32Array(len * 3);
+    pos.set(this.pos);
+    const id = new Uint32Array(len);
+    id.set(this.stroke);
+    this.vec = vec;
+    this.pos = pos;
+    this.stroke = id;
+  }
+
+  /** Whether vertex `ind / 3` carries a move from this stroke and still sits where it left it. */
+  has(ind: number, vAr: Float32Array): boolean {
+    const p = this.pos;
+    return this.stroke[ind / 3] === this.id && p[ind] === vAr[ind] && p[ind + 1] === vAr[ind + 1] && p[ind + 2] === vAr[ind + 2];
+  }
+
+  /** The FORM of the vertices `iVerts`: their positions with this stroke's moves taken out, xyz each. */
+  form(iVerts: Uint32Array, vAr: Float32Array): Float64Array {
+    const n = iVerts.length;
+    const k = this.vec;
+    const fp = new Float64Array(n * 3);
+    for (let i = 0; i < n; ++i) {
+      const ind = iVerts[i] * 3;
+      const had = this.has(ind, vAr);
+      fp[i * 3] = had ? vAr[ind] - k[ind] : vAr[ind];
+      fp[i * 3 + 1] = had ? vAr[ind + 1] - k[ind + 1] : vAr[ind + 1];
+      fp[i * 3 + 2] = had ? vAr[ind + 2] - k[ind + 2] : vAr[ind + 2];
+    }
+    return fp;
+  }
+
+  /** Record vertex `ind / 3`'s move this stroke (kx, ky, kz in all), read back from where it is stored. */
+  set(ind: number, kx: number, ky: number, kz: number, vAr: Float32Array): void {
+    this.vec[ind] = kx;
+    this.vec[ind + 1] = ky;
+    this.vec[ind + 2] = kz;
+    this.pos[ind] = vAr[ind];
+    this.pos[ind + 1] = vAr[ind + 1];
+    this.pos[ind + 2] = vAr[ind + 2];
+    this.stroke[ind / 3] = this.id;
+  }
+}
 
 /**
  * Move, ZBrush-flavored:
@@ -608,14 +817,31 @@ export class PolishBrush extends Flatten {
  * strength across 0.8 of the radius, the quartic tail after) and a build
  * plane raised by the layer, so strokes lay down ribbon-like layers instead
  * of soft mounds.
+ *
+ * Since 2026-10-31 (owner call) the layer is the Strength, in cm: one
+ * stroke at full pressure lays that much at the brush centre, whatever the
+ * brush's size (the "Strip layer" slider, a fraction of the radius, went
+ * with it). The build plane rises from the plane fitted to the FORM - the
+ * positions with this stroke's own build taken back out, as the rake takes
+ * out its cut (formPlane) - so the dabs of one stroke all aim at one layer
+ * over the surface the stroke started on, where upstream's plane rose from
+ * the surface as each dab left it (its centre lifted and its normal tilted
+ * by the build behind the dab) and a stroke kept building, to about five
+ * times the layer at the old defaults. Each dab flattens toward it at the
+ * full rate (the curve and the mask, capped at the plane), so a stroke
+ * reaches the layer; a second stroke lays the next one.
  */
-export class ClayStripsBrush extends Brush {
+export class ClayStripsBrush extends Brush implements StrengthCmBrush {
+  readonly strengthUnit = 'cm' as const;
+  readonly defaultStrength = CLAY_STRENGTH;
   /** The falloff across the strip (the Tool panel's curve). */
   readonly curve = new ProfileCurve(CLAY_PROFILES, 'plateau');
-  /** Strip layer height as a fraction of the radius, at full pressure (WS4 slider). */
-  layer = CLAY_LAYER;
   /** The last clay dab's plane offset in local units (the parity recorder reads it). */
   lastLayerOffset = 0;
+  /** The last clay dab's strength terms (the parity recorder and the tests read it). */
+  lastStrengthDab: StrengthDab | null = null;
+  /** This stroke's build per vertex (StrokeMoves). */
+  private readonly built = new StrokeMoves();
 
   constructor(session: SculptSession) {
     super(session);
@@ -625,22 +851,29 @@ export class ClayStripsBrush extends Brush {
     // Closer than upstream's 0.15 (owner call): the strips read as one
     // ribbon rather than a row of stamps.
     this._spacing = CLAY_SPACING;
+    this._intensity = CLAY_STRENGTH;
   }
 
   /**
    * The layer's pressure term p, 0..1 (owner call: the layer follows
-   * pressure). The plane offset is layer x radius x p, p the pressure on
-   * the strength curve's 0..1 scale (Tablet.getPressureLayer, 1 for a mouse
-   * or a finger).
+   * pressure). The plane offset is strength x p, p the pressure on the
+   * strength curve's 0..1 scale (strengthPressureTerm, 1 for a mouse or a
+   * finger).
    */
   layerPressure(): number {
-    return Tablet.getPressureLayer ? Tablet.getPressureLayer() : 1;
+    return strengthPressureTerm();
+  }
+
+  override start(ctrl: boolean): boolean {
+    this.built.begin();
+    return super.start(ctrl);
   }
 
   /**
    * BOZZETTO EDIT of upstream Brush.stroke (vendor Brush.js): identical
-   * flow; the clay branch raises the layer plane to layer x radius x p
-   * (upstream 0.1 x radius) and flattens with the profile curve below.
+   * flow; the clay branch raises the plane from the form's centre by the
+   * strength x p (upstream 0.1 x radius from the surface's) and flattens
+   * with the profile curve below.
    */
   override stroke(picking: Picking): void {
     let iVertsInRadius = picking.getPickedVertices();
@@ -666,28 +899,45 @@ export class ClayStripsBrush extends Brush {
         picking,
       );
     } else {
-      const aNormal = this.areaNormal(iVertsFront);
+      let aNormal = this.areaNormal(iVertsFront);
       if (!aNormal) return;
-      const aCenter = this._lockPosition
-        ? picking.getIntersectionPoint().slice()
-        : this.areaCenter(iVertsFront);
-      // CHANGED (upstream 0.1 x radius, no pressure term).
-      const off = Math.sqrt(r2) * this.layer * this.layerPressure();
+      const mesh = this.getMesh();
+      this.built.ensure(mesh.getNbVertices());
+      let aCenter: number[];
+      if (this._lockPosition) {
+        aCenter = picking.getIntersectionPoint().slice();
+      } else {
+        // CHANGED (upstream: the area centre and normal of the surface as
+        // it is): the plane fitted to the form (formPlane), so this
+        // stroke's build neither lifts nor tilts it.
+        const n0 = norm3([aNormal[0], aNormal[1], aNormal[2]]);
+        if (!n0) return;
+        const a0 = norm3(tangent(Math.abs(n0[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], n0)) as Vec3;
+        const plane = formPlane(this.built.form(iVertsFront, mesh.getVertices()), iVertsFront, mesh.getMaterials(), n0, a0, cross3(n0, a0));
+        if (!plane) return;
+        aCenter = plane.c;
+        aNormal = plane.n;
+      }
+      // CHANGED (upstream 0.1 x radius, no pressure term): the strength, cm.
+      const pressure = this.layerPressure();
+      const off = (Math.max(0, this._intensity) * pressure) / mesh.getScale();
       this.lastLayerOffset = off;
+      this.lastStrengthDab = {
+        strengthCm: this._intensity,
+        pressureTerm: pressure,
+        strokeLocal: off,
+        stepLocal: 0,
+        integral: 0,
+        spacingFactor: 0,
+        amountLocal: off,
+      };
       vec3.scaleAndAdd(
         aCenter as unknown as vec3,
         aCenter as unknown as vec3,
         aNormal as unknown as vec3,
         this._negative ? -off : off,
       );
-      this.flattenStrips(
-        iVertsInRadius,
-        aNormal,
-        aCenter,
-        picking.getIntersectionPoint(),
-        r2,
-        intensity,
-      );
+      this.flattenStrips(iVertsInRadius, aNormal, aCenter, picking.getIntersectionPoint(), r2);
     }
 
     const mesh = this.getMesh();
@@ -724,7 +974,9 @@ export class ClayStripsBrush extends Brush {
   /**
    * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js):
    * identical projection loop with the profile curve for the falloff
-   * (upstream applies the quartic from d=0).
+   * (upstream applies the quartic from d=0) and the full rate (upstream
+   * scales the step by the intensity): a vertex under the plateau lands on
+   * the plane, never past it. The move is kept as this stroke's build.
    */
   private flattenStrips(
     iVertsInRadius: Uint32Array,
@@ -732,7 +984,6 @@ export class ClayStripsBrush extends Brush {
     aCenter: number[],
     center: number[],
     radiusSquared: number,
-    intensity: number,
   ): void {
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
@@ -751,6 +1002,8 @@ export class ClayStripsBrush extends Brush {
     const anz = aNormal[2];
     const comp = this._negative ? -1.0 : 1.0;
     const curve = this.curve;
+    const built = this.built;
+    const k = built.vec;
     for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
       const ind = iVertsInRadius[i] * 3;
       const vx = vAr[ind];
@@ -763,15 +1016,22 @@ export class ClayStripsBrush extends Brush {
       const dz = vProxy[ind + 2] - cz;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
       if (dist >= 1.0) continue;
-      // CHANGED: the profile curve (upstream applies the quartic from d=0).
-      let fallOff = curve.sample(dist);
-      // Past 1 the step overshoots the plane and flips dents into bumps that
-      // later dabs skip - the Smooth-explosion class; pen pressure reaches
-      // 1.75x here, so the flatten term is capped at exactly-on-plane.
-      fallOff *= distToPlane * Math.min(1, intensity) * mAr[ind + 2];
-      vAr[ind] -= anx * fallOff;
-      vAr[ind + 1] -= any * fallOff;
-      vAr[ind + 2] -= anz * fallOff;
+      // CHANGED: the profile curve (upstream applies the quartic from d=0),
+      // at the full rate: the curve and the mask are each within [0, 1], so
+      // the step never passes the plane.
+      const fallOff = curve.sample(dist) * distToPlane * mAr[ind + 2];
+      if (fallOff === 0) continue;
+      const had = built.has(ind, vAr);
+      vAr[ind] = vx - anx * fallOff;
+      vAr[ind + 1] = vy - any * fallOff;
+      vAr[ind + 2] = vz - anz * fallOff;
+      built.set(
+        ind,
+        (had ? k[ind] : 0) + (vAr[ind] - vx),
+        (had ? k[ind + 1] : 0) + (vAr[ind + 1] - vy),
+        (had ? k[ind + 2] : 0) + (vAr[ind + 2] - vz),
+        vAr,
+      );
     }
   }
 }
@@ -782,8 +1042,12 @@ export interface RakeSettings {
   tines: number;
   /** The fraction of each tine's slot the tine fills, 0.1..1. */
   width: number;
-  /** Groove depth one stroke cuts, as a fraction of the radius, at full pressure. */
-  depth: number;
+  /**
+   * The Strength (the tool's `_intensity`), in cm: the groove depth one
+   * stroke cuts at full pressure, whatever the brush's size (owner call,
+   * 2026-10-31; it replaced Depth, a fraction of the radius).
+   */
+  strength: number;
   /**
    * Scrape (owner name, October 2026, replacing Plateau): how hard each dab
    * pulls the footprint toward its plane before the tines cut, 0 (the
@@ -796,8 +1060,13 @@ export interface RakeSettings {
   invert: boolean;
 }
 
-/** Settings as a scene may carry them: a record from before Scrape has `plateau`. */
-export type RakeSettingsIn = Partial<RakeSettings> & { plateau?: number };
+/**
+ * Settings as a scene may carry them: a record from before Scrape has
+ * `plateau`, and one from before the strength in cm `depth`, the groove as
+ * a fraction of the radius (read as that fraction of
+ * STRENGTH_CALIBRATION_RADIUS, the default brush's radius).
+ */
+export type RakeSettingsIn = Partial<RakeSettings> & { plateau?: number; depth?: number };
 
 export interface RakePreset extends RakeSettings {
   id: string;
@@ -806,18 +1075,22 @@ export interface RakePreset extends RakeSettings {
   profile: string;
 }
 
-/** The rake presets (owner call): picking one sets every knob and the tine profile. */
+/**
+ * The rake presets (owner call): picking one sets every knob, the strength
+ * and the tine profile. The strengths, in cm, are the old Depths (0.05,
+ * 0.04, 0.1, 0.08 and 0.05 of the radius) at the default brush's 3 cm.
+ */
 export const RAKE_PRESETS: readonly RakePreset[] = [
-  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, depth: 0.05, scrape: 0.15, taper: 0, invert: false, profile: 'v' },
-  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, depth: 0.04, scrape: 0.1, taper: 0, invert: false, profile: 'round' },
-  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, depth: 0.1, scrape: 0.25, taper: 0, invert: false, profile: 'round' },
-  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, depth: 0.08, scrape: 0.5, taper: 0, invert: false, profile: 'flat' },
-  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, depth: 0.05, scrape: 1, taper: 0, invert: false, profile: 'flat' },
+  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, strength: 0.15, scrape: 0.15, taper: 0, invert: false, profile: 'v' },
+  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, strength: 0.12, scrape: 0.1, taper: 0, invert: false, profile: 'round' },
+  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, strength: 0.3, scrape: 0.25, taper: 0, invert: false, profile: 'round' },
+  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, strength: 0.25, scrape: 0.5, taper: 0, invert: false, profile: 'flat' },
+  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, strength: 0.15, scrape: 1, taper: 0, invert: false, profile: 'flat' },
 ];
 export const DEFAULT_RAKE_PRESET = 'coarse';
 
 /**
- * One stroke's cut, summed over its dabs, at the default strength: the
+ * One stroke's cut, summed over its dabs: the
  * along falloff (the quartic over the chord, w / chord) summed over dabs
  * `step` apart is about chord x radius / step x the quartic's integral
  * over [-1, 1], which is 2 x 0.6 = 1.2. So a dab cuts its share times
@@ -832,15 +1105,14 @@ const RAKE_MIN_CHORD = 0.2;
 export interface RakeDab {
   tines: number;
   width: number;
-  depth: number;
+  /** The strength, cm: the groove one stroke cuts at full pressure. */
+  strength: number;
   scrape: number;
   taper: number;
   invert: boolean;
-  /** The cut one stroke adds up to, local units: depth x radius x pressure term (x strength / default). */
+  /** The cut one stroke adds up to, local units: strength x pressure term / the mesh's scale. */
   depthLocal: number;
   pressureTerm: number;
-  /** The strength term: min(1, strength) / RAKE_STRENGTH, 1 at the default. */
-  strengthTerm: number;
   /** The distance from the previous dab (or the press), local units, held to the radius. */
   stepLocal: number;
   /** step / (RAKE_ALONG_INTEGRAL x radius): the dab's share of a stroke, before the chord. */
@@ -856,7 +1128,6 @@ export interface RakeDab {
   areaCenter: [number, number, number];
 }
 
-type Vec3 = [number, number, number];
 const norm3 = (v: Vec3): Vec3 | null => {
   const l = Math.hypot(v[0], v[1], v[2]);
   return l > 1e-12 ? [v[0] / l, v[1] / l, v[2] / l] : null;
@@ -868,6 +1139,58 @@ const tangent = (v: Vec3, n: Vec3): Vec3 => {
   const d = dot3(v, n);
   return [v[0] - n[0] * d, v[1] - n[1] * d, v[2] - n[2] * d];
 };
+
+/**
+ * The plane through a dab's FORM (StrokeMoves.form of the front vertices
+ * `iFront`, xyz in `fp`): its point the mask-weighted mean, its normal the
+ * area normal `n0` refined by a least-squares fit of the same positions,
+ * as a height over n0's tangent plane (the unit axes a0, b0 in it). On a
+ * curved form that is the form's normal at the dab, and a stroke's own
+ * moves neither lift nor tilt it. Null when every vertex is masked.
+ */
+function formPlane(fp: Float64Array, iFront: Uint32Array, mAr: Float32Array, n0: Vec3, a0: Vec3, b0: Vec3): { c: Vec3; n: Vec3 } | null {
+  const nf = iFront.length;
+  let ax = 0;
+  let ay = 0;
+  let az = 0;
+  let acc = 0;
+  for (let i = 0; i < nf; ++i) {
+    const f = mAr[iFront[i] * 3 + 2];
+    ax += fp[i * 3] * f;
+    ay += fp[i * 3 + 1] * f;
+    az += fp[i * 3 + 2] * f;
+    acc += f;
+  }
+  if (!(acc > 0)) return null;
+  ax /= acc;
+  ay /= acc;
+  az /= acc;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  let sxz = 0;
+  let syz = 0;
+  for (let i = 0; i < nf; ++i) {
+    const f = mAr[iFront[i] * 3 + 2];
+    const d: Vec3 = [fp[i * 3] - ax, fp[i * 3 + 1] - ay, fp[i * 3 + 2] - az];
+    const x = dot3(d, a0);
+    const y = dot3(d, b0);
+    const z = dot3(d, n0);
+    sxx += f * x * x;
+    sxy += f * x * y;
+    syy += f * y * y;
+    sxz += f * x * z;
+    syz += f * y * z;
+  }
+  const det = sxx * syy - sxy * sxy;
+  let n = n0;
+  if (det > 1e-9 * (sxx + syy) * (sxx + syy)) {
+    const sa = (sxz * syy - syz * sxy) / det;
+    const sb = (syz * sxx - sxz * sxy) / det;
+    n = norm3([n0[0] - sa * a0[0] - sb * b0[0], n0[1] - sa * a0[1] - sb * b0[1], n0[2] - sa * a0[2] - sb * b0[2]]) ?? n0;
+  }
+  return { c: [ax, ay, az], n };
+}
 
 /**
  * The tine rake (owner call, October 2026, replacing the stencil rake): N
@@ -897,7 +1220,7 @@ const tangent = (v: Vec3, n: Vec3): Vec3 => {
  * Per vertex, in one pass over the vertices in the radius:
  *
  * 1. Scrape: the form pulled toward the plane by min(1, scrape x quartic
- *    x strength) (clay strips' flatten, from both sides, capped so it
+ *    x 0.6 x pressure factor) (clay strips' flatten, from both sides, capped so it
  *    lands on the plane and never passes it). The cut this stroke already
  *    made rides along, so the scrape planes the form under the grooves and
  *    never fills them back in.
@@ -907,27 +1230,29 @@ const tangent = (v: Vec3, n: Vec3): Vec3 => {
  *    The tine profile curve gives the weight at t (0 past the tine). Along
  *    the stroke the quartic applies over the vertex's distance along the
  *    stroke as a fraction of the chord of the disc at u. The vertex moves
- *    along the normal by depth x radius x profile(t) x taper x along
- *    falloff x pressure term x strength term x step / (1.2 x chord x
- *    radius): inward, outward with Invert (or the stroke's Ctrl), and
- *    every dab adds to the last, as the Standard brush does.
+ *    along the normal by strength x profile(t) x taper x along falloff x
+ *    pressure term x step / (1.2 x chord x radius): inward, outward with
+ *    Invert (or the stroke's Ctrl), and every dab adds to the last, as the
+ *    Standard brush does.
  *
  * The last factor is the spacing compensation (RAKE_ALONG_INTEGRAL): one
- * stroke at the default strength and full pressure cuts depth x radius,
- * whatever the spacing or the stroke speed, so Depth means one pass.
- * Pressure scales it once, through the clay layer's term (Tablet's layer
- * term: a mouse or a finger is full); the strength slider scales it as a
- * multiple of its default, capped at 1.
+ * stroke at full pressure cuts the Strength, in cm, whatever the brush's
+ * size, the spacing or the stroke speed (owner call, 2026-10-31: it
+ * replaced Depth, a fraction of the radius). Pressure scales it once,
+ * through the clay layer's term (strengthPressureTerm: a mouse or a finger
+ * is full). The scrape's rate keeps the old default strength's factor,
+ * RAKE_SCRAPE_STRENGTH, times the pressure factor.
  *
  * Positions follow the Standard brush (vendor Brush.brush): distances are
  * measured on the stroke-start positions (the proxy) when _accumulate is
  * off and on the current ones when it is on (the default), and the moves
  * add to the current positions.
  */
-export class RakeBrush extends Brush {
+export class RakeBrush extends Brush implements StrengthCmBrush {
+  readonly strengthUnit = 'cm' as const;
+  readonly defaultStrength: number = RAKE_PRESETS.find((p) => p.id === DEFAULT_RAKE_PRESET)?.strength ?? 0.3;
   tines = 4;
   tineWidth = 0.7;
-  depth = 0.1;
   scrape = 0.25;
   taper = 0;
   invert = false;
@@ -955,21 +1280,17 @@ export class RakeBrush extends Brush {
    * rake left it: dynamic topology renumbers and moves vertices, and an
    * entry that no longer matches is a vertex the rake has not cut.
    */
-  private cutVec = new Float32Array(0);
-  private cutPos = new Float32Array(0);
-  private cutStroke = new Uint32Array(0);
-  private strokeId = 0;
+  private readonly cuts = new StrokeMoves();
 
   constructor(session: SculptSession) {
     super(session);
     this._idAlpha = null;
     this._clay = false;
     this._spacing = RAKE_SPACING;
-    this._intensity = RAKE_STRENGTH;
     this.applyPreset(DEFAULT_RAKE_PRESET);
   }
 
-  /** Set every knob and the tine profile from a preset; false for an unknown id. */
+  /** Set every knob, the strength and the tine profile from a preset; false for an unknown id. */
   applyPreset(id: string): boolean {
     const p = RAKE_PRESETS.find((x) => x.id === id);
     if (!p) return false;
@@ -980,31 +1301,35 @@ export class RakeBrush extends Brush {
   }
 
   settings(): RakeSettings {
-    return { tines: this.tines, width: this.tineWidth, depth: this.depth, scrape: this.scrape, taper: this.taper, invert: this.invert };
+    return { tines: this.tines, width: this.tineWidth, strength: this._intensity, scrape: this.scrape, taper: this.taper, invert: this.invert };
   }
 
   /**
    * Set knobs (each held to its range); a preset id no longer describes
    * them unless they match it. A `plateau` (a record from before Scrape)
-   * sets the scrape, at the same value, when no `scrape` comes with it.
+   * sets the scrape, at the same value, when no `scrape` comes with it; a
+   * `depth` (a record from before the strength in cm) sets the strength,
+   * as that fraction of the default brush's radius, when no `strength`
+   * does. `set({})` re-reads the preset after the strength moved elsewhere.
    */
   set(s: RakeSettingsIn): void {
     const num = (v: unknown, lo: number, hi: number, cur: number): number =>
       typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : cur;
     this.tines = Math.round(num(s.tines, RAKE_TINES_MIN, RAKE_TINES_MAX, this.tines));
     this.tineWidth = num(s.width, 0.1, 1, this.tineWidth);
-    this.depth = num(s.depth, 0, 1, this.depth);
+    const legacy = typeof s.depth === 'number' && Number.isFinite(s.depth) ? Math.min(1, Math.max(0, s.depth)) * STRENGTH_CALIBRATION_RADIUS : undefined;
+    this._intensity = num(s.strength, 0, STRENGTH_CM_LIMIT, num(legacy, 0, STRENGTH_CM_MAX, this._intensity));
     this.scrape = num(s.scrape, 0, 1, num(s.plateau, 0, 1, this.scrape));
     this.taper = num(s.taper, 0, 1, this.taper);
     if (typeof s.invert === 'boolean') this.invert = s.invert;
     const p = RAKE_PRESETS.find((x) => x.id === this.presetId);
-    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.depth === this.depth && p.scrape === this.scrape && p.taper === this.taper && p.invert === this.invert;
+    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.strength === this._intensity && p.scrape === this.scrape && p.taper === this.taper && p.invert === this.invert;
     if (!same) this.presetId = null;
   }
 
   /** The depth's pressure term, 0..1: the clay layer's (a mouse or a finger is full). */
   pressureTerm(): number {
-    return Tablet.getPressureLayer ? Tablet.getPressureLayer() : 1;
+    return strengthPressureTerm();
   }
 
   override start(ctrl: boolean): boolean {
@@ -1012,7 +1337,7 @@ export class RakeBrush extends Brush {
     this.prev.sym = null;
     this.strokeAcross = null;
     // A new stroke: every cut entry from before is the form now.
-    this.strokeId = (this.strokeId + 1) >>> 0 || 1;
+    this.cuts.begin();
     const ok = super.start(ctrl);
     if (!ok) return ok;
     // The press is where the first dab's direction comes from.
@@ -1030,7 +1355,8 @@ export class RakeBrush extends Brush {
   override stroke(picking: Picking): void {
     const session = this._main as SculptSession;
     let iVertsInRadius = picking.getPickedVertices();
-    const intensity = this._intensity * Tablet.getPressureIntensity();
+    // The scrape's rate: the old default strength's, with the pressure factor.
+    const intensity = RAKE_SCRAPE_STRENGTH * Tablet.getPressureIntensity();
 
     if (!this._accumulate && !this._lockPosition) this.updateProxy(iVertsInRadius);
     session.getStateManager().pushVertices(iVertsInRadius);
@@ -1083,27 +1409,6 @@ export class RakeBrush extends Brush {
     mesh.updateGeometry(mesh.getFacesFromVertices(iVertsInRadius), iVertsInRadius);
   }
 
-  /** The cut tables, at least `nb` vertices long (kept across strokes, grown with slack). */
-  private cutTables(nb: number): void {
-    if (this.cutStroke.length >= nb) return;
-    const len = Math.ceil(nb * 1.25) + 64;
-    const vec = new Float32Array(len * 3);
-    vec.set(this.cutVec);
-    const pos = new Float32Array(len * 3);
-    pos.set(this.cutPos);
-    const id = new Uint32Array(len);
-    id.set(this.cutStroke);
-    this.cutVec = vec;
-    this.cutPos = pos;
-    this.cutStroke = id;
-  }
-
-  /** Whether vertex `ind / 3` carries a cut from this stroke and still sits where the rake left it. */
-  private hasCut(ind: number, vAr: Float32Array): boolean {
-    const p = this.cutPos;
-    return this.cutStroke[ind / 3] === this.strokeId && p[ind] === vAr[ind] && p[ind + 1] === vAr[ind + 1] && p[ind + 2] === vAr[ind + 2];
-  }
-
   /** The one pass over the vertices in the radius (see the class comment). */
   private rake(
     iVerts: Uint32Array,
@@ -1123,70 +1428,24 @@ export class RakeBrush extends Brush {
     // As vendor Brush.brush: distances on the stroke-start positions
     // unless the brush accumulates.
     const vProxy = this._accumulate || this._lockPosition ? vAr : mesh.getVerticesProxy();
-    this.cutTables(mesh.getNbVertices());
-    const cut = this.cutVec;
+    const cuts = this.cuts;
+    cuts.ensure(mesh.getNbVertices());
+    const cut = cuts.vec;
 
-    // The form: the front vertices' positions with this stroke's cut taken out.
-    const nf = iFront.length;
-    const fp = new Float64Array(nf * 3);
-    for (let i = 0; i < nf; ++i) {
-      const ind = iFront[i] * 3;
-      const had = this.hasCut(ind, vAr);
-      fp[i * 3] = had ? vAr[ind] - cut[ind] : vAr[ind];
-      fp[i * 3 + 1] = had ? vAr[ind + 1] - cut[ind + 1] : vAr[ind + 1];
-      fp[i * 3 + 2] = had ? vAr[ind + 2] - cut[ind + 2] : vAr[ind + 2];
-    }
-
-    // The plane's centre: the mask-weighted mean of the form.
-    let ax = 0;
-    let ay = 0;
-    let az = 0;
-    let acc = 0;
-    for (let i = 0; i < nf; ++i) {
-      const f = mAr[iFront[i] * 3 + 2];
-      ax += fp[i * 3] * f;
-      ay += fp[i * 3 + 1] * f;
-      az += fp[i * 3 + 2] * f;
-      acc += f;
-    }
-    if (acc <= 0) return;
-    ax /= acc;
-    ay /= acc;
-    az /= acc;
-    // Its normal: the area normal, refined by a least-squares fit to the
-    // same positions (as a height over the area normal's tangent plane).
-    let sxx = 0;
-    let sxy = 0;
-    let syy = 0;
-    let sxz = 0;
-    let syz = 0;
-    for (let i = 0; i < nf; ++i) {
-      const f = mAr[iFront[i] * 3 + 2];
-      const d: Vec3 = [fp[i * 3] - ax, fp[i * 3 + 1] - ay, fp[i * 3 + 2] - az];
-      const x = dot3(d, across0);
-      const y = dot3(d, along0);
-      const z = dot3(d, n0);
-      sxx += f * x * x;
-      sxy += f * x * y;
-      syy += f * y * y;
-      sxz += f * x * z;
-      syz += f * y * z;
-    }
-    const det = sxx * syy - sxy * sxy;
-    let n = n0;
-    if (det > 1e-9 * (sxx + syy) * (sxx + syy)) {
-      const sa = (sxz * syy - syz * sxy) / det;
-      const sb = (syz * sxx - sxz * sxy) / det;
-      n = norm3([n0[0] - sa * across0[0] - sb * along0[0], n0[1] - sa * across0[1] - sb * along0[1], n0[2] - sa * across0[2] - sb * along0[2]]) ?? n0;
-    }
+    // The form: the front vertices' positions with this stroke's cut taken
+    // out, and the plane fitted to it.
+    const plane = formPlane(cuts.form(iFront, vAr), iFront, mAr, n0, across0, along0);
+    if (!plane) return;
+    const { n } = plane;
+    const [ax, ay, az] = plane.c;
     const across = norm3(tangent(across0, n)) ?? across0;
     const along = cross3(across, n);
 
     const N = this.tines;
     const halfWidth = this.tineWidth / N;
     const pressure = this.pressureTerm();
-    const strengthTerm = Math.min(1, this._intensity) / RAKE_STRENGTH;
-    const depth = this.depth * radius * pressure * strengthTerm;
+    // The strength, cm, in local units: one stroke's cut (see the class comment).
+    const depth = (Math.max(0, this._intensity) * pressure) / mesh.getScale();
     const spacingFactor = step / (RAKE_ALONG_INTEGRAL * radius);
     // Inward (down the normal) unless inverted; the stroke's Ctrl flips it too.
     const comp = this.invert !== this._negative ? -1.0 : 1.0;
@@ -1201,13 +1460,12 @@ export class RakeBrush extends Brush {
     this.lastDab = {
       tines: N,
       width: this.tineWidth,
-      depth: this.depth,
+      strength: this._intensity,
       scrape,
       taper,
       invert: comp < 0,
       depthLocal: depth,
       pressureTerm: pressure,
-      strengthTerm,
       stepLocal: step,
       spacingFactor,
       across,
@@ -1216,9 +1474,6 @@ export class RakeBrush extends Brush {
       areaNormal: n,
       areaCenter: [ax, ay, az],
     };
-    const stamp = this.cutStroke;
-    const pos = this.cutPos;
-    const id = this.strokeId;
     for (let i = 0, l = iVerts.length; i < l; ++i) {
       const ind = iVerts[i] * 3;
       const px = vProxy[ind] - cx;
@@ -1228,7 +1483,7 @@ export class RakeBrush extends Brush {
       if (dist >= 1.0) continue;
       const mask = mAr[ind + 2];
       if (mask <= 0) continue;
-      const had = this.hasCut(ind, vAr);
+      const had = cuts.has(ind, vAr);
       let kx = had ? cut[ind] : 0;
       let ky = had ? cut[ind + 1] : 0;
       let kz = had ? cut[ind + 2] : 0;
@@ -1268,16 +1523,8 @@ export class RakeBrush extends Brush {
       vAr[ind] = vx;
       vAr[ind + 1] = vy;
       vAr[ind + 2] = vz;
-      if (amount !== 0 || had) {
-        // Read back: the entry holds the position exactly as stored.
-        cut[ind] = kx;
-        cut[ind + 1] = ky;
-        cut[ind + 2] = kz;
-        pos[ind] = vAr[ind];
-        pos[ind + 1] = vAr[ind + 1];
-        pos[ind + 2] = vAr[ind + 2];
-        stamp[ind / 3] = id;
-      }
+      // Read back: the entry holds the position exactly as stored.
+      if (amount !== 0 || had) cuts.set(ind, kx, ky, kz, vAr);
     }
   }
 }
@@ -1299,33 +1546,56 @@ export class RakeBrush extends Brush {
  *   Pinch - how hard the sideways gather pulls. 0 carves without gathering
  *     (a groove, not a crease); 1 is upstream; above that the surface
  *     draws into the cut and the edge sharpens as it deepens.
+ *
+ * Strength (owner call, 2026-10-31) is in cm: how far one stroke at full
+ * pressure raises (or, with Negative, cuts) the line it follows, whatever
+ * the brush's size. Each dab's crest is its share of that, as the rake
+ * shares out its cut: strength x pressure term x step / (the crest
+ * curve's integral across the dab x radius). The pinch keeps its relation
+ * to the crest: each dab gathers by pinch x (the dab's crest at the centre
+ * / radius), which at the old defaults is the old 0.07 x strength.
  */
-export class CreaseBrush extends Crease {
+export class CreaseBrush extends Crease implements StrengthCmBrush {
+  readonly strengthUnit = 'cm' as const;
+  readonly defaultStrength = CREASE_STRENGTH;
   /** The crest's falloff (the Tool panel's curve): low a broad trough, sharp a knife line. */
   readonly curve = new ProfileCurve(CREASE_PROFILES, 'sharp');
   /** Sideways gather toward the stroke; 0 carves without pinching. */
   pinch = CREASE_PINCH;
+  /** The last dab's strength terms (the parity recorder and the tests read it). */
+  lastStrengthDab: StrengthDab | null = null;
+  private readonly steps = new DabSteps();
 
   constructor(session: SculptSession) {
     super(session);
     this._idAlpha = null; // as above: upstream leaves a numeric 0 here
-    this._intensity = 0.5;
+    this._intensity = CREASE_STRENGTH;
     this._spacing = CREASE_SPACING;
+  }
+
+  override start(ctrl: boolean): boolean {
+    this.steps.clear();
+    const ok = super.start(ctrl);
+    if (ok) this.steps.begin(this._main as SculptSession);
+    return ok;
   }
 
   /**
    * BOZZETTO EDIT of upstream Crease.crease (vendor Crease.js): the same
-   * loop, with the hardcoded pow(fallOff, 5) replaced by the profile curve
-   * and the implicit pinch weight of 1 by the field above.
+   * loop, with the hardcoded pow(fallOff, 5) replaced by the profile curve,
+   * the implicit pinch weight of 1 by the field above, and the dab's crest
+   * its share of the strength in cm (the class comment) where upstream
+   * scaled 0.07 x intensity x radius.
    */
   override crease(
     iVertsInRadius: Uint32Array,
     aNormal: number[],
     center: number[],
     radiusSquared: number,
-    intensity: number,
+    _intensity: number,
     picking: Picking,
   ): void {
+    const session = this._main as SculptSession;
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
     const mAr = mesh.getMaterials();
@@ -1337,11 +1607,20 @@ export class CreaseBrush extends Crease {
     const anx = aNormal[0];
     const any = aNormal[1];
     const anz = aNormal[2];
-    const deformIntensity = intensity * 0.07;
-    let brushFactor = deformIntensity * radius;
-    if (this._negative) brushFactor = -brushFactor;
-    const pinch = deformIntensity * this.pinch; // CHANGED (upstream: deformIntensity)
     const curve = this.curve;
+    // CHANGED (upstream: brushFactor = 0.07 x intensity x radius): the
+    // dab's share of the strength.
+    const pressure = strengthPressureTerm();
+    const strokeLocal = (Math.max(0, this._intensity) * pressure) / mesh.getScale();
+    const step = this.steps.step(sideOf(session, picking), [cx, cy, cz], radius);
+    const integral = Math.max(1e-3, curve.lineIntegral());
+    const spacingFactor = step / (integral * radius);
+    const amount = strokeLocal * spacingFactor;
+    this.lastStrengthDab = { strengthCm: this._intensity, pressureTerm: pressure, strokeLocal, stepLocal: step, integral, spacingFactor, amountLocal: amount };
+    const brushFactor = this._negative ? -amount : amount;
+    // CHANGED (upstream: deformIntensity = 0.07 x intensity): the gather
+    // follows the crest, pinch x crest / radius.
+    const pinch = (amount / radius) * this.pinch;
     picking.setIdAlpha(null);
     for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
       const ind = iVertsInRadius[i] * 3;
@@ -1361,6 +1640,79 @@ export class CreaseBrush extends Crease {
       vAr[ind] = vx + dx * gather + anx * brushModifier;
       vAr[ind + 1] = vy + dy * gather + any * brushModifier;
       vAr[ind + 2] = vz + dz * gather + anz * brushModifier;
+    }
+  }
+}
+
+/**
+ * Inflate with its Strength in cm (owner call, 2026-10-31): how far one
+ * stroke at full pressure pushes the surface out along its normals at the
+ * brush centre, whatever the brush's size. Each dab pushes its share, as
+ * the rake shares out its cut: strength x pressure term x step / (1.2 x
+ * radius), 1.2 the quartic's integral across the dab. Otherwise upstream's
+ * loop (vendor Inflate.inflate), which scaled 0.1 x intensity x radius.
+ */
+export class InflateBrush extends Inflate implements StrengthCmBrush {
+  readonly strengthUnit = 'cm' as const;
+  readonly defaultStrength = INFLATE_STRENGTH;
+  /** The last dab's strength terms (the parity recorder and the tests read it). */
+  lastStrengthDab: StrengthDab | null = null;
+  private readonly steps = new DabSteps();
+
+  constructor(session: SculptSession) {
+    super(session);
+    this._intensity = INFLATE_STRENGTH;
+  }
+
+  override start(ctrl: boolean): boolean {
+    this.steps.clear();
+    const ok = super.start(ctrl);
+    if (ok) this.steps.begin(this._main as SculptSession);
+    return ok;
+  }
+
+  /** BOZZETTO EDIT of upstream Inflate.inflate (vendor Inflate.js): the dab's share of the strength (the class comment). */
+  override inflate(iVerts: Uint32Array, center: number[], radiusSquared: number, _intensity: number, picking: Picking): void {
+    const session = this._main as SculptSession;
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const mAr = mesh.getMaterials();
+    const vProxy = mesh.getVerticesProxy();
+    const nAr = mesh.getNormals();
+    const radius = Math.sqrt(radiusSquared);
+    const cx = center[0];
+    const cy = center[1];
+    const cz = center[2];
+    // CHANGED (upstream: intensity x radius x 0.1).
+    const pressure = strengthPressureTerm();
+    const strokeLocal = (Math.max(0, this._intensity) * pressure) / mesh.getScale();
+    const step = this.steps.step(sideOf(session, picking), [cx, cy, cz], radius);
+    const spacingFactor = step / (QUARTIC_LINE_INTEGRAL * radius);
+    const amount = strokeLocal * spacingFactor;
+    this.lastStrengthDab = { strengthCm: this._intensity, pressureTerm: pressure, strokeLocal, stepLocal: step, integral: QUARTIC_LINE_INTEGRAL, spacingFactor, amountLocal: amount };
+    let deformIntensity = amount;
+    if (this._negative) deformIntensity = -deformIntensity;
+    for (let i = 0, l = iVerts.length; i < l; ++i) {
+      const ind = iVerts[i] * 3;
+      const dx = vProxy[ind] - cx;
+      const dy = vProxy[ind + 1] - cy;
+      const dz = vProxy[ind + 2] - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist >= 1.0) continue;
+      let fallOff = dist * dist;
+      fallOff = 3.0 * fallOff * fallOff - 4.0 * fallOff * dist + 1.0;
+      fallOff = deformIntensity * fallOff;
+      const vx = vAr[ind];
+      const vy = vAr[ind + 1];
+      const vz = vAr[ind + 2];
+      const nx = nAr[ind];
+      const ny = nAr[ind + 1];
+      const nz = nAr[ind + 2];
+      fallOff /= Math.sqrt(nx * nx + ny * ny + nz * nz);
+      fallOff *= mAr[ind + 2] * picking.getAlpha(vx, vy, vz);
+      vAr[ind] = vx + nx * fallOff;
+      vAr[ind + 1] = vy + ny * fallOff;
+      vAr[ind + 2] = vz + nz * fallOff;
     }
   }
 }
