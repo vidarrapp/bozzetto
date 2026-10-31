@@ -71,6 +71,22 @@ const withSource = (h, edit) => {
   edit?.(source, h);
 };
 
+/**
+ * Give the scene's object poly groups (SavedMesh.groups, polyGroups.ts):
+ * one u32 a face of its top level (the one level here, one face), two
+ * names, and a u8 hidden flag a name. `edit` then has its way with them.
+ */
+const withGroups = (h, edit) => {
+  const add = (t, len) => {
+    const end = h.buffers.reduce((e, b) => Math.max(e, b.off + b.len * (b.t === 'u8' ? 1 : 4)), 0);
+    h.buffers.push({ t, off: Math.ceil(end / 4) * 4, len });
+    return { __buf: h.buffers.length - 1 };
+  };
+  const groups = { v: 1, faces: add('u32', 1), names: ['Group 1', 'Top'], hidden: add('u8', 2) };
+  h.scene.meshes[0].groups = groups;
+  edit?.(groups, h);
+};
+
 export async function run({ checks, on, off, compileShared, repo }) {
   const member = new Browser(on, { ip: '198.51.100.60', clock: { now: T + 60_000 } });
   member.jar.set('__Host-bz_session', seededToken('cn-member'));
@@ -145,6 +161,18 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withSource(h, (src) => (src.fileToLocal = src.fileToLocal.slice(0, 15))) }), /OBJ numbering record/, 'an OBJ record with a transform of 15'],
     [bozz({ edit: (h) => withSource(h, (src) => (src.nbFileVertices = 4 + 8_000_000)) }), /OBJ numbering record/, 'an OBJ record past the vertex ceiling'],
     [bozz({ edit: (h) => withSource(h, (src) => (src.faceSizes = [3])) }), /OBJ numbering record/, 'an OBJ record whose face sizes are no array'],
+    // The poly groups (SavedMesh.groups), one thing wrong at a time.
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.v = 2)) }), /bad poly groups \(a version/, 'poly groups of a version there is not'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].len = 0)) }), /bad poly groups \(not one group a face/, 'poly groups for fewer faces than the top level has'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].t = 'f32')) }), /bad poly groups \(not one group a face/, 'poly groups that are floats'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.faces = [0])) }), /bad poly groups \(not one group a face/, 'poly groups as a plain list'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.names = [])) }), /bad poly groups \(not 1 to 4096 names/, 'poly groups with no names'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.names = Array.from({ length: 4097 }, (_, i) => `G${i}`))) }), /bad poly groups \(not 1 to 4096 names/, '4,097 poly groups'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.names[1] = 'n'.repeat(201))) }), /bad poly groups \(a name that is not one/, 'a poly group named in 201 characters'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.names[1] = 7)) }), /bad poly groups \(a name that is not one/, 'a poly group named by a number'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.hidden.__buf].len = 1)) }), /bad poly groups \(hidden flags/, 'hidden flags short of the groups'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.hidden.__buf].t = 'u32')) }), /bad poly groups \(hidden flags/, 'hidden flags of four bytes each'],
+    [bozz({ edit: (h) => (h.buffers[0].t = 'u16') }), /a bad buffer entry/, 'a buffer of sixteen-bit numbers'],
   ];
   for (const [file, reason, what] of cases) {
     const { r } = await send(file);
@@ -164,6 +192,13 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(numbered.status === 201, `a scene with an OBJ numbering record is taken (${numbered.status} ${numbered.json?.reason ?? ''})`);
   const { r: noUVs } = await send(bozz({ edit: (h) => withSource(h, (src) => Object.assign(src, { faceUVs: null, nbUVs: 0, textBytes: 0, text: null, extraAt: null })) }));
   t.ok(noUVs.status === 201, `and one without texture coordinates or kept lines (${noUVs.status} ${noUVs.json?.reason ?? ''})`);
+  // Poly groups, with a u8 array for their hidden flags, and without one.
+  const { r: grouped } = await send(bozz({ edit: (h) => withGroups(h) }));
+  t.ok(grouped.status === 201, `a scene with poly groups and their hidden flags (a u8 array) is taken (${grouped.status} ${grouped.json?.reason ?? ''})`);
+  const { r: noHidden } = await send(bozz({ edit: (h) => withGroups(h, (g) => delete g.hidden) }));
+  t.ok(noHidden.status === 201, `and one with nothing hidden (${noHidden.status} ${noHidden.json?.reason ?? ''})`);
+  const { r: bareGroups } = await send(bozz({ raw: true, edit: (h) => withGroups(h) }));
+  t.ok(bareGroups.status === 201, `and a bare one, its u8 array padded to four bytes (${bareGroups.status} ${bareGroups.json?.reason ?? ''})`);
   t.report();
 
   // --- the file as a whole ------------------------------------------------------------------------

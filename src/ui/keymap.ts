@@ -72,6 +72,11 @@ export const ACTIONS: ActionDef[] = [
   { id: 'mask.invert', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+i' },
   { id: 'mask.tint', label: 'Show / hide mask tint', group: 'Masking', mode: 'sculpt', chord: 'ctrl+h' },
   { id: 'mask.extract', label: 'Extract masked region', group: 'Masking', mode: 'sculpt', chord: 'ctrl+e' },
+  // --- sculpt: poly groups ---
+  { id: 'groups.show', label: 'Show / hide the poly group colours', group: 'Poly groups', mode: 'sculpt', chord: 'shift+f' },
+  { id: 'groups.fromMask', label: 'Group the masked faces (a new poly group; in a browser tab Ctrl+W closes the tab, so use the Model panel there)', group: 'Poly groups', mode: 'sculpt', chord: 'ctrl+w' },
+  { id: 'gesture.groupIsolate', label: 'Show a poly group alone; again hides it and shows the rest; on empty space shows all', group: 'Poly groups', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + Shift + click' },
+  { id: 'gesture.groupMask', label: 'Mask a poly group (+ Alt unmasks it)', group: 'Poly groups', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click on the model' },
   // --- sculpt: navigation ---
   { id: 'gesture.orbit', label: 'Orbit (around your last stroke; a finger orbits anywhere)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Drag off mesh' },
   { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Cmd / Shift + drag' },

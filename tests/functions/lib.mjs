@@ -128,7 +128,8 @@ export function sceneHeader({ vertices = 3, faces = 1 } = {}) {
 }
 
 /** Where a header's arrays end: what its blob region must hold. */
-const blobOf = (header) => (Array.isArray(header?.buffers) ? header.buffers.reduce((end, e) => Math.max(end, (e?.off ?? 0) + (e?.len ?? 0) * 4), 0) : 0);
+const blobOf = (header) =>
+  Array.isArray(header?.buffers) ? header.buffers.reduce((end, e) => Math.max(end, (e?.off ?? 0) + (e?.len ?? 0) * (e?.t === 'u8' ? 1 : 4)), 0) : 0;
 
 /**
  * A .bozz scene file as the app packs one, gzipped unless `raw`: the

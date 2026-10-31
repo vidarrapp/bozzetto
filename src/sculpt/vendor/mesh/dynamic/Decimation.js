@@ -110,6 +110,9 @@ var deleteTriangle = function (iTri) {
 
   ftf[iTri] = ftf[lastPos];
   fstf[iTri] = fstf[lastPos];
+  // BOZZETTO EDIT: the moved face takes its poly group along.
+  var fg = mesh._facesGroups;
+  if (fg) fg[iTri] = fg[lastPos];
   iTri *= 4;
   fAr[iTri] = iv1;
   fAr[iTri + 1] = iv2;

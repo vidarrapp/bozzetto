@@ -13,7 +13,7 @@
 // - Ctrl + Shift + Alt unmasks that side of a whole mask; the mask adds to
 //   one already there; a mouse drag up masks the upper half;
 // - a Ctrl + Shift click, or a drag under 6 px, masks nothing, starts no
-//   stroke and leaves no undo step (poly groups will take the click);
+//   stroke and leaves no undo step (the click is poly groups', polyGroups.mjs);
 // - with symmetry on, the side is mirrored across the symmetry plane;
 // - on the cube, a drag across one of its edges finds that edge's loop
 //   running from corner pole to corner pole (valence 3 at both ends), which
@@ -31,7 +31,7 @@ const SHIFT = 8;
 const ALT = 1;
 
 /** The page's frames: two, so a preview scheduled on a move has drawn. */
-const frames = (page) => page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+export const frames = (page) => page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
 
 /** The active object's mask: how many vertices are masked (value under 0.5), and how many part-way. */
 const maskCount = (page) =>
@@ -50,7 +50,7 @@ const maskCount = (page) =>
   });
 
 /** A mouse drag through CDP, with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift). */
-async function mouseDrag(page, path, modifiers) {
+export async function mouseDrag(page, path, modifiers) {
   const cdp = await page.context().newCDPSession(page);
   const send = (type, [x, y], buttons) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, modifiers });
   await send('mouseMoved', path[0], 0);
@@ -60,7 +60,7 @@ async function mouseDrag(page, path, modifiers) {
   await cdp.detach();
 }
 
-const along = ([x0, y0], [x1, y1], n = 6) => Array.from({ length: n + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
+export const along = ([x0, y0], [x1, y1], n = 6) => Array.from({ length: n + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
 
 /**
  * In the page: a drag across the grid at vertex `c` (the local point
@@ -69,7 +69,7 @@ const along = ([x0, y0], [x1, y1], n = 6) => Array.from({ length: n + 1 }, (_, i
  * nearest the drag's midpoint, a third of a face from it). Returns the
  * drag's ends in client px and c's local position.
  */
-function gridDrag({ name, at, from, side, reach = 60 }) {
+export function gridDrag({ name, at, from, side, reach = 60 }) {
   const { session, input } = window.__sculpt;
   const mesh = session.getMeshes().find((m) => session.getMeshName(m) === name);
   const v = mesh.getVertices();
@@ -165,7 +165,7 @@ const setMask = (page, fn) =>
     session.render();
   }, fn);
 
-const view = (page, position, target) =>
+export const view = (page, position, target) =>
   page.evaluate(
     ([p, tg]) => {
       window.__sculpt.viewer.controls.setState(p, tg);

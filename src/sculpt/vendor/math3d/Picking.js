@@ -47,6 +47,7 @@ class Picking {
     this._xSym = !!xSym;
 
     this._pickedNormal = [0.0, 0.0, 0.0];
+    this._hiddenVerts = null; // BOZZETTO EDIT: the topological walk's hidden vertices
     // alpha stuffs
     this._alphaOrigin = [0.0, 0.0, 0.0];
     this._alphaSide = 0.0;
@@ -225,7 +226,10 @@ class Picking {
     var iFacesCandidates = mesh.intersectRay(_TMP_NEAR, eyeDir);
     var distance = Infinity;
     var nbFacesCandidates = iFacesCandidates.length;
+    // BOZZETTO EDIT: faces of a hidden poly group are not there to hit.
+    var hiddenFaces = Picking.hiddenFaces ? Picking.hiddenFaces(mesh) : null;
     for (var i = 0; i < nbFacesCandidates; ++i) {
+      if (hiddenFaces && hiddenFaces[iFacesCandidates[i]]) continue;
       var indFace = iFacesCandidates[i] * 4;
       var ind1 = fAr[indFace] * 3;
       var ind2 = fAr[indFace + 1] * 3;
@@ -275,6 +279,8 @@ class Picking {
     var iFacesInCells = mesh.intersectSphere(inter, rLocal2, true);
     var iVerts = mesh.getVerticesFromFaces(iFacesInCells);
     var nbVerts = iVerts.length;
+    // BOZZETTO EDIT: a vertex of a hidden poly group's face is not sculpted.
+    var hiddenVerts = Picking.hiddenVertices ? Picking.hiddenVertices(mesh) : null;
 
     var sculptFlag = ++Utils.SCULPT_FLAG;
     var pickedVertices = new Uint32Array(Utils.getMemory(4 * nbVerts), 0, nbVerts);
@@ -285,6 +291,7 @@ class Picking {
 
     for (var i = 0; i < nbVerts; ++i) {
       var ind = iVerts[i];
+      if (hiddenVerts && hiddenVerts[ind]) continue;
       var j = ind * 3;
       var dx = itx - vAr[j];
       var dy = ity - vAr[j + 1];
@@ -301,6 +308,8 @@ class Picking {
 
   _isInsideSphere(id, inter, rLocal2) {
     if (id === Utils.TRI_INDEX) return false;
+    // BOZZETTO EDIT: nor is a hidden one a place to start from.
+    if (this._hiddenVerts && this._hiddenVerts[id]) return false;
     var iv = id * 3;
     return vec3.sqrDist(inter, this._mesh.getVertices().subarray(iv, iv + 3)) <= rLocal2;
   }
@@ -330,6 +339,8 @@ class Picking {
     var pickedVertices = new Uint32Array(Utils.getMemory(4 * nbVertices), 0, nbVertices);
     var idf = this.getPickedFace() * 4;
     var acc = 1;
+    // BOZZETTO EDIT: the walk does not enter a hidden poly group's vertices.
+    var hiddenVerts = this._hiddenVerts = Picking.hiddenVertices ? Picking.hiddenVertices(mesh) : null;
 
     if (this._isInsideSphere(fAr[idf], inter, rLocal2)) pickedVertices[0] = fAr[idf];
     else if (this._isInsideSphere(fAr[idf + 1], inter, rLocal2)) pickedVertices[0] = fAr[idf + 1];
@@ -359,6 +370,8 @@ class Picking {
         if (vertTagFlags[idv] === tagFlag)
           continue;
         vertTagFlags[idv] = tagFlag;
+        if (hiddenVerts && hiddenVerts[idv])
+          continue;
 
         var id3 = idv * 3;
         var dx = itx - vAr[id3];
@@ -372,6 +385,7 @@ class Picking {
       }
     }
 
+    this._hiddenVerts = null;
     this._pickedVertices = new Uint32Array(pickedVertices.subarray(0, acc));
     return this._pickedVertices;
   }
@@ -452,5 +466,14 @@ Picking.ALPHAS_NAMES[none] = none;
 
 Picking.ALPHAS = {};
 Picking.ALPHAS[none] = null;
+
+// BOZZETTO EDIT: poly groups (src/sculpt/bridge/polyGroups.ts) hide faces.
+// Each hook takes the mesh and answers for its level on screen: a flag a
+// face (or a vertex: 1 when any face around it is hidden), or null when
+// nothing on it is hidden. Picking skips hidden faces, and the vertex
+// picks leave out every vertex a hidden face touches, so a stroke leaves
+// hidden faces exactly as they were.
+Picking.hiddenFaces = null;
+Picking.hiddenVertices = null;
 
 export default Picking;

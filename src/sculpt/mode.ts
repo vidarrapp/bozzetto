@@ -8,6 +8,7 @@ import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
 import { CameraAdapter } from './bridge/CameraAdapter';
 import { GeometrySync } from './bridge/GeometrySync';
+import { TooManyGroups } from './bridge/polyGroups';
 import { InputShell, SPACING_REV, STRENGTH_REV } from './bridge/InputShell';
 import { PROFILE_REV } from './bridge/profile';
 import Enums from '@sculpt-vendor/misc/Enums';
@@ -331,6 +332,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // or a stall can be read against how heavy the model was at the time.
   perfLog.triangles = () => session.getMesh()?.getNbTriangles() ?? 0;
 
+  // The poly groups' hidden faces and colours reach every object's display.
+  GeometrySync.decor = session.groups;
   const sync = new GeometrySync();
   // Every upload is a change to the picture (Viewer.invalidate).
   sync.onChange = () => viewer.invalidate();
@@ -653,6 +656,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncHighlights();
   };
 
+  // Poly groups (polyGroups.ts): an edit, its undo, a transfer or a level
+  // change redraws every object's hidden faces and colours, and the
+  // Groups list follows. The edits are undo states, which the autosave
+  // already hears.
+  session.groups.onChange = () => {
+    GeometrySync.refreshAll();
+    modelPanel?.refreshGroups();
+  };
+  /** Shift+F, and the Groups list's switch: the group colours on or off. */
+  const setGroupColors = (on: boolean): void => {
+    session.groups.setShowing(on);
+    // The attribute first, so the material never reads one that is not there.
+    GeometrySync.refreshAll();
+    viewer.materials.setSculptGroupColors(on);
+    modelPanel?.refreshGroups();
+    session.render();
+  };
+  /** Ctrl+W, and the Groups list's From mask: the masked faces into a new group. */
+  const groupFromMask = (): void => {
+    const mesh = session.getMesh();
+    if (!mesh) return;
+    try {
+      const g = session.groups.fromMask(mesh);
+      if (g < 0) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
+      else statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces`);
+    } catch (err) {
+      if (!(err instanceof TooManyGroups)) throw err;
+      statusToast('').fail(err.message);
+    }
+  };
+
   // The gizmo refuses hidden and locked objects: moving what you cannot see
   // (or deliberately froze) is never what a press meant.
   const gizmoTarget = (): SculptMesh | null => {
@@ -689,6 +723,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel?.refresh();
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
+    modelPanel?.refreshGroups();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
   };
@@ -1043,6 +1078,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     toggleMaskTint: () => {
       viewer.materials.setSculptMaskTint(!viewer.materials.getSculptMaskTint());
     },
+    toggleGroupColors: () => setGroupColors(!session.groups.isShowing()),
+    groupFromMask: () => groupFromMask(),
   });
   // World-scale brush sizing needs the three camera (for the fov) and the
   // orbit distance, neither of which the vendor session knows about.
@@ -1535,6 +1572,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
   };
   modelPanel = new ModelPanel(session, viewer);
+  modelPanel.onGroupColors = (on) => setGroupColors(on);
+  modelPanel.onGroupFromMask = () => groupFromMask();
   modelPanel.onMerge = () => scenePanel?.mergeSelected();
   // A quad remesh holds its object while it runs: drawn as locked, the
   // gizmo let go of it, and the outliner and the panels refreshed.
@@ -1968,6 +2007,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cursor.dispose();
     session.onActiveMeshChange = null;
     session.onSelectionChange = null;
+    // The group colours go with the mode; the viewer's subject has none.
+    session.groups.onChange = null;
+    viewer.materials.setSculptGroupColors(false);
+    GeometrySync.decor = null;
     input.exitSelect();
     viewer.tapToFocus = true;
     viewer.onTick = null;

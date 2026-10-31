@@ -3,8 +3,12 @@ import { validSavedScene } from './ScenePersist';
 import type { SculptSession } from './SculptSession';
 import { sanitizeScene } from './sanitize';
 import { inflateEach } from '../../viewer/inflate';
+import { objName } from './groupsRecord';
+
+/** Utils.TRI_INDEX: the fourth index of a face that is a triangle. */
+const TRI_INDEX = 4294967295;
 import type { BufferEntry, Layout } from '../../../shared/bozz';
-import { MAGIC, MAX_DEPTH, MAX_NAME, SceneFileError, damaged, notAScene, pad4, readLayout } from '../../../shared/bozz';
+import { MAGIC, MAX_DEPTH, MAX_NAME, SceneFileError, damaged, elementBytes, notAScene, pad4, readLayout } from '../../../shared/bozz';
 
 /**
  * Scene files for guests (WS5): the same v3 SavedScene the autosave keeps,
@@ -14,7 +18,7 @@ import { MAGIC, MAX_DEPTH, MAX_NAME, SceneFileError, damaged, notAScene, pad4, r
  *   u32 magic 'BOZ1' | u32 headerLen | header JSON | pad4 | blob region
  *
  * The header is the SavedScene with every typed array swapped for
- * {"__buf": n} against a buffers table of {t: 'f32'|'u32', off, len}. The
+ * {"__buf": n} against a buffers table of {t: 'f32'|'u32'|'u8', off, len}. The
  * whole container is gzipped when CompressionStream exists; the reader
  * sniffs the gzip magic, so uncompressed files stay valid. The walk is
  * shape-agnostic on both sides - new SavedScene fields ride along without
@@ -37,7 +41,7 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   const blobs: Uint8Array[] = [];
   const table: BufferEntry[] = [];
   let cursor = 0;
-  const claim = (t: 'f32' | 'u32', a: Float32Array | Uint32Array): { __buf: number } => {
+  const claim = (t: BufferEntry['t'], a: Float32Array | Uint32Array | Uint8Array): { __buf: number } => {
     blobs.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
     table.push({ t, off: cursor, len: a.length });
     cursor += pad4(a.byteLength);
@@ -46,6 +50,7 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   const strip = (v: unknown): unknown => {
     if (v instanceof Float32Array) return claim('f32', v);
     if (v instanceof Uint32Array) return claim('u32', v);
+    if (v instanceof Uint8Array) return claim('u8', v);
     if (Array.isArray(v)) return v.map(strip);
     if (v && typeof v === 'object') {
       const out: Record<string, unknown> = {};
@@ -161,7 +166,8 @@ function revive(layout: Layout, raw: Uint8Array): unknown {
       used.add(ref);
       // In range: readLayout put every entry inside `size`, and the file is that long.
       const start = layout.blobBase + e.off;
-      const copy = raw.slice(start, start + e.len * 4);
+      const copy = raw.slice(start, start + e.len * elementBytes(e.t));
+      if (e.t === 'u8') return copy;
       return e.t === 'f32' ? new Float32Array(copy.buffer) : new Uint32Array(copy.buffer);
     }
     const out: Record<string, unknown> = {};
@@ -232,11 +238,34 @@ export function sceneToOBJ(session: SculptSession): string {
     }
     const tris = mesh.getTriangles();
     const nbTris = mesh.getNbTriangles();
-    for (let i = 0; i < nbTris; i++) {
+    const tri = (i: number): void => {
       const a = tris[i * 3] + 1 + offset;
       const b = tris[i * 3 + 1] + 1 + offset;
       const c = tris[i * 3 + 2] + 1 + offset;
       out.push(flip ? `f ${a} ${c} ${b}` : `f ${a} ${b} ${c}`);
+    };
+    if (!session.groups.hasGroups(mesh)) {
+      for (let i = 0; i < nbTris; i++) tri(i);
+    } else {
+      // Poly groups as g lines (owner decision): the triangles go out face
+      // by face, as they always did, with a g line wherever the group
+      // changes, at the level on screen.
+      const groups = session.groups.levelFaces(mesh);
+      const names = session.groups.names(mesh);
+      const fAr = mesh.getFaces();
+      const ftt = mesh.isDynamic ? null : (mesh.getFacesToTriangles?.() ?? null);
+      let last = -1;
+      let t = 0;
+      for (let f = 0; f < mesh.getNbFaces(); f++) {
+        const count = mesh.isDynamic || fAr[f * 4 + 3] === TRI_INDEX ? 1 : 2;
+        const first = ftt ? ftt[f] : t;
+        t = first + count;
+        if (groups[f] !== last) {
+          last = groups[f];
+          out.push(`g ${objName(names[last] ?? `Group ${last + 1}`)}`);
+        }
+        for (let k = first; k < first + count && k < nbTris; k++) tri(k);
+      }
     }
     offset += nb;
   }

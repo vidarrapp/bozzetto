@@ -46,9 +46,10 @@ import type { BrushCursor } from './BrushCursor';
  * tools that support it; ctrl paints mask, ctrl+alt unmasks (the Masking
  * tool is swapped in just for the stroke). Ctrl+shift with any brush is no
  * stroke: a drag across the model masks one side of an edge loop
- * (loopMask.ts; ctrl+shift+alt unmasks), and a click is left free for
- * poly groups. Alt keydown is preventDefaulted so Firefox's menu bar never
- * steals the modifier.
+ * (loopMask.ts; ctrl+shift+alt unmasks), and a click shows and hides
+ * poly groups (polyGroups.ts); a ctrl click on the model that does not
+ * move masks the poly group under it (+alt unmasks). Alt keydown is
+ * preventDefaulted so Firefox's menu bar never steals the modifier.
  *
  * Fingers navigate (Preferences, on by default): with that choice a touch
  * never reaches the stroke, marquee or gizmo code below - one finger
@@ -115,6 +116,10 @@ export interface InputShellHooks {
   toggleMaskTint(): void;
   /** ctrl+e: extract the masked region at the palette's thickness. */
   extractMasked(): void;
+  /** Shift+F: the poly group colours on or off. */
+  toggleGroupColors(): void;
+  /** Ctrl+W: the masked faces into a new poly group. */
+  groupFromMask(): void;
 }
 
 /**
@@ -144,7 +149,7 @@ const PRESENT_KEYS = new Set([
 const MARQUEE_SLOP = 5;
 /**
  * A Ctrl + Shift drag shorter than this (CSS px) is a click, which masks
- * nothing: poly groups will take Ctrl + Shift + click.
+ * nothing: it shows and hides poly groups (groupVisibilityClick).
  */
 export const LOOP_CLICK_SLOP = 6;
 /**
@@ -441,6 +446,15 @@ export class InputShell {
     raf: number;
   } | null = null;
   private loopMasker: LoopMasker | null = null;
+  /**
+   * A Ctrl press on the mesh, while it may still be a click: the face it
+   * landed on, for Ctrl+click (mask that poly group) and Ctrl+Alt+click
+   * (unmask it). A release that has not moved and has masked nothing
+   * makes it the click.
+   */
+  private maskClick: { x: number; y: number; mesh: SculptMesh; face: number; state: unknown } | null = null;
+  /** What the last poly-group click did (the tests read it). */
+  lastGroupClick: { kind: 'isolated' | 'inverted' | 'showAll' | 'mask' | 'unmask' | 'none'; group: number; mesh: SculptMesh | null } | null = null;
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
@@ -1001,6 +1015,8 @@ export class InputShell {
       this.verdict?.(`loop mask: ${cut.kind}${cut.note ? ` (${cut.note})` : ''}`);
     } else {
       this.loopMask.untint();
+      // A click, not a drag: the poly groups' show and hide.
+      if (!cancelled && Math.hypot(g.x - g.x0, g.y - g.y0) < LOOP_CLICK_SLOP) this.groupVisibilityClick(g.x0, g.y0);
     }
     this.loopDrag = null;
     this.cursor.setLoop(null);
@@ -1008,6 +1024,29 @@ export class InputShell {
     this.session.render();
     e.preventDefault();
     e.stopPropagation();
+  }
+
+  /**
+   * Ctrl + Shift + click (poly groups, owner call 2026-10-31): on a group,
+   * show it alone; on the only group showing, hide it and show the rest;
+   * on empty space, show every group of the active object. Canvas CSS px.
+   */
+  private groupVisibilityClick(x: number, y: number): void {
+    const s = this.session;
+    const r = s.getPixelRatio();
+    const picking = s.getPicking();
+    const hit = picking.intersectionMouseMeshes(undefined, x * r, y * r) ? picking.getMesh() : null;
+    if (!hit) {
+      const active = s.getMesh();
+      const done = !!active && s.groups.showAll(active);
+      this.lastGroupClick = { kind: done ? 'showAll' : 'none', group: -1, mesh: active };
+      this.verdict?.('poly groups: show all');
+      return;
+    }
+    const g = s.groups.groupOfFace(hit, picking.getPickedFace());
+    const did = s.groups.isolate(hit, g);
+    this.lastGroupClick = { kind: did ?? 'none', group: g, mesh: hit };
+    this.verdict?.(`poly groups: ${did ?? 'nothing'} (group ${g + 1})`);
   }
 
   /** The window lost focus mid-drag: no release will come, so nothing is applied. */
@@ -1384,7 +1423,7 @@ export class InputShell {
     // Ctrl + Shift + drag: mask the side of an edge loop the drag moves
     // toward, with any brush (+ Alt unmasks). The Select tool's marquee and
     // the gizmo kept their own meanings above. A press that stays put masks
-    // nothing (poly groups will take the click), and nothing here orbits.
+    // nothing (the click shows and hides poly groups), and nothing here orbits.
     if (e.ctrlKey && e.shiftKey && !e.metaKey) {
       this.beginLoopDrag(e);
       return;
@@ -1500,6 +1539,17 @@ export class InputShell {
     }
 
     s._action = Enums.Action.SCULPT_EDIT;
+    // A Ctrl press on the model may yet be a click on a poly group.
+    this.maskClick =
+      e.ctrlKey && !e.metaKey && s.getSculptManager().getToolIndex() === tools.MASKING && s.getPicking().getMesh()
+        ? {
+            x: e.clientX,
+            y: e.clientY,
+            mesh: s.getPicking().getMesh() as SculptMesh,
+            face: s.getPicking().getPickedFace(),
+            state: s.getStateManager().getCurrentState(),
+          }
+        : null;
     // Only a stroke that actually started counts as painting. Flagging on
     // pointerdown marked the object painted even when the press missed the
     // mesh and orbited, and the flag is permanent: the material colour
@@ -1830,6 +1880,19 @@ export class InputShell {
     this.cursor.setStrokeStyle(null);
 
     if (s._action === Enums.Action.SCULPT_EDIT) {
+      // Ctrl+click (+Alt) on a poly group: a press that stayed put and
+      // masked nothing masks (unmasks) the group, in its undo state.
+      const click = this.maskClick;
+      this.maskClick = null;
+      if (click && e.type !== 'pointercancel' && Math.hypot(e.clientX - click.x, e.clientY - click.y) < LOOP_CLICK_SLOP) {
+        const state = s.getStateManager().getCurrentState() as { isNoop?: () => boolean } | undefined;
+        if (state && state === click.state && state.isNoop?.() && s.getMesh() === click.mesh) {
+          const n = s.groups.maskGroup(click.mesh, click.face, e.altKey);
+          const g = s.groups.groupOfFace(click.mesh, click.face);
+          this.lastGroupClick = { kind: e.altKey ? 'unmask' : 'mask', group: g, mesh: click.mesh };
+          this.verdict?.(`poly groups: ${e.altKey ? 'unmask' : 'mask'} group ${g + 1} (${n} vertices)`);
+        }
+      }
       // Upstream onDeviceUp: octree rebalance + drop no-op undo entries.
       this.endStroke(e.timeStamp);
       e.stopPropagation();
@@ -2302,6 +2365,14 @@ export class InputShell {
         return this.claim(e);
       case 'mask.extract':
         this.hooks.extractMasked();
+        return this.claim(e);
+      case 'groups.show':
+        this.hooks.toggleGroupColors();
+        return this.claim(e);
+      case 'groups.fromMask':
+        // Ctrl+W closes a browser tab before the page hears it, except in
+        // the installed app (and full screen); claimed here all the same.
+        if (s._action === Enums.Action.NOTHING) this.hooks.groupFromMask();
         return this.claim(e);
       case 'subdiv.add':
         s.subdivide();

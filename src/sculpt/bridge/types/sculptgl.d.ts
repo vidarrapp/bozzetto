@@ -167,6 +167,22 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     isVisible(): boolean;
     /** Set on dynamic-topology meshes only. */
     isDynamic?: boolean;
+    /**
+     * Dynamic-topology meshes only (BOZZETTO EDIT in MeshDynamic.js): each
+     * face's poly group, kept with the faces through splits, collapses and
+     * undo. Over-allocated like the faces; read the first getNbFaces().
+     */
+    _facesGroups?: Uint32Array | null;
+    /** Static meshes: each face's first render triangle (a quad has two from there). */
+    getFacesToTriangles?(): Uint32Array;
+    /** Face normals, three a face (local space), area-weighted: not unit length. */
+    getFaceNormals(): Float32Array;
+    /** Face centres, three a face (local space). */
+    getFaceCenters(): Float32Array;
+    /** Static meshes: the faces around each vertex, as [start, count] pairs into getVerticesRingFace(). */
+    getVerticesRingFaceStartCount(): Uint32Array;
+    /** Static meshes: a flat list; dynamic meshes: an array of arrays, one a vertex. */
+    getVerticesRingFace(): Uint32Array | number[][];
     /** The arrays behind the facade (positions, rings, ...), shared by a Multimesh with its selected level. */
     getMeshData(): { _verticesXYZ: Float32Array | Float64Array };
     /** MeshResolution levels only: the level above from this one and its detail vectors. */
@@ -386,6 +402,13 @@ declare module '@sculpt-vendor/math3d/Picking' {
     getPickedNormal(): number[] | null;
   }
   namespace Picking {
+    /**
+     * BOZZETTO EDIT: poly groups hide faces (polyGroups.ts installs these).
+     * For the mesh's level on screen: a flag a face, or a flag a vertex (1
+     * when a hidden face touches it), or null when nothing is hidden.
+     */
+    let hiddenFaces: ((mesh: SculptMesh) => Uint8Array | null) | null;
+    let hiddenVertices: ((mesh: SculptMesh) => Uint8Array | null) | null;
     /**
      * Register a greyscale stencil the brushes can stamp through. `u8` is
      * one byte per texel (255 = full effect); the name is the id tools set

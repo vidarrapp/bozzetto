@@ -7,6 +7,7 @@ import {
   MAX_SOURCE_TEXT_BYTES,
   MAX_SOURCE_VERTICES,
 } from '../../../shared/bozz';
+import { objName } from './groupsRecord';
 
 /**
  * The file's own numbering, kept for an object imported from OBJ (owner
@@ -159,6 +160,8 @@ export function unbakeLevel0(src: ObjSource, level0: Float64Array): Float64Array
 export interface ObjBuild {
   vertices: Float32Array;
   faces: Uint32Array;
+  /** For each level-0 face, the file face it came from (a pentagon gives two). */
+  faceOrigin: Uint32Array;
   /** Null when the file is past what a record keeps (MAX_SOURCE_*): it imports without one. */
   source: ObjSource | null;
 }
@@ -210,14 +213,34 @@ export function buildFromObj(parsed: ParsedObjPolygons, zUp: boolean): ObjBuild 
     toEngine[i] = id;
   }
 
+  const { faces, origin } = engineFaces(parsed.faceSizes, parsed.faceVerts, toEngine);
+  if (!faces.length) throw new Error('No geometry found in that OBJ file.');
+  const vertices = new Float32Array(engine);
+  return {
+    vertices,
+    faces: Uint32Array.from(faces),
+    faceOrigin: Uint32Array.from(origin),
+    source: record(parsed, m, toEngine, loose, vertices),
+  };
+}
+
+/**
+ * The file's faces as level 0 numbers them: a triangle or a quad as it is,
+ * a larger polygon as quads and a triangle fanned from its first corner, a
+ * face the weld folded as the triangles that are left, in file order;
+ * `origin` says which file face each came from. The import builds level 0
+ * with it, and the export and the poly groups read the same numbering back
+ * from a record with it, so the two can never disagree.
+ */
+export function engineFaces(sizes: Uint32Array, verts: Uint32Array, toEngine: Uint32Array): { faces: number[]; origin: number[] } {
   const faces: number[] = [];
-  const sizes = parsed.faceSizes;
+  const origin: number[] = [];
   let at = 0;
   for (let f = 0; f < sizes.length; f++) {
     const n = sizes[f];
     const ring: number[] = [];
     for (let k = 0; k < n; k++) {
-      const e = toEngine[parsed.faceVerts[at + k]];
+      const e = toEngine[verts[at + k]];
       if (ring[ring.length - 1] !== e) ring.push(e);
     }
     at += n;
@@ -228,22 +251,190 @@ export function buildFromObj(parsed: ParsedObjPolygons, zUp: boolean): ObjBuild 
       let k = 0;
       while (ring.length - 1 - k >= 3) {
         faces.push(ring[0], ring[k + 1], ring[k + 2], ring[k + 3]);
+        origin.push(f);
         k += 2;
       }
-      if (ring.length - 1 - k === 2) faces.push(ring[0], ring[k + 1], ring[k + 2], TRI_INDEX);
+      if (ring.length - 1 - k === 2) {
+        faces.push(ring[0], ring[k + 1], ring[k + 2], TRI_INDEX);
+        origin.push(f);
+      }
     } else {
       // Welded onto itself: the fan's triangles that still have three corners.
       for (let k = 1; k + 1 < ring.length; k++) {
         const a = ring[0];
         const b = ring[k];
         const c = ring[k + 1];
-        if (a !== b && b !== c && a !== c) faces.push(a, b, c, TRI_INDEX);
+        if (a !== b && b !== c && a !== c) {
+          faces.push(a, b, c, TRI_INDEX);
+          origin.push(f);
+        }
       }
     }
   }
-  if (!faces.length) throw new Error('No geometry found in that OBJ file.');
-  const vertices = new Float32Array(engine);
-  return { vertices, faces: Uint32Array.from(faces), source: record(parsed, m, toEngine, loose, vertices) };
+  return { faces, origin };
+}
+
+// --- poly groups and the file -----------------------------------------------------------
+
+/** The name a `g` or `o` line gives (the rest of the line), or null for another line. */
+function groupLineName(line: string): string | null {
+  const m = /^(g|o)(?:\s+(.*))?$/.exec(line.trim());
+  if (!m) return null;
+  const name = (m[2] ?? '').trim();
+  return name || 'default';
+}
+
+/** Per-file-face groups and their names, the shape the poly groups take a file's in. */
+export interface FileGroups {
+  /** For each file face, its group. */
+  perFace: Uint32Array;
+  names: string[];
+}
+
+/**
+ * The groups a file's `g` and `o` lines make (owner decision: the Maya
+ * round trip): each face is in the group the last `g` or `o` line before
+ * it names, a face before any such line in "Group 1". Groups are numbered
+ * in the order their first face comes, and a name used twice is one group,
+ * so a line that names no faces makes none.
+ */
+export function namedGroups(extras: readonly { line: string; at: number }[], nbFaces: number, defaultName = 'Group 1'): FileGroups {
+  const perFace = new Uint32Array(nbFaces);
+  const names: string[] = [];
+  const ids = new Map<string, number>();
+  let current = defaultName;
+  let x = 0;
+  for (let f = 0; f < nbFaces; f++) {
+    while (x < extras.length && extras[x].at <= f) {
+      const name = groupLineName(extras[x++].line);
+      if (name !== null) current = name;
+    }
+    let id = ids.get(current);
+    if (id === undefined) {
+      id = names.length;
+      ids.set(current, id);
+      names.push(current);
+    }
+    perFace[f] = id;
+  }
+  if (!names.length) names.push(defaultName);
+  return { perFace, names };
+}
+
+/** The record's kept lines (o, g, usemtl, s, mtllib) with how many faces come before each. */
+export function keptLines(src: ObjSource): { line: string; at: number }[] {
+  const text = lines(src);
+  const at = src.extraAt ?? new Uint32Array(0);
+  const out: { line: string; at: number }[] = [];
+  for (let i = 0; i < at.length; i++) out.push({ line: text[src.nbUVs + i] ?? '', at: at[i] });
+  return out;
+}
+
+/** For each level-0 face of an object with this record, the file face it came from. */
+export function recordFaceOrigin(src: ObjSource): Uint32Array {
+  return Uint32Array.from(engineFaces(src.faceSizes, src.faceVerts, src.toEngine).origin);
+}
+
+/**
+ * The file's faces in groups by UV island (owner decision): faces that
+ * share a texture edge (the same two vt ids, either way round) are on one
+ * island. Islands are numbered by their first face; faces with a corner
+ * that has no texture coordinate are one more group, "No UVs". Null when
+ * the record has no texture coordinates.
+ */
+export function uvIslands(src: ObjSource): FileGroups | null {
+  const uvs = src.faceUVs;
+  if (!uvs || !src.nbUVs) return null;
+  const n = src.faceSizes.length;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (a: number): number => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  };
+  const edge = new Map<number, number>();
+  const whole = new Uint8Array(n);
+  let at = 0;
+  for (let f = 0; f < n; f++) {
+    const size = src.faceSizes[f];
+    let ok = true;
+    for (let k = 0; k < size; k++) if (uvs[at + k] === NO_INDEX) ok = false;
+    whole[f] = ok ? 1 : 0;
+    if (ok) {
+      for (let k = 0; k < size; k++) {
+        const a = uvs[at + k];
+        const b = uvs[at + ((k + 1) % size)];
+        if (a === b) continue;
+        const key = Math.min(a, b) * src.nbUVs + Math.max(a, b);
+        const other = edge.get(key);
+        if (other === undefined) edge.set(key, f);
+        else {
+          const ra = find(f);
+          const rb = find(other);
+          if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+        }
+      }
+    }
+    at += size;
+  }
+  const perFace = new Uint32Array(n);
+  const names: string[] = [];
+  const ids = new Map<number, number>();
+  let none = -1;
+  for (let f = 0; f < n; f++) {
+    if (!whole[f]) {
+      if (none < 0) {
+        none = names.length;
+        names.push('No UVs');
+      }
+      perFace[f] = none;
+      continue;
+    }
+    const r = find(f);
+    let id = ids.get(r);
+    if (id === undefined) {
+      id = names.length;
+      ids.set(r, id);
+      names.push(`UV island ${ids.size}`);
+    }
+    perFace[f] = id;
+  }
+  return { perFace, names };
+}
+
+/**
+ * Each file face's group, from level 0's (derived) groups: the group most
+ * of the level-0 faces it became have, the earliest of them on a tie; a
+ * face the weld folded away takes the group of the face before it.
+ */
+export function fileFaceGroups(src: ObjSource, level0: Uint32Array): Uint32Array {
+  const origin = recordFaceOrigin(src);
+  const n = src.faceSizes.length;
+  const out = new Uint32Array(n);
+  let e = 0;
+  for (let f = 0; f < n; f++) {
+    const from = e;
+    while (e < origin.length && origin[e] === f) e++;
+    if (e === from) {
+      out[f] = f > 0 ? out[f - 1] : 0;
+      continue;
+    }
+    let best = level0[from];
+    let bestN = 0;
+    for (let i = from; i < e; i++) {
+      let c = 0;
+      for (let j = from; j < e; j++) if (level0[j] === level0[i]) c++;
+      if (c > bestN) {
+        bestN = c;
+        best = level0[i];
+      }
+    }
+    out[f] = best;
+  }
+  return out;
 }
 
 /** The record, or null when the file is past what one keeps. */
@@ -438,15 +629,34 @@ function num(x: number): string {
  * file had it, a welded pair both at their vertex's place), the vt lines
  * as written, and the faces whole with the kept lines between them.
  */
-export function writeOriginalObj(src: ObjSource, level0: Float64Array | Float32Array): string {
+export function writeOriginalObj(src: ObjSource, level0: Float64Array | Float32Array, groups?: FileGroups): string {
   const back = invertAffine(src.fileToLocal) ?? [...IDENTITY];
   const text = lines(src);
   const extraAt = src.extraAt ?? new Uint32Array(0);
   const out: string[] = ['# Bozzetto sculpt export, original numbering'];
+  // Poly groups: when they are still the ones the file's own g and o lines
+  // make, the file goes back as it was; otherwise its g lines give way to
+  // one before each face that starts another group (o and the rest stay).
+  const nbFaces = src.faceSizes.length;
+  let regroup: FileGroups | null = null;
+  if (groups && groups.perFace.length === nbFaces) {
+    const own = namedGroups(keptLines(src), nbFaces);
+    for (let f = 0; f < nbFaces; f++) {
+      if (own.names[own.perFace[f]] !== groups.names[groups.perFace[f]]) {
+        regroup = groups;
+        break;
+      }
+    }
+  }
   let x = 0;
   const kept = (before: number): void => {
-    while (x < extraAt.length && extraAt[x] <= before) out.push(text[src.nbUVs + x++]);
+    while (x < extraAt.length && extraAt[x] <= before) {
+      const line = text[src.nbUVs + x++];
+      if (regroup && /^g(\s|$)/.test(line.trim())) continue;
+      out.push(line);
+    }
   };
+  let lastGroup = -1;
   kept(0);
   let li = 0;
   for (let i = 0; i < src.nbFileVertices; i++) {
@@ -463,6 +673,10 @@ export function writeOriginalObj(src: ObjSource, level0: Float64Array | Float32A
   let at = 0;
   for (let f = 0; f < src.faceSizes.length; f++) {
     kept(f);
+    if (regroup && regroup.perFace[f] !== lastGroup) {
+      lastGroup = regroup.perFace[f];
+      out.push(`g ${objName(regroup.names[lastGroup] ?? `Group ${lastGroup + 1}`)}`);
+    }
     const n = src.faceSizes[f];
     const corners: string[] = [];
     for (let k = 0; k < n; k++) {

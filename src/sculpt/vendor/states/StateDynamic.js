@@ -20,6 +20,7 @@ class StateDynamic {
 
     this._idFaceState = []; // ids of faces
     this._fArState = []; // copies of face indices
+    this._fgState = []; // BOZZETTO EDIT: copies of the faces' poly groups
   }
 
   isNoop() {
@@ -106,6 +107,8 @@ class StateDynamic {
         continue;
       fStateFlags[id] = stateFlag;
       idFaceState.push(id);
+      // BOZZETTO EDIT: and the face's poly group.
+      this._fgState.push(mesh._facesGroups ? mesh._facesGroups[id] : 0);
       id *= 4;
       fArState.push(fAr[id], fAr[id + 1], fAr[id + 2], fAr[id + 3]);
     }
@@ -187,8 +190,12 @@ class StateDynamic {
     nbFaces = acc;
     idFaceRedoState = redoState._idFaceState = new Uint32Array(idFaceRedoState.subarray(0, nbFaces));
     var fArRedoState = redoState._fArState = new Int32Array(nbFaces * 4);
+    // BOZZETTO EDIT: the poly groups of the same faces.
+    var fg = mesh._facesGroups;
+    var fgRedoState = redoState._fgState = new Uint32Array(nbFaces);
     for (i = 0; i < nbFaces; ++i) {
       id = idFaceRedoState[i];
+      fgRedoState[i] = fg ? fg[id] : 0;
       id *= 4;
       var j = i * 4;
       fArRedoState[j] = fAr[id];
@@ -242,10 +249,13 @@ class StateDynamic {
 
     var mesh = this._mesh;
     var fAr = mesh.getFaces();
+    var fg = mesh._facesGroups; // BOZZETTO EDIT
+    var fgState = this._fgState;
     for (var i = 0; i < nbFaces; ++i) {
       var id = idFaceState[i];
       if (id >= nbMeshFaces)
         continue;
+      if (fg) fg[id] = fgState[i]; // BOZZETTO EDIT
       id *= 4;
       var j = i * 4;
       fAr[id] = fArState[j];

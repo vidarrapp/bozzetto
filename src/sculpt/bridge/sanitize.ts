@@ -8,6 +8,7 @@ import { isCurveId } from './dynamics';
 import { parseStoredCurve, parseV1Points, serializeAnchors, type StoredCurve } from './profile';
 import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
+import { sanitizeGroups } from './groupsRecord';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -142,6 +143,17 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
       fail(`object ${index + 1} has a bad OBJ numbering record: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // The poly groups, where there are any: one a face of the top level
+  // (the base faces, four a face a level above the first), each naming a
+  // group there is.
+  let groups: SavedMesh['groups'];
+  if (m.groups !== undefined) {
+    try {
+      groups = sanitizeGroups(m.groups, m.nbBaseFaces * 4 ** (levels.length - 1));
+    } catch (err) {
+      fail(`object ${index + 1} has bad poly groups: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const matrix = Array.prototype.every.call(m.matrix, (x: unknown) => typeof x === 'number' && Number.isFinite(x))
     ? Float32Array.from(m.matrix)
     : new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -158,6 +170,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     locked: bool(m.locked),
     painted: bool(m.painted),
     source,
+    groups,
   });
 }
 

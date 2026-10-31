@@ -1,5 +1,6 @@
 import Enums from '@sculpt-vendor/misc/Enums';
-import { div } from '../../ui/dom';
+import { div, onTap } from '../../ui/dom';
+import { groupColor, TooManyGroups } from '../bridge/polyGroups';
 import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 
@@ -109,6 +110,20 @@ export class ModelPanel extends SidePanel {
   /** Set once the mode is left: a run it cancelled says nothing afterwards. */
   private disposed = false;
 
+  // Poly groups (polyGroups.ts).
+  private groupsList?: HTMLDivElement;
+  private groupsColors?: HTMLInputElement;
+  private uvButton?: HTMLButtonElement;
+  private showAllButton?: HTMLButtonElement;
+  /** Group by angle's threshold, in degrees (owner default 40). */
+  private groupAngle = 40;
+  /** The group whose name is being typed, so a refresh mid-edit leaves the field be. */
+  private renamingGroup = -1;
+  /** Shift+F's switch (mode.ts turns the colours on or off). */
+  onGroupColors: ((on: boolean) => void) | null = null;
+  /** From mask (Ctrl+W's twin). */
+  onGroupFromMask: (() => void) | null = null;
+
   constructor(
     private readonly session: SculptSession,
     private readonly viewer: Viewer,
@@ -124,6 +139,7 @@ export class ModelPanel extends SidePanel {
     this.buildRemesh(this.body);
     this.buildQuadRemesh(this.body);
     this.buildMask(this.body);
+    this.buildGroups(this.body);
     this.refreshTopology();
   }
 
@@ -461,6 +477,173 @@ export class ModelPanel extends SidePanel {
       }),
     );
     sec.appendChild(extractRow);
+  }
+
+  // --- Poly groups --------------------------------------------------------------
+
+  /**
+   * The active object's poly groups (owner decisions, 2026-10-31): the
+   * colours' switch (Shift+F), the ways to make groups - From mask
+   * (Ctrl+W), By angle at the threshold set, By UV islands for an OBJ with
+   * texture coordinates - and Show all; then a row a group, with its
+   * colour, its name (tap to rename), an eye and a delete. Every change is
+   * one undo step.
+   */
+  private buildGroups(body: HTMLElement): void {
+    const sec = section(body, 'Poly groups');
+    sec.dataset.role = 'groups';
+    const colors = checkbox('Show group colours (Shift+F)', this.session.groups.isShowing(), (on) => this.onGroupColors?.(on));
+    this.groupsColors = colors.querySelector('input') as HTMLInputElement;
+    sec.appendChild(colors);
+    const make = div('sculpt-panel__row');
+    const fromMask = this.tapButton('From mask', () => this.onGroupFromMask?.());
+    fromMask.title = 'The masked faces into a new group (Ctrl+W in the installed app)';
+    fromMask.dataset.role = 'groups-from-mask';
+    this.showAllButton = this.tapButton('Show all', () => {
+      const mesh = this.session.getMesh();
+      if (mesh) this.session.groups.showAll(mesh);
+    });
+    this.showAllButton.title = 'Show every group (Ctrl+Shift+click on empty space)';
+    this.showAllButton.dataset.role = 'groups-show-all';
+    make.append(fromMask, this.showAllButton);
+    sec.appendChild(make);
+    const angle = this.numberedRange(
+      'Angle',
+      1,
+      90,
+      1,
+      this.groupAngle,
+      (v) => {
+        this.groupAngle = Math.round(v);
+        return `${this.groupAngle} deg`;
+      },
+      { limits: { min: 1, max: 179 } },
+    );
+    sec.appendChild(angle.row);
+    const split = div('sculpt-panel__row');
+    const byAngle = this.tapButton('By angle', () => this.groupBy(() => this.session.groups.byAngle(this.session.getMesh()!, this.groupAngle)));
+    byAngle.title = 'A group for each piece between edges sharper than the angle';
+    byAngle.dataset.role = 'groups-by-angle';
+    this.uvButton = this.tapButton('By UV islands', () => this.groupBy(() => this.session.groupByUVIslands()));
+    this.uvButton.title = 'A group for each UV island (an OBJ imported with texture coordinates)';
+    this.uvButton.dataset.role = 'groups-by-uv';
+    split.append(byAngle, this.uvButton);
+    sec.appendChild(split);
+    this.groupsList = div('groups-list');
+    this.groupsList.dataset.role = 'groups-list';
+    sec.appendChild(this.groupsList);
+    this.refreshGroups();
+  }
+
+  /** Run a regrouping, saying so when it makes too many groups. */
+  private groupBy(run: () => number): void {
+    if (!this.session.getMesh()) return;
+    try {
+      const n = run();
+      if (n > 0) statusToast('').done(`${n} poly group${n === 1 ? '' : 's'}`);
+    } catch (err) {
+      if (!(err instanceof TooManyGroups)) throw err;
+      statusToast('').fail(err.message);
+    }
+  }
+
+  /** At most this many rows; a split into more lists the first and says how many more. */
+  private static readonly GROUP_ROWS = 200;
+
+  /** Redraw the Groups list for the active object (any change to its groups, another object). */
+  refreshGroups(): void {
+    const list = this.groupsList;
+    if (!list) return;
+    if (this.groupsColors) this.groupsColors.checked = this.session.groups.isShowing();
+    const mesh = this.session.getMesh();
+    if (this.uvButton) this.uvButton.disabled = !mesh || !this.session.hasUVIslands(mesh);
+    if (this.renamingGroup >= 0 && list.contains(document.activeElement)) return;
+    this.renamingGroup = -1;
+    list.replaceChildren();
+    if (!mesh) return;
+    const groups = this.session.groups;
+    const names = groups.names(mesh);
+    const hidden = groups.hiddenGroups(mesh);
+    const counts = groups.counts(mesh);
+    if (this.showAllButton) this.showAllButton.disabled = !hidden.some(Boolean);
+    const rows = Math.min(names.length, ModelPanel.GROUP_ROWS);
+    for (let g = 0; g < rows; g++) {
+      const row = div('groups-row');
+      row.dataset.group = String(g);
+      if (hidden[g]) row.classList.add('groups-row--hidden');
+      const swatch = div('groups-row__swatch');
+      const [r, gr, b] = groupColor(g) as number[];
+      swatch.style.background = `rgb(${Math.round(r * 255)}, ${Math.round(gr * 255)}, ${Math.round(b * 255)})`;
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'groups-row__name';
+      name.textContent = names[g];
+      name.title = `${names[g]}: ${counts[g]} face${counts[g] === 1 ? '' : 's'} (tap to rename)`;
+      onTap(name, () => this.renameGroup(mesh, g, name));
+      const eye = this.groupIcon(hidden[g] ? 'fi-ss-eye-crossed' : 'fi-ss-eye', hidden[g] ? 'Show' : 'Hide', () => groups.setHidden(mesh, g, !hidden[g]));
+      eye.dataset.role = 'group-eye';
+      const del = this.groupIcon('fi-ss-trash', 'Delete the group (its faces join the group they border most)', () => groups.remove(mesh, g));
+      del.dataset.role = 'group-delete';
+      del.disabled = names.length <= 1;
+      row.append(swatch, name, eye, del);
+      list.appendChild(row);
+    }
+    if (names.length > rows) {
+      const more = div('sculpt-panel__hint muted');
+      more.textContent = `and ${names.length - rows} more`;
+      list.appendChild(more);
+    }
+  }
+
+  /** The name swapped for a field; Enter or leaving it renames, Escape keeps the name. */
+  private renameGroup(mesh: SculptMesh, g: number, nameEl: HTMLElement): void {
+    this.renamingGroup = g;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'groups-row__rename';
+    input.value = this.session.groups.names(mesh)[g] ?? '';
+    input.maxLength = 200;
+    let done = false;
+    const finish = (commit: boolean): void => {
+      if (done) return;
+      done = true;
+      this.renamingGroup = -1;
+      if (commit) this.session.groups.rename(mesh, g, input.value);
+      this.refreshGroups();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing is not a hotkey
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  private groupIcon(icon: string, title: string, onPress: () => void): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'outliner__icon';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    const glyph = document.createElement('i');
+    glyph.className = `fi ${icon}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    btn.appendChild(glyph);
+    onTap(btn, onPress);
+    return btn;
+  }
+
+  /** A panel button that acts on a tap (onTap: a slow finger on iPad still presses it). */
+  private tapButton(label: string, onPress: () => void): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sculpt-panel__btn';
+    b.textContent = label;
+    onTap(b, onPress);
+    return b;
   }
 
   /**

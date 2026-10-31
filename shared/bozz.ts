@@ -8,7 +8,10 @@
  *   u32 magic 'BOZ1' | u32 headerLen | header JSON | pad4 | blob region
  *
  * The header is the SavedScene with every typed array swapped for
- * {"__buf": n} against a buffers table of {t: 'f32'|'u32', off, len}.
+ * {"__buf": n} against a buffers table of {t: 'f32'|'u32'|'u8', off, len}:
+ * `len` counts elements (four bytes each for f32 and u32, one for u8), and
+ * every array starts on a multiple of four. u8 arrives with the poly
+ * groups (2026-10-31), for their per-group hidden flags.
  *
  * readLayout() and what it throws are SceneFile.ts's own, moved here
  * unchanged. checkHeader() is what validSavedScene (ScenePersist.ts) and
@@ -51,10 +54,13 @@ export const damaged = (why: string): SceneFileError => new SceneFileError(`This
 export const pad4 = (n: number): number => Math.ceil(n / 4) * 4;
 
 export interface BufferEntry {
-  t: 'f32' | 'u32';
+  t: 'f32' | 'u32' | 'u8';
   off: number;
   len: number;
 }
+
+/** Bytes an element of a buffer kind takes. */
+export const elementBytes = (t: BufferEntry['t']): number => (t === 'u8' ? 1 : 4);
 
 /** What a container's header says: the scene with its arrays as references, and where they are. */
 export interface Layout {
@@ -93,7 +99,7 @@ export function readLayout(head: Uint8Array): Layout | number {
   for (const e of buffers) {
     if (
       !e ||
-      (e.t !== 'f32' && e.t !== 'u32') ||
+      (e.t !== 'f32' && e.t !== 'u32' && e.t !== 'u8') ||
       !Number.isSafeInteger(e.off) ||
       !Number.isSafeInteger(e.len) ||
       e.off < 0 ||
@@ -101,8 +107,8 @@ export function readLayout(head: Uint8Array): Layout | number {
     ) {
       throw damaged('a bad buffer entry');
     }
-    end = Math.max(end, e.off + e.len * 4);
-    declared += e.len * 4;
+    end = Math.max(end, e.off + e.len * elementBytes(e.t));
+    declared += e.len * elementBytes(e.t);
   }
   const blobBase = 8 + pad4(headerLen);
   const size = blobBase + pad4(end);
@@ -134,6 +140,14 @@ export const MAX_SOURCE_CORNERS = 4 * MAX_SOURCE_VERTICES;
 export const MAX_SOURCE_TEXT_BYTES = 256 * 1024 * 1024;
 export const MAX_SOURCE_LINES = 1_000_000;
 
+/**
+ * The most poly groups an object may have (SavedMesh.groups): more than a
+ * split by angle or by UV islands makes of any model worth grouping, and
+ * few enough that their names stay a small part of the header.
+ */
+export const MAX_GROUPS = 4096;
+/** The poly groups record's version (SavedMesh.groups.v). */
+export const GROUPS_V = 1;
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -159,6 +173,11 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  *   MAX_SOURCE_CORNERS), texture corners null or as many as the corners,
  *   text that is there when its byte count says so, kept-line places null
  *   or at most MAX_SOURCE_LINES, and a transform of 16 numbers;
+ * - poly groups (`groups`), where an object has them: version 1, one u32
+ *   a face of its top level (the base faces times four a level above
+ *   the first), one to MAX_GROUPS names of at most MAX_NAME characters,
+ *   and hidden flags, where there are any, a u8 array of one a name. That
+ *   every face names a group there is the app's to check;
  * - names of at most MAX_NAME characters, at most MAX_MATERIALS materials;
  * - a units marker, where there is one, that is 'cm' or 'm'
  *   (src/viewer/units.ts): the scales the app reads a scene on, an 'm'
@@ -243,6 +262,22 @@ export function checkHeader(layout: Layout): void {
   const name = (v: unknown, what: string): void => {
     if (typeof v === 'string' && v.length > MAX_NAME) throw damaged(`${what} has a name over ${MAX_NAME} characters`);
   };
+  /**
+   * The poly groups (SavedMesh.groups), as far as the header says: what
+   * polyGroups.ts's sanitizeGroups asks of them without reading an array.
+   */
+  const checkGroups = (g: unknown, object: string, topFaces: number): void => {
+    const bad = (what: string): never => {
+      throw damaged(`${object} has bad poly groups (${what})`);
+    };
+    if (!isRec(g) || g.v !== GROUPS_V) bad('a version this app does not read');
+    const r = g as Rec;
+    if (!array(r.faces, 'u32', topFaces)) bad('not one group a face of its top level');
+    const names = r.names;
+    if (!Array.isArray(names) || names.length < 1 || names.length > MAX_GROUPS) bad(`not 1 to ${MAX_GROUPS} names`);
+    for (const n of names as unknown[]) if (typeof n !== 'string' || n.length > MAX_NAME) bad('a name that is not one');
+    if (r.hidden !== undefined && !array(r.hidden, 'u8', (names as unknown[]).length)) bad('hidden flags that are not one a group');
+  };
 
   const scene = layout.scene;
   if (!isRec(scene)) throw damaged('it holds no scene');
@@ -288,6 +323,8 @@ export function checkHeader(layout: Layout): void {
       }
     });
     if (m.source !== undefined) checkSource(m.source, object, (levels[0] as Rec).nbVertices as number);
+    // Each level above the base has four faces for each one below.
+    if (m.groups !== undefined) checkGroups(m.groups, object, faces * 4 ** (levels.length - 1));
   });
   if (scene.units !== undefined && scene.units !== 'cm' && scene.units !== 'm') throw damaged('units this app does not read');
   const materials = scene.materials;

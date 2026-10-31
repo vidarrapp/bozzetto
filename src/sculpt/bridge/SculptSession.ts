@@ -53,7 +53,21 @@ import { CM_PER_M, UNITS, type Units } from '../../viewer/units';
 import { bakeScale, transformLocal } from './bakeScale';
 import { sceneOnCentimetres } from './sceneUnits';
 import type { ParsedObjPolygons } from '../../admin/glb';
-import { bakedBase, buildFromObj, composeBake, level0ForExport, STALE_MESSAGE, unbakeLevel0, writeOriginalObj, type ObjSource } from './objSource';
+import {
+  bakedBase,
+  buildFromObj,
+  composeBake,
+  fileFaceGroups,
+  level0ForExport,
+  namedGroups,
+  recordFaceOrigin,
+  STALE_MESSAGE,
+  unbakeLevel0,
+  uvIslands,
+  writeOriginalObj,
+  type ObjSource,
+} from './objSource';
+import { matchFaces, PolyGroups } from './polyGroups';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -284,6 +298,8 @@ export class SculptSession {
   private readonly staleSources = new WeakSet<SculptMesh>();
 
   private readonly stateManager = new StateManager(this);
+  /** Every object's poly groups (polyGroups.ts). */
+  readonly groups: PolyGroups;
   private readonly sculptManager: SculptManager;
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
@@ -351,6 +367,7 @@ export class SculptSession {
     ) as unknown as SculptTool;
     this.picking = new Picking(this);
     this.pickingSym = new Picking(this, true);
+    this.groups = new PolyGroups(this);
   }
 
   // --- the main-object surface consumed by the vendored core --------------
@@ -379,6 +396,7 @@ export class SculptSession {
 
   /** Stop watching the canvas (sculpt mode unmounting; the canvas stays). */
   dispose(): void {
+    this.groups.dispose();
     this.sizeObserver.disconnect();
   }
 
@@ -806,6 +824,8 @@ export class SculptSession {
       mul.selectResolution(top - 1);
     }
     push(StateMultiresolution.DELETE_HIGHER);
+    // The level below becomes the top: its derived groups are its own now.
+    this.groups.beforeDeleteTop(mul as unknown as SculptMesh);
     mul.deleteHigher();
     if (from < top - 1) {
       push(StateMultiresolution.SELECTION);
@@ -854,7 +874,10 @@ export class SculptSession {
     masking.extract();
     const added = this.meshes.length > before;
     if (added) {
-      this.meshNames.set(this.meshes[this.meshes.length - 1], this.uniqueMeshName('Extracted'));
+      const made = this.meshes[this.meshes.length - 1];
+      this.meshNames.set(made, this.uniqueMeshName('Extracted'));
+      // The shell's faces take the groups of the surface they came off.
+      if (this.mesh) this.groups.transferNearest([this.mesh], made);
       this.activeChanged(); // mesh list changed even if selection kept
     }
     return added;
@@ -932,6 +955,7 @@ export class SculptSession {
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
     const newMesh = new Multimesh(this.remeshAt([mesh], mesh, this.remeshBox([mesh]))) as unknown as SculptMesh;
     this.markStale([mesh], newMesh);
+    this.groups.transferNearest([mesh], newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -1042,6 +1066,7 @@ export class SculptSession {
     base.updateDuplicateColorsAndMaterials();
     const newMesh = new Multimesh(base) as unknown as SculptMesh;
     this.markStale([mesh], newMesh);
+    this.groups.transferNearest([mesh], newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     if (!mesh.isVisible()) newMesh.setVisible(false);
@@ -1118,6 +1143,7 @@ export class SculptSession {
     const t0 = performance.now();
     const merged = new Multimesh(this.remeshAt(sources, base, this.remeshBox(sources)));
     this.markStale(sources, merged as unknown as SculptMesh);
+    this.groups.transferNearest(sources, merged as unknown as SculptMesh);
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
     this.writeSymmetryAxis(this.getSymmetryAxis(), [merged as unknown as SculptMesh]);
     this.stateManager.pushStateAddRemove(merged, sources);
@@ -1210,6 +1236,14 @@ export class SculptSession {
     if (base.getNbVertices() !== built.vertices.length / 3) throw new Error('No geometry found in that OBJ file.');
     const mesh = new Multimesh(base);
     if (built.source) this.sources.set(mesh as unknown as SculptMesh, { source: built.source, level0: mesh._meshes[0] });
+    // The file's g and o lines are its poly groups (owner decision): each
+    // level-0 face in the group of the file face it came from.
+    const named = namedGroups(parsed.extras, parsed.faceSizes.length);
+    if (named.names.length > 1 || named.names[0] !== 'Group 1') {
+      const perFace = new Uint32Array(built.faceOrigin.length);
+      for (let i = 0; i < perFace.length; i++) perFace[i] = named.perFace[built.faceOrigin[i]];
+      this.groups.fromLevel0(mesh as unknown as SculptMesh, perFace, named.names, false);
+    }
     if (!this.units && fit) mesh.normalizeSize();
     // Every level kept, level 0 the file's: the clamp would drop the
     // lowest levels of a small file, and with them its numbering.
@@ -1283,9 +1317,39 @@ export class SculptSession {
     // Level 0 now, in the space the import built it in (a scale folded
     // into the vertices since is taken back out: objSource.ts `bake`).
     const level0 = unbakeLevel0(rec.source, level0ForExport(mul._meshes, mul._sel, bakedBase(rec.source)));
-    const text = writeOriginalObj(rec.source, level0);
+    // The poly groups back out as g lines, through the file's faces; a
+    // file whose groups are still its own goes back as it was.
+    const groups = { perFace: fileFaceGroups(rec.source, this.groups.levelFaces(mesh, 0)), names: this.groups.names(mesh) };
+    const text = writeOriginalObj(rec.source, level0, groups);
     perfLog.record('obj export', performance.now() - t0, 'original numbering');
     return text;
+  }
+
+  /**
+   * Whether the object can be grouped by its UV islands: it came from an
+   * OBJ with texture coordinates, and level 0 is still the file's.
+   */
+  hasUVIslands(mesh: SculptMesh | null = this.mesh): boolean {
+    if (!mesh || this.originalNumbering(mesh) !== 'valid') return false;
+    const src = this.sources.get(mesh)!.source;
+    return !!src.faceUVs && src.nbUVs > 0;
+  }
+
+  /**
+   * Group by UV islands: the file's faces joined where they share a
+   * texture edge (objSource.ts uvIslands), each level-0 face in its file
+   * face's island and every face above in its ancestor's. One undo step.
+   * Returns the number of groups, 0 when the object has no UVs to read.
+   */
+  groupByUVIslands(mesh: SculptMesh | null = this.mesh): number {
+    if (!mesh || !this.hasUVIslands(mesh)) return 0;
+    const src = this.sources.get(mesh)!.source;
+    const islands = uvIslands(src);
+    if (!islands) return 0;
+    const origin = recordFaceOrigin(src);
+    const perFace = new Uint32Array(origin.length);
+    for (let i = 0; i < origin.length; i++) perFace[i] = islands.perFace[origin[i]];
+    return this.groups.fromLevel0(mesh, perFace, islands.names) ? islands.names.length : 0;
   }
 
   /** `made` replaces objects one of which had a record: its own says the topology is gone. */
@@ -1642,6 +1706,7 @@ export class SculptSession {
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
       : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
     this.markStale([mesh], newMesh);
+    this.groups.carryTopology(mesh, newMesh);
     const name = this.meshNames.get(mesh);
     if (name) this.meshNames.set(newMesh, name);
     this.stateManager.pushStateAddRemove(newMesh, mesh);
@@ -1837,6 +1902,8 @@ export class SculptSession {
       // The file's numbering, while level 0 is still the file's. Its arrays
       // never change, so the record shares them rather than copy them.
       ...(this.originalNumbering(mesh) === 'valid' ? { source: this.sources.get(mesh)!.source } : {}),
+      // The poly groups, where the object has any: its top level's.
+      ...(this.groups.hasGroups(mesh) ? { groups: this.groups.serialize(mesh) } : {}),
     };
   }
 
@@ -2077,6 +2144,7 @@ export class SculptSession {
       reflected = true;
     }
     const mesh = this.buildLevels(saved);
+    if (saved.groups) this.groups.restore(mesh as unknown as SculptMesh, saved.groups);
     // The file's numbering comes back with the object. A reflection baked
     // into the vertices (a mirror copy) is not the file's level 0 any more.
     if (source && !reflected && source.base.length === mesh._meshes[0].getNbVertices() * 3) {
@@ -2271,7 +2339,23 @@ export class SculptSession {
     matrix[0] = -matrix[0];
     matrix[1] = -matrix[1];
     matrix[2] = -matrix[2];
-    return { ...saved, nbBaseFaces: exact.nbBaseFaces, baseFaces, levels, sel: top, matrix };
+    // 5. The poly groups, top face by top face: the reversed base numbers
+    // each face's children in another order, so each is found again by
+    // its corners.
+    let groups = saved.groups;
+    const vmap = perm as Uint32Array | null;
+    if (groups && vmap) {
+      const oldTop = temp._meshes[top];
+      const newTop = scratch._meshes[top];
+      const nbF = oldTop.getNbFaces();
+      if (groups.faces.length === nbF && newTop.getNbFaces() === nbF) {
+        const match = matchFaces(oldTop.getFaces(), newTop.getFaces(), nbF, newTop.getNbVertices(), vmap);
+        const faces = new Uint32Array(nbF);
+        for (let f = 0; f < nbF; f++) if (match[f] >= 0) faces[match[f]] = groups.faces[f];
+        groups = { ...groups, faces };
+      }
+    }
+    return { ...saved, nbBaseFaces: exact.nbBaseFaces, baseFaces, levels, sel: top, matrix, ...(groups ? { groups } : {}) };
   }
 
   // --- primitives (ported from Scene.js + drawables/Primitives.js) --------

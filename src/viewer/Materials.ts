@@ -137,6 +137,24 @@ export class Materials {
       shader reading a missing attribute is not an error you get to see. */
   private sculptVertexPBR = false;
 
+  /**
+   * Sculpt's poly group colours (Shift+F): the colour comes from the
+   * `groupColor` attribute GeometrySync fills while they show, in place of
+   * the paint in Lit and under the matcap's shading, the mask's darkening
+   * still on top. Every sculpt geometry has the attribute while this is on.
+   */
+  private groupColorsOn = false;
+
+  getSculptGroupColors(): boolean {
+    return this.groupColorsOn;
+  }
+
+  setSculptGroupColors(on: boolean): void {
+    if (on === this.groupColorsOn) return;
+    this.groupColorsOn = on;
+    this.rebuildSculptColor();
+  }
+
   /** Whether masked areas are currently drawn darkened (ctrl+h toggles). */
   getSculptMaskTint(): boolean {
     return this.maskTintOn;
@@ -250,6 +268,9 @@ export class Materials {
       // masks must stay visible while sculpting.
       let node: unknown =
         this.readsVertexColor() && id === 'lit' ? attribute('color', 'vec3') : null;
+      // The poly group colours, while they show (never in Present, which
+      // shows the model as it will be published).
+      if (this.groupColorsOn && this.sculptVertexColor && !this.presenting) node = attribute('groupColor', 'vec3');
       // How much of the surface counts as masked: the vertex mask when the
       // tint is on, and the whole object when it is locked (owner call: a
       // locked object draws as if fully masked, so the padlock shows in

@@ -26,6 +26,24 @@ const RANGE_MERGE_GAP = 4096;
 /** Beyond this many ranges per commit, fall back to a full upload. */
 const RANGE_CAP = 64;
 
+/**
+ * What the poly groups (polyGroups.ts) lend the display: which faces of a
+ * mesh's level on screen are hidden, and each vertex's group colour while
+ * the colours show (Shift+F). One for every sync (mode.ts installs it).
+ */
+export interface GeometryDecor {
+  /** A flag a face of the level on screen (1 hidden), or null when nothing is. */
+  hiddenFaces(mesh: SculptMesh): Uint8Array | null;
+  /** Whether the group colours show. */
+  isShowing(): boolean;
+  /** Each vertex's group colour into `out` (three a vertex). */
+  fillColors(mesh: SculptMesh, out: Float32Array): void;
+  /** A dynamic-topology step or undo moved the faces. */
+  topologyChanged(mesh: SculptMesh): void;
+}
+
+const TRI_INDEX = 4294967295;
+
 /** Upload accounting for the WS1 acceptance ("logged and bounded"). */
 export interface SyncStats {
   /** Elements (floats) uploaded by the last commit (position + normal). */
@@ -39,6 +57,16 @@ export interface SyncStats {
 }
 
 export class GeometrySync {
+  /** The poly groups' hidden faces and colours, for every sync. */
+  static decor: GeometryDecor | null = null;
+  /** The syncs alive, so a change to the groups or their colours reaches every object. */
+  private static readonly live = new Set<GeometrySync>();
+
+  /** Every sync redraws its hidden faces and colours (a group edit, Shift+F). */
+  static refreshAll(): void {
+    for (const s of GeometrySync.live) s.refreshDecor();
+  }
+
   readonly geometry = new BufferGeometry();
   readonly stats: SyncStats = {
     lastCommitElements: 0,
@@ -60,6 +88,20 @@ export class GeometrySync {
   /** The wireframe's edge lines; see wireGeometry. */
   private wire: BufferGeometry | null = null;
   private wireStale = true;
+  /**
+   * While some faces are hidden: the visible triangles, as the index the
+   * geometry draws (as long as the mesh's own, the hidden ones left out),
+   * and the triangles array it was taken from. Null when all show.
+   */
+  private visible: BufferAttribute | null = null;
+  private visibleFrom: Uint32Array | null = null;
+  private visibleCount = 0;
+  /** The group colours, while they show. */
+  private groupColors: BufferAttribute | null = null;
+
+  constructor() {
+    GeometrySync.live.add(this);
+  }
 
   /** Wrap `mesh` and install the buffer-update hooks on it. */
   bind(mesh: SculptMesh): void {
@@ -82,8 +124,10 @@ export class GeometrySync {
     this.geometry.setAttribute('color', new BufferAttribute(mesh.getColors(), 3));
     // roughness / metallic / masking per vertex; the mask tint reads z (WS3).
     this.geometry.setAttribute('materialsPBR', new BufferAttribute(mesh.getMaterials(), 3));
-    this.geometry.setIndex(new BufferAttribute(mesh.getTriangles(), 1));
-    this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
+    this.visible = null;
+    this.visibleFrom = null;
+    this.groupColors = null;
+    this.applyDecor(mesh, true);
     this.wireStale = true;
     this.stats.rebuilds++;
     this.onChange?.();
@@ -105,7 +149,22 @@ export class GeometrySync {
     if (mesh && pos && (this.wireStale || this.wire.getAttribute('position') !== pos)) {
       const t0 = performance.now();
       this.wire.setAttribute('position', pos);
-      const edges = faceEdges(mesh.getFaces(), mesh.getNbFaces(), mesh.getNbVertices());
+      // Hidden faces draw no wire either: only the visible faces' edges.
+      const hidden = GeometrySync.decor?.hiddenFaces(mesh) ?? null;
+      let faces = mesh.getFaces();
+      let nbFaces = mesh.getNbFaces();
+      if (hidden) {
+        const kept = new Uint32Array(nbFaces * 4);
+        let n = 0;
+        for (let f = 0; f < nbFaces; f++) {
+          if (hidden[f]) continue;
+          kept.set(faces.subarray(f * 4, f * 4 + 4), n * 4);
+          n++;
+        }
+        faces = kept;
+        nbFaces = n;
+      }
+      const edges = faceEdges(faces, nbFaces, mesh.getNbVertices());
       this.wire.setIndex(new BufferAttribute(edges, 1));
       this.wire.setDrawRange(0, edges.length);
       this.wireStale = false;
@@ -131,8 +190,78 @@ export class GeometrySync {
       !mat ||
       mat.array !== mesh.getMaterials() ||
       !idx ||
-      idx.array !== mesh.getTriangles()
+      (this.visible ? idx !== this.visible || this.visibleFrom !== mesh.getTriangles() : idx.array !== mesh.getTriangles())
     );
+  }
+
+  /**
+   * The index the geometry draws and the group colours, for the mesh as
+   * it is: the mesh's own triangles when nothing is hidden, otherwise the
+   * visible ones, copied into an index kept as long as the mesh's so a
+   * stroke step reuses it; and the colour attribute while the colours
+   * show. `fresh` after the attributes were rebuilt; `faces` when the
+   * faces themselves may have changed (the index is uploaded again then).
+   */
+  private applyDecor(mesh: SculptMesh, fresh: boolean, faces = fresh): void {
+    const decor = GeometrySync.decor;
+    const tris = mesh.getTriangles();
+    const hidden = decor?.hiddenFaces(mesh) ?? null;
+    if (!hidden) {
+      const idx = this.geometry.getIndex();
+      if (fresh || this.visible || !idx || idx.array !== tris) this.geometry.setIndex(new BufferAttribute(tris, 1));
+      else if (faces) idx.needsUpdate = true;
+      this.visible = null;
+      this.visibleFrom = null;
+      this.visibleCount = 0;
+    } else {
+      if (!this.visible || this.visibleFrom !== tris || (this.visible.array as Uint32Array).length < tris.length) {
+        this.visible = new BufferAttribute(new Uint32Array(tris.length), 1);
+        this.visibleFrom = tris;
+        this.geometry.setIndex(this.visible);
+      }
+      const out = this.visible.array as Uint32Array;
+      const fAr = mesh.getFaces();
+      const ftt = mesh.isDynamic ? null : (mesh.getFacesToTriangles?.() ?? null);
+      const nbFaces = mesh.getNbFaces();
+      let n = 0;
+      let t = 0;
+      for (let f = 0; f < nbFaces; f++) {
+        const count = fAr[f * 4 + 3] === TRI_INDEX || mesh.isDynamic ? 1 : 2;
+        const first = ftt ? ftt[f] : t;
+        t = first + count;
+        if (hidden[f]) continue;
+        for (let k = first * 3, end = (first + count) * 3; k < end; k++) out[n++] = tris[k];
+      }
+      this.visibleCount = n;
+      this.visible.needsUpdate = true;
+    }
+    this.geometry.setDrawRange(0, this.drawCount(mesh));
+    if (decor?.isShowing()) {
+      const len = mesh.getVertices().length;
+      if (!this.groupColors || this.groupColors.array.length !== len) {
+        this.groupColors = new BufferAttribute(new Float32Array(len), 3);
+        this.geometry.setAttribute('groupColor', this.groupColors);
+      }
+      decor.fillColors(mesh, this.groupColors.array as Float32Array);
+      this.groupColors.needsUpdate = true;
+    } else if (this.groupColors) {
+      this.geometry.deleteAttribute('groupColor');
+      this.groupColors = null;
+    }
+  }
+
+  /** How many indices to draw: every triangle, or the visible ones. */
+  private drawCount(mesh: SculptMesh): number {
+    return this.visible ? this.visibleCount : mesh.getNbTriangles() * 3;
+  }
+
+  /** The groups changed (an edit, an undo, Shift+F): hidden faces and colours again. */
+  refreshDecor(): void {
+    const mesh = this.mesh;
+    if (!mesh) return;
+    this.applyDecor(mesh, false);
+    this.wireStale = true;
+    this.onChange?.();
   }
 
   /** Vendor seam feed: the vertex ids touched by one updateGeometry call. */
@@ -156,7 +285,7 @@ export class GeometrySync {
     const pos = this.geometry.getAttribute('position') as BufferAttribute;
     const nrm = this.geometry.getAttribute('normal') as BufferAttribute;
     this.commitGeometry(pos, nrm);
-    this.geometry.setDrawRange(0, mesh.getNbTriangles() * 3);
+    this.geometry.setDrawRange(0, this.drawCount(mesh));
     this.onChange?.();
   }
 
@@ -196,6 +325,9 @@ export class GeometrySync {
   }
 
   private queueAllBuffers(mesh: SculptMesh): void {
+    // The faces may have moved (a dynamic-topology step): the groups'
+    // hidden faces are read afresh.
+    GeometrySync.decor?.topologyChanged(mesh);
     if (this.arraysChanged(mesh)) {
       this.rebuild();
       this.resetDirty();
@@ -206,8 +338,7 @@ export class GeometrySync {
     this.onGeometryBuffers(mesh);
     (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
     (this.geometry.getAttribute('materialsPBR') as BufferAttribute).needsUpdate = true;
-    const idx = this.geometry.getIndex();
-    if (idx) idx.needsUpdate = true;
+    this.applyDecor(mesh, false, true);
   }
 
   /** Apply the accumulated dirty set to position + normal as update ranges. */
@@ -260,6 +391,7 @@ export class GeometrySync {
   }
 
   dispose(): void {
+    GeometrySync.live.delete(this);
     if (this.mesh && this.mesh._bridgeSync === this) this.mesh._bridgeSync = null;
     this.mesh = null;
     this.geometry.dispose();

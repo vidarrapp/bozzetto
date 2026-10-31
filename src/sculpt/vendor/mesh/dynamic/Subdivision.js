@@ -39,6 +39,9 @@ var fillTriangle = function (iTri, iv1, iv2, iv3, ivMid) {
 
   var iNewTri = mesh.getNbTriangles();
   vrf[ivMid].push(iTri, iNewTri);
+  // BOZZETTO EDIT: the new half keeps the split face's poly group.
+  var fg = mesh._facesGroups;
+  if (fg) fg[iNewTri] = fg[iTri];
 
   j = iNewTri * 4;
   fAr[j] = ivMid;
@@ -151,6 +154,9 @@ var halfEdgeSplit = function (iTri, iv1, iv2, iv3) {
   fAr[id + 3] = Utils.TRI_INDEX;
 
   var iNewTri = mesh.getNbTriangles();
+  // BOZZETTO EDIT: the new half keeps the split face's poly group.
+  var fg = mesh._facesGroups;
+  if (fg) fg[iNewTri] = fg[iTri];
   id = iNewTri * 4;
   fAr[id] = ivMid;
   fAr[id + 1] = iv2;

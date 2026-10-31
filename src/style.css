@@ -2143,6 +2143,71 @@ html.is-page body {
   color: var(--accent-hover);
 }
 
+/* The Model panel's poly groups: a row a group, its colour, its name (a
+   tap renames it), an eye and a delete, as the Scene list's rows read. */
+.groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.groups-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  border-radius: var(--radius);
+}
+
+.groups-row:hover {
+  background: var(--hover);
+}
+
+.groups-row__swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.groups-row__name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.groups-row--hidden .groups-row__name,
+.groups-row--hidden .groups-row__swatch {
+  opacity: 0.45;
+}
+
+.groups-row__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: var(--font-spec);
+  font-size: 12px;
+  outline: none;
+}
+
 /* Create, above the list: the panel's one button. */
 .outliner__header {
   display: flex;

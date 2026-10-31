@@ -27,6 +27,12 @@ class MeshDynamic extends Mesh {
 
     this._facesStateFlags = null; // state flags (<= Utils.STATE_FLAG) (Int32Array)
     this._wireframe = null; // Uint32Array
+    // BOZZETTO EDIT: each face's poly group (src/sculpt/bridge/polyGroups.ts),
+    // kept with the faces as they split, collapse and move: a new face takes
+    // the group of the face it was split from, a face moved into a deleted
+    // one's place takes its own along, and the undo states keep it with the
+    // face indices they keep (StateDynamic).
+    this._facesGroups = null; // Uint32Array
 
     this.initFromMesh(mesh);
 
@@ -79,6 +85,7 @@ class MeshDynamic extends Mesh {
     this._meshData._vertRingVert = []; // vertex ring
     this._meshData._vertRingFace = []; // face ring
     this._facesStateFlags = new Int32Array(this.getNbFaces());
+    this._facesGroups = new Uint32Array(this.getNbFaces()); // BOZZETTO EDIT
   }
 
   initFromMesh(mesh) {
@@ -209,6 +216,7 @@ class MeshDynamic extends Mesh {
     var len = nbTriangles + nbAddElements;
     if (nbDyna < len || nbDyna > len * 4) {
       this._facesStateFlags = this.resizeArray(this._facesStateFlags, len);
+      this._facesGroups = this.resizeArray(this._facesGroups, len); // BOZZETTO EDIT
       if (this.getShowWireframe())
         this._wireframe = this.resizeArray(this._wireframe, len * 6);
 
