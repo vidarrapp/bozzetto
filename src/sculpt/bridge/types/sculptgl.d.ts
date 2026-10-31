@@ -190,6 +190,12 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     /** MeshResolution levels only: set when a reversion numbered the even vertices apart. */
     _evenMapping?: boolean;
     _vertMapping?: Uint32Array | null;
+    /**
+     * BOZZETTO EDIT (Reversion.js): on a level made by a reversion, which
+     * fine faces each of its faces covers: a quad's centre vertex in the
+     * level above as -1 - v, a triangle's middle child as its face index.
+     */
+    _reverseCentres?: Int32Array;
     /** Set on multiresolution meshes only (the level stack). */
     _meshes?: SculptMesh[];
     /** MeshResolution levels only: detail vectors from the last analysis. */

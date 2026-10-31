@@ -679,7 +679,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (!mesh) return;
     try {
       const g = session.groups.fromMask(mesh);
-      if (g < 0) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
+      if (g === -1) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
+      else if (g < 0) statusToast('').fail('Too little is masked: groups follow the base mesh, so a base face joins when most of it is masked. Mask more, or step down to level 0.');
       else statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces`);
     } catch (err) {
       if (!(err instanceof TooManyGroups)) throw err;

@@ -143,13 +143,14 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
       fail(`object ${index + 1} has a bad OBJ numbering record: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  // The poly groups, where there are any: one a face of the top level
-  // (the base faces, four a face a level above the first), each naming a
-  // group there is.
+  // The poly groups, where there are any: one a face of level 0 (version
+  // 2), or of the top level (version 1, the base faces four a face a level
+  // above the first, rounded down to level 0 here), each naming a group
+  // there is.
   let groups: SavedMesh['groups'];
   if (m.groups !== undefined) {
     try {
-      groups = sanitizeGroups(m.groups, m.nbBaseFaces * 4 ** (levels.length - 1));
+      groups = sanitizeGroups(m.groups, m.nbBaseFaces, levels.length);
     } catch (err) {
       fail(`object ${index + 1} has bad poly groups: ${err instanceof Error ? err.message : String(err)}`);
     }

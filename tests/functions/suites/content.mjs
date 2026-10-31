@@ -73,17 +73,25 @@ const withSource = (h, edit) => {
 
 /**
  * Give the scene's object poly groups (SavedMesh.groups, polyGroups.ts):
- * one u32 a face of its top level (the one level here, one face), two
- * names, and a u8 hidden flag a name. `edit` then has its way with them.
+ * version 2 by default, one u32 a face of level 0 (one face here); with
+ * `v: 1`, one a face of the top level. `levels: 2` adds a level above the
+ * base first, so the top has four faces to level 0's one. Two names, and a
+ * u8 hidden flag a name. `edit` then has its way with them.
  */
-const withGroups = (h, edit) => {
-  const add = (t, len) => {
+const withGroups = (h, edit, { v = 2, levels = 1, len } = {}) => {
+  const add = (t, n) => {
     const end = h.buffers.reduce((e, b) => Math.max(e, b.off + b.len * (b.t === 'u8' ? 1 : 4)), 0);
-    h.buffers.push({ t, off: Math.ceil(end / 4) * 4, len });
+    h.buffers.push({ t, off: Math.ceil(end / 4) * 4, len: n });
     return { __buf: h.buffers.length - 1 };
   };
-  const groups = { v: 1, faces: add('u32', 1), names: ['Group 1', 'Top'], hidden: add('u8', 2) };
-  h.scene.meshes[0].groups = groups;
+  const mesh = h.scene.meshes[0];
+  for (let k = 1; k < levels; k++) {
+    const n = mesh.levels[0].nbVertices * 2;
+    mesh.levels.push({ nbVertices: n, vertices: add('f32', n * 3), normals: null, colors: add('f32', n * 3), materials: add('f32', n * 3), detailsXYZ: null, detailsRGB: null, detailsPBR: null });
+  }
+  const faces = len ?? (v === 1 ? mesh.nbBaseFaces * 4 ** (levels - 1) : mesh.nbBaseFaces);
+  const groups = { v, faces: add('u32', faces), names: ['Group 1', 'Top'], hidden: add('u8', 2) };
+  mesh.groups = groups;
   edit?.(groups, h);
 };
 
@@ -162,8 +170,10 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withSource(h, (src) => (src.nbFileVertices = 4 + 8_000_000)) }), /OBJ numbering record/, 'an OBJ record past the vertex ceiling'],
     [bozz({ edit: (h) => withSource(h, (src) => (src.faceSizes = [3])) }), /OBJ numbering record/, 'an OBJ record whose face sizes are no array'],
     // The poly groups (SavedMesh.groups), one thing wrong at a time.
-    [bozz({ edit: (h) => withGroups(h, (g) => (g.v = 2)) }), /bad poly groups \(a version/, 'poly groups of a version there is not'],
-    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].len = 0)) }), /bad poly groups \(not one group a face/, 'poly groups for fewer faces than the top level has'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.v = 3)) }), /bad poly groups \(a version/, 'poly groups of a version there is not'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].len = 0)) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) for fewer faces than level 0 has'],
+    [bozz({ edit: (h) => withGroups(h, null, { levels: 2, len: 4 }) }), /bad poly groups \(not one group a face of its level 0/, 'poly groups (version 2) sized to the top level of two'],
+    [bozz({ edit: (h) => withGroups(h, null, { v: 1, levels: 2, len: 1 }) }), /bad poly groups \(not one group a face of its top level/, 'poly groups (version 1) sized to level 0 of two'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.faces.__buf].t = 'f32')) }), /bad poly groups \(not one group a face/, 'poly groups that are floats'],
     [bozz({ edit: (h) => withGroups(h, (g) => (g.faces = [0])) }), /bad poly groups \(not one group a face/, 'poly groups as a plain list'],
     [bozz({ edit: (h) => withGroups(h, (g) => (g.names = [])) }), /bad poly groups \(not 1 to 4096 names/, 'poly groups with no names'],
@@ -192,13 +202,17 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(numbered.status === 201, `a scene with an OBJ numbering record is taken (${numbered.status} ${numbered.json?.reason ?? ''})`);
   const { r: noUVs } = await send(bozz({ edit: (h) => withSource(h, (src) => Object.assign(src, { faceUVs: null, nbUVs: 0, textBytes: 0, text: null, extraAt: null })) }));
   t.ok(noUVs.status === 201, `and one without texture coordinates or kept lines (${noUVs.status} ${noUVs.json?.reason ?? ''})`);
-  // Poly groups, with a u8 array for their hidden flags, and without one.
+  // Poly groups (version 2), with a u8 array for their hidden flags, and without one.
   const { r: grouped } = await send(bozz({ edit: (h) => withGroups(h) }));
   t.ok(grouped.status === 201, `a scene with poly groups and their hidden flags (a u8 array) is taken (${grouped.status} ${grouped.json?.reason ?? ''})`);
   const { r: noHidden } = await send(bozz({ edit: (h) => withGroups(h, (g) => delete g.hidden) }));
   t.ok(noHidden.status === 201, `and one with nothing hidden (${noHidden.status} ${noHidden.json?.reason ?? ''})`);
   const { r: bareGroups } = await send(bozz({ raw: true, edit: (h) => withGroups(h) }));
   t.ok(bareGroups.status === 201, `and a bare one, its u8 array padded to four bytes (${bareGroups.status} ${bareGroups.json?.reason ?? ''})`);
+  const { r: v2Two } = await send(bozz({ edit: (h) => withGroups(h, null, { levels: 2 }) }));
+  t.ok(v2Two.status === 201, `poly groups version 2 on two levels, one a face of level 0, are taken (${v2Two.status} ${v2Two.json?.reason ?? ''})`);
+  const { r: v1Two } = await send(bozz({ edit: (h) => withGroups(h, null, { v: 1, levels: 2 }) }));
+  t.ok(v1Two.status === 201, `and version 1 (2026-10-31), one a face of the top level's four, still is (${v1Two.status} ${v1Two.json?.reason ?? ''})`);
   t.report();
 
   // --- the file as a whole ------------------------------------------------------------------------

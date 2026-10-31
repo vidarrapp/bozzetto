@@ -1,21 +1,27 @@
-// Poly groups (owner decisions, 2026-10-31; polyGroups.ts). One group a
-// face of an object's top level, names by group number; lower levels
-// derived (a face takes its children's majority, the earliest child on a
-// tie), never stored.
+// Poly groups (owner decisions, 2026-10-31; stored on level 0 since
+// 2026-11-01; polyGroups.ts). One group a face of an object's level 0 (the
+// base mesh), names by group number; every higher level's face takes its
+// level-0 ancestor's group exactly.
 //
 // polyGroups:
 // - the multires numbering: face f's children are 4f..4f+3 of the level
 //   above, a quad's child k at its corner k (checked on every face of the
 //   cube's levels);
+// - storage: one group a level-0 face (the array, the .bozz record), and
+//   at every level face f in its level-0 ancestor's (f >> 2k) group;
 // - Ctrl+W after a loop-mask drag across the sphere's equator makes "Group
-//   2" of exactly the faces below the loop, one undo step; Ctrl+W with
-//   nothing masked makes none;
-// - the derivation: a child pattern of 2,1,1,2 gives 2 (a tie: the
-//   earliest child), 3,1,1,0 gives 1; a level two down follows the level
-//   one down; subdividing gives each new face its parent's group; deleting
-//   the top level keeps the level below's derived groups, and an undo
-//   brings the top back with its own;
-// - Group by angle on the cube: 6 groups, one a side;
+//   2" of the level-0 faces the masked top faces round down to, level by
+//   level (a face of the level below joins when most of its four children
+//   do, the earliest child deciding a tie), one undo step; Ctrl+W with
+//   nothing masked makes none; the rounding rule itself on chosen
+//   patterns, including one where level by level and a flat vote differ;
+// - subdividing and deleting the highest level leave level 0's groups as
+//   they were; Rebuild puts a new level 0 under the old one, each face the
+//   majority of its children (found by the reversion's parent map, checked
+//   on the geometry), and an undo brings the old one back;
+// - Group by angle on the cube: 6 groups, one a side; on a library figure
+//   and a quad-remeshed one, level 0's own split against a vote from the
+//   level on screen (the coarseness of level 0 reported);
 // - Shift+F: the group colours on every object, and off;
 // - Ctrl+Shift+click on a side shows it alone, again hides it and shows
 //   the rest, on empty space shows all; hidden faces are not picked, and a
@@ -30,8 +36,10 @@
 //   import again as the same groups; the triangle export writes g lines;
 // - By UV islands on an OBJ with two islands: two groups, the button off
 //   for an object without UVs;
-// - a .bozz and the autosave keep the faces, names and hidden flags; a
-//   scene with malformed groups is refused; an older scene opens in group 0;
+// - a .bozz and the autosave keep the faces (version 2, level 0's), names
+//   and hidden flags; a version 1 record (top level's) opens rounded down
+//   level by level; a scene with malformed groups is refused; an older
+//   scene opens in group 0;
 // - the Groups list: a row a group, a tap renames, the eye hides, the
 //   trash merges the faces into the group they border most;
 // - timings on a 393k-face sphere.
@@ -42,7 +50,7 @@ const CTRL = 2;
 const SHIFT = 8;
 const ALT = 1;
 
-/** The active object's groups: names, top-level counts, hidden flags, and the undo index. */
+/** The active object's groups: names, level-0 counts, hidden flags, and the undo index. */
 const groupsOf = (page) =>
   page.evaluate(() => {
     const { session } = window.__sculpt;
@@ -52,7 +60,8 @@ const groupsOf = (page) =>
       names: g.names(m),
       counts: g.counts(m),
       hidden: g.hiddenGroups(m),
-      top: g.topFaces(m).length,
+      base: g.baseFaces(m).length,
+      level0: m._meshes ? m._meshes[0].getNbFaces() : m.getNbFaces(),
       undo: session.getStateManager()._curUndoIndex,
     };
   });
@@ -125,6 +134,33 @@ const gLines = (text) => {
   return out;
 };
 
+/**
+ * In the page or here: values one a face of level `k` (faces 4f..4f+3 a
+ * face's children) rounded to level 0 level by level: a face takes what
+ * most of its four children have, the earliest child on a tie.
+ */
+function roundLevels(values, k) {
+  let cur = Array.from(values);
+  for (let j = k; j >= 1; j--) {
+    const out = [];
+    for (let p = 0; p * 4 < cur.length; p++) {
+      const c = cur.slice(p * 4, p * 4 + 4);
+      let best = c[0];
+      let bestN = 0;
+      for (const g of c) {
+        const n = c.filter((x) => x === g).length;
+        if (n > bestN) {
+          bestN = n;
+          best = g;
+        }
+      }
+      out.push(best);
+    }
+    cur = out;
+  }
+  return cur;
+}
+
 export const suites = {
   async polyGroups(page, base, t) {
     page.on('dialog', (d) => void d.accept());
@@ -174,24 +210,28 @@ export const suites = {
     const eq = await page.evaluate(gridDrag, { name: 'Sphere', at: [0, 0, 12.5], from: [0, 1, 0], side: [1, 0, 0] });
     await dev.penDrag(along(eq.a, eq.b), null, CTRL | SHIFT);
     await settle(page);
-    const below = await page.evaluate(() => {
+    const below = await page.evaluate((roundSrc) => {
+      const roundLevels = new Function(`return ${roundSrc}`)();
       const m = window.__sculpt.session.getMesh();
       const f = m.getFaces();
-      const v = m.getVertices();
+      const mat = m.getMaterials();
+      const flags = [];
       let n = 0;
       for (let i = 0; i < m.getNbFaces(); i++) {
         let all = true;
-        for (let k = 0; k < 4; k++) if (v[f[i * 4 + k] * 3 + 1] > 1e-4) all = false;
+        for (let k = 0; k < 4; k++) if (!(mat[f[i * 4 + k] * 3 + 2] < 0.5)) all = false;
+        flags.push(all ? 1 : 0);
         if (all) n++;
       }
-      return { n, faces: m.getNbFaces() };
-    });
+      const base = roundLevels(flags, m._sel);
+      return { n, faces: m.getNbFaces(), base: base.filter((x) => x).length, level0: m._meshes[0].getNbFaces(), sel: m._sel };
+    }, roundLevels.toString());
     let before = await groupsOf(page);
     await page.keyboard.press('Control+w');
     let g = await groupsOf(page);
     t.ok(
-      g.names.length === 2 && g.names[1] === 'Group 2' && g.counts[1] === below.n && g.counts[0] === below.faces - below.n && g.undo === before.undo + 1,
-      `Ctrl+W after a loop mask across the equator: "Group 2" of the ${below.n} faces wholly below it, one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
+      g.base === below.level0 && g.names.length === 2 && g.names[1] === 'Group 2' && g.counts[1] === below.base && below.base > 0 && g.counts[0] === below.level0 - below.base && g.undo === before.undo + 1,
+      `Ctrl+W after a loop mask across the equator: "Group 2" of the ${below.base} of the sphere's ${below.level0} level-0 faces the ${below.n} masked faces of level ${below.sel} round down to, one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
     );
     const maskKept = await page.evaluate(() => {
       const m = window.__sculpt.session.getMesh();
@@ -203,107 +243,255 @@ export const suites = {
     t.ok(maskKept > 0, `and the mask stays as it was (${maskKept} vertices still masked)`);
     await page.evaluate(() => window.__sculpt.session.undo());
     g = await groupsOf(page);
-    t.ok(g.names.length === 1 && g.counts[0] === below.faces, `one undo takes the group off (${g.names.length} group)`);
+    t.ok(g.names.length === 1 && g.counts[0] === below.level0, `one undo takes the group off (${g.names.length} group)`);
     await page.evaluate(() => window.__sculpt.session.redo());
     g = await groupsOf(page);
-    t.ok(g.names.length === 2 && g.counts[1] === below.n, 'and a redo puts it back');
+    t.ok(g.names.length === 2 && g.counts[1] === below.base, 'and a redo puts it back');
     await page.keyboard.press('Control+c'); // clear the mask
     before = await groupsOf(page);
     await page.keyboard.press('Control+w');
     g = await groupsOf(page);
     t.ok(g.names.length === 2 && g.undo === before.undo, 'Ctrl+W with nothing masked makes no group');
 
-    // --- the derivation, subdividing and deleting the top --------------------------------
-    const derive = await page.evaluate(() => {
+    // --- storage on level 0, exact inheritance, the rounding -----------------------------
+    const store = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.addPrimitive('cube');
       session.setMesh(cube);
       const groups = session.groups;
       groups.byAngle(cube, 40); // six names to number faces with
-      const top = groups.topFaces(cube);
-      // Children of face 0 one level down: 2,1,1,2 (a tie: the earliest
-      // child's), of face 1: 3,1,1,0 (a majority), of face 2: 0,1,2,3 (all
-      // tied: the first); everything else 0. Written as an edit would.
-      top.fill(0);
-      top.set([2, 1, 1, 2, 3, 1, 1, 0, 0, 1, 2, 3]);
-      // Face 4 one down, whose children are 16..19: a two-level check below.
-      top.set([1, 1, 0, 0], 16);
+      const base = groups.baseFaces(cube);
+      // A pattern with no structure to it, written as an edit would.
+      for (let f = 0; f < base.length; f++) base[f] = (f * 7 + (f >> 3)) % 6;
       groups.touch(cube);
       const levels = cube._meshes.length;
-      const one = groups.levelFaces(cube, levels - 2);
-      const two = groups.levelFaces(cube, levels - 3);
-      return { one: Array.from(one.subarray(0, 5)), two0: two[0], two1: two[1], levels };
+      let wrong = 0;
+      let checked = 0;
+      for (let k = 0; k < levels; k++) {
+        const at = groups.levelFaces(cube, k);
+        if (at.length !== cube._meshes[k].getNbFaces()) wrong++;
+        for (let f = 0; f < at.length; f++, checked++) if (at[f] !== base[f >> (2 * k)]) wrong++;
+      }
+      return { len: base.length, level0: cube._meshes[0].getNbFaces(), top: cube.getNbFaces(), levels, wrong, checked, saved: groups.serialize(cube).faces.length };
     });
-    t.eq(derive.one.slice(0, 3).join(','), '2,1,0', 'one level down: 2,1,1,2 gives 2 (tie: the earliest child), 3,1,1,0 gives 1, 0,1,2,3 gives 0');
-    // Two down, face 0's children one down are 2,1,0,0 (faces 0..3): 0 wins
-    // (two of four); face 1's are 1,0,0,0 (faces 4..7, face 4 being 1 by its tie).
-    t.ok(derive.one[4] === 1 && derive.two0 === 0 && derive.two1 === 0, `two levels down follows the level one down (${JSON.stringify(derive)})`);
-    // Shown at a lower level: the derived groups are what the face reports.
-    const lower = await page.evaluate(() => {
+    t.ok(store.len === store.level0 && store.saved === store.level0 && store.top === store.level0 * 4 ** (store.levels - 1), `groups are stored one a level-0 face: ${store.len} on the cube (its top level ${store.top}), and saved so`);
+    t.ok(store.wrong === 0, `at each of the ${store.levels} levels face f takes its level-0 ancestor's (f >> 2k) group exactly (${store.checked} faces, ${store.wrong} wrong)`);
+    // The rounding: patterns on the top level of base faces 0..5, by their
+    // level-1 children (16 top faces each) and level-2 grandchildren (4).
+    const rounding = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
-      session.selectLevel(cube._meshes.length - 2);
-      return { g0: session.groups.groupOfFace(cube, 0), g1: session.groups.groupOfFace(cube, 1), sel: cube._sel };
+      const levels = cube._meshes.length;
+      const flags = new Uint32Array(cube.getNbFaces());
+      const span = 4 ** (levels - 2); // a level-1 child's top faces
+      const child = (p, c) => flags.fill(1, (4 * p + c) * span, (4 * p + c + 1) * span);
+      const grand = (p, c, g) => flags.fill(1, ((4 * p + c) * 4 + g) * (span / 4), ((4 * p + c) * 4 + g + 1) * (span / 4));
+      [0, 1, 2].forEach((c) => child(0, c)); // three of four: joins
+      [0, 3].forEach((c) => child(1, c)); // two of four, the first among them: joins (tie)
+      [1, 2].forEach((c) => child(2, c)); // two of four, not the first: stays (tie)
+      child(3, 0); // one of four: stays
+      // Children 0 and 1 three quarters each (24 of 64 top faces, under
+      // half): level by level they qualify, and then the tie goes to child 0.
+      for (const c of [0, 1]) for (const g of [0, 1, 2]) grand(5, c, g);
+      const out = session.groups.roundDown(cube, flags);
+      return Array.from(out.subarray(0, 6));
     });
-    t.ok(lower.g0 === 2 && lower.g1 === 1, `stepped down a level, face 0 is in group 2 and face 1 in group 1 (${JSON.stringify(lower)})`);
-    // A group assigned at the lower level covers every top face under it.
+    t.eq(rounding.join(','), '1,1,0,0,0,1', 'rounding a top-level selection to level 0, level by level: 3 of 4 children joins, a 2-2 tie goes to the first child, 1 of 4 stays, and 24 of 64 top faces joins when its first two children each have 3 of 4');
+    // A group assigned at level 0 directly: just the masked faces.
     const assignLow = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
+      session.selectLevel(0);
       const mat = cube.getMaterials();
       const f = cube.getFaces();
       for (let i = 0; i < cube.getNbVertices(); i++) mat[i * 3 + 2] = 1;
       for (let k = 0; k < 4; k++) mat[f[5 * 4 + k] * 3 + 2] = 0; // face 5's corners masked
       const g = session.groups.fromMask(cube);
-      const top = session.groups.topFaces(cube);
-      return { g, under: Array.from(top.subarray(20, 24)), next: top[24] };
+      const base = session.groups.baseFaces(cube);
+      const top = session.groups.levelFaces(cube, cube._meshes.length - 1);
+      const span = 4 ** (cube._meshes.length - 1);
+      session.selectLevel(cube._meshes.length - 1);
+      return { g, at5: base[5], at4: base[4], at6: base[6], under: Array.from(new Set(top.subarray(5 * span, 6 * span))), next: top[6 * span] };
     });
-    t.ok(assignLow.under.every((x) => x === assignLow.g) && assignLow.next !== assignLow.g, `From mask at a lower level puts every top face under the masked face in the new group (${JSON.stringify(assignLow)})`);
+    t.ok(assignLow.at5 === assignLow.g && assignLow.at4 !== assignLow.g && assignLow.at6 !== assignLow.g && assignLow.under.join() === String(assignLow.g) && assignLow.next !== assignLow.g, `From mask at level 0 puts the masked face in the new group, and every top face under it (${JSON.stringify(assignLow)})`);
     const sub = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
-      session.selectLevel(cube._meshes.length - 1);
-      const old = session.groups.topFaces(cube).slice();
+      const old = session.groups.baseFaces(cube).slice();
       session.subdivide();
-      const now = session.groups.topFaces(cube);
-      let wrong = 0;
-      for (let c = 0; c < now.length; c++) if (now[c] !== old[c >> 2]) wrong++;
-      // An edit on the new top, so the level below's derived groups mean something.
-      now.fill(3, 0, 3);
-      session.groups.touch(cube);
+      const base = session.groups.baseFaces(cube);
+      const k = cube._meshes.length - 1;
+      const now = session.groups.levelFaces(cube, k);
+      let wrong = base.length !== old.length ? 1 : 0;
+      for (let i = 0; !wrong && i < base.length; i++) if (base[i] !== old[i]) wrong++;
+      for (let c = 0; c < now.length; c++) if (now[c] !== old[c >> (2 * k)]) wrong++;
       return { wrong, n: now.length, levels: cube._meshes.length };
     });
-    t.ok(sub.wrong === 0 && sub.n === 4 * 24576, `subdividing gives each of the ${sub.n} new faces its parent's group (${sub.wrong} wrong)`);
+    t.ok(sub.wrong === 0 && sub.n === 4 * 24576, `subdividing leaves level 0 as it was and each of the ${sub.n} new faces takes its level-0 ancestor's group (${sub.wrong} wrong)`);
     const del = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
       const groups = session.groups;
-      const topBefore = groups.topFaces(cube).slice();
-      const expect = groups.levelFaces(cube, cube._meshes.length - 2).slice();
+      const before = groups.baseFaces(cube).slice();
+      const same = (a) => a.length === before.length && a.every((x, i) => x === before[i]);
       session.deleteHighestLevel();
-      const after = groups.topFaces(cube);
-      let same = after.length === expect.length;
-      for (let i = 0; same && i < after.length; i++) if (after[i] !== expect[i]) same = false;
-      const g0 = after[0];
+      const after = same(groups.baseFaces(cube));
       session.undo();
-      const back = groups.topFaces(cube);
-      let restored = back.length === topBefore.length;
-      for (let i = 0; restored && i < back.length; i++) if (back[i] !== topBefore[i]) restored = false;
+      const back = same(groups.baseFaces(cube));
       session.redo();
-      return { same, g0, restored, n: after.length };
+      return { after, back, levels: cube._meshes.length };
     });
-    t.ok(del.same && del.g0 === 3, `deleting the top level keeps the level below's derived groups as its own (face 0: children 3,3,3,x gives ${del.g0})`);
-    t.ok(del.restored, 'and an undo brings the top back with its own groups');
+    t.ok(del.after && del.back, `deleting the highest level leaves level 0's groups as they were, and so does its undo (${JSON.stringify(del)})`);
+
+    // --- Rebuild: a new level 0 under the old one --------------------------------------
+    const rebuild = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const cube = session.getMesh();
+      const groups = session.groups;
+      session.selectLevel(0);
+      const old0 = cube._meshes[0];
+      const oldBase = groups.baseFaces(cube);
+      // Three groups in a pattern that gives two-two ties (A A B B by fours)
+      // and, every sixteenth face, majorities.
+      for (let f = 0; f < oldBase.length; f++) oldBase[f] = (((f >> 1) + (f >> 3)) % 2) + (f % 16 === 0 ? 2 : 0);
+      groups.touch(cube);
+      const kept = oldBase.slice();
+      const ok = session.reverse();
+      const low = cube._meshes[0];
+      const base = groups.baseFaces(cube);
+      const parent = groups.parents.get(old0)?.parent;
+      // The parent map against the geometry: each old face holds exactly
+      // one corner of its parent (its corner child), each parent four.
+      const vmap = low._vertMapping;
+      const lf = low.getFaces();
+      const of = old0.getFaces();
+      let geomWrong = 0;
+      const kids = new Map();
+      for (let f = 0; f < old0.getNbFaces(); f++) {
+        const p = parent[f];
+        const corners = new Set(Array.from(lf.subarray(p * 4, p * 4 + 4)).map((v) => vmap[v]));
+        let n = 0;
+        for (let k = 0; k < 4; k++) if (corners.has(of[f * 4 + k])) n++;
+        if (n !== 1) geomWrong++;
+        if (!kids.has(p)) kids.set(p, []);
+        kids.get(p).push(f);
+      }
+      for (const list of kids.values()) if (list.length !== 4) geomWrong++;
+      let moved = 0;
+      for (let f = 0; f < old0.getNbFaces(); f++) if (parent[f] !== f >> 2) moved++;
+      // The new level 0, by majority of the children in index order (earliest on a tie).
+      let majWrong = 0;
+      let ties = 0;
+      let majorities = 0;
+      for (let p = 0; p < low.getNbFaces(); p++) {
+        const c = (kids.get(p) ?? []).sort((a, b) => a - b).map((f) => kept[f]);
+        let best = c[0];
+        let bestN = 0;
+        for (const g of c) {
+          const n = c.filter((x) => x === g).length;
+          if (n > bestN) {
+            bestN = n;
+            best = g;
+          }
+        }
+        if (bestN === 2 && new Set(c).size === 2) ties++;
+        else if (bestN >= 2) majorities++;
+        if (base[p] !== best) majWrong++;
+      }
+      // Above it, each face takes its ancestor's exactly, the old level 0 through the map.
+      const one = groups.levelFaces(cube, 1);
+      let inherit = 0;
+      for (let f = 0; f < one.length; f++) if (one[f] !== base[parent[f]]) inherit++;
+      const top = groups.levelFaces(cube, cube._meshes.length - 1);
+      const shift = 2 * (cube._meshes.length - 2);
+      for (let f = 0; f < top.length; f++) if (top[f] !== base[parent[f >> shift]]) inherit++;
+      const n = { low: low.getNbFaces(), old: old0.getNbFaces() };
+      session.undo();
+      const back = groups.baseFaces(cube);
+      const restored = cube._meshes[0] === old0 && back.length === kept.length && back.every((x, i) => x === kept[i]);
+      return { ok, n, geomWrong, moved, majWrong, ties, majorities, inherit, restored };
+    });
+    t.ok(rebuild.ok && rebuild.geomWrong === 0, `Rebuild puts a ${rebuild.n.low}-face level 0 under the ${rebuild.n.old}-face one, each old face holding exactly one corner of the parent its map names (${rebuild.geomWrong} wrong; ${rebuild.moved} of ${rebuild.n.old} faces not under face f >> 2)`);
+    t.ok(rebuild.majWrong === 0 && rebuild.ties > 0 && rebuild.majorities > 0, `its groups are the majority of each face's children, the earliest child on a tie (${rebuild.majWrong} wrong; ${rebuild.ties} ties, ${rebuild.majorities} majorities)`);
+    t.ok(rebuild.inherit === 0, `and every face above takes its new level-0 ancestor's group exactly (${rebuild.inherit} wrong)`);
+    t.ok(rebuild.restored, 'an undo brings the old level 0 back with its own groups');
 
     // --- group by angle on the cube: six sides ------------------------------------------
     const angle = await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.getMesh();
+      session.selectLevel(cube._meshes.length - 1);
       const t0 = performance.now();
       const n = session.groups.byAngle(cube, 40);
-      return { n, ms: performance.now() - t0, faces: cube.getNbFaces(), counts: session.groups.counts(cube) };
+      const ms = performance.now() - t0;
+      const counts = session.groups.counts(cube);
+      const vote = session.groups.byAngle(cube, 40, 'vote');
+      const voteCounts = session.groups.counts(cube);
+      session.undo();
+      return { n, ms, base: session.groups.baseFaces(cube).length, faces: cube.getNbFaces(), counts, vote, voteCounts };
     });
-    t.ok(angle.n === 6 && angle.counts.every((c) => c === angle.faces / 6), `Group by angle (40 degrees) on the cube: 6 groups, one a side (${angle.counts.join(', ')}; ${angle.ms.toFixed(0)} ms on ${angle.faces} faces)`);
+    t.ok(angle.n === 6 && angle.counts.every((c) => c === angle.base / 6), `Group by angle (40 degrees) on the cube: 6 groups, one a side of its ${angle.base} level-0 faces (${angle.counts.join(', ')}; ${angle.ms.toFixed(0)} ms from ${angle.faces} faces on screen)`);
+    t.ok(angle.vote === 6 && angle.voteCounts.every((c) => c === angle.base / 6), `and a vote from the level on screen agrees there (${angle.voteCounts.join(', ')})`);
+
+    // --- by angle on figures, and how coarse level 0 is ---------------------------------
+    const figure = await page.evaluate(async () => {
+      const { session, modelPanel } = window.__sculpt;
+      const keep = session.getMesh();
+      const groups = session.groups;
+      const nbOf = (m) => m.getNbFaces();
+      /** Groups whose level-0 faces are not one connected piece, and groups of under 4 faces. */
+      const quality = (m) => {
+        const l0 = m._meshes ? m._meshes[0] : m;
+        const base = groups.baseFaces(m);
+        const f = l0.getFaces();
+        const parent = new Int32Array(base.length).map((_, i) => i);
+        const find = (a) => {
+          while (parent[a] !== a) a = parent[a] = parent[parent[a]];
+          return a;
+        };
+        const byEdge = new Map();
+        for (let i = 0; i < base.length; i++) {
+          const n = f[i * 4 + 3] === 4294967295 ? 3 : 4;
+          for (let k = 0; k < n; k++) {
+            const a = f[i * 4 + k];
+            const b = f[i * 4 + ((k + 1) % n)];
+            const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+            const o = byEdge.get(key);
+            if (o === undefined) byEdge.set(key, i);
+            else if (base[o] === base[i]) parent[find(o)] = find(i);
+          }
+        }
+        const pieces = new Map();
+        for (let i = 0; i < base.length; i++) {
+          const g = base[i];
+          if (!pieces.has(g)) pieces.set(g, new Set());
+          pieces.get(g).add(find(i));
+        }
+        const counts = groups.counts(m);
+        return { split: [...pieces.values()].filter((p) => p.size > 1).length, tiny: counts.filter((c) => c > 0 && c < 4).length };
+      };
+      const run = (m) => {
+        const a = groups.byAngle(m, 40);
+        const qa = quality(m);
+        session.undo();
+        const b = groups.byAngle(m, 40, 'vote');
+        const qb = quality(m);
+        session.undo();
+        return { level0: a, level0Split: qa.split, level0Tiny: qa.tiny, vote: b, voteSplit: qb.split, voteTiny: qb.tiny };
+      };
+      const body = await session.addBaseMesh('body-female-stylized');
+      const lib = { base: body._meshes[0].getNbFaces(), top: nbOf(body), levels: body._meshes.length, ...run(body) };
+      modelPanel.quadTarget = Math.min(50000, Math.max(500, Math.round(nbOf(body) / 4)));
+      const ok = await modelPanel.runQuadRemesh();
+      const q = session.getMesh();
+      const quad = { ok, target: modelPanel.quadTarget, base: q._meshes ? q._meshes[0].getNbFaces() : nbOf(q), levels: q._meshes?.length ?? 1, ...run(q) };
+      session.deleteMesh(q);
+      session.setMesh(keep);
+      return { lib, quad, sphere: (session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'))._meshes[0].getNbFaces() };
+    });
+    t.ok(figure.lib.level0 > 1 && figure.lib.level0Split === 0, `by angle on a library figure (${figure.lib.base} level-0 faces, ${figure.lib.top} on screen over ${figure.lib.levels} levels): level 0's split makes ${figure.lib.level0} groups, every one a connected piece (${figure.lib.level0Tiny} under 4 faces); a vote from the level on screen makes ${figure.lib.vote}, ${figure.lib.voteSplit} of them in pieces and ${figure.lib.voteTiny} under 4 faces`);
+    t.ok(figure.quad.ok && figure.quad.levels === 1 && figure.quad.level0 === figure.quad.vote, `quad-remeshed (target ${figure.quad.target}), the figure is one level of ${figure.quad.base} faces, all level 0, so both ways agree (${figure.quad.level0} groups)`);
+    t.ok(true, `how coarse level 0 is: the default sphere ${figure.sphere} faces, the library figure ${figure.lib.base}, the quad-remeshed figure ${figure.quad.base}`);
 
     // --- Shift+F: the colours -------------------------------------------------------
     await page.keyboard.press('Shift+f');
@@ -459,7 +647,7 @@ export const suites = {
       const quadsBefore = before.getNbQuads();
       session.toggleDynamicTopology();
       const d = session.getMesh();
-      const tri = session.groups.topFaces(d);
+      const tri = session.groups.baseFaces(d);
       // Each quad is two triangles, in face order.
       let wrong = 0;
       let t = 0;
@@ -470,7 +658,7 @@ export const suites = {
       }
       const names = session.groups.names(d).length;
       session.toggleDynamicTopology();
-      const back = session.groups.topFaces(session.getMesh());
+      const back = session.groups.baseFaces(session.getMesh());
       let wrongBack = back.length !== tri.length ? 1 : 0;
       for (let i = 0; !wrongBack && i < back.length; i++) if (back[i] !== tri[i]) wrongBack++;
       session.undo();
@@ -598,8 +786,8 @@ export const suites = {
       return { shape, sphereGroups: sphereRec?.groups ? sphereRec.groups.names : null };
     });
     t.ok(
-      roundTrip.shape && roundTrip.shape.v === 1 && roundTrip.shape.faces === 'Uint32Array' && roundTrip.shape.len === saved.top && roundTrip.shape.names.join('|') === saved.names.join('|') && roundTrip.shape.hidden?.[0] === 'Uint8Array' && roundTrip.shape.hidden[5] === 1,
-      `a .bozz carries groups: { v: 1, faces: Uint32Array of the top level's ${saved.top}, names, hidden: Uint8Array a group } (${JSON.stringify(roundTrip.shape && { ...roundTrip.shape, names: roundTrip.shape.names.length })})`,
+      roundTrip.shape && roundTrip.shape.v === 2 && roundTrip.shape.faces === 'Uint32Array' && roundTrip.shape.len === saved.base && saved.base === saved.level0 && roundTrip.shape.names.join('|') === saved.names.join('|') && roundTrip.shape.hidden?.[0] === 'Uint8Array' && roundTrip.shape.hidden[5] === 1,
+      `a .bozz carries groups: { v: 2, faces: Uint32Array of level 0's ${saved.base}, names, hidden: Uint8Array a group } (${JSON.stringify(roundTrip.shape && { ...roundTrip.shape, names: roundTrip.shape.names.length })})`,
     );
     t.ok(roundTrip.sphereGroups && roundTrip.sphereGroups.length === 2, 'the sphere its own (from Ctrl+W)');
     g = await groupsOf(page);
@@ -610,9 +798,11 @@ export const suites = {
       const base = await file.unpack(await file.pack());
       const tries = {
         'a face in a group there is not': (r) => (r.meshes[0].groups.faces[0] = 99),
-        'faces short of the top level': (r) => (r.meshes[0].groups.faces = r.meshes[0].groups.faces.slice(1)),
+        'faces short of level 0': (r) => (r.meshes[0].groups.faces = r.meshes[0].groups.faces.slice(1)),
+        'version 2 sized to the top level': (r) => (r.meshes[0].groups.faces = new Uint32Array(r.meshes[0].nbBaseFaces * 4 ** (r.meshes[0].levels.length - 1))),
         'hidden flags short of the names': (r) => (r.meshes[0].groups.hidden = new Uint8Array(1)),
-        'a version there is not': (r) => (r.meshes[0].groups.v = 2),
+        'a version there is not': (r) => (r.meshes[0].groups.v = 3),
+        'version 1 sized to level 0': (r) => (r.meshes[0].groups.v = 1),
         'no names': (r) => (r.meshes[0].groups.names = []),
       };
       for (const [what, edit] of Object.entries(tries)) {
@@ -633,7 +823,7 @@ export const suites = {
       for (const m of older.meshes) delete m.groups;
       await file.open(await file.packRecord(older));
       const { session } = window.__sculpt;
-      out.older = session.getMeshes().map((m) => session.groups.names(m).length + ':' + session.groups.counts(m)[0] + '/' + session.groups.topFaces(m).length);
+      out.older = session.getMeshes().map((m) => session.groups.names(m).length + ':' + session.groups.counts(m)[0] + '/' + session.groups.baseFaces(m).length);
       await file.open(await file.packRecord(base));
       return out;
     });
@@ -643,6 +833,37 @@ export const suites = {
       `a scene with malformed groups is refused, saying so (${refusals.map(([k, v]) => `${k}: ${v.replace(/.*poly groups[: (]*/, '')}`).join('; ')})`,
     );
     t.ok(refused.older.every((x) => /^1:(\d+)\/\1$/.test(x)), `an older scene opens with every face in group 0 (${refused.older.join(', ')})`);
+    // A version 1 record (2026-10-31): one group a face of the top level.
+    // Level 0 face 0's top faces are made so a flat vote and level by level
+    // part ways: children 0 and 1 three quarters "Top side" (2), the rest
+    // "Group 5" (4); level by level 2 wins the tie at child 0, flat 4 wins 40 to 24.
+    const v1 = await page.evaluate(async (roundSrc) => {
+      const roundLevels = new Function(`return ${roundSrc}`)();
+      const { file, session } = window.__sculpt;
+      const orig = await file.pack();
+      const rec = await file.unpack(orig);
+      const m = rec.meshes.find((x) => x.name === 'Cube');
+      const cube = session.getMeshes().find((x) => session.getMeshName(x) === 'Cube');
+      const k = m.levels.length - 1;
+      const top = new Uint32Array(session.groups.levelFaces(cube, k));
+      const span = 4 ** k;
+      const g = span / 16; // a level-2 face's top faces
+      top.fill(4, 0, span);
+      for (const c of [0, 1]) for (const gc of [0, 1, 2]) top.fill(2, (c * 4 + gc) * g, (c * 4 + gc + 1) * g);
+      const expect = roundLevels(top, k);
+      m.groups = { ...m.groups, v: 1, faces: top };
+      await file.open(await file.packRecord(rec));
+      const now = session.getMeshes().find((x) => session.getMeshName(x) === 'Cube');
+      const base = Array.from(session.groups.baseFaces(now));
+      let wrong = base.length !== expect.length ? 1 : 0;
+      for (let i = 0; i < base.length; i++) if (base[i] !== expect[i]) wrong++;
+      const saved = session.groups.serialize(now);
+      const flat = Array.from(top.subarray(0, span)).filter((x) => x === 4).length;
+      await file.open(orig);
+      return { wrong, n: base.length, face0: base[0], flat, v: saved.v, len: saved.faces.length };
+    }, roundLevels.toString());
+    t.ok(v1.wrong === 0 && v1.face0 === 2 && v1.flat === 40 && v1.v === 2 && v1.len === v1.n, `a version 1 record opens rounded down to level 0 level by level (${v1.n} faces, ${v1.wrong} off; face 0 in group ${v1.face0 + 1} though ${v1.flat} of its 64 top faces are in group 5), and saves again as version 2`);
+
     await page.evaluate(() => {
       const { session } = window.__sculpt;
       session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Cube'));
@@ -696,7 +917,7 @@ export const suites = {
     await tapIn('[data-role="groups-list"] .groups-row[data-group="5"] [data-role="group-delete"]');
     g = await groupsOf(page);
     t.ok(
-      g.names.length === 5 && g.counts.reduce((a, b) => a + b, 0) === saved.top && Math.max(...g.counts) === counts0[5] * 2 && !g.names.includes(saved.names[5]),
+      g.names.length === 5 && g.counts.reduce((a, b) => a + b, 0) === saved.base && Math.max(...g.counts) === counts0[5] * 2 && !g.names.includes(saved.names[5]),
       `delete merges the group's faces into a group it borders, and the rows close up (${g.counts.join(', ')})`,
     );
     await page.evaluate(() => window.__sculpt.session.undo());
@@ -787,7 +1008,7 @@ export const suites = {
       ms.showAll = performance.now() - t0;
       t0 = performance.now();
       session.selectLevel(s._sel - 2);
-      ms.derive2Down = performance.now() - t0;
+      ms.inherit2Down = performance.now() - t0;
       session.selectLevel(s._meshes.length - 1);
       t0 = performance.now();
       const saved = groups.serialize(s);

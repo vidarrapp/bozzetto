@@ -4,39 +4,43 @@ import { GROUPS_V, MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
 import { PointGrid } from './quadMesh';
 
 /**
- * Poly groups (owner decisions, 2026-10-31; the model matches Bozzetto
- * Studio's core, so a .bozz round-trips between the two).
+ * Poly groups (owner decisions, 2026-10-31; stored on level 0 since
+ * 2026-11-01). The model matches Bozzetto Studio's core, so a .bozz
+ * round-trips between the two.
  *
- * The model. Every face of an object's TOP subdivision level is in one
+ * The model. Every face of an object's LEVEL 0 (the base mesh) is in one
  * group: a u32 a face, and a names array indexed by group number (group 0
- * is "Group 1" until renamed). Only the top level is stored. A lower
- * level's groups are derived, never stored: a face takes the group most of
- * its four children have, and on a tie the group of the earliest child
- * among the tied ones, level by level down from the top.
+ * is "Group 1" until renamed), with a hidden flag a group. Only level 0 is
+ * stored. Every higher level's faces take their level-0 ancestor's group
+ * exactly; nothing is derived by vote.
  *
- * Children. SculptGL's full subdivision (vendor editing/Subdivision.js,
+ * Ancestors. SculptGL's full subdivision (vendor editing/Subdivision.js,
  * applyOddSmooth) writes face f's children at 4f..4f+3 of the level above,
- * for triangles and quads alike, and keeps the faces' order:
+ * triangles and quads alike, so a level-k face's level-0 ancestor is
+ * floor(f / 4^k). A level rebuilt under level 0 (Rebuild, the vendor's
+ * reversion) numbers its faces in its own order, and the level above it
+ * keeps its order: that one step has a parent map of its own (`parents`,
+ * read off Reversion.js's centres), and every level above it is
+ * floor(f / 4) of the one below again. A saved scene re-subdivides its
+ * stack from the base faces, so after a reload every step is floor(f / 4).
  *
- * - a quad (v1 v2 v3 v4) gives 4f+k = the quad at corner v(k+1): 4f the
- *   one at v1 (v1 m1 c m4), 4f+1 at v2 (m1 v2 m2 c), 4f+2 at v3 (c m2 v3
- *   m3), 4f+3 at v4 (m4 c m3 v4), m the edge midpoints, c the centre;
- * - a triangle (v1 v2 v3) gives 4f = the middle triangle (m1 m2 m3),
- *   4f+1 the one at v1 (v1 m1 m3), 4f+2 at v2 (m1 v2 m2), 4f+3 at v3
- *   (m3 m2 v3). The middle one is first, so it wins a triangle's ties.
+ * The one derivation. Rebuild adds a new level 0 under the old one: each
+ * new face takes the group most of its children (old level-0 faces) have,
+ * and on a tie the group of the earliest child (lowest index) among the
+ * tied ones. Subdividing and deleting the highest level change nothing.
  *
- * So a face's descendants k levels up are the contiguous range
- * f*4^k..(f+1)*4^k-1 of that level, and assigning a group at a lower
- * level assigns every top-level face under it. Subdividing gives each new
- * face its parent's group. Deleting the top level makes the level below
- * the top, its derived groups now its stored ones.
+ * Assigning at a higher level (Ctrl+W from a mask drawn there, the loop
+ * mask then Ctrl+W): the group is set per level-0 face. The faces on
+ * screen that qualify are rounded down level by level (roundDown): each
+ * face of the level below qualifies when most of its four children do,
+ * the earliest child deciding a two-two tie, the same rule Bozzetto
+ * Studio rounds with. By angle works on level 0's faces themselves.
  *
- * Where it lives. Per object: the names, a hidden flag a group, and a
- * version that moves with every change. The faces are kept per LEVEL
- * INSTANCE (a WeakMap), only the top's read: an undo that brings back a
- * deleted top level brings back its own array with it, and a level added
- * since takes its groups from the highest level below it that has some.
- * A dynamic-topology mesh keeps its faces' groups in the vendor's own
+ * Where it lives. Per object: the names, the hidden flags, and a version
+ * that moves with every change. Level 0's faces are kept per LEVEL-0
+ * INSTANCE (a WeakMap): an undo that takes a rebuilt level away brings the
+ * old level 0 back with its own array. A dynamic-topology mesh has one
+ * level, its faces level 0's, and keeps their groups in the vendor's own
  * array (MeshDynamic._facesGroups), which follows the faces through
  * splits, collapses and undo.
  *
@@ -55,52 +59,47 @@ interface GroupRecord {
   names: string[];
   hidden: Uint8Array;
   version: number;
-  /** Faces' groups by level instance; the top's is the one that counts. */
-  byLevel: WeakMap<object, Uint32Array>;
+  /** Level 0's groups by level-0 instance. */
+  byBase: WeakMap<object, Uint32Array>;
 }
 
 /** The level instances of an object, base first (a dynamic mesh is its own one level). */
 const levelsOf = (mesh: SculptMesh): SculptMesh[] => mesh._meshes ?? [mesh];
 const selOf = (mesh: SculptMesh): number => (mesh._meshes ? (mesh as unknown as { _sel: number })._sel : 0);
 
-/** The group most of a face's four children have; on a tie the earliest child's. */
-function majority(c: Uint32Array, i: number): number {
-  const a = c[i];
-  const b = c[i + 1];
-  const d = c[i + 2];
-  const e = c[i + 3];
-  let best = a;
-  let bestN = 1 + (b === a ? 1 : 0) + (d === a ? 1 : 0) + (e === a ? 1 : 0);
-  if (bestN >= 3) return a;
-  const nb = 1 + (a === b ? 1 : 0) + (d === b ? 1 : 0) + (e === b ? 1 : 0);
-  if (nb > bestN) {
-    best = b;
-    bestN = nb;
+/**
+ * Each parent's group by the majority of its children's, the earliest
+ * child (lowest index) winning a tie among the tied groups: `parentOf`
+ * one a child (null: child c's parent is c >> 2), `nbParents` parents.
+ */
+export function majorityDown(children: Uint32Array, parentOf: Uint32Array | null, nbParents: number): Uint32Array {
+  const out = new Uint32Array(nbParents);
+  // Children by parent, in index order (CSR).
+  const start = new Uint32Array(nbParents + 1);
+  for (let c = 0; c < children.length; c++) {
+    const p = parentOf ? parentOf[c] : c >> 2;
+    if (p < nbParents) start[p + 1]++;
   }
-  const nd = 1 + (a === d ? 1 : 0) + (b === d ? 1 : 0) + (e === d ? 1 : 0);
-  if (nd > bestN) {
-    best = d;
-    bestN = nd;
+  for (let p = 0; p < nbParents; p++) start[p + 1] += start[p];
+  const fill = start.slice(0, nbParents);
+  const list = new Uint32Array(start[nbParents]);
+  for (let c = 0; c < children.length; c++) {
+    const p = parentOf ? parentOf[c] : c >> 2;
+    if (p < nbParents) list[fill[p]++] = c;
   }
-  const ne = 1 + (a === e ? 1 : 0) + (b === e ? 1 : 0) + (d === e ? 1 : 0);
-  if (ne > bestN) best = e;
-  return best;
-}
-
-/** The level below's groups from a level's (`nbBelow` faces). */
-export function deriveDown(above: Uint32Array, nbBelow: number): Uint32Array {
-  const out = new Uint32Array(nbBelow);
-  for (let p = 0; p < nbBelow; p++) out[p] = majority(above, p * 4);
-  return out;
-}
-
-/** The level above's groups from a level's: each child its parent's. */
-export function inheritUp(below: Uint32Array): Uint32Array {
-  const out = new Uint32Array(below.length * 4);
-  for (let p = 0; p < below.length; p++) {
-    const g = below[p];
-    const i = p * 4;
-    out[i] = out[i + 1] = out[i + 2] = out[i + 3] = g;
+  for (let p = 0; p < nbParents; p++) {
+    let best = 0;
+    let bestN = 0;
+    for (let i = start[p]; i < start[p + 1]; i++) {
+      const g = children[list[i]];
+      let n = 0;
+      for (let j = start[p]; j < start[p + 1]; j++) if (children[list[j]] === g) n++;
+      if (n > bestN) {
+        bestN = n;
+        best = g;
+      }
+    }
+    out[p] = best;
   }
   return out;
 }
@@ -194,10 +193,16 @@ export class TooManyGroups extends Error {}
 
 export class PolyGroups {
   private readonly records = new WeakMap<SculptMesh, GroupRecord>();
-  /** Derived lower levels, by level instance: valid for one top array at one version. */
-  private readonly derived = new WeakMap<object, { top: Uint32Array; version: number; faces: Uint32Array }>();
-  /** The hidden flags of the level on screen, by level instance, as `derived` is kept. */
-  private readonly hiddenCache = new WeakMap<object, { top: Uint32Array | null; version: number; tick: number; faces: Uint8Array; verts: Uint8Array | null }>();
+  /**
+   * A level whose faces are not 4f..4f+3 of the one below (the old level 0
+   * under a Rebuild): its parent map, valid while `below` is the level
+   * under it.
+   */
+  private readonly parents = new WeakMap<object, { below: object; parent: Uint32Array }>();
+  /** Higher levels' groups, by level instance: valid for one level-0 array at one version. */
+  private readonly inherited = new WeakMap<object, { base: Uint32Array; version: number; faces: Uint32Array }>();
+  /** The hidden flags of the level on screen, by level instance, as `inherited` is kept. */
+  private readonly hiddenCache = new WeakMap<object, { base: Uint32Array | null; version: number; tick: number; faces: Uint8Array; verts: Uint8Array | null }>();
   /** Dynamic meshes' topology steps (GeometrySync reports each), so their caches know to go. */
   private readonly ticks = new WeakMap<object, number>();
   /** Whether the display shows the group colours (Shift+F). */
@@ -225,7 +230,7 @@ export class PolyGroups {
   private rec(mesh: SculptMesh): GroupRecord {
     let r = this.records.get(mesh);
     if (!r) {
-      r = { names: [defaultGroupName(0)], hidden: new Uint8Array(1), version: 0, byLevel: new WeakMap() };
+      r = { names: [defaultGroupName(0)], hidden: new Uint8Array(1), version: 0, byBase: new WeakMap() };
       this.records.set(mesh, r);
     }
     return r;
@@ -258,19 +263,20 @@ export class PolyGroups {
 
   // --- faces, by level ------------------------------------------------------
 
-  /** The top level instance (the one whose faces are stored). */
-  topLevel(mesh: SculptMesh): SculptMesh {
-    const levels = levelsOf(mesh);
-    return levels[levels.length - 1];
+  /** Level `k`'s parent map, or null when its faces are 4f..4f+3 of the level below. */
+  private parentMap(levels: SculptMesh[], k: number): Uint32Array | null {
+    const e = this.parents.get(levels[k]);
+    return e && e.below === levels[k - 1] && e.parent.length === levels[k].getNbFaces() ? e.parent : null;
   }
 
   /**
-   * The top level's groups, one a face: the array itself, which edits
-   * write into. A top level with none yet takes them from the highest
-   * level below it that has some, each face its parent's (a level added
-   * since); an object with none at all starts in group 0.
+   * Level 0's groups, one a face: the array itself, which edits write
+   * into. A level 0 with none yet (one a Rebuild put under the old one)
+   * takes them from the lowest level above it that has some, each face
+   * the majority of its children's; an object with none at all starts in
+   * group 0.
    */
-  topFaces(mesh: SculptMesh): Uint32Array {
+  baseFaces(mesh: SculptMesh): Uint32Array {
     if (mesh.isDynamic) {
       const n = mesh.getNbFaces();
       if (!mesh._facesGroups || mesh._facesGroups.length < n) {
@@ -282,50 +288,73 @@ export class PolyGroups {
     }
     const r = this.rec(mesh);
     const levels = levelsOf(mesh);
-    const top = levels.length - 1;
-    const own = r.byLevel.get(levels[top]);
-    if (own && own.length === levels[top].getNbFaces()) return own;
-    let i = top - 1;
-    let from: Uint32Array | null = null;
-    for (; i >= 0; i--) {
-      const a = r.byLevel.get(levels[i]);
-      if (a && a.length === levels[i].getNbFaces()) {
-        from = a;
-        break;
+    const own = r.byBase.get(levels[0]);
+    if (own && own.length === levels[0].getNbFaces()) return own;
+    let faces: Uint32Array | null = null;
+    for (let i = 1; i < levels.length && !faces; i++) {
+      const a = r.byBase.get(levels[i]);
+      if (!a || a.length !== levels[i].getNbFaces()) continue;
+      faces = a;
+      for (let k = i; k >= 1 && faces; k--) {
+        const map = this.parentMap(levels, k);
+        const nbBelow = levels[k - 1].getNbFaces();
+        faces = map || faces.length === nbBelow * 4 ? majorityDown(faces, map, nbBelow) : null;
       }
     }
-    let faces: Uint32Array;
-    if (!from) faces = new Uint32Array(levels[top].getNbFaces());
-    else {
-      faces = from;
-      for (let k = i + 1; k <= top; k++) faces = inheritUp(faces);
-      // A level that is not four faces a face below (never made by Sculpt) starts over.
-      if (faces.length !== levels[top].getNbFaces()) faces = new Uint32Array(levels[top].getNbFaces());
-    }
-    r.byLevel.set(levels[top], faces);
-    return faces;
+    const out = faces ?? new Uint32Array(levels[0].getNbFaces());
+    r.byBase.set(levels[0], out);
+    return out;
   }
 
-  /** The groups of level `k` of the object (the top's own array at the top; derived below). */
+  /** The groups of level `k` of the object (level 0's own array at 0; each face its level-0 ancestor's above). */
   levelFaces(mesh: SculptMesh, k = selOf(mesh)): Uint32Array {
-    const top = this.topFaces(mesh);
-    if (mesh.isDynamic) return top;
+    const base = this.baseFaces(mesh);
+    if (mesh.isDynamic || k <= 0) return base;
     const levels = levelsOf(mesh);
-    const t = levels.length - 1;
-    if (k >= t) return top;
     const version = this.rec(mesh).version;
-    let faces = top;
-    for (let j = t - 1; j >= k; j--) {
+    let faces = base;
+    for (let j = 1; j <= Math.min(k, levels.length - 1); j++) {
       const lv = levels[j];
-      const hit = this.derived.get(lv);
-      if (hit && hit.top === top && hit.version === version && hit.faces.length === lv.getNbFaces()) {
+      const n = lv.getNbFaces();
+      const hit = this.inherited.get(lv);
+      if (hit && hit.base === base && hit.version === version && hit.faces.length === n) {
         faces = hit.faces;
         continue;
       }
-      faces = deriveDown(faces, lv.getNbFaces());
-      this.derived.set(lv, { top, version, faces });
+      const map = this.parentMap(levels, j);
+      const out = new Uint32Array(n);
+      const below = faces;
+      if (map) for (let f = 0; f < n; f++) out[f] = below[map[f]] ?? 0;
+      else if (n === below.length * 4) for (let f = 0; f < n; f++) out[f] = below[f >> 2];
+      faces = out;
+      this.inherited.set(lv, { base, version, faces });
     }
     return faces;
+  }
+
+  /**
+   * Each face of level `k`'s level-0 ancestor: `map[f >> shift]`, or
+   * `f >> shift` itself when `map` is null (every step up to `k` is
+   * 4f..4f+3).
+   */
+  private ancestry(mesh: SculptMesh, k: number): { map: Uint32Array | null; shift: number } {
+    if (mesh.isDynamic || k <= 0) return { map: null, shift: 0 };
+    const levels = levelsOf(mesh);
+    let j = 0; // the highest level up to k with a parent map of its own
+    for (let i = 1; i <= k; i++) if (this.parentMap(levels, i)) j = i;
+    if (j === 0) return { map: null, shift: 2 * k };
+    let anc: Uint32Array | null = null; // level i's ancestors, i walking up to j
+    for (let i = 1; i <= j; i++) {
+      const n = levels[i].getNbFaces();
+      const map = this.parentMap(levels, i);
+      const out = new Uint32Array(n);
+      for (let f = 0; f < n; f++) {
+        const p = map ? map[f] : f >> 2;
+        out[f] = anc ? anc[p] : p;
+      }
+      anc = out;
+    }
+    return { map: anc, shift: 2 * (k - j) };
   }
 
   /** The group of a face of the level on screen. */
@@ -334,12 +363,62 @@ export class PolyGroups {
     return face >= 0 && face < g.length ? g[face] : -1;
   }
 
-  /** How many top-level faces each group has. */
+  /** How many level-0 faces each group has. */
   counts(mesh: SculptMesh): number[] {
     const out = new Array<number>(this.rec(mesh).names.length).fill(0);
-    const faces = this.topFaces(mesh);
+    const faces = this.baseFaces(mesh);
     for (let i = 0; i < faces.length; i++) if (faces[i] < out.length) out[faces[i]]++;
     return out;
+  }
+
+  /**
+   * Rebuild put a new level 0 under the old one (SculptSession.reverse):
+   * the old one, now level 1, keeps its face order, so its parent map is
+   * read off the reversion (each coarse quad's centre vertex, each coarse
+   * triangle's middle child and the three across its edges), and the new
+   * level 0 takes its groups by majority of its children.
+   */
+  afterReverse(mesh: SculptMesh): void {
+    const levels = levelsOf(mesh);
+    if (mesh.isDynamic || levels.length < 2) return;
+    const low = levels[0];
+    const up = levels[1];
+    const cen = low._reverseCentres;
+    const nLow = low.getNbFaces();
+    const nUp = up.getNbFaces();
+    if (cen && cen.length >= nLow) {
+      const parent = new Uint32Array(nUp).fill(TRI);
+      const centreOf = new Int32Array(up.getNbVertices()).fill(-1);
+      const fUp = up.getFaces();
+      let nb: Int32Array | null = null;
+      for (let p = 0; p < nLow; p++) {
+        const c = cen[p];
+        if (c < 0) {
+          if (-c - 1 < centreOf.length) centreOf[-c - 1] = p;
+          continue;
+        }
+        parent[c] = p;
+        nb ??= faceNeighbours(fUp, nUp, up.getNbVertices());
+        for (let k = 0; k < 3; k++) if (nb[c * 4 + k] >= 0) parent[nb[c * 4 + k]] = p;
+      }
+      let ok = true;
+      for (let f = 0; f < nUp; f++) {
+        if (parent[f] !== TRI) continue;
+        const m = fUp[f * 4 + 3] === TRI ? 3 : 4;
+        for (let k = 0; k < m; k++) {
+          const p = centreOf[fUp[f * 4 + k]];
+          if (p >= 0) {
+            parent[f] = p;
+            break;
+          }
+        }
+        if (parent[f] === TRI) ok = false;
+      }
+      if (ok) this.parents.set(up, { below: low, parent });
+    }
+    if (!this.records.has(mesh)) return;
+    this.baseFaces(mesh);
+    this.changed(mesh);
   }
 
   // --- hidden faces -----------------------------------------------------------
@@ -361,14 +440,14 @@ export class PolyGroups {
     const r = this.rec(mesh);
     const level = mesh.isDynamic ? mesh : levelsOf(mesh)[selOf(mesh)];
     const tick = this.ticks.get(mesh) ?? 0;
-    const top = mesh.isDynamic ? null : this.topFaces(mesh);
+    const base = mesh.isDynamic ? null : this.baseFaces(mesh);
     const n = mesh.getNbFaces();
     const hit = this.hiddenCache.get(level);
-    if (hit && hit.top === top && hit.version === r.version && hit.tick === tick && hit.faces.length === n) return hit;
+    if (hit && hit.base === base && hit.version === r.version && hit.tick === tick && hit.faces.length === n) return hit;
     const groups = this.levelFaces(mesh);
     const faces = new Uint8Array(n);
     for (let f = 0; f < n; f++) faces[f] = r.hidden[groups[f]] ?? 0;
-    const entry = { top, version: r.version, tick, faces, verts: null as Uint8Array | null };
+    const entry = { base, version: r.version, tick, faces, verts: null as Uint8Array | null };
     this.hiddenCache.set(level, entry);
     return entry;
   }
@@ -437,35 +516,36 @@ export class PolyGroups {
   // --- edits ----------------------------------------------------------------
 
   /**
-   * One undoable change to an object's groups: `change` edits the top
-   * array, names and hidden flags in place and says whether it did. The
-   * undo state keeps only the faces that changed, and the names and flags
-   * whole (a few kilobytes at most).
+   * One undoable change to an object's groups: `change` edits level 0's
+   * array, the names and hidden flags in place and says whether it did.
+   * The undo state keeps only the faces that changed, and the names and
+   * flags whole (a few kilobytes at most), and writes back into the array
+   * it changed (that level-0 instance's).
    */
-  private edit(mesh: SculptMesh, change: (top: Uint32Array, r: GroupRecord) => boolean): boolean {
+  private edit(mesh: SculptMesh, change: (base: Uint32Array, r: GroupRecord) => boolean): boolean {
     const r = this.rec(mesh);
-    const level = this.topLevel(mesh);
-    const top = this.topFaces(mesh);
-    const before = top.slice();
+    const base = this.baseFaces(mesh);
+    const before = base.slice();
     const namesBefore = [...r.names];
     const hiddenBefore = r.hidden.slice();
-    if (!change(top, r)) return false;
+    if (!change(base, r)) return false;
     let n = 0;
-    for (let i = 0; i < top.length; i++) if (top[i] !== before[i]) n++;
+    for (let i = 0; i < base.length; i++) if (base[i] !== before[i]) n++;
     const at = new Uint32Array(n);
     const was = new Uint32Array(n);
     const now = new Uint32Array(n);
     n = 0;
-    for (let i = 0; i < top.length; i++) {
-      if (top[i] === before[i]) continue;
+    for (let i = 0; i < base.length; i++) {
+      if (base[i] === before[i]) continue;
       at[n] = i;
       was[n] = before[i];
-      now[n++] = top[i];
+      now[n++] = base[i];
     }
     const namesAfter = [...r.names];
     const hiddenAfter = r.hidden.slice();
+    const level0 = levelsOf(mesh)[0];
     const apply = (vals: Uint32Array, names: string[], hidden: Uint8Array): void => {
-      const faces = mesh.isDynamic ? this.topFaces(mesh) : r.byLevel.get(level);
+      const faces = mesh.isDynamic ? this.baseFaces(mesh) : r.byBase.get(level0);
       if (faces) for (let i = 0; i < at.length; i++) if (at[i] < faces.length) faces[at[i]] = vals[i];
       r.names = [...names];
       r.hidden = hidden.slice();
@@ -481,18 +561,23 @@ export class PolyGroups {
     return true;
   }
 
-  /** Every top-level face under the flagged faces of the level on screen, to group `g`. */
-  private assignFromLevel(mesh: SculptMesh, top: Uint32Array, flags: Uint8Array, g: number): void {
-    if (mesh.isDynamic) {
-      for (let f = 0; f < flags.length; f++) if (flags[f]) top[f] = g;
-      return;
-    }
+  /**
+   * Values one a face of the level on screen, rounded to level 0 level by
+   * level down: each face of the level below takes the value most of its
+   * four children have, the earliest child (lowest index) winning a tie
+   * among the tied values (the rule Bozzetto Studio rounds with, so both
+   * apps make the same level-0 groups). Level 0's own values are returned
+   * as they are.
+   */
+  roundDown(mesh: SculptMesh, values: Uint32Array): Uint32Array {
+    const nBase = this.baseFaces(mesh).length;
+    if (mesh.isDynamic) return values.subarray(0, nBase);
     const levels = levelsOf(mesh);
-    const shift = 2 * (levels.length - 1 - selOf(mesh));
-    for (let f = 0; f < flags.length; f++) {
-      if (!flags[f]) continue;
-      top.fill(g, f * 2 ** shift, (f + 1) * 2 ** shift);
+    let cur = values;
+    for (let k = Math.min(selOf(mesh), levels.length - 1); k >= 1; k--) {
+      cur = majorityDown(cur, this.parentMap(levels, k), levels[k - 1].getNbFaces());
     }
+    return cur;
   }
 
   private newName(r: GroupRecord): string {
@@ -503,10 +588,12 @@ export class PolyGroups {
   }
 
   /**
-   * Ctrl+W: the masked faces of the level on screen into a new group. A
-   * face is masked when every one of its corners is (mask under 0.5);
-   * hidden faces stay where they are. Nothing else changes, the mask
-   * included. Returns the new group, or -1 when no face is masked.
+   * Ctrl+W: the masked faces into a new group. A face of the level on
+   * screen is masked when every one of its corners is (mask under 0.5);
+   * hidden faces stay where they are. Groups are level 0's, so the
+   * masked faces are rounded down to level 0 level by level (roundDown).
+   * Nothing else changes, the mask included. Returns the new group, -1
+   * when no face is masked, -2 when none is left at level 0.
    */
   fromMask(mesh: SculptMesh): number {
     const r = this.rec(mesh);
@@ -528,83 +615,89 @@ export class PolyGroups {
       }
     }
     if (!any) return -1;
+    const joins = this.roundDown(mesh, Uint32Array.from(flags));
+    if (!joins.some((x) => x !== 0)) return -2;
     if (r.names.length >= MAX_GROUPS) throw new TooManyGroups(`An object can have at most ${MAX_GROUPS} poly groups.`);
     const g = r.names.length;
-    this.edit(mesh, (top, rr) => {
+    this.edit(mesh, (base, rr) => {
       rr.names.push(this.newName(rr));
       const hid = new Uint8Array(rr.names.length);
       hid.set(rr.hidden);
       rr.hidden = hid;
-      this.assignFromLevel(mesh, top, flags, g);
+      for (let a = 0; a < joins.length; a++) if (joins[a]) base[a] = g;
       return true;
     });
     return g;
   }
 
   /**
-   * Replace every group with a numbered set: `perFace` one a face of the
-   * level on screen, numbered from 0, `names` theirs. Shows everything.
+   * Replace every group with a numbered set: `perFace` one a level-0
+   * face, numbered from 0, `names` theirs. Shows everything.
    */
   private replaceAll(mesh: SculptMesh, perFace: Uint32Array, names: string[]): boolean {
     if (names.length > MAX_GROUPS) {
       throw new TooManyGroups(`That makes ${names.length} groups, and an object can have at most ${MAX_GROUPS}.`);
     }
-    return this.edit(mesh, (top, r) => {
+    return this.edit(mesh, (base, r) => {
       r.names = names.map((n) => n.slice(0, MAX_NAME));
       r.hidden = new Uint8Array(names.length);
-      if (mesh.isDynamic) top.set(perFace.subarray(0, top.length));
-      else {
-        const levels = levelsOf(mesh);
-        const shift = 2 * (levels.length - 1 - selOf(mesh));
-        const span = 2 ** shift;
-        for (let f = 0; f < perFace.length; f++) top.fill(perFace[f], f * span, (f + 1) * span);
-      }
+      base.set(perFace.subarray(0, base.length));
       return true;
     });
   }
 
   /**
-   * Group by angle: the level on screen split wherever two faces meet at
-   * more than `degrees` (their normals that far apart), each connected
-   * piece a group, numbered by its first face.
+   * Group by angle, on level 0's faces (`method` 'level0', the default):
+   * each level-0 face's normal is the sum of its faces' on the level on
+   * screen (the vendor's face normals are area-weighted, so it is the
+   * area-weighted mean of the surface as it is now, sculpted detail
+   * included, whatever level 0's own vertices say), and level 0 is split
+   * wherever two neighbouring faces' normals are more than `degrees`
+   * apart, each connected piece a group, numbered by its first face.
+   * 'vote' splits the level on screen instead and rounds the pieces down
+   * to level 0 (roundDown), groups numbered by their first level-0 face
+   * and a piece no level-0 face keeps dropped (kept for comparison: the
+   * tests measure both).
    */
-  byAngle(mesh: SculptMesh, degrees: number): number {
-    const n = mesh.getNbFaces();
-    const nb = faceNeighbours(mesh.getFaces(), n, mesh.getNbVertices());
-    // The vendor's face normals are area-weighted: made unit here.
-    const raw = mesh.getFaceNormals();
-    const normals = new Float32Array(n * 3);
-    for (let f = 0; f < n; f++) {
-      const x = raw[f * 3];
-      const y = raw[f * 3 + 1];
-      const z = raw[f * 3 + 2];
-      const len = Math.hypot(x, y, z) || 1;
-      normals[f * 3] = x / len;
-      normals[f * 3 + 1] = y / len;
-      normals[f * 3 + 2] = z / len;
-    }
+  byAngle(mesh: SculptMesh, degrees: number, method: 'level0' | 'vote' = 'level0'): number {
     const cos = Math.cos((Math.min(180, Math.max(0, degrees)) * Math.PI) / 180);
-    const perFace = new Uint32Array(n).fill(TRI);
-    const stack = new Int32Array(n);
-    let groups = 0;
-    for (let seed = 0; seed < n; seed++) {
-      if (perFace[seed] !== TRI) continue;
-      const g = groups++;
-      perFace[seed] = g;
-      let sp = 0;
-      stack[sp++] = seed;
-      while (sp) {
-        const f = stack[--sp];
-        for (let k = 0; k < 4; k++) {
-          const o = nb[f * 4 + k];
-          if (o < 0 || perFace[o] !== TRI) continue;
-          const dot = normals[f * 3] * normals[o * 3] + normals[f * 3 + 1] * normals[o * 3 + 1] + normals[f * 3 + 2] * normals[o * 3 + 2];
-          if (dot < cos) continue;
-          perFace[o] = g;
-          stack[sp++] = o;
+    const raw = mesh.getFaceNormals();
+    const nScreen = mesh.getNbFaces();
+    if (method === 'vote') {
+      const normals = new Float32Array(nScreen * 3);
+      for (let f = 0; f < nScreen * 3; f++) normals[f] = raw[f];
+      unitise(normals, nScreen);
+      const nb = faceNeighbours(mesh.getFaces(), nScreen, mesh.getNbVertices());
+      const { perFace } = floodByAngle(nb, normals, nScreen, cos);
+      const rounded = this.roundDown(mesh, perFace);
+      const renumber = new Map<number, number>();
+      const out = new Uint32Array(rounded.length);
+      for (let a = 0; a < rounded.length; a++) {
+        let g = renumber.get(rounded[a]);
+        if (g === undefined) {
+          g = renumber.size;
+          renumber.set(rounded[a], g);
         }
+        out[a] = g;
       }
+      const names = Array.from({ length: renumber.size }, (_, i) => defaultGroupName(i));
+      this.replaceAll(mesh, out, names);
+      return renumber.size;
     }
+    const level0 = mesh.isDynamic ? mesh : levelsOf(mesh)[0];
+    const n = level0.getNbFaces();
+    const nb = faceNeighbours(level0.getFaces(), n, level0.getNbVertices());
+    const normals = new Float32Array(n * 3);
+    const { map, shift } = this.ancestry(mesh, selOf(mesh));
+    for (let f = 0; f < nScreen; f++) {
+      const a = map ? map[f >> shift] : f >> shift;
+      if (a >= n) continue;
+      normals[a * 3] += raw[f * 3];
+      normals[a * 3 + 1] += raw[f * 3 + 1];
+      normals[a * 3 + 2] += raw[f * 3 + 2];
+    }
+    unitise(normals, n);
+    const { perFace, groups } = floodByAngle(nb, normals, n, cos);
     const names = Array.from({ length: groups }, (_, i) => defaultGroupName(i));
     this.replaceAll(mesh, perFace, names);
     return groups;
@@ -612,38 +705,29 @@ export class PolyGroups {
 
   /**
    * Groups given level 0's faces (an OBJ's g/o lines, its UV islands): one
-   * a level-0 face, names theirs; every face above takes its level-0
-   * ancestor's. Not undoable when `undoable` is false (the import, which
-   * is its own undo step).
+   * a level-0 face, names theirs. Not undoable when `undoable` is false
+   * (the import, which is its own undo step).
    */
   fromLevel0(mesh: SculptMesh, perFace: Uint32Array, names: string[], undoable = true): boolean {
     const levels = levelsOf(mesh);
     if (perFace.length !== levels[0].getNbFaces()) return false;
-    let top = perFace;
-    for (let k = 1; k < levels.length; k++) top = inheritUp(top);
     if (!undoable) {
       const r = this.rec(mesh);
       r.names = names.slice(0, MAX_GROUPS).map((n) => n.slice(0, MAX_NAME));
       r.hidden = new Uint8Array(r.names.length);
-      if (mesh.isDynamic) this.topFaces(mesh).set(top);
-      else r.byLevel.set(this.topLevel(mesh), top);
+      if (mesh.isDynamic) this.baseFaces(mesh).set(perFace);
+      else r.byBase.set(levels[0], new Uint32Array(perFace));
       this.changed(mesh);
       return true;
     }
-    if (names.length > MAX_GROUPS) throw new TooManyGroups(`That makes ${names.length} groups, and an object can have at most ${MAX_GROUPS}.`);
-    return this.edit(mesh, (t, r) => {
-      r.names = names.map((n) => n.slice(0, MAX_NAME));
-      r.hidden = new Uint8Array(names.length);
-      t.set(top);
-      return true;
-    });
+    return this.replaceAll(mesh, perFace, names);
   }
 
   rename(mesh: SculptMesh, g: number, name: string): boolean {
     const clean = name.replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_NAME);
     const r = this.rec(mesh);
     if (!clean || g < 0 || g >= r.names.length || r.names[g] === clean) return false;
-    return this.edit(mesh, (_t, rr) => {
+    return this.edit(mesh, (_b, rr) => {
       rr.names[g] = clean;
       return true;
     });
@@ -653,7 +737,7 @@ export class PolyGroups {
   setHidden(mesh: SculptMesh, g: number, hidden: boolean): boolean {
     const r = this.rec(mesh);
     if (g < 0 || g >= r.names.length || !!r.hidden[g] === hidden) return false;
-    return this.edit(mesh, (_t, rr) => {
+    return this.edit(mesh, (_b, rr) => {
       rr.hidden[g] = hidden ? 1 : 0;
       return true;
     });
@@ -662,18 +746,18 @@ export class PolyGroups {
   /** Show all: every group of the object visible again. */
   showAll(mesh: SculptMesh): boolean {
     if (!this.anyHidden(mesh)) return false;
-    return this.edit(mesh, (_t, r) => {
+    return this.edit(mesh, (_b, r) => {
       r.hidden.fill(0);
       return true;
     });
   }
 
-  /** The groups the top level has faces in. */
+  /** The groups level 0 has faces in. */
   private used(mesh: SculptMesh): Uint8Array {
     const r = this.rec(mesh);
     const out = new Uint8Array(r.names.length);
-    const top = this.topFaces(mesh);
-    for (let i = 0; i < top.length; i++) if (top[i] < out.length) out[top[i]] = 1;
+    const base = this.baseFaces(mesh);
+    for (let i = 0; i < base.length; i++) if (base[i] < out.length) out[base[i]] = 1;
     return out;
   }
 
@@ -693,14 +777,14 @@ export class PolyGroups {
       if (!r.hidden[i]) othersShowing = true;
     }
     if (othersShowing || r.hidden[g]) {
-      this.edit(mesh, (_t, rr) => {
+      this.edit(mesh, (_b, rr) => {
         for (let i = 0; i < rr.hidden.length; i++) rr.hidden[i] = i === g ? 0 : 1;
         return true;
       });
       return 'isolated';
     }
     if (!others) return null;
-    this.edit(mesh, (_t, rr) => {
+    this.edit(mesh, (_b, rr) => {
       for (let i = 0; i < rr.hidden.length; i++) rr.hidden[i] = i === g ? 1 : 0;
       return true;
     });
@@ -709,30 +793,23 @@ export class PolyGroups {
 
   /**
    * Delete a group: its faces join the group they border most (counted
-   * over the top level's edges, the lowest-numbered on a tie), or group 0
-   * when they border no other (a separate piece). The groups after it
-   * move down one. The last group cannot go.
+   * over level 0's edges, the lowest-numbered on a tie), or group 0 when
+   * they border no other (a separate piece). The groups after it move
+   * down one. The last group cannot go.
    */
   remove(mesh: SculptMesh, g: number): boolean {
     const r = this.rec(mesh);
     if (g < 0 || g >= r.names.length || r.names.length <= 1) return false;
-    const level = this.topLevel(mesh);
-    const top = this.topFaces(mesh);
+    const level0 = levelsOf(mesh)[0];
+    const base = this.baseFaces(mesh);
     const border = new Float64Array(r.names.length);
-    let has = false;
-    for (let i = 0; i < top.length; i++) {
-      if (top[i] === g) {
-        has = true;
-        break;
-      }
-    }
-    if (has) {
-      const nb = faceNeighbours(level.getFaces(), level.getNbFaces(), level.getNbVertices());
-      for (let f = 0; f < top.length; f++) {
-        if (top[f] !== g) continue;
+    if (base.includes(g)) {
+      const nb = faceNeighbours(level0.getFaces(), level0.getNbFaces(), level0.getNbVertices());
+      for (let f = 0; f < base.length; f++) {
+        if (base[f] !== g) continue;
         for (let k = 0; k < 4; k++) {
           const o = nb[f * 4 + k];
-          if (o >= 0 && top[o] !== g) border[top[o]]++;
+          if (o >= 0 && base[o] !== g) border[base[o]]++;
         }
       }
     }
@@ -745,11 +822,11 @@ export class PolyGroups {
       }
     }
     const target = into > g ? into - 1 : into;
-    return this.edit(mesh, (t, rr) => {
-      for (let i = 0; i < t.length; i++) {
-        const v = t[i];
-        if (v === g) t[i] = target;
-        else if (v > g) t[i] = v - 1;
+    return this.edit(mesh, (b, rr) => {
+      for (let i = 0; i < b.length; i++) {
+        const v = b[i];
+        if (v === g) b[i] = target;
+        else if (v > g) b[i] = v - 1;
       }
       rr.names.splice(g, 1);
       const hid = new Uint8Array(rr.names.length);
@@ -802,42 +879,42 @@ export class PolyGroups {
 
   // --- carrying groups across -------------------------------------------------
 
-  /** The groups record of an object for a scene file, or undefined when it has none worth keeping. */
+  /** The groups record of an object for a scene file (version 2, level 0's), or undefined when it has none worth keeping. */
   serialize(mesh: SculptMesh): SavedGroups | undefined {
     if (!this.hasGroups(mesh)) return undefined;
     const r = this.rec(mesh);
-    const out: SavedGroups = { v: GROUPS_V as 1, faces: new Uint32Array(this.topFaces(mesh)), names: [...r.names] };
+    const out: SavedGroups = { v: GROUPS_V, faces: new Uint32Array(this.baseFaces(mesh)), names: [...r.names] };
     if (r.hidden.some((h) => h !== 0)) out.hidden = r.hidden.slice();
     return out;
   }
 
-  /** An object's groups from a scene record (sanitizeGroups checked it); false when it does not fit. */
+  /** An object's groups from a scene record (sanitizeGroups checked it, a version 1 one made level 0's); false when it does not fit. */
   restore(mesh: SculptMesh, saved: SavedGroups | undefined): boolean {
     if (!saved) return false;
-    const levels = levelsOf(mesh);
-    const top = levels[levels.length - 1];
-    if (saved.faces.length !== top.getNbFaces()) return false;
+    const level0 = levelsOf(mesh)[0];
+    if (saved.faces.length !== level0.getNbFaces()) return false;
     const r = this.rec(mesh);
     r.names = [...saved.names];
     r.hidden = new Uint8Array(saved.names.length);
     if (saved.hidden) r.hidden.set(saved.hidden.subarray(0, r.names.length));
-    if (mesh.isDynamic) this.topFaces(mesh).set(saved.faces);
-    else r.byLevel.set(top, new Uint32Array(saved.faces));
+    if (mesh.isDynamic) this.baseFaces(mesh).set(saved.faces);
+    else r.byBase.set(level0, new Uint32Array(saved.faces));
     this.changed(mesh);
     return true;
   }
 
   /**
-   * Dynamic topology on: the new mesh's triangles are the old level's
-   * faces in order (a quad two), so each takes its face's group. Off: the
-   * static mesh's faces are the dynamic ones in order. The names and the
+   * Dynamic topology on: the new mesh (one level, so its faces are its
+   * level 0) has the level on screen's faces in order as triangles (a
+   * quad two), so each takes its face's group. Off: the static mesh's
+   * faces (its level 0) are the dynamic ones in order. The names and the
    * hidden flags go along either way.
    */
   carryTopology(from: SculptMesh, to: SculptMesh): void {
     if (!this.records.has(from)) return;
     const src = this.levelFaces(from);
     const r = this.rec(from);
-    const out = new Uint32Array(to.getNbFaces());
+    const out = new Uint32Array(levelsOf(to)[0].getNbFaces());
     if (to.isDynamic && !from.isDynamic) {
       const fAr = from.getFaces();
       let t = 0;
@@ -851,19 +928,17 @@ export class PolyGroups {
     const dst = this.rec(to);
     dst.names = [...r.names];
     dst.hidden = r.hidden.slice();
-    if (to.isDynamic) this.topFaces(to).set(out);
-    else dst.byLevel.set(this.topLevel(to), out);
+    if (to.isDynamic) this.baseFaces(to).set(out);
+    else dst.byBase.set(levelsOf(to)[0], out);
     this.changed(to);
   }
 
   /**
-   * Remesh, quad remesh, merge, extract: each face of `to`'s top level
-   * takes the group of the nearest face centre among the sources' (world
-   * space). A source is read at its top level when that is on screen, at
-   * the level on screen otherwise (the top's positions are behind a
-   * stroke made lower down). Names are united by name, in source order;
-   * a group is hidden when it was in the first source that has it.
-   * Nothing is done when no source has groups.
+   * Remesh, quad remesh, merge, extract: each face of `to`'s level 0 (the
+   * results have one level) takes the group of the nearest face centre
+   * among the sources' on their level on screen (world space). Names are
+   * united by name, in source order; a group is hidden when it was in the
+   * first source that has it. Nothing is done when no source has groups.
    */
   transferNearest(sources: SculptMesh[], to: SculptMesh): void {
     const withGroups = sources.filter((m) => this.hasGroups(m));
@@ -886,10 +961,8 @@ export class PolyGroups {
         }
         map[i] = id;
       });
-      const levels = levelsOf(src);
-      const atTop = src.isDynamic || selOf(src) === levels.length - 1;
-      const level = src.isDynamic ? src : atTop ? levels[levels.length - 1] : levels[selOf(src)];
-      const groups = atTop ? this.topFaces(src) : this.levelFaces(src);
+      const level = src.isDynamic ? src : levelsOf(src)[selOf(src)];
+      const groups = this.levelFaces(src);
       const centres = worldCentres(level, src.getMatrix());
       parts.push({ centres, groups, map });
       total += groups.length;
@@ -903,7 +976,7 @@ export class PolyGroups {
       at += p.groups.length;
     }
     const grid = new PointGrid(all);
-    const level = this.topLevel(to);
+    const level = levelsOf(to)[0];
     const centres = worldCentres(level, to.getMatrix());
     const out = new Uint32Array(level.getNbFaces());
     for (let f = 0; f < out.length; f++) {
@@ -913,26 +986,54 @@ export class PolyGroups {
     const dst = this.rec(to);
     dst.names = names.slice(0, MAX_GROUPS);
     dst.hidden = Uint8Array.from(hidden.slice(0, MAX_GROUPS));
-    if (to.isDynamic) this.topFaces(to).set(out);
-    else dst.byLevel.set(level, out);
+    if (to.isDynamic) this.baseFaces(to).set(out);
+    else dst.byBase.set(level, out);
     this.changed(to);
-  }
-
-  /**
-   * Deleting the top level: the level below becomes the top, its derived
-   * groups now its stored ones. Called before the vendor drops it.
-   */
-  beforeDeleteTop(mesh: SculptMesh): void {
-    const levels = levelsOf(mesh);
-    if (levels.length < 2 || !this.records.has(mesh)) return;
-    const below = this.levelFaces(mesh, levels.length - 2);
-    this.rec(mesh).byLevel.set(levels[levels.length - 2], new Uint32Array(below));
   }
 
   /** A changed level or topology: tell the listeners (display, list), without an edit. */
   touch(mesh: SculptMesh): void {
     this.changed(mesh);
   }
+}
+
+/** Normals made unit, three a face, in place. */
+function unitise(normals: Float32Array, n: number): void {
+  for (let a = 0; a < n; a++) {
+    const len = Math.hypot(normals[a * 3], normals[a * 3 + 1], normals[a * 3 + 2]) || 1;
+    normals[a * 3] /= len;
+    normals[a * 3 + 1] /= len;
+    normals[a * 3 + 2] /= len;
+  }
+}
+
+/**
+ * Faces split wherever two neighbours' unit normals are further apart
+ * than `cos`: each connected piece a group, numbered by its first face.
+ */
+function floodByAngle(nb: Int32Array, normals: Float32Array, n: number, cos: number): { perFace: Uint32Array; groups: number } {
+  const perFace = new Uint32Array(n).fill(TRI);
+  const stack = new Int32Array(n);
+  let groups = 0;
+  for (let seed = 0; seed < n; seed++) {
+    if (perFace[seed] !== TRI) continue;
+    const g = groups++;
+    perFace[seed] = g;
+    let sp = 0;
+    stack[sp++] = seed;
+    while (sp) {
+      const f = stack[--sp];
+      for (let k = 0; k < 4; k++) {
+        const o = nb[f * 4 + k];
+        if (o < 0 || perFace[o] !== TRI) continue;
+        const dot = normals[f * 3] * normals[o * 3] + normals[f * 3 + 1] * normals[o * 3 + 1] + normals[f * 3 + 2] * normals[o * 3 + 2];
+        if (dot < cos) continue;
+        perFace[o] = g;
+        stack[sp++] = o;
+      }
+    }
+  }
+  return { perFace, groups };
 }
 
 /** A level's face centres through a matrix (world space), three a face. */
@@ -959,55 +1060,6 @@ function worldCentres(level: SculptMesh, m: Float32Array): Float32Array {
     out[f * 3] = m[0] * x + m[4] * y + m[8] * z + m[12];
     out[f * 3 + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
     out[f * 3 + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
-  }
-  return out;
-}
-
-
-/**
- * Which face of `to` each face of `from` is, when both are the same
- * surface numbered apart (a mirror copy's stack, rebuilt from its reversed
- * base): `vmap` takes `from`'s vertices to `to`'s, and a face is the one
- * with the same corners. -1 for a face with no match.
- */
-export function matchFaces(
-  from: Uint32Array | Int32Array,
-  to: Uint32Array | Int32Array,
-  nbFaces: number,
-  nbVertices: number,
-  vmap: Uint32Array,
-): Int32Array {
-  const corners = (a: Uint32Array | Int32Array, f: number, out: number[], map: Uint32Array | null): number[] => {
-    out.length = 0;
-    const n = a[f * 4 + 3] === TRI ? 3 : 4;
-    for (let k = 0; k < n; k++) out.push(map ? map[a[f * 4 + k]] : a[f * 4 + k]);
-    return out.sort((x, y) => x - y);
-  };
-  // `to`'s faces bucketed by their lowest corner.
-  const start = new Uint32Array(nbVertices + 1);
-  const tmp: number[] = [];
-  const lowest = new Uint32Array(nbFaces);
-  for (let f = 0; f < nbFaces; f++) {
-    lowest[f] = corners(to, f, tmp, null)[0];
-    start[lowest[f] + 1]++;
-  }
-  for (let v = 0; v < nbVertices; v++) start[v + 1] += start[v];
-  const fill = start.slice(0, nbVertices);
-  const items = new Uint32Array(nbFaces);
-  for (let f = 0; f < nbFaces; f++) items[fill[lowest[f]]++] = f;
-  const out = new Int32Array(nbFaces).fill(-1);
-  const a: number[] = [];
-  const b: number[] = [];
-  for (let f = 0; f < nbFaces; f++) {
-    corners(from, f, a, vmap);
-    const lo = a[0];
-    for (let i = start[lo]; i < start[lo + 1]; i++) {
-      corners(to, items[i], b, null);
-      if (a.length === b.length && a.every((x, k) => x === b[k])) {
-        out[f] = items[i];
-        break;
-      }
-    }
   }
   return out;
 }

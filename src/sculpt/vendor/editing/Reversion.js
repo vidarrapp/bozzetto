@@ -566,6 +566,10 @@ Reversion.computeReverse = function (baseMesh, newMesh) {
   var triFaceOrQuadCenter = new Int32Array(nbFaces / 4);
   if (!createFaces(baseMesh, newMesh, vEvenTags, triFaceOrQuadCenter))
     return false;
+  // BOZZETTO EDIT: poly groups (src/sculpt/bridge/polyGroups.ts) read which
+  // fine faces each coarse face covers: a quad's centre vertex (as -1 - v)
+  // or a triangle's middle child, by coarse face.
+  newMesh._reverseCentres = triFaceOrQuadCenter;
 
   createVertices(baseMesh, newMesh, triFaceOrQuadCenter);
   copyVerticesData(baseMesh, newMesh);

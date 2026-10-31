@@ -184,8 +184,9 @@ export interface SavedMesh {
    */
   source?: ObjSource;
   /**
-   * The object's poly groups (polyGroups.ts): one u32 a face of its TOP
-   * level, the names they index, and a hidden flag a group where any is
+   * The object's poly groups (polyGroups.ts): one u32 a face of its
+   * level 0 (version 2; a version 1 record, one a face of the top level,
+   * is rounded down to level 0 as it is read), the names they index, and a hidden flag a group where any is
    * hidden. Optional, with a version of its own, as `source` is: a scene
    * without it opens with every face in group 0, and a build from before
    * it leaves the field behind.

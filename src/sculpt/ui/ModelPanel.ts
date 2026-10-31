@@ -578,7 +578,7 @@ export class ModelPanel extends SidePanel {
       name.type = 'button';
       name.className = 'groups-row__name';
       name.textContent = names[g];
-      name.title = `${names[g]}: ${counts[g]} face${counts[g] === 1 ? '' : 's'} (tap to rename)`;
+      name.title = `${names[g]}: ${counts[g]} base face${counts[g] === 1 ? '' : 's'} (tap to rename)`;
       onTap(name, () => this.renameGroup(mesh, g, name));
       const eye = this.groupIcon(hidden[g] ? 'fi-ss-eye-crossed' : 'fi-ss-eye', hidden[g] ? 'Show' : 'Hide', () => groups.setHidden(mesh, g, !hidden[g]));
       eye.dataset.role = 'group-eye';

@@ -67,7 +67,7 @@ import {
   writeOriginalObj,
   type ObjSource,
 } from './objSource';
-import { matchFaces, PolyGroups } from './polyGroups';
+import { PolyGroups } from './polyGroups';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -824,8 +824,6 @@ export class SculptSession {
       mul.selectResolution(top - 1);
     }
     push(StateMultiresolution.DELETE_HIGHER);
-    // The level below becomes the top: its derived groups are its own now.
-    this.groups.beforeDeleteTop(mul as unknown as SculptMesh);
     mul.deleteHigher();
     if (from < top - 1) {
       push(StateMultiresolution.SELECTION);
@@ -853,6 +851,8 @@ export class SculptSession {
     const created = mul.computeReverse();
     if (!created) return false;
     this.stateManager.pushState(state);
+    // The new level 0's poly groups, by majority of its children's.
+    this.groups.afterReverse(mul as unknown as SculptMesh);
     this.setMesh(mul);
     perfLog.record('subdivision', performance.now() - t0, 'a level reversed in below');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
@@ -1319,7 +1319,7 @@ export class SculptSession {
     const level0 = unbakeLevel0(rec.source, level0ForExport(mul._meshes, mul._sel, bakedBase(rec.source)));
     // The poly groups back out as g lines, through the file's faces; a
     // file whose groups are still its own goes back as it was.
-    const groups = { perFace: fileFaceGroups(rec.source, this.groups.levelFaces(mesh, 0)), names: this.groups.names(mesh) };
+    const groups = { perFace: fileFaceGroups(rec.source, this.groups.baseFaces(mesh)), names: this.groups.names(mesh) };
     const text = writeOriginalObj(rec.source, level0, groups);
     perfLog.record('obj export', performance.now() - t0, 'original numbering');
     return text;
@@ -1902,7 +1902,7 @@ export class SculptSession {
       // The file's numbering, while level 0 is still the file's. Its arrays
       // never change, so the record shares them rather than copy them.
       ...(this.originalNumbering(mesh) === 'valid' ? { source: this.sources.get(mesh)!.source } : {}),
-      // The poly groups, where the object has any: its top level's.
+      // The poly groups, where the object has any: level 0's.
       ...(this.groups.hasGroups(mesh) ? { groups: this.groups.serialize(mesh) } : {}),
     };
   }
@@ -2339,23 +2339,9 @@ export class SculptSession {
     matrix[0] = -matrix[0];
     matrix[1] = -matrix[1];
     matrix[2] = -matrix[2];
-    // 5. The poly groups, top face by top face: the reversed base numbers
-    // each face's children in another order, so each is found again by
-    // its corners.
-    let groups = saved.groups;
-    const vmap = perm as Uint32Array | null;
-    if (groups && vmap) {
-      const oldTop = temp._meshes[top];
-      const newTop = scratch._meshes[top];
-      const nbF = oldTop.getNbFaces();
-      if (groups.faces.length === nbF && newTop.getNbFaces() === nbF) {
-        const match = matchFaces(oldTop.getFaces(), newTop.getFaces(), nbF, newTop.getNbVertices(), vmap);
-        const faces = new Uint32Array(nbF);
-        for (let f = 0; f < nbF; f++) if (match[f] >= 0) faces[match[f]] = groups.faces[f];
-        groups = { ...groups, faces };
-      }
-    }
-    return { ...saved, nbBaseFaces: exact.nbBaseFaces, baseFaces, levels, sel: top, matrix, ...(groups ? { groups } : {}) };
+    // 5. The poly groups are level 0's, and the rewound base keeps its
+    // faces' order, so they go along as they are.
+    return { ...saved, nbBaseFaces: exact.nbBaseFaces, baseFaces, levels, sel: top, matrix };
   }
 
   // --- primitives (ported from Scene.js + drawables/Primitives.js) --------

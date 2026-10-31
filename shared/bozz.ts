@@ -146,8 +146,13 @@ export const MAX_SOURCE_LINES = 1_000_000;
  * few enough that their names stay a small part of the header.
  */
 export const MAX_GROUPS = 4096;
-/** The poly groups record's version (SavedMesh.groups.v). */
-export const GROUPS_V = 1;
+/**
+ * The poly groups record's version (SavedMesh.groups.v): 2 since
+ * 2026-11-01, one group a face of level 0. Version 1 (2026-10-31), one a
+ * face of the top level, is still read.
+ */
+export const GROUPS_V = 2;
+export const GROUPS_V1 = 1;
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -173,9 +178,10 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  *   MAX_SOURCE_CORNERS), texture corners null or as many as the corners,
  *   text that is there when its byte count says so, kept-line places null
  *   or at most MAX_SOURCE_LINES, and a transform of 16 numbers;
- * - poly groups (`groups`), where an object has them: version 1, one u32
- *   a face of its top level (the base faces times four a level above
- *   the first), one to MAX_GROUPS names of at most MAX_NAME characters,
+ * - poly groups (`groups`), where an object has them: version 2 with one
+ *   u32 a face of level 0 (`nbBaseFaces`), or version 1 with one a face
+ *   of its top level (the base faces times four a level above the
+ *   first), one to MAX_GROUPS names of at most MAX_NAME characters,
  *   and hidden flags, where there are any, a u8 array of one a name. That
  *   every face names a group there is the app's to check;
  * - names of at most MAX_NAME characters, at most MAX_MATERIALS materials;
@@ -266,13 +272,15 @@ export function checkHeader(layout: Layout): void {
    * The poly groups (SavedMesh.groups), as far as the header says: what
    * polyGroups.ts's sanitizeGroups asks of them without reading an array.
    */
-  const checkGroups = (g: unknown, object: string, topFaces: number): void => {
+  const checkGroups = (g: unknown, object: string, baseFaces: number, topFaces: number): void => {
     const bad = (what: string): never => {
       throw damaged(`${object} has bad poly groups (${what})`);
     };
-    if (!isRec(g) || g.v !== GROUPS_V) bad('a version this app does not read');
+    if (!isRec(g) || (g.v !== GROUPS_V && g.v !== GROUPS_V1)) bad('a version this app does not read');
     const r = g as Rec;
-    if (!array(r.faces, 'u32', topFaces)) bad('not one group a face of its top level');
+    if (r.v === GROUPS_V1 ? !array(r.faces, 'u32', topFaces) : !array(r.faces, 'u32', baseFaces)) {
+      bad(r.v === GROUPS_V1 ? 'not one group a face of its top level' : 'not one group a face of its level 0');
+    }
     const names = r.names;
     if (!Array.isArray(names) || names.length < 1 || names.length > MAX_GROUPS) bad(`not 1 to ${MAX_GROUPS} names`);
     for (const n of names as unknown[]) if (typeof n !== 'string' || n.length > MAX_NAME) bad('a name that is not one');
@@ -323,8 +331,9 @@ export function checkHeader(layout: Layout): void {
       }
     });
     if (m.source !== undefined) checkSource(m.source, object, (levels[0] as Rec).nbVertices as number);
-    // Each level above the base has four faces for each one below.
-    if (m.groups !== undefined) checkGroups(m.groups, object, faces * 4 ** (levels.length - 1));
+    // Version 2 is one a base face; version 1 one a top-level face, each
+    // level above the base having four faces for each one below.
+    if (m.groups !== undefined) checkGroups(m.groups, object, faces, faces * 4 ** (levels.length - 1));
   });
   if (scene.units !== undefined && scene.units !== 'cm' && scene.units !== 'm') throw damaged('units this app does not read');
   const materials = scene.materials;
