@@ -19,6 +19,10 @@
 
 ## Notes for Bozzetto Studio
 
+### Change of plan: poly groups on level 0 (2026-11-01)
+
+On Vidar's call, Bozzetto Web stores poly groups on the LOWEST level (level 0, the base cage), not the top. The groups record becomes `v: 2`: one group per level-0 face (`faces.length` = `nbBaseFaces`), plus `names` and `hidden` as below. Every higher level inherits exactly: face `f` at level `k` belongs to level-0 face `floor(f / 4^k)`. No derivation between levels, and no tie rule, except when a new level 0 is built underneath (Rebuild): each new base face takes the majority of its children, the earliest child on a tie. Grouping from a higher level (a mask drawn at the top, then Ctrl+W) sets whole level-0 faces, each joining when most of its top-level faces qualify. Dynamic-topology and remeshed meshes are single-level, so their faces are level 0. A `v: 1` record (top level, written for one day) converts on open by majority per level-0 face. This section replaces the 2026-10-31 layout below once the change lands; the full v2 definition will be written here then.
+
 ### The .bozz poly group layout (2026-10-31)
 
 Bozzetto Web writes poly groups per object as an optional field of the object record, `meshes[i].groups`, with a version of its own; the scene's `v` stays 4. A scene without the field opens with every face in group 0, named "Group 1". The web writes the field only when an object has groups worth keeping (more than one group, group 0 renamed, or something hidden), so a file from an object that was never grouped is byte-for-byte what it was before.
