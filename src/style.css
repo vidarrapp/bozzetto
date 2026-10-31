@@ -1700,6 +1700,30 @@ html.is-page body {
   opacity: 0.85;
 }
 
+/* The edge-loop mask (Ctrl + Shift + drag): the loop or ring the drag
+   would cut along, faint and dashed where it runs round the back, and the
+   drag itself (BrushCursor.renderLoop). */
+.sculpt-loop__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+.sculpt-loop__line--back {
+  opacity: 0.3;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+
+.sculpt-loop__drag {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
 .sculpt-cursor__dot {
   fill: var(--accent);
   opacity: 0.9;

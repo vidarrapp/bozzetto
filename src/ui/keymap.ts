@@ -65,6 +65,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'edit.redo', label: 'Redo', group: 'Sculpting', mode: 'sculpt', chord: 'ctrl+shift+z', repeat: true },
   // --- sculpt: masking ---
   { id: 'gesture.mask', label: 'Paint mask (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag' },
+  { id: 'gesture.loopMask', label: 'Mask one side of an edge loop (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + Shift + drag' },
   { id: 'gesture.maskInvertClick', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click off mesh' },
   { id: 'mask.all', label: 'Mask the whole object', group: 'Masking', mode: 'sculpt', chord: 'ctrl+a' },
   { id: 'mask.clear', label: 'Clear mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+c' },

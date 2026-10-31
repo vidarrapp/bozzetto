@@ -78,6 +78,33 @@ export interface StrengthInfo {
   worldRadius: number;
 }
 
+/**
+ * The edge-loop mask's overlay (InputShell, while Ctrl + Shift drags): the
+ * loop or ring the drag would cut along, world space, solid where it faces
+ * the camera and faint where it runs round the back, and the drag itself.
+ */
+export interface LoopOverlay {
+  /** xyz per point, world space. */
+  points: Float32Array;
+  /** 1 where the point faces the camera. */
+  front: Uint8Array;
+  closed: boolean;
+  /** The drag's ends, container CSS px. */
+  from: [number, number];
+  to: [number, number];
+  /** A note beside the drag's end ('' for none). */
+  label: string;
+}
+
+/** What the loop overlay last drew (the tests read it). */
+export interface LoopProbe {
+  shown: boolean;
+  points: number;
+  front: number;
+  closed: boolean;
+  label: string;
+}
+
 /** World -> container CSS px; null when the point is behind the camera. */
 export type CursorProjector = (p: [number, number, number]) => [number, number] | null;
 
@@ -98,6 +125,14 @@ export class BrushCursor {
   private readonly tinePath: SVGPathElement;
   private readonly tineGradient: SVGLinearGradientElement;
   private readonly tineStops: SVGStopElement[];
+  private readonly loopRoot: SVGSVGElement;
+  private readonly loopFront: SVGPathElement;
+  private readonly loopBack: SVGPathElement;
+  private readonly loopDrag: SVGLineElement;
+  private readonly loopLabel: SVGTextElement;
+  private loop: LoopOverlay | null = null;
+  /** What the loop overlay last drew (the tests read it). */
+  readonly loopProbe: LoopProbe = { shown: false, points: 0, front: 0, closed: false, label: '' };
 
   private projector: CursorProjector | null = null;
   private surface: SurfaceState | null = null;
@@ -180,7 +215,77 @@ export class BrushCursor {
     this.ringPath.classList.add('sculpt-cursor__ring--main');
     this.root.append(defs, this.ghostPath, this.ringPath, this.tinePath, this.screenRing, this.dot, this.strength, this.strengthLabel);
     container.appendChild(this.root);
+    // The loop overlay has its own layer: the brush ring is hidden while
+    // Ctrl + Shift drags, and the loop must show regardless.
+    this.loopRoot = document.createElementNS(NS, 'svg');
+    this.loopRoot.setAttribute('class', 'sculpt-cursor sculpt-loop');
+    this.loopBack = document.createElementNS(NS, 'path');
+    this.loopBack.setAttribute('class', 'sculpt-loop__line sculpt-loop__line--back');
+    this.loopFront = document.createElementNS(NS, 'path');
+    this.loopFront.setAttribute('class', 'sculpt-loop__line');
+    this.loopDrag = document.createElementNS(NS, 'line');
+    this.loopDrag.setAttribute('class', 'sculpt-loop__drag');
+    this.loopLabel = document.createElementNS(NS, 'text');
+    this.loopLabel.setAttribute('class', 'sculpt-cursor__strength-label sculpt-loop__label');
+    this.loopRoot.append(this.loopBack, this.loopFront, this.loopDrag, this.loopLabel);
+    this.loopRoot.style.display = 'none';
+    container.appendChild(this.loopRoot);
     this.applyMode('hidden');
+  }
+
+  /** Show the edge-loop mask's overlay, or take it away (null). */
+  setLoop(loop: LoopOverlay | null): void {
+    this.loop = loop;
+    this.renderLoop();
+  }
+
+  private renderLoop(): void {
+    const loop = this.loop;
+    const probe = this.loopProbe;
+    if (!loop) {
+      this.loopRoot.style.display = 'none';
+      probe.shown = false;
+      probe.points = probe.front = 0;
+      probe.closed = false;
+      probe.label = '';
+      return;
+    }
+    this.loopRoot.style.display = '';
+    this.loopDrag.setAttribute('x1', String(loop.from[0]));
+    this.loopDrag.setAttribute('y1', String(loop.from[1]));
+    this.loopDrag.setAttribute('x2', String(loop.to[0]));
+    this.loopDrag.setAttribute('y2', String(loop.to[1]));
+    const n = loop.points.length / 3;
+    const screen: ([number, number] | null)[] = [];
+    for (let i = 0; i < n; i++) {
+      screen.push(this.projector ? this.projector([loop.points[i * 3], loop.points[i * 3 + 1], loop.points[i * 3 + 2]]) : null);
+    }
+    // One segment per pair of neighbours, in the front path when both face
+    // the camera, else in the faint back one.
+    let front = '';
+    let back = '';
+    let frontCount = 0;
+    const segs = loop.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const j = (i + 1) % n;
+      const a = screen[i];
+      const b = screen[j];
+      if (!a || !b) continue;
+      const d = `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+      if (loop.front[i] && loop.front[j]) front += d;
+      else back += d;
+    }
+    for (let i = 0; i < n; i++) if (loop.front[i]) frontCount++;
+    this.loopFront.setAttribute('d', front);
+    this.loopBack.setAttribute('d', back);
+    this.loopLabel.textContent = loop.label;
+    this.loopLabel.setAttribute('x', String(loop.to[0] + 12));
+    this.loopLabel.setAttribute('y', String(loop.to[1] - 10));
+    probe.shown = true;
+    probe.points = n;
+    probe.front = frontCount;
+    probe.closed = loop.closed;
+    probe.label = loop.label;
   }
 
   /** Wire the world-to-screen projection (mode.ts supplies the camera). */
@@ -232,6 +337,7 @@ export class BrushCursor {
 
   /** Re-project the cached surface (camera moved under a still pointer). */
   refresh(): void {
+    if (this.loop) this.renderLoop();
     if (this.mode === 'surface' && this.surface) this.renderSurface();
   }
 
@@ -691,5 +797,6 @@ export class BrushCursor {
 
   dispose(): void {
     this.root.remove();
+    this.loopRoot.remove();
   }
 }

@@ -18,6 +18,7 @@ import {
   strengthPressureTerm,
 } from './tools';
 import { SURFACE_RELAX } from './surfaceSmooth';
+import { LoopMasker, type LoopCut } from './loopMask';
 import { SMOOTH_REV, type SavedRake, type SavedSmooth } from './ScenePersist';
 import type { WorldScaleBrush } from './worldScale';
 import type { TransformGizmo } from './transform';
@@ -43,8 +44,11 @@ import type { BrushCursor } from './BrushCursor';
  *
  * Stroke modifiers, ZBrush-style: alt inverts the stroke (negative) for
  * tools that support it; ctrl paints mask, ctrl+alt unmasks (the Masking
- * tool is swapped in just for the stroke). Alt keydown is preventDefaulted
- * so Firefox's menu bar never steals the modifier.
+ * tool is swapped in just for the stroke). Ctrl+shift with any brush is no
+ * stroke: a drag across the model masks one side of an edge loop
+ * (loopMask.ts; ctrl+shift+alt unmasks), and a click is left free for
+ * poly groups. Alt keydown is preventDefaulted so Firefox's menu bar never
+ * steals the modifier.
  *
  * Fingers navigate (Preferences, on by default): with that choice a touch
  * never reaches the stroke, marquee or gizmo code below - one finger
@@ -138,6 +142,11 @@ const PRESENT_KEYS = new Set([
 
 /** A select-tool press that travels past this is a marquee, not a click. */
 const MARQUEE_SLOP = 5;
+/**
+ * A Ctrl + Shift drag shorter than this (CSS px) is a click, which masks
+ * nothing: poly groups will take Ctrl + Shift + click.
+ */
+export const LOOP_CLICK_SLOP = 6;
 /**
  * How far a finger may wander and still be a tap, when fingers navigate:
  * in the Select tool and under the gizmo a tap picks, as a click does,
@@ -417,6 +426,21 @@ export class InputShell {
     pointerId: number;
     dragging: boolean;
   } | null = null;
+  /**
+   * Ctrl + Shift + drag with a brush: the edge-loop mask (owner call,
+   * 2026-10-31). Positions are canvas CSS px; the cut is found on each
+   * frame of the drag, previewed, and applied on release.
+   */
+  private loopDrag: {
+    pointerId: number;
+    x0: number;
+    y0: number;
+    x: number;
+    y: number;
+    unmask: boolean;
+    raf: number;
+  } | null = null;
+  private loopMasker: LoopMasker | null = null;
   /** Shift held = smoothing (temp tool); the cursor previews it in blue. */
   private shiftHeld = false;
   private lKeyHeld = false;
@@ -489,6 +513,7 @@ export class InputShell {
   }
 
   dispose(): void {
+    this.cancelLoopDrag();
     this.dynamics.dispose();
     this.container.removeEventListener('pointerdown', this.onPointerDown, true);
     this.container.removeEventListener('pointermove', this.onPointerMove, true);
@@ -896,6 +921,106 @@ export class InputShell {
     else this.enterSelect();
   }
 
+  // --- the edge-loop mask (Ctrl + Shift + drag) -----------------------------
+
+  /** The edge-loop mask's cut finder (the tests reach it here too). */
+  get loopMask(): LoopMasker {
+    return (this.loopMasker ??= new LoopMasker(this.session));
+  }
+
+  private beginLoopDrag(e: PointerEvent): void {
+    this.loopDrag = {
+      pointerId: e.pointerId,
+      x0: this.lastClientX,
+      y0: this.lastClientY,
+      x: this.lastClientX,
+      y: this.lastClientY,
+      unmask: e.altKey,
+      raf: 0,
+    };
+    // Busy, as a stroke is: undo, redo and tool switches wait for the release.
+    this.session._action = Enums.Action.MASK_EDIT;
+    this.cursor.hide();
+    if (e.pointerType !== 'touch') {
+      try {
+        this.session.getCanvas().setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+    }
+    this.verdict?.(`loop mask ${e.pointerType}`);
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  /** What the drag so far cuts, or null while it is a click or crosses nothing. */
+  private loopCut(): LoopCut | null {
+    const g = this.loopDrag;
+    if (!g || Math.hypot(g.x - g.x0, g.y - g.y0) < LOOP_CLICK_SLOP) return null;
+    const r = this.session.getPixelRatio();
+    return this.loopMask.pick(g.x0 * r, g.y0 * r, g.x * r, g.y * r);
+  }
+
+  /** The preview for the drag as it stands: the line it cuts along, the side tinted. */
+  private updateLoopDrag(): void {
+    const g = this.loopDrag;
+    if (!g) return;
+    g.raf = 0;
+    const cut = this.loopCut();
+    this.loopMask.preview(cut, g.unmask);
+    const travelled = Math.hypot(g.x - g.x0, g.y - g.y0) >= LOOP_CLICK_SLOP;
+    this.cursor.setLoop(
+      travelled
+        ? {
+            points: cut ? cut.points : new Float32Array(0),
+            front: cut ? cut.front : new Uint8Array(0),
+            closed: !!cut?.closed,
+            from: [g.x0, g.y0],
+            to: [g.x, g.y],
+            label: cut?.note ?? '',
+          }
+        : null,
+    );
+  }
+
+  /** Release: apply the cut where the drag ended (a click, or a cancel, applies nothing). */
+  private endLoopDrag(e: PointerEvent): void {
+    const g = this.loopDrag!;
+    if (g.raf) cancelAnimationFrame(g.raf);
+    g.raf = 0;
+    const cancelled = e.type === 'pointercancel';
+    if (!cancelled) {
+      this.setMouse(e);
+      g.x = this.lastClientX;
+      g.y = this.lastClientY;
+      g.unmask = e.altKey;
+    }
+    const cut = cancelled ? null : this.loopCut();
+    if (cut) {
+      this.loopMask.apply(cut, g.unmask);
+      this.verdict?.(`loop mask: ${cut.kind}${cut.note ? ` (${cut.note})` : ''}`);
+    } else {
+      this.loopMask.untint();
+    }
+    this.loopDrag = null;
+    this.cursor.setLoop(null);
+    this.session._action = Enums.Action.NOTHING;
+    this.session.render();
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  /** The window lost focus mid-drag: no release will come, so nothing is applied. */
+  private cancelLoopDrag(): void {
+    const g = this.loopDrag;
+    if (!g) return;
+    if (g.raf) cancelAnimationFrame(g.raf);
+    this.loopDrag = null;
+    this.loopMask.untint();
+    this.cursor.setLoop(null);
+    this.session._action = Enums.Action.NOTHING;
+  }
+
   /** A press in select mode: a click picks, a drag draws the marquee. */
   private beginSelectPress(e: PointerEvent): void {
     const s = this.session;
@@ -1198,6 +1323,12 @@ export class InputShell {
       this.heldKeyPress(e);
       return;
     }
+    // One loop drag at a time; nothing else starts under it.
+    if (this.loopDrag) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const s = this.session;
     this.setMouse(e);
 
@@ -1247,6 +1378,15 @@ export class InputShell {
       this.orbitPointer = e.pointerId;
       this.verdict?.('orbit (gizmo active, missed)');
       this.hooks.orbitBegin();
+      return;
+    }
+
+    // Ctrl + Shift + drag: mask the side of an edge loop the drag moves
+    // toward, with any brush (+ Alt unmasks). The Select tool's marquee and
+    // the gizmo kept their own meanings above. A press that stays put masks
+    // nothing (poly groups will take the click), and nothing here orbits.
+    if (e.ctrlKey && e.shiftKey && !e.metaKey) {
+      this.beginLoopDrag(e);
       return;
     }
 
@@ -1518,6 +1658,18 @@ export class InputShell {
     this.setMouse(e);
     this.cursor.moveTo(this.lastClientX, this.lastClientY);
 
+    if (this.loopDrag && e.pointerId === this.loopDrag.pointerId) {
+      const g = this.loopDrag;
+      g.x = this.lastClientX;
+      g.y = this.lastClientY;
+      g.unmask = e.altKey;
+      // Once a frame, however many moves the frame brings.
+      if (!g.raf) g.raf = requestAnimationFrame(() => this.updateLoopDrag());
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     // ctrl off the model: past the slop this is a zoom, and vertical travel
     // dollies. Pixels-to-factor is exponential so the step is proportional
     // at any distance, and dragging up zooms IN, matching the wheel.
@@ -1599,7 +1751,7 @@ export class InputShell {
     this.hoverDue = false;
     const s = this.session;
     if (this.pointerId !== -1 || s._action !== Enums.Action.NOTHING) return;
-    if (this.presenting || this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld) return;
+    if (this.presenting || this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld || this.loopDrag) return;
     const surf = s.hoverSurface(true);
     this.syncCursorTines();
     this.cursor.setTineAxis(null);
@@ -1649,6 +1801,11 @@ export class InputShell {
     if (this.orbitPointer === e.pointerId) {
       this.orbitPointer = -1;
       this.hooks.orbitEnd();
+    }
+
+    if (this.loopDrag && e.pointerId === this.loopDrag.pointerId) {
+      this.endLoopDrag(e);
+      return;
     }
 
     if (this.ctrlEmpty && e.pointerId === this.ctrlEmpty.pointerId) {
@@ -1714,6 +1871,7 @@ export class InputShell {
       this.pointerId !== -1 ||
       this.marquee !== null ||
       this.ctrlEmpty !== null ||
+      this.loopDrag !== null ||
       this.adjustPointer !== -1 ||
       this.orbitPointer !== -1 ||
       !!this.transform?.isDragging()
@@ -2314,6 +2472,7 @@ export class InputShell {
       this.hooks.orbitEnd();
     }
     this.endMarquee();
+    this.cancelLoopDrag();
     this.resetFingers();
     this.lKeyHeld = false;
     if (this.shiftHeld) {

@@ -125,7 +125,7 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     updateDuplicateColorsAndMaterials(iVerts?: Uint32Array): void;
     /** Non-indexed (draw-arrays) rendering, which upstream never uses here. */
     isUsingDrawArrays(): boolean;
-    updateDrawArrays(faces: Uint32Array): void;
+    updateDrawArrays(faces?: Uint32Array): void;
     /** Re-upload the vertex colour buffer after a bulk write (paint fill). */
     updateColorBuffer(): void;
     /** Re-upload the roughness/metalness/mask buffer after a bulk write. */
@@ -138,6 +138,8 @@ declare module '@sculpt-vendor/mesh/Mesh' {
     /** Faces that are quads (the rest are triangles). */
     getNbQuads(): number;
     getNbEdges(): number;
+    /** Static meshes: each face's edge ids, four per face (slot k runs from corner k to k + 1). */
+    getFaceEdges?(): Uint32Array | null;
     getMatrix(): Float32Array;
     /** The matrix's scale (its first column's length): world units per local unit. */
     getScale(): number;
@@ -274,6 +276,8 @@ declare module '@sculpt-vendor/editing/tools/SculptBase' {
     paintAll?(): void;
     blur?(): void;
     sharpen?(): void;
+    /** Masking tool only: re-fan the mask into the render arrays and redraw. */
+    updateAndRenderMask?(): void;
     /** Masking tool only: shell extraction of the masked region (WS4). */
     _thickness?: number;
     extract?(): void;
@@ -322,6 +326,8 @@ declare module '@sculpt-vendor/states/StateManager' {
     getCurrentState(): unknown;
     /** Every undoable edit funnels through here (autosave hooks it). */
     pushState(state: unknown): void;
+    /** Open a colour + material state for a mesh (what a mask stroke pushes). */
+    pushStateColorAndMaterial(mesh: unknown): void;
     /** Record touched vertices on the current state (stroke tools). */
     pushVertices(iVerts: Uint32Array): void;
     pushStateAdd(mesh: unknown): void;
@@ -357,7 +363,7 @@ declare module '@sculpt-vendor/math3d/Picking' {
     /** The picked mesh, as getMesh() returns it. */
     _mesh: SculptMesh | null;
     constructor(main: unknown, xSym?: boolean);
-    intersectionMouseMeshes(): boolean;
+    intersectionMouseMeshes(meshes?: SculptMesh[], mouseX?: number, mouseY?: number): boolean;
     intersectionMouseMesh(mesh?: SculptMesh, mouseX?: number, mouseY?: number): boolean;
     getMesh(): SculptMesh | null;
     /** Intersection point in the picked mesh's local space. */
