@@ -11,7 +11,7 @@
 - [x] 2026-10-24: QuadriFlow's flow solver in Bozzetto Web. Decided 2026-10-24: Boykov-Kolmogorov max flow (QuadriFlow's default path, no network-simplex min-cost flow, no Gurobi); the heavier solving is for Studio
 - [x] 2026-10-24: Quad remesh in Bozzetto Web: offer QuadriFlow's adaptive quad sizing as an option. Decided 2026-10-24: include it, off by default
 - [x] 2026-10-27: Where Smooth's Mode and Relax go. Decided 2026-10-27: a Smooth group in every brush's Tool panel, one shared setting for all tools
-- [x] 2026-10-31: Strength in centimetres for the brushes that push the surface. Decided 2026-10-31: yes; Clay, Inflate, Crease, Rake, Move and Drag get 0 to 5 cm, the capped brushes keep 0 to 1
+- [x] 2026-10-31: Strength in centimetres for the brushes that push the surface. Decided 2026-10-31: yes; Clay, Inflate, Crease and Rake get 0 to 5 cm; Move and Drag follow the pen and keep 0 to 1 (corrected 2026-10-31), as do the capped brushes
 - [x] 2026-10-31: Strength indicator shown always or only while adjusting. Decided 2026-10-31: only while adjusting strength
 - [x] 2026-10-31: Edge-loop mask with Ctrl+Shift drag. Decided 2026-10-31: as proposed; true edge loops on quads, and a geodesic ring on triangle meshes as well
 - [x] 2026-10-31: Poly groups, how they are made. Decided 2026-10-31: from the mask (Ctrl+W), from and back out to OBJ g/o lines (Maya round trip), split by angle, and by UV islands
