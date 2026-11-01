@@ -1134,7 +1134,7 @@ export const suites = {
       }
       return { heads: heads.join(','), under: under.join(',') };
     });
-    t.eq(layout.under, 'Group:From mask,Group:Visible,Group:Auto,Group:By angle,Group:By UV islands,Group:Clear all,Groups:Show all', `the Groups section: a Group sub-heading with From mask, Visible, Auto, By angle, By UV islands and Clear all, then the list's Groups with Show all (${layout.heads})`);
+    t.eq(layout.under, 'Group:From mask,Group:Visible,Group:Auto,Group:By angle,Group:By UV islands,Group:Clear all,Group:Remove unused,Groups:Show all', `the Groups section: a Group sub-heading with From mask, Visible, Auto, By angle, By UV islands and Clear all, then the list's Groups with Show all (${layout.heads})`);
     await page.evaluate(() => {
       const { session } = window.__sculpt;
       const cube = session.addPrimitive('cube');
@@ -1183,6 +1183,36 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.session.undo());
     g = await groupsOf(page);
     t.ok(g.names.length === 2 && g.hidden[1], 'an undo brings the two groups back, the second hidden');
+
+    // Frame with a group hidden: only the visible piece is framed.
+    const framed = await page.evaluate(() => {
+      const { session, input, viewer } = window.__sculpt;
+      const m = session.getMesh();
+      const target = () => ({ x: viewer.getCameraState().target[0] });
+      input.hooks.frameModel();
+      const withHidden = target();
+      session.groups.showAll(m);
+      input.hooks.frameModel();
+      const all = target();
+      session.undo();
+      return { hiddenX: withHidden.x, allX: all.x };
+    });
+    t.ok(Math.abs(framed.hiddenX - framed.allX) > 10, `Frame with the second sphere hidden centres on the first, not the pair (centre x ${framed.hiddenX.toFixed(1)} against ${framed.allX.toFixed(1)})`);
+
+    // Remove unused: a group emptied by Visible goes, the rest keep their names.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = session.getMesh();
+      // Every built-in action already drops a group it empties, so an
+      // unused one comes from a file (another app, an older build): add
+      // a name no face is in, as a loaded record would bring it.
+      const saved = session.groups.serialize(m) ?? { v: 2, faces: new Uint32Array(session.groups.baseFaces(m)), names: session.groups.names(m) };
+      session.groups.restore(m, { ...saved, faces: new Uint32Array(saved.faces), names: [...saved.names, 'Spare'], hidden: undefined });
+    });
+    const beforePrune = await groupsOf(page);
+    await tapIn('[data-role="groups-remove-unused"]');
+    const pruned = await groupsOf(page);
+    t.ok(pruned.names.length === beforePrune.names.length - (beforePrune.counts.filter((c) => c === 0).length) && pruned.counts.every((c) => c > 0) && pruned.undo === beforePrune.undo + 1, `Remove unused drops the empty groups in one undo step (${beforePrune.names.length} to ${pruned.names.length}: ${pruned.names.join(', ')})`);
 
     // --- Edit: Split groups into objects, Split hidden into object, Delete hidden ------
     const editMenuItem = (label) =>

@@ -985,10 +985,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const active = session.getMesh();
       if (!active) return;
       endPivotOrbit();
-      viewer.frameBounds(liveWorldBox(active));
+      // Only what shows: hidden poly groups are left out of the framing.
+      const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
+      viewer.frameBounds(box);
       // Framing re-centres deliberately, so it also resets what you orbit
       // around; otherwise the next drag would swing away from the framing.
-      liveWorldBox(active).getCenter(pivot);
+      box.getCenter(pivot);
     },
     selectModeChanged: (on) => {
       toolbar.setSelectActive(on);
@@ -1027,8 +1029,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     frameAll: () => {
       const meshes = session.getMeshes().filter((m) => m.isVisible());
       if (meshes.length === 0) return;
-      const box = liveWorldBox(meshes[0]);
-      for (let i = 1; i < meshes.length; i++) box.union(liveWorldBox(meshes[i]));
+      const box = visibleWorldBox(meshes[0], session.groups.hiddenFaces(meshes[0]));
+      for (let i = 1; i < meshes.length; i++) box.union(visibleWorldBox(meshes[i], session.groups.hiddenFaces(meshes[i])));
       endPivotOrbit();
       viewer.frameBounds(box);
       box.getCenter(pivot);
@@ -2329,6 +2331,34 @@ function exactWorldBox(mesh: SculptMesh): Box3 {
 }
 
 /** World-space box of the live vertex region (over-allocated tail excluded). */
+/**
+ * The world box of what shows of an object: with poly groups hidden, only
+ * the visible faces' corners at the level on screen (Frame and Frame all
+ * look at what can be seen); otherwise the live bound.
+ */
+function visibleWorldBox(mesh: SculptMesh, hiddenFaces: Uint8Array | null): Box3 {
+  if (!hiddenFaces) return liveWorldBox(mesh);
+  const fAr = mesh.getFaces();
+  const vAr = mesh.getVertices();
+  const nFaces = mesh.getNbFaces();
+  const seen = new Uint8Array(mesh.getNbVertices());
+  const box = new Box3();
+  const p = new Vector3();
+  const m = new Matrix4().fromArray(mesh.getMatrix() as unknown as number[]);
+  for (let f = 0; f < nFaces; f++) {
+    if (hiddenFaces[f]) continue;
+    for (let c = 0; c < 4; c++) {
+      const v = fAr[f * 4 + c];
+      if (c === 3 && v === 4294967295) continue; // a triangle's empty fourth corner
+      if (seen[v]) continue;
+      seen[v] = 1;
+      p.set(vAr[v * 3], vAr[v * 3 + 1], vAr[v * 3 + 2]).applyMatrix4(m);
+      box.expandByPoint(p);
+    }
+  }
+  return box.isEmpty() ? liveWorldBox(mesh) : box;
+}
+
 function liveWorldBox(mesh: SculptMesh): Box3 {
   // The bound the vendor already maintains, not a fresh scan of every
   // vertex: the octree keeps a local AABB that strokes grow, and

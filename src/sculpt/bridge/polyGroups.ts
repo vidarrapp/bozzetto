@@ -902,6 +902,23 @@ export class PolyGroups {
     return this.replaceAll(mesh, new Uint32Array(this.baseFaces(mesh).length), [defaultGroupName(0)]);
   }
 
+  /**
+   * Remove unused: drop the groups no face is in any more (after Visible,
+   * a delete or a split), keeping the rest in order with their names and
+   * hidden flags. Returns how many went; 0 changes nothing.
+   */
+  removeUnused(mesh: SculptMesh): number {
+    const used = this.used(mesh);
+    let unused = 0;
+    for (let g = 0; g < used.length; g++) if (!used[g]) unused++;
+    if (unused === 0 || unused === used.length) return 0;
+    this.edit(mesh, (b, r) => {
+      compact(b, r);
+      return true;
+    });
+    return unused;
+  }
+
   rename(mesh: SculptMesh, g: number, name: string): boolean {
     const clean = name.replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_NAME);
     const r = this.rec(mesh);

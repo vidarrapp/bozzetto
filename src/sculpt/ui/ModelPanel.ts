@@ -543,7 +543,15 @@ export class ModelPanel extends SidePanel {
     clear.title = 'Every face back in one group, "Group 1", nothing hidden';
     clear.dataset.role = 'groups-clear';
     this.clearGroupsButton = clear;
-    clearRow.append(clear);
+    const prune = this.tapButton('Remove unused', () => {
+      const mesh = this.session.getMesh();
+      const n = mesh ? this.session.groups.removeUnused(mesh) : 0;
+      if (n > 0) statusToast('').done(n === 1 ? 'Removed 1 unused group' : `Removed ${n} unused groups`);
+      else statusToast('').done('No unused groups');
+    });
+    prune.title = 'Remove the groups no face is in any more';
+    prune.dataset.role = 'groups-remove-unused';
+    clearRow.append(clear, prune);
     sec.appendChild(clearRow);
     // Groups: the list, and Show all for what it hides.
     sec.appendChild(subheading('Groups'));
