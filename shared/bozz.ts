@@ -153,6 +153,15 @@ export const MAX_GROUPS = 4096;
  */
 export const GROUPS_V = 2;
 export const GROUPS_V1 = 1;
+/**
+ * A group's colour in the poly groups record (SavedMesh.groups.colors,
+ * 2026-11-01, optional): one u32 a group, 0xRRGGBB (sRGB, as the colour
+ * picker gives it), or this value for the group's default hue. An older
+ * build leaves the field behind; the record stays at version 2.
+ */
+export const GROUP_COLOR_DEFAULT = 0xffffffff;
+/** Whether a stored group colour is one: a 24-bit 0xRRGGBB or the default. */
+export const isGroupColor = (c: number): boolean => c === GROUP_COLOR_DEFAULT || (c >= 0 && c <= 0xffffff);
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -182,8 +191,10 @@ const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.i
  *   u32 a face of level 0 (`nbBaseFaces`), or version 1 with one a face
  *   of its top level (the base faces times four a level above the
  *   first), one to MAX_GROUPS names of at most MAX_NAME characters,
- *   and hidden flags, where there are any, a u8 array of one a name. That
- *   every face names a group there is the app's to check;
+ *   hidden flags, where there are any, a u8 array of one a name, and
+ *   colours, where there are any, a u32 array of one a name. That every
+ *   face names a group there is, and every colour is 0xRRGGBB or
+ *   GROUP_COLOR_DEFAULT, is the app's to check;
  * - names of at most MAX_NAME characters, at most MAX_MATERIALS materials;
  * - a units marker, where there is one, that is 'cm' or 'm'
  *   (src/viewer/units.ts): the scales the app reads a scene on, an 'm'
@@ -285,6 +296,7 @@ export function checkHeader(layout: Layout): void {
     if (!Array.isArray(names) || names.length < 1 || names.length > MAX_GROUPS) bad(`not 1 to ${MAX_GROUPS} names`);
     for (const n of names as unknown[]) if (typeof n !== 'string' || n.length > MAX_NAME) bad('a name that is not one');
     if (r.hidden !== undefined && !array(r.hidden, 'u8', (names as unknown[]).length)) bad('hidden flags that are not one a group');
+    if (r.colors !== undefined && !array(r.colors, 'u32', (names as unknown[]).length)) bad('colours that are not one a group');
   };
 
   const scene = layout.scene;

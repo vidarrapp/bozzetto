@@ -106,9 +106,21 @@ function hsvRow(
   return { row, input };
 }
 
+export interface ColorPickerOptions {
+  /**
+   * The popover closed (outside press, Escape, the swatch again, close()):
+   * a host that keeps one undo step a pick commits here, the drag's
+   * onChange calls having only previewed (the poly groups' swatches).
+   */
+  onClose?: () => void;
+  /** The popover opened. */
+  onOpen?: () => void;
+}
+
 export function colorPicker(
   initial: string,
   onChange: (hex: string) => void,
+  opts: ColorPickerOptions = {},
 ): ColorPickerHandle {
   let hsv = hexToHsv(isHexColor(initial) ? initial : '#000000');
   /** The colour as last set or picked: what value() answers, exactly as it came. */
@@ -242,7 +254,9 @@ export function colorPicker(
   }
 
   const close = (): void => {
+    if (pop.hidden) return;
     pop.hidden = true;
+    opts.onClose?.();
   };
   const onDocDown = (e: PointerEvent): void => {
     if (pop.hidden) return;
@@ -266,11 +280,11 @@ export function colorPicker(
     }
   };
   swatch.addEventListener('click', () => {
-    pop.hidden = !pop.hidden;
-    if (!pop.hidden) {
-      paint();
-      place(); // measured after unhiding, so the size is real
-    }
+    if (!pop.hidden) return close();
+    pop.hidden = false;
+    opts.onOpen?.();
+    paint();
+    place(); // measured after unhiding, so the size is real
   });
   document.addEventListener('pointerdown', onDocDown, true);
   document.addEventListener('keydown', onKey, true);

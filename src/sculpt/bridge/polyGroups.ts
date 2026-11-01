@@ -1,6 +1,6 @@
 import Picking from '@sculpt-vendor/math3d/Picking';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
-import { GROUPS_V, MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
+import { GROUP_COLOR_DEFAULT, GROUPS_V, MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
 import { PointGrid } from './quadMesh';
 
 /**
@@ -44,6 +44,13 @@ import { PointGrid } from './quadMesh';
  * array (MeshDynamic._facesGroups), which follows the faces through
  * splits, collapses and undo.
  *
+ * Colours (owner request, 2026-11-01). A group shows its default hue
+ * (groupColor, golden-ratio steps) until one is picked for it in the
+ * Groups list; the pick is kept per group (`colors`, 0xRRGGBB sRGB, or
+ * GROUP_COLOR_DEFAULT) and goes wherever the group goes: a rename, a
+ * delete or Remove unused (the others keep theirs), a split into objects,
+ * a merge (by name), a copy, a file.
+ *
  * Hidden groups are not drawn (GeometrySync draws an index of the visible
  * triangles), not picked and not sculpted (the Picking hooks below). Every
  * edit here is one undo step.
@@ -58,6 +65,8 @@ export { defaultGroupName, sanitizeGroups, type SavedGroups } from './groupsReco
 interface GroupRecord {
   names: string[];
   hidden: Uint8Array;
+  /** One a group: 0xRRGGBB (sRGB) picked for it, or GROUP_COLOR_DEFAULT. */
+  colors: Uint32Array;
   version: number;
   /** Level 0's groups by level-0 instance. */
   byBase: WeakMap<object, Uint32Array>;
@@ -130,6 +139,71 @@ export function groupColor(g: number, out: Float32Array | number[] = [0, 0, 0], 
   out[at + 2] = rgb[2];
   return out;
 }
+
+/** A colour channel 0..1 from sRGB to linear (the display's vertex colours are linear). */
+const toLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+/** A colour channel 0..1 from linear to sRGB. */
+const toSRGB = (c: number): number => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+
+/** 0xRRGGBB (sRGB) as `#rrggbb`. */
+export function packedToHex(c: number): string {
+  return `#${(c & 0xffffff).toString(16).padStart(6, '0')}`;
+}
+
+/** `#rrggbb` as 0xRRGGBB, or null when it is not one. */
+export function hexToPacked(hex: string): number | null {
+  return /^#[0-9a-f]{6}$/i.test(hex) ? parseInt(hex.slice(1), 16) : null;
+}
+
+/**
+ * The colour group `g` shows, linear 0..1 RGB into `out`: `packed`
+ * (0xRRGGBB, sRGB) when one was picked, else its default hue.
+ */
+export function shownColor(g: number, packed: number, out: Float32Array | number[] = [0, 0, 0], at = 0): Float32Array | number[] {
+  if (packed === GROUP_COLOR_DEFAULT) return groupColor(g, out, at);
+  out[at] = toLinear(((packed >> 16) & 255) / 255);
+  out[at + 1] = toLinear(((packed >> 8) & 255) / 255);
+  out[at + 2] = toLinear((packed & 255) / 255);
+  return out;
+}
+
+/** The colour group `g` shows as `#rrggbb` (sRGB), as a swatch paints it. */
+export function shownHex(g: number, packed: number): string {
+  if (packed !== GROUP_COLOR_DEFAULT) return packedToHex(packed);
+  const rgb = groupColor(g);
+  let n = 0;
+  for (let k = 0; k < 3; k++) n = n * 256 + Math.round(Math.max(0, Math.min(1, toSRGB(rgb[k]))) * 255);
+  return packedToHex(n);
+}
+
+/**
+ * The colour a group keeps when it moves from number `from` to `to` (a
+ * delete, Remove unused, a split, a merge): its own, or, when it had its
+ * default hue and the number changes, that hue held as a colour of its
+ * own, so what shows on screen does not change with the numbering.
+ */
+export function heldColor(c: number, from: number, to: number): number {
+  if (c !== GROUP_COLOR_DEFAULT || from === to) return c;
+  return hexToPacked(shownHex(from, GROUP_COLOR_DEFAULT)) ?? GROUP_COLOR_DEFAULT;
+}
+
+/** Flags and colours `r` sized to its names: kept where they were, the new ones shown and default. */
+function fitToNames(r: { names: string[]; hidden: Uint8Array; colors: Uint32Array }): void {
+  const n = r.names.length;
+  if (r.hidden.length !== n) {
+    const hid = new Uint8Array(n);
+    hid.set(r.hidden.subarray(0, n));
+    r.hidden = hid;
+  }
+  if (r.colors.length !== n) {
+    const col = new Uint32Array(n).fill(GROUP_COLOR_DEFAULT);
+    col.set(r.colors.subarray(0, n));
+    r.colors = col;
+  }
+}
+
+/** Default colours for `n` groups. */
+const defaultColors = (n: number): Uint32Array => new Uint32Array(n).fill(GROUP_COLOR_DEFAULT);
 
 /**
  * Each face's neighbour across each of its edges: four slots a face (slot
@@ -230,17 +304,68 @@ export class PolyGroups {
   private rec(mesh: SculptMesh): GroupRecord {
     let r = this.records.get(mesh);
     if (!r) {
-      r = { names: [defaultGroupName(0)], hidden: new Uint8Array(1), version: 0, byBase: new WeakMap() };
+      r = { names: [defaultGroupName(0)], hidden: new Uint8Array(1), colors: defaultColors(1), version: 0, byBase: new WeakMap() };
       this.records.set(mesh, r);
     }
     return r;
   }
 
-  /** Whether the object has groups worth keeping: more than one, or one renamed, or anything hidden. */
+  /** Whether the object has groups worth keeping: more than one, or one renamed, hidden or coloured. */
   hasGroups(mesh: SculptMesh): boolean {
     const r = this.records.get(mesh);
     if (!r) return false;
-    return r.names.length > 1 || r.names[0] !== defaultGroupName(0) || r.hidden.some((h) => h !== 0);
+    return r.names.length > 1 || r.names[0] !== defaultGroupName(0) || r.hidden.some((h) => h !== 0) || this.anyColor(r);
+  }
+
+  private anyColor(r: GroupRecord): boolean {
+    for (let i = 0; i < r.colors.length; i++) if (r.colors[i] !== GROUP_COLOR_DEFAULT) return true;
+    return false;
+  }
+
+  /** One a group: 0xRRGGBB (sRGB) picked for it, or GROUP_COLOR_DEFAULT for its default hue. */
+  colors(mesh: SculptMesh): number[] {
+    const r = this.rec(mesh);
+    fitToNames(r);
+    return [...r.colors];
+  }
+
+  /** The colour group `g` shows, as `#rrggbb` (sRGB): its own, or its default hue. */
+  colorHex(mesh: SculptMesh, g: number): string {
+    return shownHex(g, this.rec(mesh).colors[g] ?? GROUP_COLOR_DEFAULT);
+  }
+
+  /**
+   * A colour for group `g` while it is being picked (the picker's drag):
+   * shown at once, with no undo state and no list refresh. setColor
+   * commits it. Returns whether the group is there.
+   */
+  previewColor(mesh: SculptMesh, g: number, packed: number): boolean {
+    const r = this.rec(mesh);
+    fitToNames(r);
+    if (g < 0 || g >= r.names.length) return false;
+    r.colors[g] = packed;
+    return true;
+  }
+
+  /**
+   * Group `g`'s colour, one undo step: 0xRRGGBB (sRGB), or
+   * GROUP_COLOR_DEFAULT for its default hue. `before` is the colour it had
+   * before a preview (previewColor) began, which the undo puts back.
+   * False when nothing changes.
+   */
+  setColor(mesh: SculptMesh, g: number, packed: number, before?: number): boolean {
+    const r = this.rec(mesh);
+    fitToNames(r);
+    if (g < 0 || g >= r.names.length) return false;
+    if (before !== undefined) r.colors[g] = before;
+    if (r.colors[g] === packed) {
+      if (before !== undefined) this.changed(mesh);
+      return false;
+    }
+    return this.edit(mesh, (_b, rr) => {
+      rr.colors[g] = packed;
+      return true;
+    });
   }
 
   names(mesh: SculptMesh): string[] {
@@ -551,11 +676,12 @@ export class PolyGroups {
       index[o + 2] = r === 0 ? c : r === 1 ? a : b;
     }
     const rgb = new Float32Array(3);
+    const own = this.records.get(mesh)?.colors;
     let last = -1;
     for (let v = 0; v < nbV; v++) {
       const g = owner[v] < 0 ? 0 : owner[v];
       if (g !== last) {
-        groupColor(g, rgb);
+        shownColor(g, own?.[g] ?? GROUP_COLOR_DEFAULT, rgb);
         last = g;
       }
       colors[v * 3] = rgb[0];
@@ -581,9 +707,12 @@ export class PolyGroups {
     const r = this.rec(mesh);
     const base = this.baseFaces(mesh);
     const before = base.slice();
+    fitToNames(r);
     const namesBefore = [...r.names];
     const hiddenBefore = r.hidden.slice();
+    const colorsBefore = r.colors.slice();
     if (!change(base, r)) return false;
+    fitToNames(r);
     let n = 0;
     for (let i = 0; i < base.length; i++) if (base[i] !== before[i]) n++;
     const at = new Uint32Array(n);
@@ -598,23 +727,25 @@ export class PolyGroups {
     }
     const namesAfter = [...r.names];
     const hiddenAfter = r.hidden.slice();
+    const colorsAfter = r.colors.slice();
     const level0 = levelsOf(mesh)[0];
-    const apply = (vals: Uint32Array, names: string[], hidden: Uint8Array): void => {
+    const apply = (vals: Uint32Array, names: string[], hidden: Uint8Array, colors: Uint32Array): void => {
       const faces = mesh.isDynamic ? this.baseFaces(mesh) : r.byBase.get(level0);
       if (faces) for (let i = 0; i < at.length; i++) if (at[i] < faces.length) faces[at[i]] = vals[i];
       r.names = [...names];
       r.hidden = hidden.slice();
+      r.colors = colors.slice();
       this.changed(mesh);
       this.host.render();
     };
     this.host.getStateManager().pushStateCustom(
       () => {
         extra?.undo();
-        apply(was, namesBefore, hiddenBefore);
+        apply(was, namesBefore, hiddenBefore, colorsBefore);
       },
       () => {
         extra?.redo();
-        apply(now, namesAfter, hiddenAfter);
+        apply(now, namesAfter, hiddenAfter, colorsAfter);
       },
     );
     extra?.redo();
@@ -727,9 +858,7 @@ export class PolyGroups {
       mesh,
       (base, rr) => {
         rr.names.push(this.newName(rr));
-        const hid = new Uint8Array(rr.names.length);
-        hid.set(rr.hidden);
-        rr.hidden = hid;
+        fitToNames(rr);
         for (let a = 0; a < joins.length; a++) if (joins[a]) base[a] = g;
         return true;
       },
@@ -772,6 +901,7 @@ export class PolyGroups {
     return this.edit(mesh, (base, r) => {
       r.names = names.map((n) => n.slice(0, MAX_NAME));
       r.hidden = new Uint8Array(names.length);
+      r.colors = defaultColors(names.length);
       base.set(perFace.subarray(0, base.length));
       return true;
     });
@@ -846,6 +976,7 @@ export class PolyGroups {
       const r = this.rec(mesh);
       r.names = names.slice(0, MAX_GROUPS).map((n) => n.slice(0, MAX_NAME));
       r.hidden = new Uint8Array(r.names.length);
+      r.colors = defaultColors(r.names.length);
       if (mesh.isDynamic) this.baseFaces(mesh).set(perFace);
       else r.byBase.set(levels[0], new Uint32Array(perFace));
       this.changed(mesh);
@@ -872,11 +1003,11 @@ export class PolyGroups {
       const name = this.newName(rr);
       const g = rr.names.length;
       rr.names.push(name);
-      const hid = new Uint8Array(rr.names.length);
-      hid.set(rr.hidden);
-      rr.hidden = hid;
+      fitToNames(rr);
       for (let i = 0; i < b.length; i++) if (!rr.hidden[b[i]]) b[i] = g;
       made = compact(b, rr)[g];
+      // The new group is new: its default hue, whatever number it took.
+      if (made >= 0) rr.colors[made] = GROUP_COLOR_DEFAULT;
       return true;
     });
     return made;
@@ -1028,6 +1159,9 @@ export class PolyGroups {
       const hid = new Uint8Array(rr.names.length);
       for (let i = 0, j = 0; i < rr.hidden.length; i++) if (i !== g) hid[j++] = rr.hidden[i];
       rr.hidden = hid;
+      const col = defaultColors(rr.names.length);
+      for (let i = 0, j = 0; i < rr.colors.length && j < col.length; i++) if (i !== g) col[j] = heldColor(rr.colors[i], i, j++);
+      rr.colors = col;
       return true;
     });
   }
@@ -1081,6 +1215,8 @@ export class PolyGroups {
     const r = this.rec(mesh);
     const out: SavedGroups = { v: GROUPS_V, faces: new Uint32Array(this.baseFaces(mesh)), names: [...r.names] };
     if (r.hidden.some((h) => h !== 0)) out.hidden = r.hidden.slice();
+    fitToNames(r);
+    if (this.anyColor(r)) out.colors = r.colors.slice();
     return out;
   }
 
@@ -1093,6 +1229,8 @@ export class PolyGroups {
     r.names = [...saved.names];
     r.hidden = new Uint8Array(saved.names.length);
     if (saved.hidden) r.hidden.set(saved.hidden.subarray(0, r.names.length));
+    r.colors = defaultColors(saved.names.length);
+    if (saved.colors) r.colors.set(saved.colors.subarray(0, r.names.length));
     if (mesh.isDynamic) this.baseFaces(mesh).set(saved.faces);
     else r.byBase.set(level0, new Uint32Array(saved.faces));
     this.changed(mesh);
@@ -1124,6 +1262,8 @@ export class PolyGroups {
     const dst = this.rec(to);
     dst.names = [...r.names];
     dst.hidden = r.hidden.slice();
+    fitToNames(r);
+    dst.colors = r.colors.slice();
     if (to.isDynamic) this.baseFaces(to).set(out);
     else dst.byBase.set(levelsOf(to)[0], out);
     this.changed(to);
@@ -1141,11 +1281,13 @@ export class PolyGroups {
     if (!withGroups.length) return;
     const names: string[] = [];
     const hidden: number[] = [];
+    const colors: number[] = [];
     const ids = new Map<string, number>();
     let total = 0;
     const parts: { centres: Float32Array; groups: Uint32Array; map: Uint32Array }[] = [];
     for (const src of sources) {
       const r = this.rec(src);
+      fitToNames(r);
       const map = new Uint32Array(r.names.length);
       r.names.forEach((n, i) => {
         let id = ids.get(n);
@@ -1154,6 +1296,7 @@ export class PolyGroups {
           ids.set(n, id);
           names.push(n);
           hidden.push(r.hidden[i] ? 1 : 0);
+          colors.push(heldColor(r.colors[i], i, id));
         }
         map[i] = id;
       });
@@ -1182,6 +1325,7 @@ export class PolyGroups {
     const dst = this.rec(to);
     dst.names = names.slice(0, MAX_GROUPS);
     dst.hidden = Uint8Array.from(hidden.slice(0, MAX_GROUPS));
+    dst.colors = Uint32Array.from(colors.slice(0, MAX_GROUPS));
     if (to.isDynamic) this.baseFaces(to).set(out);
     else dst.byBase.set(level, out);
     this.changed(to);
@@ -1195,26 +1339,29 @@ export class PolyGroups {
 
 /**
  * Drop the groups no face of `base` is in, in place: the rest keep their
- * order, names and hidden flags, and the faces are renumbered. Returns the
+ * order, names, hidden flags and colours, and the faces are renumbered. Returns the
  * new number of each old group (-1 for one dropped). Group 0 stays when
  * nothing is left.
  */
-function compact(base: Uint32Array, r: { names: string[]; hidden: Uint8Array }): Int32Array {
+function compact(base: Uint32Array, r: { names: string[]; hidden: Uint8Array; colors: Uint32Array }): Int32Array {
   const used = new Uint8Array(r.names.length);
   for (let i = 0; i < base.length; i++) if (base[i] < used.length) used[base[i]] = 1;
   if (!used.some((u) => u)) used[0] = 1;
   const to = new Int32Array(r.names.length).fill(-1);
   const names: string[] = [];
   const hidden: number[] = [];
+  const colors: number[] = [];
   for (let g = 0; g < r.names.length; g++) {
     if (!used[g]) continue;
     to[g] = names.length;
     names.push(r.names[g]);
     hidden.push(r.hidden[g] ?? 0);
+    colors.push(heldColor(r.colors[g] ?? GROUP_COLOR_DEFAULT, g, to[g]));
   }
   for (let i = 0; i < base.length; i++) base[i] = Math.max(0, to[base[i]] ?? 0);
   r.names = names;
   r.hidden = Uint8Array.from(hidden);
+  r.colors = Uint32Array.from(colors);
   return to;
 }
 

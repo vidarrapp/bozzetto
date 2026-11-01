@@ -67,8 +67,8 @@ import {
   writeOriginalObj,
   type ObjSource,
 } from './objSource';
-import { defaultGroupName, PolyGroups } from './polyGroups';
-import { GROUPS_V } from '../../../shared/bozz';
+import { defaultGroupName, heldColor, PolyGroups } from './polyGroups';
+import { GROUP_COLOR_DEFAULT, GROUPS_V } from '../../../shared/bozz';
 import type { SavedGroups } from './groupsRecord';
 
 /**
@@ -1440,7 +1440,8 @@ export class SculptSession {
   /**
    * Edit > Split groups into objects: each group of `mesh` with faces
    * becomes an object of its own, named after the group, at the same
-   * transform; the original goes. One undo step. Returns the new objects
+   * transform, its one group the group it was (name and colour); the
+   * original goes. One undo step. Returns the new objects
    * (the caller gives them the original's material), and whether they were
    * cut at the level on screen rather than at level 0 (see partOf).
    */
@@ -1459,7 +1460,9 @@ export class SculptSession {
       let name = names[g];
       for (let k = 2; taken.has(name); k++) name = `${names[g]} ${k}`;
       taken.add(name);
-      const part = this.partOf(mesh, keep, name, null);
+      // The part keeps its group, name and colour (owner request,
+      // 2026-11-01: a colour follows its group into the split).
+      const part = this.partOf(mesh, keep, name, base);
       if (!part) continue;
       flat ||= part.flat;
       made.push(part.mesh);
@@ -1678,21 +1681,27 @@ export class SculptSession {
       }
     }
     if (groupFaces) {
-      // The groups the part has faces in, in order, everything shown.
+      // The groups the part has faces in, in order, with their colours,
+      // everything shown.
       const names = this.groups.names(mesh);
+      const colors = this.groups.colors(mesh);
       const to = new Map<number, number>();
       const kept: string[] = [];
+      const keptColors: number[] = [];
       for (let i = 0; i < groupFaces.length; i++) {
         let g = to.get(groupFaces[i]);
         if (g === undefined) {
           g = kept.length;
           to.set(groupFaces[i], g);
           kept.push(names[groupFaces[i]] ?? defaultGroupName(g));
+          keptColors.push(heldColor(colors[groupFaces[i]] ?? GROUP_COLOR_DEFAULT, groupFaces[i], g));
         }
         groupFaces[i] = g;
       }
       const grouped: SavedGroups = { v: GROUPS_V, faces: groupFaces, names: kept };
-      if (kept.length > 1 || kept[0] !== defaultGroupName(0)) saved.groups = grouped;
+      const coloured = keptColors.some((c) => c !== GROUP_COLOR_DEFAULT);
+      if (coloured) grouped.colors = Uint32Array.from(keptColors);
+      if (kept.length > 1 || kept[0] !== defaultGroupName(0) || coloured) saved.groups = grouped;
     }
     const made = this.buildRestoredMesh(saved, false);
     if (!flat && made._sel !== sel) {
@@ -1820,7 +1829,14 @@ export class SculptSession {
       if (bake !== 1) for (let i = 0; i < positions.length; i++) positions[i] *= bake;
       base.setVertices(positions);
       base.setFaces(new Uint32Array(part.faces));
-      base.init();
+      // A part with poly groups keeps the file's face order, which its
+      // groups are numbered in (the vendor's cache reordering would lose it).
+      if (part.groups) Mesh.OPTIMIZE = false;
+      try {
+        base.init();
+      } finally {
+        Mesh.OPTIMIZE = true;
+      }
       const mesh = new Multimesh(base);
       const m = mesh.getMatrix() as unknown as mat4;
       mat4.fromTranslation(m, [
@@ -1830,6 +1846,19 @@ export class SculptSession {
       ]);
       mat4.scale(m, m, [scale, scale, scale]);
       this.subdivideClamp(mesh, info.smooth === false, even ? 1000 : k === 0 ? 20000 : 2000);
+      // The file's groups (its face sets, a blockout's lumps) on level 0;
+      // where the clamp dropped the lowest levels, each face of the new
+      // level 0 takes its file face's group (face f's is f >> 2d, d levels up).
+      if (part.groups) {
+        const src = part.groups.faces;
+        const n0 = mesh._meshes[0].getNbFaces();
+        let shift = 0;
+        while (src.length << shift < n0) shift += 2;
+        if (src.length << shift === n0) {
+          const perFace = shift ? Uint32Array.from({ length: n0 }, (_, f) => src[f >> shift]) : src;
+          this.groups.fromLevel0(mesh as unknown as SculptMesh, perFace, part.groups.names, false);
+        }
+      }
       const name = !even && k === 0 ? info.label : part.name;
       this.meshNames.set(mesh as unknown as SculptMesh, this.uniqueMeshName(name));
       meshes.push(mesh);

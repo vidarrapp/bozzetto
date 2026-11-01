@@ -23,6 +23,25 @@ and its two eyes, say), each an independent welded mesh:
       u16|u32 faces[nFaces*4]   quads; a triangle's 4th index is 0xFFFF / 0xFFFFFFFF
       zero padding to a 4-byte boundary
 
+After the parts, optionally, the parts' POLY GROUPS (2026-11-01; a reader
+from before it stops after the parts and never sees them):
+
+    'GRPS'  u32 version=1  u32 partCount
+    per part:
+      u32 nGroups            0: the part has no groups (one face set, or none)
+      per group: u32 nameLen, name (utf-8, zero-padded to 4 bytes)
+      u32 indexBytes (1 or 2), then one group index a face (u8|u16),
+      zero padding to a 4-byte boundary
+
+A part's groups are its sculpt FACE SETS (Blender's `.sculpt_face_set`
+face attribute), as the evaluated mesh carries them at the exported
+level: each set a group, numbered by its first face and named by body
+region from FACE_SET_NAMES below (Blender's face sets have numbers, not
+names). A
+voxel-remeshed blockout has no face sets left; tools/basemesh-groups.mjs
+gives it its lumps' names instead (each face the nearest lump), and this
+script runs it after writing the shells when node is on the PATH.
+
 Everything is little-endian, in metres, Y up, facing +Z (Blender's Z up
 and -Y forward rotated: x, z, -y). Each part's positions are relative to
 its own bounding-box centre so the app can pivot it on itself; `offset`
@@ -45,7 +64,9 @@ off here anyway.
 """
 
 import os
+import shutil
 import struct
+import subprocess
 import sys
 
 import bpy
@@ -139,12 +160,30 @@ def set_levels(ob, level):
             m.show_viewport = False
 
 
-def evaluated_geometry(ob, dg):
+FACE_SET = ('.sculpt_face_set', 'sculpt_face_set')
+
+
+def face_sets_of(me):
+    """The evaluated mesh's face set a polygon, or None when it has none."""
+    for name in FACE_SET:
+        a = me.attributes.get(name)
+        if a is not None and a.domain == 'FACE' and len(a.data) == len(me.polygons):
+            vals = [0] * len(a.data)
+            a.data.foreach_get('value', vals)
+            return vals
+    return None
+
+
+def evaluated_geometry(ob, dg, with_sets=False):
     """World-space, Y-up positions and polygon index lists of an object as
-    evaluated with its modifiers."""
+    evaluated with its modifiers (and, with `with_sets`, its face set a
+    polygon, or None)."""
     ev = ob.evaluated_get(dg)
     me = ev.to_mesh()
+    sets = None
     try:
+        if with_sets:
+            sets = face_sets_of(me)
         mw = ev.matrix_world
         verts = []
         for v in me.vertices:
@@ -164,6 +203,8 @@ def evaluated_geometry(ob, dg):
             polys = [(q[0],) + q[:0:-1] for q in polys]
     finally:
         ev.to_mesh_clear()
+    if with_sets:
+        return verts, polys, sets
     return verts, polys
 
 
@@ -264,18 +305,221 @@ def part_name(ob, asset_id):
     return ' '.join(w.capitalize() if len(w) > 1 else w for w in tail.split('.'))
 
 
-def quads_of(polys):
-    """Polygon index lists -> flat quad list (tri marker as None), fanning n-gons."""
+def quads_of(polys, sets=None):
+    """Polygon index lists -> flat quad list (tri marker as None), fanning
+    n-gons; with `sets` (one a polygon), also each quad's polygon's set."""
     out = []
-    for p in polys:
+    out_sets = []
+    for i, p in enumerate(polys):
         if len(p) == 4:
+            n = 1
             out.append(p)
         elif len(p) == 3:
+            n = 1
             out.append((p[0], p[1], p[2], None))
         else:
+            n = len(p) - 2
             for k in range(1, len(p) - 1):
                 out.append((p[0], p[k], p[k + 1], None))
+        if sets is not None:
+            out_sets.extend([sets[i]] * n)
+    if sets is not None:
+        return out, out_sets
     return out
+
+
+# --- face set names -----------------------------------------------------
+#
+# Blender's face sets are numbers. These tables name each mesh's sets by
+# body region (Vidar's call, 2026-11-01), worked out from each set's
+# geometry in the bundle v1.4.1 (centroid, extent, side of X = 0 and which
+# sets it borders; the probe printed them per mesh). L and R are the
+# model's own sides: in Blender's front view the figures face -Y, so the
+# model's left is +X. A mesh built with a Mirror modifier has one set for
+# both sides, named in the plural ("Thighs"). A name ending in a number
+# ("Mouth lining 1") is a set whose region is a best guess. A set missing
+# from its table is "Face set <n>" and is printed as a warning.
+
+def _digits(prefix, side, ids):
+    """Finger or toe segments: ids for base, middle, tip and nail."""
+    parts = ('base', 'middle', 'tip')
+    out = {}
+    for i, part in zip(ids[:3], parts):
+        out[i] = f'{prefix} {part} {side}'
+    if len(ids) > 3:
+        nail = 'Thumbnail' if prefix == 'Thumb' else (prefix.replace(' finger', ' fingernail') if 'finger' in prefix else prefix.replace(' toe', ' toenail'))
+        out[ids[3]] = f'{nail} {side}'
+    return out
+
+
+def _body_realistic():
+    t = {
+        1: 'Torso', 2: 'Eye socket L', 3: 'Eye socket R', 4: 'Ear L', 5: 'Ear R',
+        7: 'Upper lip', 8: 'Lower lip', 22: 'Mouth area', 17: 'Head and neck',
+        9: 'Hand L', 10: 'Hand R', 11: 'Forearm R', 12: 'Forearm L',
+        20: 'Upper arm R', 21: 'Upper arm L', 19: 'Waist', 18: 'Pelvis',
+        23: 'Thigh R', 24: 'Thigh L', 16: 'Shin R', 15: 'Shin L',
+        13: 'Foot R', 14: 'Foot L', 26: 'Forefoot R', 25: 'Forefoot L',
+        # The right big toe has a base of its own; the left one's is in the forefoot.
+        31: 'Big toe base R', 36: 'Big toe tip R', 37: 'Big toenail R',
+        46: 'Big toe tip L', 47: 'Big toenail L',
+    }
+    for side, toes in (('R', ((27, 32, 38, 42), (28, 33, 39, 43), (29, 34, 40, 44), (30, 35, 41, 45))),
+                       ('L', ((48, 49, 50, 51), (52, 53, 54, 55), (56, 57, 58, 59), (60, 61, 62, 63)))):
+        for name, ids in zip(('Second toe', 'Middle toe', 'Fourth toe', 'Little toe'), toes):
+            t.update(_digits(name, side, ids))
+    for side, fingers in (('R', ((84, 85, 86, 87), (88, 89, 90, 91), (92, 93, 94, 95), (96, 97, 98, 99), (100, 101, 102, 103))),
+                          ('L', ((80, 81, 82, 83), (76, 77, 78, 79), (72, 73, 74, 75), (68, 69, 70, 71), (64, 65, 66, 67)))):
+        for name, ids in zip(('Thumb', 'Index finger', 'Middle finger', 'Ring finger', 'Little finger'), fingers):
+            t.update(_digits(name, side, ids))
+    return t
+
+
+# The stylized fingers, the same numbers on the figures and the hand.
+_STYLIZED_FINGERS = {
+    'Thumb': (288, 285, 284), 'Index finger': (278, 283, 282), 'Middle finger': (277, 279, 272),
+    'Ring finger': (280, 274, 275), 'Little finger': (281, 286, 276),
+}
+
+
+def _fingers(plural):
+    t = {}
+    for name, ids in _STYLIZED_FINGERS.items():
+        for i, part in zip(ids, ('base', 'middle', 'tip')):
+            t[i] = f'{name} {part}s' if plural else f'{name} {part}'
+    return t
+
+
+# The stylized head, on the figures and on its own (one Mirror modifier: both sides in one set).
+_HEAD_STYLIZED = {
+    44: 'Head', 6: 'Neck', 46: 'Jaw', 45: 'Nose', 29: 'Ears', 27: 'Eye areas 1', 28: 'Eyelids',
+    37: 'Eye sockets', 47: 'Upper lip', 48: 'Lower lip', 49: 'Mouth interior',
+}
+
+FACE_SET_NAMES = {
+    'body-realistic': _body_realistic(),
+    'body-stylized': {
+        **_HEAD_STYLIZED, **_fingers(True), 359: 'Thumb bases',
+        259: 'Torso', 260: 'Shoulders', 258: 'Pelvis', 263: 'Upper arms', 262: 'Forearms', 273: 'Hands',
+        256: 'Thighs', 257: 'Shins', 288: 'Ankles', 316: 'Feet', 317: 'Forefeet',
+        318: 'Big toes', 319: 'Second toes', 320: 'Middle toes', 321: 'Fourth toes', 322: 'Little toes',
+    },
+    'head-realistic': {
+        11: 'Cranium', 8: 'Upper face', 2: 'Eye socket R', 3: 'Eye socket L', 4: 'Ear R', 5: 'Ear L',
+        9: 'Nose', 6: 'Mouth', 7: 'Jaw', 10: 'Neck', 12: 'Neck base',
+    },
+    'head-stylized': {**_HEAD_STYLIZED, 359: 'Neck base'},
+    'eye-stylized': {358: 'Sclera', 53: 'Iris', 52: 'Pupil'},
+    'hand-realistic': {
+        24: 'Hand', 10: 'Fingernails',
+        23: 'Thumb base', 22: 'Thumb middle', 21: 'Thumb tip',
+        19: 'Index finger base', 16: 'Index finger middle', 3: 'Index finger tip',
+        18: 'Middle finger base', 15: 'Middle finger middle', 4: 'Middle finger tip',
+        17: 'Ring finger base', 14: 'Ring finger middle', 5: 'Ring finger tip',
+        13: 'Little finger base', 12: 'Little finger middle', 11: 'Little finger tip',
+    },
+    'hand-stylized': {**_fingers(False), 273: 'Hand', 262: 'Wrist', 287: 'Wrist cap'},
+    'foot-realistic': {
+        13: 'Ankle', 1: 'Foot', 12: 'Forefoot', 3: 'Toe tips 1', 2: 'Toenails', 8: 'Big toe',
+        9: 'Second toe base', 4: 'Second toe middle', 10: 'Middle toe base', 5: 'Middle toe middle',
+        11: 'Outer toes 1', 6: 'Outer toes 2',
+    },
+    'foot-stylized': {
+        316: 'Foot', 317: 'Forefoot', 288: 'Ankle', 323: 'Ankle cap',
+        318: 'Big toe', 319: 'Second toe', 320: 'Middle toe', 321: 'Fourth toe', 322: 'Little toe',
+    },
+    'skull-realistic': {
+        7: 'Cranium', 1: 'Frontal bone', 9: 'Parietal L', 18: 'Parietal R', 6: 'Temporal L', 16: 'Temporal R',
+        5: 'Zygomatic L', 15: 'Zygomatic R', 4: 'Maxilla L', 14: 'Maxilla R', 8: 'Sphenoid 1 L', 17: 'Sphenoid 1 R',
+        2: 'Nasal bone L', 12: 'Nasal bone R', 3: 'Lacrimal L', 13: 'Lacrimal R', 11: 'Nasal septum', 10: 'Vomer',
+        33: 'Mandible', 34: 'Upper teeth', 35: 'Lower teeth',
+    },
+    'skull-planar': {1: 'Cranium', 2: 'Face', 6: 'Cheekbones 1', 4: 'Mandible', 5: 'Teeth'},
+}
+
+
+def _teeth(rows):
+    t = {}
+    for (jaw, side), ids, names in rows:
+        for i, n in zip(ids, names):
+            t[i] = f'{jaw} {n} {side}'
+    return t
+
+
+_REAL_TEETH = ('central incisor', 'lateral incisor', 'canine', 'first premolar', 'second premolar', 'first molar', 'second molar')
+FACE_SET_NAMES['jaw-realistic'] = {
+    31: 'Tongue', 93: 'Upper gum', 155: 'Lower gum', 157: 'Mouth lining 1',
+    **_teeth((
+        (('Lower', 'L'), (158, 165, 166, 167, 168, 169, 170), _REAL_TEETH),
+        (('Upper', 'L'), (171, 159, 160, 161, 162, 163, 164), _REAL_TEETH),
+        (('Lower', 'R'), (172, 179, 180, 181, 182, 183, 184), _REAL_TEETH),
+        (('Upper', 'R'), (185, 173, 174, 175, 176, 177, 178), _REAL_TEETH),
+    )),
+}
+_STYL_TEETH = ('central incisor', 'lateral incisor', 'canine', 'premolar', 'first molar', 'second molar', 'third molar')
+FACE_SET_NAMES['jaw-stylized'] = {
+    351: 'Tongue', 352: 'Tongue base', 353: 'Upper gum', 354: 'Upper gum top', 355: 'Lower gum', 356: 'Lower gum base',
+    **_teeth((
+        (('Upper', 'L'), (323, 328, 326, 324, 329, 327, 325), _STYL_TEETH),
+        (('Upper', 'R'), (330, 335, 333, 331, 336, 334, 332), _STYL_TEETH),
+        (('Lower', 'L'), (337, 342, 339, 338, 343, 341, 340), _STYL_TEETH),
+        (('Lower', 'R'), (344, 349, 346, 345, 350, 348, 347), _STYL_TEETH),
+    )),
+}
+
+
+def face_set_table(asset_id, ob):
+    """The names table for one part of an asset, or None."""
+    if '.eye.' in ob.name or asset_id == 'eye-stylized':
+        return FACE_SET_NAMES['eye-stylized']
+    key = asset_id.replace('-male', '').replace('-female', '')
+    return FACE_SET_NAMES.get(key)
+
+
+def groups_of(face_sets, table=None, label=''):
+    """Face sets (one a face) -> (names, one group index a face), the
+    groups numbered by first face and named from `table` (face set number
+    -> name; "Face set <n>" where it has none); None for fewer than two."""
+    if not face_sets:
+        return None
+    order = {}
+    for v in face_sets:
+        if v not in order:
+            order[v] = len(order)
+    if len(order) < 2:
+        return None
+    names = []
+    for i, v in enumerate(order):
+        name = (table or {}).get(v)
+        if name is None:
+            name = f'Face set {i + 1}'
+            print(f'  WARNING {label}: face set {v} has no name in FACE_SET_NAMES')
+        names.append(name)
+    if len(set(names)) != len(names):
+        raise SystemExit(f'{label}: two face sets share a name')
+    unused = sorted(set(table or {}) - set(order))
+    if table and unused:
+        print(f'  WARNING {label}: FACE_SET_NAMES has sets the mesh does not: {unused}')
+    return names, [order[v] for v in face_sets]
+
+
+def groups_trailer(groups):
+    """The 'GRPS' section: `groups` one a part, (names, indices) or None."""
+    chunks = [struct.pack('<4sII', b'GRPS', 1, len(groups))]
+    for g in groups:
+        if g is None:
+            chunks.append(struct.pack('<I', 0))
+            continue
+        names, idx = g
+        chunks.append(struct.pack('<I', len(names)))
+        for n in names:
+            nb = n.encode('utf-8')
+            chunks.append(struct.pack('<I', len(nb)) + nb + b'\0' * (-len(nb) % 4))
+        one = len(names) <= 256
+        chunks.append(struct.pack('<I', 1 if one else 2))
+        body = struct.pack(f'<{len(idx)}{"B" if one else "H"}', *idx)
+        chunks.append(body + b'\0' * (-len(body) % 4))
+    return b''.join(chunks)
 
 
 def bbox(verts):
@@ -316,8 +560,9 @@ def check_outward(file_id, parts):
     return vols
 
 
-def write_bzm(path, parts):
-    """parts: list of (name, verts, quads) in the shared asset frame."""
+def write_bzm(path, parts, groups=None):
+    """parts: list of (name, verts, quads) in the shared asset frame;
+    groups: None, or one a part, (names, one index a quad) or None."""
     allv = [v for _, verts, _ in parts for v in verts]
     lo, hi = bbox(allv)
     centre = tuple((lo[i] + hi[i]) / 2 for i in range(3))
@@ -345,6 +590,8 @@ def write_bzm(path, parts):
         if two and len(idx) % 2:
             chunks.append(b'\0\0')
         stats.append((name, len(verts), len(quads), sum(1 for q in quads if q[3] is None)))
+    if groups and any(g is not None for g in groups):
+        chunks.append(groups_trailer(groups))
     data = b''.join(chunks)
     with open(path, 'wb') as f:
         f.write(data)
@@ -376,6 +623,7 @@ def main():
     os.makedirs(os.path.join(out, 'thumbs'), exist_ok=True)
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(blend))
     manifest = []
+    shells = []
     for entry in ASSETS:
         if opts['only'] and entry['id'] not in opts['only']:
             continue
@@ -387,18 +635,28 @@ def main():
         if entry.get('voxel'):
             verts, polys = remeshed(objs, entry['voxel'], dg)
             parts = [(entry['id'], verts, quads_of(polys))]
+            groups = None
         else:
             parts = []
+            groups = []
             # The main part first (the one that is not parented to another
             # part), then the rest in name order, so the app selects the body
             # rather than an eye after adding.
             ordered = sorted(objs, key=lambda o: (o.parent is not None, o.name))
             for ob in ordered:
-                verts, polys = evaluated_geometry(ob, dg)
-                parts.append((part_name(ob, entry['id']), verts, quads_of(polys)))
+                verts, polys, sets = evaluated_geometry(ob, dg, with_sets=True)
+                quads, quad_sets = quads_of(polys, sets if sets is not None else [0] * len(polys))
+                parts.append((part_name(ob, entry['id']), verts, quads))
+                label = f"{entry['id']} {ob.name}"
+                groups.append(groups_of(quad_sets, face_set_table(entry['id'], ob), label) if sets is not None else None)
         path = os.path.join(out, f"{entry['id']}.bzm")
         vols = check_outward(entry['id'], parts)
-        size, stats, dims = write_bzm(path, parts)
+        size, stats, dims = write_bzm(path, parts, groups)
+        if groups:
+            for (name, _, _), g in zip(parts, groups):
+                print(f'    {name}: ' + (f'{len(g[0])} face sets' if g else 'no face sets'))
+        if entry.get('voxel'):
+            shells.append(entry['id'])
         if entry.get('parts'):
             split = []
             for ob in hierarchy_order(objs):
@@ -423,6 +681,14 @@ def main():
             print(f'    {s[0]}: v={s[1]} f={s[2]} tris={s[3]} vol={v * 1e6:+.1f} cm3')
         manifest.append(dict(id=entry['id'], parts=len(parts), verts=verts, faces=faces, bytes=size, author=ad.author))
     print('MANIFEST', manifest)
+    # The remeshed shells' groups, from their lumps (tools/basemesh-groups.mjs).
+    if shells:
+        tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'basemesh-groups.mjs')
+        node = shutil.which('node')
+        if node:
+            subprocess.run([node, tool, '--dir', out, *shells], check=True)
+        else:
+            print(f'node is not on the PATH: run `node tools/basemesh-groups.mjs --dir {out} ' + ' '.join(shells) + '` for the shells\' groups.')
 
 
 main()

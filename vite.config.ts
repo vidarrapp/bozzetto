@@ -165,7 +165,7 @@ export default defineConfig(({ mode }) => {
           // installed app online and offline.
           'assets/fonts/*.ttf',
           // The models and the default environment, from the first install
-          // (owner request): the base-mesh library (about 9.5 MB over 28
+          // (owner request): the base-mesh library (about 9.8 MB over 28
           // files), the four mannequins (4 MB) and the Neutral studio HDRI
           // (1.5 MB). Kept only once used, they left an offline session
           // whose Create menu tiles failed and whose new armature came up

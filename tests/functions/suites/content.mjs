@@ -76,9 +76,11 @@ const withSource = (h, edit) => {
  * version 2 by default, one u32 a face of level 0 (one face here); with
  * `v: 1`, one a face of the top level. `levels: 2` adds a level above the
  * base first, so the top has four faces to level 0's one. Two names, and a
- * u8 hidden flag a name. `edit` then has its way with them.
+ * u8 hidden flag a name; with `colors`, a u32 colour a name (2026-11-01,
+ * 0xRRGGBB or 0xFFFFFFFF for the default hue). `edit` then has its way
+ * with them.
  */
-const withGroups = (h, edit, { v = 2, levels = 1, len } = {}) => {
+const withGroups = (h, edit, { v = 2, levels = 1, len, colors = false } = {}) => {
   const add = (t, n) => {
     const end = h.buffers.reduce((e, b) => Math.max(e, b.off + b.len * (b.t === 'u8' ? 1 : 4)), 0);
     h.buffers.push({ t, off: Math.ceil(end / 4) * 4, len: n });
@@ -91,6 +93,7 @@ const withGroups = (h, edit, { v = 2, levels = 1, len } = {}) => {
   }
   const faces = len ?? (v === 1 ? mesh.nbBaseFaces * 4 ** (levels - 1) : mesh.nbBaseFaces);
   const groups = { v, faces: add('u32', faces), names: ['Group 1', 'Top'], hidden: add('u8', 2) };
+  if (colors) groups.colors = add('u32', 2);
   mesh.groups = groups;
   edit?.(groups, h);
 };
@@ -182,6 +185,11 @@ export async function run({ checks, on, off, compileShared, repo }) {
     [bozz({ edit: (h) => withGroups(h, (g) => (g.names[1] = 7)) }), /bad poly groups \(a name that is not one/, 'a poly group named by a number'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.hidden.__buf].len = 1)) }), /bad poly groups \(hidden flags/, 'hidden flags short of the groups'],
     [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.hidden.__buf].t = 'u32')) }), /bad poly groups \(hidden flags/, 'hidden flags of four bytes each'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].len = 1), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours short of the groups'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].len = 3), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours past the groups'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].t = 'f32'), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours that are floats'],
+    [bozz({ edit: (h) => withGroups(h, (g, hh) => (hh.buffers[g.colors.__buf].t = 'u8'), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours of one byte each'],
+    [bozz({ edit: (h) => withGroups(h, (g) => (g.colors = [0xff0000, 0xffffffff]), { colors: true }) }), /bad poly groups \(colours that are not one a group/, 'group colours as a plain list'],
     [bozz({ edit: (h) => (h.buffers[0].t = 'u16') }), /a bad buffer entry/, 'a buffer of sixteen-bit numbers'],
   ];
   for (const [file, reason, what] of cases) {
@@ -207,6 +215,8 @@ export async function run({ checks, on, off, compileShared, repo }) {
   t.ok(grouped.status === 201, `a scene with poly groups and their hidden flags (a u8 array) is taken (${grouped.status} ${grouped.json?.reason ?? ''})`);
   const { r: noHidden } = await send(bozz({ edit: (h) => withGroups(h, (g) => delete g.hidden) }));
   t.ok(noHidden.status === 201, `and one with nothing hidden (${noHidden.status} ${noHidden.json?.reason ?? ''})`);
+  const { r: coloured } = await send(bozz({ edit: (h) => withGroups(h, null, { colors: true }) }));
+  t.ok(coloured.status === 201, `and one with group colours, a u32 array of one a group (${coloured.status} ${coloured.json?.reason ?? ''})`);
   const { r: bareGroups } = await send(bozz({ raw: true, edit: (h) => withGroups(h) }));
   t.ok(bareGroups.status === 201, `and a bare one, its u8 array padded to four bytes (${bareGroups.status} ${bareGroups.json?.reason ?? ''})`);
   const { r: v2Two } = await send(bozz({ edit: (h) => withGroups(h, null, { levels: 2 }) }));

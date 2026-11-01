@@ -2175,10 +2175,18 @@ html.is-page body {
   background: var(--hover);
 }
 
-.groups-row__swatch {
+.groups-row__pick {
   flex: none;
-  width: 12px;
-  height: 12px;
+  display: flex;
+}
+
+/* The row's colour: the colour picker's own swatch (tap to choose, drag
+   over the view to pick), at the list's size. */
+.cpick__swatch.groups-row__swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: none;
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
 }

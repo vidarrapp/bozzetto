@@ -1,6 +1,8 @@
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, onTap } from '../../ui/dom';
-import { groupColor, TooManyGroups } from '../bridge/polyGroups';
+import { hexToPacked, TooManyGroups } from '../bridge/polyGroups';
+import { GeometrySync } from '../bridge/GeometrySync';
+import { installSwatchPick } from '../../ui/swatchPick';
 import { checkbox, compactRange, section, numberedRange, type SliderOptions } from '../../ui/Panel';
 import { setSliderValue, type Limits } from '../../ui/sliderEntry';
 
@@ -120,6 +122,14 @@ export class ModelPanel extends SidePanel {
   private groupAngle = 40;
   /** The group whose name is being typed, so a refresh mid-edit leaves the field be. */
   private renamingGroup = -1;
+  /** The Groups list's colour pickers, one a row (rebuilt with the list). */
+  private groupPickers: ColorPickerHandle[] = [];
+  /**
+   * The group whose colour is being picked, and the colour it had before
+   * (0xRRGGBB or the default): the picker previews, and its close (or the
+   * end of a drag over the view) commits one undo step.
+   */
+  private pickingGroup: { mesh: SculptMesh; g: number; before: number } | null = null;
   /** Shift+F's switch (mode.ts turns the colours on or off). */
   onGroupColors: ((on: boolean) => void) | null = null;
   /** From mask (Ctrl+G's twin). */
@@ -608,7 +618,11 @@ export class ModelPanel extends SidePanel {
     if (this.uvButton) this.uvButton.disabled = !mesh || !this.session.hasUVIslands(mesh);
     if (this.clearGroupsButton) this.clearGroupsButton.disabled = !mesh || !this.session.groups.hasGroups(mesh);
     if (this.renamingGroup >= 0 && list.contains(document.activeElement)) return;
+    // A picker that is up keeps its row; its close refreshes the list.
+    if (this.groupPickers.some((p) => p.isOpen())) return;
     this.renamingGroup = -1;
+    for (const p of this.groupPickers) p.dispose();
+    this.groupPickers = [];
     list.replaceChildren();
     if (!mesh) return;
     const groups = this.session.groups;
@@ -616,14 +630,13 @@ export class ModelPanel extends SidePanel {
     const hidden = groups.hiddenGroups(mesh);
     const counts = groups.counts(mesh);
     if (this.showAllButton) this.showAllButton.disabled = !hidden.some(Boolean);
+    const colors = groups.colors(mesh);
     const rows = Math.min(names.length, ModelPanel.GROUP_ROWS);
     for (let g = 0; g < rows; g++) {
       const row = div('groups-row');
       row.dataset.group = String(g);
       if (hidden[g]) row.classList.add('groups-row--hidden');
-      const swatch = div('groups-row__swatch');
-      const [r, gr, b] = groupColor(g) as number[];
-      swatch.style.background = `rgb(${Math.round(r * 255)}, ${Math.round(gr * 255)}, ${Math.round(b * 255)})`;
+      const swatch = this.groupSwatch(mesh, g, names[g], colors[g]);
       const name = document.createElement('button');
       name.type = 'button';
       name.className = 'groups-row__name';
@@ -643,6 +656,58 @@ export class ModelPanel extends SidePanel {
       more.textContent = `and ${names.length - rows} more`;
       list.appendChild(more);
     }
+  }
+
+  /**
+   * A row's colour swatch (owner request, 2026-11-01): a tap opens the
+   * app's colour picker, a drag over the view samples the frame, as every
+   * other swatch does. The colour shows on the group's faces as it moves
+   * (the Shift+F colours come on if they were off); closing the picker, or
+   * letting go of a drag, makes it one undo step.
+   */
+  private groupSwatch(mesh: SculptMesh, g: number, name: string, packed: number): HTMLElement {
+    const groups = this.session.groups;
+    // The colours come on as the popover opens; under a drag only once it
+    // ends, since turning them on rebuilds the list, the swatch with it.
+    const begin = (drag: boolean): void => {
+      const p = this.pickingGroup;
+      if (!p || p.mesh !== mesh || p.g !== g) this.pickingGroup = { mesh, g, before: packed };
+      if (!drag && !groups.isShowing()) this.onGroupColors?.(true);
+    };
+    const preview = (hex: string): void => {
+      const c = hexToPacked(hex);
+      if (c === null || !groups.previewColor(mesh, g, c)) return;
+      GeometrySync.refreshAll();
+      this.session.render();
+    };
+    const commit = (): void => {
+      const p = this.pickingGroup;
+      this.pickingGroup = null;
+      if (!p || p.mesh !== mesh || p.g !== g) return;
+      if (!groups.isShowing()) this.onGroupColors?.(true);
+      const now = groups.colors(mesh)[g];
+      if (now === undefined || !groups.setColor(mesh, g, now, p.before)) this.refreshGroups();
+    };
+    const picker = colorPicker(groups.colorHex(mesh, g), preview, { onOpen: () => begin(false), onClose: commit });
+    this.groupPickers.push(picker);
+    picker.root.classList.add('groups-row__pick');
+    const btn = picker.root.querySelector<HTMLElement>('.cpick__swatch');
+    if (btn) {
+      btn.classList.add('groups-row__swatch');
+      btn.dataset.role = 'group-color';
+      btn.title = `${name}: its colour (tap to choose, drag over the view to pick one)`;
+      btn.setAttribute('aria-label', `Colour of ${name}`);
+    }
+    installSwatchPick(picker, this.viewer, (hex) => {
+      begin(true);
+      preview(hex);
+    });
+    // The end of a drag over the view (swatchPick says so with a change);
+    // with the popover up, its close commits instead.
+    picker.root.addEventListener('change', () => {
+      if (!picker.isOpen()) commit();
+    });
+    return picker.root;
   }
 
   /** The name swapped for a field; Enter or leaving it renames, Escape keeps the name. */
@@ -864,6 +929,8 @@ export class ModelPanel extends SidePanel {
     this.cancelQuadRemesh();
     this.albedoPicker?.dispose();
     this.albedoPicker = null;
+    for (const p of this.groupPickers) p.dispose();
+    this.groupPickers = [];
     this.voxelOverlay?.dispose();
     this.voxelOverlay = null;
     super.dispose();

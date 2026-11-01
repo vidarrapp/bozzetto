@@ -1,4 +1,4 @@
-import { GROUPS_V, GROUPS_V1, MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
+import { GROUPS_V, GROUPS_V1, isGroupColor, MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
 
 /**
  * The poly groups' scene record (SavedMesh.groups), apart from
@@ -19,6 +19,12 @@ export interface SavedGroups {
   names: string[];
   /** One a group: 1 hidden. Absent when nothing is hidden. */
   hidden?: Uint8Array;
+  /**
+   * One a group: 0xRRGGBB (sRGB) picked for it, or GROUP_COLOR_DEFAULT
+   * (0xFFFFFFFF) for its default hue (groupColor). Absent when every group
+   * has its default.
+   */
+  colors?: Uint32Array;
 }
 
 /** The name a new group takes, when nothing else names it: "Group 1" for group 0. */
@@ -61,7 +67,8 @@ export function topToBase(top: Uint32Array, nbBaseFaces: number, levels: number)
  * a face of the top level (`levels` levels, four faces a face a level up),
  * which is rounded down to level 0 (topToBase); every face naming a group
  * there is, one to MAX_GROUPS names that are strings (cut to MAX_NAME),
- * and hidden flags, where there are any, one a group. Throws saying what
+ * hidden flags, where there are any, one a group, and colours, where there
+ * are any, one a group, each 0xRRGGBB or the default. Throws saying what
  * is wrong; returns a version 2 record of its own fields and no others.
  */
 export function sanitizeGroups(v: unknown, nbBaseFaces: number, levels: number): SavedGroups {
@@ -83,11 +90,15 @@ export function sanitizeGroups(v: unknown, nbBaseFaces: number, levels: number):
   for (let i = 0; i < f.length; i++) if (f[i] >= ns.length) bad('a face in a group there is not');
   const hidden = r.hidden;
   if (hidden !== undefined && (!(hidden instanceof Uint8Array) || hidden.length !== ns.length)) bad('hidden flags that are not one a group');
+  const colors = r.colors;
+  if (colors !== undefined && (!(colors instanceof Uint32Array) || colors.length !== ns.length)) bad('colours that are not one a group');
+  if (colors instanceof Uint32Array && !colors.every(isGroupColor)) bad('a colour that is not one');
   return {
     v: 2,
     faces: v1 ? topToBase(f, nbBaseFaces, levels) : f,
     names: (ns as string[]).map((n) => n.slice(0, MAX_NAME)),
     ...(hidden instanceof Uint8Array ? { hidden: Uint8Array.from(hidden, (h) => (h ? 1 : 0)) } : {}),
+    ...(colors instanceof Uint32Array ? { colors: Uint32Array.from(colors) } : {}),
   };
 }
 

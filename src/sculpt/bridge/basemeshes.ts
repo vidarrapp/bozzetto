@@ -1,4 +1,5 @@
 import Utils from '@sculpt-vendor/misc/Utils';
+import { MAX_GROUPS, MAX_NAME } from '../../../shared/bozz';
 
 /**
  * The base-mesh library: Blender Studio's Human Base Meshes (CC0), exported
@@ -14,7 +15,7 @@ import Utils from '@sculpt-vendor/misc/Utils';
  * in a scene from before them.
  *
  * Files are fetched when a tile is picked, and the service worker precaches
- * the whole library with the app (vite.config.ts), about 9.5 MB, so every
+ * the whole library with the app (vite.config.ts), about 9.8 MB, so every
  * tile works offline from the first install, not only the ones used before.
  *
  * Format (little-endian; tools/export-basemeshes.py writes it):
@@ -22,6 +23,18 @@ import Utils from '@sculpt-vendor/misc/Utils';
  *   per part: u32 nameLen, name (zero-padded to 4), u32 nVerts, u32 nFaces,
  *             u32 indexBytes (2|4), f32 offset[3], f32 positions[nVerts*3],
  *             u16|u32 faces[nFaces*4] (a triangle's 4th index is all ones)
+ *   then, optionally (2026-11-01), the parts' poly groups; a reader from
+ *   before them stops after the parts:
+ *   'GRPS' u32 version=1 u32 partCount
+ *   per part: u32 nGroups (0: none), per group u32 nameLen and the name
+ *             (zero-padded to 4), u32 indexBytes (1|2), u8|u16 group[nFaces]
+ *             (zero-padded to 4)
+ *
+ * The groups are the parts' sculpt face sets in Blender, named by body
+ * region in tools/export-basemeshes.py (Blender's face sets have numbers,
+ * not names), and on a remeshed blockout the
+ * lumps it was made of, by name (tools/basemesh-groups.mjs). The app
+ * makes them the object's level-0 poly groups (SculptSession.adoptBaseMesh).
  */
 export type BaseMeshGroup = 'body' | 'head' | 'part';
 
@@ -72,34 +85,34 @@ export const BASE_MESHES: BaseMeshInfo[] = [
   // blockouts are the bundle's "primitive" figures - fifty subdivided lumps
   // in Blender - voxel-remeshed by the exporter into one shell, which is
   // the closest thing to a posed mannequin to start a figure from.
-  { id: 'body-male-realistic', label: 'Male body', note: 'realistic', group: 'body', faces: 43428, kb: 848, by: DAN },
-  { id: 'body-female-realistic', label: 'Female body', note: 'realistic', group: 'body', faces: 43428, kb: 848, by: DAN },
-  { id: 'body-male-stylized', label: 'Male body', note: 'stylized', group: 'body', faces: 14164, kb: 276, by: JULIEN },
-  { id: 'body-female-stylized', label: 'Female body', note: 'stylized', group: 'body', faces: 14164, kb: 276, by: JULIEN },
-  { id: 'blockout-male-realistic', label: 'Male blockout', note: 'realistic', group: 'body', faces: 50672, kb: 990, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-male-realistic-parts' },
-  { id: 'blockout-female-realistic', label: 'Female blockout', note: 'realistic', group: 'body', faces: 42224, kb: 825, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-female-realistic-parts' },
-  { id: 'blockout-male-stylized', label: 'Male blockout', note: 'stylized', group: 'body', faces: 52344, kb: 1022, by: PAUL, parts: 'blockout-male-stylized-parts' },
-  { id: 'blockout-female-stylized', label: 'Female blockout', note: 'stylized', group: 'body', faces: 39040, kb: 763, by: PAUL, parts: 'blockout-female-stylized-parts' },
+  { id: 'body-male-realistic', label: 'Male body', note: 'realistic', group: 'body', faces: 43428, kb: 892, by: DAN },
+  { id: 'body-female-realistic', label: 'Female body', note: 'realistic', group: 'body', faces: 43428, kb: 892, by: DAN },
+  { id: 'body-male-stylized', label: 'Male body', note: 'stylized', group: 'body', faces: 14164, kb: 291, by: JULIEN },
+  { id: 'body-female-stylized', label: 'Female body', note: 'stylized', group: 'body', faces: 14164, kb: 291, by: JULIEN },
+  { id: 'blockout-male-realistic', label: 'Male blockout', note: 'realistic', group: 'body', faces: 50672, kb: 1040, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-male-realistic-parts' },
+  { id: 'blockout-female-realistic', label: 'Female blockout', note: 'realistic', group: 'body', faces: 42224, kb: 867, by: `${PAUL}, ${JULIEN}`, parts: 'blockout-female-realistic-parts' },
+  { id: 'blockout-male-stylized', label: 'Male blockout', note: 'stylized', group: 'body', faces: 52344, kb: 1074, by: PAUL, parts: 'blockout-male-stylized-parts' },
+  { id: 'blockout-female-stylized', label: 'Female blockout', note: 'stylized', group: 'body', faces: 39040, kb: 801, by: PAUL, parts: 'blockout-female-stylized-parts' },
   // Heads. Realistic is the sculpting-topology scan with its eyes; planar
   // is the "planes of the head" study at multires level 2; generic is a
   // 316-face cage, the one to start a head from scratch on.
-  { id: 'head-realistic', label: 'Head', note: 'realistic', group: 'head', faces: 14298, kb: 279, by: DAN },
-  { id: 'head-stylized', label: 'Head', note: 'stylized', group: 'head', faces: 5798, kb: 112, by: JULIEN },
+  { id: 'head-realistic', label: 'Head', note: 'realistic', group: 'head', faces: 14298, kb: 293, by: DAN },
+  { id: 'head-stylized', label: 'Head', note: 'stylized', group: 'head', faces: 5798, kb: 118, by: JULIEN },
   { id: 'head-planar', label: 'Head', note: 'planar', group: 'head', faces: 5056, kb: 99, by: PAUL },
   { id: 'head-generic', label: 'Head', note: 'low poly', group: 'head', faces: 316, kb: 6, by: PAUL },
-  { id: 'head-blockout', label: 'Head', note: 'blockout', group: 'head', faces: 44264, kb: 865, by: `${PAUL}, ${JULIEN}`, parts: 'head-blockout-parts' },
+  { id: 'head-blockout', label: 'Head', note: 'blockout', group: 'head', faces: 44264, kb: 908, by: `${PAUL}, ${JULIEN}`, parts: 'head-blockout-parts' },
   // Parts. One hand and one foot each; Mirror in the Scene panel makes the
   // other side.
-  { id: 'hand-realistic', label: 'Hand', note: 'realistic', group: 'part', faces: 3298, kb: 64, by: DAN },
-  { id: 'hand-stylized', label: 'Hand', note: 'stylized', group: 'part', faces: 880, kb: 17, by: JULIEN },
-  { id: 'foot-realistic', label: 'Foot', note: 'realistic', group: 'part', faces: 5952, kb: 116, by: DAN },
+  { id: 'hand-realistic', label: 'Hand', note: 'realistic', group: 'part', faces: 3298, kb: 68, by: DAN },
+  { id: 'hand-stylized', label: 'Hand', note: 'stylized', group: 'part', faces: 880, kb: 18, by: JULIEN },
+  { id: 'foot-realistic', label: 'Foot', note: 'realistic', group: 'part', faces: 5952, kb: 122, by: DAN },
   { id: 'foot-stylized', label: 'Foot', note: 'stylized', group: 'part', faces: 798, kb: 16, by: JULIEN },
   { id: 'eye-realistic', label: 'Eye', note: 'realistic', group: 'part', faces: 944, kb: 19, by: DAN },
-  { id: 'eye-stylized', label: 'Eye', note: 'stylized', group: 'part', faces: 832, kb: 16, by: JULIEN },
-  { id: 'jaw-realistic', label: 'Jaw', note: 'realistic', group: 'part', faces: 5470, kb: 105, by: DAN },
-  { id: 'jaw-stylized', label: 'Jaw', note: 'stylized', group: 'part', faces: 6308, kb: 126, by: JULIEN },
-  { id: 'skull-realistic', label: 'Skull', note: 'realistic', group: 'part', faces: 11634, kb: 228, by: `${PAUL}, ${TONATIUH}` },
-  { id: 'skull-planar', label: 'Skull', note: 'planar', group: 'part', faces: 898, kb: 18, smooth: false, by: TONATIUH },
+  { id: 'eye-stylized', label: 'Eye', note: 'stylized', group: 'part', faces: 832, kb: 17, by: JULIEN },
+  { id: 'jaw-realistic', label: 'Jaw', note: 'realistic', group: 'part', faces: 5470, kb: 111, by: DAN },
+  { id: 'jaw-stylized', label: 'Jaw', note: 'stylized', group: 'part', faces: 6308, kb: 133, by: JULIEN },
+  { id: 'skull-realistic', label: 'Skull', note: 'realistic', group: 'part', faces: 11634, kb: 240, by: `${PAUL}, ${TONATIUH}` },
+  { id: 'skull-planar', label: 'Skull', note: 'planar', group: 'part', faces: 898, kb: 19, smooth: false, by: TONATIUH },
 ];
 
 /** How a base mesh is added; only a blockout with a parts file honours it. */
@@ -128,6 +141,8 @@ export interface BaseMeshPart {
   positions: Float32Array;
   /** Four indices a face; a triangle's fourth is Utils.TRI_INDEX. */
   faces: Uint32Array;
+  /** Poly groups, where the file has them: one index into `names` a face. */
+  groups?: { names: string[]; faces: Uint32Array };
 }
 
 export interface BaseMeshFile {
@@ -196,6 +211,44 @@ export function parseBaseMesh(buf: ArrayBuffer): BaseMeshFile {
     parts.push({ name, offset, positions, faces });
   }
   if (!parts.length) fail('no parts');
+  // The groups section, where there is one.
+  if (off + 12 <= buf.byteLength) {
+    let tag = '';
+    for (let i = 0; i < 4; i++) tag += String.fromCharCode(dv.getUint8(off + i));
+    if (tag === 'GRPS') {
+      if (dv.getUint32(off + 4, true) !== 1) fail('groups of a version this app does not read');
+      if (dv.getUint32(off + 8, true) !== parts.length) fail('groups for another number of parts');
+      off += 12;
+      for (const part of parts) {
+        need(4);
+        const n = dv.getUint32(off, true);
+        off += 4;
+        if (n === 0) continue;
+        if (n > MAX_GROUPS) fail('too many groups');
+        const names: string[] = [];
+        for (let g = 0; g < n; g++) {
+          need(4);
+          const len = dv.getUint32(off, true);
+          off += 4;
+          need(len);
+          names.push(new TextDecoder().decode(new Uint8Array(buf, off, len)).slice(0, MAX_NAME));
+          off += len + ((4 - (len % 4)) % 4);
+        }
+        need(4);
+        const ib = dv.getUint32(off, true);
+        off += 4;
+        if (ib !== 1 && ib !== 2) fail(`group index size ${ib}`);
+        const nFaces = part.faces.length / 4;
+        need(nFaces * ib);
+        const faces = new Uint32Array(nFaces);
+        for (let f = 0; f < nFaces; f++) faces[f] = ib === 1 ? dv.getUint8(off + f) : dv.getUint16(off + f * 2, true);
+        off += nFaces * ib;
+        off += (4 - (off % 4)) % 4;
+        for (let f = 0; f < nFaces; f++) if (faces[f] >= n) fail('a face in a group there is not');
+        part.groups = { names, faces };
+      }
+    }
+  }
   return { parts };
 }
 

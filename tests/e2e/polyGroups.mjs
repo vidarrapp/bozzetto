@@ -45,6 +45,15 @@
 //   scene opens in group 0;
 // - the Groups list: a row a group, a tap renames, the eye hides, the
 //   trash merges the faces into the group they border most;
+// - group colours (2026-11-01): a tap on a row's swatch opens the colour
+//   picker and turns the colours on, a pick recolours the group's faces in
+//   the Shift+F view, closing it is one undo step; the colour follows its
+//   group through a rename, a delete, Remove unused, a split and a merge;
+//   a .bozz and the autosave keep it (groups.colors, a u32 a group), an
+//   object never coloured saves without the field, malformed colours are
+//   refused;
+// - the base-mesh library: each Blender Studio mesh added from Create
+//   opens with its face sets (a blockout with its lumps) as level-0 groups;
 // - timings on a 393k-face sphere.
 import { devices, emptySpot, openForInput, openPanel, settle } from './smoke.mjs';
 import { along, frames, gridDrag, mouseDrag, view } from './loopMask.mjs';
@@ -1401,6 +1410,220 @@ export const suites = {
       const { session } = window.__sculpt;
       session.deleteMesh(session.getMesh());
       for (const m of session.getMeshes()) session.setMeshVisible(m, true);
+      session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'));
+    });
+
+    // --- group colours (owner request, 2026-11-01) --------------------------------------
+    // A cube's six sides as groups, the colours off: a tap on a row's swatch
+    // opens the colour picker (and turns the colours on), a pick recolours
+    // that group's faces and closing the picker is one undo step.
+    t.ok(await openPanel(page, 'Model'), 'the Model panel is open for the colours');
+    await page.evaluate(() => {
+      const { session, modelPanel } = window.__sculpt;
+      const cube = session.addPrimitive('cube');
+      session.setMeshName(cube, 'Tinted');
+      session.groups.byAngle(cube, 40);
+      ['Front', 'Back', 'Top', 'Bottom', 'Left', 'Right'].forEach((n, i) => session.groups.rename(cube, i, n));
+      if (session.groups.isShowing()) modelPanel.onGroupColors(false);
+      modelPanel.refreshGroups();
+    });
+    const tinted = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const m = session.getMeshes().find((x) => session.getMeshName(x) === 'Tinted');
+        const names = session.groups.names(m);
+        return {
+          names,
+          colors: session.groups.colors(m),
+          hex: names.map((_, g) => session.groups.colorHex(m, g)),
+          showing: session.groups.isShowing(),
+          undo: session.getStateManager()._curUndoIndex,
+        };
+      });
+    const c0 = await tinted();
+    await tapIn('[data-role="groups-list"] .groups-row[data-group="2"] [data-role="group-color"]');
+    const opened = await page.evaluate(() => [...document.querySelectorAll('.cpick__pop')].filter((p) => !p.hidden).length);
+    const c1 = await tinted();
+    t.ok(opened === 1 && c1.showing && !c0.showing, `a tap on a group's swatch opens the colour picker and turns the group colours on (${opened} open)`);
+    // Drag in the spectrum: previews only, no undo state while it moves.
+    const field = await page.locator('.cpick__pop:not([hidden]) .cpick__field').boundingBox();
+    await page.mouse.move(field.x + field.width * 0.9, field.y + field.height * 0.2);
+    await page.mouse.down();
+    for (const k of [0.8, 0.7, 0.95]) await page.mouse.move(field.x + field.width * k, field.y + field.height * 0.15, { steps: 2 });
+    await page.mouse.up();
+    const c2 = await tinted();
+    t.ok(c2.undo === c1.undo && c2.colors[2] !== 0xffffffff, `moving in the picker previews the colour (#${c2.colors[2].toString(16).padStart(6, '0')}) with no undo step yet`);
+    await page.keyboard.press('Escape');
+    await frames(page);
+    const c3 = await tinted();
+    const swatchHex = await page.evaluate(() => {
+      const el = document.querySelector('[data-role="groups-list"] .groups-row[data-group="2"] [data-role="group-color"]');
+      return el ? getComputedStyle(el).backgroundColor : '';
+    });
+    t.ok(c3.undo === c1.undo + 1 && c3.colors[2] === c2.colors[2] && c3.colors.filter((c) => c === 0xffffffff).length === 5, `closing the picker makes the pick one undo step; the other groups keep their default hues (${c3.hex.join(' ')}; the row shows ${swatchHex})`);
+    // The Shift+F view: every face of the group has a corner of the picked colour (linear), no face of another group.
+    const shown = await page.evaluate(() => {
+      const { session, sync } = window.__sculpt;
+      const m = session.getMesh();
+      const attr = sync.geometry.getAttribute('groupColor');
+      if (!attr) return null;
+      const col = attr.array;
+      const packed = session.groups.colors(m)[2];
+      const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      const want = [(packed >> 16) & 255, (packed >> 8) & 255, packed & 255].map((c) => lin(c / 255));
+      const groups = session.groups.levelFaces(m);
+      const f = m.getFaces();
+      const is = (v) => Math.abs(col[v * 3] - want[0]) < 1e-4 && Math.abs(col[v * 3 + 1] - want[1]) < 1e-4 && Math.abs(col[v * 3 + 2] - want[2]) < 1e-4;
+      let inGroup = 0;
+      let hit = 0;
+      let others = 0;
+      for (let i = 0; i < groups.length; i++) {
+        const corners = [0, 1, 2, 3].map((k) => f[i * 4 + k]).filter((v) => v !== 4294967295);
+        const any = corners.some(is);
+        if (groups[i] === 2) {
+          inGroup++;
+          if (any) hit++;
+        } else if (corners.every(is)) others++;
+      }
+      return { inGroup, hit, others };
+    });
+    t.ok(shown && shown.inGroup > 0 && shown.hit === shown.inGroup && shown.others === 0, `the Shift+F view shows the picked colour on the group's faces (${shown?.hit} of ${shown?.inGroup} faces), on no other's`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    const c4 = await tinted();
+    t.ok(c4.colors[2] === 0xffffffff && c4.hex[2] === c0.hex[2], 'an undo puts the default hue back');
+    await page.evaluate(() => window.__sculpt.session.redo());
+    const c5 = await tinted();
+    t.ok(c5.colors[2] === c3.colors[2], 'and a redo the pick');
+    // Follows the group: rename, delete, Remove unused, split, merge.
+    const follow = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const G = session.groups;
+      const find = (n) => session.getMeshes().find((x) => session.getMeshName(x) === n);
+      const m = find('Tinted');
+      session.setMesh(m);
+      const byName = (mesh) => Object.fromEntries(G.names(mesh).map((n, g) => [n, G.colorHex(mesh, g)]));
+      const before = byName(m);
+      G.rename(m, 2, 'Lid');
+      const renamed = byName(m).Lid === before.Top;
+      G.remove(m, 0);
+      const afterDelete = byName(m);
+      const deleted = !('Front' in afterDelete) && ['Back', 'Lid', 'Left', 'Right'].every((n) => afterDelete[n] === before[n === 'Lid' ? 'Top' : n]);
+      session.undo();
+      // An unused group ahead of the rest, as a file could bring it.
+      const saved = G.serialize(m);
+      G.restore(m, { ...saved, faces: saved.faces.map((x) => x + 1), names: ['Spare', ...saved.names], colors: Uint32Array.from([0xffffffff, ...saved.colors]) });
+      const spared = byName(m);
+      G.removeUnused(m);
+      const pruned = byName(m);
+      const prunedOk = !('Spare' in pruned) && Object.keys(pruned).length === 6 && Object.keys(pruned).every((n) => pruned[n] === spared[n]);
+      session.undo();
+      G.restore(m, saved);
+      const split = session.splitGroups(m);
+      const parts = split ? split.made.map((p) => [session.getMeshName(p), G.colorHex(p, 0)]) : [];
+      const splitOk = parts.length === 6 && parts.every(([n, hex]) => hex === before[n === 'Lid' ? 'Top' : n]);
+      const lid = find('Lid');
+      const back = find('Back');
+      const merged = session.mergeMeshes([back, lid], back);
+      const mergedNames = byName(merged);
+      const mergedOk = mergedNames.Lid === before.Top && mergedNames.Back === before.Back;
+      session.undo();
+      session.undo();
+      return { renamed, deleted, prunedOk, splitOk, mergedOk, parts: parts.map((p) => p.join(' ')).join(', '), mergedNames: JSON.stringify(mergedNames) };
+    });
+    t.ok(follow.renamed && follow.deleted && follow.prunedOk, `the colour follows its group through a rename, a delete and Remove unused, and the other groups keep theirs (${JSON.stringify(follow)})`);
+    t.ok(follow.splitOk, `Split groups into objects: each part keeps its group's colour (${follow.parts})`);
+    t.ok(follow.mergedOk, `a merge unites the groups by name with their colours (${follow.mergedNames})`);
+    // Saved, opened, malformed, untouched, the autosave.
+    const filed = await page.evaluate(async () => {
+      const { file, session } = window.__sculpt;
+      const find = (n) => session.getMeshes().find((x) => session.getMeshName(x) === n);
+      session.setMesh(find('Tinted'));
+      const plain = session.addPrimitive('cube');
+      session.setMeshName(plain, 'Plain');
+      session.groups.byAngle(plain, 40);
+      const bytes = await file.pack();
+      const rec = await file.unpack(bytes);
+      const t = rec.meshes.find((x) => x.name === 'Tinted').groups;
+      const p = rec.meshes.find((x) => x.name === 'Plain').groups;
+      const out = { kind: t.colors?.constructor.name, colors: t.colors ? Array.from(t.colors) : null, plainHas: 'colors' in p, plainSerial: 'colors' in session.groups.serialize(plain) };
+      await file.open(bytes);
+      out.reopened = session.groups.colors(find('Tinted'));
+      const tries = {
+        'colours short of the groups': (g) => (g.colors = g.colors.slice(1)),
+        'a colour past 0xFFFFFF': (g) => (g.colors[0] = 0x1000000),
+        'colours as floats': (g) => (g.colors = Float32Array.from(g.colors)),
+      };
+      out.refused = {};
+      for (const [what, edit] of Object.entries(tries)) {
+        const r = structuredClone(rec);
+        edit(r.meshes.find((x) => x.name === 'Tinted').groups);
+        try {
+          await file.unpack(await file.packRecord(r));
+          out.refused[what] = 'opened';
+        } catch (err) {
+          out.refused[what] = String(err.message);
+        }
+      }
+      session.setMesh(find('Tinted'));
+      return out;
+    });
+    t.ok(filed.kind === 'Uint32Array' && filed.colors.length === 6 && filed.colors[2] === c3.colors[2] && filed.colors.filter((c) => c === 0xffffffff).length === 5 && filed.reopened.join() === filed.colors.join(), `a .bozz keeps the colours: groups.colors a Uint32Array of 0xRRGGBB, 0xFFFFFFFF for the default (${filed.colors.map((c) => c.toString(16)).join(' ')}), and opens with them`);
+    t.ok(!filed.plainHas && !filed.plainSerial, 'an object whose colours were never picked saves without the colors field');
+    t.ok(Object.values(filed.refused).every((why) => /poly groups/.test(why)), `malformed colours are refused (${Object.entries(filed.refused).map(([k, v]) => `${k}: ${v.replace(/.*poly groups[: (]*/, '')}`).join('; ')})`);
+    await page.evaluate(() => window.__sculpt.persist.markDirty());
+    await page.evaluate(() => window.__sculpt.persist.flush());
+    await page.goto(`${base}/?sculpt=1&q=low`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__sculpt && !document.getElementById('overlay'), null, { timeout: 90_000 });
+    const reloaded = await tinted();
+    t.ok(reloaded.colors.join() === filed.colors.join(), `the autosave keeps them through a reload (${reloaded.colors.map((c) => c.toString(16)).join(' ')})`);
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      for (const n of ['Tinted', 'Plain']) session.deleteMesh(session.getMeshes().find((x) => session.getMeshName(x) === n));
+    });
+
+    // --- the base-mesh library's groups -------------------------------------------------
+    // Each Blender Studio base mesh as Create adds it: [groups, first name,
+    // last name, the first group's file faces, the file's faces] a part
+    // (tools/export-basemeshes.py writes the face sets named by region,
+    // basemesh-groups.mjs a blockout's lumps); one group "Group 1" where the
+    // file has none.
+    const LIBRARY = {"body-male-realistic":[[102,"Shin R","Thumb base L",1636,42340],[1,null,null,544,544],[1,null,null,544,544]],"body-female-realistic":[[102,"Shin R","Thumb base L",1636,42340],[1,null,null,544,544],[1,null,null,544,544]],"body-male-stylized":[[42,"Neck","Ankles",506,12500],[3,"Sclera","Pupil",512,832],[3,"Sclera","Pupil",512,832]],"body-female-stylized":[[42,"Neck","Ankles",506,12500],[3,"Sclera","Pupil",512,832],[3,"Sclera","Pupil",512,832]],"blockout-male-realistic":[[45,"Pelvis","Thumb R",3456,50672]],"blockout-female-realistic":[[43,"Pelvis","Thumb R",4144,42224]],"blockout-male-stylized":[[49,"Pelvis","Thumb R",2383,52344]],"blockout-female-stylized":[[51,"Pelvis","Thumb R",2681,39040]],"head-realistic":[[11,"Jaw","Neck base",1256,13210],[1,null,null,544,544],[1,null,null,544,544]],"head-stylized":[[12,"Neck","Neck base",506,4134],[3,"Sclera","Pupil",512,832],[3,"Sclera","Pupil",512,832]],"head-planar":[[1,null,null,5056,5056]],"head-generic":[[1,null,null,316,316]],"head-blockout":[[11,"Head","Upper eyelid R",40414,44264]],"hand-realistic":[[17,"Fingernails","Thumb base",80,3298]],"hand-stylized":[[18,"Wrist","Wrist cap",66,880]],"foot-realistic":[[12,"Ankle","Toenails",1568,5952]],"foot-stylized":[[9,"Foot","Ankle cap",290,798]],"eye-realistic":[[1,null,null,944,944]],"eye-stylized":[[3,"Sclera","Pupil",512,832]],"jaw-realistic":[[32,"Tongue","Upper central incisor R",306,5470]],"jaw-stylized":[[34,"Upper central incisor L","Lower gum base",104,6308]],"skull-realistic":[[21,"Frontal bone","Lower teeth",328,11634]],"skull-planar":[[5,"Cranium","Teeth",374,898]]};
+    const library = await page.evaluate(async (lib) => {
+      const { session } = window.__sculpt;
+      const out = {};
+      for (const [id, want] of Object.entries(lib)) {
+        const n0 = session.getMeshes().length;
+        await session.addBaseMesh(id);
+        const made = session.getMeshes().slice(n0);
+        const parts = made.map((m, i) => {
+          const [n, first, last, c0, fileFaces] = want[i] ?? [];
+          const names = session.groups.names(m);
+          const counts = session.groups.counts(m);
+          const l0 = m._meshes ? m._meshes[0].getNbFaces() : m.getNbFaces();
+          const ratio = l0 / fileFaces;
+          const ok =
+            names.length === n &&
+            (first === null ? names[0] === 'Group 1' : names[0] === first && names[names.length - 1] === last) &&
+            counts[0] === c0 * ratio &&
+            counts.reduce((a, b) => a + b, 0) === l0 &&
+            counts.every((c) => c > 0);
+          return { ok, names: names.length, first: names[0], counts0: counts[0], l0 };
+        });
+        const lumps = id.startsWith('blockout') ? ['Thigh L', 'Thigh R', 'Head', 'Hand L'].every((x) => session.groups.names(made[0]).includes(x)) : true;
+        out[id] = { parts, count: made.length === want.length, lumps };
+        session.undo();
+      }
+      return out;
+    }, LIBRARY);
+    const libBad = Object.entries(library).filter(([, r]) => !r.count || !r.lumps || r.parts.some((p) => !p.ok));
+    t.ok(
+      libBad.length === 0,
+      `every base mesh opens with its groups on level 0: ${Object.entries(library)
+        .map(([id, r]) => `${id} ${r.parts.map((p) => p.names).join('+')}`)
+        .join(', ')}${libBad.length ? `; wrong: ${JSON.stringify(libBad)}` : ''}`,
+    );
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
       session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'));
     });
 
