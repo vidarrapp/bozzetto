@@ -104,8 +104,11 @@ export interface InputShellHooks {
   moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
   orbitY(deltaDeg: number): void;
-  /** ctrl + drag off the model: dolly by a multiplier (>1 out, <1 in). */
-  dolly(factor: number): void;
+  /**
+   * ctrl + drag off the model: dolly by a multiplier (>1 out, <1 in),
+   * `at` the press that began it (client px), for where the zoom heads.
+   */
+  dolly(factor: number, at: { x: number; y: number }): void;
   /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
   /** Shift+p (or the top row's Present): into Present mode, or back out of it. */
@@ -1733,7 +1736,7 @@ export class InputShell {
       if (g.dragging) {
         const dy = e.clientY - g.lastY;
         g.lastY = e.clientY;
-        this.hooks.dolly(Math.exp(dy * ZOOM_DRAG_RATE));
+        this.hooks.dolly(Math.exp(dy * ZOOM_DRAG_RATE), { x: g.x, y: g.y });
       }
       this.cursor.hide();
       e.preventDefault();

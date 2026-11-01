@@ -27,7 +27,7 @@ import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
 import type { Matrix4, Object3D, SkinnedMesh, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
-import { Controls } from './Controls';
+import { Controls, type ScreenPoint, type ZoomFocus } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
 import type { LightingState } from './Lighting';
@@ -2748,10 +2748,23 @@ export class Viewer {
     this.invalidate();
   }
 
-  /** Dolly by a multiplier (>1 out, <1 in); see Controls.dollyBy. */
-  dolly(factor: number): void {
-    this.controls.dollyBy(factor);
+  /**
+   * Dolly by a multiplier (>1 out, <1 in), towards the zoom focus for the
+   * page point `at` when one is set; see Controls.dollyBy.
+   */
+  dolly(factor: number, at: ScreenPoint | null = null): void {
+    this.controls.dollyBy(factor, at);
     this.invalidate();
+  }
+
+  /**
+   * Where zooms head (Sculpt's last edit or the surface under the pointer),
+   * and who is told when one has scaled the view about its point; null for
+   * the plain zoom to the orbit target. See Controls.setZoomFocus.
+   */
+  setZoomFocus(focus: ZoomFocus | null, onZoom: ((point: Vector3, s: number) => void) | null = null): void {
+    this.controls.setZoomFocus(focus);
+    this.controls.onFocusZoom = onZoom;
   }
 
   /** Stop the orbit's damped drift where it is; see Controls.halt. */

@@ -52,6 +52,20 @@ const VELOCITY_TAU = 0.05;
 /** OrbitControls' state with no pointer holding the view. */
 const STATE_NONE = -1;
 
+/** A place on the page, in client px. */
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Where a zoom heads, asked at the moment it happens: `at` is where the
+ * gesture is on the page (the wheel's pointer, the pinch's centre, the
+ * press that began a drag zoom), or null when no place is known. Null back
+ * means "nowhere in particular": the zoom heads for the orbit target.
+ */
+export type ZoomFocus = (at: ScreenPoint | null) => Vector3 | null;
+
 /** What OrbitControls keeps of the pointers holding it (three r184). */
 interface OrbitPointers {
   _pointers: number[];
@@ -92,6 +106,9 @@ interface OrbitInternals {
  *   Middle drag → pan
  *   Right  drag → dolly (zoom)
  *   Wheel       → dolly (zoom)
+ *
+ * Zooms run along the view axis to the target unless a zoom focus is set
+ * (Sculpt mode sets one): then they head for the point it gives.
  */
 export class Controls {
   readonly controls: OrbitControls;
@@ -110,6 +127,24 @@ export class Controls {
    * of that kind.
    */
   private farFloor = 0;
+  /**
+   * Where zooms head (see setZoomFocus); null leaves every zoom to
+   * OrbitControls, along the view axis to the target.
+   */
+  private zoomFocus: ZoomFocus | null = null;
+  /**
+   * Told after a zoom has scaled camera and target about `point` by `s`
+   * (Sculpt's pivot orbit moves its record of the view the same way, so
+   * it does not read the zoom as part of an orbit and apply it twice).
+   */
+  onFocusZoom: ((point: Vector3, s: number) => void) | null = null;
+  /** The fingers on the glass, by pointer id: a pinch zooms at their middle. */
+  private readonly touches = new Map<number, ScreenPoint>();
+  /** The last place a mouse or pen pointer, or the wheel, was seen. */
+  private pointerAt: ScreenPoint | null = null;
+  /** Where the mouse or pen drag OrbitControls is running began. */
+  private dragAt: ScreenPoint | null = null;
+  private readonly zoomScratch = new Vector3();
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -127,6 +162,15 @@ export class Controls {
     controls.zoomSpeed = 0.9;
     this.controls = controls;
     this.domElement = domElement;
+    // Every zoom OrbitControls makes (the wheel, a pinch, a right drag)
+    // ends in its update(), which it also calls straight from its event
+    // handlers: what it owes in _scale is taken here first and, with a
+    // zoom focus set, applied about that point instead (zoomTowardFocus).
+    const orbitUpdate = controls.update.bind(controls);
+    controls.update = (deltaTime?: number | null): boolean => {
+      this.zoomTowardFocus();
+      return orbitUpdate(deltaTime);
+    };
     // Before OrbitControls on the press (the window's capture phase runs
     // ahead of the canvas), after it to see what it started, and on the
     // window for every way a drag can end without its pointerup.
@@ -137,6 +181,7 @@ export class Controls {
     window.addEventListener('pointercancel', this.onAnyCancel, true);
     domElement.addEventListener('lostpointercapture', this.onLostCapture);
     window.addEventListener('blur', this.onWindowBlur);
+    window.addEventListener('wheel', this.onWheelFirst, { capture: true, passive: true });
   }
 
   private readonly domElement: HTMLElement;
@@ -162,6 +207,7 @@ export class Controls {
    */
   private readonly onPressFirst = (e: PointerEvent): void => {
     this.restoreButtons();
+    this.notePointer(e);
     if (e.pointerType !== 'pen' || (e.button !== 1 && e.button !== 2)) return;
     if (e.target !== this.domElement) return;
     this.savedButtons = { ...this.controls.mouseButtons };
@@ -175,6 +221,17 @@ export class Controls {
     // Only a press OrbitControls took (the sculpt shell keeps a stroke's).
     if (c.state === STATE_NONE || !c._pointers.includes(e.pointerId)) return;
     this.drag = { pointerId: e.pointerId, mask: buttonMask(e.button) };
+    this.dragAt = { x: e.clientX, y: e.clientY };
+  };
+
+  /** Where the pointers are, for where a zoom heads (zoomAt). */
+  private notePointer(e: PointerEvent): void {
+    if (e.pointerType === 'touch') this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    else this.pointerAt = { x: e.clientX, y: e.clientY };
+  }
+
+  private readonly onWheelFirst = (e: WheelEvent): void => {
+    this.pointerAt = { x: e.clientX, y: e.clientY };
   };
 
   private restoreButtons(): void {
@@ -191,6 +248,7 @@ export class Controls {
    * a pan stays a pan until its button goes, and then the drag is over.
    */
   private readonly onAnyMove = (e: PointerEvent): void => {
+    this.notePointer(e);
     const d = this.drag;
     if (!d || e.pointerType === 'touch') return;
     // Only the drag's own pointer: Firefox on Windows interleaves mouse
@@ -208,6 +266,7 @@ export class Controls {
    * one-finger rotate on the one it still holds.
    */
   private readonly onAnyUp = (e: PointerEvent): void => {
+    this.touches.delete(e.pointerId);
     const d = this.drag;
     if (!d) return;
     if (e.pointerId === d.pointerId) {
@@ -218,6 +277,7 @@ export class Controls {
   };
 
   private readonly onAnyCancel = (e: PointerEvent): void => {
+    this.touches.delete(e.pointerId);
     if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag();
   };
 
@@ -235,6 +295,7 @@ export class Controls {
   };
 
   private readonly onWindowBlur = (): void => {
+    this.touches.clear();
     if (this.drag) this.endDrag();
   };
 
@@ -484,14 +545,21 @@ export class Controls {
   }
 
   /**
-   * Dolly by a multiplier along the view ray (>1 pulls back, <1 moves in),
-   * clamped to the same min/max the wheel and the pinch obey. Drives the
-   * sculpt ctrl-drag zoom, which exists so a Pencil can zoom without a pinch
-   * gesture. A step is a proportion of the distance, as the wheel's is, so
-   * it magnifies by the same amount at any distance; it does not shrink to
-   * nothing near the floor, it stops at it.
+   * Dolly by a multiplier (>1 pulls back, <1 moves in), clamped to the same
+   * min/max the wheel and the pinch obey: along the view ray, or with a
+   * zoom focus set, towards the point it gives for `at` (see zoomAbout).
+   * Drives the sculpt ctrl-drag zoom, which exists so a Pencil can zoom
+   * without a pinch gesture. A step is a proportion of the distance, as the
+   * wheel's is, so it magnifies by the same amount at any distance; it does
+   * not shrink to nothing near the floor, it stops at it.
    */
-  dollyBy(factor: number): void {
+  dollyBy(factor: number, at: ScreenPoint | null = null): void {
+    if (this.zoomFocus) {
+      this.zoomAbout(factor, at);
+      this.syncLimits();
+      this.controls.update();
+      return;
+    }
     const offset = new Vector3().subVectors(this.camera.position, this.controls.target);
     const dist = offset.length();
     if (dist < 1e-6) return;
@@ -502,6 +570,72 @@ export class Controls {
     this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), next);
     this.syncLimits();
     this.controls.update();
+  }
+
+  /**
+   * Where zooms head from now on (Sculpt: the last edit, or the surface
+   * under the pointer), or null for OrbitControls' own zoom to the target.
+   */
+  setZoomFocus(focus: ZoomFocus | null): void {
+    this.zoomFocus = focus;
+  }
+
+  /**
+   * Where the zoom under way is on the page: the middle of the fingers for
+   * a pinch, the press for a drag zoom, otherwise the last place the mouse,
+   * the pen or the wheel was.
+   */
+  private zoomAt(): ScreenPoint | null {
+    if (this.touches.size >= 2 && this.isHeld()) {
+      let x = 0;
+      let y = 0;
+      for (const p of this.touches.values()) {
+        x += p.x;
+        y += p.y;
+      }
+      return { x: x / this.touches.size, y: y / this.touches.size };
+    }
+    if (this.drag && this.dragAt) return this.dragAt;
+    return this.pointerAt;
+  }
+
+  /**
+   * The zoom OrbitControls owes (its _scale, from the wheel, a pinch or a
+   * right drag), taken over when a zoom focus is set: applied about the
+   * focus, and nothing left for its own update to dolly by.
+   */
+  private zoomTowardFocus(): void {
+    if (!this.zoomFocus) return;
+    const c = this.controls as unknown as OrbitInternals;
+    const scale = c._scale;
+    if (scale === 1) return;
+    c._scale = 1;
+    this.zoomAbout(scale, this.zoomAt());
+  }
+
+  /**
+   * Zoom by `factor` towards the focus point for `at` (the target when
+   * there is none): camera and target both scale about that point, so the
+   * camera dollies along the ray through it, the view keeps its direction,
+   * and the point stays where it is on the screen - the target moves
+   * towards it in proportion, as OrbitControls' zoomToCursor moves it
+   * towards the cursor. The camera-to-target distance scales by the same
+   * factor, so the floor and the ceiling (and the near plane following
+   * the distance) hold exactly as for a zoom to the target.
+   */
+  private zoomAbout(factor: number, at: ScreenPoint | null): void {
+    const target = this.controls.target;
+    const dist = this.camera.position.distanceTo(target);
+    if (dist < 1e-6) return;
+    const next = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, dist * factor));
+    const s = next / dist;
+    if (s === 1) return;
+    // The camera's matrices as it now stands: picking reads them.
+    this.camera.updateMatrixWorld();
+    const p = this.zoomScratch.copy(this.zoomFocus?.(at) ?? target);
+    this.camera.position.sub(p).multiplyScalar(s).add(p);
+    target.sub(p).multiplyScalar(s).add(p);
+    this.onFocusZoom?.(p, s);
   }
 
   /** Distance from the camera to the orbit target (the depth-of-field focus). */
@@ -552,6 +686,7 @@ export class Controls {
     window.removeEventListener('pointercancel', this.onAnyCancel, true);
     this.domElement.removeEventListener('lostpointercapture', this.onLostCapture);
     window.removeEventListener('blur', this.onWindowBlur);
+    window.removeEventListener('wheel', this.onWheelFirst, { capture: true });
     this.restoreButtons();
     this.controls.dispose();
   }

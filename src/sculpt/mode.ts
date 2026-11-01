@@ -961,6 +961,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     prev.target.copy(sc.outTgt);
   };
 
+  /**
+   * Where a zoom heads (owner request): the last edit, the point the orbit
+   * pivots on, once a stroke has put the pivot there; before that (a new
+   * scene, an object just created or opened, or after a frame, which puts
+   * the pivot back on the middle), the surface under the pointer or the
+   * pinch, so the wheel zooms into the spot it points at; off the model,
+   * the target, as OrbitControls always did. `editEpoch` is the session's
+   * scene epoch when a stroke last set the pivot, -1 once a frame resets
+   * it: an object arriving or a scene opening moves the epoch on, which
+   * counts as a reset too.
+   */
+  let editEpoch = -1;
+  const zoomPoint = new Vector3();
+  const zoomFocus = (at: { x: number; y: number } | null): Vector3 | null => {
+    if (editEpoch === session.sceneEpoch) return zoomPoint.copy(pivot);
+    if (!at) return null;
+    const r = viewer.captureCanvas.getBoundingClientRect();
+    const pr = session.getPixelRatio();
+    const hit = session.surfacePointAt((at.x - r.left) * pr, (at.y - r.top) * pr);
+    return hit ? zoomPoint.set(hit[0], hit[1], hit[2]) : null;
+  };
+  // A zoom moves camera and target together about its point: the orbit
+  // re-centring's record of the view moves with them, or the next frame
+  // would read the zoom as part of the orbit and scale about the pivot
+  // again.
+  viewer.setZoomFocus(zoomFocus, (point, s) => {
+    if (!prev) return;
+    prev.cam.sub(point).multiplyScalar(s).add(point);
+    prev.target.sub(point).multiplyScalar(s).add(point);
+  });
+
   // Turntable (arrow keys / a wheel mapped to them). Two things separate it
   // from a drag-orbit: it always spins about the OBJECT's centre, never the
   // stroke pivot, so it stays a turntable wherever you have been working;
@@ -985,6 +1016,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const active = session.getMesh();
       if (!active) return;
       endPivotOrbit();
+      editEpoch = -1;
       // Only what shows: hidden poly groups are left out of the framing.
       const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
       viewer.frameBounds(box);
@@ -1032,12 +1064,17 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const box = visibleWorldBox(meshes[0], session.groups.hiddenFaces(meshes[0]));
       for (let i = 1; i < meshes.length; i++) box.union(visibleWorldBox(meshes[i], session.groups.hiddenFaces(meshes[i])));
       endPivotOrbit();
+      editEpoch = -1;
       viewer.frameBounds(box);
       box.getCenter(pivot);
     },
     // Remember where the work was; do NOT move the view for it. The jump
     // after every stroke was the objectionable part, not the re-pivot.
-    focusEdit: (point) => pivot.set(point[0], point[1], point[2]),
+    // Zooms head there from now on, until a frame or a new object.
+    focusEdit: (point) => {
+      pivot.set(point[0], point[1], point[2]);
+      editEpoch = session.sceneEpoch;
+    },
     // Once painted, an object owns its vertex colours: recolouring the
     // material must not wipe the strokes.
     transformMode: (mode) => enterTransform(mode),
@@ -1078,7 +1115,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       );
     },
     orbitY: (deltaDeg) => turntable(deltaDeg),
-    dolly: (factor) => viewer.dolly(factor),
+    dolly: (factor, at) => viewer.dolly(factor, at),
     toggleChrome: () => chrome.handleTab(),
     togglePresent: () => present?.toggle(),
     togglePlay: () => present?.toggleTurning(),
@@ -2050,6 +2087,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;
+    viewer.setZoomFocus(null);
     viewer.fastFrames = false;
     viewer.interactionProbe = null;
     offAntialias();

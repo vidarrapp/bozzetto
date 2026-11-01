@@ -331,6 +331,17 @@ export class SculptSession {
   private readonly picking: Picking;
   private readonly pickingSym: Picking;
   /**
+   * Picking of its own for surfacePointAt, so asking where a point is
+   * leaves the brush's hover and the last edit point as they were.
+   */
+  private probe: Picking | null = null;
+  /**
+   * Counts the times objects arrived or the scene was replaced (an object
+   * added or created, a new scene, an open): Sculpt's zoom heads for the
+   * last edit only while no such change has come since that edit.
+   */
+  sceneEpoch = 0;
+  /**
    * The canvas's CSS width, kept by an observer: getPixelRatio runs in
    * every stroke step, and reading clientWidth there forced a style and
    * layout pass whenever the cursor's SVG had changed since the last one.
@@ -572,6 +583,7 @@ export class SculptSession {
   }
 
   addNewMesh(mesh: SculptMesh): SculptMesh {
+    this.sceneEpoch++;
     this.writeSymmetryAxis(this.getSymmetryAxis(), [mesh]);
     this.meshes.push(mesh);
     this.stateManager.pushStateAdd(mesh);
@@ -2135,6 +2147,20 @@ export class SculptSession {
     return [out[0], out[1], out[2]];
   }
 
+  /**
+   * The world-space point of the nearest visible surface under a canvas
+   * position in device px (as _mouseX/_mouseY), or null off the model.
+   */
+  surfacePointAt(mouseX: number, mouseY: number): [number, number, number] | null {
+    const probe = (this.probe ??= new Picking(this));
+    if (!probe.intersectionMouseMeshes(this.meshes, mouseX, mouseY)) return null;
+    const mesh = probe.getMesh();
+    if (!mesh) return null;
+    const out = vec3.create();
+    vec3.transformMat4(out, probe.getIntersectionPoint() as unknown as vec3, mesh.getMatrix());
+    return [out[0], out[1], out[2]];
+  }
+
   // --- reload persistence (bridge feature, see ScenePersist) --------------
 
   /** Summed top-level triangles across the scene (autosave payload driver). */
@@ -2224,6 +2250,7 @@ export class SculptSession {
    * falls back to a fresh sphere.
    */
   restoreScene(saved: SavedScene): Multimesh {
+    this.sceneEpoch++;
     const built: Multimesh[] = [];
     for (const savedMesh of saved.meshes) {
       const mesh = this.buildRestoredMesh(savedMesh);
