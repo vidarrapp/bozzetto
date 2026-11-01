@@ -493,15 +493,21 @@ async function shadowParts(page, base, t, spare) {
       L.setIntensity('key', L.state()[0].intensity);
       await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     });
+  // The demo plays: its frames differ in size, and a frame swapped in
+  // between the last fit and the read below made the box one frame's and
+  // the fit the one before's (2% apart, as the machine's pace had it).
+  // Held on one frame, both are of it.
+  await page.evaluate(() => window.__bozzetto.timeline.pause());
+  await frames(page, 4);
   await afresh(page);
   const pub = await page.evaluate(() => {
     const v = window.__bozzetto;
     const b = v.liveShadowBox();
-    return { box: { min: b.min.toArray(), max: b.max.toArray() }, look: v.getLook(), fit: v.lighting.fitInfo(), aspect: v.camera.aspect, ground: v.getGround() };
+    return { box: { min: b.min.toArray(), max: b.max.toArray() }, groundY: v.ground.position.y, look: v.getLook(), fit: v.lighting.fitInfo(), aspect: v.camera.aspect, ground: v.getGround() };
   });
   page = await fresh(page, t, spare);
   await sculpt(page, base);
-  await page.evaluate(async ([box, look]) => {
+  await page.evaluate(async ([box, look, groundY]) => {
     const { session, viewer, input } = window.__sculpt;
     const cube = session.addPrimitive('cube');
     for (const other of [...session.getMeshes()]) if (other !== cube) session.deleteMesh(other);
@@ -520,12 +526,13 @@ async function shadowParts(page, base, t, spare) {
     input.hooks.frameAll();
     await viewer.applyLook(look);
     // The demo has no units marker, so its floor follows it, under the
-    // box (a thousandth of its height under it); Sculpt's is fixed at 0
-    // (drawn 0.01 mm under, a thousandth of a unit), raised here to the
-    // same place so both fits reach the same receiver.
-    viewer.setFloorOffset(box.min[1] - (box.max[1] - box.min[1]) * 0.001 + 1e-3);
+    // subject it was fitted to (a thousandth of its height under it: the
+    // fitted subject, not the frame on screen); Sculpt's is fixed at 0
+    // (drawn 0.01 mm under, a thousandth of a unit), raised here to where
+    // the viewer's is so both fits reach the same receiver.
+    viewer.setFloorOffset(groundY + 1e-3);
     viewer.haltOrbit();
-  }, [pub.box, pub.look]);
+  }, [pub.box, pub.look, pub.groundY]);
   await frames(page, 4);
   await page.evaluate(() => window.__bozzetto.lighting.setRigFollow(null));
   await frames(page, 4);
