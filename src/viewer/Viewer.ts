@@ -25,12 +25,12 @@ import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, u
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
-import type { Matrix4, Object3D, SkinnedMesh, Texture } from 'three';
+import type { Material, Matrix4, Object3D, SkinnedMesh, Texture } from 'three';
 import { CaptureGuide, type AspectId } from './CaptureGuide';
 import { Controls, type ScreenPoint, type ZoomFocus } from './Controls';
 import { FrameStreamer } from './FrameStreamer';
 import { Lighting } from './Lighting';
-import type { LightingState } from './Lighting';
+import type { LightId, LightingState } from './Lighting';
 import { Materials } from './Materials';
 import type { MaterialState } from './Materials';
 import { Environment } from './Environment';
@@ -717,6 +717,7 @@ export class Viewer {
     const changed = (): void => this.invalidate();
     this.lighting.onChange = changed;
     this.materials.onChange = changed;
+    this.materials.onColorNodeChange = () => this.refreshShadowPasses();
     this.environment.onChange = changed;
     const quality = SHADOW_TIERS[detectQuality()];
     this.tierAoSamples = quality.aoSamples;
@@ -1582,9 +1583,45 @@ export class Viewer {
     const render = this.renderer.render.bind(this.renderer);
     this.renderer.render = (scene, camera) => {
       const id = cameras.get(camera);
-      if (id) this.shadowRenders[id]++;
+      if (id) {
+        this.shadowRenders[id]++;
+        // The light's shadow material is the scene's override during its
+        // pass (three keeps it privately): kept for refreshShadowPasses.
+        const m = (scene as Scene).overrideMaterial as (Material & { isShadowPassMaterial?: boolean }) | null;
+        if (m?.isShadowPassMaterial) this.shadowPassMaterials.set(id, m);
+      }
       render(scene, camera);
     };
+  }
+
+  /** Each light's shadow-pass material, as last seen drawing its map. */
+  private readonly shadowPassMaterials = new Map<LightId, Material>();
+
+  /**
+   * Have the shadow passes rebuild what they draw each object with, where
+   * that has changed: after the sculpt colour node is rebuilt (Materials.
+   * onColorNodeChange), Shift+F's poly group colours above all.
+   *
+   * Three's shadow pass draws every object with the light's own shadow
+   * material, building it per object with the source material's colorNode
+   * folded in (its alpha), and checks that build again only when the
+   * SHADOW material's version moves. A rebuilt sculpt material leaves it
+   * alone, so the shadow pass kept a shader that read the `groupColor`
+   * attribute after Shift+F had taken the colours off and the attribute
+   * away: under WebGPU every shadow draw of the model then failed
+   * validation ("Vertex buffer slot 2 required by ShadowMaterial was not
+   * set"), the whole shadow pass with it, and the key's map stayed as it
+   * was while the light moved on (Sculpt's rig follows the view), so the
+   * model went dark until a shadow toggle built the passes afresh. WebGL
+   * draws a missing attribute as zeros and never showed it.
+   *
+   * Moving the version makes each of the pass's objects compare its cache
+   * key (which names the geometry's attributes) once: those whose key is
+   * the same carry on, the changed one is rebuilt. Nothing else is built.
+   */
+  refreshShadowPasses(): void {
+    for (const m of this.shadowPassMaterials.values()) m.needsUpdate = true;
+    this.invalidate();
   }
 
   /** Builds and allocations since boot (a copy). */

@@ -300,8 +300,18 @@ export class Materials {
       m.colorNode = node as unknown as MeshStandardNodeMaterial['colorNode'];
       m.needsUpdate = true;
     }
+    this.onColorNodeChange?.();
     this.onChange?.();
   }
+
+  /**
+   * Fired when the sculpt colour node is rebuilt (paint, mask tint, lock,
+   * poly group colours). The shadow pass reads that node too (three's
+   * shadow material takes the source's colorNode alpha), but caches its
+   * build per object under its own material, which this rebuild does not
+   * touch: the viewer has it rebuilt (Viewer.refreshShadowPasses).
+   */
+  onColorNodeChange: (() => void) | null = null;
 
   /** Brightness floor of fully masked areas (0 = black, 1 = no tint). */
   setMaskDarken(v: number): void {
