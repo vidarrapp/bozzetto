@@ -677,7 +677,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshGroups();
     session.render();
   };
-  /** Ctrl+W, and the Groups list's From mask: the masked faces into a new group, the mask cleared (one undo step). */
+  /** Ctrl+G, and the Groups list's From mask: the masked faces into a new group, the mask cleared (one undo step). */
   const groupFromMask = (): void => {
     const mesh = session.getMesh();
     if (!mesh) return;

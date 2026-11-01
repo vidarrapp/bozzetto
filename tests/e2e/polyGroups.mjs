@@ -9,14 +9,14 @@
 //   cube's levels);
 // - storage: one group a level-0 face (the array, the .bozz record), and
 //   at every level face f in its level-0 ancestor's (f >> 2k) group;
-// - Ctrl+W after a loop-mask drag across the sphere's equator makes "Group
+// - Ctrl+G after a loop-mask drag across the sphere's equator makes "Group
 //   2" of the level-0 faces the masked top faces round down to (a base
 //   face joins when more than half of its faces on screen are masked),
 //   clears the mask, one undo step that brings the mask back; the split
 //   is even: every face below the loop in, none above, the edges between
 //   the groups the loop's own; the same on level 0 itself; a loop two and
 //   six rows of eight up a row of base faces snaps the group to the base
-//   loop below and above it, the whole row out or in, and says so; Ctrl+W
+//   loop below and above it, the whole row out or in, and says so; Ctrl+G
 //   with nothing masked makes none; the rounding rule on chosen patterns;
 // - subdividing and deleting the highest level leave level 0's groups as
 //   they were; Rebuild puts a new level 0 under the old one, each face the
@@ -292,7 +292,7 @@ export const suites = {
     });
     t.ok(numbering.checked > 30000 && numbering.wrong === 0, `face f's children are 4f..4f+3 of the level above, child k at corner k (${numbering.checked} children over ${numbering.levels} levels, ${numbering.wrong} wrong)`);
 
-    // --- Ctrl+W from a loop-masked half -----------------------------------------------
+    // --- Ctrl+G from a loop-masked half -----------------------------------------------
     await page.evaluate(() => {
       const s = window.__sculpt.session;
       s.deleteMesh(s.getMeshes().find((m) => s.getMeshName(m) === 'Cube'));
@@ -305,11 +305,11 @@ export const suites = {
     await settle(page);
     const below = await page.evaluate(maskedFaces);
     let before = await groupsOf(page);
-    await page.keyboard.press('Control+w');
+    await page.keyboard.press('Control+g');
     let g = await groupsOf(page);
     t.ok(
       g.base === below.level0 && g.names.length === 2 && g.names[1] === 'Group 2' && g.counts[1] === below.base && below.base > 0 && g.counts[0] === below.level0 - below.base && g.undo === before.undo + 1,
-      `Ctrl+W after a loop mask across the equator: "Group 2" of the ${below.base} of the sphere's ${below.level0} level-0 faces the ${below.n} masked faces of level ${below.sel} round down to (more than half of a base face's faces), one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
+      `Ctrl+G after a loop mask across the equator: "Group 2" of the ${below.base} of the sphere's ${below.level0} level-0 faces the ${below.n} masked faces of level ${below.sel} round down to (more than half of a base face's faces), one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
     );
     let split = await page.evaluate(splitReport, { y: 0 });
     t.ok(
@@ -327,11 +327,11 @@ export const suites = {
     t.ok(g.names.length === 2 && g.counts[1] === below.base && (await page.evaluate(maskedCount)) === 0, 'and a redo puts the group back and clears the mask again');
     await page.keyboard.press('Control+c'); // clear the mask
     before = await groupsOf(page);
-    await page.keyboard.press('Control+w');
+    await page.keyboard.press('Control+g');
     g = await groupsOf(page);
-    t.ok(g.names.length === 2 && g.undo === before.undo, 'Ctrl+W with nothing masked makes no group');
+    t.ok(g.names.length === 2 && g.undo === before.undo, 'Ctrl+G with nothing masked makes no group');
 
-    // --- the loop mask then Ctrl+W, the split even ------------------------------------
+    // --- the loop mask then Ctrl+G, the split even ------------------------------------
     // Owner report, 2026-11-01: an uneven split along the loop. On the
     // base level the group always followed the mask exactly; what looked
     // uneven was the colours (a vertex colour a border vertex, so the faces
@@ -339,7 +339,7 @@ export const suites = {
     // Up the levels the rounding went by each base face's earliest child,
     // which turns with its corner order: a loop across the middle of a row
     // of base faces split the row 24 to 8.
-    /** The loop mask down across the sphere's front at a local point, then Ctrl+W; the group's split about `y`. */
+    /** The loop mask down across the sphere's front at a local point, then Ctrl+G; the group's split about `y`. */
     const loopThenGroup = async (at, y) => {
       await page.keyboard.press('Control+c');
       const d = await page.evaluate(gridDrag, { name: 'Sphere', at, from: [0, 1, 0], side: [1, 0, 0] });
@@ -348,7 +348,7 @@ export const suites = {
       const loop = await page.evaluate(() => window.__sculpt.input.loopMask.last);
       const masked = await page.evaluate(maskedFaces);
       const was = await groupsOf(page);
-      await page.keyboard.press('Control+w');
+      await page.keyboard.press('Control+g');
       const now = await groupsOf(page);
       const report = await page.evaluate(splitReport, { y, g: now.names.length - 1 });
       const snapped = await page.evaluate(() => window.__sculpt.session.groups.lastSnapped && [...document.querySelectorAll('.sculpt-toast')].some((e) => /nearest base-mesh edges/.test(e.textContent)));
@@ -362,7 +362,7 @@ export const suites = {
     let run = await loopThenGroup([0, 0, 12.5], 0);
     t.ok(
       run.loop?.kind === 'loop' && run.loop.loopLength === 32 && run.report.belowIn === run.report.below && run.report.aboveIn === 0 && run.report.border === 32 && !run.snapped,
-      `on level 0 (${run.masked.faces} faces), the loop mask across the equator then Ctrl+W: every one of the ${run.report.below} faces below the loop in the new group, ${run.report.aboveIn} of the ${run.report.above} above; ${run.report.border} edges between the groups, the loop's ${run.loop?.loopLength}`,
+      `on level 0 (${run.masked.faces} faces), the loop mask across the equator then Ctrl+G: every one of the ${run.report.below} faces below the loop in the new group, ${run.report.aboveIn} of the ${run.report.above} above; ${run.report.border} edges between the groups, the loop's ${run.loop?.loopLength}`,
     );
     await page.evaluate(() => window.__sculpt.session.undo());
     await page.keyboard.press('Control+c');
@@ -931,7 +931,7 @@ export const suites = {
       roundTrip.shape && roundTrip.shape.v === 2 && roundTrip.shape.faces === 'Uint32Array' && roundTrip.shape.len === saved.base && saved.base === saved.level0 && roundTrip.shape.names.join('|') === saved.names.join('|') && roundTrip.shape.hidden?.[0] === 'Uint8Array' && roundTrip.shape.hidden[5] === 1,
       `a .bozz carries groups: { v: 2, faces: Uint32Array of level 0's ${saved.base}, names, hidden: Uint8Array a group } (${JSON.stringify(roundTrip.shape && { ...roundTrip.shape, names: roundTrip.shape.names.length })})`,
     );
-    t.ok(roundTrip.sphereGroups && roundTrip.sphereGroups.length === 2, 'the sphere its own (from Ctrl+W)');
+    t.ok(roundTrip.sphereGroups && roundTrip.sphereGroups.length === 2, 'the sphere its own (from Ctrl+G)');
     g = await groupsOf(page);
     t.ok(g.names.join('|') === saved.names.join('|') && g.counts.join() === saved.counts.join() && g.hidden.join() === saved.hidden.join(), `and opened again, the same groups, names and hidden side (${g.names.join(', ')})`);
     const refused = await page.evaluate(async () => {
@@ -1356,7 +1356,7 @@ export const suites = {
       session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'));
     });
 
-    // --- the loop mask then Ctrl+W on a quad-remeshed object (one level) -------------
+    // --- the loop mask then Ctrl+G on a quad-remeshed object (one level) -------------
     const ball = await page.evaluate(async () => {
       const { session, modelPanel } = window.__sculpt;
       for (const m of session.getMeshes()) session.setMeshVisible(m, false);
@@ -1383,7 +1383,7 @@ export const suites = {
       const mat = m.getMaterials();
       window.__qualify = Array.from({ length: m.getNbFaces() }, (_, i) => [0, 1, 2, 3].every((k) => f[i * 4 + k] === 4294967295 || mat[f[i * 4 + k] * 3 + 2] < 0.5));
     });
-    await page.keyboard.press('Control+w');
+    await page.keyboard.press('Control+g');
     const qGroups = await groupsOf(page);
     const qSplit = await page.evaluate(splitReport, { y: 1e9, g: qGroups.names.length - 1 });
     const qOff = await page.evaluate((g) => {
@@ -1395,7 +1395,7 @@ export const suites = {
     }, qGroups.names.length - 1);
     t.ok(
       ball.ok && ball.levels === 1 && qMasked.n > ball.faces / 4 && qGroups.names.length === 2 && qGroups.counts[1] === qMasked.n && qOff === 0 && (qLoop?.kind !== 'loop' || !qLoop.closed || qSplit.border === qLoop.loopLength),
-      `quad-remeshed (${ball.faces} faces, one level): the loop mask (${qLoop?.kind}${qLoop?.note ? `, "${qLoop.note}"` : ''}, ${qLoop?.side} vertices; an edge loop that spirals round and crosses itself, as QuadriFlow's do, used to fence off a few faces between its turns and mask only those) then Ctrl+W puts exactly the ${qMasked.n} masked faces in the new group (${qGroups.counts[1]}; ${qOff} faces off); ${qSplit.border} edges between the groups`,
+      `quad-remeshed (${ball.faces} faces, one level): the loop mask (${qLoop?.kind}${qLoop?.note ? `, "${qLoop.note}"` : ''}, ${qLoop?.side} vertices; an edge loop that spirals round and crosses itself, as QuadriFlow's do, used to fence off a few faces between its turns and mask only those) then Ctrl+G puts exactly the ${qMasked.n} masked faces in the new group (${qGroups.counts[1]}; ${qOff} faces off); ${qSplit.border} edges between the groups`,
     );
     await page.evaluate(() => {
       const { session } = window.__sculpt;

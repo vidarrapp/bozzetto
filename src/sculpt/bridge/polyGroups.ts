@@ -29,8 +29,8 @@ import { PointGrid } from './quadMesh';
  * and on a tie the group of the earliest child (lowest index) among the
  * tied ones. Subdividing and deleting the highest level change nothing.
  *
- * Assigning at a higher level (Ctrl+W from a mask drawn there, the loop
- * mask then Ctrl+W): the group is set per level-0 face. The faces on
+ * Assigning at a higher level (Ctrl+G from a mask drawn there, the loop
+ * mask then Ctrl+G): the group is set per level-0 face. The faces on
  * screen that qualify are rounded down by share (roundDown): a level-0
  * face joins when more than half of its faces on screen qualify, exactly
  * half staying out (since 2026-11-01; level by level before, see
@@ -683,7 +683,7 @@ export class PolyGroups {
   lastSnapped = false;
 
   /**
-   * Ctrl+W: the masked faces into a new group. A face of the level on
+   * Ctrl+G: the masked faces into a new group. A face of the level on
    * screen is masked when every one of its corners is (mask under 0.5);
    * hidden faces stay where they are. Groups are level 0's, so the
    * masked faces are rounded down to level 0 by share (roundDown). The

@@ -118,7 +118,7 @@ export interface InputShellHooks {
   extractMasked(): void;
   /** Shift+F: the poly group colours on or off. */
   toggleGroupColors(): void;
-  /** Ctrl+W: the masked faces into a new poly group. */
+  /** Ctrl+G: the masked faces into a new poly group. */
   groupFromMask(): void;
 }
 
@@ -2370,8 +2370,9 @@ export class InputShell {
         this.hooks.toggleGroupColors();
         return this.claim(e);
       case 'groups.fromMask':
-        // Ctrl+W closes a browser tab before the page hears it, except in
-        // the installed app (and full screen); claimed here all the same.
+        // Ctrl+G (Ctrl+W closed the browser tab before the page heard it,
+        // in Chrome as in Firefox); claimed, so the browser's find-next
+        // does not run.
         if (s._action === Enums.Action.NOTHING) this.hooks.groupFromMask();
         return this.claim(e);
       case 'subdiv.add':

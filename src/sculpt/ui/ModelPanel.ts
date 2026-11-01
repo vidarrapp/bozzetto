@@ -122,7 +122,7 @@ export class ModelPanel extends SidePanel {
   private renamingGroup = -1;
   /** Shift+F's switch (mode.ts turns the colours on or off). */
   onGroupColors: ((on: boolean) => void) | null = null;
-  /** From mask (Ctrl+W's twin). */
+  /** From mask (Ctrl+G's twin). */
   onGroupFromMask: (() => void) | null = null;
 
   constructor(
@@ -485,7 +485,7 @@ export class ModelPanel extends SidePanel {
   /**
    * The active object's poly groups (owner decisions, 2026-10-31): the
    * colours' switch (Shift+F), the ways to make groups - From mask
-   * (Ctrl+W), By angle at the threshold set, By UV islands for an OBJ with
+   * (Ctrl+G), By angle at the threshold set, By UV islands for an OBJ with
    * texture coordinates - and Show all; then a row a group, with its
    * colour, its name (tap to rename), an eye and a delete. Every change is
    * one undo step.
@@ -503,7 +503,7 @@ export class ModelPanel extends SidePanel {
     sec.appendChild(subheading('Group'));
     const make = div('sculpt-panel__row');
     const fromMask = this.tapButton('From mask', () => this.onGroupFromMask?.());
-    fromMask.title = 'The masked faces into a new group, the mask cleared (Ctrl+W in the installed app)';
+    fromMask.title = 'The masked faces into a new group, the mask cleared (Ctrl+G)';
     fromMask.dataset.role = 'groups-from-mask';
     const visible = this.tapButton('Visible', () => this.groupOne((m) => this.session.groups.groupVisible(m), 'Nothing is showing to group.'));
     visible.title = 'Every face that shows into one new group; hidden faces keep theirs';
