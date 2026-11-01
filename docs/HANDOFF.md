@@ -17,7 +17,7 @@
 - [x] 2026-10-31: Poly groups, how they are made. Decided 2026-10-31: from the mask (Ctrl+W), from and back out to OBJ g/o lines (Maya round trip), split by angle, and by UV islands
 - [x] 2026-10-31: Poly groups, hiding. Decided 2026-10-31: as proposed; Ctrl+Shift+click isolates, again hides it and shows the rest, on empty space shows all; Ctrl+Shift+drag stays the edge-loop mask; a Groups list in the Model panel
 - [x] 2026-11-01: The Blender Studio base meshes' face sets have numbers but no names in Blender, so they open as "Face set 1" to "Face set 102" (the blockouts' groups are named after their lumps). Keep the numbered names, or name each base mesh's face sets by region by hand (a names table in tools/export-basemeshes.py, about 400 sets over 18 meshes)? Decided 2026-11-01: name them by body region
-- [ ] 2026-11-01: Soft shadows look banded in close-ups: the key's shadow frustum is kept wide there (Lighting.minHalf), so the blur samples land about 3.5 texels apart, where about 2 is smooth. Options: more blur samples (smooth, costs GPU time), a tighter minimum frustum (sharper close-ups, the far shadow coarser), or leave it
+- [x] 2026-11-01: Soft shadows look banded in close-ups: the key's shadow frustum is kept wide there (Lighting.minHalf), so the blur samples land about 3.5 texels apart, where about 2 is smooth. Options: more blur samples (smooth, costs GPU time), a tighter minimum frustum (sharper close-ups, the far shadow coarser), or leave it Decided 2026-11-01: more blur samples, scaled up with the shadow softness
 
 ## Notes for Bozzetto Studio
 
