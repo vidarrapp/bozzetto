@@ -101,18 +101,18 @@ export function transformLocal(mesh: SculptMesh, a: mat4): void {
   }
   const s = uniformScale(a);
   if (s !== null) {
-    const s2 = s * s;
     for (const level of stack._meshes) {
       mapPositions(level, a);
       if (s !== 1) {
-        const n = level.getNormals();
-        for (let i = 0, k = level.getNbVertices() * 3; i < k; i++) n[i] *= s2;
         const d = level._detailsXYZ;
         if (d) for (let i = 0; i < d.length; i++) d[i] *= s;
       }
     }
     // The level on screen: its faces and octree from the new positions.
-    // Its vertex normals were scaled above, as a recompute would make them.
+    // Its vertex normals stay as they are: unit length (Mesh.js
+    // updateVerticesNormal since 2026-11-01), a uniform scale leaves them
+    // be, as a recompute would. They were the faces' area-weighted mean
+    // before, which a scale multiplied by s squared.
     mesh.updateFacesAabbAndNormal();
     mesh.updateOctree();
     mesh.updateCenter();

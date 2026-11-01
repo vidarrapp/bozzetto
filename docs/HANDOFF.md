@@ -21,6 +21,18 @@
 
 ## Notes for Bozzetto Studio
 
+### Unit vertex normals, and the mirrored dab picked after the dab (2026-11-01)
+
+Found by running Clay on the Bozzetto core alongside this engine (M2-8, bozzetto-web scripts/core-clay.mjs), and decided by Vidar the same day: the engine matches the core.
+
+- **Vertex normals are unit length**: the faces' area-weighted sum, normalised (vendor `Mesh.js` `updateVerticesNormal`). Upstream divided the sum by the number of faces, which left the area around the vertex in the length; every sum of normals (the plane fits) weighed vertices by it. On the parity fixtures this moves the brushes that sum normals: on the cube (a unit across) Clay by 64% of its move, Surface smooth by 64%, the rake by 11%; on the sphere in centimetres Clay by 0.3%, Polish by 9%; Drag, Move, Pinch, Smooth's average and the paint brushes not at all. Synthesis normalises before it builds a frame, so the details of saved scenes decode as before.
+- **The ring is updated**: `updateGeometry` recomputes the normals of every vertex of the faces that changed (and marks them dirty for drawing), not only of the vertices moved; a vertex just outside a dab kept a stale normal before, up to 1.4 apart from its faces' on a sculpted sphere.
+- **Saved normals are made unit as a scene opens** (they are still restored, for their direction), and the scale bake no longer multiplies them by the scale squared.
+- **The mirrored dab is picked after the dab** (vendor `SculptBase.makeStroke`): the dab first, then the mirrored side picked on the surface it left, as upstream did only under dynamic topology. Where the two sides overlap near the plane of symmetry they saw different surfaces before.
+
+With these, the core and the engine agree on Clay to 0.00001 cm, mirrored strokes included. Fixtures recorded before carry the old normals.
+
+
 ### The .bozz poly group layout, version 2 (2026-11-01)
 
 Bozzetto Web writes poly groups per object as an optional field of the object record, `meshes[i].groups`, with a version of its own; the scene's `v` stays 4. Since 2026-11-01 (Vidar's call) the groups are stored on the LOWEST level, level 0 (the base mesh, `baseFaces`). A scene without the field opens with every face in group 0, named "Group 1". The web writes the field only when an object has groups worth keeping (more than one group, group 0 renamed, something hidden, or a colour picked), so a file from an object that was never grouped is byte-for-byte what it was before.

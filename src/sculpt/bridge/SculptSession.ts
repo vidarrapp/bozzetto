@@ -2604,7 +2604,21 @@ export class SculptSession {
     const levelMeshes = mesh._meshes;
     for (let i = 0; i < saved.levels.length; i++) {
       const normals = saved.levels[i].normals;
-      if (normals) levelMeshes[i].getNormals().set(normals);
+      if (normals) {
+        // Unit length, as the engine keeps them since 2026-11-01: a scene
+        // saved before has the faces' area-weighted mean, whose direction
+        // is what synthesis reads (it normalises), kept.
+        const n = levelMeshes[i].getNormals();
+        n.set(normals);
+        for (let k = 0, e = levelMeshes[i].getNbVertices() * 3; k < e; k += 3) {
+          const l = Math.hypot(n[k], n[k + 1], n[k + 2]);
+          if (l > 0) {
+            n[k] /= l;
+            n[k + 1] /= l;
+            n[k + 2] /= l;
+          }
+        }
+      }
     }
     mesh.setSelection(saved.sel);
     mesh.updateBuffers();
