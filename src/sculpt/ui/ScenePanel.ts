@@ -414,6 +414,40 @@ export class ScenePanel extends SidePanel {
     this.refresh();
   }
 
+  /**
+   * Edit > Split groups into objects, Split hidden into object and Delete
+   * hidden, on the active object (SculptSession.splitGroups and the rest):
+   * the new objects take its material, and the whole is one undo step.
+   */
+  splitActive(kind: 'groups' | 'hidden' | 'delete-hidden'): void {
+    const mesh = this.session.getMesh();
+    if (!mesh) return;
+    this.library?.beginRestore();
+    let out: { made: SculptMesh[]; flat: boolean } | null;
+    try {
+      out =
+        kind === 'groups'
+          ? this.session.splitGroups(mesh)
+          : kind === 'hidden'
+            ? this.session.splitHidden(mesh)
+            : this.session.deleteHidden(mesh);
+    } finally {
+      this.library?.endRestore();
+    }
+    if (!out) return;
+    for (const part of out.made) this.library?.adoptCopy(part, mesh);
+    const flat = out.flat ? ' (cut at the level on screen, as one level: after a Rebuild the base mesh cannot be cut)' : '';
+    const said =
+      kind === 'groups'
+        ? `${out.made.length} objects, one a group${flat}`
+        : kind === 'hidden'
+          ? `The hidden faces are "${this.session.getMeshName(out.made[1])}"${flat}`
+          : `Hidden faces deleted${flat}`;
+    statusToast('').done(said);
+    this.session.render();
+    this.refresh();
+  }
+
   /** Duplicate: a copy of each selected object, at its transform, with its material. */
   duplicateSelected(): void {
     this.copyEach((source) => {
@@ -428,11 +462,6 @@ export class ScenePanel extends SidePanel {
     const selected = [...this.session.getSelectedMeshes()];
     const targets = selected.length > 0 ? selected : this.session.getMesh() ? [this.session.getMesh()!] : [];
     if (targets.length === 0) return;
-    const remaining = this.session.getMeshes().length - targets.length;
-    if (remaining < 1) {
-      alert('The scene needs at least one object. Use New sculpt to start over.');
-      return;
-    }
     const what =
       targets.length === 1
         ? `"${this.session.getMeshName(targets[0])}"`
@@ -447,10 +476,6 @@ export class ScenePanel extends SidePanel {
   private deleteActive(): void {
     const mesh = this.session.getMesh();
     if (!mesh) return;
-    if (this.session.getMeshes().length <= 1) {
-      alert('The scene needs at least one object. Use New scene to start over.');
-      return;
-    }
     // Ctrl+z brings it back, so the prompt does not threaten permanence.
     if (!confirm(`Delete "${this.session.getMeshName(mesh)}"?`)) return;
     this.session.deleteMesh(mesh);
@@ -592,7 +617,6 @@ export class ScenePanel extends SidePanel {
   refresh(): void {
     const active = this.session.getMesh();
     const selected = new Set(this.session.getSelectedMeshes());
-    const many = this.session.getMeshes().length > 1;
     const solo = this.session.isSolo();
     const chord = keymap.chordFor('view.solo');
     const key = chord ? chordLabel(chord) : null;
@@ -654,7 +678,8 @@ export class ScenePanel extends SidePanel {
           row.appendChild(name);
         }
 
-        if (mesh === active && many) {
+        // On the last object too: it may go (owner call, 2026-11-01).
+        if (mesh === active) {
           const del = this.iconBtn('fi-ss-trash', 'Delete object', () => this.deleteActive());
           del.classList.add('outliner__icon--danger');
           row.appendChild(del);

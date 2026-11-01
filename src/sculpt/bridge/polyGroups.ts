@@ -31,10 +31,10 @@ import { PointGrid } from './quadMesh';
  *
  * Assigning at a higher level (Ctrl+W from a mask drawn there, the loop
  * mask then Ctrl+W): the group is set per level-0 face. The faces on
- * screen that qualify are rounded down level by level (roundDown): each
- * face of the level below qualifies when most of its four children do,
- * the earliest child deciding a two-two tie, the same rule Bozzetto
- * Studio rounds with. By angle works on level 0's faces themselves.
+ * screen that qualify are rounded down by share (roundDown): a level-0
+ * face joins when more than half of its faces on screen qualify, exactly
+ * half staying out (since 2026-11-01; level by level before, see
+ * roundDown). By angle works on level 0's faces themselves.
  *
  * Where it lives. Per object: the names, the hidden flags, and a version
  * that moves with every change. Level 0's faces are kept per LEVEL-0
@@ -337,7 +337,7 @@ export class PolyGroups {
    * `f >> shift` itself when `map` is null (every step up to `k` is
    * 4f..4f+3).
    */
-  private ancestry(mesh: SculptMesh, k: number): { map: Uint32Array | null; shift: number } {
+  ancestry(mesh: SculptMesh, k: number): { map: Uint32Array | null; shift: number } {
     if (mesh.isDynamic || k <= 0) return { map: null, shift: 0 };
     const levels = levelsOf(mesh);
     let j = 0; // the highest level up to k with a parent map of its own
@@ -355,6 +355,13 @@ export class PolyGroups {
       anc = out;
     }
     return { map: anc, shift: 2 * (k - j) };
+  }
+
+  /** Whether every level of the object is numbered 4f..4f+3 of the one below (not so under a Rebuild's old level 0). */
+  contiguous(mesh: SculptMesh): boolean {
+    const levels = levelsOf(mesh);
+    for (let k = 1; k < levels.length; k++) if (this.parentMap(levels, k)) return false;
+    return true;
   }
 
   /** The group of a face of the level on screen. */
@@ -485,31 +492,75 @@ export class PolyGroups {
   }
 
   /**
-   * Each vertex's group colour for the display (Shift+F): every face
-   * writes its colour into its corners, in face order, so a vertex on a
-   * border takes one of its groups' and the colour turns over one face.
+   * The group colours for the display (Shift+F), crisp at the borders.
+   * The colour is a flat varying (Materials): each triangle takes the
+   * colour of one of its corners, the provoking one (`provoking` 0, the
+   * first, on WebGPU; 2, the last, on WebGL 2). So every vertex gets one
+   * group's colour, and each triangle of `index` (`nTris` of them, the
+   * face of each in `triFace`) is turned, its winding kept, so that its
+   * provoking corner has its face's group. A vertex inside one group has
+   * that group's; a vertex on a border is claimed by the first triangle
+   * that has no corner of its own group yet. Owner report, 2026-11-01:
+   * coloured by vertex and blended, a loop-masked group's border looked
+   * ragged, the faces along it half one colour and half the other in
+   * face order, though the faces were split exactly.
    */
-  fillColors(mesh: SculptMesh, out: Float32Array): void {
+  fillColors(mesh: SculptMesh, colors: Float32Array, index: Uint32Array, triFace: Uint32Array, nTris: number, provoking: 0 | 2): void {
     const groups = this.levelFaces(mesh);
     const fAr = mesh.getFaces();
+    const nbV = Math.min(mesh.getNbVertices(), Math.floor(colors.length / 3));
     const n = Math.min(groups.length, mesh.getNbFaces());
-    const rgb = new Float32Array(3);
-    let last = -1;
+    // Each vertex's group: one when all its faces agree, -1 (free) on a border.
+    const owner = new Int32Array(nbV).fill(-2);
     for (let f = 0; f < n; f++) {
       const g = groups[f];
+      const i = f * 4;
+      const m = fAr[i + 3] === TRI ? 3 : 4;
+      for (let k = 0; k < m; k++) {
+        const v = fAr[i + k];
+        if (v >= nbV) continue;
+        if (owner[v] === -2) owner[v] = g;
+        else if (owner[v] !== g) owner[v] = -1;
+      }
+    }
+    // A triangle without a corner of its own group claims a free one.
+    for (let t = 0; t < nTris; t++) {
+      const g = groups[triFace[t]] ?? 0;
+      const a = index[t * 3];
+      const b = index[t * 3 + 1];
+      const c = index[t * 3 + 2];
+      if (owner[a] === g || owner[b] === g || owner[c] === g) continue;
+      if (owner[a] === -1) owner[a] = g;
+      else if (owner[b] === -1) owner[b] = g;
+      else if (owner[c] === -1) owner[c] = g;
+    }
+    // Every triangle turned so a corner of its group provokes.
+    for (let t = 0; t < nTris; t++) {
+      const g = groups[triFace[t]] ?? 0;
+      const o = t * 3;
+      let at = -1;
+      for (let k = 0; k < 3 && at < 0; k++) if (owner[index[o + k]] === g) at = k;
+      if (at < 0 || at === provoking) continue;
+      const a = index[o];
+      const b = index[o + 1];
+      const c = index[o + 2];
+      // Turning by r puts corner r first; the provoking slot wants corner `at`.
+      const r = (at - provoking + 3) % 3;
+      index[o] = r === 0 ? a : r === 1 ? b : c;
+      index[o + 1] = r === 0 ? b : r === 1 ? c : a;
+      index[o + 2] = r === 0 ? c : r === 1 ? a : b;
+    }
+    const rgb = new Float32Array(3);
+    let last = -1;
+    for (let v = 0; v < nbV; v++) {
+      const g = owner[v] < 0 ? 0 : owner[v];
       if (g !== last) {
         groupColor(g, rgb);
         last = g;
       }
-      const i = f * 4;
-      const m = fAr[i + 3] === TRI ? 3 : 4;
-      for (let k = 0; k < m; k++) {
-        const v = fAr[i + k] * 3;
-        if (v + 2 >= out.length) continue;
-        out[v] = rgb[0];
-        out[v + 1] = rgb[1];
-        out[v + 2] = rgb[2];
-      }
+      colors[v * 3] = rgb[0];
+      colors[v * 3 + 1] = rgb[1];
+      colors[v * 3 + 2] = rgb[2];
     }
   }
 
@@ -522,7 +573,11 @@ export class PolyGroups {
    * flags whole (a few kilobytes at most), and writes back into the array
    * it changed (that level-0 instance's).
    */
-  private edit(mesh: SculptMesh, change: (base: Uint32Array, r: GroupRecord) => boolean): boolean {
+  private edit(
+    mesh: SculptMesh,
+    change: (base: Uint32Array, r: GroupRecord) => boolean,
+    extra?: { undo(): void; redo(): void },
+  ): boolean {
     const r = this.rec(mesh);
     const base = this.baseFaces(mesh);
     const before = base.slice();
@@ -553,23 +608,60 @@ export class PolyGroups {
       this.host.render();
     };
     this.host.getStateManager().pushStateCustom(
-      () => apply(was, namesBefore, hiddenBefore),
-      () => apply(now, namesAfter, hiddenAfter),
+      () => {
+        extra?.undo();
+        apply(was, namesBefore, hiddenBefore);
+      },
+      () => {
+        extra?.redo();
+        apply(now, namesAfter, hiddenAfter);
+      },
     );
+    extra?.redo();
     this.changed(mesh);
     this.host.render();
     return true;
   }
 
   /**
-   * Values one a face of the level on screen, rounded to level 0 level by
-   * level down: each face of the level below takes the value most of its
-   * four children have, the earliest child (lowest index) winning a tie
-   * among the tied values (the rule Bozzetto Studio rounds with, so both
-   * apps make the same level-0 groups). Level 0's own values are returned
-   * as they are.
+   * Flags one a face of the level on screen (1: the face qualifies)
+   * rounded to level 0 by share: a level-0 face joins when MORE than half
+   * of its faces on screen qualify; exactly half stays out. Level 0's own
+   * flags are returned as they are.
+   *
+   * Owner report, 2026-11-01: the rounding used to go level by level, a
+   * face taking what most of its four children had and its earliest child
+   * on a two-two tie. Which child is earliest turns with each base face's
+   * corner order, so a loop drawn across the middle of a row of base
+   * faces split that row unevenly (24 of 32 faces in on the default
+   * sphere, 8 out, wherever the loop ran within the row). By share, a
+   * level-0 face's decision does not depend on its corner order: the
+   * group snaps to the base-face loop nearest the drawn one, the whole row
+   * alike, and a loop along base-face edges is followed exactly.
    */
   roundDown(mesh: SculptMesh, values: Uint32Array): Uint32Array {
+    const nBase = this.baseFaces(mesh).length;
+    if (mesh.isDynamic || selOf(mesh) === 0) return values.subarray(0, nBase);
+    const { map, shift } = this.ancestry(mesh, selOf(mesh));
+    const total = new Uint32Array(nBase);
+    const hit = new Uint32Array(nBase);
+    for (let f = 0; f < values.length; f++) {
+      const a = map ? map[f >> shift] : f >> shift;
+      if (a >= nBase) continue;
+      total[a]++;
+      if (values[f]) hit[a]++;
+    }
+    const out = new Uint32Array(nBase);
+    for (let a = 0; a < nBase; a++) out[a] = 2 * hit[a] > total[a] ? 1 : 0;
+    return out;
+  }
+
+  /**
+   * Group numbers one a face of the level on screen, rounded to level 0
+   * level by level (each face the group most of its children have, the
+   * earliest child on a tie; By angle's 'vote').
+   */
+  private majorityLevels(mesh: SculptMesh, values: Uint32Array): Uint32Array {
     const nBase = this.baseFaces(mesh).length;
     if (mesh.isDynamic) return values.subarray(0, nBase);
     const levels = levelsOf(mesh);
@@ -587,12 +679,16 @@ export class PolyGroups {
     return defaultGroupName(k);
   }
 
+  /** Whether the last fromMask's group differs from the mask on screen (rounded to base faces). */
+  lastSnapped = false;
+
   /**
    * Ctrl+W: the masked faces into a new group. A face of the level on
    * screen is masked when every one of its corners is (mask under 0.5);
    * hidden faces stay where they are. Groups are level 0's, so the
-   * masked faces are rounded down to level 0 level by level (roundDown).
-   * Nothing else changes, the mask included. Returns the new group, -1
+   * masked faces are rounded down to level 0 by share (roundDown). The
+   * mask is cleared in the same undo step (owner call, 2026-11-01: mask
+   * from the group afterwards, Ctrl+click). Returns the new group, -1
    * when no face is masked, -2 when none is left at level 0.
    */
   fromMask(mesh: SculptMesh): number {
@@ -601,7 +697,7 @@ export class PolyGroups {
     const fAr = mesh.getFaces();
     const n = mesh.getNbFaces();
     const hidden = this.hiddenFaces(mesh);
-    const flags = new Uint8Array(n);
+    const flags = new Uint32Array(n);
     let any = false;
     for (let f = 0; f < n; f++) {
       if (hidden && hidden[f]) continue;
@@ -615,19 +711,54 @@ export class PolyGroups {
       }
     }
     if (!any) return -1;
-    const joins = this.roundDown(mesh, Uint32Array.from(flags));
+    const joins = this.roundDown(mesh, flags);
     if (!joins.some((x) => x !== 0)) return -2;
     if (r.names.length >= MAX_GROUPS) throw new TooManyGroups(`An object can have at most ${MAX_GROUPS} poly groups.`);
+    // Does the group follow the mask exactly, face for face on screen?
+    const { map, shift } = this.ancestry(mesh, selOf(mesh));
+    this.lastSnapped = false;
+    for (let f = 0; f < n && !this.lastSnapped; f++) {
+      if (hidden && hidden[f]) continue;
+      const a = map ? map[f >> shift] : f >> shift;
+      if ((joins[a] ?? 0) !== flags[f]) this.lastSnapped = true;
+    }
     const g = r.names.length;
-    this.edit(mesh, (base, rr) => {
-      rr.names.push(this.newName(rr));
-      const hid = new Uint8Array(rr.names.length);
-      hid.set(rr.hidden);
-      rr.hidden = hid;
-      for (let a = 0; a < joins.length; a++) if (joins[a]) base[a] = g;
-      return true;
-    });
+    this.edit(
+      mesh,
+      (base, rr) => {
+        rr.names.push(this.newName(rr));
+        const hid = new Uint8Array(rr.names.length);
+        hid.set(rr.hidden);
+        rr.hidden = hid;
+        for (let a = 0; a < joins.length; a++) if (joins[a]) base[a] = g;
+        return true;
+      },
+      this.maskClearing(mesh),
+    );
     return g;
+  }
+
+  /** Clearing the mask of the level on screen, and putting it back: an edit's extra. */
+  private maskClearing(mesh: SculptMesh): { undo(): void; redo(): void } {
+    const mat = mesh.getMaterials();
+    const nbV = mesh.getNbVertices();
+    const at: number[] = [];
+    const was: number[] = [];
+    for (let v = 0; v < nbV; v++) {
+      if (mat[v * 3 + 2] !== 1) {
+        at.push(v);
+        was.push(mat[v * 3 + 2]);
+      }
+    }
+    const write = (vals: number[] | null): void => {
+      const m = mesh.getMaterials();
+      for (let i = 0; i < at.length; i++) if (at[i] * 3 + 2 < m.length) m[at[i] * 3 + 2] = vals ? vals[i] : 1;
+      mesh.updateDuplicateColorsAndMaterials();
+      if (mesh.isUsingDrawArrays?.()) mesh.updateDrawArrays();
+      if (mesh.isDynamic) mesh.updateBuffers();
+      else mesh.updateMaterialBuffer();
+    };
+    return { undo: () => write(was), redo: () => write(null) };
   }
 
   /**
@@ -655,7 +786,7 @@ export class PolyGroups {
    * wherever two neighbouring faces' normals are more than `degrees`
    * apart, each connected piece a group, numbered by its first face.
    * 'vote' splits the level on screen instead and rounds the pieces down
-   * to level 0 (roundDown), groups numbered by their first level-0 face
+   * to level 0 (majorityLevels), groups numbered by their first level-0 face
    * and a piece no level-0 face keeps dropped (kept for comparison: the
    * tests measure both).
    */
@@ -669,7 +800,7 @@ export class PolyGroups {
       unitise(normals, nScreen);
       const nb = faceNeighbours(mesh.getFaces(), nScreen, mesh.getNbVertices());
       const { perFace } = floodByAngle(nb, normals, nScreen, cos);
-      const rounded = this.roundDown(mesh, perFace);
+      const rounded = this.majorityLevels(mesh, perFace);
       const renumber = new Map<number, number>();
       const out = new Uint32Array(rounded.length);
       for (let a = 0; a < rounded.length; a++) {
@@ -721,6 +852,54 @@ export class PolyGroups {
       return true;
     }
     return this.replaceAll(mesh, perFace, names);
+  }
+
+  /**
+   * Visible: every face that shows becomes one new group; hidden faces
+   * keep theirs. Groups left with no faces are dropped (the rest keep
+   * their order). Returns the new group's number, or -1 when nothing
+   * shows.
+   */
+  groupVisible(mesh: SculptMesh): number {
+    const r = this.rec(mesh);
+    const base = this.baseFaces(mesh);
+    let any = false;
+    for (let i = 0; i < base.length && !any; i++) if (!r.hidden[base[i]]) any = true;
+    if (!any) return -1;
+    if (r.names.length >= MAX_GROUPS) throw new TooManyGroups(`An object can have at most ${MAX_GROUPS} poly groups.`);
+    let made = -1;
+    this.edit(mesh, (b, rr) => {
+      const name = this.newName(rr);
+      const g = rr.names.length;
+      rr.names.push(name);
+      const hid = new Uint8Array(rr.names.length);
+      hid.set(rr.hidden);
+      rr.hidden = hid;
+      for (let i = 0; i < b.length; i++) if (!rr.hidden[b[i]]) b[i] = g;
+      made = compact(b, rr)[g];
+      return true;
+    });
+    return made;
+  }
+
+  /**
+   * Auto: each connected piece of level 0 (faces joined across shared
+   * edges) its own group, numbered by its first face, everything shown.
+   * Returns how many groups.
+   */
+  autoIslands(mesh: SculptMesh): number {
+    const level0 = levelsOf(mesh)[0];
+    const n = level0.getNbFaces();
+    const nb = faceNeighbours(level0.getFaces(), n, level0.getNbVertices());
+    const { perFace, groups } = floodByAngle(nb, new Float32Array(n * 3), n, -Infinity);
+    this.replaceAll(mesh, perFace, Array.from({ length: groups }, (_, i) => defaultGroupName(i)));
+    return groups;
+  }
+
+  /** Clear all: every face back in one group, "Group 1", nothing hidden. False when that is how it is already. */
+  clearAll(mesh: SculptMesh): boolean {
+    if (!this.hasGroups(mesh) && !this.baseFaces(mesh).some((g) => g !== 0)) return false;
+    return this.replaceAll(mesh, new Uint32Array(this.baseFaces(mesh).length), [defaultGroupName(0)]);
   }
 
   rename(mesh: SculptMesh, g: number, name: string): boolean {
@@ -995,6 +1174,31 @@ export class PolyGroups {
   touch(mesh: SculptMesh): void {
     this.changed(mesh);
   }
+}
+
+/**
+ * Drop the groups no face of `base` is in, in place: the rest keep their
+ * order, names and hidden flags, and the faces are renumbered. Returns the
+ * new number of each old group (-1 for one dropped). Group 0 stays when
+ * nothing is left.
+ */
+function compact(base: Uint32Array, r: { names: string[]; hidden: Uint8Array }): Int32Array {
+  const used = new Uint8Array(r.names.length);
+  for (let i = 0; i < base.length; i++) if (base[i] < used.length) used[base[i]] = 1;
+  if (!used.some((u) => u)) used[0] = 1;
+  const to = new Int32Array(r.names.length).fill(-1);
+  const names: string[] = [];
+  const hidden: number[] = [];
+  for (let g = 0; g < r.names.length; g++) {
+    if (!used[g]) continue;
+    to[g] = names.length;
+    names.push(r.names[g]);
+    hidden.push(r.hidden[g] ?? 0);
+  }
+  for (let i = 0; i < base.length; i++) base[i] = Math.max(0, to[base[i]] ?? 0);
+  r.names = names;
+  r.hidden = Uint8Array.from(hidden);
+  return to;
 }
 
 /** Normals made unit, three a face, in place. */

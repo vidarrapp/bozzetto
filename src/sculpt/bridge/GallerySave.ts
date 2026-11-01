@@ -152,6 +152,7 @@ export async function saveModelToGallery(
   onProgress: (text: string) => void,
 ): Promise<string> {
   // With colours: a painted model publishes as painted (owner decision).
+  if (!session.getMeshes().length) throw new Error('The scene is empty: add an object (Scene panel, Create) before publishing.');
   const merged = mergeSceneArrays(session, true);
   if (!merged) throw new Error('Nothing to save');
   if (target.to === 'gallery' && !PROJECT_SLUG.test(target.id)) throw new Error('Id must be a-z, 0-9, hyphens');

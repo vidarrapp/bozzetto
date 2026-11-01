@@ -17,6 +17,9 @@ import {
 import { uploadScene } from './SceneProjects';
 import { libraryProjects, uploadFailure, type UploadFailure } from '../../admin/api';
 
+/** What a save says in an empty scene (owner call, 2026-11-01: saving refuses rather than write a scene with nothing in it). */
+export const EMPTY_SCENE = 'The scene is empty: add an object (Scene panel, Create) before saving.';
+
 /** How the file actions reach the viewer's look, so .bozz files carry it. */
 export interface LookBridge {
   get(): LookState;
@@ -198,10 +201,15 @@ export class FileActions {
     this.hooks.onSceneClean();
   }
 
+  /** Whether the scene has no objects (the last one deleted): nothing to save. */
+  isEmpty(): boolean {
+    return this.session.getMeshes().length === 0;
+  }
+
   /** The live scene as a record: objects, look, materials, settings. */
   serialize(): SavedScene {
     const scene = this.session.serializeScene();
-    if (!scene) throw new Error('Nothing to save');
+    if (!scene) throw new Error(this.isEmpty() ? EMPTY_SCENE : 'Nothing to save');
     // The look travels with the file: reopening it puts the work back
     // under the lighting, material and camera it was saved in.
     if (this.hooks.look) scene.look = this.hooks.look.get();

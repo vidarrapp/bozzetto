@@ -1,6 +1,6 @@
 import { Color, Material, SRGBColorSpace, Texture } from 'three';
 import { MeshMatcapNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
-import { attribute, float, materialColor, mix, uniform, userData, vec3 } from 'three/tsl';
+import { attribute, float, materialColor, mix, uniform, userData, varying, vec3 } from 'three/tsl';
 import type { AssetSource } from './AssetSource';
 import { ASSET_VERSION } from './assetVersion';
 import { hexColor } from './color';
@@ -270,7 +270,12 @@ export class Materials {
         this.readsVertexColor() && id === 'lit' ? attribute('color', 'vec3') : null;
       // The poly group colours, while they show (never in Present, which
       // shows the model as it will be published).
-      if (this.groupColorsOn && this.sculptVertexColor && !this.presenting) node = attribute('groupColor', 'vec3');
+      // Flat: each triangle takes its provoking corner's colour, which
+      // GeometrySync turns the triangles to make its face's group's, so a
+      // border between groups is crisp along the face edges.
+      if (this.groupColorsOn && this.sculptVertexColor && !this.presenting) {
+        node = varying(attribute('groupColor', 'vec3')).setInterpolation('flat', 'first');
+      }
       // How much of the surface counts as masked: the vertex mask when the
       // tint is on, and the whole object when it is locked (owner call: a
       // locked object draws as if fully masked, so the padlock shows in

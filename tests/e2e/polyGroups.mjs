@@ -10,11 +10,14 @@
 // - storage: one group a level-0 face (the array, the .bozz record), and
 //   at every level face f in its level-0 ancestor's (f >> 2k) group;
 // - Ctrl+W after a loop-mask drag across the sphere's equator makes "Group
-//   2" of the level-0 faces the masked top faces round down to, level by
-//   level (a face of the level below joins when most of its four children
-//   do, the earliest child deciding a tie), one undo step; Ctrl+W with
-//   nothing masked makes none; the rounding rule itself on chosen
-//   patterns, including one where level by level and a flat vote differ;
+//   2" of the level-0 faces the masked top faces round down to (a base
+//   face joins when more than half of its faces on screen are masked),
+//   clears the mask, one undo step that brings the mask back; the split
+//   is even: every face below the loop in, none above, the edges between
+//   the groups the loop's own; the same on level 0 itself; a loop two and
+//   six rows of eight up a row of base faces snaps the group to the base
+//   loop below and above it, the whole row out or in, and says so; Ctrl+W
+//   with nothing masked makes none; the rounding rule on chosen patterns;
 // - subdividing and deleting the highest level leave level 0's groups as
 //   they were; Rebuild puts a new level 0 under the old one, each face the
 //   majority of its children (found by the reversion's parent map, checked
@@ -161,6 +164,96 @@ function roundLevels(values, k) {
   return cur;
 }
 
+/** In the page: the active object's masked vertices (under 0.5). */
+function maskedCount() {
+  const m = window.__sculpt.session.getMesh();
+  const mat = m.getMaterials();
+  let n = 0;
+  for (let i = 0; i < m.getNbVertices(); i++) if (mat[i * 3 + 2] < 0.5) n++;
+  return n;
+}
+
+/**
+ * In the page: the faces on screen with every corner masked, and the
+ * level-0 faces they round down to by share (more than half of a base
+ * face's faces on screen), counted here independently of the app.
+ */
+function maskedFaces() {
+  const m = window.__sculpt.session.getMesh();
+  const f = m.getFaces();
+  const mat = m.getMaterials();
+  const sel = m._sel ?? 0;
+  const level0 = m._meshes ? m._meshes[0].getNbFaces() : m.getNbFaces();
+  const span = 4 ** sel;
+  const hit = new Uint32Array(level0);
+  let n = 0;
+  for (let i = 0; i < m.getNbFaces(); i++) {
+    let all = true;
+    for (let k = 0; k < 4; k++) if (f[i * 4 + k] !== 4294967295 && !(mat[f[i * 4 + k] * 3 + 2] < 0.5)) all = false;
+    if (all) {
+      n++;
+      hit[Math.floor(i / span)]++;
+    }
+  }
+  let base = 0;
+  for (let b = 0; b < level0; b++) if (2 * hit[b] > span) base++;
+  let masked = 0;
+  for (let i = 0; i < m.getNbVertices(); i++) if (mat[i * 3 + 2] < 0.5) masked++;
+  return { n, faces: m.getNbFaces(), base, level0, sel, masked };
+}
+
+/**
+ * In the page: how the active object's faces on screen fall about the
+ * height `y` (local): below it and in group `g`, above it and in `g`;
+ * and how many edges lie between faces of different groups.
+ */
+function splitReport({ y, g = 1 }) {
+  const { session } = window.__sculpt;
+  const m = session.getMesh();
+  const f = m.getFaces();
+  const v = m.getVertices();
+  const groups = session.groups.levelFaces(m);
+  let below = 0;
+  let belowIn = 0;
+  let above = 0;
+  let aboveIn = 0;
+  const edges = new Map();
+  let border = 0;
+  for (let i = 0; i < m.getNbFaces(); i++) {
+    const c = f[i * 4 + 3] === 4294967295 ? 3 : 4;
+    let cy = 0;
+    for (let k = 0; k < c; k++) cy += v[f[i * 4 + k] * 3 + 1];
+    cy /= c;
+    const inG = groups[i] === g;
+    if (cy < y) {
+      below++;
+      if (inG) belowIn++;
+    } else {
+      above++;
+      if (inG) aboveIn++;
+    }
+    for (let k = 0; k < c; k++) {
+      const a = f[i * 4 + k];
+      const b = f[i * 4 + ((k + 1) % c)];
+      const key = a < b ? a * 4194304 + b : b * 4194304 + a;
+      const o = edges.get(key);
+      if (o === undefined) edges.set(key, i);
+      else if (groups[o] !== groups[i]) border++;
+    }
+  }
+  return { below, belowIn, above, aboveIn, border };
+}
+
+/** In the page: the `k`-th vertex up the sphere's front meridian from the equator (local), on the level on screen. */
+function meridian(k) {
+  const m = window.__sculpt.session.getMesh();
+  const v = m.getVertices();
+  const pts = [];
+  for (let i = 0; i < m.getNbVertices(); i++) if (Math.abs(v[i * 3]) < 1e-3 && v[i * 3 + 2] > 0 && v[i * 3 + 1] >= -1e-3) pts.push([v[i * 3], v[i * 3 + 1], v[i * 3 + 2]]);
+  pts.sort((a, b) => a[1] - b[1]);
+  return pts[k];
+}
+
 export const suites = {
   async polyGroups(page, base, t) {
     page.on('dialog', (d) => void d.accept());
@@ -210,48 +303,94 @@ export const suites = {
     const eq = await page.evaluate(gridDrag, { name: 'Sphere', at: [0, 0, 12.5], from: [0, 1, 0], side: [1, 0, 0] });
     await dev.penDrag(along(eq.a, eq.b), null, CTRL | SHIFT);
     await settle(page);
-    const below = await page.evaluate((roundSrc) => {
-      const roundLevels = new Function(`return ${roundSrc}`)();
-      const m = window.__sculpt.session.getMesh();
-      const f = m.getFaces();
-      const mat = m.getMaterials();
-      const flags = [];
-      let n = 0;
-      for (let i = 0; i < m.getNbFaces(); i++) {
-        let all = true;
-        for (let k = 0; k < 4; k++) if (!(mat[f[i * 4 + k] * 3 + 2] < 0.5)) all = false;
-        flags.push(all ? 1 : 0);
-        if (all) n++;
-      }
-      const base = roundLevels(flags, m._sel);
-      return { n, faces: m.getNbFaces(), base: base.filter((x) => x).length, level0: m._meshes[0].getNbFaces(), sel: m._sel };
-    }, roundLevels.toString());
+    const below = await page.evaluate(maskedFaces);
     let before = await groupsOf(page);
     await page.keyboard.press('Control+w');
     let g = await groupsOf(page);
     t.ok(
       g.base === below.level0 && g.names.length === 2 && g.names[1] === 'Group 2' && g.counts[1] === below.base && below.base > 0 && g.counts[0] === below.level0 - below.base && g.undo === before.undo + 1,
-      `Ctrl+W after a loop mask across the equator: "Group 2" of the ${below.base} of the sphere's ${below.level0} level-0 faces the ${below.n} masked faces of level ${below.sel} round down to, one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
+      `Ctrl+W after a loop mask across the equator: "Group 2" of the ${below.base} of the sphere's ${below.level0} level-0 faces the ${below.n} masked faces of level ${below.sel} round down to (more than half of a base face's faces), one undo step (${JSON.stringify({ names: g.names, counts: g.counts })})`,
     );
-    const maskKept = await page.evaluate(() => {
-      const m = window.__sculpt.session.getMesh();
-      const mat = m.getMaterials();
-      let n = 0;
-      for (let i = 0; i < m.getNbVertices(); i++) if (mat[i * 3 + 2] < 0.5) n++;
-      return n;
-    });
-    t.ok(maskKept > 0, `and the mask stays as it was (${maskKept} vertices still masked)`);
+    let split = await page.evaluate(splitReport, { y: 0 });
+    t.ok(
+      split.belowIn === split.below && split.aboveIn === 0 && split.border === 256,
+      `the split follows the loop exactly at the top level: of the ${split.below} faces below it ${split.belowIn} are in "Group 2", of the ${split.above} above ${split.aboveIn}; ${split.border} edges between the groups, the loop's 256`,
+    );
+    const maskCleared = await page.evaluate(maskedCount);
+    t.ok(maskCleared === 0, `and the mask is cleared with it (${maskCleared} vertices masked)`);
     await page.evaluate(() => window.__sculpt.session.undo());
     g = await groupsOf(page);
-    t.ok(g.names.length === 1 && g.counts[0] === below.level0, `one undo takes the group off (${g.names.length} group)`);
+    const maskBack = await page.evaluate(maskedCount);
+    t.ok(g.names.length === 1 && g.counts[0] === below.level0 && maskBack === below.masked, `one undo takes the group off and puts the mask back (${g.names.length} group, ${maskBack} of ${below.masked} vertices masked)`);
     await page.evaluate(() => window.__sculpt.session.redo());
     g = await groupsOf(page);
-    t.ok(g.names.length === 2 && g.counts[1] === below.base, 'and a redo puts it back');
+    t.ok(g.names.length === 2 && g.counts[1] === below.base && (await page.evaluate(maskedCount)) === 0, 'and a redo puts the group back and clears the mask again');
     await page.keyboard.press('Control+c'); // clear the mask
     before = await groupsOf(page);
     await page.keyboard.press('Control+w');
     g = await groupsOf(page);
     t.ok(g.names.length === 2 && g.undo === before.undo, 'Ctrl+W with nothing masked makes no group');
+
+    // --- the loop mask then Ctrl+W, the split even ------------------------------------
+    // Owner report, 2026-11-01: an uneven split along the loop. On the
+    // base level the group always followed the mask exactly; what looked
+    // uneven was the colours (a vertex colour a border vertex, so the faces
+    // along it were half one colour in face order) and the mask left on.
+    // Up the levels the rounding went by each base face's earliest child,
+    // which turns with its corner order: a loop across the middle of a row
+    // of base faces split the row 24 to 8.
+    /** The loop mask down across the sphere's front at a local point, then Ctrl+W; the group's split about `y`. */
+    const loopThenGroup = async (at, y) => {
+      await page.keyboard.press('Control+c');
+      const d = await page.evaluate(gridDrag, { name: 'Sphere', at, from: [0, 1, 0], side: [1, 0, 0] });
+      await dev.penDrag(along(d.a, d.b), null, CTRL | SHIFT);
+      await settle(page);
+      const loop = await page.evaluate(() => window.__sculpt.input.loopMask.last);
+      const masked = await page.evaluate(maskedFaces);
+      const was = await groupsOf(page);
+      await page.keyboard.press('Control+w');
+      const now = await groupsOf(page);
+      const report = await page.evaluate(splitReport, { y, g: now.names.length - 1 });
+      const snapped = await page.evaluate(() => window.__sculpt.session.groups.lastSnapped && [...document.querySelectorAll('.sculpt-toast')].some((e) => /nearest base-mesh edges/.test(e.textContent)));
+      return { loop, masked, was, now, report, snapped };
+    };
+    await page.evaluate(() => window.__sculpt.session.undo()); // the group off, the mask back
+    await page.keyboard.press('Control+c');
+    // Level 0, the base level on screen: the loop is level 0's own.
+    await page.evaluate(() => window.__sculpt.session.selectLevel(0));
+    await settle(page);
+    let run = await loopThenGroup([0, 0, 12.5], 0);
+    t.ok(
+      run.loop?.kind === 'loop' && run.loop.loopLength === 32 && run.report.belowIn === run.report.below && run.report.aboveIn === 0 && run.report.border === 32 && !run.snapped,
+      `on level 0 (${run.masked.faces} faces), the loop mask across the equator then Ctrl+W: every one of the ${run.report.below} faces below the loop in the new group, ${run.report.aboveIn} of the ${run.report.above} above; ${run.report.border} edges between the groups, the loop's ${run.loop?.loopLength}`,
+    );
+    await page.evaluate(() => window.__sculpt.session.undo());
+    await page.keyboard.press('Control+c');
+    await page.evaluate(() => {
+      const s = window.__sculpt.session;
+      s.selectLevel(s.getMesh()._meshes.length - 1);
+    });
+    await settle(page);
+    // The top level, a loop two and six rows of eight up a row of base faces.
+    const meridianRows = await page.evaluate((src) => {
+      const meridian = new Function(`return ${src}`)();
+      return [meridian(2), meridian(6)];
+    }, meridian.toString());
+    // The row is 32 base faces round the sphere, 64 top faces each.
+    for (const [k, at, joins] of [
+      [2, meridianRows[0], false],
+      [6, meridianRows[1], true],
+    ]) {
+      run = await loopThenGroup(at, 0);
+      const rowIn = joins ? 32 * 64 : 0;
+      t.ok(
+        run.loop?.kind === 'loop' && run.report.belowIn === run.report.below && run.report.aboveIn === rowIn && run.report.border === 256 && run.snapped && run.now.counts[run.now.names.length - 1] === run.masked.base,
+        `a loop ${k} rows of 8 up the row of base faces above the equator (top level): the group snaps to the base-face loop ${joins ? 'above it, the whole row in' : 'below it, the whole row out'} (all ${run.report.below} faces below the equator in, ${run.report.aboveIn} above, the row's ${rowIn}); ${run.report.border} edges between the groups, one even loop of 256; the toast says it went to the base mesh's edges (${JSON.stringify({ snapped: run.snapped, counts: run.now.counts })})`,
+      );
+      // The second stays: the scene round trip below wants the sphere grouped.
+      if (!joins) await page.evaluate(() => window.__sculpt.session.undo());
+    }
+    await page.keyboard.press('Control+c');
 
     // --- storage on level 0, exact inheritance, the rounding -----------------------------
     const store = await page.evaluate(() => {
@@ -286,17 +425,20 @@ export const suites = {
       const span = 4 ** (levels - 2); // a level-1 child's top faces
       const child = (p, c) => flags.fill(1, (4 * p + c) * span, (4 * p + c + 1) * span);
       const grand = (p, c, g) => flags.fill(1, ((4 * p + c) * 4 + g) * (span / 4), ((4 * p + c) * 4 + g + 1) * (span / 4));
-      [0, 1, 2].forEach((c) => child(0, c)); // three of four: joins
-      [0, 3].forEach((c) => child(1, c)); // two of four, the first among them: joins (tie)
-      [1, 2].forEach((c) => child(2, c)); // two of four, not the first: stays (tie)
+      [0, 1, 2].forEach((c) => child(0, c)); // three of four children: 48 of 64, joins
+      [0, 3].forEach((c) => child(1, c)); // exactly half, the first child among them: stays
+      [1, 2].forEach((c) => child(2, c)); // exactly half, not the first: stays alike
       child(3, 0); // one of four: stays
-      // Children 0 and 1 three quarters each (24 of 64 top faces, under
-      // half): level by level they qualify, and then the tie goes to child 0.
+      // Half and one grandchild more (36 of 64): joins.
+      [0, 1].forEach((c) => child(4, c));
+      grand(4, 2, 0);
+      // Children 0 and 1 three quarters each (24 of 64, under half): stays,
+      // though level by level it used to join on child 0's tie.
       for (const c of [0, 1]) for (const g of [0, 1, 2]) grand(5, c, g);
       const out = session.groups.roundDown(cube, flags);
       return Array.from(out.subarray(0, 6));
     });
-    t.eq(rounding.join(','), '1,1,0,0,0,1', 'rounding a top-level selection to level 0, level by level: 3 of 4 children joins, a 2-2 tie goes to the first child, 1 of 4 stays, and 24 of 64 top faces joins when its first two children each have 3 of 4');
+    t.eq(rounding.join(','), '1,0,0,0,1,0', 'rounding a top-level selection to level 0 by share: 48 of 64 top faces joins, exactly half stays whichever children hold it, 16 of 64 stays, 36 of 64 joins, 24 of 64 stays');
     // A group assigned at level 0 directly: just the masked faces.
     const assignLow = await page.evaluate(() => {
       const { session } = window.__sculpt;
@@ -978,6 +1120,259 @@ export const suites = {
       return { has: session.hasUVIslands(s), disabled: !!document.querySelector('[data-role="groups-by-uv"]')?.disabled };
     });
     t.ok(!sphereUV.has && sphereUV.disabled, 'and greyed out for the sphere, which has none');
+
+    // --- Group: Visible, Auto, Clear all (owner call, 2026-11-01) ---------------------
+    // The Model panel's Group sub-heading holds every way of making groups.
+    const layout = await page.evaluate(() => {
+      const sec = document.querySelector('[data-role="groups"]');
+      const heads = [...sec.querySelectorAll('h4')].map((h) => h.textContent);
+      const under = [];
+      let at = null;
+      for (const el of sec.querySelectorAll('h4, button[data-role^="groups-"]')) {
+        if (el.matches('h4')) at = el.textContent;
+        else under.push(`${at}:${el.textContent}`);
+      }
+      return { heads: heads.join(','), under: under.join(',') };
+    });
+    t.eq(layout.under, 'Group:From mask,Group:Visible,Group:Auto,Group:By angle,Group:By UV islands,Group:Clear all,Groups:Show all', `the Groups section: a Group sub-heading with From mask, Visible, Auto, By angle, By UV islands and Clear all, then the list's Groups with Show all (${layout.heads})`);
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const cube = session.addPrimitive('cube');
+      session.getMeshName(cube);
+      session.groups.byAngle(cube, 40);
+      session.groups.setHidden(cube, 0, true);
+      session.groups.setHidden(cube, 1, true);
+    });
+    before = await groupsOf(page);
+    await tapIn('[data-role="groups-visible"]');
+    g = await groupsOf(page);
+    const side = before.base / 6;
+    t.ok(
+      g.undo === before.undo + 1 && g.names.length === 3 && g.names.join('|') === 'Group 1|Group 2|Group 7' && g.counts.join(',') === `${side},${side},${4 * side}` && g.hidden.join(',') === 'true,true,false',
+      `Visible: the four sides that show become one new group, "Group 7"; the two hidden sides keep theirs, and the emptied groups go; one undo step (${JSON.stringify({ names: g.names, counts: g.counts, hidden: g.hidden })})`,
+    );
+    await page.evaluate(() => window.__sculpt.session.undo());
+    g = await groupsOf(page);
+    t.ok(g.names.length === 6 && g.hidden.filter(Boolean).length === 2, 'an undo puts the six sides back');
+    // Auto: a merged pair of spheres is two separate pieces.
+    const pair = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const a = session.addPrimitive('sphere');
+      const b = session.addPrimitive('sphere');
+      b.getMatrix()[12] += 60;
+      const m = session.mergeMeshes([a, b], a);
+      session.setMesh(m);
+      session.setMeshName(m, 'Pair');
+      return { faces: m.getNbFaces(), levels: m._meshes?.length ?? 1 };
+    });
+    before = await groupsOf(page);
+    await tapIn('[data-role="groups-auto"]');
+    g = await groupsOf(page);
+    t.ok(g.undo === before.undo + 1 && g.names.length === 2 && g.counts[0] + g.counts[1] === g.base && Math.abs(g.counts[0] - g.counts[1]) < g.base * 0.05, `Auto on two merged spheres (${pair.faces} faces, ${pair.levels} level): two groups, one a piece (${g.counts.join(' + ')}), one undo step`);
+    // Clear all.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.groups.setHidden(session.getMesh(), 1, true);
+    });
+    before = await groupsOf(page);
+    let clearOn = await page.evaluate(() => !document.querySelector('[data-role="groups-clear"]').disabled);
+    await tapIn('[data-role="groups-clear"]');
+    g = await groupsOf(page);
+    const clearOff = await page.evaluate(() => document.querySelector('[data-role="groups-clear"]').disabled);
+    t.ok(clearOn && g.undo === before.undo + 1 && g.names.join('|') === 'Group 1' && g.counts[0] === g.base && !g.hidden[0] && clearOff, `Clear all: every face in "Group 1", nothing hidden, one undo step; the button off once there is nothing to clear (${JSON.stringify({ names: g.names, counts: g.counts })})`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    g = await groupsOf(page);
+    t.ok(g.names.length === 2 && g.hidden[1], 'an undo brings the two groups back, the second hidden');
+
+    // --- Edit: Split groups into objects, Split hidden into object, Delete hidden ------
+    const editMenuItem = (label) =>
+      page.evaluate((l) => {
+        const { editMenu } = window.__sculpt;
+        editMenu.open();
+        const b = [...editMenu.pop.querySelectorAll('.file-menu__item')].find((x) => x.textContent.startsWith(l));
+        const off = b.disabled;
+        editMenu.close();
+        return off;
+      }, label);
+    const pressEdit = async (label) => {
+      await page.evaluate((l) => {
+        const { editMenu } = window.__sculpt;
+        editMenu.open();
+        [...editMenu.pop.querySelectorAll('.file-menu__item')].find((x) => x.textContent.startsWith(l)).dataset.testPress = '1';
+      }, label);
+      await page.click('[data-test-press="1"]');
+      await page.evaluate(() => document.querySelector('[data-test-press]')?.removeAttribute('data-test-press'));
+      await frames(page);
+    };
+    const objects = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        const active = session.getMesh();
+        return {
+          n: session.getMeshes().length,
+          names: session.getMeshes().map((m) => session.getMeshName(m)),
+          active: active ? session.getMeshName(active) : null,
+          faces: Object.fromEntries(session.getMeshes().map((m) => [session.getMeshName(m), [m._meshes ? m._meshes[0].getNbFaces() : m.getNbFaces(), m.getNbFaces(), m._meshes?.length ?? 1, m._sel ?? 0]])),
+          undo: session.getStateManager()._curUndoIndex,
+        };
+      });
+    // A cube with its six sides as groups, on a level below its top, sculpted
+    // nowhere: each side an object of its own at every level.
+    const splitCube = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const cube = session.addPrimitive('cube');
+      session.setMeshName(cube, 'Box');
+      session.groups.byAngle(cube, 40);
+      ['Front', 'Back', 'Top', 'Bottom', 'Left', 'Right'].forEach((n, i) => session.groups.rename(cube, i, n));
+      session.selectLevel(cube._meshes.length - 2);
+      // World positions of the top level, to find each part's on.
+      const top = cube._meshes[cube._meshes.length - 1];
+      return { base: cube._meshes[0].getNbFaces(), top: top.getNbFaces(), levels: cube._meshes.length, sel: cube._sel, names: session.groups.names(cube) };
+    });
+    t.ok(!(await editMenuItem('Split groups into objects')) && (await editMenuItem('Split hidden into object')) && (await editMenuItem('Delete hidden')), 'with six groups and nothing hidden, Split groups into objects is on, the hidden ones off');
+    let o0 = await objects();
+    const topBefore = await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const top = m._meshes[m._meshes.length - 1];
+      return Array.from(top.getVertices().subarray(0, top.getNbVertices() * 3));
+    });
+    await pressEdit('Split groups into objects');
+    let o1 = await objects();
+    const sixth = splitCube.base / 6;
+    const parts = ['Front', 'Back', 'Top', 'Bottom', 'Left', 'Right'];
+    const shapes = parts.map((n) => o1.faces[n]);
+    t.ok(
+      o1.n === o0.n + 5 && !o1.names.includes('Box') && parts.every((n) => o1.names.includes(n)) && shapes.every((f) => f && f[0] === sixth && f[2] === splitCube.levels && f[3] === splitCube.sel) && o1.undo === o0.undo + 1,
+      `Split groups into objects: the cube's six groups are six objects named after them (${o1.n - o0.n + 1} for 1), each ${sixth} base faces over the cube's ${splitCube.levels} levels, on its level ${splitCube.sel} as the cube was; one undo step (${JSON.stringify(shapes)})`,
+    );
+    const exact = await page.evaluate((before) => {
+      const { session } = window.__sculpt;
+      let worst = 0;
+      let n = 0;
+      const key = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+      const had = new Set();
+      for (let i = 0; i < before.length; i += 3) had.add(key(before[i], before[i + 1], before[i + 2]));
+      for (const name of ['Front', 'Back', 'Top', 'Bottom', 'Left', 'Right']) {
+        const m = session.getMeshes().find((x) => session.getMeshName(x) === name);
+        const top = m._meshes[m._meshes.length - 1];
+        const v = top.getVertices();
+        for (let i = 0; i < top.getNbVertices(); i++, n++) if (!had.has(key(v[i * 3], v[i * 3 + 1], v[i * 3 + 2]))) worst++;
+      }
+      return { worst, n };
+    }, topBefore);
+    t.ok(exact.worst === 0, `and their top levels are the cube's own vertices (${exact.n} checked, ${exact.worst} not found)`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    let o2 = await objects();
+    t.ok(o2.n === o0.n && o2.names.includes('Box') && !o2.names.includes('Front'), `an undo puts the cube back whole (${o2.n} objects)`);
+    // Hide two sides: Split hidden into object.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const box = session.getMeshes().find((m) => session.getMeshName(m) === 'Box');
+      session.setMesh(box);
+      session.groups.setHidden(box, 2, true);
+    });
+    t.ok(!(await editMenuItem('Split hidden into object')) && !(await editMenuItem('Delete hidden')), 'with a group hidden, Split hidden into object and Delete hidden are on');
+    o0 = await objects();
+    await pressEdit('Split hidden into object');
+    o1 = await objects();
+    const hid = await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const find = (n) => session.getMeshes().find((m) => session.getMeshName(m) === n);
+      const box = find('Box');
+      const top = find('Top');
+      return { boxGroups: box && session.groups.names(box), boxHidden: box && session.groups.hiddenGroups(box).some(Boolean), topGroups: top && session.groups.names(top) };
+    });
+    t.ok(
+      o1.n === o0.n + 1 && o1.faces.Box?.[0] === 5 * sixth && o1.faces.Top?.[0] === sixth && o1.active === 'Box' && o1.undo === o0.undo + 1 && hid.boxGroups.join('|') === 'Front|Back|Bottom|Left|Right' && !hid.boxHidden && hid.topGroups.join('|') === 'Top',
+      `Split hidden into object: the hidden side is an object named after its group, "Top" (${o1.faces.Top?.[0]} base faces); "Box" keeps the five that showed (${o1.faces.Box?.[0]}), its groups but Top, nothing hidden; one undo step`,
+    );
+    await page.evaluate(() => window.__sculpt.session.undo());
+    // Two hidden: the part is "<object> hidden part".
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const box = session.getMeshes().find((m) => session.getMeshName(m) === 'Box');
+      session.setMesh(box);
+      session.groups.setHidden(box, 3, true);
+    });
+    await pressEdit('Split hidden into object');
+    o1 = await objects();
+    t.ok(o1.faces['Box hidden part']?.[0] === 2 * sixth && o1.faces.Box?.[0] === 4 * sixth, `two groups hidden: the part is "Box hidden part" (${JSON.stringify(o1.faces['Box hidden part'])})`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    o0 = await objects();
+    await pressEdit('Delete hidden');
+    o1 = await objects();
+    t.ok(o1.n === o0.n && o1.faces.Box?.[0] === 4 * sixth && o1.undo === o0.undo + 1, `Delete hidden: "Box" without its two hidden sides (${o1.faces.Box?.[0]} of ${splitCube.base} base faces), one undo step`);
+    await page.evaluate(() => window.__sculpt.session.undo());
+    o2 = await objects();
+    t.ok(o2.faces.Box?.[0] === splitCube.base, 'and an undo brings them back');
+    // A one-level object (the merged pair) splits at its level, the parts by Auto.
+    const flat = 'Pair';
+    {
+      await page.evaluate((n) => {
+        const { session } = window.__sculpt;
+        const m = session.getMeshes().find((x) => session.getMeshName(x) === n);
+        session.setMesh(m);
+        session.groups.autoIslands(m);
+      }, flat);
+      o0 = await objects();
+      await pressEdit('Split groups into objects');
+      o1 = await objects();
+      const two = o1.names.filter((n) => n.startsWith('Group'));
+      t.ok(o1.n === o0.n + 1 && two.length === 2 && two.every((n) => o1.faces[n][2] === 1) && o1.faces[two[0]][0] + o1.faces[two[1]][0] === o0.faces[flat][0], `a one-level object (the merged pair) splits into its two pieces as one-level objects (${two.map((n) => o1.faces[n][0]).join(' + ')} of ${o0.faces[flat][0]} faces)`);
+      await page.evaluate(() => window.__sculpt.session.undo());
+    }
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'));
+    });
+
+    // --- the loop mask then Ctrl+W on a quad-remeshed object (one level) -------------
+    const ball = await page.evaluate(async () => {
+      const { session, modelPanel } = window.__sculpt;
+      for (const m of session.getMeshes()) session.setMeshVisible(m, false);
+      const b = session.addPrimitive('sphere');
+      session.setMeshName(b, 'Ball');
+      modelPanel.quadTarget = 2000;
+      const ok = await modelPanel.runQuadRemesh();
+      const q = session.getMesh();
+      session.setMeshName(q, 'Ball');
+      return { ok, faces: q.getNbFaces(), levels: q._meshes?.length ?? 1 };
+    });
+    await view(page, [0, 12.5, 45], [0, 12.5, 0]);
+    await settle(page);
+    await page.keyboard.press('Control+c');
+    const qd = await page.evaluate(gridDrag, { name: 'Ball', at: [0, 0, 12.5], from: [0, 1, 0], side: [1, 0, 0] });
+    await dev.penDrag(along(qd.a, qd.b), null, CTRL | SHIFT);
+    await settle(page);
+    const qLoop = await page.evaluate(() => window.__sculpt.input.loopMask.last);
+    const qMasked = await page.evaluate(maskedFaces);
+    // Each face's "every corner masked", kept to hold the group against.
+    await page.evaluate(() => {
+      const m = window.__sculpt.session.getMesh();
+      const f = m.getFaces();
+      const mat = m.getMaterials();
+      window.__qualify = Array.from({ length: m.getNbFaces() }, (_, i) => [0, 1, 2, 3].every((k) => f[i * 4 + k] === 4294967295 || mat[f[i * 4 + k] * 3 + 2] < 0.5));
+    });
+    await page.keyboard.press('Control+w');
+    const qGroups = await groupsOf(page);
+    const qSplit = await page.evaluate(splitReport, { y: 1e9, g: qGroups.names.length - 1 });
+    const qOff = await page.evaluate((g) => {
+      const { session } = window.__sculpt;
+      const groups = session.groups.levelFaces(session.getMesh());
+      let off = 0;
+      for (let i = 0; i < groups.length; i++) if ((groups[i] === g) !== window.__qualify[i]) off++;
+      return off;
+    }, qGroups.names.length - 1);
+    t.ok(
+      ball.ok && ball.levels === 1 && qMasked.n > ball.faces / 4 && qGroups.names.length === 2 && qGroups.counts[1] === qMasked.n && qOff === 0 && (qLoop?.kind !== 'loop' || !qLoop.closed || qSplit.border === qLoop.loopLength),
+      `quad-remeshed (${ball.faces} faces, one level): the loop mask (${qLoop?.kind}${qLoop?.note ? `, "${qLoop.note}"` : ''}, ${qLoop?.side} vertices; an edge loop that spirals round and crosses itself, as QuadriFlow's do, used to fence off a few faces between its turns and mask only those) then Ctrl+W puts exactly the ${qMasked.n} masked faces in the new group (${qGroups.counts[1]}; ${qOff} faces off); ${qSplit.border} edges between the groups`,
+    );
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.deleteMesh(session.getMesh());
+      for (const m of session.getMeshes()) session.setMeshVisible(m, true);
+      session.setMesh(session.getMeshes().find((m) => session.getMeshName(m) === 'Sphere'));
+    });
 
     // --- timings at 393k faces ---------------------------------------------------------
     const timing = await page.evaluate(() => {

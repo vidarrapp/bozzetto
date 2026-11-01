@@ -886,6 +886,14 @@ export class ScenePersist {
     // write follows the stroke rather than waiting out another grace.
     if (this.session._action === Enums.Action.SCULPT_EDIT) return;
     if (this.session.topLevelTriangles() > SKIP_SAVE_TRIS) return;
+    // An empty scene (the last object deleted) is not written: the record
+    // keeps the last scene that had something in it, which a reload brings
+    // back, and nothing here is at stake (owner call, 2026-11-01). The next
+    // object made is an edit, and saves as usual.
+    if (this.session.getMeshes().length === 0) {
+      this.dirty = false;
+      return;
+    }
     const t0 = performance.now();
     const scene = this.session.serializeScene();
     if (!scene) return;

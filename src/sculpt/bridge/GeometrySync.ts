@@ -36,8 +36,12 @@ export interface GeometryDecor {
   hiddenFaces(mesh: SculptMesh): Uint8Array | null;
   /** Whether the group colours show. */
   isShowing(): boolean;
-  /** Each vertex's group colour into `out` (three a vertex). */
-  fillColors(mesh: SculptMesh, out: Float32Array): void;
+  /**
+   * Each vertex's group colour into `colors` (three a vertex), and the
+   * triangles of `index` turned so each one's provoking corner has its
+   * face's group (`triFace` the face of each of the `nTris` triangles).
+   */
+  fillColors(mesh: SculptMesh, colors: Float32Array, index: Uint32Array, triFace: Uint32Array, nTris: number, provoking: 0 | 2): void;
   /** A dynamic-topology step or undo moved the faces. */
   topologyChanged(mesh: SculptMesh): void;
 }
@@ -59,6 +63,11 @@ export interface SyncStats {
 export class GeometrySync {
   /** The poly groups' hidden faces and colours, for every sync. */
   static decor: GeometryDecor | null = null;
+  /**
+   * Which corner of a triangle a flat varying takes: the first on WebGPU,
+   * the last on WebGL 2 (mode.ts sets it from the renderer's backend).
+   */
+  static provoking: 0 | 2 = 0;
   /** The syncs alive, so a change to the groups or their colours reaches every object. */
   private static readonly live = new Set<GeometrySync>();
 
@@ -98,6 +107,8 @@ export class GeometrySync {
   private visibleCount = 0;
   /** The group colours, while they show. */
   private groupColors: BufferAttribute | null = null;
+  /** The face of each triangle of the own index, while the colours show. */
+  private triFace: Uint32Array | null = null;
 
   constructor() {
     GeometrySync.live.add(this);
@@ -206,13 +217,17 @@ export class GeometrySync {
     const decor = GeometrySync.decor;
     const tris = mesh.getTriangles();
     const hidden = decor?.hiddenFaces(mesh) ?? null;
-    if (!hidden) {
+    // The colours turn triangles in the index (fillColors), so they need
+    // an index of their own too, as hidden faces do.
+    const showing = !!decor?.isShowing();
+    if (!hidden && !showing) {
       const idx = this.geometry.getIndex();
       if (fresh || this.visible || !idx || idx.array !== tris) this.geometry.setIndex(new BufferAttribute(tris, 1));
       else if (faces) idx.needsUpdate = true;
       this.visible = null;
       this.visibleFrom = null;
       this.visibleCount = 0;
+      this.triFace = null;
     } else {
       if (!this.visible || this.visibleFrom !== tris || (this.visible.array as Uint32Array).length < tris.length) {
         this.visible = new BufferAttribute(new Uint32Array(tris.length), 1);
@@ -220,6 +235,13 @@ export class GeometrySync {
         this.geometry.setIndex(this.visible);
       }
       const out = this.visible.array as Uint32Array;
+      let triFace: Uint32Array | null = null;
+      if (showing) {
+        if (!this.triFace || this.triFace.length < tris.length / 3) this.triFace = new Uint32Array(Math.ceil(tris.length / 3));
+        triFace = this.triFace;
+      } else {
+        this.triFace = null;
+      }
       const fAr = mesh.getFaces();
       const ftt = mesh.isDynamic ? null : (mesh.getFacesToTriangles?.() ?? null);
       const nbFaces = mesh.getNbFaces();
@@ -229,22 +251,24 @@ export class GeometrySync {
         const count = fAr[f * 4 + 3] === TRI_INDEX || mesh.isDynamic ? 1 : 2;
         const first = ftt ? ftt[f] : t;
         t = first + count;
-        if (hidden[f]) continue;
+        if (hidden && hidden[f]) continue;
+        if (triFace) for (let c = 0; c < count; c++) triFace[n / 3 + c] = f;
         for (let k = first * 3, end = (first + count) * 3; k < end; k++) out[n++] = tris[k];
       }
       this.visibleCount = n;
+      if (showing) {
+        const len = mesh.getVertices().length;
+        if (!this.groupColors || this.groupColors.array.length !== len) {
+          this.groupColors = new BufferAttribute(new Float32Array(len), 3);
+          this.geometry.setAttribute('groupColor', this.groupColors);
+        }
+        decor!.fillColors(mesh, this.groupColors.array as Float32Array, out, triFace!, n / 3, GeometrySync.provoking);
+        this.groupColors.needsUpdate = true;
+      }
       this.visible.needsUpdate = true;
     }
     this.geometry.setDrawRange(0, this.drawCount(mesh));
-    if (decor?.isShowing()) {
-      const len = mesh.getVertices().length;
-      if (!this.groupColors || this.groupColors.array.length !== len) {
-        this.groupColors = new BufferAttribute(new Float32Array(len), 3);
-        this.geometry.setAttribute('groupColor', this.groupColors);
-      }
-      decor.fillColors(mesh, this.groupColors.array as Float32Array);
-      this.groupColors.needsUpdate = true;
-    } else if (this.groupColors) {
+    if (!showing && this.groupColors) {
       this.geometry.deleteAttribute('groupColor');
       this.groupColors = null;
     }

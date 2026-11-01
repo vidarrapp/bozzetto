@@ -115,6 +115,7 @@ export class ModelPanel extends SidePanel {
   private groupsColors?: HTMLInputElement;
   private uvButton?: HTMLButtonElement;
   private showAllButton?: HTMLButtonElement;
+  private clearGroupsButton?: HTMLButtonElement;
   /** Group by angle's threshold, in degrees (owner default 40). */
   private groupAngle = 40;
   /** The group whose name is being typed, so a refresh mid-edit leaves the field be. */
@@ -495,17 +496,22 @@ export class ModelPanel extends SidePanel {
     const colors = checkbox('Show group colours (Shift+F)', this.session.groups.isShowing(), (on) => this.onGroupColors?.(on));
     this.groupsColors = colors.querySelector('input') as HTMLInputElement;
     sec.appendChild(colors);
+    // Group: every way of making groups, each one undo step (owner call,
+    // 2026-11-01: By angle and By UV islands under this heading, with
+    // Visible, Auto and Clear all; From mask joins them, as it makes a
+    // group too).
+    sec.appendChild(subheading('Group'));
     const make = div('sculpt-panel__row');
     const fromMask = this.tapButton('From mask', () => this.onGroupFromMask?.());
-    fromMask.title = 'The masked faces into a new group (Ctrl+W in the installed app)';
+    fromMask.title = 'The masked faces into a new group, the mask cleared (Ctrl+W in the installed app)';
     fromMask.dataset.role = 'groups-from-mask';
-    this.showAllButton = this.tapButton('Show all', () => {
-      const mesh = this.session.getMesh();
-      if (mesh) this.session.groups.showAll(mesh);
-    });
-    this.showAllButton.title = 'Show every group (Ctrl+Shift+click on empty space)';
-    this.showAllButton.dataset.role = 'groups-show-all';
-    make.append(fromMask, this.showAllButton);
+    const visible = this.tapButton('Visible', () => this.groupOne((m) => this.session.groups.groupVisible(m), 'Nothing is showing to group.'));
+    visible.title = 'Every face that shows into one new group; hidden faces keep theirs';
+    visible.dataset.role = 'groups-visible';
+    const auto = this.tapButton('Auto', () => this.groupBy(() => this.session.groups.autoIslands(this.session.getMesh()!)));
+    auto.title = 'A group for each separate piece of the mesh';
+    auto.dataset.role = 'groups-auto';
+    make.append(fromMask, visible, auto);
     sec.appendChild(make);
     const angle = this.numberedRange(
       'Angle',
@@ -529,10 +535,45 @@ export class ModelPanel extends SidePanel {
     this.uvButton.dataset.role = 'groups-by-uv';
     split.append(byAngle, this.uvButton);
     sec.appendChild(split);
+    const clearRow = div('sculpt-panel__row');
+    const clear = this.tapButton('Clear all', () => {
+      const mesh = this.session.getMesh();
+      if (mesh && this.session.groups.clearAll(mesh)) statusToast('').done('One poly group');
+    });
+    clear.title = 'Every face back in one group, "Group 1", nothing hidden';
+    clear.dataset.role = 'groups-clear';
+    this.clearGroupsButton = clear;
+    clearRow.append(clear);
+    sec.appendChild(clearRow);
+    // Groups: the list, and Show all for what it hides.
+    sec.appendChild(subheading('Groups'));
+    const showRow = div('sculpt-panel__row');
+    this.showAllButton = this.tapButton('Show all', () => {
+      const mesh = this.session.getMesh();
+      if (mesh) this.session.groups.showAll(mesh);
+    });
+    this.showAllButton.title = 'Show every group (Ctrl+Shift+click on empty space)';
+    this.showAllButton.dataset.role = 'groups-show-all';
+    showRow.append(this.showAllButton);
+    sec.appendChild(showRow);
     this.groupsList = div('groups-list');
     this.groupsList.dataset.role = 'groups-list';
     sec.appendChild(this.groupsList);
     this.refreshGroups();
+  }
+
+  /** Make one group (Visible), saying which, or `none` when it made nothing. */
+  private groupOne(run: (mesh: SculptMesh) => number, none: string): void {
+    const mesh = this.session.getMesh();
+    if (!mesh) return;
+    try {
+      const g = run(mesh);
+      if (g < 0) statusToast('').fail(none);
+      else statusToast('').done(`${this.session.groups.names(mesh)[g]}: the visible faces`);
+    } catch (err) {
+      if (!(err instanceof TooManyGroups)) throw err;
+      statusToast('').fail(err.message);
+    }
   }
 
   /** Run a regrouping, saying so when it makes too many groups. */
@@ -557,6 +598,7 @@ export class ModelPanel extends SidePanel {
     if (this.groupsColors) this.groupsColors.checked = this.session.groups.isShowing();
     const mesh = this.session.getMesh();
     if (this.uvButton) this.uvButton.disabled = !mesh || !this.session.hasUVIslands(mesh);
+    if (this.clearGroupsButton) this.clearGroupsButton.disabled = !mesh || !this.session.groups.hasGroups(mesh);
     if (this.renamingGroup >= 0 && list.contains(document.activeElement)) return;
     this.renamingGroup = -1;
     list.replaceChildren();
@@ -818,4 +860,12 @@ export class ModelPanel extends SidePanel {
     this.voxelOverlay = null;
     super.dispose();
   }
+}
+
+/** A sub-heading inside a section (the Poly groups section's Group and Groups). */
+function subheading(text: string): HTMLElement {
+  const h = document.createElement('h4');
+  h.className = 'sculpt-panel__subhead';
+  h.textContent = text;
+  return h;
 }

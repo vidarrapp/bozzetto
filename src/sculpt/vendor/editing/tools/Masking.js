@@ -73,6 +73,8 @@ class Masking extends SculptBase {
 
   updateAndRenderMask() {
     var mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     mesh.updateDuplicateColorsAndMaterials();
     mesh.updateDrawArrays();
     this.updateRender();
@@ -80,6 +82,8 @@ class Masking extends SculptBase {
 
   blur() {
     var mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     var iVerts = this.getMaskedVertices();
     if (iVerts.length === 0)
       return;
@@ -99,6 +103,8 @@ class Masking extends SculptBase {
 
   sharpen() {
     var mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     var iVerts = this.getMaskedVertices();
     if (iVerts.length === 0)
       return;
@@ -118,6 +124,8 @@ class Masking extends SculptBase {
 
   clear() {
     var mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     var iVerts = this.getMaskedVertices();
     if (iVerts.length === 0)
       return;
@@ -162,6 +170,8 @@ class Masking extends SculptBase {
   invert(isState, meshState) {
     var mesh = meshState;
     if (!mesh) mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     if (!isState)
       this._main.getStateManager().pushStateCustom(this.invert.bind(this, true, mesh));
 
@@ -355,6 +365,8 @@ class Masking extends SculptBase {
 
   extract() {
     var mesh = this.getMesh();
+    // BOZZETTO EDIT: an empty scene (the last object deleted) has no mesh.
+    if (!mesh) return;
     var maskClamp = 0.5;
 
     var iVerts = this.filterMaskedVertices(-Infinity, maskClamp);

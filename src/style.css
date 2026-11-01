@@ -516,6 +516,15 @@ h1,
   border-bottom: none;
 }
 
+.section h4.sculpt-panel__subhead {
+  margin: 12px 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .section h3 {
   margin: 0 0 8px;
   font-size: 11px;

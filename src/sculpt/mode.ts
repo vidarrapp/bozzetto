@@ -334,6 +334,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // The poly groups' hidden faces and colours reach every object's display.
   GeometrySync.decor = session.groups;
+  // A flat varying takes the first corner on WebGPU and the last on WebGL 2.
+  GeometrySync.provoking = (viewer.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 0 : 2;
   const sync = new GeometrySync();
   // Every upload is a change to the picture (Viewer.invalidate).
   sync.onChange = () => viewer.invalidate();
@@ -628,7 +630,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The outliner eye and padlock: the vendor flag and the session's lock
     // set are the truth, the display follows (a locked object draws as if
     // fully masked).
-    viewer.setSculptVisible(active ? active.isVisible() : true);
+    // An empty scene (the last object deleted) draws nothing: the primary
+    // display still holds the last active object's geometry.
+    viewer.setSculptVisible(active ? active.isVisible() : false);
     viewer.setSculptLocked('primary', !!active && session.isLocked(active));
     // A newly added object still has SculptGL's white vertex colours.
     library.applyNew();
@@ -673,7 +677,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshGroups();
     session.render();
   };
-  /** Ctrl+W, and the Groups list's From mask: the masked faces into a new group. */
+  /** Ctrl+W, and the Groups list's From mask: the masked faces into a new group, the mask cleared (one undo step). */
   const groupFromMask = (): void => {
     const mesh = session.getMesh();
     if (!mesh) return;
@@ -681,6 +685,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const g = session.groups.fromMask(mesh);
       if (g === -1) statusToast('').fail('Mask some faces first: a face whose corners are all masked joins the new group.');
       else if (g < 0) statusToast('').fail('Too little is masked: groups follow the base mesh, so a base face joins when most of it is masked. Mask more, or step down to level 0.');
+      else if (session.groups.lastSnapped) statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces, to the nearest base-mesh edges`);
       else statusToast('').done(`${session.groups.names(mesh)[g]}: the masked faces`);
     } catch (err) {
       if (!(err instanceof TooManyGroups)) throw err;
@@ -1485,6 +1490,30 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
             })),
         },
         { separator: true },
+        // Poly groups into objects (owner call, 2026-11-01), on the active
+        // object; greyed out where there is nothing to split.
+        {
+          label: 'Split groups into objects',
+          enabled: () => session.splittableGroups() >= 2,
+          action: () => scenePanel?.splitActive('groups'),
+        },
+        {
+          label: 'Split hidden into object',
+          enabled: () => {
+            const s = session.hiddenSplit();
+            return s.hidden > 0 && s.shown > 0;
+          },
+          action: () => scenePanel?.splitActive('hidden'),
+        },
+        {
+          label: 'Delete hidden',
+          enabled: () => {
+            const s = session.hiddenSplit();
+            return s.hidden > 0 && s.shown > 0;
+          },
+          action: () => scenePanel?.splitActive('delete-hidden'),
+        },
+        { separator: true },
         { label: 'Preferences…', action: () => showPreferences('sculpt') },
       ],
       'file-menu--edit',
@@ -1916,6 +1945,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const snapshot = async (): Promise<void> => {
     try {
       const meshes = session.getMeshes();
+      // An empty scene is not autosaved (ScenePersist.flush): the card keeps
+      // the picture of the scene the record still holds.
+      if (!meshes.length) return;
       await saveSculptSnapshot({
         thumb: await viewer.captureThumbnail(),
         savedAt: Date.now(),
@@ -2057,7 +2089,7 @@ function makeStatsCorner(session: SculptSession): { dispose(): void } {
   document.body.appendChild(el);
   const update = (): void => {
     const mesh = session.getMesh();
-    name.textContent = session.activeName();
+    name.textContent = mesh ? session.activeName() : 'Empty scene';
     tris.textContent = mesh ? `${mesh.getNbTriangles().toLocaleString('en-US')} tris` : '';
   };
   update();

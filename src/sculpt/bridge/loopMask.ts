@@ -14,7 +14,9 @@
  * - Between two quads, the cut is that edge's loop: walked both ways
  *   through regular vertices (four quads around, not on a border), at each
  *   one going on along the edge opposite the one it came in by, and
- *   stopping at a pole (any other valence), a border, or where it closes.
+ *   stopping at a pole (any other valence), a border, where it closes, or
+ *   where it comes back across itself (a spiral, which then cuts nothing
+ *   in two and falls back to the ring).
  * - Anywhere else (triangles: a dynamic-topology surface, a decimated or
  *   imported one), the cut is a geodesic ring: the plane through the picked
  *   point that holds the surface normal there and stands across the drag
@@ -267,7 +269,11 @@ function unbar(t: LoopTopology, marked: number[]): void {
 /**
  * Walk an edge loop from edge (f, slot) on through its end `v`: the edges
  * passed are barred and their far ends pushed onto `out`. Returns how the
- * walk stopped.
+ * walk stopped. `seen` is the stamp the walk's vertices carry in
+ * t.vertMark: a loop that comes back across itself (a spiral, common on a
+ * quad-remeshed surface) stops there ('crossed'). Walked on, it fenced off
+ * a cell of a few faces between its own turns, and that cell was all the
+ * drag masked.
  */
 function walkLoop(
   t: LoopTopology,
@@ -277,7 +283,8 @@ function walkLoop(
   start: [number, number],
   out: number[],
   marked: number[],
-): 'closed' | 'pole' | 'border' {
+  seen: number,
+): 'closed' | 'pole' | 'border' | 'crossed' {
   const fAr = t.fAr;
   for (let steps = 0; steps <= t.nf; steps++) {
     if (!t.regular[v]) return t.border[v] ? 'border' : 'pole';
@@ -289,6 +296,8 @@ function walkLoop(
     const a = fAr[h * 4 + s2];
     const w = a === v ? fAr[h * 4 + ((s2 + 1) % t.corners[h])] : a;
     if ((v === start[0] && w === start[1]) || (v === start[1] && w === start[0])) return 'closed';
+    if (t.vertMark[w] === seen && w !== start[0] && w !== start[1]) return 'crossed';
+    t.vertMark[w] = seen;
     bar(t, h * 4 + s2, marked);
     out.push(w);
     f = h;
@@ -712,20 +721,24 @@ export class LoopMasker {
       const endFace = bestT > hit.t ? g : f;
       const startFace = endFace === f ? g : f;
       bar(t, f * 4 + best, marked);
+      const seen = ++t.stamp;
+      t.vertMark[a] = seen;
+      t.vertMark[b] = seen;
       const fwd: number[] = [];
-      const how = walkLoop(t, f, best, b, [a, b], fwd, marked);
+      const how = walkLoop(t, f, best, b, [a, b], fwd, marked, seen);
       const back: number[] = [];
       let howBack: typeof how = how;
       // A closed walk comes back round to a: it is the first vertex already.
       if (how === 'closed' && fwd[fwd.length - 1] === a) fwd.pop();
-      if (how !== 'closed') howBack = walkLoop(t, f, best, a, [a, b], back, marked);
+      if (how !== 'closed') howBack = walkLoop(t, f, best, a, [a, b], back, marked, seen);
+      const crossed = how === 'crossed' || howBack === 'crossed';
       const order = back.reverse().concat([a, b], fwd);
       loop = Uint32Array.from(order);
       const val = (v: number): number => t.vfStart[v + 1] - t.vfStart[v];
       endValence = how === 'closed' ? [4, 4] : [val(order[0]), val(order[order.length - 1])];
       walkMs = performance.now() - tFind;
       const closed = how === 'closed';
-      ends = closed ? 'closed' : how === 'border' && howBack === 'border' ? 'border' : how === 'pole' || howBack === 'pole' ? 'pole' : 'border';
+      ends = closed ? 'closed' : how === 'border' && howBack === 'border' ? 'border' : how === 'pole' || howBack === 'pole' || crossed ? 'pole' : 'border';
       // The same loop and side as last time: keep what it found.
       let mn = order[0];
       for (const v of order) if (v < mn) mn = v;
@@ -749,7 +762,7 @@ export class LoopMasker {
         line = { pts, nrm, closed };
         this.remember(cacheKey, t, flood.count, null);
       } else {
-        note = ends === 'pole' ? 'loop ends at a pole: cut by a ring' : 'loop ends at a border: cut by a ring';
+        note = crossed ? 'loop crosses itself: cut by a ring' : ends === 'pole' ? 'loop ends at a pole: cut by a ring' : 'loop ends at a border: cut by a ring';
       }
       floodMs = performance.now() - tFlood;
       unbar(t, marked);

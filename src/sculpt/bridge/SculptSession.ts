@@ -67,7 +67,9 @@ import {
   writeOriginalObj,
   type ObjSource,
 } from './objSource';
-import { PolyGroups } from './polyGroups';
+import { defaultGroupName, PolyGroups } from './polyGroups';
+import { GROUPS_V } from '../../../shared/bozz';
+import type { SavedGroups } from './groupsRecord';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -151,6 +153,31 @@ function reverseWinding(faces: Uint32Array): void {
  * level indices go through `lowMap` when the level below was itself
  * renumbered. Returns one key per added vertex, from index `nbLow` up.
  */
+/** A level's arrays for the vertices `order` lists, in that order (the detail vectors left to be rebuilt). */
+function gatherLevel(level: SavedLevel, order: number[]): SavedLevel {
+  const n = order.length;
+  const pick = (src: Float32Array): Float32Array => {
+    const out = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const j = order[i] * 3;
+      out[i * 3] = src[j];
+      out[i * 3 + 1] = src[j + 1];
+      out[i * 3 + 2] = src[j + 2];
+    }
+    return out;
+  };
+  return {
+    nbVertices: n,
+    vertices: pick(level.vertices),
+    normals: level.normals ? pick(level.normals) : null,
+    colors: pick(level.colors),
+    materials: pick(level.materials),
+    detailsXYZ: null,
+    detailsRGB: null,
+    detailsPBR: null,
+  };
+}
+
 function subdivisionKeys(
   faces: Uint32Array | Int32Array,
   nbFaces: number,
@@ -1380,6 +1407,289 @@ export class SculptSession {
     return copy;
   }
 
+  // --- splitting by poly groups (owner call, 2026-11-01) ------------------
+
+  /** Groups of the active object with faces: the Edit menu's Split groups into objects asks for two or more. */
+  splittableGroups(mesh: SculptMesh | null = this.mesh): number {
+    if (!mesh) return 0;
+    return this.groups.counts(mesh).filter((n) => n > 0).length;
+  }
+
+  /** Level-0 faces of an object that are hidden and that show. */
+  hiddenSplit(mesh: SculptMesh | null = this.mesh): { hidden: number; shown: number } {
+    if (!mesh) return { hidden: 0, shown: 0 };
+    const base = this.groups.baseFaces(mesh);
+    const hid = this.groups.hiddenGroups(mesh);
+    let hidden = 0;
+    for (let i = 0; i < base.length; i++) if (hid[base[i]]) hidden++;
+    return { hidden, shown: base.length - hidden };
+  }
+
+  /**
+   * Edit > Split groups into objects: each group of `mesh` with faces
+   * becomes an object of its own, named after the group, at the same
+   * transform; the original goes. One undo step. Returns the new objects
+   * (the caller gives them the original's material), and whether they were
+   * cut at the level on screen rather than at level 0 (see partOf).
+   */
+  splitGroups(mesh: SculptMesh): { made: SculptMesh[]; flat: boolean } | null {
+    const base = this.groups.baseFaces(mesh);
+    const names = this.groups.names(mesh);
+    const counts = this.groups.counts(mesh);
+    if (counts.filter((n) => n > 0).length < 2) return null;
+    const made: SculptMesh[] = [];
+    let flat = false;
+    const taken = new Set(this.meshes.filter((m) => m !== mesh).map((m) => this.getMeshName(m)));
+    for (let g = 0; g < names.length; g++) {
+      if (!counts[g]) continue;
+      const keep = new Uint8Array(base.length);
+      for (let i = 0; i < base.length; i++) if (base[i] === g) keep[i] = 1;
+      let name = names[g];
+      for (let k = 2; taken.has(name); k++) name = `${names[g]} ${k}`;
+      taken.add(name);
+      const part = this.partOf(mesh, keep, name, null);
+      if (!part) continue;
+      flat ||= part.flat;
+      made.push(part.mesh);
+    }
+    if (!made.length) return null;
+    this.swapParts(mesh, made);
+    return { made, flat };
+  }
+
+  /**
+   * Edit > Split hidden into object: the hidden faces become an object of
+   * their own, named after the hidden group when there is one, else
+   * "<object> hidden part"; the faces that show stay as the object, under
+   * its name. Both keep their groups, everything shown. One undo step.
+   * Returns [the part that shows, the hidden part].
+   */
+  splitHidden(mesh: SculptMesh): { made: SculptMesh[]; flat: boolean } | null {
+    const { hidden, shown } = this.hiddenSplit(mesh);
+    if (!hidden || !shown) return null;
+    const base = this.groups.baseFaces(mesh);
+    const hid = this.groups.hiddenGroups(mesh);
+    const names = this.groups.names(mesh);
+    const counts = this.groups.counts(mesh);
+    const hiddenUsed = names.map((_, g) => g).filter((g) => hid[g] && counts[g] > 0);
+    const keep = new Uint8Array(base.length);
+    for (let i = 0; i < base.length; i++) if (!hid[base[i]]) keep[i] = 1;
+    const rest = new Uint8Array(base.length);
+    for (let i = 0; i < base.length; i++) rest[i] = keep[i] ? 0 : 1;
+    const own = this.getMeshName(mesh);
+    const taken = new Set(this.meshes.filter((m) => m !== mesh).map((m) => this.getMeshName(m)));
+    taken.add(own);
+    const want = hiddenUsed.length === 1 ? names[hiddenUsed[0]] : `${own} hidden part`;
+    let name = want;
+    for (let k = 2; taken.has(name); k++) name = `${want} ${k}`;
+    const shownPart = this.partOf(mesh, keep, own, base);
+    const hiddenPart = this.partOf(mesh, rest, name, base);
+    if (!shownPart || !hiddenPart) return null;
+    this.swapParts(mesh, [shownPart.mesh, hiddenPart.mesh]);
+    this.selectSet([shownPart.mesh]);
+    return { made: [shownPart.mesh, hiddenPart.mesh], flat: shownPart.flat || hiddenPart.flat };
+  }
+
+  /** Edit > Delete hidden: the object without its hidden faces (its groups kept, everything shown). One undo step. */
+  deleteHidden(mesh: SculptMesh): { made: SculptMesh[]; flat: boolean } | null {
+    const { hidden, shown } = this.hiddenSplit(mesh);
+    if (!hidden || !shown) return null;
+    const base = this.groups.baseFaces(mesh);
+    const hid = this.groups.hiddenGroups(mesh);
+    const keep = new Uint8Array(base.length);
+    for (let i = 0; i < base.length; i++) if (!hid[base[i]]) keep[i] = 1;
+    const part = this.partOf(mesh, keep, this.getMeshName(mesh), base);
+    if (!part) return null;
+    this.swapParts(mesh, [part.mesh]);
+    return { made: [part.mesh], flat: part.flat };
+  }
+
+  /** `parts` take `mesh`'s place in the list, in one undo step, and are selected (the first active). */
+  private swapParts(mesh: SculptMesh, parts: SculptMesh[]): void {
+    this.markStale([mesh], parts[0]);
+    for (const p of parts.slice(1)) this.markStale([mesh], p);
+    this.writeSymmetryAxis(this.getSymmetryAxis(), parts);
+    this.stateManager.pushStateAddRemove(parts, [mesh]);
+    const at = this.meshes.indexOf(mesh);
+    this.meshes.splice(at < 0 ? this.meshes.length : at, at < 0 ? 0 : 1, ...parts);
+    const eye = this.eyeVisible(mesh);
+    for (const p of parts) if (!eye) this.setEye(p, false);
+    this.selectSet([...parts].reverse());
+  }
+
+  /**
+   * A new object (not yet in the scene) of the level-0 faces of `mesh`
+   * flagged in `keep`, named `name`. With `groupsOf` (level 0's groups of
+   * `mesh`), the part keeps the groups its faces are in, renumbered,
+   * everything shown; without, it is one plain group.
+   *
+   * A multiresolution object is cut at level 0 and subdivided again to as
+   * many levels as it had: the base faces kept, renumbered in order, and
+   * every level's positions, normals, colours and mask copied over for the
+   * faces under them (face f's children are 4f..4f+3 and each child keeps
+   * its corner, so each new face's corners are the old face's). The top
+   * level is made exact first, as the reflection does, and the part walks
+   * back down to the level on screen, which re-derives the detail vectors.
+   * After a Rebuild (level 0 not numbered that way under the next) and on
+   * a one-level object the faces of the level on screen are cut instead,
+   * as one level (`flat`).
+   */
+  private partOf(mesh: SculptMesh, keep: Uint8Array, name: string, groupsOf: Uint32Array | null): { mesh: SculptMesh; flat: boolean } | null {
+    const levels: SculptMesh[] = mesh._meshes ?? [mesh];
+    const top = levels.length - 1;
+    const sel = mesh._meshes ? (mesh as unknown as Multimesh)._sel : 0;
+    const record = this.serializeMesh(mesh);
+    if (!record) return null;
+    const flat = top === 0 || !this.groups.contiguous(mesh);
+    let saved: SavedMesh;
+    let groupFaces: Uint32Array | null = null;
+    if (flat) {
+      // The level on screen as one level.
+      const L = levels[sel];
+      const nF = L.getNbFaces();
+      const { map, shift } = this.groups.ancestry(mesh, sel);
+      const anc = (f: number): number => (map ? map[f >> shift] : f >> shift);
+      const faces = L.getFaces();
+      const vmap = new Int32Array(L.getNbVertices()).fill(-1);
+      const kept: number[] = [];
+      const out: number[] = [];
+      const order: number[] = [];
+      for (let f = 0; f < nF; f++) {
+        if (!keep[anc(f)]) continue;
+        kept.push(f);
+        for (let c = 0; c < 4; c++) {
+          const v = faces[f * 4 + c];
+          if (v === Utils.TRI_INDEX) {
+            out.push(v);
+            continue;
+          }
+          if (vmap[v] < 0) {
+            vmap[v] = order.length;
+            order.push(v);
+          }
+          out.push(vmap[v]);
+        }
+      }
+      if (!kept.length) return null;
+      const level = record.levels[sel];
+      saved = {
+        ...record,
+        name,
+        source: undefined,
+        groups: undefined,
+        nbBaseFaces: kept.length,
+        baseFaces: Uint32Array.from(out),
+        levels: [gatherLevel(level, order)],
+        sel: 0,
+      };
+      if (groupsOf) {
+        groupFaces = new Uint32Array(kept.length);
+        for (let i = 0; i < kept.length; i++) groupFaces[i] = groupsOf[anc(kept[i])];
+      }
+    } else {
+      // An exact top level first, the object as it is.
+      let exact = record;
+      let liveLevels = levels;
+      if (sel < top) {
+        const temp = this.buildLevels(record);
+        temp.selectResolution(top);
+        const e = this.serializeMesh(temp as unknown as SculptMesh);
+        if (!e) return null;
+        exact = e;
+        liveLevels = temp._meshes;
+      }
+      const nBase = exact.nbBaseFaces;
+      const S: number[] = [];
+      for (let f = 0; f < nBase; f++) if (keep[f]) S.push(f);
+      if (!S.length) return null;
+      const bf = exact.baseFaces;
+      const vmap = new Int32Array(exact.levels[0].nbVertices).fill(-1);
+      const order0: number[] = [];
+      const newBase = new Uint32Array(S.length * 4);
+      S.forEach((f, i) => {
+        for (let c = 0; c < 4; c++) {
+          const v = bf[f * 4 + c];
+          if (v === Utils.TRI_INDEX) {
+            newBase[i * 4 + c] = v;
+            continue;
+          }
+          if (vmap[v] < 0) {
+            vmap[v] = order0.length;
+            order0.push(v);
+          }
+          newBase[i * 4 + c] = vmap[v];
+        }
+      });
+      // The new stack's topology, to learn its numbering.
+      const scratchBase = new MeshStatic(null);
+      scratchBase.setVertices(gatherLevel(exact.levels[0], order0).vertices);
+      scratchBase.setColors(new Float32Array(order0.length * 3));
+      scratchBase.setMaterials(new Float32Array(order0.length * 3));
+      scratchBase.setFaces(newBase);
+      Mesh.OPTIMIZE = false;
+      scratchBase.init();
+      Mesh.OPTIMIZE = true;
+      const scratch = new Multimesh(scratchBase);
+      for (let k = 1; k <= top; k++) scratch.addLevel();
+      const newLevels: SavedLevel[] = [gatherLevel(exact.levels[0], order0)];
+      for (let k = 1; k <= top; k++) {
+        const nf = scratch._meshes[k].getNbFaces();
+        const span = 4 ** k;
+        if (nf !== S.length * span) return null;
+        const nf2 = scratch._meshes[k].getFaces();
+        const of = liveLevels[k].getFaces();
+        const order = new Int32Array(scratch._meshes[k].getNbVertices()).fill(-1);
+        for (let J = 0; J < nf; J++) {
+          const old = S[Math.floor(J / span)] * span + (J % span);
+          for (let c = 0; c < 4; c++) {
+            const nv = nf2[J * 4 + c];
+            if (nv === Utils.TRI_INDEX) continue;
+            order[nv] = of[old * 4 + c];
+          }
+        }
+        if (order.some((o) => o < 0)) return null;
+        newLevels.push(gatherLevel(exact.levels[k], Array.from(order)));
+      }
+      saved = {
+        ...exact,
+        name,
+        source: undefined,
+        groups: undefined,
+        nbBaseFaces: S.length,
+        baseFaces: newBase,
+        levels: newLevels,
+        sel: top,
+      };
+      if (groupsOf) {
+        groupFaces = new Uint32Array(S.length);
+        S.forEach((f, i) => (groupFaces![i] = groupsOf[f]));
+      }
+    }
+    if (groupFaces) {
+      // The groups the part has faces in, in order, everything shown.
+      const names = this.groups.names(mesh);
+      const to = new Map<number, number>();
+      const kept: string[] = [];
+      for (let i = 0; i < groupFaces.length; i++) {
+        let g = to.get(groupFaces[i]);
+        if (g === undefined) {
+          g = kept.length;
+          to.set(groupFaces[i], g);
+          kept.push(names[groupFaces[i]] ?? defaultGroupName(g));
+        }
+        groupFaces[i] = g;
+      }
+      const grouped: SavedGroups = { v: GROUPS_V, faces: groupFaces, names: kept };
+      if (kept.length > 1 || kept[0] !== defaultGroupName(0)) saved.groups = grouped;
+    }
+    const made = this.buildRestoredMesh(saved, false);
+    if (!flat && made._sel !== sel) {
+      made.selectResolution(sel);
+      made.updateBuffers();
+    }
+    return { mesh: made as unknown as SculptMesh, flat: flat && top > 0 };
+  }
+
   /**
    * Scene menu: a mirrored copy across a WORLD axis plane through the
    * origin. The reflection is asked for through the copy's matrix (S * M)
@@ -1929,12 +2239,6 @@ export class SculptSession {
   }
 
   /**
-   * Remove one object from the scene (outliner minus). Refuses to empty the
-   * scene - there would be nothing to sculpt and no way back except a
-   * reload - and hands selection to a neighbour when the active object is
-   * the one going.
-   */
-  /**
    * Edit locks (outliner padlock): a locked object stays visible and
    * selectable, but strokes and the transform gizmo refuse it. Kept here
    * beside the mesh list so persistence and the panels share one truth.
@@ -2038,8 +2342,14 @@ export class SculptSession {
     this.onActiveMeshChange?.();
   }
 
+  /**
+   * Remove one object from the scene (Delete, the outliner's trash), and
+   * hand the selection to a neighbour when the active object is the one
+   * going. The last object may go too (owner call, 2026-11-01): the scene
+   * is then empty, nothing is active, and an undo or the Create button
+   * brings something back.
+   */
   deleteMesh(mesh: SculptMesh): boolean {
-    if (this.meshes.length <= 1) return false;
     const index = this.meshes.indexOf(mesh);
     if (index < 0) return false;
     this.stateManager.pushStateAddRemove([], [mesh]);
@@ -2047,7 +2357,7 @@ export class SculptSession {
     const sel = this.selectMeshes.indexOf(mesh);
     if (sel >= 0) this.selectMeshes.splice(sel, 1);
     if (this.mesh === mesh) {
-      this.setMesh(this.meshes[Math.min(index, this.meshes.length - 1)]);
+      this.setMesh(this.meshes.length ? this.meshes[Math.min(index, this.meshes.length - 1)] : null);
     } else {
       // Selection is unchanged, but the mesh LIST moved: the display pool
       // and the outliner both key off this callback.
@@ -2135,7 +2445,7 @@ export class SculptSession {
    * with a negative scale) is first folded into the record's geometry, so
    * what gets built is an ordinary right-handed object.
    */
-  private buildRestoredMesh(saved: SavedMesh): Multimesh {
+  private buildRestoredMesh(saved: SavedMesh, add = true): Multimesh {
     const sel = saved.sel;
     const source = saved.source;
     let reflected = false;
@@ -2161,7 +2471,7 @@ export class SculptSession {
     // The saved per-object axis is legacy: symmetry is per brush now, and
     // addNewMesh writes the brush's axis in.
     this.meshNames.set(mesh, typeof saved.name === 'string' ? saved.name : 'Sphere');
-    this.addNewMesh(mesh);
+    if (add) this.addNewMesh(mesh);
     return mesh;
   }
 

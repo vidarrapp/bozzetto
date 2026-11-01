@@ -4117,8 +4117,8 @@ export const suites = {
     await pickOne('Torus');
     t.eq(
       await editItems(),
-      'Undo; Redo; Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Preferences\u2026',
-      'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys; Merge off with one object',
+      'Undo; Redo; Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Preferences\u2026',
+      'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys, and the poly group splits; Merge off with one object, the splits off on an object with one group and nothing hidden',
     );
     // Its items, pressed as a pointer would.
     const menuPress = async (label, choice) => {
@@ -4192,6 +4192,89 @@ export const suites = {
     await pickTwo('Sphere', 'Cube');
     await menuPress('Merge');
     t.eq((await tally()).n, tl.n - 1, 'and so does the Edit menu\'s');
+
+    // --- the last object may go (owner call, 2026-11-01) --------------------------
+    // Down to one object, then Edit > Delete, the trash and the Delete key
+    // each take the last one; the scene is empty, everything copes, and an
+    // undo brings it back.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      for (const m of [...session.getMeshes()].slice(1)) session.deleteMesh(m);
+      session.setMesh(session.getMeshes()[0]);
+    });
+    const empty = () =>
+      page.evaluate(() => {
+        const { session } = window.__sculpt;
+        return {
+          n: session.getMeshes().length,
+          active: !!session.getMesh(),
+          rows: document.querySelectorAll('.panel--scene .outliner__row').length,
+          stats: document.querySelector('.sculpt-stats__name')?.textContent ?? '',
+        };
+      });
+    const last = await page.evaluate(() => window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()));
+    for (const way of ['Edit > Delete', 'the trash', 'the Delete key']) {
+      page.once('dialog', (d) => d.accept());
+      if (way === 'Edit > Delete') await menuPress('Delete');
+      else if (way === 'the trash') {
+        await page.evaluate(() => {
+          const row = document.querySelector('.panel--scene .outliner__row--active');
+          [...row.querySelectorAll('.outliner__icon')].find((b) => /Delete/.test(b.title)).click();
+        });
+      } else {
+        await page.evaluate(() => document.activeElement?.blur?.());
+        await page.keyboard.press('Delete');
+      }
+      await page.waitForTimeout(600); // the stats corner reads twice a second
+      const e = await empty();
+      t.ok(e.n === 0 && !e.active && e.rows === 0 && e.stats === 'Empty scene', `${way} deletes the last object: an empty scene (${JSON.stringify(e)})`);
+      await page.evaluate(() => window.__sculpt.session.undo());
+      const back = await empty();
+      const name = await page.evaluate(() => window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()));
+      t.ok(back.n === 1 && back.active && back.rows === 1 && name === last, `and an undo brings "${name}" back, active`);
+    }
+    // In the empty scene: the panels, brushes, picking, the gizmo, the mask
+    // and group keys, the autosave and the saves, without an error.
+    page.once('dialog', (d) => d.accept());
+    await menuPress('Delete');
+    const dev = await devices(page);
+    await page.mouse.click(640, 400);
+    await page.keyboard.press('3');
+    await dev.penDrag([[600, 400], [640, 420], [680, 440]]);
+    await dev.penDrag([[600, 300], [600, 380], [600, 460]], null, 10); // Ctrl+Shift: the loop mask
+    for (const k of ['Control+w', 'Shift+F', 'Shift+F', 'Control+a', 'Control+i', 'Control+c', 'Control+e', 'Control+d', 'w', 'q', '3', 'ArrowDown', 'f']) await page.keyboard.press(k);
+    await dev.penDrag([[600, 400], [650, 420]]);
+    const quiet = await page.evaluate(async () => {
+      const { session, scenePanel, modelPanel, sculptPanel, persist, file, fileActions } = window.__sculpt;
+      scenePanel.refresh();
+      modelPanel.refreshState();
+      modelPanel.refreshGroups();
+      sculptPanel.tickChannels?.();
+      for (const b of document.querySelectorAll('.panel--model [data-role^="groups-"]')) b.click();
+      persist.markDirty();
+      await persist.flush();
+      let saved = '';
+      try {
+        await file.pack();
+      } catch (err) {
+        saved = err.message;
+      }
+      return { n: session.getMeshes().length, saved, empty: fileActions.isEmpty() };
+    });
+    t.ok(quiet.n === 0 && quiet.empty && /The scene is empty/.test(quiet.saved), `the empty scene takes strokes, the loop mask, the mask and group keys, the gizmo and every Groups button without an error, and a save refuses plainly ("${quiet.saved}")`);
+    const fileItems = await page.evaluate(() => {
+      const { fileMenu } = window.__sculpt;
+      const menu = fileMenu.menu;
+      menu.open();
+      const off = [...menu.pop.querySelectorAll('.file-menu__item')].filter((b) => b.disabled).map((b) => (b.querySelector('.file-menu__label') ?? b).textContent);
+      menu.close();
+      return off.join(', ');
+    });
+    t.eq(fileItems, 'Save file, Save to library, Keep on this device, Export OBJ', 'File greys out the saves and Export OBJ in an empty scene');
+    // Create adds an object again.
+    await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
+    const made = await empty();
+    t.ok(made.n === 1 && made.active && made.rows === 1, 'Create adds an object to the empty scene, active');
   },
 
   async brushSize(page, base, t) {

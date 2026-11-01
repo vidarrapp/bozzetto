@@ -41,6 +41,8 @@ export class FileMenu {
     // Hidden inputs are how a web page asks for a file.
     this.openInput = fileInput('.bozz', (file) => void this.openFile(file));
     this.importInput = fileInput('.obj', (file) => void this.importFile(file));
+    // An empty scene (the last object deleted) has nothing to save or export.
+    const full = (): boolean => !this.actions.isEmpty();
     this.menu = new TopMenu(
       'File',
       [
@@ -54,6 +56,7 @@ export class FileMenu {
         { label: 'Open…', action: () => this.openInput.click() },
         {
           label: 'Save file',
+          enabled: full,
           action: async () => {
             const blob = await this.actions.pack();
             downloadBlob(blob, stampName('bozz'));
@@ -67,11 +70,13 @@ export class FileMenu {
         // every way of saving they had.
         {
           label: 'Save to library',
+          enabled: full,
           hint: () => this.libraryHint(),
           action: () => this.saveToLibrary(),
         },
         {
           label: 'Keep on this device',
+          enabled: full,
           hint: DEVICE_ONLY_NOTE,
           action: async () => {
             await this.actions.keepOnDevice();
@@ -85,6 +90,7 @@ export class FileMenu {
           // the triangles of every object as before (owner decision). The
           // hint says which, before the click.
           label: 'Export OBJ',
+          enabled: full,
           hint: () => this.exportHint(),
           action: () => {
             const out = this.actions.exportObj(stampName('obj'));
@@ -138,6 +144,7 @@ export class FileMenu {
   }
 
   private exportHint(): string {
+    if (this.actions.isEmpty()) return 'The scene is empty';
     const status = this.actions.originalStatus();
     if (status === 'valid') return `Level 0 of "${this.actions.activeName()}", numbered as the imported file`;
     if (status === 'stale') return 'Every object as triangles: the topology has changed since the import';
@@ -145,6 +152,7 @@ export class FileMenu {
   }
 
   private libraryHint(): string {
+    if (this.actions.isEmpty()) return 'The scene is empty: add an object first';
     if (this.role === 'expired') return 'Your sign-in has expired: keeps it on this device until you sign in again';
     if (this.role === 'suspended') return 'Your account is suspended: downloads a .bozz file to keep';
     if (!this.role || !this.uploads(this.role)) return 'Downloads a .bozz file to keep';
