@@ -335,7 +335,7 @@ export class Lighting {
 
   /**
    * Cheaper shadows for adaptive quality (adaptive.ts): with `economy`, half
-   * the blur samples; with `mapScale` below 1, smaller maps whose blur
+   * the blur samples (blurSamplesFor); with `mapScale` below 1, smaller maps whose blur
    * radius shrinks with them, so the shadows stay as soft in the scene.
    * Uniforms and map sizes only: no shader is rebuilt, and a resized map
    * is reallocated at its next draw.
@@ -348,7 +348,6 @@ export class Lighting {
       const size = this.sizes[id];
       if (size === 0) continue;
       const shadow = this.lights[id].shadow;
-      shadow.blurSamples = Math.max(2, Math.round(this.tier.blurSamples * (economy ? 0.5 : 1)));
       shadow.mapSize.set(Math.round(size * mapScale), Math.round(size * mapScale));
     }
     this.refresh();
@@ -539,14 +538,14 @@ export class Lighting {
     closeUp: boolean;
     refits: number;
     subjectRadius: number;
-    lights: Record<LightId, { width: number; texel: number; near: number; far: number; radius: number; casts: boolean }>;
+    lights: Record<LightId, { width: number; texel: number; near: number; far: number; radius: number; samples: number; casts: boolean }>;
   } {
-    const lights = {} as Record<LightId, { width: number; texel: number; near: number; far: number; radius: number; casts: boolean }>;
+    const lights = {} as Record<LightId, { width: number; texel: number; near: number; far: number; radius: number; samples: number; casts: boolean }>;
     for (const id of ALL) {
       const shadow = this.lights[id].shadow;
       const cam = shadow.camera;
       const width = cam.right - cam.left;
-      lights[id] = { width, texel: width / shadow.mapSize.x, near: cam.near, far: cam.far, radius: shadow.radius, casts: this.lights[id].castShadow };
+      lights[id] = { width, texel: width / shadow.mapSize.x, near: cam.near, far: cam.far, radius: shadow.radius, samples: shadow.blurSamples, casts: this.lights[id].castShadow };
     }
     return { closeUp: this.closeUp, refits: this.refits, subjectRadius: this.subjectRadius, lights };
   }
@@ -796,12 +795,35 @@ export class Lighting {
   private minHalf(id: LightId): number {
     const base = this.baseBlur(id);
     if (base <= 0) return 0;
-    const samples = this.lights[id].shadow.blurSamples;
+    // The tier's own count (halved in economy), not the count in force,
+    // which grows with the blur (blurSamplesFor): the fit stays as it was.
+    const samples = this.baseSamples();
     const cap = Math.max(base, 2 * Math.max(samples - 1, 1));
     return (base * this.softnessRef()) / (2 * cap);
   }
 
-  /** Blur radius and depth bias for the fit in force, so both keep their world size. */
+  /** The tier's blur sample count, halved by adaptive quality's economy. */
+  private baseSamples(): number {
+    return Math.max(2, Math.round(this.tier.blurSamples * (this.economy ? 0.5 : 1)));
+  }
+
+  /**
+   * The blur's sample count for a radius in texels (owner call, 2026-11-01:
+   * banded soft shadows get more samples). The VSM blur spreads its samples
+   * evenly over twice the radius, one pass a direction; more than about two
+   * texels apart they show as bands across a soft edge, which a close-up
+   * fit (a soft key over a face, some 19 texels of blur) reached with the
+   * tier's 12 (3.5 texels apart). So a light takes enough to keep them two
+   * texels apart, never fewer than the tier's count (a low softness costs
+   * what it did) and never more than the tier's cap. Economy halves the
+   * result, as it halved the tier's. A uniform: no shader is rebuilt.
+   */
+  private blurSamplesFor(radius: number): number {
+    const want = Math.max(this.tier.blurSamples, Math.min(this.tier.maxBlurSamples, Math.ceil(radius) + 1));
+    return this.economy ? Math.max(2, Math.round(want * 0.5)) : want;
+  }
+
+  /** Blur radius, sample count and depth bias for the fit in force, so they keep their world size. */
   private applyBlur(id: LightId): void {
     if (this.sizes[id] === 0) return;
     const shadow = this.lights[id].shadow;
@@ -809,6 +831,7 @@ export class Lighting {
     const width = cam.right - cam.left;
     const ref = this.softnessRef();
     shadow.radius = width > 0 ? (this.baseBlur(id) * ref) / width : this.baseBlur(id);
+    shadow.blurSamples = this.blurSamplesFor(shadow.radius);
     // The bias is in the frustum's depth range; the old range was the same
     // six radii, so a tighter one keeps its bias in world terms.
     const range = cam.far - cam.near;

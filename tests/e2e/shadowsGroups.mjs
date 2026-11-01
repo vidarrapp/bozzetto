@@ -25,7 +25,12 @@
 //   so the shadow pass is built while they show, Shift+F off), By angle,
 //   Ctrl+G from a mask, the view turned and back: no shadow-pass build
 //   reads an attribute its geometry lacks (the WebGL-visible form of the
-//   WebGPU failure), and the model's lit brightness matches before.
+//   WebGPU failure), and the model's lit brightness matches before;
+// - the VSM blur's samples grow with its radius (owner call, 2026-11-01:
+//   banded soft shadows): across the softness range, framed whole and in
+//   the face close-up (some 19 texels of blur), the samples stay about two
+//   texels apart within the tier's cap, a blur the tier's count covers
+//   takes no more, and adaptive quality's economy still halves them.
 import { openSculpt } from './lib.mjs';
 
 const frames = (page, n = 2) =>
@@ -260,6 +265,69 @@ export const suites = {
     t.ok(
       lum.n > 1000 && Math.abs(lum.after - lum.before) <= 1.5 && lum.changed < 0.01,
       `the model is as bright as before the groups: ${r3(lum.before)} then ${r3(lum.after)} over ${lum.n} px, ${r3(lum.changed * 100)}% of them changed by more than 10`,
+    );
+
+    // --- blur samples grow with the blur (owner call, 2026-11-01) ----------
+    // The high tier: 12 samples at the least, 32 at the most. Spaced over
+    // twice the radius, they stay about two texels apart wherever the cap
+    // allows (radius + 1 samples), and a blur the tier's 12 cover takes 12.
+    const BASE = 12;
+    const MAX = 32;
+    const blurOf = () =>
+      page.evaluate(() => {
+        const k = window.__bozzetto.lighting.fitInfo().lights.key;
+        return { radius: k.radius, samples: k.samples, width: k.width, closeUp: window.__bozzetto.lighting.fitInfo().closeUp };
+      });
+    const spacing = (b) => (b.samples > 1 ? (2 * b.radius) / (b.samples - 1) : 0);
+    const sweep = async (label) => {
+      const rows = [];
+      for (const soft of [0, 1, 3, 5, 8, 12, 16]) {
+        await page.evaluate((v) => window.__bozzetto.lighting.setSoftness('key', v), soft);
+        await frames(page, 2);
+        rows.push({ soft, ...(await blurOf()) });
+      }
+      const bad = rows.filter((r) => (r.radius + 1 <= MAX ? spacing(r) > 2.05 : r.samples !== MAX) || r.samples < BASE || (r.radius + 1 <= BASE && r.samples !== BASE));
+      t.ok(
+        !bad.length,
+        `${label}: the key's blur samples follow its radius, at most about 2 texels apart, never under the tier's ${BASE} nor over ${MAX} (${rows.map((r) => `softness ${r.soft}: ${r3(r.radius)} texels, ${r.samples} samples, ${r3(spacing(r))} apart`).join('; ')})`,
+      );
+      return rows;
+    };
+    await sweep('the figure framed whole');
+    // The close-up measured on the owner's report: a soft key (5) over the
+    // face, the fit held wide by the softness, some 19 texels of blur.
+    await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      const b = v.liveShadowBox();
+      const H = b.max.y - b.min.y;
+      const head = b.getCenter(b.min.clone());
+      head.y = b.min.y + 0.9 * H;
+      const dir = v.camera.position.clone().sub(head).normalize();
+      v.setCameraState(head.clone().addScaledVector(dir, 0.25 * H), head.clone());
+      v.haltOrbit();
+    });
+    await frames(page, 4);
+    await page.evaluate(() => window.__bozzetto.lighting.setSoftness('key', 5));
+    await frames(page, 3);
+    const face = await blurOf();
+    t.ok(
+      face.closeUp && face.radius > 15 && face.samples >= Math.ceil(face.radius) + 1 && spacing(face) <= 2.05,
+      `the face close-up at softness 5: ${r3(face.radius)} texels of blur over a ${r3(face.width)} cm fit take ${face.samples} samples, ${r3(spacing(face))} texels apart (the tier's ${BASE} were ${r3((2 * face.radius) / (BASE - 1))})`,
+    );
+    await sweep('the face close-up');
+    // Adaptive quality's economy still halves them, and gives them back.
+    await page.evaluate(() => window.__bozzetto.lighting.setSoftness('key', 5));
+    await frames(page, 2);
+    const full = await blurOf();
+    await page.evaluate(() => window.__bozzetto.lighting.setShadowQuality(true, 1));
+    await frames(page, 2);
+    const eco = await blurOf();
+    await page.evaluate(() => window.__bozzetto.lighting.setShadowQuality(false, 1));
+    await frames(page, 2);
+    const back = await blurOf();
+    t.ok(
+      eco.samples === Math.max(2, Math.round(Math.max(BASE, Math.min(MAX, Math.ceil(eco.radius) + 1)) / 2)) && back.samples === full.samples,
+      `adaptive quality's economy halves them (${full.samples} at ${r3(full.radius)} texels; ${eco.samples} at ${r3(eco.radius)}, its fit refitted) and gives them back (${back.samples})`,
     );
   },
 };

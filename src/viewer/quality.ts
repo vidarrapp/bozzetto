@@ -10,8 +10,13 @@ export interface ShadowTier {
   key: number;
   fill: number;
   rim: number;
-  /** VSM blur sample count (soft-shadow quality). */
+  /** VSM blur sample count (soft-shadow quality): the fewest a light takes. */
   blurSamples: number;
+  /**
+   * The most a light's blur takes as its softness grows (Lighting.applyBlur):
+   * enough to keep the samples about two texels apart, up to this.
+   */
+  maxBlurSamples: number;
   /** GTAO sample count (AO quality vs cost). */
   aoSamples: number;
   /** GTAO render-target scale (1 = full-res; <1 trims AO cost on weaker GPUs). */
@@ -22,12 +27,13 @@ export interface ShadowTier {
 // 4k maps — 2k is plenty and far cheaper (Lighting.updateShadowFit fits each
 // frustum to the subject, or to the part of it in view). Adaptive quality
 // trims further at runtime when the measured FPS is low (mostly via pixel
-// ratio). Every tier gives the rim a map, so its shadow (on by default)
+// ratio). A soft shadow's blur takes more samples as its radius grows, from
+// blurSamples up to maxBlurSamples, so they stay about two texels apart. Every tier gives the rim a map, so its shadow (on by default)
 // keeps it from lighting the far side through the model; low's is small.
 export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
-  high: { key: 2048, fill: 1024, rim: 1024, blurSamples: 12, aoSamples: 16, aoResolutionScale: 1 },
-  medium: { key: 2048, fill: 1024, rim: 1024, blurSamples: 8, aoSamples: 8, aoResolutionScale: 1 },
-  low: { key: 1024, fill: 0, rim: 512, blurSamples: 4, aoSamples: 8, aoResolutionScale: 0.5 },
+  high: { key: 2048, fill: 1024, rim: 1024, blurSamples: 12, maxBlurSamples: 32, aoSamples: 16, aoResolutionScale: 1 },
+  medium: { key: 2048, fill: 1024, rim: 1024, blurSamples: 8, maxBlurSamples: 24, aoSamples: 8, aoResolutionScale: 1 },
+  low: { key: 1024, fill: 0, rim: 512, blurSamples: 4, maxBlurSamples: 12, aoSamples: 8, aoResolutionScale: 0.5 },
 };
 
 export function detectQuality(): Quality {
