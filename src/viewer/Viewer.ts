@@ -258,6 +258,17 @@ const WIRE_MAX_OPACITY_BLACK = 0.6;
  * `?canvasmsaa=1` builds the old way, to compare a frame against.
  */
 const SCENE_SAMPLES = 4;
+/**
+ * How long WebGPU gets to hand over an adapter and a device before the
+ * viewer gives up on it and boots on WebGL 2 instead. Some browsers never
+ * answer navigator.gpu.requestAdapter (seen in headless Chromium on a
+ * software-rendered machine, in a second browser context), and three's own
+ * WebGL 2 fallback only runs when the request fails, not when it hangs.
+ * A real GPU's cold start takes a few seconds at worst, and a busy software
+ * GPU process has been seen to take over 7 s just to say "no adapter", so
+ * the limit sits well past both.
+ */
+export const WEBGPU_INIT_TIMEOUT_MS = 10_000;
 const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
 
 /**
@@ -663,13 +674,13 @@ export class Viewer {
     // Timestamps are asked for here, where the backend checks the adapter
     // can give them, and then switched off until the meter wants them
     // (setGpuTiming): three can only turn them on at construction.
-    const renderer = new WebGPURenderer({
+    const { renderer, webgpuTimedOut } = await initRenderer(() => ({
       antialias: CANVAS_MSAA,
       powerPreference: 'high-performance',
       trackTimestamp: true,
-    } as ConstructorParameters<typeof WebGPURenderer>[0]);
-    await renderer.init();
+    }));
     const viewer = new Viewer(renderer, container, manifest, source, options);
+    viewer.webgpuTimedOut = webgpuTimedOut;
     viewer.warnIfSoftwareRendering();
     // A software rasterizer draws every blur sample on the CPU: the blur
     // keeps the tier's count rather than growing with the softness
@@ -1739,6 +1750,8 @@ export class Viewer {
   }
 
   private gpuInfoCache: string | null = null;
+  /** WebGPU never answered at boot and the viewer fell back to WebGL 2 (initRenderer). */
+  private webgpuTimedOut = false;
 
   /**
    * The device actually rendering, so "slow for some reason" reports carry
@@ -1810,7 +1823,11 @@ export class Viewer {
       // rendering, remote desktop) vs a browser without the API.
       rows.push([
         'webgpu',
-        'gpu' in navigator ? 'no adapter · see chrome://gpu' : 'unsupported browser',
+        this.webgpuTimedOut
+          ? `no answer in ${WEBGPU_INIT_TIMEOUT_MS / 1000} s · see chrome://gpu`
+          : 'gpu' in navigator
+            ? 'no adapter · see chrome://gpu'
+            : 'unsupported browser',
       ]);
     }
     const s = this.frameStats.summary();
@@ -3718,6 +3735,48 @@ function preventTouchDefault(e: TouchEvent): void {
  * report nothing at all, deliberately, and the line says that rather than
  * looking like a fault.
  */
+type RendererOptions = ConstructorParameters<typeof WebGPURenderer>[0] & {
+  powerPreference?: GPUPowerPreference;
+  trackTimestamp?: boolean;
+};
+
+/**
+ * A WebGPURenderer, initialized: on WebGPU, or on three's WebGL 2 backend
+ * when WebGPU is missing or refuses (three falls back by itself then), or
+ * when WebGPU does not answer within WEBGPU_INIT_TIMEOUT_MS (which three
+ * would wait on forever). The options come from a function because three
+ * writes into the object it is given (its fallback hook).
+ */
+async function initRenderer(
+  options: () => RendererOptions,
+): Promise<{ renderer: WebGPURenderer; webgpuTimedOut: boolean }> {
+  const first = new WebGPURenderer(options());
+  let timer = 0;
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    timer = window.setTimeout(() => resolve('timeout'), WEBGPU_INIT_TIMEOUT_MS);
+  });
+  try {
+    const won = await Promise.race([first.init().then(() => 'ready' as const), timedOut]);
+    if (won === 'ready') return { renderer: first, webgpuTimedOut: false };
+  } finally {
+    window.clearTimeout(timer);
+  }
+  // The abandoned renderer's canvas was never attached and nothing holds
+  // it. Should its init still finish, free what it made (a device, or a
+  // WebGL context from three's own fallback); a late failure is dropped.
+  first.init().then(
+    () => first.dispose(),
+    () => undefined,
+  ).catch(() => undefined);
+  console.warn(
+    `Bozzetto: WebGPU did not answer in ${WEBGPU_INIT_TIMEOUT_MS / 1000} s; ` +
+      'the viewer fell back to WebGL 2.',
+  );
+  const renderer = new WebGPURenderer({ ...options(), forceWebGL: true });
+  await renderer.init();
+  return { renderer, webgpuTimedOut: true };
+}
+
 export function describeAdapter(ai: { vendor?: string; architecture?: string; description?: string } | undefined): string {
   return (
     [ai?.description, ai?.vendor, ai?.architecture].filter(Boolean).join(' · ') ||

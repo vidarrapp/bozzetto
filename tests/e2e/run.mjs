@@ -2,7 +2,7 @@
 // armatureProjects.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // objNumbering.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
-// profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, and accounts.mjs's and community.mjs's (which start the
+// profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's and community.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -39,9 +39,10 @@ import { suites as tineRake } from './tineRake.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 import { suites as units } from './units.mjs';
 import { suites as viewerTools } from './viewerTools.mjs';
+import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...accounts, ...community };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...accounts, ...community };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {
