@@ -234,6 +234,114 @@ export async function armatureHistory(page, base, t) {
 
 // --- the library (inside the accounts suite) ------------------------------------------------
 
+/** A page.evaluate that gives up after `ms`, so a page stuck in a long task cannot hang the caller. */
+const evalWithin = (page, ms, fn, arg) =>
+  Promise.race([page.evaluate(fn, arg), new Promise((_, no) => setTimeout(() => no(new Error(`no answer in ${ms} ms`)), ms))]);
+
+/**
+ * Before a page is opened in `context`: notes from the page itself (what the
+ * boot overlay said and when, the mode's event, a frame counter), and from
+ * Playwright the page's console and its requests, so a boot that does not
+ * come can say where it stopped. `diagnose()` says it in one bounded line.
+ */
+async function watchBoot(context) {
+  await context.addInitScript(() => {
+    const t0 = performance.now();
+    const at = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
+    const w = window;
+    w.__e2eBoot = { status: [], events: [], frames: 0 };
+    const tick = () => {
+      w.__e2eBoot.frames++;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    window.addEventListener('bozzetto:sculptmode', (e) => w.__e2eBoot.events.push(`${at()} sculptmode ${JSON.stringify(e.detail)}`));
+    window.addEventListener('bozzetto:look-restored', () => w.__e2eBoot.events.push(`${at()} look-restored`));
+    let last = null;
+    const watch = () => {
+      const msg = document.querySelector('#overlay .overlay__msg')?.textContent ?? null;
+      if (msg !== last) {
+        last = msg;
+        w.__e2eBoot.status.push(`${at()} ${msg === null ? '(no overlay)' : JSON.stringify(msg)}`);
+      }
+    };
+    new MutationObserver(watch).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  const consoleLines = [];
+  const pending = new Map();
+  const failed = [];
+  const slow = [];
+  const path = (u) => {
+    try {
+      const x = new URL(u);
+      return x.pathname + (x.search.length > 60 ? `${x.search.slice(0, 60)}…` : x.search);
+    } catch {
+      return String(u).slice(0, 100);
+    }
+  };
+  return {
+    attach(page) {
+      page.on('console', (m) => {
+        consoleLines.push(`${m.type()}: ${m.text().replace(/\s+/g, ' ').slice(0, 240)}`);
+        if (consoleLines.length > 20) consoleLines.shift();
+      });
+      page.on('request', (r) => pending.set(r, Date.now()));
+      page.on('requestfinished', (r) => {
+        const ms = Date.now() - (pending.get(r) ?? Date.now());
+        pending.delete(r);
+        if (ms > 5000) slow.push(`${path(r.url())} ${(ms / 1000).toFixed(1)}s`);
+      });
+      page.on('requestfailed', (r) => {
+        pending.delete(r);
+        failed.push(`${r.method()} ${path(r.url())}: ${r.failure()?.errorText ?? '?'}`);
+      });
+    },
+    async diagnose(page) {
+      const cap = (list, n) => (list.length > n ? [`(${list.length - n} earlier)`, ...list.slice(-n)] : list);
+      const now = Date.now();
+      const sample = () =>
+        evalWithin(page, 3000, () => {
+          const v = window.__bozzetto;
+          const be = v?.renderer?.backend;
+          const video = document.querySelector('.overlay__splash-video');
+          return {
+            raf: window.__e2eBoot?.frames ?? null,
+            drawn: v?.renderer?.info?.render?.frame ?? null,
+            viewer: !!v,
+            backend: be ? (be.isWebGPUBackend ? 'WebGPU' : be.isWebGLBackend ? 'WebGL2' : 'other') : null,
+            lost: be?.gl?.isContextLost?.() ?? null,
+            canvas: document.querySelectorAll('#viewport canvas').length,
+            panel: !!document.querySelector('.panel--armature'),
+            splash: video ? { readyState: video.readyState, paused: video.paused, ended: video.ended, t: Number(video.currentTime.toFixed(1)), error: video.error?.code ?? null } : null,
+            overlay: document.querySelector('#overlay')?.className ?? null,
+            status: window.__e2eBoot?.status ?? [],
+            events: window.__e2eBoot?.events ?? [],
+          };
+        }).catch((e) => ({ error: e.message }));
+      const one = await sample();
+      await new Promise((r) => setTimeout(r, 1000));
+      const two = await sample();
+      const frames = one.error || two.error
+        ? `page did not answer (${one.error ?? two.error}): main thread likely blocked`
+        : `rAF ${one.raf}→${two.raf}, viewer frames ${one.drawn}→${two.drawn} over 1 s`;
+      const s = two.error ? one : two;
+      const parts = [
+        `frames: ${frames}`,
+        s.error ? null : `viewer ${s.viewer ? `created (${s.backend}, context lost ${s.lost})` : 'not created'}, ${s.canvas} canvas, Armature panel ${s.panel ? 'built' : 'not built'}, overlay class "${s.overlay}"`,
+        s.error ? null : `splash video: ${s.splash ? JSON.stringify(s.splash) : 'none'}`,
+        s.error ? null : `overlay trail: ${cap(s.status, 8).join(' → ') || 'none'}`,
+        s.error ? null : `mode events: ${s.events.join('; ') || 'none'}`,
+        `pending requests: ${cap([...pending].map(([r, t0]) => `${r.method()} ${path(r.url())} ${((now - t0) / 1000).toFixed(1)}s`), 8).join(', ') || 'none'}`,
+        `failed requests: ${cap(failed, 6).join(', ') || 'none'}`,
+        `slow requests (>5 s): ${cap(slow, 6).join(', ') || 'none'}`,
+        `console (last ${consoleLines.length}): ${consoleLines.join(' | ') || 'none'}`,
+      ].filter(Boolean);
+      const text = parts.join('\n    ');
+      return text.length > 6000 ? `${text.slice(0, 6000)}…` : text;
+    },
+  };
+}
+
 /**
  * Armature projects in the library, against the real Functions: the
  * member's Save to library makes a project in My projects - created once,
@@ -265,70 +373,75 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
   });
   const mark = a.requests.length;
   const saved = await p.evaluate(() => window.__armature.saveToLibrary());
-  const sent = a.requests.slice(mark).filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
-  t.ok(
-    !!saved?.id && sent.includes('POST /api/me/projects') && sent.includes(`POST /api/me/projects/${saved.id}/armature`) && sent.includes(`POST /api/me/projects/${saved.id}/thumb`),
-    `Save to library makes a project, sends armature.json and the thumbnail (${show(sent)})`,
-  );
-  const toast = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`).at(-1) ?? '');
-  t.ok(/^done: Saved to My projects: /.test(toast), `and says so ("${toast}")`);
-  const posed = await p.evaluate(() => window.__armature.state());
-  // Saved again: the same project, updated in place.
-  await p.evaluate(() => window.__armature.turn('forearm.L', 40, 0, 0));
-  const again = a.requests.length;
-  const resaved = await p.evaluate(() => window.__armature.saveToLibrary());
-  const sent2 = a.requests.slice(again).filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
-  t.ok(resaved?.id === saved?.id && !sent2.includes('POST /api/me/projects') && sent2.includes(`POST /api/me/projects/${saved?.id}/armature`), `saved again, it updates the same project (${show(sent2)})`);
-  const posed2 = await p.evaluate(() => window.__armature.state());
-  const files = await r2(server, 'users/');
-  const stored = Object.keys(files).filter((k) => k.endsWith(`/${saved?.id}/armature.json`) || k.endsWith(`/${saved?.id}/thumb.jpg`));
-  t.eq(stored.length, 2, `R2 holds its armature.json and thumb.jpg (${show(stored)})`);
-
-  // My projects: the card, its badge and Open.
-  await p.goto(`${base}/?me`, { waitUntil: 'domcontentloaded' });
-  await p.waitForSelector(`.card--mine[data-project="${saved?.id}"]`, { timeout: 30_000 }).catch(() => {});
-  const card = await p.evaluate((id) => {
-    const c = document.querySelector(`.card--mine[data-project="${id}"]`);
-    return {
-      badge: c?.querySelector('.card__badge')?.textContent ?? null,
-      meta: c?.querySelector('.card__meta')?.textContent ?? '',
-      open: c?.querySelector('.card__open')?.getAttribute('href') ?? null,
-    };
-  }, saved?.id);
-  t.ok(card.badge === 'Armature' && /^Armature · /.test(card.meta), `My projects shows it badged Armature (${show(card)})`);
-  t.eq(card.open, `/?armature=1&project=${saved?.id}`, 'and Open goes to Armature mode');
-  // Opened back over the armature in progress: the card asks (the
-  // browser's dialogs are accepted), and the figure is as saved.
-  await Promise.all([p.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }), p.click(`.card--mine[data-project="${saved?.id}"] .card__open`)]);
-  await p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
-  await p.waitForTimeout(300);
-  const back = await p.evaluate(() => ({ state: window.__armature.state(), symmetry: window.__armature.armature.symmetry, link: window.__armature.link(), search: location.search, history: window.__armature.history() }));
-  const sameState = JSON.stringify(back.state.pose) === JSON.stringify(posed2.pose) && back.state.preset === posed2.preset;
-  t.ok(sameState && back.symmetry === true, `opened back, the figure is as saved, symmetry and all (${back.state.preset}, ${Object.keys(back.state.pose).length} joints)`);
-  t.ok(back.link?.id === saved?.id && back.search === '?armature=1' && back.history.undo === 0, `linked to its project, the address cleaned, the history fresh (${show(back.link)} ${back.search})`);
-  void posed;
-
-  // The owner's: made a template and public, a gallery card a guest opens as a copy.
-  const op = o.page;
-  await boot(op, base);
-  await op.evaluate(() => {
-    window.__armature.turn('upperarm.R', -30, 0, 35);
-    window.__armature.commit();
-  });
-  const tpl = await op.evaluate(() => window.__armature.saveToLibrary());
-  const switched = await op.evaluate(async (id) => {
-    const tr = await fetch(`/admin/api/projects/${id}/template`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ template: true }) });
-    const pub = await fetch(`/admin/api/projects/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visibility: 'public' }) });
-    return { template: tr.status, visibility: pub.status, row: await pub.json().catch(() => null) };
-  }, tpl?.id);
-  t.ok(!!tpl?.id && switched.template === 200 && switched.visibility === 200 && switched.row?.template === true && switched.row?.mode === 'armature', `the owner's armature takes the Template switch and goes public (${show({ id: tpl?.id, ...switched, row: undefined })})`);
-  const ownerState = await op.evaluate(() => window.__armature.state());
-  const guest = await a.ctx.browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
-  const g = await guest.newPage();
-  const gErrors = [];
-  g.on('pageerror', (e) => gErrors.push(String(e)));
-  g.on('dialog', (d) => void d.accept());
+  // From here the member has a project, which goes again at the end whatever happens
+  // below (in the finally), so the parts after this one find the account as they left it.
+  let guest = null;
   try {
+    const sent = a.requests.slice(mark).filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
+    t.ok(
+      !!saved?.id && sent.includes('POST /api/me/projects') && sent.includes(`POST /api/me/projects/${saved.id}/armature`) && sent.includes(`POST /api/me/projects/${saved.id}/thumb`),
+      `Save to library makes a project, sends armature.json and the thumbnail (${show(sent)})`,
+    );
+    const toast = await p.evaluate(() => [...document.querySelectorAll('.file-menu__progress')].map((n) => `${n.dataset.state}: ${n.textContent}`).at(-1) ?? '');
+    t.ok(/^done: Saved to My projects: /.test(toast), `and says so ("${toast}")`);
+    const posed = await p.evaluate(() => window.__armature.state());
+    // Saved again: the same project, updated in place.
+    await p.evaluate(() => window.__armature.turn('forearm.L', 40, 0, 0));
+    const again = a.requests.length;
+    const resaved = await p.evaluate(() => window.__armature.saveToLibrary());
+    const sent2 = a.requests.slice(again).filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
+    t.ok(resaved?.id === saved?.id && !sent2.includes('POST /api/me/projects') && sent2.includes(`POST /api/me/projects/${saved?.id}/armature`), `saved again, it updates the same project (${show(sent2)})`);
+    const posed2 = await p.evaluate(() => window.__armature.state());
+    const files = await r2(server, 'users/');
+    const stored = Object.keys(files).filter((k) => k.endsWith(`/${saved?.id}/armature.json`) || k.endsWith(`/${saved?.id}/thumb.jpg`));
+    t.eq(stored.length, 2, `R2 holds its armature.json and thumb.jpg (${show(stored)})`);
+
+    // My projects: the card, its badge and Open.
+    await p.goto(`${base}/?me`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector(`.card--mine[data-project="${saved?.id}"]`, { timeout: 30_000 }).catch(() => {});
+    const card = await p.evaluate((id) => {
+      const c = document.querySelector(`.card--mine[data-project="${id}"]`);
+      return {
+        badge: c?.querySelector('.card__badge')?.textContent ?? null,
+        meta: c?.querySelector('.card__meta')?.textContent ?? '',
+        open: c?.querySelector('.card__open')?.getAttribute('href') ?? null,
+      };
+    }, saved?.id);
+    t.ok(card.badge === 'Armature' && /^Armature · /.test(card.meta), `My projects shows it badged Armature (${show(card)})`);
+    t.eq(card.open, `/?armature=1&project=${saved?.id}`, 'and Open goes to Armature mode');
+    // Opened back over the armature in progress: the card asks (the
+    // browser's dialogs are accepted), and the figure is as saved.
+    await Promise.all([p.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }), p.click(`.card--mine[data-project="${saved?.id}"] .card__open`)]);
+    await p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+    await p.waitForTimeout(300);
+    const back = await p.evaluate(() => ({ state: window.__armature.state(), symmetry: window.__armature.armature.symmetry, link: window.__armature.link(), search: location.search, history: window.__armature.history() }));
+    const sameState = JSON.stringify(back.state.pose) === JSON.stringify(posed2.pose) && back.state.preset === posed2.preset;
+    t.ok(sameState && back.symmetry === true, `opened back, the figure is as saved, symmetry and all (${back.state.preset}, ${Object.keys(back.state.pose).length} joints)`);
+    t.ok(back.link?.id === saved?.id && back.search === '?armature=1' && back.history.undo === 0, `linked to its project, the address cleaned, the history fresh (${show(back.link)} ${back.search})`);
+    void posed;
+
+    // The owner's: made a template and public, a gallery card a guest opens as a copy.
+    const op = o.page;
+    await boot(op, base);
+    await op.evaluate(() => {
+      window.__armature.turn('upperarm.R', -30, 0, 35);
+      window.__armature.commit();
+    });
+    const tpl = await op.evaluate(() => window.__armature.saveToLibrary());
+    const switched = await op.evaluate(async (id) => {
+      const tr = await fetch(`/admin/api/projects/${id}/template`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ template: true }) });
+      const pub = await fetch(`/admin/api/projects/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visibility: 'public' }) });
+      return { template: tr.status, visibility: pub.status, row: await pub.json().catch(() => null) };
+    }, tpl?.id);
+    t.ok(!!tpl?.id && switched.template === 200 && switched.visibility === 200 && switched.row?.template === true && switched.row?.mode === 'armature', `the owner's armature takes the Template switch and goes public (${show({ id: tpl?.id, ...switched, row: undefined })})`);
+    const ownerState = await op.evaluate(() => window.__armature.state());
+    guest = await a.ctx.browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const watched = await watchBoot(guest);
+    const g = await guest.newPage();
+    watched.attach(g);
+    const gErrors = [];
+    g.on('pageerror', (e) => gErrors.push(String(e)));
+    g.on('dialog', (d) => void d.accept());
     await g.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await g.waitForSelector(`.card--armature-project[data-project="${tpl?.id}"]`, { timeout: 30_000 }).catch(() => {});
     const gcard = await g.evaluate((id) => {
@@ -349,7 +462,8 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     await g.waitForFunction(() => !!window.__armature || !!document.querySelector('.overlay--error'), null, { timeout: 150_000 }).catch(() => {});
     const opened = await g.evaluate(() => (window.__armature ? null : document.querySelector('#overlay .overlay__msg')?.textContent ?? 'no overlay'));
     if (opened) {
-      throw new Error(`the template did not open in Armature mode for a guest: ${opened}; at ${g.url()}; page errors: ${gErrors.join(' | ') || 'none'}`);
+      const where = await watched.diagnose(g).catch((e) => `(the diagnosis failed: ${e?.message ?? e})`);
+      throw new Error(`the template did not open in Armature mode for a guest: ${opened}; at ${g.url()}; page errors: ${gErrors.join(' | ') || 'none'}\n  where the boot stands:\n    ${where}`);
     }
     await g.waitForTimeout(300);
     const copy = await g.evaluate(() => ({ state: window.__armature.state(), link: window.__armature.link() }));
@@ -363,11 +477,14 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     const refused = await g.evaluate(() => document.querySelector('#overlay .overlay__msg')?.textContent ?? '');
     t.ok(/opens in Armature mode/.test(refused), `the viewer does not play an armature ("${refused}")`);
   } finally {
-    await guest.close();
+    await guest?.close().catch(() => {});
+    // The member's goes again, even when a check above threw (that error still
+    // fails the part), so the parts after this one find the account as they left it.
+    const gone = await p
+      .evaluate(async (id) => (await fetch(`/api/me/projects/${id}`, { method: 'DELETE' })).status, saved?.id)
+      .catch((e) => `the DELETE threw: ${e?.message ?? e}`);
+    t.eq(gone, 200, "the member's armature project is deleted again");
   }
-  // The member's goes again, so the parts after this one find the account as they left it.
-  const gone = await p.evaluate(async (id) => (await fetch(`/api/me/projects/${id}`, { method: 'DELETE' })).status, saved?.id);
-  t.eq(gone, 200, "the member's armature project is deleted again");
   void kinds;
 }
 
