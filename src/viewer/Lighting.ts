@@ -802,6 +802,21 @@ export class Lighting {
     return (base * this.softnessRef()) / (2 * cap);
   }
 
+  /** Whether a soft blur may take more samples than the tier's count (blurSamplesFor). */
+  private blurGrowth = true;
+
+  /**
+   * Off: every blur keeps the tier's sample count, whatever its softness,
+   * as before the count grew with it. The viewer turns it off on a
+   * software rasterizer (Viewer.create), where each sample is CPU time.
+   */
+  setBlurGrowth(on: boolean): void {
+    if (on === this.blurGrowth) return;
+    this.blurGrowth = on;
+    for (const id of ALL) this.applyBlur(id);
+    this.onChange?.();
+  }
+
   /** The tier's blur sample count, halved by adaptive quality's economy. */
   private baseSamples(): number {
     return Math.max(2, Math.round(this.tier.blurSamples * (this.economy ? 0.5 : 1)));
@@ -819,7 +834,8 @@ export class Lighting {
    * result, as it halved the tier's. A uniform: no shader is rebuilt.
    */
   private blurSamplesFor(radius: number): number {
-    const want = Math.max(this.tier.blurSamples, Math.min(this.tier.maxBlurSamples, Math.ceil(radius) + 1));
+    const max = this.blurGrowth ? this.tier.maxBlurSamples : this.tier.blurSamples;
+    const want = Math.max(this.tier.blurSamples, Math.min(max, Math.ceil(radius) + 1));
     return this.economy ? Math.max(2, Math.round(want * 0.5)) : want;
   }
 

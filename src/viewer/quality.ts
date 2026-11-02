@@ -36,9 +36,20 @@ export const SHADOW_TIERS: Record<Quality, ShadowTier> = {
   low: { key: 1024, fill: 0, rim: 512, blurSamples: 4, maxBlurSamples: 12, aoSamples: 8, aoResolutionScale: 0.5 },
 };
 
-export function detectQuality(): Quality {
+/** The tier the page's `?q=` asks for, if it names one. */
+export function qualityOverride(): Quality | null {
   const override = new URLSearchParams(location.search).get('q');
-  if (override === 'high' || override === 'medium' || override === 'low') return override;
+  return override === 'high' || override === 'medium' || override === 'low' ? override : null;
+}
+
+/** Whether a renderer description names a software rasterizer (SwiftShader, llvmpipe, WARP...). */
+export function isSoftwareRenderer(description: string): boolean {
+  return /swiftshader|software|basic render|llvmpipe|warp\b/i.test(description);
+}
+
+export function detectQuality(): Quality {
+  const override = qualityOverride();
+  if (override) return override;
 
   // WebGPU mandates a maxTextureDimension2D of at least 8192, so the old
   // max-texture-size proxy for weak GPUs no longer discriminates; gate the low

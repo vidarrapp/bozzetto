@@ -39,7 +39,7 @@ import { hexColor } from './color';
 import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
 import type { Manifest, Tier } from '../types/manifest';
-import { detectQuality, SHADOW_TIERS } from './quality';
+import { detectQuality, isSoftwareRenderer, qualityOverride, SHADOW_TIERS } from './quality';
 import { formatMs, perfLog, STALL_MS } from './perfLog';
 import { FrameStats, ms, type FrameSummary } from './frameStats';
 import { FrameClock } from './frameClock';
@@ -671,6 +671,12 @@ export class Viewer {
     await renderer.init();
     const viewer = new Viewer(renderer, container, manifest, source, options);
     viewer.warnIfSoftwareRendering();
+    // A software rasterizer draws every blur sample on the CPU: the blur
+    // keeps the tier's count rather than growing with the softness
+    // (Lighting.setBlurGrowth), unless ?q= asked for a tier outright. On
+    // CI's runner the grown count made each viewer frame long enough that
+    // leaving the page timed out behind it.
+    if (isSoftwareRenderer(viewer.gpuDescription()) && !qualityOverride()) viewer.lighting.setBlurGrowth(false);
     return viewer;
   }
 
@@ -1775,7 +1781,7 @@ export class Viewer {
   /** One console note when the fallback landed on a software rasterizer. */
   warnIfSoftwareRendering(): void {
     const gpu = this.gpuDescription();
-    if (/swiftshader|software|basic render|llvmpipe|warp\b/i.test(gpu)) {
+    if (isSoftwareRenderer(gpu)) {
       console.warn(
         `Bozzetto: software rendering detected (${gpu}). ` +
           'Check that hardware acceleration is enabled (chrome://settings/system) ' +
