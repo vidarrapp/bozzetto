@@ -13,6 +13,7 @@
 - [x] 2026-10-27: Where Smooth's Mode and Relax go. Decided 2026-10-27: a Smooth group in every brush's Tool panel, one shared setting for all tools
 - [x] 2026-10-31: Strength in centimetres for the brushes that push the surface. Decided 2026-10-31: yes; Clay, Inflate, Crease and Rake get 0 to 5 cm; Move and Drag follow the pen and keep 0 to 1 (corrected 2026-10-31), as do the capped brushes
 - [x] 2026-10-31: Strength indicator shown always or only while adjusting. Decided 2026-10-31: only while adjusting strength
+- [ ] 2026-11-03: Cap the viewer at one frame in flight, so it stays responsive on software GPUs and low-power machines (leaving a page about 4 s instead of about 10 s locally), at the cost of reworking the meter, stillAA and fastStroke tests to wait for drawn frames; or leave it as it is (blocks: the frame cap)
 - [x] 2026-10-31: Edge-loop mask with Ctrl+Shift drag. Decided 2026-10-31: as proposed; true edge loops on quads, and a geodesic ring on triangle meshes as well
 - [x] 2026-10-31: Poly groups, how they are made. Decided 2026-10-31: from the mask (Ctrl+W), from and back out to OBJ g/o lines (Maya round trip), split by angle, and by UV islands
 - [x] 2026-10-31: Poly groups, hiding. Decided 2026-10-31: as proposed; Ctrl+Shift+click isolates, again hides it and shows the rest, on empty space shows all; Ctrl+Shift+drag stays the edge-loop mask; a Groups list in the Model panel
