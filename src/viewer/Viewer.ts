@@ -3762,8 +3762,10 @@ async function initRenderer(
     window.clearTimeout(timer);
   }
   // The abandoned renderer's canvas was never attached and nothing holds
-  // it. Should its init still finish, free what it made (a device, or a
-  // WebGL context from three's own fallback); a late failure is dropped.
+  // it. Its own WebGL 2 fallback is switched off, so a late "no adapter"
+  // fails quietly rather than opening a second WebGL context beside the
+  // one below; should a late adapter come, the device it made is freed.
+  (first as unknown as { _getFallback: unknown })._getFallback = null;
   first.init().then(
     () => first.dispose(),
     () => undefined,

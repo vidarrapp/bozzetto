@@ -242,8 +242,40 @@ async function approve(m, id, t) {
   await rest(m);
 }
 
-/** Off the viewer: a software renderer drawing in one page slows every other. */
-const rest = (b) => b.page.goto('about:blank');
+/**
+ * Off the viewer: a software renderer drawing in one page slows every other.
+ * Leaving waits for the GPU work the page has queued, which on a software
+ * rasterizer is several frames of seconds each (10 s measured locally,
+ * more on CI with other pages drawing), and a goto that waits on it can
+ * pass its 30 s. So the viewer stops drawing first, the queue is let
+ * finish (a fence on WebGL 2, the queue's promise on WebGPU), and then the
+ * page goes: a quick unload with nothing behind it.
+ */
+const rest = async (b) => {
+  await b.page
+    .evaluate(async (limit) => {
+      const v = window.__bozzetto;
+      if (!v) return;
+      cancelAnimationFrame(v.rafId);
+      clearTimeout(v.pacer);
+      const be = v.renderer?.backend;
+      if (be?.isWebGPUBackend) {
+        await Promise.race([be.device.queue.onSubmittedWorkDone(), new Promise((r) => setTimeout(r, limit))]);
+        return;
+      }
+      const gl = be?.gl;
+      const sync = gl?.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      if (!sync) return;
+      gl.flush();
+      const end = performance.now() + limit;
+      while (!gl.isContextLost() && gl.getSyncParameter(sync, gl.SYNC_STATUS) !== gl.SIGNALED && performance.now() < end) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!gl.isContextLost()) gl.deleteSync(sync);
+    }, 90_000)
+    .catch(() => {});
+  return b.page.goto('about:blank');
+};
 
 /** The Community, @ada's page and the viewer show it; @bea gets Report… and reports. */
 async function listedAndReported(server, b, g, id, t) {
