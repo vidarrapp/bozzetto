@@ -45,6 +45,16 @@ npm run e2e:build           # test build, then the browser smoke tests (needs Pl
 npm run e2e -- <suite ...>  # the smoke tests against the current test build
 ```
 
+The viewer keeps one frame in flight: a refresh that comes while the GPU
+is still drawing the last frame draws nothing (after 5 s it draws anyway).
+Under the suites' software rasterizer most refreshes are skipped, so a
+suite that needs the viewer to have drawn waits for drawn frames, not
+`requestAnimationFrame` callbacks: `await window.__bozzetto.whenFramesDrawn(n)`
+resolves right after the nth frame from now is rendered, while the canvas
+still holds it (the `frames` and `snapshot` helpers of latency.mjs,
+shadows.mjs and shadowsGroups.mjs use it), and
+`window.__bozzetto.frameNo` counts drawn frames only.
+
 The Blender scripts behind the base meshes and the mannequins, and the
 `rig:*` scripts beside them, are described in `tools/README.md`.
 

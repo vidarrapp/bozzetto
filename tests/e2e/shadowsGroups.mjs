@@ -33,16 +33,12 @@
 //   takes no more, and adaptive quality's economy still halves them.
 import { openSculpt } from './lib.mjs';
 
-const frames = (page, n = 2) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) => {
-        let i = 0;
-        const f = () => (++i >= k ? ok() : requestAnimationFrame(f));
-        requestAnimationFrame(f);
-      }),
-    n,
-  );
+/**
+ * n frames drawn by the viewer from here on (not refreshes: the viewer
+ * keeps one frame in flight, and a refresh while the GPU is busy draws
+ * nothing).
+ */
+const frames = (page, n = 2) => page.evaluate((k) => window.__bozzetto.whenFramesDrawn(k), n);
 
 const still = async (page) => {
   await page.waitForFunction(() => window.__bozzetto.frameMode().kind === null, null, { timeout: 20_000 });
@@ -123,7 +119,7 @@ const shadowBuilds = (page) =>
     try {
       for (const id of ['key', 'fill', 'rim']) v.lighting.lights[id].shadow.needsUpdate = true;
       v.invalidate();
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(ok))));
+      await v.whenFramesDrawn(3);
     } finally {
       objects.get = get;
     }
@@ -135,22 +131,17 @@ const shadowBuilds = (page) =>
 
 /** Mean luminance of the model's pixels in a kept frame (those that differ from the background in `ref`). */
 const keep = (page, key) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) =>
-        requestAnimationFrame(() => {
-          const src = window.__bozzetto.captureCanvas;
-          const c = document.createElement('canvas');
-          c.width = src.width;
-          c.height = src.height;
-          const g = c.getContext('2d', { willReadFrequently: true });
-          g.drawImage(src, 0, 0);
-          (window.__shots ??= {})[k] = { w: c.width, h: c.height, d: g.getImageData(0, 0, c.width, c.height).data };
-          ok();
-        }),
-      ),
-    key,
-  );
+  page.evaluate(async (k) => {
+    // The next frame drawn, read as soon as it is.
+    await window.__bozzetto.whenFramesDrawn(1);
+    const src = window.__bozzetto.captureCanvas;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(src, 0, 0);
+    (window.__shots ??= {})[k] = { w: c.width, h: c.height, d: g.getImageData(0, 0, c.width, c.height).data };
+  }, key);
 
 const modelLum = (page, ref, key) =>
   page.evaluate(
@@ -220,9 +211,9 @@ export const suites = {
       const L = window.__bozzetto.lighting;
       input.hooks.toggleGroupColors();
       L.setShadowsMaster(false);
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      await window.__bozzetto.whenFramesDrawn(2);
       L.setShadowsMaster(true);
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      await window.__bozzetto.whenFramesDrawn(2);
     });
     await frames(page, 2);
     builds = await shadowBuilds(page);

@@ -11,17 +11,12 @@
 // (owner: it lit the floor straight through the model).
 import { openArmature, openSculpt } from './lib.mjs';
 
-/** n frames of the page's own, after the viewer's. */
-const frames = (page, n = 2) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) => {
-        let i = 0;
-        const f = () => (++i >= k ? ok() : requestAnimationFrame(f));
-        requestAnimationFrame(f);
-      }),
-    n,
-  );
+/**
+ * n frames drawn by the viewer from here on (not refreshes: the viewer
+ * keeps one frame in flight, and a refresh while the GPU is busy draws
+ * nothing).
+ */
+const frames = (page, n = 2) => page.evaluate((k) => window.__bozzetto.whenFramesDrawn(k), n);
 
 const fit = (page) => page.evaluate(() => window.__bozzetto.lighting.fitInfo());
 const counters = (page) => page.evaluate(() => window.__bozzetto.renderCounters());
@@ -77,24 +72,18 @@ const covers = (page, id, box) =>
     [id, box],
   );
 
-/** The canvas as last drawn, kept in the page under `key` (read after the viewer's frame). */
+/** The next frame the viewer draws, kept in the page under `key` (read as soon as it is drawn). */
 const snapshot = (page, key) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) =>
-        requestAnimationFrame(() => {
-          const src = window.__bozzetto.captureCanvas;
-          const c = document.createElement('canvas');
-          c.width = src.width;
-          c.height = src.height;
-          const ctx = c.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(src, 0, 0);
-          (window.__shots ??= {})[k] = { w: c.width, h: c.height, d: ctx.getImageData(0, 0, c.width, c.height).data };
-          ok();
-        }),
-      ),
-    key,
-  );
+  page.evaluate(async (k) => {
+    await window.__bozzetto.whenFramesDrawn(1);
+    const src = window.__bozzetto.captureCanvas;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0);
+    (window.__shots ??= {})[k] = { w: c.width, h: c.height, d: ctx.getImageData(0, 0, c.width, c.height).data };
+  }, key);
 
 /**
  * Luminance along a world segment, from a kept frame: n samples from a to b,
@@ -491,7 +480,7 @@ async function shadowParts(page, base, t, spare) {
     p.evaluate(async () => {
       const L = window.__bozzetto.lighting;
       L.setIntensity('key', L.state()[0].intensity);
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      await window.__bozzetto.whenFramesDrawn(2);
     });
   // The demo plays: its frames differ in size, and a frame swapped in
   // between the last fit and the read below made the box one frame's and

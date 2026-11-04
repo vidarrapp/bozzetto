@@ -269,6 +269,22 @@ const SCENE_SAMPLES = 4;
  * the limit sits well past both.
  */
 export const WEBGPU_INIT_TIMEOUT_MS = 10_000;
+/**
+ * How many frames the loop lets the GPU have under way at once (see
+ * Viewer.loop). 1: a frame waits until the GPU has finished the last one.
+ * 2: it waits only for the one before that, which absorbs the lag between
+ * the GPU finishing and the browser saying so (WebGPU's
+ * onSubmittedWorkDone resolves when the browser next looks), should a
+ * fast GPU at a high refresh rate be held for it; the meter's "held for
+ * GPU" row shows whether it is.
+ */
+const FRAMES_IN_FLIGHT: number = 1;
+/**
+ * The longest the loop holds a frame back for the GPU to finish an earlier
+ * one (see Viewer.gateOnGpu). Past it the next frame is drawn anyway: a
+ * fence that never signals must slow the view down, not freeze it.
+ */
+const GPU_WAIT_MAX_MS = 5_000;
 const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
 
 /**
@@ -1870,6 +1886,7 @@ export class Viewer {
       ['verdict', s.verdict],
       ['cpu', `input ${ms(s.inputMs)} (step ${ms(s.stepMs)}) · loop ${ms(s.loopMs)} · encode ${ms(s.encodeMs)} ms`],
       ['gpu time', gpu],
+      ['held for GPU', this.heldText()],
       ['moves', s.movesPerFrame ? `${s.movesPerFrame.toFixed(1)} per frame` : '–'],
       ['latency', latency],
       ['draws', `${info.drawCalls ?? info.calls ?? 0} · ${formatCount(info.triangles ?? 0)} tris`],
@@ -2287,6 +2304,8 @@ export class Viewer {
     this.timer.update(); // discard time accumulated during capture
     this.frameStats.resetClock(); // nor is the capture a frame to the meter
     this.endReadback();
+    this.releaseGpu();
+    this.gateOnGpu(); // the capture's renders finish before the next frame
     this.loop();
   }
 
@@ -2434,6 +2453,8 @@ export class Viewer {
     this.onResize(); // the live size and camera, and a fresh still frame
     this.timer.update(); // the capture's time is not the next frame's delta
     this.frameStats.resetClock();
+    this.releaseGpu();
+    this.gateOnGpu(); // the stills' renders finish before the next frame
     this.loop();
   }
 
@@ -2511,6 +2532,9 @@ export class Viewer {
   dispose(): void {
     cancelAnimationFrame(this.rafId);
     clearTimeout(this.pacer);
+    this.releaseGpu();
+    for (const w of this.drawnWaiters) w.ok();
+    this.drawnWaiters = [];
     this.offAdaptive();
     for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel']) {
       this.container.removeEventListener(type, this.onActivity, { capture: true });
@@ -3543,8 +3567,115 @@ export class Viewer {
    */
   onPostControls: (() => void) | null = null;
 
+  /**
+   * The frames the GPU may still be drawing, oldest first, at most
+   * FRAMES_IN_FLIGHT: each, asked with the time, says whether its work is
+   * done (or waited on past GPU_WAIT_MAX_MS), and once it says so it has
+   * let go of its fence.
+   */
+  private readonly gpuPending: Array<(now: number) => boolean> = [];
+
+  /** Let go of every wait (its fence deleted): nothing is held after this. */
+  private releaseGpu(): void {
+    for (const done of this.gpuPending) done(Infinity);
+    this.gpuPending.length = 0;
+  }
+
+  /** Refreshes held for the GPU and refreshes in all, this window and the last whole one (about a second each). */
+  private readonly heldNow = { held: 0, ticks: 0, since: 0 };
+  private heldLast: { held: number; ticks: number } | null = null;
+
+  private countRefresh(now: number, held: boolean): void {
+    const w = this.heldNow;
+    if (now - w.since >= 1000) {
+      if (w.since > 0) this.heldLast = { held: w.held, ticks: w.ticks };
+      w.held = 0;
+      w.ticks = 0;
+      w.since = now;
+    }
+    w.ticks++;
+    if (held) w.held++;
+  }
+
+  /** The meter's "held for GPU" row: how many refreshes of the last second drew nothing, waiting on the GPU. */
+  private heldText(): string {
+    const l = this.heldLast;
+    const depth = `${FRAMES_IN_FLIGHT} frame${FRAMES_IN_FLIGHT === 1 ? '' : 's'} in flight`;
+    if (!l) return `measuring · ${depth}`;
+    return `${l.held}/${l.ticks} refreshes (${l.ticks ? Math.round((100 * l.held) / l.ticks) : 0}%) · ${depth}`;
+  }
+
+  /**
+   * Add a wait on what the GPU has been given up to now (the frame just
+   * rendered): a fence on WebGL 2, the queue's own promise on WebGPU.
+   * Where neither can be had, nothing is added and nothing is held.
+   */
+  private gateOnGpu(): void {
+    const since = performance.now();
+    const b = this.renderer.backend as { isWebGPUBackend?: boolean; device?: GPUDevice; gl?: WebGL2RenderingContext | null };
+    const late = (now: number): boolean => now - since > GPU_WAIT_MAX_MS;
+    try {
+      if (b.isWebGPUBackend) {
+        if (!b.device) return;
+        let done = false;
+        // A lost device settles the promise too, one way or the other.
+        b.device.queue.onSubmittedWorkDone().then(
+          () => (done = true),
+          () => (done = true),
+        );
+        this.gpuPending.push((now) => done || late(now));
+        return;
+      }
+      const gl = b.gl;
+      if (!gl || gl.isContextLost()) return;
+      const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      if (!sync) return;
+      gl.flush(); // a fence not yet flushed may never signal
+      this.gpuPending.push((now) => {
+        // A lost context has nothing left to wait for, and its sync is gone with it.
+        if (gl.isContextLost()) return true;
+        if (!late(now) && gl.getSyncParameter(sync, gl.SYNC_STATUS) === gl.UNSIGNALED) return false;
+        gl.deleteSync(sync);
+        return true;
+      });
+    } catch {
+      // Nothing to wait on: this frame is not held for.
+    }
+  }
+
+  /** Those waiting on whenFramesDrawn, each with the frameNo it waits for. */
+  private drawnWaiters: { at: number; ok: () => void }[] = [];
+
+  /**
+   * Resolves once the loop has drawn `n` more frames, in a microtask right
+   * after the nth frame's render, while its canvas still holds it. A
+   * refresh skipped for the GPU (see the loop) is not a frame. For the
+   * tests, which used to count refreshes.
+   */
+  whenFramesDrawn(n = 1): Promise<void> {
+    return new Promise((ok) => this.drawnWaiters.push({ at: this.frameNo + Math.max(1, n), ok }));
+  }
+
   private readonly loop = (rafTime?: number): void => {
     const now = performance.now();
+    // FRAMES_IN_FLIGHT frames at most: while the GPU has that many still
+    // to finish, this refresh draws nothing, nor ticks, nor counts as a
+    // frame (the meter, the still frame's samples, adaptive quality and
+    // frameNo all see only drawn frames; the meter counts the refreshes
+    // held, apart). A real GPU is done long before the next
+    // refresh and never waits here; a software rasterizer (seconds a
+    // frame) would otherwise queue frames faster than it draws them, and
+    // every input, and leaving the page, would wait for the whole queue
+    // (10 s and more, measured in headless Chromium).
+    const pending = this.gpuPending;
+    while (pending.length && pending[0](now)) pending.shift();
+    const held = pending.length >= FRAMES_IN_FLIGHT;
+    this.countRefresh(now, held);
+    if (held) {
+      this.frameStart = now; // the main thread was free: no stall
+      this.scheduleNext(now);
+      return;
+    }
     // The stall watchdog (perfLog): frames this far apart mean the main
     // thread was held up, which is what a freeze on the device is. The note
     // is the previous frame's own share (tick, controls, render); the rest
@@ -3616,6 +3747,7 @@ export class Viewer {
     this.frameNo++;
     const encodeStart = performance.now();
     this.renderOnce();
+    this.gateOnGpu();
     const end = performance.now();
     this.frameWork = end - now;
     // The loop's own share, the encode, and the input the frame carried;
@@ -3623,6 +3755,11 @@ export class Viewer {
     const inputAt = this.frameStats.endFrame(rafTime ?? now, encodeStart - now, end - encodeStart, end);
     if (this.gpuTiming) this.sampleGpu(end, inputAt);
     if (this.interactionEnding) this.finishInteraction();
+    if (this.drawnWaiters.length) {
+      const due = this.drawnWaiters.filter((w) => w.at <= this.frameNo);
+      this.drawnWaiters = this.drawnWaiters.filter((w) => w.at > this.frameNo);
+      for (const w of due) w.ok();
+    }
   };
 
   /**

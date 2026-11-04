@@ -13,17 +13,13 @@
 import { openArmature, openSculpt } from './lib.mjs';
 import { camera, devices, emptySpot, line, openForInput, screenOf, settle } from './smoke.mjs';
 
-/** n frames of the page's own, after the viewer's. */
-const frames = (page, n = 2) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) => {
-        let i = 0;
-        const f = () => (++i >= k ? ok() : requestAnimationFrame(f));
-        requestAnimationFrame(f);
-      }),
-    n,
-  );
+/**
+ * n frames drawn by the viewer from here on. Not n refreshes: the viewer
+ * keeps one frame in flight, and a refresh that comes while the GPU is
+ * still on the last frame draws nothing (here, on a software rasterizer,
+ * most of them).
+ */
+const frames = (page, n = 2) => page.evaluate((k) => window.__bozzetto.whenFramesDrawn(k), n);
 
 const frameMode = (page) => page.evaluate(() => window.__bozzetto.frameMode());
 const counters = (page) => page.evaluate(() => window.__bozzetto.renderCounters());
@@ -66,27 +62,22 @@ const aoModel = (page, value) =>
   }, value);
 
 /**
- * The canvas as the viewer last drew it, kept in the page under `key`: read
- * in a frame callback queued after the viewer's own, so the drawing buffer
- * still holds that frame.
+ * The next frame the viewer draws, kept in the page under `key`: read as
+ * soon as it is drawn (whenFramesDrawn resolves right after its render),
+ * so the drawing buffer still holds that frame.
  */
 const snapshot = (page, key) =>
-  page.evaluate(
-    (k) =>
-      new Promise((ok) =>
-        requestAnimationFrame(() => {
-          const src = window.__bozzetto.captureCanvas;
-          const c = document.createElement('canvas');
-          c.width = src.width;
-          c.height = src.height;
-          const ctx = c.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(src, 0, 0);
-          (window.__shots ??= {})[k] = ctx.getImageData(0, 0, c.width, c.height).data;
-          ok([c.width, c.height]);
-        }),
-      ),
-    key,
-  );
+  page.evaluate(async (k) => {
+    await window.__bozzetto.whenFramesDrawn(1);
+    const src = window.__bozzetto.captureCanvas;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0);
+    (window.__shots ??= {})[k] = ctx.getImageData(0, 0, c.width, c.height).data;
+    return [c.width, c.height];
+  }, key);
 
 /**
  * Two kept frames against each other, outside `ex` (device px, inclusive):
@@ -416,6 +407,10 @@ const quality = (page) =>
       aoSamples: v.aoNode?.samples.value ?? null,
       aoScale: v.aoNode?.resolutionScale ?? null,
       blur: key.blurSamples,
+      // What the blur's count is worked out from (Lighting.blurSamplesFor):
+      // the radius in texels, and the tier's count and cap.
+      radius: key.radius,
+      tierBlur: [v.lighting.tier.blurSamples, v.lighting.tier.maxBlurSamples],
       map: key.mapSize.x,
       ratio: v.renderer.getPixelRatio(),
       aa: `${v.getAntialias()}/${v.scenePass?.options.samples}`,
@@ -480,6 +475,12 @@ export const suites = {
       t.ok(/^≈? ?[\d.]+ ms/.test(r['gpu time'] ?? ''), `the GPU is timed (${source}): "${r['gpu time']}"`);
     }
     t.ok(/^\d+ · [\d.]+[kM]? tris$/.test(r.draws ?? ''), `draw calls and triangles: "${r.draws}"`);
+    {
+      // Refreshes that drew nothing, the GPU still on the frames before:
+      // a share of the last second, beside how many frames may be in flight.
+      const m = (r['held for GPU'] ?? '').match(/^(\d+)\/(\d+) refreshes \((\d+)%\) · [12] frames? in flight$/);
+      t.ok(!!m && +m[2] > 0 && +m[1] <= +m[2], `and how many refreshes were held for the GPU: "${r['held for GPU']}"`);
+    }
     t.eq(r.frames, 'still', 'nothing moving, the frames are still ones');
     t.eq(r.builds, 'no stroke or drag yet', 'and no stroke has been bracketed yet');
     t.eq(
@@ -540,6 +541,12 @@ export const suites = {
     await page.keyboard.press('f');
     t.eq(await aoModel(page, 'gtao'), 'gtao', 'GTAO picked in the Render panel');
     await page.evaluate(() => window.__bozzetto.setGround('floor'));
+    // No mirrored copy of the stroke: the reach below is this stroke's own,
+    // and the copy (on the sphere's far side, at its silhouette from here)
+    // would change pixels outside it.
+    await page.evaluate(() => {
+      window.__sculpt.session.getSculptManager()._symmetry = false;
+    });
     await settle(page);
     await frames(page, 4);
     await stillAgain(page);
@@ -553,6 +560,9 @@ export const suites = {
       await snapshot(page, 'during');
       m.p2 = await passes(page);
       return m;
+    });
+    await page.evaluate(() => {
+      window.__sculpt.session.getSculptManager()._symmetry = true;
     });
     await frames(page, 4);
     const after = { c: await counters(page), p: await passes(page), mode: await frameMode(page) };
@@ -725,7 +735,7 @@ export const suites = {
       const v = window.__bozzetto;
       const f0 = v.clock.frameId();
       const n0 = v.frameNo;
-      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(ok))));
+      await v.whenFramesDrawn(3);
       return { owned: v.clock.owned, threeLoop: v.renderer._animation._requestId, frames: v.clock.frameId() - f0, renders: v.frameNo - n0 };
     });
     t.ok(
@@ -876,7 +886,9 @@ export const suites = {
     await settle(page);
     await stillAgain(page);
     const tier = await quality(page);
-    t.ok(tier.level === 0 && tier.blur === 4 && tier.map === 1024 && tier.text === 'full quality', `on, at the low tier's own quality (${show(tier)})`);
+    // The key's blur samples: the low tier's 4, or more for a softer blur
+    // (Lighting.blurSamplesFor grows them with the radius, up to 12).
+    t.ok(tier.level === 0 && tier.blur >= 4 && tier.blur <= 12 && tier.map === 1024 && tier.text === 'full quality', `on, at the low tier's own quality (${show(tier)})`);
 
     // Mid-stroke a step waits; with the stroke over it lands.
     await page.evaluate(() => {
@@ -894,7 +906,16 @@ export const suites = {
     });
     await frames(page, 3);
     let q = await quality(page);
-    t.ok(q.level === 3 && q.blur === 2 && q.text === 'softer shadows', `the stroke over, the step lands: half the shadow blur samples (${show(q)})`);
+    // Economy halves the count the blur's radius asks for, rounded, never
+    // under 2 (Lighting.blurSamplesFor); the tighter fit it brings moves
+    // the radius too, so the half is of the count for the radius now.
+    const [least, cap] = q.tierBlur;
+    const want = Math.max(least, Math.min(cap, Math.ceil(q.radius) + 1));
+    const half = Math.max(2, Math.round(want * 0.5));
+    t.ok(
+      q.level === 3 && q.blur < tier.blur && q.blur === half && q.text === 'softer shadows',
+      `the stroke over, the step lands: half the shadow blur samples (${tier.blur} to ${q.blur}: half of the ${want} that ${q.radius.toFixed(2)} texels of blur take; ${show(q)})`,
+    );
     t.eq(show(grew(c0, await counters(page))), '{}', 'with nothing built or allocated');
     t.eq(q.aa, 'still/0', 'and the anti-aliasing as it was');
 
@@ -937,7 +958,7 @@ export const suites = {
     await page.keyboard.press('Escape');
     await frames(page, 3);
     q = await quality(page);
-    t.ok(q.level === 0 && q.blur === 4 && q.map === 1024 && q.text === 'off', `off in Preferences, the tier's own quality comes back (${show(q)})`);
+    t.ok(q.level === 0 && q.blur === tier.blur && q.map === 1024 && q.text === 'off', `off in Preferences, the tier's own quality comes back (blur ${q.blur}, as at the start; ${show(q)})`);
     t.eq((await stored(page)).adaptive, 'off', 'and the choice is kept');
     await openPrefs(page);
     await prefToggle(page, 'Adaptive quality');
