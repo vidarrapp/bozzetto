@@ -171,10 +171,13 @@ class SculptBase {
       picking.pickVerticesInSphere(picking.getLocalRadius2());
       picking.computePickedNormal();
     }
-    // if dyn topo, we need to the picking and the sculpting altogether
-    var dynTopo = mesh.isDynamic && !this._lockPosition;
-    if (dynTopo && pick1)
-      this.stroke(picking, false);
+    // BOZZETTO EDIT (2026-11-01): the dab first, then the mirrored side
+    // picked on the surface it left, always (upstream does so only under
+    // dynamic topology, and otherwise picks the mirrored side before the
+    // dab moves anything). Where the two sides overlap near the plane of
+    // symmetry they then agree with the Bozzetto core, which takes each
+    // dab on the surface as it stands (0.27 cm apart before, M2-8).
+    if (pick1) this.stroke(picking, false);
 
     var pick2;
     if (pickingSym) {
@@ -187,7 +190,6 @@ class SculptBase {
       }
     }
 
-    if (!dynTopo && pick1) this.stroke(picking, false);
     if (pick2) this.stroke(pickingSym, true);
     return pick1 || pick2;
   }

@@ -387,15 +387,23 @@ class Mesh {
 
   updateGeometry(iFaces, iVerts) {
     this.updateFacesAabbAndNormal(iFaces);
-    this.updateVerticesNormal(iVerts);
+    // BOZZETTO EDIT (Vidar's call, 2026-11-01): the normals of every vertex
+    // of the faces that changed, not only of the vertices moved (upstream
+    // updateVerticesNormal(iVerts)): a vertex just outside a dab shares a
+    // face with one inside, and its normal was left stale (up to 1.4 apart
+    // from its faces' on a sculpted sphere), in the shading and in the next
+    // dab's plane. Copied: getVerticesFromFaces answers in shared memory.
+    var ring = iFaces === undefined ? undefined : new Uint32Array(this.getVerticesFromFaces(iFaces));
+    this.updateVerticesNormal(ring);
     this.updateOctree(iFaces);
     if (this._renderData) {
-      this.updateDuplicateGeometry(iVerts);
+      this.updateDuplicateGeometry(ring);
       this.updateDrawArrays(iFaces);
     }
     // BOZZETTO EDIT: feed the dirty vertex set to the GeometrySync bridge so
-    // the next buffer commit can upload ranges instead of the full arrays.
-    if (this._bridgeSync) this._bridgeSync.onDirtyGeometry(this, iVerts);
+    // the next buffer commit can upload ranges instead of the full arrays
+    // (the ring: its normals changed too).
+    if (this._bridgeSync) this._bridgeSync.onDirtyGeometry(this, ring);
   }
 
   allocateArrays() {
@@ -545,7 +553,14 @@ class Mesh {
         ny += faceNormals[id + 1];
         nz += faceNormals[id + 2];
       }
-      var len = end - start;
+      // BOZZETTO EDIT (Vidar's call, 2026-11-01): unit length, the faces'
+      // area-weighted sum normalised, as the Bozzetto core keeps them
+      // (clay-mesh catmull_clark::frames). Upstream divides by the number of
+      // faces, which left the area around the vertex in the length and so
+      // weighed each vertex by it wherever normals are summed (the plane
+      // fits); the core and the engine then drifted apart by up to 0.03 cm
+      // over sculpted surface (bozzetto-web scripts/core-clay.mjs).
+      var len = Math.sqrt(nx * nx + ny * ny + nz * nz);
       if (len !== 0.0) len = 1.0 / len;
       ind *= 3;
       nAr[ind] = nx * len;
