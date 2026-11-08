@@ -21,6 +21,7 @@
 - [x] 2026-11-01: Soft shadows look banded in close-ups: the key's shadow frustum is kept wide there (Lighting.minHalf), so the blur samples land about 3.5 texels apart, where about 2 is smooth. Options: more blur samples (smooth, costs GPU time), a tighter minimum frustum (sharper close-ups, the far shadow coarser), or leave it Decided 2026-11-01: more blur samples, scaled up with the shadow softness
 - [ ] 2026-11-08: Restyle Bozzetto Web on Gestalt v2 (black and white grounds, no greys, orange for active, lime for tips, Familjen Grotesk, Martian Mono and Helvetica, square corners, hairlines, letters in place of icons), as in the "Bozzetto in Gestalt v2" mockup, or keep the current look (blocks: the restyle)
 - [ ] 2026-11-08: Under Gestalt v2, the handwritten "Bozzetto" logotype on the loading screen: keep it as your own mark, or set the name in Familjen Grotesk as Gestalt's Wordmark does (blocks: the loading screen and the gallery header in the restyle)
+- [ ] 2026-11-08: Under Gestalt v2, corner brackets on the side panels: none, so brackets mark only the viewport and images (as the mockup has it now); brackets around every open panel; or brackets only around the panel in use (blocks: the panels in the restyle)
 
 ## Notes for Bozzetto Studio
 
