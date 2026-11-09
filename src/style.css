@@ -191,12 +191,19 @@ h1,
 }
 
 /* --- loading / error overlay --- */
+/* Pure black / pure white (owner call), not the warm --bg: the splash
+   videos are drawn on #000 / #fff and melt into it. Every boot (viewer,
+   Sculpt, Armature) and its error text share this one overlay. */
 .overlay {
+  --overlay-bg: #000;
+  --overlay-text: #fff;
+  --overlay-error: #ff8f8f;
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  background: var(--bg);
+  background: var(--overlay-bg);
+  color: var(--overlay-text);
   /* A boot curtain covers the whole app. It used to sit at 20, under the
      sculpt chrome (toolbar 30, tabs' stack, pickers 40) - invisible while
      the overlay dropped the instant the mount finished, but the splash
@@ -204,20 +211,26 @@ h1,
   z-index: 60;
 }
 
+:root[data-theme='light'] .overlay {
+  --overlay-bg: #fff;
+  --overlay-text: #000;
+  --overlay-error: #b3261e;
+}
+
 .overlay__msg {
-  color: var(--muted);
+  color: var(--overlay-text);
   max-width: 30rem;
   padding: 1rem 1.5rem;
   text-align: center;
 }
 
 .overlay--error .overlay__msg {
-  color: #ff8f8f;
+  color: var(--overlay-error);
 }
 
 /* Sculpt splash: the handwritten-logo animation plays inside the boot
-   overlay. The ink/paper video backgrounds ARE the theme's --bg values,
-   so the overlay needs no backdrop override - only place-content, which
+   overlay. The videos' backgrounds are the overlay's own black / white,
+   so the splash needs no backdrop override - only place-content, which
    packs the logo and the status line together mid-screen (with two grid
    rows, the default stretch would park them in separate halves). */
 .overlay--splash {

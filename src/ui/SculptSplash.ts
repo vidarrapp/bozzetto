@@ -1,13 +1,14 @@
 import { getTheme } from './theme';
 
 /**
- * Sculpt-mode boot splash: the handwritten Bozzetto logo drawing itself
- * (a 2.5s silent mp4, ~120 KB), played inside the existing boot overlay
- * while the engine mounts, so the wait IS the branding. The overlay's
- * status line keeps reporting under it. Two variants, one per theme -
- * their backgrounds are the design system's warm ink (#1c1814) and paper
- * (#f1ebe1), i.e. exactly the overlay's var(--bg), so the 16:9 frame
- * melts into the full-bleed overlay with no seam.
+ * Sculpt-mode boot splash: the hand-drawn Bozzetto logotype writing
+ * itself out (2.5s silent 1280x720 video, H.264 mp4 ~26 KB / VP9 webm
+ * ~20 KB), played inside the existing boot overlay while the engine
+ * mounts, so the wait IS the branding. The overlay's status line keeps
+ * reporting under it. Two variants, one per theme: `ink` is white strokes
+ * on pure black (#000000), `paper` black strokes on pure white (#ffffff),
+ * the same as the overlay's own background (.overlay in style.css), so
+ * the 16:9 frame melts into the full-bleed overlay with no seam.
  *
  * The rules, in order of importance:
  *  - it must never WEDGE the boot: any playback failure (404, decode,
