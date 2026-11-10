@@ -26,11 +26,11 @@
 - [x] 2026-11-10: Clay brush default falloff, once the clay maths is back to SculptGL's: keep Plateau (flat-topped strips) or make Soft the default. Decided 2026-11-10: keep Plateau as the default
 - [x] 2026-11-10: Rake, after looking at ZBrush's: which to try of A tines cut only the high spots and stop at a level, B an add mode that fills hollows, C a light Shift-smooth for rake marks, D Scrape split into down-only and up-only. Decided 2026-11-10: try A
 - [ ] 2026-11-10: Clay, when Strength asks for more than the brush can lay in one stroke: one stroke now builds at most about two thirds of the brush's radius (taller builds tore on anatomy), so a higher Strength does nothing past that. Options: keep the cap as it is; show it (hold the strength line in the cursor to what the stroke will build); or lay strengths past the cap the old way, as one exact layer over the surface the stroke started on
-- [ ] 2026-11-10: Gestalt switch-over, rollout: build the new look beside the old behind a Look choice in Preferences and flip the default at the end (recommended), or one branch switched in a single step (blocks: phase 0 of docs/gestalt-switchover.md)
-- [ ] 2026-11-10: Gestalt switch-over, the states proposed on the "Controls and states" board that the spec does not cover: selected list row inverted; selected swatch or matcap with four corner brackets; notice as an outlined box; something gone wrong as an orange box; tip as a lime box; window with one primary button and a quiet Cancel. Yes to all, or which to change (blocks: phase 2)
-- [ ] 2026-11-10: Gestalt switch-over, errors and destructive actions with no red in the system: errors in orange and Delete confirmed with the ordinary primary button (proposed), or something else (blocks: phases 2 and 5)
-- [ ] 2026-11-10: Gestalt switch-over, where the theme choice lives once the Ink button leaves the top bar: View, Preferences, or both (blocks: phase 3)
-- [ ] 2026-11-10: Gestalt switch-over, the Flaticon credit the system asks for: keep it in THIRD_PARTY_NOTICES.md and add one line in Help (proposed), or a Premium subscription and no credit
+- [x] 2026-11-10: Gestalt switch-over, rollout: a preview switch with the default flipped at the end, or go live as it is built. Decided 2026-11-10: go live right away, no preview switch; each phase ships to the site as it lands
+- [x] 2026-11-10: Gestalt switch-over, the states proposed on the "Controls and states" board that the spec does not cover (selected list row inverted; selected swatch or matcap with four corner brackets; notice as an outlined box; something gone wrong as an orange box; tip as a lime box; window with one primary button and a quiet Cancel). Decided 2026-11-10: yes to all
+- [x] 2026-11-10: Gestalt switch-over, errors and destructive actions with no red in the system. Decided 2026-11-10: orange for errors, and the primary button to confirm
+- [x] 2026-11-10: Gestalt switch-over, where the theme choice lives once the Ink button leaves the top bar. Decided 2026-11-10: Preferences
+- [x] 2026-11-10: Gestalt switch-over, the Flaticon credit the system asks for. Decided 2026-11-10: a Help menu in the menu bar, with documentation of every tool and option and an About and credits section crediting everything
 
 ## Notes for Bozzetto Studio
 

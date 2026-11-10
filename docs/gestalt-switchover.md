@@ -41,16 +41,12 @@ Nothing here is built yet.
 
 ## The approach
 
-**Build the new look beside the old one, behind a switch, and flip the
-default at the end.** A "Look" choice in Preferences (Classic, Gestalt
-preview) sets one attribute on the page. Each phase below lands on `main`
-with the default unchanged, so the app stays shippable and can be tried on
-the iPad after every phase. The alternative, one long branch switched in a
-single step, hides problems until the end and cannot be tried on a real
-device along the way.
-
-The risk in this approach is a half-finished preview that looks broken.
-That is acceptable because it is a preview nobody is put on by default.
+**Go live as it is built** (owner call, 2026-11-10). There is no preview
+switch and no Classic look kept beside the new one: each phase replaces
+the old look on `main`, and the site updates with it. For a while the app
+will wear the new colours and type on the old layout; that is accepted.
+Phases 1 and 2 ship together, so the skin never arrives without its
+controls.
 
 **Rebuild the controls once, in one place.** The panels build their rows
 through a few shared helpers. The new field, switch, select, panel button,
@@ -72,8 +68,6 @@ No visible change.
 
 - Copy in `tokens.css`, Familjen Grotesk and Martian Mono, with their
   licences in `THIRD_PARTY_NOTICES.md`.
-- Add the Look switch and the page attribute it sets.
-- Let the browser tests run with either look.
 
 ### 1. Skin (M)
 
@@ -105,10 +99,10 @@ The shared controls are rebuilt to the Controls board.
 
 The layout changes, and two things are new features.
 
-- The 24px menu bar: File, Edit and View on the left, the object readout
+- The 24px menu bar: File, Edit, View and Help on the left, the object readout
   in the centre, help and hide-interface icons on the right. "← Gallery"
   becomes File › Close, Publish moves into File, Present into View, and
-  the theme button into View or Preferences.
+  the theme button into Preferences.
 - Menus: hung under their name, the open name inverted, the hovered row
   bold, submenus for Mirror and Radial copies, reasons shown on
   unavailable items.
@@ -156,10 +150,10 @@ with a Pencil, and on phones.
 - Then a pass on the device: targets, the Pencil's long-press tool name,
   panel scrolling against the corner controls.
 
-### 7. Switch over (S)
+### 7. Clean up (S)
 
-- Gestalt becomes the default look and Classic is removed, with its CSS
-  and its three fonts.
+- Remove what is left of the old look: unused CSS and the three old
+  fonts.
 - README screenshots, the PWA manifest colours and the docs are updated.
 
 ## Order and dependencies
@@ -169,28 +163,19 @@ drawn before 3 is built. 3, 4 and 5 can then run one after another in any
 order; 3 is the largest and the one you will use most, so it goes first.
 7 is last.
 
-## Decisions needed
+## Decided on 2026-11-10
 
-They are also in `docs/HANDOFF.md`.
+1. **Rollout:** live right away, no preview switch.
+2. **The proposed states** on the Controls board: yes to all.
+3. **Errors and destructive actions:** orange for errors; Delete is
+   confirmed with the primary button.
+4. **The theme choice** lives in Preferences.
+5. **Help:** a Help menu joins File, Edit and View. It opens
+   documentation of every tool and option, and an About and credits
+   section that credits everything the app uses, Flaticon's Uicons
+   included.
 
-1. **Rollout.** A preview switch with the default flipped at the end
-   (recommended), or one branch switched in a single step.
-2. **Proposed states** on the Controls board, which the spec does not
-   cover: a selected list row is inverted; a selected swatch or matcap
-   gets four corner brackets; a notice is an outlined box; something gone
-   wrong is an orange box; a tip is a lime box; a window has one primary
-   button and a quiet Cancel.
-3. **Errors and destructive actions.** The system has no red. Proposed:
-   errors use orange (its "warning" meaning), and Delete is confirmed
-   with the ordinary primary button.
-4. **Where the theme choice lives** once the "Ink" button leaves the top
-   bar: View, Preferences, or both.
-5. **Flaticon credit.** The system notes that Uicons need a credit line
-   or a Premium subscription. Today the credit is in
-   `THIRD_PARTY_NOTICES.md`; proposed: also one line in Help.
-6. **Panel corner brackets** (open since 2026-11-08). The system now
-   keeps brackets for the selected or hovered thing, so the proposal is
-   none on panels.
+Still open: corner brackets on panels (proposed: none).
 
 ## What is already settled
 
