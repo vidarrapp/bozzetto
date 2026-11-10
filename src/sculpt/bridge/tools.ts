@@ -69,15 +69,31 @@ export const STRENGTH_CM_SLIDER_STEP = 0.01;
 export const STRENGTH_CALIBRATION_RADIUS = 3;
 
 /**
- * Clay strips (owner call): the dab spacing, and since 2026-10-31 the
- * strength in cm (the layer one stroke lays, at full pressure; the layer
- * follows pressure, and a mouse lays all of it). 1.5 cm is what a stroke
- * at the old defaults (layer 0.1 of the radius, strength 0.5) built up to
- * at the default size. The falloff is the clay profile curve, whose
- * default "Plateau" preset is the old plateau: full strength to 0.8 of the
- * radius, the quartic after (profile.ts).
+ * Clay (owner calls): the dab spacing, and since 2026-10-31 the strength in
+ * cm: about what one stroke at full pressure builds along its centre line,
+ * whatever the brush's size (ClayStripsBrush has the maths). 1.5 cm is what
+ * a stroke at the old defaults (strength 0.5) built up to at the default
+ * size. The falloff is the clay profile curve, whose default "Plateau"
+ * preset is full to 0.8 of the radius, the quartic after (profile.ts).
  */
 const CLAY_STRENGTH = 1.5;
+/**
+ * Clay's rate for a strength (ClayStripsBrush: g = CLAY_GAIN x strength x
+ * spacing / 0.1 / the curve's line integral, the dab's rate g / radius).
+ * Measured, not derived: at 1.5 one full-pressure stroke of the default
+ * brush (2.8 cm, the Plateau curve, spacing 0.1) across the default sphere
+ * raises its centre line 1.62 cm for a strength of 1.5 cm, and 1.44 cm on
+ * the plane; the build is proportional to the rate below the cap.
+ */
+const CLAY_GAIN = 1.5;
+/**
+ * The most a clay dab goes toward its plane. Upstream's full intensity at
+ * its own spacing and falloff comes to about 0.45 here; past about 0.8 the
+ * build outruns the brush (a ridge taller than the radius, its front too
+ * steep for the next dab's plane) and strokes on anatomy came out torn, and
+ * raising the plane instead did the same. At 0.5 a stroke stays even.
+ */
+const CLAY_MAX_RATE = 0.5;
 const CLAY_SPACING = 0.1;
 
 /** Inflate's strength in cm: a stroke at the old 0.3 pushed about 0.55 cm at the default size. */
@@ -263,8 +279,7 @@ const sideOf = (session: SculptSession, picking: Picking): Side => (picking === 
  * counts only for this stroke and while the vertex is still where the
  * brush left it: dynamic topology renumbers and moves vertices, and an
  * entry that no longer matches is a vertex the stroke has not moved. The
- * rake keeps its cut here; clay its build, so a stroke lays one layer
- * over the form it started on.
+ * rake keeps its cut here.
  */
 class StrokeMoves {
   vec = new Float32Array(0);
@@ -812,68 +827,92 @@ export class PolishBrush extends Flatten {
 }
 
 /**
- * The Standard brush as clay strips (review request): a flat-topped
- * falloff (the clay profile curve; its default "Plateau" preset is full
- * strength across 0.8 of the radius, the quartic tail after) and a build
- * plane raised by the layer, so strokes lay down ribbon-like layers instead
- * of soft mounds.
+ * The Standard brush: upstream's clay (vendor Brush.js and Flatten.js), with
+ * the Tool panel's profile curve for the falloff and the Strength in cm.
  *
- * Since 2026-10-31 (owner call) the layer is the Strength, in cm: one
- * stroke at full pressure lays that much at the brush centre, whatever the
- * brush's size (the "Strip layer" slider, a fraction of the radius, went
- * with it). The build plane rises from the plane fitted to the FORM - the
- * positions with this stroke's own build taken back out, as the rake takes
- * out its cut (formPlane) - so the dabs of one stroke all aim at one layer
- * over the surface the stroke started on, where upstream's plane rose from
- * the surface as each dab left it (its centre lifted and its normal tilted
- * by the build behind the dab) and a stroke kept building, to about five
- * times the layer at the old defaults. Each dab flattens toward it at the
- * full rate (the curve and the mask, capped at the plane), so a stroke
- * reaches the layer; a second stroke lays the next one.
+ * Each dab takes the surface AS IT IS under the brush - the area centre and
+ * the area normal of the front vertices, upstream's areaCenter and
+ * areaNormal - raises that plane by a tenth of the radius along its normal,
+ * and moves every vertex below it a FRACTION of the way up to it (the rate,
+ * times the curve). The plane is refitted to the surface at every dab, so
+ * the build follows the form as it turns and rides up on what the stroke
+ * has laid; a dab goes only part of the way, so a light touch adds a little
+ * and the dabs blend into one surface instead of a row of stamped planes.
+ *
+ * Strength (owner call, 2026-10-31) is a length: about how far one stroke at
+ * full pressure raises the line it follows, whatever the brush's size. With
+ * S the strength in local units, r the radius and p the pressure term (0..1;
+ * a mouse or a finger is 1):
+ *
+ *   g    = CLAY_GAIN x S x (spacing / 0.1) / the curve's line integral
+ *   rate = min(CLAY_MAX_RATE, g / r) x p     (upstream: intensity x pressure)
+ *
+ * which is upstream's maths at intensity g / r: a stroke's build comes out
+ * proportional to the rate (measured; CLAY_GAIN), so g / r makes it the
+ * strength at any size and spacing. Strength 0, or no pressure, is rate 0:
+ * nothing moves. The rate stops at CLAY_MAX_RATE, so a stroke builds at most
+ * about 0.65 of the radius (the default curve) however high the strength:
+ * a taller build takes a bigger brush or another pass.
+ *
+ * Before (2026-10-31 to 2026-11-10) the plane was fitted to the stroke's
+ * FORM, raised by the strength, and every dab went all the way to it: exact
+ * in height at any size, but a dab at Strength 0 still filled to the plane,
+ * pressure never softened the fill, and the stamped planes showed as facets
+ * on curved anatomy (owner report).
  */
 export class ClayStripsBrush extends Brush implements StrengthCmBrush {
   readonly strengthUnit = 'cm' as const;
   readonly defaultStrength = CLAY_STRENGTH;
-  /** The falloff across the strip (the Tool panel's curve). */
+  /** The falloff across the dab (the Tool panel's curve). */
   readonly curve = new ProfileCurve(CLAY_PROFILES, 'plateau');
-  /** The last clay dab's plane offset in local units (the parity recorder reads it). */
+  /**
+   * The last clay dab's plane offset from the area centre along the area
+   * normal, local units: 0.1 x the radius (upstream's), before the sign
+   * Negative gives it. The parity recorder and the tests read it.
+   */
   lastLayerOffset = 0;
-  /** The last clay dab's strength terms (the parity recorder and the tests read it). */
+  /**
+   * The last clay dab's rate, 0..CLAY_MAX_RATE: the fraction of the way to
+   * the plane a vertex at the curve's top moves, min(CLAY_MAX_RATE, g /
+   * radius) x the pressure term (the class comment).
+   */
+  lastRate = 0;
+  /**
+   * The last clay dab's strength terms (the parity recorder and the tests
+   * read it). Clay shares nothing out by the step: stepLocal and
+   * spacingFactor are 0, strokeLocal is what a stroke is asked to build
+   * (strength x pressure term / the mesh's scale; the rate's cap may hold it
+   * to less), integral the curve's, and
+   * amountLocal the dab's move for a vertex on the area plane at the
+   * curve's top, rate x offset.
+   */
   lastStrengthDab: StrengthDab | null = null;
-  /** This stroke's build per vertex (StrokeMoves). */
-  private readonly built = new StrokeMoves();
 
   constructor(session: SculptSession) {
     super(session);
     // No stencils (alphas retired): upstream leaves the NUMBER 0 here,
     // which behaves as none; null says so.
     this._idAlpha = null;
-    // Closer than upstream's 0.15 (owner call): the strips read as one
+    // Closer than upstream's 0.15 (owner call): the dabs read as one
     // ribbon rather than a row of stamps.
     this._spacing = CLAY_SPACING;
     this._intensity = CLAY_STRENGTH;
   }
 
   /**
-   * The layer's pressure term p, 0..1 (owner call: the layer follows
-   * pressure). The plane offset is strength x p, p the pressure on the
-   * strength curve's 0..1 scale (strengthPressureTerm, 1 for a mouse or a
-   * finger).
+   * The pressure term p, 0..1 (owner call: the build follows pressure): the
+   * pressure on the strength curve's 0..1 scale (strengthPressureTerm, 1
+   * for a mouse or a finger). It scales the dab's rate.
    */
   layerPressure(): number {
     return strengthPressureTerm();
   }
 
-  override start(ctrl: boolean): boolean {
-    this.built.begin();
-    return super.start(ctrl);
-  }
-
   /**
    * BOZZETTO EDIT of upstream Brush.stroke (vendor Brush.js): identical
-   * flow; the clay branch raises the plane from the form's centre by the
-   * strength x p (upstream 0.1 x radius from the surface's) and flattens
-   * with the profile curve below.
+   * flow; the clay branch takes its rate from the strength in cm (the class
+   * comment) where upstream had intensity x pressure, and flattens with the
+   * profile curve below.
    */
   override stroke(picking: Picking): void {
     let iVertsInRadius = picking.getPickedVertices();
@@ -899,37 +938,28 @@ export class ClayStripsBrush extends Brush implements StrengthCmBrush {
         picking,
       );
     } else {
-      let aNormal = this.areaNormal(iVertsFront);
+      const aNormal = this.areaNormal(iVertsFront);
       if (!aNormal) return;
-      const mesh = this.getMesh();
-      this.built.ensure(mesh.getNbVertices());
-      let aCenter: number[];
-      if (this._lockPosition) {
-        aCenter = picking.getIntersectionPoint().slice();
-      } else {
-        // CHANGED (upstream: the area centre and normal of the surface as
-        // it is): the plane fitted to the form (formPlane), so this
-        // stroke's build neither lifts nor tilts it.
-        const n0 = norm3([aNormal[0], aNormal[1], aNormal[2]]);
-        if (!n0) return;
-        const a0 = norm3(tangent(Math.abs(n0[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], n0)) as Vec3;
-        const plane = formPlane(this.built.form(iVertsFront, mesh.getVertices()), iVertsFront, mesh.getMaterials(), n0, a0, cross3(n0, a0));
-        if (!plane) return;
-        aCenter = plane.c;
-        aNormal = plane.n;
-      }
-      // CHANGED (upstream 0.1 x radius, no pressure term): the strength, cm.
+      const aCenter: number[] = this._lockPosition ? picking.getIntersectionPoint().slice() : this.areaCenter(iVertsFront);
+      // CHANGED (upstream: intensity x pressure): the strength in cm as a
+      // rate (the class comment). The plane offset is upstream's.
+      const radius = Math.sqrt(r2);
       const pressure = this.layerPressure();
-      const off = (Math.max(0, this._intensity) * pressure) / mesh.getScale();
+      const strengthLocal = Math.max(0, this._intensity) / this.getMesh().getScale();
+      const integral = Math.max(1e-3, this.curve.lineIntegral());
+      const gain = (CLAY_GAIN * strengthLocal * (this._spacing / CLAY_SPACING)) / integral;
+      const rate = Math.min(CLAY_MAX_RATE, gain / radius) * pressure;
+      const off = 0.1 * radius;
       this.lastLayerOffset = off;
+      this.lastRate = rate;
       this.lastStrengthDab = {
         strengthCm: this._intensity,
         pressureTerm: pressure,
-        strokeLocal: off,
+        strokeLocal: strengthLocal * pressure,
         stepLocal: 0,
-        integral: 0,
+        integral,
         spacingFactor: 0,
-        amountLocal: off,
+        amountLocal: rate * off,
       };
       vec3.scaleAndAdd(
         aCenter as unknown as vec3,
@@ -937,7 +967,7 @@ export class ClayStripsBrush extends Brush implements StrengthCmBrush {
         aNormal as unknown as vec3,
         this._negative ? -off : off,
       );
-      this.flattenStrips(iVertsInRadius, aNormal, aCenter, picking.getIntersectionPoint(), r2);
+      if (rate > 0) this.flattenClay(iVertsInRadius, aNormal, aCenter, picking.getIntersectionPoint(), r2, rate);
     }
 
     const mesh = this.getMesh();
@@ -974,16 +1004,16 @@ export class ClayStripsBrush extends Brush implements StrengthCmBrush {
   /**
    * BOZZETTO EDIT of upstream Flatten.flatten (vendor Flatten.js):
    * identical projection loop with the profile curve for the falloff
-   * (upstream applies the quartic from d=0) and the full rate (upstream
-   * scales the step by the intensity): a vertex under the plateau lands on
-   * the plane, never past it. The move is kept as this stroke's build.
+   * (upstream applies the quartic from d=0) and the step held at the plane
+   * (`rate` is within [0, 1]; the curve is held there too).
    */
-  private flattenStrips(
+  private flattenClay(
     iVertsInRadius: Uint32Array,
     aNormal: number[],
     aCenter: number[],
     center: number[],
     radiusSquared: number,
+    rate: number,
   ): void {
     const mesh = this.getMesh();
     const vAr = mesh.getVertices();
@@ -1002,8 +1032,6 @@ export class ClayStripsBrush extends Brush implements StrengthCmBrush {
     const anz = aNormal[2];
     const comp = this._negative ? -1.0 : 1.0;
     const curve = this.curve;
-    const built = this.built;
-    const k = built.vec;
     for (let i = 0, l = iVertsInRadius.length; i < l; ++i) {
       const ind = iVertsInRadius[i] * 3;
       const vx = vAr[ind];
@@ -1016,22 +1044,11 @@ export class ClayStripsBrush extends Brush implements StrengthCmBrush {
       const dz = vProxy[ind + 2] - cz;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
       if (dist >= 1.0) continue;
-      // CHANGED: the profile curve (upstream applies the quartic from d=0),
-      // at the full rate: the curve and the mask are each within [0, 1], so
-      // the step never passes the plane.
-      const fallOff = curve.sample(dist) * distToPlane * mAr[ind + 2];
-      if (fallOff === 0) continue;
-      const had = built.has(ind, vAr);
-      vAr[ind] = vx - anx * fallOff;
-      vAr[ind + 1] = vy - any * fallOff;
-      vAr[ind + 2] = vz - anz * fallOff;
-      built.set(
-        ind,
-        (had ? k[ind] : 0) + (vAr[ind] - vx),
-        (had ? k[ind + 1] : 0) + (vAr[ind + 1] - vy),
-        (had ? k[ind + 2] : 0) + (vAr[ind + 2] - vz),
-        vAr,
-      );
+      // CHANGED: the profile curve (upstream: the quartic), never past the plane.
+      const fallOff = Math.min(1, curve.sample(dist) * rate * mAr[ind + 2]) * distToPlane;
+      vAr[ind] -= anx * fallOff;
+      vAr[ind + 1] -= any * fallOff;
+      vAr[ind + 2] -= anz * fallOff;
     }
   }
 }
