@@ -6343,7 +6343,7 @@ export const suites = {
         const publish = window.__sculpt.publishWindow.chip;
         return { chips, like: look(publish) === look(file) && look(publish) === look(edit) };
       });
-      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Publish, Present', 'signed in, the top row has a Publish chip beside File and Edit, Present after it');
+      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Help, Publish, Present', 'signed in, the top row has a Publish chip after File, Edit and Help, Present after it');
       t.ok(row.like, 'styled as they are');
       let s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
