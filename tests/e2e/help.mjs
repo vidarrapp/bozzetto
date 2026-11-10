@@ -1,5 +1,5 @@
-// The Help window (src/help): opened from Sculpt's Help menu, from the
-// hotkey guide in the viewer, and from the gallery's Help chip; its topics
+// The Help window (src/help): opened from Sculpt's and Armature's Help
+// menu only (the viewer and the gallery have none); its topics
 // all drawn with text, the filter narrowing them by title and by body, the
 // About topic naming every heading of THIRD_PARTY_NOTICES.md (read from
 // the file here), Escape and the keyboard, the phone-width layout, every
@@ -91,7 +91,7 @@ export const suites = {
     t.ok(dashes === s.all.length, 'no topic is listed twice');
 
     // The topics asked for are all there.
-    for (const id of ['getting-started', 'navigating', 'brush-settings', 'model-panel', 'scene-panel', 'render-panel', 'files', 'present', 'armature', 'viewer', 'preferences', 'hotkeys', 'about']) {
+    for (const id of ['getting-started', 'navigating', 'brush-settings', 'model-panel', 'scene-panel', 'render-panel', 'files', 'present', 'armature', 'preferences', 'hotkeys', 'about']) {
       t.ok(s.all.includes(id), `there is a "${id}" topic`);
     }
 
@@ -224,54 +224,6 @@ export const suites = {
     await page.waitForTimeout(150);
     const wide = await lay();
     t.ok(wide.nav.w < 300 && Math.abs(wide.nav.t - wide.topic.t) < 4, 'back at desktop width the list sits beside the topic');
-  },
-
-  async helpViewer(page, base, t) {
-    await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.help-toggle', { timeout: 90_000 });
-    // The ? button opens the guide, which now leads on to the rest.
-    await page.click('.help-toggle');
-    t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'the ? button opens the hotkey guide, as before');
-    const links = await page.evaluate(() => [...document.querySelectorAll('.help-guide__link')].map((b) => b.textContent));
-    t.eq(links.join(' | '), 'Help topics | About and credits', 'the guide gains Help topics and About and credits');
-    t.ok(await page.evaluate(() => !!document.querySelector('.help-guide__prefs:not(.help-guide__link)')), 'and keeps Customise hotkeys…');
-    await page.click('.help-guide__link:has-text("Help topics")');
-    await page.waitForSelector('.help-win:not([hidden])');
-    let s = await win(page);
-    t.ok(s.open && s.modal && s.topic === 'getting-started', 'Help topics opens the Help window in the viewer');
-    t.ok(await page.evaluate(() => document.querySelector('.help-guide').hidden), 'the guide steps aside for it');
-    await page.keyboard.press('Escape');
-    t.ok(!(await win(page)).open, 'Escape closes it');
-
-    await page.click('.help-toggle');
-    await page.click('.help-guide__link:has-text("About and credits")');
-    await page.waitForSelector('.help-win:not([hidden])');
-    s = await win(page);
-    t.eq(s.topic, 'about', 'About and credits opens straight on the About topic');
-    t.ok(s.text.includes('Uicons by Flaticon'), 'with the Flaticon credit');
-    // A topic reachable by a deep link is also reachable by the list.
-    await page.click('.help-win__item[data-topic="viewer"]');
-    t.ok((await win(page)).text.includes('Space'), 'the viewer topic tells how to play');
-    await page.keyboard.press('Escape');
-    // The window is built once and reopens on the topic it was left on.
-    await page.click('.help-toggle');
-    await page.click('.help-guide__link:has-text("Help topics")');
-    s = await win(page);
-    t.ok(s.open && s.topic === 'viewer', `Help topics reopens where it was left (${s.topic})`);
-    await page.keyboard.press('Escape');
-    // H still toggles the guide while the window is shut.
-    await page.keyboard.press('h');
-    t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H still opens the guide');
-
-    // The gallery's Help chip.
-    await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.help-chip', { timeout: 60_000 });
-    await page.click('.help-chip');
-    await page.waitForSelector('.help-win:not([hidden])');
-    s = await win(page);
-    t.ok(s.open && s.all.length >= 25, 'the gallery\'s Help chip opens the Help window');
-    await page.keyboard.press('Escape');
-    t.ok(!(await win(page)).open, 'and Escape closes it');
   },
 
   async helpArmature(page, base, t) {

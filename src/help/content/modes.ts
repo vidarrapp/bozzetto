@@ -1,4 +1,4 @@
-import { h, list, options, p, type Topic } from '../types';
+import { h, options, p, type Topic } from '../types';
 
 const G = 'Files and modes';
 
@@ -100,30 +100,6 @@ export const MODES: Topic[] = [
         ['Resolution', 'The voxel grid, as in Sculpt\'s Remesh. The grid shows over the figure while you hold the slider.'],
         ['Send to Sculpt', 'Voxelises the posed figure into one object and opens it in Sculpt.'],
       ),
-    ],
-  },
-  {
-    id: 'viewer',
-    title: 'The viewer',
-    group: G,
-    blocks: [
-      p('The viewer plays a published project: a timelapse of frames, or a single model. Open one from the gallery.'),
-      h('Playing'),
-      list(
-        '**Space** plays and pauses. The **left** and **right** arrow keys step a frame.',
-        'The bar along the bottom shows the current stage\'s title and description above a scrubber with a play button. A slim strip under the scrubber shows which frames are loaded, and "Buffering…" shows when playback waits for frames. A single model has no timeline.',
-      ),
-      h('Looking'),
-      p('Drag to orbit, **Cmd** or **Shift** and drag to pan, scroll to zoom. Double-click (double-tap on touch) sets the focus point for the depth of field. **F** frames the model.'),
-      h('The Render panel'),
-      p('The panel on the right changes how you see the project. It starts closed. See the Render panel topic for the sections the viewer shows: Material, Lighting and Depth of field. These keys help:'),
-      list(
-        '**1** shows Lit (PBR) and **2** to **9** show matcaps.',
-        '**Shift+W** turns the wireframe on and off, **Shift+S** the shadows, and **G** cycles the ground.',
-        'Hold **L** and move the pointer to swing the key light.',
-        '**P** shows the frame meter.',
-      ),
-      p('**Tab** closes the panels, then hides the interface (the timeline stays), then brings it back. **H** shows the hotkey guide. **Esc** brings a hidden interface back.'),
     ],
   },
 ];

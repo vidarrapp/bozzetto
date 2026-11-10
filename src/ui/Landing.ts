@@ -44,7 +44,6 @@ import {
 import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
-import { showHelp } from '../help/HelpWindow';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
 import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
@@ -114,12 +113,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     // device the owner is done with.
     if (admin) chip(signOutChip());
   }
-  // The help topics and the credits, for anyone: the gallery has no hotkey
-  // guide, so this is its way in.
-  const help = topChip('Help');
-  help.classList.add('help-chip');
-  help.addEventListener('click', () => showHelp());
-  chip(help);
   if (signIn.suspended) {
     // Every time, while it lasts: nothing of the account answers until the
     // owner lifts it, and no sign-in would.

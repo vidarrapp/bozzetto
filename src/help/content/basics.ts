@@ -34,7 +34,7 @@ export const BASICS: Topic[] = [
     title: 'Navigating the view',
     group: G,
     blocks: [
-      p('How you move the camera depends on whether you are in the viewer or in an editor.'),
+      p('How you move the camera depends on the mode you are in.'),
       h('In Sculpt'),
       options(
         ['Orbit', 'Drag off the model. One finger orbits anywhere, in every tool, unless Preferences lets fingers sculpt.'],
@@ -45,14 +45,6 @@ export const BASICS: Topic[] = [
         ['Frame the whole scene', 'Press **A**.'],
       ),
       p('In the Select tool, **Alt** and drag orbits.'),
-      h('In the viewer'),
-      options(
-        ['Orbit', 'Drag.'],
-        ['Pan', 'Hold **Cmd** or **Shift** and drag, or drag with two fingers on touch.'],
-        ['Zoom', 'Scroll.'],
-        ['Set focus point', 'Double-click (double-tap on touch). The depth of field focuses on that point.'],
-        ['Frame the model', 'Press **F**. **A** frames the whole scene.'],
-      ),
       h('In Armature'),
       p('The view moves as it does in Sculpt. Tapping a part selects its joint, and tapping off the figure lets it go, so turning the view keeps your selection.'),
       p('All of these keys can be changed. See the Hotkeys topic.'),
