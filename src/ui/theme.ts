@@ -11,11 +11,18 @@ export type Theme = 'dark' | 'light';
 const KEY = 'bozzetto-theme';
 const EVENT = 'bozzetto:themechange';
 
-/** 3D viewport background per theme — warm ink / warm paper. */
+/** The viewer's 3D background per theme: the system's black and white (Sculpt and Armature keep their own grey, STUDIO_BG). */
 export const THEME_BG: Record<Theme, string> = {
-  dark: '#1c1814',
-  light: '#f1ebe1',
+  dark: '#000000',
+  light: '#ffffff',
 };
+
+/** The browser chrome's colour follows the ground: black on ink, white on paper. */
+const CHROME_COLOR: Record<Theme, string> = { dark: '#000000', light: '#ffffff' };
+
+function syncChromeColor(theme: Theme): void {
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', CHROME_COLOR[theme]);
+}
 
 export function initTheme(): Theme {
   let theme: Theme = 'dark';
@@ -25,6 +32,7 @@ export function initTheme(): Theme {
     /* storage unavailable */
   }
   document.documentElement.dataset.theme = theme;
+  syncChromeColor(theme);
   return theme;
 }
 
@@ -34,6 +42,7 @@ export function getTheme(): Theme {
 
 export function setTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
+  syncChromeColor(theme);
   try {
     localStorage.setItem(KEY, theme);
   } catch {
