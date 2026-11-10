@@ -22,7 +22,7 @@ professional apps solve the same problems.
 | Where settings live | One inspector on the right, with tabs, showing what is selected | Structure on the left, properties on the right, one panel each | Popovers from the top bar | A tabbed panel on each side, one open per side |
 | Tools | Tool menu in the toolbar | A bar at the bottom centre | A column or bar at an edge | The bar at the bottom centre |
 | Brush size and strength | Not applicable | Not applicable | Upright sliders on the edge by the free hand | Upright sliders on the left edge, tall enough for a thumb |
-| Touch | Larger rows and controls on iPad than on the Mac | Mostly a desktop app | Large targets throughout | Two densities from the same parts: compact for a mouse, touch for fingers and a pen |
+| Size of controls on iPad | Larger rows than on the Mac, for fingers | Mostly a desktop app | Small, dense controls, because the Pencil is precise | One size for pen and mouse; finger-sized only where fingers press |
 | Hiding the interface | Full-screen viewer | Hide UI command | Full-screen toggle | Hide interface, in View and on a key |
 | The main outward action | Share, top right | Share, top right | Export in a menu | Publish, top right |
 | What you are working on | Project name in the title area | File name in the title area | Not shown | Project name and the object readout in the title strip |
@@ -52,9 +52,10 @@ professional apps solve the same problems.
 1. **Nothing says which project is open or whether it is saved.** Every
    app compared shows the document's name at the top. The title strip
    gains the project name and its saved state.
-2. **Rows of 28px cannot be touched reliably.** The system asks for 44px
-   targets, and stacked 28px rows cannot each have one. Final Cut on iPad
-   solves this with larger rows. Bozzetto gets two densities (section 4).
+2. **The system's 44px target rule does not fit a pen app.** Stacked
+   28px rows cannot each have a 44px target, and with a Pencil they do
+   not need one. The rule is kept for the controls a finger presses and
+   dropped for panel rows (section 4).
 3. **Four panels that can all be open at once do not fit a laptop or an
    iPad.** Two open on one side each get half the height and both scroll.
    Final Cut and Figma show one panel per side and switch by tab. One
@@ -65,13 +66,13 @@ professional apps solve the same problems.
    own way (section 5).
 5. **Help was a "?" icon; it is now a menu.** The order is File, Edit,
    View, Help. The "?" icon goes.
-6. **The brush sliders are 96px tall and 16px wide in the mockup.** That
-   is a mouse size. On touch they are 160px tall with a 44px wide target,
-   and a left-handed setting moves them to the right edge.
+6. **The brush sliders are 96px tall and 16px wide in the mockup.** They
+   become 160px tall with a 44px wide drag zone, and a left-handed
+   setting moves them to the right edge.
 7. **Hotkey digits and key hints assume a keyboard.** On an iPad without
    one they are noise, and a web page cannot tell whether a keyboard is
-   attached. Both become View toggles, on by default in compact density
-   and off in touch.
+   attached. Both become View toggles, on by default with a mouse and
+   off by default on a touch screen.
 8. **Section headers carry numbers ("01 Material").** A number implies an
    order to follow, and folding sections have none. Inspectors in the
    apps compared use the name alone. The numbers are dropped.
@@ -94,34 +95,36 @@ professional apps solve the same problems.
    outline. A 1px outline means "this can be pressed or filled in": a
    panel button, a select, an input, a switch, the Create tile, a window,
    a notice.
-4. **The same parts at two sizes.** Compact for a mouse and keyboard,
-   touch for fingers and a pen. Nothing else differs between them.
+4. **One size for a pen and a mouse.** The iPad and the desktop show the
+   same controls at the same sizes.
 5. **Commands are defined once.** The menus, the hotkeys, the hotkey
    guide, context menus and Help all read from one list.
 6. **The platform's conventions win over invention.** Menu order, key
    names, where Settings lives, how a window closes: as the platform
    does it.
 
-## 4. Density and input
+## 4. Size and input
 
-| | Compact | Touch |
-| --- | --- | --- |
-| When | The main pointer is a mouse or trackpad | The main pointer is a finger or a pen |
-| Row height (field, switch row, list row, menu row) | 28px | 44px |
-| Panel button | 28px tall | 44px tall |
-| Tool button | 44px | 52px |
-| Title strip | 24px (28px on the Mac desktop) | 44px |
-| Type | 13px labels, 11px values | The same |
-| Brush sliders | 96px tall | 160px tall, 44px wide target |
+**One size, for a pen and a mouse** (owner call, 2026-11-11). Bozzetto on
+iPad is used with an Apple Pencil, which points as precisely as a mouse.
+Painting apps built for the Pencil keep small, dense controls for that
+reason. So the iPad gets the same sizes as the desktop: 28px rows and
+panel buttons, 13px labels, 11px values, the 24px title strip. There is
+no separate touch density. An earlier draft of this spec had one, with
+44px rows; it made the panels huge and is withdrawn.
 
-- The density follows the pointer, not the screen size: an iPad with a
-  trackpad attached still starts in touch, because the pen is in use.
-  Preferences offers Automatic, Compact and Touch.
+- **Where fingers reach.** Fingers navigate (orbit, pan, zoom) and press
+  the few controls that sit alone on the viewport: the tools (44px) and
+  the edge controls (40px). Those keep finger-sized targets. Rows inside
+  a panel are pen and mouse sized.
+- **Brush sliders.** 160px tall on the left edge, slim, with a 44px wide
+  drag zone, as the edge sliders of a painting app are. (The mockup's
+  first drawing had them at 96px.)
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
-  ("Hotkeys on tools", "Viewport hints"), on by default in compact and
-  off in touch, and remembered.
+  ("Hotkeys on tools", "Viewport hints"), on by default with a mouse and
+  off by default on a touch screen, and remembered.
 - **Pen.** Hovering with a pen shows what hovering with a mouse shows.
   A long press with a pen or finger opens the context menu, and on a tool
   shows its name.
@@ -353,11 +356,13 @@ states" board. This section adds behaviour.
 `bozzetto-interface.md` should gain, once agreed:
 
 1. The Help menu, and the order File, Edit, View, Help.
-2. The two densities, and that row height is 44px in touch.
+2. The 44px target rule applies to controls a finger presses (tools, edge
+   controls); panel rows are pen and mouse sized.
 3. One panel per side with a tab row, the tab showing in bold.
 4. The project name in the title strip.
 5. Surfaces carry no outline; an outline means a control.
-6. Hotkey digits and key hints as View toggles, off by default in touch.
+6. Hotkey digits and key hints as View toggles, off by default on a
+   touch screen.
 7. Section headers without numbers.
 8. Notices, progress and context menus as specified above.
 
@@ -367,10 +372,9 @@ The mockup and this spec are the target, and each screen is built to
 match them directly. The earlier plan repainted the old layout first and
 moved the layout later; that produced an in-between look and is dropped.
 
-1. **Foundations.** The system's tokens and fonts, the command list, the
-   density switch. The work already done on tokens and fonts carries
+1. **Foundations.** The system's tokens and fonts and the command list. The work already done on tokens and fonts carries
    over.
-2. **The controls**, once, to the Controls board, in both densities.
+2. **The controls**, once, to the Controls board.
 3. **Sculpt**: title strip and menus, tabbed panels, tool bar, edge
    controls, hints, view axes, context menus.
 4. **Armature**, which shares Sculpt's shell.
@@ -379,5 +383,4 @@ moved the layout later; that produced an in-between look and is dropped.
 7. **Clean-up**: the old stylesheet and fonts.
 
 Each step is compared against the mockup by screenshot, in both themes
-and both densities, before it ships. The mockup gains iPad boards in
-touch density before step 3 starts.
+and at the desktop and iPad sizes, before it ships.
