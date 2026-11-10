@@ -19,9 +19,12 @@
  * displays; an SVG stroke stays a crisp CSS-pixel width on every backend,
  * and one code path now styles, dims and hides all cursor pieces.
  *
- * With the Rake in hand (setTines) the ring is drawn faint and one small
- * circle per tine sits inside it, on the rake's across axis (see
- * renderTines).
+ * With the Rake in hand (setTines) one small circle per tine sits inside
+ * the ring, on the rake's across axis: in the surface ring, which is then
+ * drawn faint (renderTines), and in the screen-space ring too, to the
+ * ring's scale (renderScreenTines), so a size being set off the mesh, from
+ * the sliders or from the keys shows what the tines come to (owner
+ * request).
  *
  * Visibility policy lives in InputShell; this class renders what it is
  * told. `root.dataset.mode` mirrors the active representation for tests.
@@ -48,9 +51,27 @@ export interface TineProbe {
   source: 'stroke' | 'hover';
   /** The across axis, world space, unit. */
   across: [number, number, number];
-  /** Each tine circle's world radius: the brush's x width / count. */
+  /**
+   * Each tine circle's radius, the brush's x width / count: in world units
+   * on the surface, in CSS px in the screen ring.
+   */
   radius: number;
+  /** Which ring they were drawn in: the surface's, or the screen-space one. */
+  space: 'surface' | 'screen';
+  /** The across axis as drawn on screen (unit, CSS px axes): what the screen ring lays its tines along. */
+  screenAcross: [number, number];
 }
+
+const newTineProbe = (): TineProbe => ({
+  count: 0,
+  width: 0,
+  taper: 0,
+  source: 'hover',
+  across: [0, 0, 0],
+  radius: 0,
+  space: 'surface',
+  screenAcross: [1, 0],
+});
 
 type StrokeStyle = null | 'dot' | 'dim';
 
@@ -172,6 +193,12 @@ export class BrushCursor {
   private hoverS2 = 0;
   private lastMoveX = NaN;
   private lastMoveY = NaN;
+  /**
+   * The across axis's direction on screen as the surface ring last drew
+   * it (unit), which the screen ring lays its tines along; null until a
+   * surface ring has drawn tines, and the screen ring's are then level.
+   */
+  private lastAcrossScreen: [number, number] | null = null;
   /** The tines last drawn, or null when none were (the tests read it). */
   tineProbe: TineProbe | null = null;
 
@@ -429,6 +456,7 @@ export class BrushCursor {
       this.tineStops[2].setAttribute('stop-opacity', String(edge));
     }
     if (this.mode === 'surface') this.renderSurface();
+    else if (this.mode === 'screen') this.renderScreen();
   }
 
   /**
@@ -484,7 +512,9 @@ export class BrushCursor {
     this.root.dataset.mode = mode;
     this.root.style.display = mode === 'hidden' ? 'none' : '';
     this.ringPath.style.display = mode === 'surface' ? '' : 'none';
-    this.tinePath.style.display = mode === 'surface' ? '' : 'none';
+    // The tines draw in both live modes: whichever shows renders them
+     // (renderSurface, renderScreen), each right after the mode is set.
+    this.tinePath.style.display = mode === 'hidden' ? 'none' : '';
     this.screenRing.style.display = mode === 'screen' ? '' : 'none';
     // The strength indicator draws in both live modes, so keyboard nudges
     // read on the flashed screen ring too (hover-less pencils).
@@ -775,7 +805,7 @@ export class BrushCursor {
       this.tineGradient.setAttribute('x2', g1[0].toFixed(1));
       this.tineGradient.setAttribute('y2', g1[1].toFixed(1));
     }
-    const probe = this.tineProbe ?? (this.tineProbe = { count: 0, width: 0, taper: 0, source: 'hover', across: [0, 0, 0], radius: 0 });
+    const probe = this.tineProbe ?? (this.tineProbe = newTineProbe());
     probe.count = N;
     probe.width = this.tineWidth;
     probe.taper = this.tineTaper;
@@ -784,6 +814,68 @@ export class BrushCursor {
     probe.across[1] = ay;
     probe.across[2] = az;
     probe.radius = tr;
+    probe.space = 'surface';
+    // Where the axis points on screen, for the screen ring to carry on from.
+    if (g0 && g1) {
+      const sx = g1[0] - g0[0];
+      const sy = g1[1] - g0[1];
+      const sl = Math.hypot(sx, sy);
+      if (sl > 1e-3) {
+        const kept = this.lastAcrossScreen ?? (this.lastAcrossScreen = [1, 0]);
+        kept[0] = sx / sl;
+        kept[1] = sy / sl;
+      }
+    }
+    const kept = this.lastAcrossScreen;
+    probe.screenAcross[0] = kept ? kept[0] : 1;
+    probe.screenAcross[1] = kept ? kept[1] : 0;
+  }
+
+  /**
+   * The rake's tines in the screen-space ring (the size or strength being
+   * set off the mesh, from the sliders or from the keys): the same N
+   * circles as on the surface, to the ring's scale - centred at
+   * (k + 0.5) / N x 2 - 1 of its radius, each radius x width / N, faded by
+   * the same taper - in a row along the across axis as the surface ring
+   * last drew it on screen, or level when it never has.
+   */
+  private renderScreenTines(): void {
+    const N = this.tineCount;
+    if (!N) {
+      if (this.tineProbe) {
+        this.tinePath.setAttribute('d', '');
+        this.tineProbe = null;
+      }
+      return;
+    }
+    const r = this.radiusCss;
+    const ax = this.lastAcrossScreen ? this.lastAcrossScreen[0] : 1;
+    const ay = this.lastAcrossScreen ? this.lastAcrossScreen[1] : 0;
+    const tr = (r * this.tineWidth) / N;
+    let d = '';
+    for (let k = 0; k < N; k++) {
+      const u = (((k + 0.5) / N) * 2 - 1) * r;
+      const cx = this.x + ax * u;
+      const cy = this.y + ay * u;
+      for (let i = 0; i < TINE_SEGMENTS; i++) {
+        const t = (i / TINE_SEGMENTS) * Math.PI * 2;
+        d += `${i ? 'L' : 'M'}${(cx + Math.cos(t) * tr).toFixed(1)} ${(cy + Math.sin(t) * tr).toFixed(1)}`;
+      }
+      d += 'Z';
+    }
+    this.tinePath.setAttribute('d', d);
+    this.tineGradient.setAttribute('x1', (this.x - ax * r).toFixed(1));
+    this.tineGradient.setAttribute('y1', (this.y - ay * r).toFixed(1));
+    this.tineGradient.setAttribute('x2', (this.x + ax * r).toFixed(1));
+    this.tineGradient.setAttribute('y2', (this.y + ay * r).toFixed(1));
+    const probe = this.tineProbe ?? (this.tineProbe = newTineProbe());
+    probe.count = N;
+    probe.width = this.tineWidth;
+    probe.taper = this.tineTaper;
+    probe.radius = tr;
+    probe.space = 'screen';
+    probe.screenAcross[0] = ax;
+    probe.screenAcross[1] = ay;
   }
 
   private renderScreen(): void {
@@ -792,6 +884,7 @@ export class BrushCursor {
     this.screenRing.setAttribute('r', String(this.radiusCss));
     this.dot.setAttribute('cx', String(this.x));
     this.dot.setAttribute('cy', String(this.y));
+    this.renderScreenTines();
     this.renderStrength();
   }
 

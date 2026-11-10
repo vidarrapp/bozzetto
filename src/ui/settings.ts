@@ -19,9 +19,9 @@ export interface SettingsValues {
   /**
    * What a frame draws while a stroke, a pose drag or the view is moving,
    * in Sculpt and Armature. 'fast' (the default): ambient occlusion holds
-   * still under a stroke and steps aside while things move, and the fill
-   * and rim shadows refresh less often (Viewer.updateFrameMode). 'full':
-   * every frame drawn as a still one is.
+   * still under a stroke (it is drawn as ever while the view or a pose
+   * moves), and the fill and rim shadows refresh less often
+   * (Viewer.updateFrameMode). 'full': every frame drawn as a still one is.
    */
   interactionLook: 'fast' | 'full';
   /**

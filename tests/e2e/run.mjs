@@ -22,6 +22,7 @@ import { suites as channelBox } from './channelBox.mjs';
 import { suites as clayTabPen } from './clayTabPen.mjs';
 import { suites as community } from './community.mjs';
 import { suites as hardening } from './hardening.mjs';
+import { suites as help } from './help.mjs';
 import { suites as latency } from './latency.mjs';
 import { suites as loopMask } from './loopMask.mjs';
 import { suites as objNumbering } from './objNumbering.mjs';
@@ -42,7 +43,7 @@ import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...accounts, ...community };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...accounts, ...community };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

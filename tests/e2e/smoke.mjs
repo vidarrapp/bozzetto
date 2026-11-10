@@ -877,7 +877,7 @@ const doubleTap = async (dev, at) => {
 };
 
 /** The defaults the ranges suite and the AO suite expect (Viewer's DEFAULT_AO / DEFAULT_CAVITY, Environment's). */
-const AO_DEFAULT = { intensity: 1, radius: 0.3 };
+const AO_DEFAULT = { intensity: 1, radius: 0.3, radiusCm: 2 };
 const CAVITY_DEFAULT = { strength: 0.9, radius: 8, strengthMax: 2, radiusMin: 2, radiusMax: 12 };
 /** The environment's intensity is in slider units: 1 is ENV_SCALE to the renderer (Environment). */
 const HDRI_DEFAULT = 1;
@@ -6215,8 +6215,8 @@ export const suites = {
       `GTAO's Strength runs 0..2 and starts at ${AO_DEFAULT.intensity} (${aoStrength.min}..${aoStrength.max}, at ${aoStrength.thumb})`,
     );
     t.ok(
-      aoRadius.min === 0.05 && aoRadius.max === 1 && aoRadius.step === 0.01 && aoRadius.thumb === AO_DEFAULT.radius,
-      `its Radius runs 0.05..1 in hundredths and starts at ${AO_DEFAULT.radius} (${aoRadius.min}..${aoRadius.max}, at ${aoRadius.thumb})`,
+      aoRadius.min === 0.1 && aoRadius.max === 10 && aoRadius.step === 0.1 && aoRadius.thumb === AO_DEFAULT.radiusCm && aoRadius.readout === '2.0 cm',
+      `its Radius runs 0.1..10 cm in tenths and starts at ${AO_DEFAULT.radiusCm} cm (${aoRadius.min}..${aoRadius.max}, at ${aoRadius.thumb}, "${aoRadius.readout}")`,
     );
     const cavStrength = await sliderRow(page, 'Render', 'Strength', 1);
     const cavRadius = await sliderRow(page, 'Render', 'Radius', 1);
@@ -6249,8 +6249,9 @@ export const suites = {
 
   // Ambient occlusion (owner report: the radius felt large and cut off,
   // and over 0.5 the strength drew black outlines). GTAO's defaults are
-  // what the panel starts on and what the pass gets; the radius follows the
-  // subject, and so does the denoise's depth tolerance; GTAO and its
+  // what the panel starts on and what the pass gets; the radius is a
+  // length in centimetres in a scene on real units (viewerTools.mjs's
+  // aoRadius has the rest), and the denoise's depth tolerance follows it; GTAO and its
   // denoise are in the graph only while GTAO is the model; and the model
   // rides a scene file - a GTAO look used to come back as Cavity.
   async aoDefaults(page, base, t) {
@@ -6286,14 +6287,14 @@ export const suites = {
       !s.ao.enabled && s.cav.strength === CAVITY_DEFAULT.strength && s.cav.radius === CAVITY_DEFAULT.radius && (await model()) === 'cavity',
       `sculpt mode starts on the cavity at its defaults (${s.cav.strength}, ${s.cav.radius} px)`,
     );
-    t.ok(s.ao.intensity === AO_DEFAULT.intensity && s.ao.radius === AO_DEFAULT.radius, `GTAO waits at strength ${s.ao.intensity}, radius ${s.ao.radius}`);
+    t.ok(s.ao.intensity === AO_DEFAULT.intensity && s.ao.radiusCm === AO_DEFAULT.radiusCm, `GTAO waits at strength ${s.ao.intensity}, radius ${s.ao.radiusCm} cm`);
     t.eq(s.out, 'plain', 'with the cavity on, neither GTAO nor its denoise is in the graph');
     await model('gtao');
     s = await state();
     t.ok(s.ao.enabled && s.cav.strength === 0 && s.out === 'gtao', `choosing GTAO puts it in the graph and the cavity at zero (${s.out})`);
     t.ok(
-      Math.abs(s.radius - AO_DEFAULT.radius * s.subject) < 1e-6 && Math.abs(s.phi - 0.25 * s.radius) < 1e-6,
-      `its radius is ${AO_DEFAULT.radius} of the subject's (${s.radius.toFixed(2)} of ${s.subject.toFixed(2)}), the denoise's depth tolerance a quarter of that`,
+      Math.abs(s.radius - AO_DEFAULT.radiusCm) < 1e-6 && Math.abs(s.phi - 0.25 * s.radius) < 1e-6,
+      `its radius is ${AO_DEFAULT.radiusCm} cm on a subject of radius ${s.subject.toFixed(2)} cm (${s.radius.toFixed(2)}), the denoise's depth tolerance a quarter of that`,
     );
     await page.evaluate(async () => {
       window.__aoLook = await window.__sculpt.file.pack();
@@ -6342,7 +6343,7 @@ export const suites = {
         const publish = window.__sculpt.publishWindow.chip;
         return { chips, like: look(publish) === look(file) && look(publish) === look(edit) };
       });
-      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Publish, Present', 'signed in, the top row has a Publish chip beside File and Edit, Present after it');
+      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Help, Publish, Present', 'signed in, the top row has a Publish chip after File, Edit and Help, Present after it');
       t.ok(row.like, 'styled as they are');
       let s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');

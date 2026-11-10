@@ -3,6 +3,7 @@ import { chordLabel, chordParts, keymap, type KeyMode } from './keymap';
 import { showPreferences } from './Preferences';
 import { checkForUpdates, onUpdates, updateStatus, updatesAvailable } from './updates';
 import { APP_VERSION } from './version';
+import { HOTKEY_GUIDE_EVENT } from '../help/menu';
 
 /**
  * Hotkey guide for the viewer: a dismissible top-left hint ("Press H …") that
@@ -82,6 +83,8 @@ export class Help {
     this.mode = detail?.mode ?? (detail?.active ? 'sculpt' : 'view');
     this.render();
   };
+
+  private readonly onGuideEvent = (): void => this.toggle();
 
   private render(): void {
     this.guide.innerHTML = guideHtml(this.mode, this.updates);
@@ -164,6 +167,8 @@ export class Help {
     // Sculpt mode swaps the guide content while active (and back on exit),
     // and a rebind redraws it.
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    // The Help menu's Hotkeys item asks for the guide this way.
+    window.addEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     this.offKeymap = keymap.onChange(() => this.render());
     this.offUpdates = onUpdates(this.onUpdate);
   }
@@ -184,6 +189,7 @@ export class Help {
   dispose(): void {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.removeEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     this.offKeymap();
     this.offUpdates();
     this.hint.remove();

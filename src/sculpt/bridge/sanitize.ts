@@ -250,6 +250,7 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
           plateau: num(v.rake.plateau, 0, 1),
           taper: num(v.rake.taper, 0, 1),
           invert: bool(v.rake.invert),
+          level: bool(v.rake.level),
           preset: v.rake.preset === null ? null : str(v.rake.preset, 32),
         })
       : undefined,
@@ -341,7 +342,7 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
           bgBrightness: num(env.bgBrightness, 0),
         })
       : undefined,
-    ao: section(defined({ enabled: bool(ao.enabled), intensity: num(ao.intensity, 0), radius: num(ao.radius, 0) })),
+    ao: section(defined({ enabled: bool(ao.enabled), intensity: num(ao.intensity, 0), radius: num(ao.radius, 0), radiusCm: num(ao.radiusCm, 0) })),
     sculptAO: section(defined({ strength: num(sculptAO.strength, 0), radius: num(sculptAO.radius, 0) })),
     presentation: section(
       defined({

@@ -1,12 +1,20 @@
-// Three owner items, one suite each:
+// Three owner items, and the clay brush's mechanics:
 //
 // clayLayer: the clay brush's defaults (spacing 0.1, the Plateau profile
 //   curve - the old 0.8 plateau - and since 2026-10-31 a strength of 1.5
-//   cm, the layer's height, with no Strip layer slider; the tine rake
-//   keeps its own spacing 0.06), and the layer height following pen
-//   pressure: a pen dab at half pressure raises the plane half as far as
-//   one at full pressure, and a mouse dab lays the whole layer. A stored
-//   scene from before the new spacing does not shadow it.
+//   cm, with no Strip layer slider; the tine rake keeps its own spacing
+//   0.06), and one dab's maths: the plane a tenth of the radius over the
+//   surface, the rate from the strength and following pen pressure (half
+//   the press moves half as far, a mouse is a full press), and Strength 0
+//   moving nothing. A stored scene from before the new spacing does not
+//   shadow it.
+// clayFollow (owner report, 2026-11-10: the brush pushed at Strength 0,
+//   ignored pressure and stamped flat planes): strokes across the default
+//   sphere and down a head's philtrum. Strength 0 at full pressure moves no
+//   vertex; a lighter press builds in proportion; one stroke at the
+//   defaults builds about the Strength, and a strength past the rate's cap
+//   about 0.65 of the radius, evenly; and what moves, moves along the
+//   surface's own normals within a tolerance, concave anatomy included.
 // tabAfterCreate: Tab after creating an object in the Scene panel closes
 //   the panels (a clicked button no longer keeps Tab), and Shift+Tab still
 //   moves the focus.
@@ -23,12 +31,13 @@ async function openForInput(page, base) {
 
 /**
  * In the page: the plane primitive at level 0 alone in reach, flat,
- * symmetry off, and one clay dab on the vertex nearest its centre through
- * the live tool. `pen` and `pressure` are what InputShell would have fed
- * the Tablet. Returns how far the centre vertex rose, the layer offset the
- * dab used and the local radius.
+ * symmetry off, and one clay dab at `strength` cm on the vertex nearest its
+ * centre through the live tool. `pen` and `pressure` are what InputShell
+ * would have fed the Tablet. Returns how far the centre vertex rose, the
+ * farthest any vertex moved, the plane offset and the rate the dab used,
+ * the rate its strength asks for, and the local radius.
  */
-function clayDab({ pen, pressure }) {
+function clayDab({ pen, pressure, strength = 0.3 }) {
   const { session, tablet, input } = window.__sculpt;
   const manager = session.getSculptManager();
   const tool = manager.getTool(input.currentToolIndex());
@@ -58,10 +67,7 @@ function clayDab({ pen, pressure }) {
   const symmetry = manager._symmetry;
   const intensity = tool._intensity;
   manager._symmetry = false;
-  // The layer is the strength, 0.3 cm here: the full rate lands the
-  // plateau's vertex on the plane in one dab, so only the layer term
-  // differs between the dabs.
-  tool._intensity = 0.3;
+  tool._intensity = strength;
   const d = input.dynamics.get(input.currentToolIndex());
   d.strength = 1;
   d.strengthCurve = 'linear';
@@ -79,12 +85,190 @@ function clayDab({ pen, pressure }) {
     tool.updateRender();
     manager.end();
     session.getStateManager().cleanNoop();
-    return { hitPlane, rise: Math.abs(v[ind + 2]), off: tool.lastLayerOffset, r, strength: tool._intensity, factor: tablet.getPressureLayer() };
+    let moved = 0;
+    for (let i = 0; i < n; i++) moved = Math.max(moved, Math.abs(v[i * 3 + 2]));
+    // The rate the strength asks for: 1.5 x strength / (the curve's line
+    // integral x radius) at the default spacing, held to 0.5 (tools.ts).
+    const want = Math.min(0.5, (1.5 * strength) / plane.getScale() / (tool.curve.lineIntegral() * r));
+    return { hitPlane, rise: Math.abs(v[ind + 2]), moved, off: tool.lastLayerOffset, rate: tool.lastRate, want, r, strength: tool._intensity, factor: tablet.getPressureLayer() };
   } finally {
     tablet.pressure = 0.5;
     tablet.pen = false;
     tool._intensity = intensity;
     manager._symmetry = symmetry;
+  }
+}
+
+/**
+ * In the page: one clay stroke through the live tool on `window.__clayMesh`
+ * (the first object without one), symmetry off, between the local points
+ * `from` and `to`, projected - or, with neither, through the object's
+ * middle on the canvas along `dir`, moved `offset` brush radii across the
+ * canvas - with a dab every spacing x radius px as a real stroke lays them.
+ * `pen` and `pressure` are what InputShell would feed the Tablet;
+ * `strength` (cm), `radius` (cm, the px radius found by a probe press: the
+ * view's scale may change between strokes) and `lenRadii` (the stroke as
+ * that many brush radii either side of its middle) override the tool's.
+ * The mesh is put back as it was. Returns,
+ * against the positions and normals from before the stroke: how many
+ * vertices moved and the farthest; the rise along the normal of the
+ * vertices on the stroke's centre line (within 0.12 radius of it, half a
+ * radius either side of its middle: least, mean, most); and the angle
+ * between each move and its vertex's normal (the mean weighted by the
+ * move, and the 90th percentile among moves over a quarter of the
+ * farthest).
+ */
+export function clayStroke(o) {
+  const { session, tablet, input } = window.__sculpt;
+  const manager = session.getSculptManager();
+  const tool = manager.getTool(0);
+  manager.setToolIndex(0);
+  const mesh = window.__clayMesh ?? session.getMeshes()[0];
+  session.setMesh(mesh);
+  const v = mesh.getVertices();
+  const n = mesh.getNbVertices();
+  if (!mesh.__rest) {
+    mesh.__rest = new Float32Array(v.subarray(0, n * 3));
+    mesh.__restN = new Float32Array(mesh.getNormals().subarray(0, n * 3));
+  }
+  const rest = mesh.__rest;
+  const restN = mesh.__restN;
+  const reset = () => {
+    v.set(rest);
+    mesh.updateGeometry();
+    mesh.updateBuffers?.();
+  };
+  reset();
+  const m = mesh.getMatrix();
+  const screen = (p) => session.getCamera().project([0, 1, 2].map((k) => m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]));
+  const scale = mesh.getScale();
+  const symmetry = manager._symmetry;
+  manager._symmetry = false;
+  const d = input.dynamics.get(0);
+  const dyn = { ...d };
+  d.size = 0;
+  d.strength = 1;
+  d.strengthCurve = 'linear';
+  const keep = { intensity: tool._intensity, radius: tool._radius };
+  const picking = session.getPicking();
+  // A press that moves nothing: where the ray lands and the radius there.
+  const pickAt = (x, y) => {
+    session._mouseX = x;
+    session._mouseY = y;
+    tablet.pressure = 0.5;
+    tablet.pen = false;
+    const s0 = tool._intensity;
+    tool._intensity = 0;
+    try {
+      if (!manager.start(false) || picking.getMesh() !== mesh) return null;
+      return { p: Array.from(picking.getIntersectionPoint()), r: Math.sqrt(picking.getLocalRadius2()) };
+    } finally {
+      manager.end();
+      tool._intensity = s0;
+      session.getStateManager().cleanNoop();
+    }
+  };
+  try {
+    if (o.strength !== undefined) tool._intensity = o.strength;
+    const pr = session.getPixelRatio();
+    const dir = o.dir ?? [1, 0];
+    const middle = screen([0, 0, 0]);
+    let [x0, y0] = o.from ? screen(o.from) : [middle[0] - dir[0], middle[1] - dir[1]];
+    let [x1, y1] = o.to ? screen(o.to) : [middle[0] + dir[0], middle[1] + dir[1]];
+    let xm = (x0 + x1) / 2;
+    let ym = (y0 + y1) / 2;
+    let mid = pickAt(xm, ym);
+    // The px radius that is `radius` cm there, then (the offset moving the
+    // middle) there again.
+    for (let pass = 0; pass < 2 && mid; pass++) {
+      if (o.radius) tool._radius = (tool._radius * o.radius) / (mid.r * scale);
+      if (pass === 0 && o.offset) {
+        const [ox, oy] = [o.offset[0] * tool._radius * pr, o.offset[1] * tool._radius * pr];
+        [x0, y0, x1, y1, xm, ym] = [x0 + ox, y0 + oy, x1 + ox, y1 + oy, xm + ox, ym + oy];
+      }
+      mid = pickAt(xm, ym);
+    }
+    if (o.lenRadii) {
+      const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+      const ux = ((x1 - x0) / len) * o.lenRadii * tool._radius * pr;
+      const uy = ((y1 - y0) / len) * o.lenRadii * tool._radius * pr;
+      [x0, y0, x1, y1] = [xm - ux, ym - uy, xm + ux, ym + uy];
+    }
+    const a = pickAt(x0, y0);
+    const b = pickAt(x1, y1);
+    if (!mid || !a || !b) return { miss: true };
+    tablet.pressure = o.pressure ?? 1;
+    tablet.pen = o.pen ?? true;
+    session._mouseX = x0;
+    session._mouseY = y0;
+    if (!manager.start(false)) return { miss: true };
+    const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (tool._spacing * tool._radius * pr));
+    const rates = [];
+    for (let s = 1; s <= steps; s++) {
+      const x = x0 + ((x1 - x0) * s) / steps;
+      const y = y0 + ((y1 - y0) * s) / steps;
+      session._mouseX = x;
+      session._mouseY = y;
+      tool.makeStroke(x, y, picking, null);
+      rates.push(tool.lastRate);
+    }
+    tool.updateRender();
+    manager.end();
+    session.getStateManager().cleanNoop();
+    const r = mid.r;
+    const way = [b.p[0] - a.p[0], b.p[1] - a.p[1], b.p[2] - a.p[2]];
+    const dl = Math.hypot(...way) || 1;
+    let moved = 0;
+    let far = 0;
+    let sum = 0;
+    let sumAngle = 0;
+    const moves = [];
+    const line = [];
+    for (let i = 0; i < n; i++) {
+      const j = i * 3;
+      const dx = v[j] - rest[j];
+      const dy = v[j + 1] - rest[j + 1];
+      const dz = v[j + 2] - rest[j + 2];
+      const len = Math.hypot(dx, dy, dz);
+      const nl = Math.hypot(restN[j], restN[j + 1], restN[j + 2]) || 1;
+      const rise = (dx * restN[j] + dy * restN[j + 1] + dz * restN[j + 2]) / nl;
+      const px = rest[j] - mid.p[0];
+      const py = rest[j + 1] - mid.p[1];
+      const pz = rest[j + 2] - mid.p[2];
+      const along = (px * way[0] + py * way[1] + pz * way[2]) / dl;
+      const across = Math.sqrt(Math.max(0, px * px + py * py + pz * pz - along * along));
+      if (Math.abs(along) < 0.5 * r && across < 0.12 * r) line.push(rise * scale);
+      if (len === 0) continue;
+      moved++;
+      far = Math.max(far, len);
+      const angle = (Math.acos(Math.max(-1, Math.min(1, rise / len))) * 180) / Math.PI;
+      moves.push([angle, len]);
+      sum += len;
+      sumAngle += angle * len;
+    }
+    const big = moves.filter((q) => q[1] > 0.25 * far).map((q) => q[0]).sort((p, q) => p - q);
+    line.sort((p, q) => p - q);
+    return {
+      r: r * scale,
+      steps,
+      moved,
+      far: far * scale,
+      lineN: line.length,
+      lineMin: line[0] ?? 0,
+      lineMean: line.reduce((t, x) => t + x, 0) / (line.length || 1),
+      lineMax: line[line.length - 1] ?? 0,
+      angle: sum ? sumAngle / sum : 0,
+      angle90: big.length ? big[Math.min(big.length - 1, Math.floor(big.length * 0.9))] : 0,
+      rate: rates[0] ?? 0,
+    };
+  } finally {
+    Object.assign(d, dyn);
+    tool._intensity = keep.intensity;
+    tool._radius = keep.radius;
+    tablet.pressure = 0.5;
+    tablet.pen = false;
+    manager._symmetry = symmetry;
+    reset();
   }
 }
 
@@ -289,15 +473,26 @@ export const suites = {
     t.ok(slider.min === 0 && slider.max === 5 && slider.value === 1.5 && slider.unit === ' cm', `the Strength row is the layer, in cm, at 1.5 of 0..5 (${JSON.stringify(slider)})`);
     t.ok(!/layer height|follows pen pressure/.test(slider.hint), `and no hint under it (owner call, 2026-10-24: "${slider.hint}")`);
 
+    // One dab on the flat plane, at 0.3 cm: the plane is a tenth of the
+    // radius over the surface (upstream's), and the centre vertex goes the
+    // rate's share of the way to it. The rate is the strength's, times the
+    // pressure term.
     const full = await page.evaluate(clayDab, { pen: true, pressure: 1 });
     const half = await page.evaluate(clayDab, { pen: true, pressure: 0.5 });
     const mouse = await page.evaluate(clayDab, { pen: false, pressure: 0.5 });
-    t.ok(full.hitPlane && half.hitPlane && mouse.hitPlane, 'the dabs land on the plane');
-    t.near(full.off, 0.3, 1e-9, `a pen at full pressure raises the plane by the strength, 0.3 cm (${full.off.toFixed(4)})`);
-    t.near(half.off, 0.15, 1e-9, `at half pressure 0.15 cm (${half.off.toFixed(4)})`);
-    t.near(full.rise, full.off, 1e-5, `and the plateau's vertex rises to the plane (${full.rise.toExponential(3)} for ${full.off.toExponential(3)})`);
-    t.ok(half.rise < full.rise * 0.6 && Math.abs(half.rise - full.rise / 2) < 1e-5, `the half-pressure dab raises half as far, by the layer term alone (${half.rise.toExponential(3)} against ${full.rise.toExponential(3)})`);
-    t.ok(mouse.factor === 1 && Math.abs(mouse.off - 0.3) < 1e-9 && Math.abs(mouse.rise - full.rise) < 1e-5, `a mouse (Tablet's stand-in 0.5) lays the full layer (factor ${mouse.factor}, ${mouse.off.toFixed(4)} cm)`);
+    const none = await page.evaluate(clayDab, { pen: true, pressure: 1, strength: 0 });
+    const light = await page.evaluate(clayDab, { pen: true, pressure: 0, strength: 5 });
+    t.ok(full.hitPlane && half.hitPlane && mouse.hitPlane && none.hitPlane && light.hitPlane, 'the dabs land on the plane');
+    t.near(full.off, 0.1 * full.r, 1e-9, `a dab's plane is a tenth of the radius over the surface (${full.off.toFixed(4)} for a radius of ${full.r.toFixed(4)})`);
+    t.ok(full.want > 0.01 && full.want < 0.5 && Math.abs(full.rate - full.want) < 1e-9, `a pen at full pressure dabs at the strength's rate (${full.rate.toFixed(4)}, 1.5 x 0.3 cm over the curve's integral and the radius: ${full.want.toFixed(4)})`);
+    t.near(full.rise, full.rate * full.off, 1e-5, `and the centre vertex rises that share of the way to the plane (${full.rise.toExponential(3)} of ${full.off.toExponential(3)})`);
+    t.ok(full.rise < 0.2 * full.off, `a small part of it: one dab at a low strength is a light touch (${(full.rise / full.off).toFixed(3)} of the way)`);
+    // Dab against dab by rate x radius, which is the strength's alone: the
+    // canvas's scale, and with it the brush's radius, may change between two.
+    t.ok(Math.abs(half.rate * half.r - (full.rate * full.r) / 2) < 1e-9 && Math.abs(half.off - 0.1 * half.r) < 1e-9 && Math.abs(half.rise - half.rate * half.off) < 1e-5, `the half-pressure dab goes half as far, by the rate alone (rate ${half.rate.toFixed(4)} against ${full.rate.toFixed(4)}, rise ${half.rise.toExponential(3)} against ${full.rise.toExponential(3)})`);
+    t.ok(mouse.factor === 1 && Math.abs(mouse.rate * mouse.r - full.rate * full.r) < 1e-9 && Math.abs(mouse.rise - mouse.rate * mouse.off) < 1e-5, `a mouse (Tablet's stand-in 0.5) is a full press (factor ${mouse.factor}, rate ${mouse.rate.toFixed(4)})`);
+    t.ok(none.rate === 0 && none.moved === 0, `Strength 0 at full pressure moves nothing (rate ${none.rate}, farthest move ${none.moved})`);
+    t.ok(light.rate === 0 && light.moved === 0, `and neither does a strength of 5 cm with no pressure (rate ${light.rate}, farthest move ${light.moved})`);
 
     // A real mouse press through InputShell: the Tablet knows it is no pen.
     const real = await page.evaluate(() => {
@@ -314,7 +509,7 @@ export const suites = {
       const own = tool.stroke;
       tool.stroke = function (picking, sym) {
         const out = own.call(this, picking, sym);
-        seen.push({ pen: tablet.pen, off: this.lastLayerOffset, strength: this._intensity });
+        seen.push({ pen: tablet.pen, rate: this.lastRate, strength: this._intensity, press: this.lastStrengthDab?.pressureTerm });
         return out;
       };
       window.__claySeen = { seen, restore: () => (tool.stroke = own) };
@@ -329,7 +524,7 @@ export const suites = {
       s.restore();
       return s.seen;
     });
-    t.ok(seen.length > 0 && seen.every((s) => s.pen === false && s.strength === 1.5 && Math.abs(s.off - 1.5) < 1e-9), `a real mouse stroke lays the full 1.5 cm layer on every dab (${seen.length} dabs, ${JSON.stringify(seen.slice(0, 2))})`);
+    t.ok(seen.length > 0 && seen.every((s) => s.pen === false && s.strength === 1.5 && s.press === 1 && s.rate > 0.05 && s.rate <= 0.5), `a real mouse stroke dabs at the 1.5 cm strength's full rate on every dab (${seen.length} dabs, ${JSON.stringify(seen.slice(0, 2))})`);
 
     // A scene saved before the new spacing (no spacingRev) carries clay's
     // old default 0.15 for every tool; it does not shadow the new 0.1. A
@@ -348,6 +543,89 @@ export const suites = {
       return out;
     });
     t.ok(loads.legacyDefault === 0.1 && loads.legacyChosen === 0.3 && loads.currentRecord === 0.15, `stored spacing: an old record's 0.15 default is passed over, a chosen value and a current record's are kept (${JSON.stringify(loads)})`);
+  },
+
+  async clayFollow(page, base, t) {
+    await openForInput(page, base);
+    await page.keyboard.press('3');
+    // The default sphere, 25 cm, and the default brush, about 2.8 cm at
+    // the default view: strokes through the middle of the sphere as the
+    // view shows it, 2.5 radii either side. The first takes the brush as
+    // it comes; the rest ask for its size in cm, since the canvas's scale
+    // may change under a suite.
+    await page.waitForTimeout(500);
+    const stroke = (o) => page.evaluate(clayStroke, { lenRadii: 2.5, ...o });
+    const full = await stroke({});
+    t.ok(!full.miss && full.steps > 20 && full.lineN > 10 && full.moved > 500, `a stroke across the sphere at the defaults: ${full.steps} dabs of a ${full.r?.toFixed(2)} cm brush, ${full.moved} vertices moved`);
+
+    // Strength 0 at full pressure, and no pressure at any strength.
+    const radius = full.r;
+    const zero = await stroke({ radius, strength: 0 });
+    t.ok(!zero.miss && zero.moved === 0 && zero.far === 0, `Strength 0 at full pressure: the stroke moves no vertex (${zero.moved} moved, farthest ${zero.far})`);
+    const unpressed = await stroke({ radius, strength: 5, pressure: 0 });
+    t.ok(!unpressed.miss && unpressed.moved === 0, `and neither does 5 cm at no pressure (${unpressed.moved} moved)`);
+
+    // One stroke at the defaults builds about the Strength.
+    t.ok(Math.abs(full.lineMean / 1.5 - 1) < 0.2, `one full-pressure stroke raises its centre line ${full.lineMean.toFixed(3)} cm for a strength of 1.5 cm (rate ${full.rate.toFixed(3)})`);
+    t.ok(full.lineMax - full.lineMin < 0.1 * full.lineMean, `evenly along it (${full.lineMin.toFixed(3)} to ${full.lineMax.toFixed(3)} cm)`);
+    const big = await stroke({ radius: radius * 2, lenRadii: 1.5 });
+    t.ok(!big.miss && Math.abs(big.lineMean / 1.5 - 1) < 0.25, `and about as much with a brush twice the size (${big.lineMean.toFixed(3)} cm, a ${big.r.toFixed(2)} cm brush)`);
+    const low = await stroke({ radius, strength: 0.5 });
+    t.ok(Math.abs(low.lineMean / 0.5 - 1) < 0.2, `a strength of 0.5 cm builds ${low.lineMean.toFixed(3)} cm`);
+    // Past the rate's cap the build stops at about 0.65 of the radius,
+    // and stays even: 1.5 cm asked of a brush half the size, and 5 cm.
+    const small = await stroke({ radius: radius / 2 });
+    const smallMore = await stroke({ radius: radius / 2, strength: 5 });
+    t.ok(
+      !small.miss && small.rate === 0.5 && small.lineMean > 0.5 * small.r && small.lineMean < 0.8 * small.r && small.lineMax - small.lineMin < 0.1 * small.lineMean,
+      `a strength past the cap builds what the brush can lay, evenly: ${small.lineMean.toFixed(3)} cm (${small.lineMin.toFixed(3)} to ${small.lineMax.toFixed(3)}) with a ${small.r.toFixed(2)} cm brush, rate ${small.rate}`,
+    );
+    t.ok(Math.abs(smallMore.lineMean / small.lineMean - 1) < 0.02, `and no more at 5 cm (${smallMore.lineMean.toFixed(3)} cm)`);
+
+    // The rate follows pressure: a lighter press builds in proportion.
+    const again = await stroke({ radius });
+    const half = await stroke({ radius, pressure: 0.5 });
+    const quarter = await stroke({ radius, pressure: 0.25 });
+    t.ok(Math.abs(again.lineMean / full.lineMean - 1) < 0.02, `the same stroke again builds the same (${again.lineMean.toFixed(3)} cm): nothing is left over from the strokes before`);
+    t.ok(Math.abs(half.lineMean / full.lineMean - 0.5) < 0.05, `half the press builds half as much (${half.lineMean.toFixed(3)} against ${full.lineMean.toFixed(3)} cm)`);
+    t.ok(Math.abs(quarter.lineMean / full.lineMean - 0.25) < 0.05, `and a quarter a quarter (${quarter.lineMean.toFixed(3)} cm)`);
+    t.ok(Math.abs(half.rate / full.rate - 0.5) < 0.01 && Math.abs(quarter.rate / full.rate - 0.25) < 0.01, `by the dab's rate (${quarter.rate.toFixed(4)}, ${half.rate.toFixed(4)}, ${full.rate.toFixed(4)})`);
+    const mouse = await stroke({ radius, pen: false, pressure: 0.5 });
+    t.ok(Math.abs(mouse.lineMean / full.lineMean - 1) < 0.02 && Math.abs(mouse.rate / full.rate - 1) < 0.01, `a mouse is a full press (${mouse.lineMean.toFixed(3)} cm)`);
+
+    // What moves, moves along the sphere's normals. A light build stays
+    // within the angle the brush's own flat footprint makes with the
+    // sphere; a full one leans a little more, forward onto its own build,
+    // as upstream's does.
+    t.ok(quarter.angle < 10 && quarter.angle90 < 14, `a light stroke moves the surface along its normals: ${quarter.angle.toFixed(1)} degrees off on average, ${quarter.angle90.toFixed(1)} at the 90th percentile`);
+    t.ok(full.angle < 20 && full.angle90 < 25, `a full one within ${full.angle.toFixed(1)} degrees on average, ${full.angle90.toFixed(1)} at the 90th percentile`);
+    // Off the middle of the view, where the sphere turns away from the eye.
+    const side = await stroke({ radius, offset: [2, 0], dir: [1, 1], lenRadii: 1.5 });
+    t.ok(!side.miss && side.angle < 20 && Math.abs(side.lineMean / 1.5 - 1) < 0.2, `the same where the surface turns from the view: ${side.angle?.toFixed(1)} degrees off, ${side.lineMean?.toFixed(3)} cm built`);
+
+    // Concave anatomy: down a head's philtrum, from under the nose to the
+    // lip, with a 1 cm brush (the nose's base in its reach at the start).
+    const head = await page.evaluate(async () => {
+      const { session } = window.__sculpt;
+      const m = await session.addBaseMesh('head-realistic');
+      window.__clayMesh = m;
+      const oc = window.__bozzetto.controls.controls;
+      const mm = m.getMatrix();
+      oc.target.set(mm[12], mm[13] + 1.3, mm[14] + 11);
+      oc.object.position.set(mm[12], mm[13] + 1.3, mm[14] + 56);
+      oc.update();
+      oc.object.updateMatrixWorld(true);
+      return { n: m.getNbVertices(), scale: m.getScale() };
+    });
+    await page.waitForTimeout(800);
+    const philtrum = { from: [0, 2.2, 10.9], to: [0, 0.5, 11.1], radius: 1 };
+    const lip0 = await page.evaluate(clayStroke, { ...philtrum, strength: 0 });
+    t.ok(!lip0.miss && lip0.moved === 0, `down the philtrum of a head (${head.n} vertices) at Strength 0: nothing moves (${lip0.moved} moved)`);
+    const lip = await page.evaluate(clayStroke, { ...philtrum, strength: 0.3 });
+    const lipLight = await page.evaluate(clayStroke, { ...philtrum, strength: 0.3, pressure: 0.3 });
+    t.ok(!lip.miss && lip.moved > 200 && Math.abs(lip.r - 1) < 0.05 && lip.far < 0.7, `at 0.3 cm with a ${lip.r?.toFixed(2)} cm brush: ${lip.moved} vertices moved, none farther than ${lip.far?.toFixed(3)} cm`);
+    t.ok(lip.angle < 35 && lip.angle90 < 50, `the build follows the surface there: ${lip.angle?.toFixed(1)} degrees off its normals on average, ${lip.angle90?.toFixed(1)} at the 90th percentile`);
+    t.ok(lipLight.lineMean < 0.5 * lip.lineMean && lipLight.lineMean > 0.2 * lip.lineMean && lipLight.far < lip.far, `and a 0.3 press builds about that share (${lipLight.lineMean?.toFixed(3)} against ${lip.lineMean?.toFixed(3)} cm along the line, farthest ${lipLight.far?.toFixed(3)} against ${lip.far?.toFixed(3)})`);
   },
 
   async tabAfterCreate(page, base, t) {

@@ -3213,7 +3213,9 @@ body:has(.transport) .chrome-hint {
 
 /* The Rake: one circle per tine (BrushCursor.renderTines), the brush ring
    kept faint behind them to show the rake's reach. The circles' stroke is
-   a gradient that fades the tapered outer tines. */
+   a gradient that fades the tapered outer tines. The screen-space ring
+   (a size set off the mesh, from the sliders or the keys) has them too,
+   and stays as strong as ever: its size is what is being set. */
 .sculpt-cursor__tines {
   fill: none;
   stroke-width: 1.5;
@@ -6004,4 +6006,214 @@ body.is-sampling * {
 
 .admin-user__rolesay {
   padding: 0 12px 8px;
+}
+
+/* ==========================================================================
+   Help window (src/help). Built on the Preferences window's chrome
+   (.dsettings, .dsettings__card) and the app's variables; everything
+   below is the layout of its list and its text. Kept in this one block.
+   ========================================================================== */
+.help-win__card {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - 32px));
+  padding: 16px 20px;
+}
+
+.help-win__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.help-win__head .dsettings__title {
+  margin: 0;
+}
+
+.help-win__filter {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.help-win__filter:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.help-win__status {
+  min-height: 1.45em;
+}
+
+.help-win__body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.help-win__nav {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+  border-right: 1px solid var(--panel-border);
+}
+
+.help-win__group {
+  margin: 12px 0 4px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.help-win__group:first-child {
+  margin-top: 0;
+}
+
+.help-win__item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-win__item[hidden],
+.help-win__group[hidden] {
+  display: none;
+}
+
+.help-win__item:hover {
+  background: var(--hover);
+}
+
+.help-win__item:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.help-win__item[aria-current='true'] {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.help-win__topic {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.help-win__topic:focus {
+  outline: none;
+}
+
+.help-win__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.help-win__h {
+  margin: 16px 0 4px;
+  font-family: var(--font-spec);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.help-win__p {
+  margin: 6px 0;
+}
+
+.help-win__list {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.help-win__list li {
+  margin: 3px 0;
+}
+
+.help-win__options {
+  margin: 6px 0;
+}
+
+.help-win__options dt {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.help-win__options dd {
+  margin: 1px 0 0;
+  color: var(--muted);
+}
+
+.help-win__options dd strong {
+  color: var(--text);
+}
+
+.help-win__topic a {
+  color: var(--accent);
+}
+
+.help-win__credit {
+  margin: 10px 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.help-win__credit-name {
+  margin: 0;
+  font-size: 13px;
+}
+
+.help-win__meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.help-win__none {
+  color: var(--muted);
+}
+
+/* Phone width: the list above the topic. */
+@media (max-width: 640px) {
+  .help-win__card {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    padding: 12px;
+  }
+
+  .help-win__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 32%) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .help-win__nav {
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--panel-border);
+  }
 }

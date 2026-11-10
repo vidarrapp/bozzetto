@@ -1,3 +1,4 @@
+import { keyedLabel } from '../../ui/keymap';
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, labelRow, onTap, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
@@ -488,7 +489,7 @@ export class SculptPanel extends SidePanel {
   /**
    * The tine rake's rows: its presets, the tine count and width, the
    * Scrape (how flat each dab planes the footprint before the tines cut),
-   * the taper, Invert, and the tine's own profile. The groove's depth is
+   * the taper, Invert, Stop at depth, and the tine's own profile. The groove's depth is
    * the Strength above, in cm (2026-10-31: the Depth row went with that).
    * A preset sets them all, the strength included; any of them can move
    * after.
@@ -538,6 +539,15 @@ export class SculptPanel extends SidePanel {
         changed();
       }),
     );
+    extras.appendChild(
+      checkbox('Stop at depth', rake.level, (on) => {
+        rake.set({ level: on });
+        changed();
+      }),
+    );
+    const hint = div('sculpt-panel__hint muted');
+    hint.textContent = 'Tines cut down to the Strength below the surface, then only take off what stands proud. Off: every pass cuts deeper.';
+    extras.appendChild(hint);
     extras.appendChild(this.curveRow('Tine profile', 'Tine profile', rake.curve));
   }
 
@@ -656,7 +666,7 @@ export class SculptPanel extends SidePanel {
   private buildSymmetry(body: HTMLElement): void {
     const sec = section(body, 'Symmetry');
     this.symSection = sec;
-    const box = checkbox('Mirror sculpting (x)', this.session.getSymmetry(), () =>
+    const box = checkbox(keyedLabel('Mirror sculpting', 'brush.symmetry'), this.session.getSymmetry(), () =>
       this.session.toggleSymmetry(),
     );
     this.symCheckbox = box.querySelector('input') as HTMLInputElement;

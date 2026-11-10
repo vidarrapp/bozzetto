@@ -6,7 +6,7 @@ import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
-import { chordLabel, keymap } from './keymap';
+import { chordLabel, keyedLabel, keymap } from './keymap';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -410,13 +410,35 @@ export class Panel {
           limits: AMOUNT,
         }),
       );
-      // A fraction of the subject's radius, so it means the same at any
-      // scale; above zero, or nothing occludes at all.
-      gtaoRows.appendChild(
-        compactRange('Radius', AO_RADIUS_MIN, AO_RADIUS_MAX, 0.01, ao.radius, (v) => this.viewer.setAO({ radius: v }), {
-          limits: { min: 0.01 },
-        }),
-      );
+      // A length in centimetres in a scene on real units, the same on a
+      // head and on a whole figure (owner report: as a share of the
+      // subject, the least it went on a body was an eye across), with its
+      // unit printed beside it. A look from before that opens at the
+      // length its share comes to, which may lie past the travel. Without
+      // real units it is the share of the subject's radius it always was.
+      // Above zero either way, or nothing occludes at all.
+      const radius = this.viewer.getAORadius();
+      if (radius.unit) {
+        const row = numberedRange(
+          'Radius',
+          AO_RADIUS_CM_MIN,
+          AO_RADIUS_CM_MAX,
+          0.1,
+          Math.round(radius.value * 100) / 100,
+          (v) => {
+            this.viewer.setAO({ radiusCm: v });
+            return sliderText(row.input, v);
+          },
+          { limits: { min: 0.01 }, unit: ' cm' },
+        );
+        gtaoRows.appendChild(row.row);
+      } else {
+        gtaoRows.appendChild(
+          compactRange('Radius', AO_RADIUS_MIN, AO_RADIUS_MAX, 0.01, ao.radius, (v) => this.viewer.setAO({ radius: v }), {
+            limits: { min: 0.01 },
+          }),
+        );
+      }
       sec.appendChild(gtaoRows);
     }
 
@@ -593,7 +615,7 @@ export class Panel {
     this.smoothCheckbox = smooth.querySelector('input')!;
     material.appendChild(smooth);
 
-    const wire = checkbox('Wireframe (w)', this.viewer.isWireframe(), (on) =>
+    const wire = checkbox(keyedLabel('Wireframe', 'view.wireframe'), this.viewer.isWireframe(), (on) =>
       this.viewer.setWireframe(on),
     );
     this.wireframeCheckbox = wire.querySelector('input')!;
@@ -1184,7 +1206,9 @@ const BG_BRIGHTNESS_MAX = 2;
 
 /**
  * Ambient occlusion's travel. GTAO's strength runs to 2, all of it usable
- * now that it deepens rather than clips (see DEFAULT_AO in Viewer). The
+ * now that it deepens rather than clips (see DEFAULT_AO in Viewer). Its
+ * radius runs 1 mm to 10 cm in a scene on real units, and 0.05 to 1 of
+ * the subject's radius in one without. The
  * cavity's taps past about 12 px stamp offset copies of an edge onto the
  * surface behind it (a ghost of the ear on the cheek, measured on the
  * realistic head), so its travel ends there; a wider one can be typed.
@@ -1192,6 +1216,8 @@ const BG_BRIGHTNESS_MAX = 2;
 const AO_STRENGTH_MAX = 2;
 const AO_RADIUS_MIN = 0.05;
 const AO_RADIUS_MAX = 1;
+const AO_RADIUS_CM_MIN = 0.1;
+const AO_RADIUS_CM_MAX = 10;
 const CAVITY_STRENGTH_MAX = 2;
 const CAVITY_RADIUS_MIN = 2;
 const CAVITY_RADIUS_MAX = 12;

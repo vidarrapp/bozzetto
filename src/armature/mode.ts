@@ -9,6 +9,7 @@ import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { isShowKey, pageChrome } from '../ui/ChromeToggle';
 import { showPreferences } from '../ui/Preferences';
+import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
@@ -689,7 +690,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.refresh(selected);
   };
   // Fast frames while a pose drag moves the figure (and, the viewer sees
-  // for itself, while the view moves): Viewer.updateFrameMode.
+  // for itself, while the view moves): Viewer.updateFrameMode. The AO is
+  // drawn through the drag.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (dragUnderway() ? 'move' : null);
   // Anti-aliasing as Preferences says, as in Sculpt (the viewer's own is 4x MSAA).
@@ -1578,6 +1580,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ],
     'file-menu--edit',
   );
+  const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
 
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
@@ -1819,6 +1822,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.dispose();
     fileMenu.dispose();
     editMenu.dispose();
+    helpMenu.dispose();
     if (pendingStep) clearTimeout(pendingStep);
     histButtons.dispose();
     openInput.remove();

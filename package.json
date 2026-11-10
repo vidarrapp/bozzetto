@@ -36,6 +36,8 @@
     "gl-matrix": "^3.4.4",
     "mediabunny": "^1.62.1",
     "three": "^0.187.0"
+    "mediabunny": "^1.65.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261030.1",

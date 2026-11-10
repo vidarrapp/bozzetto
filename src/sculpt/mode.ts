@@ -55,6 +55,7 @@ import { FileMenu } from './ui/FileMenu';
 import { chordLabel, keymap } from '../ui/keymap';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
+import { helpMenuItems } from '../help/menu';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -347,6 +348,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // subject is fitted, since a fixed floor is not sized by it. Again
   // whenever the scene's units change (New, Open, Set scale).
   const holdFloor = (): void => viewer.lockFloor(session.getUnits() ? 0 : null);
+  // The AO as the project under the mode has it, read before the floor is
+  // held: on real units the record's radius is told against this scene's
+  // subject, and it goes back (dispose) once the floor is the project's again.
+  const savedAO = viewer.getAOState();
   const savedFloorOffset = viewer.getFloorOffset();
   holdFloor();
 
@@ -417,7 +422,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const savedMaterial = viewer.materials.getMaterialState();
   const savedShadowsMaster = lighting.getShadowsMaster();
   const savedGround = viewer.getGround();
-  const savedAO = viewer.getAOState();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
   // Shadows on by default (review call): they read the form far better than
@@ -587,6 +591,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let publishWindow: PublishWindow | null = null;
   let fileMenu: FileMenu | null = null;
   let editMenu: TopMenu | null = null;
+  let helpMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   // Present mode (ui/Present): the frame tick turns its turntable, so it is
@@ -1228,6 +1233,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // Fast frames while a stroke or a gizmo drag is under way (and, the
   // viewer sees for itself, while the view moves): Viewer.updateFrameMode.
+  // A stroke holds the AO it had; a gizmo drag, like the view moving,
+  // draws it on every frame.
   // The stroke's own work goes to the frame meter as the frame's input.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (input.isStroking() ? 'stroke' : gizmo.isDragging() ? 'move' : null);
@@ -1557,6 +1564,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       ],
       'file-menu--edit',
     );
+    // Help beside them: the topics, the hotkey guide, and who made what.
+    helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
   }
   // Built after File and Edit so its chip lands beside them in the row.
   // The chip stays hidden until the role probe below has found a sign-in.
@@ -1661,6 +1670,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshUnits();
     sculptPanel?.refreshBrush();
     scaleBanner?.refresh();
+    // The Render panel's GTAO Radius is in centimetres on real units and a
+    // share of the subject without: it is built again on the scale it has now.
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
   };
 
   /**
@@ -1948,6 +1960,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow,
     fileMenu,
     editMenu,
+    helpMenu,
     fileActions,
     sculptPanel,
     modelPanel,
@@ -2056,6 +2069,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
+    helpMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();

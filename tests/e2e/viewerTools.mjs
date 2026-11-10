@@ -7,11 +7,15 @@
 // factor (presentation.scale, lifted onto the floor at 0), marks the
 // project `units: 'cm'` and saves both, so the viewer plays it at that
 // height for everyone. Tab closes the panels, hides the interface and
-// brings it back, and Esc brings it back, in both as in Sculpt. Each gets
-// (page, base, t).
+// brings it back, and Esc brings it back, in both as in Sculpt. And GTAO's
+// radius (owner report: at its smallest it drew a dark blob the size of an
+// eye on a whole body) is a length in centimetres wherever the scene is on
+// real units, the same on a small subject and a large one, while a scene
+// without real units, and a look saved before the length, keep the share
+// of the subject they had. Each gets (page, base, t).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { chromeChecks } from './lib.mjs';
+import { chromeChecks, openSculpt } from './lib.mjs';
 
 /** The guide is up, and what its head and rows say. */
 const guideOf = (page) =>
@@ -323,6 +327,189 @@ export const suites = {
       Math.abs(viewer.height - 30) < 1e-4 && Math.abs(viewer.foot) < 1e-4 && viewer.locked === 0 && viewer.floor === 0,
       `the viewer plays it 30 cm tall on the floor at 0 (${JSON.stringify(viewer)})`,
     );
+    await page.unroute('**/timelapses/demo/manifest.json');
+  },
+  // GTAO's radius in centimetres (owner report: on a whole body the least
+  // the Radius went was 4.5 cm, an eye across, because it was a share of
+  // the subject's size). On real units it is a length: 2 cm to start, the
+  // same world radius whatever the subject's size, 0.1 to 10 cm on the
+  // rail. A look from before the length carries a share alone, and goes on
+  // drawing that share - the picture it had - until the Radius is moved.
+  // Without real units (the viewer on a project from before them) nothing
+  // changed: the share, on its old rail. And a radius only a few pixels
+  // across on screen, which a length can be and a share of the framed
+  // subject never was, draws no occlusion rather than the noise its
+  // horizon search makes of it.
+  async aoRadius(page, base, t) {
+    const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+    /** The pass's radius and what follows it, the record and the control. */
+    const state = () =>
+      page.evaluate(() => {
+        const v = window.__bozzetto;
+        return {
+          world: v.aoNode.radius.value,
+          phi: v.aoDenoise.depthPhi.value,
+          subject: v.subjectRadius,
+          ao: v.getAOState(),
+          control: v.getAORadius(),
+        };
+      });
+    /** Fit the viewer to the subject's box grown by `by` world units a side: a larger subject. */
+    const grow = (by) =>
+      page.evaluate((d) => {
+        const v = window.__bozzetto;
+        window.__aoBox ??= v.subjectBox.clone();
+        v.fitSubjectBounds(window.__aoBox.clone().expandByScalar(d), false);
+      }, by);
+    /** The GTAO Radius row of the Render panel. */
+    const row = () =>
+      page.evaluate(() => {
+        const sec = [...document.querySelectorAll('.panel .section')].find((el) => el.querySelector('h3')?.textContent === 'Ambient occlusion');
+        const r = sec && [...sec.querySelectorAll('label.compact')].find((l) => l.firstElementChild?.textContent === 'Radius');
+        if (!r) return null;
+        const input = r.querySelector('input[type=range]');
+        const val = r.querySelector('.slider-val, .sculpt-panel__val');
+        return { min: Number(input.min), max: Number(input.max), step: Number(input.step), thumb: Number(input.value), readout: val && !val.hidden ? val.textContent : null };
+      });
+    const rebuilt = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')));
+
+    // Sculpt, a new scene: on real units.
+    await openSculpt(page, base, '&q=low');
+    await page.evaluate(() => window.__bozzetto.setAO({ enabled: true }));
+    await rebuilt();
+    let s = await state();
+    const small = s.subject;
+    t.ok(s.control.unit === 'cm' && s.control.value === 2 && near(s.world, 2), `a new scene's GTAO radius is 2 cm (${s.world} on a subject of radius ${small.toFixed(1)} cm)`);
+    t.ok(near(s.phi, 0.5), `the denoise's depth tolerance is a quarter of it (${s.phi})`);
+    t.ok(s.ao.radiusCm === 2 && near(s.ao.radius, 2 / small), `the record carries the length, and its share of this subject beside it (${s.ao.radiusCm} cm, ${s.ao.radius.toFixed(4)})`);
+    let r = await row();
+    t.ok(r && r.min === 0.1 && r.max === 10 && r.thumb === 2 && r.readout === '2.0 cm', `the Radius rail runs 0.1 to 10 cm and says its unit (${JSON.stringify(r)})`);
+
+    // Too few pixels across to search: the term fades out. The picture at
+    // a radius of 2 px is the one with no AO at all; at 2 cm it has AO.
+    const shots = await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      v.setAntialias('off');
+      v.setGround('floor');
+      const grab = async () => {
+        await v.whenFramesDrawn(2);
+        const c = document.createElement('canvas');
+        c.width = v.captureCanvas.width;
+        c.height = v.captureCanvas.height;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(v.captureCanvas, 0, 0);
+        return ctx.getImageData(0, 0, c.width, c.height).data;
+      };
+      const differ = (a, b) => {
+        let max = 0;
+        let changed = 0;
+        for (let i = 0; i < a.length; i += 4) {
+          const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+          if (d > max) max = d;
+          if (d > 0) changed++;
+        }
+        return { max, changed };
+      };
+      // Pixels of the drawing buffer to a centimetre, at the orbit's distance.
+      const perCm = v.captureCanvas.height / (2 * v.controls.targetDistance() * Math.tan((v.camera.fov * Math.PI) / 360));
+      const withAo = await grab();
+      v.setAO({ intensity: 0 });
+      const none = await grab();
+      v.setAO({ intensity: 1, radiusCm: 2 / perCm });
+      const tiny = await grab();
+      v.setAO({ radiusCm: 2 });
+      await v.whenFramesDrawn(1);
+      return { perCm, from: v.aoNode.fadeFrom.value, to: v.aoNode.fadeTo.value, ao: differ(withAo, none), tiny: differ(tiny, none) };
+    });
+    t.ok(shots.from === 3 && shots.to === 8 && 2 * shots.perCm > shots.to, `here 2 cm is ${(2 * shots.perCm).toFixed(1)} px across, past the ${shots.from} to ${shots.to} px over which a radius too small to search fades out`);
+    t.ok(shots.ao.changed > 200, `and its occlusion is in the picture (${shots.ao.changed} pixels differ from no AO, by up to ${shots.ao.max})`);
+    t.ok(shots.tiny.max <= 1, `a radius of 2 px (${(2 / shots.perCm).toFixed(3)} cm) draws none: the frame with no AO (max difference ${shots.tiny.max}, ${shots.tiny.changed} pixels)`);
+
+    await grow(small * 4);
+    s = await state();
+    const large = s.subject;
+    t.ok(large > small * 3 && near(s.world, 2) && near(s.phi, 0.5), `on a subject ${(large / small).toFixed(1)} times the size the same 2 cm is the same world radius (${s.world}, tolerance ${s.phi})`);
+    await page.evaluate(() => window.__bozzetto.setAO({ radiusCm: 0.1 }));
+    s = await state();
+    t.ok(near(s.world, 0.1) && near(s.phi, 0.025), `the rail's least is 1 mm there too, not a share of the subject (${s.world})`);
+    await grow(0);
+    s = await state();
+    t.ok(near(s.subject, small) && near(s.world, 0.1), `and on the small subject again (${s.world})`);
+
+    // A look from before the length: a share alone.
+    await page.evaluate(async () => {
+      const v = window.__bozzetto;
+      const look = v.getLook();
+      look.ao = { enabled: true, intensity: 1, radius: 0.3 };
+      await v.applyLook(look);
+    });
+    await rebuilt();
+    s = await state();
+    t.ok(near(s.world, 0.3 * small) && near(s.phi, 0.075 * small), `a look saved with the old share of 0.3 opens to its old world radius, 0.3 of the subject's (${s.world.toFixed(3)} of ${small.toFixed(3)})`);
+    t.ok(s.ao.radius === 0.3 && s.ao.radiusCm === undefined, `and is saved again as the share it was (${JSON.stringify(s.ao)})`);
+    r = await row();
+    t.ok(
+      s.control.unit === 'cm' && near(s.control.value, 0.3 * small) && / cm$/.test(r.readout ?? '') && near(parseFloat(r.readout), 0.3 * small, 0.006) && r.thumb === Math.min(10, Math.round(0.3 * small * 10) / 10),
+      `the Radius says the length that share comes to (${r.readout}, thumb at ${r.thumb})`,
+    );
+    await grow(small * 4);
+    s = await state();
+    t.ok(near(s.world, 0.3 * large, 1e-4), `it follows the subject as it did (${s.world.toFixed(3)} on the large one)`);
+    await grow(0);
+    // The scene file keeps it a share, through the look's sanitizer.
+    await page.evaluate(async () => {
+      window.__aoScene = await window.__sculpt.file.pack();
+      window.__bozzetto.setAO({ radiusCm: 1.5 });
+    });
+    s = await state();
+    t.ok(near(s.world, 1.5) && s.ao.radiusCm === 1.5, `moving the Radius makes it a length (${s.world} cm)`);
+    await page.evaluate(async () => {
+      window.__aoSceneCm = await window.__sculpt.file.pack();
+      await window.__sculpt.file.open(window.__aoScene);
+    });
+    s = await state();
+    t.ok(near(s.world, 0.3 * s.subject) && s.ao.radiusCm === undefined, `a scene file saved on the share opens on it (${s.world.toFixed(3)} of ${s.subject.toFixed(3)})`);
+    await page.evaluate(() => window.__sculpt.file.open(window.__aoSceneCm));
+    s = await state();
+    t.ok(near(s.world, 1.5) && s.ao.radiusCm === 1.5, `and one saved on 1.5 cm opens on 1.5 cm (${s.world})`);
+
+    // The viewer on a project from before real units: the share, as ever.
+    const viewer = async (patch) => {
+      await page.unroute('**/timelapses/demo/manifest.json').catch(() => undefined);
+      await page.route('**/timelapses/demo/manifest.json', async (route) => {
+        // A request the page leaves behind as it goes on to the next
+        // project is cut off under the fetch: let it go.
+        try {
+          const res = await route.fetch();
+          await route.fulfill({ response: res, json: { ...(await res.json()), ...patch } });
+        } catch {
+          await route.abort().catch(() => undefined);
+        }
+      });
+      await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
+      await page.evaluate(() => window.__bozzetto.pause());
+      await page.waitForTimeout(250);
+    };
+    await viewer({ units: null, ao: null });
+    s = await state();
+    r = await row();
+    t.ok(s.control.unit === null && s.control.value === 0.3 && near(s.world, 0.3 * s.subject), `without real units the radius is 0.3 of the subject's, as before (${s.world.toFixed(3)} of ${s.subject.toFixed(3)})`);
+    t.ok(r && r.min === 0.05 && r.max === 1 && r.step === 0.01 && r.thumb === 0.3, `on its old rail, 0.05 to 1 (${JSON.stringify(r)})`);
+    await viewer({ units: null, ao: { enabled: true, intensity: 1, radius: 0.45 } });
+    s = await state();
+    t.ok(near(s.world, 0.45 * s.subject) && s.ao.radius === 0.45, `a project saved at 0.45 plays at 0.45 of its subject (${s.world.toFixed(3)})`);
+    // The same project marked as on real units (Set scale): its saved share still draws.
+    await viewer({ units: 'cm', ao: { enabled: true, intensity: 1, radius: 0.45 } });
+    s = await state();
+    t.ok(s.control.unit === 'cm' && near(s.world, 0.45 * s.subject), `on real units its saved share still draws the radius it drew (${s.world.toFixed(3)} of ${s.subject.toFixed(3)})`);
+    // A project published with the length.
+    await viewer({ units: 'cm', ao: { enabled: true, intensity: 1, radius: 0.45, radiusCm: 1.5 } });
+    s = await state();
+    t.ok(near(s.world, 1.5), `a project published with 1.5 cm plays at 1.5 cm (${s.world})`);
+    await viewer({ units: null, ao: { enabled: true, intensity: 1, radius: 0.45, radiusCm: 1.5 } });
+    s = await state();
+    t.ok(near(s.world, 0.45 * s.subject), `and without real units at the share saved beside it (${s.world.toFixed(3)})`);
     await page.unroute('**/timelapses/demo/manifest.json');
   },
 };
