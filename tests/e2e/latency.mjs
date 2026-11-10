@@ -584,14 +584,20 @@ export const suites = {
 
     // The comparison can see AO: with none, the same view changes where
     // the occlusion was.
+    // At full strength for this comparison: at the default 2 cm radius the
+    // default strength moves the default sphere's pixels by 3 levels at most.
+    const aoWas = await page.evaluate(() => window.__bozzetto.getAOState().intensity);
+    await page.evaluate(() => window.__bozzetto.setAO({ intensity: 2 }));
+    await frames(page, 2);
     await snapshot(page, 'full');
     await page.evaluate(() => window.__bozzetto.setAO({ intensity: 0 }));
     await frames(page, 2);
     await snapshot(page, 'none');
     const none = await compareShots(page, 'full', 'none');
     t.ok(none.changed > 200 && none.max > 4, `whereas a frame with no AO changes them (${none.changed} pixels, max ${none.max})`);
-    await page.evaluate(() => window.__bozzetto.setAO({ intensity: 1 }));
+    await page.evaluate((v) => window.__bozzetto.setAO({ intensity: v }), aoWas);
     await frames(page, 2);
+    await snapshot(page, 'still');
 
     // While something moves the AO is drawn, as a still frame draws it:
     // the picture keeps its occlusion (owner report: it vanished on every
@@ -614,7 +620,7 @@ export const suites = {
       moving.mode.kind === 'move' && moving.mode.fast && moving.mode.ao === 'full' && moving.p.gtao - p0.gtao >= 3 && moving.p.denoise - p0.denoise >= 3,
       `moving, GTAO and its denoise are drawn on every frame (${moving.p.gtao - p0.gtao} passes over 3 frames; ${show(moving.mode)})`,
     );
-    const same = await compareShots(page, 'full', 'moving');
+    const same = await compareShots(page, 'still', 'moving');
     t.ok(same.max <= 2, `and the moving frame is the still one's, occlusion and all (max ${same.max}, mean ${same.mean.toFixed(4)}, against ${none.mean.toFixed(4)} for no AO)`);
     t.ok(back.ao === 'full' && back.kind === null, `nothing to bring back once still (${show(back)})`);
     t.eq(show(grew(c0, await counters(page))), '{}', 'with not one build, compile or allocation into the move or out of it');
@@ -816,7 +822,14 @@ export const suites = {
     a = await aaState(page);
     t.eq(a.state, '16/16 held', 'left still, the view is smoothed over sixteen samples and held');
     t.ok(/^\d+\/16$/.test(midway ?? ''), `the meter shows the smoothing as it goes ("AA ${midway}")`);
-    await frames(page, 2);
+    // The meter refreshes on its own clock: give it a moment to catch up.
+    await page
+      .waitForFunction(
+        () => [...document.querySelectorAll('.fps-meter__row')].find((r) => r.children[0].textContent === 'AA')?.children[1].textContent === '16/16 held',
+        null,
+        { timeout: 10_000 },
+      )
+      .catch(() => {});
     t.eq((await meterRows(page)).AA, '16/16 held', 'and when it is done');
     await snapshot(page, 'smooth');
     const held0 = await aaState(page);
