@@ -732,7 +732,12 @@ export const suites = {
     // fitted per dab, raising only what lay below it: on a sphere, a
     // ridge's height came from how far below the passing dabs' planes it
     // sat, the outer ones 2.5 times the depth here, the inner ones 1.1).
-    const sInv = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { strength: 0.25, scrape: 0, invert: true } });
+    // Stop at depth fits a quadric to the form; at the sphere's quarter
+    // radius that is within a few percent, at a brush half the sphere's
+    // radius (the brush larger than any sensible one for the curve) the
+    // ridges come out up to a quarter low, the grooves up to 30% off, so
+    // the large brush is checked to 30% below.
+    const sInv = await page.evaluate(rakeStroke, { ...onSphere, radius: 0.25, preset: 'coarse', knobs: { strength: 0.25, scrape: 0, invert: true } });
     const ridges = dips(flip(sInv.col), 0.5 * sInv.reach, sInv.r / 4);
     const rise = Math.max(...sInv.col.map(([, , h]) => h));
     t.ok(
@@ -740,6 +745,9 @@ export const suites = {
       `Invert raises 4 ridges on the sphere, each the strength above the surface, within a quarter (at ${ridges.map(([y, , h]) => `${(y / sInv.r).toFixed(2)}:${(-h / sInv.reach).toFixed(2)}`).join(', ')} of the radius and the depth)`,
     );
     t.ok(rise > 0.75 * sInv.reach && Math.min(...sInv.col.map(([, , h]) => h)) > -1e-3 * sInv.R, `standing about the strength proud of the surface (${rise.toFixed(4)} for ${sInv.reach.toFixed(4)})`);
+    const sInvBig = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { strength: 0.25, scrape: 0, invert: true } });
+    const ridgesBig = dips(flip(sInvBig.col), 0.5 * sInvBig.reach, sInvBig.r / 4);
+    t.ok(ridgesBig.length === 4 && ridgesBig.every(([, , h]) => Math.abs(-h / sInvBig.reach - 1) < 0.3), `and with a brush half the sphere's radius, within 30% (${ridgesBig.map(([y, , h]) => `${(y / sInvBig.r).toFixed(2)}:${(-h / sInvBig.reach).toFixed(2)}`).join(', ')})`);
     // Scrape: the curvature between the grooves kept at 0, planed at 1.
     const s0 = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { width: 0.4, scrape: 0 } });
     const s1 = await page.evaluate(rakeStroke, { ...onSphere, preset: 'coarse', knobs: { width: 0.4, scrape: 1 } });

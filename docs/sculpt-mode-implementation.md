@@ -578,6 +578,34 @@ and each dab goes part of the way to it - with the profile curve for the
 falloff and the Strength in cm setting that rate; the class comment in
 `src/sculpt/bridge/tools.ts` has the maths.)
 
+The tine rake (`RakeBrush`) lays 2 to 12
+tines across the stroke, each cutting its own groove along the normal of a
+plane fitted to the form (the positions with this stroke's own cut taken
+out), as a standard brush: every dab adds its share of the Strength, in cm.
+Its **Stop at depth** setting (`level`, on by default in every preset and in
+scenes that do not carry it; saved in the rake settings by `ScenePersist`,
+read through `sanitize.ts`; a checkbox with a one-line hint in the Tool
+panel) holds each vertex's cut to a floor. Per dab, `levelSurface` fits a
+reference to the even surface around the tines: a mask-weighted quadric
+over the dab's plane (so a curved form does not put the floor a sagitta off
+at the rim), lifted onto its upper side by the median of the highest
+vertices of a grid of cells a tine slot wide (so grooves of earlier passes
+do not pull it down), and fitted once more with those grooves filled. A
+tine's floor is that reference lowered by its whole depth there (Strength x
+pressure term x profile x taper x mask). A vertex moves by its usual share
+or by its height over the floor, if that is less, and not at all once it is
+at or below it. So on an even surface the first stroke cuts the Strength and
+a second adds almost nothing (about 2%, measured); a crossing stroke cuts to
+the same floor; a bump is cut over more passes until its grooves reach the
+floor; a hollow below it is left alone. Invert mirrors it: a ceiling a
+whole depth above a reference on the lower side. Scrape works as before,
+and moves a vertex and the reference under it together, so with Scrape above
+0 the lands still sink a little with each pass. The reference is a quadric:
+with a brush half the radius of the form it is off by up to about a tenth of a
+cm in the rim tines, so grooves and ridges come out within 30% of the
+Strength there (within 5% at a quarter of the radius). With the setting off
+the rake is the plain standard brush, and every pass cuts deeper.
+
 
 Two representations behind one cursor (review round 2): over the mesh, a
 3D ring aligned to the picked surface normal, drawn at the intersection
