@@ -4,7 +4,8 @@ import type { LookState } from './Viewer';
  * A look's world numbers times `k` (src/viewer/units.ts): the camera's
  * place and what it looks at, a focus lock, the Floor offset and a played
  * lift. Everything else in a look is a direction, a colour or a share of
- * the subject, which a change of unit leaves alone. Used to bring a look
+ * the subject, which a change of unit leaves alone (the AO's radius in
+ * centimetres too: no look from before centimetres has one). Used to bring a look
  * saved in metres to centimetres (k = 100), and an armature look from the
  * old 50 units a metre (armature/units.ts). Returns a new look; fields a
  * look does not have stay absent.

@@ -689,7 +689,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.refresh(selected);
   };
   // Fast frames while a pose drag moves the figure (and, the viewer sees
-  // for itself, while the view moves): Viewer.updateFrameMode.
+  // for itself, while the view moves): Viewer.updateFrameMode. The AO is
+  // drawn through the drag.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (dragUnderway() ? 'move' : null);
   // Anti-aliasing as Preferences says, as in Sculpt (the viewer's own is 4x MSAA).

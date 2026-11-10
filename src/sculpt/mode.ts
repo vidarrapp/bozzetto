@@ -347,6 +347,10 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // subject is fitted, since a fixed floor is not sized by it. Again
   // whenever the scene's units change (New, Open, Set scale).
   const holdFloor = (): void => viewer.lockFloor(session.getUnits() ? 0 : null);
+  // The AO as the project under the mode has it, read before the floor is
+  // held: on real units the record's radius is told against this scene's
+  // subject, and it goes back (dispose) once the floor is the project's again.
+  const savedAO = viewer.getAOState();
   const savedFloorOffset = viewer.getFloorOffset();
   holdFloor();
 
@@ -417,7 +421,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const savedMaterial = viewer.materials.getMaterialState();
   const savedShadowsMaster = lighting.getShadowsMaster();
   const savedGround = viewer.getGround();
-  const savedAO = viewer.getAOState();
   lighting.setEnabled('fill', false);
   lighting.setEnabled('rim', false);
   // Shadows on by default (review call): they read the form far better than
@@ -1228,6 +1231,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // Fast frames while a stroke or a gizmo drag is under way (and, the
   // viewer sees for itself, while the view moves): Viewer.updateFrameMode.
+  // A stroke holds the AO it had; a gizmo drag, like the view moving,
+  // draws it on every frame.
   // The stroke's own work goes to the frame meter as the frame's input.
   viewer.fastFrames = true;
   viewer.interactionProbe = () => (input.isStroking() ? 'stroke' : gizmo.isDragging() ? 'move' : null);
@@ -1661,6 +1666,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshUnits();
     sculptPanel?.refreshBrush();
     scaleBanner?.refresh();
+    // The Render panel's GTAO Radius is in centimetres on real units and a
+    // share of the subject without: it is built again on the scale it has now.
+    window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
   };
 
   /**

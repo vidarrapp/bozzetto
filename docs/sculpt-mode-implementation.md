@@ -572,6 +572,11 @@ OrbitControls. Sculpt lighting rides a camera-orbit quaternion delta
 overrides (bridge subclasses, vendor untouched): VolumetricMove
 (off-model silhouette grab + falloff pow 0.55) and ClayStripsBrush
 (plateau 0.45 falloff, 0.25r layer) replace MOVE/BRUSH registry slots.
+(Since 2026-11-10 ClayStripsBrush is upstream's clay again - the plane is
+the surface's area centre and normal at each dab, a tenth of the radius up,
+and each dab goes part of the way to it - with the profile curve for the
+falloff and the Strength in cm setting that rate; the class comment in
+`src/sculpt/bridge/tools.ts` has the maths.)
 
 
 Two representations behind one cursor (review round 2): over the mesh, a

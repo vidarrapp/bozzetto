@@ -77,8 +77,8 @@ onto the plane's right boundary), one dab per move. Move and Drag pull off the
 surface instead. Pressure is 0.5 at the press and 0.5, 0.65, 0.8, 0.4, 0.5 on
 the moves, which matters for the brushes whose dynamics use it. The
 pressures are a pen's (`Tablet.pen` is set, as InputShell sets it for a
-pen event): a mouse or a finger reports no pressure, and the clay layer
-then takes the full term, 1.
+pen event): a mouse or a finger reports no pressure, and the cm brushes'
+pressure term (the clay layer's, by its old name) is then the full 1.
 
 The pressure terms (`meta.engine.tablet`): the strength and size factors are
 `1 + amount * (curve(pressure) * 2 - 1)`, from 0 to 2 at full amount. The
@@ -109,11 +109,11 @@ Picking state at that moment, all in mesh local space:
   factors it gave (`pressureIntensity`, `pressureRadius`, and
   `pressureLayer`, the clay layer's pressure term); `intensity` is the
   tool's strength times the factor.
-- Clay: `layerPressure`, the layer term the dab used, and `layerOffset`, how
-  far the build plane sits off the form's plane along its normal, in local
-  units: `strengthCm * layerPressure / scale` (negated in the loop when
-  `_negative`). The layer follows pressure, so `layerPressure` is
-  `pressureLayer`.
+- Clay: `layerPressure`, the pressure term the dab used (`pressureLayer`);
+  `layerOffset`, how far the dab's plane sits off the area centre along the
+  area normal, in local units: `0.1 * radiusLocal`, upstream's (negated in
+  the loop when `_negative`); and `layerRate`, the fraction of the way to
+  that plane the dab moves a vertex at the curve's top (below).
 - Clay, Crease and Inflate: `strength`, the dab's strength terms (below).
 - Drag: `dragDir`. VolumetricMove: `center` (the press), `moveDir`.
 - Rake: `rake`, the tine rake's dab (below).
@@ -249,19 +249,27 @@ line gets the falloff summed over dabs `stepLocal` apart, about
   `_negative`) where upstream had `pow(q, 5) * 0.07 * intensity * radius`;
   the gather is `q(d) * mask * pinch * amountLocal / radiusLocal` (upstream
   `q(d) * 0.07 * intensity`).
-- ClayStripsBrush: the target is not shared out. Its record's
-  `strokeLocal` is the layer (`layerOffset`), the step terms 0. The build
-  plane is fitted to the FORM, the front vertices' positions with this
-  stroke's build taken out (`built`, kept per vertex as the rake keeps its
-  `cut`, and void for a vertex no longer where the brush left it): its
-  point the mask-weighted mean of the form, its normal the area normal
-  `n0` refined by the same least-squares fit as the rake's, on the axes
-  `a0 = normalize(tangent((1, 0, 0) if |n0.x| < 0.9 else (0, 1, 0), n0))`
-  and `b0 = n0 x a0`. The plane is that point plus `layerOffset` along the
-  normal. Per vertex (upstream Flatten.flatten's loop): skipped when on
-  the far side of the plane or `dist >= 1`; else
-  `v -= n * (curve(dist) * ((v - point) . n) * mask)`, the full rate (no
-  intensity), and the move is added to the vertex's `built`.
+- ClayStripsBrush (since 2026-11-10): upstream's clay, Brush.stroke's clay
+  branch and Flatten.flatten's loop, with the strength as a rate. Nothing
+  is shared out by the step, so the record's step terms are 0;
+  `strokeLocal` is what the stroke is asked to build, `integral` the clay
+  curve's, and `amountLocal` is `layerRate * layerOffset`. The plane is
+  upstream's: its point `areaCenter` of the front vertices as they are at
+  the dab (the mask-weighted mean position), its normal their `areaNormal`
+  (the mask-weighted sum of the vertex normals, normalized), the point then
+  moved `layerOffset = 0.1 * radiusLocal` along the normal. The rate:
+
+  ```
+  g         = CLAY_GAIN * strengthCm / scale * (_spacing / CLAY_SPACING) / integral
+  layerRate = min(CLAY_MAX_RATE, g / radiusLocal) * pressureTerm
+  ```
+
+  Per vertex: skipped when on the far side of the plane or `dist >= 1`;
+  else `v -= n * (min(1, curve(dist) * layerRate * mask) * ((v - point) . n))`.
+  With `layerRate` 0 (Strength 0, or no pressure) the loop is not run.
+  CLAY_GAIN is measured, so that a stroke's build at its centre line comes
+  to about the strength; past CLAY_MAX_RATE a higher strength builds no
+  more.
 
 ## The tine rake's dab
 
@@ -506,7 +514,8 @@ The fixtures describe the engine at `meta.webCommit`. Re-record them whenever
 a brush changes; `--verify` against the old files shows what moved. The
 clay brush and the rake have their own constants (`CLAY_*`, `RAKE_*` in
 `meta.engine.bridgeConstants`): clay is spacing 0.1, the Plateau curve and a
-pressure-driven layer of 1.5 cm (its strength); the rake is spacing 0.06 and
+strength of 1.5 cm, with CLAY_GAIN and CLAY_MAX_RATE for its rate; the rake
+is spacing 0.06 and
 the Coarse preset (4 Round tines, width 0.7, strength 0.3 cm, Scrape 0.25,
 no taper, Stop at depth on), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD
 for its spacing factor, RAKE_SCRAPE_STRENGTH for its scrape and
@@ -553,3 +562,10 @@ just before, at 03a04b9).
 Only RakeBrush is re-recorded: its `brush.params` gained `level`, its dabs
 `rake.level` and `rake.levelRef`. With `level` off it records the outputs
 it did before, bit for bit.
+
+2026-11-10: clay went back to upstream's mechanics (owner report: it pushed
+at Strength 0, pressure did not soften it, and it stamped flat planes on
+curved anatomy). The plane is the surface's area centre and normal at each
+dab again, a tenth of the radius up, and the strength in cm sets the dab's
+rate (above) where it set the plane's height. Only ClayStripsBrush needs
+re-recording; its dabs gain `layerRate`.

@@ -1,6 +1,7 @@
 // The latency suites: the frame meter and what it reads; fast frames while
 // a stroke, a pose drag or the view moves (the AO held under a stroke and
-// dropped while things move, the fill and rim shadows held or staggered,
+// drawn on every frame, in full, while things move, the fill and rim
+// shadows held or staggered,
 // and not one build, compile or allocation from pen-down to pen-up); the
 // anti-aliasing that waits for a still view; adaptive quality's ladder;
 // the viewer's frame pacing with v-sync off (setPacing, which no browser
@@ -36,15 +37,16 @@ const recordModes = (page) =>
   page.evaluate(() => {
     const v = window.__bozzetto;
     window.__modes = [];
-    window.__drops = [];
+    window.__moving = [];
     if (!v.__recording) {
       const decide = v.updateFrameMode.bind(v);
       v.updateFrameMode = (now, dt) => {
         decide(now, dt);
         const m = v.frameMode();
         window.__modes?.push(`${m.kind ?? 'still'}/${m.ao}/${m.shadows}`);
-        // The AO's drop from the frame the view stopped on.
-        if (m.kind === null && (window.__drops.length || m.aoDrop > 0)) window.__drops.push(m.aoDrop);
+        // Every frame decided while something moved: the GTAO passes drawn
+        // before it, whether the pass is skipped, and its sample count.
+        if (m.kind === 'move') window.__moving?.push({ gtao: v.passCounts().gtao, skip: v.aoNode.skip, denoise: v.aoRtt.autoUpdate, samples: v.aoNode.samples.value });
       };
       v.__recording = true;
     }
@@ -257,13 +259,13 @@ const reachOf = (page, path, margin) =>
     [path, margin],
   );
 
-/** Wait out the view's settling: no camera move for a while, the AO back. */
+/** Wait out the view's settling: no camera move for a while, the AO in full again. */
 const stillAgain = (page, timeout = 20_000) =>
   page
     .waitForFunction(
       () => {
         const m = window.__bozzetto.frameMode();
-        return m.kind === null && m.aoDrop === 0;
+        return m.kind === null && m.ao === 'full';
       },
       null,
       { timeout },
@@ -529,7 +531,7 @@ export const suites = {
   // hold while the key's redraws, and from the frame before pen-down to
   // the frames after pen-up nothing is built, compiled or allocated.
   // Outside the stroke's reach the frame is the one before pen-down's to
-  // the pixel; dropping the AO instead changes those same pixels.
+  // the pixel; taking the AO away instead changes those same pixels.
   async fastStroke(page, base, t) {
     await openForInput(page, base);
     const dev = await devices(page);
@@ -580,19 +582,42 @@ export const suites = {
     const held = await compareShots(page, 'before', 'during', reach);
     t.ok(held.max <= 2, `outside the stroke's reach, mid-stroke frames are the frame before pen-down's (max ${held.max}, mean ${held.mean.toFixed(4)}, ${held.changed} of ${held.n} pixels differ)`);
 
-    // The comparison can see AO: dropped instead of held, the same view
-    // changes where the occlusion was.
+    // The comparison can see AO: with none, the same view changes where
+    // the occlusion was.
     await snapshot(page, 'full');
+    await page.evaluate(() => window.__bozzetto.setAO({ intensity: 0 }));
+    await frames(page, 2);
+    await snapshot(page, 'none');
+    const none = await compareShots(page, 'full', 'none');
+    t.ok(none.changed > 200 && none.max > 4, `whereas a frame with no AO changes them (${none.changed} pixels, max ${none.max})`);
+    await page.evaluate(() => window.__bozzetto.setAO({ intensity: 1 }));
+    await frames(page, 2);
+
+    // While something moves the AO is drawn, as a still frame draws it:
+    // the picture keeps its occlusion (owner report: it vanished on every
+    // turn of the model, and came back a moment after). The frame mode
+    // pinned to 'move', the view itself still, so the frames compare.
+    const c0 = await counters(page);
+    const p0 = await passes(page);
     await page.evaluate(() => {
       window.__bozzetto.debugInteraction = 'move';
     });
-    await frames(page, 2);
-    await snapshot(page, 'dropped');
+    await frames(page, 3);
+    const moving = { mode: await frameMode(page), p: await passes(page) };
+    await snapshot(page, 'moving');
     await page.evaluate(() => {
       window.__bozzetto.debugInteraction = undefined;
     });
-    const dropped = await compareShots(page, 'full', 'dropped');
-    t.ok(dropped.changed > 200 && dropped.max > 4, `whereas dropping the AO changes them (${dropped.changed} pixels, max ${dropped.max})`);
+    await frames(page, 2);
+    const back = await frameMode(page);
+    t.ok(
+      moving.mode.kind === 'move' && moving.mode.fast && moving.mode.ao === 'full' && moving.p.gtao - p0.gtao >= 3 && moving.p.denoise - p0.denoise >= 3,
+      `moving, GTAO and its denoise are drawn on every frame (${moving.p.gtao - p0.gtao} passes over 3 frames; ${show(moving.mode)})`,
+    );
+    const same = await compareShots(page, 'full', 'moving');
+    t.ok(same.max <= 2, `and the moving frame is the still one's, occlusion and all (max ${same.max}, mean ${same.mean.toFixed(4)}, against ${none.mean.toFixed(4)} for no AO)`);
+    t.ok(back.ao === 'full' && back.kind === null, `nothing to bring back once still (${show(back)})`);
+    t.eq(show(grew(c0, await counters(page))), '{}', 'with not one build, compile or allocation into the move or out of it');
     t.ok((await modesSeen(page)).includes('stroke/held/hold'), `the frames went stroke/held/hold (${(await modesSeen(page)).join(', ')})`);
 
     // Full look: the same stroke draws every frame in full.
@@ -610,10 +635,10 @@ export const suites = {
   },
 
   // Fast frames while the view moves: a mouse orbit, a finger and the
-  // wheel each count as moving; the AO is dropped and comes back, faded
-  // in, once the view stops (after its coast); the fill and rim are
-  // staggered; nothing is built or allocated. The viewer itself (?tl=)
-  // keeps full frames.
+  // wheel each count as moving; the AO is drawn on every one of those
+  // frames, with every sample - it used to be dropped, and to fade back in
+  // once the view stopped; the fill and rim are staggered; nothing is built
+  // or allocated. The viewer itself (?tl=) keeps full frames.
   async fastMove(page, base, t) {
     await openForInput(page, base);
     const dev = await devices(page);
@@ -633,18 +658,25 @@ export const suites = {
     const c0 = await camera(page);
     await frames(page, 2);
     const c1 = await camera(page);
-    t.ok(mid.kind === 'move' && mid.ao === 'off' && mid.aoDrop === 1 && mid.shadows === 'stagger', `orbiting, the AO is dropped and the fill and rim staggered (${show(mid)})`);
+    const still = await page.evaluate(() => window.__bozzetto.tierAoSamples);
+    t.ok(mid.kind === 'move' && mid.fast && mid.ao === 'full' && mid.shadows === 'stagger', `orbiting, the AO is drawn and the fill and rim staggered (${show(mid)})`);
     t.ok(Math.hypot(...c0.position.map((p, i) => p - c1.position[i])) > 1e-6, 'let go, the view coasts on');
     await stillAgain(page);
     const end = await frameMode(page);
-    t.ok(end.kind === null && end.ao === 'full' && end.aoDrop === 0, `stopped, the AO is back (${show(end)})`);
+    t.ok(end.kind === null && end.ao === 'full' && end.shadows === 'all', `stopped, full frames again (${show(end)})`);
     t.eq(show(grew(before, await counters(page))), '{}', 'no build or allocation from the press to the end of the coast');
-    const fade = await page.evaluate(() => window.__drops ?? []);
-    t.ok(fade.every((d, i) => i === 0 || d <= fade[i - 1] + 1e-9), `and it fades back in, never up again (${fade.map((d) => d.toFixed(2)).join(' ')})`);
+    // Every frame of the orbit and its coast drew the AO: the pass never
+    // skipped, its count up by one from each moving frame to the next, with
+    // every sample a still frame has.
+    const moving = await page.evaluate(() => window.__moving ?? []);
+    t.ok(
+      moving.length >= 2 && moving.every((f, i) => !f.skip && f.denoise && f.samples === still && (i === 0 || f.gtao === moving[i - 1].gtao + 1)),
+      `the AO is drawn on every moving frame, never dropped, with all ${still} samples (${moving.length} frames, GTAO passes ${moving[0]?.gtao} to ${moving[moving.length - 1]?.gtao})`,
+    );
 
     // A finger, as fingers navigate.
     const finger = await dev.finger(line(spot, [spot[0] + 40, spot[1] + 5], 3), () => frameMode(page));
-    t.ok(finger.kind === 'move' && finger.ao === 'off', `a finger orbiting counts as moving (${show(finger)})`);
+    t.ok(finger.kind === 'move' && finger.ao === 'full' && finger.shadows === 'stagger', `a finger orbiting counts as moving (${show(finger)})`);
     await settle(page);
     await stillAgain(page);
 
@@ -655,9 +687,27 @@ export const suites = {
     await page.mouse.wheel(0, -240);
     await frames(page, 3);
     const seen = await modesSeen(page);
-    t.ok(seen.some((m) => m.startsWith('move/off')), `a wheel zoom counts as moving the view (${seen.join(', ')})`);
+    t.ok(seen.some((m) => m.startsWith('move/full/stagger')) && !seen.some((m) => m.startsWith('move/held')), `a wheel zoom counts as moving the view (${seen.join(', ')})`);
     await settle(page);
     await stillAgain(page);
+
+    // Adaptive quality's step is the only thing that changes the AO's
+    // samples, and a move leaves what it set alone.
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.adaptive.apply(1);
+      v.debugInteraction = 'move';
+    });
+    await frames(page, 2);
+    const stepped = await page.evaluate(() => window.__bozzetto.aoNode.samples.value);
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.debugInteraction = undefined;
+      v.adaptive.apply(0);
+    });
+    await frames(page, 2);
+    const unstepped = await page.evaluate(() => window.__bozzetto.aoNode.samples.value);
+    t.ok(stepped === Math.max(4, still / 2) && unstepped === still, `adaptive quality's halved samples stay as it set them through a move (${stepped} of ${still}, then ${unstepped})`);
 
     // The viewer keeps full frames whatever moves.
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
@@ -676,9 +726,9 @@ export const suites = {
     t.ok(p1.gtao > p0.gtao, `GTAO drawn while it turns (${p0.gtao} then ${p1.gtao})`);
   },
 
-  // Armature mode: a pose drag (an IK ball) counts as moving, so the AO
-  // (GTAO, Armature's default) is dropped while it goes and nothing is
-  // built or allocated; the panel is rebuilt once when it ends, not on
+  // Armature mode: a pose drag (an IK ball) counts as moving: the AO
+  // (GTAO, Armature's default) is drawn through it, never dropped, and
+  // nothing is built or allocated; the panel is rebuilt once when it ends, not on
   // every move.
   async fastArmature(page, base, t) {
     await openArmature(page, base);
@@ -703,13 +753,16 @@ export const suites = {
     await page.mouse.down();
     await page.mouse.move(ball[0] + 30, ball[1] - 25, { steps: 4 });
     await frames(page, 1);
-    const mid = { mode: await frameMode(page), refreshes: await page.evaluate(() => window.__refreshes) };
+    const mid = { mode: await frameMode(page), refreshes: await page.evaluate(() => window.__refreshes), p: await passes(page) };
+    await frames(page, 2);
+    mid.p2 = await passes(page);
     await page.mouse.move(ball[0] + 45, ball[1] - 35, { steps: 2 });
     await page.mouse.up();
     await frames(page, 4);
     const hand1 = await page.evaluate(() => window.__armature.handlePosition('hand.L'));
     t.ok(Math.hypot(...hand0.map((v, i) => v - hand1[i])) > 2e-5, 'the drag moved the hand');
-    t.ok(mid.mode.kind === 'move' && mid.mode.ao === 'off' && mid.mode.fast, `mid-drag the AO is dropped (${show(mid.mode)})`);
+    t.ok(mid.mode.kind === 'move' && mid.mode.ao === 'full' && mid.mode.shadows === 'stagger' && mid.mode.fast, `mid-drag the AO is drawn, not dropped (${show(mid.mode)})`);
+    t.ok(mid.p2.gtao - mid.p.gtao >= 2 && mid.p2.denoise - mid.p.denoise >= 2, `GTAO and its denoise drawn on the frames of the drag (${mid.p.gtao} then ${mid.p2.gtao})`);
     t.eq(mid.refreshes, 0, 'the panel is not rebuilt during the drag');
     t.eq(await page.evaluate(() => window.__refreshes), 1, 'and is rebuilt once when it ends');
     t.eq(show(grew(before, await counters(page))), '{}', 'no build or allocation from the press to the frames after the release');
@@ -1330,13 +1383,31 @@ export const suites = {
         }, kind);
         await p2.waitForFunction(([f, n]) => window.__bozzetto.frameNo >= f + n + 1, [from, FRAMES], { timeout: 120_000 }).catch(() => {});
         out[kind ?? 'full'] = await recentFrames(p2, FRAMES);
+        // And the whole frame, start to start, over the next few drawn in
+        // this mode: in software the rasterizer's own time is in it, which
+        // is all there is here to say what the passes cost against each
+        // other (a GPU's times are not these).
+        out[kind ?? 'full'].wall = await p2.evaluate(async (n) => {
+          const v = window.__bozzetto;
+          await v.whenFramesDrawn(1);
+          const t0 = performance.now();
+          await v.whenFramesDrawn(n);
+          return (performance.now() - t0) / n;
+        }, FRAMES);
       }
       await p2.evaluate(() => {
         window.__bozzetto.debugInteraction = undefined;
       });
+      // A stroke skips GTAO and its denoise and holds the fill and rim; a
+      // move draws the AO and staggers the fill and rim, so its encode is
+      // about the full frame's, less a shadow pass.
       t.ok(
-        out.full.frames > 2 && out.move.encode < out.full.encode,
+        out.full.frames > 2 && out.stroke.encode < out.full.encode,
         `measure: encode ${fmt(out.full.encode)} ms full, ${fmt(out.stroke.encode)} ms under a stroke, ${fmt(out.move.encode)} ms moving (loop ${fmt(out.full.loop)} / ${fmt(out.stroke.loop)} / ${fmt(out.move.loop)} ms; medium tier, GTAO, floor, key and fill casting; ${out.full.frames}, ${out.stroke.frames}, ${out.move.frames} frames)`,
+      );
+      t.ok(
+        out.full.wall > 0 && out.move.wall > 0 && out.stroke.wall > 0,
+        `measure: a whole frame in software, start to start: ${fmt(out.full.wall)} ms full, ${fmt(out.move.wall)} ms moving (GTAO drawn, fill and rim in turn), ${fmt(out.stroke.wall)} ms under a stroke (GTAO held, fill and rim held)`,
       );
     } finally {
       await ctx.close();
