@@ -22,6 +22,8 @@
 - [ ] 2026-11-08: Restyle Bozzetto Web on Gestalt v2 (black and white grounds, no greys, orange for active, lime for tips, Familjen Grotesk, Martian Mono and Helvetica, square corners, hairlines, letters in place of icons), as in the "Bozzetto in Gestalt v2" mockup, or keep the current look (blocks: the restyle)
 - [x] 2026-11-08: Under Gestalt v2, the handwritten "Bozzetto" logotype on the loading screen: keep it as your own mark, or set the name in Familjen Grotesk as Gestalt's Wordmark does. Decided 2026-11-09: keep the hand-drawn logotype, in white on black or in orange (which of the two still to choose), on a new loading splash
 - [ ] 2026-11-08: Under Gestalt v2, corner brackets on the side panels: none, so brackets mark only the viewport and images (as the mockup has it now); brackets around every open panel; or brackets only around the panel in use (blocks: the panels in the restyle)
+- [ ] 2026-11-10: Clay, when Strength asks for more than the brush can lay in one stroke: one stroke now builds at most about two thirds of the brush's radius (taller builds tore on anatomy), so a higher Strength does nothing past that. Options: keep the cap as it is; show it (hold the strength line in the cursor to what the stroke will build); or lay strengths past the cap the old way, as one exact layer over the surface the stroke started on
+- [ ] 2026-11-10: Clay's default profile, now that the brush is SculptGL's again: keep Plateau (a flat-topped strip with a firm edge, the Strength calibrated for it) or make Soft the default (SculptGL's rounded build; it builds about half the Strength today and would get its own calibration)
 
 ## Notes for Bozzetto Studio
 
