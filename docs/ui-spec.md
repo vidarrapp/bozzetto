@@ -69,7 +69,9 @@ professional apps solve the same problems.
    is a mouse size. On touch they are 160px tall with a 44px wide target,
    and a left-handed setting moves them to the right edge.
 7. **Hotkey digits and key hints assume a keyboard.** On an iPad without
-   one they are noise. They show only when a keyboard is present.
+   one they are noise, and a web page cannot tell whether a keyboard is
+   attached. Both become View toggles, on by default in compact density
+   and off in touch.
 8. **Section headers carry numbers ("01 Material").** A number implies an
    order to follow, and folding sections have none. Inspectors in the
    apps compared use the name alone. Drop the numbers (**Proposed**).
@@ -115,9 +117,11 @@ professional apps solve the same problems.
 - The density follows the pointer, not the screen size: an iPad with a
   trackpad attached still starts in touch, because the pen is in use.
   Preferences offers Automatic, Compact and Touch.
-- **Keyboard present.** Hotkey digits on the tools and the key hints
-  above the tool bar show when a hardware keyboard has been used in this
-  session, and stay hidden until then on touch devices.
+- **Keyboard.** A web page cannot tell whether an iPad has a keyboard
+  attached, and the iPad runs the web app. So the hotkey digits on the
+  tools and the key hints above the tool bar are two View toggles
+  ("Hotkeys on tools", "Viewport hints"), on by default in compact and
+  off in touch, and remembered.
 - **Pen.** Hovering with a pen shows what hovering with a mouse shows.
   A long press with a pen or finger opens the context menu, and on a tool
   shows its name.
@@ -137,7 +141,7 @@ grows into this list.
 | Web | An in-window bar at the left of the title strip |
 | Mac desktop | The system menu bar: Bozzetto, File, Edit, View, Window, Help. About, Settings and Quit move to the Bozzetto menu, as the Mac expects |
 | Windows desktop | An in-window bar, as on the web. Preferences stays under Edit |
-| iPad | The in-window bar; the same commands are also given to the system's menu where the system has one |
+| iPad | The web app, so the in-window bar |
 
 **The menus, in order**
 
@@ -182,6 +186,7 @@ defaults and follow the platform's names.
 - Wireframe
 - Poly group colours
 - Viewport hints
+- Hotkeys on tools
 - View axes
 
 - Scene panel
@@ -209,14 +214,13 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ File Edit View Help      Project · Object · Tris · Level   ⌄ │  title strip
-├────────┐                                          ┌──────────┤
-│ Scene  │                                          │   Tool   │  tabs
-│ Model  │                                          │  Render  │
-│┌──────┐│                                          │┌────────┐│
-││ open ││              viewport                    ││  open  ││  one open
-││panel ││                                          ││ panel  ││  per side
-│└──────┘│                                          │└────────┘│
+│ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
+├─────────────┐                                   ┌─────────────┤
+│ Scene Model │                                   │ Tool Render │  tabs
+│┌───────────┐│                                   │┌───────────┐│
+││   open    ││            viewport               ││   open    ││  one open
+││   panel   ││                                   ││   panel   ││  per side
+│└───────────┘│                                   │└───────────┘│
 │ size   │                                          │          │
 │ strength         hints (keyboard only)            │          │
 │ solo undo redo  ┌────────────────────┐      axes  │          │
@@ -237,13 +241,15 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
 
 ### Panels
 
-- Each side has a column of tabs under the title strip: Scene and Model
-  on the left, Tool and Render on the right. A tab is a `ground` box with
+- Each side has a row of tabs under the title strip: Scene and Model on
+  the left, Tool and Render on the right. A tab is a `ground` box with
   the panel's name set horizontally.
 - **One panel is open per side** (**Proposed**). Pressing a tab opens its
-  panel under the tabs; pressing the open panel's tab, or the chevron in
-  its header, closes it. Opening the other tab on that side swaps them.
-  The open panel's tab is inverted, like an open menu's name.
+  panel under the tabs; pressing the open panel's tab
+  closes it; the panel's header has no close button of its own. Opening
+  the other tab on that side swaps them. The open panel's tab is
+  inverted, like an open menu's name. The header names what the panel is
+  about: the selected object in Model, the tool in hand in Tool.
 - A panel is 304px wide and as tall as its content, up to 16px above
   whatever sits below it on that edge; past that it scrolls inside.
 - Each panel remembers which of its sections are folded, and which panel
@@ -265,8 +271,8 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
   from the brightness of the picture behind it.
 - Size and strength show only while the Tool panel is closed, and for a
   moment when changed by a hotkey while it is open.
-- Undo and Redo show in touch density; in compact they are in Edit and
-  on their keys only (**Proposed**).
+- Undo and Redo are always shown (owner call, 2026-11-11), as well as
+  being in Edit.
 - Right edge, bottom: the view axes. Pressing an axis turns the view to
   look along it (**Proposed**).
 
@@ -311,13 +317,14 @@ states" board. This section adds behaviour.
 
 ## 8. Viewport hints and modifiers
 
-- With a keyboard: the keys that change the current tool (Shift Smooth,
-  Ctrl Mask, Alt Carve) sit above the tool bar, each key in a hairline
-  box, and can be switched off in View.
-- Without a keyboard there is no way to hold Shift. The row becomes hold
-  buttons with the same names: holding one with the free hand while the
-  pen draws acts as the key does (**Proposed**; needs a look at how
-  smoothing and masking are reached on iPad today).
+- The keys that change the current tool (Shift Smooth, Ctrl Mask, Alt
+  Carve) sit above the tool bar, each key in a hairline box, when
+  "Viewport hints" is on in View.
+- Holding a button with the free hand to smooth, mask or carve while the
+  pen draws cannot be done reliably in a web page on iPad (looked into
+  before; it needs a native app). Touch keeps what it has today: the
+  Negative button, and Smooth and Mask reached as they are now. The
+  desktop and any native iPad version can revisit it.
 
 ## 9. Windows, notices and progress
 
@@ -346,7 +353,7 @@ states" board. This section adds behaviour.
 3. One open panel per side, with the open panel's tab inverted.
 4. The project name in the title strip.
 5. Surfaces carry no outline; an outline means a control.
-6. Hotkey digits and key hints only when a keyboard is present.
+6. Hotkey digits and key hints as View toggles, off by default in touch.
 7. Section headers without numbers, if agreed.
 8. Notices, progress and context menus as specified above.
 
