@@ -21,7 +21,7 @@ import {
   Vector2,
   Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, mix } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -101,14 +101,22 @@ const PLAYBACK_MIN_BUFFER = 4;
 /**
  * GTAO's defaults (Render panel > Ambient occlusion > GTAO), set on a box
  * room, the default sphere on the floor and on the pedestal, a head and
- * the mannequin. The radius is a fraction of the subject's bounding
- * radius. At 0.5 it felt large for the scene (owner report) - in a box
+ * the mannequin. The strength is an exponent on the term (see
+ * buildPipeline): 1, the term as computed, sits mid-travel.
+ *
+ * The radius is a real length where the scene is on real units
+ * (`radiusCm`, in centimetres: owner report - as a share of the subject,
+ * the smallest setting on a whole body was 4.5 cm, a dark blob the size of
+ * an eye in the corner of one, where on a head alone it was 6 mm). Two
+ * centimetres reads as contact shading on a head and on a figure alike.
+ * Where nobody knows what a unit is (the viewer on a project from before
+ * real units) it stays the share of the subject's bounding radius it was,
+ * `radius`: at 0.5 that felt large for the scene (owner report) - in a box
  * room it shaded most of each wall - and the owner had settled on 0.2 with
  * the old term; this one fades towards the edge of its radius (gtao.ts),
- * so 0.3 now reaches about as far as 0.2 did. The strength is an exponent
- * on the term (see buildPipeline): 1, the term as computed, sits mid-travel.
+ * so 0.3 now reaches about as far as 0.2 did.
  */
-export const DEFAULT_AO = { intensity: 1, radius: 0.3 } as const;
+export const DEFAULT_AO = { intensity: 1, radius: 0.3, radiusCm: 2 } as const;
 
 /** The sculpt cavity's defaults: its strength, and its tap radius in pixels. */
 export const DEFAULT_CAVITY = { strength: 0.9, radius: 8 } as const;
@@ -129,8 +137,22 @@ export interface AOState {
   enabled: boolean;
   /** GTAO blend strength (ignored by the SSAO fallback). */
   intensity: number;
-  /** AO sample radius as a fraction of the subject radius. */
+  /**
+   * AO sample radius as a fraction of the subject's bounding radius: what
+   * draws where the scene has no real units, and all a record from before
+   * `radiusCm` carries. Saved on real units beside a `radiusCm`, it is
+   * that length as a share of the subject it was saved over, so a reader
+   * without real units draws the same reach.
+   */
   radius: number;
+  /**
+   * AO sample radius in centimetres: what draws in a scene on real units.
+   * Absent in a record from before it, which keeps drawing its `radius`
+   * share of the subject, so it opens to the picture it had, until the
+   * Radius control is moved (Viewer.setAO). Saved without real units, it
+   * is the length waiting for them (the default, until a share is set).
+   */
+  radiusCm?: number;
 }
 
 /** Depth-of-field state (persisted in `camera.dof`). */
@@ -288,11 +310,9 @@ const GPU_WAIT_MAX_MS = 5_000;
 const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
 
 /**
- * Fast frames (Viewer.updateFrameMode): how long ambient occlusion takes to
- * fade back in once the view stops, and how recently the camera must have
+ * Fast frames (Viewer.updateFrameMode): how recently the camera must have
  * moved to count as moving (the damped coast after a drag, a wheel zoom).
  */
-const AO_FADE_MS = 150;
 const MOVED_WITHIN_MS = 150;
 /**
  * The smallest turn (radians) or move (share of the orbit distance) in a
@@ -512,9 +532,9 @@ export class Viewer {
   private donePending = false;
 
   /**
-   * Fast frames: while a stroke, a pose drag or the view is moving, ambient
-   * occlusion holds or steps aside and the fill and rim shadows refresh
-   * less often (updateFrameMode). The editors switch this on while they are
+   * Fast frames: under a stroke ambient occlusion holds, and while a
+   * stroke, a pose drag or the view is moving the fill and rim shadows
+   * refresh less often (updateFrameMode). The editors switch this on while they are
    * mounted (Sculpt, Armature); the viewer and embeds draw every frame full.
    */
   fastFrames = false;
@@ -532,8 +552,6 @@ export class Viewer {
   private interaction: InteractionKind | null = null;
   /** The AO texture matches the view and the scene as they are (safe to hold). */
   private aoValid = false;
-  /** 0: the AO term as drawn; 1: no AO (the view is moving). Fades back on its own clock. */
-  private readonly aoDropU = uniform(0);
   /** The denoised AO, drawn to a texture of its own so a stroke can hold it. */
   private aoRtt: ReturnType<typeof rtt> | null = null;
   /** Denoise passes drawn since boot. */
@@ -617,7 +635,14 @@ export class Viewer {
   private readonly sculptAoRadiusU = uniform(DEFAULT_CAVITY.radius);
   private aoEnabled = true; // AO on by default
   private aoIntensity: number = DEFAULT_AO.intensity;
+  /** The radius as a share of the subject's: drawn without real units, or with no `aoRadiusCm`. */
   private aoRadiusFraction: number = DEFAULT_AO.radius;
+  /**
+   * The radius in centimetres, drawn in a scene on real units; null once a
+   * record from before it (a share alone) has been read, which then keeps
+   * its share on real units too.
+   */
+  private aoRadiusCm: number | null = DEFAULT_AO.radiusCm;
   private subjectRadius = 1;
   /** `?aodebug`: render the raw GTAO buffer (untone-mapped) and log AO params. */
   private readonly aoDebug = new URLSearchParams(location.search).has('aodebug');
@@ -1305,6 +1330,7 @@ export class Viewer {
    */
   lockFloor(y: number | null): void {
     this.floorY = y;
+    this.applyAoRadius(); // a length on real units, a share of the subject without
     if (y !== null && this.groundMode === 'pedestal') this.groundMode = 'floor';
     this.layoutStage();
     this.updateStage();
@@ -1740,26 +1766,24 @@ export class Viewer {
 
   /**
    * What the frames are doing now, for the meter and the tests: the kind of
-   * interaction, whether the AO is held or dropped, how the fill and rim
-   * shadows are scheduled, and the builds across the last interaction.
+   * interaction, whether the AO is held (a stroke) or drawn, how the fill
+   * and rim shadows are scheduled, and the builds across the last
+   * interaction.
    */
   frameMode(): {
     kind: InteractionKind | null;
     fast: boolean;
-    ao: 'full' | 'held' | 'off' | 'fading';
-    aoDrop: number;
+    ao: 'full' | 'held';
     shadows: 'all' | 'hold' | 'stagger';
     lastInteraction: RenderCounters | null;
   } {
     const fast = this.fastActive();
     const kind = fast ? this.interaction : null;
-    const drop = this.aoDropU.value as number;
-    const ao = kind === 'move' ? 'off' : this.aoNode?.skip ? 'held' : drop > 0 ? 'fading' : 'full';
+    const ao = this.aoNode?.skip ? 'held' : 'full';
     return {
       kind: this.interaction,
       fast,
       ao,
-      aoDrop: drop,
       shadows: kind === 'stroke' ? 'hold' : kind === 'move' ? 'stagger' : 'all',
       lastInteraction: this.lastInteractionDelta ? { ...this.lastInteractionDelta } : null,
     };
@@ -1865,13 +1889,11 @@ export class Viewer {
     const info = this.renderer.info.render as { drawCalls?: number; calls?: number; triangles?: number };
     const mode = this.frameMode();
     // The AO part only where GTAO is drawn at all: the cavity, and no AO,
-    // have nothing to hold or drop.
-    const aoText = this.aoEnabled ? ` · AO ${mode.ao}` : '';
+    // have nothing to hold.
+    const aoText = this.aoEnabled ? ` · AO ${mode.ao === 'held' ? 'held' : 'drawn'}` : '';
     const modeText = mode.kind
       ? `${mode.kind === 'stroke' ? 'stroke' : 'moving'}${mode.fast ? `${aoText} · fill/rim ${mode.shadows === 'all' ? 'every frame' : mode.shadows === 'hold' ? 'held' : 'every 3rd frame'}` : ' · full look'}`
-      : mode.ao === 'fading'
-        ? 'still · AO fading in'
-        : 'still';
+      : 'still';
     const last = mode.lastInteraction;
     const given = this.frameStats.reportedPeriod ? (this.pacing.displayHz > 0 ? ' (display)' : ' (assumed)') : '';
     const refresh = s.refreshHz ? `${s.refreshHz} Hz${given}` : '…';
@@ -1904,7 +1926,7 @@ export class Viewer {
       ...rows,
       ['size', `${w}×${h} @${this.renderer.getPixelRatio()}x`],
       ['material', this.currentMode],
-      ['AO', this.aoEnabled ? `str ${this.aoIntensity.toFixed(2)} · rad ${this.aoRadiusFraction.toFixed(2)}` : 'off'],
+      ['AO', this.aoEnabled ? `str ${this.aoIntensity.toFixed(2)} · rad ${this.aoRadiusText()}` : 'off'],
       [
         'DoF',
         this.dofEnabled
@@ -1940,16 +1962,60 @@ export class Viewer {
       this.rebuildOutput(); // GTAO joins or leaves the graph
     }
     if (typeof state.intensity === 'number') this.aoIntensity = state.intensity;
+    const cm = finite(state.radiusCm) && state.radiusCm > 0 ? state.radiusCm : null;
     if (typeof state.radius === 'number') {
+      // A share with no length beside it is a record from before the
+      // radius was a length (or the control of a scene without real
+      // units): it goes on drawing as that share.
       this.aoRadiusFraction = state.radius;
-      this.applyAoRadius();
+      this.aoRadiusCm = cm;
+    } else if (cm !== null) {
+      this.aoRadiusCm = cm;
     }
+    if (typeof state.radius === 'number' || cm !== null) this.applyAoRadius();
     this.applyAoStrength();
     this.invalidate();
   }
 
+  /**
+   * The AO as a record. While a length draws (a scene on real units), the
+   * share beside it is that length over the subject as it now stands, so a
+   * reader without real units, or from before `radiusCm`, draws the same
+   * reach.
+   */
   getAOState(): AOState {
-    return { enabled: this.aoEnabled, intensity: this.aoIntensity, radius: this.aoRadiusFraction };
+    const cm = this.aoRadiusCm;
+    const inCm = cm !== null && this.realUnits() !== null;
+    return {
+      enabled: this.aoEnabled,
+      intensity: this.aoIntensity,
+      radius: inCm ? cm / this.subjectRadius : this.aoRadiusFraction,
+      ...(cm !== null ? { radiusCm: cm } : {}),
+    };
+  }
+
+  /**
+   * What the Radius control shows and sets: centimetres in a scene on real
+   * units (`unit` 'cm', set with `setAO({ radiusCm })`) - for a record
+   * from before that, its share of the subject as the length it comes to -
+   * and the share of the subject where there are none (`setAO({ radius })`).
+   */
+  getAORadius(): { unit: Units | null; value: number } {
+    const unit = this.realUnits();
+    return { unit, value: unit ? this.aoWorldRadius() : this.aoRadiusFraction };
+  }
+
+  /** The AO's sample radius in world units, as it is drawn. */
+  private aoWorldRadius(): number {
+    return this.aoRadiusCm !== null && this.realUnits() !== null
+      ? this.aoRadiusCm
+      : this.aoRadiusFraction * this.subjectRadius;
+  }
+
+  /** The meter's AO radius: the length on real units, else the share of the subject. */
+  private aoRadiusText(): string {
+    const units = this.realUnits();
+    return units ? formatSceneLength(this.aoWorldRadius(), units) : this.aoRadiusFraction.toFixed(2);
   }
 
   /** DoF is available once the node pipeline built (it always does on WebGPU). */
@@ -2930,10 +2996,8 @@ export class Viewer {
     // its square. It was a blend, mix(1, term, strength), which past 1 ran
     // below zero wherever the term fell under 1 - 1/strength and was floored
     // to black there - every half-occluded pixel at strength 2. A power
-    // deepens the same pixels without ever crossing zero. The drop fades it
-    // to none while the view moves (updateFrameMode): a uniform, so dropping
-    // it changes no shader.
-    const aoFactor = mix(pow(aoTerm, this.aoStrengthU), float(1), this.aoDropU);
+    // deepens the same pixels without ever crossing zero.
+    const aoFactor = pow(aoTerm, this.aoStrengthU);
 
     // Sculpt-mode composite: a small depth-only SSAO (8 taps), the cavity.
     // Depth ignores facet normals, so flat shading shows no grid at facet
@@ -3112,10 +3176,17 @@ export class Viewer {
     this.aoStrengthU.value = this.aoEnabled ? this.aoIntensity : 0;
   }
 
-  /** AO sample radius scales with the subject, so the look is scale-independent. */
+  /**
+   * The AO's sample radius, in world units: the length asked for in a
+   * scene on real units, whatever the subject's size; else a share of the
+   * subject's radius, as a scene without real units and a record from
+   * before the length have it (aoWorldRadius). Again whenever the subject
+   * is fitted or the floor is held or let go (which is how a scene says it
+   * is on real units).
+   */
   private applyAoRadius(): void {
     if (!this.aoNode) return;
-    const radius = this.aoRadiusFraction * this.subjectRadius;
+    const radius = this.aoWorldRadius();
     this.aoNode.radius.value = radius;
     // The denoise's depth tolerance is in world units too (its default of 5
     // is a small fraction of a subject here, or most of one): a neighbour
@@ -3345,15 +3416,22 @@ export class Viewer {
    * the AO texture from the last full frame stays: GTAO and its denoise are
    * skipped, and nothing outside the brush changes, so pen-down shows no
    * pop. While anything moves ('move': the camera, the gizmo, a pose drag) a
-   * held screen-space AO would smear across the view, so the AO is dropped,
-   * and fades back over AO_FADE_MS once things stop. A held AO is always one
-   * drawn for the view on screen: after a move, a stroke draws one full
-   * frame before holding. The fill and rim shadows hold under a stroke and
-   * redraw in turn while things move (Lighting.scheduleShadows).
+   * held screen-space AO would smear across the view, so the AO is drawn,
+   * on every frame and in full, as a still frame draws it. It used to be
+   * dropped while anything moved and faded back in after (owner report:
+   * the AO vanished on every turn of the model and came back a moment
+   * later). Fewer samples while moving were tried and left out: in this
+   * GTAO the count sets how many steps reach inside the radius, so half
+   * the samples drew half the darkening or less (17 to 72% of it on the
+   * mannequin, at 2 to 5 cm), and the AO deepened as the view stopped,
+   * which is the same complaint. A held AO is always one drawn for the
+   * view on screen: after a move, a stroke draws one frame before
+   * holding. The fill and rim shadows hold under a stroke and redraw in
+   * turn while things move (Lighting.scheduleShadows).
    *
-   * None of it builds, compiles or allocates anything: passes are skipped,
-   * a uniform moves and the shadows' update flags change. The skipped passes
-   * were compiled by the full frames before, and keep their targets.
+   * None of it builds, compiles or allocates anything: passes are skipped
+   * and the shadows' update flags change. The skipped passes were compiled
+   * by the full frames before, and keep their targets.
    */
   private updateFrameMode(now: number, dt: number): void {
     const moved = this.cameraMoved();
@@ -3374,20 +3452,11 @@ export class Viewer {
     const fast = this.fastActive();
     const ao = this.aoNode;
     const denoise = this.aoRtt;
-    if (fast && kind === 'move') {
-      if (ao) ao.skip = true;
-      if (denoise) denoise.autoUpdate = false;
-      this.aoValid = false;
-      this.aoDropU.value = 1;
-    } else {
-      const hold = fast && kind === 'stroke' && this.aoValid && !moved;
-      if (ao) ao.skip = hold;
-      if (denoise) denoise.autoUpdate = !hold;
-      // Not held: this frame draws the AO for the view as it now stands.
-      if (!hold) this.aoValid = this.aoEnabled;
-      const drop = this.aoDropU.value as number;
-      if (drop > 0) this.aoDropU.value = Math.max(0, drop - (dt * 1000) / AO_FADE_MS);
-    }
+    const hold = fast && kind === 'stroke' && this.aoValid && !moved;
+    if (ao) ao.skip = hold;
+    if (denoise) denoise.autoUpdate = !hold;
+    // Not held: this frame draws the AO for the view as it now stands.
+    if (!hold) this.aoValid = this.aoEnabled;
     this.lighting.scheduleShadows(
       fast && kind === 'stroke' ? 'hold' : fast && kind === 'move' ? 'stagger' : 'all',
       this.frameNo,

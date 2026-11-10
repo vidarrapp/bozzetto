@@ -32,8 +32,14 @@
 //   the tines' spacing and half-width, laid across the hover motion (a
 //   jitter barely turns them) and across the drag mid-stroke, on the
 //   stroke's own axis; Taper fades the outer circles; other brushes draw
-//   the single ring.
-import { openForInput, openPanel } from './smoke.mjs';
+//   the single ring;
+// - the size being set (owner request): held b and dragged over the
+//   plane, the tine circles grow with the surface ring; off the mesh, from
+//   the ] key and from the size slider, the screen-space ring has the same
+//   circles to its own scale (count, spacing, half-width, taper), in a row
+//   along the across axis as the surface last showed it, or level when it
+//   never has; another brush's screen ring has none.
+import { emptySpot, openForInput, openPanel } from './smoke.mjs';
 
 const RAKE = 13; // Enums.Tools.RAKE
 
@@ -300,14 +306,20 @@ function cursorRead({ at, dir }) {
   const ring = root.querySelector('.sculpt-cursor__ring--main');
   const tines = root.querySelector('.sculpt-cursor__tines');
   const probe = input.cursor.tineProbe;
+  // The screen-space ring, where that is what shows: four points of it
+  // stand in for the surface ring's loop, so the layout reads the same.
+  const circle = root.querySelector('circle.sculpt-cursor__ring');
+  const [sx, sy, sr] = ['cx', 'cy', 'r'].map((k) => Number(circle.getAttribute(k)));
+  const onScreen = root.dataset.mode === 'screen';
   const out = {
     mode: root.dataset.mode,
     rake: root.classList.contains('is-rake'),
-    ring: loops(ring.getAttribute('d')),
-    ringOpacity: Number(getComputedStyle(ring).opacity),
+    ring: onScreen ? [[[sx - sr, sy], [sx, sy - sr], [sx + sr, sy], [sx, sy + sr]]] : loops(ring.getAttribute('d')),
+    ringOpacity: Number(getComputedStyle(onScreen ? circle : ring).opacity),
+    tinesShown: getComputedStyle(tines).display !== 'none',
     tines: loops(tines.getAttribute('d')),
     stops: [...root.querySelectorAll('.sculpt-cursor__tine-stop')].map((x) => Number(x.getAttribute('stop-opacity') ?? 1)),
-    probe: probe && { ...probe, across: [...probe.across] },
+    probe: probe && { ...probe, across: [...probe.across], screenAcross: [...probe.screenAcross] },
   };
   if (at && dir) {
     // The world points under the two screen points, through the picking
@@ -328,7 +340,8 @@ function cursorRead({ at, dir }) {
     out.motion = d.map((x) => x / l);
   }
   const tool = session.getSculptManager().getTool(13);
-  if (tool.strokeAcross) {
+  // Off the mesh nothing is picked: the stroke's axis has no mesh to be read in.
+  if (tool.strokeAcross && session.getPicking().getMesh()) {
     const m = session.getPicking().getMesh().getMatrix();
     const a = tool.strokeAcross;
     const w = [0, 1, 2].map((k) => m[k] * a[0] + m[4 + k] * a[1] + m[8 + k] * a[2]);
@@ -523,6 +536,126 @@ export const suites = {
     lay = tineLayout(c);
     t.ok(c.stops.join() === `${0.2 + 0.8 * 0.4},1,${0.2 + 0.8 * 0.4}` && lay.sizes.every((r) => Math.abs(r / (0.7 / 4) - 1) < 0.15), `Taper 0.6 fades the circles toward the rim (stop opacities ${c.stops.join(', ')}), the same size`);
     await page.evaluate(cursorSetup, { preset: 'coarse' });
+
+    // The size being set. Over the plane, held b and dragged: the surface
+    // ring grows and the tine circles with it.
+    const size0 = await page.evaluate(() => window.__sculpt.input.getBrushRadius());
+    await hover([mid[0] - 80, mid[1]], mid);
+    const rest = await page.evaluate(cursorRead, {});
+    const restRing = loopShape(rest.ring[0]).r;
+    await page.keyboard.down('b');
+    await page.mouse.down();
+    await page.mouse.move(mid[0] + 60, mid[1], { steps: 6 });
+    await frames(page);
+    c = await page.evaluate(cursorRead, {});
+    await page.mouse.up();
+    await page.keyboard.up('b');
+    lay = tineLayout(c);
+    const grown = loopShape(c.ring[0]).r;
+    t.ok(c.mode === 'surface' && grown > 1.1 * restRing, `held b and dragged over the plane, the surface ring grows (${restRing.toFixed(1)} to ${grown.toFixed(1)} px)`);
+    t.ok(
+      lay.n === 4 && lay.gaps.every((g) => Math.abs(g / 0.5 - 1) < 0.15) && lay.sizes.every((r) => Math.abs(r / (0.7 / 4) - 1) < 0.15) && lay.centred < 0.05,
+      `and its four tine circles with it, the same shares of the ring (gaps ${lay.gaps.map((g) => g.toFixed(3)).join(', ')}, sizes ${lay.sizes.map((r) => r.toFixed(3)).join(', ')})`,
+    );
+    const surfaceAxis = c.probe.screenAcross;
+    // The row those circles stand in on screen, as the probe says it.
+    const rowOf = (cur) => {
+      const shapes = cur.tines.map(loopShape);
+      const a = shapes[0].c;
+      const b = shapes[shapes.length - 1].c;
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      return [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+    };
+    const along = (u, v) => Math.abs(u[0] * v[0] + u[1] * v[1]);
+    t.ok(along(rowOf(c), surfaceAxis) > 0.99, `the probe keeps the row's direction on screen (${surfaceAxis.map((x) => x.toFixed(2)).join(', ')})`);
+
+    // Off the mesh: the screen-space ring, with the same circles to its scale.
+    const off = (await emptySpot(page)) ?? [200, 500];
+    await page.mouse.move(off[0] - 6, off[1]);
+    await page.mouse.move(off[0], off[1], { steps: 2 });
+    await frames(page);
+    c = await page.evaluate(cursorRead, {});
+    t.eq(c.mode, 'hidden', 'off the plane the cursor is hidden');
+    const screenChecks = (cur, what, axis) => {
+      const l = tineLayout(cur);
+      t.ok(cur.mode === 'screen' && cur.rake && cur.tinesShown && cur.probe?.space === 'screen' && cur.probe.count === 4, `${what}: the screen ring shows, with the Rake's tines in it (mode ${cur.mode}, ${JSON.stringify(cur.probe)})`);
+      t.ok(
+        l.n === 4 && l.gaps.every((g) => Math.abs(g / 0.5 - 1) < 0.05) && l.sizes.every((r) => Math.abs(r / (0.7 / 4) - 1) < 0.05) && l.centred < 0.02,
+        `${what}: four circles a slot apart (2 / 4 of the ring's radius), each 0.7 / 4 of it, around its middle (gaps ${l.gaps.map((g) => g.toFixed(3)).join(', ')}, sizes ${l.sizes.map((r) => r.toFixed(3)).join(', ')})`,
+      );
+      t.ok(along(rowOf(cur), axis) > 0.99 && along(cur.probe.screenAcross, axis) > 0.999, `${what}: in a row along ${axis.map((x) => x.toFixed(2)).join(', ')} on screen (${rowOf(cur).map((x) => x.toFixed(2)).join(', ')})`);
+      return l;
+    };
+    // Held b off the mesh, then dragged.
+    await page.keyboard.down('b');
+    await frames(page);
+    c = await page.evaluate(cursorRead, {});
+    screenChecks(c, 'b held off the mesh', surfaceAxis);
+    const ringB = loopShape(c.ring[0]);
+    t.ok(Math.abs(ringB.c[0] - off[0]) < 1.5 && Math.abs(ringB.c[1] - off[1]) < 1.5 && c.ringOpacity > 0.8, `the ring at the pointer, as strong as ever (opacity ${c.ringOpacity})`);
+    await page.mouse.down();
+    await page.mouse.move(off[0] - 40, off[1], { steps: 5 });
+    await frames(page);
+    const shrunk = await page.evaluate(cursorRead, {});
+    await page.mouse.up();
+    await page.keyboard.up('b');
+    screenChecks(shrunk, 'dragged smaller', surfaceAxis);
+    const ringS = loopShape(shrunk.ring[0]).r;
+    t.ok(ringS < 0.93 * ringB.r && Math.abs(shrunk.probe.radius - (ringS * 0.7) / 4) < 0.05, `the circles shrink with the ring (${ringB.r.toFixed(1)} to ${ringS.toFixed(1)} px, each ${shrunk.probe.radius.toFixed(2)} px)`);
+    // The ] key: the ring flashes where the pointer is, tines in it.
+    await page.waitForTimeout(600);
+    await page.keyboard.press(']');
+    c = await page.evaluate(cursorRead, {});
+    screenChecks(c, 'the ] key', surfaceAxis);
+    // The size slider: the ring flashes mid-view.
+    await page.waitForTimeout(600);
+    const view = await page.evaluate((px) => {
+      const { input } = window.__sculpt;
+      input.setBrushRadius(px);
+      const r = input.container.getBoundingClientRect();
+      return [r.width / 2, r.height / 2];
+    }, size0);
+    c = await page.evaluate(cursorRead, {});
+    screenChecks(c, 'the size slider', surfaceAxis);
+    const ringV = loopShape(c.ring[0]);
+    t.ok(Math.abs(ringV.c[0] - view[0]) < 1.5 && Math.abs(ringV.c[1] - view[1]) < 1.5, `mid-view (${ringV.c.map((x) => x.toFixed(0)).join(', ')})`);
+    // Taper fades the screen ring's circles as it does the surface's, and
+    // a knob moved shows at once.
+    c = await page.evaluate(() => {
+      const { session, input } = window.__sculpt;
+      session.getSculptManager().getTool(13).set({ tines: 6, width: 0.5, taper: 0.6 });
+      input.refreshBrushCursor();
+    }).then(() => page.evaluate(cursorRead, {}));
+    lay = tineLayout(c);
+    t.ok(
+      c.mode === 'screen' && lay.n === 6 && lay.gaps.every((g) => Math.abs(g / (2 / 6) - 1) < 0.05) && lay.sizes.every((r) => Math.abs(r / (0.5 / 6) - 1) < 0.08) && c.stops.join() === `${0.2 + 0.8 * 0.4},1,${0.2 + 0.8 * 0.4}`,
+      `six tapered tines set in the Tool panel show in the screen ring at once (${lay.n} circles, stop opacities ${c.stops.join(', ')})`,
+    );
+    // With no surface ring drawn yet, the row is level.
+    await page.waitForTimeout(600);
+    c = await page.evaluate(() => {
+      const { input } = window.__sculpt;
+      window.__keptAxis = input.cursor.lastAcrossScreen;
+      input.cursor.lastAcrossScreen = null;
+      input.setBrushRadius(input.getBrushRadius());
+    }).then(() => page.evaluate(cursorRead, {}));
+    t.ok(c.mode === 'screen' && along(rowOf(c), [1, 0]) > 0.999, `before any surface ring has shown them, the row is level (${rowOf(c).map((x) => x.toFixed(2)).join(', ')})`);
+    await page.evaluate(() => {
+      window.__sculpt.input.cursor.lastAcrossScreen = window.__keptAxis;
+    });
+    // Another brush: the screen ring alone.
+    await page.waitForTimeout(600);
+    await page.keyboard.press('3');
+    const size3 = await page.evaluate(() => window.__sculpt.input.getBrushRadius());
+    await page.keyboard.press(']');
+    c = await page.evaluate(cursorRead, {});
+    t.ok(c.mode === 'screen' && !c.rake && c.tines.length === 0 && c.probe === null, `another brush's screen ring has no tines (${c.tines.length} circles)`);
+    await page.evaluate((px) => window.__sculpt.input.setBrushRadius(px), size3);
+    await page.keyboard.press('7');
+    await page.waitForTimeout(600);
+    await page.evaluate(cursorSetup, { preset: 'coarse' });
+    await page.evaluate((px) => window.__sculpt.input.setBrushRadius(px), size0);
+    await page.waitForTimeout(600);
 
     // Other brushes: the single ring.
     for (const key of ['3', '1', '6']) {

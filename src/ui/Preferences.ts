@@ -90,7 +90,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       [
         'fast',
         'Fast frames',
-        'Ambient occlusion holds still under a stroke and steps aside while the view or a pose moves, and the fill and rim shadows redraw less often, so each frame keeps up with the pen. All of it is back as you let go.',
+        'Ambient occlusion holds still under a stroke, and the fill and rim shadows redraw less often while you stroke, pose or move the view, so each frame keeps up with the pen. All of it is back as you let go.',
       ],
       ['full', 'Full look', 'Every frame is drawn in full, as a still one is.'],
     ],
