@@ -268,8 +268,10 @@ line gets the falloff summed over dabs `stepLocal` apart, about
 The rake (`RakeBrush`) lays `tines` tines across the brush, perpendicular
 to the stroke, and cuts a groove under each. Since 2026-10-24 it is a
 standard brush, not a clay one: each dab displaces along the normal and the
-dabs add up (a second pass cuts deeper), where it used to move each vertex
-toward a target height over a plane. Each dab's record holds:
+dabs add up, where it used to move each vertex toward a target height over
+a plane. Since 2026-11-10 its `level` (Stop at depth, on in every preset
+and so in the fixtures) holds the cut to a floor, below; with it off a
+second pass cuts deeper. Each dab's record holds:
 
 ```
 tines, width, strength, scrape, taper the knobs as the dab used them
@@ -291,6 +293,9 @@ directionFrom  'press' (first dab: from the press point), 'previous-dab',
 areaNormal     the plane's normal, fitted to the form (below)
 areaCenter     the plane's point: the mask-weighted mean of the front
                vertices' form positions
+level          Stop at depth, as the dab applied it
+levelRef       with level (and depthLocal > 0): the reference surface,
+               { coef: [a, b, c, d, e, f], offset } (below); else null
 ```
 
 The form: a vertex's current position minus the cut this stroke has made
@@ -344,6 +349,55 @@ stroke speed (RAKE_MIN_CHORD = 0.2 holds the factor at the disc's rim).
 Scrape 0 leaves the form as it was between the grooves; 1 planes the
 footprint onto the plane and cuts the grooves into the flat. A scene's
 saved `plateau`, from before Scrape, is read as the scrape.
+
+### Stop at depth
+
+With `level` the cut is held to a floor under a reference surface, fitted
+per dab (`levelSurface` in `tools.ts`). Beside `cut` the stroke keeps, per
+vertex, `scr` (the sum of the scrape's moves this stroke, a vector) and
+`kept` (the product of `1 - rate` over the dabs that scraped it; 1 at the
+press), valid as `cut` is. The reference is fitted to the front vertices as
+they were before the stroke, `o = v - cut - scr`, mask-weighted, over the
+dab's plane (`x = (o - areaCenter) . across / r`, `y` the same on `along`,
+`z = (o - areaCenter) . areaNormal`):
+
+1. `coef`: the least-squares fit of `z` to `a + b x + c y + d x^2 + e x y +
+   f y^2` (weights the mask; the 6 x 6 normal equations by Gauss with
+   partial pivoting). All zero when fewer than LEVEL_MIN_VERTICES (24)
+   front vertices are unmasked or the system is singular (a pivot under
+   1e-10 of the largest diagonal entry).
+2. `offset`: the unmasked front vertices go into `tines x tines` cells by
+   `ku = clamp(floor((x - cx + 1) * tines / 2))`, `kw` the same on `y - cy`
+   (`cx, cy` the intersection's `x, y`); each cell keeps its highest
+   `s * (z - q(x, y))` (`q` the quadric, `s` as above) and its vertex
+   count; the cells are sorted by that height, lowest first, and the
+   offset is `s` times the height of the first cell at which the running
+   count reaches half the unmasked vertices.
+3. Step 1 again, each `z` whose `h = s * (z - q(x, y))` is under
+   `floor = that height - LEVEL_BAND * depthLocal` (LEVEL_BAND = 0.2)
+   raised to it (`z + s * (floor - h)`); if that fit holds (24 vertices,
+   not singular), step 2 again over the new quadric, otherwise steps 1
+   and 2 stand.
+
+Then, per vertex, with the scrape step keeping `scr` and `kept`
+(`scr -= n * h * rate; kept *= 1 - rate`) and `o` taken before it:
+
+```
+full  = depthLocal * prof * (1 - taper * |centre|) * mask
+share = |amount| as above
+x, y  = (o - areaCenter) . across / r, (o - areaCenter) . along / r
+stood = (o - areaCenter) . n - (q(x, y) + offset)
+sunk  = cut . n - ((b + 2 d x + e y) * (cut . across)
+                 + (c + e x + 2 f y) * (cut . along)) / r * kept
+room  = s * (stood * kept + sunk) + full
+share = room > 0 ? min(share, room) : 0
+amount = -s * share
+```
+
+`cut` here is the cut before this dab's. On an even surface one stroke
+cuts `depthLocal` and the same stroke again adds next to nothing; what
+stands above the reference is cut by each pass until it is `full` below
+it, and what lies below that is left.
 
 ## Smooth's Surface mode
 
@@ -454,8 +508,9 @@ clay brush and the rake have their own constants (`CLAY_*`, `RAKE_*` in
 `meta.engine.bridgeConstants`): clay is spacing 0.1, the Plateau curve and a
 pressure-driven layer of 1.5 cm (its strength); the rake is spacing 0.06 and
 the Coarse preset (4 Round tines, width 0.7, strength 0.3 cm, Scrape 0.25,
-no taper), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD for its spacing
-factor and RAKE_SCRAPE_STRENGTH for its scrape. Retuning one re-records
+no taper, Stop at depth on), with RAKE_ALONG_INTEGRAL and RAKE_MIN_CHORD
+for its spacing factor, RAKE_SCRAPE_STRENGTH for its scrape and
+LEVEL_MIN_VERTICES and LEVEL_BAND for Stop at depth. Retuning one re-records
 only its own fixtures.
 
 October 2026: the brushes moved onto profile curves and the stencil rake
@@ -493,3 +548,8 @@ were re-recorded; their `brush.params` record `strengthUnit` and
 of `depth` and `strengthTerm`). Every other brush recorded the same outputs
 and dabs bit for bit (`--verify --outputs --tol=0` against a recording made
 just before, at 03a04b9).
+
+2026-11-10: the Rake's Stop at depth (owner call, to try), on by default.
+Only RakeBrush is re-recorded: its `brush.params` gained `level`, its dabs
+`rake.level` and `rake.levelRef`. With `level` off it records the outputs
+it did before, bit for bit.

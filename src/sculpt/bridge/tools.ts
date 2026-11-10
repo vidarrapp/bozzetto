@@ -1058,6 +1058,14 @@ export interface RakeSettings {
   taper: number;
   /** Raise ridges instead of carving grooves. */
   invert: boolean;
+  /**
+   * Stop at depth (owner call, 2026-11-10, to try): the tines cut down to
+   * a floor, the Strength below the surface around them, and no further,
+   * so a second pass adds next to nothing on an even surface and only
+   * what stands proud is cut again (RakeBrush). Off, every pass cuts
+   * deeper. On in every preset and for a scene from before it.
+   */
+  level: boolean;
 }
 
 /**
@@ -1081,11 +1089,11 @@ export interface RakePreset extends RakeSettings {
  * 0.04, 0.1, 0.08 and 0.05 of the radius) at the default brush's 3 cm.
  */
 export const RAKE_PRESETS: readonly RakePreset[] = [
-  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, strength: 0.15, scrape: 0.15, taper: 0, invert: false, profile: 'v' },
-  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, strength: 0.12, scrape: 0.1, taper: 0, invert: false, profile: 'round' },
-  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, strength: 0.3, scrape: 0.25, taper: 0, invert: false, profile: 'round' },
-  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, strength: 0.25, scrape: 0.5, taper: 0, invert: false, profile: 'flat' },
-  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, strength: 0.15, scrape: 1, taper: 0, invert: false, profile: 'flat' },
+  { id: 'fine', label: 'Fine', tines: 8, width: 0.45, strength: 0.15, scrape: 0.15, taper: 0, invert: false, level: true, profile: 'v' },
+  { id: 'comb', label: 'Comb', tines: 12, width: 0.5, strength: 0.12, scrape: 0.1, taper: 0, invert: false, level: true, profile: 'round' },
+  { id: 'coarse', label: 'Coarse', tines: 4, width: 0.7, strength: 0.3, scrape: 0.25, taper: 0, invert: false, level: true, profile: 'round' },
+  { id: 'chisel', label: 'Chisel', tines: 3, width: 0.75, strength: 0.25, scrape: 0.5, taper: 0, invert: false, level: true, profile: 'flat' },
+  { id: 'scraper', label: 'Scraper', tines: 5, width: 0.8, strength: 0.15, scrape: 1, taper: 0, invert: false, level: true, profile: 'flat' },
 ];
 export const DEFAULT_RAKE_PRESET = 'coarse';
 
@@ -1100,6 +1108,10 @@ export const DEFAULT_RAKE_PRESET = 'coarse';
 const RAKE_ALONG_INTEGRAL = 1.2;
 /** The chord the spacing factor divides by, at least this (the disc's rim). */
 const RAKE_MIN_CHORD = 0.2;
+/** Stop at depth: the fewest unmasked front vertices a dab fits the form's curve to (below, its plane). */
+const LEVEL_MIN_VERTICES = 24;
+/** Stop at depth: how far under the reference's upper side the second fit lets a vertex lie, of the stroke's depth. */
+const LEVEL_BAND = 0.2;
 
 /** What the last rake dab used, per its picking side (the parity recorder and the tests read it). */
 export interface RakeDab {
@@ -1126,6 +1138,10 @@ export interface RakeDab {
   /** The plane the dab scrapes toward and cuts along: fitted to the form (see the class comment). */
   areaNormal: [number, number, number];
   areaCenter: [number, number, number];
+  /** Stop at depth, as the dab applied it. */
+  level: boolean;
+  /** With `level`: the surface the floor hangs under (levelSurface), else null. */
+  levelRef: { offset: number; coef: [number, number, number, number, number, number] } | null;
 }
 
 const norm3 = (v: Vec3): Vec3 | null => {
@@ -1192,12 +1208,200 @@ function formPlane(fp: Float64Array, iFront: Uint32Array, mAr: Float32Array, n0:
   return { c: [ax, ay, az], n };
 }
 
+/** The surface a levelled rake dab measures its floor from (levelSurface). */
+interface LevelRef {
+  /** a + b x + c y + d x^2 + e x y + f y^2: the form's height over the plane, x and y in radii. */
+  coef: [number, number, number, number, number, number];
+  /** Added to it: lifts it from the mean of the form onto its upper side (lower, for ridges). */
+  offset: number;
+}
+
+/** Solve the n x n system m x = r in place (Gauss, partial pivoting); false when it is singular. */
+function solveInPlace(m: Float64Array, r: Float64Array, n: number): boolean {
+  let top = 0;
+  for (let i = 0; i < n; ++i) top = Math.max(top, Math.abs(m[i * n + i]));
+  for (let col = 0; col < n; ++col) {
+    let piv = col;
+    for (let row = col + 1; row < n; ++row) if (Math.abs(m[row * n + col]) > Math.abs(m[piv * n + col])) piv = row;
+    if (!(Math.abs(m[piv * n + col]) > 1e-10 * top)) return false;
+    if (piv !== col) {
+      for (let k = 0; k < n; ++k) {
+        const t = m[col * n + k];
+        m[col * n + k] = m[piv * n + k];
+        m[piv * n + k] = t;
+      }
+      const t = r[col];
+      r[col] = r[piv];
+      r[piv] = t;
+    }
+    for (let row = col + 1; row < n; ++row) {
+      const f = m[row * n + col] / m[col * n + col];
+      if (f === 0) continue;
+      for (let k = col; k < n; ++k) m[row * n + k] -= f * m[col * n + k];
+      r[row] -= f * r[col];
+    }
+  }
+  for (let row = n - 1; row >= 0; --row) {
+    let acc = r[row];
+    for (let k = row + 1; k < n; ++k) acc -= m[row * n + k] * r[k];
+    r[row] = acc / m[row * n + row];
+  }
+  return true;
+}
+
+/**
+ * The reference surface of a levelled rake dab (RakeBrush, Stop at depth):
+ * the even surface the tines' floor hangs under, as a height over the
+ * dab's plane (point `pc`, normal `n`, the unit tangent axes `ax`, `ay`),
+ * from the front vertices as they were before the stroke (`fp`, xyz each
+ * as formPlane takes them: the form with the stroke's scrape taken out).
+ *
+ * 1. The form's own shape: a least-squares quadric through the heights,
+ *    mask-weighted, x and y in radii. On a curved form (the sphere) a
+ *    plane would stand above the rim and below the middle by the sagitta,
+ *    more than a groove's depth at an ordinary brush size, and the floor
+ *    with it; the quadric follows the curve. With too few vertices for
+ *    one it is the plane itself (all zero).
+ * 2. Its upper side: grooves already there (an earlier pass, along or
+ *    across this one) pull a least-squares fit down by their mean depth,
+ *    and a floor measured from it would sink a little with every pass.
+ *    So the heights over the quadric are closed first: the disc is cut
+ *    into cells a tine slot wide (2 / tines of the radius, both ways, from
+ *    the dab's centre `c`), each keeps its highest vertex - a groove no
+ *    wider than a slot, whichever way it runs, leaves a cell its land -
+ *    and the offset is the median of the cells' heights, each counted by
+ *    its vertices. The median, not the mean: a bump in a few cells does
+ *    not lift it, so the bump stands above the floor by its full height.
+ * 3. Once more: old grooves also bend the quadric of step 1, differently
+ *    from dab to dab as their pattern passes under the disc, and a vertex
+ *    is cut to the lowest floor any dab gives it. So the quadric is
+ *    fitted again with every vertex lower than LEVEL_BAND of the
+ *    stroke's `depth` under step 2's level raised to there (the grooves
+ *    filled to a shallow even dent; an even form is left as it is), and
+ *    step 2 repeated over it.
+ *
+ * `sgn` -1 mirrors step 2 for ridges (Invert): the lowest vertex of each
+ * cell, the offset below the mean. Null when no vertex is unmasked.
+ */
+function levelSurface(
+  fp: Float64Array,
+  iFront: Uint32Array,
+  mAr: Float32Array,
+  pc: Vec3,
+  n: Vec3,
+  ax: Vec3,
+  ay: Vec3,
+  c: Vec3,
+  radius: number,
+  tines: number,
+  sgn: number,
+  depth: number,
+): LevelRef | null {
+  const nf = iFront.length;
+  const inv = 1 / radius;
+  // x, y (radii) and the height z of each vertex over the plane; its mask.
+  const xyz = new Float64Array(nf * 3);
+  const w = new Float32Array(nf);
+  let live = 0;
+  for (let i = 0; i < nf; ++i) {
+    const dx = fp[i * 3] - pc[0];
+    const dy = fp[i * 3 + 1] - pc[1];
+    const dz = fp[i * 3 + 2] - pc[2];
+    xyz[i * 3] = (dx * ax[0] + dy * ax[1] + dz * ax[2]) * inv;
+    xyz[i * 3 + 1] = (dx * ay[0] + dy * ay[1] + dz * ay[2]) * inv;
+    xyz[i * 3 + 2] = dx * n[0] + dy * n[1] + dz * n[2];
+    const f = mAr[iFront[i] * 3 + 2];
+    if (f > 0) {
+      w[i] = f;
+      ++live;
+    }
+  }
+  if (live === 0) return null;
+  const coef: LevelRef['coef'] = [0, 0, 0, 0, 0, 0];
+  const over = (i: number): number => {
+    const x = xyz[i * 3];
+    const y = xyz[i * 3 + 1];
+    return sgn * (xyz[i * 3 + 2] - (coef[0] + coef[1] * x + coef[2] * y + coef[3] * x * x + coef[4] * x * y + coef[5] * y * y));
+  };
+  // The quadric through the unmasked vertices, each no lower than `floor`
+  // over the one before (as they are, the first time); false, `coef`
+  // kept, when they are too few or lie too badly for one.
+  const m = new Float64Array(36);
+  const r = new Float64Array(6);
+  const b = [1, 0, 0, 0, 0, 0];
+  const fit = (floor: number): boolean => {
+    if (live < LEVEL_MIN_VERTICES) return false;
+    m.fill(0);
+    r.fill(0);
+    for (let i = 0; i < nf; ++i) {
+      const f = w[i];
+      if (!(f > 0)) continue;
+      const h = over(i);
+      const z = h < floor ? xyz[i * 3 + 2] + sgn * (floor - h) : xyz[i * 3 + 2];
+      const x = xyz[i * 3];
+      const y = xyz[i * 3 + 1];
+      b[1] = x;
+      b[2] = y;
+      b[3] = x * x;
+      b[4] = x * y;
+      b[5] = y * y;
+      for (let p = 0; p < 6; ++p) {
+        const fb = f * b[p];
+        r[p] += fb * z;
+        for (let q = p; q < 6; ++q) m[p * 6 + q] += fb * b[q];
+      }
+    }
+    for (let p = 1; p < 6; ++p) for (let q = 0; q < p; ++q) m[p * 6 + q] = m[q * 6 + p];
+    if (!solveInPlace(m, r, 6)) return false;
+    for (let p = 0; p < 6; ++p) coef[p] = r[p];
+    return true;
+  };
+  // The cells' highest heights over the quadric (lowest, mirrored), and
+  // the median of them, each counted by its vertices.
+  const cu = ((c[0] - pc[0]) * ax[0] + (c[1] - pc[1]) * ax[1] + (c[2] - pc[2]) * ax[2]) * inv;
+  const cw = ((c[0] - pc[0]) * ay[0] + (c[1] - pc[1]) * ay[1] + (c[2] - pc[2]) * ay[2]) * inv;
+  const top = new Float64Array(tines * tines);
+  const count = new Uint32Array(tines * tines);
+  const cells: number[] = [];
+  const upperSide = (): number => {
+    top.fill(-Infinity);
+    count.fill(0);
+    for (let i = 0; i < nf; ++i) {
+      if (!(w[i] > 0)) continue;
+      let ku = Math.floor(((xyz[i * 3] - cu + 1) * tines) / 2);
+      let kw = Math.floor(((xyz[i * 3 + 1] - cw + 1) * tines) / 2);
+      ku = ku < 0 ? 0 : ku > tines - 1 ? tines - 1 : ku;
+      kw = kw < 0 ? 0 : kw > tines - 1 ? tines - 1 : kw;
+      const cell = kw * tines + ku;
+      const h = over(i);
+      if (h > top[cell]) top[cell] = h;
+      ++count[cell];
+    }
+    cells.length = 0;
+    for (let k = 0; k < top.length; ++k) if (count[k] > 0) cells.push(k);
+    cells.sort((p, q) => top[p] - top[q]);
+    let acc = 0;
+    for (const k of cells) {
+      acc += count[k];
+      if (acc * 2 >= live) return top[k];
+    }
+    return 0;
+  };
+  fit(-Infinity);
+  let offset = upperSide();
+  // Once more with the old grooves filled to just under the upper side,
+  // so they bend the quadric no more than they lower it.
+  if (fit(offset - LEVEL_BAND * depth)) offset = upperSide();
+  return { coef, offset: sgn * offset };
+}
+
 /**
  * The tine rake (owner call, October 2026, replacing the stencil rake): N
  * tines laid across the brush, perpendicular to the stroke, each carving
  * its own groove. Since 2026-10-24 (owner call) a standard brush, not a
  * clay one: each dab displaces, it does not aim for a target, so Invert
- * raises ridges on any form and a second pass cuts deeper.
+ * raises ridges on any form. With Stop at depth (`level`, on by default;
+ * below) the tines stop at a floor; without it a second pass cuts deeper.
  *
  * The frame, per dab: the stroke direction - from the previous dab's
  * intersection to this one, in the surface tangent plane, as the stencil
@@ -1235,6 +1439,41 @@ function formPlane(fp: Float64Array, iFront: Uint32Array, mAr: Float32Array, n0:
  *    Invert (or the stroke's Ctrl), and every dab adds to the last, as the
  *    Standard brush does.
  *
+ * Stop at depth (`level`; owner call, 2026-11-10, to try: "tines cut only
+ * where the surface stands above the form and stop at a level"): the cut
+ * of step 2 is held to a floor. Off, the above exactly.
+ *
+ * - The reference, per dab (levelSurface): the even surface around the
+ *   tines, as a height over the dab's plane. It is fitted to the front
+ *   vertices as they were before the stroke (the form with this stroke's
+ *   scrape taken out as well as its cut, `scraped`), so the dabs of one
+ *   stroke agree on it: a quadric, which follows a curved form where the
+ *   plane alone would put the floor a sagitta too high at the rim, lifted
+ *   onto its upper side so the grooves of earlier passes do not pull the
+ *   floor down with them.
+ * - The floor under a vertex: the reference lowered by the tine's whole
+ *   cut there, strength x pressure term x profile(t) x taper x mask: the
+ *   groove one full stroke cuts into a surface lying on the reference.
+ * - The cut: the dab's usual share, but no more than the vertex's height
+ *   over the floor, and nothing once it is at or below it. That height is
+ *   how far the vertex stood over the reference before the stroke, times
+ *   what the scrape has left of it (below), plus the cut so far (measured
+ *   down the plane's normal, the reference's slope allowed for).
+ * - Invert mirrors it: the reference on the lower side, a ceiling the
+ *   whole cut above it, the ridge raised no further than that.
+ * - The scrape works as it does without it, toward the plane through the
+ *   form's mean. It moves a vertex and the reference under it together:
+ *   each dab leaves 1 - rate of a height over its plane, the reference's
+ *   as the vertex's, so what stood proud by h stands proud by h x the
+ *   product of those, and Scrape 1 cuts the grooves into the flat it made.
+ *
+ * So on an even surface one stroke cuts the Strength and the same stroke
+ * again adds next to nothing; a crossing stroke cuts its own grooves to
+ * the same floor; a bump is cut by each pass until its grooves reach the
+ * floor; a hollow below the floor is left alone. With Scrape above 0 a
+ * pass over old grooves still planes their lands toward the mean (the
+ * scrape's own work), and the floor goes down with the lands.
+ *
  * The last factor is the spacing compensation (RAKE_ALONG_INTEGRAL): one
  * stroke at full pressure cuts the Strength, in cm, whatever the brush's
  * size, the spacing or the stroke speed (owner call, 2026-10-31: it
@@ -1256,6 +1495,8 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
   scrape = 0.25;
   taper = 0;
   invert = false;
+  /** Stop at depth: cut to a floor under the surface, not deeper with every pass (RakeSettings.level). */
+  level = true;
   /** The tine cross-section (the Tool panel's curve). */
   readonly curve = new ProfileCurve(TINE_PROFILES, 'round');
   /** The rake preset the knobs are exactly, or null once one moved. */
@@ -1281,6 +1522,13 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
    * entry that no longer matches is a vertex the rake has not cut.
    */
   private readonly cuts = new StrokeMoves();
+  /**
+   * Stop at depth, beside each `cuts` entry and good while it is: the move
+   * this stroke's scrape made (xyz) and the fraction it has left of the
+   * vertex's height over the planes it scraped toward (the product of
+   * 1 - rate over the dabs), four per vertex.
+   */
+  private scraped = new Float32Array(0);
 
   constructor(session: SculptSession) {
     super(session);
@@ -1301,7 +1549,7 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
   }
 
   settings(): RakeSettings {
-    return { tines: this.tines, width: this.tineWidth, strength: this._intensity, scrape: this.scrape, taper: this.taper, invert: this.invert };
+    return { tines: this.tines, width: this.tineWidth, strength: this._intensity, scrape: this.scrape, taper: this.taper, invert: this.invert, level: this.level };
   }
 
   /**
@@ -1322,8 +1570,9 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
     this.scrape = num(s.scrape, 0, 1, num(s.plateau, 0, 1, this.scrape));
     this.taper = num(s.taper, 0, 1, this.taper);
     if (typeof s.invert === 'boolean') this.invert = s.invert;
+    if (typeof s.level === 'boolean') this.level = s.level;
     const p = RAKE_PRESETS.find((x) => x.id === this.presetId);
-    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.strength === this._intensity && p.scrape === this.scrape && p.taper === this.taper && p.invert === this.invert;
+    const same = p && p.tines === this.tines && p.width === this.tineWidth && p.strength === this._intensity && p.scrape === this.scrape && p.taper === this.taper && p.invert === this.invert && p.level === this.level;
     if (!same) this.presetId = null;
   }
 
@@ -1434,7 +1683,8 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
 
     // The form: the front vertices' positions with this stroke's cut taken
     // out, and the plane fitted to it.
-    const plane = formPlane(cuts.form(iFront, vAr), iFront, mAr, n0, across0, along0);
+    const form = cuts.form(iFront, vAr);
+    const plane = formPlane(form, iFront, mAr, n0, across0, along0);
     if (!plane) return;
     const { n } = plane;
     const [ax, ay, az] = plane.c;
@@ -1457,6 +1707,29 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
     const [wx, wy, wz] = along;
     const [cx, cy, cz] = c;
     const inv = 1 / radius;
+    // Stop at depth: the surface the floor hangs under, fitted to the
+    // front vertices as they were before the stroke (the form with this
+    // stroke's scrape taken out too).
+    let ref: LevelRef | null = null;
+    if (this.level && depth > 0) {
+      if (this.scraped.length < (cut.length / 3) * 4) {
+        const grown = new Float32Array((cut.length / 3) * 4);
+        grown.set(this.scraped);
+        this.scraped = grown;
+      }
+      const s = this.scraped;
+      for (let i = 0, l = iFront.length; i < l; ++i) {
+        const id = iFront[i];
+        if (!cuts.has(id * 3, vAr)) continue;
+        form[i * 3] -= s[id * 4];
+        form[i * 3 + 1] -= s[id * 4 + 1];
+        form[i * 3 + 2] -= s[id * 4 + 2];
+      }
+      ref = levelSurface(form, iFront, mAr, plane.c, n, across, along, c, radius, N, comp, depth);
+    }
+    const aux = this.scraped;
+    const [q0, q1, q2, q3, q4, q5] = ref ? ref.coef : [0, 0, 0, 0, 0, 0];
+    const lift = ref ? ref.offset : 0;
     this.lastDab = {
       tines: N,
       width: this.tineWidth,
@@ -1473,6 +1746,8 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
       directionFrom: from,
       areaNormal: n,
       areaCenter: [ax, ay, az],
+      level: this.level,
+      levelRef: ref,
     };
     for (let i = 0, l = iVerts.length; i < l; ++i) {
       const ind = iVerts[i] * 3;
@@ -1491,12 +1766,29 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
       let vy = vAr[ind + 1];
       let vz = vAr[ind + 2];
       // 1. Scrape the form toward the plane, the cut riding along.
+      // Stop at depth: what the scrape has moved the vertex by this
+      // stroke (s), what it has left of its height over the planes (kept),
+      // and where the vertex was before the stroke (o).
+      const i4 = (ind / 3) * 4;
+      let sx = ref && had ? aux[i4] : 0;
+      let sy = ref && had ? aux[i4 + 1] : 0;
+      let sz = ref && had ? aux[i4 + 2] : 0;
+      let kept = ref && had ? aux[i4 + 3] : 1;
+      const ox = vx - kx - sx;
+      const oy = vy - ky - sy;
+      const oz = vz - kz - sz;
       if (scrape > 0) {
         const rate = Math.min(1, scrape * quartic(dist) * intensity * mask);
         const h = (vx - kx - ax) * nx + (vy - ky - ay) * ny + (vz - kz - az) * nz;
         vx -= nx * h * rate;
         vy -= ny * h * rate;
         vz -= nz * h * rate;
+        if (ref) {
+          sx -= nx * h * rate;
+          sy -= ny * h * rate;
+          sz -= nz * h * rate;
+          kept *= 1 - rate;
+        }
       }
       // 2. Cut: the nearest tine and how far across it the vertex sits.
       const u = (px * ux + py * uy + pz * uz) * inv;
@@ -1511,7 +1803,30 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
       const chord = Math.sqrt(Math.max(0, 1 - u * u));
       const aw = Math.abs(w) / Math.max(1e-6, chord);
       const alongFall = aw >= 1 ? 0 : quartic(aw);
-      const amount = prof * alongFall > 0 ? -comp * depth * prof * (1 - taper * Math.abs(centre)) * alongFall * mask * (spacingFactor / Math.max(RAKE_MIN_CHORD, chord)) : 0;
+      // The tine's whole cut here, and this dab's share of it.
+      const full = depth * prof * (1 - taper * Math.abs(centre)) * mask;
+      let share = prof * alongFall > 0 ? depth * prof * (1 - taper * Math.abs(centre)) * alongFall * mask * (spacingFactor / Math.max(RAKE_MIN_CHORD, chord)) : 0;
+      if (ref && share > 0) {
+        // Stop at depth: no further than the floor, the whole cut under
+        // the reference surface (above it, the ceiling, for ridges).
+        const ex = ox - ax;
+        const ey = oy - ay;
+        const ez = oz - az;
+        const x = (ex * ux + ey * uy + ez * uz) * inv;
+        const y = (ex * wx + ey * wy + ez * wz) * inv;
+        // How far it stood over the reference before the stroke, what
+        // the scrape has left of that, and the cut so far: its height,
+        // less what the reference drops over the cut's sideways part (on
+        // a curved form the earlier dabs cut along other normals).
+        const stood = ex * nx + ey * ny + ez * nz - (q0 + q1 * x + q2 * y + q3 * x * x + q4 * x * y + q5 * y * y + lift);
+        const slopeX = q1 + 2 * q3 * x + q4 * y;
+        const slopeY = q2 + q4 * x + 2 * q5 * y;
+        const sunk = kx * nx + ky * ny + kz * nz - (slopeX * (kx * ux + ky * uy + kz * uz) + slopeY * (kx * wx + ky * wy + kz * wz)) * inv * kept;
+        const over = stood * kept + sunk;
+        const room = comp * over + full;
+        share = room > 0 ? Math.min(share, room) : 0;
+      }
+      const amount = share > 0 ? -comp * share : 0;
       if (amount !== 0) {
         vx += nx * amount;
         vy += ny * amount;
@@ -1524,7 +1839,13 @@ export class RakeBrush extends Brush implements StrengthCmBrush {
       vAr[ind + 1] = vy;
       vAr[ind + 2] = vz;
       // Read back: the entry holds the position exactly as stored.
-      if (amount !== 0 || had) cuts.set(ind, kx, ky, kz, vAr);
+      if (amount !== 0 || had || ref) cuts.set(ind, kx, ky, kz, vAr);
+      if (ref) {
+        aux[i4] = sx;
+        aux[i4 + 1] = sy;
+        aux[i4 + 2] = sz;
+        aux[i4 + 3] = kept;
+      }
     }
   }
 }

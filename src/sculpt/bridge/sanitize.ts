@@ -250,6 +250,7 @@ function sanitizeSettings(v: unknown): SculptSettings | undefined {
           plateau: num(v.rake.plateau, 0, 1),
           taper: num(v.rake.taper, 0, 1),
           invert: bool(v.rake.invert),
+          level: bool(v.rake.level),
           preset: v.rake.preset === null ? null : str(v.rake.preset, 32),
         })
       : undefined,

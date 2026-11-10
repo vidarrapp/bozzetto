@@ -94,6 +94,8 @@ export interface SavedRake {
   plateau?: number;
   taper?: number;
   invert?: boolean;
+  /** Stop at depth (2026-11-10); a record from before it has none and opens with it on. */
+  level?: boolean;
   preset?: string | null;
 }
 

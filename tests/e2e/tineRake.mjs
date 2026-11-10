@@ -3,7 +3,10 @@
 // groove. Since 2026-10-24 a standard brush (owner call): each dab
 // displaces along the normal and the dabs add up, so one stroke cuts the
 // Strength (in cm since 2026-10-31, where it was a Depth, a fraction of the
-// radius), a second cuts deeper, and Invert raises ridges on any form.
+// radius), and Invert raises ridges on any form. With Stop at depth off a
+// second stroke cuts deeper; with it on (the default; owner call,
+// 2026-11-10, to try) the tines stop at a floor, the Strength under the
+// surface around them (tineRakeLevel, at the foot).
 // Scrape (replacing Plateau) planes the footprint before the tines cut;
 // Taper fades the outer tines; pressure scales the depth.
 //
@@ -27,6 +30,8 @@
 //   from before Scrape, with a `plateau`, opens with it as the scrape, and
 //   one from before the strength in cm, with a `depth`, opens with that
 //   fraction of 3 cm as the strength;
+// - Stop at depth, in the panel (a checkbox, on, with its hint) and in the
+//   scene file (kept when off; a record without it opens with it on);
 // - the brush cursor: with the Rake in hand, hovering the plane draws one
 //   circle per tine (4 for Coarse, 12 for Comb) inside a faint ring, at
 //   the tines' spacing and half-width, laid across the hover motion (a
@@ -44,14 +49,19 @@ const RAKE = 13; // Enums.Tools.RAKE
  *   -span to +span along y = 0, or
  * - a sphere primitive (`sphere: true`), across its front from x = -span
  *   to +span of its radius through its middle.
- * `passes` strokes the same path that many times; `setup` only adds the
- * form, for the view to settle on before the strokes. Returns the column of
+ * `passes` strokes the same path that many times, with `cross` every
+ * second one a quarter turn round, through the same middle; `bump` raises
+ * a round bump on the form first ({ height, sigma, y, x }, cm or the
+ * sphere's radius; a negative height a hollow); `setup` only adds the
+ * form, for the view to settle on before the strokes. `perPass` is, after
+ * each pass, the deepest cut and the highest rise within half the radius
+ * of the middle, and `row` the column's like along the stroke. Returns the column of
  * vertices across the stroke at x = 0 as [y, z, h]: z the height (the
  * plane's z, the sphere's coordinate toward the camera), h the move along
  * the form's normal (the plane's z, the sphere's radial), the dab record
  * and the radius used.
  */
-function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 0, radius = 6, span = 9, sphere = false, passes = 1, setup = false }) {
+function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 0, bump = null, radius = 6, span = 9, sphere = false, passes = 1, cross = false, setup = false }) {
   const { session, tablet, input } = window.__sculpt;
   const manager = session.getSculptManager();
   const tool = manager.getTool(13);
@@ -77,18 +87,23 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
     for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) ctr[k] += rest[i * 3 + k] / n;
     for (let i = 0; i < n; i++) R = Math.max(R, Math.hypot(rest[i * 3] - ctr[0], rest[i * 3 + 1] - ctr[1], rest[i * 3 + 2] - ctr[2]));
   }
-  const reset = () => {
+  const reset = (shaped = true) => {
     for (let i = 0; i < n; i++) {
       v[i * 3] = rest[i * 3];
       v[i * 3 + 1] = rest[i * 3 + 1];
       v[i * 3 + 2] = sphere ? rest[i * 3 + 2] : ripple ? ripple * Math.cos((2 * Math.PI * rest[i * 3 + 1]) / 1.3) : rest[i * 3 + 2];
+      if (bump && shaped) {
+        // A round bump (a hollow, with a negative height) out of the form.
+        const q = [0, 1, 2].map((k) => rest[i * 3 + k] - ctr[k]);
+        const g = bump.height * Math.exp(-((dot(q, a) - (bump.x ?? 0) * unitLen) ** 2 + (dot(q, b) - bump.y * unitLen) ** 2) / (bump.sigma * unitLen) ** 2);
+        const out = sphere ? unit(q) : f;
+        if (!sphere || dot(q, f) > 0) for (let k = 0; k < 3; k++) v[i * 3 + k] += out[k] * g * unitLen;
+      }
     }
     mesh.updateGeometry();
     mesh.updateBuffers?.();
   };
-  reset();
-  // The heights before the stroke (the plane's ripples included).
-  const before = new Float32Array(v.subarray(0, n * 3));
+  reset(false);
   if (preset) tool.applyPreset(preset);
   tool.set(knobs);
   const m = mesh.getMatrix();
@@ -121,6 +136,11 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
     a = unit([d1[0] - f[0] * k, d1[1] - f[1] * k, d1[2] - f[2] * k]);
     b = [f[1] * a[2] - f[2] * a[1], f[2] * a[0] - f[0] * a[2], f[0] * a[1] - f[1] * a[0]];
   }
+  // A bump's lengths: cm on the plane, the sphere's radius on the sphere.
+  const unitLen = sphere ? R : 1;
+  reset();
+  // The heights before the stroke (the plane's ripples and the bump included).
+  const before = new Float32Array(v.subarray(0, n * 3));
   const ends = sphere
     ? [-span, span].map((x) => {
         const z = Math.sqrt(Math.max(0, 1 - x * x));
@@ -140,8 +160,12 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
   tablet.pen = pen;
   try {
     // The pixel radius that gives `local` on the form: probe once.
-    const [x0, y0] = screen(ends[0]);
-    const [x1, y1] = screen(ends[1]);
+    let [x0, y0] = screen(ends[0]);
+    let [x1, y1] = screen(ends[1]);
+    const lengthways = [x0, y0, x1, y1];
+    // The crossing path: the same, turned a quarter (along b through the middle).
+    const turned = (e) => ctr.map((o, k) => o + b[k] * dot(sub(e, ctr), a) + f[k] * dot(sub(e, ctr), f));
+    const crossways = [...screen(turned(ends[0])).slice(0, 2), ...screen(turned(ends[1])).slice(0, 2)];
     session._mouseX = x0;
     session._mouseY = y0;
     tool._radius = 60;
@@ -155,7 +179,11 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
     tool._radius = (60 * local) / probe;
     let hit = true;
     const dabs = [];
+    // After each pass: the deepest and the highest move in the middle of
+    // the strokes (within half the radius of it, both ways).
+    const perPass = [];
     for (let pass = 0; pass < passes; pass++) {
+      [x0, y0, x1, y1] = cross && pass % 2 === 1 ? crossways : lengthways;
       // The stroke: dabs at the brush's own spacing along the path.
       session._mouseX = x0;
       session._mouseY = y0;
@@ -173,6 +201,16 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
       tool.updateRender();
       manager.end();
       session.getStateManager().cleanNoop();
+      let lo = 0;
+      let hi = 0;
+      for (let i = 0; i < n; i++) {
+        const p0 = sub([before[i * 3], before[i * 3 + 1], before[i * 3 + 2]], ctr);
+        if (Math.abs(dot(p0, a)) > 0.5 * local || Math.abs(dot(p0, b)) > 0.5 * local || (sphere && dot(p0, f) <= 0)) continue;
+        const h = dot(sub(sub([v[i * 3], v[i * 3 + 1], v[i * 3 + 2]], ctr), p0), sphere ? unit(p0) : f);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+      perPass.push([-lo, hi]);
     }
     const r = dabs[Math.floor(dabs.length / 2)]?.r ?? local;
     // The column at x = 0 (the plane's grid is axis-aligned; the sphere's
@@ -189,11 +227,21 @@ function rakeStroke({ preset, knobs = {}, pen = false, pressure = 0.5, ripple = 
       col.push([y, dot(p1, f), h]);
     }
     col.sort((a, b) => a[0] - b[0]);
+    // The same along the stroke through its middle: [x, z, h] (a crossing stroke's column).
+    const row = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = sub([before[i * 3], before[i * 3 + 1], before[i * 3 + 2]], ctr);
+      const p1 = sub([v[i * 3], v[i * 3 + 1], v[i * 3 + 2]], ctr);
+      const x = dot(p0, a);
+      if (Math.abs(dot(p0, b)) >= slab || Math.abs(x) >= r || (sphere && dot(p0, f) <= 0)) continue;
+      row.push([x, dot(p1, f), dot(sub(p1, p0), sphere ? unit(p0) : f)]);
+    }
+    row.sort((a, b) => a[0] - b[0]);
     const mid = dabs[Math.floor(dabs.length / 2)];
     // The deepest cut any dab over the column aimed for (the radius, and
     // with it the depth, changes along the stroke with the view).
     const reach = Math.max(...dabs.filter((q) => Math.abs(q.x - ctr[0]) < q.r).map((q) => q.depthLocal));
-    return { hitPlane: hit, r, R, col, dab: mid, first: dabs[0], count: dabs.length, reach };
+    return { hitPlane: hit, r, R, col, row, dab: mid, first: dabs[0], count: dabs.length, reach, perPass };
   } finally {
     Object.assign(d, dyn);
     tablet.pressure = 0.5;
@@ -402,11 +450,11 @@ export const suites = {
       }
     }
 
-    // A second pass cuts deeper, as the Standard brush does.
-    const one = await page.evaluate(rakeStroke, { preset: 'coarse', knobs: { scrape: 0 } });
-    const two = await page.evaluate(rakeStroke, { preset: 'coarse', knobs: { scrape: 0 }, passes: 2 });
+    // Stop at depth off: a second pass cuts deeper, as the Standard brush does.
+    const one = await page.evaluate(rakeStroke, { preset: 'coarse', knobs: { scrape: 0, level: false } });
+    const two = await page.evaluate(rakeStroke, { preset: 'coarse', knobs: { scrape: 0, level: false }, passes: 2 });
     t.ok(Math.abs(deepest(two) / deepest(one) - 2) < 0.2, `a second pass deepens the grooves (${deepest(two).toFixed(3)} after two, ${deepest(one).toFixed(3)} after one)`);
-    const twoScraped = await page.evaluate(rakeStroke, { preset: 'coarse', passes: 2 });
+    const twoScraped = await page.evaluate(rakeStroke, { preset: 'coarse', knobs: { level: false }, passes: 2 });
     t.ok(deepest(twoScraped) > 1.2 * deepest(one), `with the default Scrape too (${deepest(twoScraped).toFixed(3)})`);
 
     // Depth follows pressure.
@@ -580,6 +628,7 @@ export const suites = {
         presets: [...p.querySelectorAll('.sculpt-panel__presets button')].map((b) => b.textContent),
         on: p.querySelector('.sculpt-panel__presets .sculpt-panel__btn--on')?.textContent,
         invert: [...p.querySelectorAll('label.checkbox span')].some((s) => /Invert/.test(s.textContent)),
+        level: [...p.querySelectorAll('label.checkbox')].find((l) => l.textContent === 'Stop at depth')?.querySelector('input').checked,
         curves: [...p.querySelectorAll('.sculpt-panel__curve-label')].map((l) => l.textContent),
         tinePresets: [...p.querySelectorAll('.curve-editor__preset')].map((b) => b.textContent),
         hints: [...p.querySelectorAll('.panel--sculpt .sculpt-panel__extras .sculpt-panel__hint')].map((h) => h.textContent),
@@ -589,6 +638,7 @@ export const suites = {
       ['Strength', 'Tines', 'Tine width', 'Scrape', 'Taper'].every((c) => rows.captions.includes(c)) && !rows.captions.includes('Plateau') && !rows.captions.includes('Depth') && rows.invert && rows.curves.join() === 'Tine profile',
       `the rake's rows, with no Depth (the Strength is the groove, in cm): ${rows.captions.join(', ')}, Invert, ${rows.curves.join()}`,
     );
+    t.ok(rows.level === true && rows.hints.some((h) => /stands proud/.test(h)), `and Stop at depth, ticked, with its one-line hint (${rows.level}, ${JSON.stringify(rows.hints)})`);
     t.ok(!rows.hints.some((h) => /Depth follows|Plateau/.test(h)), `and no depth hint under them (owner call, 2026-10-24: ${JSON.stringify(rows.hints)})`);
     t.ok(rows.presets.join() === 'Fine,Comb,Coarse,Chisel,Scraper' && rows.tinePresets.join() === 'Round,V,Flat,Soft', `its presets (${rows.presets.join(', ')}) and the tine profiles (${rows.tinePresets.join(', ')})`);
     const pick = async (label) => {
@@ -626,6 +676,17 @@ export const suites = {
         `${label} sets the strength to ${cm} cm, the Tool panel's Strength and the rail's nub with it (${got.intensity}, slider ${got.strengthSlider}, nub ${got.rail}%)`,
       );
     }
+    // Stop at depth: on in every preset; unticked, the rake has it off and the preset unlights.
+    const lvl = await page.evaluate(() => {
+      const tool = window.__sculpt.session.getSculptManager().getTool(13);
+      const presets = ['fine', 'comb', 'coarse', 'chisel', 'scraper'].map((id) => tool.applyPreset(id) && tool.level);
+      const box = [...document.querySelectorAll('.panel--sculpt label.checkbox')].find((l) => l.textContent === 'Stop at depth').querySelector('input');
+      const was = box.checked;
+      box.click();
+      return { presets, was, level: tool.level, setting: tool.settings().level, preset: tool.presetId, lit: document.querySelectorAll('.panel--sculpt .sculpt-panel__presets .sculpt-panel__btn--on').length };
+    });
+    t.ok(lvl.presets.every((x) => x === true) && lvl.was === true, `every preset has Stop at depth on (${lvl.presets.join(', ')})`);
+    t.ok(lvl.level === false && lvl.setting === false && lvl.preset === null && lvl.lit === 0, `unticking it turns it off on the rake and unlights the preset (${JSON.stringify(lvl)})`);
     // The strength moved from the rail unlights the preset, as a knob does.
     const strengthMoved = await page.evaluate(() => {
       const { input, session } = window.__sculpt;
@@ -651,11 +712,14 @@ export const suites = {
       const { file } = window.__sculpt;
       const tool = window.__sculpt.session.getSculptManager().getTool(13);
       tool.curve.applyPreset('soft');
+      tool.set({ level: false });
       const bytes = await file.pack();
+      const saved = (await file.unpack(bytes)).settings.rake.level;
       tool.applyPreset('comb');
       await file.open(bytes);
-      return { ...tool.settings(), curve: tool.curve.presetId, preset: tool.presetId };
+      return { ...tool.settings(), curve: tool.curve.presetId, preset: tool.presetId, saved };
     });
+    t.ok(back.saved === false && back.level === false, `Stop at depth, off, is saved with the scene and comes back off (saved ${back.saved}, back ${back.level})`);
     t.ok(back.tines === 3 && back.taper === 0.4 && back.scrape === 0.5 && back.curve === 'soft' && back.preset === null, `the knobs and the tine profile come back with the scene (${JSON.stringify(back)})`);
 
     // A record from before Scrape: its plateau is the scrape.
@@ -672,6 +736,131 @@ export const suites = {
       return { mapped, direct: tool.scrape };
     });
     t.ok(legacy.mapped.scrape === 0.35 && legacy.mapped.tines === 6 && !('plateau' in legacy.mapped) && legacy.direct === 0.8, `a saved rake with a plateau opens with it as the scrape (${JSON.stringify(legacy)})`);
+    t.ok(legacy.mapped.level === true, `a saved rake without Stop at depth opens with it on, though it was off when the scene opened (${legacy.mapped.level})`);
     t.ok(Math.abs(legacy.mapped.strength - 0.21) < 1e-9 && !('depth' in legacy.mapped), `and its depth 0.07 (of the radius) as the strength, 0.07 x 3 cm = 0.21 cm (${legacy.mapped.strength})`);
+  },
+
+  // Stop at depth (owner call, 2026-11-10, to try: "tines cut only where the
+  // surface stands above the form and stop at a level"), with strokes as
+  // tineRake drives them, Scrape 0 unless said:
+  // - on the flat plane one Coarse stroke cuts the strength and the same
+  //   stroke again, and three more, add under 15%; with it off each adds a
+  //   strength;
+  // - a crossing stroke cuts its own four grooves to the same floor, the
+  //   crossings no deeper;
+  // - a bump under a tine is cut by each pass until its groove is level
+  //   with the others, moved further than the even surface; a hollow
+  //   below the floor is not cut;
+  // - Invert mirrors: ridges to a ceiling, a hollow raised to it, a bump
+  //   above it left;
+  // - with the default Scrape a second pass planes the lands lower (the
+  //   scrape's work, as without Stop at depth), and the grooves stay the
+  //   strength below their lands;
+  // - on the sphere, at a quarter of its radius, four grooves about the
+  //   strength deep and no deeper for more passes.
+  async tineRakeLevel(page, base, t) {
+    await openForInput(page, base);
+    const pct = (x) => `${(100 * x).toFixed(1)}%`;
+    const run = (o) => page.evaluate(rakeStroke, { preset: 'coarse', ...o, knobs: { scrape: 0, ...o.knobs } });
+    const cuts = (s) => s.perPass.map(([lo]) => lo);
+    const rises = (s) => s.perPass.map(([, hi]) => hi);
+    const fmt = (a) => a.map((x) => x.toFixed(3)).join(', ');
+    /** The column's vertex nearest y = `at`: [y, z, h]. */
+    const at = (s, y) => s.col.reduce((best, p) => (Math.abs(p[0] - y) < Math.abs(best[0] - y) ? p : best));
+
+    // --- an even surface: the strength, once -----------------------------------
+    const flat = await run({ passes: 5 });
+    const d = cuts(flat);
+    t.ok(flat.dab.level === true && flat.dab.levelRef && Math.abs(flat.dab.levelRef.offset) < 0.02 * flat.reach, `the Coarse preset rakes with Stop at depth on (reference offset ${flat.dab.levelRef?.offset.toExponential(1)} on the flat)`);
+    t.ok(Math.abs(d[0] - flat.reach) < 0.1 * flat.reach, `one stroke on the flat plane cuts the strength, 0.3 cm (${d[0].toFixed(3)})`);
+    t.ok(d[1] / d[0] - 1 < 0.15, `the same stroke again adds ${pct(d[1] / d[0] - 1)} (under 15%)`);
+    t.ok(d[4] / d[0] - 1 < 0.15 && d[4] - d[3] < 0.01 * d[0] && d[4] < 1.05 * flat.reach, `and five of them ${pct(d[4] / d[0] - 1)} in all: it stops (${fmt(d)})`);
+    t.eq(grooves(flat.col, -0.3 * flat.dab.depthLocal).length, 4, 'still four grooves');
+    const off = await run({ passes: 3, knobs: { level: false } });
+    const dOff = cuts(off);
+    t.ok(off.dab.level === false && off.dab.levelRef === null && Math.abs(dOff[1] / dOff[0] - 2) < 0.2 && Math.abs(dOff[2] / dOff[0] - 3) < 0.3, `with it off every stroke cuts a strength deeper, as before (${fmt(dOff)})`);
+    // Each preset, as it is but for the Scrape.
+    for (const preset of ['fine', 'comb', 'chisel', 'scraper']) {
+      const s = await run({ preset, passes: 3 });
+      const c = cuts(s);
+      t.ok(Math.abs(c[0] - s.reach) < 0.25 * s.reach && c[2] < 1.1 * s.reach, `${preset}: ${c[0].toFixed(3)} for ${s.reach} cm, and two more strokes stop at the floor (${fmt(c)})`);
+    }
+
+    // --- cross-hatching ----------------------------------------------------------
+    const hatch = await run({ passes: 2, cross: true });
+    const hatch4 = await run({ passes: 4, cross: true });
+    const h = cuts(hatch4);
+    const own = grooves(hatch.row, -0.3 * hatch.dab.depthLocal);
+    t.eq(own.length, 4, `a crossing stroke cuts its own four grooves (at ${own.map(([x]) => (x / hatch.r).toFixed(2)).join(', ')} of the radius along the first stroke)`);
+    // (A little short of it: the pointer's picked points wander over the
+    // first grooves, which turns the tines from dab to dab and spreads the cut.)
+    t.ok(own.every(([, , z]) => -z < 1.05 * hatch.reach && -z > 0.75 * hatch.reach), `to the same floor, none past it (${own.map(([, , z]) => (-z).toFixed(3)).join(', ')} for ${hatch.reach})`);
+    t.ok(h[1] / h[0] - 1 < 0.15, `and the crossings are no deeper than it: the deepest point after the cross is ${pct(h[1] / h[0] - 1)} lower`);
+    // More crossing passes wear the lands between the grooves down (each
+    // lands a little beside the last: the pointer picks its way over the
+    // grooves), and the floor follows what is left of them.
+    const hOff = cuts(await run({ passes: 4, cross: true, knobs: { level: false } }));
+    t.ok(h[3] / h[0] - 1 < 0.4 && hOff[1] > 1.7 * hOff[0] && hOff[3] > 3 * h[3] / 1.4, `two more crossing strokes take the deepest point ${pct(h[3] / h[0] - 1)} down in all (${fmt(h)}); with it off the crossings are two strengths deep, then four (${fmt(hOff)})`);
+
+    // --- a bump, a hollow --------------------------------------------------------
+    // Under the tine at y = 1.5 cm (a quarter of the radius); the tine at
+    // -1.5 runs over the even surface.
+    const lump = { sigma: 0.6, y: 1.5 };
+    const bump1 = await run({ passes: 1, bump: { ...lump, height: 0.5 } });
+    const bump = await run({ passes: 4, bump: { ...lump, height: 0.5 } });
+    const [b1, b4, even] = [at(bump1, 1.5), at(bump, 1.5), at(bump, -1.5)];
+    t.ok(-b1[2] > 0.8 * bump1.reach && b1[1] > 0.1, `one stroke across a 0.5 cm bump cuts a strength off it and leaves it proud (moved ${b1[2].toFixed(3)}, now at ${b1[1].toFixed(3)})`);
+    t.ok(-b4[2] > 2 * -even[2] && Math.abs(-even[2] - bump.reach) < 0.1 * bump.reach, `more strokes lower it further than the even surface (the bump's top moved ${b4[2].toFixed(3)}, the even groove ${even[2].toFixed(3)})`);
+    t.ok(Math.abs(b4[1] - even[1]) < 0.1 * bump.reach, `down to the floor the other grooves are at, and there it stops (at ${b4[1].toFixed(3)} and ${even[1].toFixed(3)}; the deepest move per pass ${fmt(cuts(bump))})`);
+    const hollow = await run({ passes: 2, bump: { ...lump, height: -0.6 } });
+    const [pit, evenH] = [at(hollow, 1.5), at(hollow, -1.5)];
+    t.ok(Math.abs(pit[2]) < 0.01 * hollow.reach && pit[1] < -0.5 && Math.abs(-evenH[2] - hollow.reach) < 0.1 * hollow.reach, `a hollow below the floor is not cut (moved ${pit[2].toFixed(4)} at ${pit[1].toFixed(3)}; the even groove ${evenH[2].toFixed(3)})`);
+    const hollowOff = await run({ passes: 2, knobs: { level: false }, bump: { ...lump, height: -0.6 } });
+    t.ok(-at(hollowOff, 1.5)[2] > 1.5 * hollowOff.reach, `(with it off it is, two strengths: ${at(hollowOff, 1.5)[2].toFixed(3)})`);
+
+    // --- Invert mirrors ----------------------------------------------------------
+    const inv = await run({ passes: 5, knobs: { invert: true } });
+    const up = rises(inv);
+    t.ok(Math.abs(up[0] - inv.reach) < 0.1 * inv.reach && up[4] / up[0] - 1 < 0.15 && Math.max(...cuts(inv)) < 1e-4, `Invert raises ridges a strength high and five strokes add ${pct(up[4] / up[0] - 1)} (${fmt(up)})`);
+    t.ok(inv.dab.invert === true && Math.abs(inv.dab.levelRef.offset) < 0.02 * inv.reach, `(the reference on the lower side: offset ${inv.dab.levelRef.offset.toExponential(1)})`);
+    const fill = await run({ passes: 4, knobs: { invert: true }, bump: { ...lump, height: -0.5 } });
+    const [f4, evenF] = [at(fill, 1.5), at(fill, -1.5)];
+    t.ok(f4[2] > 2 * evenF[2] && Math.abs(f4[1] - evenF[1]) < 0.1 * fill.reach, `a hollow is raised to the ridges' ceiling, further than the even surface (moved ${f4[2].toFixed(3)} to ${f4[1].toFixed(3)}; the even ridge ${evenF[2].toFixed(3)} to ${evenF[1].toFixed(3)})`);
+    const knob = await run({ passes: 2, knobs: { invert: true }, bump: { ...lump, height: 0.6 } });
+    t.ok(Math.abs(at(knob, 1.5)[2]) < 0.01 * knob.reach, `and a bump above the ceiling is not raised (moved ${at(knob, 1.5)[2].toFixed(4)})`);
+
+    // --- the default Scrape ------------------------------------------------------
+    // The scrape planes the lands toward the form's mean, old grooves
+    // included, so the lands go down with every pass; the grooves stay a
+    // strength below them.
+    const relief = (s) => {
+      const lands = between(s, 0.2).map(([, z]) => z).sort((p, q) => p - q);
+      const land = lands[Math.floor(lands.length / 2)];
+      const low = Math.min(...s.col.filter(([y]) => Math.abs(y) < 0.5 * s.r).map(([, z]) => z));
+      return { land, low, groove: land - low };
+    };
+    const sc1 = relief(await run({ passes: 1, knobs: { scrape: 0.25 } }));
+    const sc2 = relief(await run({ passes: 2, knobs: { scrape: 0.25 } }));
+    const sc2off = relief(await run({ passes: 2, knobs: { scrape: 0.25, level: false } }));
+    t.ok(Math.abs(sc1.groove - 0.3) < 0.03 && Math.abs(sc1.land) < 0.01, `Coarse as it is (Scrape 0.25): one stroke cuts ${sc1.groove.toFixed(3)} cm under lands at ${sc1.land.toFixed(3)}`);
+    t.ok(Math.abs(sc2.groove / sc1.groove - 1) < 0.15 && sc2.land < -0.05, `a second planes the lands to ${sc2.land.toFixed(3)} and the grooves stay ${sc2.groove.toFixed(3)} under them (${pct(sc2.groove / sc1.groove - 1)})`);
+    t.ok(sc2.low > sc2off.low && sc2.low < -1.2 * 0.3, `so with Scrape the same stroke again does go deeper, to ${(-sc2.low).toFixed(3)} cm under the first surface (with Stop at depth off, ${(-sc2off.low).toFixed(3)}, ${sc2off.groove.toFixed(3)} under lands at ${sc2off.land.toFixed(3)})`);
+
+    // --- the sphere --------------------------------------------------------------
+    const onSphere = { sphere: true, radius: 0.25, span: 0.6 };
+    await page.evaluate(rakeStroke, { ...onSphere, setup: true });
+    await page.waitForTimeout(1000);
+    const ball1 = await run({ ...onSphere, passes: 1 });
+    const ball = await run({ ...onSphere, passes: 5 });
+    const g1 = dips(ball1.col, 0.5 * ball1.reach, ball1.r / 4);
+    const g5 = dips(ball.col, 0.5 * ball.reach, ball.r / 4);
+    const each = (g, s) => g.map(([y, , hh]) => `${(y / s.r).toFixed(2)}:${(-hh / s.reach).toFixed(2)}`).join(', ');
+    t.ok(g1.length === 4 && g1.every(([, , hh]) => Math.abs(-hh / ball1.reach - 1) < 0.15), `on the sphere (radius ${ball1.r.toFixed(2)} cm on its ${ball1.R.toFixed(1)}) one stroke cuts four grooves a strength deep, the rim's as the middle's (${each(g1, ball1)} of the radius and the strength)`);
+    t.ok(g5.length === 4 && g5.every(([, , hh]) => Math.abs(-hh / ball.reach - 1) < 0.15) && cuts(ball)[4] / cuts(ball)[0] - 1 < 0.15, `and five strokes leave them there (${each(g5, ball)}; the deepest per pass ${fmt(cuts(ball))}, ${pct(cuts(ball)[4] / cuts(ball)[0] - 1)} more)`);
+    const curve = ball.dab.levelRef.coef;
+    t.ok(curve[3] < -0.1 && curve[5] < -0.1, `the reference follows the sphere's curve (x^2 and y^2 terms ${curve[3].toFixed(3)}, ${curve[5].toFixed(3)} cm at the rim)`);
+    const big = await run({ ...onSphere, radius: 0.5, passes: 3 });
+    const gBig = dips(big.col, 0.5 * big.reach, big.r / 4);
+    t.ok(gBig.length === 4 && gBig.every(([, , hh]) => Math.abs(-hh / big.reach - 1) < 0.3), `at half the sphere's radius, where a plane would stand ${(big.r * big.r / (2 * big.R)).toFixed(2)} cm off, the grooves are within 30% of the strength (${each(gBig, big)})`);
   },
 };
