@@ -23,6 +23,7 @@
 - [x] 2026-11-08: Under Gestalt v2, the handwritten "Bozzetto" logotype on the loading screen: keep it as your own mark, or set the name in Familjen Grotesk as Gestalt's Wordmark does. Decided 2026-11-09: keep the hand-drawn logotype, in white on black or in orange (which of the two still to choose), on a new loading splash
 - [ ] 2026-11-08: Under Gestalt v2, corner brackets on the side panels: none, so brackets mark only the viewport and images (as the mockup has it now); brackets around every open panel; or brackets only around the panel in use (blocks: the panels in the restyle)
 - [x] 2026-11-09: Menu hover in the Gestalt v2 restyle, a subtler mark than the inverted row: A inverted (current), B solid 20% tint, C 3px edge bar, D 6px square marker, E bold name. Decided 2026-11-09: E, the hovered item turns bold with no band; the open menu's name stays inverted
+- [ ] 2026-11-10: Clay brush default falloff, once the clay maths is back to SculptGL's (in progress): keep Plateau (flat-topped strips, your 2026-10-24 call) or make Soft the default (SculptGL's own falloff, softer mounds); both stay as presets either way (blocks: nothing, the fix ships with Plateau)
 
 ## Notes for Bozzetto Studio
 
