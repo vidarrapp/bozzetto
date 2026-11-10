@@ -58,7 +58,7 @@ professional apps solve the same problems.
 3. **Four panels that can all be open at once do not fit a laptop or an
    iPad.** Two open on one side each get half the height and both scroll.
    Final Cut and Figma show one panel per side and switch by tab. One
-   open panel per side (**Proposed**, section 6).
+   open panel per side, with folder tabs (section 6).
 4. **The menu bar is a web answer.** On the desktop the same commands
    belong in the system's menu bar, and on iPad in the system's menu.
    The spec defines commands once and lets each platform show them its
@@ -245,16 +245,17 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
 ### Panels
 
 - Each side has one panel, docked under the title strip: Scene and Model
-  share the left one, Tool and Render the right one.
-- The panel's top row is its tabs, as in any tabbed inspector: the two
-  names in the body face, the one showing in bold. A hairline runs under
-  the row and is open under the tab that is showing, so that tab reads
-  as part of the panel beneath it. At the far end of the row a chevron
-  closes the panel toward its edge.
-- **One panel is open per side** (**Proposed**). Pressing the other tab
-  swaps what the panel shows. Closed, only the tab row is left at the
-  edge: the two names, neither bold, no line; pressing a name opens the
-  panel on it.
+  share the left one, Tool and Render the right one (owner call,
+  2026-11-11: one panel open per side, with folder tabs).
+- **Folder tabs.** Above the panel sit its two tabs, each a box of the
+  panel's own surface, 2px apart. The tab that is showing is 28px tall,
+  joined to the panel with no gap, its name bold. The other is 26px
+  tall, so it stops 2px short of the panel, its name regular: a tab
+  behind, still plainly a thing to press.
+- Pressing the other tab swaps what the panel shows. Pressing the tab
+  that is showing closes the panel; there is no separate close button.
+  Closed, both tabs stay at the edge as two 26px boxes, and pressing one
+  opens the panel on it.
 - Under the tabs the panel's heading names what it is about: the
   selected object in Model, the tool in hand in Tool.
 - A panel is 304px wide and as tall as its content, up to 16px above
@@ -358,7 +359,7 @@ states" board. This section adds behaviour.
 1. The Help menu, and the order File, Edit, View, Help.
 2. The 44px target rule does not apply to Bozzetto: every control is
    pressed with a pen, a mouse or a hotkey.
-3. One panel per side with a tab row, the tab showing in bold.
+3. One panel per side with folder tabs, as specified here.
 4. The project name in the title strip.
 5. Surfaces carry no outline; an outline means a control.
 6. Hotkey digits and key hints as View toggles, off by default on a

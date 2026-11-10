@@ -31,7 +31,7 @@
 - [x] 2026-11-10: Gestalt switch-over, errors and destructive actions with no red in the system. Decided 2026-11-10: orange for errors, and the primary button to confirm
 - [x] 2026-11-10: Gestalt switch-over, where the theme choice lives once the Ink button leaves the top bar. Decided 2026-11-10: Preferences
 - [x] 2026-11-10: Gestalt switch-over, the Flaticon credit the system asks for. Decided 2026-11-10: a Help menu in the menu bar, with documentation of every tool and option and an About and credits section crediting everything
-- [ ] 2026-11-10: Interface spec (docs/ui-spec.md), panels: one panel per side with a tab row along its top (Scene | Model, Tool | Render), the tab showing in bold, as an inspector in Final Cut or Figma; the first drawing (inverted tabs floating above the panel) was turned down 2026-11-11 and this is the second, on the mockup's Sculpt and iPad boards. Yes, or keep any number open at once (blocks: the Sculpt screen)
+- [x] 2026-11-10: Interface spec (docs/ui-spec.md), panels: one open per side switched by tab, or any number open at once. Decided 2026-11-11: one per side with folder tabs (option A on the "Panel tabs · three ways" board): both tabs are boxes of the panel's surface, the one showing joined to the panel and bold, the other stopping 2px short of it
 - [x] 2026-11-10: Interface spec, section headers: drop the numbers or keep them. Decided 2026-11-11: drop them
 - [x] 2026-11-10: Interface spec, Publish: a quiet button at the top right of the title strip, or only in the File menu. Decided 2026-11-11: at the top right
 - [x] 2026-11-10: Interface spec, Undo and Redo buttons on the viewport: only in touch density, or always. Decided 2026-11-11: always visible
