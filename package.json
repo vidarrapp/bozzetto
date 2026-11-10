@@ -35,11 +35,11 @@
     "gifenc": "^1.0.3",
     "gl-matrix": "^3.4.4",
     "mediabunny": "^1.62.1",
-    "three": "^0.186.1"
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261030.1",
-    "@types/three": "^0.186.0",
+    "@types/three": "^0.187.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0",
