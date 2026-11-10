@@ -71,7 +71,7 @@ No visible change.
 
 ### 1. Skin (M)
 
-With the preview on, the whole app changes colour and type at once.
+The whole app changes colour and type at once.
 
 - Colours: `--bg` and `--text` become ground and ink. The muted grey goes;
   secondary text is smaller or lighter instead. The Sculpt viewport stays
