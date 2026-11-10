@@ -31,11 +31,11 @@
 - [x] 2026-11-10: Gestalt switch-over, errors and destructive actions with no red in the system. Decided 2026-11-10: orange for errors, and the primary button to confirm
 - [x] 2026-11-10: Gestalt switch-over, where the theme choice lives once the Ink button leaves the top bar. Decided 2026-11-10: Preferences
 - [x] 2026-11-10: Gestalt switch-over, the Flaticon credit the system asks for. Decided 2026-11-10: a Help menu in the menu bar, with documentation of every tool and option and an About and credits section crediting everything
-- [ ] 2026-11-10: Interface spec (docs/ui-spec.md), panels: one open panel per side, switched by tab, as Final Cut and Figma do (proposed), or any number open at once as the mockup has it ; drawn on the mockup's Sculpt and iPad boards for you to judge (blocks: the Sculpt screen)
-- [ ] 2026-11-10: Interface spec, section headers: drop the numbers ("Material", not "01 Material") (proposed), or keep them (blocks: the controls)
-- [ ] 2026-11-10: Interface spec, Publish: a quiet button at the top right of the title strip, as Share is in Final Cut and Figma (proposed), or only in the File menu (blocks: the Sculpt screen)
+- [ ] 2026-11-10: Interface spec (docs/ui-spec.md), panels: one panel per side with a tab row along its top (Scene | Model, Tool | Render), the tab showing in bold, as an inspector in Final Cut or Figma; the first drawing (inverted tabs floating above the panel) was turned down 2026-11-11 and this is the second, on the mockup's Sculpt and iPad boards. Yes, or keep any number open at once (blocks: the Sculpt screen)
+- [x] 2026-11-10: Interface spec, section headers: drop the numbers or keep them. Decided 2026-11-11: drop them
+- [x] 2026-11-10: Interface spec, Publish: a quiet button at the top right of the title strip, or only in the File menu. Decided 2026-11-11: at the top right
 - [x] 2026-11-10: Interface spec, Undo and Redo buttons on the viewport: only in touch density, or always. Decided 2026-11-11: always visible
-- [ ] 2026-11-10: Interface spec, view axes: pressing an axis turns the view to look along it (proposed), or the axes only show
+- [x] 2026-11-10: Interface spec, view axes: pressing an axis turns the view to look along it, or the axes only show. Decided 2026-11-11: they only show
 - [ ] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
 

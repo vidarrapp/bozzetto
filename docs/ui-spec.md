@@ -24,7 +24,7 @@ professional apps solve the same problems.
 | Brush size and strength | Not applicable | Not applicable | Upright sliders on the edge by the free hand | Upright sliders on the left edge, tall enough for a thumb |
 | Touch | Larger rows and controls on iPad than on the Mac | Mostly a desktop app | Large targets throughout | Two densities from the same parts: compact for a mouse, touch for fingers and a pen |
 | Hiding the interface | Full-screen viewer | Hide UI command | Full-screen toggle | Hide interface, in View and on a key |
-| The main outward action | Share, top right | Share, top right | Export in a menu | Publish, top right (**Proposed**) |
+| The main outward action | Share, top right | Share, top right | Export in a menu | Publish, top right |
 | What you are working on | Project name in the title area | File name in the title area | Not shown | Project name and the object readout in the title strip |
 
 ## 2. Evaluation of the mockup
@@ -74,9 +74,9 @@ professional apps solve the same problems.
    and off in touch.
 8. **Section headers carry numbers ("01 Material").** A number implies an
    order to follow, and folding sections have none. Inspectors in the
-   apps compared use the name alone. Drop the numbers (**Proposed**).
+   apps compared use the name alone. The numbers are dropped.
 9. **Publish is three levels down.** It is the app's one outward action.
-   Final Cut and Figma keep theirs at the top right (**Proposed**).
+   Final Cut and Figma keep theirs at the top right, and so does this.
 10. **Long operations have no shape.** Remesh, quad remesh, save and
     export need a progress line and a Cancel (section 9).
 11. **There are no context menus.** Right-click on the Mac and long-press
@@ -236,20 +236,24 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
   object (name, triangles, level), keys regular and values bold. An
   unsaved project shows "Edited" after its name, in regular weight.
   Under 900px wide the readout drops the triangle count, then the level.
-- Right: Publish (**Proposed**), then the hide-interface icon.
+- Right: Publish, a quiet button, then the hide-interface icon.
 - It is the one band that runs edge to edge.
 
 ### Panels
 
-- Each side has a row of tabs under the title strip: Scene and Model on
-  the left, Tool and Render on the right. A tab is a `ground` box with
-  the panel's name set horizontally.
-- **One panel is open per side** (**Proposed**). Pressing a tab opens its
-  panel under the tabs; pressing the open panel's tab
-  closes it; the panel's header has no close button of its own. Opening
-  the other tab on that side swaps them. The open panel's tab is
-  inverted, like an open menu's name. The header names what the panel is
-  about: the selected object in Model, the tool in hand in Tool.
+- Each side has one panel, docked under the title strip: Scene and Model
+  share the left one, Tool and Render the right one.
+- The panel's top row is its tabs, as in any tabbed inspector: the two
+  names in the body face, the one showing in bold. A hairline runs under
+  the row and is open under the tab that is showing, so that tab reads
+  as part of the panel beneath it. At the far end of the row a chevron
+  closes the panel toward its edge.
+- **One panel is open per side** (**Proposed**). Pressing the other tab
+  swaps what the panel shows. Closed, only the tab row is left at the
+  edge: the two names, neither bold, no line; pressing a name opens the
+  panel on it.
+- Under the tabs the panel's heading names what it is about: the
+  selected object in Model, the tool in hand in Tool.
 - A panel is 304px wide and as tall as its content, up to 16px above
   whatever sits below it on that edge; past that it scrolls inside.
 - Each panel remembers which of its sections are folded, and which panel
@@ -273,8 +277,8 @@ Model panel, not in a menu. The viewer and the gallery have no Help menu.
   moment when changed by a hotkey while it is open.
 - Undo and Redo are always shown (owner call, 2026-11-11), as well as
   being in Edit.
-- Right edge, bottom: the view axes. Pressing an axis turns the view to
-  look along it (**Proposed**).
+- Right edge, bottom: the view axes. They only show; they are not
+  pressed (owner call, 2026-11-11).
 
 ### Narrow and short windows
 
@@ -350,11 +354,11 @@ states" board. This section adds behaviour.
 
 1. The Help menu, and the order File, Edit, View, Help.
 2. The two densities, and that row height is 44px in touch.
-3. One open panel per side, with the open panel's tab inverted.
+3. One panel per side with a tab row, the tab showing in bold.
 4. The project name in the title strip.
 5. Surfaces carry no outline; an outline means a control.
 6. Hotkey digits and key hints as View toggles, off by default in touch.
-7. Section headers without numbers, if agreed.
+7. Section headers without numbers.
 8. Notices, progress and context menus as specified above.
 
 ## 11. Building it
