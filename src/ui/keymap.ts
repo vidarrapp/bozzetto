@@ -246,6 +246,12 @@ export function chordLabel(chord: string): string {
   return chordParts(chord).join(' + ');
 }
 
+/** A control's label with its action's current key after it, "Wireframe (Shift + W)"; the bare label when unbound. */
+export function keyedLabel(label: string, actionId: string): string {
+  const chord = keymap.chordFor(actionId);
+  return chord ? `${label} (${chordLabel(chord)})` : label;
+}
+
 type Listener = () => void;
 
 /** The live keymap: defaults plus the user's overrides, saved per browser. */

@@ -72,7 +72,7 @@ export const MODES: Topic[] = [
         ['Preset', 'Male or Female (placeholder blocks), or a Male or Female mannequin, realistic or stylized. A model you load joins the list.'],
         ['Height', 'How tall the figure stands.'],
         ['Floor offset', 'Raises or lowers the floor it stands on, in centimetres.'],
-        ['Symmetry (x)', 'Mirrors pose edits to the other side. Hotkey **X**.'],
+        ['Symmetry', 'Mirrors pose edits to the other side. The label shows its hotkey, **X** by default.'],
         ['Reset pose', 'Puts the pose back. Hotkey **Shift+R**.'],
         ['Copy L → R, Copy R → L', 'Copies the pose of one side onto the other.'],
       ),

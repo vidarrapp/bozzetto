@@ -6,7 +6,7 @@ import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
-import { chordLabel, keymap } from './keymap';
+import { chordLabel, keyedLabel, keymap } from './keymap';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
@@ -615,7 +615,7 @@ export class Panel {
     this.smoothCheckbox = smooth.querySelector('input')!;
     material.appendChild(smooth);
 
-    const wire = checkbox('Wireframe (w)', this.viewer.isWireframe(), (on) =>
+    const wire = checkbox(keyedLabel('Wireframe', 'view.wireframe'), this.viewer.isWireframe(), (on) =>
       this.viewer.setWireframe(on),
     );
     this.wireframeCheckbox = wire.querySelector('input')!;

@@ -1,3 +1,4 @@
+import { keyedLabel } from '../../ui/keymap';
 import Enums from '@sculpt-vendor/misc/Enums';
 import { div, labelRow, onTap, selectEl } from '../../ui/dom';
 import { checkbox, compactRange, section } from '../../ui/Panel';
@@ -665,7 +666,7 @@ export class SculptPanel extends SidePanel {
   private buildSymmetry(body: HTMLElement): void {
     const sec = section(body, 'Symmetry');
     this.symSection = sec;
-    const box = checkbox('Mirror sculpting (x)', this.session.getSymmetry(), () =>
+    const box = checkbox(keyedLabel('Mirror sculpting', 'brush.symmetry'), this.session.getSymmetry(), () =>
       this.session.toggleSymmetry(),
     );
     this.symCheckbox = box.querySelector('input') as HTMLInputElement;

@@ -136,7 +136,7 @@ export const PANELS: Topic[] = [
         ['Matcap', 'In Matcap mode, a thumbnail gallery of matcaps to choose from.'],
         ['Colour', 'While you present a sculpt, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
-        ['Wireframe (w)', 'Draws the triangle edges over the model. Default hotkey **Shift+W**.'],
+        ['Wireframe', 'Draws the triangle edges over the model. The label shows its hotkey, **Shift + W** by default.'],
         ['Wire opacity', 'From 0 to 1.'],
       ),
       p('In the viewer, Lit (PBR) also shows **Albedo**, **Roughness** and **Metalness**. In Sculpt these three belong to each object, in the Model panel.'),

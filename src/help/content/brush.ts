@@ -27,7 +27,7 @@ export const BRUSH: Topic[] = [
       h('Symmetry'),
       p('The **Symmetry** section is for the brushes only.'),
       options(
-        ['Mirror sculpting (x)', 'Mirrors every stroke across the chosen axis. **X** toggles it.'],
+        ['Mirror sculpting', 'Mirrors every stroke across the chosen axis. The label shows its hotkey, **X** by default.'],
         ['X, Y, Z', 'The axis to mirror across. It is kept for each brush.'],
       ),
       h('Profile curves'),
