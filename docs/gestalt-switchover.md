@@ -8,6 +8,11 @@ every control.
 
 Nothing here is built yet.
 
+**Superseded in part on 2026-11-10 by `docs/ui-spec.md`:** the interface
+is now specified there, and each screen is built to match the mockup and
+that spec directly. The phase order below (skin first, layout later) is
+dropped; see the spec's last section for the build order.
+
 ## What the system asks for, in short
 
 - Black, white, orange and lime. No grey, no tints, no ink at reduced
