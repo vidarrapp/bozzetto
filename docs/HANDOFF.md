@@ -24,6 +24,7 @@
 - [ ] 2026-11-08: Under Gestalt v2, corner brackets on the side panels: none, so brackets mark only the viewport and images (as the mockup has it now); brackets around every open panel; or brackets only around the panel in use (blocks: the panels in the restyle)
 - [x] 2026-11-09: Menu hover in the Gestalt v2 restyle, a subtler mark than the inverted row: A inverted (current), B solid 20% tint, C 3px edge bar, D 6px square marker, E bold name. Decided 2026-11-09: E, the hovered item turns bold with no band; the open menu's name stays inverted
 - [ ] 2026-11-10: Clay brush default falloff, once the clay maths is back to SculptGL's (in progress): keep Plateau (flat-topped strips, your 2026-10-24 call) or make Soft the default (SculptGL's own falloff, softer mounds); both stay as presets either way (blocks: nothing, the fix ships with Plateau)
+- [ ] 2026-11-10: Rake, after looking at ZBrush's (nothing changed yet): which of these to try, if any: A tines cut only the high spots and stop at a level (the traditional rake; ours and ZBrush's dig deeper every pass); B an add mode that fills hollows with combed strips before building; C a light Shift-smooth that erases rake marks but keeps the levelled form; D Scrape split into down-only and up-only (blocks: any rake change)
 
 ## Notes for Bozzetto Studio
 
