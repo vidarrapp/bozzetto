@@ -341,7 +341,7 @@ export function sanitizeLook(v: unknown): Partial<LookState> | undefined {
           bgBrightness: num(env.bgBrightness, 0),
         })
       : undefined,
-    ao: section(defined({ enabled: bool(ao.enabled), intensity: num(ao.intensity, 0), radius: num(ao.radius, 0) })),
+    ao: section(defined({ enabled: bool(ao.enabled), intensity: num(ao.intensity, 0), radius: num(ao.radius, 0), radiusCm: num(ao.radiusCm, 0) })),
     sculptAO: section(defined({ strength: num(sculptAO.strength, 0), radius: num(sculptAO.radius, 0) })),
     presentation: section(
       defined({

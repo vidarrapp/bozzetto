@@ -26,6 +26,7 @@ import {
   normalize,
   pow,
   sin,
+  smoothstep,
   sqrt,
   sub,
   textureSize,
@@ -80,6 +81,9 @@ const texSize: N = textureSize;
  * beyond the radius in any direction - in front, behind or to the side -
  * no longer darkens anything, and the term fades out instead of ending.
  *
+ * And one thing added: the term fades to none where the radius is only a
+ * few pixels across on screen (see `fadeFrom`).
+ *
  * The rest - the horizon search, the slice integral, the step falloff, the
  * noise - is three's r184 code, so `thickness` goes unused. r186 rewrote
  * three's own shader (quadratic steps, a squared sphere falloff, a
@@ -98,6 +102,30 @@ class SoftGTAONode extends GTAONode {
   readonly falloff: UniformNode<'float', number> = uniform(0.35) as unknown as UniformNode<'float', number>;
 
   /**
+   * The radius on screen, in pixels of the depth buffer, at or under which
+   * the term is none (`fadeFrom`) and from which it is whole (`fadeTo`).
+   * The horizon search steps inside the radius; once the radius is a few
+   * pixels its steps land on the pixel being shaded or right beside it,
+   * where the depth buffer says nothing about occluders, only about the
+   * surface's own slope and its rounding, and the search reads those as
+   * occlusion: every slanted surface greyed and the floor banded (seen on
+   * the mannequin, 170 cm in a 700 px view, at 1 cm: 3 px). A radius was a
+   * share of the subject, which the view frames, so it was never that
+   * small on screen; as a length in centimetres it is, on a whole figure
+   * seen from afar. There the AO now fades out, as a contact shadow a
+   * pixel or two wide would, and comes in as the view closes in.
+   */
+  readonly fadeFrom: UniformNode<'float', number> = uniform(3) as unknown as UniformNode<'float', number>;
+  readonly fadeTo: UniformNode<'float', number> = uniform(8) as unknown as UniformNode<'float', number>;
+  /** The depth buffer's height in pixels (setSize), to measure the radius on screen with. */
+  private readonly depthHeight: UniformNode<'float', number> = uniform(1) as unknown as UniformNode<'float', number>;
+
+  override setSize(width: number, height: number): void {
+    this.depthHeight.value = height;
+    super.setSize(width, height);
+  }
+
+  /**
    * Leave the AO texture as the last pass drew it (Viewer.updateFrameMode).
    * Under a stroke the camera holds still, so last frame's occlusion is
    * this frame's everywhere but under the brush, and skipping the pass is
@@ -112,6 +140,12 @@ class SoftGTAONode extends GTAONode {
     // undefined, not false: false asks the frame to try the node again.
     if (this.skip) return undefined;
     this.renders++;
+    // three (r186) rebuilds the material whenever the sample count differs
+    // from the one it last built with, having baked the count into its own
+    // shader. This shader reads the count as a uniform (setup), so a change
+    // of count (adaptive quality's step) is that uniform moving and nothing
+    // else, and no shader is compiled for it.
+    (this as unknown as GTAOInternals)._currentSamples = this.samples.value;
     return super.updateBefore(frame);
   }
 
@@ -206,14 +240,21 @@ class SoftGTAONode extends GTAONode {
 
       ao.assign(clamp(ao.div(DIRECTIONS), 0, 1));
       ao.assign(pow(ao, this.scale as N));
+      // ADDED: none where the radius is too few pixels across to search
+      // (fadeFrom). The radius on screen at this pixel's depth: how far up
+      // the screen a point one radius above it lands.
+      const above: N = getScreenPosition(viewPosition.add(vec3(0, radiusToUse, 0)), self._cameraProjectionMatrix as N);
+      const here: N = getScreenPosition(viewPosition, self._cameraProjectionMatrix as N);
+      const radiusPx: N = above.y.sub(here.y).abs().mul(this.depthHeight as N);
+      ao.assign(mix(1.0, ao, smoothstep(this.fadeFrom as N, this.fadeTo as N, radiusPx)));
       return ao;
     });
 
     // As three's setup leaves it (r186): its updateBefore rebuilds the
     // material from _ao whenever samples.value differs from
-    // _currentSamples, so both must be this shader's, or the first frame
-    // would call a null _ao. This shader reads the count as a uniform, so
-    // the rebuild is not needed here, only harmless.
+    // _currentSamples, so both are this shader's. This shader reads the
+    // count as a uniform, so the rebuild is not needed here, and
+    // updateBefore above keeps it from happening.
     self._ao = occlusion as N;
     self._sharedContext = (builder as N).getSharedContext();
     self._currentSamples = (this.samples as N).value;

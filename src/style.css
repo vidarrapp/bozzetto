@@ -3213,7 +3213,9 @@ body:has(.transport) .chrome-hint {
 
 /* The Rake: one circle per tine (BrushCursor.renderTines), the brush ring
    kept faint behind them to show the rake's reach. The circles' stroke is
-   a gradient that fades the tapered outer tines. */
+   a gradient that fades the tapered outer tines. The screen-space ring
+   (a size set off the mesh, from the sliders or the keys) has them too,
+   and stays as strong as ever: its size is what is being set. */
 .sculpt-cursor__tines {
   fill: none;
   stroke-width: 1.5;
