@@ -3,6 +3,8 @@ import { chordLabel, chordParts, keymap, type KeyMode } from './keymap';
 import { showPreferences } from './Preferences';
 import { checkForUpdates, onUpdates, updateStatus, updatesAvailable } from './updates';
 import { APP_VERSION } from './version';
+import { showHelp } from '../help/HelpWindow';
+import { HOTKEY_GUIDE_EVENT } from '../help/menu';
 
 /**
  * Hotkey guide for the viewer: a dismissible top-left hint ("Press H …") that
@@ -42,6 +44,10 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
   }
   if (open) html += '</div>';
   html += `<div class="help-guide__foot"><button type="button" class="help-guide__prefs">Customise hotkeys…</button>`;
+  // The way on to the rest of the help: the topics, and who made what.
+  html +=
+    ' <button type="button" class="help-guide__prefs help-guide__link" data-topic="">Help topics</button>' +
+    ' <button type="button" class="help-guide__prefs help-guide__link" data-topic="about">About and credits</button>';
   // Which build this is, so "am I on the new one?" has an answer on the
   // device itself. Checking needs a service worker; without one the
   // version stands alone.
@@ -83,15 +89,24 @@ export class Help {
     this.render();
   };
 
+  private readonly onGuideEvent = (): void => this.toggle();
+
   private render(): void {
     this.guide.innerHTML = guideHtml(this.mode, this.updates);
     // The way into the editor from the guide, for anyone reading it and
     // wanting a different key. Its click must not close the guide.
-    this.guide.querySelector<HTMLButtonElement>('.help-guide__prefs')?.addEventListener('click', (e) => {
+    this.guide.querySelector<HTMLButtonElement>('.help-guide__prefs:not(.help-guide__link)')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.guide.hidden = true;
       showPreferences(this.mode);
     });
+    for (const link of this.guide.querySelectorAll<HTMLButtonElement>('.help-guide__link')) {
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.guide.hidden = true;
+        showHelp(link.dataset.topic || undefined);
+      });
+    }
     // Nor must this one's: the answer is said here, beside the version.
     this.guide.querySelector<HTMLButtonElement>('.help-guide__check')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -164,6 +179,8 @@ export class Help {
     // Sculpt mode swaps the guide content while active (and back on exit),
     // and a rebind redraws it.
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
+    // The Help menu's Hotkeys item asks for the guide this way.
+    window.addEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     this.offKeymap = keymap.onChange(() => this.render());
     this.offUpdates = onUpdates(this.onUpdate);
   }
@@ -184,6 +201,7 @@ export class Help {
   dispose(): void {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
+    window.removeEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
     this.offKeymap();
     this.offUpdates();
     this.hint.remove();

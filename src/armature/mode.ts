@@ -9,6 +9,7 @@ import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { isShowKey, pageChrome } from '../ui/ChromeToggle';
 import { showPreferences } from '../ui/Preferences';
+import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
@@ -1579,6 +1580,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ],
     'file-menu--edit',
   );
+  const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
 
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
@@ -1820,6 +1822,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.dispose();
     fileMenu.dispose();
     editMenu.dispose();
+    helpMenu.dispose();
     if (pendingStep) clearTimeout(pendingStep);
     histButtons.dispose();
     openInput.remove();

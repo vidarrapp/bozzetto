@@ -55,6 +55,7 @@ import { FileMenu } from './ui/FileMenu';
 import { chordLabel, keymap } from '../ui/keymap';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
+import { helpMenuItems } from '../help/menu';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -590,6 +591,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let publishWindow: PublishWindow | null = null;
   let fileMenu: FileMenu | null = null;
   let editMenu: TopMenu | null = null;
+  let helpMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
   // Present mode (ui/Present): the frame tick turns its turntable, so it is
@@ -1562,6 +1564,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       ],
       'file-menu--edit',
     );
+    // Help beside them: the topics, the hotkey guide, and who made what.
+    helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
   }
   // Built after File and Edit so its chip lands beside them in the row.
   // The chip stays hidden until the role probe below has found a sign-in.
@@ -1956,6 +1960,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow,
     fileMenu,
     editMenu,
+    helpMenu,
     fileActions,
     sculptPanel,
     modelPanel,
@@ -2064,6 +2069,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
+    helpMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
       e.sync.dispose();
