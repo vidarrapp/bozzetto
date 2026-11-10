@@ -22,7 +22,7 @@ professional apps solve the same problems.
 | Where settings live | One inspector on the right, with tabs, showing what is selected | Structure on the left, properties on the right, one panel each | Popovers from the top bar | A tabbed panel on each side, one open per side |
 | Tools | Tool menu in the toolbar | A bar at the bottom centre | A column or bar at an edge | The bar at the bottom centre |
 | Brush size and strength | Not applicable | Not applicable | Upright sliders on the edge by the free hand | Upright sliders on the left edge, tall enough for a thumb |
-| Size of controls on iPad | Larger rows than on the Mac, for fingers | Mostly a desktop app | Small, dense controls, because the Pencil is precise | One size for pen and mouse; finger-sized only where fingers press |
+| Size of controls on iPad | Larger rows than on the Mac, for fingers | Mostly a desktop app | Small, dense controls, because the Pencil is precise | One size for pen and mouse; nothing sized for a finger |
 | Hiding the interface | Full-screen viewer | Hide UI command | Full-screen toggle | Hide interface, in View and on a key |
 | The main outward action | Share, top right | Share, top right | Export in a menu | Publish, top right |
 | What you are working on | Project name in the title area | File name in the title area | Not shown | Project name and the object readout in the title strip |
@@ -53,9 +53,8 @@ professional apps solve the same problems.
    app compared shows the document's name at the top. The title strip
    gains the project name and its saved state.
 2. **The system's 44px target rule does not fit a pen app.** Stacked
-   28px rows cannot each have a 44px target, and with a Pencil they do
-   not need one. The rule is kept for the controls a finger presses and
-   dropped for panel rows (section 4).
+   28px rows cannot each have a 44px target, and with a Pencil nothing
+   needs one. The rule does not apply to Bozzetto (section 4).
 3. **Four panels that can all be open at once do not fit a laptop or an
    iPad.** Two open on one side each get half the height and both scroll.
    Final Cut and Figma show one panel per side and switch by tab. One
@@ -113,10 +112,11 @@ panel buttons, 13px labels, 11px values, the 24px title strip. There is
 no separate touch density. An earlier draft of this spec had one, with
 44px rows; it made the panels huge and is withdrawn.
 
-- **Where fingers reach.** Fingers navigate (orbit, pan, zoom) and press
-  the few controls that sit alone on the viewport: the tools (44px) and
-  the edge controls (40px). Those keep finger-sized targets. Rows inside
-  a panel are pen and mouse sized.
+- **Fingers only navigate.** Orbit, pan and zoom are the fingers' job.
+  Every control, the tools included, is pressed with the pen, a mouse or
+  a hotkey (owner call, 2026-11-11). So no control is sized for a
+  finger. The tools stay at 44px and the edge controls at 40px because
+  that is how they are drawn, not as touch targets.
 - **Brush sliders.** 160px tall on the left edge, slim, with a 44px wide
   drag zone, as the edge sliders of a painting app are. (The mockup's
   first drawing had them at 96px.)
@@ -356,8 +356,8 @@ states" board. This section adds behaviour.
 `bozzetto-interface.md` should gain, once agreed:
 
 1. The Help menu, and the order File, Edit, View, Help.
-2. The 44px target rule applies to controls a finger presses (tools, edge
-   controls); panel rows are pen and mouse sized.
+2. The 44px target rule does not apply to Bozzetto: every control is
+   pressed with a pen, a mouse or a hotkey.
 3. One panel per side with a tab row, the tab showing in bold.
 4. The project name in the title strip.
 5. Surfaces carry no outline; an outline means a control.
