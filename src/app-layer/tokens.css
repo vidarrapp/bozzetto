@@ -1,0 +1,34 @@
+/*
+ * Bozzetto application layer: foundations (docs/ui-foundations.md).
+ * Dark theme only. The interface's own grey scale, text levels, lines and
+ * the three colours with one job each. Everything in the app's interface
+ * reads these; nothing in it reads Gestalt's --ground and --ink directly.
+ */
+:root {
+  /* surfaces, darkest to lightest */
+  --bz-strip: #1b1b1b; /* the title strip; a tab that is behind; page ground of the gallery and viewer */
+  --bz-viewport: #222222; /* the Sculpt and Armature viewport */
+  --bz-panel: #2c2c2c; /* panels and the tool bar */
+  --bz-raised: #333333; /* menus, tooltips, windows, notices */
+  --bz-raised-border: #555555;
+  --bz-control: #3a3a3a; /* buttons, selects */
+  --bz-hover: #4b4b4b; /* a hovered control or row, a selected row, the box of a switch */
+  --bz-pressed: #1b1b1b;
+  /* text and lines */
+  --bz-text: #f2f2f2;
+  --bz-text-2: #b3b3b3; /* section headers, hotkeys in menus, captions */
+  --bz-text-3: #7d7d7d; /* unavailable */
+  --bz-line: #5c5c5c; /* the line under a field */
+  --bz-sep: #444444; /* between sections and groups */
+  /* colour, one job each */
+  --bz-orange: #ff5a1f; /* the tool in hand, a field's amount, the one main action, the focus outline */
+  --bz-lime: #c6ff00; /* the knob of a switch that is on */
+  --bz-red: #ff4060; /* something went wrong; an action that cannot be undone */
+  --bz-on-accent: #000000; /* text and icons on orange, lime or red */
+  /* raised things */
+  --bz-raised-shadow: 0 0 0 1px var(--bz-raised-border), 0 12px 32px rgba(0, 0, 0, 0.55);
+  --bz-focus: 2px solid var(--bz-orange);
+  /* type */
+  --bz-font: 'Familjen Grotesk', system-ui, sans-serif;
+  --bz-font-mono: 'Martian Mono', ui-monospace, Menlo, monospace;
+}
