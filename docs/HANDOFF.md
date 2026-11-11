@@ -36,6 +36,10 @@
 - [x] 2026-11-10: Interface spec, Publish: a quiet button at the top right of the title strip, or only in the File menu. Decided 2026-11-11: at the top right
 - [x] 2026-11-10: Interface spec, Undo and Redo buttons on the viewport: only in touch density, or always. Decided 2026-11-11: always visible
 - [x] 2026-11-10: Interface spec, view axes: pressing an axis turns the view to look along it, or the axes only show. Decided 2026-11-11: they only show
+- [ ] 2026-11-11: Reaching projects and templates from Sculpt: only File, Close back to the gallery (as now); or also a File, Browse item that opens a window with your projects and templates without leaving the workspace (blocks: the File menu)
+- [ ] 2026-11-11: Present as a third workspace beside Sculpt and Armature: how it is entered and left (a workspace switch in the title strip, or View, Present mode as now), and what its strip and panels hold (blocks: the Present design)
+- [x] 2026-11-11: Install and the account while in Sculpt or Armature. Decided 2026-11-11: neither is there; the account, projects and Install are reached from the gallery, and the File menu handles saving, importing and exporting
+- [x] 2026-11-11: A menu strip in the gallery. Decided 2026-11-11: none, so the gallery reads as different from the workspaces
 - [ ] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
 - [x] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app. Decided 2026-11-11: yes; red for errors and deletes; dark theme only for now (a native iOS app will later have to consider Liquid Glass). Written up in docs/ui-foundations.md
