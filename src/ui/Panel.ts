@@ -1315,9 +1315,8 @@ export interface SliderOptions {
 }
 
 /**
- * A slider row: the caption, the track, and the value at the end. A
- * numbered row prints its value always; a compact one only while the value
- * lies past the travel, where the pinned thumb cannot show it.
+ * A slider row: the caption, the track, and the value at the end, which
+ * both kinds print always (a value past the travel shows as typed).
  */
 function sliderRow(
   label: string,
@@ -1347,7 +1346,7 @@ function sliderRow(
     val.textContent = sliderText(input, value);
   } else {
     val.className = 'slider-val';
-    val.hidden = true;
+    val.textContent = sliderText(input, value);
   }
   if (!opts.fixed) {
     typedSlider(
@@ -1356,13 +1355,7 @@ function sliderRow(
         apply,
         limits: opts.limits,
         hold: opts.hold,
-        readout: numbered
-          ? undefined
-          : (v) => {
-              const past = v < min || v > max;
-              val.hidden = !past;
-              if (past) val.textContent = sliderText(input, v);
-            },
+        readout: numbered ? undefined : (v) => void (val.textContent = sliderText(input, v)),
       },
       value,
     );

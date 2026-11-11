@@ -5826,7 +5826,7 @@ export const suites = {
     await page.mouse.up();
     row = await intensity();
     key = await keyLight(page);
-    t.ok(key.intensity < 5 && key.intensity === row.thumb && row.readout === null, `a drag from there moves within the travel again (${key.intensity}, readout ${row.readout})`);
+    t.ok(key.intensity < 5 && key.intensity === row.thumb && Math.abs(parseFloat(row.readout) - key.intensity) < 0.06, `a drag from there moves within the travel again, and the row says the value (${key.intensity}, readout ${row.readout})`);
 
     const before = key.intensity;
     await page.mouse.dblclick(...row.at);
@@ -5836,7 +5836,7 @@ export const suites = {
     await page.mouse.dblclick(...row.at);
     await typeValue(page, '-3');
     row = await intensity();
-    t.ok((await keyLight(page)).intensity === 0 && row.thumb === 0 && row.readout === null, 'below zero is held at zero: an intensity has nothing less');
+    t.ok((await keyLight(page)).intensity === 0 && row.thumb === 0 && parseFloat(row.readout) === 0, 'below zero is held at zero: an intensity has nothing less');
     await page.mouse.dblclick(...row.at);
     await typeValue(page, '0,25');
     t.eq((await keyLight(page)).intensity, 0.25, 'a comma reads as the decimal point');
