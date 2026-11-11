@@ -1,87 +1,48 @@
 /**
- * App-wide light/dark theme. Sets `data-theme` on <html> (CSS variables key off
- * it), persists the choice, and broadcasts changes so an active viewer can
- * re-tint its 3D background. Call initTheme() before first paint and
- * mountThemeToggle() once per page.
+ * App-wide theme. The application layer is dark only (docs/ui-foundations.md):
+ * `data-theme` on <html> is always `dark`, whatever an earlier visit stored.
+ * Call initTheme() before first paint. The functions that used to switch to
+ * paper stay as harmless stand-ins so their callers keep working.
  */
 
-import { topbarRight } from './topbar';
 export type Theme = 'dark' | 'light';
 
-const KEY = 'bozzetto-theme';
-const EVENT = 'bozzetto:themechange';
-
-/** The viewer's 3D background per theme: the system's black and white (Sculpt and Armature keep their own grey, STUDIO_BG). */
+/**
+ * The viewer's 3D background: the same grey as Sculpt's and Armature's
+ * (STUDIO_BG). The scene's background brightness dims it, so #333333 is
+ * what draws as the interface's viewport grey, #222222.
+ */
 export const THEME_BG: Record<Theme, string> = {
-  dark: '#000000',
-  light: '#ffffff',
+  dark: '#333333',
+  light: '#333333',
 };
 
-/** The browser chrome's colour follows the ground: black on ink, white on paper. */
-const CHROME_COLOR: Record<Theme, string> = { dark: '#000000', light: '#ffffff' };
-
-function syncChromeColor(theme: Theme): void {
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', CHROME_COLOR[theme]);
-}
+/** The browser chrome's colour: the title strip. */
+const CHROME_COLOR = '#1b1b1b';
 
 export function initTheme(): Theme {
-  let theme: Theme = 'dark';
-  try {
-    if (localStorage.getItem(KEY) === 'light') theme = 'light';
-  } catch {
-    /* storage unavailable */
-  }
-  document.documentElement.dataset.theme = theme;
-  syncChromeColor(theme);
-  return theme;
+  document.documentElement.dataset.theme = 'dark';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', CHROME_COLOR);
+  return 'dark';
 }
 
 export function getTheme(): Theme {
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  return 'dark';
 }
 
-export function setTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme;
-  syncChromeColor(theme);
-  try {
-    localStorage.setItem(KEY, theme);
-  } catch {
-    /* ignore */
-  }
-  window.dispatchEvent(new CustomEvent<Theme>(EVENT, { detail: theme }));
+/** There is one theme: asking for another changes nothing. */
+export function setTheme(_theme: Theme): void {
+  initTheme();
 }
 
 export function toggleTheme(): Theme {
-  const next: Theme = getTheme() === 'dark' ? 'light' : 'dark';
-  setTheme(next);
-  return next;
+  return 'dark';
 }
 
-/** Subscribe to theme changes; returns an unsubscribe function. */
-export function onThemeChange(cb: (theme: Theme) => void): () => void {
-  const handler = (e: Event): void => cb((e as CustomEvent<Theme>).detail);
-  window.addEventListener(EVENT, handler);
-  return () => window.removeEventListener(EVENT, handler);
+/** Subscribe to theme changes; the theme never changes, so this only hands back an unsubscribe. */
+export function onThemeChange(_cb: (theme: Theme) => void): () => void {
+  return () => {};
 }
 
-/** Mount the global ink/paper toggle button (top-right). Idempotent per page. */
-export function mountThemeToggle(): void {
-  if (document.querySelector('.theme-toggle')) return;
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'topchip theme-toggle';
-
-  const sync = (): void => {
-    const theme = getTheme();
-    button.textContent = theme === 'dark' ? 'Ink' : 'Paper';
-    button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'paper' : 'ink'} theme`);
-  };
-  sync();
-
-  button.addEventListener('click', () => {
-    toggleTheme();
-    sync();
-  });
-  onThemeChange(sync); // keep in sync if toggled elsewhere
-  topbarRight().appendChild(button);
-}
+/** The ink/paper chip is gone with the paper theme; kept so pages need no change. */
+export function mountThemeToggle(): void {}
