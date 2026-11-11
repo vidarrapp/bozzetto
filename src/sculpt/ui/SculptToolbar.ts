@@ -1,11 +1,10 @@
 import Enums from '@sculpt-vendor/misc/Enums';
-// Flaticon uicons: solid straight (fi-ss-*) for the brushes, thin straight
-// (fi-ts-*) for the Negative mode button (review pick; the lighter face
-// sets the modifier apart from the tools). Whole style sheets are imported
+// Flaticon uicons, solid straight (fi-ss-*), for the brushes and for the
+// Negative button (circle-half-stroke: one style for every icon, owner
+// call). Whole style sheets are imported
 // for upgrade-proof font URLs; each font only downloads when one of its
 // glyphs first renders (sculpt mode). Attribution lives in the README.
 import '@flaticon/flaticon-uicons/css/solid/straight.css';
-import '@flaticon/flaticon-uicons/css/thin/straight.css';
 import type { InputShell } from '../bridge/InputShell';
 import { liftedOn, onTap, TAP_CLICK_MS } from '../../ui/dom';
 
@@ -223,7 +222,7 @@ export class SculptToolbar {
       '',
       'Carve (negative): tap to carve the next stroke, long-press to keep carving until a tap. Alt + drag does the opposite of the button',
       'negative',
-      'fi-ts-reflect-vertical',
+      'fi-ss-circle-half-stroke',
     );
     this.negativeBtn.addEventListener('pointerdown', this.onNegativeDown);
     // The keyboard's and assistive tech's press, as for onTap. A pointer's

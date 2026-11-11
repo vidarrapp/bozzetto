@@ -4,9 +4,9 @@ import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDou
 import { onTap } from '../../ui/dom';
 import { SHELL_LAYOUT_EVENT } from './shellLayout';
 import { chordParts, keymap } from '../../ui/keymap';
-// Flaticon uicons bold straight (fi-bs-*), for the Solo button's glyph; the
-// font only downloads when that glyph first renders. Attribution: README.
-import '@flaticon/flaticon-uicons/css/bold/straight.css';
+// Flaticon uicons solid straight (fi-ss-*), for the Solo button's glyph, the
+// style of every other icon. Attribution: README.
+import '@flaticon/flaticon-uicons/css/solid/straight.css';
 
 /**
  * The edge controls at the bottom left (docs/ui-spec.md section 6): a
@@ -186,7 +186,7 @@ export class BrushSliders {
       // Its own class, styled like the history chips: .sculpt-histbtn means
       // undo or redo, and Solo sharing it made it the first match for them.
       btn.className = 'sculpt-solobtn';
-      btn.innerHTML = '<i class="fi fi-bs-arrows-to-eye" aria-hidden="true"></i>';
+      btn.innerHTML = '<i class="fi fi-ss-arrows-to-eye" aria-hidden="true"></i>';
       // Matches the state cache's initial values; refresh writes on change.
       btn.disabled = true;
       btn.setAttribute('aria-pressed', 'false');
