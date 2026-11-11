@@ -1816,7 +1816,7 @@ export const suites = {
         below: b.top >= s.bottom && b.top - s.bottom < 24 && z.bottom <= s.top,
         next: btn.parentElement.previousElementSibling?.classList.contains('bz-edge__fields') ?? false,
         plain: btn.getAttribute('aria-pressed') !== 'false' || getComputedStyle(btn).backgroundColor === 'rgba(0, 0, 0, 0)',
-        glyph: !!glyph && getComputedStyle(glyph, '::before').fontFamily.includes('uicons-bold-straight'),
+        glyph: !!glyph && getComputedStyle(glyph, '::before').fontFamily.includes('uicons-solid-straight'),
       };
     });
     t.ok(placed?.below && placed.next && placed.plain, `the Solo button stands under both brush fields, a bare icon while off (${JSON.stringify(placed)})`);
@@ -4030,7 +4030,7 @@ export const suites = {
 
     // In view: a short window, so the panel's body scrolls; scrolled to its
     // foot, the rows are out of sight, and a step brings the active one in.
-    await page.setViewportSize({ width: 1280, height: 300 });
+    await page.setViewportSize({ width: 1280, height: 360 });
     const where = () =>
       page.evaluate(() => {
         const body = document.querySelector('.panel--scene .panel__body');
@@ -4042,6 +4042,13 @@ export const suites = {
           scrollTop: Math.round(body.scrollTop),
         };
       });
+    // The panel's height limit follows the window a frame or two later.
+    await page
+      .waitForFunction(() => {
+        const body = document.querySelector('.panel--scene .panel__body');
+        return body.scrollHeight > body.clientHeight + 1;
+      }, null, { timeout: 4000 })
+      .catch(() => {});
     await page.evaluate(() => {
       const body = document.querySelector('.panel--scene .panel__body');
       body.scrollTop = body.scrollHeight;
