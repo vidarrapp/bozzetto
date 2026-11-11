@@ -474,7 +474,9 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     const [download] = await Promise.all([g.waitForEvent('download', { timeout: 30_000 }).catch(() => null), g.evaluate(() => window.__armature.saveToLibrary())]);
     t.ok(!!download && /\.armature$/.test(download.suggestedFilename()), `a guest's Save to library downloads a .armature file (${download?.suggestedFilename()})`);
     // The viewer does not play one: its address says where it opens.
-    await g.goto(`${base}/?tl=${tpl?.id}`, { waitUntil: 'domcontentloaded' });
+    // Leaving the Armature page is slow on a small runner (the figure and its
+    // renderer are torn down first): the wait is as long as the boot's above.
+    await g.goto(`${base}/?tl=${tpl?.id}`, { waitUntil: 'domcontentloaded', timeout: 150_000 });
     await g.waitForSelector('.overlay--error', { timeout: 30_000 }).catch(() => {});
     const refused = await g.evaluate(() => document.querySelector('#overlay .overlay__msg')?.textContent ?? '');
     t.ok(/opens in Armature mode/.test(refused), `the viewer does not play an armature ("${refused}")`);
