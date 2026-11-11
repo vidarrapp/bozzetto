@@ -2,6 +2,9 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-11: In the viewer's review mode play is grey so Approve (or Unhide) is the screen's one orange action; elsewhere in the viewer play is the orange one. Keep it so, or play orange in review too? (blocks: nothing)
+- [ ] 2026-11-11: A stage's note ("Major planes established.") sits as a small caption over the transport in the viewer, since the readout carries the stage's name only. Keep the caption, or drop the notes from the viewer? (blocks: nothing)
+- [ ] 2026-11-11: On a phone the readout hides, and with it a reviewer's "Reviewing Pending review" and the title; the actions still show. Accept that, or give the strip a second line there? (blocks: review mode on a phone)
 - [x] 2026-10-24: Rake tines, what happens between the grooves: cut only, cut and level the ridges, or a "Level between" slider. Decided 2026-10-24: a "Level between" slider from 0 to 1
 - [x] 2026-10-24: Profile curves in the Tool panel: an editable curve or presets plus a hardness slider. Decided 2026-10-24: a draggable curve with presets; tap to add a point, pull a point outside the editor to remove it
 - [x] 2026-10-24: Clay without alphas: replace the Strip plateau slider with a profile curve or keep both. Decided 2026-10-24: replace it, the default preset being today's plateau shape

@@ -26,6 +26,14 @@ export interface MountOptions {
    * parts in another dress, not copies.
    */
   shell?: boolean;
+  /**
+   * The public viewer in the app shell (viewerFrame.ts): the same shell
+   * parts (the Render panel under its tab, the transport as the bottom
+   * bar), but the panel keeps the viewer's own section set rather than the
+   * whole look, and the strip's Help menu stands in for the "?" chip. The
+   * author is the strip's to say, not the panel's.
+   */
+  frame?: boolean;
   /** The viewer needs the preserved drawing buffer (Save image reads the canvas). */
   preserveDrawingBuffer?: boolean;
 }
@@ -65,9 +73,14 @@ export async function mountViewerParts(
   if (grade) viewer.setToneMapping(grade as ToneMappingId);
 
   // Build the UI after boot so controls reflect the applied look.
-  const help = new Help();
+  const help = new Help({ button: !opts.frame });
   // A member's work from the Community names its author under the title.
-  const panel = new Panel(viewer, { onHotkeys: () => help.toggle(), author: opts.author, fullLook: opts.shell });
+  const panel = new Panel(viewer, {
+    onHotkeys: () => help.toggle(),
+    author: opts.author,
+    fullLook: opts.shell && !opts.frame,
+    shell: opts.shell,
+  });
   viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;
   // a single-model project has nothing to scrub, so it gets no timeline.

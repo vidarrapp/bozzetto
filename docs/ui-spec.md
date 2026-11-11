@@ -217,7 +217,7 @@ Every toggle in View carries a check, so the menu keeps a check column.
 - About and credits (on the Mac: About Bozzetto, in the Bozzetto menu)
 
 Commands on one object's parts (split groups, delete hidden) stay in the
-Model panel, not in a menu. The viewer and the gallery have no Help menu.
+Model panel, not in a menu. The gallery has no Help menu; the public viewer's holds Hotkeys alone (no Help topics window).
 
 ## 6. Layout
 

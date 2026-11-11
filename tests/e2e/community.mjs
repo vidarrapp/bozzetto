@@ -142,11 +142,11 @@ async function reviewTab(b, tab) {
   }));
 }
 
-/** The viewer's top row, left: what its chips say. */
+/** The viewer's title strip: what its buttons at the right say, and its readout's author and review state. */
 const viewerRow = (p) =>
   p.evaluate(() => ({
-    chips: [...document.querySelectorAll('.topbar--left .topchip')].map((c) => c.textContent.trim()),
-    author: document.querySelector('.viewer-author')?.textContent ?? null,
+    chips: [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].map((c) => c.textContent.trim()),
+    author: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null,
     authorHref: document.querySelector('.viewer-author')?.getAttribute('href') ?? null,
     report: !!document.querySelector('.viewer-report'),
     mode: document.querySelector('.review-mode')?.dataset.shared ?? null,
@@ -160,7 +160,7 @@ async function viewer(b, id, extra = '') {
   await go(b, `?tl=${id}${extra}`);
   const ok = await b.page.waitForFunction(() => !document.querySelector('#overlay') || document.querySelector('#overlay.overlay--error'), null, { timeout: 60_000 }).then(() => true, () => false);
   const msg = await b.page.evaluate(() => document.querySelector('#overlay .overlay__msg')?.textContent ?? null);
-  if (process.env.E2E_DEBUG) console.log(`viewer ${b.who} ${extra}: ${ok} ${Date.now() - t0} ms, ${msg}, ${await b.page.evaluate(() => document.querySelector('.topbar--left')?.textContent)}`);
+  if (process.env.E2E_DEBUG) console.log(`viewer ${b.who} ${extra}: ${ok} ${Date.now() - t0} ms, ${msg}, ${await b.page.evaluate(() => document.querySelector('.bz-strip')?.textContent)}`);
   return msg;
 }
 
@@ -233,7 +233,7 @@ async function approve(m, id, t) {
   let row = await viewerRow(p);
   t.ok(
     row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['approve', 'reject']) && row.back === '/?review&tab=queue' && !row.report,
-    `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject…, ← Review (${show(row)})`,
+    `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject…, Close back to Review (${show(row)})`,
   );
   await p.click('.review-action[data-action="approve"]');
   await waitFor(p, () => document.querySelector('.review-mode')?.dataset.shared === 'public');
@@ -417,10 +417,10 @@ async function viewerReviewChip(m, b, g, id, t) {
   const shown = await waitFor(m.page, () => !!document.querySelector('.viewer-review'));
   const seen = await m.page.evaluate(() => {
     const chip = document.querySelector('.viewer-review');
-    return { href: chip?.getAttribute('href') ?? null, after: chip?.previousElementSibling?.classList.contains('viewer-author') ?? false };
+    return { href: chip?.getAttribute('href') ?? null, inStrip: !!chip?.closest('.bz-strip__right'), credit: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null };
   });
   await rest(m);
-  t.ok(shown && seen.href === `/?tl=${id}&review=1&from=gallery` && seen.after, `@mo's viewer has Review beside the credit, to review mode from the Gallery (${show(seen)})`);
+  t.ok(shown && seen.href === `/?tl=${id}&review=1&from=gallery` && seen.inStrip && seen.credit === 'by @ada', `@mo's viewer has Review at the right of the strip, the credit in the readout, to review mode from the Gallery (${show(seen)})`);
   for (const x of [b, g]) {
     await viewer(x, id);
     await waitFor(x.page, () => !!document.querySelector('.viewer-author'));

@@ -14,9 +14,15 @@ export const keyFor =
 /** What the View menu acts on, where the mode has it; an item without its hook is left out. */
 export interface ViewHooks {
   frameSelected?: () => void;
+  /** What the frameSelected item is called, where "selected" is not the word (the viewer's one subject). */
+  frameSelectedLabel?: string;
   frameAll?: () => void;
   wireframe?: { get: () => boolean; toggle: () => void };
   groupColors?: { get: () => boolean; toggle: () => void };
+  /** The viewer's shadows switch (Shift+S). */
+  shadows?: { get: () => boolean; toggle: () => void };
+  /** The viewer's ground, cycled by G: shadow, floor, pedestal, off. */
+  cycleGround?: () => void;
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
   toolKeys?: boolean;
   /** The panels this mode has, in the order of the menu: [id, name]. */
@@ -46,13 +52,16 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
     items.push(...part);
   };
   const frames: MenuItem[] = [];
-  if (h.frameSelected) frames.push({ label: 'Frame selected', key: keyFor('view.frame'), action: h.frameSelected });
+  if (h.frameSelected) frames.push({ label: h.frameSelectedLabel ?? 'Frame selected', key: keyFor('view.frame'), action: h.frameSelected });
   if (h.frameAll) frames.push({ label: 'Frame all', key: keyFor('view.frameAll'), action: h.frameAll });
   group(...frames);
 
   const looks: MenuItem[] = [];
   const wire = h.wireframe;
   if (wire) looks.push({ label: 'Wireframe', key: keyFor('view.wireframe'), checked: wire.get, toggle: () => wire.toggle() });
+  const shadows = h.shadows;
+  if (shadows) looks.push({ label: 'Shadows', key: keyFor('view.shadows'), checked: shadows.get, toggle: () => shadows.toggle() });
+  if (h.cycleGround) looks.push({ label: 'Cycle ground', key: keyFor('view.ground'), action: h.cycleGround });
   const colours = h.groupColors;
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });

@@ -356,6 +356,7 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **The public viewer in the new frame.** `/?tl=<id>` has the quiet version of the title strip: **View** and **Help** (Hotkeys) at the left, the title, author, what it is and the stage in the middle, **Close**, **Edit** (for the owner) and the hide-interface button at the right, **Render** as the one folder tab with its panel under it, and the transport as the bar at the foot, where play is the one orange action. Keys, touch, the frame meter, Tab's staged hiding and review mode (Approve, Reject, Hide and Unhide in the strip) work as before; the gallery, Create and Admin keep their old top row.
 - **Present for a published project, for the owner.** A timelapse or model on the site opens in **Present** (`/?tl=<id>&present=1`, from **Present** in the Projects list or **Edit** in the viewer when the owner is signed in), under the same title strip and folder tabs as Sculpt's: **Project** (title, visibility, frames per second, stages, the card picture), **Render** (the whole look) and **Output** (Record reel as MP4 or GIF with its guide, progress and Cancel, and Save image), the transport at the foot, and one **Save** for the look, the settings and the stages. Anyone else gets the ordinary viewer; the old editor stays, and is where frames are uploaded.
 
 ### v0.6.4

@@ -161,7 +161,7 @@ export const suites = {
         const html = await (await fetch(`${origin}/`)).text();
         const entry = html.match(/src="(\/assets\/main-[^"]+\.js)"/)?.[1];
         const js = entry ? await (await fetch(`${origin}${entry}`)).text() : '';
-        t.ok(!!entry && js.includes('&present=1'), `the public entry bundle has the quiet Edit link (${entry})`);
+        t.ok(!!entry && js.includes('&present=1'), `the public entry bundle has the quiet "Edit" link (${entry})`);
         t.ok(!js.includes('Close without saving?') && !js.includes('Card picture'), 'but not the Present page itself, which is a chunk loaded when asked for');
       }
 
@@ -170,13 +170,14 @@ export const suites = {
         const g = await open({ owner: false }, '/?tl=tl-demo&present=1');
         await g.page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
         const s = await g.page.evaluate(() => ({
-          strip: !!document.querySelector('.bz-strip'),
+          // The viewer has a strip of its own now, with View and Help only: Present's has File.
+          menus: [...document.querySelectorAll('.bz-menuname')].map((m) => m.textContent).join(),
           project: !!document.querySelector('.panel--project'),
           search: location.search,
           chip: !!document.querySelector('.viewer-present'),
           error: document.querySelector('.overlay__msg')?.textContent ?? '',
         }));
-        t.ok(!s.strip && !s.project && s.error === '', `a guest gets the ordinary viewer, with no error page (${JSON.stringify(s)})`);
+        t.ok(s.menus === 'View,Help' && !s.project && s.error === '', `a guest gets the ordinary viewer (its strip has View and Help only), with no error page (${JSON.stringify(s)})`);
         t.ok(s.search === '?tl=tl-demo', `and the param is dropped from the address (${s.search})`);
         t.ok(!s.chip, 'the viewer offers a guest no Edit');
         await g.ctx.close(); // software GL: a page left open starves the next
@@ -196,8 +197,8 @@ export const suites = {
         );
         await m.page.goto(`${origin}/?tl=tl-demo&present=1`, { waitUntil: 'domcontentloaded' });
         await m.page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
-        const s = await m.page.evaluate(() => ({ strip: !!document.querySelector('.bz-strip'), search: location.search }));
-        t.ok(!s.strip && s.search === '?tl=tl-demo', `a member signed in, who is not the owner, gets the viewer and the param is dropped (${JSON.stringify(s)})`);
+        const s = await m.page.evaluate(() => ({ present: !!document.querySelector('.bz-ws, .panel--project'), search: location.search }));
+        t.ok(!s.present && s.search === '?tl=tl-demo', `a member signed in, who is not the owner, gets the viewer and the param is dropped (${JSON.stringify(s)})`);
         await m.ctx.close();
       }
 
@@ -591,8 +592,8 @@ export const suites = {
       // The viewer: Edit, quiet, for the owner already signed in on this device.
       await p.goto(`${origin}/?tl=model-demo`, { waitUntil: 'domcontentloaded' });
       await p.waitForSelector('.viewer-present', { timeout: 30_000 });
-      const chip = await p.evaluate(() => ({ text: document.querySelector('.viewer-present').textContent, href: document.querySelector('.viewer-present').getAttribute('href'), cls: document.querySelector('.viewer-present').className }));
-      t.ok(chip.text === 'Edit' && chip.href === '/?tl=model-demo&present=1' && chip.cls.includes('topchip'), `the viewer shows the owner Edit, in its top row (${JSON.stringify(chip)})`);
+      const chip = await p.evaluate(() => ({ text: document.querySelector('.viewer-present').textContent, href: document.querySelector('.viewer-present').getAttribute('href'), cls: document.querySelector('.viewer-present').className, inStrip: !!document.querySelector('.viewer-present').closest('.bz-strip__right') }));
+      t.ok(chip.text === 'Edit' && chip.href === '/?tl=model-demo&present=1' && chip.cls.includes('bz-strip__btn') && chip.inStrip, `the viewer shows the owner Edit, quiet at the right of its strip (${JSON.stringify(chip)})`);
 
       // The old editor, as it was.
       await p.goto(`${origin}/admin/?p=tl-demo`, { waitUntil: 'domcontentloaded' });

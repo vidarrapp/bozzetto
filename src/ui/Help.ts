@@ -68,7 +68,7 @@ const CHECKED = {
 export class Help {
   private readonly hint: HTMLDivElement;
   private readonly guide: HTMLDivElement;
-  private readonly button: HTMLButtonElement;
+  private readonly button: HTMLButtonElement | null;
   private hintTimer: number | undefined;
   private mode: KeyMode = 'view';
   private readonly offKeymap: () => void;
@@ -139,7 +139,11 @@ export class Help {
     }
   };
 
-  constructor() {
+  /**
+   * `button: false` leaves the "?" chip out, for a page whose strip has a
+   * Help menu to open the guide (the viewer in the app shell).
+   */
+  constructor(opts: { button?: boolean } = {}) {
     this.hint = document.createElement('div');
     this.hint.className = 'help-hint';
     const helpKey = keymap.chordFor('ui.help');
@@ -149,14 +153,18 @@ export class Help {
 
     // A visible way in, since H is unreachable on a keyboard-less iPad.
     // Parked beside the theme toggle in the top-right corner.
-    this.button = document.createElement('button');
-    this.button.type = 'button';
-    this.button.className = 'topchip help-toggle';
-    this.button.textContent = '?';
-    this.button.title = helpKey ? `Hotkey guide (${chordLabel(helpKey)})` : 'Hotkey guide';
-    this.button.setAttribute('aria-label', 'Hotkey guide');
-    this.button.addEventListener('click', () => this.toggle());
-    topbarRight().appendChild(this.button);
+    if (opts.button ?? true) {
+      this.button = document.createElement('button');
+      this.button.type = 'button';
+      this.button.className = 'topchip help-toggle';
+      this.button.textContent = '?';
+      this.button.title = helpKey ? `Hotkey guide (${chordLabel(helpKey)})` : 'Hotkey guide';
+      this.button.setAttribute('aria-label', 'Hotkey guide');
+      this.button.addEventListener('click', () => this.toggle());
+      topbarRight().appendChild(this.button);
+    } else {
+      this.button = null;
+    }
 
     this.guide = document.createElement('div');
     this.guide.className = 'help-guide';
@@ -193,7 +201,7 @@ export class Help {
     this.offKeymap();
     this.offUpdates();
     this.hint.remove();
-    this.button.remove();
+    this.button?.remove();
     this.guide.remove();
   }
 }

@@ -2,6 +2,8 @@ import { validateManifest } from './types/manifest';
 import type { Manifest } from './types/manifest';
 import { HttpSource } from './viewer/AssetSource';
 import { mountViewer } from './viewer/mountViewer';
+import { mountPublicViewer, type ViewerFrame } from './viewer/viewerFrame';
+import type { Viewer } from './viewer/Viewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme } from './ui/theme';
 import { installRangeFill } from './ui/rangeFill';
@@ -205,20 +207,30 @@ async function bootViewer(id: string, review = false): Promise<void> {
     const reviewing = review ? await reviewManifest(id) : null;
     const { manifest, manifestUrl, author } = reviewing ?? (await loadProject(id, base));
     setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
-    const viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus, { author });
+    // The public viewer is in the app's frame (viewer/viewerFrame.ts); the
+    // dev spike that mounts Sculpt over a project (?sculpt=1) has a strip
+    // of its own to bring, so it keeps the viewer's old top row.
+    const spike = !author && !reviewing && new URLSearchParams(window.location.search).get('sculpt') === '1';
+    let viewer: Viewer;
+    let frame: ViewerFrame | null = null;
+    if (spike) {
+      viewer = await mountViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus, { author });
+    } else {
+      ({ viewer, frame } = await mountPublicViewer(viewport, manifest, new HttpSource(manifestUrl), setStatus, { author }));
+    }
     overlay?.remove();
-    if (reviewing) {
+    if (reviewing && frame) {
       const { mountReviewBar } = await import('./ui/community/reviewViewer');
-      await mountReviewBar(id, { title: manifest.title, author: author ?? null, shared: reviewing.shared });
+      await mountReviewBar(id, { title: manifest.title, author: author ?? null, shared: reviewing.shared }, frame);
       return;
     }
-    addGalleryLink();
-    if (!author && (manifest.mode === 'timelapse' || manifest.mode === 'model')) void addPresentLink(id);
+    if (!frame) addGalleryLink();
+    if (!author && (manifest.mode === 'timelapse' || manifest.mode === 'model')) void addPresentLink(id, frame);
     // A member's work from the Community (docs/accounts.md §13): who made
     // it, and Report for a member signed in who is not its author.
-    if (author) {
+    if (author && frame) {
       const { mountCommunityCredit } = await import('./ui/community/credit');
-      await mountCommunityCredit(id, author);
+      await mountCommunityCredit(id, author, frame);
     }
     // WS0 spike entry (dev-only): ?sculpt=1 mounts sculpt mode on the default
     // sphere over this project's stage/lighting. The real entry point ships
@@ -410,18 +422,21 @@ async function bootArmature(): Promise<void> {
 }
 
 /**
- * "Edit", quietly beside the gallery link, for the owner when an
+ * "Edit", quietly beside Close (the gallery link, in the viewer's
+ * old top row), for the owner when an
  * owner session is already there: nothing is asked for, and a device that
  * never signed in asks nothing of the server either (the remembered
  * sign-in, as the gallery keeps it).
  */
-async function addPresentLink(id: string): Promise<void> {
+async function addPresentLink(id: string, frame: ViewerFrame | null): Promise<void> {
   try {
     if (!signedInHereBefore()) return;
     if (roleOf(await checkSignIn()) !== 'owner') return;
-    const a = topChip('Edit', `/?tl=${encodeURIComponent(id)}&present=1`);
+    const href = `/?tl=${encodeURIComponent(id)}&present=1`;
+    const a = frame ? frame.control('Edit', href) : topChip('Edit', href);
     a.classList.add('viewer-present');
-    topbarLeft().appendChild(a);
+    if (frame) frame.addAction(a);
+    else topbarLeft().appendChild(a);
   } catch {
     // No owner session to find: the viewer is as it was.
   }

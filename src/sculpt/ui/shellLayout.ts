@@ -58,10 +58,10 @@ export function layoutShell(): void {
   const vw = window.innerWidth;
   const panelW = Math.min(PANEL_WIDTH, vw);
   // What stands at the foot of the screen: the tool bar, or in Present the turntable bar,
-  // or on the owner's Present of a published project its transport.
+  // or on the owner's Present of a published project, and in the public viewer, its transport.
   const body = document.body.classList;
   const bar = document.querySelector<HTMLElement>(
-    body.contains('bz-frames') ? '.transport--shell' : body.contains('presenting') ? '.present-bar' : '.sculpt-toolbar__brushes',
+    body.contains('bz-frames') || body.contains('bz-viewer') ? '.transport--shell' : body.contains('presenting') ? '.present-bar' : '.sculpt-toolbar__brushes',
   );
   const barBox = bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect() : null;
   const edge = document.querySelector<HTMLElement>('.bz-edge');

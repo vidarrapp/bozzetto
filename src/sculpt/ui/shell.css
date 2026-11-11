@@ -1216,3 +1216,121 @@ body.bz-shell .transport--shell .transport__frame {
   color: var(--bz-text);
   font: 700 13px/28px var(--bz-font-mono);
 }
+
+/* --- the public viewer (viewer/viewerFrame.ts) -----------------------------
+   The quiet version of the shell: a visitor looks, nothing here edits. Two
+   menus, the title and what it is in the middle, Close and the hide button
+   at the right, the Render tab, the transport at the foot. `body.bz-viewer`
+   marks it. */
+
+/* A link in the strip (Close, Edit, Review) is the strip's button. */
+body.bz-shell a.bz-strip__btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+body.bz-shell .bz-strip__btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+/* The decisive button of the reviewer's strip: orange for the main action
+   (Approve, Unhide), red for what takes the work down (Hide). */
+body.bz-shell .bz-strip__btn.bz-strip__btn--danger,
+body.bz-shell .bz-strip__btn.bz-strip__btn--danger:hover,
+body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
+  padding: 0 12px;
+  background: var(--bz-red);
+  color: var(--bz-on-accent);
+}
+
+body.bz-shell .bz-strip__btn.bz-strip__btn--primary:disabled,
+body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* The star of a member's work: a glyph, the width of the hide button; orange when starred. */
+body.bz-shell .bz-strip__btn.viewer-star {
+  width: 24px;
+  padding: 0;
+  font-size: 15px;
+}
+
+body.bz-shell .bz-strip__btn.viewer-star[aria-pressed='true'] {
+  color: var(--bz-orange);
+}
+
+/* "by @handle" after the title: a link to the author's page, in the readout's quiet tone. */
+body.bz-shell .bz-readout__by {
+  margin-left: -8px;
+  color: var(--bz-text-2);
+  text-decoration: none;
+}
+
+body.bz-shell .bz-readout__by:hover {
+  color: var(--bz-text);
+}
+
+body.bz-shell .bz-readout__by:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+body.bz-shell .bz-readout__key:empty {
+  display: none;
+}
+
+/* The transport's play is the one orange action of the viewer (a viewer's
+   main action is play and pause, docs/ui-foundations.md); in Present it
+   stays grey, Save being that page's, and in review mode, where Approve is
+   the main action (reviewViewer.ts marks the page `bz-reviewing`). */
+body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play,
+body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:hover:not(:disabled),
+body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:active:not(:disabled) {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+body.bz-viewer .transport--shell .transport__play:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+/* The stage's name is in the strip; its note, where there is one, stands over the line. */
+body.bz-viewer .transport--shell .transport__info {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  min-height: 0;
+  padding: 8px 16px 0;
+  background: var(--bz-panel);
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+  text-align: center;
+}
+
+body.bz-viewer .transport--shell .transport__stage-name {
+  display: none;
+}
+
+body.bz-viewer .transport--shell .transport__stage-desc {
+  color: inherit;
+  font: inherit;
+}
+
+body.bz-viewer .transport--shell .transport__info:not(:has(.transport__stage-desc:not(:empty))) {
+  display: none;
+}
+
+/* "Buffering..." rides above the stage's note, where there is one. */
+body.bz-viewer .transport--shell:has(.transport__stage-desc:not(:empty)) .transport__buffering {
+  top: -64px;
+}

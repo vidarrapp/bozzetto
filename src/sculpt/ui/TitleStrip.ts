@@ -21,6 +21,11 @@ export interface Readout {
   name?: string | null;
   /** "Edited" after the name, for a project with changes not yet saved. */
   edited?: boolean;
+  /**
+   * Who made it, for the public viewer of a member's work: "by @handle", a
+   * link to their page, after the name. Null leaves it out.
+   */
+  by?: { text: string; href: string } | null;
   /** The selected object's name. */
   object?: string | null;
   tris?: number | null;
@@ -66,8 +71,16 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
   return e;
 }
 
+/** What a strip may leave out: the public viewer is a place to look, and has no workspaces to walk between. */
+export interface TitleStripOptions {
+  /** The workspace path (Armature, Sculpt, Present) after the menus; on by default. */
+  path?: boolean;
+}
+
 export class TitleStrip {
   readonly el: HTMLElement;
+  /** The readout in the middle: a mode may put a pair or two of its own at its end. */
+  readonly readoutEl: HTMLElement;
   /** Where the menus put their names. */
   readonly menus: HTMLElement;
   /** Publish, a plain text button; hidden until publishing is reachable (PublishWindow). */
@@ -76,6 +89,7 @@ export class TitleStrip {
   private readonly steps = new Map<Workspace, HTMLButtonElement>();
   private readonly stepActions = new Map<Workspace, (() => void) | null>();
   private readonly nameEl = el('b', 'bz-readout__name');
+  private readonly byEl = el('a', 'bz-readout__by viewer-author');
   private readonly editedEl = el('span', 'bz-readout__edited', 'Edited');
   private readonly objectItem: HTMLElement;
   private readonly objectVal = el('b', 'bz-readout__val bz-readout__object');
@@ -94,7 +108,7 @@ export class TitleStrip {
   private readonly stopLayout: () => void;
   private readonly offSettings: () => void;
 
-  constructor() {
+  constructor(opts: TitleStripOptions = {}) {
     document.body.classList.add('bz-shell');
     this.el = el('header', 'bz-strip');
     this.menus = el('nav', 'bz-strip__menus');
@@ -113,7 +127,9 @@ export class TitleStrip {
     this.frameItem = pair('bz-readout__item--frame', 'Frame', this.frameVal);
     this.editedEl.hidden = true;
     this.nameEl.hidden = true;
-    readout.append(this.nameEl, this.editedEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
+    this.byEl.hidden = true;
+    this.readoutEl = readout;
+    readout.append(this.nameEl, this.editedEl, this.byEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
 
     const right = el('div', 'bz-strip__right');
     this.publishHost = right;
@@ -151,7 +167,8 @@ export class TitleStrip {
       this.steps.set(id, b);
       path.appendChild(b);
     });
-    left.append(this.menus, sep, path);
+    left.append(this.menus);
+    if (opts.path ?? true) left.append(sep, path);
 
     this.el.append(left, readout, right);
     document.body.appendChild(this.el);
@@ -174,7 +191,8 @@ export class TitleStrip {
    */
   setWorkspace(current: Workspace, steps: Partial<Record<Workspace, PathStep>>): void {
     for (const [id, label] of WORKSPACES) {
-      const b = this.steps.get(id)!;
+      const b = this.steps.get(id);
+      if (!b) continue; // a strip without the path
       const on = id === current;
       const step = on ? undefined : steps[id];
       const action = step && 'action' in step ? step.action : null;
@@ -191,6 +209,11 @@ export class TitleStrip {
       else if (on) b.title = `${label}, where you are`;
       else b.title = action ? `Go to ${label}` : '';
     }
+  }
+
+  /** Put a control at the right of the strip, before `before` (default: the hide-interface button). */
+  addAction(control: HTMLElement, before: HTMLElement | null = this.hideBtn): void {
+    this.publishHost.insertBefore(control, before);
   }
 
   /** The button names what it does now: hide, or bring the interface back. */
@@ -214,6 +237,12 @@ export class TitleStrip {
     this.nameEl.hidden = !name;
     if (this.nameEl.textContent !== name) this.nameEl.textContent = name;
     this.editedEl.hidden = !name || !r.edited;
+    const by = r.by ?? null;
+    this.byEl.hidden = !by;
+    if (by) {
+      if (this.byEl.textContent !== by.text) this.byEl.textContent = by.text;
+      if (this.byEl.getAttribute('href') !== by.href) this.byEl.setAttribute('href', by.href);
+    }
     const set = (item: HTMLElement, val: HTMLElement, text: string | null): void => {
       item.hidden = text === null;
       if (text !== null && val.textContent !== text) val.textContent = text;
@@ -260,4 +289,11 @@ export function stripButton(label: string, primary = false): HTMLButtonElement {
   const b = el('button', primary ? 'bz-strip__btn bz-strip__btn--primary' : 'bz-strip__btn', label);
   b.type = 'button';
   return b;
+}
+
+/** The same quiet text, for a link (Close, Edit): the strip's button where the command is an address. */
+export function stripLink(label: string, href: string): HTMLAnchorElement {
+  const a = el('a', 'bz-strip__btn', label);
+  a.href = href;
+  return a;
 }

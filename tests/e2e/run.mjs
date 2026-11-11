@@ -1,6 +1,6 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
 // armatureProjects.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
-// tweaks.mjs's, units.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
+// tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
 // profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's and framePresent.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
@@ -41,11 +41,12 @@ import { suites as surfaceSmooth } from './surfaceSmooth.mjs';
 import { suites as tineRake } from './tineRake.mjs';
 import { suites as tweaks } from './tweaks.mjs';
 import { suites as units } from './units.mjs';
+import { suites as viewerFrame } from './viewerFrame.mjs';
 import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...framePresent };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...framePresent, ...viewerFrame };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {
