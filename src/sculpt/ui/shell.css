@@ -683,3 +683,9 @@ body.bz-shell .bz-edge .sculpt-slider__val {
 body.bz-shell .armature-hist {
   position: static;
 }
+
+/* The update notice, in the corner of the foot of the screen: beside an open
+   right-hand panel (304px now) rather than over its foot (ui/updateNotice). */
+body.bz-shell .update-notice--beside-panel {
+  right: calc(316px + env(safe-area-inset-right, 0px));
+}

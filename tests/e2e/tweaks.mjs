@@ -165,7 +165,7 @@ const bluish = ([r, g, b]) => b > 60 && b > r * 1.5 && b > g;
 const swatchOf = (page, panel, caption, within = null) =>
   page.evaluate(
     ([name, cap, box]) => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
       const scope = box ? p.querySelector(box) : p;
       const row = [...scope.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === cap);
       const s = row?.querySelector('.cpick__swatch');
@@ -401,7 +401,7 @@ export const suites = {
 
     // The background, a solid colour, picked off the sphere.
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Background').querySelector('select');
       sel.value = 'color';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -481,7 +481,7 @@ export const suites = {
     await page.mouse.click(...keyAt);
     const m = await page.evaluate(() => {
       const pop = [...document.querySelectorAll('.cpick__pop')].find((p) => !p.hidden);
-      const panel = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const r = (el) => el.getBoundingClientRect();
       return {
         pop: r(pop).toJSON(),
@@ -586,7 +586,7 @@ export const suites = {
     });
     await clearNotices(page);
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Model');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Model');
       [...p.querySelectorAll('button')].find((b) => b.textContent === 'Voxel remesh').click();
     });
     const said = await failedNotice(page);
@@ -600,7 +600,7 @@ export const suites = {
     await setDeviceMemory(page, null);
     await clearNotices(page);
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Model');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Model');
       [...p.querySelectorAll('button')].find((b) => b.textContent === 'Voxel remesh').click();
     });
     const saidSafari = await failedNotice(page);

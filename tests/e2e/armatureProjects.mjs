@@ -16,7 +16,7 @@ async function boot(page, base, query = '') {
   await page.waitForTimeout(250);
 }
 
-/** Where the Armature panel, its tab, the Render panel's tab, the undo chips and the top row are. */
+/** Where the Armature panel, its tab, the Render panel's tab, the undo chips and the title strip are. */
 const layout = (page) =>
   page.evaluate(() => {
     const box = (el) => {
@@ -31,7 +31,7 @@ const layout = (page) =>
       return hs.display === 'none' || hs.visibility === 'hidden' ? null : box(handle);
     };
     const arm = document.querySelector('.panel--armature');
-    const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+    const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
     return {
       left: arm?.classList.contains('panel--left') ?? false,
       open: arm ? !arm.classList.contains('panel--collapsed') : false,
@@ -42,7 +42,7 @@ const layout = (page) =>
       renderTab: tabOf(render),
       renderBody: box(render),
       hist: [...document.querySelectorAll('.armature-hist .sculpt-histbtn')].map(box),
-      topbar: [...document.querySelectorAll('.topbar .topchip')].filter((c) => !c.hidden).map(box),
+      topbar: [box(document.querySelector('.bz-strip'))].filter(Boolean),
     };
   });
 
@@ -52,8 +52,8 @@ const setOpen = (page, which, open) =>
       const p =
         w === 'Armature'
           ? document.querySelector('.panel--armature')
-          : [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === w);
-      if (p.classList.contains('panel--collapsed') === o) p.querySelector(o ? '.panel__handle' : '.panel__close').click();
+          : [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === w);
+      if (p.classList.contains('panel--collapsed') === o) p.querySelector('.panel__handle').click();
     },
     [which, open],
   );
@@ -87,6 +87,8 @@ export async function armaturePanelSide(page, base, t, sizes = [[1024, 768], [74
     if (l.hist.length !== 2 || l.hist.some((x) => x.l < 0 || x.b > h)) problems.push(`${at}: the undo chips are not both on the screen`);
     await setOpen(page, 'Armature', true);
     await setOpen(page, 'Render', true);
+    // The shell sets the panels' height limits a frame after they open or the window changes.
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
     l = await layout(page);
     if (!l.open || !l.renderOpen) problems.push(`${at}: Armature and Render do not open together (${l.open}, ${l.renderOpen})`);
     if (l.body && (l.body.l < 0 || l.body.r > w || l.body.b > h)) problems.push(`${at}: the open panel leaves the screen`);

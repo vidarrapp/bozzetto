@@ -10,7 +10,7 @@ const EDGE = 8;
  * The highest the window goes: clear of the title strip, which would
  * otherwise cover its title bar and its close button.
  */
-const TOP = 32;
+const TOP = 30;
 
 interface Position {
   x: number;

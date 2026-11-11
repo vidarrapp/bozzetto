@@ -74,8 +74,8 @@ class CornerNotice {
   }
 
   /**
-   * Keep clear of what holds the corner on this page: Sculpt's corner
-   * button, the viewer's transport, and over either of them an open
+   * Keep clear of what holds the corner on this page: Sculpt's tool bar,
+   * the viewer's transport, and over either of them an open
    * right-hand panel, whose foot comes down to about 90px off the bottom.
    * Judged from what the page holds rather than from where it is drawn, so
    * placing costs no layout. Script rather than :has() rules in the
@@ -83,9 +83,13 @@ class CornerNotice {
    * a box that is almost never there.
    */
   private readonly place = (): void => {
-    const button = !!document.querySelector('.sculpt-toolbar__right');
+    // Sculpt's tool bar holds the foot of the screen (its corner button
+    // moved to the title strip), and in the app shell an open right-hand
+    // panel comes down to 16px off the bottom whatever the mode.
+    const button = !!document.querySelector('.sculpt-toolbar__brushes');
     const transport = !button && !!document.querySelector('.transport');
-    const panel = (button || transport) && !!document.querySelector('.panel:not(.panel--left):not(.panel--collapsed)');
+    const shell = document.body.classList.contains('bz-shell');
+    const panel = (button || transport || shell) && !!document.querySelector('.panel:not(.panel--left):not(.panel--collapsed)');
     this.el.classList.toggle('update-notice--over-button', button);
     this.el.classList.toggle('update-notice--over-transport', transport);
     this.el.classList.toggle('update-notice--beside-panel', panel);

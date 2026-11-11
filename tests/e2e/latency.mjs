@@ -56,7 +56,7 @@ const modesSeen = (page) => page.evaluate(() => [...new Set(window.__modes ?? []
 /** The Render panel's AO model, picked the way a user picks it. */
 const aoModel = (page, value) =>
   page.evaluate((m) => {
-    const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+    const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
     const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
     sel.value = m;
     sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1226,7 +1226,9 @@ export const suites = {
       });
     let look = await surfaces();
     t.ok(look.present >= 4 && look.blurred.length === 0, `no panel blurs the view behind it (${look.present} on screen; blurred: ${look.blurred.join(', ') || 'none'})`);
-    t.ok(/, 0\.95\)$/.test(look.panel) && look.chip === look.panel, `every panel starts 95% opaque, from one property (${look.panel}, ${look.chip})`);
+    // The panels' fill and the old chips' are one alpha from one property (the colours differ: the shell's panels are the application layer's grey).
+    const alphaOf = (c) => Number(/(?:,|\/)\s*([\d.]+)\)$/.exec(c)?.[1]);
+    t.ok(alphaOf(look.panel) === 0.95 && alphaOf(look.chip) === alphaOf(look.panel), `every panel starts 95% opaque, from one property (${look.panel}, ${look.chip})`);
 
     await openPrefs(page);
     const layout = await page.evaluate(() => {
