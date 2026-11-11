@@ -37,7 +37,9 @@
 - [x] 2026-11-10: Interface spec, Undo and Redo buttons on the viewport: only in touch density, or always. Decided 2026-11-11: always visible
 - [x] 2026-11-10: Interface spec, view axes: pressing an axis turns the view to look along it, or the axes only show. Decided 2026-11-11: they only show
 - [ ] 2026-11-11: Reaching projects and templates from Sculpt: only File, Close back to the gallery (as now); or also a File, Browse item that opens a window with your projects and templates without leaving the workspace (blocks: the File menu)
-- [ ] 2026-11-11: Present as a third workspace beside Sculpt and Armature: how it is entered and left (a workspace switch in the title strip, or View, Present mode as now), and what its strip and panels hold (blocks: the Present design)
+- [ ] 2026-11-11: Present as a third workspace, drawn on the mockup canvas (boards "Sculpt with the workspace path", "Present as a workspace", "The workspace path in each workspace"). Proposed: a path Armature › Sculpt › Present after the menus in the title strip of every workspace, the current step lit; Present has Render and Output tabs, the turntable in the tool bar's place and nothing that edits. Yes, or changes (blocks: building Present as a workspace)
+- [ ] 2026-11-11: The Publish button at the right of the strip: only in Present, in orange, as the end of the path, with File, Publish staying in every workspace (proposed); or in Sculpt too, as built now (blocks: the title strip)
+- [ ] 2026-11-11: The Armature step while in a sculpt that was not sent from an armature: dim and not pressable (proposed); or it starts a new armature (blocks: the workspace path)
 - [x] 2026-11-11: Install and the account while in Sculpt or Armature. Decided 2026-11-11: neither is there; the account, projects and Install are reached from the gallery, and the File menu handles saving, importing and exporting
 - [x] 2026-11-11: A menu strip in the gallery. Decided 2026-11-11: none, so the gallery reads as different from the workspaces
 - [ ] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark
