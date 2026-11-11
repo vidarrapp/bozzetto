@@ -8,6 +8,12 @@ the system) and from the "Controls and states" board on the mockup canvas.
 This spec adds structure and behaviour, and says where the mockup should
 change.
 
+**The look is now set by `docs/ui-foundations.md`** (2026-11-11): a grey
+scale, hover, separators, raised menus, red for errors, dark theme only.
+Where this spec describes how something looks (outlines on controls,
+the bold hovered menu row, the paper theme) the foundations win. Layout
+and behaviour here still hold.
+
 Written 2026-11-10. Sections marked **Proposed** depart from the mockup or
 the system as they stand and wait for the owner's yes (see Decisions).
 

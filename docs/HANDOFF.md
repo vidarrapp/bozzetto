@@ -38,7 +38,7 @@
 - [x] 2026-11-10: Interface spec, view axes: pressing an axis turns the view to look along it, or the axes only show. Decided 2026-11-11: they only show
 - [ ] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
-- [ ] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app (a neutral grey scale for surfaces, text levels, hover, disabled and separators; elevation for menus and windows; red for errors and destructive actions, or keep orange; states as macOS and iPadOS draw them), keeping the identity (orange, lime, the two typefaces, square corners, the logotype, the icons) and the layout already agreed. Draft it and redraw the Controls board and one Sculpt board beside the current ones for comparison: yes or no (blocks: everything visual in the switch-over)
+- [x] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app. Decided 2026-11-11: yes; red for errors and deletes; dark theme only for now (a native iOS app will later have to consider Liquid Glass). Written up in docs/ui-foundations.md
 
 ## Notes for Bozzetto Studio
 
