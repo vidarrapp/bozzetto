@@ -356,6 +356,8 @@ URL switches: `?dev` reveals a developer section, `?q=low|medium|high` forces a 
 
 ### Unreleased
 
+- **Present for a published project, for the owner.** A timelapse or model on the site opens in **Present** (`/?tl=<id>&present=1`, from **Open in Present** in the Projects list or **Edit in Present** in the viewer when the owner is signed in), under the same title strip and folder tabs as Sculpt's: **Project** (title, visibility, frames per second, stages, the card picture), **Render** (the whole look) and **Output** (Record reel as MP4 or GIF with its guide, progress and Cancel, and Save image), the transport at the foot, and one **Save** for the look, the settings and the stages. Anyone else gets the ordinary viewer; the old editor stays, and is where frames are uploaded.
+
 ### v0.6.4
 
 **A new interface.** The app has its own look (dark grey, square, one job for each colour), Sculpt and Armature share a title strip with File, Edit, View and Help and panels under folder tabs, Present is a workspace of its own at the end of the path Armature, Sculpt, Present, and there is a Help window. Clay, the Rake and ambient occlusion were reworked on the way.

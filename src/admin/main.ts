@@ -303,7 +303,9 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       : armature
         ? '<a class="btn btn--primary admin-row__open">Open in Armature</a>'
       : `<a class="btn btn--primary admin-row__edit">Edit</a>
-          <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>`;
+          <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>` +
+        // The owner's Present for a published timelapse or model (/?tl=&present=1).
+        (p.mode === 'timelapse' || p.mode === 'model' ? '\n<a class="btn admin-row__present">Open in Present</a>' : '');
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
@@ -380,6 +382,9 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       row
         .querySelector<HTMLAnchorElement>('.admin-row__view')!
         .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
+      row
+        .querySelector<HTMLAnchorElement>('.admin-row__present')
+        ?.setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1`);
     }
 
     // Who sees it, and whether it is a template (docs/accounts.md §5): a

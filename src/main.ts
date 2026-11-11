@@ -10,6 +10,7 @@ import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
 import { accountsOn, type SharedState } from './net/account';
+import { checkSignIn, roleOf, signedInHereBefore } from './admin/api';
 import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
@@ -103,6 +104,33 @@ async function main(): Promise<void> {
     showError(document.getElementById('overlay'), new Error('That is not a project link'));
     return;
   }
+  // Present, the owner's workspace for a published project (docs/ui-spec.md):
+  // for the owner alone, and anyone else gets the viewer, as if the link had
+  // not asked for it. Loaded only when asked for.
+  if (params.get('present') === '1' && params.get('review') !== '1') {
+    const viewport = document.getElementById('viewport');
+    const overlay = document.getElementById('overlay');
+    if (viewport) {
+      try {
+        const { openPresent } = await import('./present/open');
+        const setStatus = (msg: string): void => {
+          const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
+          if (box) box.textContent = msg;
+        };
+        if (await openPresent(id, viewport, setStatus)) {
+          overlay?.remove();
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+        showError(overlay, err);
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('present');
+      window.history.replaceState(window.history.state, '', url);
+    }
+  }
   await bootViewer(id, params.get('review') === '1');
 }
 
@@ -185,6 +213,7 @@ async function bootViewer(id: string, review = false): Promise<void> {
       return;
     }
     addGalleryLink();
+    if (!author && (manifest.mode === 'timelapse' || manifest.mode === 'model')) void addPresentLink(id);
     // A member's work from the Community (docs/accounts.md §13): who made
     // it, and Report for a member signed in who is not its author.
     if (author) {
@@ -377,6 +406,24 @@ async function bootArmature(): Promise<void> {
     console.error(err);
     splash.dispose();
     showError(overlay, err);
+  }
+}
+
+/**
+ * "Edit in Present", quietly beside the gallery link, for the owner when an
+ * owner session is already there: nothing is asked for, and a device that
+ * never signed in asks nothing of the server either (the remembered
+ * sign-in, as the gallery keeps it).
+ */
+async function addPresentLink(id: string): Promise<void> {
+  try {
+    if (!signedInHereBefore()) return;
+    if (roleOf(await checkSignIn()) !== 'owner') return;
+    const a = topChip('Edit in Present', `/?tl=${encodeURIComponent(id)}&present=1`);
+    a.classList.add('viewer-present');
+    topbarLeft().appendChild(a);
+  } catch {
+    // No owner session to find: the viewer is as it was.
   }
 }
 

@@ -28,6 +28,8 @@ export const MODES: Topic[] = [
       p('When you are signed in, **Publish…** in the File menu opens a small window that you can move, and that does not block the work around it. In **Present** the same window opens from the orange **Publish** button at the right of the title strip, where the path ends. **Publish model** puts the scene on the site as a model that opens in the viewer. The owner chooses a project id, a title and who can see it (**Public: a template in the gallery** or **Private: only you**). A member only gives a title, and the model goes to **My projects**. When you publish from Present, the camera and look you presented are stored with it.'),
       h('Timelapses'),
       p('Bozzetto Web plays timelapses and publishes ones made from frames, but does not record them while you sculpt. In the gallery, **Create**, then **Create timelapse**, takes OBJ or GLB frames made in another app and plays them back as a timelapse or a model. Signed in, it saves them to your projects; as a guest, nothing is uploaded. The viewer topic says how to play one.'),
+      h('Editing a published project'),
+      p('A published timelapse or model is edited in **Present**, by the owner only (this is not for members yet). In the **Projects** list each one has **Open in Present**, and in the viewer, when you are signed in as the owner, a quiet **Edit in Present** stands beside the gallery link; both open the project with present=1 on its address. Anyone else who opens that address gets the ordinary viewer. The older editor is still there (**Edit** in the list), and is where frames are uploaded. The Present topic says what the page has.'),
     ],
   },
   {
@@ -51,6 +53,14 @@ export const MODES: Topic[] = [
         ['Format', 'MP4 or GIF.'],
         ['Size', 'The size of the clip, as the window at 1x or 2x.'],
         ['Save turntable', 'Renders the clip and downloads it. A progress bar shows while it renders, and **Cancel** stops it with nothing saved.'],
+      ),
+      h('Present for a published project'),
+      p('A timelapse or model on the site opens in Present from the Projects list (**Open in Present**) or from the viewer (**Edit in Present**), for the owner. It is the same title strip and folder tabs. The path shows **Present**, with **Armature** and **Sculpt** dim, since the project has no sculpt scene. The strip names the project, **Timelapse** and its frame count (or **Model**), and the stage you are in; **Edited** follows the name while there are changes not yet saved, and the orange **Save** at the right writes them. **File**, **Close** goes back to the gallery, and asks first if something is not saved.'),
+      options(
+        ['Project (left)', '**Settings**: the title, **Visibility** (Public or Private) and, for a timelapse, **Frames per second**. **Stages**: the list, the one at the playhead marked; **Add stage here**, **Remove**, and the name and note of the marked stage. **Card picture**: **Use this frame** sends the frame on show to the gallery card at once.'],
+        ['Render (right)', 'The whole look: material, lighting, camera, environment and ambient occlusion. **Save** stores it with the project.'],
+        ['Output (right)', '**Reel**: **Motion** (**Timelapse** or **Turntable**, with its spin and direction), **Aspect**, with a guide on the view, **Format**, **Size** and **FPS**, a line with the frame count and length, and **Record reel**, with a progress bar and **Cancel**. **Image**: **Save image**, a PNG at twice the window.'],
+        ['The bar along the bottom', 'A timelapse has its transport here: play and pause, the line with the played part in orange and a tick at each stage, and the frame counter. A model has no bar.'],
       ),
     ],
   },

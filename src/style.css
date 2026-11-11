@@ -1505,6 +1505,11 @@ html.is-page body {
   opacity: 1;
 }
 
+.transport__fill,
+.transport__ticks {
+  display: none; /* the owner's Present bar draws them (sculpt/ui/shell.css) */
+}
+
 .transport__spinner {
   width: 11px;
   height: 11px;

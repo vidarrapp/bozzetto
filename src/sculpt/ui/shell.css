@@ -818,7 +818,7 @@ body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output) > .panel
   display: none;
 }
 
-body.bz-shell:not(.presenting) .panel--output {
+body.bz-shell:not(.presenting):not(.bz-frames) .panel--output {
   display: none;
 }
 
@@ -921,17 +921,298 @@ body.bz-shell.chrome-hidden .present-bar {
   }
 }
 
-/* Publish: only in Present, the one orange action of the workspace, at the
+/* Publish (Present only) and Save (Present of a published project): the one
+   orange action of the workspace, at the
    right of the strip. */
-body.bz-shell .bz-strip__btn.publish-window__chip,
-body.bz-shell .bz-strip__btn.publish-window__chip:hover,
-body.bz-shell .bz-strip__btn.publish-window__chip.topchip--open {
+body.bz-shell .bz-strip__btn.bz-strip__btn--primary,
+body.bz-shell .bz-strip__btn.bz-strip__btn--primary:hover,
+body.bz-shell .bz-strip__btn.bz-strip__btn--primary.topchip--open {
   min-height: 24px;
   padding: 0 12px;
   background: var(--bz-orange);
   color: var(--bz-on-accent);
 }
 
-body.bz-shell .bz-strip__btn.publish-window__chip[hidden] {
+body.bz-shell .bz-strip__btn.bz-strip__btn--primary[hidden] {
   display: none;
+}
+
+/* --- Present of a published project (present/) ---------------------------
+   The owner's page for a timelapse or a model on the site: the same strip
+   and folder tabs, Project at the left, Render and Output at the right,
+   and the transport where the tool bar stood. `body.bz-frames` marks it. */
+body.bz-shell .bz-readout__extras {
+  display: contents;
+}
+
+body.bz-shell .panel--project {
+  z-index: 15;
+}
+
+/* The project's fields: a caption and, at the right, what it holds. */
+body.bz-shell .bz-input {
+  box-sizing: border-box;
+  height: 28px;
+  width: 176px;
+  max-width: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font: 400 13px/28px var(--bz-font);
+}
+
+body.bz-shell .bz-input:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell label.bz-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+}
+
+/* The stages: a name and its frame, the one at the playhead on the hover fill. */
+body.bz-shell .bz-stages {
+  margin: 0 -8px;
+}
+
+body.bz-shell .bz-stage {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text);
+  font: 400 13px/28px var(--bz-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-stage:hover,
+body.bz-shell .bz-stage--on {
+  background: var(--bz-hover);
+}
+
+body.bz-shell .bz-stage:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .bz-stage__frame {
+  font: 700 13px/28px var(--bz-font-mono);
+}
+
+body.bz-shell .bz-stages__none,
+body.bz-shell .bz-note {
+  margin: 4px 0 8px;
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+}
+
+body.bz-shell .bz-stages__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+body.bz-shell .bz-stagefields {
+  margin-top: 8px;
+}
+
+body.bz-shell .bz-stagefields[hidden] {
+  display: none;
+}
+
+/* The reel's lines under Output. */
+body.bz-shell .panel--output .reel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+body.bz-shell .reel-info {
+  margin: 8px 0;
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+}
+
+body.bz-shell .reel-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+body.bz-shell .reel-running[hidden] {
+  display: none;
+}
+
+body.bz-shell .reel-running progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+body.bz-shell .panel--output .reel-record {
+  width: auto;
+  margin-top: 4px;
+}
+
+/* The transport, as the bar where the tool bar was: bottom centre, flush,
+   the panel's surface; a line with the played part in orange, a tick for
+   each stage, and the frame counter. The stage's words are the strip's. */
+body.bz-shell .transport--shell {
+  left: 50%;
+  right: auto;
+  bottom: env(safe-area-inset-bottom, 0px);
+  transform: translateX(-50%);
+  box-sizing: content-box;
+  width: min(720px, calc(100vw - 32px));
+  max-width: 100vw;
+  height: 28px;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: var(--bz-panel);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--bz-text);
+  z-index: 20;
+}
+
+body.bz-shell .transport--shell .transport__info {
+  display: none;
+}
+
+body.bz-shell .transport--shell .transport__bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 14px;
+}
+
+body.bz-shell .transport--shell .transport__play {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+/* Play is a quiet control here; the orange is the line's and Save's. */
+body.bz-shell .transport--shell .transport__play,
+body.bz-shell .transport--shell .transport__play:hover:not(:disabled),
+body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
+  background: var(--bz-control);
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.bz-shell .transport--shell .transport__play:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+body.bz-shell .transport--shell .transport__scrub {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  height: 28px;
+  min-width: 0;
+}
+
+body.bz-shell .transport--shell .transport__buffer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background-color: var(--bz-line);
+  opacity: 1;
+  pointer-events: none;
+}
+
+body.bz-shell .transport--shell .transport__fill {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: calc(50% - 1px);
+  height: 3px;
+  width: 0;
+  background: var(--bz-orange);
+  pointer-events: none;
+}
+
+body.bz-shell .transport--shell .transport__ticks {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+body.bz-shell .transport--shell .transport__tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 13px;
+  margin-left: -0.5px;
+  transform: translateY(-50%);
+  background: var(--bz-text-2);
+}
+
+/* The slider is the hand on the line: no track or knob of its own. */
+body.bz-shell .transport--shell .transport__scrubber {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+body.bz-shell .transport--shell .transport__scrubber::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 28px;
+}
+
+body.bz-shell .transport--shell .transport__scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 2px;
+  height: 28px;
+  background: transparent;
+  border: 0;
+}
+
+body.bz-shell .transport--shell .transport__scrubber::-moz-range-track {
+  background: transparent;
+}
+
+body.bz-shell .transport--shell .transport__scrubber::-moz-range-thumb {
+  width: 2px;
+  height: 28px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+body.bz-shell .transport--shell .transport__frame {
+  min-width: 72px;
+  color: var(--bz-text);
+  font: 700 13px/28px var(--bz-font-mono);
 }
