@@ -410,7 +410,7 @@ async function bootArmature(): Promise<void> {
 }
 
 /**
- * "Edit in Present", quietly beside the gallery link, for the owner when an
+ * "Edit", quietly beside the gallery link, for the owner when an
  * owner session is already there: nothing is asked for, and a device that
  * never signed in asks nothing of the server either (the remembered
  * sign-in, as the gallery keeps it).
@@ -419,7 +419,7 @@ async function addPresentLink(id: string): Promise<void> {
   try {
     if (!signedInHereBefore()) return;
     if (roleOf(await checkSignIn()) !== 'owner') return;
-    const a = topChip('Edit in Present', `/?tl=${encodeURIComponent(id)}&present=1`);
+    const a = topChip('Edit', `/?tl=${encodeURIComponent(id)}&present=1`);
     a.classList.add('viewer-present');
     topbarLeft().appendChild(a);
   } catch {

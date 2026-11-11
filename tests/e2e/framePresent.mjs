@@ -11,7 +11,7 @@
 // reel to a file, Cancel, Save image), the Render tab, the transport; one
 // Save writing the look with the settings and a stage, "Edited" coming and
 // going, a refused Save losing nothing; Close asking when edited; the
-// Projects list's action and the viewer's "Edit in Present"; the old editor
+// Projects list's action and the viewer's "Edit"; the old editor
 // as it was; and the public bundle without the page in it.
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -161,7 +161,7 @@ export const suites = {
         const html = await (await fetch(`${origin}/`)).text();
         const entry = html.match(/src="(\/assets\/main-[^"]+\.js)"/)?.[1];
         const js = entry ? await (await fetch(`${origin}${entry}`)).text() : '';
-        t.ok(!!entry && js.includes('Edit in Present'), `the public entry bundle has the quiet "Edit in Present" link (${entry})`);
+        t.ok(!!entry && js.includes('&present=1'), `the public entry bundle has the quiet Edit link (${entry})`);
         t.ok(!js.includes('Close without saving?') && !js.includes('Card picture'), 'but not the Present page itself, which is a chunk loaded when asked for');
       }
 
@@ -178,7 +178,7 @@ export const suites = {
         }));
         t.ok(!s.strip && !s.project && s.error === '', `a guest gets the ordinary viewer, with no error page (${JSON.stringify(s)})`);
         t.ok(s.search === '?tl=tl-demo', `and the param is dropped from the address (${s.search})`);
-        t.ok(!s.chip, 'the viewer offers a guest no Edit in Present');
+        t.ok(!s.chip, 'the viewer offers a guest no Edit');
         await g.ctx.close(); // software GL: a page left open starves the next
       }
 
@@ -582,17 +582,17 @@ export const suites = {
           edit: document.querySelector('.admin-row[data-project="tl-demo"] .admin-row__edit')?.getAttribute('href'),
         };
       }, sceneId);
-      t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Open in Present', `each frame project's row has Open in Present (${JSON.stringify(links)})`);
+      t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Present', `each frame project's row has Present (${JSON.stringify(links)})`);
       t.ok(links.scene === null && links.edit === '?p=tl-demo', 'a scene\'s row has none, and Edit is still there');
       await p.click('.admin-row[data-project="tl-demo"] .admin-row__present');
       await presentReady(p);
       t.ok(new URL(p.url()).searchParams.get('tl') === 'tl-demo', 'it opens the project in Present');
 
-      // The viewer: Edit in Present, quiet, for the owner already signed in on this device.
+      // The viewer: Edit, quiet, for the owner already signed in on this device.
       await p.goto(`${origin}/?tl=model-demo`, { waitUntil: 'domcontentloaded' });
       await p.waitForSelector('.viewer-present', { timeout: 30_000 });
       const chip = await p.evaluate(() => ({ text: document.querySelector('.viewer-present').textContent, href: document.querySelector('.viewer-present').getAttribute('href'), cls: document.querySelector('.viewer-present').className }));
-      t.ok(chip.text === 'Edit in Present' && chip.href === '/?tl=model-demo&present=1' && chip.cls.includes('topchip'), `the viewer shows the owner Edit in Present, in its top row (${JSON.stringify(chip)})`);
+      t.ok(chip.text === 'Edit' && chip.href === '/?tl=model-demo&present=1' && chip.cls.includes('topchip'), `the viewer shows the owner Edit, in its top row (${JSON.stringify(chip)})`);
 
       // The old editor, as it was.
       await p.goto(`${origin}/admin/?p=tl-demo`, { waitUntil: 'domcontentloaded' });

@@ -305,7 +305,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       : `<a class="btn btn--primary admin-row__edit">Edit</a>
           <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>` +
         // The owner's Present for a published timelapse or model (/?tl=&present=1).
-        (p.mode === 'timelapse' || p.mode === 'model' ? '\n<a class="btn admin-row__present">Open in Present</a>' : '');
+        (p.mode === 'timelapse' || p.mode === 'model' ? '\n<a class="btn admin-row__present">Present</a>' : '');
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
