@@ -58,7 +58,7 @@ export const CREDIT_GROUPS: CreditGroup[] = [
       },
       {
         name: 'Uicons by Flaticon',
-        use: "The icons of the Sculpt toolbar and panels (the solid straight, thin straight and bold straight sets), and the Flatten icon, Flaticon's scraper icon.",
+        use: "The icons of the Sculpt toolbar and panels (the solid straight set), and the Flatten icon, Flaticon's scraper icon.",
         licence: 'Flaticon License, free of charge with attribution',
         url: 'https://www.flaticon.com/uicons',
         note: 'Icons: Uicons by Flaticon.',

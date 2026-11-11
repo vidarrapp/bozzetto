@@ -145,7 +145,7 @@ files only; it does not extend to the rest of Bozzetto.
 ### Uicons by Flaticon
 
 `@flaticon/flaticon-uicons` 3.3.1, <https://www.flaticon.com/uicons>: the
-sculpt toolbar's icon font (solid straight and thin straight). Also
+sculpt toolbar's icon font (solid straight). Also
 `src/sculpt/ui/icons/flatten.svg`, Flaticon's "scraper" icon (19010200).
 Used under the Flaticon License, free of charge with attribution:
 

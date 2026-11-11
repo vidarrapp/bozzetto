@@ -1811,7 +1811,7 @@ export const suites = {
       const b = btn.getBoundingClientRect();
       const s = strength.getBoundingClientRect();
       const z = size.getBoundingClientRect();
-      const glyph = btn.querySelector('i.fi.fi-bs-arrows-to-eye');
+      const glyph = btn.querySelector('i.fi.fi-ss-arrows-to-eye');
       return {
         below: b.top >= s.bottom && b.top - s.bottom < 24 && z.bottom <= s.top,
         next: btn.parentElement.previousElementSibling?.classList.contains('bz-edge__fields') ?? false,
@@ -1820,7 +1820,7 @@ export const suites = {
       };
     });
     t.ok(placed?.below && placed.next && placed.plain, `the Solo button stands under both brush fields, a bare icon while off (${JSON.stringify(placed)})`);
-    t.ok(placed?.glyph, 'with the bold straight arrows-to-eye glyph');
+    t.ok(placed?.glyph, 'with the solid straight arrows-to-eye glyph');
     const soloButton = (press) =>
       page.evaluate(async (how) => {
         // The rail reads solo once a frame, with the history flags.
