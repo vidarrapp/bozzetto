@@ -64,6 +64,7 @@ body.bz-shell .bz-strip {
 }
 
 body.bz-shell .bz-strip__menus {
+  grid-column: 1;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -113,6 +114,7 @@ body.bz-shell .file-menu {
 }
 
 body.bz-shell .bz-strip__right {
+  grid-column: 3;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -677,6 +679,13 @@ body.bz-shell .bz-edge .sculpt-slider__val {
   font: 400 11px/14px var(--bz-font-mono);
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* A phone: the tool bar spans the width, so the edge controls stand above it. */
+@media (max-width: 660px) {
+  body.bz-shell:has(.sculpt-toolbar__brushes) .bz-edge {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* Armature stands the undo and redo buttons in the same place. */
