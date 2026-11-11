@@ -2,7 +2,7 @@ import { Box3, Color as ThreeColor, Euler, Matrix4, Quaternion, Sphere, Vector3 
 import { mat4 } from 'gl-matrix';
 import { CM_PER_M, formatLength, LEGACY_ARMATURE_SCALE, UNITS } from '../viewer/units';
 import { lookTimes } from '../viewer/lookUnits';
-import type { SculptHandoff } from '../armature/persist';
+import { hasArmature, type SculptHandoff } from '../armature/persist';
 import { STUDIO_BG } from '../viewer/Environment';
 import type { LookState, Viewer } from '../viewer/Viewer';
 import { BrushCursor } from './bridge/BrushCursor';
@@ -2097,9 +2097,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * SculptHandoff.addToScene).
    */
   goArmature = async (): Promise<void> => {
+    // A new figure takes the place of the armature kept on this device, as
+    // opening one from the gallery does: say so before it goes.
+    const draft = await hasArmature();
     const yes = await askWindow({
       title: 'Make a new armature for this scene?',
-      text: 'The figure you send back is added to this scene as a new object. Nothing in the scene is replaced.',
+      text:
+        'The figure you send back is added to this scene as a new object. Nothing in the scene is replaced.' +
+        (draft ? ' The armature in progress on this device will be replaced.' : ''),
       yes: 'New armature',
     });
     if (!yes) return;
