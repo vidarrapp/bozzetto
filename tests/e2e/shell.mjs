@@ -460,6 +460,13 @@ export const suites = {
     await tab(page, 'panel--sculpt');
     await page.waitForFunction(() => !document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
     t.ok(true, 'closing the Tool panel brings them back');
+    // An open left panel has the edge to itself.
+    await tab(page, 'panel--model');
+    await page.waitForFunction(() => document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
+    t.ok(true, 'they go while a left panel is open');
+    await tab(page, 'panel--model');
+    await page.waitForFunction(() => !document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
+    t.ok(true, 'and come back when it closes');
   },
 
   /** Armature: the same strip and tabs, with the panels it has. */

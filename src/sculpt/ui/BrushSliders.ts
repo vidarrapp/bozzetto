@@ -252,8 +252,15 @@ export class BrushSliders {
     return !!p && !p.classList.contains('panel--collapsed');
   }
 
+  /** Whether a panel is open on the left, which needs the height the fields would take. */
+  private leftPanelOpen(): boolean {
+    return !!document.querySelector('.panel--scene:not(.panel--collapsed), .panel--model:not(.panel--collapsed)');
+  }
+
   private paintFields(): void {
-    const hidden = this.toolPanelOpen() && !this.flashTimer;
+    // An open left panel has the edge to itself: the fields would leave it a
+    // couple of hundred pixels on a tablet. They come back when it closes.
+    const hidden = this.leftPanelOpen() || (this.toolPanelOpen() && !this.flashTimer);
     if (this.fields.hidden === hidden) return;
     this.fields.hidden = hidden;
     window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
