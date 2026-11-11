@@ -1227,7 +1227,12 @@ export const suites = {
     let look = await surfaces();
     t.ok(look.present >= 4 && look.blurred.length === 0, `no panel blurs the view behind it (${look.present} on screen; blurred: ${look.blurred.join(', ') || 'none'})`);
     // The panels' fill and the old chips' are one alpha from one property (the colours differ: the shell's panels are the application layer's grey).
-    const alphaOf = (c) => Number(/(?:,|\/)\s*([\d.]+)\)$/.exec(c)?.[1]);
+    // A colour as the browser words it - rgba(...) for the old panels, color(srgb ... / a) for the shell's, whose fill is the grey token at the opacity - read for its alpha alone; 1 with none.
+    const alphaOf = (c) => {
+      const m = /^rgba\(.*,\s*([\d.]+)\)$/.exec(c) ?? /\/\s*([\d.]+)\)$/.exec(c);
+      return m ? Number(m[1]) : 1;
+    };
+    const solid = (c) => /^(rgb\(\d+, \d+, \d+\)|color\(srgb [\d. ]+\))$/.test(c);
     t.ok(alphaOf(look.panel) === 0.95 && alphaOf(look.chip) === alphaOf(look.panel), `every panel starts 95% opaque, from one property (${look.panel}, ${look.chip})`);
 
     await openPrefs(page);
@@ -1268,7 +1273,7 @@ export const suites = {
       return { seen, readout: document.querySelector('[data-setting="panelOpacity"] .prefs__slider-value').textContent };
     });
     t.ok(
-      ['0.9', '0.75', '0.6'].every((a, i) => dragged.seen[i].endsWith(`, ${a})`)) && dragged.readout === '60%',
+      ['0.9', '0.75', '0.6'].every((a, i) => alphaOf(dragged.seen[i]) === Number(a)) && dragged.readout === '60%',
       `while it is dragged the panels follow it (${dragged.seen.join(' then ')}; reads ${dragged.readout})`,
     );
     t.eq((await stored(page)).panelOpacity, 60, 'and the value is kept');
@@ -1278,7 +1283,7 @@ export const suites = {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     look = await surfaces();
-    t.ok(/^rgb\(\d+, \d+, \d+\)$/.test(look.panel) && look.blurred.length === 0, `at 100% the panels are solid (${look.panel})`);
+    t.ok(solid(look.panel) && look.blurred.length === 0, `at 100% the panels are solid (${look.panel})`);
 
     for (const name of ['Frame meter', 'Stall log', 'Input log']) await prefToggle(page, name);
     await page.keyboard.press('Escape');
@@ -1295,7 +1300,7 @@ export const suites = {
 
     await openSculpt(page, base, '&q=low');
     s = await shown();
-    t.ok(s.stall && s.input && s.meter && /^rgb\(/.test(s.bg), `after a reload it all still holds, the panels solid (${show(s)})`);
+    t.ok(s.stall && s.input && s.meter && solid(s.bg), `after a reload it all still holds, the panels solid (${show(s)})`);
     const boxes = await page.evaluate(() => {
       const rect = (sel) => {
         const r = document.querySelector(sel).getBoundingClientRect();
@@ -1309,7 +1314,7 @@ export const suites = {
     // Every mode: Armature, and the viewer.
     await openArmature(page, base);
     s = await shown();
-    t.ok(s.stall && s.meter && !s.input && /^rgb\(/.test(s.bg), `in Armature mode the stall log and the meter are up and the panels solid too (no input log: it is Sculpt's) (${show(s)})`);
+    t.ok(s.stall && s.meter && !s.input && solid(s.bg), `in Armature mode the stall log and the meter are up and the panels solid too (no input log: it is Sculpt's) (${show(s)})`);
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     s = await page.evaluate(() => ({ stall: !!document.querySelector('.perf-debug'), meter: !document.querySelector('.fps-meter')?.hidden }));
@@ -1326,7 +1331,7 @@ export const suites = {
     for (const name of ['Frame meter', 'Stall log', 'Input log']) await prefToggle(page, name);
     await page.keyboard.press('Escape');
     s = await shown();
-    t.ok(!s.stall && !s.input && !s.meter && /, 0\.95\)$/.test(s.bg), `unticked they all go, and the panels are back at 95% (${show(s)})`);
+    t.ok(!s.stall && !s.input && !s.meter && alphaOf(s.bg) === 0.95, `unticked they all go, and the panels are back at 95% (${show(s)})`);
     t.eq(show(await stored(page)), '{}', 'with nothing stored');
     await openSculpt(page, base, '&q=low&perfdebug=1&inputdebug=1');
     s = await shown();
