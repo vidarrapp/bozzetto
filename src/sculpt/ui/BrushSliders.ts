@@ -38,10 +38,8 @@ const LOG_SPAN = Math.log(R_MAX) - LOG_MIN;
 const REPEAT_DELAY_MS = 400;
 const REPEAT_STEP_MS = 110;
 
-const UNDO_ICON =
-  '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4.5 4.5 8l3.5 3.5M4.5 8H12a4.5 4.5 0 0 1 0 9H8.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const REDO_ICON =
-  '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4.5 15.5 8l-3.5 3.5M15.5 8H8a4.5 4.5 0 0 0 0 9h3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const UNDO_ICON = '<i class="fi fi-ss-undo" aria-hidden="true"></i>';
+const REDO_ICON = '<i class="fi fi-ss-redo" aria-hidden="true"></i>';
 
 export interface HistoryHooks {
   undo(): void;

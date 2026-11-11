@@ -25,13 +25,14 @@ export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
 const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--armature'];
-const RIGHT_ORDER = ['panel--sculpt', 'panel--render'];
+const RIGHT_ORDER = ['panel--sculpt', 'panel--render', 'panel--output'];
 
 function tabsOf(order: string[]): HTMLElement[] {
   const out: HTMLElement[] = [];
   for (const cls of order) {
     const handle = document.querySelector<HTMLElement>(`.panel.${cls} > .panel__handle`);
-    if (handle) out.push(handle);
+    // A tab that is not shown (display none: Present puts some away) takes no place in the row.
+    if (handle && handle.getClientRects().length > 0) out.push(handle);
   }
   return out;
 }
@@ -56,7 +57,10 @@ export function layoutShell(): void {
   const vh = window.innerHeight;
   const vw = window.innerWidth;
   const panelW = Math.min(PANEL_WIDTH, vw);
-  const bar = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
+  // What stands at the foot of the screen: the tool bar, or in Present the turntable bar.
+  const bar = document.querySelector<HTMLElement>(
+    document.body.classList.contains('presenting') ? '.present-bar' : '.sculpt-toolbar__brushes',
+  );
   const barBox = bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect() : null;
   const edge = document.querySelector<HTMLElement>('.bz-edge');
   const edgeBox = edge && edge.getClientRects().length > 0 ? edge.getBoundingClientRect() : null;
@@ -91,7 +95,7 @@ export function startShellLayout(): () => void {
   const watched = new Set<Element>();
   const ro = new ResizeObserver(soon);
   const watch = (): void => {
-    const now = document.querySelectorAll('.panel > .panel__handle, .bz-edge, .sculpt-toolbar__brushes');
+    const now = document.querySelectorAll('.panel > .panel__handle, .bz-edge, .sculpt-toolbar__brushes, .present-bar');
     for (const e of now) {
       if (watched.has(e)) continue;
       watched.add(e);

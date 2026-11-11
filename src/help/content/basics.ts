@@ -14,7 +14,7 @@ export const BASICS: Topic[] = [
       p('In the gallery, choose **Create**. You can start a **New Sculpt** (a sphere of clay, brushes and paint), a **New Armature** (a posable figure), **Import OBJ** (one .obj file from another app, opened in Sculpt as a new scene) or **Create timelapse** (frames made elsewhere, played back as a timelapse or a model).'),
       h('What is on the screen in Sculpt'),
       list(
-        'The **title strip** across the top has the **File**, **Edit**, **View** and **Help** menus at the left, the project and object readout in the middle, and, at the right, **Publish** (when you are signed in) and the hide button.',
+        'The **title strip** across the top has the **File**, **Edit**, **View** and **Help** menus at the left, then the workspace path **Armature › Sculpt › Present**, the project and object readout in the middle, and, at the right, the hide button (and **Publish**, in Present only, when you are signed in).',
         'The **tool bar** along the bottom holds the tools, each with its hotkey digit, which **View**, then **Hotkeys on tools**, shows or hides.',
         'The **edge controls** at the bottom left are, from the bottom, Carve (negative), Undo, Redo and Solo, with the brush size and strength fields above them while the Tool panel is closed.',
         'The **Scene** and **Model** panels share the left side, and **Tool** and **Render** the right. Each side has a row of two tabs at the top and one open panel: a tab opens its panel and closes the other, and the open panel\'s tab closes it.',

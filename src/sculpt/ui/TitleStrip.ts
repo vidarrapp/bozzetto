@@ -4,10 +4,12 @@ import { settings } from '../../ui/settings';
 import { layoutShell, startShellLayout } from './shellLayout';
 
 /**
- * The title strip of Sculpt and Armature: one 24px band across the top.
- * The menus are at its left (their names are TopMenu's, hosted here), the
- * readout of the project and the object in the middle, Publish and the
- * hide-interface button at the right (docs/ui-spec.md section 6).
+ * The title strip of Sculpt, Armature and Present: one 24px band across the
+ * top. The menus are at its left (their names are TopMenu's, hosted here),
+ * then the workspace path (Armature, Sculpt, Present: the order the work
+ * goes, the step you are in lit), the readout of the project and the object
+ * in the middle, and at the right Publish (Present only) and the
+ * hide-interface button (docs/ui-spec.md section 6).
  *
  * Making it also marks the page as the app shell (`body.bz-shell`), which
  * is what shell.css keys on: the old top row is put away, the panels dock
@@ -24,6 +26,8 @@ export interface Readout {
   tris?: number | null;
   /** The object's subdivision level (1-based) of the levels it has, when it has them. */
   level?: { at: number; of: number } | null;
+  /** Present: the viewport's size in pixels, the frame a saved image is taken from. */
+  frame?: { w: number; h: number } | null;
 }
 
 /** The crossed-out eye: what hides the interface, and, while it is hidden, what brings it back. */
@@ -33,6 +37,21 @@ const EYE_ICON =
   '<path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.5 8.1A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.4 9.4 0 0 0 3.6-.7" ' +
   'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>';
+
+/** The three workspaces, in the order the work goes. */
+export type Workspace = 'armature' | 'sculpt' | 'present';
+const WORKSPACES: Array<[Workspace, string]> = [
+  ['armature', 'Armature'],
+  ['sculpt', 'Sculpt'],
+  ['present', 'Present'],
+];
+
+/**
+ * What pressing a step does: an action, or a reason it cannot be pressed
+ * (the step is then dim and says why in its title). A step with neither is
+ * dim and silent.
+ */
+export type PathStep = { action: () => void } | { unavailable: string };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -48,6 +67,8 @@ export class TitleStrip {
   /** Publish, a plain text button; hidden until publishing is reachable (PublishWindow). */
   readonly publishHost: HTMLElement;
   private readonly hideBtn: HTMLButtonElement;
+  private readonly steps = new Map<Workspace, HTMLButtonElement>();
+  private readonly stepActions = new Map<Workspace, (() => void) | null>();
   private readonly nameEl = el('b', 'bz-readout__name');
   private readonly editedEl = el('span', 'bz-readout__edited', 'Edited');
   private readonly objectItem: HTMLElement;
@@ -56,6 +77,8 @@ export class TitleStrip {
   private readonly trisVal = el('b', 'bz-readout__val bz-readout__tris');
   private readonly levelItem: HTMLElement;
   private readonly levelVal = el('b', 'bz-readout__val bz-readout__level');
+  private readonly frameItem: HTMLElement;
+  private readonly frameVal = el('b', 'bz-readout__val bz-readout__frame');
   /** Set by the mode: the direct hide/show switch (not Tab's staged one). */
   onToggleChrome: (() => void) | null = null;
   private readonly offKeymap: () => void;
@@ -78,9 +101,10 @@ export class TitleStrip {
     this.objectItem = pair('bz-readout__item--object', 'Object', this.objectVal);
     this.trisItem = pair('bz-readout__item--tris', 'Tris', this.trisVal);
     this.levelItem = pair('bz-readout__item--level', 'Level', this.levelVal);
+    this.frameItem = pair('bz-readout__item--frame', 'Frame', this.frameVal);
     this.editedEl.hidden = true;
     this.nameEl.hidden = true;
-    readout.append(this.nameEl, this.editedEl, this.objectItem, this.trisItem, this.levelItem);
+    readout.append(this.nameEl, this.editedEl, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
 
     const right = el('div', 'bz-strip__right');
     this.publishHost = right;
@@ -95,7 +119,32 @@ export class TitleStrip {
     this.setChromeHidden(false);
     this.offKeymap = keymap.onChange(() => this.setChromeHidden(this.hiddenNow));
 
-    this.el.append(this.menus, readout, right);
+    // The menus, a 1px separator, then the path.
+    const left = el('div', 'bz-strip__left');
+    const sep = el('span', 'bz-strip__sep');
+    sep.setAttribute('aria-hidden', 'true');
+    const path = el('div', 'bz-ws');
+    path.setAttribute('role', 'group');
+    path.setAttribute('aria-label', 'Workspace');
+    WORKSPACES.forEach(([id, label], i) => {
+      if (i) {
+        const arrow = el('span', 'bz-ws__sep', '\u203a');
+        arrow.setAttribute('aria-hidden', 'true');
+        path.appendChild(arrow);
+      }
+      const b = el('button', 'bz-ws__step', label);
+      b.type = 'button';
+      b.dataset.workspace = id;
+      onTap(b, () => {
+        if (b.getAttribute('aria-current') === 'step') return;
+        this.stepActions.get(id)?.();
+      });
+      this.steps.set(id, b);
+      path.appendChild(b);
+    });
+    left.append(this.menus, sep, path);
+
+    this.el.append(left, readout, right);
     document.body.appendChild(this.el);
     this.setReadout({});
     // View > Hotkeys on tools: the digits on the tool bar follow the setting.
@@ -108,6 +157,32 @@ export class TitleStrip {
   }
 
   private hiddenNow = false;
+
+  /**
+   * Light the workspace the person is in and say what the other steps do.
+   * Called by the mode on boot and whenever the workspace changes (Sculpt
+   * to Present and back). `steps` is read for every step but the current.
+   */
+  setWorkspace(current: Workspace, steps: Partial<Record<Workspace, PathStep>>): void {
+    for (const [id, label] of WORKSPACES) {
+      const b = this.steps.get(id)!;
+      const on = id === current;
+      const step = on ? undefined : steps[id];
+      const action = step && 'action' in step ? step.action : null;
+      this.stepActions.set(id, action);
+      if (on) b.setAttribute('aria-current', 'step');
+      else b.removeAttribute('aria-current');
+      b.classList.toggle('bz-ws__step--on', on);
+      const dim = !on && !action;
+      b.classList.toggle('bz-ws__step--none', dim);
+      if (dim) b.setAttribute('aria-disabled', 'true');
+      else b.removeAttribute('aria-disabled');
+      const reason = step && 'unavailable' in step ? step.unavailable : '';
+      if (reason) b.title = reason;
+      else if (on) b.title = `${label}, where you are`;
+      else b.title = action ? `Go to ${label}` : '';
+    }
+  }
 
   /** The button names what it does now: hide, or bring the interface back. */
   setChromeHidden(hidden: boolean): void {
@@ -137,6 +212,7 @@ export class TitleStrip {
     set(this.objectItem, this.objectVal, r.object ?? null);
     set(this.trisItem, this.trisVal, r.tris == null ? null : r.tris.toLocaleString('en-US'));
     set(this.levelItem, this.levelVal, r.level ? `${r.level.at}/${r.level.of}` : null);
+    set(this.frameItem, this.frameVal, r.frame ? `${r.frame.w} \u00d7 ${r.frame.h}` : null);
   }
 
   dispose(): void {

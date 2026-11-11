@@ -1,36 +1,46 @@
-import { div, onTap } from '../../ui/dom';
+import { div, labelRow, onTap, selectEl } from '../../ui/dom';
+import { numberedRange, section } from '../../ui/Panel';
+import { SidePanel } from './SidePanel';
+import { panelIsOpen } from './panelMemory';
+import { SHELL_LAYOUT_EVENT } from './shellLayout';
 
 /**
- * Present mode (owner call): the model on its own, for looking at and for
- * showing. View > Present mode goes in, and Shift+P (the keymap's
- * ui.present, rebindable) goes in or out; Esc and Done leave.
+ * Present, the third workspace (Armature, Sculpt, Present): the model on its
+ * own, for looking at and for showing. The path in the title strip, View >
+ * Present and Shift+P (the keymap's ui.present, rebindable, which also
+ * leaves) go in; Esc, the path's Sculpt step and Shift+P leave.
  *
  * Presenting hides what edits - the tool bar, the edge controls and their undo
- * chips, the Scene, Model and Tool panels, the brush ring and the object
- * stats - and locks it: the brushes, the gizmo and the selection do not
- * answer (InputShell.presenting), while orbit, pan and zoom do, fingers
- * included, by the iPad's finger rules. The Render panel stays, with
- * everything on the look; so do the title strip and the notices. Nothing about
- * the scene changes by going in or out, and the autosave carries on.
- * Leaving puts the interface back as it was: which panels were open, the
- * tool, the gizmo or the Select tool, the mask tint, Tab's hidden state.
+ * chips, the Scene, Model and Tool panels and their tabs, the brush ring and
+ * the object stats - and locks it: the brushes, the gizmo and the selection
+ * do not answer (InputShell.presenting), while orbit, pan and zoom do,
+ * fingers included, by the iPad's finger rules. The strip stays, with the
+ * path showing Present, and Publish at its right (Present only); the notices
+ * stay. Two panels remain, as the right-hand tabs: Render (everything on the
+ * look) and Output (below). Nothing about the scene changes by going in or
+ * out, and the autosave carries on. Leaving puts the interface back as it
+ * was: which panels were open, the tool, the gizmo or the Select tool, the
+ * mask tint, Tab's hidden state.
  *
- * The bar along the bottom holds the turntable - a slow turn about the
- * subject's vertical axis, at the speed its slider says, which Space (the
- * keymap's play.toggle, the viewer's play/pause) starts and stops and any
- * press or wheel on the view stops; it moves the camera only, so the
- * scene and its undo never see it - Save image, and Done. Under it, one row
- * saves the turntable as a clip: one full turn at the slider's speed
- * (36°/s is ten seconds), MP4 or GIF, the window at 1x or 2x
- * (capture/turntable.ts), rendered offline with a progress bar and Cancel
- * in the row's place while it runs.
+ * Where the tool bar stood, one bar at the bottom centre holds the
+ * turntable - a slow turn about the subject's vertical axis, at the speed
+ * its field says, which the play button and Space (the keymap's
+ * play.toggle, the viewer's play/pause) start and stop and any press or
+ * wheel on the view stops; it moves the camera only, so the scene and its
+ * undo never see it - and Save image.
+ *
+ * The Output panel has the saves. Image: Save image, a PNG at twice the
+ * window. Turntable: the format (MP4 or GIF), the size (the window at 1x or
+ * 2x) and Save turntable, one full turn at the speed (36 degrees a second is
+ * ten seconds) rendered offline (capture/turntable.ts), with a progress bar
+ * and Cancel in the button's place while it runs.
  *
  * Tab, and the title strip's hide button, which stays in its corner in
  * Present, hide the interface as they do anywhere in Sculpt: here that is
- * everything, this bar included, and either brings it all back.
+ * everything, the bar included, and either brings it all back.
  */
 
-/** What mode.ts does for Present mode, which knows the scene and the viewer. */
+/** What mode.ts does for Present, which knows the scene and the viewer. */
 export interface PresentHost {
   /** Whether Present can begin now: not mid-stroke, nor mid-drag. */
   canEnter(): boolean;
@@ -67,16 +77,32 @@ const SPEED_KEY = 'bozzetto-present-speed';
 /** A stalled frame never flings the turn. */
 const MAX_STEP_S = 0.1;
 
+/** The Output panel: the right-hand tab beside Render, in Present only. */
+class OutputPanel extends SidePanel {
+  constructor() {
+    super({ id: 'output', title: 'Output', side: 'right', variant: 'panel--output', collapsed: true });
+  }
+
+  get content(): HTMLElement {
+    return this.body;
+  }
+}
+
 export class PresentMode {
+  /** The bar at the bottom centre: the turntable's play button, its speed, Save image. */
   readonly bar: HTMLDivElement;
+  /** The Output panel: Save image, and the turntable's format, size and Save turntable. */
+  readonly output: OutputPanel;
   private readonly playBtn: HTMLButtonElement;
   private readonly speedInput: HTMLInputElement;
   private readonly speedOut: HTMLSpanElement;
   private readonly saveBtn: HTMLButtonElement;
+  private readonly outSaveBtn: HTMLButtonElement;
   private readonly clipRow: HTMLDivElement;
-  private readonly formatBtn: HTMLButtonElement;
-  private readonly sizeBtn: HTMLButtonElement;
+  private readonly formatSel: HTMLSelectElement;
+  private readonly sizeSel: HTMLSelectElement;
   private readonly clipBtn: HTMLButtonElement;
+  private readonly clipNote: HTMLParagraphElement;
   private readonly progressRow: HTMLDivElement;
   private readonly progress: HTMLProgressElement;
   private format: ClipFormat = 'mp4';
@@ -98,7 +124,7 @@ export class PresentMode {
     if (!this.active || e.key !== 'Escape' || e.defaultPrevented) return;
     if (document.body.classList.contains('has-modal')) return;
     const at = e.target as Element | null;
-    if (at?.closest?.('[role="menu"], [role="dialog"], .float-window, input[type="text"], textarea')) return;
+    if (at?.closest?.('[role="menu"], [role="dialog"], .float-window, input[type="text"], textarea, select')) return;
     this.leave();
   };
 
@@ -117,58 +143,92 @@ export class PresentMode {
     this.bar = div('present-bar');
     this.bar.hidden = true;
     this.bar.setAttribute('role', 'toolbar');
-    this.bar.setAttribute('aria-label', 'Present');
+    this.bar.setAttribute('aria-label', 'Turntable');
 
-    this.playBtn = button('present-bar__play', 'Turntable', () => this.setTurning(!this.turning));
+    this.playBtn = button('present-bar__play', '', () => this.setTurning(!this.turning));
+    this.playBtn.setAttribute('aria-label', 'Turntable');
     this.playBtn.setAttribute('aria-pressed', 'false');
+    this.paintPlay();
 
-    const speed = div('present-bar__speed');
-    this.speedInput = document.createElement('input');
-    this.speedInput.type = 'range';
-    this.speedInput.min = String(SPEED_MIN);
-    this.speedInput.max = String(SPEED_MAX);
-    this.speedInput.step = '1';
-    this.speedInput.setAttribute('aria-label', 'Turntable speed, degrees a second');
-    this.speedOut = document.createElement('span');
-    this.speedOut.className = 'present-bar__val';
     try {
       const stored = Number(localStorage.getItem(SPEED_KEY));
       if (stored >= SPEED_MIN && stored <= SPEED_MAX) this.speed = stored;
     } catch {
       // A blocked store: the default speed.
     }
-    this.speedInput.value = String(this.speed);
-    this.speedInput.addEventListener('input', () => this.setSpeed(Number(this.speedInput.value)));
-    speed.append(this.speedInput, this.speedOut);
-    this.paintSpeed();
+    const speed = numberedRange(
+      'Speed',
+      SPEED_MIN,
+      SPEED_MAX,
+      1,
+      this.speed,
+      (v) => {
+        this.setSpeed(v);
+        return `${Math.round(this.speed)}°/s`;
+      },
+      { unit: '°/s', limits: { min: SPEED_MIN, max: SPEED_MAX } },
+    );
+    speed.row.classList.add('present-bar__speed');
+    this.speedInput = speed.input;
+    this.speedInput.classList.add('present-bar__speed-input');
+    this.speedInput.setAttribute('aria-label', 'Turntable speed, degrees a second');
+    this.speedOut = speed.val;
+    this.speedOut.classList.add('present-bar__val');
 
     this.saveBtn = button('present-bar__save', 'Save image', () => void this.saveImage());
-    const done = button('present-bar__done', 'Done', () => this.leave());
-    done.setAttribute('aria-label', 'Leave Present');
-    const top = div('present-bar__row');
-    top.append(this.playBtn, speed, this.saveBtn, done);
+    const sep = document.createElement('span');
+    sep.className = 'present-bar__sep';
+    sep.setAttribute('aria-hidden', 'true');
+    this.bar.append(this.playBtn, speed.row, sep, this.saveBtn);
+    document.body.appendChild(this.bar);
 
-    // Save turntable: the format and the size switch on a tap, as the
-    // play button does - nothing keeps a focus for Space to land on.
-    this.formatBtn = button('present-bar__format', '', () => this.setClipFormat(this.format === 'mp4' ? 'gif' : 'mp4'));
-    this.sizeBtn = button('present-bar__size', '', () => this.setClipScale(this.scale === 1 ? 2 : 1));
-    this.clipBtn = button('present-bar__clip', 'Save turntable', () => void this.saveTurntable());
-    this.clipBtn.title = 'One full turn at the turntable\'s speed, as a video';
-    this.clipRow = div('present-bar__row present-bar__cliprow');
-    this.clipRow.append(this.formatBtn, this.sizeBtn, this.clipBtn);
+    // The Output panel: the saves.
+    const out = new OutputPanel();
+    this.output = out;
+    const image = section(out.content, 'Image');
+    this.outSaveBtn = button('present-out__save', 'Save image', () => void this.saveImage());
+    this.outSaveBtn.title = 'A PNG of the view at twice the window';
+    image.appendChild(this.outSaveBtn);
+
+    const turn = section(out.content, 'Turntable');
+    this.formatSel = selectEl(
+      [
+        ['mp4', 'MP4'],
+        ['gif', 'GIF'],
+      ],
+      this.format,
+    );
+    this.formatSel.classList.add('present-out__format');
+    this.formatSel.setAttribute('aria-label', 'Turntable clip format');
+    this.formatSel.addEventListener('change', () => this.setClipFormat(this.formatSel.value as ClipFormat));
+    this.sizeSel = selectEl(
+      [
+        ['1', 'Window, 1x'],
+        ['2', 'Window, 2x'],
+      ],
+      String(this.scale),
+    );
+    this.sizeSel.classList.add('present-out__size');
+    this.sizeSel.setAttribute('aria-label', 'Turntable clip size');
+    this.sizeSel.addEventListener('change', () => this.setClipScale(Number(this.sizeSel.value)));
+    this.clipNote = document.createElement('p');
+    this.clipNote.className = 'present-out__note';
+    this.clipBtn = button('present-out__clip', 'Save turntable', () => void this.saveTurntable());
+    this.clipBtn.title = "One full turn at the turntable's speed, as a video";
+    this.clipRow = div('present-out__row');
+    this.clipRow.append(this.clipBtn);
     this.progress = document.createElement('progress');
-    this.progress.className = 'present-bar__progress';
+    this.progress.className = 'present-out__progress';
     this.progress.max = 1;
     this.progress.value = 0;
     this.progress.setAttribute('aria-label', 'Saving the turntable');
-    const cancel = button('present-bar__cancel', 'Cancel', () => this.clip?.abort());
-    this.progressRow = div('present-bar__row present-bar__cliprow');
+    const cancel = button('present-out__cancel', 'Cancel', () => this.clip?.abort());
+    this.progressRow = div('present-out__row present-out__row--progress');
     this.progressRow.hidden = true;
     this.progressRow.append(this.progress, cancel);
+    turn.append(labelRow('Format', this.formatSel), labelRow('Size', this.sizeSel), this.clipNote, this.clipRow, this.progressRow);
     this.paintClip();
-
-    this.bar.append(top, this.clipRow, this.progressRow);
-    document.body.appendChild(this.bar);
+    this.paintSpeed();
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointerdown', this.onViewInput, true);
@@ -198,7 +258,10 @@ export class PresentMode {
     this.restore = this.host.enter();
     this.active = true;
     this.bar.hidden = false;
+    // Render stays up if it was; otherwise the Output tab opens.
+    if (!panelIsOpen('settings')) this.output.setCollapsed(false);
     this.onChange?.(true);
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
     return true;
   }
 
@@ -208,10 +271,12 @@ export class PresentMode {
     this.setTurning(false);
     this.active = false;
     this.bar.hidden = true;
+    this.output.setCollapsed(true);
     const restore = this.restore;
     this.restore = null;
     restore?.();
     this.onChange?.(false);
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
   }
 
   /** The turntable on or off; only while presenting. */
@@ -223,6 +288,7 @@ export class PresentMode {
     this.lastTurn = performance.now();
     this.playBtn.setAttribute('aria-pressed', String(on));
     this.playBtn.classList.toggle('is-on', on);
+    this.paintPlay();
   }
 
   setSpeed(degPerSecond: number): void {
@@ -276,9 +342,14 @@ export class PresentMode {
     return this.clip !== null;
   }
 
+  private setSaveDisabled(disabled: boolean): void {
+    this.saveBtn.disabled = disabled;
+    this.outSaveBtn.disabled = disabled;
+  }
+
   /**
    * Save turntable: one turn at the slider's speed, from this view. The
-   * turn stops for it, the bar's row becomes the progress and its Cancel,
+   * turn stops for it, the button becomes the progress and its Cancel,
    * and the turntable carries on afterwards if it was turning.
    */
   async saveTurntable(): Promise<void> {
@@ -287,7 +358,9 @@ export class PresentMode {
     this.setTurning(false);
     const clip = new AbortController();
     this.clip = clip;
-    this.saveBtn.disabled = true;
+    this.setSaveDisabled(true);
+    this.formatSel.disabled = true;
+    this.sizeSel.disabled = true;
     this.progress.value = 0;
     this.clipRow.hidden = true;
     this.progressRow.hidden = false;
@@ -303,7 +376,9 @@ export class PresentMode {
       });
     } finally {
       this.clip = null;
-      this.saveBtn.disabled = false;
+      this.setSaveDisabled(false);
+      this.formatSel.disabled = false;
+      this.sizeSel.disabled = false;
       this.progressRow.hidden = true;
       this.clipRow.hidden = false;
       if (wasTurning && !clip.signal.aborted) this.setTurning(true);
@@ -314,14 +389,14 @@ export class PresentMode {
   async saveImage(): Promise<void> {
     if (this.saving || this.clip) return;
     this.saving = true;
-    this.saveBtn.disabled = true;
+    this.setSaveDisabled(true);
     this.clipBtn.disabled = true;
     this.setTurning(false);
     try {
       await this.host.saveImage();
     } finally {
       this.saving = false;
-      this.saveBtn.disabled = false;
+      this.setSaveDisabled(false);
       this.clipBtn.disabled = false;
     }
   }
@@ -331,20 +406,25 @@ export class PresentMode {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('pointerdown', this.onViewInput, true);
     window.removeEventListener('wheel', this.onViewInput, { capture: true });
+    this.output.dispose();
     this.bar.remove();
   }
 
+  private paintPlay(): void {
+    const glyph = this.turning ? 'fi-ss-pause' : 'fi-ss-play';
+    this.playBtn.innerHTML = `<i class="fi ${glyph}" aria-hidden="true"></i>`;
+    this.playBtn.title = `${this.turning ? 'Stop' : 'Start'} the turntable (Space)`;
+  }
+
   private paintClip(): void {
-    this.formatBtn.textContent = this.format === 'mp4' ? 'MP4' : 'GIF';
-    this.formatBtn.setAttribute('aria-label', `Turntable clip format: ${this.format.toUpperCase()}`);
-    this.formatBtn.title = 'MP4 or GIF';
-    this.sizeBtn.textContent = `${this.scale}×`;
-    this.sizeBtn.setAttribute('aria-label', `Turntable clip size: the window at ${this.scale}x`);
-    this.sizeBtn.title = 'The window at 1x or 2x';
+    this.formatSel.value = this.format;
+    this.sizeSel.value = String(this.scale);
   }
 
   private paintSpeed(): void {
     this.speedOut.textContent = `${Math.round(this.speed)}°/s`;
+    const seconds = Math.round(360 / this.speed);
+    this.clipNote.textContent = `One full turn, ${seconds} seconds.`;
   }
 }
 

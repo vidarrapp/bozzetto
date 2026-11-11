@@ -12,7 +12,7 @@ export function packArmature(file: ArmatureFile): Blob {
   // model is loaded, and says so when they disagree. Nor does the gallery
   // card's picture, which is binary too and belongs to this device.
   // The library project it belongs to is this device's to know, not the file's.
-  const { model: _model, thumb: _thumb, project: _project, symmetry: _symmetry, ...rest } = file;
+  const { model: _model, thumb: _thumb, project: _project, symmetry: _symmetry, forScene: _forScene, ...rest } = file;
   return new Blob([JSON.stringify(rest, null, 1)], { type: 'application/json' });
 }
 

@@ -35,7 +35,7 @@ const ui = (page) =>
       const el = document.querySelector(sel);
       if (!el || el.closest('[hidden]')) return false;
       const cs = getComputedStyle(el);
-      return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0;
+      return el.getClientRects().length > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0;
     };
     const { scenePanel, modelPanel, sculptPanel, input, gizmo, present } = window.__sculpt;
     const render = document.querySelector('.panel--render');
@@ -47,7 +47,9 @@ const ui = (page) =>
         model: !modelPanel.isCollapsed(),
         tool: !sculptPanel.isCollapsed(),
         render: !render.classList.contains('panel--collapsed'),
+        output: !document.querySelector('.panel--output').classList.contains('panel--collapsed'),
       },
+      path: [...document.querySelectorAll('.bz-ws__step')].map((b) => `${b.textContent}${b.getAttribute('aria-current') === 'step' ? '*' : ''}`).join(' > '),
       shown: {
         toolbar: shown('.sculpt-toolbar__brushes'),
         rail: shown('.sculpt-sliders'),
@@ -56,6 +58,8 @@ const ui = (page) =>
         model: shown('.panel--model .panel__handle'),
         tool: shown('.panel--sculpt .panel__handle'),
         render: shown('.panel--render .panel__handle') || shown('.panel--render .panel__header'),
+        output: shown('.panel--output .panel__handle'),
+        publish: shown('.publish-window__chip'),
         bar: shown('.present-bar'),
         menus: shown('.bz-menuname'),
         hide: shown('.bz-strip__hide'),
@@ -242,15 +246,17 @@ export const suites = {
     // Present is a View item now, with its hotkey beside it.
     await page.click('.bz-menuname:text-is("View")');
     const presentItem = await page.evaluate(() => {
-      const item = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present mode');
+      const item = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present');
       return item ? item.querySelector('.file-menu__key')?.textContent : null;
     });
-    t.ok(presentItem && /Shift \+ P|Shift\+P/.test(presentItem), `View has Present mode, and shows the hotkey ("${presentItem}")`);
+    t.ok(presentItem && /Shift \+ P|Shift\+P/.test(presentItem), `View has Present, and shows the hotkey ("${presentItem}")`);
     await press(page, 'Escape');
 
     await press(page, 'Shift+P');
     let now = await ui(page);
-    t.ok(now.presenting && now.shown.bar && now.shown.render && now.shown.menus, `Shift+P presents: the bar and the Render panel's tab up (${show(now.shown)})`);
+    t.ok(now.presenting && now.shown.bar && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Render and Output tabs up (${show(now.shown)})`);
+    t.ok(now.open.output && !now.open.render, `the Output panel opens with it (${show(now.open)})`);
+    t.eq(now.path, 'Armature > Sculpt > Present*', 'the path shows Present as the current step');
     t.ok(
       !now.shown.toolbar && !now.shown.rail && !now.shown.scene && !now.shown.model && !now.shown.tool,
       `the toolbar, the brush rail and the Scene, Model and Tool panels are hidden, the strip stays (${show(now.shown)})`,
@@ -267,12 +273,12 @@ export const suites = {
     await press(page, 'e'); // the rotate gizmo
     const gizmoBefore = await ui(page);
     await page.click('.bz-menuname:text-is("View")');
-    await page.click('.file-menu--view .file-menu__item:has-text("Present mode")');
+    await page.click('.file-menu--view .file-menu__item:has(.file-menu__label:text-is("Present"))');
     now = await ui(page);
-    t.ok(now.presenting && now.gizmo === null, `View > Present mode presents too, the gizmo put away (${show(now)})`);
+    t.ok(now.presenting && now.gizmo === null, `View > Present presents too, the gizmo put away (${show(now)})`);
     await press(page, 'Escape');
     after = await ui(page);
-    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate', `Esc leaves, the rotate gizmo back (${show(after)})`);
+    t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Esc leaves, the rotate gizmo back (${show(after)})`);
     await press(page, '3'); // a brush again: Standard clay
 
     // --- locked: brushes, gizmo and edits; orbit still turns ----------------
@@ -536,13 +542,18 @@ async function clipChecks(page, base, t) {
 
     // The autosave's edit count, to show the clip adds no edit to the scene.
     const edits0 = await p.evaluate(() => window.__sculpt.persist.editCount());
-    const row = await p.evaluate(() => ({
-      format: document.querySelector('.present-bar__format').textContent,
-      size: document.querySelector('.present-bar__size').textContent,
-      clip: document.querySelector('.present-bar__clip').textContent,
-      progress: !document.querySelector('.present-bar__progress').closest('[hidden]'),
-    }));
-    t.ok(row.format === 'MP4' && row.size === '1×' && row.clip === 'Save turntable' && !row.progress, `one row: MP4, 1×, Save turntable, no progress bar yet (${show(row)})`);
+    const row = await p.evaluate(() => {
+      const sel = (c) => document.querySelector(c);
+      const label = (c) => sel(c).selectedOptions[0].textContent;
+      return {
+        open: !sel('.panel--output').classList.contains('panel--collapsed'),
+        format: label('.present-out__format'),
+        size: label('.present-out__size'),
+        clip: sel('.present-out__clip').textContent,
+        progress: !sel('.present-out__progress').closest('[hidden]'),
+      };
+    });
+    t.ok(row.open && row.format === 'MP4' && row.size === 'Window, 1x' && row.clip === 'Save turntable' && !row.progress, `the Output panel's Turntable section: MP4, Window 1x, Save turntable, no progress bar yet (${show(row)})`);
 
     // MP4, 1x, at 60°/s: six seconds, 30 fps, the window's size.
     await p.evaluate(() => window.__sculpt.present.setSpeed(60));
@@ -551,11 +562,11 @@ async function clipChecks(page, base, t) {
     const [mp4dl] = await Promise.all([
       p.waitForEvent('download', { timeout: 900_000 }),
       (async () => {
-        await p.click('.present-bar__clip');
+        await p.click('.present-out__clip');
         const shown = await p.evaluate(() => ({
           saving: window.__sculpt.present.isSavingClip(),
-          progress: !document.querySelector('.present-bar__progress').closest('[hidden]'),
-          row: !document.querySelector('.present-bar__clip').closest('[hidden]'),
+          progress: !document.querySelector('.present-out__progress').closest('[hidden]'),
+          row: !document.querySelector('.present-out__clip').closest('[hidden]'),
         }));
         t.ok(shown.saving && shown.progress && !shown.row, `while it renders the row is a progress bar with Cancel (${show(shown)})`);
       })(),
@@ -575,10 +586,11 @@ async function clipChecks(page, base, t) {
     t.ok(said, 'and it says it saved the file');
 
     // GIF, 2x: 15 fps, twice the window (under the GIF's 1080 cap).
-    await p.click('.present-bar__format');
-    await p.click('.present-bar__size');
+    await p.selectOption('.present-out__format', 'gif');
+    await p.selectOption('.present-out__size', '2');
+    t.ok(await p.evaluate(() => window.__sculpt.present.getClipFormat() === 'gif' && window.__sculpt.present.getClipScale() === 2), 'the format and size selects set the clip: GIF, 2x');
     const g0 = Date.now();
-    const [gifdl] = await Promise.all([p.waitForEvent('download', { timeout: 900_000 }), p.click('.present-bar__clip')]);
+    const [gifdl] = await Promise.all([p.waitForEvent('download', { timeout: 900_000 }), p.click('.present-out__clip')]);
     const gif = readFileSync(await gifdl.path());
     const ginfo = gifInfo(gif);
     t.eq(gifdl.suggestedFilename(), 'Sculpt-turntable.gif', 'as GIF, <title>-turntable.gif');
@@ -593,14 +605,14 @@ async function clipChecks(page, base, t) {
     const before = await camera(p);
     const downloads = [];
     p.on('download', (d) => downloads.push(d.suggestedFilename()));
-    await p.click('.present-bar__clip');
-    await p.waitForFunction(() => document.querySelector('.present-bar__progress').value > 0.03, null, { timeout: 120_000 });
+    await p.click('.present-out__clip');
+    await p.waitForFunction(() => document.querySelector('.present-out__progress').value > 0.03, null, { timeout: 120_000 });
     const mid = await camera(p);
-    await p.click('.present-bar__cancel');
+    await p.click('.present-out__cancel');
     await p.waitForFunction(() => !window.__sculpt.present.isSavingClip(), null, { timeout: 30_000 });
     await p.waitForTimeout(1500);
     back = await camera(p);
-    const rowBack = await p.evaluate(() => !document.querySelector('.present-bar__clip').closest('[hidden]') && !!document.querySelector('.present-bar__progress').closest('[hidden]'));
+    const rowBack = await p.evaluate(() => !document.querySelector('.present-out__clip').closest('[hidden]') && !!document.querySelector('.present-out__progress').closest('[hidden]'));
     t.ok(camMoved(before, mid) > 5e-5 && camMoved(before, back) < 1e-4, `Cancel puts the view back where it was (moved ${camMoved(before, mid).toExponential(1)} mid-turn, then off by ${camMoved(before, back).toExponential(1)})`);
     t.ok(downloads.length === 0 && rowBack, `and leaves no download, the row back (${show(downloads)})`);
 
@@ -765,12 +777,13 @@ async function ipadChecks(page, base, t) {
       }, sel);
     await dev.tap(await centre('.bz-menuname:nth-child(3)'));
     await dev.tap(await ipad.evaluate(() => {
-      const r = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.textContent.includes('Present mode')).getBoundingClientRect();
+      const r = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present').getBoundingClientRect();
       return [r.left + r.width / 2, r.top + r.height / 2];
     }));
     await ipad.waitForTimeout(100);
-    t.ok((await ui(ipad)).presenting, 'on an upright iPad a tap on View, then Present mode, presents');
-    await setRender(ipad, true);
+    t.ok((await ui(ipad)).presenting, 'on an upright iPad a tap on View, then Present, presents');
+    const outputOpen = await ipad.evaluate(() => !document.querySelector('.panel--output').classList.contains('panel--collapsed'));
+    t.ok(outputOpen, 'the Output panel is open on entering');
     const layout = await ipad.evaluate(() => {
       const box = (el) => {
         const r = el.getBoundingClientRect();
@@ -778,7 +791,7 @@ async function ipadChecks(page, base, t) {
       };
       return {
         bar: box(document.querySelector('.present-bar')),
-        render: box(document.querySelector('.panel--render')),
+        render: box(document.querySelector('.panel--output')),
         hide: box(document.querySelector('.bz-strip__hide')),
         chips: [...document.querySelectorAll('.bz-menuname, .bz-strip__hide')].map(box),
         w: innerWidth,
@@ -787,11 +800,9 @@ async function ipadChecks(page, base, t) {
     });
     const meets = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
     const inside = (a) => a.l >= 0 && a.t >= 0 && a.r <= layout.w && a.b <= layout.h;
-    t.ok(inside(layout.bar) && inside(layout.render), `the bar and the open Render panel fit the 744x1133 screen (${show(layout.bar)})`);
+    t.ok(inside(layout.bar) && inside(layout.render), `the bar and the open Output panel fit the 744x1133 screen (${show(layout.bar)})`);
     t.ok(!meets(layout.bar, layout.render) && !layout.chips.some((c) => meets(c, layout.bar) || meets(c, layout.render)), 'and overlap neither each other nor the strip');
     t.ok(inside(layout.hide) && !meets(layout.hide, layout.bar) && !meets(layout.hide, layout.render), `the hide button sits clear of the bar and the panel (${show(layout.hide)})`);
-    await setRender(ipad, false);
-
     await ipad.keyboard.press('3');
     const [cx, cy] = await screenOf(ipad, 'Sphere');
     const path = line([cx - 90, cy - 20], [cx + 90, cy + 20]);
@@ -813,10 +824,10 @@ async function ipadChecks(page, base, t) {
     t.ok(await ipad.evaluate(() => window.__sculpt.present.isTurning()), 'a tap on play turns the model');
     await dev.tap([cx + 150, cy + 250]);
     t.ok(!(await ipad.evaluate(() => window.__sculpt.present.isTurning())), 'and a touch on the view stops it');
-    await dev.tap(await centre('.present-bar__done'));
+    await dev.tap(await centre('.bz-ws__step[data-workspace="sculpt"]'));
     await ipad.waitForTimeout(100);
     const back = await ui(ipad);
-    t.ok(!back.presenting && back.shown.toolbar, 'Done leaves Present, the toolbar back');
+    t.ok(!back.presenting && back.shown.toolbar && back.path === 'Armature > Sculpt* > Present', 'the path\'s Sculpt step leaves Present, the toolbar back');
 
     // The gallery on the iPad: the In progress card's picture, square too.
     // Some work to come back to, so the gallery has an In progress card.

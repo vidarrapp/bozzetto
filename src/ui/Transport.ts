@@ -1,3 +1,4 @@
+import '@flaticon/flaticon-uicons/css/solid/straight.css';
 import type { Viewer } from '../viewer/Viewer';
 
 /**
@@ -95,7 +96,7 @@ export class Transport {
   }
 
   private setPlay(playing: boolean): void {
-    this.playButton.textContent = playing ? '❚❚' : '▶';
+    this.playButton.innerHTML = `<i class="fi ${playing ? 'fi-ss-pause' : 'fi-ss-play'}" aria-hidden="true"></i>`;
     this.playButton.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
 

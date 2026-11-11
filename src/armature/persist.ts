@@ -47,6 +47,13 @@ export interface ArmatureFile {
    * onCentimetres.
    */
   units?: UnitsMarker;
+  /**
+   * Made from Sculpt's workspace path ("Make a new armature for this
+   * scene?"): the figure it sends is for that scene, as a new object. The
+   * autosave keeps it, so a reload still knows; no file ever carries it,
+   * and a send consumes it.
+   */
+  forScene?: boolean;
 }
 
 /**
@@ -76,6 +83,13 @@ export interface SculptHandoff {
    * stays on it.
    */
   floor?: number;
+  /**
+   * Sent for the scene the person came from (Sculpt's path, Armature step):
+   * the figure is added to it as a new object, replacing nothing, even
+   * where the scene has had no work yet and a plain send would make way
+   * for the figure.
+   */
+  addToScene?: boolean;
 }
 
 // The same IndexedDB store the sculpt autosave uses, under keys of its own.
