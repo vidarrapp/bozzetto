@@ -469,7 +469,8 @@ async function openByAddress(browser, base, t) {
       void (answer ? d.accept() : d.dismiss());
     });
     await openSculpt(p, base, '&q=low');
-    await p.waitForFunction(() => !window.__sculpt.publishWindow.chip.hidden, null, { timeout: 30_000 });
+    // Signed in: publishing is reachable (its button stands in Present only).
+    await p.waitForFunction(() => window.__sculpt.publishWindow.isAvailable(), null, { timeout: 30_000 });
     // A scene on the shelf (two objects), and different work in progress (three).
     const entry = await p.evaluate(async () => {
       const s = window.__sculpt;

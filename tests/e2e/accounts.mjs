@@ -1088,9 +1088,9 @@ async function suspension(server, browser, o, t) {
     const gate = await p.evaluate(() => ({
       notes: [...document.querySelectorAll('.gallery-form__gatenote')].map((n) => n.textContent),
       signIn: [...document.querySelectorAll('.gallery-form__signin')].filter((b) => !b.hidden).length,
-      chip: !window.__sculpt.publishWindow.chip.hidden,
+      chip: (() => { const w = window.__sculpt; w.present.enter(); const shown = !w.publishWindow.chip.hidden; w.present.leave(); return shown; })(),
     }));
-    t.ok(gate.notes.every((n) => n === 'Your account is suspended.') && gate.signIn === 0 && !gate.chip, `Sculpt's publish form says it is suspended, offers no sign-in, and there is no Publish chip (${show(gate)})`);
+    t.ok(gate.notes.every((n) => n === 'Your account is suspended.') && gate.signIn === 0 && !gate.chip, `Sculpt's publish form says it is suspended, offers no sign-in, and there is no Publish chip, not even in Present (${show(gate)})`);
     const download = p.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
     await p.click('.file-menu--file__chip');
     await p.click('.file-menu--file button:has-text("Save to library")');
@@ -1240,12 +1240,12 @@ async function memberLibrary(server, o, a, t) {
       id: !f.querySelector('.gallery-form__input[placeholder="project-id"]').hidden,
       visibility: !f.querySelector('.gallery-form__visibility').hidden,
       where: f.querySelector('.gallery-form__where').textContent,
-      chip: !window.__sculpt.publishWindow.chip.hidden,
+      chip: (() => { const w = window.__sculpt; w.present.enter(); const shown = !w.publishWindow.chip.hidden; w.present.leave(); return shown; })(),
     };
   });
   t.ok(
     !publish.id && !publish.visibility && publish.where === 'To My projects, where only you see it.' && publish.chip,
-    `Publish is a member's too: the chip shows, and its form asks no id and no visibility (${show(publish)})`,
+    `Publish is a member's too: the chip shows (in Present), and its form asks no id and no visibility (${show(publish)})`,
   );
 
   // The first save: a project of the member's own, with the bytes the scene packed to.

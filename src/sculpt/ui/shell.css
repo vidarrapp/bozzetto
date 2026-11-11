@@ -54,7 +54,8 @@ body.bz-shell .bz-strip {
   z-index: 35;
   height: 24px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* The menus and the path keep their full width; the readout gives way. */
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
   align-items: center;
   background: var(--bz-strip);
   color: var(--bz-text);
@@ -71,6 +72,7 @@ body.bz-shell .bz-strip__left {
 }
 
 body.bz-shell .bz-strip__menus {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -175,8 +177,16 @@ body.bz-shell .bz-readout__val {
   font-weight: 700;
 }
 
-/* Narrow: the readout goes before the path does. */
-@media (max-width: 899px) {
+/* Narrow: the readout goes before the path does (under 1000px it would meet the path). */
+@media (max-width: 999px) {
+  body.bz-shell .bz-strip {
+    grid-template-columns: minmax(min-content, 1fr) auto;
+  }
+
+  body.bz-shell .bz-strip__right {
+    grid-column: 2;
+  }
+
   body.bz-shell .bz-readout {
     display: none;
   }
@@ -251,6 +261,14 @@ body.bz-shell .bz-ws__step--none:hover {
 body.bz-shell .bz-ws__sep {
   color: var(--bz-text-3);
   font: 400 13px/16px var(--bz-font);
+}
+
+/* A very narrow phone: no path at all; the View menu has the workspaces. */
+@media (max-width: 379px) {
+  body.bz-shell .bz-strip__sep,
+  body.bz-shell .bz-ws {
+    display: none;
+  }
 }
 
 /* A phone: the step you are in, and nothing else; the others are in the View menu. */

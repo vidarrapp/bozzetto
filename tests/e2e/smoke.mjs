@@ -5292,10 +5292,11 @@ export const suites = {
       const gate = await owner.evaluate(() => ({
         signIn: [...document.querySelectorAll('.gallery-form__gate .gallery-form__signin')].filter((b) => !b.hidden).map((b) => b.textContent),
         fields: [...document.querySelectorAll('.gallery-form__fields')].filter((f) => !f.hidden).length,
-        chip: !window.__sculpt.publishWindow.chip.hidden,
+        // The button stands in Present only: look there, and come back.
+        chip: (() => { const w = window.__sculpt; w.present.enter(); const shown = !w.publishWindow.chip.hidden; w.present.leave(); return shown; })(),
       }));
       t.ok(gate.signIn.length === 1 && gate.signIn[0] === 'Sign in again' && gate.fields === 0, `the publish form says the sign-in expired and offers Sign in again (${JSON.stringify(gate)})`);
-      t.ok(gate.chip, 'and the owner\'s device still has the Publish chip, to reach it');
+      t.ok(gate.chip, 'and the owner\'s device still has the Publish chip in Present, to reach it');
 
       // Save to library: kept on the device, and said so, with the way back in.
       await owner.evaluate(() => window.__sculpt.session.addPrimitive('torus'));
@@ -5655,7 +5656,14 @@ export const suites = {
       );
 
       // A template off the gallery: its copy comes through the owner's routes.
-      await owner.evaluate(() => window.__sculpt.persist.flush());
+      // There is work in progress to lose: the scene saved to the library is
+      // synced, and the autosave may or may not still hold it, so one more
+      // object makes it certain.
+      await owner.evaluate(async () => {
+        window.__sculpt.session.addPrimitive('cube');
+        window.__sculpt.persist.markDirty();
+        await window.__sculpt.persist.flush();
+      });
       mark = fake.calls.length;
       ownerDialogs.length = 0;
       await openSculpt(owner, base, '&q=low&template=tpl-hidden');
@@ -6339,6 +6347,23 @@ export const suites = {
         await owner.waitForFunction(() => window.__sculpt.publishWindow.isAvailable(), null, { timeout: 30_000 });
       };
       await boot();
+      // Publish's button stands in the strip in Present only (the end of the
+      // workspace path); from Sculpt and Armature File > Publish… opens the window.
+      const enterPresent = async () => {
+        await owner.keyboard.press('Shift+P');
+        await owner.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });
+        // Output opens with Present: closed, so the window's place is as it was beside the chip.
+        await owner.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'output', open: false } })));
+      };
+      const leavePresent = async () => {
+        await owner.evaluate(() => window.__sculpt.present.leave());
+        await owner.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 10_000 });
+      };
+      const viaFile = async () => {
+        await owner.evaluate(() => document.querySelector('.file-menu--file__chip').click());
+        await owner.waitForFunction(() => document.querySelector('.bz-menuname.is-open'), null, { timeout: 5000 });
+        await owner.evaluate(() => [...document.querySelectorAll('.file-menu--file .file-menu__item')].find((b) => (b.querySelector('.file-menu__label')?.textContent ?? b.textContent.trim()) === 'Publish…')?.click());
+      };
 
       const row = await owner.evaluate(() => {
         const menus = [...document.querySelectorAll('.bz-strip__menus > *')].map((c) => c.textContent.trim());
@@ -6355,9 +6380,22 @@ export const suites = {
         return { menus, right, like: look(publish) === look(file) && look(publish) === look(edit) };
       });
       t.eq(row.menus.join(', '), 'File, Edit, View, Help', 'the strip carries the four menus at its left');
-      t.eq(row.right.join(', '), 'Publish, hide', 'signed in, Publish leads the strip\'s right-hand group, the hide button after it');
-      t.ok(row.like, 'styled as the menu names are');
+      t.eq(row.right.join(', '), 'hide', 'signed in, in Sculpt the strip\'s right-hand group is the hide button alone: no Publish button');
       let s = await publishState(owner);
+      t.ok(!s.chip.shown, 'the Publish button is not shown in Sculpt');
+      await viaFile();
+      s = await publishState(owner);
+      t.ok(s.open && s.shown, 'File > Publish… opens the window in Sculpt');
+      await owner.evaluate(() => window.__sculpt.publishWindow.close());
+      await enterPresent();
+      const inPresent = await owner.evaluate(() => {
+        const right = [...document.querySelectorAll('.bz-strip__right > *')].filter((c) => !c.hidden).map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
+        const css = getComputedStyle(window.__sculpt.publishWindow.chip);
+        return { right, bg: css.backgroundColor, color: css.color };
+      });
+      t.eq(inPresent.right.join(', '), 'Publish, hide', 'in Present, signed in, Publish leads the strip\'s right-hand group, the hide button after it');
+      t.ok(inPresent.bg === 'rgb(255, 90, 31)' && inPresent.color === 'rgb(0, 0, 0)', 'and it is the orange action, black text');
+      s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
 
       // Opened from the chip: under it, the chip pressed, and the publish
@@ -6425,8 +6463,11 @@ export const suites = {
       await owner.mouse.click(...(await centreOf(owner, '.publish-window .float-window__close')));
       t.ok(!(await publishState(owner)).open, 'its close button closes it');
 
-      // Non-modal: open, a pen stroke on the sphere sculpts, and it stays.
-      await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
+      // Non-modal: back in Sculpt, opened from File, a pen stroke on the
+      // sphere sculpts (Present locks the brushes), and it stays.
+      await leavePresent();
+      await viaFile();
+      t.ok((await publishState(owner)).open, 'File > Publish… opens it again where it was left');
       const dev = await devices(owner);
       await owner.keyboard.press('3'); // Standard clay
       const [cx, cy] = await screenOf(owner, 'Sphere');
@@ -6514,6 +6555,7 @@ export const suites = {
 
       // A reload: the place is the session's.
       await boot();
+      await enterPresent();
       await owner.mouse.click(...(await centreOf(owner, '.publish-window__chip')));
       s = await publishState(owner);
       t.ok(s.open && s.rect.l === kept.l && s.rect.t === kept.t, `after a reload it opens where it was left (${showRect(s.rect)})`);
@@ -6544,9 +6586,11 @@ export const suites = {
       t.ok(!/record|timelapse|capture/i.test(offered), 'nothing about recording is offered in the File menu or the hotkey guide');
       await signInContext(guestCtx);
       await web.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-      await web.waitForFunction(() => !window.__sculpt.publishWindow.chip.hidden, null, { timeout: 30_000 }).catch(() => {});
+      await web.waitForFunction(() => window.__sculpt.publishWindow.isAvailable(), null, { timeout: 30_000 }).catch(() => {});
+      await web.keyboard.press('Shift+P');
+      await web.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });
       s = await publishState(web);
-      t.ok(s.chip.shown, 'back in front, signed in meanwhile, the page asks again and the chip appears');
+      t.ok(s.chip.shown, 'back in front, signed in meanwhile, the page asks again and the chip appears (in Present)');
       t.ok(!errors.length, `no page errors as a guest${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await guestCtx.close();
