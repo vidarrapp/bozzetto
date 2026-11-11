@@ -245,6 +245,9 @@ export const suites = {
     t.near(brush.unit, 0.02, 1e-12, 'its slider steps a fifth of a millimetre on real units (0.02 units)');
     t.eq(brush.display.unit, ' cm', 'the brush size reads in centimetres');
     t.eq(brush.panelUnit, ' cm', 'in the Tool panel too');
+    // The edge fields stand only while the Tool panel and the left panels are closed.
+    await page.evaluate(() => window.dispatchEvent(new Event('bozzetto:panel-close-all')));
+    await page.waitForFunction(() => !document.querySelector('.bz-edge__fields')?.hidden, null, { timeout: 4000 });
     const rail = page.locator('.sculpt-slider[data-kind="size"]');
     const r = await rail.boundingBox();
     await page.mouse.move(r.x + r.width / 2, r.y + r.height * 0.5);
