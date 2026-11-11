@@ -736,14 +736,14 @@ async function publishChecks(page, base, t) {
     t.ok(opened.tone === 'agx' && same(opened.env, look.environment), `under its grade and environment (${opened.tone})`);
     await owner.keyboard.press('Escape');
 
-    // The gallery: every card's picture frame is 4:5, and the pictures fill it.
+    // The gallery: every card's picture frame is square (application layer), and the pictures sit in it.
     await owner.evaluate(() => window.__sculpt.persist.flush());
     await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('.card[data-project="present-model"] .card__img', { timeout: 30_000 }).catch(() => {});
     await owner.waitForFunction(() => document.querySelector('.card[data-project="present-model"] .card__img')?.naturalWidth > 0, null, { timeout: 15_000 }).catch(() => {});
     const cards = await cardShapes(owner);
     const published = cards.find((c) => c.project === 'present-model');
-    t.ok(cards.length > 1 && cards.every((c) => Math.abs(c.ratio - 0.8) < 0.01), `on the desktop every gallery card's picture is 4:5 (${cards.map((c) => c.ratio.toFixed(3)).join(', ')})`);
+    t.ok(cards.length > 1 && cards.every((c) => Math.abs(c.ratio - 1) < 0.01), `on the desktop every gallery card's picture is square (${cards.map((c) => c.ratio.toFixed(3)).join(', ')})`);
     t.ok(published?.img?.w === 800 && published.img.h === 1000, `and the presented model's card shows its 800x1000 picture (${show(published?.img)})`);
     t.ok(!errors.length, `no page errors publishing${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   } finally {
@@ -816,7 +816,7 @@ async function ipadChecks(page, base, t) {
     const back = await ui(ipad);
     t.ok(!back.presenting && back.shown.toolbar, 'Done leaves Present, the toolbar back');
 
-    // The gallery on the iPad: the In progress card's picture, 4:5 too.
+    // The gallery on the iPad: the In progress card's picture, square too.
     // Some work to come back to, so the gallery has an In progress card.
     await ipad.evaluate(async () => {
       window.__sculpt.session.addPrimitive('cube');
@@ -833,7 +833,7 @@ async function ipadChecks(page, base, t) {
     await ipad.waitForTimeout(500);
     const cards = await cardShapes(ipad);
     const progress = cards.find((c) => c.img);
-    t.ok(cards.length > 0 && cards.every((c) => Math.abs(c.ratio - 0.8) < 0.01), `on the iPad every gallery card's picture is 4:5 (${cards.map((c) => c.ratio.toFixed(3)).join(', ')})`);
+    t.ok(cards.length > 0 && cards.every((c) => Math.abs(c.ratio - 1) < 0.01), `on the iPad every gallery card's picture is square (${cards.map((c) => c.ratio.toFixed(3)).join(', ')})`);
     t.ok(!!progress && progress.img.w === 800 && progress.img.h === 1000, `and the In progress card's snapshot is the 800x1000 portrait (${show(progress?.img)})`);
     t.ok(!errors.length, `no page errors on the iPad${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   } finally {

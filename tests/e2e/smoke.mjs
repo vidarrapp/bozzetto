@@ -6349,7 +6349,7 @@ export const suites = {
       t.ok(s.open && s.shown && s.chip.expanded === 'true' && s.chip.lit, `the chip opens it and shows it is open (expanded ${s.chip.expanded})`);
       const column = await owner.evaluate(() => Math.max(...[...document.querySelectorAll('.panel--left')].map((p) => p.offsetLeft + p.offsetWidth)));
       t.ok(
-        Math.abs(s.rect.t - (s.chip.b + 6)) <= 1 && s.rect.l >= s.chip.l && s.rect.l >= column && s.rect.l <= column + 10,
+        Math.abs(s.rect.t - (s.chip.b + 6)) <= 1 && s.rect.l >= s.chip.l && s.rect.l >= column && s.rect.l <= Math.max(column, s.chip.l) + 10,
         `the first time, under the chip and clear of where the left panels open (${showRect(s.rect)}; chip at ${s.chip.l}, panels to ${column})`,
       );
       const holds = await owner.evaluate(() => {

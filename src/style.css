@@ -7793,3 +7793,22 @@ progress {
 .account-reason {
   background: var(--bz-hover);
 }
+
+/* Focus, kept where an older rule took the outline away. */
+.prefs__open:focus-visible,
+.prefs__key:focus-visible,
+.help-guide__prefs:focus-visible,
+.help-guide__check:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+.review-chip__count {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.admin-invite[data-state='live'] .admin-invite__state {
+  border-color: var(--bz-line);
+  color: var(--bz-text);
+}
