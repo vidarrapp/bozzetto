@@ -403,7 +403,7 @@ export const suites = {
       await Promise.all([page.waitForURL(/sculpt=1/, { timeout: 60_000 }), step('sculpt')]);
       await page.waitForFunction((n) => !!window.__sculpt && window.__sculpt.session.getMeshes().length === n + 1, before, { timeout: 180_000 });
       const arrived = await page.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
-      t.ok(arrived.length === before + 1 && arrived.includes('Sphere') && arrived.filter((n) => n === 'Figure').length === round, `round ${round}: the Sculpt step sends the figure, added to the scene as a new object, replacing nothing (${arrived.join(', ')})`);
+      t.ok(arrived.length === before + 1 && arrived.includes('Sphere') && arrived.filter((n) => /^Figure/.test(n)).length === round, `round ${round}: the Sculpt step sends the figure, added to the scene as a new object, replacing nothing (${arrived.join(', ')})`);
     }
   },
 

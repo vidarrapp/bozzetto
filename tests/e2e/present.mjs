@@ -35,7 +35,7 @@ const ui = (page) =>
       const el = document.querySelector(sel);
       if (!el || el.closest('[hidden]')) return false;
       const cs = getComputedStyle(el);
-      return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0;
+      return el.getClientRects().length > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0;
     };
     const { scenePanel, modelPanel, sculptPanel, input, gizmo, present } = window.__sculpt;
     const render = document.querySelector('.panel--render');
@@ -273,7 +273,7 @@ export const suites = {
     await press(page, 'e'); // the rotate gizmo
     const gizmoBefore = await ui(page);
     await page.click('.bz-menuname:text-is("View")');
-    await page.click('.file-menu--view .file-menu__item:text-is("Present")');
+    await page.click('.file-menu--view .file-menu__item:has(.file-menu__label:text-is("Present"))');
     now = await ui(page);
     t.ok(now.presenting && now.gizmo === null, `View > Present presents too, the gizmo put away (${show(now)})`);
     await press(page, 'Escape');
@@ -777,7 +777,7 @@ async function ipadChecks(page, base, t) {
       }, sel);
     await dev.tap(await centre('.bz-menuname:nth-child(3)'));
     await dev.tap(await ipad.evaluate(() => {
-      const r = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.textContent === 'Present').getBoundingClientRect();
+      const r = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present').getBoundingClientRect();
       return [r.left + r.width / 2, r.top + r.height / 2];
     }));
     await ipad.waitForTimeout(100);
