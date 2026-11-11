@@ -100,7 +100,7 @@ export const suites = {
 
     // The readout stands in the middle of the strip and replaced the corner's.
     const readout = await page.evaluate(() => ({
-      keys: [...document.querySelectorAll('.bz-readout__key')].map((k) => k.textContent),
+      keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
       object: document.querySelector('.bz-readout__object')?.textContent,
       tris: document.querySelector('.bz-readout__tris')?.textContent,
       level: document.querySelector('.bz-readout__level')?.textContent,
@@ -307,7 +307,7 @@ export const suites = {
     t.ok(ro.keys.join() === 'Frame' && ro.frame === `${ro.view.w} × ${ro.view.h}`, `the readout is Frame W × H (${JSON.stringify(ro)})`);
     const ws = await page.evaluate(() => {
       const vis = (sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
-      const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.textContent, l: h.getBoundingClientRect().left }));
+      const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.querySelector('.handle__label').textContent, l: h.getBoundingClientRect().left }));
       return { toolbar: vis('.sculpt-toolbar__brushes'), edge: vis('.bz-edge'), tabs: tabs.sort((a, b) => a.l - b.l).map((x) => x.n).join(), done: !!document.querySelector('.present-bar__done') };
     });
     t.ok(!ws.toolbar && !ws.edge && ws.tabs === 'Render,Output' && !ws.done, `no tool bar, no edge controls, no left tabs; the tabs are Render, Output, and there is no Done (${JSON.stringify(ws)})`);
@@ -318,7 +318,7 @@ export const suites = {
       const r = el.getBoundingClientRect();
       return {
         bottom: r.bottom, h: innerHeight, centre: r.left + r.width / 2, w: innerWidth, bg: getComputedStyle(el).backgroundColor,
-        kids: [...el.querySelectorAll('button, .compact')].map((k) => k.className.split(' ').find((c) => c.startsWith('present-bar__')) ?? k.className),
+        kids: [...el.querySelectorAll('button, .compact')].map((k) => k.className.split(' ').find((c) => c.startsWith('present-bar__') && c !== 'present-bar__btn') ?? k.className),
         play: el.querySelector('.present-bar__play .fi')?.className,
       };
     });
@@ -335,7 +335,7 @@ export const suites = {
         open: !p.classList.contains('panel--collapsed'),
         heading: p.querySelector('.panel__title').textContent,
         sections: [...p.querySelectorAll('.section h3')].map((h) => h.textContent).join(),
-        buttons: [...p.querySelectorAll('button:not(.panel__handle)')].map((b) => b.textContent).join(),
+        buttons: [...p.querySelectorAll('button:not(.panel__handle)')].filter((b) => b.getClientRects().length > 0).map((b) => b.textContent).join(),
         selects: [...p.querySelectorAll('select')].map((x) => [...x.options].map((o) => o.textContent).join('/')).join(' | '),
       };
     });
@@ -395,7 +395,7 @@ export const suites = {
           return { color: getComputedStyle(el).color, title: el.title, disabled: el.getAttribute('aria-disabled') };
         });
         t.ok(dim.color === 'rgb(125, 125, 125)' && /sent to Sculpt first/.test(dim.title) && dim.disabled === 'true', `Present is dim, with a title saying a figure is sent to Sculpt first (${JSON.stringify(dim)})`);
-        await page.click('.bz-ws__step[data-workspace="present"]');
+        await page.click('.bz-ws__step[data-workspace="present"]', { force: true });
         t.ok(!!(await page.evaluate(() => window.__armature)) && new URL(page.url()).searchParams.get('armature') === '1', 'pressing it does nothing');
         t.eq(await page.evaluate(() => !!document.querySelector('.bz-strip .publish-window__chip')), false, 'Armature: no Publish button in the strip');
       }

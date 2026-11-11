@@ -209,6 +209,7 @@ body.bz-shell .bz-ws__step {
   align-items: center;
   flex: 0 0 auto;
   height: 24px;
+  min-height: 24px;
   margin: 0;
   padding: 0 10px;
   border: 0;
@@ -907,6 +908,7 @@ body.bz-shell.chrome-hidden .present-bar {
 body.bz-shell .bz-strip__btn.publish-window__chip,
 body.bz-shell .bz-strip__btn.publish-window__chip:hover,
 body.bz-shell .bz-strip__btn.publish-window__chip.topchip--open {
+  min-height: 24px;
   padding: 0 12px;
   background: var(--bz-orange);
   color: var(--bz-on-accent);
