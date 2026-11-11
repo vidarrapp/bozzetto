@@ -44,8 +44,8 @@ layer does not try to.
 | Viewport | #222222 | The Sculpt and Armature viewport |
 | Panel | #2c2c2c | Panels (at the Panel opacity preference), the tool bar |
 | Raised | #333333 | Menus, tooltips, windows, notices: with a 1px #555555 border and a shadow |
-| Control | #3a3a3a | Buttons, selects, a switch that is off |
-| Hover | #4b4b4b | A hovered control or row; a selected row; the preset in use; an open menu's name |
+| Control | #3a3a3a | Buttons, selects |
+| Hover | #4b4b4b | A hovered control or row; a selected row; the preset in use; an open menu's name; the box of a switch |
 
 ## Text and lines
 
@@ -62,7 +62,7 @@ layer does not try to.
 | Name | Value | Its one job |
 | --- | --- | --- |
 | Orange | #ff5a1f | The tool in hand; the amount in a field; the one main action of a window; the focus outline. Text on it is black |
-| Lime | #c6ff00 | A switch that is on. The knob on it is black |
+| Lime | #c6ff00 | The knob of a switch that is on |
 | Red | #ff4060 | Something went wrong; an action that cannot be undone. Text on it is black. It leans toward pink so it cannot be taken for the orange |
 
 The view axes keep their own red, green and blue.
@@ -77,7 +77,7 @@ The view axes keep their own red, green and blue.
 | Tool | No fill | Hover | | Orange, icon black | | |
 | Tab | Strip, secondary text | Text brightens | | Panel surface, joined to the panel | | |
 | Field | Line and orange amount | Label brightens | Dragging | Label bold when changed from default | Dim | |
-| Switch | Control, grey knob | | | Lime, black knob | | |
+| Switch | Hover-grey box, grey knob at the left | | | Same box, lime knob at the right | | |
 | Menu row | No fill | Hover | | A check before it | Dim, with the reason | |
 | List row | No fill | Control | | Hover | | |
 
