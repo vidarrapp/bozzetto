@@ -24,6 +24,13 @@ export interface PanelOptions {
    * to their page.
    */
   author?: string;
+  /**
+   * The look-dev half of the panel (light rig, camera, environment, ambient
+   * occlusion) shown outright, as the editors and Sculpt show it, under the
+   * heading Render: the panel of the owner's Present page for a published
+   * project (present/), where the look is what is being edited.
+   */
+  fullLook?: boolean;
 }
 
 /**
@@ -43,6 +50,8 @@ export class Panel {
   /** "by @handle" under the title, for a member's work from the Community. */
   private bylineEl: HTMLAnchorElement | null = null;
   private readonly editor: boolean;
+  /** The whole look shown in a viewer panel (PanelOptions.fullLook). */
+  private readonly fullLook: boolean;
   private collapsed = false;
 
   /** Fired when the handle is clicked (editor coordinates both panels). */
@@ -152,7 +161,7 @@ export class Panel {
    * than trying to keep two copies of the state in step.
    */
   private applySculptVisibility(): void {
-    const active = this.sculpting;
+    const active = this.sculpting || this.fullLook;
     // DoF shows in sculpt too (owner call: full look parity - a look set
     // while sculpting should carry everything the editor could set).
     // Sculpt mode gets look-dev parity with the editor: the full light rig,
@@ -190,6 +199,7 @@ export class Panel {
     options: PanelOptions = {},
   ) {
     this.editor = options.editor ?? false;
+    this.fullLook = (options.fullLook ?? false) && !this.editor;
 
     // panel--render names it for the stylesheet: Present mode keeps this
     // panel and hides the rest.
@@ -229,7 +239,7 @@ export class Panel {
     // swaps it for the panel's own name, since the synthetic sculpt
     // manifest is titled "Sculpt" and would sit right above the Sculpt
     // palette (onSculptMode below).
-    title.textContent = this.editor ? 'Render' : viewer.manifest.title || 'Bozzetto';
+    title.textContent = this.editor || this.fullLook ? 'Render' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
       this.setCollapsed(true);
@@ -238,7 +248,7 @@ export class Panel {
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
     closeBtn.setAttribute('aria-label', 'Hide render panel');
-    if (options.author && !this.editor) {
+    if (options.author && !this.editor && !this.fullLook) {
       // The title and, under it, who made it: a member's work from the
       // Community. Hidden while sculpting, when the title is the panel's.
       const heading = div('panel__heading');
@@ -301,7 +311,7 @@ export class Panel {
     }
     if (devMode()) this.buildDeveloper(this.bodyEl);
     if (this.onHotkeys) this.buildInterface(this.bodyEl, this.onHotkeys);
-    if (this.sculpting) this.applySculptVisibility();
+    if (this.sculpting || this.fullLook) this.applySculptVisibility();
     this.refreshControls();
   }
 

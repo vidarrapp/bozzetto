@@ -51,7 +51,7 @@ export class PublishWindow {
 
   /** `host` is the strip's right-hand group, which Publish leads. */
   constructor(host: HTMLElement) {
-    this.chip = stripButton('Publish');
+    this.chip = stripButton('Publish', true);
     this.chip.classList.add('file-menu__chip', 'publish-window__chip');
     this.chip.setAttribute('aria-expanded', 'false');
     this.chip.hidden = true;

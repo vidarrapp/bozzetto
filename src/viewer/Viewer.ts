@@ -38,7 +38,7 @@ import type { EnvState } from './Environment';
 import { hexColor } from './color';
 import { Timeline } from './Timeline';
 import type { AssetSource } from './AssetSource';
-import type { Manifest, Tier } from '../types/manifest';
+import type { Manifest, StageEntry, Tier } from '../types/manifest';
 import { detectQuality, isSoftwareRenderer, qualityOverride, SHADOW_TIERS } from './quality';
 import { formatMs, perfLog, STALL_MS } from './perfLog';
 import { FrameStats, ms, type FrameSummary } from './frameStats';
@@ -1001,6 +1001,12 @@ export class Viewer {
 
   setLoop(loop: boolean): void {
     this.timeline.setLoop(loop);
+  }
+
+  /** Play another stage list (the owner's Present editing them); the manifest's follows. */
+  setStages(stages: StageEntry[]): void {
+    this.manifest.stages = stages.map((s) => ({ ...s }));
+    this.timeline.setStages(this.manifest.stages);
   }
 
   /** Scrub to a frame ordinal: prioritise it, holding the nearest resident. */

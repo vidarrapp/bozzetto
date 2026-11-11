@@ -8,6 +8,11 @@ import type { Viewer } from '../viewer/Viewer';
  * and a "Buffering…" pill appears while playback waits for frames. Frame
  * stepping is keyboard-only (installShortcuts). Owns viewer.onFrame,
  * onPlayStateChange, onBufferChange and onBufferingChange.
+ *
+ * With `shell` it is the bar of the owner's Present page (shell.css): the
+ * line with the played part in orange, a tick at each stage, the frame
+ * counter; the stage's words go to the title strip instead. The same
+ * markup serves both, so there is one transport, not two.
  */
 export class Transport {
   private readonly root: HTMLDivElement;
@@ -18,11 +23,16 @@ export class Transport {
   private readonly stageName: HTMLSpanElement;
   private readonly stageDesc: HTMLSpanElement;
   private readonly frameLabel: HTMLSpanElement;
+  private readonly fill: HTMLDivElement;
+  private readonly ticks: HTMLDivElement;
 
-  constructor(private readonly viewer: Viewer) {
+  constructor(
+    private readonly viewer: Viewer,
+    opts: { shell?: boolean } = {},
+  ) {
     const m = viewer.manifest;
 
-    this.root = el('div', 'transport');
+    this.root = el('div', opts.shell ? 'transport transport--shell' : 'transport');
 
     const info = el('div', 'transport__info');
     this.stageName = el('span', 'transport__stage-name');
@@ -47,7 +57,10 @@ export class Transport {
       this.viewer.scrubTo(Number(this.scrubber.value)),
     );
     this.buffer = el('div', 'transport__buffer');
-    scrub.append(this.scrubber, this.buffer);
+    // The shell's line: played part and stage ticks, drawn under the slider.
+    this.fill = el('div', 'transport__fill');
+    this.ticks = el('div', 'transport__ticks');
+    scrub.append(this.scrubber, this.buffer, this.fill, this.ticks);
 
     this.frameLabel = el('span', 'transport__frame');
     bar.append(this.playButton, scrub, this.frameLabel);
@@ -64,10 +77,27 @@ export class Transport {
     this.viewer.onBufferingChange = () => this.syncBuffer();
     this.syncFrame(m.defaults.frame);
     this.setPlay(viewer.timeline.playing);
+    this.syncStages();
+  }
+
+  /** Redraw the stage ticks from the viewer's stages (they were edited). */
+  syncStages(): void {
+    const count = this.viewer.manifest.config.frameCount;
+    const span = Math.max(1, count - 1);
+    this.ticks.replaceChildren(
+      ...this.viewer.manifest.stages.map((s) => {
+        const tick = el('span', 'transport__tick');
+        tick.style.left = `${Math.min(100, Math.max(0, (s.frame / span) * 100)).toFixed(2)}%`;
+        tick.title = s.name;
+        return tick;
+      }),
+    );
+    this.syncFrame(this.viewer.timeline.frameIndex());
   }
 
   private syncFrame(ordinal: number): void {
     this.scrubber.value = String(ordinal);
+    this.fill.style.width = `${((ordinal / Math.max(1, this.viewer.manifest.config.frameCount - 1)) * 100).toFixed(2)}%`;
     this.frameLabel.textContent = `${ordinal + 1} / ${this.viewer.manifest.config.frameCount}`;
     const stage = this.viewer.timeline.stageAt(ordinal);
     this.stageName.textContent = stage ? stage.name : '';

@@ -21,7 +21,7 @@ export class Timeline {
   /** Floating-point playhead in frame units. */
   private playhead = 0;
 
-  private readonly stages: StageEntry[];
+  private stages: StageEntry[];
 
   constructor(
     frameCount: number,
@@ -91,6 +91,11 @@ export class Timeline {
 
   setLoop(loop: boolean): void {
     this.loop = loop;
+  }
+
+  /** Put another stage list in (the owner's Present editing them), kept in frame order. */
+  setStages(stages: StageEntry[]): void {
+    this.stages = [...stages].sort((a, b) => a.frame - b.frame);
   }
 
   /** The stage active at the given frame, or null before the first stage. */

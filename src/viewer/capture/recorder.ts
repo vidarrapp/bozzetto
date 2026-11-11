@@ -6,6 +6,14 @@ import type { ReelFormat, ReelOptions, ReelProgress, VideoSink } from './types';
 
 export type { ReelFormat, ReelOptions };
 
+/** What recordReel rejects with when its signal aborts (Cancel): nothing is produced. */
+export class ReelCancelled extends Error {
+  constructor() {
+    super('Reel cancelled');
+    this.name = 'ReelCancelled';
+  }
+}
+
 /** Render denser than the output, then downscale on draw, for cheap anti-aliasing. */
 const SUPERSAMPLE = 1.5;
 /** Cap on the renderer's larger dimension during capture (GPU + perf safety). */
@@ -27,6 +35,7 @@ export async function recordReel(
   viewer: Viewer,
   opts: ReelOptions,
   onProgress?: ReelProgress,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   const { outW, outH } = outputDims(opts.aspect, opts.size);
   const view = viewer.viewportSize();
@@ -46,6 +55,7 @@ export async function recordReel(
       : createGifSink(out, opts.fps);
 
   viewer.beginCapture(capW, capH);
+  let finished = false;
   try {
     // Resolve the frame count and a per-step render: the timeline steps source
     // frames; the turntable holds the current frame and spins it one full turn
@@ -65,17 +75,22 @@ export async function recordReel(
     }
 
     for (let n = 0; n < total; n++) {
+      if (signal?.aborted) throw new ReelCancelled();
       await renderStep(n);
       ctx.drawImage(viewer.captureCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
       await sink.addFrame(n);
       onProgress?.(n + 1, total);
       await tick(); // yield so the progress bar paints and the tab stays responsive
     }
+    if (signal?.aborted) throw new ReelCancelled();
+    const blob = await sink.finalize();
+    finished = true;
+    return blob;
   } finally {
+    // A cancelled or failed clip closes its encoder; nothing is left running.
+    if (!finished) await sink.cancel?.().catch(() => {});
     viewer.endCapture();
   }
-
-  return sink.finalize();
 }
 
 /** Output pixel dimensions for an aspect, given the shorter edge length. */

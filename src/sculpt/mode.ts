@@ -63,6 +63,7 @@ import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
+import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
 import { downloadBlob } from '../ui/download';
@@ -93,13 +94,6 @@ const SPIN_STOP_DEG_S = 2;
  * property of time rather than of frame rate.
  */
 const SPIN_COAST_MAX_MS = 600;
-
-/**
- * Save image's resolution: twice the window, or twice the device's pixel
- * ratio, held to this many pixels on the long side - a drawing buffer and
- * the still frame's sum past it would cost an iPad more memory than it has.
- */
-const STILL_MAX_SIDE = 4096;
 
 /** Sculpt's clay: warmer and smoother than the viewer's neutral default. */
 const SCULPT_ALBEDO = '#fed9a8';
@@ -1325,9 +1319,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const saveImage = async (): Promise<void> => {
     const status = statusToast('Rendering the image...');
     try {
-      const { w, h } = viewer.viewportSize();
-      const ratio = Math.min(Math.max(1, window.devicePixelRatio || 1) * 2, STILL_MAX_SIDE / Math.max(1, w, h));
-      const blob = await viewer.captureStill(ratio);
+      const blob = await viewer.captureStill(stillRatio(viewer));
       const name = `${imageName(fileActions.link?.title ?? openedName ?? '')}.png`;
       downloadBlob(blob, name);
       status.done(`Saved ${name}`);
@@ -2539,15 +2531,4 @@ function liveWorldBox(mesh: SculptMesh): Box3 {
   // which is the right trade for a brush unit and a framing box.
   const b = mesh.computeWorldBound(); // the mesh's own scratch array
   return new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
-}
-
-/** A title as a file name: what a file system refuses goes, and an empty one is "Sculpt". */
-function imageName(title: string): string {
-  const base = title
-    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100)
-    .replace(/^[.-]+|[.-]+$/g, '');
-  return base || 'Sculpt';
 }

@@ -28,6 +28,12 @@ export interface Readout {
   level?: { at: number; of: number } | null;
   /** Present: the viewport's size in pixels, the frame a saved image is taken from. */
   frame?: { w: number; h: number } | null;
+  /**
+   * Other pairs for a workspace of its own (the owner's Present of a
+   * published project: Timelapse 240 frames, Stage Forms), after the name:
+   * a dim word and its bold value each. A null value leaves the pair out; an empty one shows the word alone.
+   */
+  extras?: Array<{ key: string; value: string | null }>;
 }
 
 /** The crossed-out eye: what hides the interface, and, while it is hidden, what brings it back. */
@@ -79,6 +85,9 @@ export class TitleStrip {
   private readonly levelVal = el('b', 'bz-readout__val bz-readout__level');
   private readonly frameItem: HTMLElement;
   private readonly frameVal = el('b', 'bz-readout__val bz-readout__frame');
+  /** The pairs a workspace adds (Readout.extras), kept by key between refreshes. */
+  private readonly extraEls = new Map<string, { item: HTMLElement; val: HTMLElement }>();
+  private readonly extraHost = el('span', 'bz-readout__extras');
   /** Set by the mode: the direct hide/show switch (not Tab's staged one). */
   onToggleChrome: (() => void) | null = null;
   private readonly offKeymap: () => void;
@@ -104,7 +113,7 @@ export class TitleStrip {
     this.frameItem = pair('bz-readout__item--frame', 'Frame', this.frameVal);
     this.editedEl.hidden = true;
     this.nameEl.hidden = true;
-    readout.append(this.nameEl, this.editedEl, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
+    readout.append(this.nameEl, this.editedEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
 
     const right = el('div', 'bz-strip__right');
     this.publishHost = right;
@@ -213,6 +222,24 @@ export class TitleStrip {
     set(this.trisItem, this.trisVal, r.tris == null ? null : r.tris.toLocaleString('en-US'));
     set(this.levelItem, this.levelVal, r.level ? `${r.level.at}/${r.level.of}` : null);
     set(this.frameItem, this.frameVal, r.frame ? `${r.frame.w} \u00d7 ${r.frame.h}` : null);
+    const wanted = (r.extras ?? []).filter((x): x is { key: string; value: string } => x.value !== null);
+    for (const [key, e] of this.extraEls) {
+      if (wanted.some((x) => x.key === key)) continue;
+      e.item.remove();
+      this.extraEls.delete(key);
+    }
+    for (const { key, value } of wanted) {
+      let e = this.extraEls.get(key);
+      if (!e) {
+        const val = el('b', 'bz-readout__val');
+        const item = el('span', 'bz-readout__item');
+        item.append(el('span', 'bz-readout__key', key), val);
+        this.extraHost.appendChild(item);
+        e = { item, val };
+        this.extraEls.set(key, e);
+      }
+      if (e.val.textContent !== value) e.val.textContent = value;
+    }
   }
 
   dispose(): void {
@@ -225,9 +252,12 @@ export class TitleStrip {
   }
 }
 
-/** The plain-text button the strip carries for a command (Publish). */
-export function stripButton(label: string): HTMLButtonElement {
-  const b = el('button', 'bz-strip__btn', label);
+/**
+ * The plain-text button the strip carries for a command (Publish, Save).
+ * `primary` is the one orange action of a workspace.
+ */
+export function stripButton(label: string, primary = false): HTMLButtonElement {
+  const b = el('button', primary ? 'bz-strip__btn bz-strip__btn--primary' : 'bz-strip__btn', label);
   b.type = 'button';
   return b;
 }

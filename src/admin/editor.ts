@@ -13,32 +13,7 @@ import { Help } from '../ui/Help';
 import { ScaleBanner } from '../sculpt/ui/SetScale';
 import { validateManifest } from '../types/manifest';
 import { UNITS } from '../viewer/units';
-
-interface Stage {
-  name: string;
-  frame: number;
-  desc: string;
-}
-
-/** The manifest-shaped fields the editor reads from /admin/api/projects/:id. */
-interface EditorProject {
-  id: string;
-  title: string;
-  mode: string;
-  visibility?: Visibility;
-  config: { fps: number; frameCount: number };
-  frames: { index: number; tris: number }[];
-  stages: Stage[];
-}
-
-/**
- * The owner's manifest URL. Frame paths in it are root-absolute (/media
- * or, for a project the gallery does not list, /admin/api/media), or full
- * addresses on the server's files host, so this is only what the paths
- * resolve against - but it has to be the route the manifest came from.
- */
-const manifestUrl = (id: string): string =>
-  new URL(`/admin/api/projects/${encodeURIComponent(id)}`, location.href).href;
+import { lookPatch, manifestUrl, normalizeStages, type EditorProject, type Stage } from './projectEdit';
 
 const naturalSort = (a: string, b: string): number =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -66,29 +41,6 @@ async function runSave(btn: HTMLButtonElement, fn: () => Promise<void>): Promise
   } finally {
     btn.disabled = false;
   }
-}
-
-/**
- * The look as a project's blocks, as Save look writes them. One gatherer
- * for the whole look (Viewer.getLook), shared with sculpt mode's session
- * save, so the two cannot drift apart; the stage carries the played scale
- * where Set scale gave the project one.
- */
-function lookPatch(p: Viewer): Record<string, unknown> {
-  const look = p.getLook();
-  return {
-    // The scale those numbers are on: a project stored in metres played
-    // here in centimetres (types/manifest.ts onCentimetres), so a save
-    // marks it 'cm' with them. One without units stays without.
-    ...(p.manifest.units ? { units: p.manifest.units } : {}),
-    lighting: look.lighting,
-    material: look.material,
-    environment: look.environment,
-    ao: look.ao,
-    presentation: look.presentation,
-    camera: look.camera,
-    defaults: { material: look.materialMode },
-  };
 }
 
 /** Not now on Set scale: kept for this tab's session, per project, and nothing stored on the server. */
@@ -460,14 +412,13 @@ export async function renderEditor(host: HTMLElement, id: string): Promise<void>
 
   $('#add-stage').addEventListener('click', () => addStageRow({ name: '', frame: 0, desc: '' }));
   $<HTMLButtonElement>('#save-stages').addEventListener('click', (e) => {
-    const stages: Stage[] = [...stagesHost.querySelectorAll<HTMLElement>('.stage-row')]
-      .map((r) => ({
-        name: r.querySelector<HTMLInputElement>('.stage-name')!.value.trim(),
+    const stages: Stage[] = normalizeStages(
+      [...stagesHost.querySelectorAll<HTMLElement>('.stage-row')].map((r) => ({
+        name: r.querySelector<HTMLInputElement>('.stage-name')!.value,
         frame: Number(r.querySelector<HTMLInputElement>('.stage-frame')!.value) || 0,
-        desc: r.querySelector<HTMLInputElement>('.stage-desc')!.value.trim(),
-      }))
-      .filter((s) => s.name)
-      .sort((a, b) => a.frame - b.frame);
+        desc: r.querySelector<HTMLInputElement>('.stage-desc')!.value,
+      })),
+    );
     void runSave(e.currentTarget as HTMLButtonElement, async () => {
       await api.update(id, { stages });
     });

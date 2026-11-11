@@ -24,7 +24,7 @@ const GAP = 16;
 export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
-const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--armature'];
+const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--armature', 'panel--project'];
 const RIGHT_ORDER = ['panel--sculpt', 'panel--render', 'panel--output'];
 
 function tabsOf(order: string[]): HTMLElement[] {
@@ -57,9 +57,11 @@ export function layoutShell(): void {
   const vh = window.innerHeight;
   const vw = window.innerWidth;
   const panelW = Math.min(PANEL_WIDTH, vw);
-  // What stands at the foot of the screen: the tool bar, or in Present the turntable bar.
+  // What stands at the foot of the screen: the tool bar, or in Present the turntable bar,
+  // or on the owner's Present of a published project its transport.
+  const body = document.body.classList;
   const bar = document.querySelector<HTMLElement>(
-    document.body.classList.contains('presenting') ? '.present-bar' : '.sculpt-toolbar__brushes',
+    body.contains('bz-frames') ? '.transport--shell' : body.contains('presenting') ? '.present-bar' : '.sculpt-toolbar__brushes',
   );
   const barBox = bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect() : null;
   const edge = document.querySelector<HTMLElement>('.bz-edge');
@@ -95,7 +97,7 @@ export function startShellLayout(): () => void {
   const watched = new Set<Element>();
   const ro = new ResizeObserver(soon);
   const watch = (): void => {
-    const now = document.querySelectorAll('.panel > .panel__handle, .bz-edge, .sculpt-toolbar__brushes, .present-bar');
+    const now = document.querySelectorAll('.panel > .panel__handle, .bz-edge, .sculpt-toolbar__brushes, .present-bar, .transport--shell');
     for (const e of now) {
       if (watched.has(e)) continue;
       watched.add(e);

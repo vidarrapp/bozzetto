@@ -94,6 +94,9 @@ const ROOT: Record<string, string> = {
   sculpt: '.panel--sculpt',
   armature: '.panel--armature',
   settings: '.panel--render',
+  // The owner's Present of a published project (present/): its two own tabs.
+  project: '.panel--project',
+  output: '.panel--output',
 };
 
 /** Whether the panel with this id is open now. */
