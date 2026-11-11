@@ -807,14 +807,14 @@ const openPanel = async (page, title) => {
       style.textContent = '.panel { transition: none !important; }';
       document.head.appendChild(style);
     }
-    const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+    const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
     if (p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
     return !!p;
   }, title);
   if (!found) return false;
   await page.waitForFunction(
     (name) => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
       return getComputedStyle(p).transform === 'none';
     },
     title,
@@ -832,7 +832,7 @@ const openPanel = async (page, title) => {
 const sliderRow = (page, panel, label, nth = 0) =>
   page.evaluate(
     ([name, caption, k]) => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === name);
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
       const row = p && [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === caption)[k];
       if (!row) return null;
       row.scrollIntoView({ block: 'center' });
@@ -1196,6 +1196,7 @@ const publishState = (page) =>
       chip: {
         shown: !w.chip.hidden && getComputedStyle(w.chip).display !== 'none',
         l: Math.round(c.left),
+        r: Math.round(c.right),
         b: Math.round(c.bottom),
         expanded: w.chip.getAttribute('aria-expanded'),
         lit: w.chip.classList.contains('topchip--open'),
@@ -1719,9 +1720,9 @@ export const suites = {
     const chip = await page.evaluate(() => {
       const panel = document.querySelector('.panel--scene');
       const box = (sel) => panel.querySelector(sel).getBoundingClientRect();
-      const [c, title, close] = ['.outliner__solo', '.panel__title', '.panel__close'].map(box);
+      const [c, title] = ['.outliner__solo', '.panel__title'].map(box);
       const el = panel.querySelector('.outliner__solo');
-      return { text: el.textContent, tip: el.title, placed: c.width > 0 && c.left > title.right && c.right < close.left };
+      return { text: el.textContent, tip: el.title, placed: c.width > 0 && c.left > title.right && c.right < panel.getBoundingClientRect().right };
     });
     t.ok(chip.text === 'Solo' && chip.placed, `and in the title bar, a Solo chip after the name ("${chip.tip}")`);
     const guide = await page.evaluate(() => {
@@ -1812,13 +1813,13 @@ export const suites = {
       const z = size.getBoundingClientRect();
       const glyph = btn.querySelector('i.fi.fi-bs-arrows-to-eye');
       return {
-        above: b.bottom <= z.top && z.top - b.bottom < 24 && z.bottom <= s.top,
-        next: btn.parentElement.nextElementSibling === size,
-        offFaded: btn.getAttribute('aria-pressed') !== 'false' || Number(getComputedStyle(btn).opacity) < 0.5,
+        below: b.top >= s.bottom && b.top - s.bottom < 24 && z.bottom <= s.top,
+        next: btn.parentElement.previousElementSibling?.classList.contains('bz-edge__fields') ?? false,
+        plain: btn.getAttribute('aria-pressed') !== 'false' || getComputedStyle(btn).backgroundColor === 'rgba(0, 0, 0, 0)',
         glyph: !!glyph && getComputedStyle(glyph, '::before').fontFamily.includes('uicons-bold-straight'),
       };
     });
-    t.ok(placed?.above && placed.next && placed.offFaded, `the Solo button heads the rail above both sliders, faded while off (${JSON.stringify(placed)})`);
+    t.ok(placed?.below && placed.next && placed.plain, `the Solo button stands under both brush fields, a bare icon while off (${JSON.stringify(placed)})`);
     t.ok(placed?.glyph, 'with the bold straight arrows-to-eye glyph');
     const soloButton = (press) =>
       page.evaluate(async (how) => {
@@ -3605,6 +3606,9 @@ export const suites = {
     // up: a press anywhere else lets go of it, the pen's or a finger's.
     const rename = () =>
       page.evaluate(() => {
+        // A closed panel is hidden, and nothing hidden takes the focus: renaming happens in the open panel.
+        const scene = document.querySelector('.panel--scene');
+        if (scene.classList.contains('panel--collapsed')) scene.querySelector('.panel__handle').click();
         document.querySelector('.panel--scene .outliner__name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
         const input = document.querySelector('.panel--scene .outliner__rename');
         return { focused: document.activeElement === input, select: getComputedStyle(input).userSelect };
@@ -3644,14 +3648,14 @@ export const suites = {
     const ALT = 1;
     const SHIFT = 8;
     const button = await page.evaluate(() => {
-      const r = document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').getBoundingClientRect();
+      const r = document.querySelector('.bz-edge .sculpt-toolbar__btn').getBoundingClientRect();
       return [r.left + r.width / 2, r.top + r.height / 2];
     });
     // What the shell will do with the next stroke, and what the button shows.
     const state = () =>
       page.evaluate(() => {
         const { input } = window.__sculpt;
-        const b = document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn');
+        const b = document.querySelector('.bz-edge .sculpt-toolbar__btn');
         const look = b.classList.contains('sculpt-toolbar__btn--active')
           ? 'latched'
           : b.classList.contains('sculpt-toolbar__btn--armed')
@@ -3840,7 +3844,7 @@ export const suites = {
     t.ok(!/sculpt-toolbar/.test(focusLeft), `the press leaves no focus on the button (${focusLeft || 'body'})`);
     await click(50);
     t.ok(isOff(await state()), 'a mouse click lets go of the latch');
-    await page.evaluate(() => document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').focus());
+    await page.evaluate(() => document.querySelector('.bz-edge .sculpt-toolbar__btn').focus());
     await page.keyboard.press('Enter');
     s = await state();
     t.ok(isArmed(s), `Enter on the focused button arms it, as a tap does (${show(s)})`);
@@ -3869,7 +3873,7 @@ export const suites = {
     t.ok(isOff(blurred) && isOff(s), `a press the window loses focus during is neither a long press nor a tap (${show(blurred)}, then ${show(s)})`);
     t.ok(
       await page.evaluate(
-        () => !document.querySelector('.sculpt-toolbar__left .sculpt-toolbar__btn').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+        () => !document.querySelector('.bz-edge .sculpt-toolbar__btn').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
       ),
       'and the button still refuses the context menu',
     );
@@ -4016,10 +4020,10 @@ export const suites = {
     // An open menu keeps its own arrows: the Edit menu walks its items.
     const menu = await page.evaluate(() => {
       window.__sculpt.editMenu.open();
-      return document.activeElement?.textContent;
+      return document.activeElement?.querySelector('.file-menu__label')?.textContent;
     });
     await page.keyboard.press('ArrowDown');
-    const item = await page.evaluate(() => document.activeElement?.textContent);
+    const item = await page.evaluate(() => document.activeElement?.querySelector('.file-menu__label')?.textContent);
     t.ok(menu === 'Undo' && item === 'Redo' && (await scene()).active === before.active, `in the open Edit menu ArrowDown moves from ${menu} to ${item}, and the active object stays`);
     await page.keyboard.press('Escape');
     await page.evaluate(() => document.activeElement?.blur?.());
@@ -4111,7 +4115,7 @@ export const suites = {
     await pickOne('Torus');
     t.eq(
       await editItems(),
-      'Undo; Redo; Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Preferences\u2026',
+      'Undo (Ctrl + Z); Redo (Ctrl + Shift + Z); Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Preferences\u2026',
       'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys, and the poly group splits; Merge off with one object, the splits off on an object with one group and nothing hidden',
     );
     // Its items, pressed as a pointer would.
@@ -4203,7 +4207,7 @@ export const suites = {
           n: session.getMeshes().length,
           active: !!session.getMesh(),
           rows: document.querySelectorAll('.panel--scene .outliner__row').length,
-          stats: document.querySelector('.sculpt-stats__name')?.textContent ?? '',
+          stats: document.querySelector('.bz-readout__object')?.textContent ?? '',
         };
       });
     const last = await page.evaluate(() => window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()));
@@ -4264,7 +4268,8 @@ export const suites = {
       menu.close();
       return off.join(', ');
     });
-    t.eq(fileItems, 'Save file, Save to library, Keep on this device, Export OBJ', 'File greys out the saves and Export OBJ in an empty scene');
+    // Publish… is greyed too: this page has no sign-in (its own check is in the publishWindow suite).
+    t.eq(fileItems, 'Save file, Save to library, Keep on this device, Export OBJ, Publish…', 'File greys out the saves and Export OBJ in an empty scene (and Publish…, with no sign-in)');
     // Create adds an object again.
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
     const made = await empty();
@@ -5868,7 +5873,7 @@ export const suites = {
     await typeValue(page, '4');
     t.eq((await keyLight(page)).intensity, 4, 'and Enter applies what was typed');
     const viaKey = await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const input = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Intensity').querySelector('input');
       input.focus();
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
@@ -5971,6 +5976,8 @@ export const suites = {
     await typeValue(page, '0');
     t.eq(Math.round(await held()), 1, 'a typed 0 is held to the least step, a fifth of a millimetre');
 
+    // The edge fields show while the Tool panel is closed, which is when they are used.
+    await page.evaluate(() => window.__sculpt.sculptPanel.setCollapsed(true));
     const track = (kind) =>
       page.evaluate((k) => {
         const r = document.querySelector(`.sculpt-slider[data-kind="${k}"]`).getBoundingClientRect();
@@ -6183,7 +6190,7 @@ export const suites = {
     t.ok(light.min === 0 && light.max === 5 && light.step === 0.1, `a light's Intensity runs 0..5 (${light.min}..${light.max})`);
     const fresh = await page.evaluate(() => window.__bozzetto.environment.getState().intensity);
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
@@ -6197,7 +6204,7 @@ export const suites = {
     const rot = await sliderRow(page, 'Render', 'Rotation');
     t.ok(rot.min === 0 && rot.max === 360, 'its Rotation runs a full turn');
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
       sel.value = 'gtao';
       sel.dispatchEvent(new Event('change'));
@@ -6268,7 +6275,7 @@ export const suites = {
       });
     const model = (value) =>
       page.evaluate((m) => {
-        const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+        const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
         const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
         if (m) {
           sel.value = m;
@@ -6327,7 +6334,10 @@ export const suites = {
       await boot();
 
       const row = await owner.evaluate(() => {
-        const chips = [...document.querySelectorAll('.topbar--left > *')].filter((c) => !c.hidden).map((c) => c.textContent.trim());
+        const menus = [...document.querySelectorAll('.bz-strip__menus > *')].map((c) => c.textContent.trim());
+        const right = [...document.querySelectorAll('.bz-strip__right > *')]
+          .filter((c) => !c.hidden)
+          .map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
         const look = (el) => {
           const s = getComputedStyle(el);
           return [s.fontFamily, s.fontSize, s.letterSpacing, s.textTransform, s.paddingTop, s.paddingLeft, s.borderTopWidth, s.borderTopColor, s.borderRadius, s.backgroundColor, s.color].join('|');
@@ -6335,10 +6345,11 @@ export const suites = {
         const file = document.querySelector('.file-menu--file__chip');
         const edit = document.querySelector('.file-menu--edit__chip');
         const publish = window.__sculpt.publishWindow.chip;
-        return { chips, like: look(publish) === look(file) && look(publish) === look(edit) };
+        return { menus, right, like: look(publish) === look(file) && look(publish) === look(edit) };
       });
-      t.eq(row.chips.join(', '), '← Gallery, File, Edit, Help, Publish, Present', 'signed in, the top row has a Publish chip after File, Edit and Help, Present after it');
-      t.ok(row.like, 'styled as they are');
+      t.eq(row.menus.join(', '), 'File, Edit, View, Help', 'the strip carries the four menus at its left');
+      t.eq(row.right.join(', '), 'Publish, hide', 'signed in, Publish leads the strip\'s right-hand group, the hide button after it');
+      t.ok(row.like, 'styled as the menu names are');
       let s = await publishState(owner);
       t.ok(!s.open && !s.shown && s.chip.expanded === 'false' && !s.chip.lit, 'the window starts closed');
 
@@ -6349,8 +6360,8 @@ export const suites = {
       t.ok(s.open && s.shown && s.chip.expanded === 'true' && s.chip.lit, `the chip opens it and shows it is open (expanded ${s.chip.expanded})`);
       const column = await owner.evaluate(() => Math.max(...[...document.querySelectorAll('.panel--left')].map((p) => p.offsetLeft + p.offsetWidth)));
       t.ok(
-        Math.abs(s.rect.t - (s.chip.b + 6)) <= 1 && s.rect.l >= s.chip.l && s.rect.l >= column && s.rect.l <= Math.max(column, s.chip.l) + 10,
-        `the first time, under the chip and clear of where the left panels open (${showRect(s.rect)}; chip at ${s.chip.l}, panels to ${column})`,
+        Math.abs(s.rect.t - (s.chip.b + 6)) <= 1 && s.rect.r <= s.chip.r + 1 && s.rect.l > column,
+        `the first time, under the button with its right edge at the button's (${showRect(s.rect)}; button to ${s.chip.r}, left panels to ${column})`,
       );
       const holds = await owner.evaluate(() => {
         const root = window.__sculpt.publishWindow.root;
@@ -6535,13 +6546,14 @@ export const suites = {
     }
   },
 
-  // The panels' sides (owner call): Scene then Model down the left edge,
-  // Render then Tool down the right. One panel per edge is open at a time
-  // and either edge's panel stays open when the other edge's opens. On the
+  // The panels' sides (owner call): Scene then Model along the left edge,
+  // Tool then Render along the right, each side a row of two folder tabs
+  // under the title strip. One panel per edge is open at a time and
+  // either edge's panel stays open when the other edge's opens. On the
   // iPad's screens, in either orientation and under Safari's toolbars, no
-  // two tabs overlap or leave the screen or run into the brush rail, the
-  // stats or the toolbar, an open left panel covers neither tab on its
-  // edge, and an open Render ducks the Tool tab it covers, as it always has.
+  // two tabs overlap or leave the screen or run into the strip, the brush
+  // rail or the toolbar, and an open panel covers no tab, stops 16px above
+  // the edge controls or the bottom, and meets neither them nor the toolbar.
   async panelSides(page, base, t) {
     await openSculpt(page, base, '&q=low');
     // The panels slide; the geometry under test is where they end up.
@@ -6551,7 +6563,7 @@ export const suites = {
         const panels = {
           Scene: document.querySelector('.panel--scene'),
           Model: document.querySelector('.panel--model'),
-          Render: [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render'),
+          Render: [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render'),
           Tool: document.querySelector('.panel--sculpt'),
         };
         const box = (el) => {
@@ -6568,14 +6580,14 @@ export const suites = {
             open: !p.classList.contains('panel--collapsed'),
             body: box(p),
             tab: hs.display === 'none' || hs.visibility === 'hidden' ? null : box(handle),
-            ducked: p.classList.contains('panel--tab-hidden'),
           };
         }
         out.extra = {
           rail: box(document.querySelector('.sculpt-sliders')),
-          stats: box(document.querySelector('.sculpt-stats')),
-          toolbar: [...document.querySelectorAll('.sculpt-toolbar__corner, .sculpt-toolbar__group')].map(box),
-          topbar: [...document.querySelectorAll('.topbar .topchip')].filter((c) => !c.hidden).map(box),
+          toolbar: [...document.querySelectorAll('.sculpt-toolbar__brushes')].map(box),
+          strip: box(document.querySelector('.bz-strip')),
+          w: innerWidth,
+          h: innerHeight,
         };
         return out;
       });
@@ -6584,9 +6596,9 @@ export const suites = {
       page.evaluate(
         ([n, o]) => {
           const { scenePanel, modelPanel, sculptPanel } = window.__sculpt;
-          const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+          const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
           if (n === 'Render') {
-            if (render.classList.contains('panel--collapsed') === o) render.querySelector(o ? '.panel__handle' : '.panel__close').click();
+            if (render.classList.contains('panel--collapsed') === o) render.querySelector('.panel__handle').click();
             return;
           }
           ({ Scene: scenePanel, Model: modelPanel, Tool: sculptPanel })[n].setCollapsed(!o);
@@ -6597,15 +6609,19 @@ export const suites = {
       for (const n of ['Scene', 'Model', 'Render', 'Tool']) await setOpen(n, false);
     };
 
+    const frames = (p) => p.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
     let l = await layout();
     t.ok(l.Scene.left && l.Model.left && !l.Render.left && !l.Tool.left, 'Scene and Model dock left, Render and Tool right');
-    // A docked tab tucks its outer border just past the screen's edge.
+    // The tabs stand in a row at the top of each edge, the outer one flush to it.
     const atEdge = (tab, x) => Math.abs(tab.l - x) <= 1 || Math.abs(tab.r - x) <= 1;
     t.ok(
-      l.Scene.tab.t < l.Model.tab.t && atEdge(l.Scene.tab, 0) && atEdge(l.Model.tab, 0),
-      `down the left edge, Scene then Model (tabs at ${Math.round(l.Scene.tab.t)} and ${Math.round(l.Model.tab.t)})`,
+      l.Scene.tab.l < l.Model.tab.l && atEdge(l.Scene.tab, 0) && Math.abs(l.Scene.tab.t - l.Model.tab.t) < 1,
+      `along the left edge, Scene then Model (tabs at ${Math.round(l.Scene.tab.l)} and ${Math.round(l.Model.tab.l)})`,
     );
-    t.ok(l.Render.tab.t < l.Tool.tab.t, `down the right edge, Render then Tool (tabs at ${Math.round(l.Render.tab.t)} and ${Math.round(l.Tool.tab.t)})`);
+    t.ok(
+      l.Tool.tab.l < l.Render.tab.l && atEdge(l.Render.tab, l.extra.w) && Math.abs(l.Tool.tab.t - l.Render.tab.t) < 1,
+      `along the right edge, Tool then Render (tabs at ${Math.round(l.Tool.tab.l)} and ${Math.round(l.Render.tab.l)})`,
+    );
 
     // One open per edge; the other edge keeps what it had.
     const opened = async () => {
@@ -6634,6 +6650,8 @@ export const suites = {
     for (const [w, h] of sizes) {
       await page.setViewportSize({ width: w, height: h });
       await page.waitForTimeout(60);
+      // The shell lays its tabs and the panels' height limits out a frame after a resize.
+      await frames(page);
       await closeAll();
       l = await layout();
       const names = ['Scene', 'Model', 'Render', 'Tool'];
@@ -6649,29 +6667,27 @@ export const suites = {
         }
         const tab = l[names[i]].tab;
         if (meets(tab, l.extra.rail)) problems.push(`${at}: ${names[i]}'s tab runs into the brush rail`);
-        if (meets(tab, l.extra.stats)) problems.push(`${at}: ${names[i]}'s tab runs into the stats`);
         if (l.extra.toolbar.some((x) => meets(tab, x))) problems.push(`${at}: ${names[i]}'s tab runs into the toolbar`);
-        if (l.extra.topbar.some((x) => meets(tab, x))) problems.push(`${at}: ${names[i]}'s tab runs into the top row`);
+        if (meets(tab, l.extra.strip)) problems.push(`${at}: ${names[i]}'s tab runs into the strip`);
       }
-      // An open left panel covers neither left tab; Render ducks Tool's.
-      for (const [open, other] of [['Scene', 'Model'], ['Model', 'Scene']]) {
-        await setOpen(open, true);
+      // An open panel covers no tab, stops 16px above the bottom, and meets neither the edge controls nor the toolbar.
+      for (const n of names) {
+        await setOpen(n, true);
+        await frames(page);
         const x = await layout();
-        if (!x[other].tab) problems.push(`${at}: open ${open} hides ${other}'s tab`);
-        else if (meets(x[open].body, x[other].tab)) problems.push(`${at}: open ${open} covers ${other}'s tab`);
-        await setOpen(open, false);
+        for (const other of names) {
+          if (other !== n && meets(x[n].body, x[other].tab)) problems.push(`${at}: open ${n} covers ${other}'s tab`);
+        }
+        if (!x[n].open) problems.push(`${at}: ${n} did not open`);
+        if (x[n].body.b > h - 16 + 1) problems.push(`${at}: open ${n} comes within 16px of the bottom (${Math.round(x[n].body.b)} of ${h})`);
+        if (x[n].body.l < -1 || x[n].body.r > w + 1) problems.push(`${at}: open ${n} leaves the screen`);
+        if (meets(x[n].body, x.extra.rail)) problems.push(`${at}: open ${n} runs into the brush rail`);
+        if (x.extra.toolbar.some((b) => meets(x[n].body, b))) problems.push(`${at}: open ${n} runs into the toolbar`);
+        await setOpen(n, false);
       }
-      await setOpen('Render', true);
-      let x = await layout();
-      if (meets(x.Render.body, l.Tool.tab) && !x.Tool.ducked) problems.push(`${at}: open Render covers Tool's tab without ducking it`);
-      await setOpen('Tool', true);
-      x = await layout();
-      if (x.Render.tab && meets(x.Tool.body, x.Render.tab)) problems.push(`${at}: open Tool covers Render's tab`);
       await closeAll();
-      x = await layout();
-      if (!x.Tool.tab || x.Tool.ducked) problems.push(`${at}: Tool's tab does not come back when Render closes`);
     }
-    t.ok(!problems.length, `on ${sizes.length} iPad screens, no tab overlaps or leaves the screen, and no open panel covers a tab it should not${problems.length ? `: ${problems.join('; ')}` : ''}`);
+    t.ok(!problems.length, `on ${sizes.length} iPad screens, no tab overlaps or leaves the screen, and no open panel covers a tab, the controls or the toolbar${problems.length ? `: ${problems.join('; ')}` : ''}`);
     // Armature mode's one panel docks left too, on the same screens.
     await armaturePanelSide(page, base, t, sizes);
   },
@@ -6831,7 +6847,7 @@ export const suites = {
     const show = (s) => `level ${s.sel + 1}/${s.levels}, slider ${s.value} of ${s.max} reading ${s.readout}, ${s.tris} tris`;
     const statsTris = (n) =>
       page
-        .waitForFunction((k) => document.querySelector('.sculpt-stats__tris')?.textContent === `${k.toLocaleString('en-US')} tris`, n, { timeout: 5000 })
+        .waitForFunction((k) => document.querySelector('.bz-readout__tris')?.textContent === k.toLocaleString('en-US'), n, { timeout: 5000 })
         .then(() => true)
         .catch(() => false);
     const del = () =>
@@ -7080,7 +7096,7 @@ export const suites = {
     // The panel: the slider's own travel, and the plate's row beside Bg blur.
     t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
@@ -7089,7 +7105,7 @@ export const suites = {
     const intensity = await sliderRow(page, 'Render', 'Intensity', 1);
     const plate = await sliderRow(page, 'Render', 'Bg brightness');
     const order = await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
       const row = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Bg brightness');
       return row?.previousElementSibling?.firstElementChild?.textContent ?? null;
     });
@@ -7098,7 +7114,7 @@ export const suites = {
     const slide = (caption, nth, value) =>
       page.evaluate(
         ([c, k, v]) => {
-          const p = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+          const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
           const input = [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === c)[k].querySelector('input');
           input.value = String(v);
           input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7218,7 +7234,7 @@ export const suites = {
     const panelBoxes = async () => {
       await openPanel(page, 'Render');
       return page.evaluate(() => {
-        const panel = [...document.querySelectorAll('.panel')].find((el) => el.querySelector('.panel__title')?.textContent === 'Render');
+        const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
         return [...(panel?.querySelectorAll('.light') ?? [])].map((light) => {
           const box = [...light.querySelectorAll('label.checkbox')].find((l) => l.textContent === 'Casts shadow');
           return box ? box.querySelector('input').checked : null;
@@ -7481,7 +7497,8 @@ export const suites = {
       try {
         t.ok(await install(d, '/?sculpt=1&q=low'), 'the old build is installed and serves Sculpt');
         await d.p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
-        await d.p.click('.help-toggle');
+        await d.p.click('.bz-menuname:text-is("Help")');
+        await d.p.click('.file-menu--help .file-menu__item:has-text("Hotkeys")');
         t.eq(await d.p.textContent('.help-guide__ver'), `Bozzetto ${OLD}`, 'the hotkey guide names the version');
         await d.p.click('.help-guide__check');
         t.eq(await checked(d), 'Up to date', 'Check for updates, with nothing newer, says Up to date');
@@ -7508,18 +7525,18 @@ export const suites = {
             const box = (el) => el?.getBoundingClientRect() ?? null;
             const meets = (a, b) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
             const n = box(document.querySelector('.update-notice'));
-            const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
+            const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
             return {
               inCorner: !!n && innerWidth - n.right < 400 && innerHeight - n.bottom < 120,
-              button: meets(n, box(document.querySelector('.sculpt-toolbar__right'))),
+              button: meets(n, box(document.querySelector('.bz-strip__hide'))),
               toolbar: meets(n, box(document.querySelector('.sculpt-toolbar__brushes'))),
               panel: !render.classList.contains('panel--collapsed') && meets(n, box(render)),
             };
           });
         const toggleRender = () =>
           d.p.evaluate(() => {
-            const render = [...document.querySelectorAll('.panel')].find((p) => p.querySelector('.panel__title')?.textContent === 'Render');
-            render.querySelector(render.classList.contains('panel--collapsed') ? '.panel__handle' : '.panel__close').click();
+            const render = [...document.querySelectorAll('.panel')].find((p) => p.dataset.panel === 'Render');
+            render.querySelector('.panel__handle').click();
           });
         const crowded = [];
         for (const [w, h] of [[1280, 800], [1024, 768], [744, 1133]]) {

@@ -194,6 +194,8 @@ export class Panel {
     // panel--render names it for the stylesheet: Present mode keeps this
     // panel and hides the rest.
     this.root = div('panel panel--render');
+    // Its name, whatever the heading says (the viewer's title, in the viewer).
+    this.root.dataset.panel = 'Render';
     // Editor panel runs full-height (like the sidebar); the viewer panel stays
     // content-sized and leaves room for the transport bar at the bottom.
     if (this.editor) this.root.classList.add('panel--editor');

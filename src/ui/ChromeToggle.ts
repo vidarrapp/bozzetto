@@ -25,9 +25,9 @@ import { chordLabel, chordOf, keymap } from './keymap';
  * interface. In the editors only the preview's chrome goes: their sidebar
  * of project settings is the page, not the preview's furniture.
  *
- * In Sculpt the toolbar's Negative group survives, so does the hide button
- * sitting in it - a visible, labelled control to come back with, on a
- * device with no Tab key as much as anywhere else. Escape also exits
+ * In Sculpt the edge controls (Negative, Undo, Redo, Solo) survive, and so
+ * does the hide button in the title strip - a visible, labelled control to
+ * come back with, on a device with no Tab key as much as anywhere else. Escape also exits
  * everywhere, and the state is never persisted, so a reload always returns
  * a full interface.
  *

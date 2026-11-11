@@ -51,14 +51,14 @@ const ui = (page) =>
       shown: {
         toolbar: shown('.sculpt-toolbar__brushes'),
         rail: shown('.sculpt-sliders'),
-        stats: shown('.sculpt-stats'),
+        strip: shown('.bz-readout'),
         scene: shown('.panel--scene .panel__handle'),
         model: shown('.panel--model .panel__handle'),
         tool: shown('.panel--sculpt .panel__handle'),
         render: shown('.panel--render .panel__handle') || shown('.panel--render .panel__header'),
         bar: shown('.present-bar'),
-        chip: shown('.present__chip'),
-        hide: shown('.sculpt-toolbar__right .sculpt-toolbar__btn'),
+        menus: shown('.bz-menuname'),
+        hide: shown('.bz-strip__hide'),
       },
       tool: input.currentToolIndex(),
       selecting: input.isSelecting(),
@@ -154,7 +154,7 @@ const close3 = (a, b, eps = 1e-4) => a.length === b.length && a.every((v, i) => 
 const setRender = (page, open) =>
   page.evaluate((o) => {
     const render = document.querySelector('.panel--render');
-    if (render.classList.contains('panel--collapsed') === o) render.querySelector(o ? '.panel__handle' : '.panel__close').click();
+    if (render.classList.contains('panel--collapsed') === o) render.querySelector('.panel__handle').click();
   }, open);
 
 const press = async (page, key) => {
@@ -238,22 +238,22 @@ export const suites = {
     });
     await press(page, 'q');
     const before = await ui(page);
-    t.ok(before.open.scene && before.open.tool && before.selecting && !before.presenting && before.shown.chip, `set up: Scene and Tool open, the Select tool up, the Present chip in the top row (${show(before)})`);
-    const chipNextToPublish = await page.evaluate(() => {
-      const chips = [...document.querySelectorAll('.topbar--left .topchip')];
-      const i = chips.findIndex((c) => c.classList.contains('present__chip'));
-      return { order: chips.map((c) => c.textContent).join(','), after: chips[i - 1]?.classList.contains('publish-window__chip') ?? false };
+    t.ok(before.open.scene && before.open.tool && before.selecting && !before.presenting && before.shown.menus, `set up: Scene and Tool open, the Select tool up, the strip's menus showing (${show(before)})`);
+    // Present is a View item now, with its hotkey beside it.
+    await page.click('.bz-menuname:text-is("View")');
+    const presentItem = await page.evaluate(() => {
+      const item = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Present mode');
+      return item ? item.querySelector('.file-menu__key')?.textContent : null;
     });
-    t.ok(chipNextToPublish.after, `the Present chip sits beside Publish (${chipNextToPublish.order})`);
-    const title = await page.evaluate(() => document.querySelector('.present__chip').title);
-    t.ok(/Shift \+ P/.test(title), `its title names the hotkey ("${title}")`);
+    t.ok(presentItem && /Shift \+ P|Shift\+P/.test(presentItem), `View has Present mode, and shows the hotkey ("${presentItem}")`);
+    await press(page, 'Escape');
 
     await press(page, 'Shift+P');
     let now = await ui(page);
-    t.ok(now.presenting && now.shown.bar && now.shown.render && now.shown.chip, `Shift+P presents: the bar and the Render panel's tab up (${show(now.shown)})`);
+    t.ok(now.presenting && now.shown.bar && now.shown.render && now.shown.menus, `Shift+P presents: the bar and the Render panel's tab up (${show(now.shown)})`);
     t.ok(
-      !now.shown.toolbar && !now.shown.rail && !now.shown.stats && !now.shown.scene && !now.shown.model && !now.shown.tool,
-      `the toolbar, the brush rail, the stats and the Scene, Model and Tool panels are hidden (${show(now.shown)})`,
+      !now.shown.toolbar && !now.shown.rail && !now.shown.scene && !now.shown.model && !now.shown.tool,
+      `the toolbar, the brush rail and the Scene, Model and Tool panels are hidden, the strip stays (${show(now.shown)})`,
     );
     t.ok(!now.selecting && now.gizmo === null && !now.open.scene && !now.open.tool, `the Select tool and the side panels are put away (${show(now)})`);
     const highlighted = await page.evaluate(() => window.__sculpt.viewer.isSculptHighlighted('primary'));
@@ -266,9 +266,10 @@ export const suites = {
     await press(page, 'q');
     await press(page, 'e'); // the rotate gizmo
     const gizmoBefore = await ui(page);
-    await page.click('.present__chip');
+    await page.click('.bz-menuname:text-is("View")');
+    await page.click('.file-menu--view .file-menu__item:has-text("Present mode")');
     now = await ui(page);
-    t.ok(now.presenting && now.gizmo === null, `the chip presents too, the gizmo put away (${show(now)})`);
+    t.ok(now.presenting && now.gizmo === null, `View > Present mode presents too, the gizmo put away (${show(now)})`);
     await press(page, 'Escape');
     after = await ui(page);
     t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate', `Esc leaves, the rotate gizmo back (${show(after)})`);
@@ -324,16 +325,16 @@ export const suites = {
     now = await ui(page);
     t.ok(!now.open.render && !now.chrome && now.presenting, `Tab first closes the Render panel (${show(now)})`);
     await press(page, 'Tab');
-    const allHidden = (u) => u.chrome && !u.shown.render && !u.shown.bar && !u.shown.chip && u.presenting;
+    const allHidden = (u) => u.chrome && !u.shown.render && !u.shown.bar && !u.shown.menus && u.presenting;
     now = await uiOnce(page, allHidden);
     t.ok(allHidden(now), `Tab again hides everything, the bar included (${show(now.shown)})`);
-    t.ok(now.shown.hide, "but the toolbar's hide button, in its corner");
+    t.ok(now.shown.hide, "but the strip's hide button, in its corner");
     t.eq(await page.evaluate(() => document.querySelector('.present-bar__chrome')), null, 'the bar has no hide switch of its own');
-    const allBack = (u) => !u.chrome && u.shown.render && u.shown.bar && u.shown.chip && u.presenting;
-    await page.click('.sculpt-toolbar__right .sculpt-toolbar__btn');
+    const allBack = (u) => !u.chrome && u.shown.render && u.shown.bar && u.shown.menus && u.presenting;
+    await page.click('.bz-strip__hide');
     now = await uiOnce(page, allBack);
     t.ok(allBack(now), `the hide button brings it all back, still presenting (${show(now.shown)})`);
-    await page.click('.sculpt-toolbar__right .sculpt-toolbar__btn');
+    await page.click('.bz-strip__hide');
     now = await uiOnce(page, allHidden);
     t.ok(allHidden(now), `and hides it all again (${show(now.shown)})`);
     await press(page, 'Tab');
@@ -423,10 +424,7 @@ export const suites = {
         const b = el.getBoundingClientRect();
         return [(b.left + b.width / 2 - r.left) / r.width, (b.top + b.height / 2 - r.top) / r.height];
       };
-      const shown = [...document.querySelectorAll('.topbar .topchip')].filter((c) => c.getBoundingClientRect().width > 0);
-      const left = shown.filter((c) => c.closest('.topbar--left'));
-      const right = shown.filter((c) => c.closest('.topbar--right'));
-      return [at(left[0]), at(right[right.length - 1] ?? left[left.length - 1])];
+      return [at(document.querySelector('.bz-menuname')), at(document.querySelector('.bz-strip__hide'))];
     });
     const got = await pixelsOf(page, png, [...corners, [0.5, 0.5], ...chipsAt]);
     const bg = got[0];
@@ -765,9 +763,13 @@ async function ipadChecks(page, base, t) {
         const r = document.querySelector(s).getBoundingClientRect();
         return [r.left + r.width / 2, r.top + r.height / 2];
       }, sel);
-    await dev.tap(await centre('.present__chip'));
+    await dev.tap(await centre('.bz-menuname:nth-child(3)'));
+    await dev.tap(await ipad.evaluate(() => {
+      const r = [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => b.textContent.includes('Present mode')).getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    }));
     await ipad.waitForTimeout(100);
-    t.ok((await ui(ipad)).presenting, 'on an upright iPad a tap on the chip presents');
+    t.ok((await ui(ipad)).presenting, 'on an upright iPad a tap on View, then Present mode, presents');
     await setRender(ipad, true);
     const layout = await ipad.evaluate(() => {
       const box = (el) => {
@@ -777,8 +779,8 @@ async function ipadChecks(page, base, t) {
       return {
         bar: box(document.querySelector('.present-bar')),
         render: box(document.querySelector('.panel--render')),
-        hide: box(document.querySelector('.sculpt-toolbar__right .sculpt-toolbar__btn')),
-        chips: [...document.querySelectorAll('.topbar .topchip')].filter((c) => !c.hidden && getComputedStyle(c).display !== 'none').map(box),
+        hide: box(document.querySelector('.bz-strip__hide')),
+        chips: [...document.querySelectorAll('.bz-menuname, .bz-strip__hide')].map(box),
         w: innerWidth,
         h: innerHeight,
       };
@@ -786,7 +788,7 @@ async function ipadChecks(page, base, t) {
     const meets = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
     const inside = (a) => a.l >= 0 && a.t >= 0 && a.r <= layout.w && a.b <= layout.h;
     t.ok(inside(layout.bar) && inside(layout.render), `the bar and the open Render panel fit the 744x1133 screen (${show(layout.bar)})`);
-    t.ok(!meets(layout.bar, layout.render) && !layout.chips.some((c) => meets(c, layout.bar) || meets(c, layout.render)), 'and overlap neither each other nor the top row');
+    t.ok(!meets(layout.bar, layout.render) && !layout.chips.some((c) => meets(c, layout.bar) || meets(c, layout.render)), 'and overlap neither each other nor the strip');
     t.ok(inside(layout.hide) && !meets(layout.hide, layout.bar) && !meets(layout.hide, layout.render), `the hide button sits clear of the bar and the panel (${show(layout.hide)})`);
     await setRender(ipad, false);
 
@@ -823,7 +825,8 @@ async function ipadChecks(page, base, t) {
       window.__sculpt.persist.markDirty();
       await window.__sculpt.persist.flush();
     });
-    await ipad.locator('.viewer-back').click();
+    await ipad.click('.bz-menuname:text-is("File")');
+    await ipad.click('.file-menu--file .file-menu__item:has-text("Close")');
     await ipad.waitForURL((u) => u.pathname === '/' && !u.search.includes('sculpt'), { timeout: 30_000 }).catch(() => {});
     const found = await ipad.waitForSelector('#landing-grid .card__thumb .card__img', { timeout: 30_000 }).then(() => true).catch(() => false);
     if (!found) {

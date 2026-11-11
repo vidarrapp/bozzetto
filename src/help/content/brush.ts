@@ -19,7 +19,7 @@ export const BRUSH: Topic[] = [
       ),
       h('Changing size and strength quickly'),
       list(
-        'The two sliders on the brush rail do the same as the rows in the Tool panel.',
+        'The two fields at the left edge, which show while the Tool panel is closed, do the same as the rows in the Tool panel.',
         'Hold **B** and drag with the pen down to change the size. Hold **S** and drag up or down to change the strength.',
         '**[** and **]** step the size. **;** and **\'** step the strength (by 0.05 cm when the strength is a length).',
         'While you change the strength, a short line at the brush centre shows how far a stroke would push, with the value beside it. Brushes on 0 to 1 show a percentage.',

@@ -152,6 +152,7 @@ export class ModelPanel extends SidePanel {
     this.buildMask(this.body);
     this.buildGroups(this.body);
     this.refreshTopology();
+    this.refreshHeading();
   }
 
   // --- Material: the active object's material VALUES ----------------------
@@ -916,10 +917,16 @@ export class ModelPanel extends SidePanel {
 
   /** Re-sync stateful controls after engine-side changes (undo, dyntopo). */
   refreshState(): void {
+    this.refreshHeading();
     this.dyntopoCheckbox.checked = this.session.isDynamicTopology();
     this.refreshTopology();
     this.refreshVoxel(true);
     this.refreshQuadTarget();
+  }
+
+  /** The heading names the object the panel is about: the selected one, "Model" with none. */
+  refreshHeading(): void {
+    this.setHeading(this.session.getMesh() ? this.session.activeName() : 'Model');
   }
 
   override dispose(): void {

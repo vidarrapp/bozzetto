@@ -1,18 +1,16 @@
 import { div, onTap } from '../../ui/dom';
-import { keymap, chordLabel } from '../../ui/keymap';
-import { topbarLeft, topChip } from '../../ui/topbar';
 
 /**
  * Present mode (owner call): the model on its own, for looking at and for
- * showing. Its chip sits in the top row beside Publish, and Shift+P (the
- * keymap's ui.present, rebindable) or Esc leaves it as well as the chip.
+ * showing. View > Present mode goes in, and Shift+P (the keymap's
+ * ui.present, rebindable) goes in or out; Esc and Done leave.
  *
- * Presenting hides what edits - the toolbar, the brush rail and its undo
+ * Presenting hides what edits - the tool bar, the edge controls and their undo
  * chips, the Scene, Model and Tool panels, the brush ring and the object
  * stats - and locks it: the brushes, the gizmo and the selection do not
  * answer (InputShell.presenting), while orbit, pan and zoom do, fingers
  * included, by the iPad's finger rules. The Render panel stays, with
- * everything on the look; so do the top row and the notices. Nothing about
+ * everything on the look; so do the title strip and the notices. Nothing about
  * the scene changes by going in or out, and the autosave carries on.
  * Leaving puts the interface back as it was: which panels were open, the
  * tool, the gizmo or the Select tool, the mask tint, Tab's hidden state.
@@ -27,7 +25,7 @@ import { topbarLeft, topChip } from '../../ui/topbar';
  * (capture/turntable.ts), rendered offline with a progress bar and Cancel
  * in the row's place while it runs.
  *
- * Tab, and the toolbar's hide button, which stays in its corner in
+ * Tab, and the title strip's hide button, which stays in its corner in
  * Present, hide the interface as they do anywhere in Sculpt: here that is
  * everything, this bar included, and either brings it all back.
  */
@@ -70,7 +68,6 @@ const SPEED_KEY = 'bozzetto-present-speed';
 const MAX_STEP_S = 0.1;
 
 export class PresentMode {
-  readonly chip: HTMLButtonElement;
   readonly bar: HTMLDivElement;
   private readonly playBtn: HTMLButtonElement;
   private readonly speedInput: HTMLInputElement;
@@ -92,7 +89,6 @@ export class PresentMode {
   private lastTurn = 0;
   private speed = SPEED_DEFAULT;
   private saving = false;
-  private readonly offKeymap: () => void;
 
   /** Told when Present begins or ends. */
   onChange: ((on: boolean) => void) | null = null;
@@ -118,13 +114,6 @@ export class PresentMode {
     /** The viewport: a press inside it stops the turntable. */
     private readonly view: HTMLElement,
   ) {
-    this.chip = topChip('Present') as HTMLButtonElement;
-    this.chip.classList.add('file-menu__chip', 'present__chip');
-    this.chip.setAttribute('aria-pressed', 'false');
-    onTap(this.chip, () => this.toggle());
-    topbarLeft().appendChild(this.chip);
-    this.syncChipTitle();
-
     this.bar = div('present-bar');
     this.bar.hidden = true;
     this.bar.setAttribute('role', 'toolbar');
@@ -184,7 +173,6 @@ export class PresentMode {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointerdown', this.onViewInput, true);
     window.addEventListener('wheel', this.onViewInput, { capture: true, passive: true });
-    this.offKeymap = keymap.onChange(() => this.syncChipTitle());
   }
 
   isActive(): boolean {
@@ -210,8 +198,6 @@ export class PresentMode {
     this.restore = this.host.enter();
     this.active = true;
     this.bar.hidden = false;
-    this.chip.setAttribute('aria-pressed', 'true');
-    this.chip.classList.add('topchip--open');
     this.onChange?.(true);
     return true;
   }
@@ -222,8 +208,6 @@ export class PresentMode {
     this.setTurning(false);
     this.active = false;
     this.bar.hidden = true;
-    this.chip.setAttribute('aria-pressed', 'false');
-    this.chip.classList.remove('topchip--open');
     const restore = this.restore;
     this.restore = null;
     restore?.();
@@ -347,8 +331,6 @@ export class PresentMode {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('pointerdown', this.onViewInput, true);
     window.removeEventListener('wheel', this.onViewInput, { capture: true });
-    this.offKeymap();
-    this.chip.remove();
     this.bar.remove();
   }
 
@@ -363,11 +345,6 @@ export class PresentMode {
 
   private paintSpeed(): void {
     this.speedOut.textContent = `${Math.round(this.speed)}°/s`;
-  }
-
-  private syncChipTitle(): void {
-    const chord = keymap.chordFor('ui.present');
-    this.chip.title = chord ? `Present (${chordLabel(chord)}; Esc leaves)` : 'Present (Esc leaves)';
   }
 }
 

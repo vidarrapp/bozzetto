@@ -161,7 +161,11 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
             return !!p && !p.classList.contains('panel--collapsed');
           }),
           tabs: sels.map((s) => shown(document.querySelector(`${s} .panel__handle`))),
-          help: shown(document.querySelector('.help-toggle')),
+          // The viewer's Help chip; in Sculpt and Armature the strip's menus stand in its place (the old top row is hidden there).
+          help: shown(document.querySelector('.help-toggle')) || [...document.querySelectorAll('.bz-menuname')].some(shown),
+          menus: [...document.querySelectorAll('.bz-menuname, .bz-readout')].filter(shown).length,
+          eye: shown(document.querySelector('.bz-strip__hide')),
+          strip: !!document.querySelector('.bz-strip'),
           chips: [...document.querySelectorAll('body > .topbar .topchip')].filter(shown).map((c) => c.textContent.trim()),
           transport: shown(document.querySelector('.transport')),
           kept: keepSels.map((s) => shown(document.querySelector(s))),
@@ -191,7 +195,7 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
 
   // No fades: a headless page that draws nothing new runs no transitions,
   // and the hidden state is what is being checked, not its fade.
-  await page.addStyleTag({ content: '.panel, .panel *, .topbar, .topbar *, .transport, .fps-meter { transition: none !important; }' });
+  await page.addStyleTag({ content: '.panel, .panel *, .topbar, .topbar *, .bz-strip, .bz-strip *, .transport, .fps-meter { transition: none !important; }' });
   await openAll();
   let s = await state();
   t.ok(s.open.every(Boolean) && !s.hidden, `${where}: the panels open (${s.open})`);
@@ -202,7 +206,8 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
   await page.keyboard.press('Tab');
   await whenHidden();
   s = await state();
-  t.ok(s.hidden && s.tabs.every((v) => !v) && !s.help && s.chips.length === 0, `${where}: Tab again hides the interface: the panels' tabs, Help and the top chips go (tabs ${s.tabs}, help ${s.help}, chips ${s.chips.join(', ') || 'none'})`);
+  t.ok(s.hidden && s.tabs.every((v) => !v) && !s.help && s.chips.length === 0 && s.menus === 0, `${where}: Tab again hides the interface: the panels' tabs, Help (or the strip's menus) and the top chips go (tabs ${s.tabs}, help ${s.help}, chips ${s.chips.join(', ') || 'none'}, strip menus ${s.menus})`);
+  if (s.strip) t.ok(s.eye, `${where}: and the strip's hide button stays, to bring it back`);
   t.ok(/press Tab to bring it back/.test(s.hint), `${where}: and says how to bring it back ("${s.hint}")`);
   if (transport) t.ok(s.transport, `${where}: the transport stays`);
   if (keep.length) t.ok(s.kept.every(Boolean), `${where}: the page's own ${keep.join(', ')} stay (${s.kept})`);

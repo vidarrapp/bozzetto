@@ -10,8 +10,9 @@ import { signInButton } from '../../ui/signIn';
 const ROLE_WAIT_MS = 5000;
 
 /**
- * The File menu: a chip in the top row, beside the gallery link, that
- * drops the file commands, with FileActions behind them.
+ * The File menu: its name in the title strip, with the file commands
+ * under it, and FileActions behind them. New and Open, then saving, then
+ * OBJ in and out, Publish, and Close, which returns to the gallery.
  *
  * Questions are asked here, not in FileActions: a plain confirm(), and
  * the scene logic underneath is the same whoever asks.
@@ -37,7 +38,19 @@ export class FileMenu {
    */
   onSignInChange: (() => Promise<unknown> | void) | null = null;
 
-  constructor(private readonly actions: FileActions) {
+  constructor(
+    private readonly actions: FileActions,
+    /** The strip's menu row, where the name goes. */
+    host: HTMLElement,
+    private readonly hooks: {
+      /** Close: leave for the gallery (the mode flushes the autosave and its picture first). */
+      close: () => void | Promise<void>;
+      /** Publish…: open the Publish window. */
+      publish: () => void;
+      /** Whether publishing is reachable (a sign-in has been found). */
+      canPublish: () => boolean;
+    },
+  ) {
     // Hidden inputs are how a web page asks for a file.
     this.openInput = fileInput('.bozz', (file) => void this.openFile(file));
     this.importInput = fileInput('.obj', (file) => void this.importFile(file));
@@ -54,6 +67,7 @@ export class FileMenu {
           },
         },
         { label: 'Open…', action: () => this.openInput.click() },
+        { separator: true },
         {
           label: 'Save file',
           enabled: full,
@@ -84,6 +98,8 @@ export class FileMenu {
           },
         },
         { separator: true },
+        { label: 'Import OBJ…', action: () => this.importInput.click() },
+        { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
         {
           // The active object's level 0 in the imported file's own vertex
           // and face order when it has that record (objSource.ts), else
@@ -98,10 +114,19 @@ export class FileMenu {
             if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
           },
         },
-        { label: 'Import OBJ…', action: () => this.importInput.click() },
-        { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
+        { separator: true },
+        {
+          label: 'Publish…',
+          enabled: () => this.hooks.canPublish(),
+          hint: () => (this.hooks.canPublish() ? '' : 'Needs a sign-in'),
+          action: () => this.hooks.publish(),
+        },
+        { separator: true },
+        { label: 'Close', hint: 'Back to the gallery', action: () => this.hooks.close() },
       ],
       'file-menu--file',
+      host,
+      true,
     );
     this.menu.pop.append(this.openInput, this.importInput);
   }

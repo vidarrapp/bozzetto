@@ -88,6 +88,7 @@ export class SculptPanel extends SidePanel {
     // settings these sliders drive; refreshBrush renames it per selection.
     const sec = section(body, 'Brush');
     this.brushHeading = sec.querySelector('h3');
+    this.brushHeading?.classList.add('bz-section-named');
 
     // Screen scale is upstream's behaviour: the brush is a fixed number of
     // pixels, so it covers less of the model up close and more far away.
@@ -109,6 +110,15 @@ export class SculptPanel extends SidePanel {
     this.extrasBody = div('sculpt-panel__extras');
     sec.appendChild(this.extrasBody);
     this.refreshBrush();
+  }
+
+  /**
+   * Name what the panel is for: the section's own heading, and the panel's,
+   * which the shell shows in its place (the section's is then put away).
+   */
+  private nameBrush(name: string): void {
+    if (this.brushHeading) this.brushHeading.textContent = name;
+    this.setHeading(name);
   }
 
   /** Rebuild the per-brush rows for the ACTIVE tool (tool switches). */
@@ -133,21 +143,21 @@ export class SculptPanel extends SidePanel {
     // Shift's Smooth settings ride every brush that Shift smooths from.
     this.fillShiftSmooth(uiMode === 'brush' ? tool : -1);
     if (uiMode === 'select') {
-      if (this.brushHeading) this.brushHeading.textContent = 'Select';
+      this.nameBrush('Select');
       this.extrasBody.replaceChildren();
       this.buildChannelBox(dyn);
       this.buildSelectSettings(dyn);
       return;
     }
     if (uiMode === 'transform') {
-      if (this.brushHeading) this.brushHeading.textContent = 'Transform';
+      this.nameBrush('Transform');
       this.extrasBody.replaceChildren();
       this.buildChannelBox(dyn);
       this.buildTransformSettings(dyn);
       return;
     }
     this.refreshState();
-    if (this.brushHeading) this.brushHeading.textContent = TOOL_NAMES[tool] ?? 'Brush';
+    this.nameBrush(TOOL_NAMES[tool] ?? 'Brush');
     const d = this.input.dynamics.get(tool);
     // The paint brush leads with its colour: the same HSV picker the Render
     // panel uses for albedo, so a colour is chosen the same way wherever

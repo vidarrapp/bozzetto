@@ -62,20 +62,22 @@ export const TOOL_NAMES: Record<number, string> = {
 };
 
 /**
- * Touch-first sculpt toolbar (early WS4 piece, pulled forward for iPad): a
- * bottom bar with the Negative button in the left corner, the digit brushes
- * centered and the hide-interface eye on the right, each showing its icon
- * with the hotkey digit as a corner badge. Most iPads have no keyboard, so
- * this is the native way to invert strokes and swap brushes; buttons and
+ * The tool bar: the Select tool, the digit brushes and Transform in one
+ * box at the bottom centre, each showing its icon with its hotkey digit
+ * as a corner badge (View > Hotkeys on tools shows or hides the digits)
+ * and its name, with the hotkey, in a tooltip above it. Most iPads have
+ * no keyboard, so this is the native way to swap brushes; buttons and
  * hotkeys stay in sync.
  *
- * Negative carves two ways, and neither keeps a finger on the glass while
- * the Pencil draws: on an iPad a fingertip anywhere in the page hides the
- * Pencil from it until the finger lifts, below anything a web page can
- * reach (plan 6.6e), so hold-to-carve cannot be offered there at all. A
- * TAP arms carving for the next stroke, which spends it; a LONG PRESS
- * latches carving on until a tap lets go. Alt does the opposite of
- * whatever the button says, so keyboard users lose nothing either way.
+ * Negative is built here, because its press logic is, but it stands in
+ * the edge controls (BrushSliders takes `negativeEl`). It carves two
+ * ways, and neither keeps a finger on the glass while the Pencil draws: on
+ * an iPad a fingertip anywhere in the page hides the Pencil from it until
+ * the finger lifts, below anything a web page can reach (plan 6.6e), so
+ * hold-to-carve cannot be offered there at all. A TAP arms carving for the
+ * next stroke, which spends it; a LONG PRESS latches carving on until a
+ * tap lets go. Alt does the opposite of whatever the button says, so
+ * keyboard users lose nothing either way.
  */
 export class SculptToolbar {
   /** Toolbar transform toggle (mode.ts owns the gizmo). */
@@ -88,6 +90,7 @@ export class SculptToolbar {
 
   setTransformActive(on: boolean): void {
     this.transformBtn.classList.toggle('sculpt-toolbar__btn--active', on);
+    this.keepInView();
   }
 
   setSelectActive(on: boolean): void {
@@ -98,9 +101,10 @@ export class SculptToolbar {
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
   private readonly brushBtns = new Map<number, HTMLButtonElement>();
-  /** Set by mode.ts: a direct hide/show switch for the toolbar button. */
-  onToggleChrome: (() => void) | null = null;
-  private hideBtn!: HTMLButtonElement;
+  /** The Negative button, for the edge controls to stand. */
+  get negativeEl(): HTMLButtonElement {
+    return this.negativeBtn;
+  }
   /**
    * The press on Negative, from its pointerdown to its lift: its pointer,
    * when it went down by the event's clock, and, once the timer has
@@ -213,10 +217,6 @@ export class SculptToolbar {
     // With a transport bar present (?tl=...&sculpt=1), sit above it.
     if (document.querySelector('.transport')) this.root.classList.add('sculpt-toolbar--raised');
 
-    // The two corner controls sit bare, without the group's panel behind
-    // them (review call) - they are single icons, not a cluster.
-    const left = document.createElement('div');
-    left.className = 'sculpt-toolbar__corner sculpt-toolbar__left';
     // Carve: a tap for the next stroke, a long press for every stroke
     // until a tap (see the class comment for why there is no hold).
     this.negativeBtn = toolButton(
@@ -246,31 +246,6 @@ export class SculptToolbar {
       (e) => e.preventDefault(),
       { passive: false },
     );
-    left.appendChild(this.negativeBtn);
-
-    // The pointer route into the clean screen, and back out of it: Tab is
-    // the keyboard/TourBox way, but the primary device is an iPad with no
-    // Tab key at all. Parked in the opposite corner from Negative so a
-    // resting left hand cannot brush it.
-    const hideBtn = document.createElement('button');
-    hideBtn.type = 'button';
-    hideBtn.className = 'sculpt-toolbar__btn';
-    hideBtn.title = 'Hide the interface (Tab)';
-    hideBtn.setAttribute('aria-label', 'Hide the interface');
-    hideBtn.innerHTML =
-      '<span class="sculpt-toolbar__svg" aria-hidden="true">' +
-      '<svg viewBox="0 0 24 24"><path d="M3 3l18 18" fill="none" stroke="currentColor" ' +
-      'stroke-width="1.7" stroke-linecap="round"/>' +
-      '<path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.5 8.1A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.4 9.4 0 0 0 3.6-.7" ' +
-      'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
-      '</svg></span>';
-    // The button is a plain switch, unlike Tab, which first tidies open
-    // panels. Assigned by mode.ts; read at tap time so ordering is free.
-    onTap(hideBtn, () => this.onToggleChrome?.());
-    this.hideBtn = hideBtn;
-    const right = document.createElement('div');
-    right.className = 'sculpt-toolbar__corner sculpt-toolbar__right';
-    right.appendChild(hideBtn);
 
     const center = document.createElement('div');
     center.className = 'sculpt-toolbar__group sculpt-toolbar__brushes';
@@ -278,29 +253,29 @@ export class SculptToolbar {
     // Icon picks are Vidar's where the pack ships them in solid straight;
     // the rest are the closest fi-ss matches (see the WS2b results note).
     // The slot name (column 4) doubles as the inline-SVG override filename.
-    const brushes: Array<[number, string, string, string, string]> = [
-      [tools.CREASE, '1', 'Crease', 'crease', 'fi-ss-scalpel'],
-      [tools.MOVE, '2', 'Move', 'move', 'fi-ss-arrows'],
-      [tools.BRUSH, '3', 'Standard (clay)', 'standard', 'fi-ss-screwdriver'],
-      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-expand-arrows-alt'],
-      [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress'],
-      [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line'],
+    const brushes: Array<[number, string, string, string, string, string]> = [
+      [tools.CREASE, '1', 'Crease', 'crease', 'fi-ss-scalpel', 'Crease'],
+      [tools.MOVE, '2', 'Move', 'move', 'fi-ss-arrows', 'Move'],
+      [tools.BRUSH, '3', 'Standard (clay)', 'standard', 'fi-ss-screwdriver', 'Standard clay'],
+      [tools.INFLATE, '4', 'Inflate', 'inflate', 'fi-ss-expand-arrows-alt', 'Inflate'],
+      [tools.PINCH, '5', 'Pinch', 'pinch', 'fi-ss-compress', 'Pinch'],
+      [tools.FLATTEN, '6', 'Flatten', 'flatten', 'fi-ss-arrows-to-line', 'Flatten'],
       // Smooth lost the digit to the Rake (owner call) but not the tool:
       // holding shift still smooths, from any brush.
-      [tools.RAKE, '7', 'Rake (shift still smooths)', 'smooth', 'fi-ss-shredder'],
-      [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist'],
-      [tools.TWIST, '9', 'Polish', 'polish', 'fi-ss-broom'],
+      [tools.RAKE, '7', 'Rake (shift still smooths)', 'smooth', 'fi-ss-shredder', 'Rake'],
+      [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist', 'Drag'],
+      [tools.TWIST, '9', 'Polish', 'polish', 'fi-ss-broom', 'Polish'],
       // Paint takes the tenth slot; the digit row was full at 1-9, and 0
       // sits next to 9 on every keyboard.
-      [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-palette'],
+      [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-palette', 'Paint'],
     ];
     // Select at the far left, Transform at the far right (owner call): the
     // two tools that are not brushes bracket the row.
-    this.selectBtn = toolButton('q', 'Select (q): click, shift adds, ctrl+drag removes, drag a marquee', 'select', 'fi-ss-cursor');
+    this.selectBtn = toolButton('q', 'Select (q): click, shift adds, ctrl+drag removes, drag a marquee', 'select', 'fi-ss-cursor', 'Select');
     onTap(this.selectBtn, () => this.onToggleSelect?.());
     center.appendChild(this.selectBtn);
-    for (const [id, key, name, slot, icon] of brushes) {
-      const btn = toolButton(key, name, slot, icon);
+    for (const [id, key, name, slot, icon, tip] of brushes) {
+      const btn = toolButton(key, name, slot, icon, tip);
       onTap(btn, () => this.input.selectBrush(id));
       this.brushBtns.set(id, btn);
       center.appendChild(btn);
@@ -310,11 +285,11 @@ export class SculptToolbar {
     // kind of handle) and a gizmo instead of strokes, so it keeps its own
     // button and active state rather than a digit slot. Its key shows as a
     // badge like every other tool's (owner request).
-    this.transformBtn = toolButton('t', 'Transform (t): move, rotate and scale; w/e/r show one kind', 'transform', 'fi-ss-transformation-block');
+    this.transformBtn = toolButton('t', 'Transform (t): move, rotate and scale; w/e/r show one kind', 'transform', 'fi-ss-transformation-block', 'Transform');
     onTap(this.transformBtn, () => this.onToggleTransform?.());
     center.appendChild(this.transformBtn);
 
-    this.root.append(left, center, right);
+    this.root.append(center);
     document.body.appendChild(this.root);
 
     window.addEventListener('pointerup', this.onNegativeUp, true);
@@ -324,14 +299,6 @@ export class SculptToolbar {
     // The arm clears when its stroke ends, which the shell sees first.
     this.input.onNegativeChange = () => this.refresh();
     this.refresh();
-  }
-
-  /** The hide button stays on screen while hidden, so it shows its state. */
-  setChromeHidden(hidden: boolean): void {
-    this.hideBtn.classList.toggle('sculpt-toolbar__btn--active', hidden);
-    const label = hidden ? 'Show the interface (Tab)' : 'Hide the interface (Tab)';
-    this.hideBtn.title = label;
-    this.hideBtn.setAttribute('aria-label', hidden ? 'Show the interface' : 'Hide the interface');
   }
 
   /** Reflect the active brush, and Negative's arm or latch, on the buttons. */
@@ -347,6 +314,17 @@ export class SculptToolbar {
     const latched = this.input.getNegativeBase();
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--active', latched);
     this.negativeBtn.classList.toggle('sculpt-toolbar__btn--armed', !latched && this.input.getNegativeArmed());
+    this.keepInView();
+  }
+
+  /** Where the bar scrolls sideways (a phone), the tool in hand is brought to its middle. */
+  private keepInView(): void {
+    const bar = this.root.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
+    const on = bar?.querySelector<HTMLElement>('.sculpt-toolbar__btn--active');
+    if (!bar || !on || bar.scrollWidth <= bar.clientWidth) return;
+    const b = bar.getBoundingClientRect();
+    const r = on.getBoundingClientRect();
+    bar.scrollLeft += r.left + r.width / 2 - (b.left + b.width / 2);
   }
 
   dispose(): void {
@@ -360,7 +338,7 @@ export class SculptToolbar {
   }
 }
 
-function toolButton(key: string, title: string, slot: string, icon: string): HTMLButtonElement {
+function toolButton(key: string, title: string, slot: string, icon: string, tip?: string): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'sculpt-toolbar__btn';
@@ -387,7 +365,26 @@ function toolButton(key: string, title: string, slot: string, icon: string): HTM
     badge.textContent = key;
     btn.appendChild(badge);
   }
-  btn.title = title;
   btn.setAttribute('aria-label', title);
+  if (tip) {
+    // A tool is named by a box above it (shell.css), not the browser's
+    // title: its name, and its hotkey in the mono face.
+    const box = document.createElement('span');
+    box.className = 'bz-tip';
+    box.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'bz-tip__name';
+    name.textContent = tip;
+    box.appendChild(name);
+    if (key) {
+      const k = document.createElement('kbd');
+      k.className = 'bz-tip__key';
+      k.textContent = key;
+      box.appendChild(k);
+    }
+    btn.appendChild(box);
+  } else {
+    btn.title = title;
+  }
   return btn;
 }

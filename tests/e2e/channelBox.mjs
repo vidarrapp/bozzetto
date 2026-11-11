@@ -213,6 +213,8 @@ export const suites = {
     await frames(page);
     const chromeHidden = await visible();
     await page.evaluate(() => window.__sculpt.chrome.set(false));
+    // Hiding the interface closes the panels, and a closed panel is hidden: the Tool panel is opened again.
+    await page.evaluate(() => window.__sculpt.sculptPanel.setCollapsed(false));
     await frames(page);
     t.ok(!chromeHidden && (await visible()), 'hidden with the chrome, back with it');
     await page.evaluate(() => window.__sculpt.present.toggle());

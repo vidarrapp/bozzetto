@@ -29,7 +29,7 @@ const win = (page) =>
 
 /** Sculpt's Help menu: open it and press the item. */
 async function menuItem(page, label) {
-  await page.click('.topbar--left .file-menu__chip:has-text("Help")');
+  await page.click('.bz-strip__menus .file-menu__chip:has-text("Help")');
   await page.waitForSelector('.file-menu--help:not([hidden])');
   await page.click(`.file-menu--help .file-menu__item:has-text("${label}")`);
 }
@@ -50,9 +50,9 @@ export const suites = {
     await openSculpt(page, base);
 
     // --- the Help menu beside File and Edit ---------------------------------
-    const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--left .file-menu__chip')].map((c) => c.textContent.trim()));
-    t.ok(chips.indexOf('File') >= 0 && chips.indexOf('Edit') >= 0 && chips.indexOf('Help') === chips.indexOf('Edit') + 1, `a Help chip follows Edit in the top row (${chips.join(', ')})`);
-    await page.click('.topbar--left .file-menu__chip:has-text("Help")');
+    const chips = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .file-menu__chip')].map((c) => c.textContent.trim()));
+    t.ok(chips.indexOf('File') >= 0 && chips.indexOf('Edit') >= 0 && chips.indexOf('Help') === chips.indexOf('Edit') + 2, `a Help name follows Edit and View in the strip (${chips.join(', ')})`);
+    await page.click('.bz-strip__menus .file-menu__chip:has-text("Help")');
     await page.waitForSelector('.file-menu--help:not([hidden])');
     const items = await page.evaluate(() => [...document.querySelectorAll('.file-menu--help .file-menu__item')].map((b) => (b.querySelector('.file-menu__label')?.textContent ?? b.textContent).trim()));
     t.eq(items.join(' | '), 'Help topics | Hotkeys | About and credits', 'the Help menu holds Help topics, Hotkeys and About and credits');
@@ -135,7 +135,7 @@ export const suites = {
     t.ok(!(await win(page)).modal, 'and gives the keys back');
     const tools = await page.evaluate(() =>
       [...document.querySelectorAll('.sculpt-toolbar__btn')].map((b) => ({
-        title: b.title,
+        title: b.getAttribute('aria-label') ?? b.title,
         key: b.querySelector('.sculpt-toolbar__key')?.textContent ?? '',
       })),
     );
@@ -228,9 +228,9 @@ export const suites = {
 
   async helpArmature(page, base, t) {
     await openArmature(page, base);
-    const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--left .file-menu__chip')].map((c) => c.textContent.trim()));
+    const chips = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .file-menu__chip')].map((c) => c.textContent.trim()));
     t.ok(chips.includes('Help'), `Armature has the Help menu (${chips.join(', ')})`);
-    await page.click('.topbar--left .file-menu__chip:has-text("Help")');
+    await page.click('.bz-strip__menus .file-menu__chip:has-text("Help")');
     await page.click('.file-menu--help .file-menu__item:has-text("Help topics")');
     await page.waitForSelector('.help-win:not([hidden])');
     await page.click('.help-win__item[data-topic="armature"]');

@@ -1,16 +1,16 @@
 import { div, onTap } from '../../ui/dom';
 import { section } from '../../ui/Panel';
-import { topbarLeft, topChip } from '../../ui/topbar';
+import { stripButton } from './TitleStrip';
 
 /** Where the window was left, for the rest of the browser session. */
 const POSITION_KEY = 'bozzetto-publish-window';
 /** The gap kept between the window and the screen's edges. */
 const EDGE = 8;
 /**
- * The highest the window goes: clear of the top row, whose chips sit over
- * it and would otherwise cover its title bar and its close button.
+ * The highest the window goes: clear of the title strip, which would
+ * otherwise cover its title bar and its close button.
  */
-const TOP = 44;
+const TOP = 30;
 
 interface Position {
   x: number;
@@ -19,8 +19,8 @@ interface Position {
 
 /**
  * The Publish window: Publish model's form, in a window that floats over
- * the work rather than a panel docked at an edge. Its chip sits in the top
- * row beside File and Edit, and opens and closes it. It was the Capture
+ * the work rather than a panel docked at an edge. Its button is Publish, at
+ * the right of the title strip, and opens and closes it. It was the Capture
  * window, with the timelapse recorder's toggle, readout and Clear frames
  * beside the forms, until recording left Bozzetto Web for Bozzetto Studio;
  * Publish model is what stayed.
@@ -48,15 +48,16 @@ export class PublishWindow {
   private pos: Position | null = readPosition();
   private drag: { id: number; dx: number; dy: number } | null = null;
 
-  constructor() {
-    this.chip = topChip('Publish') as HTMLButtonElement;
+  /** `host` is the strip's right-hand group, which Publish leads. */
+  constructor(host: HTMLElement) {
+    this.chip = stripButton('Publish');
     this.chip.classList.add('file-menu__chip', 'publish-window__chip');
     this.chip.setAttribute('aria-expanded', 'false');
     this.chip.hidden = true;
     // A tap, not a click, like the panels' edge tabs: no long press on a
     // slow tap, and no focus left on the chip for Tab to land on.
     onTap(this.chip, () => this.toggle());
-    topbarLeft().appendChild(this.chip);
+    host.prepend(this.chip);
 
     this.root = div('float-window publish-window');
     this.root.hidden = true;
@@ -194,18 +195,18 @@ export class PublishWindow {
   }
 
   /**
-   * Under the chip, the first time, but clear of the left edge's panels:
-   * an open Model panel reaches past the chip, and the window would sit
-   * across it. Their layout boxes, which ignore the slide, say where a
-   * docked panel opens rather than where it is tucked away.
+   * Under the button, the first time, with the window's right edge at the
+   * button's, which is where the screen's edge is: the window opens
+   * inward, over the view, and clear of the right edge's panels, whose
+   * layout boxes say where a docked panel opens.
    */
   private underChip(): Position {
     const r = this.chip.getBoundingClientRect();
-    let clear = 0;
-    for (const p of document.querySelectorAll<HTMLElement>('.panel--left')) {
-      clear = Math.max(clear, p.offsetLeft + p.offsetWidth + EDGE);
+    let edge = r.right;
+    for (const p of document.querySelectorAll<HTMLElement>('.panel:not(.panel--left)')) {
+      if (!p.classList.contains('panel--collapsed')) edge = Math.min(edge, p.getBoundingClientRect().left - EDGE);
     }
-    return { x: Math.max(r.left, clear), y: r.bottom + 6 };
+    return { x: edge - this.root.offsetWidth, y: r.bottom + 6 };
   }
 
   private clamp(p: Position): Position {

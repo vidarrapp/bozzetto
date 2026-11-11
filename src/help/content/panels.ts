@@ -106,7 +106,7 @@ export const PANELS: Topic[] = [
       ),
       p('Under the list, the **Material** menu picks a material for the active object. **New\\*** makes a new material and assigns it. Changing the material of an object you have painted asks first, because its painted colours are replaced.'),
       h('Solo'),
-      p('**Alt+Q**, or the **Solo** button on the brush rail, shows only the active object. While it is on, the Scene panel shows a **Solo** chip, and clicking the chip, pressing the key again, or clicking any eye ends it.'),
+      p('**Alt+Q**, or the **Solo** button in the edge controls at the bottom left, shows only the active object. While it is on, the Scene panel shows a **Solo** chip, and clicking the chip, pressing the key again, or clicking any eye ends it.'),
       h('Units and scale'),
       p('Scenes work in real units: positions and sizes are in centimetres. A scene from before real units opens as it was, with a banner that says "This scene has no real-world scale yet." **Set scale** asks which object, and how tall it really is in centimetres, and scales the whole scene by the same amount and sets it on the floor. The undo history starts over from there. **Not now** keeps the scene as it is and the offer is not made again for it.'),
       options(['Floor offset', 'Only on real units. Raises or lowers the floor the scene stands on, in centimetres.']),

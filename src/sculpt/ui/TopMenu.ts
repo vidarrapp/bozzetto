@@ -18,7 +18,15 @@ export type MenuItem =
       enabled?: () => boolean;
       action: () => void | Promise<void>;
     }
-  | { label: string; checked: () => boolean; toggle: (on: boolean) => void }
+  | {
+      label: MenuText;
+      /** The hotkey that does the same, at the right (read on each open). */
+      key?: MenuText;
+      /** Greyed out and skipped by the arrows while this says no. */
+      enabled?: () => boolean;
+      checked: () => boolean;
+      toggle: (on: boolean) => void;
+    }
   | {
       /** A label and a row of small buttons, one command each, rebuilt on each open. */
       label: MenuText;
@@ -42,7 +50,7 @@ function line(label: HTMLElement, key: string): HTMLElement {
 }
 
 /**
- * A top-row menu: a chip beside the gallery link that drops a list of
+ * A menu: its name in the title strip (a chip in the gallery's top row) that drops a list of
  * commands. File and Edit are both one of these.
  *
  * Outside press, Escape and Tab close it; arrows walk the items; it hides
@@ -53,15 +61,27 @@ export class TopMenu {
   readonly chip: HTMLButtonElement;
   readonly pop: HTMLDivElement;
   private opened = false;
+  private readonly plain: boolean;
   /** Re-reads each item's label and hint, run whenever the menu opens. */
   private readonly painters: Array<() => void> = [];
 
   /**
    * `host` is the row the chip goes in: the left one, beside the gallery
    * link, unless said otherwise (the account's menu sits on the right).
+   * With `plain`, the name is bare text in the title strip (shell.css)
+   * rather than a chip, and the list hangs from the strip's lower edge.
    */
-  constructor(label: string, items: MenuItem[], cls: string, host: HTMLElement = topbarLeft()) {
-    this.chip = topChip(label) as HTMLButtonElement;
+  constructor(label: string, items: MenuItem[], cls: string, host: HTMLElement = topbarLeft(), plain = false) {
+    this.plain = plain;
+    if (plain) {
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'bz-menuname';
+      name.textContent = label;
+      this.chip = name;
+    } else {
+      this.chip = topChip(label) as HTMLButtonElement;
+    }
     this.chip.classList.add('file-menu__chip', `${cls}__chip`);
     this.chip.setAttribute('aria-haspopup', 'menu');
     this.chip.setAttribute('aria-expanded', 'false');
@@ -91,7 +111,7 @@ export class TopMenu {
     this.pop.hidden = false;
     this.place();
     this.chip.setAttribute('aria-expanded', 'true');
-    this.chip.classList.add('topchip--open');
+    this.chip.classList.add('topchip--open', 'is-open');
     this.pop.querySelector<HTMLButtonElement>('.file-menu__item:not(:disabled)')?.focus();
   }
 
@@ -100,7 +120,7 @@ export class TopMenu {
     this.opened = false;
     this.pop.hidden = true;
     this.chip.setAttribute('aria-expanded', 'false');
-    this.chip.classList.remove('topchip--open');
+    this.chip.classList.remove('topchip--open', 'is-open');
   }
 
   dispose(): void {
@@ -134,15 +154,24 @@ export class TopMenu {
     // A tap, not a click (ui/dom onTap): on an iPad a finger held a moment
     // on an item would otherwise never become a click.
     if ('toggle' in item) {
-      b.textContent = item.label;
       b.classList.add('file-menu__item--toggle');
       b.setAttribute('role', 'menuitemcheckbox');
-      const paint = (): void => b.setAttribute('aria-checked', item.checked() ? 'true' : 'false');
+      const paint = (): void => {
+        if (item.enabled) b.disabled = !item.enabled();
+        const label = document.createElement('span');
+        label.className = 'file-menu__label';
+        label.textContent = read(item.label);
+        const key = read(item.key);
+        b.replaceChildren(key ? line(label, key) : label);
+        b.setAttribute('aria-checked', item.checked() ? 'true' : 'false');
+      };
       onTap(b, () => {
+        if (b.disabled) return;
         item.toggle(!item.checked());
         paint();
       });
       paint();
+      this.painters.push(paint);
       return b;
     }
     // A hint is a second, quieter line saying what the command will do
@@ -230,7 +259,7 @@ export class TopMenu {
     const r = this.chip.getBoundingClientRect();
     const room = window.innerWidth - this.pop.offsetWidth - 8;
     this.pop.style.left = `${Math.round(Math.max(8, Math.min(r.left, room)))}px`;
-    this.pop.style.top = `${Math.round(r.bottom + 6)}px`;
+    this.pop.style.top = `${Math.round(this.plain ? r.bottom : r.bottom + 6)}px`;
   }
 
   private readonly onPointerDown = (e: PointerEvent): void => {
