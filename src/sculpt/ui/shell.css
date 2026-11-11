@@ -1,0 +1,685 @@
+/*
+ * The shell of Sculpt and Armature (docs/ui-spec.md sections 5 and 6): the
+ * title strip, the folder tabs and the panels under them, the tool bar and
+ * the edge controls.
+ *
+ * Loaded by the two modes' entry code, so it comes after style.css, and
+ * everything in it is scoped to `body.bz-shell` - set while the strip is up -
+ * which also outranks the older single-class rules it overrides. Colours
+ * are the application layer's tokens (app-layer/tokens.css) and nothing
+ * else; corners are square, surfaces have no outlines, labels are 13px and
+ * nothing is under 11px. How the panels' contents look is style.css's;
+ * this file is where things are and how big.
+ */
+
+body.bz-shell {
+  /* The panel's own fill: its surface at the Panel opacity preference. */
+  --bz-panel-fill: var(--bz-panel);
+}
+
+@supports (color: rgb(from red r g b / 0.5)) {
+  body.bz-shell {
+    --bz-panel-fill: rgb(from var(--bz-panel) r g b / var(--panel-alpha, 0.95));
+  }
+}
+
+/* --- the old top row ------------------------------------------------------
+   The strip replaces it: the gallery link (File > Close), Help (Help menu,
+   and H still works), Present (View) and the rest. Hidden, not removed:
+   the page under the mode owns those elements. */
+body.bz-shell > .topbar {
+  display: none;
+}
+
+/* The hint that H opens the hotkey guide, and the guide, clear of the tabs. */
+body.bz-shell .help-hint {
+  top: auto;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+body.bz-shell .help-guide {
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* --- the title strip ---------------------------------------------------- */
+body.bz-shell .bz-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  height: 24px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  background: var(--bz-strip);
+  color: var(--bz-text);
+  font: 400 13px/24px var(--bz-font);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.bz-shell .bz-strip__menus {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 8px;
+}
+
+/* A menu's name and the strip's text buttons: bare text, 16px in from the
+   edge, 20px from the next. The fill shows while a menu is open. */
+body.bz-shell .bz-menuname,
+body.bz-shell .bz-strip__btn,
+body.bz-shell .bz-strip__hide {
+  appearance: none;
+  margin: 0;
+  padding: 0 8px;
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--bz-text);
+  font: 400 13px/24px var(--bz-font);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.bz-shell .bz-menuname:hover,
+body.bz-shell .bz-strip__btn:hover,
+body.bz-shell .bz-strip__hide:hover,
+body.bz-shell .bz-menuname.is-open,
+body.bz-shell .bz-strip__btn.topchip--open,
+body.bz-shell .bz-strip__hide--on {
+  background: var(--bz-hover);
+}
+
+body.bz-shell .bz-menuname:focus-visible,
+body.bz-shell .bz-strip__btn:focus-visible,
+body.bz-shell .bz-strip__hide:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+/* The menus hang from the strip's lower edge, left edges level with the names. */
+body.bz-shell .file-menu {
+  z-index: 40;
+}
+
+body.bz-shell .bz-strip__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+body.bz-shell .bz-strip__hide {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  padding: 0;
+}
+
+body.bz-shell .bz-strip__hide svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+/* The readout: the project's name in bold, then keys regular and values bold. */
+body.bz-shell .bz-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body.bz-shell .bz-readout__name {
+  font-weight: 700;
+}
+
+body.bz-shell .bz-readout__edited {
+  margin-left: -8px;
+  font-weight: 400;
+}
+
+body.bz-shell .bz-readout__item {
+  display: inline-flex;
+  gap: 6px;
+}
+
+body.bz-shell .bz-readout__key {
+  color: var(--bz-text-2);
+  font-weight: 400;
+}
+
+body.bz-shell .bz-readout__val {
+  font-weight: 700;
+}
+
+@media (max-width: 899px) {
+  body.bz-shell .bz-readout__item--tris {
+    display: none;
+  }
+}
+
+@media (max-width: 699px) {
+  body.bz-shell .bz-readout__item--level {
+    display: none;
+  }
+}
+
+@media (max-width: 559px) {
+  body.bz-shell .bz-readout {
+    display: none;
+  }
+}
+
+/* Interface hidden: the strip's bar and words go; the hide button stays, to bring it back. */
+body.bz-shell.chrome-hidden .bz-strip {
+  background: transparent;
+  pointer-events: none;
+}
+
+body.bz-shell.chrome-hidden .bz-menuname,
+body.bz-shell.chrome-hidden .bz-readout,
+body.bz-shell.chrome-hidden .bz-strip__btn {
+  visibility: hidden;
+}
+
+body.bz-shell.chrome-hidden .bz-strip__hide {
+  pointer-events: auto;
+}
+
+/* --- panels and their folder tabs ----------------------------------------
+   One panel open per side, 304px wide, under a row of two tabs. The tab is
+   a child of its own panel but fixed to the screen: shellLayout.ts sets its
+   place along the edge, and the panel's height limits (--bz-max-left and
+   --bz-max-right). */
+body.bz-shell .panel {
+  position: fixed;
+  top: 56px;
+  bottom: auto;
+  width: min(304px, 100vw);
+  max-height: var(--bz-max-left, calc(100vh - 72px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bz-panel-fill);
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+  z-index: 14;
+}
+
+body.bz-shell .panel--left {
+  left: 0;
+  right: auto;
+}
+
+body.bz-shell .panel:not(.panel--left) {
+  left: auto;
+  right: 0;
+  max-height: var(--bz-max-right, calc(100vh - 72px));
+}
+
+body.bz-shell .panel--model,
+body.bz-shell .panel--sculpt {
+  z-index: 15;
+}
+
+body.bz-shell .panel.panel--collapsed {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Present mode keeps the Render panel, which ends above the bar's two rows. */
+body.bz-shell.presenting .panel--render {
+  max-height: min(var(--bz-max-right, 9999px), calc(100vh - 56px - 170px));
+}
+
+/* The heading: what the panel is about, 20px bold; no close button in it. */
+body.bz-shell .panel__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 8px;
+  border: 0;
+}
+
+body.bz-shell .panel__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bz-text);
+  font: 700 20px/24px var(--bz-font);
+}
+
+body.bz-shell .panel__close,
+body.bz-shell .handle__arrow {
+  display: none;
+}
+
+/* Solo, said on the Scene tab while that panel is closed: after the name, in orange. */
+body.bz-shell .handle__note {
+  margin-left: 8px;
+  writing-mode: horizontal-tb;
+  letter-spacing: 0;
+  text-transform: none;
+  font: 400 11px/1 var(--bz-font-mono);
+  color: var(--bz-orange);
+}
+
+/* The Tool panel's section heading says what the panel's heading now does. */
+body.bz-shell .bz-section-named {
+  display: none;
+}
+
+body.bz-shell .panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bz-line) transparent;
+}
+
+body.bz-shell .panel__body::-webkit-scrollbar {
+  width: 4px;
+}
+
+body.bz-shell .panel__body::-webkit-scrollbar-thumb {
+  background: var(--bz-line);
+  border-radius: 0;
+}
+
+body.bz-shell .panel__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The tab: 28px tall, 4px under the strip, flush to the edge. A tab whose
+   panel is closed sits on the strip's colour; the open panel's is the
+   panel's own, and joins it. */
+body.bz-shell .panel > .panel__handle {
+  position: fixed;
+  top: 28px;
+  width: auto;
+  min-width: 0;
+  height: 28px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bz-strip);
+  color: var(--bz-text-2);
+  font: 400 13px/1 var(--bz-font);
+  white-space: nowrap;
+  cursor: pointer;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+body.bz-shell .panel--left > .panel__handle {
+  left: 0;
+  right: auto;
+}
+
+body.bz-shell .panel:not(.panel--left) > .panel__handle {
+  left: auto;
+  right: 0;
+}
+
+body.bz-shell .panel > .panel__handle:hover {
+  color: var(--bz-text);
+}
+
+body.bz-shell .panel > .panel__handle:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .panel:not(.panel--collapsed) > .panel__handle {
+  background: var(--bz-panel-fill);
+  color: var(--bz-text);
+  font-weight: 600;
+}
+
+body.bz-shell .panel .handle__label {
+  display: block;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: inherit;
+}
+
+/* Hidden interface and Present take the tabs of what they put away. */
+body.bz-shell.chrome-hidden .panel > .panel__handle,
+body.bz-shell.presenting .panel:not(.panel--render) > .panel__handle {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* A phone: an open panel may cover the width. */
+@media (max-width: 599px) {
+  body.bz-shell .panel {
+    width: 100vw;
+  }
+}
+
+/* --- the tool bar ----------------------------------------------------------
+   One box at the bottom centre, flush to the edge, as wide as its tools. */
+body.bz-shell .sculpt-toolbar {
+  left: 50%;
+  right: auto;
+  display: block;
+  padding: 0;
+  transform: translateX(-50%);
+  max-width: 100vw;
+  bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body.bz-shell .sculpt-toolbar--raised {
+  bottom: 92px;
+}
+
+body.bz-shell .sculpt-toolbar__brushes {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  max-width: 100vw;
+  overflow: visible;
+  background: var(--bz-panel);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Where it does not fit it scrolls sideways (the active tool kept in view by the mode). */
+@media (max-width: 620px) {
+  body.bz-shell .sculpt-toolbar__brushes {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+}
+
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--bz-text);
+}
+
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn .fi {
+  font-size: 22px;
+}
+
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__svg {
+  width: 22px;
+  height: 22px;
+}
+
+@media (hover: hover) {
+  body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn:hover {
+    background: var(--bz-hover);
+  }
+}
+
+/* The tool in hand: orange, its icon and digit black. */
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn.sculpt-toolbar__btn--active,
+body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn.sculpt-toolbar__btn--active:hover {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+body.bz-shell .sculpt-toolbar__key {
+  right: 4px;
+  bottom: 3px;
+  font: 400 11px/1 var(--bz-font-mono);
+  color: var(--bz-text-2);
+}
+
+body.bz-shell .sculpt-toolbar__btn--active .sculpt-toolbar__key {
+  color: var(--bz-on-accent);
+}
+
+/* View > Hotkeys on tools. */
+body.bz-shell.bz-no-toolkeys .sculpt-toolbar__brushes .sculpt-toolbar__key {
+  display: none;
+}
+
+/* The name of a tool, above it while it is hovered or has the keyboard. */
+body.bz-shell .sculpt-toolbar__btn .bz-tip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+body.bz-shell .sculpt-toolbar__btn .bz-tip__key {
+  font: 400 11px/16px var(--bz-font-mono);
+  color: var(--bz-text-2);
+}
+
+@media (hover: hover) {
+  body.bz-shell .sculpt-toolbar__btn:hover .bz-tip {
+    display: flex;
+  }
+}
+
+body.bz-shell .sculpt-toolbar__btn:focus-visible .bz-tip {
+  display: flex;
+}
+
+/* --- the edge controls ------------------------------------------------------
+   Bottom left, 16px in, no box behind any of them. Top down: the brush
+   Size and Strength fields (while the Tool panel is closed), Solo, Redo,
+   Undo and Negative. */
+body.bz-shell .bz-edge {
+  position: fixed;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  user-select: none;
+}
+
+body.bz-shell .bz-edge__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* A 40px square, a bare icon: hover fills, a button with nothing to do is dim. */
+body.bz-shell .bz-edge .sculpt-histbtn,
+body.bz-shell .bz-edge .sculpt-solobtn,
+body.bz-shell .bz-edge .sculpt-toolbar__btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--bz-text);
+  opacity: 1;
+}
+
+body.bz-shell .bz-edge .sculpt-histbtn svg {
+  width: 20px;
+  height: 20px;
+}
+
+body.bz-shell .bz-edge .sculpt-solobtn .fi,
+body.bz-shell .bz-edge .sculpt-toolbar__btn .fi {
+  font-size: 20px;
+}
+
+body.bz-shell .bz-edge .sculpt-toolbar__svg {
+  width: 20px;
+  height: 20px;
+}
+
+body.bz-shell .bz-edge .sculpt-hist {
+  gap: 0;
+  align-items: stretch;
+}
+
+body.bz-shell .bz-edge .sculpt-histbtn:not(:disabled):hover,
+body.bz-shell .bz-edge .sculpt-histbtn:not(:disabled):active,
+body.bz-shell .bz-edge .sculpt-solobtn:not(:disabled):hover,
+body.bz-shell .bz-edge .sculpt-solobtn:not(:disabled):active,
+body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='false']:not(:disabled):hover,
+body.bz-shell .bz-edge .sculpt-toolbar__btn:hover {
+  background: var(--bz-hover);
+  border: 0;
+  color: var(--bz-text);
+  opacity: 1;
+}
+
+body.bz-shell .bz-edge .sculpt-histbtn:disabled,
+body.bz-shell .bz-edge .sculpt-solobtn:disabled {
+  background: none;
+  color: var(--bz-text-3);
+  opacity: 1;
+}
+
+/* Solo on and Negative latched are tools in hand: orange, icon black. Negative armed for a stroke: lifted, its icon orange. */
+body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true'],
+body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true']:hover,
+body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true']:active,
+body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--active,
+body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--active:hover {
+  background: var(--bz-orange);
+  border: 0;
+  color: var(--bz-on-accent);
+  opacity: 1;
+}
+
+body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--armed,
+body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--armed:hover {
+  background: var(--bz-hover);
+  background-image: none;
+  border: 0;
+  color: var(--bz-orange);
+}
+
+/* The Negative button had a hotkey badge once; it has none here. */
+body.bz-shell .bz-edge .sculpt-toolbar__key {
+  display: none;
+}
+
+body.bz-shell .bz-edge .sculpt-solo {
+  display: block;
+}
+
+/* The upright fields: a 1px line 160px tall, the amount in orange 3px wide
+   from its foot, the value above in mono, no handle; the finger drags in a
+   44px-wide zone. The nub is not drawn, but stays where the value is, for
+   the number field a double press opens beside it. */
+body.bz-shell .bz-edge .sculpt-slider {
+  position: relative;
+  width: 44px;
+  height: 160px;
+  margin: 18px 0 0 -2px;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-edge .sculpt-slider__track {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  border-radius: 0;
+  background: var(--bz-line);
+  opacity: 1;
+}
+
+body.bz-shell .bz-edge .sculpt-slider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 3px;
+  height: calc(var(--amount, 0) * 1%);
+  transform: translateX(-50%);
+  background: var(--bz-orange);
+  pointer-events: none;
+}
+
+body.bz-shell .bz-edge .sculpt-slider__nub {
+  width: 0;
+  height: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  visibility: hidden;
+}
+
+body.bz-shell .bz-edge .sculpt-slider__val {
+  position: absolute;
+  left: 0;
+  width: 44px;
+  text-align: center;
+  bottom: calc(100% + 4px);
+  color: var(--bz-text);
+  font: 400 11px/14px var(--bz-font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Armature stands the undo and redo buttons in the same place. */
+body.bz-shell .armature-hist {
+  position: static;
+}

@@ -46,6 +46,20 @@ export interface SettingsValues {
   stallLog: OnOff;
   /** The input log overlay in Sculpt (what ?inputdebug=1 shows). */
   inputLog: OnOff;
+  /**
+   * Hotkey digits on the tool bar (View > Hotkeys on tools). On where a
+   * mouse is the pointer, off on a touch screen, which has no keys to show.
+   */
+  toolKeys: OnOff;
+}
+
+/** Whether the device's main pointer is a fine one (a mouse or trackpad), the tool keys' default. */
+function finePointer(): boolean {
+  try {
+    return window.matchMedia('(pointer: fine)').matches;
+  } catch {
+    return true;
+  }
 }
 
 const DEFAULTS: SettingsValues = {
@@ -57,6 +71,7 @@ const DEFAULTS: SettingsValues = {
   meter: 'off',
   stallLog: 'off',
   inputLog: 'off',
+  toolKeys: finePointer() ? 'on' : 'off',
 };
 
 const ON_OFF = ['on', 'off'] as const;
@@ -80,6 +95,7 @@ const ALLOWED: { [K in keyof SettingsValues]: SettingsValues[K] extends number ?
   meter: ON_OFF,
   stallLog: ON_OFF,
   inputLog: ON_OFF,
+  toolKeys: ON_OFF,
 };
 
 /** Whether `value` is one `key` accepts. */

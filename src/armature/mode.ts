@@ -14,13 +14,17 @@ import { settings } from '../ui/settings';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
+import { TitleStrip } from '../sculpt/ui/TitleStrip';
+import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
+import { rememberPanels } from '../sculpt/ui/panelMemory';
+import '../sculpt/ui/shell.css';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
-import { ArmaturePanel } from './ArmaturePanel';
+import { ArmaturePanel, prettyName } from './ArmaturePanel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
 import { armatureStamp, packArmature, unpackArmature } from './file';
@@ -1064,7 +1068,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     undoStack.push(last);
     void applyState(next);
   };
-  // The chips where Sculpt has them, at the foot of the left edge.
+  // The title strip, and the undo and redo buttons where Sculpt has them,
+  // at the foot of the left edge.
+  const strip = new TitleStrip();
+  const chrome = pageChrome();
+  strip.onToggleChrome = () => chrome.toggle();
+  chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
   const histButtons = new HistoryButtons({
     undo,
     redo,
@@ -1072,7 +1081,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     canRedo: () => redoStack.length > 0,
   });
   histButtons.el.classList.add('armature-hist');
-  document.body.appendChild(histButtons.el);
+  const edge = document.createElement('div');
+  edge.className = 'bz-edge';
+  edge.appendChild(histButtons.el);
+  document.body.appendChild(edge);
 
   /**
    * The gallery card's picture. It is taken on the way out, and carried by
@@ -1165,16 +1177,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     void snapshot(false);
   };
   window.addEventListener('pagehide', onHidden);
-  const galleryLink = document.querySelector<HTMLAnchorElement>('.viewer-back');
-  const onLeave = (e: MouseEvent): void => {
-    if (!galleryLink || e.defaultPrevented || e.button !== 0) return;
-    e.preventDefault();
+  // File > Close, which the "← Gallery" chip used to be.
+  const leaveForGallery = (): void => {
     void snapshot().finally(() => {
-      // The site's root, never the link's own address (main.ts addGalleryLink).
+      // The site's root, whatever the address says (main.ts addGalleryLink).
       window.location.href = '/';
     });
   };
-  galleryLink?.addEventListener('click', onLeave);
   // Signing in again and reloading onto an update leave the page and come
   // back (ui/leaving): the figure is saved and pictured first, as leaving
   // for the gallery does.
@@ -1567,20 +1576,54 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
       { separator: true },
       { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
+      { separator: true },
+      { label: 'Close', hint: 'Back to the gallery', action: leaveForGallery },
     ],
     'file-menu--file',
+    strip.menus,
+    true,
   );
   const editMenu = new TopMenu(
     'Edit',
     [
-      { label: 'Undo', action: undo },
-      { label: 'Redo', action: redo },
+      { label: 'Undo', key: keyFor('arm.undo'), action: undo },
+      { label: 'Redo', key: keyFor('arm.redo'), action: redo },
       { separator: true },
       { label: 'Preferences…', action: () => showPreferences('armature') },
     ],
     'file-menu--edit',
+    strip.menus,
+    true,
   );
-  const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
+  const viewMenu = new TopMenu(
+    'View',
+    viewMenuItems({
+      frameAll: frame,
+      wireframe: { get: () => viewer.isWireframe(), toggle: () => viewer.toggleWireframe() },
+      panels: [
+        ['armature', 'Armature'],
+        ['settings', 'Render'],
+      ],
+      hideInterface: () => chrome.set(true),
+    }),
+    'file-menu--view',
+    strip.menus,
+    true,
+  );
+  const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
+  // Which panel was open on each side last time, open again; kept from here on.
+  const offPanelMemory = rememberPanels('armature');
+  // The readout: the project's name when it has one, the part in hand, the figure's triangles.
+  const paintReadout = (): void => {
+    const tris = armature.mesh.geometry.getIndex();
+    strip.setReadout({
+      name: link?.title ?? null,
+      object: selected ? prettyName(selected) : null,
+      tris: tris ? Math.round(tris.count / 3) : null,
+    });
+  };
+  paintReadout();
+  const readoutTimer = window.setInterval(paintReadout, 500);
 
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
@@ -1794,7 +1837,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     window.removeEventListener('bozzetto:look-reset', onLookReset);
     window.removeEventListener('pagehide', onHidden);
     offLeaving();
-    galleryLink?.removeEventListener('click', onLeave);
     select(null);
     viewer.fastFrames = false;
     viewer.interactionProbe = null;
@@ -1820,11 +1862,17 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.lockFloor(viewer.manifestFloor());
     handleGeometry.dispose();
     panel.dispose();
+    clearInterval(readoutTimer);
+    offPanelMemory();
     fileMenu.dispose();
     editMenu.dispose();
+    viewMenu.dispose();
     helpMenu.dispose();
     if (pendingStep) clearTimeout(pendingStep);
     histButtons.dispose();
+    edge.remove();
+    chrome.onChange = null;
+    strip.dispose();
     openInput.remove();
     modelInput.remove();
     delete (window as unknown as { __armature?: object }).__armature;

@@ -2,27 +2,31 @@ import type { InputShell } from '../bridge/InputShell';
 import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
 import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
 import { onTap } from '../../ui/dom';
+import { SHELL_LAYOUT_EVENT } from './shellLayout';
 import { chordParts, keymap } from '../../ui/keymap';
 // Flaticon uicons bold straight (fi-bs-*), for the Solo button's glyph; the
 // font only downloads when that glyph first renders. Attribution: README.
 import '@flaticon/flaticon-uicons/css/bold/straight.css';
 
 /**
- * Minimal Procreate-style left rail (WS2h review request + undo round): two
- * thin vertical tracks - brush size on top (log-mapped over 5..500 px so
- * small brushes get room), strength below (linear: 0 to 5 cm for the
- * brushes whose strength is a length, 0..1 for the rest) - each just a track
- * and a nub, the Solo button between them, then undo/redo chips at the foot
- * of the rail, mirroring where
- * Procreate parks its history arrows. Slider values stay live in both
- * directions: dragging updates the tool (with the centered preview ring),
- * and every other route (digits, b/s drags, wheel keys, tool switches)
- * moves the nubs through InputShell.onBrushChange. The history buttons act
- * on tap and auto-repeat while held; their enabled state is re-checked by
+ * The edge controls at the bottom left (docs/ui-spec.md section 6): a
+ * column of bare icon buttons, bottom up Negative, Undo, Redo and Solo,
+ * with the brush Strength and Size above them as two upright fields - a
+ * 1px line, the amount in orange from its foot, the value above, no
+ * handle - dragged up and down in a zone 44px wide. The size is
+ * log-mapped over 5..500 px so small brushes get room; the strength is
+ * linear: 0 to 5 cm for the brushes whose strength is a length, 0..1 for
+ * the rest. Both show only while the Tool panel is closed (its own rows
+ * say the same), and for a moment when a hotkey or a tool switch moves
+ * them while it is open. Values stay live in both directions: dragging
+ * updates the tool (with the centered preview ring), and every other
+ * route (digits, b/s drags, wheel keys, tool switches) moves the fields
+ * through InputShell.onBrushChange. The history buttons act on tap and
+ * auto-repeat while held; their enabled state is re-checked by
  * refreshHistory(), which the mode tick polls (cheap: two flag reads, DOM
- * touched only on change). A double-tap on either track opens a number
+ * touched only on change). A double-tap on either field opens a number
  * field beside it, as every slider's double-click does (sliderEntry): a
- * size typed past 500 px is kept, and the nub pins at the top.
+ * size typed past 500 px is kept, and the amount pins at the top.
  */
 
 const R_MIN = 5;
@@ -143,8 +147,14 @@ export interface SoloHooks {
   toggle(): void;
 }
 
+/** How long the fields stay up after a change made while the Tool panel is open. */
+const FLASH_MS = 1100;
+
 export class BrushSliders {
   private readonly root: HTMLDivElement;
+  private readonly fields: HTMLDivElement;
+  private readonly vals: { size: HTMLElement; strength: HTMLElement };
+  private flashTimer = 0;
   private readonly nubs: { size: HTMLDivElement; strength: HTMLDivElement };
   private readonly hist: HistoryButtons;
   private readonly soloBtn: HTMLButtonElement | null = null;
@@ -155,12 +165,17 @@ export class BrushSliders {
     private readonly input: InputShell,
     history: HistoryHooks,
     private readonly solo?: SoloHooks,
+    /** Negative, the bottom of the column (the tool bar owns its press logic). */
+    negative?: HTMLElement,
   ) {
     this.root = document.createElement('div');
-    this.root.className = 'sculpt-sliders';
+    this.root.className = 'sculpt-sliders bz-edge';
+    this.fields = document.createElement('div');
+    this.fields.className = 'bz-edge__fields';
     const size = this.buildSlider('size', 'Brush size');
     const strength = this.buildSlider('strength', 'Brush strength');
     this.nubs = { size: size.nub, strength: strength.nub };
+    this.vals = { size: size.val, strength: strength.val };
     this.hist = new HistoryButtons(history);
     // Solo, at the head of the rail above both tracks (owner layout call): the
     // view's one toggle a hand on the rail reaches for, Alt+Q's twin on a
@@ -187,12 +202,24 @@ export class BrushSliders {
       this.titleSolo();
       this.offKeymap = keymap.onChange(() => this.titleSolo());
     }
-    this.root.append(size.el, strength.el, this.hist.el);
+    this.fields.append(size.el, strength.el);
+    // The fields lead, then Solo (already in the root), then the history
+    // and Negative, which is the foot of the column.
+    this.root.prepend(this.fields);
+    this.root.append(this.hist.el);
+    if (negative) this.root.append(negative);
     document.body.appendChild(this.root);
 
-    this.input.onBrushChange = () => this.refresh();
+    this.input.onBrushChange = () => {
+      this.refresh();
+      this.flash();
+    };
+    window.addEventListener('bozzetto:panel-open', this.onPanel);
+    window.addEventListener('bozzetto:panel-close', this.onPanel);
+    window.addEventListener('bozzetto:panel-close-all', this.onPanel);
     this.refresh();
     this.refreshHistory();
+    this.paintFields();
   }
 
   /** "Solo (Alt+Q)", from the keymap, so a rebind shows at once. */
@@ -219,10 +246,41 @@ export class BrushSliders {
     }
   }
 
+  /** Whether the Tool panel is open, whose own rows then say what the fields do. */
+  private toolPanelOpen(): boolean {
+    const p = document.querySelector('.panel--sculpt');
+    return !!p && !p.classList.contains('panel--collapsed');
+  }
+
+  private paintFields(): void {
+    const hidden = this.toolPanelOpen() && !this.flashTimer;
+    if (this.fields.hidden === hidden) return;
+    this.fields.hidden = hidden;
+    window.dispatchEvent(new Event(SHELL_LAYOUT_EVENT));
+  }
+
+  private readonly onPanel = (): void => {
+    // A panel's events come before its class changes settle in some orders;
+    // the next frame has the truth.
+    this.paintFields();
+    requestAnimationFrame(() => this.paintFields());
+  };
+
+  /** Show the fields for a moment, for a change made with the Tool panel open. */
+  private flash(): void {
+    if (!this.toolPanelOpen()) return;
+    window.clearTimeout(this.flashTimer);
+    this.flashTimer = window.setTimeout(() => {
+      this.flashTimer = 0;
+      this.paintFields();
+    }, FLASH_MS);
+    this.paintFields();
+  }
+
   private buildSlider(
     kind: 'size' | 'strength',
     title: string,
-  ): { el: HTMLDivElement; nub: HTMLDivElement } {
+  ): { el: HTMLDivElement; nub: HTMLDivElement; val: HTMLElement } {
     const el = document.createElement('div');
     el.className = 'sculpt-slider';
     el.dataset.kind = kind;
@@ -231,7 +289,11 @@ export class BrushSliders {
     track.className = 'sculpt-slider__track';
     const nub = document.createElement('div');
     nub.className = 'sculpt-slider__nub';
-    el.append(track, nub);
+    // The value stands above the line, in mono; the zone the finger drags
+    // in is the line's own height, so the label does not skew it.
+    const val = document.createElement('span');
+    val.className = 'sculpt-slider__val';
+    el.append(track, nub, val);
 
     const apply = (e: PointerEvent): void => {
       const rect = el.getBoundingClientRect();
@@ -279,7 +341,7 @@ export class BrushSliders {
         this.openField(kind, el, nub);
       },
     );
-    return { el, nub };
+    return { el, nub, val };
   }
 
   /**
@@ -341,6 +403,18 @@ export class BrushSliders {
     this.nubs.size.style.bottom = `${(Math.min(1, Math.max(0, tSize)) * 100).toFixed(1)}%`;
     const tStrength = this.input.getBrushIntensity() / this.input.strengthSpec().max;
     this.nubs.strength.style.bottom = `${(Math.min(1, Math.max(0, tStrength)) * 100).toFixed(1)}%`;
+    // The amount, as the stylesheet draws it from the line's foot, and its value.
+    const amount = (t: number): string => (Math.min(1, Math.max(0, t)) * 100).toFixed(1);
+    this.nubs.size.parentElement?.style.setProperty('--amount', amount(tSize));
+    this.nubs.strength.parentElement?.style.setProperty('--amount', amount(tStrength));
+    this.setVal(this.vals.size, this.sizeText());
+    this.setVal(this.vals.strength, this.input.strengthText());
+  }
+
+  private setVal(el: HTMLElement, text: string): void {
+    // The number to two places at most: 2.8319 cm reads as 2.83 cm above a 44px line.
+    const t = text.trim().replace(/-?\d+(\.\d+)?/, (n) => String(Number(Number(n).toFixed(2))));
+    if (el.textContent !== t) el.textContent = t;
   }
 
   /** Enable/disable the history chips; DOM is touched only on change. */
@@ -353,6 +427,10 @@ export class BrushSliders {
 
   dispose(): void {
     this.offKeymap();
+    window.clearTimeout(this.flashTimer);
+    window.removeEventListener('bozzetto:panel-open', this.onPanel);
+    window.removeEventListener('bozzetto:panel-close', this.onPanel);
+    window.removeEventListener('bozzetto:panel-close-all', this.onPanel);
     this.hist.dispose();
     this.input.onBrushChange = null;
     this.root.remove();

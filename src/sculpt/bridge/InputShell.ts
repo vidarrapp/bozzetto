@@ -111,7 +111,7 @@ export interface InputShellHooks {
   dolly(factor: number, at: { x: number; y: number }): void;
   /** Tab: close open panels, then clear the standing interface. */
   toggleChrome(): void;
-  /** Shift+p (or the top row's Present): into Present mode, or back out of it. */
+  /** Shift+p (or View > Present mode): into Present mode, or back out of it. */
   togglePresent(): void;
   /** Space (play.toggle) in Present: the turntable on or off. */
   togglePlay(): void;

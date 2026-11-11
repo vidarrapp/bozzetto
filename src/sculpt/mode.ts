@@ -52,10 +52,13 @@ import { settings } from '../ui/settings';
 import { forcedByUrl } from '../ui/diagnostics';
 import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
-import { chordLabel, keymap } from '../ui/keymap';
 import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
+import { TitleStrip } from './ui/TitleStrip';
+import { keyFor, viewMenuItems } from './ui/viewMenu';
+import { rememberPanels } from './ui/panelMemory';
+import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -591,6 +594,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   let publishWindow: PublishWindow | null = null;
   let fileMenu: FileMenu | null = null;
   let editMenu: TopMenu | null = null;
+  let viewMenu: TopMenu | null = null;
   let helpMenu: TopMenu | null = null;
   let sculptPanel: SculptPanel | null = null;
   let sliders: BrushSliders | null = null;
@@ -724,6 +728,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // viewer's double-tap DoF lock stays off for the whole mode.
   viewer.tapToFocus = false;
 
+  // The title strip's readout, brought up to date; made below, once the strip is.
+  let refreshReadout: () => void = () => undefined;
   session.onActiveMeshChange = () => {
     const active = session.getMesh();
     if (active) {
@@ -737,6 +743,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshGroups();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
+    refreshReadout();
   };
   reconcile();
 
@@ -747,11 +754,23 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.onLevelChange = (sel, levels) => {
     levelToast.show(sel + 1, levels);
     modelPanel?.refreshTopology();
+    refreshReadout();
   };
 
-  // Top-left stats: active object name + live triangle count (the name
-  // column becomes the scene graph/outliner entry point later).
-  const stats = makeStatsCorner(session);
+  // The title strip: the menus, the readout of the project and the active
+  // object (name, live triangle count, level), Publish and the hide button.
+  // Its readout is what the stats corner at the top left of the view was.
+  const strip = new TitleStrip();
+  // The file actions come later in the mount; the readout asks through this.
+  let fileActionsRef: FileActions | null = null;
+  const readout = makeReadout(strip, session, {
+    projectName: () => fileActionsRef?.link?.title ?? openedName,
+    edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
+    onRefresh: () => {
+      modelPanel?.refreshHeading();
+    },
+  });
+  refreshReadout = readout.refresh;
 
   // The opt-in hardware input log, for bugs that only exist on a real
   // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
@@ -1016,19 +1035,31 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     spin.until = spin.lastTick + SPIN_COAST_MAX_MS;
   };
 
+  // F and A, and View > Frame selected and Frame all.
+  const frameModel = (): void => {
+    const active = session.getMesh();
+    if (!active) return;
+    endPivotOrbit();
+    editEpoch = -1;
+    // Only what shows: hidden poly groups are left out of the framing.
+    const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
+    viewer.frameBounds(box);
+    // Framing re-centres deliberately, so it also resets what you orbit
+    // around; otherwise the next drag would swing away from the framing.
+    box.getCenter(pivot);
+  };
+  const frameAll = (): void => {
+    const meshes = session.getMeshes().filter((m) => m.isVisible());
+    if (meshes.length === 0) return;
+    const box = visibleWorldBox(meshes[0], session.groups.hiddenFaces(meshes[0]));
+    for (let i = 1; i < meshes.length; i++) box.union(visibleWorldBox(meshes[i], session.groups.hiddenFaces(meshes[i])));
+    endPivotOrbit();
+    editEpoch = -1;
+    viewer.frameBounds(box);
+    box.getCenter(pivot);
+  };
   const input = new InputShell(session, container, cursor, {
-    frameModel: () => {
-      const active = session.getMesh();
-      if (!active) return;
-      endPivotOrbit();
-      editEpoch = -1;
-      // Only what shows: hidden poly groups are left out of the framing.
-      const box = visibleWorldBox(active, session.groups.hiddenFaces(active));
-      viewer.frameBounds(box);
-      // Framing re-centres deliberately, so it also resets what you orbit
-      // around; otherwise the next drag would swing away from the framing.
-      box.getCenter(pivot);
-    },
+    frameModel,
     selectModeChanged: (on) => {
       toolbar.setSelectActive(on);
       sculptPanel?.refreshBrush();
@@ -1063,16 +1094,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     mergeSelected: () => scenePanel?.mergeSelected(),
     toggleSolo: () => setSolo(!session.isSolo()),
     stepObject: (dir, extend) => scenePanel?.step(dir, extend),
-    frameAll: () => {
-      const meshes = session.getMeshes().filter((m) => m.isVisible());
-      if (meshes.length === 0) return;
-      const box = visibleWorldBox(meshes[0], session.groups.hiddenFaces(meshes[0]));
-      for (let i = 1; i < meshes.length; i++) box.union(visibleWorldBox(meshes[i], session.groups.hiddenFaces(meshes[i])));
-      endPivotOrbit();
-      editEpoch = -1;
-      viewer.frameBounds(box);
-      box.getCenter(pivot);
-    },
+    frameAll,
     // Remember where the work was; do NOT move the view for it. The jump
     // after every stroke was the objectionable part, not the re-pivot.
     // Zooms head there from now on, until a frame or a new object.
@@ -1317,9 +1339,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     else enterTransform('all');
   };
   toolbar.onToggleSelect = () => input.toggleSelect();
-  toolbar.onToggleChrome = () => chrome.toggle();
+  strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => {
-    toolbar.setChromeHidden(hidden);
+    strip.setChromeHidden(hidden);
   };
   sliders = new BrushSliders(input, {
     undo: () => session.undo(),
@@ -1330,7 +1352,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     isSolo: () => session.isSolo(),
     canSolo: () => !!session.getMesh(),
     toggle: () => setSolo(!session.isSolo()),
-  });
+  }, toolbar.negativeEl);
   // How the file actions reach the viewer's look, so .bozz files carry it.
   const lookBridge: LookBridge = {
     // A save is of one view: Present's turntable stops for it.
@@ -1483,24 +1505,26 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     syncPoint: () => persist.editCount(),
     onSynced: (at) => persist.markSynced(at),
   });
+  fileActionsRef = fileActions;
   fileActions.adoptLink(bootLink);
   fileActions.adoptUnsent(bootUnsent);
-  // The top row's File and Edit menus.
+  // Where File > Close goes: set once the snapshot is defined, below.
+  let leaveForGallery: () => void = () => undefined;
+  // The title strip's menus: File, Edit, View and Help, in that order.
   {
-    fileMenu = new FileMenu(fileActions);
-    // The hotkey bound to an action, as the guide writes it; '' when unbound.
-    const keyFor = (id: string) => (): string => {
-      const chord = keymap.chordFor(id);
-      return chord ? chordLabel(chord) : '';
-    };
+    fileMenu = new FileMenu(fileActions, strip.menus, {
+      close: () => leaveForGallery(),
+      publish: () => publishWindow?.toggle(),
+      canPublish: () => !!publishWindow?.isAvailable(),
+    });
     // What used to be the Scene panel's buttons (owner call: only Create
     // stays there), each on the whole selection as before.
     const acts = (): boolean => !!scenePanel?.hasTargets();
     editMenu = new TopMenu(
       'Edit',
       [
-        { label: 'Undo', action: () => session.undo() },
-        { label: 'Redo', action: () => session.redo() },
+        { label: 'Undo', key: keyFor('edit.undo'), action: () => session.undo() },
+        { label: 'Redo', key: keyFor('edit.redo'), action: () => session.redo() },
         { separator: true },
         { label: 'Duplicate', enabled: acts, action: () => scenePanel?.duplicateSelected() },
         { label: 'Delete', key: keyFor('scene.delete'), enabled: acts, action: () => scenePanel?.deleteSelected() },
@@ -1563,14 +1587,39 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         { label: 'Preferences…', action: () => showPreferences('sculpt') },
       ],
       'file-menu--edit',
+      strip.menus,
+      true,
+    );
+    // View: framing, the viewport's switches, the panels, Hide interface
+    // and Present: each the command its hotkey runs.
+    viewMenu = new TopMenu(
+      'View',
+      viewMenuItems({
+        frameSelected: frameModel,
+        frameAll,
+        wireframe: { get: () => viewer.isWireframe(), toggle: () => viewer.toggleWireframe() },
+        groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
+        toolKeys: true,
+        panels: [
+          ['scene', 'Scene'],
+          ['model', 'Model'],
+          ['sculpt', 'Tool'],
+          ['settings', 'Render'],
+        ],
+        hideInterface: () => chrome.set(true),
+        present: () => present?.toggle(),
+      }),
+      'file-menu--view',
+      strip.menus,
+      true,
     );
     // Help beside them: the topics, the hotkey guide, and who made what.
-    helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help');
+    helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
   }
-  // Built after File and Edit so its chip lands beside them in the row.
-  // The chip stays hidden until the role probe below has found a sign-in.
-  publishWindow = new PublishWindow();
-  // Present mode's chip lands beside Publish's (ui/Present).
+  // Publish, at the right of the strip. The button stays hidden until the
+  // role probe below has found a sign-in.
+  publishWindow = new PublishWindow(strip.publishHost);
+  // Present mode has no button of its own: View > Present mode (ui/Present).
   const turnCentre = new Vector3();
   /** The middle of the visible scene's box, which the turntable turns about; false with nothing shown. */
   const sceneCentre = (into: Vector3): boolean => {
@@ -1636,6 +1685,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
     persist.markDirty();
     session.render();
+    refreshReadout();
   };
   scenePanel.onSolo = (on) => setSolo(on);
   // The Model panel's Merge (under Remesh) is the Edit menu's, and greys
@@ -1661,6 +1711,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     scenePanel?.refresh();
   };
   modelPanel.setMergeEnabled(scenePanel.canMerge());
+  // Which panel was open on each side last time, open again; kept from here on.
+  const offPanelMemory = rememberPanels('sculpt');
   // New, Open, a restore and Set scale can each move the scene between
   // real units and the old scale: the floor, the panels' units and the
   // Set scale offer follow.
@@ -1960,6 +2012,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow,
     fileMenu,
     editMenu,
+    viewMenu,
     helpMenu,
     fileActions,
     sculptPanel,
@@ -2010,18 +2063,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // Never block leaving the page over a thumbnail.
     }
   };
-  const galleryLink = document.querySelector<HTMLAnchorElement>('.viewer-back');
-  const onLeave = (e: MouseEvent): void => {
-    if (!galleryLink || e.defaultPrevented || e.button !== 0) return;
-    e.preventDefault();
+  // File > Close, which the "← Gallery" chip used to be.
+  leaveForGallery = (): void => {
     // The flush is what makes the card honest: the picture and the geometry
     // behind it must describe the same moment.
     void Promise.all([snapshot(), persist.flush(), storeLook()]).finally(() => {
-      // The site's root, never the link's own address (main.ts addGalleryLink).
+      // The site's root, whatever the address says (main.ts addGalleryLink).
       window.location.href = '/';
     });
   };
-  galleryLink?.addEventListener('click', onLeave);
   // Signing in again and reloading onto an update leave the page and come
   // back to it (ui/leaving): the scene goes as it goes to the gallery,
   // written and pictured first, and the autosave brings it back, link and
@@ -2056,7 +2106,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     present = null;
     session.onLevelChange = null;
     levelToast.dispose();
-    stats.dispose();
+    offPanelMemory();
+    readout.dispose();
+    strip.dispose();
     gizmo.dispose();
     // Solo belongs to this visit, not to the scene: every object gets its
     // own eye back before the last autosave lets go.
@@ -2069,6 +2121,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     publishWindow?.dispose();
     fileMenu?.dispose();
     editMenu?.dispose();
+    viewMenu?.dispose();
     helpMenu?.dispose();
     for (const [, e] of extras) {
       viewer.removeSculptExtra(e.handle);
@@ -2078,7 +2131,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // The eye may have hidden the active object; the viewer's display mesh
     // outlives sculpt mode and must come back visible for playback.
     viewer.setSculptVisible(true);
-    galleryLink?.removeEventListener('click', onLeave);
     offInputDebug();
     inputDebug?.dispose();
     inputDebug = null;
@@ -2131,27 +2183,37 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
 }
 
-/** Top-left corner stats: object name + live poly count (polled, cheap). */
-function makeStatsCorner(session: SculptSession): { dispose(): void } {
-  const el = document.createElement('div');
-  el.className = 'sculpt-stats';
-  const name = document.createElement('div');
-  name.className = 'sculpt-stats__name';
-  const tris = document.createElement('div');
-  tris.className = 'sculpt-stats__tris';
-  el.append(name, tris);
-  document.body.appendChild(el);
+/**
+ * The title strip's readout: the project's name (and "Edited" while it has
+ * changes not saved anywhere), then the active object's name, its live
+ * triangle count and its level. Polled, cheap, written only where it
+ * changed; `refresh` also runs on the events that move it. `onRefresh`
+ * keeps the panels' headings in step.
+ */
+function makeReadout(
+  strip: TitleStrip,
+  session: SculptSession,
+  from: { projectName: () => string | null | undefined; edited: () => boolean; onRefresh: () => void },
+): { refresh(): void; dispose(): void } {
   const update = (): void => {
     const mesh = session.getMesh();
-    name.textContent = mesh ? session.activeName() : 'Empty scene';
-    tris.textContent = mesh ? `${mesh.getNbTriangles().toLocaleString('en-US')} tris` : '';
+    const levels = session.getLevels();
+    const name = from.projectName() ?? null;
+    strip.setReadout({
+      name,
+      edited: !!name && from.edited(),
+      object: mesh ? session.activeName() : 'Empty scene',
+      tris: mesh ? mesh.getNbTriangles() : null,
+      level: levels && levels.levels > 0 ? { at: levels.sel + 1, of: levels.levels } : null,
+    });
+    from.onRefresh();
   };
   update();
   const timer = window.setInterval(update, 500);
   return {
+    refresh: update,
     dispose() {
       clearInterval(timer);
-      el.remove();
     },
   };
 }

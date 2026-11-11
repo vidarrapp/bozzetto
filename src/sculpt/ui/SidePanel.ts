@@ -2,25 +2,21 @@ import { div, onTap } from '../../ui/dom';
 import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
 
 /**
- * Shared shell for the docked sculpt panels: the sliding root, the edge
- * handle that doubles as the collapsed tab, the title bar with its close
- * button, and the scrolling body.
+ * Shared shell for the docked panels: the root, the folder tab at the top
+ * of its edge, the heading, and the scrolling body.
  *
- * Mutual collapse is SIDE-SCOPED. Each edge holds a stack of panels (right:
- * Render, Tool; left: Scene, Model) and only one per edge is open at a
- * time - but a left and a right panel can be open together, since they
- * never overlap. Panels announce themselves on 'bozzetto:panel-open' with
- * {id, side, top}; a panel collapses when a DIFFERENT id opens on the SAME
- * side. Older dispatchers that omit `side` are treated as right-edge,
- * which is where they all were.
+ * One panel is open per side. Each side holds two (left: Scene, Model;
+ * right: Tool, Render) and opening one closes the other: panels announce
+ * themselves on 'bozzetto:panel-open' with {id, side}, and a panel
+ * collapses when a DIFFERENT id opens on the SAME side. Older dispatchers
+ * that omit `side` are treated as right-edge. A left and a right panel can
+ * be open together, since they never overlap.
  *
- * Right-edge panels also DUCK THEIR TABS: an open right panel spans the
- * tab column, and any collapsed tab stacked at or below its top would
- * float over the open body (the lower panels out-z-index the upper ones so
- * their tabs stay clickable). Such a tab hides until the panel that
- * covered it announces 'bozzetto:panel-close'. Left-edge panels open clear
- * of their tab column (see .panel--left), so an open Scene never covers
- * Model's tab nor Model Scene's, and they never need this.
+ * The tab is the panel's way open and shut: pressing it opens the panel,
+ * pressing it again closes it, and there is no close button in the panel.
+ * Its place along the edge is shellLayout's; its look is shell.css's.
+ * 'bozzetto:panel-set' with {id, open} opens or closes a panel from
+ * outside (the View menu, Present mode putting things back).
  */
 
 export type PanelSide = 'left' | 'right';
@@ -28,7 +24,7 @@ export type PanelSide = 'left' | 'right';
 export interface SidePanelOptions {
   /** Unique id for the panel-open protocol. */
   id: string;
-  /** Title bar text and collapsed-tab label. */
+  /** The name on the tab, and the heading until the panel words it otherwise. */
   title: string;
   side: PanelSide;
   /** Extra class on the root (e.g. 'panel--scene') for per-panel geometry. */
@@ -40,10 +36,11 @@ export interface SidePanelOptions {
 export class SidePanel {
   protected readonly root: HTMLDivElement;
   protected readonly body: HTMLDivElement;
-  /** The name on the title bar and on the docked tab, for a panel that marks a state beside them. */
+  /** The heading at the top of the panel (setHeading words it). */
   protected readonly title: HTMLSpanElement;
+  /** The name on the tab. */
   protected readonly tabLabel: HTMLSpanElement;
-  private readonly handleArrow: HTMLSpanElement;
+  private readonly handle: HTMLButtonElement;
   private readonly side: PanelSide;
   private readonly id: string;
   private collapsed: boolean;
@@ -56,31 +53,19 @@ export class SidePanel {
     if (!this.collapsed) this.setCollapsed(true);
   };
 
-  /** Which open panel's body our tab is ducking under (or null). */
-  private tabHiddenBy: string | null = null;
-
   private readonly onOtherPanelOpen = (e: Event): void => {
-    const detail = (e as CustomEvent<{ id?: string; side?: PanelSide; top?: number }>).detail;
+    const detail = (e as CustomEvent<{ id?: string; side?: PanelSide }>).detail;
     if (!detail?.id || detail.id === this.id) return;
     if ((detail.side ?? 'right') !== this.side) return;
     if (!this.collapsed) this.setCollapsed(true);
-    // Duck the tab when the opened panel's body will cover its spot (right
-    // edge only; the -1 forgives sub-pixel rounding between the two rects).
-    if (
-      this.side === 'right' &&
-      typeof detail.top === 'number' &&
-      this.root.getBoundingClientRect().top >= detail.top - 1
-    ) {
-      this.tabHiddenBy = detail.id;
-      this.root.classList.add('panel--tab-hidden');
-    }
   };
 
-  private readonly onPanelClose = (e: Event): void => {
-    const detail = (e as CustomEvent<{ id?: string }>).detail;
-    if (!detail?.id || detail.id !== this.tabHiddenBy) return;
-    this.tabHiddenBy = null;
-    this.root.classList.remove('panel--tab-hidden');
+  /** Opened or closed from outside, by id. */
+  private readonly onPanelSet = (e: Event): void => {
+    const detail = (e as CustomEvent<{ id?: string; open?: boolean }>).detail;
+    if (detail?.id !== this.id || typeof detail.open !== 'boolean') return;
+    if (this.collapsed === !detail.open) return;
+    this.setCollapsed(!detail.open);
   };
 
   constructor(opts: SidePanelOptions) {
@@ -88,27 +73,25 @@ export class SidePanel {
     this.side = opts.side;
     this.collapsed = opts.collapsed ?? true;
 
-    // panel--left must ride along from the first paint: the collapse
-    // transform is direction-specific, and a panel that gets
-    // panel--collapsed without it slides off the WRONG edge, taking its
-    // tab off-screen with it. Both classes go on before the first paint so
-    // a panel that starts collapsed never animates its way out.
+    // panel--left rides along from the first paint, as does the collapsed
+    // class: a panel that starts collapsed must never show for a frame.
     this.root = div(
       `panel ${opts.side === 'left' ? 'panel--left ' : ''}${opts.variant}` +
         (this.collapsed ? ' panel--collapsed' : ''),
     );
+    // The panel's name, which the heading may not say (the object's, the tool's).
+    this.root.dataset.panel = opts.title;
     document.body.appendChild(this.root);
 
     const handle = document.createElement('button');
     handle.type = 'button';
-    handle.className = `panel__handle${opts.side === 'left' ? ' panel__handle--left' : ''}`;
+    handle.className = 'panel__handle';
     this.tabLabel = document.createElement('span');
     this.tabLabel.className = 'handle__label';
     this.tabLabel.textContent = opts.title;
-    this.handleArrow = document.createElement('span');
-    this.handleArrow.className = 'handle__arrow';
-    handle.append(this.tabLabel, this.handleArrow);
-    // A tap, not a click: the tab sits on the screen's edge, where a hand
+    handle.append(this.tabLabel);
+    this.handle = handle;
+    // A tap, not a click: the tab sits at the screen's edge, where a hand
     // rests, and a slow tap there must not become iOS's long press (onTap).
     onTap(handle, () => this.setCollapsed(!this.collapsed));
     this.root.appendChild(handle);
@@ -117,13 +100,7 @@ export class SidePanel {
     this.title = document.createElement('span');
     this.title.className = 'panel__title';
     this.title.textContent = opts.title;
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'panel__close';
-    close.textContent = opts.side === 'left' ? '‹' : '›';
-    close.setAttribute('aria-label', `Hide ${opts.title.toLowerCase()} panel`);
-    close.addEventListener('click', () => this.setCollapsed(true));
-    header.append(this.title, close);
+    header.appendChild(this.title);
     this.root.appendChild(header);
 
     this.body = div('panel__body');
@@ -131,8 +108,13 @@ export class SidePanel {
 
     this.applyCollapsed();
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-    window.addEventListener('bozzetto:panel-close', this.onPanelClose);
+    window.addEventListener('bozzetto:panel-set', this.onPanelSet);
     window.addEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
+  }
+
+  /** The panel's heading: the object's name in Model, the tool's in Tool. */
+  setHeading(text: string): void {
+    if (this.title.textContent !== text) this.title.textContent = text;
   }
 
   setCollapsed(collapsed: boolean): void {
@@ -140,10 +122,6 @@ export class SidePanel {
     this.collapsed = collapsed;
     this.applyCollapsed();
     if (!collapsed) {
-      // Opening clears our own duck state - the open panel hides its handle
-      // via CSS anyway, but the flag must not linger past our next close.
-      this.tabHiddenBy = null;
-      this.root.classList.remove('panel--tab-hidden');
       window.dispatchEvent(
         new CustomEvent('bozzetto:panel-open', {
           detail: { id: this.id, side: this.side, top: this.root.getBoundingClientRect().top },
@@ -163,15 +141,12 @@ export class SidePanel {
 
   private applyCollapsed(): void {
     this.root.classList.toggle('panel--collapsed', this.collapsed);
-    // The arrow points the way the panel travels on click.
-    const out = this.side === 'left' ? '›' : '‹';
-    const back = this.side === 'left' ? '‹' : '›';
-    this.handleArrow.textContent = this.collapsed ? out : back;
+    this.handle.setAttribute('aria-expanded', String(!this.collapsed));
   }
 
   dispose(): void {
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
-    window.removeEventListener('bozzetto:panel-close', this.onPanelClose);
+    window.removeEventListener('bozzetto:panel-set', this.onPanelSet);
     window.removeEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
     this.root.remove();
   }
