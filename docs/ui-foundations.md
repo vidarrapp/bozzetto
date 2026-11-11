@@ -63,7 +63,7 @@ layer does not try to.
 | --- | --- | --- |
 | Orange | #ff5a1f | The tool in hand; the amount in a field; the one main action of a window; the focus outline. Text on it is black |
 | Lime | #c6ff00 | The knob of a switch that is on |
-| Red | #ff4060 | Something went wrong; an action that cannot be undone. Text on it is black. It leans toward pink so it cannot be taken for the orange |
+| Red | #ff4060 | Something went wrong; an action that cannot be undone; the knob of a switch that is off (owner call, 2026-11-11). Text on it is black. It leans toward pink so it cannot be taken for the orange |
 
 The view axes keep their own red, green and blue.
 
@@ -77,7 +77,7 @@ The view axes keep their own red, green and blue.
 | Tool | No fill | Hover | | Orange, icon black | | |
 | Tab | Strip, secondary text | Text brightens | | Panel surface, joined to the panel | | |
 | Field | Line and orange amount | Label brightens | Dragging | Label bold when changed from default | Dim | |
-| Switch | Hover-grey box, grey knob at the left | | | Same box, lime knob at the right | | |
+| Switch | Hover-grey box, red knob at the left (off) | | | Same box, lime knob at the right (on) | | |
 | Menu row | No fill | Hover | | A check before it | Dim, with the reason | |
 | List row | No fill | Control | | Hover | | |
 
