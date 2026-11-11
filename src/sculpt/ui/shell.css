@@ -63,8 +63,14 @@ body.bz-shell .bz-strip {
   -webkit-user-select: none;
 }
 
-body.bz-shell .bz-strip__menus {
+body.bz-shell .bz-strip__left {
   grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+body.bz-shell .bz-strip__menus {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -169,22 +175,94 @@ body.bz-shell .bz-readout__val {
   font-weight: 700;
 }
 
+/* Narrow: the readout goes before the path does. */
 @media (max-width: 899px) {
-  body.bz-shell .bz-readout__item--tris {
-    display: none;
-  }
-}
-
-@media (max-width: 699px) {
-  body.bz-shell .bz-readout__item--level {
-    display: none;
-  }
-}
-
-@media (max-width: 559px) {
   body.bz-shell .bz-readout {
     display: none;
   }
+}
+
+/* --- the workspace path ----------------------------------------------------
+   After the menus: a 1px by 12px separator, then Armature, Sculpt, Present
+   with a quiet arrow between. The step you are in sits on the viewport's
+   colour and is bold; the others are dim and fill on hover. In Armature
+   Present is dimmer still and cannot be pressed. */
+body.bz-shell .bz-strip__sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 12px;
+  margin: 0 8px;
+  background: var(--bz-sep);
+}
+
+body.bz-shell .bz-ws {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  min-width: 0;
+}
+
+body.bz-shell .bz-ws__step {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 24px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.bz-shell .bz-ws__step:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+body.bz-shell .bz-ws__step:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .bz-ws__step--on,
+body.bz-shell .bz-ws__step--on:hover {
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+body.bz-shell .bz-ws__step--none,
+body.bz-shell .bz-ws__step--none:hover {
+  background: none;
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+body.bz-shell .bz-ws__sep {
+  color: var(--bz-text-3);
+  font: 400 13px/16px var(--bz-font);
+}
+
+/* A phone: the step you are in, and nothing else; the others are in the View menu. */
+@media (max-width: 599px) {
+  body.bz-shell .bz-ws__step:not([aria-current]),
+  body.bz-shell .bz-ws__sep {
+    display: none;
+  }
+}
+
+body.bz-shell.chrome-hidden .bz-strip__sep,
+body.bz-shell.chrome-hidden .bz-ws {
+  visibility: hidden;
 }
 
 /* Interface hidden: the strip's bar and words go; the hide button stays, to bring it back. */
@@ -245,11 +323,6 @@ body.bz-shell .panel--sculpt {
 body.bz-shell .panel.panel--collapsed {
   visibility: hidden;
   pointer-events: none;
-}
-
-/* Present mode keeps the Render panel, which ends above the bar's two rows. */
-body.bz-shell.presenting .panel--render {
-  max-height: min(var(--bz-max-right, 9999px), calc(100vh - 56px - 170px));
 }
 
 /* The heading: what the panel is about, 20px bold; no close button in it. */
@@ -378,9 +451,8 @@ body.bz-shell .panel .handle__label {
   color: inherit;
 }
 
-/* Hidden interface and Present take the tabs of what they put away. */
-body.bz-shell.chrome-hidden .panel > .panel__handle,
-body.bz-shell.presenting .panel:not(.panel--render) > .panel__handle {
+/* Hidden interface takes the tabs. */
+body.bz-shell.chrome-hidden .panel > .panel__handle {
   visibility: hidden;
   pointer-events: none;
 }
@@ -556,9 +628,11 @@ body.bz-shell .bz-edge .sculpt-toolbar__btn {
   opacity: 1;
 }
 
-body.bz-shell .bz-edge .sculpt-histbtn svg {
-  width: 20px;
-  height: 20px;
+body.bz-shell .bz-edge .sculpt-histbtn .fi {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 body.bz-shell .bz-edge .sculpt-solobtn .fi,
@@ -697,4 +771,147 @@ body.bz-shell .armature-hist {
    right-hand panel (304px now) rather than over its foot (ui/updateNotice). */
 body.bz-shell .update-notice--beside-panel {
   right: calc(316px + env(safe-area-inset-right, 0px));
+}
+
+/* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------
+   What edits is put away and locked: the tool bar, the edge controls, the
+   brush ring, the object stats, and the Scene, Model and Tool panels with
+   their tabs (display, so their tabs leave no gap in the row). Render and
+   Output remain as the right-hand tabs. The Output tab and panel exist in
+   Present only. */
+body.presenting .sculpt-toolbar__left,
+body.presenting .sculpt-toolbar__brushes,
+body.presenting .sculpt-sliders,
+body.presenting .bz-edge,
+body.presenting .sculpt-hist,
+body.presenting .sculpt-stats,
+body.presenting .sculpt-leveltoast,
+body.presenting .sculpt-cursor {
+  visibility: hidden !important;
+  opacity: 0;
+}
+
+body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output) {
+  visibility: hidden !important;
+}
+
+body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output) > .panel__handle {
+  display: none;
+}
+
+body.bz-shell:not(.presenting) .panel--output {
+  display: none;
+}
+
+body.bz-shell .panel--output {
+  z-index: 15;
+}
+
+/* The Output panel: the Image and Turntable sections' controls. */
+body.bz-shell .panel--output .section + .section {
+  margin-top: 16px;
+}
+
+body.bz-shell .present-out__note {
+  margin: 8px 0;
+  color: var(--bz-text-2);
+  font: 400 12px/16px var(--bz-font);
+}
+
+body.bz-shell .present-out__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.bz-shell .present-out__row[hidden] {
+  display: none;
+}
+
+body.bz-shell .present-out__progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 8px;
+}
+
+/* The bar where the tool bar was: bottom centre, flush, the panel's surface. */
+body.bz-shell .present-bar {
+  position: fixed;
+  left: 50%;
+  bottom: env(safe-area-inset-bottom, 0px);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100vw;
+  padding: 8px 12px;
+  background: var(--bz-panel);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.bz-shell .present-bar[hidden] {
+  display: none;
+}
+
+body.bz-shell .present-bar__play {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 36px;
+  padding: 0 8px;
+}
+
+body.bz-shell .present-bar__play .fi {
+  display: block;
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+body.bz-shell .present-bar__speed {
+  flex: 0 0 auto;
+  width: 168px;
+}
+
+body.bz-shell .present-bar__sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  background: var(--bz-sep);
+}
+
+body.bz-shell .present-bar__save {
+  flex: 0 0 auto;
+}
+
+body.bz-shell.chrome-hidden .present-bar {
+  visibility: hidden;
+}
+
+@media (max-width: 420px) {
+  body.bz-shell .present-bar__speed {
+    width: 112px;
+  }
+}
+
+/* Publish: only in Present, the one orange action of the workspace, at the
+   right of the strip. */
+body.bz-shell .bz-strip__btn.publish-window__chip,
+body.bz-shell .bz-strip__btn.publish-window__chip:hover,
+body.bz-shell .bz-strip__btn.publish-window__chip.topchip--open {
+  padding: 0 12px;
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+}
+
+body.bz-shell .bz-strip__btn.publish-window__chip[hidden] {
+  display: none;
 }

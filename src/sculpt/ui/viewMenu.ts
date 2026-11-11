@@ -22,12 +22,19 @@ export interface ViewHooks {
   /** The panels this mode has, in the order of the menu: [id, name]. */
   panels: Array<[id: string, name: string]>;
   hideInterface: () => void;
+  /**
+   * The workspaces, as the path in the strip has them: the way to the
+   * others from a window too narrow for the path. Each is left out where
+   * the mode cannot go there.
+   */
+  armature?: () => void;
+  sculpt?: { action: () => void; enabled?: () => boolean };
   present?: () => void;
 }
 
 /**
  * The View menu of the title strip, for Sculpt and Armature: framing, the
- * viewport's own switches, which panels are open, Hide interface, Present.
+ * viewport's own switches, which panels are open, Hide interface, the workspaces.
  * Each item is the existing command - the same function its hotkey runs -
  * with that hotkey shown at the right; the switches carry a check.
  */
@@ -71,7 +78,10 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
     { label: 'Hide interface', key: keyFor('ui.chrome'), action: hide },
   );
 
-  const present = h.present;
-  if (present) group({ label: 'Present mode', key: keyFor('ui.present'), action: present });
+  const spaces: MenuItem[] = [];
+  if (h.armature) spaces.push({ label: 'Armature', action: h.armature });
+  if (h.sculpt) spaces.push({ label: 'Sculpt', action: h.sculpt.action, enabled: h.sculpt.enabled });
+  if (h.present) spaces.push({ label: 'Present', key: keyFor('ui.present'), action: h.present });
+  group(...spaces);
   return items;
 }

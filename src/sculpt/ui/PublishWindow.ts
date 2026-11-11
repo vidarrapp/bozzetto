@@ -44,6 +44,7 @@ export class PublishWindow {
   private readonly autosaveNote: HTMLDivElement;
   private opened = false;
   private available = false;
+  private inPresent = false;
   /** Where the window was put; shown clamped to the screen, kept as put. */
   private pos: Position | null = readPosition();
   private drag: { id: number; dx: number; dy: number } | null = null;
@@ -127,8 +128,21 @@ export class PublishWindow {
    */
   setAvailable(available: boolean): void {
     this.available = available;
-    this.chip.hidden = !available;
+    this.paintChip();
     if (!available) this.close();
+  }
+
+  /**
+   * The strip's Publish button exists only in Present, as the end of the
+   * workspace path; File > Publish opens the window from any workspace.
+   */
+  setInPresent(inPresent: boolean): void {
+    this.inPresent = inPresent;
+    this.paintChip();
+  }
+
+  private paintChip(): void {
+    this.chip.hidden = !(this.available && this.inPresent);
   }
 
   toggle(): void {
@@ -201,7 +215,10 @@ export class PublishWindow {
    * layout boxes say where a docked panel opens.
    */
   private underChip(): Position {
-    const r = this.chip.getBoundingClientRect();
+    // The chip stands in the strip in Present only: elsewhere (File > Publish) the window opens from the strip's right end.
+    const r = this.chip.hidden
+      ? { right: window.innerWidth - 12, bottom: 24 }
+      : this.chip.getBoundingClientRect();
     let edge = r.right;
     for (const p of document.querySelectorAll<HTMLElement>('.panel:not(.panel--left)')) {
       if (!p.classList.contains('panel--collapsed')) edge = Math.min(edge, p.getBoundingClientRect().left - EDGE);

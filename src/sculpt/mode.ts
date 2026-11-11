@@ -56,6 +56,7 @@ import { TopMenu } from './ui/TopMenu';
 import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip } from './ui/TitleStrip';
+import { askWindow } from '../ui/askWindow';
 import { keyFor, viewMenuItems } from './ui/viewMenu';
 import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
@@ -763,12 +764,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const strip = new TitleStrip();
   // The file actions come later in the mount; the readout asks through this.
   let fileActionsRef: FileActions | null = null;
+  let goArmature: () => Promise<void> = async () => undefined;
   const readout = makeReadout(strip, session, {
     projectName: () => fileActionsRef?.link?.title ?? openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
     onRefresh: () => {
       modelPanel?.refreshHeading();
     },
+    frame: () => (presenting ? viewer.viewportSize() : null),
   });
   refreshReadout = readout.refresh;
 
@@ -1607,6 +1610,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           ['settings', 'Render'],
         ],
         hideInterface: () => chrome.set(true),
+        armature: () => void goArmature(),
+        sculpt: { action: () => present?.leave(), enabled: () => !!present?.isActive() },
         present: () => present?.toggle(),
       }),
       'file-menu--view',
@@ -1964,7 +1969,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const { takeHandoff } = await import('../armature/persist');
     const handoff = await takeHandoff();
     if (handoff) {
-      const untouched = !fileActions.hasWork();
+      // A figure sent for the scene (Armature step of the path) is added to it, work or none.
+      const untouched = !fileActions.hasWork() && !handoff.addToScene;
       // A scene with nothing in it yet becomes the figure's, on real
       // units whatever it was; one with work keeps its own scale.
       if (untouched) session.setUnits(UNITS);
@@ -2082,6 +2088,40 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     return persist.settle();
   });
 
+  /**
+   * The Armature step of the workspace path. Nothing in a sculpt records an
+   * armature it was sent from (the handoff is taken and deleted on arrival,
+   * and the scene record keeps no link), so every sculpt asks. Yes: the
+   * scene is written as it stands, and Armature opens on a new figure whose
+   * Send to Sculpt adds it to this scene as a new object (&scene=1,
+   * SculptHandoff.addToScene).
+   */
+  goArmature = async (): Promise<void> => {
+    const yes = await askWindow({
+      title: 'Make a new armature for this scene?',
+      text: 'The figure you send back is added to this scene as a new object. Nothing in the scene is replaced.',
+      yes: 'New armature',
+    });
+    if (!yes) return;
+    present?.leave();
+    await Promise.all([snapshot(), persist.flush(), storeLook()]);
+    window.location.href = '/?armature=1&scene=1';
+  };
+  // The workspace path: Sculpt, or Present while presenting, lit; Publish
+  // shows in Present only.
+  const paintPath = (): void => {
+    const inPresent = !!present?.isActive();
+    strip.setWorkspace(inPresent ? 'present' : 'sculpt', {
+      armature: { action: () => void goArmature() },
+      sculpt: { action: () => present?.leave() },
+      present: { action: () => void present?.enter() },
+    });
+    publishWindow?.setInPresent(inPresent);
+    refreshReadout();
+  };
+  if (present) present.onChange = paintPath;
+  paintPath();
+
   // The hotkey guide (H) swaps to the sculpt table while the mode is active.
   window.dispatchEvent(new CustomEvent('bozzetto:sculptmode', { detail: { active: true } }));
 
@@ -2193,18 +2233,27 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 function makeReadout(
   strip: TitleStrip,
   session: SculptSession,
-  from: { projectName: () => string | null | undefined; edited: () => boolean; onRefresh: () => void },
+  from: {
+    projectName: () => string | null | undefined;
+    edited: () => boolean;
+    onRefresh: () => void;
+    /** Present: the viewport's size, instead of the object's numbers. */
+    frame: () => { w: number; h: number } | null;
+  },
 ): { refresh(): void; dispose(): void } {
   const update = (): void => {
     const mesh = session.getMesh();
     const levels = session.getLevels();
     const name = from.projectName() ?? null;
+    const frame = from.frame();
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
-      object: mesh ? session.activeName() : 'Empty scene',
-      tris: mesh ? mesh.getNbTriangles() : null,
-      level: levels && levels.levels > 0 ? { at: levels.sel + 1, of: levels.levels } : null,
+      // In Present the readout is the project and the frame, not the object's numbers.
+      object: frame ? null : mesh ? session.activeName() : 'Empty scene',
+      tris: frame || !mesh ? null : mesh.getNbTriangles(),
+      level: !frame && levels && levels.levels > 0 ? { at: levels.sel + 1, of: levels.levels } : null,
+      frame,
     });
     from.onRefresh();
   };

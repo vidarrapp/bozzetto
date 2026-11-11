@@ -170,6 +170,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     history.replaceState(history.state, '', url);
   }
   let saved = await loadArmature();
+  // Sculpt's path, Armature step, asked "Make a new armature for this scene?"
+  // and was told yes (&scene=1): a new figure, whatever the autosave held,
+  // that Send to Sculpt adds to the scene as a new object. The autosave
+  // keeps the mark (ArmatureFile.forScene), so a reload still knows.
+  const forSceneParam = query.get('scene') === '1';
+  let forScene = forSceneParam || saved?.forScene === true;
+  if (forSceneParam) {
+    saved = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('scene');
+    history.replaceState(history.state, '', url);
+  }
   /** The project Save to library writes to: the autosave's, or the one just opened. */
   let bootLink: ArmatureLink | null = saved?.project ?? null;
   let bootSymmetry: boolean | null = null;
@@ -1113,7 +1125,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       clearTimeout(saveTimer);
       saveTimer = 0;
     }
-    await saveArmature(currentFile());
+    await saveArmature({ ...currentFile(), ...(forScene ? { forScene: true } : {}) });
   };
   const scheduleSave = (): void => {
     if (saveTimer) clearTimeout(saveTimer);
@@ -1348,7 +1360,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       savedAt: Date.now(),
       units: UNITS,
       floor: viewer.floorHeight() ?? 0,
+      ...(forScene ? { addToScene: true } : {}),
     });
+    // The figure is on its way: a send from here again is an ordinary one.
+    forScene = false;
     await flushSave();
     window.location.href = '/?sculpt=1&handoff=1';
   };
@@ -1605,12 +1620,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         ['settings', 'Render'],
       ],
       hideInterface: () => chrome.set(true),
+      sculpt: { action: () => void send(panel.resolution) },
     }),
     'file-menu--view',
     strip.menus,
     true,
   );
   const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
+  // The workspace path: Sculpt is File > Send to Sculpt; Present waits for a figure to be sent.
+  strip.setWorkspace('armature', {
+    sculpt: { action: () => void send(panel.resolution) },
+    present: { unavailable: 'A figure is sent to Sculpt first' },
+  });
   // Which panel was open on each side last time, open again; kept from here on.
   const offPanelMemory = rememberPanels('armature');
   // The readout: the project's name when it has one, the part in hand, the figure's triangles.

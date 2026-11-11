@@ -1453,6 +1453,12 @@ html.is-page body {
   font-size: 13px;
 }
 
+.transport__play .fi {
+  display: block;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .transport__scrub {
   flex: 1;
   display: flex;
@@ -2892,147 +2898,7 @@ body.chrome-hidden .fps-meter {
    hidden-state rule, so dropping the class snaps everything straight back
    rather than fading, which is what you want at fifty toggles a day. */
 
-/* --- Present mode (sculpt/ui/Present.ts) --- */
-
-/* What edits goes, the same way Tab's chrome goes (visibility, so nothing
-   hidden keeps a focus stop): the toolbar, the brush rail and its undo
-   chips, every panel but Render, the brush ring, the object stats and the
-   level pill. The top row, the notices and the Render panel stay, and so
-   does the toolbar's hide button in its corner: Tab's switch, which in
-   Present hides everything, the bar below included. */
-body.presenting .sculpt-toolbar__left,
-body.presenting .sculpt-toolbar__brushes,
-body.presenting .sculpt-sliders,
-body.presenting .sculpt-hist,
-body.presenting .sculpt-stats,
-body.presenting .sculpt-leveltoast,
-body.presenting .sculpt-cursor,
-body.presenting .panel:not(.panel--render) {
-  visibility: hidden !important;
-  opacity: 0;
-}
-
-/* The Render panel ends above the bar's two rows, on a tall narrow screen
-   (an upright iPad) as anywhere. */
-body.presenting .panel--render {
-  max-height: calc(100vh - 170px);
-}
-
-.present-bar {
-  position: fixed;
-  left: 50%;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  max-width: calc(100vw - 24px);
-  padding: 6px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  box-shadow: var(--bz-raised-shadow);
-  font-family: var(--font-spec);
-  font-size: 11px;
-  /* Its buttons and slider are the touch targets; no browser gesture starts here. */
-  touch-action: none;
-  user-select: none;
-}
-
-.present-bar__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Save turntable's row: the format, the size and the button; while it
-   renders, the progress and its Cancel. */
-.present-bar__cliprow {
-  justify-content: center;
-}
-
-.present-bar__clip {
-  flex: 1 1 auto;
-}
-
-.present-bar__progress {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 8px;
-  accent-color: var(--accent);
-}
-
-.present-bar__btn {
-  min-height: 34px;
-  padding: 6px 12px;
-  font: inherit;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.present-bar__btn:hover {
-  background: var(--hover);
-}
-
-.present-bar__btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.present-bar__play.is-on {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.present-bar__speed {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.present-bar__speed input {
-  width: 96px;
-}
-
-.present-bar__val {
-  min-width: 4ch;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Tab in Present hides everything, this bar too; the toolbar's hide
-   button, kept in its corner, is the way back on a device without a Tab
-   key. */
-body.chrome-hidden .present-bar {
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 0.18s ease,
-    visibility 0s linear 0.18s;
-}
-
-/* A narrow screen (an iPad held upright, a phone): the labels tighten. */
-@media (max-width: 600px) {
-  .present-bar,
-  .present-bar__row {
-    gap: 4px;
-  }
-  .present-bar__btn {
-    padding: 6px 8px;
-    letter-spacing: 0.04em;
-  }
-  .present-bar__speed input {
-    width: 64px;
-  }
-}
+/* Present (sculpt/ui/Present.ts) is laid out in sculpt/ui/shell.css. */
 
 /* Said once, when the interface goes, and less each time you do it. */
 .chrome-hint {
@@ -3192,6 +3058,13 @@ body:has(.transport) .chrome-hint {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* The undo and redo glyphs are the icon font's (fi-ss-undo, fi-ss-redo). */
+.sculpt-histbtn .fi {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .sculpt-histbtn:not(:disabled):hover,
@@ -6968,7 +6841,6 @@ h1,
 .help-guide,
 .slider-bubble,
 .outliner__menu,
-.present-bar,
 .sculpt-toast,
 .scale-banner,
 .update-notice,
@@ -7004,7 +6876,6 @@ h1,
 .help-hint,
 .chrome-hint,
 .sculpt-leveltoast,
-.present-bar,
 .env-loading,
 .transport__buffering {
   font-family: var(--bz-font);
@@ -7414,7 +7285,6 @@ h1,
 }
 
 .sculpt-panel__progress,
-.present-bar__progress,
 .reel progress,
 progress {
   accent-color: var(--bz-orange);
