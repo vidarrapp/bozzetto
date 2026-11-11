@@ -31,6 +31,12 @@ export interface PanelOptions {
    * project (present/), where the look is what is being edited.
    */
   fullLook?: boolean;
+  /**
+   * The panel under the app shell's folder tab (the title strip says whose
+   * work it is): headed Render, with no byline. The section set is the
+   * viewer's own unless `fullLook` says otherwise.
+   */
+  shell?: boolean;
 }
 
 /**
@@ -239,7 +245,7 @@ export class Panel {
     // swaps it for the panel's own name, since the synthetic sculpt
     // manifest is titled "Sculpt" and would sit right above the Sculpt
     // palette (onSculptMode below).
-    title.textContent = this.editor || this.fullLook ? 'Render' : viewer.manifest.title || 'Bozzetto';
+    title.textContent = this.editor || this.fullLook || options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
       this.setCollapsed(true);
@@ -248,7 +254,7 @@ export class Panel {
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
     closeBtn.setAttribute('aria-label', 'Hide render panel');
-    if (options.author && !this.editor && !this.fullLook) {
+    if (options.author && !this.editor && !this.fullLook && !options.shell) {
       // The title and, under it, who made it: a member's work from the
       // Community. Hidden while sculpting, when the title is the panel's.
       const heading = div('panel__heading');

@@ -9,8 +9,8 @@ import {
   reportProject,
   type ReportReason,
 } from '../../net/account';
-import { authorHref, recordView } from '../../net/community';
-import { topChip, topbarLeft } from '../topbar';
+import { recordView } from '../../net/community';
+import type { ViewerFrame } from '../../viewer/viewerFrame';
 import { signInButton } from '../signIn';
 import { LEGAL, button, el, legalLink } from '../account/parts';
 import { REPORT_REASON_LABELS } from './reviewActions';
@@ -18,11 +18,12 @@ import { starButton } from './star';
 
 /**
  * The viewer's word on a member's work from the Community
- * (docs/accounts.md §13): "by @handle" in the top row, beside ← Gallery,
- * which leads to the author's page (the Render panel says it under the
- * title too), and Report… for a member signed in who is not the author.
+ * (docs/accounts.md §13): "by @handle" after the title in the title strip,
+ * a link to the author's page (the viewer's frame says it, from the
+ * author it is given), and at the right of the strip Report… for a member
+ * signed in who is not the author.
  * A guest gets nothing to click: the terms name the address to write to.
- * An active owner or moderator also gets a Review chip beside the credit,
+ * An active owner or moderator also gets a Review button before them,
  * which opens the same work in review mode (`&review=1&from=gallery`).
  * Nothing here copies or downloads anything; the viewer offers neither.
  *
@@ -35,12 +36,8 @@ import { starButton } from './star';
  * `.viewer-review`, `.viewer-report` (`data-reported` once sent), and the dialog's `.report-overlay`, `select[name=reason]`,
  * `textarea[name=note]`, `.report-send`, `.report-say`.
  */
-export async function mountCommunityCredit(id: string, author: string): Promise<void> {
-  const left = topbarLeft();
-  left.querySelectorAll('.viewer-author, .viewer-star, .viewer-review, .viewer-report').forEach((c) => c.remove());
-  const by = topChip(`by @${author}`, authorHref(author));
-  by.classList.add('viewer-author');
-  left.appendChild(by);
+export async function mountCommunityCredit(id: string, author: string, frame: ViewerFrame): Promise<void> {
+  document.querySelectorAll('.viewer-star, .viewer-review, .viewer-report').forEach((c) => c.remove());
   recordView(id);
 
   if (!(await accountsOn().catch(() => false))) return;
@@ -48,20 +45,20 @@ export async function mountCommunityCredit(id: string, author: string): Promise<
   const me = await getMe().catch(() => null);
   if (!me || me.status !== 'active') return;
   if (me.role === 'owner' || me.role === 'moderator') {
-    const review = topChip('Review', `/?tl=${encodeURIComponent(id)}&review=1&from=gallery`);
+    const review = frame.control('Review', `/?tl=${encodeURIComponent(id)}&review=1&from=gallery`);
     review.classList.add('viewer-review');
     review.title = 'Open it in review mode';
-    by.after(review);
+    frame.addAction(review);
   }
   if (me.handle.toLowerCase() === author.toLowerCase()) return;
   // Star: as the member left it, or unstarred when that cannot be read now.
   const starred = await isStarred(id).catch(() => false);
-  const star = starButton(id, starred, { className: 'topchip viewer-star' });
-  (left.querySelector('.viewer-review') ?? by).after(star);
-  const report = topChip('Report…') as HTMLButtonElement;
+  const star = starButton(id, starred, { className: 'bz-strip__btn viewer-star' });
+  frame.addAction(star);
+  const report = frame.control('Report…') as HTMLButtonElement;
   report.classList.add('viewer-report');
   report.addEventListener('click', () => openReport(id, author, report));
-  left.appendChild(report);
+  frame.addAction(report);
 }
 
 /** Report…: the reason, an optional note, what happens next, and Send. */

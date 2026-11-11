@@ -1,7 +1,6 @@
 import { getMe, reviewReports, type ReviewAction, type SharedState } from '../../net/account';
-import { authorHref } from '../../net/community';
 import { statusToast } from '../../sculpt/ui/statusToast';
-import { topChip, topbarLeft } from '../topbar';
+import type { ViewerFrame } from '../../viewer/viewerFrame';
 import { signInButton } from '../signIn';
 import {
   ACTION_LABEL,
@@ -15,37 +14,56 @@ import {
   sendReview,
 } from './reviewActions';
 
+/** The decisive action of a state is filled: the main one orange, the one that takes the work down red. */
+const FILL: Partial<Record<ReviewAction, 'primary' | 'danger'>> = { approve: 'primary', unhide: 'primary', hide: 'danger' };
+
 /**
  * The viewer in review mode (`/?tl=<id>&review=1`, docs/accounts.md §13),
  * for the owner and moderators: a shared project in whatever state it is,
  * read through the reviewers' own route, with the reviewer's controls in
- * the top row - ← Review (to the tab it was opened from, `&from=`), the
- * author's credit, a Reviewing chip saying where the project stands, and
- * Approve, Reject…, Hide…, Unhide or Dismiss as that state allows. Each
- * action redraws the row from the server's answer. On a moderator's own
- * work the row says another reviewer decides, and offers nothing; the
+ * the viewer's title strip - Close goes back to the Review tab it was
+ * opened from (`&from=`), the readout names the author and says where the
+ * project stands ("Reviewing Pending review"), and Approve, Reject…, Hide…,
+ * Unhide or Dismiss, as that state allows, stand at the right of the strip:
+ * the decisive one filled (Approve and Unhide orange, Hide red). Each
+ * action redraws them from the server's answer. On a moderator's own work
+ * the readout says another reviewer decides, and nothing is offered; the
  * owner reviews everything, their own work included.
  *
  * Hooks for tests: `.review-back`, `.viewer-author`, `.review-mode`
  * (`data-shared`), `.review-action[data-action]`.
  */
-export async function mountReviewBar(id: string, project: { title: string; author: string | null; shared: SharedState }): Promise<void> {
+export async function mountReviewBar(
+  id: string,
+  project: { title: string; author: string | null; shared: SharedState },
+  frame: ViewerFrame,
+): Promise<void> {
+  // Approve (or Unhide) is the screen's main action here, so play steps back to grey.
+  document.body.classList.add('bz-reviewing');
   const from = reviewTabOf(new URLSearchParams(window.location.search).get('from'));
-  const left = topbarLeft();
-  left.querySelectorAll('.viewer-back, .review-back, .viewer-author, .review-mode, .review-action, .review-own').forEach((c) => c.remove());
-  const back = topChip('← Review', reviewTabHref(from));
-  back.classList.add('viewer-back', 'review-back');
-  left.appendChild(back);
+  // Close, here, is the way back to the Review page.
+  frame.close.href = reviewTabHref(from);
+  frame.close.classList.add('review-back');
+  frame.close.title = 'Back to the review page';
   const author = project.author;
-  if (author) {
-    const by = topChip(`by @${author}`, authorHref(author));
-    by.classList.add('viewer-author');
-    left.appendChild(by);
-  }
-  const chip = document.createElement('span');
-  chip.className = 'topchip topchip--accent review-mode';
-  chip.setAttribute('role', 'status');
-  left.appendChild(chip);
+  // The state and the reviewer's note, at the end of the readout.
+  const readout = frame.strip.readoutEl;
+  const pair = (cls: string, key: string): { item: HTMLElement; val: HTMLElement } => {
+    const item = document.createElement('span');
+    item.className = `bz-readout__item ${cls}`;
+    const val = document.createElement('b');
+    val.className = 'bz-readout__val';
+    const k = document.createElement('span');
+    k.className = 'bz-readout__key';
+    k.textContent = key;
+    item.append(k, val);
+    readout.appendChild(item);
+    return { item, val };
+  };
+  const chip = pair('review-mode', 'Reviewing');
+  chip.item.setAttribute('role', 'status');
+  const note = pair('review-own', '');
+  note.item.hidden = true;
 
   const [me, reports] = await Promise.all([getMe().catch(() => null), reviewReports().catch(() => null)]);
   // A moderator's own work: another reviewer decides. The owner reviews everything.
@@ -55,23 +73,21 @@ export async function mountReviewBar(id: string, project: { title: string; autho
   let busy = false;
 
   const draw = (): void => {
-    chip.dataset.shared = shared;
-    chip.textContent = `Reviewing · ${STATE_LABEL[shared]}${open ? ` · ${open} report${open === 1 ? '' : 's'}` : ''}`;
-    left.querySelectorAll('.review-action, .review-own').forEach((c) => c.remove());
+    chip.item.dataset.shared = shared;
+    chip.val.textContent = `${STATE_LABEL[shared]}${open ? ` · ${open} report${open === 1 ? '' : 's'}` : ''}`;
+    document.querySelectorAll('.bz-strip .review-action').forEach((c) => c.remove());
     if (own) {
-      const note = document.createElement('span');
-      note.className = 'topchip review-own';
-      note.textContent = 'Your own: another reviewer decides';
-      left.appendChild(note);
+      note.item.hidden = false;
+      note.val.textContent = 'Your own: another reviewer decides';
       return;
     }
     for (const action of allowedActions(shared, open)) {
-      const b = topChip(ACTION_LABEL[action]) as HTMLButtonElement;
+      const b = frame.control(ACTION_LABEL[action], undefined, FILL[action]) as HTMLButtonElement;
       b.classList.add('review-action');
       b.dataset.action = action;
       b.disabled = busy;
       b.addEventListener('click', () => void act(action));
-      left.appendChild(b);
+      frame.addAction(b);
     }
   };
 
