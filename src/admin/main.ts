@@ -4,7 +4,8 @@ import { renderEditor } from './editor';
 import { ownerSignIn, ownerSignInPanel } from './ownerSession';
 import { AccountError, bootstrapOwner, errorText, loadConfig, whoami } from '../net/account';
 import { HandleField, Say, termsBox } from '../ui/account/parts';
-import { initTheme, mountThemeToggle } from '../ui/theme';
+import { initTheme } from '../ui/theme';
+import { installRangeFill } from '../ui/rangeFill';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { topbarRight } from '../ui/topbar';
@@ -455,7 +456,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
 initTheme();
 followPanelOpacity();
-mountThemeToggle();
+installRangeFill();
 installSliderBubble();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.

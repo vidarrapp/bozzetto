@@ -3,7 +3,8 @@ import type { Manifest } from './types/manifest';
 import { HttpSource } from './viewer/AssetSource';
 import { mountViewer } from './viewer/mountViewer';
 import { renderLanding } from './ui/Landing';
-import { initTheme, mountThemeToggle } from './ui/theme';
+import { initTheme } from './ui/theme';
+import { installRangeFill } from './ui/rangeFill';
 import { installSliderBubble } from './ui/sliderBubble';
 import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
@@ -29,7 +30,7 @@ import { takeAccountLink } from './ui/account/links';
 async function main(): Promise<void> {
   initTheme();
   followPanelOpacity();
-  mountThemeToggle();
+  installRangeFill();
   installSliderBubble();
   installTouchGuards();
   registerServiceWorker();

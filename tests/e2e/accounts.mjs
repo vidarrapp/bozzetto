@@ -845,7 +845,7 @@ async function legalPages(browser, origin, t) {
       `the owner's decisions written in: the templates, nudity, the takedown address (${show(terms.takedown)})`,
     );
     t.ok(!terms.todo && !terms.text.includes('['), `and no placeholder left in the terms (${terms.todo} marked)`);
-    t.ok(/Instrument Serif/.test(terms.font) && terms.background === 'rgb(28, 24, 20)', `on the app's stylesheet (${terms.font}, ${terms.background})`);
+    t.ok(/Familjen Grotesk/.test(terms.font) && terms.background === 'rgb(27, 27, 27)', `on the app's stylesheet (${terms.font}, ${terms.background})`);
     await p.goto(`${origin}/legal/privacy.html`, { waitUntil: 'load' });
     const privacy = await p.evaluate(() => ({
       title: document.querySelector('h1')?.textContent,

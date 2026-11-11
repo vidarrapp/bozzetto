@@ -7,7 +7,8 @@ import { EditorLayout } from '../ui/editorLayout';
 import { FpsMeter } from '../ui/FpsMeter';
 import { installShortcuts } from '../ui/shortcuts';
 import { disposePageChrome, pageChrome } from '../ui/ChromeToggle';
-import { initTheme, mountThemeToggle } from '../ui/theme';
+import { initTheme } from '../ui/theme';
+import { installRangeFill } from '../ui/rangeFill';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { validateManifest, type Manifest } from '../types/manifest';
@@ -95,7 +96,7 @@ async function savePicture(p: Viewer): Promise<Blob> {
 async function main(): Promise<void> {
   initTheme();
   followPanelOpacity();
-  mountThemeToggle();
+  installRangeFill();
   installSliderBubble();
 
   const host = document.getElementById('create');

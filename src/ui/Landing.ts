@@ -59,7 +59,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
     <div class="landing">
       <header class="landing__head">
         <div>
-          <h1 class="landing__title">Bozzetto</h1>
+          <h1 class="landing__title"><img class="landing__logo" src="/assets/bozzetto-script-ink.svg" alt="Bozzetto" /></h1>
           <p class="landing__tagline">Pose, sculpt, render and timelapse</p>
         </div>
 
@@ -229,7 +229,7 @@ function createCard(savesTo: string | null): HTMLElement {
   a.className = 'card card--new';
   a.href = '/?sculpt=1';
   a.innerHTML =
-    '<div><div class="card--new__plus">+</div>' +
+    '<div><div class="card--new__plus" aria-hidden="true"></div>' +
     '<div class="card--new__label">Create</div></div>';
   a.addEventListener('click', (e) => {
     e.preventDefault();

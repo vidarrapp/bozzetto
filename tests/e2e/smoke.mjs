@@ -4051,7 +4051,7 @@ export const suites = {
 
     // The panel (owner layout call): Create above the list, the material
     // directly under it, no other buttons and no size line; the active
-    // row's trash in the rust accent, in both themes.
+    // row's trash in the application layer's red (an action that cannot be undone).
     await page.evaluate(() => {
       const { session, scenePanel } = window.__sculpt;
       for (const m of session.getMeshes()) {
@@ -4070,26 +4070,20 @@ export const suites = {
         return getComputedStyle(probe).color;
       };
       const trash = () => getComputedStyle(panel.querySelector('.outliner__icon--danger')).color;
-      const dark = { trash: trash(), accent: rust('--accent') };
-      const was = document.documentElement.dataset.theme;
-      document.documentElement.dataset.theme = 'light';
-      const light = { trash: trash(), accent: rust('--accent') };
-      if (was === undefined) delete document.documentElement.dataset.theme;
-      else document.documentElement.dataset.theme = was;
+      const dark = { trash: trash(), red: rust('--bz-red'), accent: rust('--accent') };
       probe.remove();
       return {
         order: order.join(','),
         buttons: [...panel.querySelectorAll('.outliner__btn')].map((b) => b.textContent).join(','),
         size: !!panel.querySelector('.outliner__size'),
         dark,
-        light,
       };
     });
     t.eq(layout.order, 'outliner__header,outliner,outliner__material,outliner__measure', 'the Scene panel is Create, the list, the material, then the floor');
     t.ok(layout.buttons === 'Create' && !layout.size, `Create is its one button, and there is no size line (${layout.buttons})`);
     t.ok(
-      layout.dark.trash === layout.dark.accent && layout.light.trash === layout.light.accent && layout.dark.accent !== layout.light.accent,
-      `the trash is in the rust accent in both themes (${layout.dark.trash}, ${layout.light.trash})`,
+      layout.dark.trash === layout.dark.red && layout.dark.trash !== layout.dark.accent,
+      `the trash is red, not the orange (${layout.dark.trash}, orange ${layout.dark.accent})`,
     );
 
     // The Edit menu has what the panel's buttons were, with their hotkeys.
@@ -6486,13 +6480,10 @@ export const suites = {
       s = await publishState(owner);
       t.ok(s.rect.l === kept.l && s.rect.t === kept.t, `back at full size it is where it was put (${showRect(s.rect)})`);
 
-      // The theme, and Tab.
+      // The surface (the raised grey, dark only: the paper theme and its chip are gone), and Tab.
       const background = () => owner.evaluate(() => getComputedStyle(window.__sculpt.publishWindow.root).backgroundColor);
-      const ink = await background();
-      await owner.evaluate(() => document.querySelector('.theme-toggle').click());
-      const paper = await background();
-      await owner.evaluate(() => document.querySelector('.theme-toggle').click());
-      t.ok(ink !== paper && (await background()) === ink, `it follows the theme (${ink} in ink, ${paper} in paper)`);
+      t.eq(await background(), 'rgb(51, 51, 51)', 'it is on the raised grey');
+      t.ok(await owner.evaluate(() => !document.querySelector('.theme-toggle')), 'and there is no Ink / Paper chip');
       await owner.evaluate(() => document.activeElement?.blur?.());
       await owner.keyboard.press('Tab');
       await owner.waitForFunction(() => getComputedStyle(window.__sculpt.publishWindow.root).visibility === 'hidden', null, { timeout: 5000 }).catch(() => {});

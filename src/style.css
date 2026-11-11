@@ -33,44 +33,35 @@
 }
 
 :root,
-:root[data-theme='dark'] {
-  --bg: #1c1814;
-  --text: #f1ebe1;
-  --muted: #b3a896;
-  --accent: #bb5b33;
-  --accent-hover: #c87049;
-  --accent-soft: rgba(187, 91, 51, 0.16);
+:root[data-theme='dark'],
+:root[data-theme='light'] {
+  /* The application layer (docs/ui-foundations.md): the app's own names for
+     the tokens in app-layer/tokens.css. Dark only; a stored paper choice
+     resolves to the same values. */
+  --bg: var(--bz-strip);
+  --text: var(--bz-text);
+  --muted: var(--bz-text-2);
+  --text-muted: var(--bz-text-2);
+  --accent: var(--bz-orange);
+  --accent-hover: var(--bz-orange);
+  --accent-soft: var(--bz-hover);
   /* Every panel's background alpha, in one place (Preferences > Appearance
      > Panel opacity sets it on the root; appearance.ts). Nothing behind a
      panel is blurred: a blur over the 3D view had the browser redraw it on
      every frame the view moved, on the GPU the frame itself needs. */
   --panel-alpha: 0.95;
-  --panel-bg: rgb(28 24 20 / var(--panel-alpha));
-  --panel-border: #4a3f35;
-  --control-bg: #2a2520;
-  --hover: rgba(255, 255, 255, 0.08);
+  --panel-bg: rgb(44 44 44 / var(--panel-alpha));
+  --panel-border: var(--bz-sep);
+  --control-bg: var(--bz-control);
+  --hover: var(--bz-hover);
 
-  --font-body: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-spec: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --font-body: var(--bz-font);
+  --font-display: var(--bz-font);
+  --font-spec: var(--bz-font-mono);
 
-  --radius: 2px;
-  --radius-image: 12px;
+  --radius: 0;
+  --radius-image: 0;
 }
-
-:root[data-theme='light'] {
-  --bg: #f1ebe1;
-  --text: #1c1814;
-  --muted: #5c574d;
-  --accent: #9a4827;
-  --accent-hover: #bb5b33;
-  --accent-soft: rgba(187, 91, 51, 0.14);
-  --panel-bg: rgb(250 246 238 / var(--panel-alpha));
-  --panel-border: #c9c1b1;
-  --control-bg: #e8e3d9;
-  --hover: rgba(0, 0, 0, 0.06);
-}
-
 
 * {
   box-sizing: border-box;
@@ -273,7 +264,6 @@ h1,
   opacity: 0;
   pointer-events: none;
   z-index: 15;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 10px rgba(0, 0, 0, 0.25);
 }
 
 .focus-reticle--show {
@@ -306,7 +296,6 @@ h1,
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   z-index: 10;
   user-select: none;
   transition: transform 0.25s ease;
@@ -445,7 +434,7 @@ h1,
 
 .panel__body::-webkit-scrollbar-thumb {
   background: var(--panel-border);
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 .panel__body::-webkit-scrollbar-track {
@@ -488,7 +477,7 @@ h1,
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .matcap-grid--pop {
@@ -531,7 +520,7 @@ h1,
 
 .section h4.sculpt-panel__subhead {
   margin: 12px 0 6px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -548,46 +537,209 @@ h1,
 }
 
 /* controls */
+/* Controls (docs/ui-foundations.md, States): a grey fill and no outline;
+   hover lightens, pressed darkens, unavailable dims the text and keeps the
+   fill. 28px tall, 13px label. */
 button {
-  background: var(--control-bg);
-  color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  padding: 6px 10px;
+  min-height: 28px;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  padding: 6px 12px;
   cursor: pointer;
-  font: inherit;
+  font: 13px/16px var(--bz-font);
 }
 
-button:hover {
-  background: var(--hover);
+button:hover:not(:disabled) {
+  background: var(--bz-hover);
 }
 
-button:active {
-  background: rgba(255, 255, 255, 0.18);
+button:active:not(:disabled) {
+  background: var(--bz-pressed);
 }
 
+button:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+/* A select: the control's fill, no border, the chevron in secondary text. */
 select {
   width: 100%;
-  background: var(--control-bg);
-  color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  padding: 6px 8px;
-  font: inherit;
+  height: 28px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bz-control);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23b3b3b3' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  padding: 0 28px 0 10px;
+  font: 13px/16px var(--bz-font);
+  cursor: pointer;
 }
 
-input[type='range'] {
+select:hover:not(:disabled) {
+  background-color: var(--bz-hover);
+}
+
+select:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+option {
+  background: var(--bz-raised);
+  color: var(--bz-text);
+}
+
+/* A slider is a field: no box and no thumb, a 1px line along the foot and
+   the amount over it in orange, 3px tall from the left. --fill is the
+   amount's width, kept by ui/rangeFill. */
+input:where([type='range']) {
+  --fill: 0%;
   width: 100%;
-  accent-color: var(--accent);
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background:
+    linear-gradient(var(--bz-orange), var(--bz-orange)) 0 100% / var(--fill) 3px no-repeat,
+    linear-gradient(var(--bz-line), var(--bz-line)) 0 100% / 100% 1px no-repeat;
+  cursor: pointer;
 }
 
-input[type='color'] {
+input:where([type='range'])::-webkit-slider-runnable-track {
+  height: 16px;
+  background: transparent;
+}
+
+input:where([type='range'])::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 3px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+input:where([type='range'])::-moz-range-track {
+  height: 16px;
+  background: transparent;
+}
+
+input:where([type='range'])::-moz-range-thumb {
+  width: 3px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+input:where([type='range']):disabled {
+  cursor: default;
+  filter: grayscale(1);
+  opacity: 1;
+}
+
+input:where([type='color']) {
   width: 32px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
   background: none;
+}
+
+/* A switch (checkboxes): a 36 x 20 box in the hover grey with a 14px knob,
+   grey at the left when off, lime at the right when on. */
+input:where([type='checkbox']) {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bz-hover);
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--bz-text-2);
+}
+
+input[type='checkbox']:checked::after {
+  left: 19px;
+  background: var(--bz-lime);
+}
+
+input[type='checkbox']:disabled {
+  cursor: default;
+}
+
+input[type='checkbox']:disabled::after {
+  background: var(--bz-text-3);
+}
+
+/* A radio: a 14px circle in the hover grey, an orange dot when chosen. */
+input:where([type='radio']) {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bz-hover);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+input[type='radio']:checked {
+  background: radial-gradient(circle, var(--bz-orange) 0 3px, var(--bz-hover) 3.5px);
+}
+
+/* Text entry: the control's fill, no border. */
+:where(input:not([type]), input[type='text'], input[type='email'], input[type='number'], input[type='search'], input[type='password'], input[type='url'], textarea) {
+  background: var(--bz-control);
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  font: 13px/16px var(--bz-font);
+}
+
+:where(input:not([type]), input[type='text'], input[type='email'], input[type='number'], input[type='search'], input[type='password'], input[type='url']) {
+  min-height: 28px;
+  padding: 6px 8px;
+}
+
+textarea {
+  padding: 6px 8px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--bz-text-3);
+}
+
+/* Keyboard focus: the orange outline, 2px off (the one job of orange that
+   is not a state of the thing). */
+:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
 }
 
 .row {
@@ -776,7 +928,7 @@ html.is-page body {
   background: none;
   color: var(--accent);
   font: inherit;
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -787,7 +939,7 @@ html.is-page body {
 }
 
 .landing__editor:hover {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .landing__links {
@@ -804,7 +956,7 @@ html.is-page body {
 }
 
 .landing__admin:hover {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .landing__grid {
@@ -863,7 +1015,7 @@ html.is-page body {
   background: var(--control-bg);
   color: var(--muted);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* --- editor (admin) --- */
@@ -1094,7 +1246,7 @@ html.is-page body {
 .progress__track {
   flex: 1;
   height: 8px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--control-bg);
   overflow: hidden;
 }
@@ -1317,7 +1469,7 @@ html.is-page body {
    segments (a JS-built gradient) over a faint track. */
 .transport__buffer {
   height: 3px;
-  border-radius: 2px;
+  border-radius: 0;
   background-color: var(--panel-border);
   opacity: 0.9;
 }
@@ -1441,7 +1593,7 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--bz-raised-shadow);
   cursor: pointer;
 }
 
@@ -1455,7 +1607,7 @@ html.is-page body {
 
 .help-guide__close {
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1468,7 +1620,7 @@ html.is-page body {
 .help-guide__title {
   margin-bottom: 6px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1528,7 +1680,7 @@ html.is-page body {
 .fps-meter__key {
   color: var(--text-muted, #888);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* --- environment loading hint --- */
@@ -1565,7 +1717,6 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   z-index: 10;
   transition: transform 0.25s ease;
 }
@@ -1888,7 +2039,7 @@ html.is-page body {
   line-height: 1.2;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .slider-bubble[hidden] {
@@ -2023,7 +2174,7 @@ html.is-page body {
   background: var(--accent-soft);
   color: var(--accent-hover);
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -2089,7 +2240,6 @@ html.is-page body {
 
 /* In the selection (the Select tool), but not the active object. */
 .outliner__row--selected {
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* A hidden object stays listed but reads as absent. */
@@ -2200,8 +2350,7 @@ html.is-page body {
   width: 16px;
   height: 16px;
   border: none;
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  border-radius: 0;
 }
 
 .groups-row__name {
@@ -2282,7 +2431,7 @@ html.is-page body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  box-shadow: var(--bz-raised-shadow);
   /* Above every panel (15) so it is never clipped or covered. */
   z-index: 32;
 }
@@ -2329,7 +2478,7 @@ html.is-page body {
   gap: 8px;
   padding: 10px 12px 4px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2356,7 +2505,7 @@ html.is-page body {
 
 .outliner__menu-grid--words .outliner__menu-item {
   padding: 7px 8px;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 /* The size a primitive comes at, under its name (scenes on real units). */
@@ -2364,7 +2513,7 @@ html.is-page body {
   display: block;
   margin-top: 1px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -2380,7 +2529,7 @@ html.is-page body {
 .outliner__menu-pill {
   padding: 3px 9px;
   border: 1px solid var(--panel-border);
-  border-radius: 999px;
+  border-radius: 0;
   background: none;
   color: var(--muted);
   font: inherit;
@@ -2404,7 +2553,7 @@ html.is-page body {
   gap: 2px;
   padding: 6px 4px 5px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: none;
   color: var(--text);
   font-family: var(--font-body);
@@ -2437,7 +2586,7 @@ html.is-page body {
 }
 
 .outliner__tile-note {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.2;
   color: var(--muted);
 }
@@ -2510,7 +2659,7 @@ html.is-page body {
 .curve-editor__preset,
 .sculpt-panel__presets .sculpt-panel__btn {
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .curve-editor__plot {
@@ -2590,7 +2739,7 @@ html.is-page body {
   display: flex;
   justify-content: space-between;
   max-width: 180px;
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 2px;
 }
 
@@ -2628,7 +2777,7 @@ html.is-page body {
    (the autosave note etc.). */
 .sculpt-panel__hint {
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   margin: 2px 0 6px;
 }
@@ -2784,7 +2933,7 @@ body.presenting .panel--render {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 18px rgb(0 0 0 / 30%);
+  box-shadow: var(--bz-raised-shadow);
   font-family: var(--font-spec);
   font-size: 11px;
   /* Its buttons and slider are the touch targets; no browser gesture starts here. */
@@ -2939,7 +3088,7 @@ body:has(.transport) .chrome-hint {
 .gallery-form__where,
 .gallery-form__status {
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   min-height: 12px;
   overflow-wrap: anywhere;
@@ -3140,7 +3289,7 @@ body:has(.transport) .chrome-hint {
   color: var(--text);
   background: var(--control-bg);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 .channel-box__value:hover:not(:disabled) {
@@ -3163,7 +3312,7 @@ body:has(.transport) .chrome-hint {
 
 .channel-box__unit {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* Sculpt corner stats: object name + live poly count (top-left). */
@@ -3284,7 +3433,7 @@ body:has(.transport) .chrome-hint {
   font-family: var(--font-body);
   font-size: 13px;
   z-index: 30;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .sculpt-toast__btn {
@@ -3322,7 +3471,7 @@ body:has(.transport) .chrome-hint {
   font-family: var(--font-body);
   font-size: 13px;
   z-index: 30;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .scale-banner[hidden],
@@ -3405,7 +3554,7 @@ body.presenting .scale-banner {
   color: var(--text);
   font-family: var(--font-body);
   font-size: 13px;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 /* A notice with nothing to press keeps its padding even. */
@@ -3671,7 +3820,7 @@ body.is-sampling * {
   padding: 8px 10px;
   white-space: pre;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--text);
   background: var(--panel-bg);
@@ -3733,7 +3882,7 @@ body.is-sampling * {
   background: var(--accent);
   color: var(--bg);
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -3801,7 +3950,7 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .file-menu__item {
@@ -3840,7 +3989,7 @@ body.is-sampling * {
   height: 11px;
   transform: translateY(-50%);
   border: 1px solid var(--panel-border);
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .file-menu__item--toggle[aria-checked='true']::before {
@@ -3976,7 +4125,7 @@ body.is-sampling * {
   border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .dsettings__title {
@@ -4129,7 +4278,7 @@ body.is-sampling * {
 .prefs__group {
   margin: 12px 0 4px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted, #9a8f85);
@@ -4277,7 +4426,7 @@ body.is-sampling * {
 
 .card--library .card__title[contenteditable='true'] {
   outline: 1px solid var(--accent);
-  border-radius: 3px;
+  border-radius: 0;
   padding: 0 2px;
 }
 
@@ -4353,7 +4502,7 @@ body.is-sampling * {
 }
 
 .card__link:hover {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* The owner's Public/Private switch and Upload to Projects: small controls
@@ -4400,7 +4549,7 @@ body.is-sampling * {
   place-items: center;
   min-height: 200px;
   border: 1px dashed var(--panel-border);
-  border-radius: var(--radius-image);
+  border-radius: 0;
   background:
     radial-gradient(circle at 50% 45%, rgb(255 255 255 / 10%) 0 22%, transparent 60%),
     var(--control-bg);
@@ -4490,7 +4639,7 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  box-shadow: var(--bz-raised-shadow);
 }
 
 .cpick__spectrum {
@@ -4539,7 +4688,7 @@ body.is-sampling * {
   right: -2px;
   height: 6px;
   margin-top: -3px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .cpick__rows {
@@ -4558,7 +4707,7 @@ body.is-sampling * {
 .cpick__label,
 .cpick__value {
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -4617,7 +4766,7 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  box-shadow: var(--bz-raised-shadow);
   color: var(--text);
 }
 
@@ -4685,7 +4834,7 @@ body.is-sampling * {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  box-shadow: var(--bz-raised-shadow);
   color: var(--text);
 }
 
@@ -5086,7 +5235,7 @@ body.is-sampling * {
   color: var(--accent);
   font: inherit;
   font-size: 13px;
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -5493,7 +5642,7 @@ body.is-sampling * {
   align-self: stretch;
   height: 8px;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--panel-border);
 }
 
@@ -5675,7 +5824,7 @@ body.is-sampling * {
 
 .card__author:hover {
   color: var(--accent);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .community__more {
@@ -5710,7 +5859,7 @@ body.is-sampling * {
   height: 32px;
   padding: 0;
   border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 50%;
+  border-radius: 0;
   background: rgb(0 0 0 / 55%);
   color: #fff;
   font: inherit;
@@ -5756,7 +5905,7 @@ body.is-sampling * {
 
 .panel__byline:hover {
   color: var(--accent);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .viewer-author {
@@ -5869,10 +6018,10 @@ body.is-sampling * {
 .review-chip__count {
   min-width: 16px;
   padding: 0 4px;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--accent);
   color: var(--bg, #fff);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 16px;
   letter-spacing: 0;
   text-align: center;
@@ -6072,7 +6221,7 @@ body.is-sampling * {
 .help-win__group {
   margin: 12px 0 4px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -6135,7 +6284,7 @@ body.is-sampling * {
 .help-win__h {
   margin: 16px 0 4px;
   font-family: var(--font-spec);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -6216,4 +6365,1431 @@ body.is-sampling * {
     border-right: 0;
     border-bottom: 1px solid var(--panel-border);
   }
+}
+
+/* ==========================================================================
+   The application layer (docs/ui-foundations.md)
+
+   The look of everything but the shell's layout, on the tokens of
+   app-layer/tokens.css: a grey scale, one job for each colour, square
+   corners, one shadow (on raised things), Familjen Grotesk 13px for
+   labels and Martian Mono 11px for values. It sits last so that it wins
+   over the rules above at equal weight; the variables at the top and the
+   base controls (button, select, range, switch, radio, text entry) carry
+   the rest. Kept in this one block, by area.
+   ========================================================================== */
+
+/* --- type --- */
+h1,
+.landing__title,
+.admin__head h1,
+.editor__title {
+  font-family: var(--bz-font);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.transport__stage-name,
+.stage__name {
+  font-family: var(--bz-font);
+  font-style: normal;
+  font-weight: 600;
+  color: var(--bz-text);
+}
+
+/* Section headers: Martian Mono 11px in capitals, secondary text. */
+.section h3,
+.section h4.sculpt-panel__subhead,
+.sculpt-panel__curve-label,
+.editor__section h3,
+.prefs__group,
+.help-win__group,
+.help-win__h,
+.help-guide__title,
+.outliner__menu-head,
+.help-guide__close {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-stretch: 90%;
+  color: var(--bz-text-2);
+}
+
+/* Captions and the quiet lines: secondary text. */
+.stage__desc,
+.transport__stage-desc,
+.sculpt-panel__hint,
+.editor__hint,
+.admin__hint,
+.dsettings__blurb,
+.dsettings__hint,
+.prefs__choice-hint,
+.file-menu__hint,
+.card__note,
+.card__stats,
+.reel-status,
+.panel__byline,
+.card__author,
+.help-guide__version,
+.help-guide__credit,
+.help-guide__credit a {
+  font-family: var(--bz-font);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bz-text-2);
+}
+
+/* Values and numbers: Martian Mono 11px, as typed. */
+.readout,
+.frame-label,
+.transport__frame,
+.sculpt-panel__val,
+.slider-val,
+.prefs__slider-value,
+.cpick__label,
+.cpick__value,
+.channel-box__value,
+.channel-box__unit,
+.card__meta,
+.admin-row__meta,
+.editor__id,
+.fps-meter,
+.fps-meter__row,
+.outliner__menu-size {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.card__meta,
+.admin-row__meta,
+.editor__id,
+.readout,
+.frame-label,
+.transport__frame {
+  color: var(--bz-text-2);
+}
+
+/* Nothing under 11px; nothing but a section header in capitals. */
+.fps-meter__key {
+  font-size: 11px;
+  text-transform: none;
+  color: var(--bz-text-2);
+}
+
+.badge,
+.create-choice__title,
+.card--new__label {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+/* --- links: text, weight 600, no underline --- */
+.landing__signin,
+.landing__editor,
+.gallery-form__gatenote a,
+.gallery-form__status a,
+.account-legal,
+.account-links a,
+.account-linkbtn,
+.legal a,
+.report-what a,
+.share-note__list a,
+.help-win__topic a,
+.card__link,
+.landing__admin {
+  color: var(--bz-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.help-guide__credit a {
+  color: var(--bz-text-2);
+}
+
+.panel__byline:hover,
+.card__author:hover {
+  color: var(--bz-text);
+}
+
+/* --- buttons ---
+   One look for every button; the classes below only change what the
+   markup needs (a size, a layout). Pressed is the strip's black. */
+.btn,
+.sculpt-panel__btn,
+.sculpt-toast__btn,
+.card__action,
+.present-bar__btn,
+.outliner__btn,
+.create-choice,
+.help-guide__prefs,
+.help-guide__check,
+.prefs__open,
+.prefs__key,
+.prefs__reset,
+.prefs__tab,
+.install-close,
+.float-window__close,
+.card__trash,
+.card__star {
+  min-height: 28px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  opacity: 1;
+}
+
+.btn {
+  display: inline-block;
+}
+
+.btn:hover:not(:disabled),
+.sculpt-panel__btn:hover:not(:disabled),
+.sculpt-toast__btn:hover:not(:disabled),
+.card__action:hover:not(:disabled),
+.present-bar__btn:hover:not(:disabled),
+.outliner__btn:hover:not(:disabled),
+.create-choice:hover,
+.help-guide__prefs:hover:not(:disabled),
+.help-guide__check:hover:not(:disabled),
+.prefs__open:hover,
+.prefs__key:hover,
+.prefs__reset:hover,
+.prefs__tab:hover,
+.install-close:hover,
+.float-window__close:hover,
+.card__trash:hover,
+.card__star:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  border-color: transparent;
+}
+
+.btn:active:not(:disabled),
+.sculpt-panel__btn:active:not(:disabled),
+.sculpt-toast__btn:active:not(:disabled),
+.card__action:active:not(:disabled),
+.present-bar__btn:active:not(:disabled),
+.outliner__btn:active:not(:disabled),
+.create-choice:active,
+.help-guide__prefs:active:not(:disabled),
+.help-guide__check:active:not(:disabled),
+.prefs__open:active,
+.prefs__key:active,
+.prefs__reset:active {
+  background: var(--bz-pressed);
+}
+
+.btn:disabled,
+.sculpt-panel__btn:disabled,
+.sculpt-toast__btn:disabled,
+.card__action:disabled,
+.present-bar__btn:disabled,
+.outliner__btn:disabled,
+.help-guide__check:disabled,
+.viewer-report:disabled,
+.topbar--left .review-action:disabled {
+  background: var(--bz-control);
+  color: var(--bz-text-3);
+  opacity: 1;
+}
+
+/* The one main action of a window, and a delete that cannot be undone:
+   orange and red fills, black text. */
+.btn--primary,
+.dsettings__primary,
+.help-win__close,
+.gallery-form__go,
+.scale-banner__apply,
+.transport__play {
+  background: var(--bz-orange);
+  border: 0;
+  color: var(--bz-on-accent);
+}
+
+.btn--primary:hover:not(:disabled),
+.dsettings__primary:hover:not(:disabled),
+.help-win__close:hover:not(:disabled),
+.gallery-form__go:hover:not(:disabled),
+.scale-banner__apply:hover:not(:disabled),
+.transport__play:hover:not(:disabled) {
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+  filter: brightness(1.12);
+}
+
+.btn--primary:active:not(:disabled),
+.dsettings__primary:active:not(:disabled),
+.help-win__close:active:not(:disabled),
+.gallery-form__go:active:not(:disabled),
+.scale-banner__apply:active:not(:disabled),
+.transport__play:active:not(:disabled) {
+  background: var(--bz-orange);
+  filter: brightness(0.85);
+}
+
+.btn--primary:disabled,
+.gallery-form__go:disabled,
+.scale-banner__apply:disabled {
+  background: var(--bz-control);
+  color: var(--bz-text-3);
+}
+
+.btn--danger,
+.btn--danger:hover:not(:disabled) {
+  background: var(--bz-red);
+  border: 0;
+  color: var(--bz-on-accent);
+}
+
+.btn--danger:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.btn--danger:disabled {
+  background: var(--bz-control);
+  color: var(--bz-text-3);
+}
+
+.btn--small,
+.panel__reset,
+.panel__hotkeys {
+  min-height: 28px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* A choice in use (a preset, a tab, a toggle that is on): the hover fill
+   and full text; the others secondary text and no fill. */
+.sculpt-panel__presets .sculpt-panel__btn,
+.curve-editor__preset,
+.prefs__tab {
+  background: none;
+  color: var(--bz-text-2);
+}
+
+.sculpt-panel__presets .sculpt-panel__btn:hover:not(:disabled),
+.curve-editor__preset:hover:not(:disabled),
+.prefs__tab:hover {
+  background: var(--bz-control);
+  color: var(--bz-text);
+}
+
+.sculpt-panel__btn--on,
+.sculpt-panel__presets .sculpt-panel__btn--on,
+.curve-editor__preset[aria-pressed='true'],
+.curve-editor__preset--on,
+.prefs__tab--on,
+.prefs__tab--on:hover,
+.outliner__btn[aria-pressed='true'],
+.present-bar__play.is-on {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  border: 0;
+}
+
+.sculpt-panel__btn--icon,
+.outliner__btn {
+  min-width: 28px;
+  padding: 4px 8px;
+}
+
+.sculpt-panel__btn--wide,
+.outliner__btn--wide,
+.outliner__filebtn {
+  width: 100%;
+}
+
+.sculpt-panel__presets,
+.curve-editor__presets {
+  gap: 2px;
+}
+
+.sculpt-panel__row {
+  gap: 4px;
+}
+
+.prefs__key--none {
+  font-style: normal;
+  color: var(--bz-text-3);
+}
+
+.prefs__key kbd {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+}
+
+.prefs__reset {
+  width: 28px;
+  padding: 6px 0;
+}
+
+.install-close,
+.float-window__close {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 15px;
+}
+
+/* --- a field: a slider's row ---
+   One 28px row: the label at the left, the value at the right in mono,
+   and under them the line with the amount over it. The input fills the
+   row, so the whole row is the slider; the words above it let a press
+   through. */
+:is(.compact, .label-row:has(> .range-wrap)) {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 28px;
+  column-gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+:is(.compact, .label-row:has(> .range-wrap)) > span:first-child {
+  grid-area: 1 / 1;
+  min-width: 0;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  pointer-events: none;
+  align-self: start;
+  padding-top: 2px;
+}
+
+.label-row > .range-wrap {
+  display: contents;
+}
+
+:is(.compact, .range-wrap) > input[type='range'] {
+  grid-area: 1 / 1 / 2 / 3;
+  align-self: stretch;
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  z-index: 1;
+}
+
+:is(.compact, .range-wrap) > input[type='range']::-webkit-slider-runnable-track,
+:is(.compact, .range-wrap) > input[type='range']::-webkit-slider-thumb {
+  height: 28px;
+}
+
+:is(.compact, .range-wrap) > input[type='range']::-moz-range-track,
+:is(.compact, .range-wrap) > input[type='range']::-moz-range-thumb {
+  height: 28px;
+}
+
+:is(.compact, .range-wrap) > input[type='range']:focus-visible {
+  outline: none;
+}
+
+:is(.compact, .label-row:has(> .range-wrap)):has(input[type='range']:focus-visible) {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+.compact > .sculpt-panel__val,
+.compact > span.slider-val,
+.range-wrap > .readout {
+  grid-area: 1 / 2;
+  align-self: start;
+  flex: none;
+  min-width: 0;
+  padding-top: 3px;
+  text-align: right;
+  color: var(--bz-text);
+  font: 11px/16px var(--bz-font-mono);
+  pointer-events: none;
+}
+
+/* The number field a double press puts where a slider was: it takes the
+   value's place, boxed in orange as the focus is. */
+.slider-field {
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid var(--bz-orange);
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 11px/16px var(--bz-font-mono);
+  text-align: right;
+  outline: none;
+}
+
+:is(.compact, .range-wrap) > .slider-field {
+  grid-area: 1 / 2;
+  align-self: start;
+  width: 72px;
+  flex: none;
+  z-index: 2;
+}
+
+.light .compact > span:first-child {
+  font-size: 13px;
+}
+
+/* A switch row: the label at the left, the switch at the right. */
+.checkbox,
+.prefs__toggle {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkbox {
+  min-height: 28px;
+  margin: 4px 0;
+  white-space: nowrap;
+}
+
+.prefs__choice input[type='radio'] {
+  margin: 2px 0 0;
+}
+
+.prefs__toggle input {
+  margin: 0;
+}
+
+.btn-grid {
+  gap: 4px;
+}
+
+.btn-grid button {
+  font-size: 13px;
+}
+
+/* --- panels and their sections --- */
+.panel,
+.editor__sidebar {
+  background: var(--panel-bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.panel__header,
+.editor__sidebar-header {
+  padding: 12px 16px 4px;
+  border-bottom: 0;
+}
+
+.panel__title,
+.editor__sidebar .editor__title {
+  font-family: var(--bz-font);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0;
+}
+
+.panel__body {
+  padding: 4px 16px 16px;
+  scrollbar-color: var(--bz-sep) transparent;
+}
+
+.panel__body::-webkit-scrollbar-thumb {
+  background: var(--bz-sep);
+}
+
+.editor__sidebar-body {
+  padding: 8px 16px 24px;
+}
+
+.section,
+.editor__section {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--bz-sep);
+}
+
+.section:last-child {
+  border-bottom: 0;
+}
+
+.section h3,
+.section h4.sculpt-panel__subhead {
+  margin: 0 0 8px;
+}
+
+.section h4.sculpt-panel__subhead {
+  margin-top: 12px;
+}
+
+.light {
+  padding: 8px 0;
+  border: 0;
+  background: none;
+}
+
+.label-row {
+  min-height: 28px;
+}
+
+.label-row > span:first-child {
+  flex: 0 0 auto;
+  min-width: 78px;
+  white-space: nowrap;
+  color: var(--bz-text);
+}
+
+.label-row > select,
+.label-row > .cpick {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.stage {
+  min-height: 0;
+}
+
+/* Raised things: a menu, a tooltip, a popover, a window, a notice. The
+   raised grey, the 1px lighter edge and the one shadow. */
+.mcpick__pop,
+.help-guide,
+.slider-bubble,
+.outliner__menu,
+.present-bar,
+.sculpt-toast,
+.scale-banner,
+.update-notice,
+.file-menu,
+.dsettings__card,
+.cpick__pop,
+.install-card,
+.float-window,
+.help-hint,
+.chrome-hint,
+.sculpt-leveltoast,
+.env-loading,
+.fps-meter,
+.input-debug,
+.perf-debug,
+.transport__buffering,
+.voxel-overlay__caption,
+.prefs__capture {
+  background: var(--bz-raised);
+  color: var(--bz-text);
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bz-raised-shadow);
+}
+
+.help-hint,
+.chrome-hint,
+.env-loading,
+.transport__buffering {
+  color: var(--bz-text-2);
+}
+
+.help-hint,
+.chrome-hint,
+.sculpt-leveltoast,
+.present-bar,
+.env-loading,
+.transport__buffering {
+  font-family: var(--bz-font);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.slider-bubble,
+.voxel-overlay__caption {
+  font-family: var(--bz-font-mono);
+  font-size: 11px;
+}
+
+/* Titles of windows: 17px bold. */
+.float-window__title,
+.dsettings__title,
+.install-card h2,
+.help-win__title,
+.help-guide__head {
+  font-family: var(--bz-font);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0;
+}
+
+.float-window__bar {
+  border-bottom: 0;
+  padding: 8px 8px 0 16px;
+}
+
+.float-window__body {
+  padding: 8px 16px 16px;
+  scrollbar-color: var(--bz-sep) transparent;
+}
+
+.install-steps svg {
+  color: var(--bz-text);
+}
+
+/* Errors say so in red (never orange): the message, or a red square. */
+.landing__notice--suspended,
+.editor__warn,
+.voxel-overlay__caption--over,
+.sculpt-panel__warn,
+.scale-banner__error,
+.update-notice[data-state='failed'],
+.file-menu__progress[data-state='failed'],
+.pkcheck__value--no,
+.account-hint[data-tone='no'],
+.account-invite[data-tone='no'],
+.account-say[data-tone='error'],
+.account-item__warn,
+.admin-user__why,
+.my-storage[data-full='true'] .storage-meter__text,
+.account-delete__warn,
+.card__share[data-shared='rejected'] .card__share-status,
+.card__share[data-shared='hidden'] .card__share-status,
+.review-card[data-shared='hidden'] .review-card__state,
+.review-card[data-shared='rejected'] .review-card__state {
+  color: var(--bz-red);
+  font-size: 13px;
+}
+
+.curve-editor__point--remove {
+  stroke: var(--bz-red);
+}
+
+.card--sculpt {
+  outline: 0;
+}
+
+/* --- menus (.file-menu): rows 26px, the hover fill, hotkeys in secondary
+   text, unavailable in the dim text, a line between groups --- */
+.file-menu,
+.outliner__menu {
+  padding: 4px 0;
+}
+
+.file-menu {
+  min-width: 220px;
+}
+
+.file-menu__item,
+.outliner__menu-item {
+  display: block;
+  min-height: 26px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.file-menu__item:hover:not(:disabled),
+.file-menu__item:focus-visible,
+.outliner__menu-item:hover:not(:disabled),
+.outliner__tile:hover:not(:disabled) {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  font-weight: 400;
+  outline: none;
+}
+
+.file-menu__item:disabled,
+.outliner__menu-item:disabled {
+  opacity: 1;
+  color: var(--bz-text-3);
+}
+
+.file-menu__item:disabled:hover {
+  background: none;
+}
+
+.file-menu__key {
+  font: 13px/16px var(--bz-font);
+  color: var(--bz-text-2);
+}
+
+.file-menu__item:disabled .file-menu__key {
+  color: var(--bz-text-3);
+}
+
+.file-menu__line {
+  align-items: center;
+  gap: 24px;
+}
+
+.file-menu__sep,
+.outliner__menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--bz-sep);
+}
+
+/* A checked item has a check before it. */
+.file-menu__item--toggle {
+  padding-left: 32px;
+}
+
+.file-menu__item--toggle::before {
+  left: 12px;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.file-menu__item--toggle[aria-checked='true']::before {
+  content: '\2713';
+  background: none;
+  border: 0;
+}
+
+.file-menu__choices {
+  padding: 4px 12px 6px;
+  color: var(--bz-text);
+}
+
+.file-menu__choices--off {
+  opacity: 1;
+  color: var(--bz-text-3);
+}
+
+.file-menu .file-menu__choice {
+  min-height: 24px;
+  min-width: 34px;
+  padding: 3px 8px;
+  background: var(--bz-control);
+  border: 0;
+  color: var(--bz-text);
+  text-align: center;
+}
+
+.file-menu .file-menu__choice:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+.file-menu__choices--off .file-menu__choice:disabled {
+  color: var(--bz-text-3);
+}
+
+.file-menu__hint {
+  margin-top: 0;
+}
+
+.file-menu__progress {
+  padding: 8px 12px;
+}
+
+.outliner__menu-grid--words .outliner__menu-item {
+  padding: 5px 8px;
+}
+
+.outliner__menu-head {
+  padding: 8px 12px 4px;
+}
+
+.outliner__menu-aside {
+  opacity: 1;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.outliner__menu-sub,
+.outliner__menu-switch,
+.outliner__tile-name {
+  font-size: 12px;
+}
+
+.outliner__menu-sub,
+.outliner__menu-switch,
+.outliner__tile-note,
+.outliner__menu-size {
+  color: var(--bz-text-2);
+}
+
+.outliner__tile-note {
+  font-size: 11px;
+}
+
+.outliner__menu-pill {
+  min-height: 24px;
+  padding: 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+}
+
+.outliner__menu-pill:hover {
+  background: var(--bz-control);
+  color: var(--bz-text);
+}
+
+.outliner__menu-pill[aria-pressed='true'] {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  border: 0;
+}
+
+/* --- list rows (outliner, poly groups): hover the control grey,
+   selected the hover grey --- */
+.outliner__row,
+.groups-row {
+  font: 13px/16px var(--bz-font);
+}
+
+.outliner__row:hover,
+.groups-row:hover {
+  background: var(--bz-control);
+}
+
+.outliner__row--active,
+.outliner__row--active:hover,
+.outliner__row--selected,
+.outliner__row--selected:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.outliner__row--hidden .outliner__name,
+.groups-row--hidden .groups-row__name,
+.groups-row--hidden .groups-row__swatch {
+  opacity: 1;
+  color: var(--bz-text-3);
+}
+
+.outliner__name,
+.groups-row__name {
+  font: 13px/16px var(--bz-font);
+}
+
+.outliner__rename,
+.groups-row__rename {
+  border: 1px solid var(--bz-orange);
+  background: var(--bz-control);
+  font: 13px/16px var(--bz-font);
+}
+
+.outliner__icon {
+  opacity: 1;
+  color: var(--bz-text-2);
+}
+
+.outliner__icon:hover {
+  opacity: 1;
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+.outliner__icon--on {
+  color: var(--bz-text);
+}
+
+.outliner__icon--danger,
+.outliner__icon--danger:hover {
+  color: var(--bz-red);
+}
+
+.outliner__solo {
+  border: 0;
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  font: 11px/16px var(--bz-font-mono);
+  letter-spacing: 0.06em;
+}
+
+.outliner__measure,
+.outliner__material {
+  border-top: 1px solid var(--bz-sep);
+}
+
+.curve-editor__axis {
+  font-size: 11px;
+}
+
+/* --- popovers: swatches, the matcap picker, the colour picker --- */
+.cpick__swatch {
+  border: 1px solid var(--bz-line);
+}
+
+.cpick__swatch.groups-row__swatch {
+  border: 0;
+}
+
+.matcap-swatch:hover {
+  border-color: var(--bz-text-3);
+}
+
+.matcap-swatch--on,
+.matcap-swatch--on:hover {
+  border-color: var(--bz-orange);
+}
+
+.mcpick__trigger {
+  border: 1px solid var(--bz-line);
+}
+
+/* --- tool-panel odds and ends --- */
+.channel-box__row {
+  font-size: 11px;
+}
+
+.channel-box__label {
+  font-size: 13px;
+  color: var(--bz-text-2);
+}
+
+.channel-box__value {
+  border: 0;
+  height: 24px;
+}
+
+.channel-box__value:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+.channel-box__value:focus {
+  outline: var(--bz-focus);
+  outline-offset: 0;
+}
+
+.channel-box__value:disabled {
+  color: var(--bz-text-3);
+  opacity: 1;
+}
+
+.gallery-form {
+  border-top: 1px solid var(--bz-sep);
+}
+
+.gallery-form__input,
+.scale-banner__object,
+.scale-banner__height,
+.stage-row input,
+.account-input,
+.help-win__filter {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+}
+
+.gallery-form__gatenote,
+.gallery-form__where,
+.gallery-form__status {
+  font-family: var(--bz-font);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bz-text-2);
+}
+
+.account-input:focus-visible,
+.help-win__filter:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+.sculpt-panel__progress,
+.present-bar__progress,
+.reel progress,
+progress {
+  accent-color: var(--bz-orange);
+}
+
+/* --- notices and toasts --- */
+.sculpt-toast,
+.scale-banner,
+.update-notice {
+  font: 13px/16px var(--bz-font);
+}
+
+.scale-banner__note,
+.scale-banner__hint {
+  color: var(--bz-text-2);
+  font-size: 12px;
+}
+
+.update-notice__bar {
+  background: var(--bz-control);
+}
+
+/* --- Preferences, the hotkey guide, the Help window --- */
+.prefs__tabs {
+  gap: 2px;
+}
+
+.prefs__question {
+  font-size: 13px;
+}
+
+.prefs__label,
+.prefs__choice-title {
+  font-size: 13px;
+}
+
+.prefs__label {
+  white-space: nowrap;
+}
+
+.prefs__open {
+  display: block;
+  text-align: left;
+}
+
+.prefs__slider-head {
+  font-size: 13px;
+}
+
+.prefs__slider input[type='range'] {
+  margin: 4px 0 2px;
+}
+
+.help-guide {
+  padding: 16px;
+}
+
+.help-guide__foot {
+  border-top: 1px solid var(--bz-sep);
+}
+
+.help-guide kbd,
+.help-key {
+  min-width: 16px;
+  padding: 1px 6px;
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 11px/16px var(--bz-font-mono);
+}
+
+.help-row {
+  font-size: 13px;
+}
+
+.help-win__nav {
+  border-right: 1px solid var(--bz-sep);
+}
+
+.help-win__item {
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+}
+
+.help-win__item:hover {
+  background: var(--bz-control);
+  color: var(--bz-text);
+}
+
+.help-win__item[aria-current='true'] {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+  font-weight: 400;
+}
+
+.help-win__item:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+.help-win__options dd,
+.help-win__meta,
+.help-win__none {
+  color: var(--bz-text-2);
+}
+
+.help-win__credit {
+  border-top: 1px solid var(--bz-sep);
+}
+
+@media (max-width: 640px) {
+  .help-win__nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--bz-sep);
+  }
+}
+
+/* --- the gallery and the viewer --- */
+.landing__head,
+.admin__head {
+  border-bottom: 1px solid var(--bz-sep);
+}
+
+.landing__title {
+  line-height: 0;
+}
+
+/* The hand-drawn logotype: its picture carries a ground of its own, which
+   the lighten blend lets drop into the page's. */
+.landing__logo {
+  display: block;
+  height: 64px;
+  width: auto;
+  mix-blend-mode: lighten;
+  filter: grayscale(1);
+}
+
+.landing__tagline,
+.landing__notice {
+  font-size: 13px;
+  color: var(--bz-text-2);
+}
+
+.landing__notice--suspended {
+  color: var(--bz-red);
+}
+
+.landing__signin {
+  background: none;
+  min-height: 0;
+  padding: 0;
+}
+
+/* Install, Log in and the account chips of the gallery: plain text. */
+.topbar .landing-chip,
+.topbar .community-chip {
+  min-height: 28px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.topbar .landing-chip:hover,
+.topbar .community-chip:hover {
+  background: var(--bz-hover);
+}
+
+.card {
+  border: 0;
+  background: none;
+  transition: none;
+}
+
+.card:hover {
+  border-color: transparent;
+  background: var(--bz-control);
+  transform: none;
+}
+
+.card__thumb {
+  aspect-ratio: 1;
+  background: var(--bz-viewport);
+}
+
+.admin-row__thumb {
+  background: var(--bz-viewport);
+}
+
+.card__body {
+  padding: 10px 8px 12px;
+}
+
+.card__title {
+  font: 600 13px/16px var(--bz-font);
+}
+
+.card__badge {
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  background: var(--bz-strip);
+  color: var(--bz-text);
+  font: 11px/16px var(--bz-font-mono);
+  letter-spacing: 0.06em;
+}
+
+.card__badge--private,
+.card__badge--template {
+  background: var(--bz-strip);
+  color: var(--bz-text-2);
+  outline: 0;
+}
+
+.badge {
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text-2);
+}
+
+.card__trash,
+.card__star {
+  background: var(--bz-strip);
+  color: var(--bz-text);
+}
+
+.card__star {
+  width: 28px;
+  padding: 0;
+}
+
+.card__star[aria-pressed='true'],
+.viewer-star[aria-pressed='true'] {
+  color: var(--bz-orange);
+}
+
+.card--new {
+  border: 0;
+  background: var(--bz-panel);
+  color: var(--bz-text);
+}
+
+.card--new:hover {
+  background: var(--bz-control);
+  color: var(--bz-text);
+  border-color: transparent;
+}
+
+.card--new__plus {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  margin: 0 auto;
+  font-size: 0;
+}
+
+.card--new__plus::before,
+.card--new__plus::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+}
+
+.card--new__plus::before {
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 1px;
+}
+
+.card--new__plus::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+}
+
+.card--new__label {
+  margin-top: 12px;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.create-choice {
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+
+.create-choice__hint {
+  font-size: 12px;
+  color: var(--bz-text-2);
+}
+
+.dropzone {
+  border: 0;
+  background: var(--bz-control);
+}
+
+.dropzone--over {
+  background: var(--bz-hover);
+}
+
+.progress__track {
+  background: var(--bz-sep);
+}
+
+.admin-row {
+  border: 0;
+  background: var(--bz-panel);
+}
+
+.card__share,
+.card__share-hint,
+.reel,
+.review-history__item {
+  border-color: var(--bz-sep);
+}
+
+/* The viewer's transport: play is the main action, the rest are grey; the
+   timeline is the line with the played part in orange. */
+.transport {
+  background: var(--panel-bg);
+  border-top: 0;
+}
+
+.transport__play {
+  width: 40px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.transport__scrubber {
+  height: 20px;
+}
+
+.transport__buffer {
+  background-color: var(--bz-sep);
+  opacity: 1;
+}
+
+.transport__spinner {
+  border-color: var(--bz-sep);
+  border-top-color: var(--bz-orange);
+}
+
+/* --- the page's loose odds --- */
+.editor__preview {
+  background: var(--bz-viewport);
+}
+
+.dsettings__row {
+  gap: 4px;
+}
+
+.pkcheck__step,
+.account-section,
+.admin__bootstrap,
+.admin__lock,
+.admin__notice,
+.admin-invites__made,
+.admin-user__detail {
+  border-color: var(--bz-sep);
+  background: var(--bz-panel);
+}
+
+.legal__todo,
+.account-reason {
+  background: var(--bz-hover);
 }

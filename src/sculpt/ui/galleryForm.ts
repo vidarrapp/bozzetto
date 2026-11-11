@@ -113,7 +113,7 @@ export function galleryForm(opts: {
 
   const go = document.createElement('button');
   go.type = 'button';
-  go.className = 'sculpt-panel__btn';
+  go.className = 'sculpt-panel__btn gallery-form__go';
   go.textContent = opts.buttonLabel;
 
   const status = div('gallery-form__status');

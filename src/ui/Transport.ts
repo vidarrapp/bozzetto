@@ -82,7 +82,7 @@ export class Transport {
       .map(([start, end]) => {
         const a = ((start / count) * 100).toFixed(2);
         const b = (((end + 1) / count) * 100).toFixed(2);
-        return `transparent ${a}%, var(--accent) ${a}% ${b}%, transparent ${b}%`;
+        return `transparent ${a}%, var(--bz-text-3) ${a}% ${b}%, transparent ${b}%`;
       })
       .join(', ');
     this.buffer.style.backgroundImage = stops
