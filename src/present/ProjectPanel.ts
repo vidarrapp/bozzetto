@@ -93,7 +93,9 @@ export class ProjectPanel extends SidePanel {
     );
     mode.setAttribute('aria-label', 'Mode');
     mode.addEventListener('change', () => {
-      this.values.mode = mode.value === 'model' ? 'model' : 'timelapse';
+      const picked = mode.value === 'model' ? 'model' : 'timelapse';
+      if (picked === this.values.mode) return;
+      this.values.mode = picked;
       this.setMode(this.values.mode);
       this.hooks.modeChanged(this.values.mode);
       this.hooks.edited();
