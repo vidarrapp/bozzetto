@@ -94,7 +94,7 @@ const navOf = (p) =>
     const tops = new Set(links.map((l) => Math.round(l.getBoundingClientRect().top)));
     return {
       first: !!nav && (nav.parentElement?.firstElementChild === nav),
-      logo: logo ? { text: logo.textContent, href: logo.getAttribute('href'), left: logo.getBoundingClientRect().left } : null,
+      logo: logo ? { text: logo.querySelector('img[src$="bozzetto-script-ink.svg"]')?.getAttribute('alt') ?? '', drawn: (logo.querySelector('img')?.naturalWidth ?? 0) > 0, href: logo.getAttribute('href'), left: logo.getBoundingClientRect().left } : null,
       links: links.map((l) => l.textContent.replace(/\d+$/, '')),
       current: links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => l.textContent.replace(/\d+$/, '')),
       currentWeight: links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => getComputedStyle(l).fontWeight),
@@ -145,7 +145,7 @@ async function navRows(server, o, m, a, g, t) {
   await open(g, '/?community', '.card--community, .community__empty');
   let n = await navOf(g.page);
   t.ok(show(n.links) === show(['Gallery', 'Community']) && show(n.current) === show(['Community']) && n.account.includes('Sign in'), `a guest's row: Gallery and Community, Community marked, Sign in (${show(n)})`);
-  t.ok(n.logo?.text === 'Bozzetto' && n.logo.href === '/' && n.first && n.oneLine && n.height === 48, `the logotype at the left, one row of 48px, first on the page (${show(n)})`);
+  t.ok(n.logo?.text === 'Bozzetto' && n.logo.drawn && n.logo.href === '/' && n.first && n.oneLine && n.height === 48, `the logotype at the left, one row of 48px, first on the page (${show(n)})`);
   t.ok(n.currentWeight.every((w) => Number(w) === 600) && n.restWeight.every((w) => Number(w) === 400), `the current page in weight 600, the others 400 (${show([n.currentWeight, n.restWeight])})`);
   t.ok(n.chips.length === 0, `and no corner chips (${show(n.chips)})`);
 

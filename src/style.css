@@ -6804,11 +6804,19 @@ progress {
   background: var(--bz-strip);
 }
 
+/* The hand-drawn logotype, as on the gallery: its picture carries a ground
+   of its own, which the lighten blend lets drop into the page's. */
 .pagenav__logo {
   flex: none;
-  color: var(--bz-text);
-  font: italic 700 17px/20px var(--bz-font);
-  text-decoration: none;
+  line-height: 0;
+}
+
+.pagenav__logo img {
+  display: block;
+  height: 28px;
+  width: auto;
+  mix-blend-mode: lighten;
+  filter: grayscale(1);
 }
 
 .pagenav__links {

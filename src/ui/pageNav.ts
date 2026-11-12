@@ -55,7 +55,10 @@ export function pageNav(current: PageId | null): PageNav {
   const logo = document.createElement('a');
   logo.className = 'pagenav__logo';
   logo.href = '/';
-  logo.textContent = 'Bozzetto';
+  const mark = document.createElement('img');
+  mark.src = '/assets/bozzetto-script-ink.svg';
+  mark.alt = 'Bozzetto';
+  logo.appendChild(mark);
   const links = document.createElement('div');
   links.className = 'pagenav__links';
   links.appendChild(link('gallery', 'Gallery', '/', current));
