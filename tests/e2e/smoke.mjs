@@ -5147,9 +5147,9 @@ export const suites = {
       await owner.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
       await owner.waitForSelector(`.admin-row[data-project="${id}"]`, { timeout: 30_000 });
       const rows = await owner.evaluate(() =>
-        Object.fromEntries([...document.querySelectorAll('.admin-row')].map((r) => [r.dataset.project, { open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null, edit: !!r.querySelector('.admin-row__edit'), priv: r.querySelector('.admin-row__vis input').checked }])),
+        Object.fromEntries([...document.querySelectorAll('.admin-row')].map((r) => [r.dataset.project, { open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null, edit: !!r.querySelector('.admin-row__present'), priv: r.querySelector('.admin-row__vis input').checked }])),
       );
-      t.ok(rows[id]?.open === `/?sculpt=1&project=${id}` && !rows[id].edit && rows['pub-reel']?.edit, 'the Projects page lists the scenes, opening in Sculpt, and the published work, opening in the editor');
+      t.ok(rows[id]?.open === `/?sculpt=1&project=${id}` && !rows[id].edit && rows['pub-reel']?.edit, 'the Projects page lists the scenes, opening in Sculpt, and the published work, opening in Present');
       t.ok(rows['priv-reel']?.priv === true && rows['pub-reel']?.priv === false && rows[id]?.priv === false, `with each one's visibility (${JSON.stringify(rows)})`);
       mark = fake.calls.length;
       await owner.click('.admin-row[data-project="priv-reel"] .admin-row__vis input');

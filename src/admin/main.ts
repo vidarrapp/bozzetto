@@ -302,11 +302,9 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       ? '<a class="btn admin-row__open">Open in Sculpt</a>'
       : armature
         ? '<a class="btn admin-row__open">Open in Armature</a>'
-        : // The owner's Present for a published timelapse or model (/?tl=&present=1),
-          // View in the viewer, and Frames: the Present workspace on its Frames tab.
-          (p.mode === 'timelapse' || p.mode === 'model' ? '<a class="btn admin-row__present">Present</a>\n' : '') +
-          `<a class="btn admin-row__view" target="_blank" rel="noopener">View</a>
-          <a class="btn admin-row__edit admin-row__frames">Frames</a>`;
+        : // A timelapse or a model opens in the Present workspace, which holds
+          // both its tabs: Project and Frames.
+          '<a class="btn admin-row__present">Open in Present</a>';
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
@@ -377,15 +375,10 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         })();
       });
     } else {
+      // With no frames yet there is nothing to present: it opens on the Frames tab.
       row
-        .querySelector<HTMLAnchorElement>('.admin-row__edit')!
-        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1&tab=frames`);
-      row
-        .querySelector<HTMLAnchorElement>('.admin-row__view')!
-        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
-      row
-        .querySelector<HTMLAnchorElement>('.admin-row__present')
-        ?.setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1`);
+        .querySelector<HTMLAnchorElement>('.admin-row__present')!
+        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1${p.frameCount ? '' : '&tab=frames'}`);
     }
 
     // Who sees it, and whether it is a template (docs/accounts.md §5): a

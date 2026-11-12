@@ -583,11 +583,11 @@ export const suites = {
           model: href('model-demo'),
           scene: scene ? href(scene) : null,
           text: document.querySelector('.admin-row[data-project="tl-demo"] .admin-row__present')?.textContent,
-          edit: document.querySelector('.admin-row[data-project="tl-demo"] .admin-row__edit')?.getAttribute('href'),
+          buttons: [...document.querySelectorAll('.admin-row[data-project="tl-demo"] .admin-row__buttons .btn')].map((b) => b.textContent).join(),
         };
       }, sceneId);
-      t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Present', `each frame project's row has Present (${JSON.stringify(links)})`);
-      t.ok(links.scene === null && links.edit === '/?tl=tl-demo&present=1&tab=frames', `a scene's row has none, and Edit leads to the workspace's Frames tab (${links.edit})`);
+      t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Open in Present', `each frame project's row has Open in Present (${JSON.stringify(links)})`);
+      t.ok(links.scene === null && links.buttons === 'Open in Present', `a scene's row has none, and it is the row's one button (${links.buttons})`);
       await p.click('.admin-row[data-project="tl-demo"] .admin-row__present');
       await presentReady(p);
       t.ok(new URL(p.url()).searchParams.get('tl') === 'tl-demo', 'it opens the project in Present');
