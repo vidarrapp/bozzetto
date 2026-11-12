@@ -15,8 +15,18 @@
  * variables (--bz-max-left, --bz-max-right).
  */
 
-/** Height of the title strip and the tab row under it: where a panel starts. */
-export const PANEL_TOP = 56;
+/**
+ * Height of the title strip and the tab row under it: where a panel starts.
+ * 56px with the 24px strip; a phone's taller strip (shell.css,
+ * --bz-strip-h) moves it by the same amount, so it is read from where the
+ * panels stand rather than kept here.
+ */
+export const PANEL_TOP_DEFAULT = 56;
+export function panelTop(): number {
+  const panel = document.querySelector<HTMLElement>('body.bz-shell .panel');
+  const top = panel ? parseFloat(getComputedStyle(panel).top) : NaN;
+  return Number.isFinite(top) ? top : PANEL_TOP_DEFAULT;
+}
 export const PANEL_WIDTH = 304;
 const GAP = 16;
 
@@ -54,6 +64,7 @@ export function layoutShell(): void {
   }
 
   const root = document.documentElement.style;
+  const top = panelTop();
   const vh = window.innerHeight;
   const vw = window.innerWidth;
   const panelW = Math.min(PANEL_WIDTH, vw);
@@ -75,7 +86,7 @@ export function layoutShell(): void {
     const to = from + panelW;
     if (side === 'left' && edgeBox) bottom = Math.min(bottom, edgeBox.top - GAP);
     if (barBox && barBox.left < to && barBox.right > from) bottom = Math.min(bottom, barBox.top - GAP);
-    return Math.max(48, Math.floor(bottom - PANEL_TOP));
+    return Math.max(48, Math.floor(bottom - top));
   };
   root.setProperty('--bz-max-left', `${limit('left')}px`);
   root.setProperty('--bz-max-right', `${limit('right')}px`);
