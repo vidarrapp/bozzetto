@@ -5720,7 +5720,7 @@ export const suites = {
         `each row has a Template switch beside Private, on for the templates (${JSON.stringify(rows)})`,
       );
       t.ok(/template/i.test(rows['own-scene']?.hint ?? ''), `the switch says what a template is ("${rows['own-scene']?.hint}")`);
-      t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Open in Sculpt opens the template itself, through the owner\'s routes, as before');
+      t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Sculpt on its row opens the template itself, through the owner\'s routes, as before');
       t.ok(
         rows['tpl-files']?.img?.src.startsWith(`${FILES}/m/tpl-files/thumb.jpg?v=`) && rows['tpl-files'].img.cors === 'anonymous',
         `a picture on the files host is asked for with CORS here too (${JSON.stringify(rows['tpl-files']?.img)})`,

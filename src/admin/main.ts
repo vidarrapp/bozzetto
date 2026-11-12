@@ -299,12 +299,12 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // A scene is a file to open in Sculpt, an armature one to open in
     // Armature mode; the editor is for frames.
     const actions = scene
-      ? '<a class="btn admin-row__open">Open in Sculpt</a>'
+      ? '<a class="btn admin-row__open">Sculpt</a>'
       : armature
-        ? '<a class="btn admin-row__open">Open in Armature</a>'
+        ? '<a class="btn admin-row__open">Armature</a>'
         : // A timelapse or a model opens in the Present workspace, which holds
           // both its tabs: Project and Frames.
-          '<a class="btn admin-row__present">Open in Present</a>';
+          '<a class="btn admin-row__present">Present</a>';
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
