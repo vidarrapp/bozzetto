@@ -4458,16 +4458,8 @@ body.is-sampling * {
   accent-color: var(--accent);
 }
 
-.account-legal,
-.account-links a {
+.account-legal {
   color: var(--accent);
-}
-
-.account-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin: 0;
 }
 
 .account-actions {
@@ -5521,7 +5513,6 @@ h1,
 .gallery-form__gatenote a,
 .gallery-form__status a,
 .account-legal,
-.account-links a,
 .account-linkbtn,
 .legal a,
 .report-what a,

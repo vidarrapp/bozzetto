@@ -38,7 +38,7 @@ import { signInAgain } from '../signIn';
 import { pageShell, setTagline } from '../pageShell';
 import { trashButton } from '../trash';
 import { noteAccountDeleted } from '../Landing';
-import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink } from './parts';
+import { CodeStep, HandleField, Say, button, el, field, input } from './parts';
 import { fillMeta, metaPhrase } from '../metaLine';
 import { confirmIdentity } from './signIn';
 
@@ -892,9 +892,5 @@ function legalSection(state: PageState): HTMLElement {
       `You accepted the terms of ${state.details.termsVersion} when you joined, on ${dayOf(state.details.createdAt)}.`,
     ),
   );
-  const links = el('p', 'account-links');
-  // Terms, Privacy and Report content stand in the page's foot; only what the foot does not link is here.
-  links.append(legalLink('Content policy', LEGAL.content));
-  s.appendChild(links);
   return s;
 }
