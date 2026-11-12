@@ -893,12 +893,8 @@ function legalSection(state: PageState): HTMLElement {
     ),
   );
   const links = el('p', 'account-links');
-  links.append(
-    legalLink('Terms', LEGAL.terms),
-    legalLink('Content policy', LEGAL.content),
-    legalLink('Privacy notice', LEGAL.privacy),
-    legalLink('Reporting content', LEGAL.takedown),
-  );
+  // Terms, Privacy and Report content stand in the page's foot; only what the foot does not link is here.
+  links.append(legalLink('Content policy', LEGAL.content));
   s.appendChild(links);
   return s;
 }

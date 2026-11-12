@@ -583,7 +583,7 @@ async function accountPasskeys(server, a, t) {
     `Your data offers Download my data and Delete account (${show(data)})`,
   );
   const legal = await p.evaluate(() => [...document.querySelectorAll('[data-section="legal"] a')].map((l) => l.getAttribute('href')));
-  t.ok(['/legal/terms.html', '/legal/terms.html#content', '/legal/privacy.html', '/legal/terms.html#takedown'].every((h) => legal.includes(h)), `and the legal pages (${show(legal)})`);
+  t.eq(show(legal), show(['/legal/terms.html#content']), 'and the content policy, the one legal link the foot does not have');
 
   // Rename.
   t.eq(show(await passkeyNames(p)), show(['Chrome on Linux']), 'one passkey, named after the browser that made it');
