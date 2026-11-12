@@ -6596,8 +6596,9 @@ progress {
   transform: none;
 }
 
+/* 4:5, the shape every card picture is captured at, so none shows bands. */
 .card__thumb {
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 5;
   background: var(--bz-viewport);
 }
 
