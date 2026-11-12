@@ -14,6 +14,8 @@
  * table - a habit the bracket and quote keys already had.
  */
 
+import { deviceStore, onDeviceChoice } from './deviceStorage';
+
 export type KeyMode = 'sculpt' | 'view' | 'armature';
 
 export interface ActionDef {
@@ -263,6 +265,12 @@ export class Keymap {
   constructor() {
     for (const a of ACTIONS) this.byId.set(a.id, a);
     this.load();
+    // What an earlier visit kept is read once saving is allowed (ui/deviceStorage).
+    onDeviceChoice((c) => {
+      if (c !== 'keep') return;
+      this.load();
+      this.emit();
+    });
   }
 
   action(id: string): ActionDef | undefined {
@@ -390,7 +398,7 @@ export class Keymap {
 
   private load(): void {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = deviceStore.get(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Record<string, string | null>;
       for (const [id, chord] of Object.entries(parsed)) {
@@ -405,8 +413,8 @@ export class Keymap {
 
   private save(): void {
     try {
-      if (this.overrides.size === 0) localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(this.overrides)));
+      if (this.overrides.size === 0) deviceStore.remove(STORAGE_KEY);
+      else deviceStore.set(STORAGE_KEY, JSON.stringify(Object.fromEntries(this.overrides)));
     } catch {
       // The rebind still holds for this page; it just will not survive a reload.
     }

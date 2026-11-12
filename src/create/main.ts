@@ -16,6 +16,7 @@ import { AuthExpiredError, checkSignIn, libraryProjects, roleOf, uploadFailure, 
 import { loadConfig, sizeText } from '../net/account';
 import { statusToast, type StatusToast } from '../sculpt/ui/statusToast';
 import { signInButton } from '../ui/signIn';
+import { ensureDeviceChoice } from '../ui/deviceChoice';
 import { aoWithoutCavity } from '../viewer/Viewer';
 
 /**
@@ -98,6 +99,8 @@ async function main(): Promise<void> {
   followPanelOpacity();
   installRangeFill();
   installSliderBubble();
+  // Asked first, as every page that keeps something is (ui/deviceChoice).
+  await ensureDeviceChoice();
 
   const host = document.getElementById('create');
   if (!host) throw new Error('#create element not found');

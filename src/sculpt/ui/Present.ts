@@ -3,6 +3,7 @@ import { numberedRange, section } from '../../ui/Panel';
 import { SidePanel } from './SidePanel';
 import { panelIsOpen } from './panelMemory';
 import { SHELL_LAYOUT_EVENT } from './shellLayout';
+import { deviceStore } from '../../ui/deviceStorage';
 
 /**
  * Present, the third workspace (Armature, Sculpt, Present): the model on its
@@ -151,7 +152,7 @@ export class PresentMode {
     this.paintPlay();
 
     try {
-      const stored = Number(localStorage.getItem(SPEED_KEY));
+      const stored = Number(deviceStore.get(SPEED_KEY));
       if (stored >= SPEED_MIN && stored <= SPEED_MAX) this.speed = stored;
     } catch {
       // A blocked store: the default speed.
@@ -297,7 +298,7 @@ export class PresentMode {
     this.speedInput.value = String(this.speed);
     this.paintSpeed();
     try {
-      localStorage.setItem(SPEED_KEY, String(this.speed));
+      deviceStore.set(SPEED_KEY, String(this.speed));
     } catch {
       // Only this page remembers it, then.
     }

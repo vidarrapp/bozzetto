@@ -11,6 +11,7 @@ import { isShowKey, pageChrome } from '../ui/ChromeToggle';
 import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
+import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
@@ -1125,12 +1126,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       clearTimeout(saveTimer);
       saveTimer = 0;
     }
+    // Saving off (ui/deviceStorage): nothing is written.
+    if (!mayStore()) return;
     await saveArmature({ ...currentFile(), ...(forScene ? { forScene: true } : {}) });
   };
   const scheduleSave = (): void => {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => void flushSave(), SAVE_GAP_MS);
   };
+  // Turned on from Preferences: the figure as it stands is kept straight away.
+  onDeviceChoice((c) => {
+    if (c === 'keep') scheduleSave();
+  });
   /**
    * Picture the figure for the gallery card, as sculpt mode does its work,
    * and save it with the rest. The balls, the gizmo and the selection wash
@@ -1348,6 +1355,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     } catch (err) {
       if (!(err instanceof RemeshTooLarge)) throw err;
       statusToast('Sending to Sculpt...').fail(err.message);
+      return;
+    }
+    // The figure crosses to Sculpt through the device's storage, which is
+    // shut while saving is off.
+    if (!mayStore()) {
+      statusToast('Sending to Sculpt...').fail('Saving is off, so the figure cannot be sent to Sculpt. Turn on Keep work on this device in Edit > Preferences.');
       return;
     }
     await saveHandoff({

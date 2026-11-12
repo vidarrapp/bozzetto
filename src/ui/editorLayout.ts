@@ -1,4 +1,5 @@
 import type { Panel } from './Panel';
+import { deviceStore } from './deviceStorage';
 
 /**
  * Coordinates the editor's two slide-out panels — the left "Project settings"
@@ -103,7 +104,7 @@ export class EditorLayout {
       panel: this.panel ? !this.panel.isCollapsed() : true,
     };
     try {
-      localStorage.setItem(this.storageKey, JSON.stringify(data));
+      deviceStore.set(this.storageKey, JSON.stringify(data));
     } catch {
       /* storage unavailable (private mode); fall back to defaults next load */
     }
@@ -111,7 +112,7 @@ export class EditorLayout {
 
   private load(): SavedLayout | null {
     try {
-      const raw = localStorage.getItem(this.storageKey);
+      const raw = deviceStore.get(this.storageKey);
       if (!raw) return null;
       const d = JSON.parse(raw) as Partial<SavedLayout>;
       if (typeof d.sidebar === 'boolean' && typeof d.panel === 'boolean') {

@@ -1,7 +1,7 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
 // armatureProjects.mjs's, shellPhone.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
-// objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
+// deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
 // profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's and framePresent.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
@@ -21,6 +21,7 @@ import { suites as brushCaps } from './brushCaps.mjs';
 import { suites as channelBox } from './channelBox.mjs';
 import { suites as clayTabPen } from './clayTabPen.mjs';
 import { suites as community } from './community.mjs';
+import { suites as deviceStorage } from './deviceStorage.mjs';
 import { suites as framePresent } from './framePresent.mjs';
 import { suites as hardening } from './hardening.mjs';
 import { suites as help } from './help.mjs';
@@ -48,7 +49,7 @@ import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo, ...deviceStorage };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {
@@ -68,18 +69,34 @@ const browser = await launch();
 // included: software frames here miss every refresh, and the ladder would
 // lighten frames under suites that compare them. The latency suites turn
 // it back on where they test it.
+//
+// The first-visit question about keeping things on the device (ui/deviceChoice)
+// would block every suite that starts from an empty context, so every context
+// starts with the choice already stored as "keep", seeded before the app
+// loads. The one suite about the question opts out with
+// `newContext({ askAboutDevice: true })`; the option is ours and is not
+// passed on to Playwright.
 const newContext = browser.newContext.bind(browser);
-browser.newContext = async (options) => {
+browser.newContext = async ({ askAboutDevice = false, ...options } = {}) => {
   const ctx = await newContext(options);
   await ctx.addInitScript(() => {
     window.__bozzettoAdaptiveOff = true;
   });
+  if (!askAboutDevice) {
+    await ctx.addInitScript(() => {
+      try {
+        if (location.protocol.startsWith('http')) localStorage.setItem('bozzetto-device-choice', 'keep');
+      } catch {
+        /* no storage on this page */
+      }
+    });
+  }
   return ctx;
 };
 let failed = 0;
 try {
   for (const [name, fn] of chosen) {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, askAboutDevice: name.startsWith('deviceStorage') });
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));

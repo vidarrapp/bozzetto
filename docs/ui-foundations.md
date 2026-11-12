@@ -64,6 +64,7 @@ layer does not try to.
 | Orange | #ff5a1f | The tool in hand; the amount in a field; the one main action of a window; the focus outline. Text on it is black |
 | Lime | #c6ff00 | The knob of a switch that is on |
 | Red | #ff4060 | Something went wrong; an action that cannot be undone. Never a switch that is off: off is neutral, as on macOS and iPadOS. Text on it is black. It leans toward pink so it cannot be taken for the orange |
+| Lime, as a button | #c6ff00 | The recommended action (`.btn--recommended`): the one step the person should take next, one to a screen, such as Keep on this device in the first-visit window. Text on it is black. A window has this or the orange main action, not both |
 
 The view axes keep their own red, green and blue.
 

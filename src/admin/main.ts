@@ -12,6 +12,7 @@ import { topbarRight } from '../ui/topbar';
 import { signOutChip } from '../ui/signIn';
 import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
+import { ensureDeviceChoice } from '../ui/deviceChoice';
 
 /**
  * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
@@ -466,5 +467,8 @@ installSliderBubble();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');
-if (isProjectId(projectId)) void renderEditor(root, projectId);
-else void renderAdmin(root, wantedTab());
+// Asked first, as every page that keeps something is (ui/deviceChoice).
+void ensureDeviceChoice().then(() => {
+  if (isProjectId(projectId)) void renderEditor(root, projectId);
+  else void renderAdmin(root, wantedTab());
+});

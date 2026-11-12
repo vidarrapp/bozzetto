@@ -2,6 +2,9 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-12: The label on Turn saving off. The brief said white on the red fill; the design system and every other btn--danger have black text on red (white on #ff4060 is about 3.3:1, black about 7:1). Built black. White, or keep black? (blocks: nothing)
+- [ ] 2026-11-12: While saving is off, the gallery's Import OBJ and Armature's Send to Sculpt cannot carry the file to Sculpt, since they go through IndexedDB. Both say so and point to Preferences. Accept, or carry them in sessionStorage (small files only)? (blocks: nothing)
+- [ ] 2026-11-12: sessionStorage still holds tab-only state (an invite being followed, the splash already played, the sign-in hand-off) with no choice made, as it is gone with the tab. Accept, or gate it too? (blocks: nothing)
 - [ ] 2026-11-11: In the viewer's review mode play is grey so Approve (or Unhide) is the screen's one orange action; elsewhere in the viewer play is the orange one. Keep it so, or play orange in review too? (blocks: nothing)
 - [ ] 2026-11-11: A stage's note ("Major planes established.") sits as a small caption over the transport in the viewer, since the readout carries the stage's name only. Keep the caption, or drop the notes from the viewer? (blocks: nothing)
 - [ ] 2026-11-11: On a phone the readout hides, and with it a reviewer's "Reviewing Pending review" and the title; the actions still show. Accept that, or give the strip a second line there? (blocks: review mode on a phone)

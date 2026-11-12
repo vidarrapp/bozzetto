@@ -23,6 +23,7 @@ import {
   suspensionText,
   type Me,
 } from '../net/account';
+import { deviceStore } from '../ui/deviceStorage';
 
 export type Visibility = 'public' | 'private';
 
@@ -465,8 +466,8 @@ function remember(): void {
   try {
     // When, and nothing else: the address is never read back, and a
     // device the owner has left need not keep it.
-    localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ at: Date.now() }));
-    localStorage.removeItem(EXPIRY_TOLD_KEY);
+    deviceStore.set(SIGNED_IN_KEY, JSON.stringify({ at: Date.now() }));
+    deviceStore.remove(EXPIRY_TOLD_KEY);
   } catch {
     // Storage refused: a later signed-out answer reads as a guest's.
   }
@@ -474,7 +475,7 @@ function remember(): void {
 
 function forget(): void {
   try {
-    localStorage.removeItem(SIGNED_IN_KEY);
+    deviceStore.remove(SIGNED_IN_KEY);
   } catch {
     // Nothing remembered that could be.
   }
@@ -487,11 +488,11 @@ function forget(): void {
  */
 export function signedInHereBefore(): boolean {
   try {
-    const raw = localStorage.getItem(SIGNED_IN_KEY);
+    const raw = deviceStore.get(SIGNED_IN_KEY);
     const rec = raw ? (JSON.parse(raw) as { at?: unknown; email?: unknown }) : null;
     const at = rec?.at;
     // Records from before kept the owner's address too: kept no longer.
-    if (typeof at === 'number' && rec?.email !== undefined) localStorage.setItem(SIGNED_IN_KEY, JSON.stringify({ at }));
+    if (typeof at === 'number' && rec?.email !== undefined) deviceStore.set(SIGNED_IN_KEY, JSON.stringify({ at }));
     return typeof at === 'number' && Date.now() - at < REMEMBER_MS;
   } catch {
     return false;
@@ -504,8 +505,8 @@ export function signedInHereBefore(): boolean {
  */
 export function takeExpiryNotice(): boolean {
   try {
-    if (localStorage.getItem(EXPIRY_TOLD_KEY)) return false;
-    localStorage.setItem(EXPIRY_TOLD_KEY, '1');
+    if (deviceStore.get(EXPIRY_TOLD_KEY)) return false;
+    deviceStore.set(EXPIRY_TOLD_KEY, '1');
     return true;
   } catch {
     return false; // could not record it was said, so it is not said at all
@@ -629,7 +630,7 @@ export async function signOut(): Promise<void> {
 export async function forgetSignIn(): Promise<void> {
   forget();
   try {
-    localStorage.removeItem(EXPIRY_TOLD_KEY);
+    deviceStore.remove(EXPIRY_TOLD_KEY);
   } catch {
     // Nothing was remembered that could be.
   }
