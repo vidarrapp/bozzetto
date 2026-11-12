@@ -1942,7 +1942,7 @@ export const suites = {
     }));
     t.ok(
       guestPage.note === 'Nothing is uploaded.' &&
-        guestPage.heads === 'Sequence,Order,Settings,Stages' &&
+        guestPage.heads === 'Sequence,Settings,Stages' &&
         guestPage.action === '' &&
         guestPage.frames === '0' &&
         guestPage.open === 'Frames' &&
@@ -1977,7 +1977,7 @@ export const suites = {
       }));
       t.ok(
         ownerPage.note === 'Nothing is uploaded until you save to Projects.' &&
-          ownerPage.heads === 'Sequence,Order,Settings,Stages' &&
+          ownerPage.heads === 'Sequence,Settings,Stages' &&
           ownerPage.buttons === 'Save to Projects (off)',
         `signed in, the workspace saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
       );
@@ -4085,7 +4085,7 @@ export const suites = {
         return getComputedStyle(probe).color;
       };
       const trash = () => getComputedStyle(panel.querySelector('.outliner__icon--danger')).color;
-      const dark = { trash: trash(), red: rust('--bz-red'), accent: rust('--accent') };
+      const dark = { trash: trash(), red: rust('--bz-red-text'), accent: rust('--accent') };
       probe.remove();
       return {
         order: order.join(','),
