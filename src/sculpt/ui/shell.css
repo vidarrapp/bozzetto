@@ -844,16 +844,14 @@ body.bz-shell .update-notice--beside-panel {
 
 /* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------
    What edits is put away and locked: the tool bar, the edge controls, the
-   brush ring, the object stats, and the Scene, Model and Tool panels with
+   brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Render and
    Output remain as the right-hand tabs. The Output tab and panel exist in
    Present only. */
-body.presenting .sculpt-toolbar__left,
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
 body.presenting .bz-edge,
 body.presenting .sculpt-hist,
-body.presenting .sculpt-stats,
 body.presenting .sculpt-leveltoast,
 body.presenting .sculpt-cursor {
   visibility: hidden !important;
