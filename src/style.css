@@ -1,37 +1,8 @@
 /* ------------------------------------------------------------------
-   Design foundation: warm ink-and-cream surfaces, a single clay-rust
-   accent, editorial serif display + Manrope UI + mono spec labels,
-   and low (2px) radius.
+   Design foundation: the application layer's names for the tokens in
+   app-layer/tokens.css (a single accent, Familjen Grotesk + Martian Mono,
+   square corners).
    ------------------------------------------------------------------ */
-@font-face {
-  font-family: 'Manrope';
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('/assets/fonts/Manrope-Variable.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Regular.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Italic.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 100 800;
-  font-display: swap;
-  src: url('/assets/fonts/JetBrainsMono-Variable.ttf') format('truetype');
-}
-
 :root,
 :root[data-theme='dark'],
 :root[data-theme='light'] {

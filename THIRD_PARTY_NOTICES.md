@@ -695,11 +695,10 @@ THE SOFTWARE.
 
 ## Fonts
 
-Familjen Grotesk and Martian Mono (from the Gestalt v2 design system), and
-Instrument Serif, JetBrains Mono and Manrope (the last three no longer used,
-to be removed), in `public/assets/fonts/`, are
-under the SIL Open Font License 1.1. Each font's copyright line and the full
-licence are in `public/assets/fonts/licenses/`, which ships beside the fonts.
+Familjen Grotesk and Martian Mono (from the Gestalt v2 design system), in
+`public/assets/fonts/`, are under the SIL Open Font License 1.1. Each font's
+copyright line and the full licence are in `public/assets/fonts/licenses/`,
+which ships beside the fonts.
 
 ## Models and images
 
