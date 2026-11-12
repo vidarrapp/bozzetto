@@ -1406,26 +1406,23 @@ async function guestCreate(browser, origin, t) {
   try {
     const p = g.page;
     await p.goto(`${origin}/create/`, { waitUntil: 'domcontentloaded' });
-    await p.waitForSelector('#save-signin button', { timeout: 30_000 });
+    await p.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
     const page = await p.evaluate(() => ({
-      intro: document.querySelector('.editor__id')?.textContent ?? '',
-      button: document.querySelector('#save-signin button')?.textContent ?? '',
-      save: !!document.querySelector('#save-project'),
+      note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+      button: document.querySelector('.bz-strip__btn--primary')?.textContent ?? '',
+      off: document.querySelector('.bz-strip__btn--primary')?.disabled,
       exported: !!document.querySelector('#export-html'),
     }));
     t.ok(
-      page.intro === 'Build a timelapse or a model from frames made elsewhere. Sign in to save it to My projects and share it. Nothing is uploaded until then.' &&
-        page.button === 'Sign in' &&
-        !page.save &&
-        !page.exported,
-      `a guest's uploader offers Sign in, with no Save and no Export .html (${show(page)})`,
+      page.note === 'Nothing is uploaded until you sign in and save.' && page.button === 'Sign in to save' && !page.exported,
+      `a guest's workspace offers Sign in to save, with no Save and no Export .html (${show(page)})`,
     );
-    await p.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await p.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
-    await p.click('#save-signin button');
+    await p.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await p.waitForFunction(() => !!document.querySelector('.panel--render') && !!document.querySelector('.panel--frames .bz-frame'), null, { timeout: 90_000 });
+    await p.click('.bz-strip__btn--primary');
     t.ok(await p.waitForSelector('.account-card', { timeout: 15_000 }).then(() => true, () => false), 'Sign in opens the dialog');
-    const kept = await p.evaluate(() => ({ path: location.pathname, frames: document.querySelector('#frame-count')?.textContent ?? '' }));
-    t.ok(kept.path === '/create/' && kept.frames === '\u00b7 1 frame', `over the page, which keeps its frame (${show(kept)})`);
+    const kept = await p.evaluate(() => ({ path: location.pathname, frames: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent ?? '' }));
+    t.ok(kept.path === '/create/' && kept.frames === '1', `over the page, which keeps its frame (${show(kept)})`);
   } finally {
     await g.ctx.close();
   }
@@ -1456,24 +1453,37 @@ async function memberCreate(server, o, a, t) {
     `signed in as a member, Create offers Import OBJ and a Create timelapse that saves to My projects (${show(menu)})`,
   );
   await Promise.all([p.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }), p.click('.create-overlay [data-kind="timelapse"]')]);
-  await p.waitForSelector('#save-project', { timeout: 30_000 });
-  const intro = await p.evaluate(() => document.querySelector('.editor__id')?.textContent ?? '');
-  t.eq(intro, 'Build a timelapse or a model from frames made elsewhere, and save it to My projects, where only you see it.', 'the uploader opens signed in: nothing says nothing is uploaded');
+  await p.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
+  const intro = await p.evaluate(() => ({
+    note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+    action: document.querySelector('.bz-strip__btn--primary')?.textContent ?? '',
+  }));
+  t.eq(show(intro), show({ note: 'Nothing is uploaded until you save to My projects.', action: 'Save to My projects' }), 'the workspace opens signed in, on its Frames tab, with the one orange Save to My projects');
 
   const frames = [0, 1, 2].map((i) => resolve(`dist/timelapses/demo/frames/sd/000${i}.glb`));
   const load = async () => {
-    await p.fill('#f-title', 'Ada reel');
-    await p.selectOption('#f-mode', 'timelapse');
-    await p.fill('#f-fps', '6');
-    await p.setInputFiles('#files', frames);
-    await p.waitForFunction(() => !document.querySelector('#save-project').disabled, null, { timeout: 90_000 });
+    await p.setInputFiles('.panel--frames input[type="file"]', frames);
+    await p.waitForFunction(() => !document.querySelector('.bz-strip__btn--primary').disabled && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
+    await p.evaluate(() => document.querySelector('.panel--project')?.classList.contains('panel--collapsed') && document.querySelector('.panel--project .panel__handle').click());
+    await p.fill('.panel--project input[aria-label="Title"]', 'Ada reel');
+    await p.selectOption('.panel--project select[aria-label="Mode"]', 'timelapse');
+    await p.evaluate(() => {
+      const el = document.querySelector('.panel--project input[aria-label="Frames per second"]');
+      el.value = '6';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   };
   await load();
-  await p.click('#add-stage');
-  await p.fill('.stage-row .stage-name', 'Blockout');
-  await p.fill('.stage-row .stage-frame', '1');
+  await p.evaluate(() => {
+    window.__bozzetto.pause();
+    window.__bozzetto.jumpTo(1);
+  });
+  await p.waitForFunction(() => window.__bozzetto.timeline.frameIndex() === 1 && !document.querySelector('.panel--project .bz-stages__actions .btn').disabled, null, { timeout: 5000 });
+  await p.click('.panel--project .bz-stages__actions .btn:first-child');
+  await p.fill('.panel--project input[aria-label="Stage name"]', 'Blockout');
   await clearNotices(p);
-  await Promise.all([p.waitForURL((u) => u.searchParams.has('me'), { timeout: 90_000 }).catch(() => {}), p.click('#save-project')]);
+  await Promise.all([p.waitForURL((u) => u.searchParams.has('me'), { timeout: 90_000 }).catch(() => {}), p.click('.bz-strip__btn--primary')]);
   t.ok(new URL(p.url()).searchParams.has('me'), `Save to My projects opens My projects (${p.url()})`);
   const list = (await pageJson(p, '/api/me/projects')).body ?? [];
   const made = list.find((x) => !before.includes(x.id));
@@ -1506,10 +1516,10 @@ async function memberCreate(server, o, a, t) {
   t.eq(await setQuota(1), 200, "the owner sets the member's quota to 1 MB");
   const held = (await pageJson(p, '/api/me')).body?.usage ?? { used: 0, reserved: 0 };
   await p.goto(`${server.base}/create/`, { waitUntil: 'domcontentloaded' });
-  await p.waitForSelector('#save-project', { timeout: 30_000 });
+  await p.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
   await load();
   const kept = await ids();
-  await p.click('#save-project');
+  await p.click('.bz-strip__btn--primary');
   const notice = await failedNotice(p);
   t.eq(
     notice?.text,

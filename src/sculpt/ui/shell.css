@@ -995,8 +995,234 @@ body.bz-shell .bz-readout__extras {
   display: contents;
 }
 
-body.bz-shell .panel--project {
+body.bz-shell .panel--project,
+body.bz-shell .panel--frames {
   z-index: 15;
+}
+
+/* A control a panel has put away (a model has no frames a second, a list with no frames no Order). */
+body.bz-shell .panel--project [hidden],
+body.bz-shell .panel--frames [hidden] {
+  display: none !important;
+}
+
+/* --- Frames: the sequence the project plays (present/FramesPanel.ts) ------
+   The drop box, the counts, Add more and the trash, then the order. */
+body.bz-shell .bz-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 20px 12px;
+  border: 1px dashed var(--bz-line);
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+  text-align: center;
+}
+
+body.bz-shell .bz-drop p {
+  margin: 0;
+}
+
+body.bz-shell .panel--frames.panel--dropping .bz-drop,
+body.bz-shell .panel--frames.panel--dropping .panel__body {
+  outline: 1px dashed var(--bz-orange);
+  outline-offset: -4px;
+}
+
+body.bz-shell .bz-rowline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+body.bz-shell .bz-lab {
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+body.bz-shell .bz-val {
+  color: var(--bz-text);
+  font: 700 11px/16px var(--bz-font-mono);
+  white-space: nowrap;
+}
+
+body.bz-shell .bz-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The trash: grey at rest, red under the pointer or the keyboard's focus. */
+body.bz-shell .bz-trash {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-trash:hover,
+body.bz-shell .bz-trash:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-red);
+}
+
+body.bz-shell .bz-trash:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .bz-trash i {
+  display: block;
+  height: 1em;
+}
+
+body.bz-shell .bz-progress {
+  margin-top: 8px;
+}
+
+/* The Sequence section is the last one showing while the order has nothing to list. */
+body.bz-shell .panel--frames .section:has(+ .section[hidden]) {
+  border-bottom: 0;
+}
+
+body.bz-shell .bz-progress__track {
+  height: 3px;
+  background: var(--bz-line);
+}
+
+body.bz-shell .bz-progress__bar {
+  height: 100%;
+  width: 0;
+  background: var(--bz-orange);
+}
+
+body.bz-shell .bz-warn {
+  margin: 8px 0 0;
+  color: var(--bz-red);
+  font: 400 12px/16px var(--bz-font);
+}
+
+/* The order: a row a frame, its place in mono, its name, and the three small buttons. */
+body.bz-shell .bz-frames {
+  max-height: 240px;
+  margin: 0 -8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bz-line) transparent;
+}
+
+body.bz-shell .bz-frame {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 28px;
+}
+
+body.bz-shell .bz-frame--on,
+body.bz-shell .bz-frame:hover {
+  background: var(--bz-hover);
+}
+
+body.bz-shell .bz-frame__pick {
+  appearance: none;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text);
+  font: 400 13px/28px var(--bz-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-frame__pick:focus-visible,
+body.bz-shell .bz-frame__btn:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .bz-frame__n {
+  flex: none;
+  min-width: 3ch;
+  color: var(--bz-text-2);
+  font: 700 11px/28px var(--bz-font-mono);
+}
+
+body.bz-shell .bz-frame__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.bz-shell .bz-frame__btn {
+  appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-frame__btn:hover:not(:disabled) {
+  background: var(--bz-control);
+  color: var(--bz-text);
+}
+
+body.bz-shell .bz-frame__btn.bz-frame__remove:hover:not(:disabled),
+body.bz-shell .bz-frame__btn.bz-frame__remove:focus-visible {
+  color: var(--bz-red);
+}
+
+body.bz-shell .bz-frame__btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+body.bz-shell .bz-frame__btn i {
+  display: block;
+  height: 1em;
+}
+
+/* Create with no frames: what the view will be, said quietly where it will stand. */
+body.bz-shell .bz-empty {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--bz-text-3);
+  font: 400 13px/16px var(--bz-font);
+  pointer-events: none;
 }
 
 /* The project's fields: a caption and, at the right, what it holds. */

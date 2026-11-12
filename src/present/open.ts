@@ -1,7 +1,6 @@
 import { api, checkSignIn, roleOf } from '../admin/api';
 import type { EditorProject } from '../admin/projectEdit';
-import { validateManifest } from '../types/manifest';
-import { mountFramesPresent } from './framesPresent';
+import { mountWorkspace } from './workspace';
 
 /**
  * The route `/?tl=<id>&present=1` (main.ts): Present for a published frame
@@ -20,6 +19,7 @@ export async function openPresent(
   id: string,
   viewport: HTMLElement,
   onStatus?: (msg: string) => void,
+  tab?: string | null,
 ): Promise<boolean> {
   try {
     if (roleOf(await checkSignIn()) !== 'owner') return false;
@@ -35,9 +35,14 @@ export async function openPresent(
   }
   // A scene or an armature opens where it was made; only frames are played here.
   if (project?.mode !== 'timelapse' && project?.mode !== 'model') return false;
-  if (!Array.isArray(project.frames) || project.frames.length === 0) return false;
-  const manifest = validateManifest(project);
-  onStatus?.(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
-  await mountFramesPresent({ id, project, manifest, viewport, onStatus });
+  if (!Array.isArray(project.frames)) return false;
+  // A project made but not yet given frames (the Projects list's Create) opens on its Frames tab, empty.
+  onStatus?.(project.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
+  await mountWorkspace({
+    viewport,
+    project: { id, data: project },
+    tab: tab === 'frames' || project.frames.length === 0 ? 'frames' : tab === 'project' ? 'project' : undefined,
+    onStatus,
+  });
   return true;
 }

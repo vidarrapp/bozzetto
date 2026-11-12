@@ -1,6 +1,5 @@
 import { OwnerSessionError, TEMPLATE_HINT, VISIBILITY_HINT, api, failureText, mediaPath, setThumbSrc } from './api';
 import type { ProjectSummary } from './api';
-import { renderEditor } from './editor';
 import { ownerSignIn, ownerSignInPanel } from './ownerSession';
 import { AccountError, bootstrapOwner, errorText, loadConfig, whoami } from '../net/account';
 import { HandleField, Say, termsBox } from '../ui/account/parts';
@@ -14,8 +13,8 @@ import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
 
 /**
- * Editor router. `/admin/?p=<id>` opens the per-project editor (frame upload,
- * preview, settings); with no `p` it shows the project list + create form,
+ * Editor router. `/admin/?p=<id>` goes on to the Present workspace (present/), the frame editor,
+ * where the owner's project is edited; with no `p` it shows the project list + create form,
  * and with accounts on, tabs beside it for the owner's tools over accounts
  * (`?tab=invites|users|audit`). Navigation uses plain links (full reload),
  * so each view starts clean and the preview's WebGL context is never leaked
@@ -378,7 +377,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     } else {
       row
         .querySelector<HTMLAnchorElement>('.admin-row__edit')!
-        .setAttribute('href', `?p=${encodeURIComponent(p.id)}`);
+        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1&tab=frames`);
       row
         .querySelector<HTMLAnchorElement>('.admin-row__view')!
         .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}`);
@@ -466,5 +465,6 @@ installSliderBubble();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');
-if (isProjectId(projectId)) void renderEditor(root, projectId);
+// The editor is the Present workspace now: an old link or a just-made project goes to its Frames tab.
+if (isProjectId(projectId)) window.location.replace(`/?tl=${encodeURIComponent(projectId)}&present=1&tab=frames`);
 else void renderAdmin(root, wantedTab());

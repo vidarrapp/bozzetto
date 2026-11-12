@@ -325,17 +325,17 @@ export const suites = {
     await page.unroute('**/timelapses/demo/manifest.json');
     await page.unroute(/painted\.glb/);
 
-    // The editors' preview (the uploader's here; the admin editor builds
-    // the same panel).
+    // Create's preview (the owner's frame editor is the same workspace).
     const dir = mkdtempSync(join(tmpdir(), 'bozzetto-painted-'));
     try {
       const file = join(dir, 'painted.glb');
       writeFileSync(file, painted);
       await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
-      await page.setInputFiles('#files', file);
-      await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
+      await page.setInputFiles('.panel--frames input[type="file"]', file);
+      await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
+      await page.evaluate(() => document.querySelector('.panel--render.panel--collapsed')?.querySelector('.panel__handle').click());
       rows = await materialRows(page);
-      t.ok(rows.colour === 'sculpt' && !rows.albedo, `the uploader's preview offers the switch for a painted model (${JSON.stringify(rows)})`);
+      t.ok(rows.colour === 'sculpt' && !rows.albedo, `the Create workspace's preview offers the switch for a painted model (${JSON.stringify(rows)})`);
       await pickColour(page, 'plain');
       await page.evaluate(() => window.__bozzetto.materials.setAlbedo('#2a5cff'));
       t.ok(bluish(await middle(page)), 'and renders Plain colour in its albedo');
@@ -444,12 +444,13 @@ export const suites = {
     const armKey = (await keyLight(page)).color;
     t.ok(drag.sampling && near(armKey, fig.hex), `the key light takes the colour under the pointer (${armKey}, frame ${fig.hex})`);
 
-    // The editors' preview: the uploader's, whose Render panel is the admin editor's.
+    // Create's preview, whose Render panel is the owner's editor's.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
-    await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
+    await page.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
+    await page.evaluate(() => document.querySelector('.panel--render.panel--collapsed')?.querySelector('.panel__handle').click());
     await page.evaluate(() => {
-      const p = document.querySelector('.panel--editor');
+      const p = document.querySelector('.panel--render');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Background').querySelector('select');
       sel.value = 'color';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -458,7 +459,7 @@ export const suites = {
     await page.waitForTimeout(300);
     const model = await viewMiddle(page);
     const edBgAt = await page.evaluate(() => {
-      const p = document.querySelector('.panel--editor');
+      const p = document.querySelector('.panel--render');
       const row = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Bg colour');
       const s = row.querySelector('.cpick__swatch');
       s.scrollIntoView({ block: 'center' });
@@ -467,7 +468,7 @@ export const suites = {
     });
     drag = await pickDrag(page, edBgAt, model.at, bgColourNot, '#203040');
     const edBg = await page.evaluate(() => window.__bozzetto.environment.getState().bgColor);
-    t.ok(drag.sampling && near(edBg, model.hex), `the editor preview's background picks off its model (${edBg}, frame ${model.hex})`);
+    t.ok(drag.sampling && near(edBg, model.hex), `the Create preview's background picks off its model (${edBg}, frame ${model.hex})`);
   },
 
   // The colour picker at twice its size (owner call), beside its panel on

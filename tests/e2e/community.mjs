@@ -191,12 +191,14 @@ async function makeModerator(o, t) {
 async function makeModel(a, t) {
   const p = a.page;
   await go(a, 'create/');
-  await p.waitForSelector('#save-project', { timeout: 30_000 });
-  await p.fill('#f-title', 'Ada torso');
-  await p.selectOption('#f-mode', 'model');
-  await p.setInputFiles('#files', [resolve('dist/timelapses/demo/frames/sd/0000.glb')]);
-  await p.waitForFunction(() => !document.querySelector('#save-project').disabled, null, { timeout: 90_000 });
-  await Promise.all([p.waitForURL((u) => u.searchParams.has('me'), { timeout: 90_000 }).catch(() => {}), p.click('#save-project')]);
+  await p.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
+  await p.setInputFiles('.panel--frames input[type="file"]', [resolve('dist/timelapses/demo/frames/sd/0000.glb')]);
+  await p.waitForFunction(() => !document.querySelector('.bz-strip__btn--primary').disabled, null, { timeout: 90_000 });
+  await p.click('.panel--project .panel__handle');
+  await p.fill('.panel--project input[aria-label="Title"]', 'Ada torso');
+  await p.selectOption('.panel--project select[aria-label="Mode"]', 'model');
+  await p.waitForFunction(() => !document.querySelector('.bz-strip__btn--primary').disabled && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
+  await Promise.all([p.waitForURL((u) => u.searchParams.has('me'), { timeout: 90_000 }).catch(() => {}), p.click('.bz-strip__btn--primary')]);
   const list = await p.evaluate(async () => (await fetch('/api/me/projects')).json());
   const made = list.find((x) => x.title === 'Ada torso');
   t.ok(!!made && made.mode === 'model' && made.shared === 'none', `@ada has a model in My projects, not shared (${show(made && { id: made.id, mode: made.mode, shared: made.shared })})`);

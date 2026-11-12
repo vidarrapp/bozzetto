@@ -232,9 +232,10 @@ export const suites = {
       dialogs.push(d.message());
       void d.accept();
     });
+    // The owner's editor is the Present workspace now (/admin/?p= leads there).
     const openEditor = async () => {
-      await page.goto(`${base}/admin/?p=${id}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => !!document.querySelector('.panel--editor') && !!document.querySelector('#reel-mount')?.firstElementChild, null, { timeout: 90_000 });
+      await page.goto(`${base}/?tl=${id}&present=1`, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
       // Held on the first frame, which Set scale measures and boot shows.
       await page.evaluate(() => {
         window.__bozzetto.pause();
@@ -247,11 +248,10 @@ export const suites = {
     t.ok(exposed, 'the editor preview is reachable as __bozzetto (debug handle)');
     if (!exposed) return;
     await page.evaluate(() => window.__bozzetto.pause());
-    await guideChecks(page, t, 'the editor', { button: true });
+    await guideChecks(page, t, 'the editor', { button: false });
     await lightChecks(page, t, 'the editor');
-    // Tab as everywhere, over the preview only: the editor's own top row and
-    // its sidebar of project settings stay.
-    await chromeChecks(page, t, 'the editor', { panels: ['.panel--editor'], keep: ['.editor .topbar', '.editor__sidebar'] });
+    // Tab as everywhere: the panels close, then the interface goes, and the transport stays.
+    await chromeChecks(page, t, 'the editor', { panels: ['.panel--render'], transport: true });
 
     // --- Set scale --------------------------------------------------------
     const banner = () =>
@@ -280,14 +280,14 @@ export const suites = {
     b = await banner();
     t.ok(/^Now .+ units tall\.$/.test(b.note), `the form says how tall the model is now, in its own units ("${b.note}")`);
     refuse = true;
-    dialogs.length = 0;
     await page.fill('.scale-banner__height', '30');
     await page.click('.scale-banner__apply');
-    for (let i = 0; i < 40 && !dialogs.length; i++) await page.waitForTimeout(100);
+    const failed = () => page.evaluate(() => document.querySelector('.sculpt-toast[data-state="failed"]')?.textContent ?? null);
+    for (let i = 0; i < 40 && !(await failed()); i++) await page.waitForTimeout(100);
     let now = await played(page);
     t.ok(
-      dialogs[0] === 'Set scale failed: The save failed' && now.scale === 1 && now.units === null && now.locked === null && (await banner()).shown,
-      `a refused save says so and puts the preview back (${dialogs.join(' | ')}; ${JSON.stringify(now)})`,
+      (await failed()) === 'Set scale failed: The save failed' && now.scale === 1 && now.units === null && now.locked === null && (await banner()).shown,
+      `a refused save says so and puts the preview back (${await failed()}; ${JSON.stringify(now)})`,
     );
     refuse = false;
     puts.length = 0;
@@ -306,15 +306,15 @@ export const suites = {
     t.ok(Math.abs(now.height - 30) < 1e-4 && Math.abs(now.foot) < 1e-4, `the preview plays it 30 cm tall, standing on 0 (${now.height.toFixed(4)} cm, foot ${now.foot})`);
     t.ok(now.locked === 0 && now.floor === 0 && now.units === 'cm', `on the fixed floor at 0 (${JSON.stringify(now)})`);
     t.ok(!(await banner()).shown, 'and the offer goes');
-    // Save look after keeps the scale.
+    // Save after keeps the scale.
     puts.length = 0;
-    await page.click('.panel__actions .btn--primary');
+    await page.click('.bz-strip__btn--primary');
     for (let i = 0; i < 40 && !puts.length; i++) await page.waitForTimeout(100);
-    t.ok(Math.abs((puts[0]?.presentation?.scale ?? 0) - factor) < 1e-9, `Save look after it keeps the scale (${puts[0]?.presentation?.scale})`);
+    t.ok(Math.abs((puts[0]?.presentation?.scale ?? 0) - factor) < 1e-9, `Save after it keeps the scale (${puts[0]?.presentation?.scale})`);
     // Reopened: the scale and the marker come back from the project, every frame alike.
     await openEditor();
     now = await played(page);
-    t.ok(Math.abs(now.height - 30) < 1e-4 && now.units === 'cm' && now.locked === 0 && !(await banner()).shown, `reopened, the editor plays it at the new size, marked, offering nothing (${JSON.stringify(now)})`);
+    t.ok(Math.abs(now.height - 30) < 1e-4 && now.units === 'cm' && now.locked === 0 && !(await banner()).shown, `reopened, the workspace plays it at the new size, marked, offering nothing (${JSON.stringify(now)})`);
     await page.evaluate(() => window.__bozzetto.jumpTo(10));
     await page.waitForTimeout(800);
     const later = await page.evaluate(() => {

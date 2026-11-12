@@ -21,6 +21,8 @@ export interface Readout {
   name?: string | null;
   /** "Edited" after the name, for a project with changes not yet saved. */
   edited?: boolean;
+  /** What the mark says instead of "Edited": "Not saved", for a project not made yet (Create). */
+  editedText?: string;
   /**
    * Who made it, for the public viewer of a member's work: "by @handle", a
    * link to their page, after the name. Null leaves it out.
@@ -110,9 +112,6 @@ export class TitleStrip {
 
   constructor(opts: TitleStripOptions = {}) {
     document.body.classList.add('bz-shell');
-    // A panel built before the strip may hold the Interface section's Hotkeys
-    // button; with the strip's Help menu (and H) it is a second way in, and goes.
-    for (const sec of document.querySelectorAll('.section--interface')) sec.remove();
     this.el = el('header', 'bz-strip');
     this.menus = el('nav', 'bz-strip__menus');
     this.menus.setAttribute('aria-label', 'Menus');
@@ -240,6 +239,8 @@ export class TitleStrip {
     this.nameEl.hidden = !name;
     if (this.nameEl.textContent !== name) this.nameEl.textContent = name;
     this.editedEl.hidden = !name || !r.edited;
+    const mark = r.editedText ?? 'Edited';
+    if (this.editedEl.textContent !== mark) this.editedEl.textContent = mark;
     const by = r.by ?? null;
     this.byEl.hidden = !by;
     if (by) {
