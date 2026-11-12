@@ -1,4 +1,4 @@
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import './icons';
 import type { Viewer } from '../viewer/Viewer';
 
 /**

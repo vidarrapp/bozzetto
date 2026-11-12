@@ -17,14 +17,17 @@
   /* text and lines */
   --bz-text: #f2f2f2;
   --bz-text-2: #b3b3b3; /* section headers, hotkeys in menus, captions */
-  --bz-text-3: #7d7d7d; /* unavailable */
+  --bz-text-3: #7d7d7d; /* unavailable: a disabled control, the star that is not pressed. Never text that is read (about 3.4:1 on the panel) */
+  --bz-text-hint: #a3a3a3; /* faint but read: the placeholder of a field, the word for no key. 4.5:1 or more on every surface above, up to the control; dimmer than the secondary text */
   --bz-line: #5c5c5c; /* the line under a field */
   --bz-sep: #444444; /* between sections and groups */
   /* colour, one job each */
   --bz-orange: #ff5a1f; /* the tool in hand, a field's amount, the one main action, the focus outline */
   --bz-lime: #c6ff00; /* the knob of a switch that is on */
-  --bz-red: #ff4060; /* something went wrong; an action that cannot be undone */
-  --bz-on-accent: #000000; /* text and icons on orange, lime or red */
+  --bz-red: #ab0000; /* something went wrong; an action that cannot be undone. A fill only, with --bz-on-red on it: on the greys it is under 2:1, so never text, an icon or a line */
+  --bz-red-text: #ff6b6b; /* red as text, an icon or a stroke: the light red that reaches 4.5:1 on the panel and the raised grey */
+  --bz-on-red: #ffffff; /* text and icons on a red fill (7.7:1) */
+  --bz-on-accent: #000000; /* text and icons on orange or lime */
   /* raised things */
   --bz-raised-shadow: 0 0 0 1px var(--bz-raised-border), 0 12px 32px rgba(0, 0, 0, 0.55);
   --bz-focus: 2px solid var(--bz-orange);

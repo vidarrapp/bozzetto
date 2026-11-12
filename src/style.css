@@ -670,7 +670,8 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--bz-text-3);
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 /* Keyboard focus: the orange outline, 2px off (the one job of orange that
@@ -2616,8 +2617,8 @@ body:has(.transport) .chrome-hint {
 }
 
 .channel-box__value::placeholder {
-  color: var(--muted);
-  opacity: 0.6;
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 .channel-box__value:disabled {
@@ -5676,7 +5677,7 @@ h1,
 .btn--danger:hover:not(:disabled) {
   background: var(--bz-red);
   border: 0;
-  color: var(--bz-on-accent);
+  color: var(--bz-on-red);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -5745,7 +5746,8 @@ h1,
 
 .prefs__key--none {
   font-style: normal;
-  color: var(--bz-text-3);
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 .prefs__key kbd {
@@ -6065,12 +6067,12 @@ h1,
 .card__share[data-shared='hidden'] .card__share-status,
 .review-card[data-shared='hidden'] .review-card__state,
 .review-card[data-shared='rejected'] .review-card__state {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
   font-size: 13px;
 }
 
 .curve-editor__point--remove {
-  stroke: var(--bz-red);
+  stroke: var(--bz-red-text);
 }
 
 .card--sculpt {
@@ -6129,6 +6131,15 @@ h1,
 
 .file-menu__item:disabled .file-menu__key {
   color: var(--bz-text-3);
+}
+
+/* On the hover fill the secondary grey is 4.2:1; the key and the hint under a
+   row read as the label there. */
+.file-menu__item:hover:not(:disabled) .file-menu__key,
+.file-menu__item:focus-visible .file-menu__key,
+.file-menu__item:hover:not(:disabled) .file-menu__hint,
+.file-menu__item:focus-visible .file-menu__hint {
+  color: var(--bz-text);
 }
 
 .file-menu__line {
@@ -6308,7 +6319,7 @@ h1,
 
 .outliner__icon--danger,
 .outliner__icon--danger:hover {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .outliner__solo {
@@ -6559,7 +6570,7 @@ progress {
 }
 
 .landing__notice--suspended {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .landing__signin {
@@ -7177,7 +7188,7 @@ progress {
 .trash-btn:hover:not(:disabled),
 .trash-btn:focus-visible {
   background: var(--bz-hover);
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .trash-btn:disabled {
@@ -7186,14 +7197,16 @@ progress {
 }
 
 /* Delete account…, and the like: red text, no fill. */
-.btn--quietred,
-.btn--quietred:hover:not(:disabled) {
+/* White at rest, red under the pointer or the focus, as the trash icon. */
+.btn--quietred {
   background: none;
-  color: var(--bz-red);
+  color: var(--bz-text);
 }
 
-.btn--quietred:hover:not(:disabled) {
+.btn--quietred:hover:not(:disabled),
+.btn--quietred:focus-visible {
   background: var(--bz-hover);
+  color: var(--bz-red-text);
 }
 
 /* --- the owner tools' forms --- */
@@ -7685,7 +7698,7 @@ progress {
 
 .account-card .account-hint[data-tone='no'],
 .account-card .account-invite[data-tone='no'] {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 /* Why the dialog is up: a grey band, no colour. */
@@ -7714,7 +7727,7 @@ progress {
 }
 
 .account-card .account-input::placeholder {
-  color: var(--bz-text-3);
+  color: var(--bz-text-hint);
   opacity: 1;
 }
 

@@ -9,7 +9,7 @@
 // the page one is on marked - and none of the corner chips; delete is a
 // trash icon named "Delete <title>", grey at rest and red under the pointer
 // or on focus, while the question after it keeps its filled red button and
-// "Delete account…" is red text; orange is the one main action of a page
+// "Delete account…" is white text, red under the pointer; orange is the one main action of a page
 // and nothing else; no element of these pages is set in the old fonts
 // (Manrope, Instrument Serif, JetBrains Mono); and at 390px wide no page
 // scrolls sideways. (The star's colours are the community suite's.)
@@ -27,7 +27,8 @@ const PEOPLE = {
 };
 
 const GREY_TEXT = 'rgb(179, 179, 179)';
-const RED = 'rgb(255, 64, 96)';
+const RED = 'rgb(171, 0, 0)';
+const RED_TEXT = 'rgb(255, 107, 107)';
 const ORANGE = 'rgb(255, 90, 31)';
 const OLD_FONTS = /Manrope|Instrument Serif|JetBrains Mono/i;
 
@@ -195,7 +196,7 @@ async function trash(o, a, t) {
   await o.page.keyboard.press('Shift+Tab');
   await o.page.keyboard.press('Tab');
   const focus = await colour(o.page, sel);
-  t.ok(rest === GREY_TEXT && hover === RED && focus === RED, `grey at rest, red under the pointer and on focus (${rest} / ${hover} / ${focus})`);
+  t.ok(rest === GREY_TEXT && hover === RED_TEXT && focus === RED_TEXT, `grey at rest, the red of text under the pointer and on focus (${rest} / ${hover} / ${focus})`);
 
   await open(a, '/?me', '.card--mine');
   const mine = await a.page.evaluate(() => [...document.querySelectorAll('.card--mine .card__delete')].map((b) => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('i.fi-ss-trash') })));
@@ -203,7 +204,7 @@ async function trash(o, a, t) {
   const mineSel = '.card--mine .card__delete';
   const mineRest = await colour(a.page, mineSel);
   await a.page.hover(mineSel);
-  t.ok(mineRest === GREY_TEXT && (await colour(a.page, mineSel)) === RED, 'grey at rest and red under the pointer there too');
+  t.ok(mineRest === GREY_TEXT && (await colour(a.page, mineSel)) === RED_TEXT, 'grey at rest and red under the pointer there too');
 
   await open(a, '/?account', '.account-section');
   const keys = await a.page.evaluate(() => [...document.querySelectorAll('[data-section="passkeys"] .account-item__remove')].map((b) => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('i.fi-ss-trash'), text: b.textContent })));
@@ -213,14 +214,17 @@ async function trash(o, a, t) {
     const s = getComputedStyle(b);
     return { text: b.textContent, color: s.color, bg: s.backgroundColor };
   });
-  t.ok(del.text === 'Delete account…' && del.color === RED && del.bg === 'rgba(0, 0, 0, 0)', `"Delete account…" stays red text with no fill (${show(del)})`);
+  t.ok(del.text === 'Delete account…' && del.color === 'rgb(242, 242, 242)' && del.bg === 'rgba(0, 0, 0, 0)', `"Delete account…" is white text with no fill at rest (${show(del)})`);
+  await a.page.hover('[data-item="delete"] button');
+  const delHover = await colour(a.page, '[data-item="delete"] button');
+  t.ok(delHover === RED_TEXT, `and the red of text under the pointer (${delHover})`);
   await a.page.click('[data-item="delete"] button');
   await a.page.waitForSelector('.account-delete button.btn--danger', { timeout: 10_000 });
   const sure = await a.page.evaluate(() => {
     const s = getComputedStyle(document.querySelector('.account-delete button.btn--danger'));
     return { bg: s.backgroundColor, color: s.color };
   });
-  t.ok(sure.bg === RED && sure.color === 'rgb(0, 0, 0)', `and the question keeps its filled red button (${show(sure)})`);
+  t.ok(sure.bg === RED && sure.color === 'rgb(255, 255, 255)', `and the question keeps its filled red button (${show(sure)})`);
 }
 
 async function colourAndType(o, m, a, t) {
