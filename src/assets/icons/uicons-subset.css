@@ -3,15 +3,12 @@
  * do not edit. Flaticon License, free with attribution (THIRD_PARTY_NOTICES.md). */
 @font-face{font-family:uicons-solid-straight;src:url(./uicons-subset.woff2) format("woff2");font-display:swap}
 i[class^=fi-ss-]:before,i[class*=" fi-ss-"]:before,span[class^=fi-ss-]:before,span[class*=fi-ss-]:before{font-family:uicons-solid-straight!important;font-style:normal;font-weight:400!important;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-.fi-ss-angle-small-down:before{content:"\f154"}
-.fi-ss-angle-small-up:before{content:"\f157"}
 .fi-ss-arrows:before{content:"\f1cd"}
 .fi-ss-arrows-to-eye:before{content:"\f1cb"}
 .fi-ss-arrows-to-line:before{content:"\f1cc"}
 .fi-ss-broom:before{content:"\f2f4"}
 .fi-ss-circle-half-stroke:before{content:"\f407"}
 .fi-ss-compress:before{content:"\f4c9"}
-.fi-ss-cross-small:before{content:"\f4f7"}
 .fi-ss-cursor:before{content:"\f50f"}
 .fi-ss-expand-arrows-alt:before{content:"\f5f0"}
 .fi-ss-eye:before{content:"\f5f9"}
