@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-12: A notice about what Bozzetto keeps on the visitor's device (autosave, offline files, preferences; no cookies, no tracking). Options: a one-time notice with OK and a link to the privacy notice, shown on first visit and blocking nothing; an accept or decline gate where declining turns autosave and offline off; or nothing beyond the privacy notice. (blocks: nothing)
 - [x] 2026-11-12: Card pictures are captured 4:5 but the card tiles had been square since the app-layer skin, so every picture showed side bands. Decided 2026-11-12: the tiles are 4:5; nothing is recaptured
 - [x] 2026-11-12: The Frames tab has an Order list (each frame: press to go to it, move up, move down, remove), which the PgCreate board does not draw (it has the count, memory, Add more and the trash only). Keep the list (built, so reorder and remove exist at all: neither old page had them), or only what the board shows Decided 2026-11-12: remove the Order list
 - [x] 2026-11-12: On a published project, frames added, moved or removed are a working copy that the one Save writes (frames that stay put are not uploaded again), where the old editor uploaded as soon as files were picked. Keep that (built), or upload on pick again Decided 2026-11-12: keep it; the one Save writes frame changes
