@@ -570,6 +570,11 @@ body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__svg {
   body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn:hover {
     background: var(--bz-hover);
   }
+
+  /* The digit in the secondary grey is 4.2:1 on the hover fill. */
+  body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn:not(.sculpt-toolbar__btn--active):hover .sculpt-toolbar__key {
+    color: var(--bz-text);
+  }
 }
 
 /* The tool in hand: orange, its icon and digit black. */

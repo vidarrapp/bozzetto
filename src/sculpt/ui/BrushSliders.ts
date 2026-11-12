@@ -6,7 +6,7 @@ import { SHELL_LAYOUT_EVENT } from './shellLayout';
 import { chordParts, keymap } from '../../ui/keymap';
 // Flaticon uicons solid straight (fi-ss-*), for the Solo button's glyph, the
 // style of every other icon. Attribution: README.
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import '../../ui/icons';
 
 /**
  * The edge controls at the bottom left (docs/ui-spec.md section 6): a

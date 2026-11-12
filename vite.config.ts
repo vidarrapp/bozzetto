@@ -469,6 +469,10 @@ export default defineConfig(({ mode }) => {
     target: 'es2020',
     sourcemap: true,
     outDir: 'dist',
+    // A font is always a file of its own and never a data: URI in the CSS:
+    // the site's policy says font-src 'self' (public/_headers). The icon
+    // subset is small enough (about 2 KB) that Vite would inline it.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
     rolldownOptions: {
       input: {
         main: `${root}index.html`,
