@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-12: Should Sculpt and Armature be operable by keyboard alone, with Tab moving focus through the interface (raised by the technical audit). Decided 2026-11-12: no. Tab only hides and shows the interface, and the workspaces are pointer tools with no keyboard-only path; recorded in PRODUCT.md
 - [ ] 2026-11-11: In the viewer's review mode play is grey so Approve (or Unhide) is the screen's one orange action; elsewhere in the viewer play is the orange one. Keep it so, or play orange in review too? (blocks: nothing)
 - [ ] 2026-11-11: A stage's note ("Major planes established.") sits as a small caption over the transport in the viewer, since the readout carries the stage's name only. Keep the caption, or drop the notes from the viewer? (blocks: nothing)
 - [ ] 2026-11-11: On a phone the readout hides, and with it a reviewer's "Reviewing Pending review" and the title; the actions still show. Accept that, or give the strip a second line there? (blocks: review mode on a phone)

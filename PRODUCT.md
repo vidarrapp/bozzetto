@@ -52,7 +52,8 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 
 - Name: Bozzetto, with its handwritten logotype.
 - The Gestalt v2 app layer is the existing visual system and is binding: dark only; a grey scale; square corners; orange for the active tool, a field's amount, the one main action on a screen, and focus; red for errors and deletes; one solid icon style; Familjen Grotesk for labels and Martian Mono for values.
-- Pencil and touch first: everything must work with Apple Pencil and fingers on iPad and iPhone. Keyboard and mouse are equal, never required.
+- Pencil and touch first: everything must work with Apple Pencil and fingers on iPad and iPhone. Mouse works equally; the keyboard adds shortcuts and is never required.
+- Tab has one job in the workspaces: it hides and shows the interface. It does not move focus there.
 - Plain wording: interface text is short, plain sentences that say what happened and what to do. No marketing voice inside the app.
 
 ## Evidence on Hand
@@ -72,4 +73,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 
 ## Accessibility & Inclusion
 
-Every control must be reachable by touch and Pencil without a keyboard, and by keyboard without a pointer. No specific standard has been set beyond that.
+- Every control must be reachable by touch and Pencil without a keyboard.
+- The Sculpt and Armature workspaces are pointer tools. They are not meant to be operated by keyboard alone, and no keyboard-only path through them is planned. Do not report the missing Tab order there as a defect or design one in.
+- Pages outside the workspaces (gallery, Community, My projects, Account, Review, owner's tools, sign-in) and windows with form fields keep ordinary keyboard focus order.
+- No formal standard has been set.
