@@ -62,6 +62,12 @@
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
 - [x] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app. Decided 2026-11-11: yes; red for errors and deletes; dark theme only for now (a native iOS app will later have to consider Liquid Glass). Written up in docs/ui-foundations.md
 
+## Later
+
+Ideas Vidar has raised that are not being built yet.
+
+- 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now.
+
 ## Notes for Bozzetto Studio
 
 ### Unit vertex normals, and the mirrored dab picked after the dab (2026-11-01)
