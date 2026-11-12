@@ -302,7 +302,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       : armature
         ? '<a class="btn admin-row__open">Open in Armature</a>'
         : // The owner's Present for a published timelapse or model (/?tl=&present=1),
-          // View in the viewer, and Frames: the frame editor (?p=).
+          // View in the viewer, and Frames: the Present workspace on its Frames tab.
           (p.mode === 'timelapse' || p.mode === 'model' ? '<a class="btn admin-row__present">Present</a>\n' : '') +
           `<a class="btn admin-row__view" target="_blank" rel="noopener">View</a>
           <a class="btn admin-row__edit admin-row__frames">Frames</a>`;
