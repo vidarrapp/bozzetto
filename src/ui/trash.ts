@@ -1,4 +1,4 @@
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import './icons';
 
 /**
  * Delete, as the pages draw it: a trash icon (the Uicons solid-straight

@@ -4,7 +4,7 @@ import Enums from '@sculpt-vendor/misc/Enums';
 // call). Whole style sheets are imported
 // for upgrade-proof font URLs; each font only downloads when one of its
 // glyphs first renders (sculpt mode). Attribution lives in the README.
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import '../../ui/icons';
 import type { InputShell } from '../bridge/InputShell';
 import { liftedOn, onTap, TAP_CLICK_MS } from '../../ui/dom';
 

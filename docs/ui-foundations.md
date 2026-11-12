@@ -52,8 +52,9 @@ layer does not try to.
 | Name | Value | Used for |
 | --- | --- | --- |
 | Text | #f2f2f2 | Labels, values, titles |
-| Secondary | #b3b3b3 | Section headers, hotkeys in menus, captions, readout keys, the tab behind |
-| Unavailable | #7d7d7d | Text on a control that cannot be used |
+| Secondary | #b3b3b3 | Section headers, hotkeys in menus, captions, readout keys, the tab behind. On the Hover fill it is 4.2:1, so a hotkey or hint on a hovered row is Text |
+| Unavailable | #7d7d7d | Text and icons of a control that cannot be used; the star that is not pressed. Never text that is read (3.4:1 on the panel) |
+| Hint | #a3a3a3 | Faint text that is read: the placeholder of a field, the word for a key with none. 4.5:1 or more on the strip, viewport, panel, raised and control greys; dimmer than Secondary |
 | Field line | #5c5c5c | The line under a field |
 | Separator | #444444 | Between sections of a panel and groups of a menu |
 
@@ -64,6 +65,7 @@ layer does not try to.
 | Orange | #ff5a1f | The tool in hand; the amount in a field; the one main action of a window; the focus outline. Text on it is black |
 | Lime | #c6ff00 | The knob of a switch that is on |
 | Red | #ff4060 | Something went wrong; an action that cannot be undone. Never a switch that is off: off is neutral, as on macOS and iPadOS. Text on it is black. It leans toward pink so it cannot be taken for the orange |
+| Red text | #ff6b85 | The same red as text (error lines, "Delete account…") and as the trash icon under the pointer: lighter, to reach 4.5:1 on the panel and raised greys, where red itself is 4.1:1 and 3.7:1. Fills, borders and strokes use Red |
 
 The view axes keep their own red, green and blue.
 

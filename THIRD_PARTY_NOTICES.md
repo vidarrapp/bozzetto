@@ -145,7 +145,10 @@ files only; it does not extend to the rest of Bozzetto.
 ### Uicons by Flaticon
 
 `@flaticon/flaticon-uicons` 3.3.1, <https://www.flaticon.com/uicons>: the
-sculpt toolbar's icon font (solid straight). Also
+interface's icon font (solid straight). The app ships a subset of it with
+only the glyphs it uses (`src/assets/icons/`, made by
+`scripts/build-icon-subset.py`; the outlines are unchanged), and the npm
+package is a development dependency only, read by that script. Also
 `src/sculpt/ui/icons/flatten.svg`, Flaticon's "scraper" icon (19010200).
 Used under the Flaticon License, free of charge with attribution:
 
