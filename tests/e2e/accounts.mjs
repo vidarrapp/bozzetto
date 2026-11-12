@@ -492,7 +492,7 @@ async function passkeyFallback(a, t) {
   t.ok(
     view.line === 'Your browser did not offer the passkey. Enter your handle and try again.' &&
       view.focused === 'handle' &&
-      show(view.buttons) === show(['Use a passkey', 'Try again', 'Email me a code', 'Join with an invite']) &&
+      show(view.buttons) === show(['Use a passkey', 'Email me a code', 'Try again', 'Join with an invite']) &&
       view.email &&
       view.said === '',
     `in one line, with the handle field and Try again, and the code beside them (${show(view)})`,
