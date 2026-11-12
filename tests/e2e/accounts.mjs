@@ -680,7 +680,7 @@ async function accountHandle(a, t) {
   await p.waitForFunction((s) => document.querySelector(`${s} .account-hint`)?.textContent === '@ada_l is free.', scope, { timeout: 10_000 }).catch(() => {});
   await p.click(`${scope} button:text-is("Save")`);
   await p.waitForFunction(() => /^@ada_l /.test(document.querySelector('.page__tag')?.textContent ?? ''), null, { timeout: 20_000 }).catch(() => {});
-  t.ok(/^@ada_l · since /.test(await p.textContent('.page__tag')), `the handle changes: "${await p.textContent('.page__tag')}"`);
+  t.ok(/^@ada_l since /.test(await p.textContent('.page__tag')), `the handle changes: "${await p.textContent('.page__tag')}"`);
   t.ok(await chipShown(p, '@ada_l'), 'and the top row says it');
   await p.click(`${scope} button:text-is("Change handle")`);
   await p.fill(`${scope} input[name=handle]`, 'ada_m');
@@ -1469,7 +1469,7 @@ async function guestCreate(browser, origin, t) {
       `a guest's workspace offers Sign in to save, with no Save and no Export .html (${show(page)})`,
     );
     await p.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await p.waitForFunction(() => !!document.querySelector('.panel--render') && !!document.querySelector('.panel--frames .bz-frame'), null, { timeout: 90_000 });
+    await p.waitForFunction(() => !!document.querySelector('.panel--render') && Number(document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent) > 0, null, { timeout: 90_000 });
     await p.click('.bz-strip__btn--primary');
     t.ok(await p.waitForSelector('.account-card', { timeout: 15_000 }).then(() => true, () => false), 'Sign in opens the dialog');
     const kept = await p.evaluate(() => ({ path: location.pathname, frames: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent ?? '' }));
@@ -1619,8 +1619,8 @@ async function myProjectsPage(server, a, t) {
     v.cards.length === 2 &&
       v.cards[0].id === model.id &&
       v.cards[1].id === scene.id &&
-      /^Model · 1 frame · [\d.]+ (KB|MB) · \d+ \w+( \d{4})?$/.test(v.cards[0].meta) &&
-      /^Scene · 4 objects · [\d.]+ MB · \d+ \w+( \d{4})?$/.test(v.cards[1].meta) &&
+      /^Model 1 frame [\d.]+ (KB|MB) \d+ \w+( \d{4})?$/.test(v.cards[0].meta) &&
+      /^Scene 4 objects [\d.]+ MB \d+ \w+( \d{4})?$/.test(v.cards[1].meta) &&
       v.cards.every((c) => show(c.more) === show(['Download', 'Rename']) && c.actions.length === 3 && c.actions[0] === 'Open' && c.actions[1] === 'More' && /^Delete /.test(c.actions[2])),
     `a card for each, newest first, with its kind, size and date, Open, More (Download and Rename) and the trash named Delete <title> (${show(v.cards)})`,
   );
@@ -2028,7 +2028,7 @@ async function ownerPages(server, browser, o, t) {
         : null;
     });
   let first = await row();
-  t.ok(first?.state === 'live' && first.title === 'For Cleo' && /^0 of 2 used · made .+ · until .+$/.test(first.meta) && first.badge === 'Live' && first.revoke, `the list has it first, live, none of two used (${show(first)})`);
+  t.ok(first?.state === 'live' && first.title === 'For Cleo' && /^0 of 2 used made .+ until .+$/.test(first.meta) && first.badge === 'Live' && first.revoke, `the list has it first, live, none of two used (${show(first)})`);
   await ownerTab(o, 'invites', '.admin-invite');
   t.ok(await p.evaluate(() => document.querySelector('.admin-invites__made').hidden && !document.querySelector('.admin-invites__link')), 'drawn again, the link is not shown: it was shown once');
 
@@ -2085,7 +2085,7 @@ async function ownerPages(server, browser, o, t) {
     t.ok(
       !!cleoRow &&
         cleoRow.id === cleo &&
-        /^cleo@example\.com · joined .+ · last seen .+ · 0 projects$/.test(cleoRow.meta) &&
+        /^cleo@example\.com joined .+ last seen .+ 0 projects$/.test(cleoRow.meta) &&
         cleoRow.usage === '0 of 500 MB used' &&
         cleoRow.title === '@cleo',
       `each row: handle, address, dates, projects, and storage against the quota (${show(cleoRow && { meta: cleoRow.meta, usage: cleoRow.usage })})`,
@@ -2099,7 +2099,7 @@ async function ownerPages(server, browser, o, t) {
     await manage(p, cleo);
     cleoRow = await userRow(p, 'cleo');
     t.ok(
-      /^0 passkeys · signed in on 1 session · /.test(cleoRow?.detail ?? '') &&
+      /^0 passkeys signed in on 1 session /.test(cleoRow?.detail ?? '') &&
         show(cleoRow?.buttons) === show(['Suspend', 'Revoke sessions', 'Set quota', 'Recount']),
       `Manage opens the account: its passkeys and sessions counted, and what can be done (${show(cleoRow && { detail: cleoRow.detail.slice(0, 60), buttons: cleoRow.buttons })})`,
     );

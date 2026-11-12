@@ -35,7 +35,7 @@ export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}
     const hint = document.createElement('p');
     hint.className = 'muted editor__hint';
     hint.textContent =
-      'Record a video or GIF — the full timelapse, or a turntable spin of the current frame.';
+      'Record a video or GIF: the full timelapse, or a turntable spin of the current frame.';
     root.appendChild(hint);
   }
 
@@ -43,10 +43,10 @@ export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}
   const aspect = selectEl(
     [
       ['off', 'Off'],
-      ['9:16', '9:16 — vertical'],
-      ['4:5', '4:5 — portrait'],
-      ['1:1', '1:1 — square'],
-      ['16:9', '16:9 — wide'],
+      ['9:16', '9:16 vertical'],
+      ['4:5', '4:5 portrait'],
+      ['1:1', '1:1 square'],
+      ['16:9', '16:9 wide'],
     ],
     viewer.getCaptureAspect() ?? (present ? '4:5' : 'off'),
   );

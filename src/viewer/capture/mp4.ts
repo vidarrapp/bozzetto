@@ -28,7 +28,7 @@ export async function createMp4Sink(
   const codec = await getFirstEncodableVideoCodec(codecs, { width, height });
   if (!codec) {
     throw new Error(
-      `This browser can't encode ${codecs.length > 1 ? 'MP4 video' : 'H.264'} at ${width}×${height} — try the GIF format.`,
+      `This browser can't encode ${codecs.length > 1 ? 'MP4 video' : 'H.264'} at ${width}×${height}. Try the GIF format.`,
     );
   }
 

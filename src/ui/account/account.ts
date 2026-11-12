@@ -39,6 +39,7 @@ import { pageShell, setTagline } from '../pageShell';
 import { trashButton } from '../trash';
 import { noteAccountDeleted } from '../Landing';
 import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink } from './parts';
+import { fillMeta, metaPhrase } from '../metaLine';
 import { confirmIdentity } from './signIn';
 
 /**
@@ -114,7 +115,7 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
     host.appendChild(el('p', 'account-say', `Your account could not be loaded: ${errorText(err)}`));
     return;
   }
-  setTagline(shell, `@${me.handle} · since ${dayOf(details.createdAt)}`);
+  setTagline(shell, [`@${me.handle}`, `since ${dayOf(details.createdAt)}`]);
   draw({ config, me, details, host });
 }
 
@@ -371,7 +372,7 @@ function passkeyRow(state: PageState, p: Passkey, say: Say): HTMLElement {
   const main = el('div', 'account-item__main');
   const name = el('span', 'account-item__title', p.name);
   const used = p.lastUsedAt ? `last used ${momentOf(p.lastUsedAt)}` : 'not used yet';
-  main.append(name, el('span', 'account-item__meta', `${passkeyKind(p)} · added ${dayOf(p.createdAt)} · ${used}`));
+  main.append(name, fillMeta(el('span', 'account-item__meta'), [metaPhrase(passkeyKind(p)), metaPhrase(`added ${dayOf(p.createdAt)}`), metaPhrase(used)]));
   if (p.counterWarningAt) {
     main.appendChild(
       el(
@@ -548,11 +549,10 @@ function sessionRow(state: PageState, v: SessionView, say: Say): HTMLElement {
   const how = HOW[v.method];
   main.append(
     title,
-    el(
-      'span',
-      'account-item__meta',
-      `Signed in ${momentOf(v.createdAt)}${how ? ` ${how}` : ''} · last seen ${momentOf(v.lastSeenAt)}`,
-    ),
+    fillMeta(el('span', 'account-item__meta'), [
+      metaPhrase(`Signed in ${momentOf(v.createdAt)}${how ? ` ${how}` : ''}`),
+      metaPhrase(`last seen ${momentOf(v.lastSeenAt)}`),
+    ]),
   );
   const actions = el('div', 'account-item__actions');
   const out = button('Sign out');

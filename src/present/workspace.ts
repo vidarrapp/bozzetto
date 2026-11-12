@@ -305,11 +305,9 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     view.onFrame = (n) => {
       frameHook?.(n);
       projectPanel.syncFrame(n);
-      framesPanel.syncFrame(n);
       refreshReadout(n);
     };
     projectPanel.refreshFrames();
-    framesPanel.syncFrame(view.timeline.frameIndex());
     // Output stands open as drawn, the first time; after that, as it was left.
     if (wasOpen === 'settings') window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: true } }));
     else if (wasOpen === 'output' || (!old && !narrow())) output.setCollapsed(false);
@@ -342,23 +340,11 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       try {
         const added = await convertFiles(picked, zUp, (done) => framesPanel.showProgress(done, picked.length));
         items = [...items, ...added];
-        framesPanel.showProgress(items.length, items.length, `Done — ${added.length} frame${added.length === 1 ? '' : 's'} added`);
+        framesPanel.showProgress(items.length, items.length, `Done: ${added.length} frame${added.length === 1 ? '' : 's'} added`);
         changed();
       } catch (err) {
         framesPanel.showProgress(null, 0, `Failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    },
-    move: (from, to) => {
-      if (to < 0 || to >= items.length || from === to) return;
-      const next = [...items];
-      const [f] = next.splice(from, 1);
-      next.splice(to, 0, f);
-      items = next;
-      changed();
-    },
-    remove: (at) => {
-      items = items.filter((_, i) => i !== at);
-      changed();
     },
     clear: () => {
       void (async () => {
@@ -375,7 +361,6 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
         changed();
       })();
     },
-    seek: (at) => viewer()?.scrubTo(at),
   });
   /** The list changed: the tab and the strip say so, and the view is put up for the new sequence. */
   const changed = (): void => {

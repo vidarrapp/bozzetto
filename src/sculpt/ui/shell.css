@@ -1005,14 +1005,14 @@ body.bz-shell .panel--frames {
   z-index: 15;
 }
 
-/* A control a panel has put away (a model has no frames a second, a list with no frames no Order). */
+/* A control a panel has put away (a model has no frames a second, a list with no frames no Add more). */
 body.bz-shell .panel--project [hidden],
 body.bz-shell .panel--frames [hidden] {
   display: none !important;
 }
 
 /* --- Frames: the sequence the project plays (present/FramesPanel.ts) ------
-   The drop box, the counts, Add more and the trash, then the order. */
+   The drop box, the counts, Add more and the trash. */
 body.bz-shell .bz-drop {
   display: flex;
   flex-direction: column;
@@ -1099,8 +1099,8 @@ body.bz-shell .bz-progress {
   margin-top: 8px;
 }
 
-/* The Sequence section is the last one showing while the order has nothing to list. */
-body.bz-shell .panel--frames .section:has(+ .section[hidden]) {
+/* The Sequence section is the only one: nothing below it to part from. */
+body.bz-shell .panel--frames .section:last-child {
   border-bottom: 0;
 }
 
@@ -1119,103 +1119,6 @@ body.bz-shell .bz-warn {
   margin: 8px 0 0;
   color: var(--bz-red-text);
   font: 400 12px/16px var(--bz-font);
-}
-
-/* The order: a row a frame, its place in mono, its name, and the three small buttons. */
-body.bz-shell .bz-frames {
-  max-height: 240px;
-  margin: 0 -8px;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-  scrollbar-width: thin;
-  scrollbar-color: var(--bz-line) transparent;
-}
-
-body.bz-shell .bz-frame {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 28px;
-}
-
-body.bz-shell .bz-frame--on,
-body.bz-shell .bz-frame:hover {
-  background: var(--bz-hover);
-}
-
-body.bz-shell .bz-frame__pick {
-  appearance: none;
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--bz-text);
-  font: 400 13px/28px var(--bz-font);
-  text-align: left;
-  cursor: pointer;
-}
-
-body.bz-shell .bz-frame__pick:focus-visible,
-body.bz-shell .bz-frame__btn:focus-visible {
-  outline: var(--bz-focus);
-  outline-offset: -2px;
-}
-
-body.bz-shell .bz-frame__n {
-  flex: none;
-  min-width: 3ch;
-  color: var(--bz-text-2);
-  font: 700 11px/28px var(--bz-font-mono);
-}
-
-body.bz-shell .bz-frame__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body.bz-shell .bz-frame__btn {
-  appearance: none;
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--bz-text-2);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-body.bz-shell .bz-frame__btn:hover:not(:disabled) {
-  background: var(--bz-control);
-  color: var(--bz-text);
-}
-
-body.bz-shell .bz-frame__btn.bz-frame__remove:hover:not(:disabled),
-body.bz-shell .bz-frame__btn.bz-frame__remove:focus-visible {
-  color: var(--bz-red-text);
-}
-
-body.bz-shell .bz-frame__btn:disabled {
-  color: var(--bz-text-3);
-  cursor: default;
-}
-
-body.bz-shell .bz-frame__btn i {
-  display: block;
-  height: 1em;
 }
 
 /* Create with no frames: what the view will be, said quietly where it will stand. */
