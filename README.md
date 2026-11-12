@@ -56,6 +56,8 @@ Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing le
 
 ## Present
 
+<img width="1180" height="820" alt="Bozzetto Screenshot - Present mode" src="docs/screenshots/present.jpg" />
+
 Light the piece, render it and publish it. Open **Present** from the path at the top of Sculpt, or with `Shift`+`P`.
 
 - **Render.** Lights with soft shadows, environment lighting, ten matcaps, tone mapping, ambient occlusion, depth of field, ground and background.
