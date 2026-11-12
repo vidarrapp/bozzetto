@@ -8179,6 +8179,8 @@ progress {
 
   .account-item {
     flex-wrap: wrap;
+  }
+}
 
 /* --- sign-in windows (the dialog of ui/account/signIn.ts) ---
    The shared window's frame (the install card, raised and square), with the
