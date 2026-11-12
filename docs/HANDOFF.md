@@ -2,6 +2,10 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-12: The Frames tab has an Order list (each frame: press to go to it, move up, move down, remove), which the PgCreate board does not draw (it has the count, memory, Add more and the trash only). Keep the list (built, so reorder and remove exist at all: neither old page had them), or only what the board shows
+- [ ] 2026-11-12: On a published project, frames added, moved or removed are a working copy that the one Save writes (frames that stay put are not uploaded again), where the old editor uploaded as soon as files were picked. Keep that (built), or upload on pick again
+- [ ] 2026-11-12: After Save replaces the whole sequence of a published project, its card picture becomes frame 1, as the old editor did after an upload; adding, moving or removing some frames leaves the card picture alone. Keep that (built), or always leave it
+- [ ] 2026-11-12: `/admin/?p=<id>` now goes straight to the workspace's Frames tab. If the owner's own account is not signed in (the owner tools' second lock), the workspace shows the ordinary viewer and does not offer the sign-in the old editor offered. Offer it there (blocks: nothing, a gap compared with the old page)
 - [ ] 2026-11-11: In the viewer's review mode play is grey so Approve (or Unhide) is the screen's one orange action; elsewhere in the viewer play is the orange one. Keep it so, or play orange in review too? (blocks: nothing)
 - [ ] 2026-11-11: A stage's note ("Major planes established.") sits as a small caption over the transport in the viewer, since the readout carries the stage's name only. Keep the caption, or drop the notes from the viewer? (blocks: nothing)
 - [ ] 2026-11-11: On a phone the readout hides, and with it a reviewer's "Reviewing Pending review" and the title; the actions still show. Accept that, or give the strip a second line there? (blocks: review mode on a phone)

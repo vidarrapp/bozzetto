@@ -233,9 +233,17 @@ export const suites = {
       void d.accept();
     });
     // The owner's editor is the Present workspace now (/admin/?p= leads there).
+    const seen = [];
+    page.on('response', (r) => r.url().includes('/admin/api') || r.url().includes('/api/config') ? seen.push(`${r.status()} ${r.url().replace(/^https?:..[^/]+/, '')}`) : null);
+    page.on('console', (m) => m.type() === 'error' || m.type() === 'warning' ? seen.push(`console ${m.text().slice(0, 200)}`) : null);
     const openEditor = async () => {
+      // The page registers the service worker, which would answer a reload past the routes above.
+      await page.evaluate(() => navigator.serviceWorker?.getRegistrations().then((rs) => Promise.all(rs.map((r) => r.unregister())))).catch(() => {});
       await page.goto(`${base}/?tl=${id}&present=1`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
+      await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 }).catch(async (e) => {
+        const state = await page.evaluate(() => ({ url: location.href, panel: !!document.querySelector('.panel--render'), viewer: !!window.__bozzetto, pipeline: !!window.__bozzetto?.pipeline, overlay: document.getElementById('overlay')?.textContent ?? null }));
+        throw new Error(`the editor did not come up: ${JSON.stringify(state)} ${JSON.stringify(seen.slice(-12))} (${e.message.split('\n')[0]})`);
+      });
       // Held on the first frame, which Set scale measures and boot shows.
       await page.evaluate(() => {
         window.__bozzetto.pause();

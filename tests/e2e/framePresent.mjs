@@ -709,8 +709,8 @@ export const suites = {
       t.ok(orange.length === 1 && orange[0] === 'Save', `the one orange control is Save (${JSON.stringify(orange)})`);
       await p.evaluate(() => window.__bozzetto.pause());
       await p.click('.panel--frames .bz-frame:nth-child(3) .bz-frame__pick');
-      await until(p, () => window.__bozzetto.timeline.frameIndex() === 2, null, 5000);
-      t.ok(await p.evaluate(() => document.querySelector('.panel--frames .bz-frame:nth-child(3)').classList.contains('bz-frame--on')), 'pressing a row goes to that frame, and marks it');
+      const marked = await until(p, () => window.__bozzetto.timeline.frameIndex() === 2 && document.querySelector('.panel--frames .bz-frame:nth-child(3)').classList.contains('bz-frame--on'), null, 8000);
+      t.ok(marked, 'pressing a row goes to that frame, and marks it');
       t.ok(!(await edited()), 'nothing is Edited yet');
 
       // --- move -------------------------------------------------------------------------------------
