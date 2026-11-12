@@ -1931,19 +1931,23 @@ export const suites = {
       page.click('.create-overlay [data-kind="timelapse"]'),
     ]);
     t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
-    await page.waitForSelector('#reel-mount', { state: 'attached', timeout: 30_000 });
+    await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
     const guestPage = await page.evaluate(() => ({
-      intro: document.querySelector('.editor__id')?.textContent ?? '',
-      heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
-      save: !!document.querySelector('#save-project'),
-      exported: !!document.querySelector('#export-html'),
+      note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+      heads: [...document.querySelectorAll('.panel--frames h3, .panel--project h3')].map((h) => h.textContent.trim()).join(','),
+      action: [...document.querySelectorAll('.bz-strip__btn--primary')].filter((b) => !b.hidden).map((b) => b.textContent).join(','),
+      frames: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent ?? '',
+      open: [...document.querySelectorAll('.panel:not(.panel--collapsed)')].map((p) => p.dataset.panel).join(','),
+      old: !!document.querySelector('.editor, .editor__sidebar, #export-html'),
     }));
     t.ok(
-      guestPage.intro === 'Build a timelapse or a model from frames made elsewhere, and make a GIF or MP4 of it. Nothing is uploaded.' &&
-        guestPage.heads === 'Project,Frames,Stages,Export' &&
-        !guestPage.save &&
-        !guestPage.exported,
-      `for a guest nothing uploads, the reel is how it ends, and the single-file export is gone (${JSON.stringify(guestPage)})`,
+      guestPage.note === 'Nothing is uploaded.' &&
+        guestPage.heads === 'Sequence,Order,Settings,Stages' &&
+        guestPage.action === '' &&
+        guestPage.frames === '0' &&
+        guestPage.open === 'Frames' &&
+        !guestPage.old,
+      `for a guest nothing uploads, the Frames tab opens empty, and the old page and the single-file export are gone (${JSON.stringify(guestPage)})`,
     );
 
     // Signed in (the owner, with accounts off: whoami answers), the same
@@ -1965,17 +1969,17 @@ export const suites = {
         owner.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
         owner.click('.create-overlay [data-kind="timelapse"]'),
       ]);
-      await owner.waitForSelector('#save-project', { timeout: 30_000 });
+      await owner.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
       const ownerPage = await owner.evaluate(() => ({
-        intro: document.querySelector('.editor__id')?.textContent ?? '',
-        heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
-        buttons: [...document.querySelectorAll('.editor__section:last-of-type button')].map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}`).join(', '),
+        note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+        heads: [...document.querySelectorAll('.panel--frames h3, .panel--project h3')].map((h) => h.textContent.trim()).join(','),
+        buttons: [...document.querySelectorAll('.bz-strip__btn--primary')].map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}`).join(', '),
       }));
       t.ok(
-        /^Build a timelapse or a model from frames made elsewhere, and save it to Projects/.test(ownerPage.intro) &&
-          ownerPage.heads === 'Project,Frames,Stages,Save' &&
+        ownerPage.note === 'Nothing is uploaded until you save to Projects.' &&
+          ownerPage.heads === 'Sequence,Order,Settings,Stages' &&
           ownerPage.buttons === 'Save to Projects (off)',
-        `signed in, the uploader saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
+        `signed in, the workspace saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
       );
     } finally {
       await ctx.close();
@@ -7106,15 +7110,16 @@ export const suites = {
     s = await aoState();
     t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.model})`);
 
-    // The uploader's preview.
+    // Create's preview.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
-    await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
+    await page.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await page.waitForFunction(() => !!document.querySelector('.panel--render'), null, { timeout: 90_000 });
+    await page.waitForFunction(() => !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     const preview = await page.evaluate(() => {
-      const sel = [...document.querySelectorAll('.panel--editor label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
+      const sel = [...document.querySelectorAll('.panel--render label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
       return { options: sel ? [...sel.options].map((o) => o.value).join(',') : null, model: sel?.value ?? null };
     });
-    t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the uploader's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
+    t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the Create workspace's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
   },
 
   // The environment's intensity on a usable scale (owner call: at the

@@ -3,26 +3,35 @@ import { numberedRange, section } from '../ui/Panel';
 import { div, labelRow, selectEl } from '../ui/dom';
 import { VISIBILITY_HINT, type Visibility } from '../admin/api';
 import { stageIndexAt, type Stage } from '../admin/projectEdit';
+import type { ProjectMode } from '../types/manifest';
 
 /**
  * The Project tab of the owner's Present page for a published frame
  * project (present/): what the editor's sidebar had as Settings, Stages
  * and Save thumbnail, as a left-hand tab. It holds the working copy of
- * what is edited here (title, visibility, frames a second, the stages) and
- * says when something changed; saving it is the page's one Save.
+ * what is edited here (title, mode, visibility, frames a second, the stages)
+ * and says when something changed; saving it is the page's one Save. Create
+ * opens it with no project on the site yet: no visibility, no card picture.
  */
 
 export interface ProjectValues {
   title: string;
-  visibility: Visibility;
+  /** Timelapse (frames, a rate, stages) or Model (one still thing). */
+  mode: ProjectMode;
+  /** Null where the project is not on the site yet: Create makes it private, and says so on Save. */
+  visibility: Visibility | null;
   fps: number;
   /** In frame order; a stage with no name is dropped when saved. */
   stages: Stage[];
 }
 
 export interface ProjectHooks {
-  /** A timelapse has frames a second and stages; a model has neither. */
-  timelapse: boolean;
+  /** The picture on the gallery card: for a project that is on the site. */
+  card: boolean;
+  /** Whether there are frames to stand on (stages and the card picture need one). */
+  hasFrames(): boolean;
+  /** The mode was changed: what plays follows. */
+  modeChanged(mode: ProjectMode): void;
   /** The frame on show. */
   frameAt(): number;
   /** Go to a frame (a stage's row). */
@@ -47,6 +56,8 @@ export class ProjectPanel extends SidePanel {
   private readonly nameInput = textInput('Stage name');
   private readonly descInput = textInput('Note under the name');
   private readonly cardBtn = button('Use this frame');
+  private fpsRow: HTMLElement | null = null;
+  private stagesSec: HTMLElement | null = null;
   private rows: Array<{ row: HTMLButtonElement; name: HTMLElement; stage: Stage }> = [];
   /** The stage the name and note fields are bound to. */
   private bound: Stage | null = null;
@@ -57,37 +68,58 @@ export class ProjectPanel extends SidePanel {
     this.hooks = hooks;
     this.setHeading(values.title);
     this.buildSettings();
-    if (hooks.timelapse) this.buildStages();
-    this.buildCard();
+    this.buildStages();
+    if (hooks.card) this.buildCard();
+    this.setMode(values.mode);
     this.syncFrame(hooks.frameAt());
   }
 
   private buildSettings(): void {
     const sec = section(this.body, 'Settings');
     const title = textInput('Title');
+    title.setAttribute('aria-label', 'Title');
     title.value = this.values.title;
     title.addEventListener('input', () => {
       this.values.title = title.value;
       this.setHeading(title.value.trim() || 'Untitled');
       this.hooks.edited();
     });
-    const vis = selectEl(
+    const mode = selectEl(
       [
-        ['public', 'Public'],
-        ['private', 'Private'],
+        ['timelapse', 'Timelapse'],
+        ['model', 'Model'],
       ],
-      this.values.visibility,
+      this.values.mode,
     );
-    vis.setAttribute('aria-label', 'Visibility');
-    vis.title = VISIBILITY_HINT;
-    vis.addEventListener('change', () => {
-      this.values.visibility = vis.value === 'private' ? 'private' : 'public';
+    mode.setAttribute('aria-label', 'Mode');
+    mode.addEventListener('change', () => {
+      const picked = mode.value === 'model' ? 'model' : 'timelapse';
+      if (picked === this.values.mode) return;
+      this.values.mode = picked;
+      this.setMode(this.values.mode);
+      this.hooks.modeChanged(this.values.mode);
       this.hooks.edited();
     });
     const titleRow = labelRow('Title', title);
     titleRow.classList.add('bz-field');
-    sec.append(titleRow, labelRow('Visibility', vis));
-    if (this.hooks.timelapse) {
+    sec.append(titleRow, labelRow('Mode', mode));
+    if (this.values.visibility !== null) {
+      const vis = selectEl(
+        [
+          ['public', 'Public'],
+          ['private', 'Private'],
+        ],
+        this.values.visibility,
+      );
+      vis.setAttribute('aria-label', 'Visibility');
+      vis.title = VISIBILITY_HINT;
+      vis.addEventListener('change', () => {
+        this.values.visibility = vis.value === 'private' ? 'private' : 'public';
+        this.hooks.edited();
+      });
+      sec.appendChild(labelRow('Visibility', vis));
+    }
+    {
       const fps = numberedRange(
         'Frames per second',
         1,
@@ -103,12 +135,27 @@ export class ProjectPanel extends SidePanel {
         { limits: { min: 1, max: 30 } },
       );
       fps.input.setAttribute('aria-label', 'Frames per second');
+      this.fpsRow = fps.row;
       sec.appendChild(fps.row);
     }
   }
 
+  /** A model has no frames a second and no stages. */
+  private setMode(mode: ProjectMode): void {
+    const timelapse = mode === 'timelapse';
+    if (this.fpsRow) this.fpsRow.hidden = !timelapse;
+    if (this.stagesSec) this.stagesSec.hidden = !timelapse;
+  }
+
+  /** Frames came or went: the stage buttons and the card picture follow. */
+  refreshFrames(): void {
+    this.cardBtn.disabled = !this.hooks.hasFrames();
+    this.syncFrame(this.hooks.frameAt());
+  }
+
   private buildStages(): void {
     const sec = section(this.body, 'Stages');
+    this.stagesSec = sec;
     this.none.className = 'bz-stages__none';
     this.none.textContent = 'No stages yet. A stage names a stretch of the timelapse.';
     const actions = div('bz-stages__actions');
@@ -183,7 +230,6 @@ export class ProjectPanel extends SidePanel {
 
   /** The playhead moved (or the stages did): mark the stage in force, and bind the fields to it. */
   syncFrame(frame: number): void {
-    if (!this.hooks.timelapse) return;
     const stages = this.values.stages;
     const at = stageIndexAt(stages, frame);
     this.rows.forEach((r, i) => {
@@ -191,8 +237,13 @@ export class ProjectPanel extends SidePanel {
       if (i === at) r.row.setAttribute('aria-current', 'true');
       else r.row.removeAttribute('aria-current');
     });
-    this.addBtn.disabled = stages.some((s) => s.frame === frame);
-    this.addBtn.title = this.addBtn.disabled ? 'A stage already starts at this frame' : `Start a stage at frame ${frame + 1}`;
+    const has = this.hooks.hasFrames();
+    this.addBtn.disabled = !has || stages.some((s) => s.frame === frame);
+    this.addBtn.title = !has
+      ? 'Add frames first'
+      : this.addBtn.disabled
+        ? 'A stage already starts at this frame'
+        : `Start a stage at frame ${frame + 1}`;
     this.removeBtn.disabled = at < 0;
     this.fields.hidden = at < 0;
     const stage = at < 0 ? null : stages[at];
@@ -207,6 +258,7 @@ export class ProjectPanel extends SidePanel {
 
   private addStage(): void {
     const frame = this.hooks.frameAt();
+    if (!this.hooks.hasFrames()) return;
     if (this.values.stages.some((s) => s.frame === frame)) return;
     const stage: Stage = { name: `Stage ${this.values.stages.length + 1}`, frame, desc: '' };
     this.values.stages.push(stage);

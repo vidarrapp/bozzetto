@@ -6,21 +6,13 @@ import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
-import { chordLabel, keyedLabel, keymap } from './keymap';
+import { keyedLabel } from './keymap';
 
 export interface PanelOptions {
   /** Editor variant: full lighting controls + an in-panel timeline. */
   editor?: boolean;
   /** Editor-only content pinned at the very top of the body (e.g. Save look). */
   actions?: HTMLElement;
-  /**
-   * Open the hotkey guide: an Interface section at the foot of the body
-   * gets a Hotkeys button for it, the way in where there is no title strip
-   * (the Create page, the old admin preview). Where the strip is, its Help
-   * menu, Hotkeys and the H key are the ways in, and the section is left
-   * out (or taken away when the strip arrives: see TitleStrip).
-   */
-  onHotkeys?: () => void;
   /**
    * The handle of the member whose work this is, for a project from the
    * Community (docs/accounts.md §13): "by @handle" under the title, a link
@@ -181,7 +173,6 @@ export class Panel {
     if (active) this.rebuildLightControls();
   }
   private readonly actions?: HTMLElement;
-  private readonly onHotkeys?: () => void;
   private albedoPicker?: ColorPickerHandle;
   /** One HSV picker style across the app (owner call): these replace the
    *  browser's RGB boxes for the background, the stage surface and each
@@ -288,7 +279,6 @@ export class Panel {
     window.addEventListener('bozzetto:present', this.onPresent);
 
     this.actions = options.actions;
-    this.onHotkeys = options.onHotkeys;
     this.buildBody();
   }
 
@@ -319,8 +309,6 @@ export class Panel {
       for (const sec of this.lookDevSections) sec.hidden = true;
     }
     if (devMode()) this.buildDeveloper(this.bodyEl);
-    // The strip may be up already (the viewer builds its frame first).
-    if (this.onHotkeys && !document.body.classList.contains('bz-shell')) this.buildInterface(this.bodyEl, this.onHotkeys);
     if (this.sculpting || this.fullLook) this.applySculptVisibility();
     this.refreshControls();
   }
@@ -539,19 +527,6 @@ export class Panel {
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();
-  }
-
-  // --- interface --------------------------------------------------------
-
-  /** The hotkey guide's button: what H opens, for a hand with no keyboard under it. */
-  private buildInterface(body: HTMLElement, open: () => void): void {
-    const sec = section(body, 'Interface');
-    sec.classList.add('section--interface');
-    const hotkeys = button('Hotkeys', open);
-    hotkeys.className = 'btn btn--small panel__hotkeys';
-    const key = keymap.chordFor('ui.help');
-    hotkeys.title = key ? `Hotkey guide (${chordLabel(key)})` : 'Hotkey guide';
-    sec.appendChild(hotkeys);
   }
 
   // --- timeline (editor only) -------------------------------------------

@@ -1212,7 +1212,7 @@ export const suites = {
       page.evaluate(() => {
         const all = [
           '.panel', '.panel__handle', '.mcpick__pop', '.transport', '.transport__buffering', '.theme-toggle',
-          '.help-hint', '.help-guide', '.fps-meter', '.env-loading', '.editor__sidebar', '.editor__sidebar-handle',
+          '.help-hint', '.help-guide', '.fps-meter', '.env-loading',
           '.sculpt-toolbar__group', '.outliner__menu', '.update-notice', '.topchip', '.file-menu', '.cpick__pop',
           '.install-overlay', '.float-window',
         ];

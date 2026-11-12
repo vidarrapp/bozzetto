@@ -142,7 +142,7 @@ npm run build
 ```
 index.html                 app shell: gallery, viewer, sculpt and armature
 admin/index.html           app shell (editor)
-create/index.html          app shell (timelapse uploader)
+create/index.html          app shell (Create: the Present workspace with no project yet)
 src/
   main.ts                  entry: ?tl=<id> boots the viewer, ?sculpt=1 and
                            ?armature=1 their modes, anything else the gallery
@@ -175,11 +175,14 @@ src/
                            service worker and its update notices
   ui/account/              accounts: the sign-in dialog, Join, Account,
                            My projects, the data download's zip
-  create/                  the timelapse uploader's entry
+  create/                  Create's entry: mounts the Present workspace empty
+  present/                 the Present workspace for frame projects: Frames,
+                           Project and Output panels, the working copy of the
+                           sequence, saving (open.ts is the owner's route)
   net/                     where API calls go, and the accounts client
   admin/
-    main.ts                editor router (list / per-project)
-    editor.ts              project editor: upload, preview, look, stages, reel
+    main.ts                the Projects list and the owner tools; ?p=<id> goes on
+                           to the Present workspace's Frames tab
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
