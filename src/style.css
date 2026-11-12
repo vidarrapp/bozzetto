@@ -5939,7 +5939,7 @@ h1,
 .btn--danger:hover:not(:disabled) {
   background: var(--bz-red);
   border: 0;
-  color: var(--bz-on-accent);
+  color: var(--bz-on-red);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -6348,7 +6348,7 @@ h1,
 }
 
 .curve-editor__point--remove {
-  stroke: var(--bz-red);
+  stroke: var(--bz-red-text);
 }
 
 .card--sculpt {
@@ -6596,7 +6596,7 @@ h1,
 
 .outliner__icon--danger,
 .outliner__icon--danger:hover {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .outliner__solo {

@@ -27,8 +27,8 @@ const PEOPLE = {
 };
 
 const GREY_TEXT = 'rgb(179, 179, 179)';
-const RED = 'rgb(255, 64, 96)';
-const RED_TEXT = 'rgb(255, 107, 133)';
+const RED = 'rgb(171, 0, 0)';
+const RED_TEXT = 'rgb(255, 107, 107)';
 const ORANGE = 'rgb(255, 90, 31)';
 const OLD_FONTS = /Manrope|Instrument Serif|JetBrains Mono/i;
 
@@ -224,7 +224,7 @@ async function trash(o, a, t) {
     const s = getComputedStyle(document.querySelector('.account-delete button.btn--danger'));
     return { bg: s.backgroundColor, color: s.color };
   });
-  t.ok(sure.bg === RED && sure.color === 'rgb(0, 0, 0)', `and the question keeps its filled red button (${show(sure)})`);
+  t.ok(sure.bg === RED && sure.color === 'rgb(255, 255, 255)', `and the question keeps its filled red button (${show(sure)})`);
 }
 
 async function colourAndType(o, m, a, t) {

@@ -1082,7 +1082,7 @@ body.bz-shell .bz-trash {
 body.bz-shell .bz-trash:hover,
 body.bz-shell .bz-trash:focus-visible {
   background: var(--bz-hover);
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 body.bz-shell .bz-trash:focus-visible {
@@ -1117,7 +1117,7 @@ body.bz-shell .bz-progress__bar {
 
 body.bz-shell .bz-warn {
   margin: 8px 0 0;
-  color: var(--bz-red);
+  color: var(--bz-red-text);
   font: 400 12px/16px var(--bz-font);
 }
 
@@ -1205,7 +1205,7 @@ body.bz-shell .bz-frame__btn:hover:not(:disabled) {
 
 body.bz-shell .bz-frame__btn.bz-frame__remove:hover:not(:disabled),
 body.bz-shell .bz-frame__btn.bz-frame__remove:focus-visible {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 body.bz-shell .bz-frame__btn:disabled {
@@ -1523,7 +1523,7 @@ body.bz-shell .bz-strip__btn.bz-strip__btn--danger:hover,
 body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
   padding: 0 12px;
   background: var(--bz-red);
-  color: var(--bz-on-accent);
+  color: var(--bz-on-red);
 }
 
 body.bz-shell .bz-strip__btn.bz-strip__btn--primary:disabled,

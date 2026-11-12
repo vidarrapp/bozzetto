@@ -24,9 +24,10 @@
   /* colour, one job each */
   --bz-orange: #ff5a1f; /* the tool in hand, a field's amount, the one main action, the focus outline */
   --bz-lime: #c6ff00; /* the knob of a switch that is on */
-  --bz-red: #ff4060; /* something went wrong; an action that cannot be undone: fills, borders and strokes */
-  --bz-red-text: #ff6b85; /* the same red as text, and as the trash icon under the pointer: lighter to reach 4.5:1 on the panel and the raised grey (red itself is 4.1:1 and 3.7:1) */
-  --bz-on-accent: #000000; /* text and icons on orange, lime or red */
+  --bz-red: #ab0000; /* something went wrong; an action that cannot be undone. A fill only, with --bz-on-red on it: on the greys it is under 2:1, so never text, an icon or a line */
+  --bz-red-text: #ff6b6b; /* red as text, an icon or a stroke: the light red that reaches 4.5:1 on the panel and the raised grey */
+  --bz-on-red: #ffffff; /* text and icons on a red fill (7.7:1) */
+  --bz-on-accent: #000000; /* text and icons on orange or lime */
   /* raised things */
   --bz-raised-shadow: 0 0 0 1px var(--bz-raised-border), 0 12px 32px rgba(0, 0, 0, 0.55);
   --bz-focus: 2px solid var(--bz-orange);

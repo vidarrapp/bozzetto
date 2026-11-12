@@ -697,13 +697,13 @@ export const suites = {
       t.ok(s.trash?.label === 'Clear the frames' && s.trash.title === 'Clear the frames' && /fi-ss-trash/.test(s.trash.icon) && s.trash.color === 'rgb(179, 179, 179)', `the trash has its name and icon and is grey at rest (${JSON.stringify(s.trash)})`);
       await p.hover('.panel--frames .bz-trash');
       let color = await p.evaluate(() => getComputedStyle(document.querySelector('.panel--frames .bz-trash')).color);
-      t.ok(color === 'rgb(255, 64, 96)', `and red under the pointer (${color})`);
+      t.ok(color === 'rgb(255, 107, 107)', `and red under the pointer (${color})`);
       await p.mouse.move(700, 450);
       // (Tab is the interface toggle here: a key that is no command, then the focus, stands for the keyboard.)
       await p.keyboard.press('Shift');
       await p.focus('.panel--frames .bz-trash');
       color = await p.evaluate(() => (document.activeElement?.classList.contains('bz-trash') ? getComputedStyle(document.activeElement).color : 'not focused'));
-      t.ok(color === 'rgb(255, 64, 96)', `and red under the keyboard's focus (${color})`);
+      t.ok(color === 'rgb(255, 107, 107)', `and red under the keyboard's focus (${color})`);
       await p.evaluate(() => document.activeElement?.blur?.());
       const orange = await p.evaluate(() => [...document.querySelectorAll('button, a')].filter((b) => b.getClientRects().length && getComputedStyle(b).backgroundColor === 'rgb(255, 90, 31)').map((b) => b.textContent.trim()));
       t.ok(orange.length === 1 && orange[0] === 'Save', `the one orange control is Save (${JSON.stringify(orange)})`);

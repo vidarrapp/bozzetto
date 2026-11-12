@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ORANGE = 'rgb(255, 90, 31)';
-const RED = 'rgb(255, 64, 96)';
+const RED = 'rgb(171, 0, 0)';
 const BLACK = 'rgb(0, 0, 0)';
 const STRIP = 'rgb(27, 27, 27)';
 
@@ -387,7 +387,7 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.review-mode')?.dataset.shared === 'public', null, { timeout: 15_000 });
     s = await stripState(page);
     t.ok(s.buttons.map((b) => b.text).join() === 'Hide…,Close,Hide the interface' && /Reviewing Public$/.test(s.readoutText), `Approve works: it is public, and Hide… is what is offered (${s.readoutText})`);
-    t.ok(s.buttons[0].bg === RED && s.buttons[0].color === BLACK, `Hide…, which takes it down, is filled red (${s.buttons[0].bg})`);
+    t.ok(s.buttons[0].bg === RED && s.buttons[0].color === 'rgb(255, 255, 255)', `Hide…, which takes it down, is filled red with a white label (${s.buttons[0].bg})`);
     t.eq(await page.evaluate(() => [...document.querySelectorAll('.bz-strip button')].filter((b) => getComputedStyle(b).backgroundColor === 'rgb(255, 90, 31)').length), 0, 'and nothing is orange in the strip then');
     s = await open('hidden', '');
     t.eq(s.buttons.map((b) => b.text).join(), 'Unhide,Close,Hide the interface', 'a hidden work offers Unhide');
