@@ -141,6 +141,19 @@ body.bz-shell .file-menu {
   z-index: 40;
 }
 
+/* "Not saved": quiet secondary text beside the hide button while saving is off. */
+body.bz-shell .bz-strip__off {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  color: var(--bz-text-2);
+  font: 400 13px/var(--bz-strip-h) var(--bz-font);
+  white-space: nowrap;
+}
+
+body.bz-shell .bz-strip__off[hidden] {
+  display: none;
+}
+
 body.bz-shell .bz-strip__right {
   grid-column: 3;
   display: flex;

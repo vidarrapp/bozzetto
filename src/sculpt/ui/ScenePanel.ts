@@ -10,6 +10,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { MaterialLibrary } from '../bridge/materials';
 import { RemeshTooLarge } from '../bridge/remeshBudget';
 import { statusToast } from './statusToast';
+import { deviceStore } from '../../ui/deviceStorage';
 
 /**
  * Scene outliner: the upper-left docked panel, and only the objects. Each
@@ -759,7 +760,7 @@ const BLOCKOUT_PARTS_KEY = 'bozzetto:blockout-parts';
 /** The switch's last setting, per browser; storage may be unavailable. */
 function readBlockoutParts(): boolean {
   try {
-    return localStorage.getItem(BLOCKOUT_PARTS_KEY) === '1';
+    return deviceStore.get(BLOCKOUT_PARTS_KEY) === '1';
   } catch {
     return false;
   }
@@ -767,7 +768,7 @@ function readBlockoutParts(): boolean {
 
 function writeBlockoutParts(parts: boolean): void {
   try {
-    localStorage.setItem(BLOCKOUT_PARTS_KEY, parts ? '1' : '0');
+    deviceStore.set(BLOCKOUT_PARTS_KEY, parts ? '1' : '0');
   } catch {
     /* private mode, or storage full: the setting lasts the session */
   }

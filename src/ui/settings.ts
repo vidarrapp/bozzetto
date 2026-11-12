@@ -5,6 +5,8 @@
  * the next press without a reload.
  */
 
+import { deviceStore, onDeviceChoice } from './deviceStorage';
+
 /** A setting that is either on or off, kept as a word so the store stays one shape. */
 export type OnOff = 'on' | 'off';
 
@@ -121,6 +123,17 @@ export class Settings {
 
   constructor() {
     this.load();
+    // Nothing is read while saving is not allowed (ui/deviceStorage). On a
+    // first answer of yes what an earlier visit kept is read. Turned on again
+    // after being off, what is on screen now is kept and written, not
+    // replaced by what the device held.
+    onDeviceChoice((c, was) => {
+      if (c !== 'keep') return;
+      if (was === 'none') {
+        this.load();
+        for (const fn of this.listeners) fn();
+      } else this.save();
+    });
   }
 
   get<K extends keyof SettingsValues>(key: K): SettingsValues[K] {
@@ -141,7 +154,7 @@ export class Settings {
 
   private load(): void {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = deviceStore.get(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<Record<keyof SettingsValues, unknown>>;
       for (const key of Object.keys(ALLOWED) as Array<keyof SettingsValues>) {
@@ -162,8 +175,8 @@ export class Settings {
       }
     }
     try {
-      if (Object.keys(changed).length === 0) localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, JSON.stringify(changed));
+      if (Object.keys(changed).length === 0) deviceStore.remove(STORAGE_KEY);
+      else deviceStore.set(STORAGE_KEY, JSON.stringify(changed));
     } catch {
       // The choice still holds for this page; it just will not survive a reload.
     }

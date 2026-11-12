@@ -1,6 +1,7 @@
 import { onTap } from '../../ui/dom';
 import { chordLabel, keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
+import { deviceChoice, mayStore, onDeviceChoice } from '../../ui/deviceStorage';
 import { layoutShell, startShellLayout } from './shellLayout';
 
 /**
@@ -77,6 +78,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
 export interface TitleStripOptions {
   /** The workspace path (Armature, Sculpt, Present) after the menus; on by default. */
   path?: boolean;
+  /**
+   * Say "Not saved" at the right while the person has turned saving off
+   * (ui/deviceStorage); on by default. The public viewer asks nothing and
+   * keeps nothing, so it has none.
+   */
+  savingNote?: boolean;
 }
 
 export class TitleStrip {
@@ -109,6 +116,7 @@ export class TitleStrip {
   private readonly offKeymap: () => void;
   private readonly stopLayout: () => void;
   private readonly offSettings: () => void;
+  private offChoice: (() => void) | null = null;
 
   constructor(opts: TitleStripOptions = {}) {
     document.body.classList.add('bz-shell');
@@ -142,6 +150,17 @@ export class TitleStrip {
     // panels. A tap, not a click: no long press on iOS, and no focus left
     // on the button for Tab or Space to land on (onTap).
     onTap(this.hideBtn, () => this.onToggleChrome?.());
+    if (opts.savingNote ?? true) {
+      // Quiet, and always there while saving is off: the strip is the one
+      // place that is neither the viewport nor the tool bar, and it stays
+      // on a phone, where the readout does not.
+      const note = el('span', 'bz-strip__off', 'Not saved');
+      note.title = 'Saving is off: your work is not kept on this device. Turn it on in Edit > Preferences.';
+      const paint = (): void => void (note.hidden = mayStore() || deviceChoice() === 'none');
+      paint();
+      this.offChoice = onDeviceChoice(paint);
+      right.appendChild(note);
+    }
     right.appendChild(this.hideBtn);
     this.setChromeHidden(false);
     this.offKeymap = keymap.onChange(() => this.setChromeHidden(this.hiddenNow));
@@ -276,6 +295,7 @@ export class TitleStrip {
   }
 
   dispose(): void {
+    this.offChoice?.();
     this.offKeymap();
     this.offSettings();
     document.body.classList.remove('bz-no-toolkeys');

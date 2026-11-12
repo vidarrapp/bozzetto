@@ -571,7 +571,7 @@ They shipped (Batch 7) with the owner's decisions as bracketed placeholders, mar
   - email codes and rate-limit counts for 48 hours at most;
   - the audit log for 12 months;
   - retired handles for 90 days.
-- **No consent banner:** there are no analytics or ads, only necessary cookies and storage.
+- **No tracking, and a choice about the device:** there are no analytics or ads, only necessary cookies. What the app keeps on the device (autosave, kept scenes, settings, the offline copy) is asked about on the first visit and written only after a yes (`src/ui/deviceStorage.ts`).
 - **Rights:** export and erasure in the app; rectification, restriction, objection and portability on request; complaints to IMY.
 - **Age:** 13 and over.
 

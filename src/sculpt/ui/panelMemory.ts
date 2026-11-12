@@ -10,6 +10,8 @@
  * or hand-edited store; the panels would close one another anyway).
  */
 
+import { deviceStore } from '../../ui/deviceStorage';
+
 /** The panels' ids by side, as they announce themselves ('settings' is the Render panel). */
 const SIDES: Record<string, 'left' | 'right'> = {
   scene: 'left',
@@ -25,7 +27,7 @@ const key = (mode: string): string => `bz.panels.${mode}`;
 export function storedPanels(mode: string): string[] {
   let list: unknown = [];
   try {
-    list = JSON.parse(localStorage.getItem(key(mode)) ?? '[]');
+    list = JSON.parse(deviceStore.get(key(mode)) ?? '[]');
   } catch {
     // A blocked or corrupt store: nothing was open.
   }
@@ -50,8 +52,8 @@ export function rememberPanels(mode: string): () => void {
     if (applying) return;
     try {
       const ids = Object.values(open).filter((id): id is string => !!id);
-      if (ids.length) localStorage.setItem(key(mode), JSON.stringify(ids));
-      else localStorage.removeItem(key(mode));
+      if (ids.length) deviceStore.set(key(mode), JSON.stringify(ids));
+      else deviceStore.remove(key(mode));
     } catch {
       // The panels still work; they just start closed next time.
     }

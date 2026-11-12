@@ -2,6 +2,8 @@ import { div } from './dom';
 import { ACTIONS, chordOf, chordParts, keymap, type ActionDef, type KeyMode } from './keymap';
 import { rangeOf, settings, type OnOff, type SettingsValues } from './settings';
 import { readyToLeave } from './leaving';
+import { confirmTurnOff } from './deviceChoice';
+import { keepOnDevice, mayStore, onDeviceChoice } from './deviceStorage';
 
 /**
  * Preferences: what a finger does, how solid the panels are, how frames are
@@ -50,7 +52,17 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   title.className = 'dsettings__title';
   title.textContent = 'Preferences';
   const blurb = div('dsettings__blurb');
-  blurb.textContent = 'Saved in this browser.';
+  const paintBlurb = (): void => {
+    blurb.textContent = mayStore() ? 'Saved in this browser.' : 'Saving is off. Changes last until you close or reload the page.';
+  };
+  paintBlurb();
+  onDeviceChoice(paintBlurb);
+
+  // Whether this browser keeps anything: the autosave, scenes kept on the
+  // device, these settings and the offline copy (ui/deviceStorage).
+  const savingHead = div('prefs__group');
+  savingHead.textContent = 'Saving';
+  const keep = keepRow();
 
   // Fingers first: on an iPad it is the choice that decides whether the
   // app is usable at all, and it has no key to find it by.
@@ -177,6 +189,8 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   // buttons stay on screen however many groups there are.
   const body = div('prefs__body');
   body.append(
+    savingHead,
+    keep.root,
     touchHead,
     fingers.root,
     appearanceHead,
@@ -314,7 +328,8 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   // drops it on the body), so the listener is on the window, and only
   // while the window is up.
   const onWindowKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && !capturing) {
+    // The device question over this window takes Esc as its own.
+    if (e.key === 'Escape' && !capturing && !document.querySelector('.bz-device')) {
       hide();
       e.preventDefault();
       e.stopPropagation();
@@ -329,7 +344,8 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
       look.set(settings.get('interactionLook'));
       antialias.set(settings.get('antialias'));
       opacity.sync();
-      for (const t of [adaptive, meter, stallLog, inputLog]) t.sync();
+      for (const t of [adaptive, meter, stallLog, inputLog, keep]) t.sync();
+      paintBlurb();
       render();
       root.hidden = false;
       document.body.classList.add('has-modal');
@@ -407,6 +423,41 @@ function toggleRow(key: OnOffKey, label: string, hint: string): { root: HTMLElem
     input.checked = settings.get(key) === 'on';
   };
   settings.onChange(sync);
+  sync();
+  return { root, sync };
+}
+
+/**
+ * The switch "Keep work on this device". On stores the choice and starts the
+ * autosave and the offline copy at once; off asks the second question first.
+ */
+function keepRow(): { root: HTMLElement; sync: () => void } {
+  const root = document.createElement('label');
+  root.className = 'prefs__choice prefs__toggle';
+  root.dataset.setting = 'keepOnDevice';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  const text = div('prefs__choice-text');
+  const head = div('prefs__choice-title');
+  head.textContent = 'Keep work on this device';
+  const note = div('prefs__choice-hint');
+  note.textContent =
+    'Your work in progress, your settings and an offline copy of the app are kept in this browser. Off, nothing is saved and the app does not work offline. Files you save or export are not affected.';
+  text.append(head, note);
+  root.append(input, text);
+  const sync = (): void => {
+    input.checked = mayStore();
+  };
+  input.addEventListener('change', () => {
+    if (input.checked) {
+      keepOnDevice();
+      return;
+    }
+    // Back to on until the second question has been answered.
+    input.checked = true;
+    void confirmTurnOff().then(sync);
+  });
+  onDeviceChoice(sync);
   sync();
   return { root, sync };
 }

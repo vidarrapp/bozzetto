@@ -68,6 +68,7 @@ import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
 import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+import { deviceStore } from '../ui/deviceStorage';
 
 /**
  * Turntable coast: only fast ticks glide, and only a little.
@@ -1215,7 +1216,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   // Which handles the gizmo shows is a workspace preference, kept per browser.
   try {
-    const stored = localStorage.getItem('bozzetto-gizmo-parts');
+    const stored = deviceStore.get('bozzetto-gizmo-parts');
     if (stored) gizmo.setParts(JSON.parse(stored) as Partial<GizmoParts>);
   } catch {
     // A blocked or corrupt store: every handle shows.
@@ -1691,7 +1692,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   sculptPanel = new SculptPanel(session, input, viewer);
   sculptPanel.onGizmoParts = (parts) => {
     try {
-      localStorage.setItem('bozzetto-gizmo-parts', JSON.stringify(parts));
+      deviceStore.set('bozzetto-gizmo-parts', JSON.stringify(parts));
     } catch {
       // Not worth failing the tick over.
     }

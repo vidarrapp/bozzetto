@@ -30,6 +30,7 @@
  * ui/updates' business once the worker is registered.
  */
 import { announceUpdate, watchUpdates } from './updates';
+import { deviceChoice, deviceStore, mayStore, onDeviceChoice } from './deviceStorage';
 
 const SW_URL = '/sw.js';
 const OPT_OUT = 'bozzetto-no-sw';
@@ -44,7 +45,7 @@ const RETIRED_CACHES = ['bozzetto-basemeshes', 'bozzetto-figures'];
 /** localStorage throws in some privacy modes; an unreadable flag is "off". */
 function optedOut(): boolean {
   try {
-    return localStorage.getItem(OPT_OUT) === '1';
+    return deviceStore.get(OPT_OUT) === '1';
   } catch {
     return false;
   }
@@ -52,8 +53,8 @@ function optedOut(): boolean {
 
 function setOptOut(on: boolean): void {
   try {
-    if (on) localStorage.setItem(OPT_OUT, '1');
-    else localStorage.removeItem(OPT_OUT);
+    if (on) deviceStore.set(OPT_OUT, '1');
+    else deviceStore.remove(OPT_OUT);
   } catch {
     // Nothing to do: the query parameter still governs this page load.
   }
@@ -101,14 +102,38 @@ export function registerServiceWorker(): void {
   }
 
   if (params.has('sw')) setOptOut(false);
-  if (optedOut()) return;
+
+  // Nothing is registered, so no cache is written, until the person has
+  // said to keep things on this device (ui/deviceStorage); a worker an
+  // earlier visit left is taken out when they say not to.
+  const follow = (): void => {
+    if (mayStore()) start();
+    else if (deviceChoice() === 'declined') {
+      started = false;
+      void unregisterAll().catch(() => {});
+    }
+  };
+  onDeviceChoice(follow);
+  if (mayStore()) start();
+}
+
+let started = false;
+
+/** Register the worker, once the choice is to keep. */
+function start(): void {
+  if (started || optedOut()) return;
+  started = true;
 
   // "Updated to <version>", when this is the first run of a new build.
   announceUpdate();
 
   // After load: registration competes with the first frames for bandwidth
   // and main-thread time, and the app is more useful than its cache.
-  window.addEventListener('load', () => {
+  const register = (): void => {
+    if (!mayStore()) {
+      started = false;
+      return;
+    }
     navigator.serviceWorker
       .register(SW_URL)
       .then(watchUpdates)
@@ -122,5 +147,8 @@ export function registerServiceWorker(): void {
     if ('caches' in window) {
       for (const name of RETIRED_CACHES) void caches.delete(name).catch(() => {});
     }
-  });
+  };
+  // Turned on from Preferences, the page has loaded long since.
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register);
 }
