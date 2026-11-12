@@ -9,9 +9,7 @@ import {
   Timer,
   Mesh,
   BufferGeometry,
-  LineBasicMaterial,
   LineSegments,
-  MeshBasicMaterial,
   PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
@@ -19,9 +17,9 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group } from 'three';
-import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt } from 'three/tsl';
+  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
+import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial, LineBasicNodeMaterial, BlendMode } from 'three/webgpu';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -452,15 +450,15 @@ export class Viewer {
 
   /** Wireframe overlay drawn on top of the current material (hotkey "w"). */
   private readonly wireframe = new Mesh();
-  private readonly wireMaterial = new MeshBasicMaterial({
+  private readonly wireMaterial = new MeshBasicNodeMaterial({
     wireframe: true,
     color: 0x000000,
-    // Faint by default. With AO on, the overlay composites in linear HDR before
-    // tone-mapping, so a low opacity still reads clearly; the panel slider tunes it.
+    // Faint by default; the panel slider tunes it. The overlay composites in
+    // linear HDR before tone-mapping, over the AO'd surface (see wireTarget).
     transparent: true,
     opacity: 0.05,
     // The overlay shares the surface geometry; keep its lines out of the depth
-    // buffer so the AO pass doesn't sample them. depthTest stays on so back-facing
+    // buffer (what GTAO and the cavity read). depthTest stays on so back-facing
     // wires remain hidden behind the surface.
     depthWrite: false,
   });
@@ -478,7 +476,7 @@ export class Viewer {
    * lazily, after topology changes; asked before each render while the
    * overlay is on, which costs nothing when nothing changed.
    */
-  private readonly wireLineMaterial = new LineBasicMaterial({
+  private readonly wireLineMaterial = new LineBasicNodeMaterial({
     color: 0x000000,
     transparent: true,
     opacity: 0.05,
@@ -2967,8 +2965,38 @@ export class Viewer {
     // target (read via .sample()): GTAONode's alternative depth-reconstruction
     // path dereferences the pass depth texture at shader-build time, which isn't
     // a valid texture yet, so that path fails to compile.
-    scenePass.setMRT(mrt({ output, normal: normalView }));
+    //
+    // The wire overlay (both wire materials) is no part of what GTAO reads
+    // or of what it darkens. It used to draw into the scene pass like a
+    // surface: its pixels wrote their own view-space normal over the
+    // surface's (a line has none, so GTAO read garbage along every wire),
+    // and its colour went through the AO multiply with the surface under
+    // it. Now it writes to a target of its own, 'wire' (premultiplied
+    // colour and coverage, 8 bits, cleared to nothing), and leaves colour
+    // and normals exactly as the surface left them (an alpha of 0 under the
+    // material's blending keeps what is there); depth is as it was, since
+    // the wire never wrote any. Every composite lays the wire over its
+    // result, after the AO. The surface writes nothing there, being opaque,
+    // so a wire behind it is overdrawn as the depth test says.
+    const wireMrt = (colourOut: Node): Node =>
+      mrt({ output: colourOut, normal: vec4(0, 0, 0, 0), wire: vec4(materialColor, materialOpacity) }) as unknown as Node;
+    for (const m of [this.wireMaterial, this.wireLineMaterial]) {
+      m.mrtNode = wireMrt(vec4(0, 0, 0, 0)) as unknown as typeof m.mrtNode;
+      m.needsUpdate = true;
+    }
+    const sceneMrt = mrt({ output, normal: normalView, wire: vec4(0, 0, 0, 0) });
+    // Normals and the wire go through the material's blending, as the colour does (the
+    // default overwrites): that is what lets the wire draw to its own target alone.
+    sceneMrt.setBlendMode('normal', new BlendMode(MaterialBlending));
+    sceneMrt.setBlendMode('wire', new BlendMode(MaterialBlending));
+    sceneMrt.setClearColor('wire', 0x000000, 0);
+    scenePass.setMRT(sceneMrt);
+    scenePass.getTexture('wire').type = UnsignedByteType;
     const colour = scenePass.getTextureNode('output');
+    const wireTex = scenePass.getTextureNode('wire');
+    // The wire over a composite: what it covers shows through at (1 - coverage).
+    const withWire = (base: unknown): Node =>
+      (base as ReturnType<typeof vec4>).mul(vec4(vec3(float(1).sub(wireTex.a)), float(1))).add(vec4(wireTex.rgb, float(0))) as unknown as Node;
     const depthTex = scenePass.getTextureNode('depth');
     const normalTex = scenePass.getTextureNode('normal');
 
@@ -3069,9 +3097,9 @@ export class Viewer {
     // not, gated only by a zero strength. Switching it on or off now costs
     // one rebuild of the output, as turning DoF on or off always has.
     const shade = (factor: unknown): Node =>
-      colour.mul(vec4(vec3(factor as never), float(1))) as unknown as Node;
+      withWire(colour.mul(vec4(vec3(factor as never), float(1))));
     this.composites = {
-      viewer: { plain: colour as unknown as Node, ao: shade(aoFactor) },
+      viewer: { plain: withWire(colour), ao: shade(aoFactor) },
       sculpt: { plain: shade(sculptAo), ao: shade(sculptAo.mul(aoFactor as never)) },
     };
     this.viewZNode = scenePass.getViewZNode() as unknown as Node;

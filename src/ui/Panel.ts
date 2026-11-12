@@ -15,7 +15,10 @@ export interface PanelOptions {
   actions?: HTMLElement;
   /**
    * Open the hotkey guide: an Interface section at the foot of the body
-   * gets a Hotkeys button for it, the way in where H is out of reach.
+   * gets a Hotkeys button for it, the way in where there is no title strip
+   * (the Create page, the old admin preview). Where the strip is, its Help
+   * menu, Hotkeys and the H key are the ways in, and the section is left
+   * out (or taken away when the strip arrives: see TitleStrip).
    */
   onHotkeys?: () => void;
   /**
@@ -316,7 +319,8 @@ export class Panel {
       for (const sec of this.lookDevSections) sec.hidden = true;
     }
     if (devMode()) this.buildDeveloper(this.bodyEl);
-    if (this.onHotkeys) this.buildInterface(this.bodyEl, this.onHotkeys);
+    // The strip may be up already (the viewer builds its frame first).
+    if (this.onHotkeys && !document.body.classList.contains('bz-shell')) this.buildInterface(this.bodyEl, this.onHotkeys);
     if (this.sculpting || this.fullLook) this.applySculptVisibility();
     this.refreshControls();
   }
@@ -542,6 +546,7 @@ export class Panel {
   /** The hotkey guide's button: what H opens, for a hand with no keyboard under it. */
   private buildInterface(body: HTMLElement, open: () => void): void {
     const sec = section(body, 'Interface');
+    sec.classList.add('section--interface');
     const hotkeys = button('Hotkeys', open);
     hotkeys.className = 'btn btn--small panel__hotkeys';
     const key = keymap.chordFor('ui.help');

@@ -110,6 +110,9 @@ export class TitleStrip {
 
   constructor(opts: TitleStripOptions = {}) {
     document.body.classList.add('bz-shell');
+    // A panel built before the strip may hold the Interface section's Hotkeys
+    // button; with the strip's Help menu (and H) it is a second way in, and goes.
+    for (const sec of document.querySelectorAll('.section--interface')) sec.remove();
     this.el = el('header', 'bz-strip');
     this.menus = el('nav', 'bz-strip__menus');
     this.menus.setAttribute('aria-label', 'Menus');

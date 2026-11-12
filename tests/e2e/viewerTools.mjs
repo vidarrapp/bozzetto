@@ -70,8 +70,12 @@ async function drag(page, from, [dx, dy], withL) {
   if (withL) await page.keyboard.up('l');
 }
 
-/** H, the guide's own click, and the Render panel's Hotkeys button, in a booted viewer or editor. */
-async function guideChecks(page, t, where) {
+/**
+ * H and the guide's own click, in a booted viewer or editor; and the Render
+ * panel's Hotkeys button where there is no title strip with a Help menu (the
+ * old admin preview), or its absence where there is (the public viewer).
+ */
+async function guideChecks(page, t, where, { button: wantButton }) {
   await page.evaluate(() => document.activeElement?.blur?.());
   let g = await guideOf(page);
   t.ok(!g.shown, `${where}: the guide starts closed`);
@@ -92,10 +96,15 @@ async function guideChecks(page, t, where) {
   await page.waitForTimeout(200);
   const button = await page.evaluate(() => {
     const b = document.querySelector('.panel--render .panel__hotkeys');
-    if (!b) return null;
+    const interfaces = [...document.querySelectorAll('.panel--render h3')].filter((h) => h.textContent === 'Interface').length;
+    if (!b) return { none: true, interfaces };
     b.scrollIntoView();
-    return { text: b.textContent, title: b.title, section: b.closest('.section')?.querySelector('h3')?.textContent ?? '' };
+    return { text: b.textContent, title: b.title, section: b.closest('.section')?.querySelector('h3')?.textContent ?? '', interfaces };
   });
+  if (!wantButton) {
+    t.ok(button.none && button.interfaces === 0, `${where}: the Render panel has no Interface section or Hotkeys button (Help, Hotkeys and H are the way in) (${JSON.stringify(button)})`);
+    return;
+  }
   t.ok(button?.text === 'Hotkeys' && button.section === 'Interface' && /\(H\)/.test(button.title), `${where}: the Render panel has a Hotkeys button, under Interface (${JSON.stringify(button)})`);
   await page.click('.panel--render .panel__hotkeys');
   t.ok((await guideOf(page)).shown, `${where}: the button opens the guide`);
@@ -171,7 +180,7 @@ export const suites = {
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     await page.evaluate(() => window.__bozzetto.pause());
-    await guideChecks(page, t, 'the viewer');
+    await guideChecks(page, t, 'the viewer', { button: false });
     // The panel tucked away again, so the drags land on the canvas.
     await page.evaluate(() => {
       const p = document.querySelector('.panel--render');
@@ -238,7 +247,7 @@ export const suites = {
     t.ok(exposed, 'the editor preview is reachable as __bozzetto (debug handle)');
     if (!exposed) return;
     await page.evaluate(() => window.__bozzetto.pause());
-    await guideChecks(page, t, 'the editor');
+    await guideChecks(page, t, 'the editor', { button: true });
     await lightChecks(page, t, 'the editor');
     // Tab as everywhere, over the preview only: the editor's own top row and
     // its sidebar of project settings stay.

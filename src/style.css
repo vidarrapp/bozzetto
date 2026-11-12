@@ -3334,7 +3334,7 @@ body:has(.transport) .chrome-hint {
    dismissed; the form opens under its line. */
 .scale-banner {
   position: fixed;
-  top: calc(56px + env(safe-area-inset-top, 0px));
+  top: calc(var(--bz-panel-top, 56px) + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   display: flex;

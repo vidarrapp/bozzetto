@@ -15,6 +15,24 @@
 body.bz-shell {
   /* The panel's own fill: its surface at the Panel opacity preference. */
   --bz-panel-fill: var(--bz-panel);
+  /* The title strip's height, and what hangs from it: the folder-tab row
+     4px under it, 28px tall, and the panels under that. Everything that
+     stands against the strip says it with these, so one number moves it all
+     (shellLayout.ts reads the panels' top from the page). */
+  --bz-strip-h: 24px;
+  --bz-tab-gap: 4px;
+  --bz-tab-h: 28px;
+  --bz-tab-top: calc(var(--bz-strip-h) + var(--bz-tab-gap));
+  --bz-panel-top: calc(var(--bz-tab-top) + var(--bz-tab-h));
+}
+
+/* A phone (narrow, a finger for a pointer): the strip is taller, 32px, so
+   its words and buttons are a touch target and fit inside it. An iPad is
+   wider than this and keeps 24px, as a desktop does. */
+@media (max-width: 599px) and (pointer: coarse) {
+  body.bz-shell {
+    --bz-strip-h: 32px;
+  }
 }
 
 @supports (color: rgb(from red r g b / 0.5)) {
@@ -40,7 +58,7 @@ body.bz-shell .help-hint {
 }
 
 body.bz-shell .help-guide {
-  top: 40px;
+  top: calc(var(--bz-strip-h) + 16px);
   left: 50%;
   transform: translateX(-50%);
 }
@@ -52,14 +70,14 @@ body.bz-shell .bz-strip {
   left: 0;
   right: 0;
   z-index: 35;
-  height: 24px;
+  height: var(--bz-strip-h);
   display: grid;
   /* The menus and the path keep their full width; the readout gives way. */
   grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
   align-items: center;
   background: var(--bz-strip);
   color: var(--bz-text);
-  font: 400 13px/24px var(--bz-font);
+  font: 400 13px/var(--bz-strip-h) var(--bz-font);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -88,13 +106,15 @@ body.bz-shell .bz-strip__hide {
   appearance: none;
   margin: 0;
   padding: 0 8px;
-  height: 24px;
+  /* The global button rule's 28px minimum would stand these taller than the strip. */
+  height: var(--bz-strip-h);
+  min-height: var(--bz-strip-h);
   border: 0;
   border-radius: 0;
   background: none;
   box-shadow: none;
   color: var(--bz-text);
-  font: 400 13px/24px var(--bz-font);
+  font: 400 13px/var(--bz-strip-h) var(--bz-font);
   white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -133,7 +153,7 @@ body.bz-shell .bz-strip__right {
 body.bz-shell .bz-strip__hide {
   display: grid;
   place-items: center;
-  width: 24px;
+  width: var(--bz-strip-h);
   padding: 0;
 }
 
@@ -209,7 +229,7 @@ body.bz-shell .bz-ws {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: var(--bz-strip-h);
   min-width: 0;
 }
 
@@ -218,8 +238,8 @@ body.bz-shell .bz-ws__step {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  height: 24px;
-  min-height: 24px;
+  height: var(--bz-strip-h);
+  min-height: var(--bz-strip-h);
   margin: 0;
   padding: 0 10px;
   border: 0;
@@ -307,10 +327,10 @@ body.bz-shell.chrome-hidden .bz-strip__hide {
    --bz-max-right). */
 body.bz-shell .panel {
   position: fixed;
-  top: 56px;
+  top: var(--bz-panel-top);
   bottom: auto;
   width: min(304px, 100vw);
-  max-height: var(--bz-max-left, calc(100vh - 72px));
+  max-height: var(--bz-max-left, calc(100vh - var(--bz-panel-top) - 16px));
   display: flex;
   flex-direction: column;
   background: var(--bz-panel-fill);
@@ -331,7 +351,7 @@ body.bz-shell .panel--left {
 body.bz-shell .panel:not(.panel--left) {
   left: auto;
   right: 0;
-  max-height: var(--bz-max-right, calc(100vh - 72px));
+  max-height: var(--bz-max-right, calc(100vh - var(--bz-panel-top) - 16px));
 }
 
 body.bz-shell .panel--model,
@@ -405,15 +425,15 @@ body.bz-shell .panel__body::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* The tab: 28px tall, 4px under the strip, flush to the edge. A tab whose
+/* The tab: 28px tall, 4px under the strip (the strip's own height, 24px or 32px), flush to the edge. A tab whose
    panel is closed sits on the strip's colour; the open panel's is the
    panel's own, and joins it. */
 body.bz-shell .panel > .panel__handle {
   position: fixed;
-  top: 28px;
+  top: var(--bz-tab-top);
   width: auto;
   min-width: 0;
-  height: 28px;
+  height: var(--bz-tab-h);
   min-height: 0;
   margin: 0;
   padding: 0 16px;
@@ -424,8 +444,12 @@ body.bz-shell .panel > .panel__handle {
   gap: 0;
   border: 0;
   border-radius: 0;
-  box-shadow: none;
-  background: var(--bz-strip);
+  /* The tabs stand 1px apart (shellLayout.ts); the gap shows the view through,
+     which on a light scene reads as a line between tabs. Each tab paints its own
+     colour 1px to either side, so the row has no lines in it. */
+  --bz-tab-bg: var(--bz-strip);
+  background: var(--bz-tab-bg);
+  box-shadow: 1px 0 0 var(--bz-tab-bg), -1px 0 0 var(--bz-tab-bg);
   color: var(--bz-text-2);
   font: 400 13px/1 var(--bz-font);
   white-space: nowrap;
@@ -455,7 +479,7 @@ body.bz-shell .panel > .panel__handle:focus-visible {
 }
 
 body.bz-shell .panel:not(.panel--collapsed) > .panel__handle {
-  background: var(--bz-panel-fill);
+  --bz-tab-bg: var(--bz-panel-fill);
   color: var(--bz-text);
   font-weight: 600;
 }
@@ -609,10 +633,18 @@ body.bz-shell .sculpt-toolbar__btn:focus-visible .bz-tip {
    Bottom left, 16px in, no box behind any of them. Top down: the brush
    Size and Strength fields (while the Tool panel is closed), Solo, Redo,
    Undo and Negative. */
+body.bz-shell {
+  --bz-edge-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* What the column holds besides the two upright fields' lines: their
+     18px of room for the value above each, the 4px between them, the
+     solo/redo/undo/negative buttons (4 x 40px) and 8px under the fields. */
+  --bz-edge-fixed: 208px;
+}
+
 body.bz-shell .bz-edge {
   position: fixed;
   left: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--bz-edge-bottom);
   z-index: 12;
   display: flex;
   flex-direction: column;
@@ -724,7 +756,15 @@ body.bz-shell .bz-edge .sculpt-solo {
 body.bz-shell .bz-edge .sculpt-slider {
   position: relative;
   width: 44px;
-  height: 160px;
+  /* 160px, less where the screen is short: the column must not reach up
+     under the tab row (the value above the top field was half hidden). The
+     visible height (dvh) is the one that counts on a phone's browser. */
+  --bz-field-h: clamp(
+    40px,
+    calc((100vh - var(--bz-edge-bottom) - var(--bz-panel-top) - var(--bz-edge-fixed) - 16px) / 2),
+    160px
+  );
+  height: var(--bz-field-h);
   margin: 18px 0 0 -2px;
   cursor: pointer;
 }
@@ -777,7 +817,17 @@ body.bz-shell .bz-edge .sculpt-slider__val {
 /* A phone: the tool bar spans the width, so the edge controls stand above it. */
 @media (max-width: 660px) {
   body.bz-shell:has(.sculpt-toolbar__brushes) .bz-edge {
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    --bz-edge-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@supports (height: 100dvh) {
+  body.bz-shell .bz-edge .sculpt-slider {
+    --bz-field-h: clamp(
+      40px,
+      calc((100dvh - var(--bz-edge-bottom) - var(--bz-panel-top) - var(--bz-edge-fixed) - 16px) / 2),
+      160px
+    );
   }
 }
 
@@ -927,7 +977,7 @@ body.bz-shell.chrome-hidden .present-bar {
 body.bz-shell .bz-strip__btn.bz-strip__btn--primary,
 body.bz-shell .bz-strip__btn.bz-strip__btn--primary:hover,
 body.bz-shell .bz-strip__btn.bz-strip__btn--primary.topchip--open {
-  min-height: 24px;
+  min-height: var(--bz-strip-h);
   padding: 0 12px;
   background: var(--bz-orange);
   color: var(--bz-on-accent);
