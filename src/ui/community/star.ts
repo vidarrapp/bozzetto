@@ -1,4 +1,4 @@
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import '../icons';
 import { AccountError, inWait, setStar } from '../../net/account';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { signInButton } from '../signIn';
