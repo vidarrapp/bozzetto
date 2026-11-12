@@ -16,6 +16,8 @@ export interface ViewerParts {
   /** The bottom bar; absent for a model, or a timelapse of one frame. */
   transport: Transport | null;
   help: Help;
+  /** Take it all down: the shortcuts, the meters, the panel, the bar and the viewer (a page that rebuilds the view). */
+  dispose(): void;
 }
 
 export interface MountOptions {
@@ -76,7 +78,6 @@ export async function mountViewerParts(
   const help = new Help({ button: !opts.frame });
   // A member's work from the Community names its author under the title.
   const panel = new Panel(viewer, {
-    onHotkeys: () => help.toggle(),
     author: opts.author,
     fullLook: opts.shell && !opts.frame,
     shell: opts.shell,
@@ -89,16 +90,30 @@ export async function mountViewerParts(
   const fps = new FpsMeter(viewer);
   // The stall log lives here, not in one mode, so it reads the same over
   // the viewer, Sculpt and Armature (Preferences > Diagnostics, ?perfdebug=1).
-  mountStallLog();
+  const stopStallLog = mountStallLog();
   // Tab hides the interface in stages, as in Sculpt (owner decision): the
   // page's one toggle, which Sculpt and Armature use too when they mount.
   const chrome = pageChrome();
-  installShortcuts(viewer, {
+  const stopShortcuts = installShortcuts(viewer, {
     toggleChrome: () => chrome.handleTab(),
     toggleHelp: () => help.toggle(),
     toggleFps: () => fps.toggle(),
     refresh: () => panel.refreshControls(),
   });
 
-  return { viewer, panel, transport, help };
+  return {
+    viewer,
+    panel,
+    transport,
+    help,
+    dispose: () => {
+      stopShortcuts();
+      stopStallLog();
+      fps.dispose();
+      panel.dispose();
+      transport?.dispose();
+      help.dispose();
+      viewer.dispose();
+    },
+  };
 }

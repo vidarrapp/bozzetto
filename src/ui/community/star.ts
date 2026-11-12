@@ -1,3 +1,4 @@
+import '../icons';
 import { AccountError, inWait, setStar } from '../../net/account';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { signInButton } from '../signIn';
@@ -6,7 +7,9 @@ import { signInButton } from '../signIn';
  * The Star toggle (docs/accounts.md §13): a signed-in member's favourite,
  * on a Community card's picture and beside the viewer's credit, never on
  * the member's own work. Optimistic: it turns at the click, and back if
- * the server refuses, saying why. It never shows a count.
+ * the server refuses, saying why. It never shows a count. The star is the
+ * same filled icon either way: white when pressed, grey when not
+ * (style.css), never orange or yellow.
  *
  * Hooks for tests: `.star-toggle[data-project][aria-pressed]`.
  */
@@ -21,11 +24,14 @@ export function starButton(
   b.dataset.project = id;
   let on = starred;
   let busy = false;
+  const icon = document.createElement('i');
+  icon.className = 'fi fi-ss-star';
+  icon.setAttribute('aria-hidden', 'true');
+  b.appendChild(icon);
   const paint = (): void => {
     b.setAttribute('aria-pressed', String(on));
     b.setAttribute('aria-label', on ? 'Unstar' : 'Star');
     b.title = on ? 'Unstar' : 'Star';
-    b.textContent = on ? '★' : '☆';
   };
   paint();
   b.addEventListener('click', (ev) => {

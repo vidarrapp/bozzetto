@@ -1,4 +1,6 @@
-import { declineKeeping, deviceChoice, keepOnDevice } from './deviceStorage';
+import { signOut, signedInOnDevice } from '../admin/api';
+import { declineKeeping, deviceChoice, keepOnDevice, mayStore } from './deviceStorage';
+import { failNotice } from '../sculpt/ui/statusToast';
 
 /**
  * The first-visit question: keep work on this device, or not (the owner's
@@ -34,7 +36,18 @@ function btn(label: string, className: string): HTMLButtonElement {
 }
 
 /** The window, from step 1 or straight to step 2. Resolves with what was chosen; step 2 may end in 'back'. */
-function openWindow(first: boolean): Promise<Answer> {
+interface WindowOptions {
+  /** Start at the first question (else straight to the second). */
+  first: boolean;
+  /** An opening sentence saying why it is asked now (an action that needs saving on). */
+  intro?: string;
+  /** A choice exists already and this is the action's question: Esc, and Go back, cancel it. */
+  cancellable?: boolean;
+  /** The second question says that turning saving off signs the person out here. */
+  signOutNote?: boolean;
+}
+
+function openWindow({ first, intro, cancellable = false, signOutNote = false }: WindowOptions): Promise<Answer> {
   return new Promise((resolve) => {
     const overlay = make('div', 'install-overlay bz-device');
     const card = make('div', 'install-card account-card bz-device__card');
@@ -54,13 +67,15 @@ function openWindow(first: boolean): Promise<Answer> {
     };
 
     const draw = (): void => {
-      card.replaceChildren();
+      const body = make('div', 'account-body');
+      card.replaceChildren(body);
       const h = make('h2', 'account-title');
       h.id = 'bz-device-title';
       card.setAttribute('aria-labelledby', h.id);
       const actions = make('div', 'account-actions');
       if (step === 1) {
         h.textContent = 'Keep your work on this device?';
+        const why = intro ? make('p', 'account-lede bz-device__why', intro) : null;
         const p1 = make(
           'p',
           'account-lede',
@@ -81,7 +96,8 @@ function openWindow(first: boolean): Promise<Answer> {
           draw();
         });
         actions.append(keep, decline);
-        card.append(h, p1, p2, actions);
+        if (why) body.append(h, why, p1, p2, actions);
+        else body.append(h, p1, p2, actions);
         primary = keep;
       } else {
         h.textContent = 'Turn saving off?';
@@ -91,17 +107,19 @@ function openWindow(first: boolean): Promise<Answer> {
           'Your work will not be saved while you sculpt, and it is gone when you close or reload the page. ' +
             'The app will not work offline. Your settings will not be remembered.',
         );
+        const out = signOutNote ? make('p', 'account-lede', 'This also signs you out on this device.') : null;
         const off = btn('Turn saving off', 'btn btn--danger bz-device-off');
         const back = btn('Go back', 'btn bz-device-back');
         off.addEventListener('click', () => finish('off'));
         back.addEventListener('click', () => {
-          if (first) {
+          if (first && !cancellable) {
             step = 1;
             draw();
           } else finish('back');
         });
         actions.append(off, back);
-        card.append(h, p, actions);
+        if (out) body.append(h, p, out, actions);
+        else body.append(h, p, actions);
         // On the second question the safe way out holds the focus: turning
         // things off is one deliberate move away.
         primary = back;
@@ -111,10 +129,12 @@ function openWindow(first: boolean): Promise<Answer> {
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
-        // The first question needs an answer; the second's Esc is Go back.
+        // The first question needs an answer, unless a choice exists already and
+        // this is an action's question (then Esc cancels it); the second's Esc is Go back.
         e.preventDefault();
         e.stopPropagation();
-        if (step === 2) card.querySelector<HTMLButtonElement>('.bz-device-back')?.click();
+        if (step === 1 && cancellable) finish('back');
+        else if (step === 2) card.querySelector<HTMLButtonElement>('.bz-device-back')?.click();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -145,18 +165,34 @@ function openWindow(first: boolean): Promise<Answer> {
 
 let asking: Promise<void> | null = null;
 
+/** Sign out here, for a person who turns saving off while signed in; false when it could not be done. */
+async function signOutForOff(): Promise<boolean> {
+  try {
+    await signOut();
+    return true;
+  } catch {
+    failNotice('Could not sign out, so saving stays on.');
+    return false;
+  }
+}
+
 /**
  * Resolves once there is a choice: at once when there is one already, else
- * when the window has been answered. Nothing is written until then.
+ * when the window has been answered. Nothing is written until then. A
+ * session signed in from before the question existed is told that saying
+ * no signs it out, and does.
  */
 export function ensureDeviceChoice(): Promise<void> {
   if (deviceChoice() !== 'none') return Promise.resolve();
   asking ??= (async () => {
     for (;;) {
-      const answer = await openWindow(true);
+      const signedIn = signedInOnDevice();
+      const answer = await openWindow({ first: true, signOutNote: signedIn });
       if (answer === 'keep') keepOnDevice();
-      else if (answer === 'off') declineKeeping();
-      else continue;
+      else if (answer === 'off') {
+        if (signedIn && !(await signOutForOff())) continue;
+        declineKeeping();
+      } else continue;
       break;
     }
   })().finally(() => {
@@ -165,9 +201,29 @@ export function ensureDeviceChoice(): Promise<void> {
   return asking;
 }
 
+/**
+ * For something that needs saving on (Import OBJ, Send to Sculpt, signing
+ * in): true at once when it is on; else the first question again, with
+ * `why` as its opening sentence. Keep on this device turns saving on and
+ * resolves true, so the caller goes on with what was asked. Anything else
+ * (Turn saving off, Go back, Esc) leaves it off and resolves false.
+ */
+export async function requireSaving(why: string): Promise<boolean> {
+  if (mayStore()) return true;
+  const answer = await openWindow({ first: true, intro: why, cancellable: true });
+  if (answer === 'keep') {
+    keepOnDevice();
+    return true;
+  }
+  if (answer === 'off') declineKeeping();
+  return false;
+}
+
 /** Preferences, turning it off: the second question alone. True once saving is turned off. */
 export async function confirmTurnOff(): Promise<boolean> {
-  if ((await openWindow(false)) !== 'off') return false;
+  const signedIn = signedInOnDevice();
+  if ((await openWindow({ first: false, signOutNote: signedIn })) !== 'off') return false;
+  if (signedIn && !(await signOutForOff())) return false;
   declineKeeping();
   return true;
 }

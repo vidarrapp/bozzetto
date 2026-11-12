@@ -1,7 +1,8 @@
-import { checkSignIn, roleOf, type SignIn } from '../../admin/api';
+import { checkSignIn, type SignIn } from '../../admin/api';
 import {
   AccountError,
   dayOf,
+  shortDayOf,
   errorText,
   loadConfig,
   momentOf,
@@ -16,11 +17,11 @@ import {
   type ReviewCard,
   type SharedFilter,
 } from '../../net/account';
-import { authorHref, statsText } from '../../net/community';
-import { legalFoot, renderLanding, setPicture } from '../Landing';
-import { topChip, topbarLeft, topbarRight } from '../topbar';
-import { accountChips } from '../account/menu';
+import { authorHref } from '../../net/community';
+import { renderLanding, setPicture } from '../Landing';
+import { pageShell } from '../pageShell';
 import { button, el } from '../account/parts';
+import { fillMeta, metaPhrase, metaValue, statsLine } from '../metaLine';
 import { signInButton } from '../signIn';
 import {
   ACTION_LABEL,
@@ -81,15 +82,14 @@ export async function renderReview(app: HTMLElement): Promise<void> {
   app.classList.add('app--page');
   document.title = 'Review · Bozzetto';
   const tab = reviewTabOf(new URLSearchParams(window.location.search).get('tab'));
-  const page = el('div', 'landing review-page');
+  const shell = pageShell(app, {
+    current: 'review',
+    title: 'Review',
+    tagline: 'What members share waits here for a reviewer. Moderators do not review their own work; the owner reviews everything.',
+    className: 'review-page',
+  });
+  const { page } = shell;
   page.dataset.tab = tab;
-  const head = el('header', 'landing__head');
-  const titles = el('div');
-  titles.append(
-    el('h1', 'landing__title', 'Review'),
-    el('p', 'landing__tagline', 'What members share waits here for a reviewer. Moderators do not review their own work; the owner reviews everything.'),
-  );
-  head.appendChild(titles);
   const nav = el('nav', 'admin-tabs review-tabs');
   nav.setAttribute('aria-label', 'Review');
   for (const [name, label] of REVIEW_TABS) {
@@ -102,21 +102,8 @@ export async function renderReview(app: HTMLElement): Promise<void> {
   const say = el('p', 'account-say review__say');
   say.setAttribute('role', 'status');
   const body = el('div', 'review__body');
-  page.append(head, nav, say, body, legalFoot());
-  app.replaceChildren(page);
-
-  const left = topbarLeft();
-  if (!left.querySelector('.viewer-back')) {
-    const back = topChip('← Gallery', '/');
-    back.classList.add('viewer-back');
-    left.appendChild(back);
-  }
-  const bar = topbarRight();
-  bar.querySelectorAll('.landing-chip').forEach((c) => c.remove());
-  for (const c of accountChips(signIn, roleOf(signIn), () => void renderReview(app))) {
-    c.classList.add('landing-chip');
-    bar.appendChild(c);
-  }
+  page.append(nav, say, body);
+  shell.nav.fill(signIn, () => void renderReview(app));
 
   const ctx: Ctx = { app, me, tab, say };
   if (tab === 'queue') await queueTab(ctx, body);
@@ -155,7 +142,7 @@ function loadFailed(ctx: Ctx, what: string, err: unknown): void {
 }
 
 async function queueTab(ctx: Ctx, body: HTMLElement): Promise<void> {
-  const grid = el('div', 'landing__grid review__grid');
+  const grid = el('div', 'admin-list review__grid');
   const more = button('Load more', 'btn community__more review__more');
   more.hidden = true;
   body.append(grid, more);
@@ -186,7 +173,7 @@ async function queueTab(ctx: Ctx, body: HTMLElement): Promise<void> {
 }
 
 async function reportsTab(ctx: Ctx, body: HTMLElement): Promise<void> {
-  const grid = el('div', 'landing__grid review__grid review__grid--reports');
+  const grid = el('div', 'admin-list review__grid review__grid--reports');
   body.append(grid);
   let got;
   try {
@@ -238,7 +225,7 @@ async function galleryTab(ctx: Ctx, body: HTMLElement): Promise<void> {
   }
   filter.value = filterOf(params.get('state'));
   tools.append(search, filter);
-  const grid = el('div', 'landing__grid review__grid');
+  const grid = el('div', 'admin-list review__grid');
   const more = button('Load more', 'btn community__more review__more');
   more.hidden = true;
   body.append(tools, grid, more);
@@ -336,14 +323,16 @@ function historyLine(item: HistoryItem): HTMLElement {
       : item.actor
         ? `by @${item.actor.handle}`
         : 'by an account since deleted';
-  head.append(el('strong', 'review-history__what', DONE[item.action] ?? item.action), ` ${who} · ${momentOf(item.at)}`);
+  fillMeta(head, [el('strong', 'review-history__what', DONE[item.action] ?? item.action), metaPhrase(who), metaValue(momentOf(item.at))]);
   const what = el('p', 'review-history__project');
   if (item.project) {
     const title = el('a', 'review-history__title', `“${item.project.title || 'Untitled'}”`);
     title.href = reviewViewerHref(item.project.id, 'history');
-    what.append(title);
-    if (item.project.author) what.append(` by @${item.project.author.handle}`);
-    what.append(` · now ${STATE_LABEL[item.project.shared].toLowerCase()}`);
+    fillMeta(what, [
+      title,
+      item.project.author ? metaPhrase(`by @${item.project.author.handle}`) : null,
+      metaPhrase(`now ${STATE_LABEL[item.project.shared].toLowerCase()}`),
+    ]);
   } else {
     what.textContent = 'A project since deleted.';
   }
@@ -352,10 +341,18 @@ function historyLine(item: HistoryItem): HTMLElement {
   return li;
 }
 
-/** One project on the Queue or the Reports tab: drawn again after each action from what the server says. */
+/**
+ * One project on the Queue, the Gallery or the Reports tab, as a row of the
+ * list (the Projects list's pattern): its picture, what it is, its title
+ * with its author, one line of where it stands, and its actions at the
+ * right. Drawn again after each action from what the server says.
+ */
 class Card {
-  readonly root = el('div', 'card card--library review-card');
-  private readonly body = el('div', 'card__body');
+  readonly root = el('div', 'admin-row review-card');
+  private readonly thumb = el('a', 'admin-row__thumb card__thumb');
+  private readonly kind = el('span', 'admin-row__kind');
+  private readonly body = el('div', 'admin-row__main');
+  private readonly acts = el('div', 'admin-row__actions');
   private readonly say = el('p', 'account-say review-card__say');
   private busy = false;
 
@@ -365,12 +362,12 @@ class Card {
     private reports: OpenReport[] | null,
   ) {
     this.root.dataset.project = item.id;
-    const thumb = el('a', 'card__thumb');
-    thumb.href = reviewViewerHref(item.id, ctx.tab);
-    thumb.setAttribute('aria-label', `Open “${item.title || 'Untitled'}” for review`);
-    if (item.thumb) setPicture(thumb, item.thumb);
+    this.thumb.href = reviewViewerHref(item.id, ctx.tab);
+    this.thumb.setAttribute('aria-label', `Open “${item.title || 'Untitled'}” for review`);
+    if (item.thumb) setPicture(this.thumb, item.thumb);
+    this.kind.textContent = item.mode === 'timelapse' ? 'Timelapse' : 'Model';
     this.say.setAttribute('role', 'status');
-    this.root.append(thumb, this.body);
+    this.root.append(this.thumb, this.kind, this.body, this.acts);
     this.draw();
   }
 
@@ -383,47 +380,57 @@ class Card {
     const p = this.item;
     this.root.dataset.shared = p.shared;
     const href = reviewViewerHref(p.id, this.ctx.tab);
-    const title = el('a', 'card__title card__link', p.title || 'Untitled');
+    const title = el('a', 'admin-row__title card__title card__link', p.title || 'Untitled');
     title.href = href;
-    const parts: HTMLElement[] = [title];
+    const head = el('span', 'review-card__head');
+    head.appendChild(title);
     if (p.author) {
       const by = el('a', 'card__author', `@${p.author.handle}`);
       by.href = authorHref(p.author.handle);
-      parts.push(by);
+      head.append(el('span', 'review-card__by', ' by '), by);
     }
-    const meta = el('span', 'card__meta');
-    meta.append(el('span', 'badge card__mode', p.mode === 'timelapse' ? 'timelapse' : 'model'));
-    if (p.shared_at) meta.append(el('span', 'card__date', `${p.shared === 'pending' ? 'Submitted' : 'Shared'} ${dayOf(p.shared_at)}`));
-    parts.push(meta);
-    const state = el('p', 'card__share-status review-card__state');
+    // One line of where it stands: state, when, reports, counts. A part each.
+    const meta = el('span', 'admin-row__meta review-card__meta');
+    const state = el('span', 'review-card__state meta__t');
     state.textContent =
       (p.shared === 'rejected' || p.shared === 'hidden') && p.review_reason ? `${STATE_LABEL[p.shared]}: ${p.review_reason}` : STATE_LABEL[p.shared];
-    parts.push(state);
+    const mine = [state];
+    if (p.shared_at) {
+      const when = metaPhrase(`${p.shared === 'pending' ? 'submitted' : 'shared'} ${shortDayOf(p.shared_at)}`);
+      when.classList.add('card__date');
+      mine.push(when);
+    }
+    const parts: HTMLElement[] = [head, meta];
+    const more: HTMLElement[] = [];
     if (this.reports) {
       const open = this.reports.length;
-      parts.push(el('p', 'review-card__reports', open === 0 ? 'No open reports now.' : `${open} open report${open === 1 ? '' : 's'}`));
+      more.push(open === 0 ? metaPhrase('No open reports now.') : metaValue(`${open} open report${open === 1 ? '' : 's'}`));
       if (open) {
         const list = el('ul', 'review-reports');
         for (const r of this.reports) {
           const li = el('li', 'review-report');
           li.dataset.reason = r.reason;
-          li.append(el('span', 'review-report__why', reportReasonText(r.reason)), ` · @${r.reporter.handle} · ${dayOf(r.created_at)}`);
+          const why = metaPhrase(reportReasonText(r.reason));
+          why.classList.add('review-report__why');
+          fillMeta(li, [why, metaValue(`@${r.reporter.handle}`), metaValue(dayOf(r.created_at))]);
           if (r.note) li.append(el('span', 'review-report__note', r.note));
           list.appendChild(li);
         }
         parts.push(list);
       }
     } else if (p.reports > 0) {
-      parts.push(el('p', 'review-card__reports', `${p.reports} open report${p.reports === 1 ? '' : 's'}`));
+      more.push(metaValue(`${p.reports} open report${p.reports === 1 ? '' : 's'}`));
     }
-    // The Gallery tab's cards carry the counts the public never sees.
-    if (typeof p.views === 'number' && typeof p.stars === 'number') parts.push(el('p', 'card__stats review-card__stats', statsText(p.views, p.stars)));
-    const actions = el('div', 'card__actions review-card__actions');
-    const open = el('a', 'card__action review-open', 'Open');
+    more.forEach((m) => m.classList.add('review-card__reports'));
+    // The Gallery tab's rows carry the counts the public never sees.
+    if (typeof p.views === 'number' && typeof p.stars === 'number') more.push(statsLine(p.views, p.stars, 'card__stats review-card__stats'));
+    const actions: HTMLElement[] = [];
+    const open = el('a', 'btn card__action review-open', 'Open');
     open.href = href;
-    actions.appendChild(open);
+    actions.push(open);
     if (this.own) {
-      parts.push(el('p', 'muted review-card__own', 'Your own work: another reviewer decides.'));
+      more.push(metaPhrase('your own work: another reviewer decides'));
+      more[more.length - 1].classList.add('review-card__own');
     } else {
       // The Reports tab is about the reports: Hide…, Dismiss, Unhide, and
       // Reject… for pending work; Approve is the Queue's. The Gallery tab
@@ -432,15 +439,17 @@ class Card {
         this.ctx.tab === 'gallery' ? a === 'hide' || a === 'unhide' : !(this.reports && a === 'approve'),
       );
       for (const action of offered) {
-        const b = button(ACTION_LABEL[action], 'card__action review-action');
+        const b = button(ACTION_LABEL[action], 'btn card__action review-action');
         b.dataset.action = action;
         b.disabled = this.busy;
         b.addEventListener('click', () => void this.act(action));
-        actions.appendChild(b);
+        actions.push(b);
       }
     }
-    parts.push(actions, this.say);
+    fillMeta(meta, [...mine, ...more]);
+    parts.push(this.say);
     this.body.replaceChildren(...parts);
+    this.acts.replaceChildren(...actions);
   }
 
   private get openReports(): number {

@@ -3,14 +3,8 @@ import type { AspectId } from '../viewer/CaptureGuide';
 import type { ReelFormat, ReelMotion, ReelOptions } from '../viewer/capture/types';
 import { div, labelRow, selectEl } from './dom';
 
-/** How a place uses the reel controls; the defaults are the editor's. */
+/** How a place uses the reel controls. */
 export interface ReelControlsOptions {
-  /**
-   * The editor's block (the default), or Present's: no lead sentence, Motion
-   * first, a line saying how many frames and how long the clip is, a Cancel
-   * while it records, and the guide on from the start (4:5).
-   */
-  variant?: 'editor' | 'present';
   /** The motions on offer; a one-frame model has nothing to step through, so only the turntable. */
   motions?: ReelMotion[];
   /** The project's name for the file, read when a clip is saved (it may have been renamed since). */
@@ -20,53 +14,42 @@ export interface ReelControlsOptions {
 /**
  * Build the reel capture controls — a video/GIF export of the timelapse or
  * a turntable spin, cropped to the active aspect guide. Returns a DOM block
- * for the editor's Export header or Present's Output tab (the owner's
- * pages only). The heavy encoder pipeline is imported on demand at first
+ * for Present's Output tab (the owner's pages only). It has no lead
+ * sentence, Motion first, a line saying how many frames and how long the
+ * clip is, a Cancel while it records, and the guide on from the start
+ * (4:5). The heavy encoder pipeline is imported on demand at first
  * capture, so it stays out of the bundle until a reel is recorded, and
  * never reaches the viewer-only page.
  */
 export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}): HTMLElement {
-  const present = opts.variant === 'present';
   const motions: ReelMotion[] = opts.motions?.length ? opts.motions : ['timeline', 'turntable'];
   const root = div('reel');
   const hasMp4 = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
-
-  if (!present) {
-    const hint = document.createElement('p');
-    hint.className = 'muted editor__hint';
-    hint.textContent =
-      'Record a video or GIF — the full timelapse, or a turntable spin of the current frame.';
-    root.appendChild(hint);
-  }
 
   // Aspect drives both the on-screen crop guide and the capture framing.
   const aspect = selectEl(
     [
       ['off', 'Off'],
-      ['9:16', '9:16 — vertical'],
-      ['4:5', '4:5 — portrait'],
-      ['1:1', '1:1 — square'],
-      ['16:9', '16:9 — wide'],
+      ['9:16', '9:16 vertical'],
+      ['4:5', '4:5 portrait'],
+      ['1:1', '1:1 square'],
+      ['16:9', '16:9 wide'],
     ],
-    viewer.getCaptureAspect() ?? (present ? '4:5' : 'off'),
+    viewer.getCaptureAspect() ?? '4:5',
   );
   aspect.setAttribute('aria-label', 'Aspect');
   // Present shows the guide from the start: it is what a reel is framed by.
-  if (present && !viewer.getCaptureAspect()) viewer.setCaptureAspect(aspect.value as AspectId);
+  if (!viewer.getCaptureAspect()) viewer.setCaptureAspect(aspect.value as AspectId);
 
   // Motion: step the timeline, or spin the current frame in place (turntable).
   const motion = selectEl(
     motions.map((m): [string, string] =>
-      m === 'timeline' ? ['timeline', present ? 'Timelapse' : 'Timeline'] : ['turntable', 'Turntable (spin)'],
+      m === 'timeline' ? ['timeline', 'Timelapse'] : ['turntable', 'Turntable (spin)'],
     ),
     motions[0],
   );
   motion.setAttribute('aria-label', 'Motion');
-  if (present) {
-    root.append(labelRow('Motion', motion), labelRow('Aspect', aspect));
-  } else {
-    root.append(labelRow('Aspect', aspect), labelRow('Motion', motion));
-  }
+  root.append(labelRow('Motion', motion), labelRow('Aspect', aspect));
 
   const spin = selectEl([['2', '2s'], ['4', '4s'], ['6', '6s'], ['8', '8s']], '4');
   spin.setAttribute('aria-label', 'Spin');
@@ -119,7 +102,7 @@ export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}
     const seconds = Math.round((n / Number(fps.value)) * 10) / 10;
     info.textContent = `${n} frame${n === 1 ? '' : 's'}, ${seconds} second${seconds === 1 ? '' : 's'} at ${fps.value} fps.`;
   };
-  if (present) root.appendChild(info);
+  root.appendChild(info);
 
   const syncMotion = (): void => {
     turnBox.hidden = motion.value !== 'turntable';
@@ -144,15 +127,11 @@ export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}
   cancel.className = 'btn reel-cancel';
   cancel.textContent = 'Cancel';
   cancel.hidden = true;
-  // Present: the button and, while it records, the progress with its Cancel in its place.
+  // The button and, while it records, the progress with its Cancel in its place.
   const running = div('reel-running');
   running.hidden = true;
-  if (present) {
-    running.append(bar, cancel);
-    root.append(record, running, status);
-  } else {
-    root.append(record, bar, status);
-  }
+  running.append(bar, cancel);
+  root.append(record, running, status);
 
   record.disabled = aspect.value === 'off';
   aspect.addEventListener('change', () => {
@@ -168,11 +147,9 @@ export function mountReelControls(viewer: Viewer, opts: ReelControlsOptions = {}
     record.textContent = busy ? 'Recording…' : 'Record reel';
     for (const c of controls) c.disabled = busy;
     bar.hidden = !busy;
-    if (present) {
-      record.hidden = busy;
-      cancel.hidden = !busy;
-      running.hidden = !busy;
-    }
+    record.hidden = busy;
+    cancel.hidden = !busy;
+    running.hidden = !busy;
   };
   cancel.addEventListener('click', () => abort?.abort());
 

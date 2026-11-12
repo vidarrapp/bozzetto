@@ -3,6 +3,7 @@ import { signOut, type SignInVia } from '../admin/api';
 import { readyToLeave } from './leaving';
 import { topChip } from './topbar';
 import { failNotice } from '../sculpt/ui/statusToast';
+import { requireSaving } from './deviceChoice';
 
 /**
  * Sign in again from wherever an expired session was noticed, and come
@@ -50,6 +51,7 @@ export async function signInAgain(via?: SignInVia, reason?: string): Promise<boo
       return false;
     }
   }
+  if (!(await requireSaving('Signing in keeps you signed in on this device.'))) return false;
   if (!(await readyToLeave('signing in means leaving the page. Leave anyway?'))) return false;
   window.location.assign(signInHref());
   return false;

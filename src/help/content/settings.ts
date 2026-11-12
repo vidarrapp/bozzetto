@@ -9,7 +9,7 @@ export const SETTINGS: Topic[] = [
     blocks: [
       p('Open **Edit**, then **Preferences…**, or press **Ctrl+,**. In the viewer, the hotkey guide has a **Customise hotkeys…** button. The settings are saved in this browser, and take effect at once.'),
       h('Saving'),
-      options(['Keep work on this device', 'On: your work in progress, your settings and an offline copy of the app are kept in this browser. Off: nothing is saved, your work is gone when you close or reload the page, and the app does not work offline. Turning it off asks first, and a quiet "Not saved" shows in the title strip while it is off. Saving a file and exporting still work. Bozzetto asks once, on your first visit; a refusal lasts for that visit.']),
+      options(['Keep work on this device', 'On: your work in progress, your settings and an offline copy of the app are kept in this browser. Off: nothing is saved, your work is gone when you close or reload the page, and the app does not work offline. Turning it off asks first, and a quiet "Not saved" shows in the title strip while it is off. Saving a file and exporting still work, but Import OBJ, Send to Sculpt and signing in need saving on, and turning it off while signed in signs you out on this device. Bozzetto asks once, on your first visit; a refusal lasts for that visit.']),
       h('Touch (Sculpt)'),
       options(
         ['Fingers: navigate only', 'One finger orbits and two pan and zoom, in every tool. Only the pen and the mouse sculpt, select and move objects.'],

@@ -140,11 +140,5 @@ export function recordView(id: string): void {
   void apiFetch(`/api/community/${encodeURIComponent(id)}/view`, { method: 'POST' }).catch(() => undefined);
 }
 
-/** "12 views · 1 star": what the author and reviewers see of a work's counts. */
-export function statsText(views: number, stars: number): string {
-  const n = (count: number, one: string): string => `${count} ${one}${count === 1 ? '' : 's'}`;
-  return `${n(views, 'view')} · ${n(stars, 'star')}`;
-}
-
 /** Where a member's author page is. */
 export const authorHref = (handle: string): string => `/?u=${encodeURIComponent(handle)}`;

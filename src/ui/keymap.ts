@@ -266,10 +266,13 @@ export class Keymap {
     for (const a of ACTIONS) this.byId.set(a.id, a);
     this.load();
     // What an earlier visit kept is read once saving is allowed (ui/deviceStorage).
-    onDeviceChoice((c) => {
+    // Turned on again after being off, what is on screen is kept and written.
+    onDeviceChoice((c, was) => {
       if (c !== 'keep') return;
-      this.load();
-      this.emit();
+      if (was === 'none') {
+        this.load();
+        this.emit();
+      } else this.save();
     });
   }
 

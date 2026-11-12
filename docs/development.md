@@ -55,6 +55,37 @@ still holds it (the `frames` and `snapshot` helpers of latency.mjs,
 shadows.mjs and shadowsGroups.mjs use it), and
 `window.__bozzetto.frameNo` counts drawn frames only.
 
+### Icons
+
+The interface's icons are Flaticon's Uicons (solid, straight), as a font. The
+whole font is 252 KB as woff2 and holds about 3,500 glyphs; the app uses about
+two dozen. So the app ships a subset, committed in `src/assets/icons/`:
+`uicons-subset.woff2` (only the glyphs in use) and `uicons-subset.css` (the
+package's own base rule and one `.fi-ss-<name>:before` rule per icon, with the
+package's codepoints). `src/ui/icons.ts` imports the stylesheet, and the
+modules that draw icons import that, so there is one place.
+
+The build and CI never run anything for this: they use the committed files.
+The font stays a file of its own in `dist/assets` (`assetsInlineLimit` in
+`vite.config.ts` keeps fonts out of the CSS as data: URIs, which `font-src 'self'`
+would not allow).
+Add or remove an icon in the source (a class `fi fi-ss-<name>`, any name from
+the Uicons solid straight set), then regenerate and commit the two files:
+
+```bash
+python3 -m pip install fonttools brotli          # once
+python3 scripts/build-icon-subset.py             # scans src/, writes src/assets/icons/
+python3 scripts/build-icon-subset.py --check     # fails when the CSS is out of date
+```
+
+The script reads the font and the codepoints from the npm package
+`@flaticon/flaticon-uicons` (a development dependency, kept for this alone) and
+finds the icons by scanning `src/`, `index.html`, `admin/`, `create/` and
+`public/legal/` for `fi-ss-<name>`. Spell a class out in full somewhere in the
+source; a name put together from pieces cannot be found. The `icons` suite
+(`npm run e2e -- icons`, which needs no browser page) fails when source names a
+class the subset does not define, and when the whole font is imported again.
+
 The Blender scripts behind the base meshes and the mannequins, and the
 `rig:*` scripts beside them, are described in `tools/README.md`.
 
@@ -142,7 +173,7 @@ npm run build
 ```
 index.html                 app shell: gallery, viewer, sculpt and armature
 admin/index.html           app shell (editor)
-create/index.html          app shell (timelapse uploader)
+create/index.html          app shell (Create: the Present workspace with no project yet)
 src/
   main.ts                  entry: ?tl=<id> boots the viewer, ?sculpt=1 and
                            ?armature=1 their modes, anything else the gallery
@@ -175,11 +206,14 @@ src/
                            service worker and its update notices
   ui/account/              accounts: the sign-in dialog, Join, Account,
                            My projects, the data download's zip
-  create/                  the timelapse uploader's entry
+  create/                  Create's entry: mounts the Present workspace empty
+  present/                 the Present workspace for frame projects: Frames,
+                           Project and Output panels, the working copy of the
+                           sequence, saving (open.ts is the owner's route)
   net/                     where API calls go, and the accounts client
   admin/
-    main.ts                editor router (list / per-project)
-    editor.ts              project editor: upload, preview, look, stages, reel
+    main.ts                the Projects list and the owner tools; ?p=<id> goes on
+                           to the Present workspace's Frames tab
     convert.ts, *.worker   in-browser OBJ to GLB conversion pipeline
     glb.ts                 pure OBJ parse + glTF-binary writer
     api.ts                 typed client for the Functions API
@@ -202,6 +236,7 @@ shared/bozz.ts             the scene file's reader, shared by the app and the Fu
 migrations/                D1 schema
 scripts/
   app-version.mjs          the version a build says it is: package.json's + the commit
+  build-icon-subset.py     the icon font subset and its CSS, from the npm package (Icons, above)
   generate-sample.mjs      builds the demo frames + manifest
   obj-to-timelapse.mjs     CLI: OBJ sequence to a static timelapse
   parity-fixtures.mjs      CLI: the sculpt brushes' exact output as JSON fixtures

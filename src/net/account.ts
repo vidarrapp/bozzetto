@@ -1126,3 +1126,12 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', {
 export const dayOf = (t: number): string => DATE.format(new Date(t));
 /** "7 Oct 2026, 14:05". */
 export const momentOf = (t: number): string => DATE_TIME.format(new Date(t));
+
+const DATE_SHORT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+const DATE_SHORT_YEAR = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** "3 Nov", with the year when it is not this one: "3 Nov 2025". For a card's one line. */
+export const shortDayOf = (t: number): string => {
+  const d = new Date(t);
+  return (d.getFullYear() === new Date().getFullYear() ? DATE_SHORT : DATE_SHORT_YEAR).format(d);
+};

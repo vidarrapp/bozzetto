@@ -25,7 +25,6 @@
  * members' shared work (`/?community`, §13). The foot links the legal pages.
  */
 
-import { APP_VERSION } from './version';
 import { div } from './dom';
 import {
   AuthExpiredError,
@@ -45,12 +44,12 @@ import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
-import { mayStore } from './deviceStorage';
+import { requireSaving } from './deviceChoice';
 import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { markOpen, markOpenOnClick } from './openToken';
 import { accountChips } from './account/menu';
-import { LEGAL } from './account/parts';
+import { legalFoot } from './legalFoot';
 import { suspensionText } from '../net/account';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
@@ -199,25 +198,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   }
 }
 
-/** The gallery's foot, with accounts on: the legal pages (docs/accounts.md §9). */
-export function legalFoot(): HTMLElement {
-  const foot = document.createElement('footer');
-  foot.className = 'landing__foot';
-  const link = (text: string, href: string): HTMLAnchorElement => {
-    const a = document.createElement('a');
-    a.href = href;
-    a.textContent = text;
-    return a;
-  };
-  foot.append(link('Privacy', LEGAL.privacy), link('Terms', LEGAL.terms), link('Report content', LEGAL.takedown));
-  // The build that is running (owner call), to tell a deploy has landed.
-  const version = document.createElement('span');
-  version.className = 'landing__version';
-  version.textContent = APP_VERSION;
-  foot.append(version);
-  return foot;
-}
-
 /**
  * The Create tile: a plus that opens the choice of how to start (owner
  * calls: the ways to start work sit here, and the uploader moved in from
@@ -321,11 +301,8 @@ async function importObj(file: File): Promise<void> {
   }
   const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
   const name = handoffs.objName(file.name);
-  // The file crosses to Sculpt through the device's storage, shut while saving is off.
-  if (!mayStore()) {
-    failNotice(`Could not open "${name}": saving is off, and the file is carried to Sculpt through this device's storage. Turn on Keep work on this device in Edit > Preferences in Sculpt, or open the file from Sculpt's File menu.`);
-    return;
-  }
+  // The file crosses to Sculpt through the device's storage, so it needs saving on.
+  if (!(await requireSaving('Import OBJ needs to keep the file on this device.'))) return;
   const hasWork = await store.hasSavedScene().catch(() => false);
   const atRisk = hasWork && !(await inProject(store));
   if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;

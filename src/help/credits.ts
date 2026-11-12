@@ -134,10 +134,10 @@ export const CREDIT_GROUPS: CreditGroup[] = [
     credits: [
       {
         name: 'Fonts',
-        use: 'Instrument Serif, JetBrains Mono and Manrope are the typefaces of the interface.',
+        use: 'Familjen Grotesk and Martian Mono are the typefaces of the interface.',
         licence: 'SIL Open Font License 1.1',
         url: 'https://openfontlicense.org',
-        note: 'Instrument Serif: The Instrument Serif Project Authors. JetBrains Mono: The JetBrains Mono Project Authors. Manrope: The Manrope Project Authors.',
+        note: 'Familjen Grotesk: The Familjen Grotesk Project Authors. Martian Mono: The Martian Mono Project Authors.',
       },
     ],
   },

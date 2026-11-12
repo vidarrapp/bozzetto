@@ -1931,19 +1931,23 @@ export const suites = {
       page.click('.create-overlay [data-kind="timelapse"]'),
     ]);
     t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
-    await page.waitForSelector('#reel-mount', { state: 'attached', timeout: 30_000 });
+    await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
     const guestPage = await page.evaluate(() => ({
-      intro: document.querySelector('.editor__id')?.textContent ?? '',
-      heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
-      save: !!document.querySelector('#save-project'),
-      exported: !!document.querySelector('#export-html'),
+      note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+      heads: [...document.querySelectorAll('.panel--frames h3, .panel--project h3')].map((h) => h.textContent.trim()).join(','),
+      action: [...document.querySelectorAll('.bz-strip__btn--primary')].filter((b) => !b.hidden).map((b) => b.textContent).join(','),
+      frames: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent ?? '',
+      open: [...document.querySelectorAll('.panel:not(.panel--collapsed)')].map((p) => p.dataset.panel).join(','),
+      old: !!document.querySelector('.editor, .editor__sidebar, #export-html'),
     }));
     t.ok(
-      guestPage.intro === 'Build a timelapse or a model from frames made elsewhere, and make a GIF or MP4 of it. Nothing is uploaded.' &&
-        guestPage.heads === 'Project,Frames,Stages,Export' &&
-        !guestPage.save &&
-        !guestPage.exported,
-      `for a guest nothing uploads, the reel is how it ends, and the single-file export is gone (${JSON.stringify(guestPage)})`,
+      guestPage.note === 'Nothing is uploaded.' &&
+        guestPage.heads === 'Sequence,Settings,Stages' &&
+        guestPage.action === '' &&
+        guestPage.frames === '0' &&
+        guestPage.open === 'Frames' &&
+        !guestPage.old,
+      `for a guest nothing uploads, the Frames tab opens empty, and the old page and the single-file export are gone (${JSON.stringify(guestPage)})`,
     );
 
     // Signed in (the owner, with accounts off: whoami answers), the same
@@ -1965,17 +1969,17 @@ export const suites = {
         owner.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
         owner.click('.create-overlay [data-kind="timelapse"]'),
       ]);
-      await owner.waitForSelector('#save-project', { timeout: 30_000 });
+      await owner.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
       const ownerPage = await owner.evaluate(() => ({
-        intro: document.querySelector('.editor__id')?.textContent ?? '',
-        heads: [...document.querySelectorAll('.editor__section h3')].map((h) => h.firstChild?.textContent.trim()).join(','),
-        buttons: [...document.querySelectorAll('.editor__section:last-of-type button')].map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}`).join(', '),
+        note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
+        heads: [...document.querySelectorAll('.panel--frames h3, .panel--project h3')].map((h) => h.textContent.trim()).join(','),
+        buttons: [...document.querySelectorAll('.bz-strip__btn--primary')].map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}`).join(', '),
       }));
       t.ok(
-        /^Build a timelapse or a model from frames made elsewhere, and save it to Projects/.test(ownerPage.intro) &&
-          ownerPage.heads === 'Project,Frames,Stages,Save' &&
+        ownerPage.note === 'Nothing is uploaded until you save to Projects.' &&
+          ownerPage.heads === 'Sequence,Settings,Stages' &&
           ownerPage.buttons === 'Save to Projects (off)',
-        `signed in, the uploader saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
+        `signed in, the workspace saves to the library, waiting for frames, with no Export .html (${JSON.stringify(ownerPage)})`,
       );
     } finally {
       await ctx.close();
@@ -4081,7 +4085,7 @@ export const suites = {
         return getComputedStyle(probe).color;
       };
       const trash = () => getComputedStyle(panel.querySelector('.outliner__icon--danger')).color;
-      const dark = { trash: trash(), red: rust('--bz-red'), accent: rust('--accent') };
+      const dark = { trash: trash(), red: rust('--bz-red-text'), accent: rust('--accent') };
       probe.remove();
       return {
         order: order.join(','),
@@ -5143,9 +5147,9 @@ export const suites = {
       await owner.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
       await owner.waitForSelector(`.admin-row[data-project="${id}"]`, { timeout: 30_000 });
       const rows = await owner.evaluate(() =>
-        Object.fromEntries([...document.querySelectorAll('.admin-row')].map((r) => [r.dataset.project, { open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null, edit: !!r.querySelector('.admin-row__edit'), priv: r.querySelector('.admin-row__vis input').checked }])),
+        Object.fromEntries([...document.querySelectorAll('.admin-row')].map((r) => [r.dataset.project, { open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null, edit: !!r.querySelector('.admin-row__present'), priv: r.querySelector('.admin-row__vis input').checked }])),
       );
-      t.ok(rows[id]?.open === `/?sculpt=1&project=${id}` && !rows[id].edit && rows['pub-reel']?.edit, 'the Projects page lists the scenes, opening in Sculpt, and the published work, opening in the editor');
+      t.ok(rows[id]?.open === `/?sculpt=1&project=${id}` && !rows[id].edit && rows['pub-reel']?.edit, 'the Projects page lists the scenes, opening in Sculpt, and the published work, opening in Present');
       t.ok(rows['priv-reel']?.priv === true && rows['pub-reel']?.priv === false && rows[id]?.priv === false, `with each one's visibility (${JSON.stringify(rows)})`);
       mark = fake.calls.length;
       await owner.click('.admin-row[data-project="priv-reel"] .admin-row__vis input');
@@ -5693,7 +5697,6 @@ export const suites = {
         owner.evaluate(() =>
           Object.fromEntries(
             [...document.querySelectorAll('.admin-row')].map((r) => {
-              const badge = r.querySelector('.admin-row__badge');
               const img = r.querySelector('.admin-row__img');
               return [
                 r.dataset.project,
@@ -5701,7 +5704,6 @@ export const suites = {
                   priv: r.querySelector('.admin-row__vis input').checked,
                   tpl: r.querySelector('.admin-row__tpl input')?.checked ?? null,
                   busy: r.querySelector('.admin-row__tpl input')?.disabled ?? null,
-                  badge: !!badge && !badge.hidden,
                   open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null,
                   img: img ? { src: img.getAttribute('src'), cors: img.getAttribute('crossorigin') } : null,
                   hint: r.querySelector('.admin-row__tpl')?.title ?? '',
@@ -5712,13 +5714,13 @@ export const suites = {
         );
       let rows = await rowsOf();
       t.ok(
-        rows['tpl-scene']?.tpl === true && rows['tpl-scene'].badge && rows['tpl-scene'].priv === false &&
+        rows['tpl-scene']?.tpl === true && rows['tpl-scene'].priv === false &&
           rows['tpl-hidden']?.tpl === true && rows['tpl-hidden'].priv === true &&
-          rows['own-scene']?.tpl === false && !rows['own-scene'].badge && rows[link?.id]?.tpl === false,
-        `each row has a Template switch beside Private, and templates are badged (${JSON.stringify(rows)})`,
+          rows['own-scene']?.tpl === false && rows[link?.id]?.tpl === false,
+        `each row has a Template switch beside Private, on for the templates (${JSON.stringify(rows)})`,
       );
       t.ok(/template/i.test(rows['own-scene']?.hint ?? ''), `the switch says what a template is ("${rows['own-scene']?.hint}")`);
-      t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Open in Sculpt opens the template itself, through the owner\'s routes, as before');
+      t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Sculpt on its row opens the template itself, through the owner\'s routes, as before');
       t.ok(
         rows['tpl-files']?.img?.src.startsWith(`${FILES}/m/tpl-files/thumb.jpg?v=`) && rows['tpl-files'].img.cors === 'anonymous',
         `a picture on the files host is asked for with CORS here too (${JSON.stringify(rows['tpl-files']?.img)})`,
@@ -5735,14 +5737,14 @@ export const suites = {
       rows = await rowsOf();
       let post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/own-scene/template');
       t.ok(
-        !!post && fake.body(post.body).template === true && fake.projects.get('own-scene').template === true && rows['own-scene'].tpl && rows['own-scene'].badge && rows['own-scene'].priv,
+        !!post && fake.body(post.body).template === true && fake.projects.get('own-scene').template === true && rows['own-scene'].tpl && rows['own-scene'].priv,
         `the Template switch makes the owner's project a template through its own route; private still, it is off the gallery (${post ? post.body : 'no call'})`,
       );
       sent = await flip('tpl-reel', 'tpl');
       rows = await rowsOf();
       post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/tpl-reel/template');
       t.ok(
-        !!post && fake.body(post.body).template === false && rows['tpl-reel'].tpl === false && !rows['tpl-reel'].badge && rows['tpl-reel'].priv === true,
+        !!post && fake.body(post.body).template === false && rows['tpl-reel'].tpl === false && rows['tpl-reel'].priv === true,
         `switched off, the template is the owner's again, and Private follows the server's answer (${JSON.stringify(rows['tpl-reel'])})`,
       );
       refusal = { status: 500, error: 'The switch failed' };
@@ -7108,15 +7110,16 @@ export const suites = {
     s = await aoState();
     t.ok(s.ao.enabled && s.out === 'gtao' && s.model === 'gtao', `an armature saved on the cavity the panel used to force comes back on GTAO (${s.model})`);
 
-    // The uploader's preview.
+    // Create's preview.
     await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
-    await page.setInputFiles('#files', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await page.waitForFunction(() => !!document.querySelector('.panel--editor'), null, { timeout: 90_000 });
+    await page.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
+    await page.waitForFunction(() => !!document.querySelector('.panel--render'), null, { timeout: 90_000 });
+    await page.waitForFunction(() => !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     const preview = await page.evaluate(() => {
-      const sel = [...document.querySelectorAll('.panel--editor label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
+      const sel = [...document.querySelectorAll('.panel--render label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model' && l.closest('.section')?.querySelector('h3')?.textContent === 'Ambient occlusion')?.querySelector('select');
       return { options: sel ? [...sel.options].map((o) => o.value).join(',') : null, model: sel?.value ?? null };
     });
-    t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the uploader's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
+    t.ok(preview.options === 'off,gtao' && preview.model === 'gtao', `the Create workspace's preview is on GTAO, offering GTAO and Off (${preview.options}: ${preview.model})`);
   },
 
   // The environment's intensity on a usable scale (owner call: at the

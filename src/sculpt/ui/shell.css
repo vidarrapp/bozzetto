@@ -583,6 +583,11 @@ body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__svg {
   body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn:hover {
     background: var(--bz-hover);
   }
+
+  /* The digit in the secondary grey is 4.2:1 on the hover fill. */
+  body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn:not(.sculpt-toolbar__btn--active):hover .sculpt-toolbar__key {
+    color: var(--bz-text);
+  }
 }
 
 /* The tool in hand: orange, its icon and digit black. */
@@ -857,16 +862,14 @@ body.bz-shell .update-notice--beside-panel {
 
 /* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------
    What edits is put away and locked: the tool bar, the edge controls, the
-   brush ring, the object stats, and the Scene, Model and Tool panels with
+   brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Render and
    Output remain as the right-hand tabs. The Output tab and panel exist in
    Present only. */
-body.presenting .sculpt-toolbar__left,
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
 body.presenting .bz-edge,
 body.presenting .sculpt-hist,
-body.presenting .sculpt-stats,
 body.presenting .sculpt-leveltoast,
 body.presenting .sculpt-cursor {
   visibility: hidden !important;
@@ -1008,8 +1011,137 @@ body.bz-shell .bz-readout__extras {
   display: contents;
 }
 
-body.bz-shell .panel--project {
+body.bz-shell .panel--project,
+body.bz-shell .panel--frames {
   z-index: 15;
+}
+
+/* A control a panel has put away (a model has no frames a second, a list with no frames no Add more). */
+body.bz-shell .panel--project [hidden],
+body.bz-shell .panel--frames [hidden] {
+  display: none !important;
+}
+
+/* --- Frames: the sequence the project plays (present/FramesPanel.ts) ------
+   The drop box, the counts, Add more and the trash. */
+body.bz-shell .bz-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 20px 12px;
+  border: 1px dashed var(--bz-line);
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+  text-align: center;
+}
+
+body.bz-shell .bz-drop p {
+  margin: 0;
+}
+
+body.bz-shell .panel--frames.panel--dropping .bz-drop,
+body.bz-shell .panel--frames.panel--dropping .panel__body {
+  outline: 1px dashed var(--bz-orange);
+  outline-offset: -4px;
+}
+
+body.bz-shell .bz-rowline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+body.bz-shell .bz-lab {
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+body.bz-shell .bz-val {
+  color: var(--bz-text);
+  font: 700 11px/16px var(--bz-font-mono);
+  white-space: nowrap;
+}
+
+body.bz-shell .bz-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The trash: grey at rest, red under the pointer or the keyboard's focus. */
+body.bz-shell .bz-trash {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+body.bz-shell .bz-trash:hover,
+body.bz-shell .bz-trash:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-red-text);
+}
+
+body.bz-shell .bz-trash:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
+}
+
+body.bz-shell .bz-trash i {
+  display: block;
+  height: 1em;
+}
+
+body.bz-shell .bz-progress {
+  margin-top: 8px;
+}
+
+/* The Sequence section is the only one: nothing below it to part from. */
+body.bz-shell .panel--frames .section:last-child {
+  border-bottom: 0;
+}
+
+body.bz-shell .bz-progress__track {
+  height: 3px;
+  background: var(--bz-line);
+}
+
+body.bz-shell .bz-progress__bar {
+  height: 100%;
+  width: 0;
+  background: var(--bz-orange);
+}
+
+body.bz-shell .bz-warn {
+  margin: 8px 0 0;
+  color: var(--bz-red-text);
+  font: 400 12px/16px var(--bz-font);
+}
+
+/* Create with no frames: what the view will be, said quietly where it will stand. */
+body.bz-shell .bz-empty {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--bz-text-3);
+  font: 400 13px/16px var(--bz-font);
+  pointer-events: none;
 }
 
 /* The project's fields: a caption and, at the right, what it holds. */
@@ -1305,7 +1437,7 @@ body.bz-shell .bz-strip__btn.bz-strip__btn--danger:hover,
 body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
   padding: 0 12px;
   background: var(--bz-red);
-  color: var(--bz-on-accent);
+  color: var(--bz-on-red);
 }
 
 body.bz-shell .bz-strip__btn.bz-strip__btn--primary:disabled,
@@ -1314,15 +1446,23 @@ body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
   cursor: progress;
 }
 
-/* The star of a member's work: a glyph, the width of the hide button; orange when starred. */
+/* The star of a member's work: a glyph, the width of the hide button; full
+   white when starred, grey when not, never orange or yellow. */
 body.bz-shell .bz-strip__btn.viewer-star {
   width: 24px;
   padding: 0;
   font-size: 15px;
+  color: var(--bz-text-3);
 }
 
 body.bz-shell .bz-strip__btn.viewer-star[aria-pressed='true'] {
-  color: var(--bz-orange);
+  color: #fff;
+}
+
+body.bz-shell .bz-strip__btn.viewer-star .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* "by @handle" after the title: a link to the author's page, in the readout's quiet tone. */

@@ -11,8 +11,11 @@
 // reel to a file, Cancel, Save image), the Render tab, the transport; one
 // Save writing the look with the settings and a stage, "Edited" coming and
 // going, a refused Save losing nothing; Close asking when edited; the
-// Projects list's action and the viewer's "Edit"; the old editor
-// as it was; and the public bundle without the page in it.
+// Projects list's action and the viewer's "Edit"; the old editor's
+// address leading to the Frames tab; and the public bundle without the page
+// in it. frameTab: the Frames tab on a project on the site (the count, no
+// Order list, add, clear with its question, what Save writes). createWorkspace:
+// /create/ as the same workspace, empty, then with frames.
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
@@ -273,7 +276,7 @@ export const suites = {
         };
       });
       t.ok(tabs.project && tabs.output && !tabs.render, `Project (left) and Output (right) are open, Render is closed (${JSON.stringify(tabs)})`);
-      t.ok(tabs.names.sort().join() === 'Output,Project,Render', `the tabs are Project, Render and Output (${tabs.names})`);
+      t.ok(tabs.names.sort().join() === 'Frames,Output,Project,Render', `the tabs are Frames, Project, Render and Output (${tabs.names})`);
 
       // Hide the interface and back, by the strip's button.
       await p.click('.bz-strip__hide');
@@ -285,7 +288,7 @@ export const suites = {
       // View menu: the panels and Hide interface.
       await p.click('.bz-menuname:has-text("View")');
       const view = await p.evaluate(() => [...document.querySelectorAll('.file-menu--view:not([hidden]) .file-menu__item')].map((i) => i.textContent.replace(/\s+/g, ' ').trim()));
-      t.ok(['Project panel', 'Render panel', 'Output panel', 'Hide interface'].every((w) => view.some((v) => v.startsWith(w))), `View has the three panels and Hide interface (${JSON.stringify(view)})`);
+      t.ok(['Frames panel', 'Project panel', 'Render panel', 'Output panel', 'Hide interface'].every((w) => view.some((v) => v.startsWith(w))), `View has the four panels and Hide interface (${JSON.stringify(view)})`);
       await p.keyboard.press('Escape');
       // Hiding put the panels away (Tab's rule everywhere): the tabs bring them back.
       await p.click('.panel--project > .panel__handle');
@@ -552,8 +555,8 @@ export const suites = {
       await settle(p, 600);
       const model = await p.evaluate(() => ({
         transport: !!document.querySelector('.transport'),
-        project: [...document.querySelectorAll('.panel--project .section > h3')].map((h) => h.textContent),
-        fps: !!document.querySelector('.panel--project input[aria-label="Frames per second"]'),
+        project: [...document.querySelectorAll('.panel--project .section:not([hidden]) > h3')].map((h) => h.textContent),
+        fps: !!document.querySelector('.panel--project input[aria-label="Frames per second"]:not([hidden] *)'),
         motion: [...document.querySelector('.panel--output select[aria-label="Motion"]').options].map((o) => o.value),
         image: !!document.querySelector('.present-out__save'),
       }));
@@ -580,11 +583,11 @@ export const suites = {
           model: href('model-demo'),
           scene: scene ? href(scene) : null,
           text: document.querySelector('.admin-row[data-project="tl-demo"] .admin-row__present')?.textContent,
-          edit: document.querySelector('.admin-row[data-project="tl-demo"] .admin-row__edit')?.getAttribute('href'),
+          buttons: [...document.querySelectorAll('.admin-row[data-project="tl-demo"] .admin-row__buttons .btn')].map((b) => b.textContent).join(),
         };
       }, sceneId);
       t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Present', `each frame project's row has Present (${JSON.stringify(links)})`);
-      t.ok(links.scene === null && links.edit === '?p=tl-demo', 'a scene\'s row has none, and Edit is still there');
+      t.ok(links.scene === null && links.buttons === 'Present', `a scene's row has none, and it is the row's one button (${links.buttons})`);
       await p.click('.admin-row[data-project="tl-demo"] .admin-row__present');
       await presentReady(p);
       t.ok(new URL(p.url()).searchParams.get('tl') === 'tl-demo', 'it opens the project in Present');
@@ -595,26 +598,255 @@ export const suites = {
       const chip = await p.evaluate(() => ({ text: document.querySelector('.viewer-present').textContent, href: document.querySelector('.viewer-present').getAttribute('href'), cls: document.querySelector('.viewer-present').className, inStrip: !!document.querySelector('.viewer-present').closest('.bz-strip__right') }));
       t.ok(chip.text === 'Edit' && chip.href === '/?tl=model-demo&present=1' && chip.cls.includes('bz-strip__btn') && chip.inStrip, `the viewer shows the owner Edit, quiet at the right of its strip (${JSON.stringify(chip)})`);
 
-      // The old editor, as it was.
+      // The old editor's address leads to the workspace, with Frames open.
       await p.goto(`${origin}/admin/?p=tl-demo`, { waitUntil: 'domcontentloaded' });
-      await p.waitForFunction(() => !!document.querySelector('.panel--editor') && !!document.querySelector('#reel-mount')?.firstElementChild, null, { timeout: 90_000 });
+      await presentReady(p);
       const ed = await p.evaluate(() => ({
-        title: document.querySelector('#f-title').value,
-        stages: document.querySelectorAll('.stage-row').length,
-        upload: !!document.querySelector('#drop'),
-        reel: [...document.querySelectorAll('#reel-mount label')].map((l) => l.firstChild.textContent.trim()),
+        url: location.pathname + location.search,
+        frames: !document.querySelector('.panel--frames')?.classList.contains('panel--collapsed'),
+        project: !document.querySelector('.panel--project')?.classList.contains('panel--collapsed'),
+        count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
+        old: !!document.querySelector('.editor, .editor__sidebar, #reel-mount'),
       }));
-      t.ok(ed.title === 'Demo timelapse 2' && ed.stages === 3 && ed.upload, `the editor still opens the project, with its stages and its frame upload (${JSON.stringify({ ...ed, reel: undefined })})`);
-      t.ok(ed.reel.join() === 'Aspect,Motion,Spin,Direction,Format,Size,FPS', `and its reel controls are as they were (${ed.reel})`);
-      puts.length = 0;
-      await p.click('#save-stages');
-      await until(p, () => true, null, 100);
-      for (let i = 0; i < 40 && !puts.length; i++) await p.waitForTimeout(100);
-      t.ok(puts.length === 1 && puts[0].stages?.length === 3 && Object.keys(puts[0]).join() === 'stages', `Save stages still writes the stages alone (${JSON.stringify(Object.keys(puts[0] ?? {}))})`);
+      t.ok(ed.url === '/?tl=tl-demo&present=1&tab=frames' && ed.frames && !ed.project && ed.count === String(FRAMES) && !ed.old, `/admin/?p= opens the workspace on its Frames tab, counting the frames (${JSON.stringify(ed)})`);
       t.ok(dialogs.length === 0, 'with no alert on the way');
     } finally {
       for (const c of contexts) await c.close().catch(() => {});
       await server?.close();
     }
+  },
+
+  // The Frames tab on a project on the site: the count and no Order list,
+  // two added, the lot cleared with the trash (grey at rest, red under the
+  // pointer, asking first), a new sequence put in, and what Save writes for each.
+  async frameTab(page, base, t) {
+    const browser = page.context().browser();
+    let server = null;
+    const contexts = [];
+    try {
+      server = await startAccountsServer({ dist: resolve('dist'), vars: { ACCOUNTS_ENABLED: 'false' } });
+      const origin = server.ipBase;
+      const call = ownerApi(origin);
+      const dir = resolve('dist/timelapses/demo/frames/sd');
+      const files = readdirSync(dir).filter((f) => f.endsWith('.glb')).sort();
+      const orig = files.map((f) => readFileSync(resolve(dir, f)));
+      await seed(call, 'tab-demo', { mode: 'timelapse', title: 'Tab demo' });
+      // The seed made 8 frames; this suite wants 4, as the project is.
+      const four = [0, 1, 2, 3].map((index) => ({ index, tris: 320 }));
+      await call('PUT', '/admin/api/projects/tab-demo', { json: { frames: four } });
+
+      const c = await contextFor(browser, origin, { owner: true });
+      contexts.push(c.ctx);
+      const p = c.page;
+      const puts = [];
+      p.on('request', (q) => q.method() === 'PUT' && q.url().includes('/admin/api/projects/tab-demo') && puts.push(JSON.parse(q.postData() ?? '{}')));
+      await p.goto(`${origin}/?tl=tab-demo&present=1&tab=frames`, { waitUntil: 'domcontentloaded' });
+      await presentReady(p);
+
+      const count = () => p.evaluate(() => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent);
+      const edited = () => p.evaluate(() => window.__presentPage.isEdited());
+      /** Run an action and wait for the view to be put up again for the new sequence. */
+      const rebuilt = async (action, empty = false) => {
+        await p.evaluate(() => {
+          window.__before = window.__bozzetto;
+        });
+        await action();
+        await p.waitForFunction(
+          (e) => (e ? !window.__bozzetto : !!window.__bozzetto?.pipeline && window.__bozzetto !== window.__before),
+          empty,
+          { timeout: 90_000 },
+        );
+        await settle(p, 300);
+      };
+      /** Save, and wait for the page to say it is not edited. */
+      const save = async () => {
+        puts.length = 0;
+        await p.click('.bz-strip__right .bz-strip__btn--primary');
+        await p.waitForFunction(() => !window.__presentPage.isEdited(), null, { timeout: 60_000 }).catch(() => {});
+        await settle(p, 300);
+      };
+      const onSite = async () => {
+        const r = await call('GET', '/admin/api/projects/tab-demo');
+        const frames = r.body?.frames ?? [];
+        const bytes = [];
+        for (const f of frames) {
+          const res = await fetch(`${origin}${f.sd}`, { headers: { 'cf-access-authenticated-user-email': OWNER } });
+          bytes.push(Buffer.from(await res.arrayBuffer()));
+        }
+        return { frames, bytes };
+      };
+
+      // --- the tab ------------------------------------------------------------------------------
+      let s = await p.evaluate(() => {
+        const open = (sel) => !document.querySelector(sel)?.classList.contains('panel--collapsed');
+        const trash = document.querySelector('.panel--frames .bz-trash');
+        return {
+          frames: open('.panel--frames'),
+          project: open('.panel--project'),
+          title: document.querySelector('.panel--frames .panel__title')?.textContent,
+          heads: [...document.querySelectorAll('.panel--frames .section:not([hidden]) > h3')].map((h) => h.textContent).join(),
+          rows: document.querySelectorAll('.panel--frames .bz-frame, .panel--frames .bz-frames').length,
+          trash: trash && { label: trash.getAttribute('aria-label'), title: trash.title, icon: trash.querySelector('i')?.className, color: getComputedStyle(trash).color },
+          drop: document.querySelector('.panel--frames .bz-drop')?.hidden,
+          more: [...document.querySelectorAll('.panel--frames .btn')].filter((b) => b.getClientRects().length).map((b) => b.textContent).join(),
+        };
+      });
+      t.ok(s.frames && !s.project && s.title === 'Frames' && s.heads === 'Sequence' && s.rows === 0, `the Frames tab opens with its Sequence section alone and no Order list, Project is a tab away (${JSON.stringify(s)})`);
+      t.ok((await count()) === '4' && s.drop === true && s.more === 'Add more', `with a project's frames the drop box gives way to Add more (${s.more})`);
+      t.ok(s.trash?.label === 'Clear the frames' && s.trash.title === 'Clear the frames' && /fi-ss-trash/.test(s.trash.icon) && s.trash.color === 'rgb(179, 179, 179)', `the trash has its name and icon and is grey at rest (${JSON.stringify(s.trash)})`);
+      await p.hover('.panel--frames .bz-trash');
+      let color = await p.evaluate(() => getComputedStyle(document.querySelector('.panel--frames .bz-trash')).color);
+      t.ok(color === 'rgb(255, 107, 107)', `and red under the pointer (${color})`);
+      await p.mouse.move(700, 450);
+      // (Tab is the interface toggle here: a key that is no command, then the focus, stands for the keyboard.)
+      await p.keyboard.press('Shift');
+      await p.focus('.panel--frames .bz-trash');
+      color = await p.evaluate(() => (document.activeElement?.classList.contains('bz-trash') ? getComputedStyle(document.activeElement).color : 'not focused'));
+      t.ok(color === 'rgb(255, 107, 107)', `and red under the keyboard's focus (${color})`);
+      await p.evaluate(() => document.activeElement?.blur?.());
+      const orange = await p.evaluate(() => [...document.querySelectorAll('button, a')].filter((b) => b.getClientRects().length && getComputedStyle(b).backgroundColor === 'rgb(255, 90, 31)').map((b) => b.textContent.trim()));
+      t.ok(orange.length === 1 && orange[0] === 'Save', `the one orange control is Save (${JSON.stringify(orange)})`);
+      t.ok(!(await edited()), 'nothing is Edited yet');
+
+      // --- add --------------------------------------------------------------------------------------
+      await rebuilt(() => p.setInputFiles('.panel--frames input[type="file"]', [resolve(dir, files[4]), resolve(dir, files[5])]));
+      s = await p.evaluate(() => ({
+        memory: [...document.querySelectorAll('.panel--frames .bz-rowline')].filter((r) => !r.hidden).map((r) => r.textContent.replace(/\s+/g, ' ')),
+        progress: document.querySelector('.panel--frames .bz-progress')?.textContent ?? '',
+      }));
+      t.ok((await count()) === '6' && /^Done: 2 frames added/.test(s.progress), `Add more adds the files after the others: six, and the line says so (${s.progress})`);
+      t.ok(s.memory.some((m) => /^In memory\s*[<\d]/.test(m)) && (await edited()), `and what is held in memory shows (${JSON.stringify(s.memory)})`);
+      await save();
+      let srv = await onSite();
+      t.ok(srv.frames.length === 6 && srv.bytes[0].equals(orig[0]) && srv.bytes[4].equals(orig[4]) && srv.bytes[5].equals(orig[5]), `Save uploads them to their places (${srv.frames.length} frames)`);
+      t.ok(puts.length === 1 && puts[0].frames?.length === 6 && !!puts[0].lighting, `with the frame list in the same write as the look (${Object.keys(puts[0] ?? {}).join()})`);
+      t.ok(!(await edited()) && (await count()) === '6', 'and the page is not Edited');
+
+      // --- clear ----------------------------------------------------------------------------------
+      await p.click('.panel--frames .bz-trash');
+      t.ok(await p.waitForSelector('.bz-ask', { timeout: 5000 }).then(() => true, () => false), 'the trash asks first');
+      const ask = await p.evaluate(() => ({ title: document.querySelector('.bz-ask h2')?.textContent, yes: document.querySelector('.bz-ask-yes')?.textContent }));
+      t.ok(ask.title === 'Clear the frames?' && ask.yes === 'Clear the frames', `with its own words (${JSON.stringify(ask)})`);
+      await p.click('.bz-ask-cancel');
+      await settle(p, 200);
+      t.ok((await count()) === '6', 'Cancel leaves the frames');
+      await rebuilt(async () => {
+        await p.click('.panel--frames .bz-trash');
+        await p.waitForSelector('.bz-ask-yes');
+        await p.click('.bz-ask-yes');
+      }, true);
+      s = await p.evaluate(() => ({
+        count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
+        drop: !document.querySelector('.panel--frames .bz-drop')?.hidden,
+        right: !!document.querySelector('.panel--render, .panel--output'),
+        empty: document.querySelector('.bz-empty')?.textContent ?? '',
+      }));
+      t.ok(s.count === '0' && s.drop && !s.right && /Drop frames/.test(s.empty), `Yes clears them: the empty tab comes back, with the drop box and no view (${JSON.stringify(s)})`);
+      await p.click('.bz-strip__right .bz-strip__btn--primary');
+      const refused = await p.waitForFunction(() => document.querySelector('.sculpt-toast')?.textContent?.includes('Add at least one frame'), null, { timeout: 5000 }).then(() => true, () => false);
+      srv = await onSite();
+      t.ok(refused && srv.frames.length === 6, `Save with none says so, and the site keeps its six (${srv.frames.length})`);
+
+      // --- a new sequence ---------------------------------------------------------------------------
+      await rebuilt(() => p.setInputFiles('.panel--frames input[type="file"]', [resolve(dir, files[6]), resolve(dir, files[7])]));
+      await save();
+      srv = await onSite();
+      t.ok(srv.frames.length === 2 && srv.bytes[0].equals(orig[6]) && srv.bytes[1].equals(orig[7]), `a sequence put in after Clear replaces the site's: two frames (${srv.frames.length})`);
+      t.ok(c.errors.length === 0, `no page errors (${c.errors.join(' | ')})`);
+    } finally {
+      for (const c of contexts) await c.close().catch(() => {});
+      await server?.close();
+    }
+  },
+
+  // /create/ as the Present workspace: empty on the Frames tab, then with
+  // frames - added, moved, removed, cleared - with no backend and no orange
+  // control for a guest, on the desktop and at a phone's width.
+  async createWorkspace(page, base, t) {
+    const dir = resolve('dist/timelapses/demo/frames/sd');
+    const file = (i) => resolve(dir, `${String(i).padStart(4, '0')}.glb`);
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
+    await settle(page, 400);
+    const state = () =>
+      page.evaluate(() => {
+        const open = (sel) => !!document.querySelector(sel) && !document.querySelector(sel).classList.contains('panel--collapsed');
+        return {
+          frames: open('.panel--frames'),
+          project: open('.panel--project'),
+          output: open('.panel--output'),
+          render: !!document.querySelector('.panel--render'),
+          rows: document.querySelectorAll('.panel--frames .bz-frame, .panel--frames .bz-frames').length,
+          count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
+          drop: !document.querySelector('.panel--frames .bz-drop')?.hidden,
+          order: [...document.querySelectorAll('.panel--frames .section')].some((x) => x.querySelector('h3')?.textContent === 'Order'),
+          empty: document.querySelector('.bz-empty')?.textContent ?? '',
+          step: document.querySelector('.bz-ws__step[aria-current="step"]')?.textContent,
+          primary: [...document.querySelectorAll('.bz-strip__btn--primary')].filter((b) => !b.hidden).length,
+          old: !!document.querySelector('.editor, .editor__sidebar, #create'),
+          readout: document.querySelector('.bz-readout')?.textContent.replace(/\s+/g, ' ').trim(),
+        };
+      });
+    const added = async (n) => {
+      await page.waitForFunction((k) => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent === String(k) && !!window.__bozzetto?.pipeline, n, { timeout: 90_000 });
+      await settle(page, 300);
+    };
+    const shot = (name) => (process.env.SHOTS ? page.screenshot({ path: `${process.env.SHOTS}/${name}.png` }) : Promise.resolve());
+    let s = await state();
+    t.ok(s.frames && !s.project && s.count === '0' && s.drop && !s.order && !s.render && !s.output, `Create opens on the Frames tab, empty: the drop box, no order, no view yet (${JSON.stringify(s)})`);
+    t.ok(/Drop frames/.test(s.empty) && s.step === 'Present' && !s.old, `with Present lit in the path, and none of the old page (${s.step})`);
+    t.ok(s.primary === 0 && /Untitled/.test(s.readout) && /no frames/.test(s.readout), `a guest with no accounts has no orange control; the strip says Untitled, no frames (${s.readout})`);
+    await shot('create-empty-1440x900');
+
+    // Add three: the list, the view, the tabs at the right.
+    await page.setInputFiles('.panel--frames input[type="file"]', [file(2), file(0), file(1)]);
+    await added(3);
+    s = await state();
+    t.ok(s.count === '3' && !s.drop && !s.order && s.rows === 0, `three frames added, the drop box gives way, and there is no Order list (${JSON.stringify({ count: s.count, rows: s.rows })})`);
+    t.ok(s.render && s.output && /Timelapse\s*3 frames/.test(s.readout) && /Not saved/.test(s.readout), `the view and its tabs come up, and the strip says Not saved (${s.readout})`);
+    t.ok(s.output && s.frames, 'Frames at the left and Output at the right stand open, as drawn');
+    await shot('create-frames-1440x900');
+
+    // Add more.
+    await page.setInputFiles('.panel--frames input[type="file"]', [file(5)]);
+    await added(4);
+    s = await state();
+    t.ok(s.count === '4' && /Timelapse\s*4 frames/.test(s.readout), `Add more adds after the others (${s.count}; ${s.readout})`);
+    // The title and mode are the Project tab's.
+    await page.click('.panel--project > .panel__handle');
+    await page.fill('.panel--project input[aria-label="Title"]', 'My sculpt');
+    await settle(page, 400);
+    s = await state();
+    t.ok(/My sculpt/.test(s.readout) && s.project && !s.frames, `the title goes to the strip (${s.readout})`);
+    await page.selectOption('.panel--project select[aria-label="Mode"]', 'model');
+    await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.querySelector('.transport'), null, { timeout: 90_000 });
+    t.ok(await page.evaluate(() => !document.querySelector('.panel--project input[aria-label="Frames per second"]:not([hidden] *)')), 'a Model has no frame rate, and no transport');
+    await page.selectOption('.panel--project select[aria-label="Mode"]', 'timelapse');
+    await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !!document.querySelector('.transport'), null, { timeout: 90_000 });
+
+    // Phone width: no sideways scroll, the panel inside the window.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await settle(page, 500);
+    await page.click('.panel--frames > .panel__handle');
+    await settle(page, 300);
+    const phone = await page.evaluate(() => {
+      const r = document.querySelector('.panel--frames').getBoundingClientRect();
+      return { scrollX: document.documentElement.scrollWidth - window.innerWidth, left: r.left, right: r.right, top: r.top };
+    });
+    t.ok(phone.scrollX <= 0 && phone.left >= 0 && phone.right <= 390, `at 390 wide nothing scrolls sideways and the Frames panel fits (${JSON.stringify(phone)})`);
+    await shot('create-frames-390x844');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await settle(page, 400);
+
+    // Clear, asking first.
+    await page.click('.panel--frames .bz-trash');
+    await page.waitForSelector('.bz-ask-yes', { timeout: 5000 });
+    await page.click('.bz-ask-yes');
+    await page.waitForFunction(() => !window.__bozzetto && !document.querySelector('.panel--render'), null, { timeout: 30_000 });
+    s = await state();
+    t.ok(s.count === '0' && s.drop && !s.order && /Drop frames/.test(s.empty), `Clear, once asked, is the starting state again (${JSON.stringify({ count: s.count, drop: s.drop })})`);
+    t.ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   },
 };

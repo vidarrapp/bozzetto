@@ -123,13 +123,16 @@ export class Settings {
 
   constructor() {
     this.load();
-    // Nothing is read while saving is not allowed (ui/deviceStorage), so what an
-    // earlier visit kept is read once the person says to keep. Turning it off
-    // leaves the values as they are for this page; they are just not written.
-    onDeviceChoice((c) => {
+    // Nothing is read while saving is not allowed (ui/deviceStorage). On a
+    // first answer of yes what an earlier visit kept is read. Turned on again
+    // after being off, what is on screen now is kept and written, not
+    // replaced by what the device held.
+    onDeviceChoice((c, was) => {
       if (c !== 'keep') return;
-      this.load();
-      for (const fn of this.listeners) fn();
+      if (was === 'none') {
+        this.load();
+        for (const fn of this.listeners) fn();
+      } else this.save();
     });
   }
 

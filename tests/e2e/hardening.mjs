@@ -710,7 +710,7 @@ async function workerAndSignOut(browser, base, t) {
     fake.opts.expired = false;
     await p.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('.admin-row', { timeout: 30_000 }).catch(() => {});
-    t.ok(await p.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
+    t.ok(await p.evaluate(() => [...document.querySelectorAll('.pagenav__account .topchip')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
 
     // Offline: the app's own pages, and nothing else.
     await gallery('Sign out');
@@ -725,7 +725,7 @@ async function workerAndSignOut(browser, base, t) {
       }
     };
     t.ok(await offline('/?sculpt=1&q=low', () => !!window.__sculpt), 'offline, the installed app boots Sculpt');
-    t.ok(await offline('/create/', () => !!document.querySelector('#create .editor')), 'and the uploader');
+    t.ok(await offline('/create/', () => !!document.querySelector('.panel--frames input[type="file"]')), 'and the Create workspace');
     t.ok(!(await offline('/admin/', () => !!document.getElementById('admin'))), 'but the editor is not answered from the shell');
     t.ok(!(await offline('//elsewhere.example/', () => !!document.getElementById('app'))), 'nor is a path that is no page of the app');
     await ctx.setOffline(false);

@@ -1,37 +1,8 @@
 /* ------------------------------------------------------------------
-   Design foundation: warm ink-and-cream surfaces, a single clay-rust
-   accent, editorial serif display + Manrope UI + mono spec labels,
-   and low (2px) radius.
+   Design foundation: the application layer's names for the tokens in
+   app-layer/tokens.css (a single accent, Familjen Grotesk + Martian Mono,
+   square corners).
    ------------------------------------------------------------------ */
-@font-face {
-  font-family: 'Manrope';
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('/assets/fonts/Manrope-Variable.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Regular.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Italic.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 100 800;
-  font-display: swap;
-  src: url('/assets/fonts/JetBrainsMono-Variable.ttf') format('truetype');
-}
-
 :root,
 :root[data-theme='dark'],
 :root[data-theme='light'] {
@@ -60,7 +31,6 @@
   --font-spec: var(--bz-font-mono);
 
   --radius: 0;
-  --radius-image: 0;
 }
 
 * {
@@ -125,11 +95,9 @@ a {
   -webkit-touch-callout: default;
 }
 
-/* Display serif for titles; mono for spec labels. */
+/* Titles in the display face; mono for spec labels. */
 h1,
-.landing__title,
-.admin__head h1,
-.editor__title {
+.landing__title {
   font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -0.01em;
@@ -147,14 +115,11 @@ h1,
 
 .card__meta,
 .admin-row__meta,
-.editor__id,
-.frame-label,
 .transport__frame {
   font-family: var(--font-spec);
 }
 
-.transport__stage-name,
-.stage__name {
+.transport__stage-name {
   font-family: var(--font-display);
   font-style: italic;
 }
@@ -301,13 +266,6 @@ h1,
   transition: transform 0.25s ease;
 }
 
-/* Editor variant: run the full height of the screen, mirroring the sidebar
-   (the editor has no transport bar to clear). */
-.panel--editor {
-  bottom: 12px;
-  max-height: none;
-}
-
 /* Collapsed: slide the whole panel off the right edge, leaving the handle. */
 .panel--collapsed {
   transform: translateX(calc(100% + 12px));
@@ -365,30 +323,17 @@ h1,
   font-size: 17px;
 }
 
-.panel--collapsed .panel__handle .handle__label,
-.editor__sidebar--collapsed .editor__sidebar-handle .handle__label {
+.panel--collapsed .panel__handle .handle__label {
   display: block;
 }
 
 /* The open panel hides its edge handle; closing moves to the title-bar chevron.
    The collapsed tab (with its label) stays as the open affordance. */
-.panel:not(.panel--collapsed) .panel__handle,
-.editor__sidebar:not(.editor__sidebar--collapsed) .editor__sidebar-handle {
+.panel:not(.panel--collapsed) .panel__handle {
   display: none;
 }
 
-/* A collapsed tab ducks while an open sibling's body covers its spot: the
-   right-edge stack z-indexes lower panels over upper ones (to keep tabs
-   clickable under an open upper panel), so without this the Tool/Model
-   tabs float on top of the open Render body. visibility, not display -
-   the geometry must hold so the tab lands back in place on close. */
-.panel--tab-hidden .panel__handle {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.panel__close,
-.editor__sidebar-close {
+.panel__close {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -405,15 +350,9 @@ h1,
   color: var(--muted);
 }
 
-.panel__close:hover,
-.editor__sidebar-close:hover {
+.panel__close:hover {
   background: var(--hover);
   color: var(--text);
-}
-
-/* Save look / thumbnail row pinned at the top of the Render panel. */
-.panel__actions {
-  padding-top: 4px;
 }
 
 .panel__body {
@@ -507,7 +446,6 @@ h1,
 .matcap-swatch--on:hover {
   border-color: var(--accent);
 }
-
 
 .section {
   padding: 10px 0;
@@ -732,7 +670,8 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--bz-text-3);
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 /* Keyboard focus: the orange outline, 2px off (the one job of orange that
@@ -740,43 +679,6 @@ textarea::placeholder {
 :focus-visible {
   outline: var(--bz-focus);
   outline-offset: 2px;
-}
-
-.row {
-  display: flex;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.row button {
-  flex: 1;
-}
-
-.scrubber {
-  margin: 6px 0 2px;
-}
-
-.frame-label {
-  display: block;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.stage {
-  display: flex;
-  flex-direction: column;
-  min-height: 30px;
-  margin-bottom: 4px;
-}
-
-.stage__name {
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.stage__desc {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .label-row,
@@ -824,16 +726,6 @@ textarea::placeholder {
   accent-color: var(--accent);
 }
 
-.btn-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.btn-grid button {
-  font-size: 12px;
-}
-
 .light {
   padding: 8px;
   margin: 8px 0;
@@ -878,8 +770,7 @@ html.is-page body {
    it used to be pinned to the corner itself, which put it on top of any
    chip the row placed first. */
 
-.landing,
-.admin {
+.landing {
   max-width: 1040px;
   margin: 0 auto;
   /* Top padding clears the fixed top row: the back link used to sit in the
@@ -887,8 +778,7 @@ html.is-page body {
   padding: 64px 20px 64px;
 }
 
-.landing__head,
-.admin__head {
+.landing__head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -930,33 +820,6 @@ html.is-page body {
   font: inherit;
   text-decoration: none;
   cursor: pointer;
-}
-
-.landing__editor {
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.landing__editor:hover {
-  text-decoration: none;
-}
-
-.landing__links {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  white-space: nowrap;
-}
-
-.landing__admin {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.landing__admin:hover {
-  text-decoration: none;
 }
 
 .landing__grid {
@@ -1018,120 +881,6 @@ html.is-page body {
   font-size: 11px;
 }
 
-/* --- editor (admin) --- */
-.admin__head h1 {
-  margin: 0;
-  font-size: 24px;
-}
-
-.admin-create {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.admin__hint {
-  margin: 0 0 24px;
-  font-size: 12px;
-}
-
-.admin-create input,
-.admin-create select {
-  width: auto;
-  padding: 7px 9px;
-}
-
-.admin-create input[name='id'] {
-  flex: 1 1 180px;
-}
-
-.admin-create input[name='title'] {
-  flex: 2 1 220px;
-}
-
-.admin-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.admin-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-}
-
-.admin-row__thumb {
-  flex: 0 0 auto;
-  width: 64px;
-  aspect-ratio: 4 / 5;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 38%, #3a3d44, #1b1d21 72%);
-}
-
-.admin-row__img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.admin-row__main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.admin-row__title {
-  font-weight: 600;
-}
-
-.admin-row__meta {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.admin-row__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-/* The row's Public/Private and Template switches, beside the actions they
-   are not among. */
-.admin-row__vis,
-.admin-row__tpl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.admin-row__vis input,
-.admin-row__tpl input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-/* A template's row says so above its title. */
-.admin-row__badge {
-  align-self: flex-start;
-}
-
-.admin-row__badge[hidden] {
-  display: none;
-}
-
 .admin__empty {
   color: var(--muted);
 }
@@ -1168,105 +917,8 @@ html.is-page body {
   border-color: #ff8f8f;
 }
 
-/* --- per-project editor --- */
 .muted {
   color: var(--muted);
-}
-
-.editor__section {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.editor__section h3 {
-  margin: 0 0 12px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.editor__settings {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.editor__settings label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.editor__settings input,
-.editor__settings select {
-  width: auto;
-  min-width: 90px;
-  padding: 7px 9px;
-}
-
-.editor__settings input#f-title {
-  min-width: 220px;
-}
-
-.dropzone {
-  border: 1px dashed var(--panel-border);
-  border-radius: var(--radius);
-  padding: 22px;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.02);
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.dropzone--over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.dropzone p {
-  margin: 0 0 10px;
-  color: var(--muted);
-}
-
-.dropzone__zup {
-  justify-content: center;
-  margin-top: 10px;
-}
-
-.progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.progress__track {
-  flex: 1;
-  height: 8px;
-  border-radius: 0;
-  background: var(--control-bg);
-  overflow: hidden;
-}
-
-.progress__bar {
-  height: 100%;
-  width: 0;
-  background: var(--accent);
-  transition: width 0.15s;
-}
-
-.editor__preview {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--bg);
-}
-
-.editor__preview canvas {
-  display: block;
 }
 
 /* Crop-framing guide: a centred frame of the capture aspect with the area
@@ -1307,10 +959,6 @@ html.is-page body {
   border-top: 1px solid var(--panel-border);
 }
 
-.reel > .editor__hint {
-  margin-top: 0;
-}
-
 .reel-record {
   width: 100%;
   margin-top: 10px;
@@ -1330,56 +978,6 @@ html.is-page body {
   font-size: 12px;
   color: var(--muted);
   min-height: 1em;
-}
-
-.preview__hint {
-  padding: 1rem;
-}
-
-.editor__row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.stage-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.stage-row input {
-  padding: 6px 8px;
-  background: var(--control-bg);
-  color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  font: inherit;
-}
-
-.stage-row .stage-name {
-  flex: 1 1 160px;
-  min-width: 0;
-}
-
-.stage-row .stage-frame {
-  flex: 0 0 80px;
-}
-
-.stage-row .stage-desc {
-  flex: 2 1 220px;
-  min-width: 0;
-}
-
-.stage-row .stage-remove {
-  flex: 0 0 auto;
-}
-
-.editor__id {
-  margin: 2px 0 0;
-  font-size: 12px;
 }
 
 .card__img,
@@ -1539,32 +1137,7 @@ html.is-page body {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- global theme toggle (top-right, all views) --- */
-.theme-toggle {
-  /* Fixed width so "Ink" and "Paper" occupy the same box: the row must not
-     shuffle when the label changes. */
-  min-width: 72px;
-  text-align: center;
-  order: 3;
-  z-index: 30;
-  padding: 5px 12px;
-  font-family: var(--font-spec);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.theme-toggle:hover {
-  background: var(--hover);
-}
-
-/* Hotkey guide button, left of the theme toggle: 72px of toggle + its 12px
-   inset + an 8px gap. H does the same thing, but not on an iPad. */
+/* Hotkey guide button. H does the same thing, but not on an iPad. */
 .help-toggle {
   min-width: 32px;
   order: 2;
@@ -1710,111 +1283,9 @@ html.is-page body {
   pointer-events: none;
 }
 
-/* --- editor app layout: full-window preview + floating side panels --- */
-.editor {
-  position: fixed;
-  inset: 0;
-}
-
-/* Left floating panel — mirrors the right control panel (.panel). */
-.editor__sidebar {
-  position: fixed;
-  top: 52px; /* clear the fixed back button in the top-left */
-  left: 12px;
-  bottom: 12px;
-  width: 332px;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  z-index: 10;
-  transition: transform 0.25s ease;
-}
-
-/* Collapsed (Tab / handle): slide the sidebar off the left edge. */
-.editor__sidebar--collapsed {
-  transform: translateX(calc(-100% - 12px));
-}
-
-/* Title bar (mirror of .panel__header): the panel name + a close chevron. */
-.editor__sidebar-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-/* Scroll lives on the body so the handle can sit outside the panel's edge. */
-.editor__sidebar-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 16px 24px;
-}
-
-/* Handle juts out of the sidebar's right edge (mirror of .panel__handle). */
-.editor__sidebar-handle {
-  position: absolute;
-  right: -36px;
-  top: 0;
-  width: 36px;
-  min-height: 116px;
-  padding: 10px 0;
-  line-height: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-left: none;
-  border-radius: 0 var(--radius) var(--radius) 0;
-}
-
-
-.editor__sidebar .editor__title {
-  margin: 0;
-  font-size: 22px;
-}
-
-.editor__sidebar .editor__settings {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.editor__sidebar .editor__settings input,
-.editor__sidebar .editor__settings select {
-  width: 100%;
-  min-width: 0;
-}
-
-.editor__sidebar .stage-row {
-  flex-wrap: wrap;
-}
-
-.editor__hint {
-  margin: 0 0 10px;
-}
-
-/* memory heads-up in the /create editor */
-.editor__warn {
-  margin: 8px 0 0;
-  color: var(--accent);
-}
-
-
 /* Narrow screens (phones): keep each slide-out panel and its edge handle on
-   screen. The two are mutually exclusive here (see EditorLayout) so they don't
-   overlap. */
+   screen. */
 @media (max-width: 600px) {
-  .editor__sidebar {
-    width: min(332px, calc(100vw - 64px));
-  }
   .panel {
     width: min(268px, calc(100vw - 64px));
   }
@@ -1966,20 +1437,6 @@ html.is-page body {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   pointer-events: auto;
-}
-
-.sculpt-toolbar__corner {
-  display: flex;
-  gap: 6px;
-  pointer-events: auto;
-}
-
-.sculpt-toolbar__left {
-  justify-self: start;
-}
-
-.sculpt-toolbar__right {
-  justify-self: end;
 }
 
 .sculpt-toolbar__brushes {
@@ -2162,14 +1619,6 @@ html.is-page body {
    which juts 36px off the panel's right edge - flush at x 0. */
 .panel--left.panel--collapsed {
   transform: translateX(calc(-100% - 44px));
-}
-
-.panel__handle--left {
-  left: auto;
-  right: -36px;
-  border: 1px solid var(--panel-border);
-  border-left: none;
-  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 /* Solo (alt+q) marks the Scene panel, open or docked: every other object
@@ -2449,12 +1898,6 @@ html.is-page body {
 
 .outliner__menu[hidden] {
   display: none;
-}
-
-.outliner__menu-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--panel-border);
 }
 
 .outliner__menu-item {
@@ -2761,11 +2204,6 @@ html.is-page body {
   gap: 6px;
 }
 
-.outliner__filebtn {
-  width: 100%;
-  text-align: left;
-}
-
 /* Quad remesh's run (Model panel): the stage over a bar with Cancel. */
 .sculpt-panel__quad-progress {
   margin-top: 6px;
@@ -2880,7 +2318,6 @@ body.chrome-hidden > .topbar,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .file-menu__chip,
 body.chrome-hidden .file-menu,
-body.chrome-hidden .theme-toggle,
 body.chrome-hidden .help-toggle,
 body.chrome-hidden .fps-meter {
   opacity: 0;
@@ -3180,8 +2617,8 @@ body:has(.transport) .chrome-hint {
 }
 
 .channel-box__value::placeholder {
-  color: var(--muted);
-  opacity: 0.6;
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 .channel-box__value:disabled {
@@ -3191,28 +2628,6 @@ body:has(.transport) .chrome-hint {
 .channel-box__unit {
   color: var(--muted);
   font-size: 11px;
-}
-
-/* Sculpt corner stats: object name + live poly count (top-left). */
-.sculpt-stats {
-  position: fixed;
-  top: 84px;
-  left: 12px;
-  z-index: 15;
-  pointer-events: none;
-  font-family: var(--font-spec);
-  line-height: 1.5;
-}
-
-.sculpt-stats__name {
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-
-.sculpt-stats__tris {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 /* Smoothing turns the fallback ring blue too (3D ring via material). */
@@ -3669,8 +3084,7 @@ body.is-sampling * {
 .sculpt-solobtn,
 .outliner__btn,
 .panel__handle,
-.float-window__bar,
-.chrome-restore {
+.float-window__bar {
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
   user-select: none;
@@ -3804,11 +3218,6 @@ body.is-sampling * {
 
 .topchip:hover {
   background: var(--hover);
-}
-
-.topchip--accent {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* The File menu: a chip in the top row and the list that drops from it.
@@ -4454,19 +3863,10 @@ body.is-sampling * {
 }
 
 /* Ordering lives here, after .topchip's default: page actions first, then
-   the guide, then the theme toggle pinned to the outside edge. Set on the
-   same specificity as .topchip and it would be a source-order coin toss. */
+   the guide. Set on the same specificity as .topchip and it would be a
+   source-order coin toss. */
 .topbar .help-toggle {
   order: 2;
-}
-
-.topbar .theme-toggle {
-  order: 3;
-}
-
-/* The hotkey guide's button, in the Render panel's Interface section. */
-.panel__hotkeys {
-  align-self: flex-start;
 }
 
 /* "Reset look" sits inside the Lighting section, quieter than a primary
@@ -4994,13 +4394,6 @@ body.is-sampling * {
   font-size: 12px;
 }
 
-.account-or {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-
 .account-step {
   display: flex;
   flex-direction: column;
@@ -5023,7 +4416,7 @@ body.is-sampling * {
   padding: 8px 10px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text);
   font: inherit;
   font-size: 16px;
@@ -5074,16 +4467,8 @@ body.is-sampling * {
   accent-color: var(--accent);
 }
 
-.account-legal,
-.account-links a {
+.account-legal {
   color: var(--accent);
-}
-
-.account-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin: 0;
 }
 
 .account-actions {
@@ -5156,88 +4541,6 @@ body.is-sampling * {
 }
 
 /* The account's pages: the gallery's frame, a section per subject. */
-.account-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 720px;
-}
-
-.account-section {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 14px 16px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-}
-
-.account-section > .account-step,
-.account-section > .account-list,
-.account-section > .account-code {
-  align-self: stretch;
-}
-
-.account-section__title {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.account-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.account-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--panel-border);
-}
-
-.account-item:first-child {
-  border-top: 0;
-}
-
-.account-item__main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.account-item__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.account-item__meta {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.account-item__warn {
-  color: var(--accent);
-  font-size: 12px;
-}
-
-.account-item__actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 .account-rename {
   display: flex;
   flex-wrap: wrap;
@@ -5299,35 +4602,6 @@ body.is-sampling * {
 /* --- The owner's tools over accounts (docs/accounts.md §8): tabs beside
    Projects for Invites, Users and the Audit log, on the editor's own rows
    and buttons. --- */
-.admin-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: -12px 0 22px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.admin-tabs[hidden] {
-  display: none;
-}
-
-.admin-tab {
-  margin-bottom: -1px;
-  padding: 6px 2px 8px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.admin-tab:hover {
-  color: var(--text);
-}
-
-.admin-tab--current {
-  border-bottom-color: var(--accent);
-  color: var(--text);
-}
-
 /* A count the owner should act on: deletions left waiting. */
 .admin__notice {
   margin: 0 0 14px;
@@ -5473,10 +4747,6 @@ body.is-sampling * {
   flex: 1 1 240px;
 }
 
-.admin-audit__row {
-  padding: 8px 14px;
-}
-
 .admin-audit__action {
   font-family: var(--font-spec);
   font-weight: 400;
@@ -5490,51 +4760,12 @@ body.is-sampling * {
   font-size: 12px;
 }
 
-@media (max-width: 560px) {
-  .admin-user .admin-row,
-  .admin-invite {
-    flex-wrap: wrap;
-  }
-
-  .admin-user .admin-row__actions,
-  .admin-invite .admin-row__actions {
-    margin-left: 0;
-  }
-}
-
-@media (max-width: 560px) {
-  .account-item {
-    flex-wrap: wrap;
-  }
-}
-
 /* --- My projects (docs/accounts.md §7): the storage meter, and cards
    with their actions in the body, where a thumb cannot cover them. --- */
 .my-projects__body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.my-projects__body > .account-say {
-  max-width: 720px;
-}
-
-.my-storage {
-  max-width: 720px;
-}
-
-.storage-meter {
-  display: flex;
-  align-self: stretch;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 0;
-  background: var(--panel-border);
-}
-
-.storage-meter__used {
-  background: var(--accent);
+  gap: 16px;
 }
 
 /* What uploads in progress hold: taken, but not yet stored. */
@@ -5554,8 +4785,9 @@ body.is-sampling * {
 .card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .card__actions .card__action {
@@ -5572,11 +4804,6 @@ body.is-sampling * {
 .card__actions .card__action:disabled {
   cursor: default;
   opacity: 0.55;
-}
-
-.card__delete:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .my-rename .account-input {
@@ -5676,13 +4903,6 @@ body.is-sampling * {
   font-size: 13px;
 }
 
-/* An owner's decision still to be written in. */
-.legal__todo {
-  padding: 0 4px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-}
-
 .legal__foot {
   margin-top: 36px;
   padding-top: 12px;
@@ -5694,10 +4914,6 @@ body.is-sampling * {
 /* --- the Community (docs/accounts.md §13): the gallery of members'
    shared work, author pages, the viewer's credit and Report, and Share
    to Community on My projects' cards. --- */
-.community-page > .account-say {
-  margin: 0 0 14px;
-}
-
 .card--community {
   cursor: pointer;
 }
@@ -5727,53 +4943,17 @@ body.is-sampling * {
 
 /* The sort select and the search, above the cards (the Review page's
    Gallery tab tools, reused). */
-.community__tools {
-  margin: 0 0 16px;
-}
-
 .community__tools[hidden] {
   display: none;
 }
 
 /* Star, in the picture's top-right corner of a Community card: a member's
    favourite, never a count. Always shown, so the state reads at a glance. */
-.card__star {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 0;
-  background: rgb(0 0 0 / 55%);
-  color: #fff;
-  font: inherit;
-  font-size: 17px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.card__star[aria-pressed='true'],
-.viewer-star[aria-pressed='true'] {
-  color: #f5c542;
-}
-
-.card__star:hover,
-.card__star:focus-visible {
-  border-color: var(--accent);
-}
-
 /* The views and stars a work has: its author's (My projects) and the
    reviewers' (the Gallery tab) to see. */
 .card__stats {
   color: var(--muted);
   font-size: 12px;
-}
-
-.my-projects .my-tabs {
-  margin: 0 0 18px;
 }
 
 /* "by @handle" under the viewer's title, in the Render panel. */
@@ -5914,31 +5094,6 @@ body.is-sampling * {
   text-align: center;
 }
 
-.review-page .review-tabs {
-  margin: 0 0 18px;
-}
-
-.review-page > .account-say {
-  margin: 0 0 14px;
-}
-
-.review-gallery__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 16px;
-}
-
-.review-gallery__tools .review-search {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-.review-gallery__tools .review-filter {
-  flex: 0 0 auto;
-  width: auto;
-}
-
 .review-card__state {
   color: var(--text);
 }
@@ -6034,10 +5189,6 @@ body.is-sampling * {
 .topbar--left:has(.review-mode) {
   flex-wrap: wrap;
   max-width: calc(100vw - 150px);
-}
-
-.admin-user__rolecol {
-  min-width: 72px;
 }
 
 .admin-user__rolesay {
@@ -6268,16 +5419,13 @@ body.is-sampling * {
 
 /* --- type --- */
 h1,
-.landing__title,
-.admin__head h1,
-.editor__title {
+.landing__title {
   font-family: var(--bz-font);
   font-weight: 700;
   letter-spacing: 0;
 }
 
-.transport__stage-name,
-.stage__name {
+.transport__stage-name {
   font-family: var(--bz-font);
   font-style: normal;
   font-weight: 600;
@@ -6288,7 +5436,6 @@ h1,
 .section h3,
 .section h4.sculpt-panel__subhead,
 .sculpt-panel__curve-label,
-.editor__section h3,
 .prefs__group,
 .help-win__group,
 .help-win__h,
@@ -6306,10 +5453,8 @@ h1,
 }
 
 /* Captions and the quiet lines: secondary text. */
-.stage__desc,
 .transport__stage-desc,
 .sculpt-panel__hint,
-.editor__hint,
 .admin__hint,
 .dsettings__blurb,
 .dsettings__hint,
@@ -6331,7 +5476,6 @@ h1,
 
 /* Values and numbers: Martian Mono 11px, as typed. */
 .readout,
-.frame-label,
 .transport__frame,
 .sculpt-panel__val,
 .slider-val,
@@ -6342,7 +5486,6 @@ h1,
 .channel-box__unit,
 .card__meta,
 .admin-row__meta,
-.editor__id,
 .fps-meter,
 .fps-meter__row,
 .outliner__menu-size {
@@ -6354,9 +5497,7 @@ h1,
 
 .card__meta,
 .admin-row__meta,
-.editor__id,
 .readout,
-.frame-label,
 .transport__frame {
   color: var(--bz-text-2);
 }
@@ -6378,18 +5519,15 @@ h1,
 
 /* --- links: text, weight 600, no underline --- */
 .landing__signin,
-.landing__editor,
 .gallery-form__gatenote a,
 .gallery-form__status a,
 .account-legal,
-.account-links a,
 .account-linkbtn,
 .legal a,
 .report-what a,
 .share-note__list a,
 .help-win__topic a,
-.card__link,
-.landing__admin {
+.card__link {
   color: var(--bz-text);
   font-weight: 600;
   text-decoration: none;
@@ -6422,8 +5560,7 @@ h1,
 .prefs__tab,
 .install-close,
 .float-window__close,
-.card__trash,
-.card__star {
+.card__trash {
   min-height: 28px;
   padding: 6px 12px;
   border: 0;
@@ -6456,8 +5593,7 @@ h1,
 .prefs__tab:hover,
 .install-close:hover,
 .float-window__close:hover,
-.card__trash:hover,
-.card__star:hover {
+.card__trash:hover {
   background: var(--bz-hover);
   color: var(--bz-text);
   border-color: transparent;
@@ -6561,7 +5697,7 @@ h1,
 .btn--danger:hover:not(:disabled) {
   background: var(--bz-red);
   border: 0;
-  color: var(--bz-on-accent);
+  color: var(--bz-on-red);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -6574,8 +5710,7 @@ h1,
 }
 
 .btn--small,
-.panel__reset,
-.panel__hotkeys {
+.panel__reset {
   min-height: 28px;
   padding: 6px 12px;
   font-size: 13px;
@@ -6600,7 +5735,6 @@ h1,
 .sculpt-panel__btn--on,
 .sculpt-panel__presets .sculpt-panel__btn--on,
 .curve-editor__preset[aria-pressed='true'],
-.curve-editor__preset--on,
 .prefs__tab--on,
 .prefs__tab--on:hover,
 .outliner__btn[aria-pressed='true'],
@@ -6617,8 +5751,7 @@ h1,
 }
 
 .sculpt-panel__btn--wide,
-.outliner__btn--wide,
-.outliner__filebtn {
+.outliner__btn--wide {
   width: 100%;
 }
 
@@ -6633,7 +5766,8 @@ h1,
 
 .prefs__key--none {
   font-style: normal;
-  color: var(--bz-text-3);
+  color: var(--bz-text-hint);
+  opacity: 1;
 }
 
 .prefs__key kbd {
@@ -6782,31 +5916,20 @@ h1,
   margin: 0;
 }
 
-.btn-grid {
-  gap: 4px;
-}
-
-.btn-grid button {
-  font-size: 13px;
-}
-
 /* --- panels and their sections --- */
-.panel,
-.editor__sidebar {
+.panel {
   background: var(--panel-bg);
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
-.panel__header,
-.editor__sidebar-header {
+.panel__header {
   padding: 12px 16px 4px;
   border-bottom: 0;
 }
 
-.panel__title,
-.editor__sidebar .editor__title {
+.panel__title {
   font-family: var(--bz-font);
   font-size: 20px;
   font-weight: 700;
@@ -6823,12 +5946,7 @@ h1,
   background: var(--bz-sep);
 }
 
-.editor__sidebar-body {
-  padding: 8px 16px 24px;
-}
-
-.section,
-.editor__section {
+.section {
   padding: 10px 0;
   border-bottom: 1px solid var(--bz-sep);
 }
@@ -6867,10 +5985,6 @@ h1,
 .label-row > .cpick {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.stage {
-  min-height: 0;
 }
 
 /* Raised things: a menu, a tooltip, a popover, a window, a notice. The
@@ -6956,7 +6070,6 @@ h1,
 
 /* Errors say so in red (never orange): the message, or a red square. */
 .landing__notice--suspended,
-.editor__warn,
 .voxel-overlay__caption--over,
 .sculpt-panel__warn,
 .scale-banner__error,
@@ -6974,12 +6087,12 @@ h1,
 .card__share[data-shared='hidden'] .card__share-status,
 .review-card[data-shared='hidden'] .review-card__state,
 .review-card[data-shared='rejected'] .review-card__state {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
   font-size: 13px;
 }
 
 .curve-editor__point--remove {
-  stroke: var(--bz-red);
+  stroke: var(--bz-red-text);
 }
 
 .card--sculpt {
@@ -7040,13 +6153,21 @@ h1,
   color: var(--bz-text-3);
 }
 
+/* On the hover fill the secondary grey is 4.2:1; the key and the hint under a
+   row read as the label there. */
+.file-menu__item:hover:not(:disabled) .file-menu__key,
+.file-menu__item:focus-visible .file-menu__key,
+.file-menu__item:hover:not(:disabled) .file-menu__hint,
+.file-menu__item:focus-visible .file-menu__hint {
+  color: var(--bz-text);
+}
+
 .file-menu__line {
   align-items: center;
   gap: 24px;
 }
 
-.file-menu__sep,
-.outliner__menu-sep {
+.file-menu__sep {
   height: 1px;
   margin: 4px 0;
   background: var(--bz-sep);
@@ -7218,7 +6339,7 @@ h1,
 
 .outliner__icon--danger,
 .outliner__icon--danger:hover {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .outliner__solo {
@@ -7296,13 +6417,12 @@ h1,
 .gallery-form__input,
 .scale-banner__object,
 .scale-banner__height,
-.stage-row input,
 .account-input,
 .help-win__filter {
   min-height: 28px;
   padding: 6px 8px;
   border: 0;
-  background: var(--bz-control);
+  background-color: var(--bz-control);
   color: var(--bz-text);
   font: 13px/16px var(--bz-font);
 }
@@ -7445,8 +6565,7 @@ progress {
 }
 
 /* --- the gallery and the viewer --- */
-.landing__head,
-.admin__head {
+.landing__head {
   border-bottom: 1px solid var(--bz-sep);
 }
 
@@ -7471,7 +6590,7 @@ progress {
 }
 
 .landing__notice--suspended {
-  color: var(--bz-red);
+  color: var(--bz-red-text);
 }
 
 .landing__signin {
@@ -7510,12 +6629,9 @@ progress {
   transform: none;
 }
 
+/* 4:5, the shape every card picture is captured at, so none shows bands. */
 .card__thumb {
-  aspect-ratio: 1;
-  background: var(--bz-viewport);
-}
-
-.admin-row__thumb {
+  aspect-ratio: 4 / 5;
   background: var(--bz-viewport);
 }
 
@@ -7550,20 +6666,9 @@ progress {
   color: var(--bz-text-2);
 }
 
-.card__trash,
-.card__star {
+.card__trash {
   background: var(--bz-strip);
   color: var(--bz-text);
-}
-
-.card__star {
-  width: 28px;
-  padding: 0;
-}
-
-.card__star[aria-pressed='true'],
-.viewer-star[aria-pressed='true'] {
-  color: var(--bz-orange);
 }
 
 .card--new {
@@ -7623,19 +6728,6 @@ progress {
   color: var(--bz-text-2);
 }
 
-.dropzone {
-  border: 0;
-  background: var(--bz-control);
-}
-
-.dropzone--over {
-  background: var(--bz-hover);
-}
-
-.progress__track {
-  background: var(--bz-sep);
-}
-
 .admin-row {
   border: 0;
   background: var(--bz-panel);
@@ -7678,16 +6770,12 @@ progress {
 }
 
 /* --- the page's loose odds --- */
-.editor__preview {
-  background: var(--bz-viewport);
-}
 
 .dsettings__row {
   gap: 4px;
 }
 
 .pkcheck__step,
-.account-section,
 .admin__bootstrap,
 .admin__lock,
 .admin__notice,
@@ -7697,7 +6785,6 @@ progress {
   background: var(--bz-panel);
 }
 
-.legal__todo,
 .account-reason {
   background: var(--bz-hover);
 }
@@ -7719,4 +6806,1143 @@ progress {
 .admin-invite[data-state='live'] .admin-invite__state {
   border-color: var(--bz-line);
   color: var(--bz-text);
+}
+
+/* ==========================================================================
+   The pages (docs/ui-foundations.md; the boards of Owner tools, My
+   projects, Community, Account and Review)
+
+   One quiet navigation row over a column of content. Lists are rows
+   (.admin-row: the Projects list's pattern, also Invites, Users, Audit and
+   Review); galleries are cards (.page-grid). Delete is a trash icon, grey
+   until the pointer or focus is on it, then red. Square corners, the grey
+   scale; orange only for the one main action, the page one is on and focus.
+   ========================================================================== */
+
+/* --- the navigation row --- */
+.pagenav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 48px;
+  padding: 0 32px;
+  background: var(--bz-strip);
+}
+
+/* The hand-drawn logotype, as on the gallery: its picture carries a ground
+   of its own, which the lighten blend lets drop into the page's. */
+.pagenav__logo {
+  flex: none;
+  line-height: 0;
+}
+
+.pagenav__logo img {
+  display: block;
+  height: 28px;
+  width: auto;
+  mix-blend-mode: lighten;
+  filter: grayscale(1);
+}
+
+.pagenav__links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.pagenav__account {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-left: auto;
+}
+
+/* A link, and the chips the row borrows (Sign in, Install, the @handle
+   menu): plain text, the page one is on in full text and weight 600. */
+.pagenav__link,
+.pagenav .topchip {
+  order: 0;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pagenav__link:hover,
+.pagenav .topchip:hover:not(:disabled),
+.pagenav .topchip--open {
+  background: none;
+  color: var(--bz-text);
+}
+
+.pagenav__link:focus-visible,
+.pagenav .topchip:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 4px;
+}
+
+.pagenav__link[aria-current='page'],
+.pagenav .topchip[aria-current='page'] {
+  color: var(--bz-text);
+  font-weight: 600;
+}
+
+.pagenav .account-menu__chip::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin: -3px 0 0 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.pagenav .review-chip,
+.pagenav .review-chip[aria-current='page'] {
+  gap: 0;
+  background: none;
+}
+
+.pagenav .review-chip__count {
+  min-width: 0;
+  margin-left: 6px;
+  padding: 0 5px;
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+/* A phone: the logotype and the account on one line, the links under them
+   (they scroll sideways if they ever outgrow the width). */
+@media (max-width: 640px) {
+  .pagenav {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px 16px 0;
+    gap: 4px 16px;
+  }
+
+  .pagenav__account {
+    order: 2;
+    gap: 16px;
+  }
+
+  .pagenav__links {
+    order: 3;
+    flex: 1 1 100%;
+    gap: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pagenav__links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pagenav__link,
+  .pagenav .topchip {
+    min-height: 32px;
+  }
+}
+
+/* --- the column --- */
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 20px 64px;
+}
+
+.page--narrow {
+  max-width: 840px;
+}
+
+.page__title {
+  margin: 0;
+  color: var(--bz-text);
+  font: 700 32px/40px var(--bz-font);
+  letter-spacing: 0;
+}
+
+.page__tag {
+  margin: 4px 0 0;
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.page__tag[hidden] {
+  display: none;
+}
+
+.page > .account-say {
+  margin: 16px 0 0;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 24px 16px 48px;
+  }
+
+  .page__title {
+    font-size: 28px;
+    line-height: 36px;
+  }
+}
+
+/* --- tabs: links, the one in use filled --- */
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 24px 0 0;
+}
+
+.admin-tabs[hidden] {
+  display: none;
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  text-decoration: none;
+}
+
+.admin-tab:hover {
+  color: var(--bz-text);
+}
+
+.admin-tab--current,
+.admin-tab--current:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+/* --- rows --- */
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 16px 0 0;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-panel);
+}
+
+.admin-row:hover {
+  background: color-mix(in srgb, var(--bz-panel) 84%, var(--bz-hover));
+}
+
+.admin-row__thumb {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  background: var(--bz-viewport);
+}
+
+.admin-row__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.admin-row__kind {
+  flex: none;
+  width: 88px;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+.admin-row__main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-row__title {
+  color: var(--bz-text);
+  font: 600 13px/16px var(--bz-font);
+  overflow-wrap: anywhere;
+}
+
+.admin-row__meta {
+  overflow-wrap: anywhere;
+}
+
+.admin-row__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Private and Template: the word, then its switch. */
+.admin-row__vis,
+.admin-row__tpl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.admin-row .btn {
+  text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .admin-row {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .admin-row__kind {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .admin-row__main {
+    flex: 1 1 100%;
+  }
+
+  .admin-row__actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+}
+
+/* A review row's lines: the title with its author, then one line of where
+   it stands, its parts a gap apart (.meta). */
+.review-card__head {
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.review-card__head .card__author {
+  color: var(--bz-text-2);
+  font: inherit;
+}
+
+.review-card__head .card__author:hover,
+.review-card__head .card__title:hover {
+  color: var(--bz-text);
+}
+
+/* Where one is red for what it says, it is still a line of the row's size. */
+.review-card[data-shared='hidden'] .review-card__state,
+.review-card[data-shared='rejected'] .review-card__state,
+.card__share[data-shared='rejected'] .card__share-status,
+.card__share[data-shared='hidden'] .card__share-status {
+  font-size: 13px;
+}
+
+.review-card__meta .card__stats {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+}
+
+/* --- delete: a trash icon --- */
+.trash-btn {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.trash-btn .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.trash-btn:hover:not(:disabled),
+.trash-btn:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-red-text);
+}
+
+.trash-btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+/* Delete account…, and the like: red text, no fill. */
+/* White at rest, red under the pointer or the focus, as the trash icon. */
+.btn--quietred {
+  background: none;
+  color: var(--bz-text);
+}
+
+.btn--quietred:hover:not(:disabled),
+.btn--quietred:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-red-text);
+}
+
+/* --- the owner tools' forms --- */
+.admin-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.admin-create input,
+.admin-create select {
+  width: auto;
+}
+
+.admin-create input[name='title'] {
+  flex: 0 1 320px;
+}
+
+.admin-page .admin__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.admin-page .admin__bootstrap,
+.admin-page .admin__lock {
+  margin: 24px 0 0;
+}
+
+.admin-page .admin__notice {
+  margin: 16px 0 0;
+}
+
+.admin-invites__form + .admin__hint + .account-say {
+  margin: 8px 0 0;
+}
+
+.admin-invites__made {
+  margin-top: 16px;
+}
+
+.admin-page .admin__empty {
+  margin: 16px 0 0;
+}
+
+.admin-audit__row {
+  padding: 8px 12px;
+}
+
+/* --- galleries: cards --- */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0 0;
+}
+
+.page-grid .card {
+  background: var(--bz-panel);
+}
+
+.page-grid .card:hover {
+  background: color-mix(in srgb, var(--bz-panel) 84%, var(--bz-hover));
+}
+
+.page-grid .card__body {
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.page-grid .card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+.page-grid .card__author {
+  align-self: auto;
+  color: var(--bz-text-2);
+  font: inherit;
+}
+
+/* A grid's own notes (nothing here yet, no such member) take the row. */
+.page-grid > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Star: in the picture's top-right corner, the same star either way, full
+   white when pressed and grey when not. Never orange or yellow. */
+.card__star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(27 27 27 / 0.7);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.star-toggle {
+  color: var(--bz-text-3);
+}
+
+.star-toggle[aria-pressed='true'] {
+  color: #fff;
+}
+
+.card__star:hover,
+.card__star:focus-visible {
+  background: rgb(27 27 27 / 0.92);
+}
+
+.star-toggle .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* --- My projects --- */
+.my-storage {
+  width: min(100%, 320px);
+}
+
+.my-storage__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.my-storage__title {
+  margin: 0;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.storage-meter__text {
+  margin: 0;
+  color: var(--bz-text);
+  font: 400 11px/16px var(--bz-font-mono);
+  text-align: right;
+}
+
+.storage-meter {
+  display: flex;
+  height: 3px;
+  overflow: hidden;
+  background: var(--bz-line);
+}
+
+.my-storage .storage-meter {
+  margin-top: 8px;
+}
+
+.storage-meter__used {
+  background: var(--bz-orange);
+}
+
+/* Share to Community: its word and the switch, then where it stands. */
+.card__share {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.card__share-switch {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  align-self: stretch;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.card__stats {
+  margin: 0;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+/* Where a share stands is words, not a value. */
+.card__share-status {
+  margin: 0;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.card__share[data-shared='public'] .card__share-status {
+  color: var(--bz-text-2);
+}
+
+.card__share-hint {
+  margin: 8px 0 0;
+  padding-top: 0;
+  border-top: 0;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.card__actions .card__delete {
+  margin-left: auto;
+}
+
+.card--mine .card__body {
+  flex: 1;
+}
+
+.card--mine .card__actions {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.card__share-link {
+  text-decoration: none;
+}
+
+.row-more-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.row-more::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 0 3px 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.row-more[aria-expanded='true'] {
+  background: var(--bz-hover);
+}
+
+.row-menu {
+  min-width: 140px;
+}
+
+/* --- Community and Review: the search and the order above the list --- */
+.community__tools,
+.review-gallery__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.review-gallery__tools .review-search {
+  flex: 0 1 320px;
+  min-width: 0;
+}
+
+.review-gallery__tools .review-filter {
+  flex: 0 0 auto;
+  width: 160px;
+}
+
+.review-history {
+  gap: 1px;
+  margin: 16px 0 0;
+}
+
+.review-history__item {
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-panel);
+}
+
+.review-history__intro {
+  margin: 16px 0 0;
+}
+
+.review__body > .review__empty,
+.review__grid > .review__empty {
+  margin: 16px 0 0;
+}
+
+/* --- Account: a section a row, its name at the left, what it holds in the
+   middle and its button at the right --- */
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  margin: 24px 0 0;
+}
+
+.account-section {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) auto;
+  column-gap: 24px;
+  row-gap: 4px;
+  align-items: start;
+  padding: 16px 0;
+  border-top: 1px solid var(--bz-sep);
+}
+
+.account-section > * {
+  grid-column: 2;
+}
+
+.account-section__title {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0 0 -3px;
+  padding-top: 3px;
+  color: var(--bz-text-2);
+  font: 400 11px/18px var(--bz-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+.account-section > .btn {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
+.account-section > .account-step,
+.account-section > .account-list,
+.account-section > .account-code,
+.account-section > .account-say {
+  grid-column: 2 / -1;
+}
+
+.account-section .account-line {
+  font: 600 13px/18px var(--bz-font);
+}
+
+.account-section .account-small {
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-item__main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-item__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--bz-text);
+  font: 600 13px/18px var(--bz-font);
+}
+
+.account-item__meta {
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.account-item__warn {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.account-item__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .account-section {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .account-section > *,
+  .account-section > .btn,
+  .account-section > .account-step,
+  .account-section > .account-list,
+  .account-section > .account-code,
+  .account-section > .account-say {
+    grid-column: 1;
+  }
+
+  .account-section__title {
+    grid-row: auto;
+    margin: 0;
+    padding-top: 0;
+  }
+
+  .account-section > .btn {
+    grid-row: auto;
+    justify-self: start;
+  }
+
+  .account-section > .btn + .account-say {
+    margin-top: 0;
+  }
+
+  .account-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* --- sign-in windows (the dialog of ui/account/signIn.ts) ---
+   The shared window's frame (the install card, raised and square), with the
+   fields, text and buttons of the app layer: Familjen Grotesk 13px, labels
+   above the field in the second text grey, the one orange action of the
+   window full width, the other ways as grey buttons or plain links, errors
+   in red. Scoped to the dialog: the Account page shares the account-*
+   class names and keeps its own look. */
+.account-card {
+  width: min(360px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 20px 24px 24px;
+}
+
+.account-card .account-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-card .account-body > * + * {
+  margin-top: 0;
+}
+
+.account-card p {
+  margin: 0;
+}
+
+.account-card .account-title {
+  margin: 0 32px 0 0;
+}
+
+.account-card .account-step {
+  gap: 12px;
+}
+
+.account-card .account-lede,
+.account-card .account-note,
+.account-card .account-foot,
+.account-card .account-line {
+  color: var(--bz-text-2);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-small,
+.account-card .account-hint,
+.account-card .account-invite {
+  color: var(--bz-text-2);
+  font: 12px/16px var(--bz-font);
+}
+
+.account-card .account-hint:empty,
+.account-card .account-invite:empty,
+.account-card .account-retry[hidden] {
+  display: none;
+}
+
+.account-card .account-hint[data-tone='ok'],
+.account-card .account-invite[data-tone='ok'] {
+  color: var(--bz-text);
+}
+
+.account-card .account-hint[data-tone='no'],
+.account-card .account-invite[data-tone='no'] {
+  color: var(--bz-red-text);
+}
+
+/* Why the dialog is up: a grey band, no colour. */
+.account-card .account-reason {
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-field {
+  gap: 4px;
+}
+
+.account-card .account-field__label {
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+}
+
+.account-card .account-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  background: var(--bz-strip);
+}
+
+.account-card .account-input::placeholder {
+  color: var(--bz-text-hint);
+  opacity: 1;
+}
+
+/* The code is a value: Martian Mono 11px. */
+.account-card .account-input[name='code'] {
+  font: 11px/16px var(--bz-font-mono);
+  letter-spacing: 0;
+}
+
+.account-card .account-input[name='code']::placeholder {
+  font: 11px/16px var(--bz-font-mono);
+}
+
+/* The 13+ and terms box: a switch and its words. */
+.account-card .account-check {
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--bz-text-2);
+  font: 13px/20px var(--bz-font);
+}
+
+.account-card .account-check input {
+  margin: 0;
+}
+
+.account-card .account-actions {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.account-card .account-actions .btn,
+.account-card .account-passkey,
+.account-card .account-submit {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 12px;
+  text-align: center;
+}
+
+.account-card .btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.account-card .btn:disabled:not(.btn--primary) {
+  color: var(--bz-text-3);
+}
+
+/* The ways between steps: plain text links, the second text grey. */
+.account-card .account-more {
+  gap: 0 16px;
+}
+
+.account-card .account-linkbtn {
+  min-height: 24px;
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+  text-align: left;
+}
+
+.account-card .account-linkbtn:hover:not(:disabled) {
+  color: var(--bz-text);
+}
+
+.account-card .account-linkbtn:disabled {
+  color: var(--bz-text-3);
+}
+
+.account-card .account-foot .account-linkbtn {
+  min-height: 0;
+  color: var(--bz-text);
+}
+
+.account-card .account-say {
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-say[data-tone='note'] {
+  color: var(--bz-text-2);
+}
+
+.account-card :is(button, input, a):focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+/* A phone zooms in on a field under 16px. */
+@media (pointer: coarse) {
+  .account-card .account-input,
+  .account-card .account-input::placeholder,
+  .account-card .account-input[name='code'] {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .account-overlay {
+    padding: 16px;
+  }
+
+  .account-card {
+    padding: 20px 16px 24px;
+  }
+}
+
+/* --- the pages' meta lines (ui/metaLine) ---
+   A line is parts, each its own inline item, one 12px gap between them and
+   no dot; a part wraps to the next line whole. A value (count, size, date,
+   id, handle, kind) is Martian Mono 11px; a phrase is Familjen Grotesk 13px,
+   both in the second text colour. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.meta__v,
+.meta__t {
+  min-width: 0;
+  color: var(--bz-text-2);
+  overflow-wrap: anywhere;
+}
+
+.meta__v {
+  font: 400 11px/16px var(--bz-font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.meta__t {
+  font: 400 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.meta .meta__kind {
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+/* A link, or a button made a link, that is a part keeps the part's face. */
+.meta__t a,
+.meta__t button,
+.meta__v a,
+.meta__v button {
+  font: inherit;
+}
+
+.review-report .review-report__note {
+  flex-basis: 100%;
+}
+
+.storage-meter__text.meta {
+  justify-content: flex-end;
+}
+
+/* The foot closes every page's column: the page above it gives up its
+   bottom padding, so the foot sits where it did inside the column. */
+.page--foot {
+  padding-top: 0;
+  padding-bottom: 48px;
+}
+
+.page:has(+ .page--foot) {
+  padding-bottom: 0;
+}
+
+.page--foot .landing__foot {
+  margin-top: 40px;
+}
+
+/* A project row on a phone: the switches on one line, the actions (and the
+   trash, at their right end) together on the next. */
+.admin-row__switches,
+.admin-row__buttons {
+  display: contents;
+}
+
+@media (max-width: 640px) {
+  .admin-row__actions:has(> .admin-row__switches) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-row__switches,
+  .admin-row__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+
+  .admin-row__buttons {
+    gap: 8px;
+  }
+
+  .admin-row__buttons .admin-row__delete {
+    margin-left: auto;
+  }
 }

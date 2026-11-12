@@ -2,6 +2,7 @@ import { ApiError, ownerCall } from './api';
 import { asOwner, failureSentence, ownerSignInPanel } from './ownerSession';
 import { momentOf } from '../net/account';
 import { Say, button, el } from '../ui/account/parts';
+import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 
 /**
  * The Audit tab (docs/accounts.md §8): the log of what was done to
@@ -48,11 +49,9 @@ function refusalText(err: unknown): string {
   return failureSentence(err);
 }
 
-/** The particulars, as `key value` pairs: "from 262144000 · to 524288000". */
-function detailText(detail: Record<string, unknown>): string {
-  return Object.entries(detail)
-    .map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-    .join(' · ');
+/** The particulars, as `key value` pairs, a part each: "from 262144000", "to 524288000". */
+function detailParts(detail: Record<string, unknown>): HTMLElement[] {
+  return Object.entries(detail).map(([k, v]) => metaValue(`${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`));
 }
 
 interface State {
@@ -185,7 +184,7 @@ function rowOf(r: AuditRow, state: State): HTMLElement {
   row.dataset.audit = String(r.id);
   const main = el('div', 'admin-row__main');
   const meta = el('span', 'admin-row__meta');
-  meta.append(`${momentOf(r.at)} · by ${r.actor}`);
+  const parts: HTMLElement[] = [metaValue(momentOf(r.at)), metaPhrase('by ', metaValue(r.actor))];
   if (r.subject) {
     const subject = button(r.subject, 'account-linkbtn admin-audit__subjectbtn');
     subject.title = 'Show only the rows about this';
@@ -195,11 +194,12 @@ function rowOf(r: AuditRow, state: State): HTMLElement {
       state.subject.value = state.filter.subject;
       void load(state, false);
     });
-    meta.append(' · on ', subject);
+    parts.push(metaPhrase('on ', metaValue(subject)));
   }
-  const detail = detailText(r.detail);
+  fillMeta(meta, parts);
+  const detail = detailParts(r.detail);
   main.append(el('span', 'admin-row__title admin-audit__action', r.action), meta);
-  if (detail) main.appendChild(el('span', 'admin-row__meta admin-audit__detail', detail));
+  if (detail.length) main.appendChild(fillMeta(el('span', 'admin-row__meta admin-audit__detail'), detail));
   row.appendChild(main);
   return row;
 }

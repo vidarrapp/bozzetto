@@ -22,7 +22,7 @@ export interface EditorProject {
   mode: string;
   visibility?: Visibility;
   config: { fps: number; frameCount: number };
-  frames: { index: number; tris: number }[];
+  frames: { index: number; tris: number; sd?: string | null }[];
   stages: Stage[];
 }
 

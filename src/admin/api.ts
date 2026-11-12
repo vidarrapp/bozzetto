@@ -217,7 +217,7 @@ async function call<T>(
       message =
         said === 'Cross-site request refused'
           ? 'The request was refused as coming from another site'
-          : 'Not authorized — sign in via Cloudflare Access.';
+          : 'Not authorized: sign in via Cloudflare Access.';
     }
     // The desktop reports "no server configured" as status 0; saying that is
     // more use than a generic failure.
@@ -475,9 +475,24 @@ function remember(): void {
 
 function forget(): void {
   try {
-    deviceStore.remove(SIGNED_IN_KEY);
+    deviceStore.forget(SIGNED_IN_KEY);
   } catch {
     // Nothing remembered that could be.
+  }
+}
+
+/**
+ * Whether a sign-in is remembered on this device whatever the choice about
+ * keeping things is: read straight from storage, nothing written. Only the
+ * device-choice window asks, to tell someone signed in from before it
+ * existed that saying no signs them out.
+ */
+export function signedInOnDevice(): boolean {
+  try {
+    const at = (JSON.parse(localStorage.getItem(SIGNED_IN_KEY) ?? 'null') as { at?: unknown } | null)?.at;
+    return typeof at === 'number' && Date.now() - at < REMEMBER_MS;
+  } catch {
+    return false;
   }
 }
 
@@ -630,7 +645,7 @@ export async function signOut(): Promise<void> {
 export async function forgetSignIn(): Promise<void> {
   forget();
   try {
-    deviceStore.remove(EXPIRY_TOLD_KEY);
+    deviceStore.forget(EXPIRY_TOLD_KEY);
   } catch {
     // Nothing was remembered that could be.
   }

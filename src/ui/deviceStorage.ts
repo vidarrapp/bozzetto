@@ -61,7 +61,8 @@ function readChoice(): DeviceChoice {
 }
 
 let choice: DeviceChoice = readChoice();
-type Listener = (choice: DeviceChoice) => void;
+/** `previous` is what the choice was: 'none' means nobody had answered yet. */
+type Listener = (choice: DeviceChoice, previous: DeviceChoice) => void;
 const listeners = new Set<Listener>();
 
 export function deviceChoice(): DeviceChoice {
@@ -81,10 +82,11 @@ export function onDeviceChoice(fn: Listener): () => void {
 
 function set(next: DeviceChoice): void {
   if (next === choice) return;
+  const previous = choice;
   choice = next;
   for (const fn of [...listeners]) {
     try {
-      fn(choice);
+      fn(choice, previous);
     } catch (err) {
       console.error(err);
     }
@@ -157,5 +159,9 @@ export const deviceStore = {
   },
   remove(key: string): void {
     if (mayStore()) localStorage.removeItem(key);
+  },
+  /** Let go of something this device holds, whatever the choice: only for a sign-in being ended. */
+  forget(key: string): void {
+    localStorage.removeItem(key);
   },
 };

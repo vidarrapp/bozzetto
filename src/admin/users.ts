@@ -2,6 +2,7 @@ import { ApiError, ownerCall } from './api';
 import { asOwner, failureSentence, ownerSignInPanel } from './ownerSession';
 import { dayOf, momentOf, sizeOfText, sizeText } from '../net/account';
 import { Say, button, el } from '../ui/account/parts';
+import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 
 /**
  * The Users tab (docs/accounts.md §8): the accounts, newest first, 50 a
@@ -78,8 +79,6 @@ export const usersApi = {
   setRole: (id: string, role: 'member' | 'moderator') => ownerCall<UserDetail>(one(id, 'role'), 'POST', { role }),
   finishDeletion: (id: string) => ownerCall<{ done: boolean; remaining: number }>(one(id, 'finish-deletion'), 'POST'),
 };
-
-const ROLE_WORDS: Record<UserView['role'], string> = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
 const STATUS_WORDS: Record<UserStatus, string> = { active: 'active', suspended: 'suspended', deleting: 'being deleted' };
 
@@ -193,7 +192,6 @@ class Account {
   private readonly reserved = el('span', 'storage-meter__reserved');
   private readonly usage = el('span', 'admin-row__meta admin-user__usage');
   private readonly manage = button('Manage', 'btn admin-user__manage');
-  private readonly roleCol = el('span', 'admin-row__meta admin-user__rolecol');
   private readonly roleAction = button('Make moderator', 'btn admin-user__setrole');
   private readonly roleSay = new Say();
   private readonly detail = el('div', 'admin-user__detail');
@@ -211,7 +209,7 @@ class Account {
     this.bar.append(this.used, this.reserved);
     main.append(this.title, this.meta, this.bar, this.usage);
     const actions = el('div', 'admin-row__actions');
-    actions.append(this.roleCol, this.roleAction, this.manage);
+    actions.append(this.roleAction, this.manage);
     this.row.append(main, actions);
     this.detail.hidden = true;
     this.roleSay.root.classList.add('admin-user__rolesay');
@@ -233,21 +231,25 @@ class Account {
     this.title.replaceChildren(`@${u.handle}`);
     if (u.role !== 'member') this.title.append(' ', el('span', 'badge admin-user__role', u.role));
     if (u.status !== 'active') this.title.append(' ', el('span', 'badge admin-user__status', STATUS_WORDS[u.status]));
-    const seen = u.lastSeenAt === null ? 'never signed in' : `last seen ${momentOf(u.lastSeenAt)}`;
-    this.meta.textContent = `${u.email} · joined ${dayOf(u.createdAt)} · ${seen} · ${plural(u.projects, 'project')}`;
+    fillMeta(this.meta, [
+      metaValue(u.email),
+      metaPhrase(`joined ${dayOf(u.createdAt)}`),
+      metaPhrase(u.lastSeenAt === null ? 'never signed in' : `last seen ${momentOf(u.lastSeenAt)}`),
+      metaValue(plural(u.projects, 'project')),
+    ]);
     const quota = Math.max(1, u.quotaBytes);
     const usedPct = Math.min(100, (u.bytesUsed / quota) * 100);
     this.used.style.width = `${usedPct}%`;
     this.reserved.style.width = `${Math.min(100 - usedPct, (u.reserved / quota) * 100)}%`;
-    let text = `${sizeOfText(u.bytesUsed, u.quotaBytes)} used`;
-    if (u.reserved > 0) text += ` · ${sizeText(u.reserved)} held by uploads in progress`;
-    this.usage.textContent = text;
+    const used = `${sizeOfText(u.bytesUsed, u.quotaBytes)} used`;
+    const held = u.reserved > 0 ? `${sizeText(u.reserved)} held by uploads in progress` : '';
+    const text = held ? `${used}, ${held}` : used;
+    fillMeta(this.usage, [metaValue(used), held ? metaPhrase(held) : null]);
     this.bar.setAttribute('aria-valuemin', '0');
     this.bar.setAttribute('aria-valuemax', String(u.quotaBytes));
     this.bar.setAttribute('aria-valuenow', String(Math.min(u.bytesUsed + u.reserved, u.quotaBytes)));
     this.bar.setAttribute('aria-valuetext', text);
     this.root.dataset.role = u.role;
-    this.roleCol.textContent = ROLE_WORDS[u.role];
     // The owner's role never changes; only an active account is made a
     // moderator, while a moderator is made a member whatever its status.
     const to = this.nextRole;
@@ -340,11 +342,11 @@ class Account {
   }
 
   private drawDetail(u: UserDetail): void {
-    const facts = el(
-      'p',
-      'admin-row__meta admin-user__facts',
-      `${plural(u.passkeys, 'passkey')} · ${u.sessions === 0 ? 'signed in nowhere' : `signed in on ${plural(u.sessions, 'session')}`} · ${u.id}`,
-    );
+    const facts = fillMeta(el('p', 'admin-row__meta admin-user__facts'), [
+      metaValue(plural(u.passkeys, 'passkey')),
+      metaPhrase(u.sessions === 0 ? 'signed in nowhere' : `signed in on ${plural(u.sessions, 'session')}`),
+      metaValue(u.id),
+    ]);
     const parts: HTMLElement[] = [facts];
     if (u.status === 'suspended') {
       parts.push(el('p', 'admin-user__why', u.suspendedReason ? `Suspended: ${u.suspendedReason}` : 'Suspended.'));

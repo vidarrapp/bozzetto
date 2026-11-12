@@ -12,6 +12,7 @@ import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
 import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
+import { requireSaving } from '../ui/deviceChoice';
 import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
@@ -1357,12 +1358,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       statusToast('Sending to Sculpt...').fail(err.message);
       return;
     }
-    // The figure crosses to Sculpt through the device's storage, which is
-    // shut while saving is off.
-    if (!mayStore()) {
-      statusToast('Sending to Sculpt...').fail('Saving is off, so the figure cannot be sent to Sculpt. Turn on Keep work on this device in Edit > Preferences.');
-      return;
-    }
+    // The figure crosses to Sculpt through the device's storage, so it needs saving on.
+    if (!(await requireSaving('Send to Sculpt needs to keep the figure on this device.'))) return;
     await saveHandoff({
       v: 1,
       name: 'Figure',

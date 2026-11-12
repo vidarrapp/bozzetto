@@ -145,7 +145,10 @@ files only; it does not extend to the rest of Bozzetto.
 ### Uicons by Flaticon
 
 `@flaticon/flaticon-uicons` 3.3.1, <https://www.flaticon.com/uicons>: the
-sculpt toolbar's icon font (solid straight). Also
+interface's icon font (solid straight). The app ships a subset of it with
+only the glyphs it uses (`src/assets/icons/`, made by
+`scripts/build-icon-subset.py`; the outlines are unchanged), and the npm
+package is a development dependency only, read by that script. Also
 `src/sculpt/ui/icons/flatten.svg`, Flaticon's "scraper" icon (19010200).
 Used under the Flaticon License, free of charge with attribution:
 
@@ -695,11 +698,10 @@ THE SOFTWARE.
 
 ## Fonts
 
-Familjen Grotesk and Martian Mono (from the Gestalt v2 design system), and
-Instrument Serif, JetBrains Mono and Manrope (the last three no longer used,
-to be removed), in `public/assets/fonts/`, are
-under the SIL Open Font License 1.1. Each font's copyright line and the full
-licence are in `public/assets/fonts/licenses/`, which ships beside the fonts.
+Familjen Grotesk and Martian Mono (from the Gestalt v2 design system), in
+`public/assets/fonts/`, are under the SIL Open Font License 1.1. Each font's
+copyright line and the full licence are in `public/assets/fonts/licenses/`,
+which ships beside the fonts.
 
 ## Models and images
 

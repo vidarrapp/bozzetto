@@ -12,7 +12,7 @@ import { deviceStore } from '../deviceStorage';
  * public, hidden), and the line under it says where it stands:
  *
  * - Pending review: sent, waiting for a reviewer.
- * - Public · Community: approved, listed, with a link to it in the viewer.
+ * - Public in Community: approved, listed, with a link to it in the viewer.
  * - Rejected: <reason> (the switch is off: ticking it shares it again).
  * - Hidden, under review: a reviewer hid it, or two members reported it.
  *   It cannot be shared again until a reviewer has acted; unticking
@@ -93,7 +93,7 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
     status.hidden = s === 'none';
     if (s === 'pending') status.textContent = 'Pending review';
     else if (s === 'public') {
-      const a = el('a', 'card__share-link', 'Public · Community');
+      const a = el('a', 'card__share-link', 'Public in Community');
       a.href = `/?tl=${encodeURIComponent(p.id)}`;
       status.append(a);
     } else if (s === 'rejected') {

@@ -159,11 +159,6 @@ export default defineConfig(({ mode }) => {
           '**/*.{js,css,html,svg,woff2}',
           'icons/**/*.png',
           'assets/**/*.png',
-          // The four UI typefaces (~0.5 MB). Without them an offline open
-          // falls back to system fonts unless the HTTP cache happens to
-          // still hold them - the one visible difference between the
-          // installed app online and offline.
-          'assets/fonts/*.ttf',
           // The models and the default environment, from the first install
           // (owner request): the base-mesh library (about 9.8 MB over 28
           // files), the four mannequins (4 MB) and the Neutral studio HDRI
@@ -469,6 +464,10 @@ export default defineConfig(({ mode }) => {
     target: 'es2020',
     sourcemap: true,
     outDir: 'dist',
+    // A font is always a file of its own and never a data: URI in the CSS:
+    // the site's policy says font-src 'self' (public/_headers). The icon
+    // subset is small enough (about 2 KB) that Vite would inline it.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
     rolldownOptions: {
       input: {
         main: `${root}index.html`,

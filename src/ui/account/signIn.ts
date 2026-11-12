@@ -44,6 +44,7 @@ import type {
 import { statusToast } from '../../sculpt/ui/statusToast';
 import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink, linkButton, termsBox } from './parts';
 import type { AccountLink } from './links';
+import { requireSaving } from '../deviceChoice';
 
 /**
  * The sign-in dialog (docs/accounts.md §7). Signing in is a dialog over
@@ -74,6 +75,9 @@ export interface SignInOptions {
   reason?: string;
 }
 
+/** Why the device question comes first when a sign-in starts with saving off. */
+const SIGN_IN_NEEDS_SAVING = 'Signing in keeps you signed in on this device.';
+
 /** Passkey options last five minutes on the server; asked again before then. */
 const OPTIONS_FRESH_MS = 4 * 60 * 1000;
 
@@ -85,9 +89,12 @@ let current: Promise<Me | null> | null = null;
  * while open, the same answer comes back.
  */
 export function openSignIn(opts: SignInOptions = {}): Promise<Me | null> {
-  current ??= new Dialog().signIn(opts).finally(() => {
-    current = null;
-  });
+  // A sign-in is kept on this device, so it needs saving on: asked first when it is off.
+  current ??= requireSaving(SIGN_IN_NEEDS_SAVING)
+    .then((ok) => (ok ? new Dialog().signIn(opts) : null))
+    .finally(() => {
+      current = null;
+    });
   return current;
 }
 
@@ -124,6 +131,7 @@ export async function openAccountLink(link: AccountLink): Promise<Me | null> {
     return openSignIn();
   }
   if (link.kind === 'join') return openSignIn({ view: 'join' });
+  if (!(await requireSaving(SIGN_IN_NEEDS_SAVING))) return null;
   return new Dialog().link(link.token);
 }
 
@@ -250,13 +258,16 @@ class Dialog {
     const bot = this.bot(botHost, 'email-code');
     void bot.start().catch((err: unknown) => say.error(err));
 
+    // The email field first, then the ways on: the passkey, then the code.
     const before: HTMLElement[] = [];
     const after: HTMLElement[] = [];
+    let passkeyButton: HTMLButtonElement | null = null;
     if (passkeys) {
-      const passkeyButton = button('Use a passkey', 'btn btn--primary account-passkey');
-      // The handle, asked for once the browser has offered no passkey.
+      passkeyButton = button('Use a passkey', 'btn btn--primary account-passkey');
+      // The handle, asked for once the browser has offered no passkey; a form
+      // of its own, so it sits beside the sign-in form and not inside it.
       const retry = el('form', 'account-step account-retry');
-      before.push(passkeyButton, retry, el('p', 'account-or', 'or'));
+      after.push(retry);
       this.passkeySignIn(passkeyButton, retry, address, say, { autofill: true });
     } else {
       const why = noPasskeysWhy(this.config);
@@ -264,13 +275,15 @@ class Dialog {
     }
     const actions = el('div', 'account-actions');
     actions.append(codeButton);
-    form.append(field('Email', address), botHost, actions, say.root);
+    form.append(field('Email', address));
+    if (passkeyButton) form.append(passkeyButton);
+    form.append(actions, botHost, say.root);
     const join = linkButton('Join with an invite');
     join.addEventListener('click', () => this.showJoin());
     const foot = el('p', 'account-foot');
     foot.append('New here? ', join);
     this.step('Sign in', ...before, form, ...after, foot);
-    (codeFirst ? address : (before.find((p) => p instanceof HTMLButtonElement) ?? address)).focus();
+    (codeFirst ? address : (passkeyButton ?? address)).focus();
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -575,7 +588,12 @@ class Dialog {
     }
 
     const handle = new HandleField('Handle');
-    const address = input('email', 'email', { autocomplete: 'email', autocapitalize: 'none', spellcheck: 'false' });
+    const address = input('email', 'email', {
+      autocomplete: 'email',
+      autocapitalize: 'none',
+      spellcheck: 'false',
+      placeholder: 'you@example.com',
+    });
     const terms = termsBox();
     const privacy = el('p', 'account-small');
     privacy.append('What is kept, and why: the ', legalLink('privacy notice', LEGAL.privacy), '.');

@@ -10,13 +10,15 @@
 // same tab does not ask again, a new context does). The "Not saved" note
 // shows in Sculpt and fits at 390px, and Preferences has the switch.
 // Each gets (page, base, t).
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSculpt } from './lib.mjs';
 
 const LIME = 'rgb(198, 255, 0)';
-const RED = 'rgb(255, 64, 96)';
+const RED = 'rgb(171, 0, 0)';
 const BLACK = 'rgb(0, 0, 0)';
+const WHITE = 'rgb(255, 255, 255)';
 /** Set E2E_SHOTS to a folder to keep the screenshots the window and the note are checked by. */
 const SHOTS = process.env.E2E_SHOTS ?? '';
 const shot = async (page, name) => {
@@ -202,7 +204,7 @@ export const suites = {
         /will not be saved while you sculpt/.test(w.text) && /gone when you close or reload/.test(w.text) && /not work offline/.test(w.text) && /settings will not be remembered/.test(w.text),
         `the second question's words (${w.text})`,
       );
-      t.ok(w.off.bg === RED && w.off.color === BLACK, `Turn saving off is filled red with the design system's label (${w.off.bg}, ${w.off.color})`);
+      t.ok(w.off.bg === RED && w.off.color === WHITE, `Turn saving off is filled red with a white label (${w.off.bg}, ${w.off.color})`);
       t.ok(/btn--danger/.test(await p.getAttribute('.bz-device-off', 'class')), 'with btn--danger');
       t.ok(w.back.bg === 'rgb(58, 58, 58)', 'Go back is grey');
       await shot(p, 'second-question-desktop');
@@ -423,6 +425,126 @@ export const suites = {
       await sculptReady(p);
       await p.waitForTimeout(800);
       t.near(await meshSum(p), sum, 1e-3, 'accepted, the earlier autosave is still there');
+    });
+
+    // ---- Create and Present (the workspace), asked before it boots; the note is in its strip ----
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      await p.waitForTimeout(500);
+      t.eq((await windowState(p)).title, 'Keep your work on this device?', '/create/ asks first');
+      t.eq(await p.locator('.bz-strip').count(), 0, 'and the workspace has not booted under the question');
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0, `with nothing written while it waits (${JSON.stringify(held)})`);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-off');
+      await p.waitForSelector('.bz-strip', { timeout: 60_000 });
+      await p.waitForTimeout(800);
+      const note = await noteShown(p);
+      t.ok(note && note.visible && note.inStrip && note.inView && note.clearOfHide, `the Present workspace's strip says Not saved (${JSON.stringify(note)})`);
+      const off = await device(p);
+      t.ok(off.local.length === 0 && off.dbs.length === 0 && off.workers === 0 && off.caches.length === 0, `and nothing is on the device (${JSON.stringify(off)})`);
+    });
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/?tl=demo&present=1`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      t.eq((await windowState(p)).title, 'Keep your work on this device?', 'Present (/?tl=<id>&present=1) asks first');
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0, 'with nothing written while it waits');
+    });
+
+    // ---- Armature, declined: the note, and no write ----
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-off');
+      await p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+      await p.waitForTimeout(800);
+      const note = await noteShown(p);
+      t.ok(note && note.text === 'Not saved' && note.visible && note.inStrip && note.inView && note.clearOfHide, `Armature's strip says Not saved (${JSON.stringify(note)})`);
+      await p.evaluate(() => window.__armature.save());
+      await p.evaluate(() => window.__armature.snapshot());
+      await p.waitForTimeout(500);
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0 && held.caches.length === 0, `Armature wrote nothing while declined (${JSON.stringify(held)})`);
+    });
+
+    // ---- Settings changed while off are kept, and written, when saving is turned on ----
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-off');
+      await sculptReady(p);
+      await p.waitForTimeout(800);
+      await p.keyboard.press('Control+Comma');
+      await p.locator('[data-setting="interactionLook"] .prefs__choice', { hasText: 'Full look' }).click();
+      t.eq(await p.evaluate(() => localStorage.getItem('bozzetto-settings')), null, 'a setting changed while off is not written');
+      await p.locator('[data-setting="keepOnDevice"] input').click();
+      const stored = await p.evaluate(() => JSON.parse(localStorage.getItem('bozzetto-settings') ?? '{}'));
+      t.eq(stored.interactionLook, 'full', 'turning saving on writes what is on screen');
+      t.ok(await p.locator('[data-setting="interactionLook"] input[value="full"]').isChecked(), 'and the screen still shows it');
+    });
+
+    // ---- Import OBJ and Send to Sculpt need saving on: the question again, then the action goes on ----
+    await inContext(page, DESKTOP, t, async (p, ctx) => {
+      const dir = mkdtempSync(join(tmpdir(), 'bozzetto-obj-'));
+      const obj = join(dir, 'Tetra piece.obj');
+      writeFileSync(obj, ['v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1', 'f 1 3 2', 'f 1 2 4', 'f 1 4 3', 'f 2 3 4', ''].join('\n'));
+      const pickObj = async () => {
+        await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+        await p.click('#landing-grid .card--new');
+        await p.setInputFiles('.create-overlay .create-obj-input', obj);
+      };
+      await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-off');
+      await pickObj();
+      await waitWindow(p);
+      t.eq(await p.textContent('.bz-device__why'), 'Import OBJ needs to keep the file on this device.', 'Import OBJ with saving off asks the question again, with the reason');
+      t.eq((await windowState(p)).title, 'Keep your work on this device?', 'as the first question');
+      await p.keyboard.press('Escape');
+      t.ok((await p.locator('.bz-device').count()) === 0 && new URL(p.url()).searchParams.get('sculpt') === null, 'Esc cancels the import');
+      await p.reload({ waitUntil: 'domcontentloaded' });
+      await pickObj();
+      await waitWindow(p);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-back');
+      t.ok((await p.locator('.bz-device').count()) === 0 && (await device(p)).local.length === 0, 'Go back cancels it and saving stays off');
+      await p.reload({ waitUntil: 'domcontentloaded' });
+      await pickObj();
+      await waitWindow(p);
+      await p.click('.bz-device-keep');
+      await p.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 30_000 });
+      await sculptReady(p);
+      const names = await p.evaluate(() => window.__sculpt.session.getMeshes().map((m) => window.__sculpt.session.getMeshName(m)));
+      t.eq(JSON.stringify(names), '["Tetra piece"]', 'Keep on this device turns saving on and the OBJ opens in Sculpt, without picking it again');
+      t.eq(await p.evaluate(() => localStorage.getItem('bozzetto-device-choice')), 'keep', 'and saving is on');
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
+      await waitWindow(p);
+      await p.click('.bz-device-decline');
+      await p.click('.bz-device-off');
+      await p.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+      await p.waitForTimeout(800);
+      void p.evaluate(() => window.__armature.send(64));
+      await waitWindow(p);
+      t.eq(await p.textContent('.bz-device__why'), 'Send to Sculpt needs to keep the figure on this device.', 'Send to Sculpt with saving off asks the question again, with the reason');
+      await p.keyboard.press('Escape');
+      await p.waitForTimeout(500);
+      t.ok((await p.locator('.bz-device').count()) === 0 && new URL(p.url()).searchParams.get('sculpt') === null, 'Esc cancels it');
+      void p.evaluate(() => window.__armature.send(64));
+      await waitWindow(p);
+      await p.click('.bz-device-keep');
+      await p.waitForURL((u) => u.searchParams.get('sculpt') === '1', { timeout: 60_000 });
+      await sculptReady(p);
+      await p.waitForTimeout(800);
+      const meshes = await p.evaluate(() => window.__sculpt.session.getMeshes().length);
+      t.ok(meshes >= 1, `Keep on this device sends the figure, and it arrives in Sculpt (${meshes} object)`);
     });
   },
 };

@@ -125,7 +125,7 @@ async function main(): Promise<void> {
           const box = overlay?.querySelector<HTMLElement>('.overlay__msg');
           if (box) box.textContent = msg;
         };
-        if (await openPresent(id, viewport, setStatus)) {
+        if (await openPresent(id, viewport, setStatus, params.get('tab'))) {
           overlay?.remove();
           return;
         }

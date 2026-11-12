@@ -6,21 +6,9 @@ import { installSwatchPick } from './swatchPick';
 import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
-import { chordLabel, keyedLabel, keymap } from './keymap';
+import { keyedLabel } from './keymap';
 
 export interface PanelOptions {
-  /** Editor variant: full lighting controls + an in-panel timeline. */
-  editor?: boolean;
-  /** Editor-only content pinned at the very top of the body (e.g. Save look). */
-  actions?: HTMLElement;
-  /**
-   * Open the hotkey guide: an Interface section at the foot of the body
-   * gets a Hotkeys button for it, the way in where there is no title strip
-   * (the Create page, the old admin preview). Where the strip is, its Help
-   * menu, Hotkeys and the H key are the ways in, and the section is left
-   * out (or taken away when the strip arrives: see TitleStrip).
-   */
-  onHotkeys?: () => void;
   /**
    * The handle of the member whose work this is, for a project from the
    * Community (docs/accounts.md §13): "by @handle" under the title, a link
@@ -45,8 +33,7 @@ export interface PanelOptions {
 /**
  * Side control panel. The viewer variant is minimal (starts collapsed; Material,
  * a trimmed Lighting of rotate-rig + ground, View) — the timeline lives in the
- * bottom Transport and the theme toggle is global. The editor variant adds the
- * full lighting rig and an in-panel timeline. Keyboard shortcuts live in
+ * bottom Transport and the theme toggle is global. Keyboard shortcuts live in
  * installShortcuts, which calls refreshControls() here; Tab's close-all reaches it
  * as PANEL_CLOSE_ALL_EVENT (ChromeToggle).
  */
@@ -58,7 +45,6 @@ export class Panel {
   private titleEl!: HTMLSpanElement;
   /** "by @handle" under the title, for a member's work from the Community. */
   private bylineEl: HTMLAnchorElement | null = null;
-  private readonly editor: boolean;
   /** The whole look shown in a viewer panel (PanelOptions.fullLook). */
   private readonly fullLook: boolean;
   private collapsed = false;
@@ -128,12 +114,10 @@ export class Panel {
     // shadows, AO) and restores a saved look on top of it, all after this
     // panel was built - so rebuild rather than trying to re-sync by hand.
     this.buildBody();
-    if (!this.editor) {
-      this.titleEl.textContent = this.sculpting
-        ? 'Render'
-        : this.viewer.manifest.title || 'Bozzetto';
-      if (this.bylineEl) this.bylineEl.hidden = this.sculpting;
-    }
+    this.titleEl.textContent = this.sculpting
+      ? 'Render'
+      : this.viewer.manifest.title || 'Bozzetto';
+    if (this.bylineEl) this.bylineEl.hidden = this.sculpting;
   };
 
   /**
@@ -180,8 +164,6 @@ export class Panel {
     if (this.lightToggles) this.lightToggles.hidden = active;
     if (active) this.rebuildLightControls();
   }
-  private readonly actions?: HTMLElement;
-  private readonly onHotkeys?: () => void;
   private albedoPicker?: ColorPickerHandle;
   /** One HSV picker style across the app (owner call): these replace the
    *  browser's RGB boxes for the background, the stage surface and each
@@ -197,27 +179,17 @@ export class Panel {
   private lightControls?: HTMLDivElement;
   private lightToggles?: HTMLDivElement;
 
-  private scrubber?: HTMLInputElement;
-  private playButton?: HTMLButtonElement;
-  private stageName?: HTMLSpanElement;
-  private stageDesc?: HTMLSpanElement;
-  private frameLabel?: HTMLSpanElement;
-
   constructor(
     private readonly viewer: Viewer,
     options: PanelOptions = {},
   ) {
-    this.editor = options.editor ?? false;
-    this.fullLook = (options.fullLook ?? false) && !this.editor;
+    this.fullLook = options.fullLook ?? false;
 
     // panel--render names it for the stylesheet: Present mode keeps this
     // panel and hides the rest.
     this.root = div('panel panel--render');
     // Its name, whatever the heading says (the viewer's title, in the viewer).
     this.root.dataset.panel = 'Render';
-    // Editor panel runs full-height (like the sidebar); the viewer panel stays
-    // content-sized and leaves room for the transport bar at the bottom.
-    if (this.editor) this.root.classList.add('panel--editor');
     document.body.appendChild(this.root);
 
     // Edge handle: always visible, doubles as the collapse/expand toggle so the
@@ -248,7 +220,7 @@ export class Panel {
     // swaps it for the panel's own name, since the synthetic sculpt
     // manifest is titled "Sculpt" and would sit right above the Sculpt
     // palette (onSculptMode below).
-    title.textContent = this.editor || this.fullLook || options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
+    title.textContent = this.fullLook || options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
       this.setCollapsed(true);
@@ -257,7 +229,7 @@ export class Panel {
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
     closeBtn.setAttribute('aria-label', 'Hide render panel');
-    if (options.author && !this.editor && !this.fullLook && !options.shell) {
+    if (options.author && !this.fullLook && !options.shell) {
       // The title and, under it, who made it: a member's work from the
       // Community. Hidden while sculpting, when the title is the panel's.
       const heading = div('panel__heading');
@@ -276,8 +248,8 @@ export class Panel {
     this.bodyEl = div('panel__body');
     this.root.appendChild(this.bodyEl);
 
-    // Viewer starts collapsed (slid out) for a minimal default; editor open.
-    this.collapsed = !this.editor;
+    // Starts collapsed (slid out) for a minimal default.
+    this.collapsed = true;
     this.applyCollapsed();
 
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
@@ -287,8 +259,6 @@ export class Panel {
     window.addEventListener('bozzetto:panel-set', this.onPanelSet);
     window.addEventListener('bozzetto:present', this.onPresent);
 
-    this.actions = options.actions;
-    this.onHotkeys = options.onHotkeys;
     this.buildBody();
   }
 
@@ -300,27 +270,20 @@ export class Panel {
    */
   private buildBody(): void {
     this.bodyEl.replaceChildren();
-    if (this.actions) this.bodyEl.appendChild(this.actions);
-    if (this.editor) this.buildTimeline(this.bodyEl);
     this.buildMaterial(this.bodyEl);
     this.buildLighting(this.bodyEl);
-    if (this.editor) this.buildCamera(this.bodyEl);
-    this.buildDoF(this.bodyEl); // viewer + editor
+    this.buildDoF(this.bodyEl);
     // The viewer builds the look-dev sections too, hidden until sculpt mode
-    // announces itself - the editor shows them outright.
+    // announces itself.
     const lookDevFrom = this.bodyEl.childElementCount;
-    if (!this.editor) this.buildCamera(this.bodyEl);
+    this.buildCamera(this.bodyEl);
     this.buildEnvironment(this.bodyEl);
     this.buildAOSection(this.bodyEl);
-    if (!this.editor) {
-      this.lookDevSections = [...this.bodyEl.children]
-        .slice(lookDevFrom)
-        .filter((el): el is HTMLElement => el instanceof HTMLElement);
-      for (const sec of this.lookDevSections) sec.hidden = true;
-    }
+    this.lookDevSections = [...this.bodyEl.children]
+      .slice(lookDevFrom)
+      .filter((el): el is HTMLElement => el instanceof HTMLElement);
+    for (const sec of this.lookDevSections) sec.hidden = true;
     if (devMode()) this.buildDeveloper(this.bodyEl);
-    // The strip may be up already (the viewer builds its frame first).
-    if (this.onHotkeys && !document.body.classList.contains('bz-shell')) this.buildInterface(this.bodyEl, this.onHotkeys);
     if (this.sculpting || this.fullLook) this.applySculptVisibility();
     this.refreshControls();
   }
@@ -541,73 +504,6 @@ export class Panel {
     this.root.remove();
   }
 
-  // --- interface --------------------------------------------------------
-
-  /** The hotkey guide's button: what H opens, for a hand with no keyboard under it. */
-  private buildInterface(body: HTMLElement, open: () => void): void {
-    const sec = section(body, 'Interface');
-    sec.classList.add('section--interface');
-    const hotkeys = button('Hotkeys', open);
-    hotkeys.className = 'btn btn--small panel__hotkeys';
-    const key = keymap.chordFor('ui.help');
-    hotkeys.title = key ? `Hotkey guide (${chordLabel(key)})` : 'Hotkey guide';
-    sec.appendChild(hotkeys);
-  }
-
-  // --- timeline (editor only) -------------------------------------------
-
-  private buildTimeline(body: HTMLElement): void {
-    const timeline = section(body, 'Timeline');
-
-    this.stageName = document.createElement('span');
-    this.stageName.className = 'stage__name';
-    this.stageDesc = document.createElement('span');
-    this.stageDesc.className = 'stage__desc';
-    const stageRow = div('stage');
-    stageRow.append(this.stageName, this.stageDesc);
-    timeline.appendChild(stageRow);
-
-    this.scrubber = document.createElement('input');
-    this.scrubber.type = 'range';
-    this.scrubber.min = '0';
-    this.scrubber.max = String(this.viewer.manifest.config.frameCount - 1);
-    this.scrubber.step = '1';
-    this.scrubber.value = String(this.viewer.manifest.defaults.frame);
-    this.scrubber.className = 'scrubber';
-    this.scrubber.addEventListener('input', () =>
-      this.viewer.scrubTo(Number(this.scrubber!.value)),
-    );
-    timeline.appendChild(this.scrubber);
-
-    this.frameLabel = document.createElement('span');
-    this.frameLabel.className = 'frame-label';
-    timeline.appendChild(this.frameLabel);
-
-    const transport = div('row');
-    this.playButton = button('Pause', () => this.viewer.togglePlay());
-    transport.appendChild(this.playButton);
-    timeline.appendChild(transport);
-
-    this.viewer.onFrame = (ordinal) => this.syncFrame(ordinal);
-    this.viewer.onPlayStateChange = (playing) => this.setPlay(playing);
-    this.syncFrame(this.viewer.manifest.defaults.frame);
-    this.setPlay(this.viewer.timeline.playing);
-  }
-
-  private syncFrame(ordinal: number): void {
-    if (this.scrubber) this.scrubber.value = String(ordinal);
-    if (this.frameLabel) {
-      this.frameLabel.textContent = `Frame ${ordinal + 1} / ${this.viewer.manifest.config.frameCount}`;
-    }
-    const stage = this.viewer.timeline.stageAt(ordinal);
-    if (this.stageName) this.stageName.textContent = stage ? stage.name : '';
-    if (this.stageDesc) this.stageDesc.textContent = stage ? stage.desc : '';
-  }
-
-  private setPlay(playing: boolean): void {
-    if (this.playButton) this.playButton.textContent = playing ? 'Pause' : 'Play';
-  }
-
   // --- material ---------------------------------------------------------
 
   private buildMaterial(body: HTMLElement): void {
@@ -787,24 +683,14 @@ export class Panel {
     this.shadowsCheckbox = shadows.querySelector('input')!;
     lighting.appendChild(shadows);
 
-    if (this.editor) {
-      // Editor keeps the full rig: intensity, angles, colour, per-light shadows.
-      this.lightControls = div('light-controls');
-      lighting.appendChild(this.lightControls);
-      this.rebuildLightControls();
-    } else {
-      // Viewer builds BOTH: the simple toggles for playback, and the full rig
-      // for sculpt mode, swapped by onSculptMode.
-      this.lightControls = div('light-controls');
-      this.lightControls.hidden = true;
-      lighting.appendChild(this.lightControls);
-    }
-    if (!this.editor) {
-      // Viewer gets just on/off toggles per light; advanced settings live in the editor.
-      this.lightToggles = div('light-toggles');
-      lighting.appendChild(this.lightToggles);
-      this.rebuildLightToggles();
-    }
+    // Builds BOTH: the simple toggles for playback, and the full rig for
+    // sculpt mode, swapped by applySculptVisibility.
+    this.lightControls = div('light-controls');
+    this.lightControls.hidden = true;
+    lighting.appendChild(this.lightControls);
+    this.lightToggles = div('light-toggles');
+    lighting.appendChild(this.lightToggles);
+    this.rebuildLightToggles();
 
     lighting.appendChild(
       labelled('Rotate rig', () => {

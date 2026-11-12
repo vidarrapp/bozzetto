@@ -2,7 +2,7 @@
 // armatureProjects.mjs's, shellPhone.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
-// profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's and framePresent.mjs's (which start the
+// profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -21,9 +21,12 @@ import { suites as brushCaps } from './brushCaps.mjs';
 import { suites as channelBox } from './channelBox.mjs';
 import { suites as clayTabPen } from './clayTabPen.mjs';
 import { suites as community } from './community.mjs';
+import { suites as contrast } from './contrast.mjs';
+import { suites as pages } from './pages.mjs';
 import { suites as deviceStorage } from './deviceStorage.mjs';
 import { suites as framePresent } from './framePresent.mjs';
 import { suites as hardening } from './hardening.mjs';
+import { suites as icons } from './icons.mjs';
 import { suites as help } from './help.mjs';
 import { suites as latency } from './latency.mjs';
 import { suites as loopMask } from './loopMask.mjs';
@@ -49,7 +52,7 @@ import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo, ...deviceStorage };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...pages, ...contrast, ...icons, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo, ...deviceStorage };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {
