@@ -2,6 +2,7 @@ import { ApiError, ownerCall } from './api';
 import { asOwner, failureSentence, ownerSignInPanel } from './ownerSession';
 import { dayOf } from '../net/account';
 import { Say, button, el } from '../ui/account/parts';
+import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 
 /**
  * The Invites tab (docs/accounts.md §8): make an invite link - a label for
@@ -212,7 +213,7 @@ function inviteRow(invite: Invite, list: HTMLElement): HTMLElement {
   row.dataset.invite = invite.id;
   row.dataset.state = invite.state;
   const main = el('div', 'admin-row__main');
-  main.append(el('span', 'admin-row__title', invite.label || 'Invite'), el('span', 'admin-row__meta', metaOf(invite)));
+  main.append(el('span', 'admin-row__title', invite.label || 'Invite'), metaOf(invite));
   const actions = el('div', 'admin-row__actions');
   const state = el('span', 'badge admin-invite__state', STATE_WORDS[invite.state]);
   actions.appendChild(state);
@@ -245,10 +246,8 @@ function inviteRow(invite: Invite, list: HTMLElement): HTMLElement {
   return row;
 }
 
-/** "1 of 2 used · made 7 October 2026 · until 21 October 2026", as it stands. */
-function metaOf(i: Invite): string {
-  const parts = [`${i.uses} of ${i.maxUses} used`, `made ${dayOf(i.createdAt)}`];
-  if (i.state === 'revoked' && i.revokedAt !== null) parts.push(`withdrawn ${dayOf(i.revokedAt)}`);
-  else parts.push(`${i.state === 'expired' ? 'ran out' : 'until'} ${dayOf(i.expiresAt)}`);
-  return parts.join(' · ');
+/** "1 of 2 used", "made 7 October 2026", "until 21 October 2026": the invite as it stands, a part each. */
+function metaOf(i: Invite): HTMLElement {
+  const end = i.state === 'revoked' && i.revokedAt !== null ? `withdrawn ${dayOf(i.revokedAt)}` : `${i.state === 'expired' ? 'ran out' : 'until'} ${dayOf(i.expiresAt)}`;
+  return fillMeta(el('span', 'admin-row__meta'), [metaValue(`${i.uses} of ${i.maxUses} used`), metaPhrase(`made ${dayOf(i.createdAt)}`), metaPhrase(end)]);
 }

@@ -216,7 +216,7 @@ async function call<T>(
       message =
         said === 'Cross-site request refused'
           ? 'The request was refused as coming from another site'
-          : 'Not authorized — sign in via Cloudflare Access.';
+          : 'Not authorized: sign in via Cloudflare Access.';
     }
     // The desktop reports "no server configured" as status 0; saying that is
     // more use than a generic failure.

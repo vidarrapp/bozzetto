@@ -6,12 +6,11 @@ import { entriesFromProject } from './frameStore';
 /**
  * Writing a changed sequence to a project on the site (the Frames tab's
  * part of the page's one Save). The site keeps frame N as the file at
- * place N, so a change is a matter of which places need a new file: a
- * frame that stays where it was needs none, one that is new or has moved
- * is uploaded to its place. The moved ones are read first (a place is
- * overwritten while another frame is still to be read from it), then
- * uploaded four at a time; the frame list in the same patch as the rest
- * of the save is what publishes them and drops the places past the end.
+ * place N, and frames are only added at the end or cleared, so a change is
+ * a matter of which places need a new file: a frame that stays where it
+ * was needs none, one that is new is uploaded to its place, four at a
+ * time; the frame list in the same patch as the rest of the save is what
+ * publishes them and drops the places past the end.
  */
 
 /** Whether the frame at place `i` is already the file the site has there. */
@@ -34,15 +33,11 @@ export async function uploadSequence(
   progress: (done: number, total: number) => void,
 ): Promise<number> {
   const places = items.map((f, i) => i).filter((i) => !inPlace(items[i], i));
-  // Read first what must be read from the site: its places may be written over below.
-  const bytes = new Map<number, ArrayBuffer>();
-  for (const i of places) bytes.set(i, await source.bytesOf(items[i]));
   let done = 0;
   progress(0, places.length);
   await runPool(
     places.map((i) => async () => {
-      await api.uploadFrame(id, i, bytes.get(i)!);
-      bytes.delete(i);
+      await api.uploadFrame(id, i, await source.bytesOf(items[i]));
       progress(++done, places.length);
     }),
     4,
@@ -60,8 +55,6 @@ export async function reseat(id: string, items: FrameItem[]): Promise<FrameItem[
   const now = entriesFromProject(fresh.frames ?? []);
   return items.map((f, i) => ({
     ...f,
-    // A frame named for its old place is named for its new one.
-    name: /^Frame \d+$/.test(f.name) ? `Frame ${i + 1}` : f.name,
     glb: null,
     bytes: 0,
     url: now[i]?.url ?? null,

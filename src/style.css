@@ -5443,10 +5443,6 @@ body.is-sampling * {
   max-width: calc(100vw - 150px);
 }
 
-.admin-user__rolecol {
-  min-width: 72px;
-}
-
 .admin-user__rolesay {
   padding: 0 12px 8px;
 }
@@ -7383,7 +7379,7 @@ progress {
 }
 
 /* A review row's lines: the title with its author, then one line of where
-   it stands, its parts parted by a dot. */
+   it stands, its parts a gap apart (.meta). */
 .review-card__head {
   color: var(--bz-text-2);
   font: 400 13px/16px var(--bz-font);
@@ -7399,31 +7395,14 @@ progress {
   color: var(--bz-text);
 }
 
-.review-card__meta > *,
-.page-grid .card__meta > * {
-  white-space: nowrap;
-}
-
-.review-card__meta > :not(:last-child)::after,
-.card--community .card__meta > :not(:last-child)::after {
-  content: '·';
-  margin: 0 8px;
-}
-
-.card--community .card__meta > :not(:last-child)::after {
-  margin: 0 6px;
-}
-
 /* Where one is red for what it says, it is still a line of the row's size. */
 .review-card[data-shared='hidden'] .review-card__state,
 .review-card[data-shared='rejected'] .review-card__state,
 .card__share[data-shared='rejected'] .card__share-status,
 .card__share[data-shared='hidden'] .card__share-status {
-  font-size: 11px;
+  font-size: 13px;
 }
 
-.review-card__reports,
-.review-card__own,
 .review-card__meta .card__stats {
   margin: 0;
   color: inherit;
@@ -7548,7 +7527,6 @@ progress {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0;
   color: var(--bz-text-2);
   font: 400 11px/16px var(--bz-font-mono);
 }
@@ -7659,11 +7637,17 @@ progress {
   font: 400 13px/16px var(--bz-font);
 }
 
-.card__share-status,
 .card__stats {
   margin: 0;
   color: var(--bz-text-2);
   font: 400 11px/16px var(--bz-font-mono);
+}
+
+/* Where a share stands is words, not a value. */
+.card__share-status {
+  margin: 0;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
 }
 
 .card__share[data-shared='public'] .card__share-status {
@@ -7675,7 +7659,7 @@ progress {
   padding-top: 0;
   border-top: 0;
   color: var(--bz-text-2);
-  font: 400 11px/16px var(--bz-font-mono);
+  font: 400 13px/16px var(--bz-font);
 }
 
 .card__actions .card__delete {
@@ -7684,10 +7668,6 @@ progress {
 
 .card--mine .card__body {
   flex: 1;
-}
-
-.page-grid .card--mine .card__meta {
-  display: block;
 }
 
 .card--mine .card__actions {
@@ -8098,5 +8078,104 @@ progress {
 
   .account-card {
     padding: 20px 16px 24px;
+  }
+}
+
+/* --- the pages' meta lines (ui/metaLine) ---
+   A line is parts, each its own inline item, one 12px gap between them and
+   no dot; a part wraps to the next line whole. A value (count, size, date,
+   id, handle, kind) is Martian Mono 11px; a phrase is Familjen Grotesk 13px,
+   both in the second text colour. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.meta__v,
+.meta__t {
+  min-width: 0;
+  color: var(--bz-text-2);
+  overflow-wrap: anywhere;
+}
+
+.meta__v {
+  font: 400 11px/16px var(--bz-font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.meta__t {
+  font: 400 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.meta .meta__kind {
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+/* A link, or a button made a link, that is a part keeps the part's face. */
+.meta__t a,
+.meta__t button,
+.meta__v a,
+.meta__v button {
+  font: inherit;
+}
+
+.review-report .review-report__note {
+  flex-basis: 100%;
+}
+
+.storage-meter__text.meta {
+  justify-content: flex-end;
+}
+
+/* The foot closes every page's column: the page above it gives up its
+   bottom padding, so the foot sits where it did inside the column. */
+.page--foot {
+  padding-top: 0;
+  padding-bottom: 48px;
+}
+
+.page:has(+ .page--foot) {
+  padding-bottom: 0;
+}
+
+.page--foot .landing__foot {
+  margin-top: 40px;
+}
+
+/* A project row on a phone: the switches on one line, the actions (and the
+   trash, at their right end) together on the next. */
+.admin-row__switches,
+.admin-row__buttons {
+  display: contents;
+}
+
+@media (max-width: 640px) {
+  .admin-row__actions:has(> .admin-row__switches) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-row__switches,
+  .admin-row__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+
+  .admin-row__buttons {
+    gap: 8px;
+  }
+
+  .admin-row__buttons .admin-row__delete {
+    margin-left: auto;
   }
 }

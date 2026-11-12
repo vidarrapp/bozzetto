@@ -9,6 +9,7 @@ import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { pageShell } from '../ui/pageShell';
 import { trashButton } from '../ui/trash';
+import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
 
@@ -317,9 +318,11 @@ async function refresh(listEl: HTMLElement): Promise<void> {
           <span class="admin-row__meta"></span>
         </div>
         <div class="admin-row__actions">
-          <label class="admin-row__vis">Private <input type="checkbox" /></label>
-          <label class="admin-row__tpl">Template <input type="checkbox" /></label>
-          ${actions}
+          <div class="admin-row__switches">
+            <label class="admin-row__vis">Private <input type="checkbox" /></label>
+            <label class="admin-row__tpl">Template <input type="checkbox" /></label>
+          </div>
+          <div class="admin-row__buttons">${actions}</div>
         </div>
       </div>`);
 
@@ -331,16 +334,18 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
     row.querySelector<HTMLElement>('.admin-row__kind')!.textContent = p.mode;
     row.querySelector<HTMLElement>('.admin-row__title')!.textContent = p.title || p.id;
-    row.querySelector<HTMLElement>('.admin-row__meta')!.textContent = scene
-      ? `${p.id} · ${
-          p.scene
-            ? `${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'} · ` +
-              `${p.scene.tris.toLocaleString('en-US')} tris · ${(p.scene.bytes / (1024 * 1024)).toFixed(1)} MB`
-            : 'upload did not finish'
-        }`
+    const facts = scene
+      ? p.scene
+        ? [
+            metaValue(`${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'}`),
+            metaValue(`${p.scene.tris.toLocaleString('en-US')} tris`),
+            metaValue(`${(p.scene.bytes / (1024 * 1024)).toFixed(1)} MB`),
+          ]
+        : [metaPhrase('upload did not finish')]
       : armature
-        ? `${p.id} · a posed figure`
-        : `${p.id} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
+        ? []
+        : [metaValue(`${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`)];
+    fillMeta(row.querySelector<HTMLElement>('.admin-row__meta')!, [metaValue(p.id), ...facts]);
 
     if (armature) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
@@ -428,7 +433,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     });
 
     const del = trashButton(`Delete ${p.title || p.id}`, 'admin-row__delete');
-    row.querySelector('.admin-row__actions')!.appendChild(del);
+    row.querySelector('.admin-row__buttons')!.appendChild(del);
     del.addEventListener('click', async () => {
       const question = scene
         ? `Delete "${p.title || p.id}"? It goes from Projects and from this device.`

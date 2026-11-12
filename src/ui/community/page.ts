@@ -12,9 +12,10 @@ import {
   type CommunityItem,
   type ListQuery,
 } from '../../net/community';
-import { legalFoot, setPicture } from '../Landing';
+import { setPicture } from '../Landing';
 import { pageShell } from '../pageShell';
 import { button, el } from '../account/parts';
+import { fillMeta, metaValue } from '../metaLine';
 import { starButton } from './star';
 
 /**
@@ -82,7 +83,6 @@ export async function renderCommunity(app: HTMLElement, handle: string | null = 
     const signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false }));
     shell.nav.fill(signIn, () => void renderCommunity(app, handle));
     me = signIn.me && signIn.me.status === 'active' ? signIn.me : null;
-    page.appendChild(legalFoot());
   } else {
     // No accounts, no members, and nothing anyone has shared.
     shell.nav.fill(null, () => undefined);
@@ -258,15 +258,18 @@ export function communityCard(
   const body = el('div', 'card__body');
   const title = el('a', 'card__title card__link', item.title || 'Untitled');
   title.href = href;
-  // The line under the title, as the board draws it: @author · timelapse · 3 Nov.
+  // The line under the title: @author, timelapse, 3 Nov, a part each.
   const meta = el('span', 'card__meta');
+  let by: HTMLAnchorElement | null = null;
   if (opts.showAuthor) {
-    const by = el('a', 'card__author', `@${item.author.handle}`);
+    by = el('a', 'card__author', `@${item.author.handle}`);
     by.href = authorHref(item.author.handle);
-    meta.append(by);
   }
-  meta.append(el('span', 'card__mode', MODE_LABEL[item.mode] ?? 'model'));
-  if (item.shared_at) meta.append(el('span', 'card__date', shortDayOf(item.shared_at)));
+  fillMeta(meta, [
+    by,
+    metaValue(MODE_LABEL[item.mode] ?? 'model', 'meta__kind card__mode'),
+    item.shared_at ? metaValue(shortDayOf(item.shared_at), 'card__date') : null,
+  ]);
   body.append(title, meta);
   card.append(thumb, body);
   if (item.thumb) setPicture(thumb, item.thumb);

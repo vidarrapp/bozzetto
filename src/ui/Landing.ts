@@ -25,7 +25,6 @@
  * members' shared work (`/?community`, §13). The foot links the legal pages.
  */
 
-import { APP_VERSION } from './version';
 import { div } from './dom';
 import {
   AuthExpiredError,
@@ -49,7 +48,7 @@ import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { markOpen, markOpenOnClick } from './openToken';
 import { accountChips } from './account/menu';
-import { LEGAL } from './account/parts';
+import { legalFoot } from './legalFoot';
 import { suspensionText } from '../net/account';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
@@ -196,25 +195,6 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   for (const p of projects.filter((p) => p.mode !== 'scene' && p.mode !== 'armature' && p.frameCount > 0)) {
     grid.appendChild(owner ? ownerCard(p) : card(p));
   }
-}
-
-/** The gallery's foot, with accounts on: the legal pages (docs/accounts.md §9). */
-export function legalFoot(): HTMLElement {
-  const foot = document.createElement('footer');
-  foot.className = 'landing__foot';
-  const link = (text: string, href: string): HTMLAnchorElement => {
-    const a = document.createElement('a');
-    a.href = href;
-    a.textContent = text;
-    return a;
-  };
-  foot.append(link('Privacy', LEGAL.privacy), link('Terms', LEGAL.terms), link('Report content', LEGAL.takedown));
-  // The build that is running (owner call), to tell a deploy has landed.
-  const version = document.createElement('span');
-  version.className = 'landing__version';
-  version.textContent = APP_VERSION;
-  foot.append(version);
-  return foot;
 }
 
 /**

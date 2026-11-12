@@ -17,9 +17,10 @@ import { pageShell, setTagline } from '../pageShell';
 import { rowMenu } from '../rowMenu';
 import { trashButton } from '../trash';
 import { Say, button, el } from './parts';
+import { fillMeta, metaKind, metaPhrase, metaValue, statsLine } from '../metaLine';
 import { shareControls } from '../community/share';
 import { communityCard } from '../community/page';
-import { starredPage, statsText } from '../../net/community';
+import { starredPage } from '../../net/community';
 
 /**
  * My projects (`/?me`, docs/accounts.md §7): the account's own work, with
@@ -315,9 +316,14 @@ class Meter {
     const taken = usage.used + usage.reserved;
     const full = taken >= usage.quota;
     let text = `${sizeOfText(usage.used, usage.quota)} used`;
-    if (usage.reserved > 0) text += ` · ${sizeText(usage.reserved)} held by an upload in progress`;
+    const held = usage.reserved > 0 ? `${sizeText(usage.reserved)} held by an upload in progress` : '';
+    if (held) text += `, ${held}`;
     if (full) text += '. Your storage is full: delete something to make room.';
-    this.line.textContent = text;
+    fillMeta(this.line, [
+      metaValue(`${sizeOfText(usage.used, usage.quota)} used`),
+      held ? metaPhrase(held) : null,
+      full ? metaPhrase('Your storage is full: delete something to make room.') : null,
+    ]);
     this.root.dataset.full = String(full);
     this.bar.setAttribute('aria-valuemin', '0');
     this.bar.setAttribute('aria-valuemax', String(usage.quota));
@@ -352,15 +358,16 @@ function openHref(p: ProjectSummary): string | null {
   return p.frameCount > 0 ? `/?tl=${encodeURIComponent(p.id)}` : null;
 }
 
-/** What is in it, for the card's line: objects for a scene, frames for the rest. */
-function contents(p: ProjectSummary): string {
+/** What is in it, for the card's line: objects for a scene, frames for the rest; a phrase where it is words. */
+function contents(p: ProjectSummary): HTMLElement | null {
   if (p.mode === 'scene') {
-    if (!p.scene) return 'upload did not finish';
-    return `${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'}`;
+    if (!p.scene) return metaPhrase('upload did not finish');
+    return metaValue(`${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'}`);
   }
-  if (p.mode === 'armature') return 'a posed figure, opens in Armature mode';
+  // An armature says nothing here: its kind label and its Open button say it.
+  if (p.mode === 'armature') return null;
   const n = Number(p.frameCount) || 0;
-  return n > 0 ? `${n} frame${n === 1 ? '' : 's'}` : 'no frames yet';
+  return n > 0 ? metaValue(`${n} frame${n === 1 ? '' : 's'}`) : metaPhrase('no frames yet');
 }
 
 /** A title made safe as a file name: the characters no system takes, gone. */
@@ -394,13 +401,12 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
   title.textContent = p.title || 'Untitled';
   const paintMeta = (): void => {
     // One part each, so a long line breaks between parts and not inside one.
-    const parts = [modeLabel(p), contents(p), sizeText(p.bytes ?? 0), shortDayOf(p.updated_at)];
-    meta.replaceChildren(...parts.flatMap((part, i) => [...(i ? [' · '] : []), el('span', '', part)]));
+    fillMeta(meta, [metaKind(modeLabel(p)), contents(p), metaValue(sizeText(p.bytes ?? 0)), metaValue(shortDayOf(p.updated_at))]);
   };
   paintMeta();
   // A shared one's views and stars in the Community: for its author alone,
   // under where it stands.
-  if (typeof p.views === 'number' && typeof p.stars === 'number') actions.before(el('span', 'card__stats', statsText(p.views, p.stars)));
+  if (typeof p.views === 'number' && typeof p.stars === 'number') actions.before(statsLine(p.views, p.stars));
 
   // Open: Sculpt for a scene, the viewer for the rest. Offline, only a
   // scene this device has a copy of can open (Sculpt falls back to it).

@@ -8,21 +8,16 @@ import { heldMegabytes, type FrameItem } from './frameStore';
  * The Frames tab of the Present workspace (present/): the sequence the
  * project plays, which the Create page and the owner's frame editor each
  * had a part of. Add frames (drop .obj or .glb files, or choose them),
- * see how many there are and what is held in memory, put them in order,
- * take one out, or clear the lot. Every change is the workspace's working
- * copy; saving it is the page's one Save.
+ * see how many there are and what is held in memory, or clear the lot.
+ * Every change is the workspace's working copy; saving it is the page's
+ * one Save.
  */
 
 export interface FramesHooks {
   /** Files were given (dropped or chosen); resolves when they are converted and in the list. */
   addFiles(files: File[], zUp: boolean): Promise<void>;
-  /** The frame at `from` goes to place `to`. */
-  move(from: number, to: number): void;
-  remove(at: number): void;
   /** Take every frame out of the list; the workspace asks first. */
   clear(): void;
-  /** A row was pressed: go to that frame. */
-  seek(at: number): void;
 }
 
 export class FramesPanel extends SidePanel {
@@ -43,11 +38,7 @@ export class FramesPanel extends SidePanel {
   private readonly progressLabel = document.createElement('span');
   private readonly warn = document.createElement('p');
   private readonly note = document.createElement('p');
-  private readonly orderSec: HTMLDivElement;
-  private readonly list = document.createElement('ol');
-  private items: readonly FrameItem[] = [];
   private busy = false;
-  private at = -1;
 
   constructor(hooks: FramesHooks) {
     super({ id: 'frames', title: 'Frames', side: 'left', variant: 'panel--frames', collapsed: true });
@@ -116,9 +107,6 @@ export class FramesPanel extends SidePanel {
 
     seq.append(this.note, this.drop, zupRow, countRow, this.memoryRow, this.progress, this.warn, actions);
 
-    this.orderSec = section(this.body, 'Order');
-    this.list.className = 'bz-frames';
-    this.orderSec.appendChild(this.list);
     this.setItems([]);
   }
 
@@ -154,9 +142,8 @@ export class FramesPanel extends SidePanel {
     this.progressLabel.textContent = text ?? (done === null ? '' : `${done} / ${total}`);
   }
 
-  /** The list changed: redraw the counts and the rows. */
+  /** The list changed: redraw the counts. */
   setItems(items: readonly FrameItem[]): void {
-    this.items = items;
     const n = items.length;
     const empty = n === 0;
     this.count.textContent = String(n);
@@ -170,50 +157,6 @@ export class FramesPanel extends SidePanel {
     this.drop.hidden = !empty;
     this.more.hidden = empty;
     this.trash.hidden = empty;
-    this.orderSec.hidden = empty;
-    this.renderRows();
-  }
-
-  private renderRows(): void {
-    const n = this.items.length;
-    const rows = this.items.map((f, i) => {
-      const li = document.createElement('li');
-      li.className = 'bz-frame';
-      li.dataset.key = String(f.key);
-      const pick = document.createElement('button');
-      pick.type = 'button';
-      pick.className = 'bz-frame__pick';
-      pick.title = `Go to frame ${i + 1}`;
-      const num = document.createElement('span');
-      num.className = 'bz-frame__n';
-      num.textContent = String(i + 1);
-      const name = document.createElement('span');
-      name.className = 'bz-frame__name';
-      name.textContent = f.name;
-      pick.append(num, name);
-      pick.addEventListener('click', () => this.hooks.seek(i));
-      li.append(
-        pick,
-        iconButton('fi-ss-angle-small-up', `Move frame ${i + 1} up`, i === 0, () => this.hooks.move(i, i - 1)),
-        iconButton('fi-ss-angle-small-down', `Move frame ${i + 1} down`, i === n - 1, () => this.hooks.move(i, i + 1)),
-        iconButton('fi-ss-cross-small', `Remove frame ${i + 1}`, false, () => this.hooks.remove(i), 'bz-frame__remove'),
-      );
-      return li;
-    });
-    this.list.replaceChildren(...rows);
-    this.markFrame(this.at);
-  }
-
-  /** The playhead is at `frame`: its row is marked. */
-  syncFrame(frame: number): void {
-    if (frame === this.at) return;
-    this.markFrame(frame);
-  }
-
-  private markFrame(frame: number): void {
-    this.at = frame;
-    const rows = this.list.children;
-    for (let i = 0; i < rows.length; i++) rows[i].classList.toggle('bz-frame--on', i === frame);
   }
 }
 
@@ -222,18 +165,6 @@ function button(label: string): HTMLButtonElement {
   b.type = 'button';
   b.className = 'btn';
   b.textContent = label;
-  return b;
-}
-
-function iconButton(icon: string, label: string, disabled: boolean, action: () => void, extra = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = `bz-frame__btn ${extra}`.trim();
-  b.title = label;
-  b.setAttribute('aria-label', label);
-  b.disabled = disabled;
-  b.innerHTML = `<i class="fi ${icon}" aria-hidden="true"></i>`;
-  b.addEventListener('click', action);
   return b;
 }
 

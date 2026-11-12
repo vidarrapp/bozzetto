@@ -625,7 +625,7 @@ export class SculptPanel extends SidePanel {
       ['Orbit', 'Alt + drag'],
     ]) {
       const row = div('sculpt-panel__hint');
-      row.textContent = `${how} — ${what.toLowerCase()}`;
+      row.textContent = `${how}: ${what.toLowerCase()}`;
       body.appendChild(row);
     }
   }

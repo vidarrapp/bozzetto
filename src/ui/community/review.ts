@@ -17,10 +17,11 @@ import {
   type ReviewCard,
   type SharedFilter,
 } from '../../net/account';
-import { authorHref, statsText } from '../../net/community';
-import { legalFoot, renderLanding, setPicture } from '../Landing';
+import { authorHref } from '../../net/community';
+import { renderLanding, setPicture } from '../Landing';
 import { pageShell } from '../pageShell';
 import { button, el } from '../account/parts';
+import { fillMeta, metaPhrase, metaValue, statsLine } from '../metaLine';
 import { signInButton } from '../signIn';
 import {
   ACTION_LABEL,
@@ -101,7 +102,7 @@ export async function renderReview(app: HTMLElement): Promise<void> {
   const say = el('p', 'account-say review__say');
   say.setAttribute('role', 'status');
   const body = el('div', 'review__body');
-  page.append(nav, say, body, legalFoot());
+  page.append(nav, say, body);
   shell.nav.fill(signIn, () => void renderReview(app));
 
   const ctx: Ctx = { app, me, tab, say };
@@ -322,14 +323,16 @@ function historyLine(item: HistoryItem): HTMLElement {
       : item.actor
         ? `by @${item.actor.handle}`
         : 'by an account since deleted';
-  head.append(el('strong', 'review-history__what', DONE[item.action] ?? item.action), ` ${who} · ${momentOf(item.at)}`);
+  fillMeta(head, [el('strong', 'review-history__what', DONE[item.action] ?? item.action), metaPhrase(who), metaValue(momentOf(item.at))]);
   const what = el('p', 'review-history__project');
   if (item.project) {
     const title = el('a', 'review-history__title', `“${item.project.title || 'Untitled'}”`);
     title.href = reviewViewerHref(item.project.id, 'history');
-    what.append(title);
-    if (item.project.author) what.append(` by @${item.project.author.handle}`);
-    what.append(` · now ${STATE_LABEL[item.project.shared].toLowerCase()}`);
+    fillMeta(what, [
+      title,
+      item.project.author ? metaPhrase(`by @${item.project.author.handle}`) : null,
+      metaPhrase(`now ${STATE_LABEL[item.project.shared].toLowerCase()}`),
+    ]);
   } else {
     what.textContent = 'A project since deleted.';
   }
@@ -386,39 +389,48 @@ class Card {
       by.href = authorHref(p.author.handle);
       head.append(el('span', 'review-card__by', ' by '), by);
     }
-    // One line of where it stands: state, when, reports, counts.
+    // One line of where it stands: state, when, reports, counts. A part each.
     const meta = el('span', 'admin-row__meta review-card__meta');
-    const state = el('span', 'review-card__state');
+    const state = el('span', 'review-card__state meta__t');
     state.textContent =
       (p.shared === 'rejected' || p.shared === 'hidden') && p.review_reason ? `${STATE_LABEL[p.shared]}: ${p.review_reason}` : STATE_LABEL[p.shared];
-    meta.appendChild(state);
-    if (p.shared_at) meta.append(el('span', 'card__date', `${p.shared === 'pending' ? 'submitted' : 'shared'} ${shortDayOf(p.shared_at)}`));
+    const mine = [state];
+    if (p.shared_at) {
+      const when = metaPhrase(`${p.shared === 'pending' ? 'submitted' : 'shared'} ${shortDayOf(p.shared_at)}`);
+      when.classList.add('card__date');
+      mine.push(when);
+    }
     const parts: HTMLElement[] = [head, meta];
+    const more: HTMLElement[] = [];
     if (this.reports) {
       const open = this.reports.length;
-      meta.append(el('span', 'review-card__reports', open === 0 ? 'No open reports now.' : `${open} open report${open === 1 ? '' : 's'}`));
+      more.push(open === 0 ? metaPhrase('No open reports now.') : metaValue(`${open} open report${open === 1 ? '' : 's'}`));
       if (open) {
         const list = el('ul', 'review-reports');
         for (const r of this.reports) {
           const li = el('li', 'review-report');
           li.dataset.reason = r.reason;
-          li.append(el('span', 'review-report__why', reportReasonText(r.reason)), ` · @${r.reporter.handle} · ${dayOf(r.created_at)}`);
+          const why = metaPhrase(reportReasonText(r.reason));
+          why.classList.add('review-report__why');
+          fillMeta(li, [why, metaValue(`@${r.reporter.handle}`), metaValue(dayOf(r.created_at))]);
           if (r.note) li.append(el('span', 'review-report__note', r.note));
           list.appendChild(li);
         }
         parts.push(list);
       }
     } else if (p.reports > 0) {
-      meta.append(el('span', 'review-card__reports', `${p.reports} open report${p.reports === 1 ? '' : 's'}`));
+      more.push(metaValue(`${p.reports} open report${p.reports === 1 ? '' : 's'}`));
     }
+    more.forEach((m) => m.classList.add('review-card__reports'));
     // The Gallery tab's rows carry the counts the public never sees.
-    if (typeof p.views === 'number' && typeof p.stars === 'number') meta.append(el('span', 'card__stats review-card__stats', statsText(p.views, p.stars)));
+    if (typeof p.views === 'number' && typeof p.stars === 'number') more.push(statsLine(p.views, p.stars, 'card__stats review-card__stats'));
     const actions: HTMLElement[] = [];
     const open = el('a', 'btn card__action review-open', 'Open');
     open.href = href;
     actions.push(open);
     if (this.own) {
-      meta.append(el('span', 'review-card__own', 'your own work: another reviewer decides'));
+      more.push(metaPhrase('your own work: another reviewer decides'));
+      more[more.length - 1].classList.add('review-card__own');
     } else {
       // The Reports tab is about the reports: Hide…, Dismiss, Unhide, and
       // Reject… for pending work; Approve is the Queue's. The Gallery tab
@@ -434,6 +446,7 @@ class Card {
         actions.push(b);
       }
     }
+    fillMeta(meta, [...mine, ...more]);
     parts.push(this.say);
     this.body.replaceChildren(...parts);
     this.acts.replaceChildren(...actions);

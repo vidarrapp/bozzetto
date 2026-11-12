@@ -223,6 +223,23 @@ async function trash(o, a, t) {
   t.ok(sure.bg === RED && sure.color === 'rgb(0, 0, 0)', `and the question keeps its filled red button (${show(sure)})`);
 }
 
+/** What the polish pass promises of a page: no dot in a meta line, words and values in their faces, the foot. */
+const polishOf = (p) =>
+  p.evaluate(() => {
+    const lines = [...document.querySelectorAll('.meta, .admin-row__meta, .card__meta, .account-item__meta')].filter((e) => e.getClientRects().length);
+    const family = (e) => getComputedStyle(e).fontFamily;
+    return {
+      dots: lines.filter((e) => e.textContent.includes('\u00b7')).length,
+      words: [...document.querySelectorAll('.meta__t, .card__share-status, .card__share-hint')].filter((e) => e.getClientRects().length && !/Familjen Grotesk/.test(family(e))).length,
+      values: [...document.querySelectorAll('.meta__v')].filter((e) => e.getClientRects().length && !/Martian Mono/.test(family(e))).length,
+      foot: [...document.querySelectorAll('.landing__foot')].map((f) => ({
+        links: [...f.querySelectorAll('a')].map((a) => a.textContent).join(),
+        version: !!f.querySelector('.landing__version')?.textContent,
+        last: f.closest('.page--foot') === document.querySelector('.page--foot') && !document.querySelector('.page--foot')?.nextElementSibling,
+      })),
+    };
+  });
+
 async function colourAndType(o, m, a, t) {
   const pages = [
     [o, '/admin/', '.admin-row', 1, 'Owner tools: Projects'],
@@ -244,6 +261,9 @@ async function colourAndType(o, m, a, t) {
     const old = fonts.families.filter(([f]) => OLD_FONTS.test(f));
     t.ok(old.length === 0 && /Familjen Grotesk/.test(fonts.h1 ?? ''), `${name}: no old font on the page, the title in Familjen Grotesk (${show(old)} ${fonts.h1})`);
     if (fonts.meta) t.ok(/Martian Mono/.test(fonts.meta), `${name}: its values are in Martian Mono (${fonts.meta})`);
+    const pol = await polishOf(b.page);
+    t.ok(pol.dots === 0 && pol.words === 0 && pol.values === 0, `${name}: meta lines have no dots, phrases are in Familjen Grotesk and values in Martian Mono (${show(pol)})`);
+    t.ok(pol.foot.length === 1 && pol.foot[0].links === 'Privacy,Terms,Report content' && pol.foot[0].version && pol.foot[0].last, `${name}: the one shared foot closes the page (${show(pol.foot)})`);
     const orange = await orangeOf(b.page);
     t.ok(orange.length <= main, `${name}: orange is the one main action only (${show(orange)})`);
     t.ok(!b.errors.length, `${name}: no page errors${b.errors.length ? `: ${b.errors.join(' | ')}` : ''}`);
@@ -267,6 +287,34 @@ async function phone(server, browser, t) {
       const over = await overflowing(o.page);
       t.ok(over <= 0, `${name} at 390px: no sideways scroll (${over}px over)`);
       t.ok(n.logo?.left === 16 || n.logo?.left <= 16, `${name} at 390px: the row keeps the logotype at the left, 16px in (${show(n.logo)})`);
+      if (name === 'Owner tools') {
+        // The switches on one line, the actions and the trash together on the next, the trash at the right end.
+        const rows = await o.page.evaluate(() =>
+          [...document.querySelectorAll('.admin-row')].map((r) => {
+            const top = (e) => Math.round(e.getBoundingClientRect().top);
+            const sw = [...r.querySelectorAll('.admin-row__vis, .admin-row__tpl')];
+            const bt = [...r.querySelectorAll('.admin-row__buttons > *')];
+            const del = r.querySelector('.admin-row__delete');
+            return {
+              switchesOneLine: new Set(sw.map(top)).size === 1,
+              buttonsOneLine: new Set(bt.map(top)).size === 1,
+              below: top(bt[0]) > top(sw[0]),
+              trashEnd: !!del && del.getBoundingClientRect().right >= r.querySelector('.admin-row__actions').getBoundingClientRect().right - 1,
+            };
+          }),
+        );
+        t.ok(rows.length > 0 && rows.every((r) => r.switchesOneLine && r.buttonsOneLine && r.below && r.trashEnd), `Owner tools at 390px: the switches on one line, the actions and the trash together below (${show(rows)})`);
+      }
+      if (name === 'Users') {
+        const roles = await o.page.evaluate(() =>
+          [...document.querySelectorAll('.admin-user')].map((u) => ({
+            chip: u.querySelector('.admin-user__role')?.textContent ?? null,
+            role: u.dataset.role,
+            plain: [...u.querySelectorAll('.admin-row__actions > *')].filter((e) => e.tagName !== 'BUTTON').length,
+          })),
+        );
+        t.ok(roles.length > 0 && roles.every((r) => r.plain === 0 && (r.role === 'member' ? r.chip === null : r.chip === r.role)), `Users at 390px: the role once, as a chip beside the handle, none for a member (${show(roles)})`);
+      }
     }
   } finally {
     await o.ctx.close();

@@ -23,7 +23,7 @@
 // the owner's Gallery and the rename: the Community's sort select reorders
 // and its search narrows (the address and a reload keep both); @bea stars
 // from a card and from the viewer, the Starred tab lists both and unstarring
-// takes one off; no star on one's own work; the author sees "N views · N
+// takes one off; no star on one's own work; the author sees "N views N
 // stars" on My projects, @mo on the Gallery tab; a guest sees no star and
 // no count.
 import { resolve } from 'node:path';
@@ -180,16 +180,16 @@ async function makeModerator(o, t) {
     p.evaluate((uid) => {
       const r = document.querySelector(`.admin-user[data-user="${uid}"]`);
       const b = r?.querySelector('.admin-user__setrole');
-      return r ? { role: r.dataset.role, col: r.querySelector('.admin-user__rolecol')?.textContent, action: b && !b.hidden ? b.textContent : null, said: r.querySelector('.admin-user__rolesay')?.textContent ?? '' } : null;
+      return r ? { role: r.dataset.role, chip: r.querySelector('.admin-user__role')?.textContent ?? null, plain: r.querySelector('.admin-user__rolecol') !== null, action: b && !b.hidden ? b.textContent : null, said: r.querySelector('.admin-user__rolesay')?.textContent ?? '' } : null;
     }, id);
   const before = await row('u-mo');
   const own = await row('u-boss');
-  t.ok(before?.col === 'Member' && before.action === 'Make moderator', `the Users tab has a role column, and Make moderator for a member (${show(before)})`);
-  t.ok(own?.col === 'Owner' && own.action === null, `the owner's own row offers no role action (${show(own)})`);
+  t.ok(before?.chip === null && !before.plain && before.action === 'Make moderator', `the Users tab shows no role for a member, no second role word, and Make moderator (${show(before)})`);
+  t.ok(own?.chip === 'owner' && !own.plain && own.action === null, `the owner's own row offers no role action (${show(own)})`);
   await p.click('.admin-user[data-user="u-mo"] .admin-user__setrole');
   await waitFor(p, () => document.querySelector('.admin-user[data-user="u-mo"]')?.dataset.role === 'moderator');
   const after = await row('u-mo');
-  t.ok(after?.col === 'Moderator' && after.action === 'Make member' && /is a moderator now/.test(after.said), `Make moderator, confirmed, makes @mo a moderator, and offers Make member (${show(after)})`);
+  t.ok(after?.chip === 'moderator' && !after.plain && after.action === 'Make member' && /is a moderator now/.test(after.said), `Make moderator, confirmed, makes @mo a moderator, and offers Make member (${show(after)})`);
 }
 
 /** @ada makes a one-frame model with the uploader; its id. */
@@ -350,8 +350,8 @@ async function unhide(m, g, id, t) {
       card?.shared === 'hidden' &&
       /^Hidden/.test(card.state) &&
       card.reports === '2 open reports' &&
-      card.lines.some((l) => /Someone else's work · @bea/.test(l) && /museum catalogue/.test(l)) &&
-      card.lines.some((l) => /Spam or advertising · @cy/.test(l)) &&
+      card.lines.some((l) => /Someone else's work @bea/.test(l) && /museum catalogue/.test(l)) &&
+      card.lines.some((l) => /Spam or advertising @cy/.test(l)) &&
       show(card.actions) === show(['Unhide']),
     `the Reports tab has it, hidden, with both reports, who made them and the note, and Unhide (${show(card)})`,
   );
@@ -452,7 +452,7 @@ async function ownerGallery(o, m, g, t) {
   await p.click('.share-note-continue');
   await waitFor(p, (pid) => document.querySelector(`.card--mine[data-project="${pid}"] .card__share`)?.dataset.shared === 'public', BOSS_WORK);
   const now = await shareOf(o, BOSS_WORK);
-  t.ok(now?.shared === 'public' && now.status === 'Public · Community' && now.on, `the owner's share is public at once, no queue (${show(now)})`);
+  t.ok(now?.shared === 'public' && now.status === 'Public in Community' && now.on, `the owner's share is public at once, no queue (${show(now)})`);
   const listed = await communityCards(g);
   t.ok(listed.some((c) => c.id === BOSS_WORK && c.author === 'boss'), `and in the Community (${show(listed)})`);
 
@@ -616,10 +616,10 @@ async function sortsAndStars(o, a, b, m, g, id, t) {
   t.ok(!own.mine && own.others === 1, `no Star on one's own work, Star on the rest (${show(own)})`);
   await myCard(a, id);
   const stats = await a.page.evaluate((pid) => document.querySelector(`.card--mine[data-project="${pid}"] .card__stats`)?.textContent ?? null, id);
-  t.ok(/^[2-9]\d* views · 1 star$/.test(stats ?? ''), `the author sees "N views · N stars" on My projects (${stats})`);
+  t.ok(/^[2-9]\d* views 1 star$/.test(stats ?? ''), `the author sees "N views · N stars" on My projects (${stats})`);
   await myCard(o, BOSS_WORK);
   const bossStats = await o.page.evaluate((bw) => document.querySelector(`.card--mine[data-project="${bw}"] .card__stats`)?.textContent ?? null, BOSS_WORK);
-  t.ok(/^\d+ views? · 0 stars$/.test(bossStats ?? ''), `the owner's own: the star taken back (${bossStats})`);
+  t.ok(/^\d+ views? 0 stars$/.test(bossStats ?? ''), `the owner's own: the star taken back (${bossStats})`);
 
   // @mo: the counts on the Gallery tab.
   await go(m, '?review&tab=gallery');
