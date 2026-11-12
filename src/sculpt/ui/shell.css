@@ -1301,15 +1301,23 @@ body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
   cursor: progress;
 }
 
-/* The star of a member's work: a glyph, the width of the hide button; orange when starred. */
+/* The star of a member's work: a glyph, the width of the hide button; full
+   white when starred, grey when not, never orange or yellow. */
 body.bz-shell .bz-strip__btn.viewer-star {
   width: 24px;
   padding: 0;
   font-size: 15px;
+  color: var(--bz-text-3);
 }
 
 body.bz-shell .bz-strip__btn.viewer-star[aria-pressed='true'] {
-  color: var(--bz-orange);
+  color: #fff;
+}
+
+body.bz-shell .bz-strip__btn.viewer-star .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* "by @handle" after the title: a link to the author's page, in the readout's quiet tone. */

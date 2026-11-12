@@ -5693,7 +5693,6 @@ export const suites = {
         owner.evaluate(() =>
           Object.fromEntries(
             [...document.querySelectorAll('.admin-row')].map((r) => {
-              const badge = r.querySelector('.admin-row__badge');
               const img = r.querySelector('.admin-row__img');
               return [
                 r.dataset.project,
@@ -5701,7 +5700,6 @@ export const suites = {
                   priv: r.querySelector('.admin-row__vis input').checked,
                   tpl: r.querySelector('.admin-row__tpl input')?.checked ?? null,
                   busy: r.querySelector('.admin-row__tpl input')?.disabled ?? null,
-                  badge: !!badge && !badge.hidden,
                   open: r.querySelector('.admin-row__open')?.getAttribute('href') ?? null,
                   img: img ? { src: img.getAttribute('src'), cors: img.getAttribute('crossorigin') } : null,
                   hint: r.querySelector('.admin-row__tpl')?.title ?? '',
@@ -5712,10 +5710,10 @@ export const suites = {
         );
       let rows = await rowsOf();
       t.ok(
-        rows['tpl-scene']?.tpl === true && rows['tpl-scene'].badge && rows['tpl-scene'].priv === false &&
+        rows['tpl-scene']?.tpl === true && rows['tpl-scene'].priv === false &&
           rows['tpl-hidden']?.tpl === true && rows['tpl-hidden'].priv === true &&
-          rows['own-scene']?.tpl === false && !rows['own-scene'].badge && rows[link?.id]?.tpl === false,
-        `each row has a Template switch beside Private, and templates are badged (${JSON.stringify(rows)})`,
+          rows['own-scene']?.tpl === false && rows[link?.id]?.tpl === false,
+        `each row has a Template switch beside Private, on for the templates (${JSON.stringify(rows)})`,
       );
       t.ok(/template/i.test(rows['own-scene']?.hint ?? ''), `the switch says what a template is ("${rows['own-scene']?.hint}")`);
       t.eq(rows['tpl-scene']?.open, '/?sculpt=1&project=tpl-scene', 'Open in Sculpt opens the template itself, through the owner\'s routes, as before');
@@ -5735,14 +5733,14 @@ export const suites = {
       rows = await rowsOf();
       let post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/own-scene/template');
       t.ok(
-        !!post && fake.body(post.body).template === true && fake.projects.get('own-scene').template === true && rows['own-scene'].tpl && rows['own-scene'].badge && rows['own-scene'].priv,
+        !!post && fake.body(post.body).template === true && fake.projects.get('own-scene').template === true && rows['own-scene'].tpl && rows['own-scene'].priv,
         `the Template switch makes the owner's project a template through its own route; private still, it is off the gallery (${post ? post.body : 'no call'})`,
       );
       sent = await flip('tpl-reel', 'tpl');
       rows = await rowsOf();
       post = sent.find((c) => c.method === 'POST' && c.path === '/admin/api/projects/tpl-reel/template');
       t.ok(
-        !!post && fake.body(post.body).template === false && rows['tpl-reel'].tpl === false && !rows['tpl-reel'].badge && rows['tpl-reel'].priv === true,
+        !!post && fake.body(post.body).template === false && rows['tpl-reel'].tpl === false && rows['tpl-reel'].priv === true,
         `switched off, the template is the owner's again, and Private follows the server's answer (${JSON.stringify(rows['tpl-reel'])})`,
       );
       refusal = { status: 500, error: 'The switch failed' };

@@ -710,7 +710,7 @@ async function workerAndSignOut(browser, base, t) {
     fake.opts.expired = false;
     await p.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('.admin-row', { timeout: 30_000 }).catch(() => {});
-    t.ok(await p.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
+    t.ok(await p.evaluate(() => [...document.querySelectorAll('.pagenav__account .topchip')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
 
     // Offline: the app's own pages, and nothing else.
     await gallery('Sign out');

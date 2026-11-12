@@ -3,19 +3,19 @@ import {
   checkSignIn,
   mediaPath,
   memberProjects,
-  roleOf,
   type ProjectSummary,
   type SignIn,
 } from '../../admin/api';
-import { dayOf, errorText, getMe, loadConfig, sizeOfText, sizeText, suspensionText, type Me } from '../../net/account';
+import { shortDayOf, errorText, getMe, loadConfig, sizeOfText, sizeText, suspensionText, type Me } from '../../net/account';
 import { apiFetch } from '../../net/origin';
 import { failNotice } from '../../sculpt/ui/statusToast';
 import { downloadBlob } from '../download';
 import { setPicture } from '../Landing';
 import { markOpenOnClick } from '../openToken';
 import { signInAgain, signInButton } from '../signIn';
-import { topChip, topbarLeft, topbarRight } from '../topbar';
-import { accountChips } from './menu';
+import { pageShell, setTagline } from '../pageShell';
+import { rowMenu } from '../rowMenu';
+import { trashButton } from '../trash';
 import { Say, button, el } from './parts';
 import { shareControls } from '../community/share';
 import { communityCard } from '../community/page';
@@ -77,19 +77,13 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
   app.classList.add('app--page');
   document.title = 'My projects · Bozzetto';
-  const page = el('div', 'landing account-page my-projects');
-  const head = el('header', 'landing__head');
-  const titles = el('div');
-  titles.append(el('h1', 'landing__title', 'My projects'));
-  head.appendChild(titles);
+  const shell = pageShell(app, { current: 'mine', title: 'My projects', className: 'my-projects' });
   const host = el('div', 'my-projects__body');
-  page.append(head, host);
-  app.replaceChildren(page);
-  galleryChip();
+  shell.page.appendChild(host);
 
   const config = await loadConfig();
   const signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false }));
-  if (config?.accounts) chips(signIn, app);
+  shell.nav.fill(config?.accounts ? signIn : null, () => void renderMyProjects(app));
   if (!config?.accounts) {
     host.appendChild(el('p', 'muted', 'Accounts are not open on this site.'));
     return;
@@ -114,7 +108,7 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
     host.append(el('p', 'muted', signIn.expired ? 'Your sign-in has expired.' : 'Sign in to see your projects.'), again);
     return;
   }
-  titles.appendChild(el('p', 'landing__tagline', `@${me.handle}`));
+  setTagline(shell, `@${me.handle}`);
   const tab = myTab();
   host.appendChild(tabsNav(tab));
   if (tab === 'starred') {
@@ -125,7 +119,7 @@ export async function renderMyProjects(app: HTMLElement): Promise<void> {
   const meter = new Meter();
   meter.set(me.usage);
   const say = new Say();
-  const grid = el('div', 'landing__grid my-projects__grid');
+  const grid = el('div', 'page-grid my-projects__grid');
   host.append(meter.root, say.root, grid);
 
   let projects: ProjectSummary[];
@@ -199,7 +193,7 @@ function tabsNav(current: MyTab): HTMLElement {
  */
 async function starredTab(host: HTMLElement, me: Me): Promise<void> {
   const say = new Say();
-  const grid = el('div', 'landing__grid community__grid my-starred');
+  const grid = el('div', 'page-grid community__grid my-starred');
   const more = button('Load more', 'btn community__more my-starred__more');
   more.hidden = true;
   host.append(say.root, grid, more);
@@ -244,24 +238,6 @@ async function starredTab(host: HTMLElement, me: Me): Promise<void> {
   };
   more.addEventListener('click', () => void load());
   await load();
-}
-
-/** The top row: back to the gallery on the left, the account's chips on the right. */
-function galleryChip(): void {
-  const left = topbarLeft();
-  if (left.querySelector('.viewer-back')) return;
-  const back = topChip('← Gallery', '/');
-  back.classList.add('viewer-back');
-  left.appendChild(back);
-}
-
-function chips(signIn: SignIn, app: HTMLElement): void {
-  const bar = topbarRight();
-  bar.querySelectorAll('.landing-chip').forEach((c) => c.remove());
-  for (const c of accountChips(signIn, roleOf(signIn), () => void renderMyProjects(app))) {
-    c.classList.add('landing-chip');
-    bar.appendChild(c);
-  }
 }
 
 /** Why the list would not come, as the end of a sentence. */
@@ -314,19 +290,20 @@ async function armatureInProgress(): Promise<boolean> {
  * meanwhile, and its quota (GET /api/me's usage), as a bar and a line.
  */
 class Meter {
-  readonly root = el('section', 'account-section my-storage');
+  readonly root = el('div', 'my-storage');
   private readonly bar = el('div', 'storage-meter');
   private readonly used = el('span', 'storage-meter__used');
   private readonly reserved = el('span', 'storage-meter__reserved');
-  private readonly line = el('p', 'account-small storage-meter__text');
+  private readonly line = el('p', 'storage-meter__text');
 
   constructor() {
     this.root.dataset.section = 'storage';
-    this.root.appendChild(el('h2', 'account-section__title', 'Storage'));
     this.bar.setAttribute('role', 'meter');
     this.bar.setAttribute('aria-label', 'Storage used');
     this.bar.append(this.used, this.reserved);
-    this.root.append(this.bar, this.line);
+    const head = el('div', 'my-storage__head');
+    head.append(el('h2', 'my-storage__title', 'Storage'), this.line);
+    this.root.append(head, this.bar);
   }
 
   set(usage: Me['usage']): void {
@@ -401,9 +378,7 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
   const card = el('div', 'card card--library card--mine');
   card.dataset.project = p.id;
   card.innerHTML = `
-    <a class="card__thumb">
-      <span class="card__badges"></span>
-    </a>
+    <a class="card__thumb"></a>
     <div class="card__body">
       <span class="card__title"></span>
       <span class="card__meta"></span>
@@ -413,25 +388,25 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
   const title = card.querySelector<HTMLElement>('.card__title')!;
   const meta = card.querySelector<HTMLElement>('.card__meta')!;
   const actions = card.querySelector<HTMLElement>('.card__actions')!;
-  const body = card.querySelector<HTMLElement>('.card__body')!;
-  const badge = el('span', 'card__badge', modeLabel(p));
-  card.querySelector('.card__badges')!.appendChild(badge);
   // Through the private route, which every cache leaves alone (vite.config.ts);
   // offline there is none, and the gradient stands in.
   if (!page.offline) setPicture(thumb, mediaPath(p, `thumb.jpg?v=${p.updated_at}`));
   title.textContent = p.title || 'Untitled';
   const paintMeta = (): void => {
-    meta.textContent = `${modeLabel(p)} · ${contents(p)} · ${sizeText(p.bytes ?? 0)} · ${dayOf(p.updated_at)}`;
+    // One part each, so a long line breaks between parts and not inside one.
+    const parts = [modeLabel(p), contents(p), sizeText(p.bytes ?? 0), shortDayOf(p.updated_at)];
+    meta.replaceChildren(...parts.flatMap((part, i) => [...(i ? [' · '] : []), el('span', '', part)]));
   };
   paintMeta();
-  // A shared one's views and stars in the Community: for its author alone.
-  if (typeof p.views === 'number' && typeof p.stars === 'number') meta.after(el('span', 'card__stats', statsText(p.views, p.stars)));
+  // A shared one's views and stars in the Community: for its author alone,
+  // under where it stands.
+  if (typeof p.views === 'number' && typeof p.stars === 'number') actions.before(el('span', 'card__stats', statsText(p.views, p.stars)));
 
   // Open: Sculpt for a scene, the viewer for the rest. Offline, only a
   // scene this device has a copy of can open (Sculpt falls back to it).
   const href = openHref(p);
   const canOpen = !!href && (!page.offline || (p.mode === 'scene' && page.copies.has(p.id)));
-  const open = el('a', 'card__action card__open', 'Open');
+  const open = el('a', 'btn card__action card__open', 'Open');
   if (href && canOpen) {
     open.href = href;
     thumb.href = href;
@@ -450,13 +425,17 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     open.classList.add('card__action--off');
   }
 
-  const download = button('Download', 'card__action card__download');
-  const rename = button('Rename', 'card__action card__rename');
-  const remove = button('Delete', 'card__action card__delete');
+  // Download and Rename are kept under More; Delete is the trash at the end.
+  const more = rowMenu('More', [
+    { label: 'Download', className: 'card__download', action: () => void downloadProject(page, p, more.trigger) },
+    { label: 'Rename', className: 'card__rename', action: () => startRename() },
+  ]);
+  const [download, rename] = more.items as [HTMLButtonElement, HTMLButtonElement];
+  const remove = trashButton(`Delete ${p.title || 'Untitled'}`, 'card__delete');
   download.disabled = page.offline || !href;
   rename.disabled = page.offline;
   remove.disabled = page.offline;
-  actions.append(open, download, rename, remove);
+  actions.append(open, more.wrap, remove);
   // Share to Community (docs/accounts.md §13): the switch and where it
   // stands, or for a scene or an armature what to do instead.
   const sharing = (): HTMLElement =>
@@ -468,11 +447,9 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
       failed: (what, err) => failed(page, what, err),
     });
   let share = sharing();
-  body.appendChild(share);
+  actions.before(share);
 
-  download.addEventListener('click', () => void downloadProject(page, p, download));
-
-  rename.addEventListener('click', () => {
+  const startRename = (): void => {
     const form = el('form', 'account-rename my-rename');
     const box = el('input', 'account-input');
     box.type = 'text';
@@ -487,11 +464,13 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
     form.append(box, save, cancel);
     title.replaceWith(form);
     rename.disabled = true;
+    more.trigger.disabled = true;
     box.focus();
     box.select();
     const done = (): void => {
       form.replaceWith(title);
       rename.disabled = page.offline;
+      more.trigger.disabled = false;
     };
     cancel.addEventListener('click', done);
     form.addEventListener('submit', (e) => {
@@ -507,6 +486,8 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
         .then(async (row) => {
           p.title = row.title;
           title.textContent = row.title;
+          remove.setAttribute('aria-label', `Delete ${row.title || 'Untitled'}`);
+          remove.title = remove.getAttribute('aria-label') ?? '';
           // A renamed public project goes back for review (§13): the
           // answer says where it stands now.
           if (row.shared) {
@@ -527,7 +508,7 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
           failed(page, `Could not rename "${p.title}"`, err);
         });
     });
-  });
+  };
 
   remove.addEventListener('click', () => {
     if (!confirm(`Delete "${p.title}"? It goes from My projects and from this device, and cannot be undone.`)) return;
@@ -544,7 +525,7 @@ function projectCard(page: Page, p: ProjectSummary): HTMLElement {
         await refreshMeter(page);
       })
       .catch((err: unknown) => {
-        remove.disabled = false;
+        remove.disabled = page.offline;
         failed(page, `Could not delete "${p.title}"`, err);
       });
   });
@@ -601,7 +582,7 @@ async function downloadProject(page: Page, p: ProjectSummary, b: HTMLButtonEleme
     failed(page, `Could not download "${p.title}"`, err);
   } finally {
     b.textContent = label;
-    b.disabled = page.offline;
+    b.disabled = false;
   }
 }
 

@@ -219,7 +219,7 @@ function inviteRow(invite: Invite, list: HTMLElement): HTMLElement {
   const say = new Say();
   main.appendChild(say.root);
   if (invite.state === 'live') {
-    const revoke = button('Revoke', 'btn btn--danger admin-invite__revoke');
+    const revoke = button('Revoke', 'btn admin-invite__revoke');
     revoke.addEventListener('click', () => {
       const name = invite.label ? `“${invite.label}”` : 'this invite';
       if (!confirm(`Withdraw ${name}? Its link admits nobody from now on; accounts it already made stay.`)) return;

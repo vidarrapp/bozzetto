@@ -89,6 +89,11 @@ async function browserFor(browser, origin, who) {
   return { ctx, page, errors, origin, who };
 }
 
+/** A star's colour as drawn: grey (the tertiary text grey) when not pressed, full white when pressed, never orange or yellow. */
+const GREY = 'rgb(125, 125, 125)';
+const WHITE = 'rgb(255, 255, 255)';
+const colourOf = (p, sel) => p.evaluate((s) => getComputedStyle(document.querySelector(s)).color, sel);
+
 const go = (b, query) => b.page.goto(`${b.origin}/${query}`, { waitUntil: 'domcontentloaded' });
 const waitFor = (p, fn, arg, timeout = 20_000) => p.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
 
@@ -117,7 +122,7 @@ const shareOf = (b, id) =>
 /** The Review chip, once the page has drawn its chips: {shown, count}. */
 async function reviewChip(b, query = '') {
   await go(b, query);
-  const shown = await waitFor(b.page, () => !!document.querySelector('.topbar--right .review-chip'));
+  const shown = await waitFor(b.page, () => !!document.querySelector('.pagenav .review-chip'));
   if (shown) await b.page.waitForSelector('.review-chip__count', { timeout: 5000 }).catch(() => {});
   return b.page.evaluate(() => ({ shown: !!document.querySelector('.review-chip'), count: document.querySelector('.review-chip__count')?.textContent ?? null }));
 }
@@ -363,6 +368,7 @@ async function unhide(m, g, id, t) {
 async function renameAndWithdraw(a, m, g, id, t) {
   const p = a.page;
   await myCard(a, id);
+  await p.click(`.card--mine[data-project="${id}"] .row-more`);
   await p.click(`.card--mine[data-project="${id}"] .card__rename`);
   await p.fill(`.card--mine[data-project="${id}"] .my-rename input[name=title]`, 'Ada torso, reworked');
   await p.click(`.card--mine[data-project="${id}"] .card__save`);
@@ -453,7 +459,7 @@ async function ownerGallery(o, m, g, t) {
   const tabs = await p.evaluate(() => [...document.querySelectorAll('.review-tab')].map((a) => a.dataset.tab));
   t.ok(show(tabs) === show(['queue', 'gallery', 'reports', 'history']) && tab.current === 'gallery', `the Gallery tab, after Queue (${show(tabs)})`);
   t.ok(tab.cards.length === 2 && own?.shared === 'public' && own.author === '@boss' && show(own.actions) === show(['Hide…']), `it lists the Community, the owner's own work with Hide… (${show(tab.cards)})`);
-  const intro = await p.evaluate(() => document.querySelector('.landing__tagline')?.textContent ?? '');
+  const intro = await p.evaluate(() => document.querySelector('.page__tag')?.textContent ?? '');
   t.ok(/the owner reviews everything/.test(intro), `the page says the owner reviews everything (${intro})`);
 
   await p.fill('.review-search', 'boss');
@@ -554,9 +560,12 @@ async function sortsAndStars(o, a, b, m, g, id, t) {
     return { id: c.dataset.project, label: s?.getAttribute('aria-label') ?? null, pressed: s?.getAttribute('aria-pressed') ?? null };
   }));
   t.ok(toggles.length === 2 && toggles.every((x) => x.label === 'Star' && x.pressed === 'false'), `a member has Star on each card not theirs, not pressed (${show(toggles)})`);
-  await p.click(`.card--community[data-project="${BOSS_WORK}"] .star-toggle`);
+  const starOf = (pid) => `.card--community[data-project="${pid}"] .star-toggle`;
+  t.eq(await colourOf(p, starOf(BOSS_WORK)), GREY, 'an unpressed star on a card is grey');
+  await p.click(starOf(BOSS_WORK));
   const pressed = await p.evaluate((pid) => document.querySelector(`.card--community[data-project="${pid}"] .star-toggle`)?.getAttribute('aria-pressed'), BOSS_WORK);
   t.eq(pressed, 'true', 'Star turns at once');
+  t.eq(await colourOf(p, starOf(BOSS_WORK)), WHITE, 'and is full white, not orange or yellow');
   await p.waitForTimeout(500);
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.card--community .star-toggle', { timeout: 30_000 }).catch(() => {});
@@ -571,8 +580,10 @@ async function sortsAndStars(o, a, b, m, g, id, t) {
   await viewer(b, id);
   await waitFor(p, () => !!document.querySelector('.viewer-star'));
   const before = await p.evaluate(() => document.querySelector('.viewer-star')?.getAttribute('aria-pressed'));
+  const viewerGrey = await colourOf(p, '.viewer-star');
   await p.click('.viewer-star');
   await waitFor(p, () => document.querySelector('.viewer-star')?.getAttribute('aria-pressed') === 'true');
+  t.ok(viewerGrey === GREY && (await colourOf(p, '.viewer-star')) === WHITE, `the viewer's star is grey, then white when pressed (${viewerGrey} → ${await colourOf(p, '.viewer-star')})`);
   await p.waitForTimeout(500);
   const starredNow = await p.evaluate(async (pid) => (await (await fetch(`/api/me/stars/${pid}`)).json()).starred, id);
   await rest(b);
