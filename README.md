@@ -1,6 +1,6 @@
 # Bozzetto
 
-<img width="1036" height="720" alt="Bozzetto Screenshot - Sculpt mode" src="docs/screenshots/sculpt.jpg" />
+<img width="1180" height="820" alt="Bozzetto Screenshot - Sculpt mode" src="docs/screenshots/sculpt.jpg" />
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
@@ -23,7 +23,7 @@ Your work autosaves on your device. Nothing uploads unless you sign in and save 
 
 ## Armature
 
-<img width="1036" height="720" alt="Bozzetto Screenshot - Armature mode" src="docs/screenshots/armature.jpg" />
+<img width="1180" height="820" alt="Bozzetto Screenshot - Armature mode" src="docs/screenshots/armature.jpg" />
 
 A posable figure, for reference or as the start of a sculpt. Pick **Create → New Armature** in the gallery. No sign-in needed.
 
@@ -56,7 +56,7 @@ Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing le
 
 ## Present
 
-<img width="1036" height="720" alt="Bozzetto Screenshot - Present mode" src="docs/screenshots/present.jpg" />
+<img width="1180" height="820" alt="Bozzetto Screenshot - Present mode" src="docs/screenshots/present.jpg" />
 
 Light the piece, render it and publish it. Open **Present** from the path at the top of Sculpt, or with `Shift`+`P`.
 
