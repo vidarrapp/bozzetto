@@ -20,7 +20,6 @@ export class OutputPanel extends SidePanel {
     const reel = section(this.body, 'Reel');
     reel.appendChild(
       mountReelControls(viewer, {
-        variant: 'present',
         motions: opts.timelapse ? ['timeline', 'turntable'] : ['turntable'],
         title: opts.title,
       }),

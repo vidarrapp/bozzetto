@@ -1,37 +1,8 @@
 /* ------------------------------------------------------------------
-   Design foundation: warm ink-and-cream surfaces, a single clay-rust
-   accent, editorial serif display + Manrope UI + mono spec labels,
-   and low (2px) radius.
+   Design foundation: the application layer's names for the tokens in
+   app-layer/tokens.css (a single accent, Familjen Grotesk + Martian Mono,
+   square corners).
    ------------------------------------------------------------------ */
-@font-face {
-  font-family: 'Manrope';
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('/assets/fonts/Manrope-Variable.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Regular.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/assets/fonts/InstrumentSerif-Italic.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 100 800;
-  font-display: swap;
-  src: url('/assets/fonts/JetBrainsMono-Variable.ttf') format('truetype');
-}
-
 :root,
 :root[data-theme='dark'],
 :root[data-theme='light'] {
@@ -60,7 +31,6 @@
   --font-spec: var(--bz-font-mono);
 
   --radius: 0;
-  --radius-image: 0;
 }
 
 * {
@@ -125,10 +95,9 @@ a {
   -webkit-touch-callout: default;
 }
 
-/* Display serif for titles; mono for spec labels. */
+/* Titles in the display face; mono for spec labels. */
 h1,
-.landing__title,
-.admin__head h1 {
+.landing__title {
   font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -0.01em;
@@ -146,13 +115,11 @@ h1,
 
 .card__meta,
 .admin-row__meta,
-.frame-label,
 .transport__frame {
   font-family: var(--font-spec);
 }
 
-.transport__stage-name,
-.stage__name {
+.transport__stage-name {
   font-family: var(--font-display);
   font-style: italic;
 }
@@ -299,13 +266,6 @@ h1,
   transition: transform 0.25s ease;
 }
 
-/* Editor variant: run the full height of the screen, mirroring the sidebar
-   (the editor has no transport bar to clear). */
-.panel--editor {
-  bottom: 12px;
-  max-height: none;
-}
-
 /* Collapsed: slide the whole panel off the right edge, leaving the handle. */
 .panel--collapsed {
   transform: translateX(calc(100% + 12px));
@@ -373,16 +333,6 @@ h1,
   display: none;
 }
 
-/* A collapsed tab ducks while an open sibling's body covers its spot: the
-   right-edge stack z-indexes lower panels over upper ones (to keep tabs
-   clickable under an open upper panel), so without this the Tool/Model
-   tabs float on top of the open Render body. visibility, not display -
-   the geometry must hold so the tab lands back in place on close. */
-.panel--tab-hidden .panel__handle {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 .panel__close {
   display: flex;
   align-items: center;
@@ -403,11 +353,6 @@ h1,
 .panel__close:hover {
   background: var(--hover);
   color: var(--text);
-}
-
-/* Save look / thumbnail row pinned at the top of the Render panel. */
-.panel__actions {
-  padding-top: 4px;
 }
 
 .panel__body {
@@ -736,43 +681,6 @@ textarea::placeholder {
   outline-offset: 2px;
 }
 
-.row {
-  display: flex;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.row button {
-  flex: 1;
-}
-
-.scrubber {
-  margin: 6px 0 2px;
-}
-
-.frame-label {
-  display: block;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.stage {
-  display: flex;
-  flex-direction: column;
-  min-height: 30px;
-  margin-bottom: 4px;
-}
-
-.stage__name {
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.stage__desc {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .label-row,
 .compact {
   display: flex;
@@ -816,16 +724,6 @@ textarea::placeholder {
 
 .checkbox input {
   accent-color: var(--accent);
-}
-
-.btn-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.btn-grid button {
-  font-size: 12px;
 }
 
 .light {
@@ -872,8 +770,7 @@ html.is-page body {
    it used to be pinned to the corner itself, which put it on top of any
    chip the row placed first. */
 
-.landing,
-.admin {
+.landing {
   max-width: 1040px;
   margin: 0 auto;
   /* Top padding clears the fixed top row: the back link used to sit in the
@@ -881,8 +778,7 @@ html.is-page body {
   padding: 64px 20px 64px;
 }
 
-.landing__head,
-.admin__head {
+.landing__head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -924,33 +820,6 @@ html.is-page body {
   font: inherit;
   text-decoration: none;
   cursor: pointer;
-}
-
-.landing__editor {
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.landing__editor:hover {
-  text-decoration: none;
-}
-
-.landing__links {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  white-space: nowrap;
-}
-
-.landing__admin {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.landing__admin:hover {
-  text-decoration: none;
 }
 
 .landing__grid {
@@ -1012,15 +881,6 @@ html.is-page body {
   font-size: 11px;
 }
 
-/* --- editor (admin) --- */
-.admin__head h1 {
-  margin: 0;
-  font-size: 24px;
-}
-
-/* The row's Public/Private and Template switches, beside the actions they
-   are not among. */
-/* A template's row says so above its title. */
 .admin__empty {
   color: var(--muted);
 }
@@ -1097,10 +957,6 @@ html.is-page body {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--panel-border);
-}
-
-.reel > .editor__hint {
-  margin-top: 0;
 }
 
 .reel-record {
@@ -1281,32 +1137,7 @@ html.is-page body {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- global theme toggle (top-right, all views) --- */
-.theme-toggle {
-  /* Fixed width so "Ink" and "Paper" occupy the same box: the row must not
-     shuffle when the label changes. */
-  min-width: 72px;
-  text-align: center;
-  order: 3;
-  z-index: 30;
-  padding: 5px 12px;
-  font-family: var(--font-spec);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.theme-toggle:hover {
-  background: var(--hover);
-}
-
-/* Hotkey guide button, left of the theme toggle: 72px of toggle + its 12px
-   inset + an 8px gap. H does the same thing, but not on an iPad. */
+/* Hotkey guide button. H does the same thing, but not on an iPad. */
 .help-toggle {
   min-width: 32px;
   order: 2;
@@ -1450,11 +1281,6 @@ html.is-page body {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   pointer-events: none;
-}
-
-/* --- the reel's hint line (the non-Present reel variant) --- */
-.editor__hint {
-  margin: 0 0 10px;
 }
 
 /* Narrow screens (phones): keep each slide-out panel and its edge handle on
@@ -1611,20 +1437,6 @@ html.is-page body {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   pointer-events: auto;
-}
-
-.sculpt-toolbar__corner {
-  display: flex;
-  gap: 6px;
-  pointer-events: auto;
-}
-
-.sculpt-toolbar__left {
-  justify-self: start;
-}
-
-.sculpt-toolbar__right {
-  justify-self: end;
 }
 
 .sculpt-toolbar__brushes {
@@ -1807,14 +1619,6 @@ html.is-page body {
    which juts 36px off the panel's right edge - flush at x 0. */
 .panel--left.panel--collapsed {
   transform: translateX(calc(-100% - 44px));
-}
-
-.panel__handle--left {
-  left: auto;
-  right: -36px;
-  border: 1px solid var(--panel-border);
-  border-left: none;
-  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 /* Solo (alt+q) marks the Scene panel, open or docked: every other object
@@ -2094,12 +1898,6 @@ html.is-page body {
 
 .outliner__menu[hidden] {
   display: none;
-}
-
-.outliner__menu-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--panel-border);
 }
 
 .outliner__menu-item {
@@ -2406,11 +2204,6 @@ html.is-page body {
   gap: 6px;
 }
 
-.outliner__filebtn {
-  width: 100%;
-  text-align: left;
-}
-
 /* Quad remesh's run (Model panel): the stage over a bar with Cancel. */
 .sculpt-panel__quad-progress {
   margin-top: 6px;
@@ -2525,7 +2318,6 @@ body.chrome-hidden > .topbar,
 body.chrome-hidden .viewer-back,
 body.chrome-hidden .file-menu__chip,
 body.chrome-hidden .file-menu,
-body.chrome-hidden .theme-toggle,
 body.chrome-hidden .help-toggle,
 body.chrome-hidden .fps-meter {
   opacity: 0;
@@ -2836,28 +2628,6 @@ body:has(.transport) .chrome-hint {
 .channel-box__unit {
   color: var(--muted);
   font-size: 11px;
-}
-
-/* Sculpt corner stats: object name + live poly count (top-left). */
-.sculpt-stats {
-  position: fixed;
-  top: 84px;
-  left: 12px;
-  z-index: 15;
-  pointer-events: none;
-  font-family: var(--font-spec);
-  line-height: 1.5;
-}
-
-.sculpt-stats__name {
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-
-.sculpt-stats__tris {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 /* Smoothing turns the fallback ring blue too (3D ring via material). */
@@ -3314,8 +3084,7 @@ body.is-sampling * {
 .sculpt-solobtn,
 .outliner__btn,
 .panel__handle,
-.float-window__bar,
-.chrome-restore {
+.float-window__bar {
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
   user-select: none;
@@ -3449,11 +3218,6 @@ body.is-sampling * {
 
 .topchip:hover {
   background: var(--hover);
-}
-
-.topchip--accent {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* The File menu: a chip in the top row and the list that drops from it.
@@ -4099,14 +3863,10 @@ body.is-sampling * {
 }
 
 /* Ordering lives here, after .topchip's default: page actions first, then
-   the guide, then the theme toggle pinned to the outside edge. Set on the
-   same specificity as .topchip and it would be a source-order coin toss. */
+   the guide. Set on the same specificity as .topchip and it would be a
+   source-order coin toss. */
 .topbar .help-toggle {
   order: 2;
-}
-
-.topbar .theme-toggle {
-  order: 3;
 }
 
 /* "Reset look" sits inside the Lighting section, quieter than a primary
@@ -4623,13 +4383,6 @@ body.is-sampling * {
 
 .account-small {
   font-size: 12px;
-}
-
-.account-or {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
 }
 
 .account-step {
@@ -5149,13 +4902,6 @@ body.is-sampling * {
   font-size: 13px;
 }
 
-/* An owner's decision still to be written in. */
-.legal__todo {
-  padding: 0 4px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-}
-
 .legal__foot {
   margin-top: 36px;
   padding-top: 12px;
@@ -5672,15 +5418,13 @@ body.is-sampling * {
 
 /* --- type --- */
 h1,
-.landing__title,
-.admin__head h1 {
+.landing__title {
   font-family: var(--bz-font);
   font-weight: 700;
   letter-spacing: 0;
 }
 
-.transport__stage-name,
-.stage__name {
+.transport__stage-name {
   font-family: var(--bz-font);
   font-style: normal;
   font-weight: 600;
@@ -5708,10 +5452,8 @@ h1,
 }
 
 /* Captions and the quiet lines: secondary text. */
-.stage__desc,
 .transport__stage-desc,
 .sculpt-panel__hint,
-.editor__hint,
 .admin__hint,
 .dsettings__blurb,
 .dsettings__hint,
@@ -5733,7 +5475,6 @@ h1,
 
 /* Values and numbers: Martian Mono 11px, as typed. */
 .readout,
-.frame-label,
 .transport__frame,
 .sculpt-panel__val,
 .slider-val,
@@ -5756,7 +5497,6 @@ h1,
 .card__meta,
 .admin-row__meta,
 .readout,
-.frame-label,
 .transport__frame {
   color: var(--bz-text-2);
 }
@@ -5778,7 +5518,6 @@ h1,
 
 /* --- links: text, weight 600, no underline --- */
 .landing__signin,
-.landing__editor,
 .gallery-form__gatenote a,
 .gallery-form__status a,
 .account-legal,
@@ -5788,8 +5527,7 @@ h1,
 .report-what a,
 .share-note__list a,
 .help-win__topic a,
-.card__link,
-.landing__admin {
+.card__link {
   color: var(--bz-text);
   font-weight: 600;
   text-decoration: none;
@@ -5973,7 +5711,6 @@ h1,
 .sculpt-panel__btn--on,
 .sculpt-panel__presets .sculpt-panel__btn--on,
 .curve-editor__preset[aria-pressed='true'],
-.curve-editor__preset--on,
 .prefs__tab--on,
 .prefs__tab--on:hover,
 .outliner__btn[aria-pressed='true'],
@@ -5990,8 +5727,7 @@ h1,
 }
 
 .sculpt-panel__btn--wide,
-.outliner__btn--wide,
-.outliner__filebtn {
+.outliner__btn--wide {
   width: 100%;
 }
 
@@ -6156,14 +5892,6 @@ h1,
   margin: 0;
 }
 
-.btn-grid {
-  gap: 4px;
-}
-
-.btn-grid button {
-  font-size: 13px;
-}
-
 /* --- panels and their sections --- */
 .panel {
   background: var(--panel-bg);
@@ -6233,10 +5961,6 @@ h1,
 .label-row > .cpick {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.stage {
-  min-height: 0;
 }
 
 /* Raised things: a menu, a tooltip, a popover, a window, a notice. The
@@ -6419,8 +6143,7 @@ h1,
   gap: 24px;
 }
 
-.file-menu__sep,
-.outliner__menu-sep {
+.file-menu__sep {
   height: 1px;
   margin: 4px 0;
   background: var(--bz-sep);
@@ -6818,8 +6541,7 @@ progress {
 }
 
 /* --- the gallery and the viewer --- */
-.landing__head,
-.admin__head {
+.landing__head {
   border-bottom: 1px solid var(--bz-sep);
 }
 
@@ -7038,7 +6760,6 @@ progress {
   background: var(--bz-panel);
 }
 
-.legal__todo,
 .account-reason {
   background: var(--bz-hover);
 }
