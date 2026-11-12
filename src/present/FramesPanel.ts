@@ -1,4 +1,4 @@
-import '@flaticon/flaticon-uicons/css/solid/straight.css';
+import '../ui/icons';
 import { SidePanel } from '../sculpt/ui/SidePanel';
 import { checkbox, section } from '../ui/Panel';
 import { div } from '../ui/dom';
