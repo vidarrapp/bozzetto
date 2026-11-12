@@ -1,6 +1,6 @@
 # Bozzetto
 
-<img width="1180" height="820" alt="Bozzetto Screenshot - Sculpt mode" src="docs/screenshots/sculpt.jpg" />
+<img width="1180" height="820" alt="Bozzetto Screenshot" src="docs/screenshots/bozzetto.jpg" />
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
@@ -36,6 +36,8 @@ A posable figure, for reference or as the start of a sculpt. Pick **Create → N
 - **Files.** The figure autosaves and shows as a card in the gallery. **File → Save** writes an `.armature` file.
 
 ## Sculpt
+
+<img width="1180" height="820" alt="Bozzetto Screenshot - Sculpt mode" src="docs/screenshots/sculpt.jpg" />
 
 Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing leaves your device unless you sign in and save or publish.
 
