@@ -169,10 +169,11 @@ export const suites = {
     t.ok(f.open && f.panel && f.panel.w === 304 && f.panel.r === s.vw && f.panel.t === 56, `a click opens it: 304px, flush right, under the tab (${JSON.stringify(f.panel)})`);
     t.eq(f.heading, 'Render', 'headed Render');
     t.ok(!f.byline, 'with no byline: whose it is, is the strip\'s to say');
-    t.ok(f.sections.includes('Material') && f.sections.includes('Lighting') && f.sections.includes('Interface'), `with the viewer's sections (${f.sections})`);
+    t.ok(f.sections.includes('Material') && f.sections.includes('Lighting') && !f.sections.includes('Interface'), `with the viewer's sections (no Interface: Help has Hotkeys) (${f.sections})`);
     t.ok(!f.sections.some((n) => /camera|environment|ambient/i.test(n)), `and not the editor's whole look (${f.sections})`);
-    await page.click('.panel--render .panel__hotkeys');
-    t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'its Hotkeys button still opens the guide');
+    t.ok(!(await page.$('.panel--render .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
+    await page.keyboard.press('h');
+    t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H opens the guide');
     await page.keyboard.press('h');
     await page.click('.panel--render > .panel__handle');
     await page.waitForTimeout(300);

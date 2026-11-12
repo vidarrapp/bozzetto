@@ -189,8 +189,6 @@ export const PANELS: Topic[] = [
         ['Radius (GTAO)', 'How far from a surface the shading reaches. On real units it is a length in centimetres, from 0.1 to 10 cm, and the same on a small model and a large one. Type a value to go past either end. Without real units it is a share of the subject\'s radius, from 0.05 to 1.'],
         ['Strength and Radius (Cavity)', 'Strength from 0 to 2, and a Radius in pixels from 2 to 12.'],
       ),
-      h('Interface'),
-      options(['Hotkeys', 'Opens the hotkey guide, the same as the **H** key.']),
       p('Anti-aliasing is a setting of the device, not of the look. See the Preferences topic.'),
     ],
   },
