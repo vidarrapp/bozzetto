@@ -7476,14 +7476,16 @@ progress {
 }
 
 /* Delete account…, and the like: red text, no fill. */
-.btn--quietred,
-.btn--quietred:hover:not(:disabled) {
+/* White at rest, red under the pointer or the focus, as the trash icon. */
+.btn--quietred {
   background: none;
-  color: var(--bz-red-text);
+  color: var(--bz-text);
 }
 
-.btn--quietred:hover:not(:disabled) {
+.btn--quietred:hover:not(:disabled),
+.btn--quietred:focus-visible {
   background: var(--bz-hover);
+  color: var(--bz-red-text);
 }
 
 /* --- the owner tools' forms --- */

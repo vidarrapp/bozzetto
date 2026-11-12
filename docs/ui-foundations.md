@@ -65,7 +65,7 @@ layer does not try to.
 | Orange | #ff5a1f | The tool in hand; the amount in a field; the one main action of a window; the focus outline. Text on it is black |
 | Lime | #c6ff00 | The knob of a switch that is on |
 | Red | #ff4060 | Something went wrong; an action that cannot be undone. Never a switch that is off: off is neutral, as on macOS and iPadOS. Text on it is black. It leans toward pink so it cannot be taken for the orange |
-| Red text | #ff6b85 | The same red as text (error lines, "Delete account…") and as the trash icon under the pointer: lighter, to reach 4.5:1 on the panel and raised greys, where red itself is 4.1:1 and 3.7:1. Fills, borders and strokes use Red |
+| Red text | #ff6b85 | The same red as text (error lines) and as the trash icon and "Delete account…" under the pointer or on focus, which are grey and white at rest: lighter, to reach 4.5:1 on the panel and raised greys, where red itself is 4.1:1 and 3.7:1. Fills, borders and strokes use Red |
 
 The view axes keep their own red, green and blue.
 

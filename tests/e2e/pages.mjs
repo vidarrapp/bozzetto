@@ -9,7 +9,7 @@
 // the page one is on marked - and none of the corner chips; delete is a
 // trash icon named "Delete <title>", grey at rest and red under the pointer
 // or on focus, while the question after it keeps its filled red button and
-// "Delete account…" is red text; orange is the one main action of a page
+// "Delete account…" is white text, red under the pointer; orange is the one main action of a page
 // and nothing else; no element of these pages is set in the old fonts
 // (Manrope, Instrument Serif, JetBrains Mono); and at 390px wide no page
 // scrolls sideways. (The star's colours are the community suite's.)
@@ -214,7 +214,10 @@ async function trash(o, a, t) {
     const s = getComputedStyle(b);
     return { text: b.textContent, color: s.color, bg: s.backgroundColor };
   });
-  t.ok(del.text === 'Delete account…' && del.color === RED_TEXT && del.bg === 'rgba(0, 0, 0, 0)', `"Delete account…" stays red text with no fill (${show(del)})`);
+  t.ok(del.text === 'Delete account…' && del.color === 'rgb(242, 242, 242)' && del.bg === 'rgba(0, 0, 0, 0)', `"Delete account…" is white text with no fill at rest (${show(del)})`);
+  await a.page.hover('[data-item="delete"] button');
+  const delHover = await colour(a.page, '[data-item="delete"] button');
+  t.ok(delHover === RED_TEXT, `and the red of text under the pointer (${delHover})`);
   await a.page.click('[data-item="delete"] button');
   await a.page.waitForSelector('.account-delete button.btn--danger', { timeout: 10_000 });
   const sure = await a.page.evaluate(() => {
