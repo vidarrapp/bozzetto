@@ -1,15 +1,12 @@
 # Bozzetto
 
-<img width="2358" height="1339" alt="bozzetto_screenshot_261007" src="https://github.com/user-attachments/assets/cd4ab67a-714c-424e-821d-310b5602ff8a" />
-
+<img width="1180" height="820" alt="Bozzetto Screenshot - Sculpt mode" src="https://github.com/user-attachments/assets/5492772f-7dcc-4cdb-9749-a7153d0c9b10" />
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
-Bozzetto is a studio in the browser to pose, sculpt, render and timelapse. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and play back timelapses made of every stage as real geometry, which you can relight, orbit and scrub. Not a pre-rendered video. The timelapses are recorded in Bozzetto Studio or built from any app's exports in the uploader.
+Bozzetto is a studio in the browser to pose, sculpt, present and play back timelapses. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, light and render it, and play back timelapses made of every stage as real geometry, which you can relight, orbit and scrub. Not a pre-rendered video. The timelapses are recorded in Bozzetto Studio or built from any app's exports in the uploader.
 
 It installs to an iPad's home screen and works offline. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
-
-This is Bozzetto Web, the web app and its service. Its desktop counterpart, Bozzetto Studio, is a separate product; see [What is changing](#what-is-changing).
 
 **Live at [bozzetto.vidarrapp.se](https://bozzetto.vidarrapp.se)**
 
@@ -75,7 +72,8 @@ Pick **Create → New Sculpt** in the [gallery](https://bozzetto.vidarrapp.se). 
 
 ## Armature mode
 
-<img width="2362" height="1331" alt="bozzetto_armature_mode" src="https://github.com/user-attachments/assets/d5b59363-7006-47af-a572-f3089ad40c87" />
+<img width="1180" height="820" alt="Bozzetto Screenshot - Armature mode" src="https://github.com/user-attachments/assets/2fab7e90-c095-425d-8050-894e19636ffc" />
+
 
 A posable figure of its own, for reference or as the start of a sculpt.
 Pick **Create → New Armature** in the gallery (or open `/?armature=1`). No
@@ -211,31 +209,6 @@ Once the site has accounts, members can share their work for anyone to see. **Co
 
 **Reviewing.** The owner and the moderators the owner names have a **Review** chip in the top row, with a count of what waits for them: work pending review and work with open reports. It opens the Review page, with four tabs. **Queue** lists what waits, oldest first: **Open** shows it in the viewer in review mode (a **Reviewing** chip, the author, and the same actions in the top row, with **← Review** back to the tab), **Approve** lists it in the Community, and **Reject…** sends it back with a reason its author sees. **Gallery** lists everything in the Community now, newest first, hidden work marked: search it by title or **@handle**, show **All**, **Public** or **Hidden**, and **Hide…** or **Unhide** from the card. **Reports** lists the work members have reported, with each report's reason, note, who sent it and when: **Hide…** takes public work out with a reason, **Unhide** brings it back, **Dismiss** closes the reports and leaves it as it is. **History** is the last 30 days of reviews and withdrawals. If another reviewer acted first, the card says so and shows where the work stands now. In the viewer, a reviewer has a **Review** chip beside the author's name that opens the work in review mode. Moderators do not review their own work: another reviewer decides on it. The owner reviews everything, their own work included, and the owner's own shares go public at once.
 
-## What is changing
-
-Decided 2026-10-14. The first and third points have landed (see the
-Unreleased changelog); the rest is about Bozzetto Studio, which is
-developed elsewhere.
-
-- **The Electron desktop app is retired.** Its releases (0.1.0 to 0.6.2)
-  are withdrawn, its code is gone from this repository, and the Install
-  card no longer offers it. The web app is the one product here.
-- **Bozzetto Studio** is the desktop version: a native sculpting and
-  painting application rebuilt in Rust, closed source, in a repository of
-  its own. It will be a public alpha, free of charge until it reaches 1.0,
-  and sold at a fixed price from 1.0 on. Downloads and alpha reports go
-  through [vidarrapp/bozzetto-studio-releases](https://github.com/vidarrapp/bozzetto-studio-releases).
-  Alpha builds are unsigned; files saved by an alpha will open in 1.0.
-- **Timelapse recording has moved to Studio.** Bozzetto Web no longer
-  records a timelapse while you sculpt; it keeps undo and autosave, and
-  **Publish model**. Bozzetto Studio records, and exports the same
-  quantised GLB frame format. The viewer and the gallery keep playing
-  timelapses, the `/create/` uploader keeps publishing them (**Save to My
-  projects**, signed in), and the server keeps
-  timelapse projects as they are, so what is made in Studio plays here.
-- **The web app keeps its JavaScript engine.** Studio's Rust core stays
-  closed for now; whether the web app adopts it is revisited once Studio
-  reaches parity.
 
 ## Features
 
