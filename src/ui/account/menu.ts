@@ -100,6 +100,12 @@ function reviewChip(): HTMLElement {
   const chip = topChip('Review', '/?review');
   chip.classList.add('review-chip');
   if (new URLSearchParams(window.location.search).has('review')) chip.setAttribute('aria-current', 'page');
+  addReviewCount(chip);
+  return chip;
+}
+
+/** The count of what waits, as a badge on a Review chip or link, and in its name. */
+export function addReviewCount(chip: HTMLElement): void {
   void reviewCounts()
     .then(({ pending, reports }) => {
       const n = pending + reports;
@@ -117,5 +123,4 @@ function reviewChip(): HTMLElement {
     .catch(() => {
       // No count to be had: the chip still leads to the page.
     });
-  return chip;
 }

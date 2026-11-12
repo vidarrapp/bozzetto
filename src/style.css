@@ -1017,114 +1017,9 @@ html.is-page body {
   font-size: 24px;
 }
 
-.admin-create {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.admin__hint {
-  margin: 0 0 24px;
-  font-size: 12px;
-}
-
-.admin-create input,
-.admin-create select {
-  width: auto;
-  padding: 7px 9px;
-}
-
-.admin-create input[name='id'] {
-  flex: 1 1 180px;
-}
-
-.admin-create input[name='title'] {
-  flex: 2 1 220px;
-}
-
-.admin-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.admin-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-}
-
-.admin-row__thumb {
-  flex: 0 0 auto;
-  width: 64px;
-  aspect-ratio: 4 / 5;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 38%, #3a3d44, #1b1d21 72%);
-}
-
-.admin-row__img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.admin-row__main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.admin-row__title {
-  font-weight: 600;
-}
-
-.admin-row__meta {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.admin-row__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
 /* The row's Public/Private and Template switches, beside the actions they
    are not among. */
-.admin-row__vis,
-.admin-row__tpl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.admin-row__vis input,
-.admin-row__tpl input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-
 /* A template's row says so above its title. */
-.admin-row__badge {
-  align-self: flex-start;
-}
-
-.admin-row__badge[hidden] {
-  display: none;
-}
-
 .admin__empty {
   color: var(--muted);
 }
@@ -4758,7 +4653,7 @@ body.is-sampling * {
   padding: 8px 10px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text);
   font: inherit;
   font-size: 16px;
@@ -4891,88 +4786,6 @@ body.is-sampling * {
 }
 
 /* The account's pages: the gallery's frame, a section per subject. */
-.account-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 720px;
-}
-
-.account-section {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 14px 16px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-}
-
-.account-section > .account-step,
-.account-section > .account-list,
-.account-section > .account-code {
-  align-self: stretch;
-}
-
-.account-section__title {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.account-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.account-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--panel-border);
-}
-
-.account-item:first-child {
-  border-top: 0;
-}
-
-.account-item__main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.account-item__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.account-item__meta {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.account-item__warn {
-  color: var(--accent);
-  font-size: 12px;
-}
-
-.account-item__actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 .account-rename {
   display: flex;
   flex-wrap: wrap;
@@ -5034,35 +4847,6 @@ body.is-sampling * {
 /* --- The owner's tools over accounts (docs/accounts.md §8): tabs beside
    Projects for Invites, Users and the Audit log, on the editor's own rows
    and buttons. --- */
-.admin-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: -12px 0 22px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.admin-tabs[hidden] {
-  display: none;
-}
-
-.admin-tab {
-  margin-bottom: -1px;
-  padding: 6px 2px 8px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.admin-tab:hover {
-  color: var(--text);
-}
-
-.admin-tab--current {
-  border-bottom-color: var(--accent);
-  color: var(--text);
-}
-
 /* A count the owner should act on: deletions left waiting. */
 .admin__notice {
   margin: 0 0 14px;
@@ -5208,10 +4992,6 @@ body.is-sampling * {
   flex: 1 1 240px;
 }
 
-.admin-audit__row {
-  padding: 8px 14px;
-}
-
 .admin-audit__action {
   font-family: var(--font-spec);
   font-weight: 400;
@@ -5225,51 +5005,12 @@ body.is-sampling * {
   font-size: 12px;
 }
 
-@media (max-width: 560px) {
-  .admin-user .admin-row,
-  .admin-invite {
-    flex-wrap: wrap;
-  }
-
-  .admin-user .admin-row__actions,
-  .admin-invite .admin-row__actions {
-    margin-left: 0;
-  }
-}
-
-@media (max-width: 560px) {
-  .account-item {
-    flex-wrap: wrap;
-  }
-}
-
 /* --- My projects (docs/accounts.md §7): the storage meter, and cards
    with their actions in the body, where a thumb cannot cover them. --- */
 .my-projects__body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.my-projects__body > .account-say {
-  max-width: 720px;
-}
-
-.my-storage {
-  max-width: 720px;
-}
-
-.storage-meter {
-  display: flex;
-  align-self: stretch;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 0;
-  background: var(--panel-border);
-}
-
-.storage-meter__used {
-  background: var(--accent);
+  gap: 16px;
 }
 
 /* What uploads in progress hold: taken, but not yet stored. */
@@ -5289,8 +5030,9 @@ body.is-sampling * {
 .card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .card__actions .card__action {
@@ -5307,11 +5049,6 @@ body.is-sampling * {
 .card__actions .card__action:disabled {
   cursor: default;
   opacity: 0.55;
-}
-
-.card__delete:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .my-rename .account-input {
@@ -5429,10 +5166,6 @@ body.is-sampling * {
 /* --- the Community (docs/accounts.md §13): the gallery of members'
    shared work, author pages, the viewer's credit and Report, and Share
    to Community on My projects' cards. --- */
-.community-page > .account-say {
-  margin: 0 0 14px;
-}
-
 .card--community {
   cursor: pointer;
 }
@@ -5462,53 +5195,17 @@ body.is-sampling * {
 
 /* The sort select and the search, above the cards (the Review page's
    Gallery tab tools, reused). */
-.community__tools {
-  margin: 0 0 16px;
-}
-
 .community__tools[hidden] {
   display: none;
 }
 
 /* Star, in the picture's top-right corner of a Community card: a member's
    favourite, never a count. Always shown, so the state reads at a glance. */
-.card__star {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 0;
-  background: rgb(0 0 0 / 55%);
-  color: #fff;
-  font: inherit;
-  font-size: 17px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.card__star[aria-pressed='true'],
-.viewer-star[aria-pressed='true'] {
-  color: #f5c542;
-}
-
-.card__star:hover,
-.card__star:focus-visible {
-  border-color: var(--accent);
-}
-
 /* The views and stars a work has: its author's (My projects) and the
    reviewers' (the Gallery tab) to see. */
 .card__stats {
   color: var(--muted);
   font-size: 12px;
-}
-
-.my-projects .my-tabs {
-  margin: 0 0 18px;
 }
 
 /* "by @handle" under the viewer's title, in the Render panel. */
@@ -5647,31 +5344,6 @@ body.is-sampling * {
   line-height: 16px;
   letter-spacing: 0;
   text-align: center;
-}
-
-.review-page .review-tabs {
-  margin: 0 0 18px;
-}
-
-.review-page > .account-say {
-  margin: 0 0 14px;
-}
-
-.review-gallery__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 16px;
-}
-
-.review-gallery__tools .review-search {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-.review-gallery__tools .review-filter {
-  flex: 0 0 auto;
-  width: auto;
 }
 
 .review-card__state {
@@ -6153,8 +5825,7 @@ h1,
 .prefs__tab,
 .install-close,
 .float-window__close,
-.card__trash,
-.card__star {
+.card__trash {
   min-height: 28px;
   padding: 6px 12px;
   border: 0;
@@ -6187,8 +5858,7 @@ h1,
 .prefs__tab:hover,
 .install-close:hover,
 .float-window__close:hover,
-.card__trash:hover,
-.card__star:hover {
+.card__trash:hover {
   background: var(--bz-hover);
   color: var(--bz-text);
   border-color: transparent;
@@ -6998,7 +6668,7 @@ h1,
   min-height: 28px;
   padding: 6px 8px;
   border: 0;
-  background: var(--bz-control);
+  background-color: var(--bz-control);
   color: var(--bz-text);
   font: 13px/16px var(--bz-font);
 }
@@ -7211,10 +6881,6 @@ progress {
   background: var(--bz-viewport);
 }
 
-.admin-row__thumb {
-  background: var(--bz-viewport);
-}
-
 .card__body {
   padding: 10px 8px 12px;
 }
@@ -7246,20 +6912,9 @@ progress {
   color: var(--bz-text-2);
 }
 
-.card__trash,
-.card__star {
+.card__trash {
   background: var(--bz-strip);
   color: var(--bz-text);
-}
-
-.card__star {
-  width: 28px;
-  padding: 0;
-}
-
-.card__star[aria-pressed='true'],
-.viewer-star[aria-pressed='true'] {
-  color: var(--bz-orange);
 }
 
 .card--new {
@@ -7367,7 +7022,6 @@ progress {
 }
 
 .pkcheck__step,
-.account-section,
 .admin__bootstrap,
 .admin__lock,
 .admin__notice,
@@ -7399,4 +7053,1050 @@ progress {
 .admin-invite[data-state='live'] .admin-invite__state {
   border-color: var(--bz-line);
   color: var(--bz-text);
+}
+
+/* ==========================================================================
+   The pages (docs/ui-foundations.md; the boards of Owner tools, My
+   projects, Community, Account and Review)
+
+   One quiet navigation row over a column of content. Lists are rows
+   (.admin-row: the Projects list's pattern, also Invites, Users, Audit and
+   Review); galleries are cards (.page-grid). Delete is a trash icon, grey
+   until the pointer or focus is on it, then red. Square corners, the grey
+   scale; orange only for the one main action, the page one is on and focus.
+   ========================================================================== */
+
+/* --- the navigation row --- */
+.pagenav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 48px;
+  padding: 0 32px;
+  background: var(--bz-strip);
+}
+
+.pagenav__logo {
+  flex: none;
+  color: var(--bz-text);
+  font: italic 700 17px/20px var(--bz-font);
+  text-decoration: none;
+}
+
+.pagenav__links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.pagenav__account {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-left: auto;
+}
+
+/* A link, and the chips the row borrows (Sign in, Install, the @handle
+   menu): plain text, the page one is on in full text and weight 600. */
+.pagenav__link,
+.pagenav .topchip {
+  order: 0;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pagenav__link:hover,
+.pagenav .topchip:hover:not(:disabled),
+.pagenav .topchip--open {
+  background: none;
+  color: var(--bz-text);
+}
+
+.pagenav__link:focus-visible,
+.pagenav .topchip:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 4px;
+}
+
+.pagenav__link[aria-current='page'],
+.pagenav .topchip[aria-current='page'] {
+  color: var(--bz-text);
+  font-weight: 600;
+}
+
+.pagenav .account-menu__chip::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin: -3px 0 0 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.pagenav .review-chip,
+.pagenav .review-chip[aria-current='page'] {
+  gap: 0;
+  background: none;
+}
+
+.pagenav .review-chip__count {
+  min-width: 0;
+  margin-left: 6px;
+  padding: 0 5px;
+  background: var(--bz-orange);
+  color: var(--bz-on-accent);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+/* A phone: the logotype and the account on one line, the links under them
+   (they scroll sideways if they ever outgrow the width). */
+@media (max-width: 640px) {
+  .pagenav {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px 16px 0;
+    gap: 4px 16px;
+  }
+
+  .pagenav__account {
+    order: 2;
+    gap: 16px;
+  }
+
+  .pagenav__links {
+    order: 3;
+    flex: 1 1 100%;
+    gap: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pagenav__links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pagenav__link,
+  .pagenav .topchip {
+    min-height: 32px;
+  }
+}
+
+/* --- the column --- */
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 20px 64px;
+}
+
+.page--narrow {
+  max-width: 840px;
+}
+
+.page__title {
+  margin: 0;
+  color: var(--bz-text);
+  font: 700 32px/40px var(--bz-font);
+  letter-spacing: 0;
+}
+
+.page__tag {
+  margin: 4px 0 0;
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.page__tag[hidden] {
+  display: none;
+}
+
+.page > .account-say {
+  margin: 16px 0 0;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 24px 16px 48px;
+  }
+
+  .page__title {
+    font-size: 28px;
+    line-height: 36px;
+  }
+}
+
+/* --- tabs: links, the one in use filled --- */
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 24px 0 0;
+}
+
+.admin-tabs[hidden] {
+  display: none;
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  text-decoration: none;
+}
+
+.admin-tab:hover {
+  color: var(--bz-text);
+}
+
+.admin-tab--current,
+.admin-tab--current:hover {
+  background: var(--bz-hover);
+  color: var(--bz-text);
+}
+
+/* --- rows --- */
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 16px 0 0;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-panel);
+}
+
+.admin-row:hover {
+  background: color-mix(in srgb, var(--bz-panel) 84%, var(--bz-hover));
+}
+
+.admin-row__thumb {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  background: var(--bz-viewport);
+}
+
+.admin-row__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.admin-row__kind {
+  flex: none;
+  width: 88px;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+.admin-row__main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-row__title {
+  color: var(--bz-text);
+  font: 600 13px/16px var(--bz-font);
+  overflow-wrap: anywhere;
+}
+
+.admin-row__meta {
+  overflow-wrap: anywhere;
+}
+
+.admin-row__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Private and Template: the word, then its switch. */
+.admin-row__vis,
+.admin-row__tpl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.admin-row .btn {
+  text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .admin-row {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .admin-row__kind {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .admin-row__main {
+    flex: 1 1 100%;
+  }
+
+  .admin-row__actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+}
+
+/* A review row's lines: the title with its author, then one line of where
+   it stands, its parts parted by a dot. */
+.review-card__head {
+  color: var(--bz-text-2);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.review-card__head .card__author {
+  color: var(--bz-text-2);
+  font: inherit;
+}
+
+.review-card__head .card__author:hover,
+.review-card__head .card__title:hover {
+  color: var(--bz-text);
+}
+
+.review-card__meta > *,
+.page-grid .card__meta > * {
+  white-space: nowrap;
+}
+
+.review-card__meta > :not(:last-child)::after,
+.card--community .card__meta > :not(:last-child)::after {
+  content: '·';
+  margin: 0 8px;
+}
+
+.card--community .card__meta > :not(:last-child)::after {
+  margin: 0 6px;
+}
+
+/* Where one is red for what it says, it is still a line of the row's size. */
+.review-card[data-shared='hidden'] .review-card__state,
+.review-card[data-shared='rejected'] .review-card__state,
+.card__share[data-shared='rejected'] .card__share-status,
+.card__share[data-shared='hidden'] .card__share-status {
+  font-size: 11px;
+}
+
+.review-card__reports,
+.review-card__own,
+.review-card__meta .card__stats {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+}
+
+/* --- delete: a trash icon --- */
+.trash-btn {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.trash-btn .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.trash-btn:hover:not(:disabled),
+.trash-btn:focus-visible {
+  background: var(--bz-hover);
+  color: var(--bz-red);
+}
+
+.trash-btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+/* Delete account…, and the like: red text, no fill. */
+.btn--quietred,
+.btn--quietred:hover:not(:disabled) {
+  background: none;
+  color: var(--bz-red);
+}
+
+.btn--quietred:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+/* --- the owner tools' forms --- */
+.admin-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.admin-create input,
+.admin-create select {
+  width: auto;
+}
+
+.admin-create input[name='title'] {
+  flex: 0 1 320px;
+}
+
+.admin-page .admin__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.admin-page .admin__bootstrap,
+.admin-page .admin__lock {
+  margin: 24px 0 0;
+}
+
+.admin-page .admin__notice {
+  margin: 16px 0 0;
+}
+
+.admin-invites__form + .admin__hint + .account-say {
+  margin: 8px 0 0;
+}
+
+.admin-invites__made {
+  margin-top: 16px;
+}
+
+.admin-page .admin__empty {
+  margin: 16px 0 0;
+}
+
+.admin-audit__row {
+  padding: 8px 12px;
+}
+
+/* --- galleries: cards --- */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0 0;
+}
+
+.page-grid .card {
+  background: var(--bz-panel);
+}
+
+.page-grid .card:hover {
+  background: color-mix(in srgb, var(--bz-panel) 84%, var(--bz-hover));
+}
+
+.page-grid .card__body {
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.page-grid .card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+.page-grid .card__author {
+  align-self: auto;
+  color: var(--bz-text-2);
+  font: inherit;
+}
+
+/* A grid's own notes (nothing here yet, no such member) take the row. */
+.page-grid > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Star: in the picture's top-right corner, the same star either way, full
+   white when pressed and grey when not. Never orange or yellow. */
+.card__star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(27 27 27 / 0.7);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.star-toggle {
+  color: var(--bz-text-3);
+}
+
+.star-toggle[aria-pressed='true'] {
+  color: #fff;
+}
+
+.card__star:hover,
+.card__star:focus-visible {
+  background: rgb(27 27 27 / 0.92);
+}
+
+.star-toggle .fi {
+  display: block;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* --- My projects --- */
+.my-storage {
+  width: min(100%, 320px);
+}
+
+.my-storage__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.my-storage__title {
+  margin: 0;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.storage-meter__text {
+  margin: 0;
+  color: var(--bz-text);
+  font: 400 11px/16px var(--bz-font-mono);
+  text-align: right;
+}
+
+.storage-meter {
+  display: flex;
+  height: 3px;
+  overflow: hidden;
+  background: var(--bz-line);
+}
+
+.my-storage .storage-meter {
+  margin-top: 8px;
+}
+
+.storage-meter__used {
+  background: var(--bz-orange);
+}
+
+/* Share to Community: its word and the switch, then where it stands. */
+.card__share {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.card__share-switch {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  align-self: stretch;
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+}
+
+.card__share-status,
+.card__stats {
+  margin: 0;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+.card__share[data-shared='public'] .card__share-status {
+  color: var(--bz-text-2);
+}
+
+.card__share-hint {
+  margin: 8px 0 0;
+  padding-top: 0;
+  border-top: 0;
+  color: var(--bz-text-2);
+  font: 400 11px/16px var(--bz-font-mono);
+}
+
+.card__actions .card__delete {
+  margin-left: auto;
+}
+
+.card--mine .card__body {
+  flex: 1;
+}
+
+.page-grid .card--mine .card__meta {
+  display: block;
+}
+
+.card--mine .card__actions {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.card__share-link {
+  text-decoration: none;
+}
+
+.row-more-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.row-more::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 0 3px 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.row-more[aria-expanded='true'] {
+  background: var(--bz-hover);
+}
+
+.row-menu {
+  min-width: 140px;
+}
+
+/* --- Community and Review: the search and the order above the list --- */
+.community__tools,
+.review-gallery__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.review-gallery__tools .review-search {
+  flex: 0 1 320px;
+  min-width: 0;
+}
+
+.review-gallery__tools .review-filter {
+  flex: 0 0 auto;
+  width: 160px;
+}
+
+.review-history {
+  gap: 1px;
+  margin: 16px 0 0;
+}
+
+.review-history__item {
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-panel);
+}
+
+.review-history__intro {
+  margin: 16px 0 0;
+}
+
+.review__body > .review__empty,
+.review__grid > .review__empty {
+  margin: 16px 0 0;
+}
+
+/* --- Account: a section a row, its name at the left, what it holds in the
+   middle and its button at the right --- */
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  margin: 24px 0 0;
+}
+
+.account-section {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) auto;
+  column-gap: 24px;
+  row-gap: 4px;
+  align-items: start;
+  padding: 16px 0;
+  border-top: 1px solid var(--bz-sep);
+}
+
+.account-section > * {
+  grid-column: 2;
+}
+
+.account-section__title {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0 0 -3px;
+  padding-top: 3px;
+  color: var(--bz-text-2);
+  font: 400 11px/18px var(--bz-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-stretch: 90%;
+}
+
+.account-section > .btn {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
+.account-section > .account-step,
+.account-section > .account-list,
+.account-section > .account-code,
+.account-section > .account-say {
+  grid-column: 2 / -1;
+}
+
+.account-section .account-line {
+  font: 600 13px/18px var(--bz-font);
+}
+
+.account-section .account-small {
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-item__main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-item__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--bz-text);
+  font: 600 13px/18px var(--bz-font);
+}
+
+.account-item__meta {
+  color: var(--bz-text-2);
+  font: 400 13px/18px var(--bz-font);
+}
+
+.account-item__warn {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.account-item__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .account-section {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .account-section > *,
+  .account-section > .btn,
+  .account-section > .account-step,
+  .account-section > .account-list,
+  .account-section > .account-code,
+  .account-section > .account-say {
+    grid-column: 1;
+  }
+
+  .account-section__title {
+    grid-row: auto;
+    margin: 0;
+    padding-top: 0;
+  }
+
+  .account-section > .btn {
+    grid-row: auto;
+    justify-self: start;
+  }
+
+  .account-section > .btn + .account-say {
+    margin-top: 0;
+  }
+
+  .account-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* --- sign-in windows (the dialog of ui/account/signIn.ts) ---
+   The shared window's frame (the install card, raised and square), with the
+   fields, text and buttons of the app layer: Familjen Grotesk 13px, labels
+   above the field in the second text grey, the one orange action of the
+   window full width, the other ways as grey buttons or plain links, errors
+   in red. Scoped to the dialog: the Account page shares the account-*
+   class names and keeps its own look. */
+.account-card {
+  width: min(360px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 20px 24px 24px;
+}
+
+.account-card .account-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-card .account-body > * + * {
+  margin-top: 0;
+}
+
+.account-card p {
+  margin: 0;
+}
+
+.account-card .account-title {
+  margin: 0 32px 0 0;
+}
+
+.account-card .account-step {
+  gap: 12px;
+}
+
+.account-card .account-lede,
+.account-card .account-note,
+.account-card .account-foot,
+.account-card .account-line {
+  color: var(--bz-text-2);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-small,
+.account-card .account-hint,
+.account-card .account-invite {
+  color: var(--bz-text-2);
+  font: 12px/16px var(--bz-font);
+}
+
+.account-card .account-hint:empty,
+.account-card .account-invite:empty,
+.account-card .account-retry[hidden] {
+  display: none;
+}
+
+.account-card .account-hint[data-tone='ok'],
+.account-card .account-invite[data-tone='ok'] {
+  color: var(--bz-text);
+}
+
+.account-card .account-hint[data-tone='no'],
+.account-card .account-invite[data-tone='no'] {
+  color: var(--bz-red);
+}
+
+/* Why the dialog is up: a grey band, no colour. */
+.account-card .account-reason {
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-field {
+  gap: 4px;
+}
+
+.account-card .account-field__label {
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+}
+
+.account-card .account-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  background: var(--bz-strip);
+}
+
+.account-card .account-input::placeholder {
+  color: var(--bz-text-3);
+  opacity: 1;
+}
+
+/* The code is a value: Martian Mono 11px. */
+.account-card .account-input[name='code'] {
+  font: 11px/16px var(--bz-font-mono);
+  letter-spacing: 0;
+}
+
+.account-card .account-input[name='code']::placeholder {
+  font: 11px/16px var(--bz-font-mono);
+}
+
+/* The 13+ and terms box: a switch and its words. */
+.account-card .account-check {
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--bz-text-2);
+  font: 13px/20px var(--bz-font);
+}
+
+.account-card .account-check input {
+  margin: 0;
+}
+
+.account-card .account-actions {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.account-card .account-actions .btn,
+.account-card .account-passkey,
+.account-card .account-submit {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 12px;
+  text-align: center;
+}
+
+.account-card .btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.account-card .btn:disabled:not(.btn--primary) {
+  color: var(--bz-text-3);
+}
+
+/* The ways between steps: plain text links, the second text grey. */
+.account-card .account-more {
+  gap: 0 16px;
+}
+
+.account-card .account-linkbtn {
+  min-height: 24px;
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+  text-align: left;
+}
+
+.account-card .account-linkbtn:hover:not(:disabled) {
+  color: var(--bz-text);
+}
+
+.account-card .account-linkbtn:disabled {
+  color: var(--bz-text-3);
+}
+
+.account-card .account-foot .account-linkbtn {
+  min-height: 0;
+  color: var(--bz-text);
+}
+
+.account-card .account-say {
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-say[data-tone='note'] {
+  color: var(--bz-text-2);
+}
+
+.account-card :is(button, input, a):focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+/* A phone zooms in on a field under 16px. */
+@media (pointer: coarse) {
+  .account-card .account-input,
+  .account-card .account-input::placeholder,
+  .account-card .account-input[name='code'] {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .account-overlay {
+    padding: 16px;
+  }
+
+  .account-card {
+    padding: 20px 16px 24px;
+  }
 }

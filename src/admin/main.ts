@@ -1,4 +1,4 @@
-import { OwnerSessionError, TEMPLATE_HINT, VISIBILITY_HINT, api, failureText, mediaPath, setThumbSrc } from './api';
+import { OwnerSessionError, TEMPLATE_HINT, VISIBILITY_HINT, api, checkSignIn, failureText, mediaPath, setThumbSrc } from './api';
 import type { ProjectSummary } from './api';
 import { ownerSignIn, ownerSignInPanel } from './ownerSession';
 import { AccountError, bootstrapOwner, errorText, loadConfig, whoami } from '../net/account';
@@ -7,8 +7,8 @@ import { initTheme } from '../ui/theme';
 import { installRangeFill } from '../ui/rangeFill';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
-import { topbarRight } from '../ui/topbar';
-import { signOutChip } from '../ui/signIn';
+import { pageShell } from '../ui/pageShell';
+import { trashButton } from '../ui/trash';
 import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
 
@@ -79,24 +79,24 @@ function wantedTab(): Tab {
 const tabHref = (tab: Tab): string => (tab === 'projects' ? '/admin/' : `/admin/?tab=${tab}`);
 
 async function renderAdmin(host: HTMLElement, wanted: Tab): Promise<void> {
-  host.innerHTML = `
-    <div class="admin">
-      <div class="topbar topbar--left"><a class="topchip" href="/">← Gallery</a></div>
-      <header class="admin__head">
-        <h1>Bozzetto editor</h1>
-      </header>
-      <div id="owner-account"></div>
-      <nav class="admin-tabs" id="admin-tabs" aria-label="Owner tools" hidden></nav>
-      <div id="admin-tab"></div>
-    </div>`;
+  const shell = pageShell(host, {
+    current: 'owner',
+    title: 'Owner tools',
+    tagline: 'Everything on the site, and who may use it.',
+    className: 'admin-page',
+  });
+  shell.page.append(
+    fromHTML('<div id="owner-account"></div>'),
+    fromHTML('<nav class="admin-tabs" id="admin-tabs" aria-label="Owner tools" hidden></nav>'),
+    fromHTML('<div id="admin-tab"></div>'),
+  );
   const body = host.querySelector<HTMLElement>('#admin-tab')!;
   // This page is only reached signed in (Access fronts it), so the way out
-  // is always offered, beside the theme toggle. Drawn again after a sign-in
-  // (renderAdmin runs again), so one chip, not a second beside the first.
-  topbarRight().querySelector('.admin-signout')?.remove();
-  const out = signOutChip();
-  out.classList.add('admin-signout');
-  topbarRight().appendChild(out);
+  // is always offered, in the navigation row. Drawn again after a sign-in
+  // (renderAdmin runs again), so one row, not a second beside the first.
+  void checkSignIn()
+    .catch(() => ({ email: null, expired: false }))
+    .then((signIn) => shell.nav.fill(signIn, () => void renderAdmin(host, wanted)));
   // With accounts on, the owner's account: made here the first time
   // (bootstrap), and signed in for the second lock after that.
   const gate = await ownerAccount(host.querySelector<HTMLElement>('#owner-account')!, () => void renderAdmin(host, wanted));
@@ -298,32 +298,28 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // A scene is a file to open in Sculpt, an armature one to open in
     // Armature mode; the editor is for frames.
     const actions = scene
-      ? '<a class="btn btn--primary admin-row__open">Open in Sculpt</a>'
+      ? '<a class="btn admin-row__open">Open in Sculpt</a>'
       : armature
-        ? '<a class="btn btn--primary admin-row__open">Open in Armature</a>'
-      : `<a class="btn btn--primary admin-row__edit">Edit</a>
-          <a class="btn admin-row__view" target="_blank" rel="noopener">Open</a>` +
-        // The owner's Present for a published timelapse or model (/?tl=&present=1).
-        (p.mode === 'timelapse' || p.mode === 'model' ? '\n<a class="btn admin-row__present">Present</a>' : '');
+        ? '<a class="btn admin-row__open">Open in Armature</a>'
+        : // The owner's Present for a published timelapse or model (/?tl=&present=1),
+          // View in the viewer, and Frames: the frame editor (?p=).
+          (p.mode === 'timelapse' || p.mode === 'model' ? '<a class="btn admin-row__present">Present</a>\n' : '') +
+          `<a class="btn admin-row__view" target="_blank" rel="noopener">View</a>
+          <a class="btn admin-row__edit admin-row__frames">Frames</a>`;
     const row = fromHTML(`
       <div class="admin-row">
         <div class="admin-row__thumb">
           <img class="admin-row__img" alt="" loading="lazy" />
         </div>
+        <span class="admin-row__kind"></span>
         <div class="admin-row__main">
-          <span class="badge admin-row__badge" hidden>Template</span>
           <span class="admin-row__title"></span>
           <span class="admin-row__meta"></span>
         </div>
         <div class="admin-row__actions">
-          <label class="admin-row__vis">
-            <input type="checkbox" /> Private
-          </label>
-          <label class="admin-row__tpl">
-            <input type="checkbox" /> Template
-          </label>
+          <label class="admin-row__vis">Private <input type="checkbox" /></label>
+          <label class="admin-row__tpl">Template <input type="checkbox" /></label>
           ${actions}
-          <button class="btn btn--danger admin-row__delete" type="button">Delete</button>
         </div>
       </div>`);
 
@@ -333,17 +329,18 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // No thumbnail yet (e.g. before any frames) → drop the <img>, show the placeholder.
     img.addEventListener('error', () => img.remove());
 
+    row.querySelector<HTMLElement>('.admin-row__kind')!.textContent = p.mode;
     row.querySelector<HTMLElement>('.admin-row__title')!.textContent = p.title || p.id;
     row.querySelector<HTMLElement>('.admin-row__meta')!.textContent = scene
-      ? `${p.id} · scene · ${
+      ? `${p.id} · ${
           p.scene
             ? `${p.scene.objects} object${p.scene.objects === 1 ? '' : 's'} · ` +
               `${p.scene.tris.toLocaleString('en-US')} tris · ${(p.scene.bytes / (1024 * 1024)).toFixed(1)} MB`
             : 'upload did not finish'
         }`
       : armature
-        ? `${p.id} · armature · opens in Armature mode`
-        : `${p.id} · ${p.mode} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
+        ? `${p.id} · a posed figure`
+        : `${p.id} · ${p.frameCount} frame${p.frameCount === 1 ? '' : 's'}`;
 
     if (armature) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
@@ -393,13 +390,11 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     // the server answered, so one moves when the other's change moves it.
     const vis = row.querySelector<HTMLInputElement>('.admin-row__vis input')!;
     const tpl = row.querySelector<HTMLInputElement>('.admin-row__tpl input')!;
-    const badge = row.querySelector<HTMLElement>('.admin-row__badge')!;
     row.querySelector<HTMLElement>('.admin-row__vis')!.title = VISIBILITY_HINT;
     row.querySelector<HTMLElement>('.admin-row__tpl')!.title = TEMPLATE_HINT;
     const paint = (): void => {
       vis.checked = p.visibility === 'private';
       tpl.checked = p.template === true;
-      badge.hidden = p.template !== true;
     };
     paint();
     /**
@@ -432,7 +427,8 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       void send(`Could not change whether "${p.title || p.id}" is a template`, () => api.setTemplate(p.id, want));
     });
 
-    const del = row.querySelector<HTMLButtonElement>('.admin-row__delete')!;
+    const del = trashButton(`Delete ${p.title || p.id}`, 'admin-row__delete');
+    row.querySelector('.admin-row__actions')!.appendChild(del);
     del.addEventListener('click', async () => {
       const question = scene
         ? `Delete "${p.title || p.id}"? It goes from Projects and from this device.`

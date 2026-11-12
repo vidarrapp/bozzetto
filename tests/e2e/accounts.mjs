@@ -197,12 +197,12 @@ async function addAuthenticator(ctx, page, transport = 'internal') {
 const credentials = async (auth) => (await auth.cdp.send('WebAuthn.getCredentials', { authenticatorId: auth.id })).credentials;
 
 /** The top row's chips, right side, as they read. */
-const chips = (p) => p.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
+const chips = (p) => p.evaluate(() => [...document.querySelectorAll(':is(.topbar--right, .pagenav__account) .topchip')].map((c) => c.textContent.trim()));
 
 /** Wait (bounded) for a chip; whether it came. */
 const chipShown = (p, label, timeout = 20_000) =>
   p
-    .waitForFunction((l) => [...document.querySelectorAll('.topbar--right .topchip')].some((c) => c.textContent.trim() === l), label, { timeout })
+    .waitForFunction((l) => [...document.querySelectorAll(':is(.topbar--right, .pagenav__account) .topchip')].some((c) => c.textContent.trim() === l), label, { timeout })
     .then(() => true, () => false);
 
 /** The gallery, drawn. */
@@ -269,7 +269,7 @@ async function typeCode(p, code) {
 /** Sign in by email code from the gallery's chip; true when signed in. */
 async function signInByCode(server, b, email, { offer = 'Not now' } = {}) {
   const p = b.page;
-  await p.click('.topbar--right .topchip:text-is("Sign in")');
+  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
   await step(p, 'Sign in');
   const before = await lastMail(server, email);
   await p.fill('.account-card input[name=email]', email);
@@ -279,6 +279,44 @@ async function signInByCode(server, b, email, { offer = 'Not now' } = {}) {
   await typeCode(p, codeIn(mail));
   if (offer && (await step(p, 'Add a passkey?', 10_000))) await press(p, '.account-card', offer);
   return dialogGone(p);
+}
+
+/**
+ * The new look of a sign-in window (docs/ui-foundations.md): square corners all
+ * over, exactly one orange action, Familjen Grotesk for the words and Martian
+ * Mono for the code's value, none of the old faces, fields on the strip's black.
+ */
+async function windowLook(p, t, where, { mono = false, orange = 1 } = {}) {
+  const look = await p.evaluate(() => {
+    const card = document.querySelector('.account-card');
+    const css = (n) => getComputedStyle(n);
+    const orangeFill = 'rgb(255, 90, 31)';
+    const all = [card, ...card.querySelectorAll('*')].filter((n) => n.getClientRects().length);
+    const round = all.filter((n) => parseFloat(css(n).borderTopLeftRadius) > 0).map((n) => n.className || n.tagName);
+    const oldFaces = all.filter((n) => /Manrope|Instrument|JetBrains/i.test(css(n).fontFamily)).map((n) => n.className || n.tagName);
+    const words = [...card.querySelectorAll('.account-title, .account-field__label, .account-lede, .account-linkbtn, .btn')];
+    const wrongWords = words.filter((n) => !css(n).fontFamily.startsWith('"Familjen Grotesk"')).map((n) => n.className);
+    const oranges = [...card.querySelectorAll('button')].filter((b) => css(b).backgroundColor === orangeFill).map((b) => b.textContent);
+    const input = card.querySelector('input.account-input');
+    const code = card.querySelector('input[name=code]');
+    return {
+      round,
+      oldFaces,
+      wrongWords,
+      oranges,
+      title: css(card.querySelector('.account-title')).fontSize + '/' + css(card.querySelector('.account-title')).fontWeight,
+      inputBg: input ? css(input).backgroundColor : null,
+      codeFont: code ? css(code).fontFamily.split(',')[0] + ' ' + css(code).fontSize : null,
+      width: Math.round(card.getBoundingClientRect().width),
+    };
+  });
+  t.ok(!look.round.length, `${where}: square corners (${show(look.round)})`);
+  t.ok(!look.oldFaces.length && !look.wrongWords.length, `${where}: Familjen Grotesk, none of the old faces (${show([look.oldFaces, look.wrongWords])})`);
+  t.ok(look.oranges.length === orange, `${where}: ${orange} orange action (${show(look.oranges)})`);
+  t.ok(look.title === '17px/700', `${where}: the title is 17px bold (${look.title})`);
+  if (look.inputBg) t.ok(look.inputBg === 'rgb(27, 27, 27)', `${where}: fields on the strip's black (${look.inputBg})`);
+  if (mono) t.ok(look.codeFont === '"Martian Mono" 11px', `${where}: the code is Martian Mono 11px (${look.codeFont})`);
+  t.ok(look.width <= 360, `${where}: the window is at most 360px wide (${look.width})`);
 }
 
 // --- the parts --------------------------------------------------------------------------
@@ -293,6 +331,13 @@ async function joinWithInvite(server, turnstile, a, t) {
   t.ok(!url.search.includes('invite') && kept === inviteToken('join'), `the token is taken off the address and kept in this tab (${url.search || '(none)'}, ${kept})`);
   await p.waitForFunction(() => /works until/.test(document.querySelector('.account-invite')?.textContent ?? ''), null, { timeout: 10_000 }).catch(() => {});
   t.ok(/^Your invite works until \d+ \w+ \d{4}\.$/.test(await p.textContent('.account-invite')), `the invite is checked: "${await p.textContent('.account-invite')}"`);
+
+  await windowLook(p, t, 'Join');
+  const sw = await p.evaluate(() => {
+    const b = document.querySelector('.account-card input[name=terms]').getBoundingClientRect();
+    return [Math.round(b.width), Math.round(b.height)];
+  });
+  t.ok(show(sw) === show([36, 20]), `the terms box is a switch (${show(sw)})`);
 
   const hint = async (value) => {
     await p.fill('.account-card input[name=handle]', value);
@@ -360,7 +405,7 @@ async function signOut(a, t, label = 'ada') {
     await caches.open('bozzetto-me').then((c) => c.put('/api/me', new Response('{}')));
     await caches.open('bozzetto-my-projects').then((c) => c.put('/api/me/projects', new Response('[]')));
   });
-  await p.click(`.topbar--right .topchip:text-is("@${label}")`);
+  await p.click(`:is(.topbar--right, .pagenav__account) .topchip:text-is("@${label}")`);
   await p.click('.account-menu button:text-is("Sign out")');
   await p.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 15_000 }).catch(() => {});
   await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 }).catch(() => {});
@@ -377,7 +422,7 @@ async function signOut(a, t, label = 'ada') {
 /** A modal passkey sign-in: the autofill asked for as the dialog opens, stopped by the button's prompt. */
 async function passkeySignIn(a, t) {
   const p = a.page;
-  await p.click('.topbar--right .topchip:text-is("Sign in")');
+  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
   await step(p, 'Sign in');
   const field = await p.evaluate(() => document.querySelector('.account-card input[name=email]').autocomplete);
   t.eq(field, 'username webauthn', 'the email field offers passkeys among its suggestions');
@@ -416,7 +461,7 @@ async function passkeyFallback(a, t) {
   const heldId = Buffer.from(held?.credentialId ?? '', 'base64').toString('base64url');
   const open = async () => {
     const before = await p.evaluate(() => window.__autofill.asked);
-    await p.click('.topbar--right .topchip:text-is("Sign in")');
+    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
     await step(p, 'Sign in');
     await p.waitForFunction((n) => window.__autofill.asked > n, before, { timeout: 10_000 }).catch(() => {});
   };
@@ -447,7 +492,7 @@ async function passkeyFallback(a, t) {
   t.ok(
     view.line === 'Your browser did not offer the passkey. Enter your handle and try again.' &&
       view.focused === 'handle' &&
-      show(view.buttons) === show(['Use a passkey', 'Try again', 'Email me a code', 'Join with an invite']) &&
+      show(view.buttons) === show(['Use a passkey', 'Email me a code', 'Try again', 'Join with an invite']) &&
       view.email &&
       view.said === '',
     `in one line, with the handle field and Try again, and the code beside them (${show(view)})`,
@@ -489,8 +534,9 @@ async function passkeyFallback(a, t) {
 /** A code sign-in: a wrong code first, said with the tries left; the offer comes back after a code. */
 async function codeSignIn(server, turnstile, a, t) {
   const p = a.page;
-  await p.click('.topbar--right .topchip:text-is("Sign in")');
+  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
   await step(p, 'Sign in');
+  await windowLook(p, t, 'Sign in');
   const before = await lastMail(server, 'ada@example.com');
   const verified = turnstile.requests.length;
   await p.fill('.account-card input[name=email]', 'ada@example.com');
@@ -498,6 +544,7 @@ async function codeSignIn(server, turnstile, a, t) {
   t.ok(await step(p, 'Check your email'), 'Email me a code asks for the code');
   const intro = await p.textContent('.account-card .account-lede');
   t.eq(intro, 'If there is an account for ada@example.com, a code is on its way to it. It works once, for 10 minutes.', 'saying nothing of whether the address has an account');
+  await windowLook(p, t, 'the code step', { mono: true });
   const mail = await mailAfter(server, 'ada@example.com', before);
   const code = codeIn(mail);
   t.ok(show(turnstile.requests.slice(verified).map((r) => r.response)) === show(['pass:email-code']), 'with a token for email-code');
@@ -556,6 +603,7 @@ async function accountPasskeys(server, a, t) {
   const before = await lastMail(server, 'ada@example.com');
   await p.click('[data-section="passkeys"] button:text-is("Add a passkey")');
   t.ok(await step(p, 'Confirm it is you'), 'adding a passkey ten minutes on asks to confirm it is you');
+  await windowLook(p, t, 'Confirm it is you');
   const ways = await p.evaluate(() => [...document.querySelectorAll('.account-card button')].map((b) => b.textContent).filter((x) => x !== '×'));
   t.ok(show(ways) === show(['Use a passkey', 'Email me a code']), `with a passkey or a code (${show(ways)})`);
   await press(p, '.account-card', 'Email me a code');
@@ -569,7 +617,7 @@ async function accountPasskeys(server, a, t) {
 
   // Remove it, ten minutes on again: confirmed by a passkey.
   clock.offset += 11 * MINUTE;
-  await p.click('[data-section="passkeys"] .account-item:nth-child(2) button:text-is("Remove")');
+  await p.click('[data-section="passkeys"] .account-item:nth-child(2) .account-item__remove');
   t.ok(await step(p, 'Confirm it is you'), 'removing one asks again');
   await press(p, '.account-card', 'Use a passkey');
   t.ok(await dialogGone(p, 20_000), 'confirmed by a passkey');
@@ -607,6 +655,9 @@ async function accountSessions(server, browser, a, t) {
     await b.page.click('.landing__notice button');
     t.ok(await step(b.page, 'Sign in'), 'and Sign in again opens the dialog over it');
     t.eq(await b.page.textContent('.account-card .account-reason'), 'Your sign-in has expired. Sign in again, and carry on where you were.', 'saying why');
+    await windowLook(b.page, t, 'the expired sign-in');
+    const band = await b.page.evaluate(() => getComputedStyle(document.querySelector('.account-card .account-reason')).borderLeftWidth);
+    t.eq(band, '0px', 'the reason is a grey band, with no orange edge');
     await b.page.click('.account-card .install-close');
     await dialogGone(b.page);
     t.ok(await signInByCode(server, b, 'ada@example.com'), 'signed in again there');
@@ -628,8 +679,8 @@ async function accountHandle(a, t) {
   await p.fill(`${scope} input[name=handle]`, 'ada_l');
   await p.waitForFunction((s) => document.querySelector(`${s} .account-hint`)?.textContent === '@ada_l is free.', scope, { timeout: 10_000 }).catch(() => {});
   await p.click(`${scope} button:text-is("Save")`);
-  await p.waitForFunction(() => /^@ada_l /.test(document.querySelector('.landing__tagline')?.textContent ?? ''), null, { timeout: 20_000 }).catch(() => {});
-  t.ok(/^@ada_l · since /.test(await p.textContent('.landing__tagline')), `the handle changes: "${await p.textContent('.landing__tagline')}"`);
+  await p.waitForFunction(() => /^@ada_l /.test(document.querySelector('.page__tag')?.textContent ?? ''), null, { timeout: 20_000 }).catch(() => {});
+  t.ok(/^@ada_l · since /.test(await p.textContent('.page__tag')), `the handle changes: "${await p.textContent('.page__tag')}"`);
   t.ok(await chipShown(p, '@ada_l'), 'and the top row says it');
   await p.click(`${scope} button:text-is("Change handle")`);
   await p.fill(`${scope} input[name=handle]`, 'ada_m');
@@ -667,7 +718,7 @@ async function codesOnly(server, browser, t) {
   try {
     const p = c.page;
     await gallery(c);
-    await p.click('.topbar--right .topchip:text-is("Sign in")');
+    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
     await step(p, 'Sign in');
     const view = await p.evaluate(() => ({
       passkey: !!document.querySelector('.account-card .account-passkey'),
@@ -707,7 +758,7 @@ async function mailedLink(server, browser, t) {
   try {
     const p = d.page;
     await gallery(d);
-    await p.click('.topbar--right .topchip:text-is("Sign in")');
+    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
     await step(p, 'Sign in');
     const before = await lastMail(server, 'ada@new.example');
     await p.fill('.account-card input[name=email]', 'ada@new.example');
@@ -757,7 +808,7 @@ async function codeResend(server, turnstile, browser, t) {
     const p = r.page;
     await r.ctx.clock.install();
     await gallery(r);
-    await p.click('.topbar--right .topchip:text-is("Sign in")');
+    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
     await step(p, 'Sign in');
     const before = await lastMail(server, 'ada@new.example');
     await p.fill('.account-card input[name=email]', 'ada@new.example');
@@ -1555,8 +1606,8 @@ async function myProjectsPage(server, a, t) {
         id: c.dataset.project,
         title: c.querySelector('.card__title')?.textContent ?? null,
         meta: c.querySelector('.card__meta').textContent,
-        badge: c.querySelector('.card__badge').textContent,
-        actions: [...c.querySelectorAll('.card__actions .card__action')].map((b) => b.textContent),
+        actions: [...c.querySelectorAll('.card__actions .card__action, .card__actions .row-more, .card__actions .card__delete')].map((b) => b.textContent || b.getAttribute('aria-label')),
+        more: [...c.querySelectorAll('.row-menu .file-menu__item')].map((b) => b.textContent),
       })),
     }));
   let v = await view();
@@ -1568,10 +1619,10 @@ async function myProjectsPage(server, a, t) {
     v.cards.length === 2 &&
       v.cards[0].id === model.id &&
       v.cards[1].id === scene.id &&
-      /^Model · 1 frame · [\d.]+ (KB|MB) · \d+ \w+ \d{4}$/.test(v.cards[0].meta) &&
-      /^Scene · 4 objects · [\d.]+ MB · \d+ \w+ \d{4}$/.test(v.cards[1].meta) &&
-      v.cards.every((c) => show(c.actions) === show(['Open', 'Download', 'Rename', 'Delete'])),
-    `a card for each, newest first, with its kind, size and date, and Open, Download, Rename and Delete (${show(v.cards)})`,
+      /^Model · 1 frame · [\d.]+ (KB|MB) · \d+ \w+( \d{4})?$/.test(v.cards[0].meta) &&
+      /^Scene · 4 objects · [\d.]+ MB · \d+ \w+( \d{4})?$/.test(v.cards[1].meta) &&
+      v.cards.every((c) => show(c.more) === show(['Download', 'Rename']) && c.actions.length === 3 && c.actions[0] === 'Open' && c.actions[1] === 'More' && /^Delete /.test(c.actions[2])),
+    `a card for each, newest first, with its kind, size and date, Open, More (Download and Rename) and the trash named Delete <title> (${show(v.cards)})`,
   );
   await p.waitForFunction((id) => document.querySelector(`.card--mine[data-project="${id}"] .card__img`)?.complete, scene.id, { timeout: 10_000 }).catch(() => {});
   const img = await p.evaluate((id) => {
@@ -1582,6 +1633,7 @@ async function myProjectsPage(server, a, t) {
 
   // Rename, up to 200 characters.
   const card = (id) => `.card--mine[data-project="${id}"]`;
+  await p.click(`${card(scene.id)} .row-more`);
   await p.click(`${card(scene.id)} .card__rename`);
   const max = await p.evaluate((sel) => document.querySelector(`${sel} input[name=title]`)?.maxLength ?? null, card(scene.id));
   await p.fill(`${card(scene.id)} input[name=title]`, 'Bust study');
@@ -1592,13 +1644,13 @@ async function myProjectsPage(server, a, t) {
   t.ok(max === 200 && list.find((x) => x.id === scene.id)?.title === 'Bust study' && named === 'Bust study', `Rename renames it, on the server and its copy here, up to 200 characters (${max}; ${named})`);
 
   // Download: the scene's .bozz, as stored.
-  let [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30_000 }).catch(() => null), p.click(`${card(scene.id)} .card__download`)]);
+  let [dl] = await Promise.all([p.waitForEvent('download', { timeout: 30_000 }).catch(() => null), p.click(`${card(scene.id)} .row-more`).then(() => p.click(`${card(scene.id)} .card__download`))]);
   const bozz = dl ? readFileSync(await dl.path()) : null;
   const served = await pageBytes(p, `/api/me/media/${scene.id}/scene.bozz`);
   t.ok(!!dl && dl.suggestedFilename() === 'Bust study.bozz' && !!bozz && !!served && bozz.equals(served), `Download saves the scene's .bozz file as stored (${dl?.suggestedFilename()}, ${bozz?.length} bytes)`);
 
   // Download: a model's frames, zipped here.
-  [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60_000 }).catch(() => null), p.click(`${card(model.id)} .card__download`)]);
+  [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60_000 }).catch(() => null), p.click(`${card(model.id)} .row-more`).then(() => p.click(`${card(model.id)} .card__download`))]);
   const zip = dl ? readZip(readFileSync(await dl.path())) : [];
   const folder = `projects/ada-model-${model.id}`;
   const frame = await pageBytes(p, `/api/me/media/${model.id}/frames/sd/0000.glb`);
@@ -1632,7 +1684,7 @@ async function myProjectsPage(server, a, t) {
       const c = document.querySelector(`.card--mine[data-project="${id}"]`);
       return {
         open: !!c?.querySelector('.card__open')?.getAttribute('href'),
-        disabled: [...(c?.querySelectorAll('.card__actions button.card__action') ?? [])].map((b) => b.disabled),
+        disabled: [...(c?.querySelectorAll('.row-menu .file-menu__item, .card__delete') ?? [])].map((b) => b.disabled),
       };
     }),
   [scene.id, model.id]);

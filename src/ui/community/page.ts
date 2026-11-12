@@ -1,5 +1,5 @@
-import { checkSignIn, roleOf, type SignIn } from '../../admin/api';
-import { dayOf, loadConfig, type Me } from '../../net/account';
+import { checkSignIn, type SignIn } from '../../admin/api';
+import { loadConfig, shortDayOf, type Me } from '../../net/account';
 import {
   COMMUNITY_SORTS,
   HANDLE_IN_ADDRESS,
@@ -13,8 +13,7 @@ import {
   type ListQuery,
 } from '../../net/community';
 import { legalFoot, setPicture } from '../Landing';
-import { topChip, topbarLeft, topbarRight } from '../topbar';
-import { accountChips } from '../account/menu';
+import { pageShell } from '../pageShell';
 import { button, el } from '../account/parts';
 import { starButton } from './star';
 
@@ -39,8 +38,8 @@ import { starButton } from './star';
  * author sees theirs on My projects, reviewers on the Review page. View
  * only: the viewer offers nothing to copy or download.
  *
- * The page keeps the gallery's frame: ← Gallery and the account's chips in
- * the top row, the legal pages at the foot. Offline, the service worker's
+ * The page has the pages' navigation row (ui/pageNav) at the top and the
+ * legal pages at the foot. Offline, the service worker's
  * last copy of a list a guest was given stands in (vite.config.ts).
  *
  * Stable hooks for tests: `.community-page[data-page=community|author]`,
@@ -59,39 +58,34 @@ export async function renderCommunity(app: HTMLElement, handle: string | null = 
   const shown = (handle ?? '').trim();
   document.title = author ? `@${shown} · Bozzetto` : 'Community · Bozzetto';
 
-  const page = el('div', 'landing community-page');
+  const shell = pageShell(app, {
+    current: 'community',
+    title: author ? `@${shown}` : 'Community',
+    tagline: author ? 'Their work in the Community. View only: it stays theirs.' : 'Work shared by members. All rights stay with the authors.',
+    className: 'community-page',
+  });
+  const { page, title } = shell;
   page.dataset.page = author ? 'author' : 'community';
-  const head = el('header', 'landing__head');
-  const titles = el('div');
-  const title = el('h1', 'landing__title', author ? `@${shown}` : 'Community');
-  const tagline = el(
-    'p',
-    'landing__tagline',
-    author ? 'Their work in the Community. View only: it stays theirs.' : 'View work shared by our community, all rights reserved by authors.',
-  );
-  titles.append(title, tagline);
-  head.appendChild(titles);
   const say = el('p', 'account-say community__say');
   say.setAttribute('role', 'status');
   const params = new URLSearchParams(window.location.search);
   const tools = listTools(author, { sort: sortOf(params.get('sort')), q: (params.get('q') ?? '').slice(0, MAX_SEARCH) });
   tools.root.hidden = true;
-  const grid = el('div', 'landing__grid community__grid');
+  const grid = el('div', 'page-grid community__grid');
   const more = button('Load more', 'btn community__more');
   more.hidden = true;
-  page.append(head, tools.root, say, grid, more);
-  app.replaceChildren(page);
-  topRow(author);
+  page.append(tools.root, say, grid, more);
 
   const config = await loadConfig();
   let me: Me | null = null;
   if (config?.accounts) {
     const signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false }));
-    chips(signIn, app, handle);
+    shell.nav.fill(signIn, () => void renderCommunity(app, handle));
     me = signIn.me && signIn.me.status === 'active' ? signIn.me : null;
     page.appendChild(legalFoot());
   } else {
     // No accounts, no members, and nothing anyone has shared.
+    shell.nav.fill(null, () => undefined);
     say.textContent = 'The Community is not open on this site.';
     return;
   }
@@ -223,31 +217,6 @@ function listTools(author: boolean, start: ListQuery): { root: HTMLElement; quer
   return tools;
 }
 
-/** The top row's left: back to the gallery, and on an author page to the Community. */
-function topRow(author: boolean): void {
-  const left = topbarLeft();
-  if (!left.querySelector('.viewer-back')) {
-    const back = topChip('← Gallery', '/');
-    back.classList.add('viewer-back');
-    left.appendChild(back);
-  }
-  left.querySelector('.community-back')?.remove();
-  if (author) {
-    const to = topChip('Community', '/?community');
-    to.classList.add('community-back');
-    left.appendChild(to);
-  }
-}
-
-function chips(signIn: SignIn, app: HTMLElement, handle: string | null): void {
-  const bar = topbarRight();
-  bar.querySelectorAll('.landing-chip').forEach((c) => c.remove());
-  for (const c of accountChips(signIn, roleOf(signIn), () => void renderCommunity(app, handle))) {
-    c.classList.add('landing-chip');
-    bar.appendChild(c);
-  }
-}
-
 function empty(handle: string | null): HTMLElement {
   return el(
     'p',
@@ -289,16 +258,16 @@ export function communityCard(
   const body = el('div', 'card__body');
   const title = el('a', 'card__title card__link', item.title || 'Untitled');
   title.href = href;
+  // The line under the title, as the board draws it: @author · timelapse · 3 Nov.
   const meta = el('span', 'card__meta');
-  meta.append(el('span', 'badge card__mode', MODE_LABEL[item.mode] ?? 'model'));
-  if (item.shared_at) meta.append(el('span', 'card__date', dayOf(item.shared_at)));
-  body.append(title);
   if (opts.showAuthor) {
     const by = el('a', 'card__author', `@${item.author.handle}`);
     by.href = authorHref(item.author.handle);
-    body.append(by);
+    meta.append(by);
   }
-  body.append(meta);
+  meta.append(el('span', 'card__mode', MODE_LABEL[item.mode] ?? 'model'));
+  if (item.shared_at) meta.append(el('span', 'card__date', shortDayOf(item.shared_at)));
+  body.append(title, meta);
   card.append(thumb, body);
   if (item.thumb) setPicture(thumb, item.thumb);
   // Star, for a member signed in, on anyone's work but their own; beside

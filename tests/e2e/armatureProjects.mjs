@@ -404,12 +404,11 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     const card = await p.evaluate((id) => {
       const c = document.querySelector(`.card--mine[data-project="${id}"]`);
       return {
-        badge: c?.querySelector('.card__badge')?.textContent ?? null,
         meta: c?.querySelector('.card__meta')?.textContent ?? '',
         open: c?.querySelector('.card__open')?.getAttribute('href') ?? null,
       };
     }, saved?.id);
-    t.ok(card.badge === 'Armature' && /^Armature · /.test(card.meta), `My projects shows it badged Armature (${show(card)})`);
+    t.ok(/^Armature · /.test(card.meta), `My projects shows it as an Armature (${show(card)})`);
     t.eq(card.open, `/?armature=1&project=${saved?.id}`, 'and Open goes to Armature mode');
     // Opened back over the armature in progress: the card asks (the
     // browser's dialogs are accepted), and the figure is as saved.

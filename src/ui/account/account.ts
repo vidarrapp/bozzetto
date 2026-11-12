@@ -1,4 +1,4 @@
-import { checkSignIn, forgetSignIn, memberProjects, roleOf, signOut, type SignIn } from '../../admin/api';
+import { checkSignIn, forgetSignIn, memberProjects, signOut, type SignIn } from '../../admin/api';
 import {
   AccountError,
   BotCheck,
@@ -35,9 +35,9 @@ import {
 import { forgetOwnerCaches } from '../../net/ownerCaches';
 import { statusToast } from '../../sculpt/ui/statusToast';
 import { signInAgain } from '../signIn';
-import { topChip, topbarLeft, topbarRight } from '../topbar';
+import { pageShell, setTagline } from '../pageShell';
+import { trashButton } from '../trash';
 import { noteAccountDeleted } from '../Landing';
-import { accountChips } from './menu';
 import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink } from './parts';
 import { confirmIdentity } from './signIn';
 
@@ -66,18 +66,13 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
   app.classList.add('app--page');
   document.title = 'Account · Bozzetto';
-  const page = el('div', 'landing account-page');
-  app.replaceChildren(page);
-  galleryChip();
+  const shell = pageShell(app, { current: 'account', title: 'Account', className: 'account-page', narrow: true });
+  const again = (): void => void renderAccount(app);
   const config = await loadConfig();
-  const head = el('header', 'landing__head');
-  const titles = el('div');
-  titles.append(el('h1', 'landing__title', 'Account'));
-  head.appendChild(titles);
-  page.appendChild(head);
   const host = el('div', 'account-sections');
-  page.appendChild(host);
+  shell.page.appendChild(host);
   if (!config?.accounts) {
+    shell.nav.fill(null, again);
     host.appendChild(el('p', 'muted', 'Accounts are not open on this site.'));
     return;
   }
@@ -85,7 +80,7 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
   if (signIn.suspended) {
     // Nothing of the account answers while it is suspended, and no sign-in
     // would lift it: say so, and offer to let the device go.
-    chips(signIn, app);
+    shell.nav.fill(signIn, again);
     host.append(el('p', 'account-say', suspensionText(signIn.suspended.reason)));
     {
       const out = button('Sign out', 'btn');
@@ -103,15 +98,15 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
   if (!signIn.me && (await signInAgain(undefined, 'Sign in to see your account.'))) {
     signIn = await checkSignIn().catch((): SignIn => ({ email: null, expired: false, accounts: true }));
   }
-  chips(signIn, app);
+  shell.nav.fill(signIn, again);
   const me = signIn.me;
   if (!me) {
-    const again = button('Sign in', 'btn btn--primary');
-    again.addEventListener('click', () => void renderAccount(app));
-    host.append(el('p', 'muted', 'You are not signed in.'), again);
+    const retry = button('Sign in', 'btn btn--primary');
+    retry.addEventListener('click', again);
+    host.append(el('p', 'muted', 'You are not signed in.'), retry);
     return;
   }
-  titles.appendChild(el('p', 'landing__tagline', `@${me.handle}`));
+  setTagline(shell, `@${me.handle}`);
   let details: AccountDetails;
   try {
     details = await getAccount();
@@ -119,26 +114,8 @@ export async function renderAccount(app: HTMLElement): Promise<void> {
     host.appendChild(el('p', 'account-say', `Your account could not be loaded: ${errorText(err)}`));
     return;
   }
-  titles.lastElementChild!.textContent = `@${me.handle} · since ${dayOf(details.createdAt)}`;
+  setTagline(shell, `@${me.handle} · since ${dayOf(details.createdAt)}`);
   draw({ config, me, details, host });
-}
-
-/** The top row: back to the gallery on the left, the account's chips on the right. */
-function galleryChip(): void {
-  const left = topbarLeft();
-  if (left.querySelector('.viewer-back')) return;
-  const back = topChip('← Gallery', '/');
-  back.classList.add('viewer-back');
-  left.appendChild(back);
-}
-
-function chips(signIn: SignIn, app: HTMLElement): void {
-  const bar = topbarRight();
-  bar.querySelectorAll('.landing-chip').forEach((c) => c.remove());
-  for (const c of accountChips(signIn, roleOf(signIn), () => void renderAccount(app))) {
-    c.classList.add('landing-chip');
-    bar.appendChild(c);
-  }
 }
 
 /** Every section, from the state as it stands. */
@@ -353,7 +330,7 @@ function passkeysSection(state: PageState): HTMLElement {
   const list = el('ul', 'account-list');
   for (const p of passkeys) list.appendChild(passkeyRow(state, p, say));
   if (passkeys.length) s.appendChild(list);
-  const add = button('Add a passkey', 'btn btn--primary');
+  const add = button('Add a passkey');
   s.appendChild(add);
   const why = noPasskeysWhy(state.config);
   if (why) {
@@ -406,7 +383,7 @@ function passkeyRow(state: PageState, p: Passkey, say: Say): HTMLElement {
   }
   const actions = el('div', 'account-item__actions');
   const rename = button('Rename');
-  const remove = button('Remove', 'btn btn--danger');
+  const remove = trashButton(`Remove the passkey ${p.name}`, 'account-item__remove');
   actions.append(rename, remove);
   row.append(main, actions);
 
@@ -440,6 +417,8 @@ function passkeyRow(state: PageState, p: Passkey, say: Say): HTMLElement {
         .then((updated) => {
           p.name = updated.name;
           name.textContent = updated.name;
+          remove.setAttribute('aria-label', `Remove the passkey ${updated.name}`);
+          remove.title = remove.getAttribute('aria-label') ?? '';
           done();
         })
         .catch((err: unknown) => {
@@ -543,7 +522,7 @@ function sessionsSection(state: PageState): HTMLElement {
     });
     actions.appendChild(elsewhere);
   }
-  const everywhere = button('Sign out everywhere', 'btn btn--danger');
+  const everywhere = button('Sign out everywhere');
   everywhere.addEventListener('click', () => {
     if (!confirm('Sign out everywhere, this browser included?')) return;
     everywhere.disabled = true;
@@ -631,7 +610,7 @@ function dataItem(key: string, label: string, what: string, danger = false): {
   row.dataset.item = key;
   const main = el('div', 'account-item__main');
   main.append(el('span', 'account-item__title', label), el('span', 'account-item__meta', what));
-  const action = button(label, danger ? 'btn btn--danger' : 'btn');
+  const action = button(label, danger ? 'btn btn--quietred' : 'btn');
   const actions = el('div', 'account-item__actions');
   actions.appendChild(action);
   const more = el('div', 'account-item__more');

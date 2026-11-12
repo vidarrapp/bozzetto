@@ -324,7 +324,7 @@ export const suites = {
       return { tag: a?.tagName, href: a?.getAttribute('href'), count: document.querySelectorAll('.viewer-author').length };
     });
     t.ok(by.tag === 'A' && by.href === '/?u=ada' && by.count === 1, `a link to her page, said once (${JSON.stringify(by)})`);
-    t.eq(s.buttons.map((b) => b.text).join(), '☆,Report…,Close,Hide the interface', "Star and Report… stand before Close, quiet");
+    t.eq(s.buttons.map((b) => b.text).join(), ',Report…,Close,Hide the interface', "Star (an icon, no words) and Report… stand before Close, quiet");
     t.ok(s.buttons.every((b) => b.bg === 'rgba(0, 0, 0, 0)'), 'none of them filled');
     t.eq(s.oldRow.join(), '', 'and no top row');
     await page.click('.panel--render > .panel__handle');
