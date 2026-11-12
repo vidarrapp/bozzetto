@@ -281,6 +281,44 @@ async function signInByCode(server, b, email, { offer = 'Not now' } = {}) {
   return dialogGone(p);
 }
 
+/**
+ * The new look of a sign-in window (docs/ui-foundations.md): square corners all
+ * over, exactly one orange action, Familjen Grotesk for the words and Martian
+ * Mono for the code's value, none of the old faces, fields on the strip's black.
+ */
+async function windowLook(p, t, where, { mono = false, orange = 1 } = {}) {
+  const look = await p.evaluate(() => {
+    const card = document.querySelector('.account-card');
+    const css = (n) => getComputedStyle(n);
+    const orangeFill = 'rgb(255, 90, 31)';
+    const all = [card, ...card.querySelectorAll('*')].filter((n) => n.getClientRects().length);
+    const round = all.filter((n) => parseFloat(css(n).borderTopLeftRadius) > 0).map((n) => n.className || n.tagName);
+    const oldFaces = all.filter((n) => /Manrope|Instrument|JetBrains/i.test(css(n).fontFamily)).map((n) => n.className || n.tagName);
+    const words = [...card.querySelectorAll('.account-title, .account-field__label, .account-lede, .account-linkbtn, .btn')];
+    const wrongWords = words.filter((n) => !css(n).fontFamily.startsWith('"Familjen Grotesk"')).map((n) => n.className);
+    const oranges = [...card.querySelectorAll('button')].filter((b) => css(b).backgroundColor === orangeFill).map((b) => b.textContent);
+    const input = card.querySelector('input.account-input');
+    const code = card.querySelector('input[name=code]');
+    return {
+      round,
+      oldFaces,
+      wrongWords,
+      oranges,
+      title: css(card.querySelector('.account-title')).fontSize + '/' + css(card.querySelector('.account-title')).fontWeight,
+      inputBg: input ? css(input).backgroundColor : null,
+      codeFont: code ? css(code).fontFamily.split(',')[0] + ' ' + css(code).fontSize : null,
+      width: Math.round(card.getBoundingClientRect().width),
+    };
+  });
+  t.ok(!look.round.length, `${where}: square corners (${show(look.round)})`);
+  t.ok(!look.oldFaces.length && !look.wrongWords.length, `${where}: Familjen Grotesk, none of the old faces (${show([look.oldFaces, look.wrongWords])})`);
+  t.ok(look.oranges.length === orange, `${where}: ${orange} orange action (${show(look.oranges)})`);
+  t.ok(look.title === '17px/700', `${where}: the title is 17px bold (${look.title})`);
+  if (look.inputBg) t.ok(look.inputBg === 'rgb(27, 27, 27)', `${where}: fields on the strip's black (${look.inputBg})`);
+  if (mono) t.ok(look.codeFont === '"Martian Mono" 11px', `${where}: the code is Martian Mono 11px (${look.codeFont})`);
+  t.ok(look.width <= 360, `${where}: the window is at most 360px wide (${look.width})`);
+}
+
 // --- the parts --------------------------------------------------------------------------
 
 /** Join from an invite link: the invite checked, the handle checked as typed, the terms box required, the code, a passkey. */
@@ -293,6 +331,13 @@ async function joinWithInvite(server, turnstile, a, t) {
   t.ok(!url.search.includes('invite') && kept === inviteToken('join'), `the token is taken off the address and kept in this tab (${url.search || '(none)'}, ${kept})`);
   await p.waitForFunction(() => /works until/.test(document.querySelector('.account-invite')?.textContent ?? ''), null, { timeout: 10_000 }).catch(() => {});
   t.ok(/^Your invite works until \d+ \w+ \d{4}\.$/.test(await p.textContent('.account-invite')), `the invite is checked: "${await p.textContent('.account-invite')}"`);
+
+  await windowLook(p, t, 'Join');
+  const sw = await p.evaluate(() => {
+    const b = document.querySelector('.account-card input[name=terms]').getBoundingClientRect();
+    return [Math.round(b.width), Math.round(b.height)];
+  });
+  t.ok(show(sw) === show([36, 20]), `the terms box is a switch (${show(sw)})`);
 
   const hint = async (value) => {
     await p.fill('.account-card input[name=handle]', value);
@@ -491,6 +536,7 @@ async function codeSignIn(server, turnstile, a, t) {
   const p = a.page;
   await p.click('.topbar--right .topchip:text-is("Sign in")');
   await step(p, 'Sign in');
+  await windowLook(p, t, 'Sign in');
   const before = await lastMail(server, 'ada@example.com');
   const verified = turnstile.requests.length;
   await p.fill('.account-card input[name=email]', 'ada@example.com');
@@ -498,6 +544,7 @@ async function codeSignIn(server, turnstile, a, t) {
   t.ok(await step(p, 'Check your email'), 'Email me a code asks for the code');
   const intro = await p.textContent('.account-card .account-lede');
   t.eq(intro, 'If there is an account for ada@example.com, a code is on its way to it. It works once, for 10 minutes.', 'saying nothing of whether the address has an account');
+  await windowLook(p, t, 'the code step', { mono: true });
   const mail = await mailAfter(server, 'ada@example.com', before);
   const code = codeIn(mail);
   t.ok(show(turnstile.requests.slice(verified).map((r) => r.response)) === show(['pass:email-code']), 'with a token for email-code');
@@ -556,6 +603,7 @@ async function accountPasskeys(server, a, t) {
   const before = await lastMail(server, 'ada@example.com');
   await p.click('[data-section="passkeys"] button:text-is("Add a passkey")');
   t.ok(await step(p, 'Confirm it is you'), 'adding a passkey ten minutes on asks to confirm it is you');
+  await windowLook(p, t, 'Confirm it is you');
   const ways = await p.evaluate(() => [...document.querySelectorAll('.account-card button')].map((b) => b.textContent).filter((x) => x !== '×'));
   t.ok(show(ways) === show(['Use a passkey', 'Email me a code']), `with a passkey or a code (${show(ways)})`);
   await press(p, '.account-card', 'Email me a code');
@@ -607,6 +655,9 @@ async function accountSessions(server, browser, a, t) {
     await b.page.click('.landing__notice button');
     t.ok(await step(b.page, 'Sign in'), 'and Sign in again opens the dialog over it');
     t.eq(await b.page.textContent('.account-card .account-reason'), 'Your sign-in has expired. Sign in again, and carry on where you were.', 'saying why');
+    await windowLook(b.page, t, 'the expired sign-in');
+    const band = await b.page.evaluate(() => getComputedStyle(document.querySelector('.account-card .account-reason')).borderLeftWidth);
+    t.eq(band, '0px', 'the reason is a grey band, with no orange edge');
     await b.page.click('.account-card .install-close');
     await dialogGone(b.page);
     t.ok(await signInByCode(server, b, 'ada@example.com'), 'signed in again there');

@@ -7687,3 +7687,204 @@ progress {
   border-color: var(--bz-line);
   color: var(--bz-text);
 }
+
+/* --- sign-in windows (the dialog of ui/account/signIn.ts) ---
+   The shared window's frame (the install card, raised and square), with the
+   fields, text and buttons of the app layer: Familjen Grotesk 13px, labels
+   above the field in the second text grey, the one orange action of the
+   window full width, the other ways as grey buttons or plain links, errors
+   in red. Scoped to the dialog: the Account page shares the account-*
+   class names and keeps its own look. */
+.account-card {
+  width: min(360px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 20px 24px 24px;
+}
+
+.account-card .account-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-card .account-body > * + * {
+  margin-top: 0;
+}
+
+.account-card p {
+  margin: 0;
+}
+
+.account-card .account-title {
+  margin: 0 32px 0 0;
+}
+
+.account-card .account-step {
+  gap: 12px;
+}
+
+.account-card .account-lede,
+.account-card .account-note,
+.account-card .account-foot,
+.account-card .account-line {
+  color: var(--bz-text-2);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-small,
+.account-card .account-hint,
+.account-card .account-invite {
+  color: var(--bz-text-2);
+  font: 12px/16px var(--bz-font);
+}
+
+.account-card .account-hint:empty,
+.account-card .account-invite:empty,
+.account-card .account-retry[hidden] {
+  display: none;
+}
+
+.account-card .account-hint[data-tone='ok'],
+.account-card .account-invite[data-tone='ok'] {
+  color: var(--bz-text);
+}
+
+.account-card .account-hint[data-tone='no'],
+.account-card .account-invite[data-tone='no'] {
+  color: var(--bz-red);
+}
+
+/* Why the dialog is up: a grey band, no colour. */
+.account-card .account-reason {
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-field {
+  gap: 4px;
+}
+
+.account-card .account-field__label {
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+}
+
+.account-card .account-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  background: var(--bz-strip);
+}
+
+.account-card .account-input::placeholder {
+  color: var(--bz-text-3);
+  opacity: 1;
+}
+
+/* The code is a value: Martian Mono 11px. */
+.account-card .account-input[name='code'] {
+  font: 11px/16px var(--bz-font-mono);
+  letter-spacing: 0;
+}
+
+.account-card .account-input[name='code']::placeholder {
+  font: 11px/16px var(--bz-font-mono);
+}
+
+/* The 13+ and terms box: a switch and its words. */
+.account-card .account-check {
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--bz-text-2);
+  font: 13px/20px var(--bz-font);
+}
+
+.account-card .account-check input {
+  margin: 0;
+}
+
+.account-card .account-actions {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.account-card .account-actions .btn,
+.account-card .account-passkey,
+.account-card .account-submit {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 12px;
+  text-align: center;
+}
+
+.account-card .btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.account-card .btn:disabled:not(.btn--primary) {
+  color: var(--bz-text-3);
+}
+
+/* The ways between steps: plain text links, the second text grey. */
+.account-card .account-more {
+  gap: 0 16px;
+}
+
+.account-card .account-linkbtn {
+  min-height: 24px;
+  color: var(--bz-text-2);
+  font: 13px/16px var(--bz-font);
+  text-align: left;
+}
+
+.account-card .account-linkbtn:hover:not(:disabled) {
+  color: var(--bz-text);
+}
+
+.account-card .account-linkbtn:disabled {
+  color: var(--bz-text-3);
+}
+
+.account-card .account-foot .account-linkbtn {
+  min-height: 0;
+  color: var(--bz-text);
+}
+
+.account-card .account-say {
+  font: 13px/18px var(--bz-font);
+}
+
+.account-card .account-say[data-tone='note'] {
+  color: var(--bz-text-2);
+}
+
+.account-card :is(button, input, a):focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+/* A phone zooms in on a field under 16px. */
+@media (pointer: coarse) {
+  .account-card .account-input,
+  .account-card .account-input::placeholder,
+  .account-card .account-input[name='code'] {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .account-overlay {
+    padding: 16px;
+  }
+
+  .account-card {
+    padding: 20px 16px 24px;
+  }
+}
