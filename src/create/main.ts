@@ -4,6 +4,7 @@ import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
 import { checkSignIn, roleOf, type SignIn } from '../admin/api';
 import { mountWorkspace } from '../present/workspace';
+import { ensureDeviceChoice } from '../ui/deviceChoice';
 
 /**
  * `/create/` (the gallery's Create > Create timelapse): the Present
@@ -34,6 +35,8 @@ async function main(): Promise<void> {
   followPanelOpacity();
   installRangeFill();
   installSliderBubble();
+  // Asked first, before the workspace boots (ui/deviceChoice).
+  await ensureDeviceChoice();
   const viewport = document.getElementById('viewport');
   if (!viewport) throw new Error('#viewport element not found');
 

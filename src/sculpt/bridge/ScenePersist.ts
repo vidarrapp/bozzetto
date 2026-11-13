@@ -10,6 +10,7 @@ import { sanitizeLook, sanitizeScene } from './sanitize';
 import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 import type { SavedGroups } from './groupsRecord';
+import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
 
 /**
  * Workspace preferences that ride with a scene: how the brushes are set up,
@@ -504,6 +505,11 @@ const RETRY_GAP_MS = 5000;
  * from any earlier version ends up with the same set.
  */
 export function openDb(): Promise<IDBDatabase> {
+  // The one door to IndexedDB (the autosave, the library, the hand-offs):
+  // shut until the person has said to keep things on this device
+  // (ui/deviceStorage). Opening the database creates and upgrades it, which
+  // is a write, so nothing is opened, and nothing already there is read.
+  if (!mayStore()) return Promise.reject(new DeviceStorageOff());
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 4);
     req.onupgradeneeded = () => {
@@ -513,7 +519,7 @@ export function openDb(): Promise<IDBDatabase> {
       }
       // The recorder's stored on/off choice goes with its reel.
       try {
-        localStorage.removeItem(RETIRED_RECORD_PREF);
+        deviceStore.remove(RETIRED_RECORD_PREF);
       } catch {
         // Storage blocked: there is nothing stored to remove either.
       }
@@ -770,7 +776,19 @@ export class ScenePersist {
     this.wrap(this.session, 'setSymmetryAxis');
     document.addEventListener('visibilitychange', this.onHidden);
     window.addEventListener('pagehide', this.onHidden);
+    this.stopHearing = onDeviceChoice((c) => {
+      if (c === 'keep' && !this.disabled) {
+        // Autosave starts straight away, with the scene as it stands.
+        this.markDirty(false);
+      } else if (c !== 'keep') {
+        // Off: nothing waiting is written.
+        this.cancelScheduled?.();
+        this.cancelScheduled = null;
+        this.dirty = false;
+      }
+    });
   }
+  private stopHearing: (() => void) | null = null;
 
   private wrap(target: object, method: string): void {
     const t = target as Record<string, (...a: unknown[]) => unknown>;
@@ -807,6 +825,9 @@ export class ScenePersist {
     if (edit) this.edits++;
     this.onDirty?.();
     if (this.disabled) return;
+    // Saving is off: nothing is scheduled. Turned on later, the scene as
+    // it stands is written straight away (install()).
+    if (!mayStore()) return;
     if (!this.dirty) {
       this.dirty = true;
       this.dirtySince = Date.now();
@@ -882,7 +903,7 @@ export class ScenePersist {
 
   /** Serialize and write now (used by the throttle, hide events, tests). */
   async flush(): Promise<void> {
-    if (!this.dirty || this.saving || this.disabled) return;
+    if (!this.dirty || this.saving || this.disabled || !mayStore()) return;
     // Never serialize a half-finished stroke: stay dirty and let the
     // stroke-end wrap reschedule. The change is overdue by then, so the
     // write follows the stroke rather than waiting out another grace.
@@ -1005,6 +1026,7 @@ export class ScenePersist {
   };
 
   dispose(): void {
+    this.stopHearing?.();
     document.removeEventListener('visibilitychange', this.onHidden);
     window.removeEventListener('pagehide', this.onHidden);
     this.cancelScheduled?.();

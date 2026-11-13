@@ -6,6 +6,10 @@ import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInButton } from '../../ui/signIn';
 import { originOf } from '../../ui/origin';
+import { mayStore } from '../../ui/deviceStorage';
+
+/** What a disabled device action says while the person has turned saving off. */
+const SAVING_OFF = 'Saving is off. Turn it on in Edit > Preferences.';
 
 /** How long a save waits on the sign-in probe before treating the visit as a guest's. */
 const ROLE_WAIT_MS = 5000;
@@ -91,8 +95,8 @@ export class FileMenu {
         },
         {
           label: 'Keep on this device',
-          enabled: full,
-          hint: DEVICE_ONLY_NOTE,
+          enabled: () => full() && mayStore(),
+          hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
           action: async () => {
             await this.actions.keepOnDevice();
             this.menu.note('Kept on this device');

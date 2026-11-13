@@ -4037,6 +4037,15 @@ body.is-sampling * {
   background: rgb(0 0 0 / 45%);
 }
 
+/* The device question is above everything, Preferences (200) included. */
+.install-overlay.bz-device {
+  z-index: 300;
+}
+
+.bz-device__card a {
+  text-decoration: underline;
+}
+
 .install-card {
   position: relative;
   max-width: 420px;
@@ -5671,6 +5680,30 @@ h1,
 .btn--primary:disabled,
 .gallery-form__go:disabled,
 .scale-banner__apply:disabled {
+  background: var(--bz-control);
+  color: var(--bz-text-3);
+}
+
+/* The recommended action: the one step the person should take next, one
+   to a screen. Lime fill, black text (docs/ui-foundations.md). */
+.btn--recommended {
+  background: var(--bz-lime);
+  border: 0;
+  color: var(--bz-on-accent);
+}
+
+.btn--recommended:hover:not(:disabled) {
+  background: var(--bz-lime);
+  color: var(--bz-on-accent);
+  filter: brightness(1.1);
+}
+
+.btn--recommended:active:not(:disabled) {
+  background: var(--bz-lime);
+  filter: brightness(0.85);
+}
+
+.btn--recommended:disabled {
   background: var(--bz-control);
   color: var(--bz-text-3);
 }

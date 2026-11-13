@@ -44,6 +44,7 @@ import type {
 import { statusToast } from '../../sculpt/ui/statusToast';
 import { CodeStep, HandleField, LEGAL, Say, button, el, field, input, legalLink, linkButton, termsBox } from './parts';
 import type { AccountLink } from './links';
+import { requireSaving } from '../deviceChoice';
 
 /**
  * The sign-in dialog (docs/accounts.md §7). Signing in is a dialog over
@@ -74,6 +75,9 @@ export interface SignInOptions {
   reason?: string;
 }
 
+/** Why the device question comes first when a sign-in starts with saving off. */
+const SIGN_IN_NEEDS_SAVING = 'Signing in keeps you signed in on this device.';
+
 /** Passkey options last five minutes on the server; asked again before then. */
 const OPTIONS_FRESH_MS = 4 * 60 * 1000;
 
@@ -85,9 +89,12 @@ let current: Promise<Me | null> | null = null;
  * while open, the same answer comes back.
  */
 export function openSignIn(opts: SignInOptions = {}): Promise<Me | null> {
-  current ??= new Dialog().signIn(opts).finally(() => {
-    current = null;
-  });
+  // A sign-in is kept on this device, so it needs saving on: asked first when it is off.
+  current ??= requireSaving(SIGN_IN_NEEDS_SAVING)
+    .then((ok) => (ok ? new Dialog().signIn(opts) : null))
+    .finally(() => {
+      current = null;
+    });
   return current;
 }
 
@@ -124,6 +131,7 @@ export async function openAccountLink(link: AccountLink): Promise<Me | null> {
     return openSignIn();
   }
   if (link.kind === 'join') return openSignIn({ view: 'join' });
+  if (!(await requireSaving(SIGN_IN_NEEDS_SAVING))) return null;
   return new Dialog().link(link.token);
 }
 

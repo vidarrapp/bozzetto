@@ -44,6 +44,7 @@ import { apiJson } from '../net/origin';
 import { installChip } from './InstallHint';
 import { topChip, topbarRight } from './topbar';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
+import { requireSaving } from './deviceChoice';
 import { signInButton, signOutChip } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { markOpen, markOpenOnClick } from './openToken';
@@ -300,6 +301,8 @@ async function importObj(file: File): Promise<void> {
   }
   const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
   const name = handoffs.objName(file.name);
+  // The file crosses to Sculpt through the device's storage, so it needs saving on.
+  if (!(await requireSaving('Import OBJ needs to keep the file on this device.'))) return;
   const hasWork = await store.hasSavedScene().catch(() => false);
   const atRisk = hasWork && !(await inProject(store));
   if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;

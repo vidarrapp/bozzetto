@@ -66,6 +66,7 @@ layer does not try to.
 | Lime | #c6ff00 | The knob of a switch that is on |
 | Red | #ab0000 | Something went wrong; an action that cannot be undone. Never a switch that is off: off is neutral, as on macOS and iPadOS. A fill only, with white text on it (7.7:1); on the greys it is under 2:1, so never text, an icon or a line |
 | Red text | #ff6b6b | Red as text (error lines), as an icon or a stroke, and as the trash icon and "Delete account…" under the pointer or on focus, which are grey and white at rest: the light red that reaches 4.5:1 on the panel and the raised grey |
+| Lime, as a button | #c6ff00 | The recommended action (`.btn--recommended`): the one step the person should take next, one to a screen, such as Keep on this device in the first-visit window. Text on it is black. A window has this or the orange main action, not both |
 
 The view axes keep their own red, green and blue.
 
