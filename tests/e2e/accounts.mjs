@@ -1161,7 +1161,7 @@ async function editFromProjects(o, id, t) {
   await p.goto(`${o.origin}/admin/`, { waitUntil: 'domcontentloaded' });
   await p.waitForSelector(`.admin-row[data-project="${id}"] .admin-row__open`, { timeout: 30_000 }).catch(() => {});
   const href = await p.evaluate((pid) => document.querySelector(`.admin-row[data-project="${pid}"] .admin-row__open`)?.getAttribute('href') ?? null, id);
-  t.eq(href, `/?sculpt=1&project=${id}&scope=admin`, "with accounts on, the Projects page opens a scene in Sculpt through the owner tools");
+  t.eq(href, `/?sculpt=1&project=${id}&scope=admin&from=owner`, "with accounts on, the Projects page opens a scene in Sculpt through the owner tools");
   await p.click(`.admin-row[data-project="${id}"] .admin-row__open`);
   await p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 }).catch(() => {});
   await p.waitForFunction(() => [...document.querySelectorAll('.gallery-form__fields')].some((f) => !f.hidden), null, { timeout: 30_000 }).catch(() => {});

@@ -174,7 +174,7 @@ export const suites = {
         await g.page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
         const s = await g.page.evaluate(() => ({
           // The viewer has a strip of its own now, with File, View and Help: Present's has the path as well.
-          menus: [...document.querySelectorAll('.bz-menuname')].map((m) => m.textContent).join(),
+          menus: [...document.querySelectorAll('.bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent).join(),
           project: !!document.querySelector('.panel--project'),
           search: location.search,
           chip: !!document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'),
@@ -586,7 +586,7 @@ export const suites = {
           buttons: [...document.querySelectorAll('.admin-row[data-project="tl-demo"] .admin-row__buttons .btn')].map((b) => b.textContent).join(),
         };
       }, sceneId);
-      t.ok(links.tl === '/?tl=tl-demo&present=1' && links.model === '/?tl=model-demo&present=1' && links.text === 'Present', `each frame project's row has Present (${JSON.stringify(links)})`);
+      t.ok(links.tl === '/?tl=tl-demo&present=1&from=owner' && links.model === '/?tl=model-demo&present=1&from=owner' && links.text === 'Present', `each frame project's row has Present (${JSON.stringify(links)})`);
       t.ok(links.scene === null && links.buttons === 'Present', `a scene's row has none, and it is the row's one button (${links.buttons})`);
       await p.click('.admin-row[data-project="tl-demo"] .admin-row__present');
       await presentReady(p);

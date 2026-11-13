@@ -409,7 +409,7 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
       };
     }, saved?.id);
     t.ok(/^Armature /.test(card.meta), `My projects shows it as an Armature (${show(card)})`);
-    t.eq(card.open, `/?armature=1&project=${saved?.id}`, 'and Open goes to Armature mode');
+    t.eq(card.open, `/?armature=1&project=${saved?.id}&from=me`, 'and Open goes to Armature mode');
     // Opened back over the armature in progress: the card asks (the
     // browser's dialogs are accepted), and the figure is as saved.
     await Promise.all([p.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }), p.click(`.card--mine[data-project="${saved?.id}"] .card__open`)]);
@@ -418,7 +418,7 @@ export async function armatureLibrary(server, o, a, t, { show, r2 }) {
     const back = await p.evaluate(() => ({ state: window.__armature.state(), symmetry: window.__armature.armature.symmetry, link: window.__armature.link(), search: location.search, history: window.__armature.history() }));
     const sameState = JSON.stringify(back.state.pose) === JSON.stringify(posed2.pose) && back.state.preset === posed2.preset;
     t.ok(sameState && back.symmetry === true, `opened back, the figure is as saved, symmetry and all (${back.state.preset}, ${Object.keys(back.state.pose).length} joints)`);
-    t.ok(back.link?.id === saved?.id && back.search === '?armature=1' && back.history.undo === 0, `linked to its project, the address cleaned, the history fresh (${show(back.link)} ${back.search})`);
+    t.ok(back.link?.id === saved?.id && back.search === "?armature=1&from=me" && back.history.undo === 0, `linked to its project, the address cleaned, the history fresh (${show(back.link)} ${back.search})`);
     void posed;
 
     // The owner's: made a template and public, a gallery card a guest opens as a copy.
