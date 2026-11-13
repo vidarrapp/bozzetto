@@ -1,4 +1,5 @@
 import { chordLabel, chordOf, keymap } from './keymap';
+import { deviceStore } from './deviceStorage';
 
 /**
  * Hide-the-interface mode (Tab), in two stages: the first press tidies -
@@ -86,7 +87,7 @@ export class ChromeToggle {
 
   constructor() {
     try {
-      this.lessons = Number(localStorage.getItem(LESSON_KEY)) || 0;
+      this.lessons = Number(deviceStore.get(LESSON_KEY)) || 0;
     } catch {
       // Private windows just get the full lesson every time, which is safe.
     }
@@ -131,7 +132,7 @@ export class ChromeToggle {
     else if (this.lessons < LESSONS_QUIET) this.showHint(HINT_QUIET_MS);
     this.lessons++;
     try {
-      localStorage.setItem(LESSON_KEY, String(this.lessons));
+      deviceStore.set(LESSON_KEY, String(this.lessons));
     } catch {
       // The lesson just doesn't stick; nothing else depends on it.
     }

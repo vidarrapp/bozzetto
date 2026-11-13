@@ -1,6 +1,7 @@
 import { AuthExpiredError, type ProjectSummary } from '../../admin/api';
 import { AccountError, inWait, shareProject, type SharedState, type ShareStatus } from '../../net/account';
 import { LEGAL, button, el, legalLink } from '../account/parts';
+import { deviceStore } from '../deviceStorage';
 
 /**
  * Share to Community on a My projects card (docs/accounts.md §13). A model
@@ -50,7 +51,7 @@ const noteKey = (userId: string): string => `bozzetto-share-note:${userId}`;
 
 function noteSeen(userId: string): boolean {
   try {
-    return localStorage.getItem(noteKey(userId)) === '1';
+    return deviceStore.get(noteKey(userId)) === '1';
   } catch {
     return false;
   }
@@ -58,7 +59,7 @@ function noteSeen(userId: string): boolean {
 
 function markNoteSeen(userId: string): void {
   try {
-    localStorage.setItem(noteKey(userId), '1');
+    deviceStore.set(noteKey(userId), '1');
   } catch {
     // Shown again next time, then: better than not at all.
   }

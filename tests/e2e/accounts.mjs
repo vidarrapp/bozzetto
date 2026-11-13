@@ -155,8 +155,8 @@ const clock = { offset: 0 };
  * virtual authenticator on its page. Confirmations (a passkey removed,
  * sessions signed out) are accepted.
  */
-async function browserFor(browser, origin, { ip, access = false, authenticator = false, serviceWorkers = 'block' }) {
-  const ctx = await browser.newContext({ viewport: VIEWPORT, serviceWorkers });
+async function browserFor(browser, origin, { ip, access = false, authenticator = false, serviceWorkers = 'block', askAboutDevice = false }) {
+  const ctx = await browser.newContext({ viewport: VIEWPORT, serviceWorkers, askAboutDevice });
   await ctx.addInitScript(waitingAutofill);
   await ctx.route('https://challenges.cloudflare.com/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/javascript', body: TURNSTILE_STUB }),
@@ -559,6 +559,104 @@ async function codeSignIn(server, turnstile, a, t) {
   t.ok((await dialogGone(p)) && (await chipShown(p, '@ada')), 'Not now closes it, signed in');
   const resets = await p.evaluate(() => window.__turnstile);
   t.ok(resets.resets >= 1 && resets.removed >= 1, `each token is taken once, the widget reset for the next, and removed with its step (${show(resets)})`);
+}
+
+/** The email-code steps of an open sign-in dialog, for ada; true when signed in. */
+async function finishCodeSignIn(server, p) {
+  // Codes to one address are a minute apart: the server's clock is moved on, as the other parts do.
+  clock.offset += 16 * MINUTE;
+  await step(p, 'Sign in');
+  const before = await lastMail(server, 'ada@example.com');
+  await p.fill('.account-card input[name=email]', 'ada@example.com');
+  await p.click('.account-card .account-submit');
+  const mail = await mailAfter(server, 'ada@example.com', before);
+  if (!codeIn(mail)) return false;
+  await typeCode(p, codeIn(mail));
+  if (await step(p, 'Add a passkey?', 10_000)) await press(p, '.account-card', 'Not now');
+  return dialogGone(p);
+}
+
+/**
+ * Signing in needs saving on (src/ui/deviceChoice.ts): with it off the question comes
+ * first, with its opening sentence; Go back cancels the sign-in, Keep on this device
+ * goes on into it. Turning saving off while signed in, or declining on a first visit
+ * with a sign-in from before, signs the person out.
+ */
+async function deviceChoice(server, browser, t) {
+  const b = await browserFor(browser, server.base, { ip: '203.0.113.31', askAboutDevice: true });
+  const p = b.page;
+  const signInChip = ':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")';
+  // The device question is a window of the same look and class; the sign-in dialog is the other one.
+  const signInOpen = () => p.evaluate(() => !!document.querySelector('.account-card:not(.bz-device__card)'));
+  const device = () => p.evaluate(() => ({ choice: localStorage.getItem('bozzetto-device-choice'), declined: sessionStorage.getItem('bozzetto-device-declined'), hint: localStorage.getItem('bozzetto-signed-in') !== null }));
+  try {
+    await p.goto(`${b.origin}/`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('.bz-device', { timeout: 30_000 });
+    await p.click('.bz-device-decline');
+    t.ok(!/signs you out/.test(await p.textContent('.bz-device__card')), 'signed out, the second question says nothing of signing out');
+    await p.click('.bz-device-off');
+    await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+    t.ok(await chipShown(p, 'Sign in'), 'declined and signed out: the gallery works, with Sign in');
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    t.eq(await p.textContent('.bz-device__why'), 'Signing in keeps you signed in on this device.', 'Sign in with saving off asks the first question, with the reason');
+    t.ok(!(await signInOpen()), 'and the sign-in window waits behind it');
+    await p.keyboard.press('Escape');
+    t.ok((await p.locator('.bz-device').count()) === 0 && !(await signInOpen()), 'Esc on it cancels the sign-in');
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    await p.click('.bz-device-decline');
+    await p.click('.bz-device-back');
+    t.ok((await p.locator('.bz-device').count()) === 0 && !(await signInOpen()) && (await device()).choice === null, 'Go back on the second question cancels the sign-in and leaves saving off');
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    await p.click('.bz-device-decline');
+    await p.click('.bz-device-off');
+    t.ok((await p.locator('.bz-device').count()) === 0 && !(await signInOpen()), 'Turn saving off cancels it too');
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    await p.click('.bz-device-keep');
+    t.ok(await step(p, 'Sign in'), 'Keep on this device goes on into the sign-in window');
+    t.eq((await device()).choice, 'keep', 'saving is on');
+    t.ok(await finishCodeSignIn(server, p), 'and signs in');
+    t.ok(await chipShown(p, '@ada'), 'signed in');
+    t.ok((await device()).hint, 'the signed-in hint is written');
+
+    // Signed in from before the question: asked on a first visit; no signs the person out.
+    await p.evaluate(() => {
+      localStorage.removeItem('bozzetto-device-choice');
+      sessionStorage.removeItem('bozzetto-device-declined');
+    });
+    await p.goto(`${b.origin}/`, { waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('.bz-device', { timeout: 30_000 });
+    await p.click('.bz-device-decline');
+    t.ok(/signs you out on this device/.test(await p.textContent('.bz-device__card')), 'signed in from before, the second question says it signs them out');
+    await p.click('.bz-device-off');
+    await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+    t.ok((await chipShown(p, 'Sign in')) && (await me(p)).status === 401, 'Turn saving off signed them out');
+    t.eq((await device()).hint, false, 'and the remembered sign-in is gone');
+
+    // Signed in, saving turned off in Preferences: the second question says so, and signs out.
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    await p.click('.bz-device-keep');
+    t.ok(await finishCodeSignIn(server, p), 'signed in again');
+    await p.goto(`${b.origin}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
+    await p.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
+    await p.keyboard.press('Control+Comma');
+    await p.locator('[data-setting="keepOnDevice"] input').click();
+    await p.waitForSelector('.bz-device');
+    t.ok(/signs you out on this device/.test(await p.textContent('.bz-device__card')), 'Preferences: the second question adds that it signs them out');
+    await p.click('.bz-device-off');
+    await p.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 30_000 }).catch(() => {});
+    await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+    t.ok((await chipShown(p, 'Sign in')) && (await me(p)).status === 401, 'Turn saving off signed them out');
+    const after = await device();
+    t.ok(after.choice === null && after.declined === '1', `and saving is off (${show(after)})`);
+  } finally {
+    t.ok(b.errors.length === 0, `no page errors (${show(b.errors)})`);
+    await b.ctx.close();
+  }
 }
 
 /** The Account page: its sections, as signed in. */
@@ -2303,6 +2401,7 @@ export const suites = {
       await part('passkey fallback', () => passkeyFallback(a, t));
       await part('sign out once more', () => signOut(a, t));
       await part('code sign-in', () => codeSignIn(server, turnstile, a, t));
+      await part('device choice', () => deviceChoice(server, browser, t));
       await part('passkeys', () => accountPasskeys(server, a, t));
       await part('sessions', () => accountSessions(server, browser, a, t));
       await part('handle', () => accountHandle(a, t));

@@ -3,6 +3,8 @@
 ## Open questions for Vidar
 
 - [x] 2026-11-12: Should the Scene panel's row for assigning a named material move to the Material tab. Decided 2026-11-12: no, assigning a material stays in Scene; the Material tab edits its values
+- [x] 2026-11-12: While saving is off, the gallery's Import OBJ and Armature's Send to Sculpt cannot carry the file to Sculpt, since they go through IndexedDB. Accept the dead end, or carry them in sessionStorage. Decided 2026-11-12: neither: both need saving on, so picking one with saving off asks the first question again with an opening sentence, and Keep on this device turns saving on and carries the action out; declining or Go back cancels it
+- [x] 2026-11-12: The owner's Edit link on the viewer does not show on a device that declined saving, since the signed-in hint is not written. Decided 2026-11-12: signing in requires saving on, so a signed-in session always has saving on and the hint; signing in with saving off asks the question first, and turning saving off while signed in (or declining with a sign-in from before) signs the person out
 - [x] 2026-11-12: A notice about what Bozzetto keeps on the visitor's device (autosave, offline files, preferences; no cookies, no tracking). Decided 2026-11-12: an accept or decline choice on first visit; declining turns autosave and offline off, after a second question that makes sure
 - [x] 2026-11-12: Card pictures are captured 4:5 but the card tiles had been square since the app-layer skin, so every picture showed side bands. Decided 2026-11-12: the tiles are 4:5; nothing is recaptured
 - [x] 2026-11-12: The Frames tab has an Order list (each frame: press to go to it, move up, move down, remove), which the PgCreate board does not draw (it has the count, memory, Add more and the trash only). Keep the list (built, so reorder and remove exist at all: neither old page had them), or only what the board shows Decided 2026-11-12: remove the Order list
@@ -62,6 +64,12 @@
 - [ ] 2026-11-10: Interface spec, a field whose value differs from its default shows its label in bold (proposed), or no mark
 - [x] 2026-11-10: Interface spec, iPad without a keyboard: hold buttons for Smooth, Mask and Carve, or leave touch as it is. Decided 2026-11-11: leave it; hold-to-modify cannot be done in the web app on iPad (it needs a native app), and a page cannot detect a keyboard, so the hints and the hotkey digits are View toggles
 - [x] 2026-11-11: App layer of Gestalt: give Bozzetto its own interface foundations in place of the print and web rules that do not fit an app. Decided 2026-11-11: yes; red for errors and deletes; dark theme only for now (a native iOS app will later have to consider Liquid Glass). Written up in docs/ui-foundations.md
+
+## Later
+
+Ideas Vidar has raised that are not being built yet.
+
+- 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now.
 
 ## Notes for Bozzetto Studio
 

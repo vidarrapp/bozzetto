@@ -61,7 +61,7 @@ export async function mountPublicViewer(
   const timelapse = manifest.mode === 'timelapse';
   const frames = manifest.config.frameCount;
 
-  const strip = new TitleStrip({ path: false });
+  const strip = new TitleStrip({ path: false, savingNote: false });
   document.body.classList.add('bz-viewer');
   const chrome = pageChrome();
 

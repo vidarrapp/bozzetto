@@ -1,6 +1,7 @@
 import { readyToLeave } from './leaving';
 import { revealUpdateNotice, showUpdateNotice } from './updateNotice';
 import { APP_VERSION } from './version';
+import { deviceStore } from './deviceStorage';
 
 /**
  * Updates to the installed app, and saying so.
@@ -326,8 +327,8 @@ const VERSION_KEY = 'bozzetto-version';
 export function announceUpdate(): void {
   let last: string | null = null;
   try {
-    last = localStorage.getItem(VERSION_KEY);
-    localStorage.setItem(VERSION_KEY, APP_VERSION);
+    last = deviceStore.get(VERSION_KEY);
+    deviceStore.set(VERSION_KEY, APP_VERSION);
   } catch {
     return; // no storage, no telling a launch from an update
   }
