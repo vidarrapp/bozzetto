@@ -17,6 +17,7 @@ import { pageShell } from '../pageShell';
 import { button, el } from '../account/parts';
 import { fillMeta, metaValue } from '../metaLine';
 import { starButton } from './star';
+import { withFrom } from '../origin';
 
 /**
  * The community gallery (docs/accounts.md §13), anyone's to see:
@@ -147,7 +148,7 @@ export async function renderCommunity(app: HTMLElement, handle: string | null = 
     for (const item of answer.page.items) {
       // A card already drawn (the list moved between pages) is not drawn twice.
       if (grid.querySelector(`[data-project="${CSS.escape(item.id)}"]`)) continue;
-      grid.appendChild(communityCard(item, { showAuthor: !author, me }));
+      grid.appendChild(communityCard(item, { showAuthor: !author, me, from: author ? `u:${author}` : 'community' }));
     }
     if (first && answer.page.items.length === 0) {
       grid.appendChild(query.q ? el('p', 'muted community__empty', 'Nothing in the Community matches.') : empty(author ? answer.handle ?? shown : null));
@@ -246,12 +247,13 @@ const MODE_LABEL: Record<string, string> = { model: 'model', timelapse: 'timelap
  */
 export function communityCard(
   item: CommunityItem,
-  opts: { showAuthor: boolean; me?: Me | null; unstarred?: (card: HTMLElement) => void },
+  opts: { showAuthor: boolean; me?: Me | null; unstarred?: (card: HTMLElement) => void; from?: string },
 ): HTMLElement {
   const card = el('div', 'card card--library card--community');
   card.dataset.project = item.id;
   card.dataset.author = item.author.handle;
-  const href = `/?tl=${encodeURIComponent(item.id)}`;
+  // The viewer's Close comes back to the page this card is on (ui/origin).
+  const href = withFrom(`/?tl=${encodeURIComponent(item.id)}`, opts.from ?? 'community');
   const thumb = el('a', 'card__thumb');
   thumb.href = href;
   thumb.setAttribute('aria-label', item.title || 'Untitled');

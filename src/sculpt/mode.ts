@@ -68,6 +68,7 @@ import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
 import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+import { originOf } from '../ui/origin';
 
 /**
  * Turntable coast: only fast ticks glide, and only a little.
@@ -285,7 +286,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
       } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
         try {
-          objMesh = session.openParsedOBJ(parsed, handoff.zUp, handoff.name);
+          // A frame from the viewer is on real units already (units 'cm'): its scene is marked, the object at its true size on the floor.
+          objMesh = handoff.units === 'cm' ? session.addParsedOBJ(parsed, false, handoff.name, null) : session.openParsedOBJ(parsed, handoff.zUp, handoff.name);
         } catch (err) {
           bootFailure ??= `Could not import "${handoff.name}": ${err instanceof Error ? err.message.replace(/\.$/, '') : String(err)}`;
         }
@@ -2067,7 +2069,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // behind it must describe the same moment.
     void Promise.all([snapshot(), persist.flush(), storeLook()]).finally(() => {
       // The site's root, whatever the address says (main.ts addGalleryLink).
-      window.location.href = '/';
+      window.location.href = originOf().href;
     });
   };
   // Signing in again and reloading onto an update leave the page and come

@@ -33,6 +33,7 @@ import { HistoryButtons } from '../sculpt/ui/BrushSliders';
 import { AuthExpiredError, checkSignIn, failureText, roleOf, type Role } from '../admin/api';
 import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
+import { originOf } from '../ui/origin';
 import { takeOpen } from '../ui/openToken';
 import { signInButton } from '../ui/signIn';
 import {
@@ -1193,7 +1194,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const leaveForGallery = (): void => {
     void snapshot().finally(() => {
       // The site's root, whatever the address says (main.ts addGalleryLink).
-      window.location.href = '/';
+      window.location.href = originOf().href;
     });
   };
   // Signing in again and reloading onto an update leave the page and come
@@ -1592,7 +1593,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       { separator: true },
       { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
       { separator: true },
-      { label: 'Close', hint: 'Back to the gallery', action: leaveForGallery },
+      { label: 'Close', hint: originOf().hint, action: leaveForGallery },
     ],
     'file-menu--file',
     strip.menus,

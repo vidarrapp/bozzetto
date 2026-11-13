@@ -27,6 +27,7 @@
   --bz-red: #ab0000; /* something went wrong; an action that cannot be undone. A fill only, with --bz-on-red on it: on the greys it is under 2:1, so never text, an icon or a line */
   --bz-red-text: #ff6b6b; /* red as text, an icon or a stroke: the light red that reaches 4.5:1 on the panel and the raised grey */
   --bz-on-red: #ffffff; /* text and icons on a red fill (7.7:1) */
+  --bz-white: #ffffff; /* the fill of play and pause, with --bz-on-accent on it */
   --bz-on-accent: #000000; /* text and icons on orange or lime */
   /* raised things */
   --bz-raised-shadow: 0 0 0 1px var(--bz-raised-border), 0 12px 32px rgba(0, 0, 0, 0.55);

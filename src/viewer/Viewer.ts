@@ -1475,6 +1475,50 @@ export class Viewer {
     this.invalidate();
   }
 
+  /**
+   * The frame on screen as a welded triangle mesh in world units, as the
+   * viewer plays it (through the played scale and lift) and standing on the
+   * fixed floor of a project on real units (the floor taken as height 0,
+   * where a new Sculpt scene has its own), for New sculpt from this. The
+   * quantised frame is read through its attributes, so it keeps the file's
+   * own resolution. Null when there is no geometry to take.
+   */
+  frameSnapshot(): { positions: Float32Array; indices: Uint32Array; units: Units | null } | null {
+    const geom = this.display.geometry;
+    const pos = geom.getAttribute('position');
+    if (!pos || pos.count < 3) return null;
+    const index = geom.getIndex();
+    const corners = index ? index.count : pos.count;
+    this.subjectRoot.updateMatrix();
+    const m = this.subjectRoot.matrix;
+    const floor = this.floorHeight() ?? 0;
+    const welded = new Map<string, number>();
+    const out: number[] = [];
+    const idx: number[] = [];
+    const v = new Vector3();
+    const map = (i: number): number => {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      v.y -= floor;
+      const key = `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+      let at = welded.get(key);
+      if (at === undefined) {
+        at = out.length / 3;
+        welded.set(key, at);
+        out.push(v.x, v.y, v.z);
+      }
+      return at;
+    };
+    for (let c = 0; c + 2 < corners; c += 3) {
+      const a = map(index ? index.getX(c) : c);
+      const b = map(index ? index.getX(c + 1) : c + 1);
+      const d = map(index ? index.getX(c + 2) : c + 2);
+      if (a === b || b === d || d === a) continue;
+      idx.push(a, b, d);
+    }
+    if (!idx.length) return null;
+    return { positions: new Float32Array(out), indices: new Uint32Array(idx), units: this.manifest.units };
+  }
+
   /** A frame geometry's bounds in the world: through the played scale and lift. */
   private playedBounds(geom: BufferGeometry): Box3 {
     geom.computeBoundingBox();

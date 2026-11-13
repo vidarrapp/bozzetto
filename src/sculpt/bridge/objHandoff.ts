@@ -20,6 +20,14 @@ export interface ObjHandoff {
   text: string;
   /** Whether to turn a Z-up export to Y-up, as File > Import OBJ's toggle does. */
   zUp: boolean;
+  /**
+   * 'cm' when the file's coordinates are real centimetres with the floor at
+   * height 0 (a frame taken from the viewer, viewer/Viewer.frameSnapshot):
+   * the scene is then on real units, the object at its true size and
+   * standing on the floor, with no Set scale question. Absent, an OBJ of
+   * unknown units, as the gallery's Import OBJ brings.
+   */
+  units?: 'cm';
   savedAt: number;
 }
 
@@ -42,7 +50,7 @@ export function objName(fileName: string): string {
 }
 
 /** Put the file for Sculpt to take. Throws when storage refuses it, which the gallery says. */
-export async function saveObjHandoff(file: { name: string; text: string; zUp?: boolean }): Promise<ObjHandoff> {
+export async function saveObjHandoff(file: { name: string; text: string; zUp?: boolean; units?: 'cm' }): Promise<ObjHandoff> {
   const rec: ObjHandoff = {
     kind: 'bozzetto-obj',
     v: 1,
@@ -50,6 +58,7 @@ export async function saveObjHandoff(file: { name: string; text: string; zUp?: b
     name: objName(file.name),
     text: file.text,
     zUp: file.zUp === true,
+    ...(file.units === 'cm' ? { units: 'cm' as const } : {}),
     savedAt: Date.now(),
   };
   await withNamedStore(STORE, 'readwrite', (s) => s.put(rec, KEY));
@@ -74,6 +83,7 @@ export async function takeObjHandoff(): Promise<ObjHandoff | null> {
       name: objName(typeof rec.name === 'string' ? rec.name : ''),
       text: rec.text,
       zUp: rec.zUp === true,
+      ...(rec.units === 'cm' ? { units: 'cm' as const } : {}),
       savedAt: rec.savedAt,
     };
   } catch {

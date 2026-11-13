@@ -39,6 +39,7 @@ import {
 } from './frameStore';
 import { reseat, sequenceChanged, uploadSequence } from './saveFrames';
 import { notSavedNotice, saveNewProject } from './saveNew';
+import { originOf } from '../ui/origin';
 
 /**
  * The Present workspace for a frame project (mode `timelapse` or `model`):
@@ -60,9 +61,6 @@ import { notSavedNotice, saveNewProject } from './saveNew';
  * something has not. A change to the sequence plays the new one by taking
  * the view down and putting it up again with the look it had.
  */
-
-/** Where the gallery is, whatever the address says (as main.ts's own link). */
-const GALLERY = '/';
 
 /** What Create knows of who is using it. */
 export interface CreateAccount {
@@ -589,7 +587,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       if (!yes) return;
     }
     leaving = true;
-    window.location.href = GALLERY;
+    window.location.href = originOf().href;
   };
   let leaving = false;
   const warn = (e: BeforeUnloadEvent): void => {
@@ -609,7 +607,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
         enabled: () => !!project || !!place,
       },
       { separator: true },
-      { label: 'Close', action: () => void close() },
+      { label: 'Close', hint: originOf().hint, action: () => void close() },
     ],
     'file-menu--file',
     strip.menus,

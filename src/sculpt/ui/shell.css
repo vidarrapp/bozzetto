@@ -120,6 +120,10 @@ body.bz-shell .bz-strip__hide {
   -webkit-tap-highlight-color: transparent;
 }
 
+body.bz-shell .bz-menuname[hidden] {
+  display: none;
+}
+
 body.bz-shell .bz-menuname:hover,
 body.bz-shell .bz-strip__btn:hover,
 body.bz-shell .bz-strip__hide:hover,
@@ -1293,19 +1297,24 @@ body.bz-shell .transport--shell .transport__play {
   min-height: 28px;
 }
 
-/* Play is a quiet control here; the orange is the line's and Save's. */
+/* Play and pause: a white filled button with a black icon, in the viewer, in
+   review and in Present alike; the orange is the line's and Save's. */
 body.bz-shell .transport--shell .transport__play,
 body.bz-shell .transport--shell .transport__play:hover:not(:disabled),
 body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
-  background: var(--bz-control);
-  color: var(--bz-text);
+  background: var(--bz-white);
+  color: var(--bz-on-accent);
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
 body.bz-shell .transport--shell .transport__play:hover:not(:disabled) {
-  background: var(--bz-hover);
+  filter: brightness(0.88);
+}
+
+body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
+  filter: brightness(0.78);
 }
 
 body.bz-shell .transport--shell .transport__scrub {
@@ -1470,21 +1479,6 @@ body.bz-shell .bz-readout__by:focus-visible {
 
 body.bz-shell .bz-readout__key:empty {
   display: none;
-}
-
-/* The transport's play is the one orange action of the viewer (a viewer's
-   main action is play and pause, docs/ui-foundations.md); in Present it
-   stays grey, Save being that page's, and in review mode, where Approve is
-   the main action (reviewViewer.ts marks the page `bz-reviewing`). */
-body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play,
-body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:hover:not(:disabled),
-body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:active:not(:disabled) {
-  background: var(--bz-orange);
-  color: var(--bz-on-accent);
-}
-
-body.bz-viewer:not(.bz-reviewing) .transport--shell .transport__play:hover:not(:disabled) {
-  filter: brightness(1.1);
 }
 
 body.bz-viewer .transport--shell .transport__play:focus-visible {

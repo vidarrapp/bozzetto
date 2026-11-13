@@ -93,7 +93,7 @@ export function shareControls(p: ProjectSummary, ctx: ShareContext): HTMLElement
     if (s === 'pending') status.textContent = 'Pending review';
     else if (s === 'public') {
       const a = el('a', 'card__share-link', 'Public in Community');
-      a.href = `/?tl=${encodeURIComponent(p.id)}`;
+      a.href = `/?tl=${encodeURIComponent(p.id)}&from=me`;
       status.append(a);
     } else if (s === 'rejected') {
       status.textContent = p.review_reason ? `Rejected: ${p.review_reason}` : 'Rejected';

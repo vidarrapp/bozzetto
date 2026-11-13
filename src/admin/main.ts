@@ -347,7 +347,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
 
     if (armature) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
-      open.href = `/?armature=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}`;
+      open.href = `/?armature=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}&from=owner`;
       open.addEventListener('click', (e) => {
         e.preventDefault();
         void (async () => {
@@ -360,7 +360,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       });
     } else if (scene) {
       const open = row.querySelector<HTMLAnchorElement>('.admin-row__open')!;
-      open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}`;
+      open.href = `/?sculpt=1&project=${encodeURIComponent(p.id)}${accounts ? '&scope=admin' : ''}&from=owner`;
       // Opening replaces the sculpt in progress on this device, as a
       // gallery card does - so the same question, when there is one.
       open.addEventListener('click', (e) => {
@@ -378,7 +378,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
       // With no frames yet there is nothing to present: it opens on the Frames tab.
       row
         .querySelector<HTMLAnchorElement>('.admin-row__present')!
-        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1${p.frameCount ? '' : '&tab=frames'}`);
+        .setAttribute('href', `/?tl=${encodeURIComponent(p.id)}&present=1${p.frameCount ? '' : '&tab=frames'}&from=owner`);
     }
 
     // Who sees it, and whether it is a template (docs/accounts.md §5): a

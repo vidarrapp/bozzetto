@@ -5625,9 +5625,15 @@ h1,
 .dsettings__primary,
 .help-win__close,
 .gallery-form__go,
-.scale-banner__apply,
-.transport__play {
+.scale-banner__apply {
   background: var(--bz-orange);
+  border: 0;
+  color: var(--bz-on-accent);
+}
+
+/* Play and pause is a white filled button, never orange (owner call, 2026-11-12). */
+.transport__play {
+  background: var(--bz-white);
   border: 0;
   color: var(--bz-on-accent);
 }
@@ -5636,21 +5642,30 @@ h1,
 .dsettings__primary:hover:not(:disabled),
 .help-win__close:hover:not(:disabled),
 .gallery-form__go:hover:not(:disabled),
-.scale-banner__apply:hover:not(:disabled),
-.transport__play:hover:not(:disabled) {
+.scale-banner__apply:hover:not(:disabled) {
   background: var(--bz-orange);
   color: var(--bz-on-accent);
   filter: brightness(1.12);
+}
+
+.transport__play:hover:not(:disabled) {
+  background: var(--bz-white);
+  color: var(--bz-on-accent);
+  filter: brightness(0.88);
 }
 
 .btn--primary:active:not(:disabled),
 .dsettings__primary:active:not(:disabled),
 .help-win__close:active:not(:disabled),
 .gallery-form__go:active:not(:disabled),
-.scale-banner__apply:active:not(:disabled),
-.transport__play:active:not(:disabled) {
+.scale-banner__apply:active:not(:disabled) {
   background: var(--bz-orange);
   filter: brightness(0.85);
+}
+
+.transport__play:active:not(:disabled) {
+  background: var(--bz-white);
+  filter: brightness(0.78);
 }
 
 .btn--primary:disabled,

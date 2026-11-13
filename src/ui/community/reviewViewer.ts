@@ -14,37 +14,30 @@ import {
   sendReview,
 } from './reviewActions';
 
-/** The decisive action of a state is filled: the main one orange, the one that takes the work down red. */
-const FILL: Partial<Record<ReviewAction, 'primary' | 'danger'>> = { approve: 'primary', unhide: 'primary', hide: 'danger' };
-
 /**
  * The viewer in review mode (`/?tl=<id>&review=1`, docs/accounts.md §13),
  * for the owner and moderators: a shared project in whatever state it is,
  * read through the reviewers' own route, with the reviewer's controls in
  * the viewer's title strip - Close goes back to the Review tab it was
- * opened from (`&from=`), the readout names the author and says where the
- * project stands ("Reviewing Pending review"), and Approve, Reject…, Hide…,
- * Unhide or Dismiss, as that state allows, stand at the right of the strip:
- * the decisive one filled (Approve and Unhide orange, Hide red). Each
- * action redraws them from the server's answer. On a moderator's own work
+ * opened from (`&from=`; File > Close, hint "Back to Review"), the readout
+ * names the author and says where the project stands ("Reviewing Pending
+ * review"), and Approve, Reject…, Hide…, Unhide or Dismiss, as that state
+ * allows, are the items of the Moderation menu. Each action redraws them
+ * from the server's answer. On a moderator's own work
  * the readout says another reviewer decides, and nothing is offered; the
  * owner reviews everything, their own work included.
  *
- * Hooks for tests: `.review-back`, `.viewer-author`, `.review-mode`
- * (`data-shared`), `.review-action[data-action]`.
+ * Hooks for tests: `.viewer-author`, `.review-mode` (`data-shared`), and
+ * the Moderation menu's rows (`.file-menu--moderation`).
  */
 export async function mountReviewBar(
   id: string,
   project: { title: string; author: string | null; shared: SharedState },
   frame: ViewerFrame,
 ): Promise<void> {
-  // Approve (or Unhide) is the screen's main action here, so play steps back to grey.
-  document.body.classList.add('bz-reviewing');
   const from = reviewTabOf(new URLSearchParams(window.location.search).get('from'));
-  // Close, here, is the way back to the Review page.
-  frame.close.href = reviewTabHref(from);
-  frame.close.classList.add('review-back');
-  frame.close.title = 'Back to the review page';
+  // File > Close, here, is the way back to the Review page.
+  frame.setOrigin({ href: reviewTabHref(from), hint: 'Back to Review', from: '' });
   const author = project.author;
   // The state and the reviewer's note, at the end of the readout.
   const readout = frame.strip.readoutEl;
@@ -75,20 +68,19 @@ export async function mountReviewBar(
   const draw = (): void => {
     chip.item.dataset.shared = shared;
     chip.val.textContent = `${STATE_LABEL[shared]}${open ? ` · ${open} report${open === 1 ? '' : 's'}` : ''}`;
-    document.querySelectorAll('.bz-strip .review-action').forEach((c) => c.remove());
     if (own) {
       note.item.hidden = false;
       note.val.textContent = 'Your own: another reviewer decides';
+      frame.setModeration([]);
       return;
     }
-    for (const action of allowedActions(shared, open)) {
-      const b = frame.control(ACTION_LABEL[action], undefined, FILL[action]) as HTMLButtonElement;
-      b.classList.add('review-action');
-      b.dataset.action = action;
-      b.disabled = busy;
-      b.addEventListener('click', () => void act(action));
-      frame.addAction(b);
-    }
+    frame.setModeration(
+      allowedActions(shared, open).map((action) => ({
+        label: ACTION_LABEL[action],
+        enabled: () => !busy,
+        action: () => act(action),
+      })),
+    );
   };
 
   const act = async (action: ReviewAction): Promise<void> => {

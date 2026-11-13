@@ -5,6 +5,7 @@ import { NotUploadedError, type FileActions } from '../bridge/FileActions';
 import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInButton } from '../../ui/signIn';
+import { originOf } from '../../ui/origin';
 
 /** How long a save waits on the sign-in probe before treating the visit as a guest's. */
 const ROLE_WAIT_MS = 5000;
@@ -122,7 +123,7 @@ export class FileMenu {
           action: () => this.hooks.publish(),
         },
         { separator: true },
-        { label: 'Close', hint: 'Back to the gallery', action: () => this.hooks.close() },
+        { label: 'Close', hint: originOf().hint, action: () => this.hooks.close() },
       ],
       'file-menu--file',
       host,

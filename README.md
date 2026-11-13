@@ -80,7 +80,7 @@ Sculpting and posing need no account. An account lets you keep work on the site 
 - **My projects.** Your saved scenes, models and timelapses, with your storage use. Open, rename, download or delete them.
 - **Community.** Work that members share, newest first. Sort it, search by title or handle, and star what you like.
 - **Sharing.** A model or timelapse in My projects has a **Share to Community** switch. Shared work is reviewed before it shows. It is to look at: there is nothing to download or copy.
-- **Report.** **Report…** in the viewer sends a reviewer a report.
+- **Report.** **Moderation**, then **Report…** in the viewer sends a reviewer a report.
 - **Account.** Change your handle and address, manage passkeys, see where you are signed in, download your data, or delete the account.
 
 ## Controls
@@ -153,6 +153,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 - **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.
 - **Present is one workspace.** Creating a timelapse and editing a published project both happen in Present, which has a **Frames** tab for the files.
 - **The viewer in the new frame.** A published piece opens under the same title strip as the workspaces, with the transport along the foot.
+- **File and Moderation in the viewer.** The viewer has a **File** menu, with **New sculpt from this** on the site's templates, **Edit in Present** for the owner, and **Close**, which goes back to Community, My projects, Review or the gallery, whichever you came from. **Report…** and the review actions are in a **Moderation** menu, and play and pause is a white button.
 - **Sign-in window.** Email comes first, then **Use a passkey**, then **Email me a code**.
 - **Stars.** A star is white when pressed and grey when not.
 - **Card pictures fill their tile.** Gallery, Community and My projects cards are 4:5, the shape the pictures are taken at, so they no longer show bands at the sides.

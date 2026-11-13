@@ -19,6 +19,12 @@ export const BASICS: Topic[] = [
         'The **edge controls** at the bottom left are, from the bottom, Carve (negative), Undo, Redo and Solo, with the brush size and strength fields above them while the Tool panel is closed.',
         'The **Scene** and **Model** panels share the left side, and **Tool** and **Render** the right. Each side has a row of two tabs at the top and one open panel: a tab opens its panel and closes the other, and the open panel\'s tab closes it.',
       ),
+      h('What is on the screen in the viewer'),
+      list(
+        'The **title strip** has **File**, **View** and **Help** at the left, and a **Moderation** menu after **View** when you are signed in and there is something in it. At the right are the star, for a member looking at shared work, and the hide button.',
+        '**File** has **New sculpt from this** on the site\'s own templates, which starts a new sculpt from the frame on screen; **Edit in Present**, for the owner; and **Close**, which goes back to the page you came from. Shared work from Community is to look at only.',
+        '**Moderation** has **Report…**, which sends a reviewer a report about shared work, and, in review mode, **Approve**, **Reject…**, **Hide…** and **Unhide**, as the work allows.',
+      ),
       h('Hide the interface'),
       p('Press **Tab** to close the open panels, then again to hide the whole interface, then again to bring it back. **Esc** brings a hidden interface back. The hide button at the right of the title strip does the same without a keyboard; it stays on screen while the rest is hidden.'),
       h('Undo and redo'),

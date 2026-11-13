@@ -225,6 +225,7 @@ async function starredTab(host: HTMLElement, me: Me): Promise<void> {
         communityCard(item, {
           showAuthor: true,
           me,
+          from: 'me',
           unstarred: (card) => {
             card.remove();
             if (!grid.querySelector('.card--community')) grid.appendChild(none());
@@ -352,10 +353,10 @@ const modeLabel = (p: ProjectSummary): string => MODES[p.mode] ?? p.mode;
 
 /** Where Open goes, or null when there is nothing to open yet. */
 function openHref(p: ProjectSummary): string | null {
-  if (p.mode === 'scene') return p.scene ? `/?sculpt=1&project=${encodeURIComponent(p.id)}` : null;
+  if (p.mode === 'scene') return p.scene ? `/?sculpt=1&project=${encodeURIComponent(p.id)}&from=me` : null;
   // An armature opens in Armature mode; the viewer does not play one.
-  if (p.mode === 'armature') return `/?armature=1&project=${encodeURIComponent(p.id)}`;
-  return p.frameCount > 0 ? `/?tl=${encodeURIComponent(p.id)}` : null;
+  if (p.mode === 'armature') return `/?armature=1&project=${encodeURIComponent(p.id)}&from=me`;
+  return p.frameCount > 0 ? `/?tl=${encodeURIComponent(p.id)}&from=me` : null;
 }
 
 /** What is in it, for the card's line: objects for a scene, frames for the rest; a phrase where it is words. */

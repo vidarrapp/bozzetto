@@ -147,17 +147,34 @@ async function reviewTab(b, tab) {
   }));
 }
 
-/** The viewer's title strip: what its buttons at the right say, and its readout's author and review state. */
+/**
+ * The viewer's title strip: what is at its right, the menus it has, what the Moderation menu holds
+ * (Report…, Review, the review actions), its readout's author and review state, and where File > Close says it goes.
+ */
 const viewerRow = (p) =>
-  p.evaluate(() => ({
-    chips: [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].map((c) => c.textContent.trim()),
-    author: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null,
-    authorHref: document.querySelector('.viewer-author')?.getAttribute('href') ?? null,
-    report: !!document.querySelector('.viewer-report'),
-    mode: document.querySelector('.review-mode')?.dataset.shared ?? null,
-    actions: [...document.querySelectorAll('.review-action')].map((c) => c.dataset.action),
-    back: document.querySelector('.review-back')?.getAttribute('href') ?? null,
-  }));
+  p.evaluate(() => {
+    const mod = [...document.querySelectorAll('.file-menu--moderation .file-menu__item')].map((c) => c.querySelector('.file-menu__label')?.textContent ?? c.textContent.trim());
+    return {
+      chips: [...document.querySelectorAll('.bz-strip__right > *')].map((c) => c.textContent.trim() || c.getAttribute('aria-label')),
+      menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent),
+      author: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null,
+      authorHref: document.querySelector('.viewer-author')?.getAttribute('href') ?? null,
+      moderation: mod,
+      report: mod.includes('Report…'),
+      mode: document.querySelector('.review-mode')?.dataset.shared ?? null,
+      actions: mod.filter((x) => x !== 'Report…' && x !== 'Review'),
+      back: [...document.querySelectorAll('.file-menu--file .file-menu__hint')].at(-1)?.textContent ?? null,
+    };
+  });
+
+/** The Moderation menu has something for this person: its name is shown. */
+const moderationShown = (p) => waitFor(p, () => !!document.querySelector('.file-menu--moderation__chip:not([hidden])'));
+
+/** Open Moderation and press one of its rows. */
+const moderate = async (p, label) => {
+  await p.click('.file-menu--moderation__chip');
+  await p.click(`.file-menu--moderation .file-menu__item:has-text("${label}")`);
+};
 
 /** The viewer on a project, drawn (the canvas up and the overlay gone). */
 async function viewer(b, id, extra = '') {
@@ -236,16 +253,16 @@ async function approve(m, id, t) {
   );
   await Promise.all([p.waitForURL((u) => u.searchParams.get('review') === '1', { timeout: 30_000 }).catch(() => {}), p.click(`.review-card[data-project="${id}"] .review-open`)]);
   await viewer(m, id, '&review=1');
-  await waitFor(p, () => !!document.querySelector('.review-action'));
+  await moderationShown(p);
   let row = await viewerRow(p);
   t.ok(
-    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['approve', 'reject']) && row.back === '/?review&tab=queue' && !row.report,
-    `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject…, Close back to Review (${show(row)})`,
+    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['Approve', 'Reject…']) && row.back === 'Back to Review' && !row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']) && show(row.chips) === show(['Hide the interface']),
+    `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject… in Moderation, File > Close back to Review (${show(row)})`,
   );
-  await p.click('.review-action[data-action="approve"]');
+  await moderate(p, 'Approve');
   await waitFor(p, () => document.querySelector('.review-mode')?.dataset.shared === 'public');
   row = await viewerRow(p);
-  t.ok(row.mode === 'public' && show(row.actions) === show(['hide']), `Approve makes it public; Hide… is offered now (${show(row)})`);
+  t.ok(row.mode === 'public' && show(row.actions) === show(['Hide…']), `Approve, from the menu, makes it public; Hide… is offered now (${show(row)})`);
   await rest(m);
 }
 
@@ -294,17 +311,17 @@ async function listedAndReported(server, b, g, id, t) {
   await waitFor(g.page, () => !!document.querySelector('.viewer-author'));
   let row = await viewerRow(g.page);
   await rest(g);
-  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report, `a guest's viewer says by @ada, and offers no Report (${show(row)})`);
+  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report && show(row.menus) === show(['File', 'View', 'Help']), `a guest's viewer says by @ada, and has no Moderation menu (${show(row)})`);
   await go(g, '?me');
   await g.page.waitForSelector('.my-projects__body button, .my-projects__body p', { timeout: 30_000 }).catch(() => {});
   t.ok(await g.page.evaluate(() => !document.querySelector('.card__share')), 'nor Share: a guest has no projects to share');
 
   const p = b.page;
   await viewer(b, id);
-  await waitFor(p, () => !!document.querySelector('.viewer-report'));
+  await moderationShown(p);
   row = await viewerRow(p);
-  t.ok(row.author === 'by @ada' && row.report, `@bea's viewer says by @ada and offers Report… (${show(row)})`);
-  await p.click('.viewer-report');
+  t.ok(row.author === 'by @ada' && row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']), `@bea's viewer says by @ada and offers Report… in Moderation (${show(row)})`);
+  await moderate(p, 'Report');
   await p.waitForSelector('.report-overlay', { timeout: 10_000 });
   const reasons = await p.evaluate(() => {
     const sel = document.querySelector('.report-overlay select[name=reason]');
@@ -422,19 +439,18 @@ async function renameAndWithdraw(a, m, g, id, t) {
 /** The viewer's Review chip: a reviewer has it beside the credit, a member and a guest do not. */
 async function viewerReviewChip(m, b, g, id, t) {
   await viewer(m, id);
-  const shown = await waitFor(m.page, () => !!document.querySelector('.viewer-review'));
-  const seen = await m.page.evaluate(() => {
-    const chip = document.querySelector('.viewer-review');
-    return { href: chip?.getAttribute('href') ?? null, inStrip: !!chip?.closest('.bz-strip__right'), credit: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null };
-  });
+  const shown = await moderationShown(m.page);
+  const seen = await m.page.evaluate(() => ({ rows: [...document.querySelectorAll('.file-menu--moderation .file-menu__item')].map((c) => c.querySelector('.file-menu__label')?.textContent), credit: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null }));
+  t.ok(shown && seen.rows.includes('Review') && seen.credit === 'by @ada', `@mo's viewer has Review in the Moderation menu, the credit in the readout (${show(seen)})`);
+  await Promise.all([m.page.waitForURL((u) => u.searchParams.get('review') === '1' && u.searchParams.get('from') === 'gallery', { timeout: 30_000 }), moderate(m.page, 'Review')]);
+  t.ok(true, 'and it opens review mode from the Gallery');
   await rest(m);
-  t.ok(shown && seen.href === `/?tl=${id}&review=1&from=gallery` && seen.inStrip && seen.credit === 'by @ada', `@mo's viewer has Review at the right of the strip, the credit in the readout, to review mode from the Gallery (${show(seen)})`);
   for (const x of [b, g]) {
     await viewer(x, id);
     await waitFor(x.page, () => !!document.querySelector('.viewer-author'));
     // The credit's own checks (accounts on, /api/me) come after the credit: give them their time.
-    if (x.who) await waitFor(x.page, () => !!document.querySelector('.viewer-report'));
-    const none = await x.page.evaluate(() => !document.querySelector('.viewer-review'));
+    if (x.who) await moderationShown(x.page);
+    const none = await x.page.evaluate(() => ![...document.querySelectorAll('.file-menu--moderation .file-menu__item')].some((c) => /Review/.test(c.textContent)));
     await rest(x);
     t.ok(none, `${x.who ? `@${x.who}, a member,` : 'a guest'} has no Review chip in the viewer`);
   }

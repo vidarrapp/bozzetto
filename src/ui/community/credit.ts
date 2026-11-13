@@ -11,6 +11,7 @@ import {
 } from '../../net/account';
 import { recordView } from '../../net/community';
 import type { ViewerFrame } from '../../viewer/viewerFrame';
+import type { MenuItem } from '../../sculpt/ui/TopMenu';
 import { signInButton } from '../signIn';
 import { LEGAL, button, el, legalLink } from '../account/parts';
 import { REPORT_REASON_LABELS } from './reviewActions';
@@ -18,51 +19,61 @@ import { starButton } from './star';
 
 /**
  * The viewer's word on a member's work from the Community
- * (docs/accounts.md §13): "by @handle" after the title in the title strip,
- * a link to the author's page (the viewer's frame says it, from the
- * author it is given), and at the right of the strip Report… for a member
- * signed in who is not the author.
- * A guest gets nothing to click: the terms name the address to write to.
- * An active owner or moderator also gets a Review button before them,
- * which opens the same work in review mode (`&review=1&from=gallery`).
+ * (docs/accounts.md §13): "by @handle" after the title in the title strip
+ * (the viewer's frame says it, from the author it is given); in the
+ * Moderation menu, Report… for a member signed in who is not the author,
+ * and for an active owner or moderator Review, which opens the same work in
+ * review mode (`&review=1&from=gallery`); and at the right of the strip the
+ * Star for a member signed in who is not the author.
+ * A guest gets no Moderation menu: the terms name the address to write to.
  * Nothing here copies or downloads anything; the viewer offers neither.
  *
  * Opening it here counts a view (recordView; the server keeps one a
  * visitor a day, never the author's or a reviewer's, and review mode never
- * comes here). A member signed in who is not the author also gets Star
- * beside the credit (star.ts), turned as they left it.
+ * comes here). The Star is turned as the member left it (star.ts).
  *
  * Hooks for tests: `.viewer-author`, `.viewer-star` (a `.star-toggle`),
- * `.viewer-review`, `.viewer-report` (`data-reported` once sent), and the dialog's `.report-overlay`, `select[name=reason]`,
- * `textarea[name=note]`, `.report-send`, `.report-say`.
+ * the menu rows `Report…` (`Reported` once sent) and `Review` in
+ * `.file-menu--moderation`, and the dialog's `.report-overlay`,
+ * `select[name=reason]`, `textarea[name=note]`, `.report-send`, `.report-say`.
  */
 export async function mountCommunityCredit(id: string, author: string, frame: ViewerFrame): Promise<void> {
-  document.querySelectorAll('.viewer-star, .viewer-review, .viewer-report').forEach((c) => c.remove());
+  document.querySelectorAll('.viewer-star').forEach((c) => c.remove());
   recordView(id);
 
   if (!(await accountsOn().catch(() => false))) return;
   // Signed in, active, and not the author: anyone else has no Report.
   const me = await getMe().catch(() => null);
   if (!me || me.status !== 'active') return;
+  const items: MenuItem[] = [];
+  const draw = (): void => frame.setModeration(items);
   if (me.role === 'owner' || me.role === 'moderator') {
-    const review = frame.control('Review', `/?tl=${encodeURIComponent(id)}&review=1&from=gallery`);
-    review.classList.add('viewer-review');
-    review.title = 'Open it in review mode';
-    frame.addAction(review);
+    items.push({
+      label: 'Review',
+      hint: 'Open it in review mode',
+      action: () => window.location.assign(`/?tl=${encodeURIComponent(id)}&review=1&from=gallery`),
+    });
   }
-  if (me.handle.toLowerCase() === author.toLowerCase()) return;
-  // Star: as the member left it, or unstarred when that cannot be read now.
-  const starred = await isStarred(id).catch(() => false);
-  const star = starButton(id, starred, { className: 'bz-strip__btn viewer-star' });
-  frame.addAction(star);
-  const report = frame.control('Report…') as HTMLButtonElement;
-  report.classList.add('viewer-report');
-  report.addEventListener('click', () => openReport(id, author, report));
-  frame.addAction(report);
+  if (me.handle.toLowerCase() !== author.toLowerCase()) {
+    // Star: as the member left it, or unstarred when that cannot be read now.
+    const starred = await isStarred(id).catch(() => false);
+    frame.addAction(starButton(id, starred, { className: 'bz-strip__btn viewer-star' }));
+    let reported = false;
+    items.push({
+      label: () => (reported ? 'Reported' : 'Report…'),
+      enabled: () => !reported,
+      action: () =>
+        openReport(id, author, () => document.querySelector<HTMLElement>('.file-menu--moderation__chip'), () => {
+          reported = true;
+          document.body.dataset.reported = 'true';
+        }),
+    });
+  }
+  draw();
 }
 
 /** Report…: the reason, an optional note, what happens next, and Send. */
-function openReport(id: string, author: string, chip: HTMLButtonElement): void {
+function openReport(id: string, author: string, focusTo: () => HTMLElement | null, sent: () => void): void {
   const overlay = el('div', 'install-overlay report-overlay');
   const card = el('form', 'install-card report-card');
   card.setAttribute('role', 'dialog');
@@ -113,7 +124,7 @@ function openReport(id: string, author: string, chip: HTMLButtonElement): void {
   const done = (): void => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
-    chip.focus();
+    focusTo()?.focus();
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') done();
@@ -127,9 +138,7 @@ function openReport(id: string, author: string, chip: HTMLButtonElement): void {
 
   /** Sent, now or before: the dialog says so, and the chip stays down. */
   const finished = (text: string): void => {
-    chip.textContent = 'Reported';
-    chip.disabled = true;
-    chip.dataset.reported = 'true';
+    sent();
     say.dataset.tone = 'note';
     say.textContent = text;
     reason.disabled = true;

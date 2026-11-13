@@ -90,7 +90,7 @@ export class TopMenu {
     this.pop = div(`file-menu ${cls}`);
     this.pop.setAttribute('role', 'menu');
     this.pop.hidden = true;
-    for (const item of items) this.pop.appendChild(this.build(item));
+    this.setItems(items);
 
     host.appendChild(this.chip);
     document.body.appendChild(this.pop);
@@ -98,6 +98,22 @@ export class TopMenu {
     window.addEventListener('keydown', this.onKeyDown, true);
     window.addEventListener('resize', this.onResize);
     window.addEventListener(PANEL_CLOSE_ALL_EVENT, this.onCloseAll);
+  }
+
+  /** Replace the rows (a menu whose items depend on who is looking, known after it is drawn). */
+  setItems(items: MenuItem[]): void {
+    this.painters.length = 0;
+    this.pop.replaceChildren(...items.map((item) => this.build(item)));
+    if (this.opened) {
+      for (const paint of this.painters) paint();
+      this.place();
+    }
+  }
+
+  /** Show or hide the menu's name (a menu with nothing in it for this person has none). */
+  setShown(shown: boolean): void {
+    this.chip.hidden = !shown;
+    if (!shown) this.close();
   }
 
   isOpen(): boolean {

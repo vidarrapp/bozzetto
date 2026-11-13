@@ -6,20 +6,23 @@ import { mountViewerParts } from './mountViewer';
 import { pageChrome } from '../ui/ChromeToggle';
 import { toggleHotkeyGuide } from '../help/menu';
 import { authorHref } from '../net/community';
-import { TitleStrip, stripButton, stripLink } from '../sculpt/ui/TitleStrip';
-import { TopMenu } from '../sculpt/ui/TopMenu';
+import { TitleStrip } from '../sculpt/ui/TitleStrip';
+import { TopMenu, type MenuItem } from '../sculpt/ui/TopMenu';
+import { originOf, type Origin } from '../ui/origin';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { layoutShell } from '../sculpt/ui/shellLayout';
 
 /**
  * The public viewer (`/?tl=<id>`) in the app's frame (docs/ui-spec.md): the
  * quiet version of the shell Sculpt, Armature and Present use. A visitor
- * looks and nothing here edits, so the strip has two menus only (View and
- * Help), no File, no Edit and no workspace path; the project's name and
- * what it is in the middle; Close, "Edit" for the owner and the
- * hide-interface button at the right; the Render panel under its one tab at
- * the right edge, shut until it is opened; and the transport at the foot,
- * where play is the one orange action of the screen.
+ * looks and nothing here edits, so there is no Edit menu and no workspace
+ * path. The strip has File (New sculpt from this, for a template; Edit in
+ * Present, for the owner; Close, back to where the person came from, ui/origin),
+ * View, Moderation (Report, and the review actions; only when it has one)
+ * and Help; the project's name and what it is in the middle; the Star for a
+ * member and the hide-interface button at the right; the Render panel under
+ * its one tab at the right edge, shut until it is opened; and the transport
+ * at the foot, with its white play button.
  *
  * It dresses the parts mountViewerParts builds (the viewer, the Render
  * panel, the transport, the guide), as Present does, and changes none of
@@ -32,21 +35,31 @@ import { layoutShell } from '../sculpt/ui/shellLayout';
  * note over the transport).
  */
 
-/** Where the gallery is, whatever the address says (as main.ts's own link). */
-const GALLERY = '/';
+/** What the viewer's File menu may offer beside Close, each only when it applies. */
+export interface ViewerFileItems {
+  /** New sculpt from this: a template only; starts a Sculpt scene from the frame on screen. */
+  newSculpt?: () => void | Promise<void>;
+  /** Edit in Present: the owner only. */
+  present?: () => void | Promise<void>;
+}
 
 export interface ViewerFrame {
   readonly strip: TitleStrip;
-  /** Close: to the gallery, or where a mode that opens the viewer says (review). */
-  readonly close: HTMLAnchorElement;
+  /** Where File > Close goes now, and what its hint says. */
+  readonly origin: () => Origin;
+  /** Close goes here (review mode names the Review page); the hint follows. */
+  setOrigin(origin: Origin): void;
+  /** The File menu's items besides Close; the menu is redrawn. */
+  setFileItems(items: ViewerFileItems): void;
   /**
-   * A quiet control in the strip's right group, before Close: a link with
-   * an address, else a button. `kind` fills it - the main action orange,
-   * one that cannot be undone red.
+   * The Moderation menu's items (Report, and the review actions): the menu
+   * shows only while it has one, and is redrawn each time this is called.
    */
-  control(label: string, href?: string, kind?: 'primary' | 'danger'): HTMLElement;
-  /** Put a control there; in order of arrival, the newest nearest Close. */
+  setModeration(items: MenuItem[]): void;
+  /** Put a control at the right of the strip, before the hide button (the Star). */
   addAction(el: HTMLElement): void;
+  /** File > Close: to where the person came from. */
+  close(): void;
 }
 
 export async function mountPublicViewer(
@@ -54,7 +67,7 @@ export async function mountPublicViewer(
   manifest: Manifest,
   source: AssetSource,
   onStatus?: (msg: string) => void,
-  opts: { author?: string } = {},
+  opts: { author?: string; origin?: Origin } = {},
 ): Promise<{ viewer: Viewer; frame: ViewerFrame }> {
   const parts = await mountViewerParts(viewport, manifest, source, onStatus, { author: opts.author, shell: true, frame: true });
   const { viewer, panel, transport } = parts;
@@ -86,7 +99,19 @@ export async function mountPublicViewer(
   };
   refreshReadout();
 
-  // --- the menus: View and Help, nothing else -------------------------------
+  // --- the menus: File, View, Moderation (when it has something), Help ---------
+  let origin: Origin = opts.origin ?? originOf();
+  let extras: ViewerFileItems = {};
+  const close = (): void => window.location.assign(origin.href);
+  const fileItems = (): MenuItem[] => {
+    const rows: MenuItem[] = [];
+    if (extras.newSculpt) rows.push({ label: 'New sculpt from this', hint: 'Starts a new sculpt from the frame on screen', action: extras.newSculpt });
+    if (extras.present) rows.push({ label: 'Edit in Present', action: extras.present });
+    if (rows.length) rows.push({ separator: true });
+    rows.push({ label: 'Close', hint: origin.hint, action: close });
+    return rows;
+  };
+  const file = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
   const refresh = (): void => panel.refreshControls();
   new TopMenu(
     'View',
@@ -119,6 +144,8 @@ export async function mountPublicViewer(
     strip.menus,
     true,
   );
+  const moderation = new TopMenu('Moderation', [], 'file-menu--moderation', strip.menus, true);
+  moderation.setShown(false);
   // The viewer has no Help topics window: its Help is the hotkey guide.
   new TopMenu(
     'Help',
@@ -130,22 +157,27 @@ export async function mountPublicViewer(
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
 
-  // --- the right of the strip: Close, and what is added before it -------------
-  const close = stripLink('Close', GALLERY);
-  close.classList.add('viewer-back');
-  close.title = 'Back to the gallery';
-  strip.addAction(close);
-
-  const control = (label: string, href?: string, kind?: 'primary' | 'danger'): HTMLElement => {
-    const el = href !== undefined ? stripLink(label, href) : stripButton(label);
-    if (kind) el.classList.add(`bz-strip__btn--${kind}`);
-    return el;
-  };
-
   // The frame hands the strip its place in the layout once the controls are up.
   layoutShell();
   return {
     viewer,
-    frame: { strip, close, control, addAction: (el) => strip.addAction(el, close) },
+    frame: {
+      strip,
+      origin: () => origin,
+      setOrigin: (o) => {
+        origin = o;
+        file.setItems(fileItems());
+      },
+      setFileItems: (items) => {
+        extras = items;
+        file.setItems(fileItems());
+      },
+      setModeration: (items) => {
+        moderation.setItems(items);
+        moderation.setShown(items.length > 0);
+      },
+      addAction: (el) => strip.addAction(el),
+      close,
+    },
   };
 }

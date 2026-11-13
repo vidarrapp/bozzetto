@@ -240,6 +240,31 @@ export const suites = {
     t.eq(items.at(-1), 'Close', 'Armature\'s File menu ends in Close too');
     await Promise.all([page.waitForURL((u) => u.pathname === '/' && !u.search.includes('armature'), { timeout: 60_000, waitUntil: 'commit' }), pick(page, 'Close')]);
     t.ok(true, 'and it returns to the gallery');
+
+    // Close goes back to where the workspace was opened from (ui/origin), the hint saying where.
+    const closeHint = () => page.evaluate(() => [...document.querySelectorAll('.file-menu--file .file-menu__item')].at(-1)?.querySelector('.file-menu__hint')?.textContent ?? null);
+    const cases = [
+      ['sculpt', 'me', 'Back to My projects', (u) => u.pathname === '/' && u.search === '?me'],
+      ['sculpt', 'community', 'Back to Community', (u) => u.pathname === '/' && u.search === '?community'],
+      ['armature', 'me', 'Back to My projects', (u) => u.pathname === '/' && u.search === '?me'],
+      ['armature', 'owner', 'Back to Owner tools', (u) => u.pathname === '/admin/'],
+    ];
+    for (const [ws, from, hint, where] of cases) {
+      if (ws === 'sculpt') await openSculpt(page, base, `&from=${from}`);
+      else {
+        await page.goto(`${base}/?armature=1&from=${from}`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 });
+        await page.waitForTimeout(250);
+      }
+      await openMenu(page, 'File');
+      t.eq(await closeHint(), hint, `${ws} opened from ${from}: Close says "${hint}"`);
+      await Promise.all([page.waitForURL((u) => where(u), { timeout: 60_000, waitUntil: 'commit' }), pick(page, 'Close')]);
+      t.ok(true, `and ${ws} goes back there`);
+    }
+    // An origin that is not one of ours is the gallery's.
+    await openSculpt(page, base, '&from=https://elsewhere.example/');
+    await openMenu(page, 'File');
+    t.eq(await closeHint(), 'Back to the gallery', 'an address that names no origin of ours leaves the hint at the gallery');
   },
 
   /**

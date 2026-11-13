@@ -1,18 +1,20 @@
 // The public viewer (`/?tl=<id>`) in the app's frame (src/viewer/viewerFrame.ts,
-// docs/ui-spec.md): the quiet title strip (View and Help only, the title and
-// what it is in the middle, Close and the hide button at the right), Render as
+// docs/ui-spec.md): the quiet title strip (File, View and Help, the title and
+// what it is in the middle, the hide button at the right), Render as
 // the one folder tab with the viewer's own panel under it, the transport as the
-// bar at the foot with the one orange play button, and none of the old top row,
+// bar at the foot with the white play button, and none of the old top row,
 // sideways tab or transport. The same at 390px, where nothing overlaps. Then
-// a model, the owner's Edit, a member's work (by @handle in the
-// readout, Star and Report in the strip) and review mode (Close back to Review,
-// the state in the readout, the decisive action filled), the last two over
+// a model, the owner's Edit in Present (File), a member's work (by @handle in the
+// readout, Star at the right, Report in Moderation) and review mode (File > Close back to
+// Review, the state in the readout, the actions in Moderation), the last two over
 // answers the page is given for the account routes (the real ones run in the
 // community suite). Each gets (page, base, t).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ORANGE = 'rgb(255, 90, 31)';
+const WHITE = 'rgb(255, 255, 255)';
+const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/viewer-menus';
 const RED = 'rgb(171, 0, 0)';
 const BLACK = 'rgb(0, 0, 0)';
 const STRIP = 'rgb(27, 27, 27)';
@@ -63,7 +65,7 @@ const stripState = (page) =>
     const name = document.querySelector('.bz-readout__name');
     return {
       strip: strip ? { ...box(strip), bg: css(strip, 'backgroundColor'), pos: css(strip, 'position') } : null,
-      menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((m) => m.textContent),
+      menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent),
       path: shown(document.querySelector('.bz-ws')),
       left: box(document.querySelector('.bz-strip__menus')),
       readout: box(document.querySelector('.bz-readout')),
@@ -123,7 +125,37 @@ const frameState = (page) =>
 const menuRows = (page, cls) =>
   page.evaluate((c) => [...document.querySelectorAll(`.${c} .file-menu__item`)].map((b) => `${b.querySelector('.file-menu__label')?.textContent ?? b.textContent}${b.querySelector('.file-menu__key') ? ` [${b.querySelector('.file-menu__key').textContent}]` : ''}`), cls);
 
+/** A page of its own with no service worker: one that has taken the page answers its fetches before the test's answers can. */
+const freshPage = async (runnerPage, t) => {
+  const ctx = await runnerPage.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => t.ok(false, `page error: ${e}`));
+  return { ctx, page };
+};
+
 const noOverlap = (a, b) => !!a && !!b && a.r <= b.l;
+
+/** Open a strip menu by its name; its list is shown. */
+const openStripMenu = async (page, name) => {
+  await page.click(`.bz-menuname:has-text("${name}")`);
+  await page.waitForSelector('.file-menu:not([hidden])');
+};
+
+/** A menu's rows with their hint lines: "Close (Back to the gallery)". */
+const rowsWithHints = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('.file-menu:not([hidden]) .file-menu__item')].map((b) => {
+      const label = b.querySelector('.file-menu__label')?.textContent ?? b.textContent.trim();
+      const hint = b.querySelector('.file-menu__hint')?.textContent;
+      return `${label}${b.disabled ? ' [off]' : ''}${hint ? ` (${hint})` : ''}`;
+    }),
+  );
+
+/** Press one row of the open menu. */
+const pickRow = (page, label) => page.click(`.file-menu:not([hidden]) .file-menu__item:has-text("${label}")`);
+
+/** The viewer's menus, in order, as the strip names them. */
+const menuNames = (page) => page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].filter((m) => !m.hidden && m.getClientRects().length).map((m) => m.textContent));
 
 export const suites = {
   async viewerFrame(page, base, t) {
@@ -133,10 +165,10 @@ export const suites = {
     await page.evaluate(() => window.__bozzetto.scrubTo(10));
     await page.waitForTimeout(500);
 
-    // --- the strip: View and Help, the readout, Close and hide --------------------
+    // --- the strip: File, View and Help, the readout, hide --------------------
     let s = await stripState(page);
     t.ok(s.strip && s.strip.h === 24 && s.strip.t === 0 && s.strip.w === s.vw && s.strip.bg === STRIP && s.strip.pos === 'fixed', `a 24px strip across the top, on the strip colour (${JSON.stringify(s.strip)})`);
-    t.eq(s.menus.join(), 'View,Help', 'two menus at its left, View and Help: no File, no Edit');
+    t.eq(s.menus.join(), 'File,View,Help', 'three menus at its left, File, View and Help, as in the workspaces: no Edit, and no Moderation for a guest');
     t.ok(!s.path, 'and no workspace path after them');
     t.ok(s.left && s.readout && s.right && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'the menus, the readout and the right group do not overlap');
     t.eq(s.title, 'Demo bust (synthetic)', "the readout starts with the project's title");
@@ -144,10 +176,15 @@ export const suites = {
     const at = await page.evaluate(() => window.__bozzetto.timeline.stageAt(10)?.name ?? null);
     t.ok(/Timelapse 24 frames/.test(s.readoutText) && !!at && s.readoutText.endsWith(`Stage ${at}`), `then Timelapse 24 frames and the stage the frame is in (${s.readoutText})`);
     t.ok(!/ by @/.test(s.readoutText), 'with no author: the project is not a member\'s');
-    t.eq(s.buttons.map((b) => b.text).join(), 'Close,Hide the interface', 'Close and the hide button at the right, nothing else for a visitor');
-    const close = s.buttons[0];
-    t.ok(close.tag === 'A' && close.cls.includes('viewer-back') && close.cls.includes('bz-strip__btn') && close.bg === 'rgba(0, 0, 0, 0)', `Close is a quiet strip link (${close.cls})`);
-    t.eq(await page.getAttribute('.viewer-back', 'href'), '/', 'to the gallery');
+    t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right for a visitor');
+    await openStripMenu(page, 'File');
+    t.eq((await rowsWithHints(page)).join(' | '), 'New sculpt from this (Starts a new sculpt from the frame on screen) | Close (Back to the gallery)', 'File holds New sculpt from this (the demo stands in for a template) and Close, with where it goes');
+    t.ok(await page.evaluate(() => !!document.querySelector('.file-menu--file.file-menu')), 'the File list is the same menu component the workspaces use');
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${SHOTS}/viewer-guest-file.png` });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.keyboard.press('Escape');
     t.eq(s.oldRow.join(), '', `the old top row, "?" chip and theme chip are gone (${s.oldRow})`);
     // The stage's name once: in the readout, not with the transport as well.
     let f = await frameState(page);
@@ -179,10 +216,10 @@ export const suites = {
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).open, 'the tab shuts it again');
 
-    // --- the transport: the bar at the foot, play the orange action ----------------
+    // --- the transport: the bar at the foot, play a white filled button ----------------
     t.ok(f.barClass.includes('transport--shell') && f.bar && f.bar.b === s.vh && Math.abs((f.bar.l + f.bar.r) / 2 - s.vw / 2) <= 1 && f.bar.w <= 752 && f.barBorderTop === '0px', `the transport is the shell's bar, flush at the bottom centre (${JSON.stringify(f.bar)})`);
-    t.ok(f.play.bg === ORANGE && f.play.color === BLACK && f.play.icon === BLACK, `its play button is orange with a black icon (${JSON.stringify(f.play)})`);
-    t.eq(f.orangeButtons.join(), 'transport__play', `and it is the only orange button on the screen (${f.orangeButtons})`);
+    t.ok(f.play.bg === WHITE && f.play.icon === BLACK, `its play button is filled white with a black icon (${JSON.stringify(f.play)})`);
+    t.eq(f.orangeButtons.join(), '', `and nothing on the screen is an orange button (${f.orangeButtons})`);
     t.eq(f.ticks, await page.evaluate(() => window.__bozzetto.manifest.stages.length), 'a tick for each stage');
     await page.click('.transport__play');
     t.ok(await page.evaluate(() => window.__bozzetto.timeline.playing), 'play plays');
@@ -252,9 +289,9 @@ export const suites = {
     f = await frameState(page);
     t.ok(s.strip.w === 390 && s.strip.h === 24 && s.scroll <= 0, `at 390px the strip is the width of the screen and nothing scrolls sideways (${s.scroll})`);
     t.ok(!s.readout, 'the readout gives way');
-    t.ok(noOverlap(s.left, s.right) && s.right.r <= 390 && s.left.l >= 0, `the menus and Close and hide do not overlap (${JSON.stringify([s.left, s.right])})`);
+    t.ok(noOverlap(s.left, s.right) && s.right.r <= 390 && s.left.l >= 0, `the menus and the hide button do not overlap (${JSON.stringify([s.left, s.right])})`);
     t.ok(f.tab && f.tab.r === 390 && f.tab.l >= 0, 'the Render tab is on the screen');
-    t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === ORANGE, `the transport spans it, flush at the bottom, play still orange (${JSON.stringify(f.bar)})`);
+    t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === WHITE, `the transport spans it, flush at the bottom, play still white (${JSON.stringify(f.bar)})`);
     await page.click('.panel--render > .panel__handle');
     await page.waitForTimeout(300);
     f = await frameState(page);
@@ -269,9 +306,10 @@ export const suites = {
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    // --- Close goes to the gallery -----------------------------------------------------------
-    await Promise.all([page.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 30_000 }).catch(() => {}), page.click('.viewer-back')]);
-    t.ok(new URL(page.url()).search === '', `Close leaves for the gallery (${page.url()})`);
+    // --- File > Close goes to the gallery, opened cold ---------------------------------------
+    await openStripMenu(page, 'File');
+    await Promise.all([page.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 30_000 }).catch(() => {}), pickRow(page, 'Close')]);
+    t.ok(new URL(page.url()).search === '', `File > Close leaves for the gallery (${page.url()})`);
   },
 
   async viewerModel(page, base, t) {
@@ -283,40 +321,124 @@ export const suites = {
     const f = await frameState(page);
     t.ok(f.bar === null, 'a model has no transport');
     t.eq(s.readoutText, 'A model Model', `its readout is its title and Model (${s.readoutText})`);
-    t.eq(s.menus.join(), 'View,Help', 'with the same two menus');
+    t.eq(s.menus.join(), 'File,View,Help', 'with the same three menus');
     t.eq(f.tabs.join(), 'Render', 'and the Render tab');
     t.eq(s.oldRow.join(), '', 'and none of the old top row');
   },
 
-  async viewerOwner(page, base, t) {
-    // Edit: quiet, at the right of the strip, for an owner already signed in on this device.
+  async viewerOwner(runnerPage, base, t) {
+    const { ctx, page } = await freshPage(runnerPage, t);
+    await page.setViewportSize({ width: 1180, height: 820 });
+    // Edit in Present: in File, for an owner already signed in on this device; nothing else in the strip.
     await page.addInitScript(() => localStorage.setItem('bozzetto-signed-in', JSON.stringify({ at: Date.now() })));
     await answer(page, { '/api/config': { accounts: false }, '/admin/api/whoami': { email: 'owner@example.com' } });
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await ready(page);
-    await page.waitForSelector('.viewer-present', { timeout: 30_000 });
+    await page.waitForFunction(() => !!document.querySelector('.bz-menuname') && document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'), null, { timeout: 30_000 });
     const s = await stripState(page);
-    t.eq(s.buttons.map((b) => b.text).join(), 'Edit,Close,Hide the interface', 'the owner has Edit before Close');
-    const chip = s.buttons[0];
-    t.ok(chip.tag === 'A' && chip.cls.includes('bz-strip__btn') && chip.bg === 'rgba(0, 0, 0, 0)' && chip.color !== BLACK, `quiet, not filled (${chip.bg})`);
-    t.eq(await page.getAttribute('.viewer-present', 'href'), '/?tl=demo&present=1', 'to Present');
-    t.ok(noOverlap(s.left, s.right), 'and it fits without touching the menus');
+    t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'the owner has no Edit at the right of the strip any more');
+    t.eq(s.menus.join(), 'File,View,Help', 'and the same three menus');
+    await openStripMenu(page, 'File');
+    t.eq((await rowsWithHints(page)).join(' | '), 'New sculpt from this (Starts a new sculpt from the frame on screen) | Edit in Present | Close (Back to the gallery)', 'File holds New sculpt from this, Edit in Present, then Close');
+    await page.screenshot({ path: `${SHOTS}/viewer-owner-file.png` });
+    await Promise.all([page.waitForURL((u) => u.search === '?tl=demo&present=1', { timeout: 30_000, waitUntil: 'commit' }), pickRow(page, 'Edit in Present')]);
+    t.ok(true, 'Edit in Present goes to Present (/?tl=demo&present=1)');
+    await page.goto(`${base}/?tl=demo&from=me`, { waitUntil: 'domcontentloaded' });
+    await ready(page);
+    await page.waitForFunction(() => document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'), null, { timeout: 30_000 });
+    await openStripMenu(page, 'File');
+    await Promise.all([page.waitForURL((u) => u.search === '?tl=demo&present=1&from=me', { timeout: 30_000, waitUntil: 'commit' }), pickRow(page, 'Edit in Present')]);
+    t.ok(true, 'and carries where the viewer was opened from, so Present closes back there');
+    await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+    await ready(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const p = await stripState(page);
     t.ok(noOverlap(p.left, p.right) && p.right.r <= 390 && p.scroll <= 0, `also at 390px (${JSON.stringify([p.left, p.right])})`);
+    await ctx.close();
+  },
+
+  async viewerGuestOnly(page, base, t) {
+    // Edit in Present is the owner's: a guest, and a member, are not offered it.
+    await answer(page, { '/api/config': { accounts: false } });
+    await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
+    await ready(page);
+    await page.waitForTimeout(800);
+    await openStripMenu(page, 'File');
+    t.ok(!(await rowsWithHints(page)).some((r) => /Edit in Present/.test(r)), 'a guest is not offered Edit in Present');
+  },
+
+  async viewerOrigin(page, base, t) {
+    // File > Close goes back to where the viewer was opened from, with the hint to match; cold it is the gallery.
+    const cases = [
+      ['', 'Back to the gallery', (u) => u.pathname === '/' && u.search === ''],
+      ['&from=community', 'Back to Community', (u) => u.pathname === '/' && u.search === '?community'],
+      ['&from=u:ada', 'Back to Community', (u) => u.pathname === '/' && u.search === '?u=ada'],
+      ['&from=me', 'Back to My projects', (u) => u.pathname === '/' && u.search === '?me'],
+      ['&from=//elsewhere.example', 'Back to the gallery', (u) => u.pathname === '/' && u.search === ''],
+    ];
+    for (const [q, hint, where] of cases) {
+      await page.goto(`${base}/?tl=demo${q}`, { waitUntil: 'domcontentloaded' });
+      await ready(page);
+      await openStripMenu(page, 'File');
+      const rows = await rowsWithHints(page);
+      t.eq(rows.at(-1), `Close (${hint})`, `${q || 'opened cold'}: Close says "${hint}"`);
+      await Promise.all([page.waitForURL((u) => where(new URL(u)), { timeout: 30_000, waitUntil: 'commit' }), pickRow(page, 'Close')]);
+      t.ok(where(new URL(page.url())), `and goes to ${new URL(page.url()).pathname}${new URL(page.url()).search}`);
+    }
+  },
+
+  async viewerNewSculpt(runnerPage, base, t) {
+    const { ctx, page } = await freshPage(runnerPage, t);
+    // New sculpt from this: a template's frame on screen becomes the one object of a new sculpt, at its size, on the floor.
+    // A project on real units (the answer says cm) and not a member's.
+    await answer(page, { '/api/projects/tpl': projectJson('tpl', { title: 'A template', units: 'cm' }) });
+    await page.goto(`${base}/?tl=tpl`, { waitUntil: 'domcontentloaded' });
+    await ready(page);
+    await page.evaluate(() => window.__bozzetto.pause());
+    await page.evaluate(() => window.__bozzetto.scrubTo(12));
+    await page.waitForTimeout(600);
+    const want = await page.evaluate(() => {
+      const b = window.__bozzetto.frameLocalBounds();
+      return { size: [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z], lowest: b.min.y };
+    });
+    await openStripMenu(page, 'File');
+    t.ok((await rowsWithHints(page)).some((r) => r.startsWith('New sculpt from this')), 'a template offers New sculpt from this');
+    await Promise.all([page.waitForURL((u) => u.search.includes('sculpt=1'), { timeout: 60_000, waitUntil: 'commit' }), pickRow(page, 'New sculpt from this')]);
+    await page.waitForFunction(() => !!window.__sculpt?.session?.getMeshes().length, null, { timeout: 90_000 });
+    await page.waitForTimeout(500);
+    const got = await page.evaluate(() => {
+      const meshes = window.__sculpt.session.getMeshes();
+      const w = window.__sculpt.worldBox(meshes[0]);
+      return { n: meshes.length, size: [0, 1, 2].map((k) => w.max[k] - w.min[k]), lowest: w.min[1], units: window.__sculpt.session.getUnits(), banner: !!document.querySelector('.scale-banner:not([hidden])') };
+    });
+    t.eq(got.n, 1, 'Sculpt opens with one object');
+    t.ok(got.size.every((v, k) => Math.abs(v - want.size[k]) <= 0.08 * want.size[k]), `at the frame's real size, give or take the smoothing of the object's finest level, as an imported OBJ has it (${got.size.map((v) => v.toFixed(2))} vs ${want.size.map((v) => v.toFixed(2))} cm)`);
+    t.ok(Math.abs(got.lowest - want.lowest) <= 0.08 * want.size[1], `standing where the frame stood on the floor (${got.lowest.toFixed(2)} vs ${want.lowest.toFixed(2)})`);
+    t.eq(got.units, 'cm', 'in a scene on real units');
+    t.ok(!got.banner, 'with no Set scale question');
+    // Not for a member's shared work, and not for a project that is the owner's or a member's own.
+    await answer(page, { '/api/config': { accounts: true }, '/api/projects/ada-bust': projectJson('ada-bust', { title: 'Ada bust', community: true, author: { handle: 'ada' } }) });
+    await page.goto(`${base}/?tl=ada-bust`, { waitUntil: 'domcontentloaded' });
+    await ready(page);
+    await page.waitForTimeout(500);
+    await openStripMenu(page, 'File');
+    t.eq((await rowsWithHints(page)).join(' | '), 'Close (Back to the gallery)', "a member's Community work is to look at only: File holds Close alone");
+    await ctx.close();
   },
 
   async viewerMember(page, base, t) {
-    // A member's work from the Community: by @ada in the readout, a member's Star and Report in the strip.
+    // A member's work from the Community: by @ada in the readout, the Star at the right, Report… in Moderation.
+    await page.setViewportSize({ width: 1180, height: 820 });
     await answer(page, {
       '/api/config': { accounts: true },
       '/api/me': { id: 'u2', handle: 'bea', role: 'member', status: 'active', usage: { used: 0, reserved: 0, quota: 1e9 } },
       '/api/projects/ada-bust': projectJson('ada-bust', { title: 'Ada bust', community: true, author: { handle: 'ada' } }),
+      '/api/me/stars/ada-bust': { starred: false },
     });
-    await page.goto(`${base}/?tl=ada-bust`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${base}/?tl=ada-bust&from=community`, { waitUntil: 'domcontentloaded' });
     await ready(page);
-    await page.waitForSelector('.viewer-report', { timeout: 30_000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('.bz-menuname')].some((m) => m.textContent === 'Moderation' && !m.hidden), null, { timeout: 30_000 });
     const s = await stripState(page);
     t.ok(/^Ada bust by @ada Timelapse 24 frames/.test(s.readoutText), `the readout names the author after the title (${s.readoutText})`);
     const by = await page.evaluate(() => {
@@ -324,16 +446,31 @@ export const suites = {
       return { tag: a?.tagName, href: a?.getAttribute('href'), count: document.querySelectorAll('.viewer-author').length };
     });
     t.ok(by.tag === 'A' && by.href === '/?u=ada' && by.count === 1, `a link to her page, said once (${JSON.stringify(by)})`);
-    t.eq(s.buttons.map((b) => b.text).join(), 'Star,Report…,Close,Hide the interface', "Star (an icon, named for a screen reader) and Report… stand before Close, quiet");
-    t.ok(s.buttons.every((b) => b.bg === 'rgba(0, 0, 0, 0)'), 'none of them filled');
+    t.eq(s.menus.join(), 'File,View,Moderation,Help', 'a member has File, View, Moderation and Help');
+    t.eq(s.buttons.map((b) => b.text).join(), 'Star,Hide the interface', 'the right of the strip holds the Star (an icon, named for a screen reader) and the hide button, nothing else');
+    t.ok(s.buttons.every((b) => b.bg === 'rgba(0, 0, 0, 0)'), 'neither filled');
     t.eq(s.oldRow.join(), '', 'and no top row');
+    await openStripMenu(page, 'File');
+    t.eq((await rowsWithHints(page)).join(' | '), 'Close (Back to Community)', "File holds Close alone (Community work is to look at only), going back to Community");
+    await page.screenshot({ path: `${SHOTS}/viewer-member-file.png` });
+    await page.keyboard.press('Escape');
+    await openStripMenu(page, 'Moderation');
+    t.eq((await rowsWithHints(page)).join(' | '), 'Report…', 'Moderation holds Report…');
+    await page.screenshot({ path: `${SHOTS}/viewer-member-moderation.png` });
+    await pickRow(page, 'Report');
+    await page.waitForSelector('.report-overlay select[name=reason]', { timeout: 10_000 });
+    t.ok(true, 'Report… opens the report window');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.report-overlay'));
     await page.click('.panel--render > .panel__handle');
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).byline, 'the panel has no byline of its own');
+    await page.click('.panel--render > .panel__handle');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const p = await stripState(page);
-    t.ok(noOverlap(p.left, p.right) && p.scroll <= 0, 'at 390px they fit beside the menus');
+    t.ok(noOverlap(p.left, p.right) && p.scroll <= 0 && p.right.r <= 390, `at 390px File, View, Moderation, Help, the Star and the hide button fit without overlap (${JSON.stringify([p.left, p.right])})`);
+    await page.screenshot({ path: `${SHOTS}/viewer-member-390.png` });
   },
 
   async viewerReview(runnerPage, base, t) {
@@ -341,6 +478,7 @@ export const suites = {
     // Its own context, with no service worker: a worker that has taken the page answers its fetches before the test's answers can.
     const ctx = await runnerPage.context().browser().newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
     const page = await ctx.newPage();
+    await page.setViewportSize({ width: 1180, height: 820 });
     page.on('pageerror', (e) => t.ok(false, `page error: ${e}`));
     let shared = 'pending';
     await answer(page, {
@@ -360,39 +498,58 @@ export const suites = {
       await ready(page).catch(async (e) => {
         throw new Error(`${e.message} / ${await page.evaluate(() => document.querySelector('#overlay')?.textContent)}`);
       });
-      await page.waitForSelector('.review-action', { timeout: 30_000 });
+      await page.waitForFunction(() => [...document.querySelectorAll('.bz-menuname')].some((m) => m.textContent === 'Moderation' && !m.hidden), null, { timeout: 30_000 });
       return stripState(page);
     };
+    const actions = async () => {
+      await openStripMenu(page, 'Moderation');
+      const rows = await rowsWithHints(page);
+      await page.keyboard.press('Escape');
+      return rows.join(' | ');
+    };
     let s = await open('pending');
-    t.eq(s.menus.join(), 'View,Help', 'the same strip, View and Help');
+    t.eq(s.menus.join(), 'File,View,Moderation,Help', 'the same strip: File, View, Moderation and Help');
     t.ok(/^Ada bust by @ada Timelapse 24 frames/.test(s.readoutText) && /Reviewing Pending review$/.test(s.readoutText), `the readout has the author and where it stands (${s.readoutText})`);
     t.eq(await page.getAttribute('.review-mode', 'data-shared'), 'pending', 'the state is on the review-mode hook');
-    t.eq(s.buttons.map((b) => b.text).join(), 'Approve,Reject…,Close,Hide the interface', 'Approve and Reject… at the right, before Close');
-    const [approve, reject, close] = s.buttons;
-    t.ok(approve.bg === ORANGE && approve.color === BLACK, `Approve, the decisive one, is filled orange (${approve.bg})`);
-    t.ok(reject.bg === 'rgba(0, 0, 0, 0)', `Reject… is quiet (${reject.bg})`);
+    t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right: the review actions are in Moderation');
+    t.eq(await actions(), 'Approve | Reject…', 'Moderation holds Approve and Reject… for pending work');
+    await openStripMenu(page, 'Moderation');
+    await page.screenshot({ path: `${SHOTS}/viewer-reviewer-moderation.png` });
+    await page.keyboard.press('Escape');
     const play = await frameState(page);
-    t.ok(play.play.bg !== ORANGE && play.orangeButtons.join() === 'bz-strip__btn bz-strip__btn--primary review-action', `play is grey in review mode, so Approve is the one orange action (${play.orangeButtons})`);
-    t.ok(close.cls.includes('review-back'), 'Close is the review\'s own way back');
-    t.eq(await page.getAttribute('.review-back', 'href'), '/?review&tab=gallery', 'to the tab it was opened from');
+    t.ok(play.play.bg === WHITE && play.play.icon === BLACK && play.orangeButtons.join() === '', `play is white in review mode too, and nothing is orange (${play.play.bg} ${play.orangeButtons})`);
+    await openStripMenu(page, 'File');
+    t.eq((await rowsWithHints(page)).join(' | '), 'Close (Back to Review)', 'File holds Close, saying it goes back to Review');
+    await page.keyboard.press('Escape');
+    await page.screenshot({ path: `${SHOTS}/viewer-reviewer-play.png` });
     t.eq(s.oldRow.join(), '', 'no top row');
     t.ok(noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'nothing in the strip overlaps');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const p = await stripState(page);
-    t.ok(noOverlap(p.left, p.right) && p.right.r <= 390 && p.scroll <= 0, `at 390px Approve, Reject…, Close and hide fit beside the menus (${JSON.stringify([p.left, p.right])})`);
+    t.ok(noOverlap(p.left, p.right) && p.right.r <= 390 && p.scroll <= 0, `at 390px the four menus and the hide button fit (${JSON.stringify([p.left, p.right])})`);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForTimeout(200);
-    await page.click('.review-action[data-action="approve"]');
+    await openStripMenu(page, 'Moderation');
+    await pickRow(page, 'Approve');
     await page.waitForFunction(() => document.querySelector('.review-mode')?.dataset.shared === 'public', null, { timeout: 15_000 });
     s = await stripState(page);
-    t.ok(s.buttons.map((b) => b.text).join() === 'Hide…,Close,Hide the interface' && /Reviewing Public$/.test(s.readoutText), `Approve works: it is public, and Hide… is what is offered (${s.readoutText})`);
-    t.ok(s.buttons[0].bg === RED && s.buttons[0].color === 'rgb(255, 255, 255)', `Hide…, which takes it down, is filled red with a white label (${s.buttons[0].bg})`);
-    t.eq(await page.evaluate(() => [...document.querySelectorAll('.bz-strip button')].filter((b) => getComputedStyle(b).backgroundColor === 'rgb(255, 90, 31)').length), 0, 'and nothing is orange in the strip then');
+    t.ok((await actions()) === 'Hide…' && /Reviewing Public$/.test(s.readoutText), `Approve works from the menu: it is public, and Hide… is what is offered (${s.readoutText})`);
+    // Hide… asks first, with the destructive confirm red (the question window's own treatment).
+    await openStripMenu(page, 'Moderation');
+    await pickRow(page, 'Hide…');
+    await page.waitForSelector('.review-reason-overlay', { timeout: 10_000 });
+    t.ok(true, 'Hide… asks for a reason first, as the strip button did');
+    await page.keyboard.press('Escape');
     s = await open('hidden', '');
-    t.eq(s.buttons.map((b) => b.text).join(), 'Unhide,Close,Hide the interface', 'a hidden work offers Unhide');
-    t.eq(s.buttons[0].bg, ORANGE, 'filled orange');
-    t.eq(await page.getAttribute('.review-back', 'href'), '/?review&tab=queue', 'and Close goes to the queue when no tab was named');
+    t.eq(await actions(), 'Unhide', 'a hidden work offers Unhide');
+    await openStripMenu(page, 'File');
+    await Promise.all([page.waitForURL((u) => u.search === '?review&tab=queue', { timeout: 30_000, waitUntil: 'commit' }), pickRow(page, 'Close')]);
+    t.ok(true, 'and File > Close goes to the queue when no tab was named');
+    await open('pending', '&from=gallery');
+    await openStripMenu(page, 'File');
+    await Promise.all([page.waitForURL((u) => u.search === '?review&tab=gallery', { timeout: 30_000, waitUntil: 'commit' }), pickRow(page, 'Close')]);
+    t.ok(true, 'and to the tab it was opened from');
     await ctx.close();
   },
 };

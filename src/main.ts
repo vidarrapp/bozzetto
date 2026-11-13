@@ -2,7 +2,8 @@ import { validateManifest } from './types/manifest';
 import type { Manifest } from './types/manifest';
 import { HttpSource } from './viewer/AssetSource';
 import { mountViewer } from './viewer/mountViewer';
-import { mountPublicViewer, type ViewerFrame } from './viewer/viewerFrame';
+import { mountPublicViewer, type ViewerFileItems, type ViewerFrame } from './viewer/viewerFrame';
+import { currentFrom, withFrom } from './ui/origin';
 import type { Viewer } from './viewer/Viewer';
 import { renderLanding } from './ui/Landing';
 import { initTheme } from './ui/theme';
@@ -205,7 +206,7 @@ async function bootViewer(id: string, review = false): Promise<void> {
     // in any state through the reviewers' route. Anyone else, or a project
     // not shared, goes the usual way, where unlisted work is not found.
     const reviewing = review ? await reviewManifest(id) : null;
-    const { manifest, manifestUrl, author } = reviewing ?? (await loadProject(id, base));
+    const { manifest, manifestUrl, author, template } = reviewing ? { ...reviewing, template: false } : await loadProject(id, base);
     setStatus(manifest.mode === 'model' ? 'Loading model…' : 'Loading timelapse…');
     // The public viewer is in the app's frame (viewer/viewerFrame.ts); the
     // dev spike that mounts Sculpt over a project (?sculpt=1) has a strip
@@ -225,7 +226,14 @@ async function bootViewer(id: string, review = false): Promise<void> {
       return;
     }
     if (!frame) addGalleryLink();
-    if (!author && (manifest.mode === 'timelapse' || manifest.mode === 'model')) void addPresentLink(id, frame);
+    // File > New sculpt from this: the site's templates only, never a
+    // member's shared work (to look at only) or a private project.
+    const fileItems: ViewerFileItems = {};
+    if (frame && template && (manifest.mode === 'timelapse' || manifest.mode === 'model')) {
+      fileItems.newSculpt = async () => (await import('./viewer/newSculpt')).newSculptFromFrame(viewer, manifest.title);
+      frame.setFileItems(fileItems);
+    }
+    if (!author && (manifest.mode === 'timelapse' || manifest.mode === 'model')) void addPresentLink(id, frame, fileItems);
     // A member's work from the Community (docs/accounts.md §13): who made
     // it, and Report for a member signed in who is not its author.
     if (author && frame) {
@@ -263,7 +271,7 @@ async function bootViewer(id: string, review = false): Promise<void> {
 async function loadProject(
   id: string,
   base: string,
-): Promise<{ manifest: Manifest; manifestUrl: string; author?: string }> {
+): Promise<{ manifest: Manifest; manifestUrl: string; author?: string; template: boolean }> {
   const apiPath = `/api/projects/${encodeURIComponent(id)}`;
   const res = await apiFetch(apiPath);
   const servedHtml = res.contentType.includes('text/html');
@@ -272,7 +280,9 @@ async function loadProject(
     const manifest = viewerManifest(raw);
     // Frame paths in an API manifest are root-absolute (/media/...), so they
     // resolve against the site, which apiManifestUrl says.
-    return { manifest, manifestUrl: apiManifestUrl(apiPath), author: communityAuthor(raw) };
+    // Public and not a member's: one of the site's templates (docs/accounts.md section 5).
+    const author = communityAuthor(raw);
+    return { manifest, manifestUrl: apiManifestUrl(apiPath), author, template: !author };
   }
   // A 404 means nothing is answering for this id: try the bundled copy.
   if (!res.ok && res.status !== 404) {
@@ -285,15 +295,16 @@ async function loadProject(
   // Access-gated route, whose manifest points the frames at the gated
   // media route as well.
   const mine = await accountManifest(id);
-  if (mine) return mine;
+  if (mine) return { ...mine, template: false };
   const owned = await ownerManifest(id);
-  if (owned) return owned;
+  if (owned) return { ...owned, template: false };
 
   if (!BUNDLED_DEMO) throw new Error(`Project "${id}" not found`);
   const staticUrl = new URL(`${base}timelapses/${encodeURIComponent(id)}/manifest.json`, window.location.href).href;
   const sres = await fetch(staticUrl);
   if (!sres.ok) throw new Error(`Project "${id}" not found`);
-  return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl };
+  // The bundled demo stands in for a template, in the dev server and the test build.
+  return { manifest: validateManifest(await sres.json()), manifestUrl: staticUrl, template: true };
 }
 
 /**
@@ -422,21 +433,18 @@ async function bootArmature(): Promise<void> {
 }
 
 /**
- * "Edit", quietly beside Close (the gallery link, in the viewer's
- * old top row), for the owner when an
- * owner session is already there: nothing is asked for, and a device that
- * never signed in asks nothing of the server either (the remembered
- * sign-in, as the gallery keeps it).
+ * File > Edit in Present, for the owner when an owner session is already
+ * there: nothing is asked for, and a device that never signed in asks
+ * nothing of the server either (the remembered sign-in, as the gallery
+ * keeps it). The way back from Present is where the viewer's own Close goes.
  */
-async function addPresentLink(id: string, frame: ViewerFrame | null): Promise<void> {
+async function addPresentLink(id: string, frame: ViewerFrame | null, items: ViewerFileItems): Promise<void> {
   try {
-    if (!signedInHereBefore()) return;
+    if (!frame || !signedInHereBefore()) return;
     if (roleOf(await checkSignIn()) !== 'owner') return;
-    const href = `/?tl=${encodeURIComponent(id)}&present=1`;
-    const a = frame ? frame.control('Edit', href) : topChip('Edit', href);
-    a.classList.add('viewer-present');
-    if (frame) frame.addAction(a);
-    else topbarLeft().appendChild(a);
+    const href = withFrom(`/?tl=${encodeURIComponent(id)}&present=1`, currentFrom());
+    items.present = () => window.location.assign(href);
+    frame.setFileItems(items);
   } catch {
     // No owner session to find: the viewer is as it was.
   }
