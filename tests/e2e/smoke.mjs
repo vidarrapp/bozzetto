@@ -1901,7 +1901,7 @@ export const suites = {
     // The uploader lives in the Create menu now, not the top row (owner call).
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
-    t.eq(await page.textContent('.landing__tagline'), 'Pose, sculpt, render and timelapse', 'the tagline');
+    t.eq(await page.textContent('.landing__tagline'), 'Pose, sculpt & present', 'the tagline');
     const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
     t.ok(!chips.some((c) => /upload/i.test(c)), `the top row has no upload chip (${chips.join(', ')})`);
     const menu = async (p) => {
