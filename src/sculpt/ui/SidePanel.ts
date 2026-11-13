@@ -1,5 +1,6 @@
 import { div, onTap } from '../../ui/dom';
 import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
+import { sidesOverlap } from './shellLayout';
 
 /**
  * Shared shell for the docked panels: the root, the folder tab at the top
@@ -10,7 +11,8 @@ import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
  * themselves on 'bozzetto:panel-open' with {id, side}, and a panel
  * collapses when a DIFFERENT id opens on the SAME side. Older dispatchers
  * that omit `side` are treated as right-edge. A left and a right panel can
- * be open together, since they never overlap.
+ * be open together where they do not overlap; on a phone, where they
+ * would, opening any panel closes the one open on the other side.
  *
  * The tab is the panel's way open and shut: pressing it opens the panel,
  * pressing it again closes it, and there is no close button in the panel.
@@ -56,7 +58,7 @@ export class SidePanel {
   private readonly onOtherPanelOpen = (e: Event): void => {
     const detail = (e as CustomEvent<{ id?: string; side?: PanelSide }>).detail;
     if (!detail?.id || detail.id === this.id) return;
-    if ((detail.side ?? 'right') !== this.side) return;
+    if ((detail.side ?? 'right') !== this.side && !sidesOverlap()) return;
     if (!this.collapsed) this.setCollapsed(true);
   };
 

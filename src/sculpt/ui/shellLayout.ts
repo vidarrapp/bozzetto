@@ -28,6 +28,14 @@ export function panelTop(): number {
   return Number.isFinite(top) ? top : PANEL_TOP_DEFAULT;
 }
 export const PANEL_WIDTH = 304;
+
+/**
+ * Whether a left and a right panel would cover each other here (a phone):
+ * then opening a panel on one side closes the other side's too.
+ */
+export function sidesOverlap(): boolean {
+  return window.innerWidth < PANEL_WIDTH * 2 + 1;
+}
 const GAP = 16;
 
 /** Something the layout depends on changed that no observer sees (the brush fields showing or hiding). */

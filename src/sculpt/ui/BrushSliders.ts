@@ -252,7 +252,7 @@ export class BrushSliders {
 
   /** Whether a panel is open on the left, which needs the height the fields would take. */
   private leftPanelOpen(): boolean {
-    return !!document.querySelector('.panel--scene:not(.panel--collapsed), .panel--model:not(.panel--collapsed)');
+    return !!document.querySelector('.panel--left:not(.panel--collapsed)');
   }
 
   private paintFields(): void {

@@ -136,6 +136,28 @@ export const suites = {
       const h = await p.evaluate(() => document.querySelector('.bz-edge .sculpt-slider').getBoundingClientRect().height);
       t.eq(h, 160, 'Sculpt: and on a tall screen they are their 160px');
 
+      // Material on a phone: the brush fields step aside, so its sections show, not just its heading.
+      const tab = (cls) => p.evaluate((c) => document.querySelector(`.panel--${c} .panel__handle`).click(), cls);
+      const openNow = () =>
+        p.evaluate(() => ['material', 'model', 'sculpt', 'render'].filter((c) => !document.querySelector(`.panel--${c}`).classList.contains('panel--collapsed')));
+      await tab('material');
+      await p.waitForTimeout(250);
+      const mat = await p.evaluate(() => {
+        const r = document.querySelector('.panel--material').getBoundingClientRect();
+        const fields = document.querySelector('.bz-edge .sculpt-slider');
+        return { h: Math.round(r.height), fields: !!fields && fields.getClientRects().length > 0 && !fields.closest('[hidden]') };
+      });
+      t.ok(mat.h > 400 && !mat.fields, `Sculpt: Material opens to its sections, the brush fields put away (${JSON.stringify(mat)})`);
+      // One panel at a time: the two sides would cover each other here.
+      await tab('sculpt');
+      await p.waitForTimeout(250);
+      t.eq((await openNow()).join(','), 'sculpt', 'Sculpt: opening Tool closes Material on a phone');
+      await tab('model');
+      await p.waitForTimeout(250);
+      t.eq((await openNow()).join(','), 'model', 'and opening Model closes Tool');
+      await tab('model');
+      await p.waitForTimeout(150);
+
       // Present, from Sculpt: the same strip.
       await p.keyboard.press('Shift+P');
       await p.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 10_000 });

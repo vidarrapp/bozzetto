@@ -7,6 +7,7 @@ import { matcapPicker, type MatcapPickerHandle } from './MatcapPicker';
 import { formatSliderNumber, sliderText, typedSlider, type Limits } from './sliderEntry';
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
 import { keyedLabel } from './keymap';
+import { sidesOverlap } from '../sculpt/ui/shellLayout';
 
 /**
  * Something a hotkey or a restore changed in the viewer (material mode,
@@ -99,7 +100,8 @@ export class Panel {
     const detail = (e as CustomEvent<{ id?: string; side?: string }>).detail;
     // Only panels sharing this one's edge contend for the space; the left
     // stack (Scene, Model) can be open alongside it.
-    if (!detail?.id || detail.id === 'settings' || (detail.side ?? 'right') !== 'right') return;
+    // On a phone the two sides cover each other, so any other panel closes this one.
+    if (!detail?.id || detail.id === 'settings' || ((detail.side ?? 'right') !== 'right' && !sidesOverlap())) return;
     // Through setCollapsed, not straight to applyCollapsed: collapsing must
     // announce on 'bozzetto:panel-close' so tabs ducked under this panel
     // come back (SidePanel listens for the id that hid them).
