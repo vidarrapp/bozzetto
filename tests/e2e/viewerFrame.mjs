@@ -17,6 +17,7 @@ const WHITE = 'rgb(255, 255, 255)';
 const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/viewer-menus';
 const RED = 'rgb(171, 0, 0)';
 const BLACK = 'rgb(0, 0, 0)';
+const CONTROL = 'rgb(58, 58, 58)';
 const STRIP = 'rgb(27, 27, 27)';
 
 const ready = (page) => page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
@@ -216,9 +217,9 @@ export const suites = {
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).open, 'the tab shuts it again');
 
-    // --- the transport: the bar at the foot, play a white filled button ----------------
+    // --- the transport: the bar at the foot, play a regular button with a white icon ----------------
     t.ok(f.barClass.includes('transport--shell') && f.bar && f.bar.b === s.vh && Math.abs((f.bar.l + f.bar.r) / 2 - s.vw / 2) <= 1 && f.bar.w <= 752 && f.barBorderTop === '0px', `the transport is the shell's bar, flush at the bottom centre (${JSON.stringify(f.bar)})`);
-    t.ok(f.play.bg === WHITE && f.play.icon === BLACK, `its play button is filled white with a black icon (${JSON.stringify(f.play)})`);
+    t.ok(f.play.bg === CONTROL && f.play.icon === WHITE, `its play button is a regular button with a white icon (${JSON.stringify(f.play)})`);
     t.eq(f.orangeButtons.join(), '', `and nothing on the screen is an orange button (${f.orangeButtons})`);
     t.eq(f.ticks, await page.evaluate(() => window.__bozzetto.manifest.stages.length), 'a tick for each stage');
     await page.click('.transport__play');
@@ -291,7 +292,7 @@ export const suites = {
     t.ok(!s.readout, 'the readout gives way');
     t.ok(noOverlap(s.left, s.right) && s.right.r <= 390 && s.left.l >= 0, `the menus and the hide button do not overlap (${JSON.stringify([s.left, s.right])})`);
     t.ok(f.tab && f.tab.r === 390 && f.tab.l >= 0, 'the Render tab is on the screen');
-    t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === WHITE, `the transport spans it, flush at the bottom, play still white (${JSON.stringify(f.bar)})`);
+    t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === CONTROL, `the transport spans it, flush at the bottom, play still a regular button (${JSON.stringify(f.bar)})`);
     await page.click('.panel--render > .panel__handle');
     await page.waitForTimeout(300);
     f = await frameState(page);
@@ -517,7 +518,7 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/viewer-reviewer-moderation.png` });
     await page.keyboard.press('Escape');
     const play = await frameState(page);
-    t.ok(play.play.bg === WHITE && play.play.icon === BLACK && play.orangeButtons.join() === '', `play is white in review mode too, and nothing is orange (${play.play.bg} ${play.orangeButtons})`);
+    t.ok(play.play.bg === CONTROL && play.play.icon === WHITE && play.orangeButtons.join() === '', `play is a regular button with a white icon in review mode too, and nothing is orange (${play.play.bg} ${play.orangeButtons})`);
     await openStripMenu(page, 'File');
     t.eq((await rowsWithHints(page)).join(' | '), 'Close (Back to Review)', 'File holds Close, saying it goes back to Review');
     await page.keyboard.press('Escape');

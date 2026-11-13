@@ -1312,24 +1312,25 @@ body.bz-shell .transport--shell .transport__play {
   min-height: 28px;
 }
 
-/* Play and pause: a white filled button with a black icon, in the viewer, in
-   review and in Present alike; the orange is the line's and Save's. */
-body.bz-shell .transport--shell .transport__play,
-body.bz-shell .transport--shell .transport__play:hover:not(:disabled),
-body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
-  background: var(--bz-white);
-  color: var(--bz-on-accent);
+/* Play and pause: a regular button with a white icon, filled white with a
+   black icon only while pressed, in the viewer, in review and in Present
+   alike; the orange is the line's and Save's. */
+body.bz-shell .transport--shell .transport__play {
+  background: var(--bz-control);
+  color: var(--bz-white);
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
 body.bz-shell .transport--shell .transport__play:hover:not(:disabled) {
-  filter: brightness(0.88);
+  background: var(--bz-hover);
+  color: var(--bz-white);
 }
 
 body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
-  filter: brightness(0.78);
+  background: var(--bz-white);
+  color: var(--bz-on-accent);
 }
 
 body.bz-shell .transport--shell .transport__scrub {

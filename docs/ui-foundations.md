@@ -70,9 +70,9 @@ layer does not try to.
 
 The view axes keep their own red, green and blue.
 
-Play and pause in the transport is a white filled button (#ffffff, black
-icon; a touch dimmer under the pointer) in the viewer, in review mode and in
-Present alike, never orange (owner call, 2026-11-12). The viewer therefore
+Play and pause in the transport is a regular grey button with a white icon,
+filled white with a black icon only while pressed, in the viewer, in review
+mode and in Present alike, never orange (owner call, 2026-11-13). The viewer therefore
 has no orange action; orange stays the line's played part and the focus
 outline.
 
