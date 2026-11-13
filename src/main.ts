@@ -18,7 +18,7 @@ import { isProjectId } from './net/ids';
 import { registerServiceWorker } from './ui/serviceWorker';
 import { followPanelOpacity } from './ui/appearance';
 import { takeAccountLink } from './ui/account/links';
-import { ensureDeviceChoice } from './ui/deviceChoice';
+import { ensureDeviceChoice, showDeviceNotice } from './ui/deviceChoice';
 
 /**
  * App entry. `?tl=<id>` opens the viewer for that project; with no id we show
@@ -47,8 +47,11 @@ async function main(): Promise<void> {
   // A first-time visitor is asked what may be kept on this device before
   // anything else is done, and nothing is written until they have said
   // (ui/deviceStorage). The public viewer asks nothing and stores nothing.
-  const asks = !id || (params.get('present') === '1' && params.get('review') !== '1');
-  if (asks) await ensureDeviceChoice();
+  // A workspace asks first, in a window, since starting first could overwrite
+  // the autosave; the pages carry on behind a small notice.
+  const workspace = (!id && (params.get('sculpt') === '1' || params.get('armature') === '1')) || (!!id && params.get('present') === '1' && params.get('review') !== '1');
+  if (workspace) await ensureDeviceChoice();
+  else if (!id) showDeviceNotice();
   if (!id && params.get('sculpt') === '1') {
     await bootSculpt();
     return;
