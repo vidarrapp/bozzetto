@@ -1,6 +1,7 @@
 import { signOut, signedInOnDevice } from '../admin/api';
 import { declineKeeping, deviceChoice, keepOnDevice, mayStore, onDeviceChoice } from './deviceStorage';
 import { failNotice } from '../sculpt/ui/statusToast';
+import { accountsOn, getMe } from '../net/account';
 
 /**
  * The first-visit question: keep work on this device, or not (the owner's
@@ -176,6 +177,20 @@ function openWindow({ first, intro, cancellable = false, signOutNote = false, bl
 let asking: Promise<void> | null = null;
 
 /** Sign out here, for a person who turns saving off while signed in; false when it could not be done. */
+/**
+ * Whether this browser is signed in: the remembered sign-in, or else the
+ * server's answer, since the note is written only once a page has asked
+ * the server and a question opened sooner would miss it.
+ */
+async function signedInNow(): Promise<boolean> {
+  if (signedInOnDevice()) return true;
+  try {
+    return (await accountsOn()) && !!(await getMe());
+  } catch {
+    return false;
+  }
+}
+
 async function signOutForOff(): Promise<boolean> {
   try {
     await signOut();
@@ -218,7 +233,7 @@ export function showDeviceNotice(): void {
   keep.addEventListener('click', () => keepOnDevice());
   decline.addEventListener('click', () => {
     void (async () => {
-      const signedIn = signedInOnDevice();
+      const signedIn = await signedInNow();
       if ((await openWindow({ first: false, cancellable: true, signOutNote: signedIn })) !== 'off') return;
       if (signedIn && !(await signOutForOff())) return;
       declineKeeping();
@@ -245,7 +260,7 @@ export function ensureDeviceChoice(): Promise<void> {
   if (deviceChoice() !== 'none') return Promise.resolve();
   asking ??= (async () => {
     for (;;) {
-      const signedIn = signedInOnDevice();
+      const signedIn = await signedInNow();
       const answer = await openWindow({ first: true, signOutNote: signedIn, blank: true });
       if (answer === 'keep') keepOnDevice();
       else if (answer === 'off') {
@@ -280,7 +295,7 @@ export async function requireSaving(why: string): Promise<boolean> {
 
 /** Preferences, turning it off: the second question alone. True once saving is turned off. */
 export async function confirmTurnOff(): Promise<boolean> {
-  const signedIn = signedInOnDevice();
+  const signedIn = await signedInNow();
   if ((await openWindow({ first: false, signOutNote: signedIn })) !== 'off') return false;
   if (signedIn && !(await signOutForOff())) return false;
   declineKeeping();
