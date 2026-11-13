@@ -707,6 +707,14 @@ textarea::placeholder {
   flex: 1;
 }
 
+.label-row > .readout--name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .readout {
   flex: 0 0 34px;
   text-align: right;

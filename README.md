@@ -150,6 +150,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **A Material tab.** Albedo, Roughness and Metalness, with the mode, shading and wireframe, now sit together in a **Material** panel next to Model on the left. The Model panel starts at Topology and the Render panel at Lighting.
 - **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.
 - **Present is one workspace.** Creating a timelapse and editing a published project both happen in Present, which has a **Frames** tab for the files.
 - **The viewer in the new frame.** A published piece opens under the same title strip as the workspaces, with the transport along the foot.

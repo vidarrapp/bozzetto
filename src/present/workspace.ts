@@ -1,6 +1,7 @@
 import '../sculpt/ui/shell.css';
 import type { Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
+import { MaterialPanel } from '../ui/MaterialPanel';
 import { mountViewerParts, type ViewerParts } from '../viewer/mountViewer';
 import { validateManifest, type Manifest, type ProjectMode } from '../types/manifest';
 import { api, failureText, type Visibility } from '../admin/api';
@@ -101,6 +102,8 @@ interface Saved {
 interface Mounted {
   parts: ViewerParts;
   output: OutputPanel;
+  /** The left-hand Material tab: how the model is drawn. */
+  material: MaterialPanel;
   banner: ScaleBanner<string> | null;
 }
 
@@ -243,9 +246,11 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
 
   const takeDown = (): void => {
     if (!current) return;
-    const { parts, output, banner } = current;
+    const { parts, output, material, banner } = current;
     banner?.dispose();
     output.dispose();
+    material.dispose();
+    if (leftOpen === 'material') leftOpen = null;
     parts.dispose();
     current = null;
     // The console's handle on the view goes with it; the next view sets its own.
@@ -273,6 +278,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     const frame = v0?.timeline.frameIndex() ?? 0;
     const playing = v0?.timeline.playing ?? true;
     const wasOpen = rightOpen;
+    const materialWasOpen = leftOpen === 'material';
     takeDown();
     source.entries = items;
     if (items.length === 0) {
@@ -299,7 +305,9 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       parts.panel.refreshControls();
     }
     const output = new OutputPanel(view, { timelapse: timelapse(), title: () => projectPanel.values.title.trim() || id || 'Bozzetto' });
-    current = { parts, output, banner: null };
+    // Mode, shading and wireframe sit in this tab, not in Render (the Render panel is built without them).
+    const material = new MaterialPanel(view, { sculpting: false });
+    current = { parts, output, material, banner: null };
     // The frame moves: the transport has the viewer's hook, so this rides on it.
     const frameHook = view.onFrame;
     view.onFrame = (n) => {
@@ -311,6 +319,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     // Output stands open as drawn, the first time; after that, as it was left.
     if (wasOpen === 'settings') window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: true } }));
     else if (wasOpen === 'output' || (!old && !narrow())) output.setCollapsed(false);
+    if (materialWasOpen) material.setCollapsed(false);
     // A project from before real units: the Set scale offer (owner tool).
     if (id) {
       current.banner = mountScaleBanner(view, id, projectPanel.values.title.trim() || title0, () => {
@@ -619,14 +628,15 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     panels: [
       ['frames', 'Frames'],
       ['project', 'Project'],
+      ['material', 'Material'],
       ['settings', 'Render'],
       ['output', 'Output'],
     ],
     hideInterface: () => chrome.set(true),
   });
-  // Render and Output are the view's: with no frames there is no view to have them.
+  // Material, Render and Output are the view's: with no frames there is no view to have them.
   for (const item of viewItems) {
-    if (!('separator' in item) && (item.label === 'Render panel' || item.label === 'Output panel')) item.enabled = () => !!current;
+    if (!('separator' in item) && (item.label === 'Material panel' || item.label === 'Render panel' || item.label === 'Output panel')) item.enabled = () => !!current;
   }
   new TopMenu('View', viewItems, 'file-menu--view', strip.menus, true);
   new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);

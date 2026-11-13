@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-12: Should the Scene panel's row for assigning a named material move to the Material tab. Decided 2026-11-12: no, assigning a material stays in Scene; the Material tab edits its values
 - [x] 2026-11-12: A notice about what Bozzetto keeps on the visitor's device (autosave, offline files, preferences; no cookies, no tracking). Decided 2026-11-12: an accept or decline choice on first visit; declining turns autosave and offline off, after a second question that makes sure
 - [x] 2026-11-12: Card pictures are captured 4:5 but the card tiles had been square since the app-layer skin, so every picture showed side bands. Decided 2026-11-12: the tiles are 4:5; nothing is recaptured
 - [x] 2026-11-12: The Frames tab has an Order list (each frame: press to go to it, move up, move down, remove), which the PgCreate board does not draw (it has the count, memory, Add more and the trash only). Keep the list (built, so reorder and remove exist at all: neither old page had them), or only what the board shows Decided 2026-11-12: remove the Order list

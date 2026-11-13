@@ -355,6 +355,7 @@ body.bz-shell .panel:not(.panel--left) {
 }
 
 body.bz-shell .panel--model,
+body.bz-shell .panel--material,
 body.bz-shell .panel--sculpt {
   z-index: 15;
 }
@@ -850,8 +851,9 @@ body.bz-shell .update-notice--beside-panel {
 /* --- Present, the third workspace (sculpt/ui/Present.ts) -----------------------
    What edits is put away and locked: the tool bar, the edge controls, the
    brush ring, and the Scene, Model and Tool panels with
-   their tabs (display, so their tabs leave no gap in the row). Render and
-   Output remain as the right-hand tabs. The Output tab and panel exist in
+   their tabs (display, so their tabs leave no gap in the row). Material
+   stays as the left-hand tab (its Surface section goes, its Display stays);
+   Render and Output remain as the right-hand tabs. The Output tab and panel exist in
    Present only. */
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
@@ -863,11 +865,11 @@ body.presenting .sculpt-cursor {
   opacity: 0;
 }
 
-body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output) {
+body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output):not(.panel--material) {
   visibility: hidden !important;
 }
 
-body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output) > .panel__handle {
+body.bz-shell.presenting .panel:not(.panel--render):not(.panel--output):not(.panel--material) > .panel__handle {
   display: none;
 }
 

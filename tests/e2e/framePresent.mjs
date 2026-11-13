@@ -352,7 +352,7 @@ export const suites = {
         sections: [...document.querySelectorAll('.panel--render .section > h3')].map((h) => h.textContent),
       }));
       t.ok(render.output && render.heading === 'Render', `the Render tab opens in Output's place (${render.heading})`);
-      t.ok(['Material', 'Lighting', 'Camera', 'Environment'].every((s) => render.sections.includes(s)), `with the whole look, as the editor has it (${render.sections})`);
+      t.ok(['Lighting', 'Camera', 'Environment'].every((s) => render.sections.includes(s)) && !render.sections.includes('Material'), `with the look, as the editor has it, but not the Material section (${render.sections})`);
       const lightBefore = await p.evaluate(() => JSON.stringify(window.__bozzetto.lighting.serialize()));
       // The key light's intensity, by its slider.
       const moved = await p.evaluate(() => {

@@ -85,8 +85,8 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
-      'View: framing, the switches, the four panels, Hide interface and the three workspaces',
+      'Frame selected|Frame all|Wireframe|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
       Object.fromEntries([...document.querySelectorAll('.file-menu--view .file-menu__item')].map((b) => [b.querySelector('.file-menu__label')?.textContent, b.querySelector('.file-menu__key')?.textContent ?? ''])),
@@ -187,7 +187,7 @@ export const suites = {
     await closeMenu(page);
 
     // The panels: a check while open, and the item opens or closes it.
-    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Tool panel', 'panel--sculpt'], ['Render panel', 'panel--render']]) {
+    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Material panel', 'panel--material'], ['Tool panel', 'panel--sculpt'], ['Render panel', 'panel--render']]) {
       await openMenu(page, 'View');
       t.eq(await checked(label), 'false', `${label}: unchecked while closed`);
       await pick(page, label);
@@ -640,7 +640,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Armature panel|Render panel|Hide interface|Sculpt', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Armature panel|Material panel|Render panel|Hide interface|Sculpt', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));

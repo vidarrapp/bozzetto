@@ -51,19 +51,14 @@ const EXTRACT_LEGACY = { min: 0, max: 6, step: 0.1, start: 1 } as const;
 /**
  * The Model panel (owner layout call): everything about the SELECTED
  * OBJECT's substance, on the left edge under Scene, the list it is the
- * other half of (owner call: it sat on the right under Render). Material
- * values on top - the albedo/roughness/metalness that used to sit in the
- * Render panel's Material section, moved here because in sculpt mode they
- * are per-object properties, not scene-wide viewing choices (mode, matcap,
- * shading and wireframe stay in Render). Then Topology and Remesh, moved
- * out of the old Sculpt panel, which is per-tool and is now called Tool,
- * and Mask, which followed them (owner call): its operations and Extract
- * act on the active object's mask, not on how a brush behaves.
+ * other half of (owner call: it sat on the right under Render). Topology
+ * and Remesh on top, moved out of the old Sculpt panel, which is per-tool
+ * and is now called Tool, then Mask, which followed them (owner call): its
+ * operations and Extract act on the active object's mask, not on how a
+ * brush behaves. The object's material values (albedo, roughness,
+ * metalness) are the Material panel's (ui/MaterialPanel.ts).
  */
 export class ModelPanel extends SidePanel {
-  private albedoPicker: ColorPickerHandle | null = null;
-  private roughInput!: HTMLInputElement;
-  private metalInput!: HTMLInputElement;
   private dyntopoCheckbox!: HTMLInputElement;
   private remeshResolution = 150;
   /** The voxel grid over the view while the Resolution slider is held. */
@@ -140,12 +135,6 @@ export class ModelPanel extends SidePanel {
     private readonly viewer: Viewer,
   ) {
     super({ id: 'model', title: 'Model', side: 'left', variant: 'panel--model' });
-    // The albedo popover is body-mounted; collapsing the panel must take
-    // it along or it floats on with its swatch off-screen.
-    this.onCollapsedChange = (collapsed) => {
-      if (collapsed) this.albedoPicker?.close();
-    };
-    this.buildMaterial(this.body);
     this.buildTopology(this.body);
     this.buildRemesh(this.body);
     this.buildQuadRemesh(this.body);
@@ -153,48 +142,6 @@ export class ModelPanel extends SidePanel {
     this.buildGroups(this.body);
     this.refreshTopology();
     this.refreshHeading();
-  }
-
-  // --- Material: the active object's material VALUES ----------------------
-
-  /**
-   * Drives the same viewer.materials setters the Render panel used to -
-   * mode.ts's hooks on Materials route the change into the active object's
-   * material either way, so moving the rows here changed no plumbing.
-   */
-  private buildMaterial(body: HTMLElement): void {
-    const sec = section(body, 'Material');
-    const mats = this.viewer.materials;
-    const state = mats.getMaterialState();
-    // The shared HSV picker, owned for the panel's life (the popover is
-    // body-mounted; disposing mid-drag closes it under the pointer).
-    this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
-    const albedoRow = document.createElement('label');
-    albedoRow.className = 'label-row';
-    const albedoName = document.createElement('span');
-    albedoName.textContent = 'Albedo';
-    albedoRow.append(albedoName, this.albedoPicker.root);
-    sec.appendChild(albedoRow);
-    const rough = compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), {
-      limits: FRACTION,
-    });
-    this.roughInput = rough.querySelector('input') as HTMLInputElement;
-    sec.appendChild(rough);
-    const metal = compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), {
-      limits: FRACTION,
-    });
-    this.metalInput = metal.querySelector('input') as HTMLInputElement;
-    sec.appendChild(metal);
-  }
-
-  /** Follow the selection (mode.ts calls this when the active material moves). */
-  refreshMaterial(): void {
-    const state = this.viewer.materials.getMaterialState();
-    // While the popover is up, the picker is the source of truth; echoes of
-    // its own drag must not fight the thumb being held.
-    if (this.albedoPicker && !this.albedoPicker.isOpen()) this.albedoPicker.set(state.albedo);
-    setSliderValue(this.roughInput, state.roughness);
-    setSliderValue(this.metalInput, state.metalness);
   }
 
   // --- Topology + Remesh (moved from the old Sculpt panel) ----------------
@@ -934,8 +881,6 @@ export class ModelPanel extends SidePanel {
     this.onQuadBusy = null;
     this.disposed = true;
     this.cancelQuadRemesh();
-    this.albedoPicker?.dispose();
-    this.albedoPicker = null;
     for (const p of this.groupPickers) p.dispose();
     this.groupPickers = [];
     this.voxelOverlay?.dispose();

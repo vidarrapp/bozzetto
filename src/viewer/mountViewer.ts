@@ -81,6 +81,8 @@ export async function mountViewerParts(
     author: opts.author,
     fullLook: opts.shell && !opts.frame,
     shell: opts.shell,
+    // The owner's Present has the Material tab for it; the public viewer's Render keeps it.
+    material: !opts.shell || !!opts.frame,
   });
   viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;

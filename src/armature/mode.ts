@@ -25,6 +25,8 @@ import { fetchFigure, figureById, tuneRig } from './figures';
 import { rigFromGLTF } from './glbRig';
 import { getGLTFLoader } from '../loaders/gltf';
 import { ArmaturePanel, prettyName } from './ArmaturePanel';
+import { MaterialPanel } from '../ui/MaterialPanel';
+import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
 import { armatureStamp, packArmature, unpackArmature } from './file';
@@ -1450,6 +1452,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     },
     viewer,
   );
+  // How the figure is drawn (mode, matcap, shading, wireframe): the Material tab beside Armature's.
+  const materialPanel = new MaterialPanel(viewer, { sculpting: true });
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
   for (const note of bootNotes) {
@@ -1614,9 +1618,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     'View',
     viewMenuItems({
       frameAll: frame,
-      wireframe: { get: () => viewer.isWireframe(), toggle: () => viewer.toggleWireframe() },
+      wireframe: {
+        get: () => viewer.isWireframe(),
+        toggle: () => {
+          viewer.toggleWireframe();
+          window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+        },
+      },
       panels: [
         ['armature', 'Armature'],
+        ['material', 'Material'],
         ['settings', 'Render'],
       ],
       hideInterface: () => chrome.set(true),
@@ -1883,6 +1894,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     viewer.lockFloor(viewer.manifestFloor());
     handleGeometry.dispose();
     panel.dispose();
+    materialPanel.dispose();
     clearInterval(readoutTimer);
     offPanelMemory();
     fileMenu.dispose();

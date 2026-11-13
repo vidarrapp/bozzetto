@@ -14,6 +14,7 @@
 const SIDES: Record<string, 'left' | 'right'> = {
   scene: 'left',
   model: 'left',
+  material: 'left',
   armature: 'left',
   sculpt: 'right',
   settings: 'right',
@@ -91,6 +92,7 @@ export function setPanel(id: string, open: boolean): void {
 const ROOT: Record<string, string> = {
   scene: '.panel--scene',
   model: '.panel--model',
+  material: '.panel--material',
   sculpt: '.panel--sculpt',
   armature: '.panel--armature',
   settings: '.panel--render',

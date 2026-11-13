@@ -200,6 +200,7 @@ defaults and follow the platform's names.
 
 - Scene panel
 - Model panel
+- Material panel
 - Tool panel
 - Render panel
 - Hide interface
@@ -225,7 +226,7 @@ Model panel, not in a menu. The gallery has no Help menu; the public viewer's ho
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model │                                   │ Tool Render │  tabs
+│ Scene Model Material │                          │ Tool Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -250,8 +251,8 @@ Model panel, not in a menu. The gallery has no Help menu; the public viewer's ho
 
 ### Panels
 
-- Each side has one panel, docked under the title strip: Scene and Model
-  share the left one, Tool and Render the right one (owner call,
+- Each side has one panel, docked under the title strip: Scene, Model and
+  Material share the left one, Tool and Render the right one (owner call,
   2026-11-11: one panel open per side, with folder tabs).
 - **Folder tabs.** Above the panel sit its two tabs, each a box of the
   panel's own surface, 2px apart. The tab that is showing is 28px tall,
