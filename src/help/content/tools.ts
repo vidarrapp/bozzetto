@@ -161,7 +161,7 @@ export const TOOLS: Topic[] = [
         ['Profile', 'The falloff of the paint across the brush, with the presets Hard, Default, Soft and Airbrush.'],
       ),
       p('Hold **Shift** to blur the paint instead of smoothing the shape. The blur uses the same profile. **Strength** runs from 0 to 1.'),
-      p('Change the object\'s base look in the Model panel under **Material**. See the Model panel topic.'),
+      p('Change the object\'s base look in the Material panel under **Surface**. See the Material panel topic.'),
     ],
   },
   {

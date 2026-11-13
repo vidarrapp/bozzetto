@@ -62,6 +62,8 @@ import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
+import { MaterialPanel } from '../ui/MaterialPanel';
+import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { SculptPanel } from './ui/SculptPanel';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
@@ -358,8 +360,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 
   // The display mesh adopts the sculpt geometry (with the vendor mesh's
   // matrix: its normalizeSize scales by matrix, not by baking), so the whole
-  // Render panel - material mode, albedo/roughness, matcaps, smooth/flat,
-  // wireframe - drives the sculpt subject through the existing machinery.
+  // Material and Render panels - material mode, albedo/roughness, matcaps,
+  // smooth/flat, wireframe - drive the sculpt subject through the existing machinery.
   viewer.enterSculpt(
     sync.geometry,
     new Matrix4().fromArray(multimesh.getMatrix()),
@@ -450,7 +452,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   viewer.materials.setSculptVertexPBR(true);
   // Materials are per object now: a named set of albedo/roughness/metalness
   // written across a mesh's attributes, rather than one uniform for the
-  // whole scene. The Render panel's controls drive the ACTIVE object's
+  // whole scene. The Material panel's Surface controls drive the ACTIVE object's
   // material, so those sliders keep meaning what they look like they mean.
   const paintTool = (): { _color?: Float32Array } =>
     session.getSculptManager().getTool(Enums.Tools.PAINT);
@@ -494,7 +496,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     if (albedo !== activeMaterial().albedo) pushActiveMaterial({ albedo });
   };
   /**
-   * Push the active object's material into the Render panel's controls.
+   * Push the active object's material into the Material panel's controls.
    * Those controls edit a material, and which material depends on what is
    * selected, so switching objects has to re-point them.
    */
@@ -516,6 +518,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // during mount, and a later `let` is a temporal dead zone at that point
   // (found the hard way - the whole sculpt boot died on it).
   let modelPanel: ModelPanel | null = null;
+  let materialPanel: MaterialPanel | null = null;
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
     try {
@@ -538,7 +541,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       syncingPanel = false;
     }
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
-    modelPanel?.refreshMaterial();
+    materialPanel?.refreshSurface();
   };
   viewer.materials.onPbrChange = () => {
     if (syncingPanel) return;
@@ -664,6 +667,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   };
   session.onSelectionChange = () => {
     scenePanel?.refresh();
+    materialPanel?.refreshSurface();
     syncHighlights();
   };
 
@@ -1123,10 +1127,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       lighting.setShadowsMaster(!lighting.getShadowsMaster());
     },
     // Like toggleShadows above: sculpt mode does not hold the Render panel
-    // (mountViewer owns it), and the panel re-reads its controls when it
-    // opens, so the checkbox catches up there.
+    // (mountViewer owns it), and the panels re-read their controls when they
+    // open. The Material panel's Wireframe switch, open, is told at once.
     toggleWireframe: () => {
       viewer.toggleWireframe();
+      window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
     },
     // Sideways swings the key light around the model, up/down raises it
     // (Lighting.nudgeKey, which Armature mode's hold-L drag shares).
@@ -1273,6 +1278,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    * the mask tint. Nothing here changes the scene; returns the way back.
    */
   const enterPresent = (): (() => void) => {
+    // The Material panel stays: it is a Present panel too (its Surface section goes, its Display stays).
     const sidePanels = [sculptPanel, scenePanel, modelPanel];
     const was = {
       chrome: chrome.isHidden(),
@@ -1595,12 +1601,19 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       viewMenuItems({
         frameSelected: frameModel,
         frameAll,
-        wireframe: { get: () => viewer.isWireframe(), toggle: () => viewer.toggleWireframe() },
+        wireframe: {
+          get: () => viewer.isWireframe(),
+          toggle: () => {
+            viewer.toggleWireframe();
+            window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+          },
+        },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
         toolKeys: true,
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
+          ['material', 'Material'],
           ['sculpt', 'Tool'],
           ['settings', 'Render'],
         ],
@@ -1700,6 +1713,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     }
   };
   modelPanel = new ModelPanel(session, viewer);
+  materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
+      hasObject: () => !!session.getMesh(),
+      // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
+      materialName: () => {
+        const picked = session.getSelectedMeshes();
+        const names = new Set((picked.length ? picked : [session.getMesh()]).filter((m) => !!m).map((m) => library.materialFor(m!).name));
+        return names.size > 1 ? 'Several' : (names.values().next().value ?? '');
+      },
+    },
+  });
   modelPanel.onGroupColors = (on) => setGroupColors(on);
   modelPanel.onGroupFromMask = () => groupFromMask();
   modelPanel.onMerge = () => scenePanel?.mergeSelected();
@@ -2018,6 +2041,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     fileActions,
     sculptPanel,
     modelPanel,
+    materialPanel,
     tablet: Tablet,
     library,
     gizmo, // transform modes, for the console and the tests
@@ -2156,6 +2180,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.dispose();
     sculptPanel?.dispose();
     modelPanel?.dispose();
+    materialPanel?.dispose();
     scenePanel?.dispose();
     scaleBanner.dispose();
     publishWindow?.dispose();

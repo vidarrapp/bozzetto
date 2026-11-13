@@ -91,7 +91,7 @@ export const suites = {
     t.ok(dashes === s.all.length, 'no topic is listed twice');
 
     // The topics asked for are all there.
-    for (const id of ['getting-started', 'navigating', 'brush-settings', 'model-panel', 'scene-panel', 'render-panel', 'files', 'present', 'armature', 'preferences', 'hotkeys', 'about']) {
+    for (const id of ['getting-started', 'navigating', 'brush-settings', 'model-panel', 'scene-panel', 'material-panel', 'render-panel', 'files', 'present', 'armature', 'preferences', 'hotkeys', 'about']) {
       t.ok(s.all.includes(id), `there is a "${id}" topic`);
     }
 
@@ -102,6 +102,9 @@ export const suites = {
     t.ok(s.shown.includes('render-panel'), 'GTAO finds the Render panel, by its text');
     t.ok(s.shown.includes(s.topic), 'and the topic shown is one of them');
     t.eq(s.status, s.shown.length === 1 ? '1 topic' : `${s.shown.length} topics`, 'the filter says how many match');
+    await page.fill('.help-win__filter', 'albedo');
+    s = await win(page);
+    t.ok(s.shown.includes('material-panel') && !s.shown.includes('model-panel'), `Albedo is described in the Material panel's topic and no longer in the Model panel's (${s.shown.join(', ')})`);
     await page.fill('.help-win__filter', 'follow-flatten');
     s = await win(page);
     t.eq(s.shown.join(','), 'tool-polish', 'a phrase from one topic\'s body finds only that topic');

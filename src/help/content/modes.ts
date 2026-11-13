@@ -40,7 +40,7 @@ export const MODES: Topic[] = [
       p('Present is the third workspace, after Armature and Sculpt. It shows the model on its own, for looking at it and for showing it. Press **Present** in the path at the top, choose **View**, then **Present**, or press **Shift+P**. **Esc**, the path\'s **Sculpt** step or **Shift+P** again leaves it, and the interface comes back as it was.'),
       h('The workspace path'),
       p('After the menus, the title strip has the path **Armature › Sculpt › Present**, in the order the work goes, with the step you are in lit. In Sculpt, **Present** is one press away, and **Sculpt** brings you back; nothing about the scene changes either way. **Armature** asks "Make a new armature for this scene?"; if you say yes, Armature opens on a new figure, and when you send it to Sculpt it is added to the scene as a new object, replacing nothing. In Armature, **Sculpt** sends the posed figure, as **File**, **Send to Sculpt** does, and **Present** is dim: a figure is sent to Sculpt first. On a phone the path shows only the step you are in, and **View** has the others.'),
-      p('While you present, the tool bar, the edge controls, the Scene, Model and Tool panels and their tabs, the brush ring and the Level pill are gone, and the brushes, the gizmo and the selection do not answer. You can still orbit, pan and zoom. The strip shows the project name and the **Frame** size in pixels, and **Publish**, in orange, stands at its right (when you are signed in; it is only in Present). Two tabs remain on the right: **Render**, with everything on the look, and **Output**. Nothing about the scene changes by going in or out.'),
+      p('While you present, the tool bar, the edge controls, the Scene, Model and Tool panels and their tabs, the brush ring and the Level pill are gone, and the brushes, the gizmo and the selection do not answer. You can still orbit, pan and zoom. The strip shows the project name and the **Frame** size in pixels, and **Publish**, in orange, stands at its right (when you are signed in; it is only in Present). **Material**, with how the model is drawn, stays at the left, and two tabs remain on the right: **Render**, with the rest of the look, and **Output**. Nothing about the scene changes by going in or out.'),
       h('The bar along the bottom'),
       options(
         ['Play', 'Starts and stops a slow turn about the model\'s vertical axis. **Space** does the same. Any press or wheel on the view stops it.'],
@@ -59,7 +59,8 @@ export const MODES: Topic[] = [
       options(
         ['Frames (left)', '**Sequence**: drop .obj or .glb files, or **Choose files**; **OBJ files are Z-up** for .obj files from a Z-up app; the number of frames and what is held in memory; **Add more**, and the trash, which clears the frames after asking. Nothing reaches the site until **Save**.'],
         ['Project (left)', '**Settings**: the title, **Mode** (**Timelapse** or **Model**), **Visibility** (Public or Private) and, for a timelapse, **Frames per second**. **Stages**: the list, the one at the playhead marked; **Add stage here**, **Remove**, and the name and note of the marked stage. **Card picture**: **Use this frame** sends the frame on show to the gallery card at once.'],
-        ['Render (right)', 'The whole look: material, lighting, camera, environment and ambient occlusion. **Save** stores it with the project.'],
+        ['Material (left)', 'How the model is drawn: **Mode** and its matcap, **Smooth shading**, **Wireframe** and **Wire opacity**, and over a published model its **Colour**, **Albedo**, **Roughness** and **Metalness**. **Save** stores it with the project.'],
+        ['Render (right)', 'The rest of the look: lighting, camera, environment and ambient occlusion. **Save** stores it with the project.'],
         ['Output (right)', '**Reel**: **Motion** (**Timelapse** or **Turntable**, with its spin and direction), **Aspect**, with a guide on the view, **Format**, **Size** and **FPS**, a line with the frame count and length, and **Record reel**, with a progress bar and **Cancel**. **Image**: **Save image**, a PNG at twice the window.'],
         ['The bar along the bottom', 'A timelapse has its transport here: play and pause, the line with the played part in orange and a tick at each stage, and the frame counter. A model has no bar.'],
       ),
@@ -70,7 +71,7 @@ export const MODES: Topic[] = [
     title: 'Armature mode',
     group: G,
     blocks: [
-      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** panel is on the left and the **Render** panel on the right.'),
+      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** and **Material** panels are on the left and the **Render** panel on the right.'),
       h('The menus'),
       options(
         ['New armature', 'Starts over, and asks first if the pose and proportions would be lost.'],
@@ -81,7 +82,7 @@ export const MODES: Topic[] = [
         ['Send to Sculpt', 'The same as the panel\'s button. Hotkey **Ctrl+Enter**.'],
         ['Close', 'Goes back to where you came from: the gallery, Community, My projects or Owner tools, as the hint says.'],
         ['Edit', 'Undo, Redo and Preferences…'],
-        ['View', 'Frame all, Wireframe, the Armature and Render panels and Hide interface.'],
+        ['View', 'Frame all, Wireframe, the Armature, Material and Render panels and Hide interface.'],
       ),
       h('Figure'),
       options(

@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-12: Should the Scene panel's row for assigning a named material move to the Material tab. Decided 2026-11-12: no, assigning a material stays in Scene; the Material tab edits its values
 - [x] 2026-11-12: While saving is off, the gallery's Import OBJ and Armature's Send to Sculpt cannot carry the file to Sculpt, since they go through IndexedDB. Accept the dead end, or carry them in sessionStorage. Decided 2026-11-12: neither: both need saving on, so picking one with saving off asks the first question again with an opening sentence, and Keep on this device turns saving on and carries the action out; declining or Go back cancels it
 - [x] 2026-11-12: The owner's Edit link on the viewer does not show on a device that declined saving, since the signed-in hint is not written. Decided 2026-11-12: signing in requires saving on, so a signed-in session always has saving on and the hint; signing in with saving off asks the question first, and turning saving off while signed in (or declining with a sign-in from before) signs the person out
 - [x] 2026-11-12: A notice about what Bozzetto keeps on the visitor's device (autosave, offline files, preferences; no cookies, no tracking). Decided 2026-11-12: an accept or decline choice on first visit; declining turns autosave and offline off, after a second question that makes sure

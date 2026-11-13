@@ -127,7 +127,7 @@ async function viewModel(page, base, frame, material) {
   await page.waitForTimeout(250);
 }
 
-/** The Render panel's material choices: the Colour switch, if offered, and whether an Albedo row is. */
+/** The material choices (the Render panel's in the viewer, the Material panel's in the workspaces): the Colour switch, if offered, and whether an Albedo row is. */
 const materialRows = (page) =>
   page.evaluate(() => {
     const opts = document.querySelector('.panel .mat-options');
@@ -333,9 +333,9 @@ export const suites = {
       await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
       await page.setInputFiles('.panel--frames input[type="file"]', file);
       await page.waitForFunction(() => !!document.querySelector('.panel--render') && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
-      await page.evaluate(() => document.querySelector('.panel--render.panel--collapsed')?.querySelector('.panel__handle').click());
+      await page.evaluate(() => document.querySelector('.panel--material.panel--collapsed')?.querySelector('.panel__handle').click());
       rows = await materialRows(page);
-      t.ok(rows.colour === 'sculpt' && !rows.albedo, `the Create workspace's preview offers the switch for a painted model (${JSON.stringify(rows)})`);
+      t.ok(rows.colour === 'sculpt' && !rows.albedo, `the Create workspace's Material panel offers the switch for a painted model (${JSON.stringify(rows)})`);
       await pickColour(page, 'plain');
       await page.evaluate(() => window.__bozzetto.materials.setAlbedo('#2a5cff'));
       t.ok(bluish(await middle(page)), 'and renders Plain colour in its albedo');

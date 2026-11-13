@@ -8,6 +8,13 @@ import { formatSliderNumber, sliderText, typedSlider, type Limits } from './slid
 import { FLOOR_OFFSET_LIMIT } from '../viewer/units';
 import { keyedLabel } from './keymap';
 
+/**
+ * Something a hotkey or a restore changed in the viewer (material mode,
+ * matcap, shading, wireframe): panels that show those controls read them
+ * again. Panel.refreshControls sends it, being what the shortcuts call.
+ */
+export const CONTROLS_REFRESH_EVENT = 'bozzetto:controls-refresh';
+
 export interface PanelOptions {
   /**
    * The handle of the member whose work this is, for a project from the
@@ -28,6 +35,15 @@ export interface PanelOptions {
    * viewer's own unless `fullLook` says otherwise.
    */
   shell?: boolean;
+  /**
+   * Whether the Render panel carries the Material section (Mode, matcap,
+   * smooth shading, wireframe, wire opacity). On by default: the public
+   * viewer's visitors keep it here. The app's workspaces turn it off and show
+   * the same section, built by the same MaterialControls, in the Material
+   * panel (ui/MaterialPanel.ts). Sculpt and Armature drop it from this panel
+   * when they take it over, whatever this says.
+   */
+  material?: boolean;
 }
 
 /**
@@ -52,10 +68,12 @@ export class Panel {
   /** Fired when the handle is clicked (editor coordinates both panels). */
   onToggle: ((collapsed: boolean) => void) | null = null;
 
-  private modeSelect!: HTMLSelectElement;
-  private materialOptions!: HTMLDivElement;
-  private smoothCheckbox!: HTMLInputElement;
-  private wireframeCheckbox!: HTMLInputElement;
+  /**
+   * The Material section (Mode, matcap, smooth shading, wireframe). Kept for
+   * the panel's life, so its pickers survive the rebuilds; absent where the
+   * Material panel has it (PanelOptions.material).
+   */
+  private readonly materialControls: MaterialControls | null;
   /** Ground-mode select lives in the editor's Environment section (or null). */
   private groundSelect: HTMLSelectElement | null = null;
   /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
@@ -91,17 +109,6 @@ export class Panel {
   /** Tab tidies the screen before it clears it, in every mode (ChromeToggle). */
   private readonly onCloseAll = (): void => {
     if (!this.collapsed) this.setCollapsed(true);
-  };
-
-  /**
-   * Sculpt's Present mode is up: the Material section offers the Sculpt
-   * colours / Plain colour switch over the sculpt, as it does over a
-   * published model (Materials.setPresenting).
-   */
-  private presenting = false;
-  private readonly onPresent = (e: Event): void => {
-    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
-    this.rebuildMaterialOptions();
   };
 
   private sculpting = false;
@@ -164,7 +171,6 @@ export class Panel {
     if (this.lightToggles) this.lightToggles.hidden = active;
     if (active) this.rebuildLightControls();
   }
-  private albedoPicker?: ColorPickerHandle;
   /** One HSV picker style across the app (owner call): these replace the
    *  browser's RGB boxes for the background, the stage surface and each
    *  light. Reused across rebuilds like the albedo one - disposing while
@@ -172,8 +178,6 @@ export class Panel {
   private bgPicker?: ColorPickerHandle;
   private stagePicker?: ColorPickerHandle;
   private readonly lightPickers = new Map<LightId, ColorPickerHandle>();
-  /** The matcap gallery popout's trigger, reused like the colour pickers. */
-  private mcPicker?: MatcapPickerHandle;
   /** Output-grade select (Camera section). */
   private toneSelect?: HTMLSelectElement;
   private lightControls?: HTMLDivElement;
@@ -184,6 +188,7 @@ export class Panel {
     options: PanelOptions = {},
   ) {
     this.fullLook = options.fullLook ?? false;
+    this.materialControls = options.material === false ? null : new MaterialControls(viewer, { sculpting: false });
 
     // panel--render names it for the stylesheet: Present mode keeps this
     // panel and hides the rest.
@@ -257,7 +262,6 @@ export class Panel {
     window.addEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.addEventListener('bozzetto:panel-close-all', this.onCloseAll);
     window.addEventListener('bozzetto:panel-set', this.onPanelSet);
-    window.addEventListener('bozzetto:present', this.onPresent);
 
     this.buildBody();
   }
@@ -270,7 +274,12 @@ export class Panel {
    */
   private buildBody(): void {
     this.bodyEl.replaceChildren();
-    this.buildMaterial(this.bodyEl);
+    // Sculpt and Armature have the Material panel; the Render panel keeps no
+    // copy of the section there, whatever it was built with.
+    if (this.materialControls && !this.sculpting) {
+      this.bodyEl.appendChild(this.materialControls.root);
+      this.materialControls.rebuild();
+    }
     this.buildLighting(this.bodyEl);
     this.buildDoF(this.bodyEl);
     // The viewer builds the look-dev sections too, hidden until sculpt mode
@@ -320,10 +329,9 @@ export class Panel {
     } else if (wasOpen) {
       // The pickers' popovers are body-mounted; without this they'd float
       // on after their swatches slid off-screen with the panel.
-      this.albedoPicker?.close();
+      this.materialControls?.closePopovers();
       this.bgPicker?.close();
       this.stagePicker?.close();
-      this.mcPicker?.close();
       for (const p of this.lightPickers.values()) p.close();
       window.dispatchEvent(
         new CustomEvent('bozzetto:panel-close', { detail: { id: 'settings', side: 'right' } }),
@@ -465,11 +473,8 @@ export class Panel {
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */
   refreshControls(): void {
-    this.modeSelect.value = this.viewer.getMaterial();
-    this.rebuildMaterialOptions();
-    const state = this.viewer.materials.getMaterialState();
-    this.smoothCheckbox.checked = !state.flatShading;
-    this.wireframeCheckbox.checked = this.viewer.isWireframe();
+    if (this.materialControls && !this.sculpting) this.materialControls.refresh();
+    window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
     if (this.toneSelect) this.toneSelect.value = this.viewer.getToneMapping();
     this.syncEnvRows?.(); // ground can move under us (the G key cycles it)
@@ -487,10 +492,9 @@ export class Panel {
   }
 
   dispose(): void {
-    this.albedoPicker?.dispose();
+    this.materialControls?.dispose();
     this.bgPicker?.dispose();
     this.stagePicker?.dispose();
-    this.mcPicker?.dispose();
     for (const p of this.lightPickers.values()) p.dispose();
     this.lightPickers.clear();
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
@@ -498,149 +502,9 @@ export class Panel {
     window.removeEventListener('bozzetto:panel-open', this.onOtherPanelOpen);
     window.removeEventListener('bozzetto:panel-close-all', this.onCloseAll);
     window.removeEventListener('bozzetto:panel-set', this.onPanelSet);
-    window.removeEventListener('bozzetto:present', this.onPresent);
     this.viewer.onFrame = null;
     this.viewer.onPlayStateChange = null;
     this.root.remove();
-  }
-
-  // --- material ---------------------------------------------------------
-
-  private buildMaterial(body: HTMLElement): void {
-    const material = section(body, 'Material');
-
-    this.modeSelect = document.createElement('select');
-    for (const mode of this.viewer.materials.modes) {
-      const opt = document.createElement('option');
-      opt.value = mode.id;
-      opt.textContent = mode.label;
-      this.modeSelect.appendChild(opt);
-    }
-    this.modeSelect.value = this.viewer.getMaterial();
-    this.modeSelect.addEventListener('change', () => {
-      this.viewer.setMaterial(this.modeSelect.value);
-      this.rebuildMaterialOptions();
-    });
-    material.appendChild(labelRow('Mode', this.modeSelect));
-
-    this.materialOptions = div('mat-options');
-    material.appendChild(this.materialOptions);
-    this.rebuildMaterialOptions();
-
-    // Smooth shading on by default; unchecking it gives faceted/flat shading.
-    const smooth = checkbox('Smooth shading', !this.viewer.materials.isFlatShading(), (on) =>
-      this.viewer.materials.setFlatShading(!on),
-    );
-    this.smoothCheckbox = smooth.querySelector('input')!;
-    material.appendChild(smooth);
-
-    const wire = checkbox(keyedLabel('Wireframe', 'view.wireframe'), this.viewer.isWireframe(), (on) =>
-      this.viewer.setWireframe(on),
-    );
-    this.wireframeCheckbox = wire.querySelector('input')!;
-    material.appendChild(wire);
-
-    material.appendChild(
-      compactRange(
-        'Wire opacity',
-        0,
-        1,
-        0.05,
-        this.viewer.getWireframeOpacity(),
-        (v) => this.viewer.setWireframeOpacity(v),
-        { limits: FRACTION },
-      ),
-    );
-  }
-
-  private rebuildMaterialOptions(): void {
-    this.materialOptions.replaceChildren();
-    const mats = this.viewer.materials;
-    const state = mats.getMaterialState();
-
-    if (this.viewer.getMaterial() === 'lit' && this.sculpting && this.presenting) {
-      // Presenting a sculpt: its paint, or the albedo over all of it, as
-      // the published model will offer. The albedo itself stays per object,
-      // in the Model panel.
-      const source = selectEl(
-        [
-          ['sculpt', 'Sculpt colours'],
-          ['plain', 'Plain colour'],
-        ],
-        state.vertexColors === false ? 'plain' : 'sculpt',
-      );
-      source.addEventListener('change', () => mats.setPlainColor(source.value === 'plain'));
-      this.materialOptions.appendChild(labelRow('Colour', source));
-    } else if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
-      // In sculpt mode these three are PER-OBJECT material values and live
-      // in the Model panel; here they would edit whichever object happens
-      // to be selected while dressed as scene-wide controls.
-      // A sculpt published from Sculpt mode carries its paint as vertex
-      // colours, which replace the albedo outright (Materials), so the
-      // albedo did nothing to one (owner report). Its own colours or one
-      // plain colour, the albedo's: offered only where there are colours
-      // to choose between, and saved with the look like the rest.
-      const painted = mats.hasModelVertexColors();
-      const plain = state.vertexColors === false;
-      if (painted) {
-        const source = selectEl(
-          [
-            ['sculpt', 'Sculpt colours'],
-            ['plain', 'Plain colour'],
-          ],
-          plain ? 'plain' : 'sculpt',
-        );
-        source.addEventListener('change', () => {
-          mats.setPlainColor(source.value === 'plain');
-          this.rebuildMaterialOptions(); // the albedo row comes or goes
-        });
-        this.materialOptions.appendChild(labelRow('Colour', source));
-      }
-      // The shared HSV picker, not <input type="color">: the same control
-      // the paint brush uses, so albedo and paint are picked the same way.
-      // REUSED across rebuilds, never recreated: the picker's own slider
-      // drag echoes back through look-restored and lands here mid-drag,
-      // and disposing closed the popover under the pointer (owner report).
-      // While the popover is up, the picker is the source of truth, so the
-      // echo's set() is skipped too - it would fight the thumb being held.
-      if (!this.albedoPicker) {
-        this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
-      } else if (!this.albedoPicker.isOpen()) {
-        this.albedoPicker.set(state.albedo);
-      }
-      // Over the model's own colours the albedo sets nothing, so it is not
-      // offered; its popover goes with the row if it was up.
-      if (!painted || plain) {
-        this.materialOptions.appendChild(labelRow('Albedo', this.albedoPicker.root));
-      } else {
-        this.albedoPicker.close();
-      }
-      this.materialOptions.appendChild(
-        compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), { limits: FRACTION }),
-      );
-      this.materialOptions.appendChild(
-        compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), { limits: FRACTION }),
-      );
-    } else if (this.viewer.getMaterial() === 'matcap') {
-      // A thumbnail gallery in a POPOUT, not a dropdown or inline rows
-      // (owner calls): matcaps are pictures, picking one by name was a
-      // guessing game, and fourteen thumbs ate half the section. The
-      // trigger swatch shows the active matcap; the handle is reused
-      // across rebuilds so refreshControls (2..9 hotkeys, look restores)
-      // just re-syncs the ring and the trigger.
-      if (mats.matcaps().length > 1) {
-        if (!this.mcPicker) {
-          this.mcPicker = matcapPicker(
-            () => this.viewer.materials.matcaps(),
-            () => this.viewer.materials.getMaterialState().matcapIndex,
-            (i) => this.viewer.materials.setMatcapIndex(i),
-          );
-        } else {
-          this.mcPicker.refresh();
-        }
-        this.materialOptions.appendChild(labelRow('Matcap', this.mcPicker.root));
-      }
-    }
   }
 
   // --- lighting ---------------------------------------------------------
@@ -1321,4 +1185,220 @@ export function checkbox(
   span.textContent = label;
   wrap.append(input, span);
   return wrap;
+}
+
+/**
+ * The display half of the material: how the model is drawn (Mode, and under
+ * it the matcap gallery or, over a published model, its colour source and
+ * albedo, roughness and metalness), Smooth shading, Wireframe and Wire
+ * opacity. One builder for both places that show it: the Render panel of the
+ * public viewer, and the Material panel of the workspaces. It owns its
+ * section, built again by rebuild(), and its pickers, kept across rebuilds:
+ * a picker's own drag echoes back through a look restore, and disposing it
+ * closed its popover under the pointer.
+ */
+export class MaterialControls {
+  /** The section, to put where it belongs. */
+  readonly root: HTMLDivElement;
+  private modeSelect?: HTMLSelectElement;
+  private options?: HTMLDivElement;
+  private smoothCheckbox?: HTMLInputElement;
+  private wireframeCheckbox?: HTMLInputElement;
+  private albedoPicker?: ColorPickerHandle;
+  /** The matcap gallery popout's trigger, reused like the colour pickers. */
+  private mcPicker?: MatcapPickerHandle;
+  private presenting = false;
+  private readonly sculpting: boolean;
+
+  /**
+   * Sculpt's Present mode is up: the section offers the Sculpt colours /
+   * Plain colour switch over the sculpt, as it does over a published model
+   * (Materials.setPresenting).
+   */
+  private readonly onPresent = (e: Event): void => {
+    this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
+    // Not shown (the Render panel in Sculpt, with the Material panel holding the section): nothing to redraw.
+    if (this.options && this.root.isConnected) this.rebuildOptions();
+  };
+
+  /**
+   * `sculpting`: Sculpt or Armature, where albedo, roughness and metalness
+   * are the active object's and live in the Material panel's Surface
+   * section; otherwise they are the published model's, offered here.
+   */
+  constructor(
+    private readonly viewer: Viewer,
+    opts: { sculpting: boolean; heading?: string },
+  ) {
+    this.sculpting = opts.sculpting;
+    this.root = div('section');
+    const h = document.createElement('h3');
+    h.textContent = opts.heading ?? 'Material';
+    this.root.appendChild(h);
+    window.addEventListener('bozzetto:present', this.onPresent);
+  }
+
+  /** Build the controls again from the viewer's live state. */
+  rebuild(): void {
+    const material = this.root;
+    while (material.children.length > 1) material.lastElementChild!.remove();
+
+    const modeSelect = document.createElement('select');
+    this.modeSelect = modeSelect;
+    for (const mode of this.viewer.materials.modes) {
+      const opt = document.createElement('option');
+      opt.value = mode.id;
+      opt.textContent = mode.label;
+      modeSelect.appendChild(opt);
+    }
+    modeSelect.value = this.viewer.getMaterial();
+    modeSelect.addEventListener('change', () => {
+      this.viewer.setMaterial(modeSelect.value);
+      this.rebuildOptions();
+    });
+    material.appendChild(labelRow('Mode', modeSelect));
+
+    this.options = div('mat-options');
+    material.appendChild(this.options);
+    this.rebuildOptions();
+
+    // Smooth shading on by default; unchecking it gives faceted/flat shading.
+    const smooth = checkbox('Smooth shading', !this.viewer.materials.isFlatShading(), (on) =>
+      this.viewer.materials.setFlatShading(!on),
+    );
+    this.smoothCheckbox = smooth.querySelector('input')!;
+    material.appendChild(smooth);
+
+    const wire = checkbox(keyedLabel('Wireframe', 'view.wireframe'), this.viewer.isWireframe(), (on) =>
+      this.viewer.setWireframe(on),
+    );
+    this.wireframeCheckbox = wire.querySelector('input')!;
+    material.appendChild(wire);
+
+    material.appendChild(
+      compactRange(
+        'Wire opacity',
+        0,
+        1,
+        0.05,
+        this.viewer.getWireframeOpacity(),
+        (v) => this.viewer.setWireframeOpacity(v),
+        { limits: FRACTION },
+      ),
+    );
+  }
+
+  /** Re-sync controls that hotkeys can change (material mode, matcap, shading, wireframe). */
+  refresh(): void {
+    if (!this.modeSelect || !this.smoothCheckbox || !this.wireframeCheckbox) return;
+    this.modeSelect.value = this.viewer.getMaterial();
+    this.rebuildOptions();
+    this.smoothCheckbox.checked = !this.viewer.materials.getMaterialState().flatShading;
+    this.wireframeCheckbox.checked = this.viewer.isWireframe();
+  }
+
+  /** The popovers are body-mounted: closing the panel takes them along. */
+  closePopovers(): void {
+    this.albedoPicker?.close();
+    this.mcPicker?.close();
+  }
+
+  dispose(): void {
+    window.removeEventListener('bozzetto:present', this.onPresent);
+    this.albedoPicker?.dispose();
+    this.mcPicker?.dispose();
+    this.root.remove();
+  }
+
+  private rebuildOptions(): void {
+    const host = this.options;
+    if (!host) return;
+    host.replaceChildren();
+    const mats = this.viewer.materials;
+    const state = mats.getMaterialState();
+
+    if (this.viewer.getMaterial() === 'lit' && this.sculpting && this.presenting) {
+      // Presenting a sculpt: its paint, or the albedo over all of it, as
+      // the published model will offer. The albedo itself stays per object,
+      // in the Surface section of the Material panel.
+      const source = selectEl(
+        [
+          ['sculpt', 'Sculpt colours'],
+          ['plain', 'Plain colour'],
+        ],
+        state.vertexColors === false ? 'plain' : 'sculpt',
+      );
+      source.addEventListener('change', () => mats.setPlainColor(source.value === 'plain'));
+      host.appendChild(labelRow('Colour', source));
+    } else if (this.viewer.getMaterial() === 'lit' && !this.sculpting) {
+      // In sculpt mode these three are PER-OBJECT material values and live
+      // in the Surface section; here they would edit whichever object happens
+      // to be selected while dressed as scene-wide controls.
+      // A sculpt published from Sculpt mode carries its paint as vertex
+      // colours, which replace the albedo outright (Materials), so the
+      // albedo did nothing to one (owner report). Its own colours or one
+      // plain colour, the albedo's: offered only where there are colours
+      // to choose between, and saved with the look like the rest.
+      const painted = mats.hasModelVertexColors();
+      const plain = state.vertexColors === false;
+      if (painted) {
+        const source = selectEl(
+          [
+            ['sculpt', 'Sculpt colours'],
+            ['plain', 'Plain colour'],
+          ],
+          plain ? 'plain' : 'sculpt',
+        );
+        source.addEventListener('change', () => {
+          mats.setPlainColor(source.value === 'plain');
+          this.rebuildOptions(); // the albedo row comes or goes
+        });
+        host.appendChild(labelRow('Colour', source));
+      }
+      // The shared HSV picker, not <input type="color">: the same control
+      // the paint brush uses, so albedo and paint are picked the same way.
+      // REUSED across rebuilds, never recreated: the picker's own slider
+      // drag echoes back through look-restored and lands here mid-drag,
+      // and disposing closed the popover under the pointer (owner report).
+      // While the popover is up, the picker is the source of truth, so the
+      // echo's set() is skipped too - it would fight the thumb being held.
+      if (!this.albedoPicker) {
+        this.albedoPicker = colorPicker(state.albedo, (hex) => mats.setAlbedo(hex));
+      } else if (!this.albedoPicker.isOpen()) {
+        this.albedoPicker.set(state.albedo);
+      }
+      // Over the model's own colours the albedo sets nothing, so it is not
+      // offered; its popover goes with the row if it was up.
+      if (!painted || plain) {
+        host.appendChild(labelRow('Albedo', this.albedoPicker.root));
+      } else {
+        this.albedoPicker.close();
+      }
+      host.appendChild(
+        compactRange('Roughness', 0, 1, 0.01, state.roughness, (v) => mats.setRoughness(v), { limits: FRACTION }),
+      );
+      host.appendChild(
+        compactRange('Metalness', 0, 1, 0.01, state.metalness, (v) => mats.setMetalness(v), { limits: FRACTION }),
+      );
+    } else if (this.viewer.getMaterial() === 'matcap') {
+      // A thumbnail gallery in a POPOUT, not a dropdown or inline rows
+      // (owner calls): matcaps are pictures, picking one by name was a
+      // guessing game, and fourteen thumbs ate half the section. The
+      // trigger swatch shows the active matcap; the handle is reused
+      // across rebuilds so refresh (2..9 hotkeys, look restores)
+      // just re-syncs the ring and the trigger.
+      if (mats.matcaps().length > 1) {
+        if (!this.mcPicker) {
+          this.mcPicker = matcapPicker(
+            () => this.viewer.materials.matcaps(),
+            () => this.viewer.materials.getMaterialState().matcapIndex,
+            (i) => this.viewer.materials.setMatcapIndex(i),
+          );
+        } else {
+          this.mcPicker.refresh();
+        }
+        host.appendChild(labelRow('Matcap', this.mcPicker.root));
+      }
+    }
+  }
 }

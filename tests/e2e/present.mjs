@@ -46,6 +46,7 @@ const ui = (page) =>
         scene: !scenePanel.isCollapsed(),
         model: !modelPanel.isCollapsed(),
         tool: !sculptPanel.isCollapsed(),
+        material: !document.querySelector('.panel--material').classList.contains('panel--collapsed'),
         render: !render.classList.contains('panel--collapsed'),
         output: !document.querySelector('.panel--output').classList.contains('panel--collapsed'),
       },
@@ -57,6 +58,7 @@ const ui = (page) =>
         scene: shown('.panel--scene .panel__handle'),
         model: shown('.panel--model .panel__handle'),
         tool: shown('.panel--sculpt .panel__handle'),
+        material: shown('.panel--material .panel__handle'),
         render: shown('.panel--render .panel__handle') || shown('.panel--render .panel__header'),
         output: shown('.panel--output .panel__handle'),
         publish: shown('.publish-window__chip'),
@@ -254,7 +256,7 @@ export const suites = {
 
     await press(page, 'Shift+P');
     let now = await ui(page);
-    t.ok(now.presenting && now.shown.bar && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Render and Output tabs up (${show(now.shown)})`);
+    t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
     t.ok(now.open.output && !now.open.render, `the Output panel opens with it (${show(now.open)})`);
     t.eq(now.path, 'Armature > Sculpt > Present*', 'the path shows Present as the current step');
     t.ok(
@@ -315,9 +317,18 @@ export const suites = {
     await setRender(page, true);
     now = await ui(page);
     t.ok(now.open.render && now.shown.render, 'the Render panel opens in Present');
+    // Its Display section (the Surface section is put away with the other editing).
+    await page.evaluate(() => document.querySelector('.panel--material .panel__handle').click());
+    now = await ui(page);
+    t.ok(now.open.material && !now.open.scene, `the Material tab opens in Present, over the put-away Scene panel (${show(now.open)})`);
+    t.eq(
+      JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.panel--material .section')].filter((s) => !s.hidden).map((s) => s.querySelector('h3').textContent))),
+      '["Display"]',
+      'with its Display section alone: the Surface section goes with the editing',
+    );
     const plain = await page.evaluate(async () => {
       const mats = window.__sculpt.viewer.materials;
-      const sel = [...document.querySelectorAll('.panel--render select')].find((x) => [...x.options].some((o) => o.textContent === 'Plain colour'));
+      const sel = [...document.querySelectorAll('.panel--material select')].find((x) => [...x.options].some((o) => o.textContent === 'Plain colour'));
       if (!sel) return null;
       sel.value = 'plain';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -327,6 +338,7 @@ export const suites = {
       return { set, back: mats.getMaterialState().vertexColors };
     });
     t.ok(plain?.set === false && plain.back === true, `with the material's Sculpt colours / Plain colour switch, which the look takes (${show(plain)})`);
+    await page.evaluate(() => document.querySelector('.panel--material .panel__handle').click());
     await press(page, 'Tab');
     now = await ui(page);
     t.ok(!now.open.render && !now.chrome && now.presenting, `Tab first closes the Render panel (${show(now)})`);

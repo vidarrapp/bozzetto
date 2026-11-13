@@ -276,7 +276,7 @@ export const suites = {
         };
       });
       t.ok(tabs.project && tabs.output && !tabs.render, `Project (left) and Output (right) are open, Render is closed (${JSON.stringify(tabs)})`);
-      t.ok(tabs.names.sort().join() === 'Frames,Output,Project,Render', `the tabs are Frames, Project, Render and Output (${tabs.names})`);
+      t.ok(tabs.names.sort().join() === 'Frames,Material,Output,Project,Render', `the tabs are Frames, Project, Material, Render and Output (${tabs.names})`);
 
       // Hide the interface and back, by the strip's button.
       await p.click('.bz-strip__hide');
@@ -352,7 +352,7 @@ export const suites = {
         sections: [...document.querySelectorAll('.panel--render .section > h3')].map((h) => h.textContent),
       }));
       t.ok(render.output && render.heading === 'Render', `the Render tab opens in Output's place (${render.heading})`);
-      t.ok(['Material', 'Lighting', 'Camera', 'Environment'].every((s) => render.sections.includes(s)), `with the whole look, as the editor has it (${render.sections})`);
+      t.ok(['Lighting', 'Camera', 'Environment'].every((s) => render.sections.includes(s)) && !render.sections.includes('Material'), `with the look, as the editor has it, but not the Material section (${render.sections})`);
       const lightBefore = await p.evaluate(() => JSON.stringify(window.__bozzetto.lighting.serialize()));
       // The key light's intensity, by its slider.
       const moved = await p.evaluate(() => {

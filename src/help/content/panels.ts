@@ -8,14 +8,7 @@ export const PANELS: Topic[] = [
     title: 'Model panel',
     group: G,
     blocks: [
-      p('The **Model** panel, on the left, acts on the active object rather than on a tool. It has these sections, from the top.'),
-      h('Material'),
-      p('The look of the active object. Each object has its own.'),
-      options(
-        ['Albedo', 'The base colour. Click the swatch for the colour picker.'],
-        ['Roughness', 'From 0 to 1. Low is glossy and high is matte.'],
-        ['Metalness', 'From 0 to 1.'],
-      ),
+      p('The **Model** panel, on the left, acts on the active object rather than on a tool. It has these sections, from the top. The object\'s colour, roughness and metalness are in the **Material** panel, next to it.'),
       h('Topology'),
       options(
         ['Dynamic topology', 'Rebuilds the surface under every stroke so it keeps enough triangles where you work. Turning it on asks first, because it replaces the mesh and flattens the subdivision levels to the current resolution. Ctrl+Z undoes the switch. Turning it off is the way back.'],
@@ -125,21 +118,38 @@ export const PANELS: Topic[] = [
     ],
   },
   {
-    id: 'render-panel',
-    title: 'Render panel',
+    id: 'material-panel',
+    title: 'Material panel',
     group: G,
     blocks: [
-      p('The **Render** panel, on the right, is the look of the scene: material, light, camera, background and shading. It is the same panel in Sculpt, Armature and the viewer. The viewer shows fewer sections to keep it simple: the Camera, Environment and Ambient occlusion sections show in Sculpt and Armature only. A look set in Sculpt is saved with the scene and is what Publish and Present use.'),
-      h('Material'),
+      p('The **Material** panel, on the left after Model, is how the surface looks and how it is drawn. In Sculpt and Armature it is a tab beside the others, and in Present for a published project it follows Frames and Project. Opening it closes the other panel on the left.'),
+      h('Surface'),
+      p('Sculpt only. The look of the active object. Each object has its own, and a change is one undo step. With no object selected, the section says so.'),
+      options(
+        ['Albedo', 'The base colour. Click the swatch for the colour picker.'],
+        ['Roughness', 'From 0 to 1. Low is glossy and high is matte.'],
+        ['Metalness', 'From 0 to 1.'],
+      ),
+      h('Display'),
+      p('How the model is drawn. It is saved with the scene, and with a published project.'),
       options(
         ['Mode', '**Lit (PBR)** shades with the lights. **Matcap** shades with a picture of a lit sphere and ignores the lights.'],
         ['Matcap', 'In Matcap mode, a thumbnail gallery of matcaps to choose from.'],
-        ['Colour', 'While you present a sculpt, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
+        ['Colour', 'While you present a sculpt, or over a published model with painted colours, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
+        ['Albedo, Roughness, Metalness', 'In Present for a published project, in Lit (PBR), the model\'s own values (with Plain colour, if it has painted colours).'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
         ['Wireframe', 'Draws the triangle edges over the model. The label shows its hotkey, **Shift + W** by default.'],
         ['Wire opacity', 'From 0 to 1.'],
       ),
-      p('In the viewer, Lit (PBR) also shows **Albedo**, **Roughness** and **Metalness**. In Sculpt these three belong to each object, in the Model panel.'),
+    ],
+  },
+  {
+    id: 'render-panel',
+    title: 'Render panel',
+    group: G,
+    blocks: [
+      p('The **Render** panel, on the right, is the look of the scene: light, camera, background and shading. It is the same panel in Sculpt, Armature and the viewer. The viewer shows fewer sections to keep it simple: the Camera, Environment and Ambient occlusion sections show in Sculpt and Armature only. A look set in Sculpt is saved with the scene and is what Publish and Present use.'),
+      p('In Sculpt, Armature and Present, how the model is drawn (mode, matcap, shading, wireframe) is in the **Material** panel. In the viewer it is the first section here, **Material**, with **Mode**, **Matcap**, **Smooth shading**, **Wireframe** and **Wire opacity**, and, in Lit (PBR), **Albedo**, **Roughness** and **Metalness** of the model.'),
       h('Lighting'),
       options(
         ['Reset look', 'Sculpt only. Puts the look back to its defaults.'],
