@@ -1258,7 +1258,7 @@ export const suites = {
     t.eq(layout.slider, '60 to 100, at 95 (95%)', 'Panel opacity runs 60 to 100%, at 95%');
     t.eq(layout.question, 'While sculpting, posing or moving the view', 'the frames choice says when it applies');
     t.eq(layout.looks.join(', '), 'Fast frames (on), Full look', 'Fast frames by default, or Full look');
-    t.eq(layout.toggles.join(', '), 'Adaptive quality (on), Frame meter, Stall log, Input log', 'Adaptive quality on, and the three diagnostic boxes off');
+    t.eq(layout.toggles.join(', '), 'Keep work on this device (on), Adaptive quality (on), Frame meter, Stall log, Input log', 'Keep work on this device on, Adaptive quality on, and the three diagnostic boxes off');
     t.eq(layout.desktop, false, 'and no Desktop group: the retired desktop app had one');
 
     // Dragged, the panels follow each value as the slider passes it.
