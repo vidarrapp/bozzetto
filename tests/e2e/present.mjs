@@ -322,8 +322,8 @@ export const suites = {
     now = await ui(page);
     t.ok(now.open.material && !now.open.scene, `the Material tab opens in Present, over the put-away Scene panel (${show(now.open)})`);
     t.eq(
-      await page.evaluate(() => [...document.querySelectorAll('.panel--material .section')].filter((s) => !s.hidden).map((s) => s.querySelector('h3').textContent)),
-      ['Display'],
+      JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.panel--material .section')].filter((s) => !s.hidden).map((s) => s.querySelector('h3').textContent))),
+      '["Display"]',
       'with its Display section alone: the Surface section goes with the editing',
     );
     const plain = await page.evaluate(async () => {

@@ -1217,7 +1217,8 @@ export class MaterialControls {
    */
   private readonly onPresent = (e: Event): void => {
     this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
-    if (this.options) this.rebuildOptions();
+    // Not shown (the Render panel in Sculpt, with the Material panel holding the section): nothing to redraw.
+    if (this.options && this.root.isConnected) this.rebuildOptions();
   };
 
   /**

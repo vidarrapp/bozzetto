@@ -310,7 +310,7 @@ export const suites = {
       const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.querySelector('.handle__label').textContent, l: h.getBoundingClientRect().left }));
       return { toolbar: vis('.sculpt-toolbar__brushes'), edge: vis('.bz-edge'), tabs: tabs.sort((a, b) => a.l - b.l).map((x) => x.n).join(), done: !!document.querySelector('.present-bar__done') };
     });
-    t.ok(!ws.toolbar && !ws.edge && ws.tabs === 'Render,Output' && !ws.done, `no tool bar, no edge controls, no left tabs; the tabs are Render, Output, and there is no Done (${JSON.stringify(ws)})`);
+    t.ok(!ws.toolbar && !ws.edge && ws.tabs === 'Material,Render,Output' && !ws.done, `no tool bar, no edge controls, no Scene, Model or Tool tabs; the tabs are Material, Render, Output, and there is no Done (${JSON.stringify(ws)})`);
 
     // The bar: bottom centre, flush, the panel's colour.
     const bar = await page.evaluate(() => {
