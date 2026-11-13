@@ -12,7 +12,7 @@ import { trashButton } from '../ui/trash';
 import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
-import { ensureDeviceChoice } from '../ui/deviceChoice';
+import { showDeviceNotice } from '../ui/deviceChoice';
 
 /**
  * Editor router. `/admin/?p=<id>` goes on to the Present workspace (present/), the frame editor,
@@ -460,9 +460,10 @@ installSliderBubble();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');
-// Asked first, as every page that keeps something is (ui/deviceChoice).
-void ensureDeviceChoice().then(() => {
-  // The editor is the Present workspace now: an old link or a just-made project goes to its Frames tab.
-  if (isProjectId(projectId)) window.location.replace(`/?tl=${encodeURIComponent(projectId)}&present=1&tab=frames`);
-  else void renderAdmin(root, wantedTab());
-});
+// The editor is the Present workspace now: an old link goes to its Frames tab, which asks.
+if (isProjectId(projectId)) window.location.replace(`/?tl=${encodeURIComponent(projectId)}&present=1&tab=frames`);
+else {
+  // The owner tools are a page: a small notice, and the page works behind it (ui/deviceChoice).
+  showDeviceNotice();
+  void renderAdmin(root, wantedTab());
+}

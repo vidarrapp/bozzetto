@@ -4037,6 +4037,73 @@ body.is-sampling * {
   background: rgb(0 0 0 / 45%);
 }
 
+/* The device question as a notice (ui/deviceChoice): a card at the foot of the
+   window, over the page and under menus (32) and windows (40). No overlay. */
+.bz-device-notice {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 20;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px 20px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 13px/18px var(--bz-font);
+}
+
+.bz-device-notice__title {
+  margin: 0 0 8px;
+  font: 700 17px/24px var(--bz-font);
+}
+
+.bz-device-notice__text {
+  margin: 0 0 12px;
+  color: var(--bz-text-2);
+}
+
+.bz-device-notice__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bz-device-notice__actions .btn {
+  flex: 1 1 auto;
+}
+
+.bz-device-notice a {
+  color: var(--bz-text);
+  text-decoration: underline;
+}
+
+@media (max-width: 599px) {
+  .bz-device-notice {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* A workspace waits on the answer over an empty page: the strip's ground, and the logotype above the window. */
+.install-overlay.bz-device--blank {
+  background: var(--bz-strip);
+}
+
+.bz-device__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+}
+
+.bz-device__logo {
+  display: block;
+  height: 64px;
+  width: auto;
+  mix-blend-mode: lighten;
+  filter: grayscale(1);
+}
+
 /* The device question is above everything, Preferences (200) included. */
 .install-overlay.bz-device {
   z-index: 300;

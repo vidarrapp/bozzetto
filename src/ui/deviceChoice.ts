@@ -1,5 +1,5 @@
 import { signOut, signedInOnDevice } from '../admin/api';
-import { declineKeeping, deviceChoice, keepOnDevice, mayStore } from './deviceStorage';
+import { declineKeeping, deviceChoice, keepOnDevice, mayStore, onDeviceChoice } from './deviceStorage';
 import { failNotice } from '../sculpt/ui/statusToast';
 
 /**
@@ -45,15 +45,25 @@ interface WindowOptions {
   cancellable?: boolean;
   /** The second question says that turning saving off signs the person out here. */
   signOutNote?: boolean;
+  /** A workspace is waiting on the answer and the page is empty: the logotype stands above the window, on the strip's ground. */
+  blank?: boolean;
 }
 
-function openWindow({ first, intro, cancellable = false, signOutNote = false }: WindowOptions): Promise<Answer> {
+function openWindow({ first, intro, cancellable = false, signOutNote = false, blank = false }: WindowOptions): Promise<Answer> {
   return new Promise((resolve) => {
     const overlay = make('div', 'install-overlay bz-device');
     const card = make('div', 'install-card account-card bz-device__card');
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-modal', 'true');
-    overlay.appendChild(card);
+    if (blank) {
+      overlay.classList.add('bz-device--blank');
+      const stack = make('div', 'bz-device__stack');
+      const logo = make('img', 'bz-device__logo');
+      logo.src = '/assets/bozzetto-script-ink.svg';
+      logo.alt = 'Bozzetto';
+      stack.append(logo, card);
+      overlay.appendChild(stack);
+    } else overlay.appendChild(card);
     let step: 1 | 2 = first ? 1 : 2;
     let primary: HTMLButtonElement;
     // Opened over Preferences, the page is already standing down: leave it so.
@@ -177,6 +187,55 @@ async function signOutForOff(): Promise<boolean> {
 }
 
 /**
+ * The question for a page that works without an answer (the gallery, My
+ * projects, Community, Account, Review, the owner tools): a small card at
+ * the foot of the window, no overlay, nothing trapped, the page behind it
+ * as usable as ever. Until it is answered the state is "no choice": nothing
+ * is written. Do not keep opens the second question as a window; Go back
+ * leaves the card where it was. It goes when the choice is made, by the
+ * card or by a question an action asked (requireSaving).
+ */
+export function showDeviceNotice(): void {
+  if (deviceChoice() !== 'none' || document.querySelector('.bz-device-notice')) return;
+  const card = make('section', 'bz-device-notice');
+  card.setAttribute('role', 'region');
+  card.setAttribute('aria-labelledby', 'bz-device-notice-title');
+  const h = make('h2', 'bz-device-notice__title', 'Keep your work on this device?');
+  h.id = 'bz-device-notice-title';
+  const p = make(
+    'p',
+    'bz-device-notice__text',
+    'Bozzetto saves your work, your settings and an offline copy of the app in this browser. Nothing is uploaded unless you sign in and save, and there are no ads and no tracking. ',
+  );
+  const link = make('a', 'account-legal', 'Privacy notice');
+  link.href = '/legal/privacy.html';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  p.appendChild(link);
+  const actions = make('div', 'bz-device-notice__actions');
+  const keep = btn('Keep on this device', 'btn btn--recommended bz-device-keep');
+  const decline = btn('Do not keep', 'btn bz-device-decline');
+  keep.addEventListener('click', () => keepOnDevice());
+  decline.addEventListener('click', () => {
+    void (async () => {
+      const signedIn = signedInOnDevice();
+      if ((await openWindow({ first: false, cancellable: true, signOutNote: signedIn })) !== 'off') return;
+      if (signedIn && !(await signOutForOff())) return;
+      declineKeeping();
+    })();
+  });
+  actions.append(keep, decline);
+  card.append(h, p, actions);
+  const stop = onDeviceChoice(() => {
+    if (deviceChoice() === 'none') return;
+    card.remove();
+    stop();
+  });
+  // First in the page, so a keyboard user reaches it early; it is fixed to the foot of the window.
+  document.body.prepend(card);
+}
+
+/**
  * Resolves once there is a choice: at once when there is one already, else
  * when the window has been answered. Nothing is written until then. A
  * session signed in from before the question existed is told that saying
@@ -187,7 +246,7 @@ export function ensureDeviceChoice(): Promise<void> {
   asking ??= (async () => {
     for (;;) {
       const signedIn = signedInOnDevice();
-      const answer = await openWindow({ first: true, signOutNote: signedIn });
+      const answer = await openWindow({ first: true, signOutNote: signedIn, blank: true });
       if (answer === 'keep') keepOnDevice();
       else if (answer === 'off') {
         if (signedIn && !(await signOutForOff())) continue;

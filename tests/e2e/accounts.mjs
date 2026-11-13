@@ -591,8 +591,16 @@ async function deviceChoice(server, browser, t) {
   const device = () => p.evaluate(() => ({ choice: localStorage.getItem('bozzetto-device-choice'), declined: sessionStorage.getItem('bozzetto-device-declined'), hint: localStorage.getItem('bozzetto-signed-in') !== null }));
   try {
     await p.goto(`${b.origin}/`, { waitUntil: 'domcontentloaded' });
-    await p.waitForSelector('.bz-device', { timeout: 30_000 });
-    await p.click('.bz-device-decline');
+    await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+    await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+    t.ok((await p.locator('.bz-device').count()) === 0, 'the first visit shows a notice, not a window, and the gallery is there');
+    // Sign in with the notice showing and no choice: the modal question with its reason; Esc leaves the notice where it was.
+    await p.click(signInChip);
+    await p.waitForSelector('.bz-device');
+    t.ok((await p.textContent('.bz-device__why')) === 'Signing in keeps you signed in on this device.' && (await p.locator('.bz-device-notice').count()) === 1, 'Sign in with the notice up asks the modal question with its reason');
+    await p.keyboard.press('Escape');
+    t.ok((await p.locator('.bz-device').count()) === 0 && (await p.locator('.bz-device-notice').count()) === 1 && !(await signInOpen()), 'Esc cancels the sign-in and the notice stays');
+    await p.click('.bz-device-notice .bz-device-decline');
     t.ok(!/signs you out/.test(await p.textContent('.bz-device__card')), 'signed out, the second question says nothing of signing out');
     await p.click('.bz-device-off');
     await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
@@ -628,8 +636,8 @@ async function deviceChoice(server, browser, t) {
       sessionStorage.removeItem('bozzetto-device-declined');
     });
     await p.goto(`${b.origin}/`, { waitUntil: 'domcontentloaded' });
-    await p.waitForSelector('.bz-device', { timeout: 30_000 });
-    await p.click('.bz-device-decline');
+    await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+    await p.click('.bz-device-notice .bz-device-decline');
     t.ok(/signs you out on this device/.test(await p.textContent('.bz-device__card')), 'signed in from before, the second question says it signs them out');
     await p.click('.bz-device-off');
     await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });

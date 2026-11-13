@@ -157,13 +157,22 @@ const noteShown = (page) =>
 
 export const suites = {
   async deviceStorage(page, base, t) {
-    // ---- the gallery: asked first, and nothing written until answered ----
+    // ---- a workspace: asked first, in a window over the logotype, and nothing written until answered ----
     await inContext(page, DESKTOP, t, async (p) => {
-      await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await p.goto(`${base}/?sculpt=1`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
       await p.waitForTimeout(800);
       let w = await windowState(p);
-      t.eq(w.title, 'Keep your work on this device?', 'the gallery asks first: the title');
+      const logo = await p.evaluate(() => {
+        const img = document.querySelector('.bz-device__logo');
+        const card = document.querySelector('.bz-device__card');
+        if (!img || !card) return null;
+        const r = img.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return { src: img.getAttribute('src'), h: Math.round(r.height), cx: Math.round(r.left + r.width / 2), above: r.bottom <= c.top, blend: getComputedStyle(img).mixBlendMode, bg: getComputedStyle(document.querySelector('.bz-device')).backgroundColor, loaded: img.complete && img.naturalWidth > 0 };
+      });
+      t.ok(logo && logo.src === '/assets/bozzetto-script-ink.svg' && logo.h === 64 && Math.abs(logo.cx - 720) <= 2 && logo.above && logo.blend === 'lighten' && logo.bg === 'rgb(27, 27, 27)' && logo.loaded, `entering Sculpt with no choice: the logotype, 64px, centred above the window, on the strip's ground (${JSON.stringify(logo)})`);
+      t.eq(w.title, 'Keep your work on this device?', 'Sculpt asks first: the title');
       t.ok(
         /saves your work, your settings and an offline copy of the app in this browser/.test(w.text) &&
           /Nothing is uploaded unless you sign in and save/.test(w.text) &&
@@ -235,12 +244,12 @@ export const suites = {
       await p.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
       await p.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
       await p.waitForTimeout(500);
-      t.eq(await p.locator('.bz-device').count(), 0, 'the public viewer asks nothing');
+      t.eq(await p.locator('.bz-device, .bz-device-notice').count(), 0, 'the public viewer asks nothing');
       const held = await device(p);
       t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0 && held.caches.length === 0, `and stores nothing with no choice (${JSON.stringify(held)})`);
       t.eq(await p.locator('.bz-strip__off').evaluate((n) => n.hidden).catch(() => true), true, 'and says nothing about saving');
       await p.goto(`${base}/legal/privacy.html`, { waitUntil: 'domcontentloaded' });
-      t.eq(await p.locator('.bz-device').count(), 0, 'the legal pages ask nothing');
+      t.eq(await p.locator('.bz-device, .bz-device-notice').count(), 0, 'the legal pages ask nothing');
       const legal = await device(p);
       t.ok(legal.local.length === 0 && legal.dbs.length === 0, 'and store nothing');
     });
@@ -322,20 +331,140 @@ export const suites = {
       }
     });
 
-    // ---- Armature and the signed-in pages ask too ----
+    // ---- Armature asks in a window; the pages carry on behind the notice ----
     await inContext(page, DESKTOP, t, async (p) => {
       await p.goto(`${base}/?armature=1`, { waitUntil: 'domcontentloaded' });
       await waitWindow(p);
-      t.ok(true, 'Armature asks');
-      await p.goto(`${base}/?me`, { waitUntil: 'domcontentloaded' });
-      await waitWindow(p);
-      t.ok(true, 'My projects asks');
+      t.eq(await p.locator('.bz-device__logo').count(), 1, 'Armature asks in a window, with the logotype');
+      for (const [path, what] of [['?me', 'My projects'], ['?community', 'the Community'], ['admin/', 'the owner tools'], ['?account', 'Account'], ['?review', 'Review']]) {
+        await p.goto(`${base}/${path}`, { waitUntil: 'domcontentloaded' });
+        await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+        t.ok((await p.locator('.bz-device').count()) === 0 && !(await p.evaluate(() => document.body.classList.contains('has-modal'))), `${what}: a notice, no window and no overlay`);
+      }
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0, 'and nothing is stored while it is up');
+    });
+
+    // ---- the pages: a notice that does not block ----
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+      const n = await p.evaluate(() => {
+        const el = document.querySelector('.bz-device-notice');
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const b = (sel) => {
+          const x = el.querySelector(sel);
+          const c = getComputedStyle(x);
+          return { text: x.textContent, bg: c.backgroundColor, h: x.getBoundingClientRect().height, left: x.getBoundingClientRect().left };
+        };
+        return {
+          role: el.getAttribute('role'),
+          label: document.getElementById(el.getAttribute('aria-labelledby'))?.textContent,
+          title: el.querySelector('h2')?.textContent,
+          text: el.textContent,
+          link: el.querySelector('a')?.getAttribute('href'),
+          pos: cs.position,
+          z: cs.zIndex,
+          bg: cs.backgroundColor,
+          radius: cs.borderRadius,
+          shadow: cs.boxShadow !== 'none',
+          left: r.left,
+          bottom: innerHeight - r.bottom,
+          width: r.width,
+          first: document.body.firstElementChild === el,
+          overlay: !!document.querySelector('.install-overlay'),
+          modal: document.body.classList.contains('has-modal'),
+          close: !!el.querySelector('[aria-label="Close"], .install-close'),
+          keep: b('.bz-device-keep'),
+          decline: b('.bz-device-decline'),
+        };
+      });
+      t.ok(n.role === 'region' && n.label === 'Keep your work on this device?' && n.title === n.label, `a labelled region with the title (${n.role}, ${n.label})`);
+      t.ok(/saves your work, your settings and an offline copy of the app in this browser/.test(n.text) && /Nothing is uploaded unless you sign in and save/.test(n.text) && /no ads and no tracking/.test(n.text) && n.link === '/legal/privacy.html', 'with the short text and the Privacy notice link');
+      t.ok(n.pos === 'fixed' && n.z === '20' && n.bg === 'rgb(51, 51, 51)' && n.radius === '0px' && n.shadow, `fixed, above the page and under windows, on the raised surface with its shadow, square (${n.pos}, ${n.z}, ${n.bg})`);
+      t.ok(n.left === 16 && n.bottom === 16 && n.width <= 420, `bottom left, 16px in, at most 420px wide (${n.left}, ${n.bottom}, ${n.width})`);
+      t.ok(n.keep.bg === LIME && n.decline.bg === 'rgb(58, 58, 58)' && n.keep.left < n.decline.left && n.keep.h >= 28, `Keep on this device lime and Do not keep grey, side by side (${JSON.stringify([n.keep, n.decline])})`);
+      t.ok(!n.overlay && !n.modal && !n.close, 'no overlay, no modal, no close button');
+      t.ok(n.first, 'first in the page, so a keyboard user reaches it early');
+      await p.keyboard.press('Tab');
+      t.ok(await p.evaluate(() => !!document.activeElement?.closest('.bz-device-notice')), 'the first Tab lands in it');
+      await shot(p, 'notice-gallery-desktop');
+      // The page is usable: a card opens its window, and the focus is not held.
+      await p.click('#landing-grid .card--new');
+      await p.waitForSelector('.create-overlay', { timeout: 10_000 });
+      t.ok(true, 'a card can be clicked while it is up');
+      await p.keyboard.press('Escape');
+      const held = await device(p);
+      t.ok(held.local.length === 0 && held.dbs.length === 0 && held.workers === 0 && held.caches.length === 0, `nothing is stored while it is up (${JSON.stringify(held)})`);
+      // Do not keep: the second question as a window; Go back returns to the notice.
+      await p.click('.bz-device-notice .bz-device-decline');
+      await p.waitForSelector('.bz-device');
+      const second = await windowState(p);
+      t.eq(second.title, 'Turn saving off?', 'Do not keep opens the second question as a window');
+      t.ok(second.off.bg === RED && second.off.color === WHITE, 'with the red button and its white label');
+      await shot(p, 'second-question-notice-desktop');
+      await p.click('.bz-device-back');
+      t.ok((await p.locator('.bz-device').count()) === 0 && (await p.locator('.bz-device-notice').count()) === 1, 'Go back returns to the notice, still showing');
+      // Keep: stored, the notice goes, the worker registers.
+      await p.click('.bz-device-notice .bz-device-keep');
+      t.eq(await p.locator('.bz-device-notice').count(), 0, 'Keep on this device removes the notice');
+      t.eq(await p.evaluate(() => localStorage.getItem('bozzetto-device-choice')), 'keep', 'and stores the choice');
+      t.ok(await workers(p, (k) => k > 0), 'and the service worker registers');
+    });
+    await inContext(page, DESKTOP, t, async (p) => {
       await p.goto(`${base}/?community`, { waitUntil: 'domcontentloaded' });
-      await waitWindow(p);
-      t.ok(true, 'the Community asks');
-      await p.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
-      await waitWindow(p);
-      t.ok(true, 'the owner tools ask');
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      // The keyboard is not held: Tab goes through the notice and on into the page.
+      let outside = false;
+      for (let i = 0; i < 8 && !outside; i++) {
+        await p.keyboard.press('Tab');
+        outside = await p.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !document.activeElement.closest('.bz-device-notice'));
+      }
+      t.ok(outside, 'Tab moves on from the notice into the page, nothing traps it');
+      await p.click('.pagenav__link[data-page="gallery"], .pagenav__logo, .pagenav a').catch(() => {});
+      await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
+      t.ok(true, 'and the page navigation works while it is up');
+      await p.goto(`${base}/?community`, { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      // Do not keep, then Turn saving off: the notice goes and the page goes on.
+      await p.click('.bz-device-notice .bz-device-decline');
+      await p.click('.bz-device-off');
+      await p.waitForTimeout(300);
+      t.eq(await p.locator('.bz-device-notice').count(), 0, 'Turn saving off removes the notice');
+      const off = await device(p);
+      t.ok(off.local.length === 0 && off.dbs.length === 0 && off.declined === '1', 'nothing persistent, the refusal kept for the tab');
+    });
+    await inContext(page, PHONE, t, async (p) => {
+      await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      await p.waitForSelector('#landing-grid .card', { timeout: 30_000 });
+      await p.waitForTimeout(500);
+      const f = await p.evaluate(() => {
+        const n = document.querySelector('.bz-device-notice').getBoundingClientRect();
+        const hit = (el) => !(el.bottom <= n.top || el.top >= n.bottom || el.right <= n.left || el.left >= n.right);
+        const nav = document.querySelector('.landing__top, .pagenav, header');
+        const first = document.querySelector('#landing-grid .card');
+        return {
+          fits: n.left >= 0 && n.right <= innerWidth && n.bottom <= innerHeight,
+          left: n.left,
+          right: innerWidth - n.right,
+          bottom: innerHeight - n.bottom,
+          nav: nav ? hit(nav.getBoundingClientRect()) : false,
+          card: first ? hit(first.getBoundingClientRect()) : false,
+          docOverflow: document.documentElement.scrollWidth - innerWidth,
+        };
+      });
+      t.ok(f.fits && f.left === 16 && f.right === 16 && f.docOverflow <= 0, `at 390px the notice fits, 16px from the edges (${JSON.stringify(f)})`);
+      t.ok(!f.nav && !f.card, `and covers neither the navigation row nor the first card (${JSON.stringify(f)})`);
+      await shot(p, 'notice-gallery-phone');
+    });
+    await inContext(page, DESKTOP, t, async (p) => {
+      await p.goto(`${base}/?me`, { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      await p.waitForTimeout(1500);
+      await shot(p, 'notice-my-projects-desktop');
     });
 
     // ---- the phone: the window and the note fit at 390px ----
@@ -498,8 +627,8 @@ export const suites = {
         await p.setInputFiles('.create-overlay .create-obj-input', obj);
       };
       await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
-      await waitWindow(p);
-      await p.click('.bz-device-decline');
+      await p.waitForSelector('.bz-device-notice', { timeout: 30_000 });
+      await p.click('.bz-device-notice .bz-device-decline');
       await p.click('.bz-device-off');
       await pickObj();
       await waitWindow(p);
