@@ -18,6 +18,12 @@
 // - after Frame: the hovered point again;
 // - a two-finger pinch (CDP touch) keeps the surface point under the
 //   pinch's middle fixed and zooms in.
+//
+// touchHold: two fingers hold the model (owner report: panning by touch
+// felt unresponsive). The surface point under the fingers' middle stays
+// under it, to within 2 px, at every move (before the fingers lift) and
+// after they lift (no coast), for a pan, a pinch and both at once; one
+// finger still orbits about the target and the pen still never pans.
 import { camera, devices, emptySpot, line, openForInput, probe, settle } from './smoke.mjs';
 
 // A world point on the page, in client px.
@@ -199,4 +205,171 @@ export const suites = {
     t.ok(gap(screen0, screen1) < 2, `and keeps the surface point under its middle put (moved ${gap(screen0, screen1).toFixed(2)} px)`);
     t.ok(dist3(after.position, R) < dist3(before.position, R) * 0.8, 'the camera moving toward it');
   },
+
+  async touchHold(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3');
+    await page.keyboard.press('f');
+    await settle(page);
+    const s0 = await sphere(page);
+    const mid = [Math.round(s0.mid[0] - s0.px * 0.2), Math.round(s0.mid[1] - s0.px * 0.15)];
+    const R = await surfaceAt(page, mid);
+    t.ok(!!R, 'the fingers start over the sphere');
+    const half = 30;
+    const fingers = ([x, y], w = half) => [[x - w, y], [x + w, y]];
+    const heldAt = async (where, label, tol = 2) => {
+      await frames(page);
+      const p = await onScreen(page, R);
+      t.ok(gap(p, where) < tol, `${label}: the held point is ${gap(p, where).toFixed(2)} px from the fingers' middle`);
+    };
+
+    // 1. A pan of N px, checked at each move and after the lift.
+    const N = [90, 40];
+    await dev.touch('touchStart', fingers(mid));
+    let before = await camera(page);
+    for (let i = 1; i <= 6; i++) {
+      const m = [mid[0] + (N[0] * i) / 6, mid[1] + (N[1] * i) / 6];
+      await dev.touch('touchMove', fingers(m));
+      if (i === 1 || i === 3 || i === 6) await heldAt(m, `pan, move ${i} of 6, fingers down`);
+    }
+    const panned = await camera(page);
+    t.ok(Math.abs(panned.distance - before.distance) < before.distance * 1e-3, 'a pan keeps the distance');
+    const end = [mid[0] + N[0], mid[1] + N[1]];
+    await dev.touch('touchEnd', []);
+    await heldAt(end, 'pan, after the lift');
+    await settle(page);
+    await heldAt(end, 'pan, once settled (no coast)');
+
+    // 2. A pinch about the middle, the fingers' middle fixed.
+    const R0 = await onScreen(page, R);
+    const mid2 = [Math.round(R0[0]), Math.round(R0[1])];
+    before = await camera(page);
+    await dev.touch('touchStart', fingers(mid2, 20));
+    for (const w of [30, 45, 60, 80]) {
+      await dev.touch('touchMove', fingers(mid2, w));
+    }
+    await heldAt(mid2, 'pinch out, fingers down');
+    after = await camera(page);
+    t.ok(after.distance < before.distance * 0.5, `the spread zooms in (${before.distance.toFixed(4)} to ${after.distance.toFixed(4)})`);
+    await dev.touch('touchEnd', []);
+    await heldAt(mid2, 'pinch out, after the lift');
+
+    // 3. Both at once: spread and slide, then pinch in.
+    const R1 = await onScreen(page, R);
+    const m1 = [Math.round(R1[0]), Math.round(R1[1])];
+    await dev.touch('touchStart', fingers(m1, 40));
+    const path = [[m1[0] - 25, m1[1] + 10, 50], [m1[0] - 50, m1[1] + 20, 35], [m1[0] - 70, m1[1] + 30, 25]];
+    for (const [x, y, w] of path) {
+      await dev.touch('touchMove', fingers([x, y], w));
+      await heldAt([x, y], 'pan and pinch together');
+    }
+    await dev.touch('touchEnd', []);
+    await settle(page);
+    await heldAt([m1[0] - 70, m1[1] + 30], 'pan and pinch, settled');
+
+    // 4. Off the model the orbit target's depth is held: a pan follows the
+    // fingers by the same rule (the target's plane moves 1:1).
+    await page.keyboard.press('f');
+    await settle(page);
+    const empty = await emptySpot(page);
+    t.ok(!!empty, 'a bare spot for the fingers');
+    const e0 = [Math.round(empty[0]), Math.round(empty[1])];
+    const T = await page.evaluate(() => window.__sculpt.viewer.getCameraState().target);
+    const T0 = await onScreen(page, T);
+    await dev.touch('touchStart', fingers(e0));
+    await dev.touch('touchMove', fingers([e0[0] + 40, e0[1] + 20]));
+    await dev.touch('touchMove', fingers([e0[0] + 80, e0[1] + 40]));
+    await frames(page);
+    const T1 = await onScreen(page, T);
+    t.ok(Math.abs(T1[0] - T0[0] - 80) < 3 && Math.abs(T1[1] - T0[1] - 40) < 3, `off the model the target's plane follows the fingers (${(T1[0] - T0[0]).toFixed(1)}, ${(T1[1] - T0[1]).toFixed(1)} for 80, 40)`);
+    await dev.touch('touchEnd', []);
+    await settle(page);
+
+    // 5. One finger still orbits (the target stays, the direction turns); the pen never pans.
+    await page.keyboard.press('f');
+    await settle(page);
+    const s5 = await sphere(page);
+    const o0 = await camera(page);
+    const from = [Math.round(s5.mid[0] + s5.px * 1.5), Math.round(s5.mid[1])];
+    await dev.finger(line(from, [from[0] - 120, from[1] + 20], 6));
+    await settle(page);
+    const o1 = await camera(page);
+    const dir = (c) => c.position.map((p, i) => p - c.target[i]);
+    t.ok(dist3(o1.target, o0.target) < o0.distance * 1e-4, 'one finger leaves the target');
+    t.ok(dist3(dir(o1), dir(o0)) > o0.distance * 0.05, 'and turns the view');
+
+    await page.keyboard.press('f');
+    await settle(page);
+    const s6 = await sphere(page);
+    const p0 = await camera(page);
+    const pa = [Math.round(s6.mid[0] - s6.px * 0.3), Math.round(s6.mid[1])];
+    await dev.penDrag(line(pa, [pa[0] + 60, pa[1] + 10], 4));
+    await settle(page);
+    const p1 = await camera(page);
+    t.ok(dist3(p1.position, p0.position) < p0.distance * 1e-6 && dist3(p1.target, p0.target) < p0.distance * 1e-6, 'a pen stroke never moves the camera');
+  },
+
+  // A big scene seen from far back with the orbit target well in front of
+  // the surface (what a zoom, a fit or a frame of something else leaves):
+  // OrbitControls scaled every pan by the distance to the target, so the
+  // model crept across the screen at a fraction of the fingers' speed.
+  async panDepth(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3');
+    await page.keyboard.press('f');
+    await settle(page);
+    const s0 = await sphere(page);
+    // Camera 4 radii out, target 0.4 radii in front of it: ten times nearer than the surface.
+    await page.evaluate(() => {
+      const { session, viewer } = window.__sculpt;
+      const b = session.getMesh().computeWorldBound();
+      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+      const r = (b[3] - b[0]) / 2;
+      const d = [0.3, 0.2, 1];
+      const n = Math.hypot(...d);
+      const pos = c.map((v, i) => v + (d[i] / n) * r * 4);
+      const tgt = pos.map((v, i) => v - (d[i] / n) * r * 0.4);
+      viewer.setCameraState(pos, tgt);
+    });
+    await settle(page);
+    const s1 = await sphere(page);
+    const mid = [Math.round(s1.mid[0] - s1.px * 0.2), Math.round(s1.mid[1] - s1.px * 0.1)];
+    const R = await surfaceAt(page, mid);
+    t.ok(!!R, `the sphere is under the fingers (it is ${(s1.px / s0.px).toFixed(2)} of its framed size on screen)`);
+    const cam = await camera(page);
+    const toSurface = dist3(cam.position, R);
+    t.ok(cam.distance < toSurface * 0.3, `the orbit target is much nearer than the surface (${cam.distance.toFixed(3)} vs ${toSurface.toFixed(3)})`);
+    const N = [60, 30];
+    const end = [mid[0] + N[0], mid[1] + N[1]];
+
+    // Two fingers.
+    await dev.touch('touchStart', [[mid[0] - 25, mid[1]], [mid[0] + 25, mid[1]]]);
+    for (let i = 1; i <= 4; i++) {
+      await dev.touch('touchMove', [[mid[0] - 25 + (N[0] * i) / 4, mid[1] + (N[1] * i) / 4], [mid[0] + 25 + (N[0] * i) / 4, mid[1] + (N[1] * i) / 4]]);
+    }
+    await frames(page);
+    let p = await onScreen(page, R);
+    t.ok(gap(p, end) < 2, `two fingers: the point under them moved with them (${gap(p, end).toFixed(2)} px off)`);
+    await dev.touch('touchEnd', []);
+    await settle(page);
+    p = await onScreen(page, R);
+    t.ok(gap(p, end) < 2, `and stays after the lift (${gap(p, end).toFixed(2)} px off)`);
+
+    // A middle-button drag (the pen barrel takes the same route), a press on the surface.
+    const R2 = await surfaceAt(page, end);
+    t.ok(!!R2, 'the mouse press is on the sphere');
+    await page.mouse.move(...end);
+    await page.mouse.down({ button: 'middle' });
+    const step = [-50, -20];
+    for (let i = 1; i <= 5; i++) await page.mouse.move(end[0] + (step[0] * i) / 5, end[1] + (step[1] * i) / 5);
+    await settle(page);
+    await page.mouse.up({ button: 'middle' });
+    await settle(page);
+    p = await onScreen(page, R2);
+    const want = [end[0] + step[0], end[1] + step[1]];
+    t.ok(gap(p, want) < 3, `middle drag: the point under the press followed the mouse (${gap(p, want).toFixed(2)} px off)`);
+  },
 };
+

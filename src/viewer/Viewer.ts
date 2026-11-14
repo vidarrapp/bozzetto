@@ -799,6 +799,7 @@ export class Viewer {
       ? manifest.defaults.material
       : 'lit';
     this.controls = new Controls(this.camera, this.renderer.domElement);
+    this.controls.setSurfacePick((at) => this.surfaceUnder(at));
 
     const tier: Tier = manifest.config.tiers.includes('hd') ? 'hd' : 'sd';
     this.streamer = new FrameStreamer(source, manifest.frames, tier);
@@ -2105,6 +2106,26 @@ export class Viewer {
     return s;
   }
 
+  /** An editor's own pick of the surface under a page point (setZoomFocus). */
+  private surfacePickOverride: ZoomFocus | null = null;
+  private readonly surfaceHit = new Vector3();
+
+  /**
+   * The surface under a page point, which two fingers hold on to: the
+   * editor's pick when it set one, else the subject and the meshes adopted
+   * into the scene. Null off the model.
+   */
+  private surfaceUnder(at: ScreenPoint | null): Vector3 | null {
+    if (!at) return null;
+    if (this.surfacePickOverride) return this.surfacePickOverride(at);
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pickNdc.set(((at.x - rect.left) / rect.width) * 2 - 1, -((at.y - rect.top) / rect.height) * 2 + 1);
+    this.picker.setFromCamera(this.pickNdc, this.camera);
+    const meshes = [this.display, ...this.sculptExtras].filter((m) => m.visible && m.geometry);
+    const hit = this.picker.intersectObjects(meshes, false)[0];
+    return hit ? this.surfaceHit.copy(hit.point) : null;
+  }
+
   /**
    * Tap-to-focus (double-click, or a double-tap on touch): raycast the pointer/finger
    * against the subject and lock the DoF focus plane onto the hit point, turning
@@ -2960,8 +2981,13 @@ export class Viewer {
    * and who is told when one has scaled the view about its point; null for
    * the plain zoom to the orbit target. See Controls.setZoomFocus.
    */
-  setZoomFocus(focus: ZoomFocus | null, onZoom: ((point: Vector3, s: number) => void) | null = null): void {
+  setZoomFocus(
+    focus: ZoomFocus | null,
+    onZoom: ((point: Vector3, s: number) => void) | null = null,
+    surface: ZoomFocus | null = null,
+  ): void {
     this.controls.setZoomFocus(focus);
+    this.surfacePickOverride = surface;
     this.controls.onFocusZoom = onZoom;
   }
 

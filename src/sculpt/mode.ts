@@ -1014,11 +1014,24 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // re-centring's record of the view moves with them, or the next frame
   // would read the zoom as part of the orbit and scale about the pivot
   // again.
-  viewer.setZoomFocus(zoomFocus, (point, s) => {
-    if (!prev) return;
-    prev.cam.sub(point).multiplyScalar(s).add(point);
-    prev.target.sub(point).multiplyScalar(s).add(point);
-  });
+  // Two fingers hold the surface under their middle (never the last edit).
+  const fingerPoint = new Vector3();
+  const surfaceUnder = (at: { x: number; y: number } | null): Vector3 | null => {
+    if (!at) return null;
+    const r = viewer.captureCanvas.getBoundingClientRect();
+    const pr = session.getPixelRatio();
+    const hit = session.surfacePointAt((at.x - r.left) * pr, (at.y - r.top) * pr);
+    return hit ? fingerPoint.set(hit[0], hit[1], hit[2]) : null;
+  };
+  viewer.setZoomFocus(
+    zoomFocus,
+    (point, s) => {
+      if (!prev) return;
+      prev.cam.sub(point).multiplyScalar(s).add(point);
+      prev.target.sub(point).multiplyScalar(s).add(point);
+    },
+    surfaceUnder,
+  );
 
   // Turntable (arrow keys / a wheel mapped to them). Two things separate it
   // from a drag-orbit: it always spins about the OBJECT's centre, never the
