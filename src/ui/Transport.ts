@@ -128,6 +128,7 @@ export class Transport {
   private setPlay(playing: boolean): void {
     this.playButton.innerHTML = `<i class="fi ${playing ? 'fi-ss-pause' : 'fi-ss-play'}" aria-hidden="true"></i>`;
     this.playButton.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    this.playButton.classList.toggle('is-playing', playing);
   }
 
   dispose(): void {

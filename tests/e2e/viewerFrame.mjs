@@ -18,6 +18,9 @@ const SHOTS = '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9
 const RED = 'rgb(171, 0, 0)';
 const BLACK = 'rgb(0, 0, 0)';
 const CONTROL = 'rgb(58, 58, 58)';
+const GREY_ICON = 'rgb(179, 179, 179)';
+/** Play's icon: light grey at rest, white while playing. */
+const playIconOk = (play) => play.icon === (play.label === 'Pause' ? WHITE : GREY_ICON);
 const STRIP = 'rgb(27, 27, 27)';
 
 const ready = (page) => page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
@@ -219,12 +222,13 @@ export const suites = {
 
     // --- the transport: the bar at the foot, play a regular button with a white icon ----------------
     t.ok(f.barClass.includes('transport--shell') && f.bar && f.bar.b === s.vh && Math.abs((f.bar.l + f.bar.r) / 2 - s.vw / 2) <= 1 && f.bar.w <= 752 && f.barBorderTop === '0px', `the transport is the shell's bar, flush at the bottom centre (${JSON.stringify(f.bar)})`);
-    t.ok(f.play.bg === CONTROL && f.play.icon === WHITE, `its play button is a regular button with a white icon (${JSON.stringify(f.play)})`);
+    t.ok(f.play.bg === CONTROL && playIconOk(f.play), `its play button is a regular button, its icon grey at rest and white while playing (${JSON.stringify(f.play)})`);
     t.eq(f.orangeButtons.join(), '', `and nothing on the screen is an orange button (${f.orangeButtons})`);
     t.eq(f.ticks, await page.evaluate(() => window.__bozzetto.manifest.stages.length), 'a tick for each stage');
     await page.click('.transport__play');
     t.ok(await page.evaluate(() => window.__bozzetto.timeline.playing), 'play plays');
     t.eq((await frameState(page)).play.label, 'Pause', 'and says Pause');
+    t.eq((await frameState(page)).play.icon, WHITE, 'and its icon is white while playing');
     await page.click('.transport__play');
     t.ok(!(await page.evaluate(() => window.__bozzetto.timeline.playing)), 'and again pauses');
     await page.evaluate(() => {
@@ -518,7 +522,7 @@ export const suites = {
     await page.screenshot({ path: `${SHOTS}/viewer-reviewer-moderation.png` });
     await page.keyboard.press('Escape');
     const play = await frameState(page);
-    t.ok(play.play.bg === CONTROL && play.play.icon === WHITE && play.orangeButtons.join() === '', `play is a regular button with a white icon in review mode too, and nothing is orange (${play.play.bg} ${play.orangeButtons})`);
+    t.ok(play.play.bg === CONTROL && playIconOk(play.play) && play.orangeButtons.join() === '', `play is the same regular button in review mode too, and nothing is orange (${play.play.bg} ${play.orangeButtons})`);
     await openStripMenu(page, 'File');
     t.eq((await rowsWithHints(page)).join(' | '), 'Close (Back to Review)', 'File holds Close, saying it goes back to Review');
     await page.keyboard.press('Escape');

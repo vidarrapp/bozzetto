@@ -724,13 +724,13 @@ body.bz-shell .bz-edge .sculpt-hist {
   align-items: stretch;
 }
 
+/* No square behind these, ever: a hover, a press, Solo on and Negative
+   latched or armed all show in the icon's colour alone, orange when on or
+   pressed (owner call, 2026-11-14). A touch leaves no grey hover behind. */
 body.bz-shell .bz-edge .sculpt-histbtn:not(:disabled):hover,
-body.bz-shell .bz-edge .sculpt-histbtn:not(:disabled):active,
 body.bz-shell .bz-edge .sculpt-solobtn:not(:disabled):hover,
-body.bz-shell .bz-edge .sculpt-solobtn:not(:disabled):active,
-body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='false']:not(:disabled):hover,
 body.bz-shell .bz-edge .sculpt-toolbar__btn:hover {
-  background: var(--bz-hover);
+  background: none;
   border: 0;
   color: var(--bz-text);
   opacity: 1;
@@ -743,24 +743,20 @@ body.bz-shell .bz-edge .sculpt-solobtn:disabled {
   opacity: 1;
 }
 
-/* Solo on and Negative latched are tools in hand: orange, icon black. Negative armed for a stroke: lifted, its icon orange. */
+body.bz-shell .bz-edge .sculpt-histbtn:not(:disabled):active,
+body.bz-shell .bz-edge .sculpt-solobtn:not(:disabled):active,
+body.bz-shell .bz-edge .sculpt-toolbar__btn:active,
 body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true'],
 body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true']:hover,
-body.bz-shell .bz-edge .sculpt-solobtn[aria-pressed='true']:active,
 body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--active,
-body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--active:hover {
-  background: var(--bz-orange);
-  border: 0;
-  color: var(--bz-on-accent);
-  opacity: 1;
-}
-
+body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--active:hover,
 body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--armed,
 body.bz-shell .bz-edge .sculpt-toolbar__btn.sculpt-toolbar__btn--armed:hover {
-  background: var(--bz-hover);
+  background: none;
   background-image: none;
   border: 0;
   color: var(--bz-orange);
+  opacity: 1;
 }
 
 /* The Negative button had a hotkey badge once; it has none here. */
@@ -1312,25 +1308,28 @@ body.bz-shell .transport--shell .transport__play {
   min-height: 28px;
 }
 
-/* Play and pause: a regular button with a white icon, filled white with a
-   black icon only while pressed, in the viewer, in review and in Present
-   alike; the orange is the line's and Save's. */
+/* Play and pause: a regular button, its icon light grey at rest and white
+   while pressed or playing, in the viewer, in review and in Present alike;
+   the orange is the line's and Save's. */
 body.bz-shell .transport--shell .transport__play {
   background: var(--bz-control);
-  color: var(--bz-white);
+  color: var(--bz-text-2);
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
-body.bz-shell .transport--shell .transport__play:hover:not(:disabled) {
-  background: var(--bz-hover);
+body.bz-shell .transport--shell .transport__play.is-playing,
+body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
   color: var(--bz-white);
 }
 
+body.bz-shell .transport--shell .transport__play:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
 body.bz-shell .transport--shell .transport__play:active:not(:disabled) {
-  background: var(--bz-white);
-  color: var(--bz-on-accent);
+  background: var(--bz-pressed);
 }
 
 body.bz-shell .transport--shell .transport__scrub {

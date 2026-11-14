@@ -51,6 +51,8 @@ export interface FileActionHooks {
    * while marks clean only what it sent, not strokes made while it ran.
    */
   onSceneClean(at?: unknown): void;
+  /** A new sculpt replaced the scene: the view goes to its sphere. */
+  onNewScene?(): void;
   /** A picture of the viewport, for a library card. */
   captureThumb(): Promise<Blob>;
   /**
@@ -199,6 +201,7 @@ export class FileActions {
     this.setLink(null);
     this.setUnsent(null);
     this.hooks.onSceneClean();
+    this.hooks.onNewScene?.();
   }
 
   /** Whether the scene has no objects (the last one deleted): nothing to save. */

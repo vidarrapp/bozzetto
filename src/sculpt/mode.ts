@@ -1491,6 +1491,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     hasWork,
     cleanPoint: () => session.getStateManager().getCurrentState(),
     onSceneClean: markSceneClean,
+    // The old scene's view would leave the new sphere off screen or tiny.
+    onNewScene: () => frameAll(),
     // The library card wants the same picture the gallery's in-progress
     // card gets, taken at the moment you press Save rather than on the way out.
     captureThumb: () => viewer.captureThumbnail(),
