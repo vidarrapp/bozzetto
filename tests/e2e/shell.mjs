@@ -642,6 +642,35 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
     t.ok(true, 'and go while it is open');
     t.ok((await shown(page, '.bz-edge .sculpt-solobtn')) && (await shown(page, '.bz-edge [data-hist="undo"]')) && (await shown(page, '.bz-edge .sculpt-toolbar__btn')), 'Undo, Redo, Solo and Negative always show');
+    // No square behind them in any state: Solo on, Negative latched or a hover show in the icon's colour alone.
+    const edgeLook = () =>
+      page.evaluate(() =>
+        ['.bz-edge .sculpt-solobtn', '.bz-edge [data-hist="undo"]', '.bz-edge .sculpt-toolbar__btn'].map((sel) => {
+          const b = document.querySelector(sel);
+          const cs = getComputedStyle(b);
+          return { bg: cs.backgroundColor, icon: getComputedStyle(b.querySelector('i, svg') ?? b).color };
+        }),
+      );
+    const clear = (l) => l.every((x) => x.bg === 'rgba(0, 0, 0, 0)');
+    const undoBox = await page.locator('.bz-edge [data-hist="undo"]').boundingBox();
+    await page.mouse.move(undoBox.x + 20, undoBox.y + 20);
+    let looks = await edgeLook();
+    t.ok(clear(looks), `the edge buttons have no square behind them, hovered or not (${JSON.stringify(looks)})`);
+    await page.evaluate(() => {
+      document.querySelector('.bz-edge .sculpt-solobtn').click();
+      document.querySelector('.bz-edge .sculpt-toolbar__btn').click();
+    });
+    await page.waitForTimeout(150);
+    looks = await edgeLook();
+    const soloOn = await page.evaluate(() => document.querySelector('.bz-edge .sculpt-solobtn').getAttribute('aria-pressed') === 'true');
+    const ORANGE = 'rgb(255, 90, 31)';
+    t.ok(clear(looks) && looks[2].icon === ORANGE && (!soloOn || looks[0].icon === ORANGE),
+      `Negative on (and Solo, when on) turn their icons orange, still with no square (solo ${soloOn}, ${JSON.stringify(looks)})`);
+    await page.evaluate(() => {
+      document.querySelector('.bz-edge .sculpt-solobtn').click();
+      document.querySelector('.bz-edge .sculpt-toolbar__btn').click();
+    });
+    await page.mouse.move(600, 400);
     await page.keyboard.press(']');
     await page.waitForFunction(() => !document.querySelector('.bz-edge__fields').hidden, null, { timeout: 4000 });
     t.ok(true, 'a size change by hotkey brings them up for a moment');

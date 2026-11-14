@@ -199,4 +199,26 @@ export const suites = {
     t.ok(gap(screen0, screen1) < 2, `and keeps the surface point under its middle put (moved ${gap(screen0, screen1).toFixed(2)} px)`);
     t.ok(dist3(after.position, R) < dist3(before.position, R) * 0.8, 'the camera moving toward it');
   },
+
+  // File > New sculpt frames its sphere, wherever the last scene left the view.
+  async newSculptFrames(page, base, t) {
+    await openForInput(page, base);
+    // The view somewhere else: far off and to the side, as a large scene leaves it.
+    await page.evaluate(() => {
+      const { viewer } = window.__sculpt;
+      viewer.camera.position.set(viewer.camera.position.x + 3, viewer.camera.position.y + 2, viewer.camera.position.z * 8);
+      viewer.camera.updateMatrixWorld();
+    });
+    await frames(page);
+    await page.evaluate(() => window.__sculpt.fileActions.newScene());
+    await frames(page);
+    await settle(page);
+    const s = await sphere(page);
+    const box = await page.evaluate(() => {
+      const r = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, h: r.height };
+    });
+    t.ok(gap(s.mid, [box.cx, box.cy]) < box.h * 0.1, `the new sphere sits in the middle of the view (${at(s.mid)} against ${at([box.cx, box.cy])})`);
+    t.ok(s.px > box.h * 0.15, `and fills it, not a dot in the distance (radius ${s.px.toFixed(0)} px of ${box.h.toFixed(0)})`);
+  },
 };
