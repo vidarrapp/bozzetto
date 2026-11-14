@@ -150,11 +150,14 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **One menu on every page.** The gallery, Community, My projects, Account, Review and Owner tools now have the same top menu as Sculpt, with **File**, **Go** and **Help**, the page's name in the middle and **Sign in** or your @handle at the right.
+- **Your @handle in the editors.** When you are signed in, your @handle menu with **Account** and **Sign out** is at the right end of the top bar in Sculpt, Armature, Present and the viewer.
+- **A sharp top bar on iPad.** The top row on the pages and in the editors stays sharp while you scroll, because only the content scrolls.
 - **Open recent.** **File > Open recent** lists the last ten projects you opened or saved, in any mode, newest first, and opens one in its own mode.
 - **The same menus everywhere.** Sculpt, Armature, Present and the viewer now have File, Edit, View and Help in that order, with the same items in the same places and **Preferences…** at the end of Edit. The viewer's View menu has one **Frame all** (on `F`) and **Shadows**, and its Help has all three topics.
 - **A Material tab.** Albedo, Roughness and Metalness, with the mode, shading and wireframe, now sit together in a **Material** panel next to Model on the left. The Model panel starts at Topology and the Render panel at Lighting.
 - **Your choice about saving.** On first visit Bozzetto asks whether to keep your work, settings and an offline copy on this device. You can change it under Edit > Preferences.
-- **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.
+- **Pages in the new look.** My projects, Community, Account, Review and Owner tools share the title strip and one footer. Lists are rows, galleries are cards, and delete is a trash icon.
 - **Present is one workspace.** Creating a timelapse and editing a published project both happen in Present, which has a **Frames** tab for the files.
 - **The viewer in the new frame.** A published piece opens under the same title strip as the workspaces, with the transport along the foot.
 - **File and Moderation in the viewer.** The viewer has a **File** menu, with **New sculpt from this** on the site's templates, **Edit in Present** for the owner, and **Close**, which goes back to Community, My projects, Review or the gallery, whichever you came from. **Report…** and the review actions are in a **Moderation** menu, and play and pause is a plain button whose icon lights up while playing.

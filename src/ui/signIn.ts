@@ -1,7 +1,7 @@
 import { accountsOn, errorText } from '../net/account';
 import { signOut, type SignInVia } from '../admin/api';
 import { readyToLeave } from './leaving';
-import { topChip } from './topbar';
+import { stripButton } from '../sculpt/ui/TitleStrip';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { requireSaving } from './deviceChoice';
 
@@ -89,14 +89,14 @@ export function signInButton(
 }
 
 /**
- * Sign out, as a top-row chip (owner request: a sign-in should not stay
+ * Sign out, as a strip button (owner request: a sign-in should not stay
  * behind on a device the owner is done with). With accounts off it goes
  * through Access's logout and comes back to the gallery; with them on it
  * ends the account's session (admin/api signOut). The desktop app signs
  * out in Server settings instead, where it signs in.
  */
 export function signOutChip(): HTMLElement {
-  const b = topChip('Sign out') as HTMLButtonElement;
+  const b = stripButton('Sign out');
   b.addEventListener('click', () => {
     b.disabled = true;
     void signOut().catch((err: unknown) => {

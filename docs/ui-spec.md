@@ -255,7 +255,37 @@ Every toggle in View carries a check, so the menu keeps a check column.
 - About and credits (on the Mac: About Bozzetto, in the Bozzetto menu)
 
 Commands on one object's parts (split groups, delete hidden) stay in the
-Model panel, not in a menu. The gallery has no Help menu; every other place has the three Help items.
+Model panel, not in a menu. Every place has the three Help items.
+
+**The pages' menu.** The gallery, Community, member pages, My projects,
+Account, Review and Owner tools have the same title strip as the
+workspaces (same height, look, phone rules), made by `src/ui/pageNav.ts`
+from `TitleStrip` with its `page` option: no hide button, no workspace path.
+There are no corner chips and no logotype in the row (the gallery keeps its
+big logotype and tagline in the page).
+
+- **File:** New sculpt, New armature, Import OBJ…. What the gallery's
+  Create card offers, with the same question about saving on this device
+  that Import OBJ asks.
+- **Go:** Gallery, Community (with accounts), My projects (signed in, not
+  suspended), Review with what waits in its name (owner and moderators),
+  Owner tools (the owner). Each only for whoever may see it today; the page
+  you are on has the check.
+- **Help:** the same three items. Hotkeys opens the guide on a page too.
+- **Middle:** the page's name: Gallery, Community, @handle, My projects,
+  Account, Review, Owner tools.
+- **Right:** a guest sees Install (where shown today) and Sign in as strip
+  buttons; signed in, the @handle menu (Account, Sign out); a suspended
+  account sees Suspended, which says why, and Sign out.
+- **The @handle menu** is also at the right end of every workspace and
+  viewer strip when signed in, last before the hide button. Star, Publish,
+  Save and Not saved stay to its left.
+
+**The document never scrolls.** On a page html and body are the screen's
+height and the strip is fixed at the top; the content scrolls inside its own
+container below it (`.page-scroll`), and in the workspaces and the viewer
+nothing scrolls. iPadOS 26 blurs whatever sits at the top edge once the
+document itself scrolls, and there is no CSS switch to turn that off.
 
 ## 6. Layout
 
@@ -283,7 +313,7 @@ Model panel, not in a menu. The gallery has no Help menu; every other place has 
   object (name, triangles, level), keys regular and values bold. An
   unsaved project shows "Edited" after its name, in regular weight.
   Under 900px wide the readout drops the triangle count, then the level.
-- Right: Publish, a quiet button, then the hide-interface icon.
+- Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
 
 ### Panels

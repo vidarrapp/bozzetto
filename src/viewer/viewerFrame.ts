@@ -6,6 +6,7 @@ import { mountViewerParts } from './mountViewer';
 import { pageChrome } from '../ui/ChromeToggle';
 import { authorHref } from '../net/community';
 import { TitleStrip } from '../sculpt/ui/TitleStrip';
+import { mountAccountHandle } from '../ui/account/menu';
 import { TopMenu, type MenuItem } from '../sculpt/ui/TopMenu';
 import { originOf, type Origin } from '../ui/origin';
 import { helpMenuItems } from '../help/menu';
@@ -77,6 +78,7 @@ export async function mountPublicViewer(
   const frames = manifest.config.frameCount;
 
   const strip = new TitleStrip({ path: false, savingNote: false });
+  mountAccountHandle(strip);
   document.body.classList.add('bz-viewer');
   const chrome = pageChrome();
 

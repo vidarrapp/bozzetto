@@ -20,6 +20,7 @@ import { onTap } from '../ui/dom';
 import { signInAgain } from '../ui/signIn';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, stripButton } from '../sculpt/ui/TitleStrip';
+import { mountAccountHandle } from '../ui/account/menu';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { failNotice, statusToast } from '../sculpt/ui/statusToast';
 import { viewMenuItems } from '../sculpt/ui/viewMenu';
@@ -160,6 +161,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
 
   // --- the strip ---------------------------------------------------------------
   const strip = new TitleStrip();
+  mountAccountHandle(strip);
   let projectPanel: ProjectPanel;
   let framesPanel: FramesPanel;
   let saving = false;

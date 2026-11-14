@@ -12,7 +12,7 @@
  * this file is where things are and how big.
  */
 
-body.bz-shell {
+body:is(.bz-shell, .bz-page) {
   /* The panel's own fill: its surface at the Panel opacity preference. */
   --bz-panel-fill: var(--bz-panel);
   /* The title strip's height, and what hangs from it: the folder-tab row
@@ -30,7 +30,7 @@ body.bz-shell {
    its words and buttons are a touch target and fit inside it. An iPad is
    wider than this and keeps 24px, as a desktop does. */
 @media (max-width: 599px) and (pointer: coarse) {
-  body.bz-shell {
+  body:is(.bz-shell, .bz-page) {
     --bz-strip-h: 32px;
   }
 }
@@ -45,7 +45,7 @@ body.bz-shell {
    The strip replaces it: the gallery link (File > Close), Help (Help menu,
    and H still works), Present (View) and the rest. Hidden, not removed:
    the page under the mode owns those elements. */
-body.bz-shell > .topbar {
+body:is(.bz-shell, .bz-page) > .topbar {
   display: none;
 }
 
@@ -64,7 +64,7 @@ body.bz-shell .help-guide {
 }
 
 /* --- the title strip ---------------------------------------------------- */
-body.bz-shell .bz-strip {
+body:is(.bz-shell, .bz-page) .bz-strip {
   position: fixed;
   top: 0;
   left: 0;
@@ -82,14 +82,14 @@ body.bz-shell .bz-strip {
   -webkit-user-select: none;
 }
 
-body.bz-shell .bz-strip__left {
+body:is(.bz-shell, .bz-page) .bz-strip__left {
   grid-column: 1;
   display: flex;
   align-items: center;
   min-width: 0;
 }
 
-body.bz-shell .bz-strip__menus {
+body:is(.bz-shell, .bz-page) .bz-strip__menus {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -100,9 +100,9 @@ body.bz-shell .bz-strip__menus {
 
 /* A menu's name and the strip's text buttons: bare text, 16px in from the
    edge, 20px from the next. The fill shows while a menu is open. */
-body.bz-shell .bz-menuname,
-body.bz-shell .bz-strip__btn,
-body.bz-shell .bz-strip__hide {
+body:is(.bz-shell, .bz-page) .bz-menuname,
+body:is(.bz-shell, .bz-page) .bz-strip__btn,
+body:is(.bz-shell, .bz-page) .bz-strip__hide {
   appearance: none;
   margin: 0;
   padding: 0 8px;
@@ -120,33 +120,33 @@ body.bz-shell .bz-strip__hide {
   -webkit-tap-highlight-color: transparent;
 }
 
-body.bz-shell .bz-menuname[hidden] {
+body:is(.bz-shell, .bz-page) .bz-menuname[hidden] {
   display: none;
 }
 
-body.bz-shell .bz-menuname:hover,
-body.bz-shell .bz-strip__btn:hover,
-body.bz-shell .bz-strip__hide:hover,
-body.bz-shell .bz-menuname.is-open,
-body.bz-shell .bz-strip__btn.topchip--open,
-body.bz-shell .bz-strip__hide--on {
+body:is(.bz-shell, .bz-page) .bz-menuname:hover,
+body:is(.bz-shell, .bz-page) .bz-strip__btn:hover,
+body:is(.bz-shell, .bz-page) .bz-strip__hide:hover,
+body:is(.bz-shell, .bz-page) .bz-menuname.is-open,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.topchip--open,
+body:is(.bz-shell, .bz-page) .bz-strip__hide--on {
   background: var(--bz-hover);
 }
 
-body.bz-shell .bz-menuname:focus-visible,
-body.bz-shell .bz-strip__btn:focus-visible,
-body.bz-shell .bz-strip__hide:focus-visible {
+body:is(.bz-shell, .bz-page) .bz-menuname:focus-visible,
+body:is(.bz-shell, .bz-page) .bz-strip__btn:focus-visible,
+body:is(.bz-shell, .bz-page) .bz-strip__hide:focus-visible {
   outline: var(--bz-focus);
   outline-offset: -2px;
 }
 
 /* The menus hang from the strip's lower edge, left edges level with the names. */
-body.bz-shell .file-menu {
+body:is(.bz-shell, .bz-page) .file-menu {
   z-index: 40;
 }
 
 /* "Not saved": quiet secondary text beside the hide button while saving is off. */
-body.bz-shell .bz-strip__off {
+body:is(.bz-shell, .bz-page) .bz-strip__off {
   flex: 0 0 auto;
   padding: 0 8px;
   color: var(--bz-text-2);
@@ -154,11 +154,11 @@ body.bz-shell .bz-strip__off {
   white-space: nowrap;
 }
 
-body.bz-shell .bz-strip__off[hidden] {
+body:is(.bz-shell, .bz-page) .bz-strip__off[hidden] {
   display: none;
 }
 
-body.bz-shell .bz-strip__right {
+body:is(.bz-shell, .bz-page) .bz-strip__right {
   grid-column: 3;
   display: flex;
   align-items: center;
@@ -167,21 +167,21 @@ body.bz-shell .bz-strip__right {
   padding-right: 12px;
 }
 
-body.bz-shell .bz-strip__hide {
+body:is(.bz-shell, .bz-page) .bz-strip__hide {
   display: grid;
   place-items: center;
   width: var(--bz-strip-h);
   padding: 0;
 }
 
-body.bz-shell .bz-strip__hide svg {
+body:is(.bz-shell, .bz-page) .bz-strip__hide svg {
   display: block;
   width: 16px;
   height: 16px;
 }
 
 /* The readout: the project's name in bold, then keys regular and values bold. */
-body.bz-shell .bz-readout {
+body:is(.bz-shell, .bz-page) .bz-readout {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,40 +191,40 @@ body.bz-shell .bz-readout {
   white-space: nowrap;
 }
 
-body.bz-shell .bz-readout__name {
+body:is(.bz-shell, .bz-page) .bz-readout__name {
   font-weight: 700;
 }
 
-body.bz-shell .bz-readout__edited {
+body:is(.bz-shell, .bz-page) .bz-readout__edited {
   margin-left: -8px;
   font-weight: 400;
 }
 
-body.bz-shell .bz-readout__item {
+body:is(.bz-shell, .bz-page) .bz-readout__item {
   display: inline-flex;
   gap: 6px;
 }
 
-body.bz-shell .bz-readout__key {
+body:is(.bz-shell, .bz-page) .bz-readout__key {
   color: var(--bz-text-2);
   font-weight: 400;
 }
 
-body.bz-shell .bz-readout__val {
+body:is(.bz-shell, .bz-page) .bz-readout__val {
   font-weight: 700;
 }
 
 /* Narrow: the readout goes before the path does (under 1000px it would meet the path). */
 @media (max-width: 999px) {
-  body.bz-shell .bz-strip {
+  body:is(.bz-shell, .bz-page) .bz-strip {
     grid-template-columns: minmax(min-content, 1fr) auto;
   }
 
-  body.bz-shell .bz-strip__right {
+  body:is(.bz-shell, .bz-page) .bz-strip__right {
     grid-column: 2;
   }
 
-  body.bz-shell .bz-readout {
+  body:is(.bz-shell, .bz-page) .bz-readout {
     display: none;
   }
 }
@@ -234,7 +234,7 @@ body.bz-shell .bz-readout__val {
    with a quiet arrow between. The step you are in sits on the viewport's
    colour and is bold; the others are dim and fill on hover. In Armature
    Present is dimmer still and cannot be pressed. */
-body.bz-shell .bz-strip__sep {
+body:is(.bz-shell, .bz-page) .bz-strip__sep {
   flex: 0 0 auto;
   width: 1px;
   height: 12px;
@@ -302,7 +302,7 @@ body.bz-shell .bz-ws__sep {
 
 /* A very narrow phone: no path at all; the View menu has the workspaces. */
 @media (max-width: 379px) {
-  body.bz-shell .bz-strip__sep,
+  body:is(.bz-shell, .bz-page) .bz-strip__sep,
   body.bz-shell .bz-ws {
     display: none;
   }
@@ -992,16 +992,16 @@ body.bz-shell.chrome-hidden .present-bar {
 /* Publish (Present only) and Save (Present of a published project): the one
    orange action of the workspace, at the
    right of the strip. */
-body.bz-shell .bz-strip__btn.bz-strip__btn--primary,
-body.bz-shell .bz-strip__btn.bz-strip__btn--primary:hover,
-body.bz-shell .bz-strip__btn.bz-strip__btn--primary.topchip--open {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--primary,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--primary:hover,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--primary.topchip--open {
   min-height: var(--bz-strip-h);
   padding: 0 12px;
   background: var(--bz-orange);
   color: var(--bz-on-accent);
 }
 
-body.bz-shell .bz-strip__btn.bz-strip__btn--primary[hidden] {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--primary[hidden] {
   display: none;
 }
 
@@ -1009,7 +1009,7 @@ body.bz-shell .bz-strip__btn.bz-strip__btn--primary[hidden] {
    The owner's page for a timelapse or a model on the site: the same strip
    and folder tabs, Project at the left, Render and Output at the right,
    and the transport where the tool bar stood. `body.bz-frames` marks it. */
-body.bz-shell .bz-readout__extras {
+body:is(.bz-shell, .bz-page) .bz-readout__extras {
   display: contents;
 }
 
@@ -1430,69 +1430,69 @@ body.bz-shell .transport--shell .transport__frame {
    marks it. */
 
 /* A link in the strip (Close, Edit, Review) is the strip's button. */
-body.bz-shell a.bz-strip__btn {
+body:is(.bz-shell, .bz-page) a.bz-strip__btn {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
 }
 
-body.bz-shell .bz-strip__btn:disabled {
+body:is(.bz-shell, .bz-page) .bz-strip__btn:disabled {
   color: var(--bz-text-3);
   cursor: default;
 }
 
 /* The decisive button of the reviewer's strip: orange for the main action
    (Approve, Unhide), red for what takes the work down (Hide). */
-body.bz-shell .bz-strip__btn.bz-strip__btn--danger,
-body.bz-shell .bz-strip__btn.bz-strip__btn--danger:hover,
-body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--danger,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--danger:hover,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--danger:disabled {
   padding: 0 12px;
   background: var(--bz-red);
   color: var(--bz-on-red);
 }
 
-body.bz-shell .bz-strip__btn.bz-strip__btn--primary:disabled,
-body.bz-shell .bz-strip__btn.bz-strip__btn--danger:disabled {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--primary:disabled,
+body:is(.bz-shell, .bz-page) .bz-strip__btn.bz-strip__btn--danger:disabled {
   opacity: 0.6;
   cursor: progress;
 }
 
 /* The star of a member's work: a glyph, the width of the hide button; full
    white when starred, grey when not, never orange or yellow. */
-body.bz-shell .bz-strip__btn.viewer-star {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.viewer-star {
   width: 24px;
   padding: 0;
   font-size: 15px;
   color: var(--bz-text-3);
 }
 
-body.bz-shell .bz-strip__btn.viewer-star[aria-pressed='true'] {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.viewer-star[aria-pressed='true'] {
   color: #fff;
 }
 
-body.bz-shell .bz-strip__btn.viewer-star .fi {
+body:is(.bz-shell, .bz-page) .bz-strip__btn.viewer-star .fi {
   display: block;
   line-height: 1;
   pointer-events: none;
 }
 
 /* "by @handle" after the title: a link to the author's page, in the readout's quiet tone. */
-body.bz-shell .bz-readout__by {
+body:is(.bz-shell, .bz-page) .bz-readout__by {
   margin-left: -8px;
   color: var(--bz-text-2);
   text-decoration: none;
 }
 
-body.bz-shell .bz-readout__by:hover {
+body:is(.bz-shell, .bz-page) .bz-readout__by:hover {
   color: var(--bz-text);
 }
 
-body.bz-shell .bz-readout__by:focus-visible {
+body:is(.bz-shell, .bz-page) .bz-readout__by:focus-visible {
   outline: var(--bz-focus);
   outline-offset: 2px;
 }
 
-body.bz-shell .bz-readout__key:empty {
+body:is(.bz-shell, .bz-page) .bz-readout__key:empty {
   display: none;
 }
 
@@ -1534,24 +1534,29 @@ body.bz-viewer .transport--shell:has(.transport__stage-desc:not(:empty)) .transp
   top: -64px;
 }
 
+/* Where the signed-in account's @handle menu stands at the right of the strip: no box of its own. */
+body:is(.bz-shell, .bz-page) .bz-strip__account {
+  display: contents;
+}
+
 /* A row that opens a second list: its chevron at the right, the row lit while the list is out. */
-body.bz-shell .file-menu__chev {
+body:is(.bz-shell, .bz-page) .file-menu__chev {
   font: 400 16px/16px var(--bz-font);
 }
 
-body.bz-shell .file-menu__item--open {
+body:is(.bz-shell, .bz-page) .file-menu__item--open {
   background: var(--bz-hover);
 }
 
 /* The second list hangs beside the first, one step above it. */
-body.bz-shell .file-menu--sub {
+body:is(.bz-shell, .bz-page) .file-menu--sub {
   z-index: 41;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
 }
 
 @media (max-width: 600px) {
-  body.bz-shell .file-menu--sub {
+  body:is(.bz-shell, .bz-page) .file-menu--sub {
     max-width: calc(100vw - 16px);
   }
 }

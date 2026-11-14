@@ -16,6 +16,8 @@ export type MenuItem =
       key?: MenuText;
       /** Greyed out and skipped by the arrows while this says no (read on each open). */
       enabled?: () => boolean;
+      /** The place this row leads to is where the person is now: it carries the check, as a toggle that is on does. */
+      current?: () => boolean;
       action: () => void | Promise<void>;
     }
   | {
@@ -207,8 +209,13 @@ export class TopMenu {
     // where that depends on more than its name (signed in or not); a key
     // is the hotkey that does the same, at the right. Items with neither
     // stay plain text.
+    if (item.current) {
+      b.classList.add('file-menu__item--toggle');
+      b.setAttribute('role', 'menuitemradio');
+    }
     const paint = (): void => {
       if (item.enabled) b.disabled = !item.enabled();
+      if (item.current) b.setAttribute('aria-checked', item.current() ? 'true' : 'false');
       const hint = read(item.hint);
       const key = read(item.key);
       if (!hint && !key) {
@@ -229,7 +236,7 @@ export class TopMenu {
     };
     paint();
     this.painters.push(paint);
-    b.setAttribute('role', 'menuitem');
+    if (!item.current) b.setAttribute('role', 'menuitem');
     onTap(b, () => {
       if (b.disabled) return;
       this.run(item.action);

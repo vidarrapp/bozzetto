@@ -597,7 +597,7 @@ export const suites = {
       // The viewer: Edit, quiet, for the owner already signed in on this device.
       await p.goto(`${origin}/?tl=model-demo`, { waitUntil: 'domcontentloaded' });
       await p.waitForFunction(() => document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'), null, { timeout: 30_000 });
-      const right = await p.evaluate(() => [...document.querySelectorAll('.bz-strip__right > *')].map((c) => c.getAttribute('aria-label') || c.textContent.trim()).join());
+      const right = await p.evaluate(() => [...document.querySelectorAll('.bz-strip__right > *')].map((c) => c.getAttribute('aria-label') || c.textContent.trim()).filter(Boolean).join());
       t.ok(right === 'Hide the interface', `Edit has left the right of the strip (${right})`);
       await p.click('.bz-menuname:has-text("File")');
       await Promise.all([p.waitForURL((u) => u.searchParams.get('present') === '1' && u.searchParams.get('tl') === 'model-demo', { timeout: 30_000 }), p.click('.file-menu--file .file-menu__item:has-text("Edit in Present")')]);

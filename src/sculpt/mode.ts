@@ -55,6 +55,7 @@ import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
 import { helpMenuItems } from '../help/menu';
 import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
+import { mountAccountHandle } from '../ui/account/menu';
 import { askWindow } from '../ui/askWindow';
 import { keyFor, viewMenuItems } from './ui/viewMenu';
 import { editMenuItems } from './ui/menuShape';
@@ -763,6 +764,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // object (name, live triangle count, level), Publish and the hide button.
   // Its readout is what the stats corner at the top left of the view was.
   const strip = new TitleStrip();
+  mountAccountHandle(strip);
   // The file actions come later in the mount; the readout asks through this.
   let fileActionsRef: FileActions | null = null;
   let goArmature: () => Promise<void> = async () => undefined;

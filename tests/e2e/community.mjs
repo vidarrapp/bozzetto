@@ -122,9 +122,17 @@ const shareOf = (b, id) =>
 /** The Review chip, once the page has drawn its chips: {shown, count}. */
 async function reviewChip(b, query = '') {
   await go(b, query);
-  const shown = await waitFor(b.page, () => !!document.querySelector('.pagenav .review-chip'));
-  if (shown) await b.page.waitForSelector('.review-chip__count', { timeout: 5000 }).catch(() => {});
-  return b.page.evaluate(() => ({ shown: !!document.querySelector('.review-chip'), count: document.querySelector('.review-chip__count')?.textContent ?? null }));
+  await waitFor(b.page, () => !!document.querySelector('body.bz-page .bz-strip__right .bz-strip__btn, body.bz-page .bz-strip__right .account-menu__chip'));
+  await b.page.waitForTimeout(600);
+  // Review is a place in Go, with what waits in its name.
+  await b.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((x) => x.textContent === 'Go')?.click());
+  await b.page.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
+  const seen = await b.page.evaluate(() => {
+    const row = [...document.querySelectorAll('.file-menu--go .file-menu__item')].find((c) => /^Review/.test(c.textContent.trim()));
+    return { shown: !!row, count: /\((\d+)\)$/.exec(row?.textContent.trim() ?? '')?.[1] ?? null };
+  });
+  await b.page.keyboard.press('Escape');
+  return seen;
 }
 
 /** A Review tab, drawn: its cards [{id, shared, state, actions}] (or, on History, its lines). */
@@ -652,7 +660,7 @@ async function notAReviewer(b, t) {
     search: location.search,
     note: document.querySelector('.review-refused')?.textContent ?? null,
     grid: !!document.querySelector('#landing-grid'),
-    chip: !!document.querySelector('.review-chip'),
+    chip: [...document.querySelectorAll('.bz-strip__menus .bz-menuname, .file-menu--go .file-menu__item')].some((c) => /^Review/.test(c.textContent.trim())),
   }));
   t.ok(seen.search === '' && seen.grid && !!seen.note && !seen.chip, `a member opening /?review gets the gallery, with a note, and has no Review chip (${show(seen)})`);
 }

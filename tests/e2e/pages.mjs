@@ -3,10 +3,11 @@
 // (startAccountsServer) at http://localhost:<port>, with seeded accounts
 // whose session cookies the browsers are handed, as the community suite does.
 //
-// The path: every page has the one navigation row - the logotype, then the
-// links its person may see (a guest: Gallery and Community; a member adds
+// The path: every page has the workspaces' title strip - File, Go, Help, the
+// page's name, the account at the right - and Go lists the places its person
+// may see (a guest: Gallery and Community; a member adds
 // My projects; a moderator Review, with its count; the owner Owner tools),
-// the page one is on marked - and none of the corner chips; delete is a
+// the page one is on checked - and none of the corner chips; delete is a
 // trash icon named "Delete <title>", grey at rest and red under the pointer
 // or on focus, while the question after it keeps its filled red button and
 // "Delete account…" is white text, red under the pointer; orange is the one main action of a page
@@ -76,42 +77,54 @@ async function browserFor(browser, origin, who, viewport = { width: 1440, height
 
 const waitFor = (p, fn, arg, timeout = 20_000) => p.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
 
-/** Open a page and wait until its navigation row has been filled for its person. */
+/** Open a page and wait until its title strip has been filled for its person. */
 async function open(b, path, ready) {
   await b.page.goto(`${b.origin}${path}`, { waitUntil: 'domcontentloaded' });
-  await b.page.waitForSelector('.pagenav__links', { timeout: 30_000 });
+  await b.page.waitForSelector('body.bz-page .bz-strip', { timeout: 30_000 });
   if (ready) await b.page.waitForSelector(ready, { timeout: 30_000 }).catch(() => {});
-  // The row is drawn once the page knows who is signed in.
-  await waitFor(b.page, () => document.querySelectorAll('.pagenav__account > *').length > 0 || document.querySelectorAll('.pagenav__link').length > 1);
+  // The strip is drawn once the page knows who is signed in.
+  await waitFor(b.page, () => document.querySelectorAll('.bz-strip__right .bz-strip__btn, .bz-strip__right .account-menu__chip, .file-menu--go .file-menu__item:nth-child(2)').length > 0);
+  await b.page.waitForTimeout(400);
 }
 
-/** The row, as drawn: its links, the current one, the logotype, and what the corner chips would have been. */
-const navOf = (p) =>
-  p.evaluate(() => {
-    const nav = document.querySelector('.pagenav');
-    const links = [...document.querySelectorAll('.pagenav__link')];
-    const logo = document.querySelector('.pagenav__logo');
-    const tops = new Set(links.map((l) => Math.round(l.getBoundingClientRect().top)));
+/** The Go menu, opened and read: its rows, the checked one, Review's count. Then closed. */
+const goOf = async (p) => {
+  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await p.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
+  const rows = await p.evaluate(() => [...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => ({ text: c.textContent.trim(), on: c.getAttribute('aria-checked') === 'true' })));
+  await p.keyboard.press('Escape');
+  return rows;
+};
+
+/** The strip, as drawn: its menus, Go's rows, the page's name, what is at the right, its height. */
+const navOf = async (p) => {
+  const go = await goOf(p);
+  const rest = await p.evaluate(() => {
+    const strip = document.querySelector('.bz-strip');
     return {
-      first: !!nav && (nav.parentElement?.firstElementChild === nav),
-      logo: logo ? { text: logo.querySelector('img[src$="bozzetto-script-ink.svg"]')?.getAttribute('alt') ?? '', drawn: (logo.querySelector('img')?.naturalWidth ?? 0) > 0, href: logo.getAttribute('href'), left: logo.getBoundingClientRect().left } : null,
-      links: links.map((l) => l.textContent.replace(/\d+$/, '')),
-      current: links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => l.textContent.replace(/\d+$/, '')),
-      currentWeight: links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => getComputedStyle(l).fontWeight),
-      restWeight: links.filter((l) => l.getAttribute('aria-current') !== 'page').map((l) => getComputedStyle(l).fontWeight),
-      oneLine: tops.size === 1,
-      count: document.querySelector('.pagenav .review-chip__count')?.textContent ?? null,
-      account: [...document.querySelectorAll('.pagenav__account > *')].map((c) => c.textContent.trim()),
+      first: !!strip && document.body.contains(strip),
+      menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent),
+      name: document.querySelector('.bz-readout__name')?.textContent ?? '',
+      account: [...document.querySelectorAll('.bz-strip__right > *, .bz-strip__account > *')].map((c) => c.textContent.trim()).filter(Boolean),
       chips: [...document.querySelectorAll('body > .topbar .topchip, #app .topbar .topchip')].map((c) => c.textContent),
-      height: nav ? Math.round(nav.getBoundingClientRect().height) : null,
+      height: strip ? Math.round(strip.getBoundingClientRect().height) : null,
+      oldRow: !!document.querySelector('.pagenav, .topbar--right'),
+      scrolls: document.scrollingElement.scrollHeight <= document.scrollingElement.clientHeight,
     };
   });
+  return {
+    ...rest,
+    links: go.map((r) => r.text.replace(/\s*\(\d+\)$/, '')),
+    current: go.filter((r) => r.on).map((r) => r.text.replace(/\s*\(\d+\)$/, '')),
+    count: go.map((r) => /\((\d+)\)$/.exec(r.text)?.[1]).find(Boolean) ?? null,
+  };
+};
 
 /** Every font family computed on the page, for the old ones. */
 const fontsOf = (p) =>
   p.evaluate(() => {
     const seen = new Map();
-    for (const el of document.querySelectorAll('#app *, #admin *, .pagenav *')) {
+    for (const el of document.querySelectorAll('#app *, #admin *, .bz-strip *')) {
       const f = getComputedStyle(el).fontFamily;
       if (!seen.has(f)) seen.set(f, el.className || el.tagName);
     }
@@ -132,8 +145,8 @@ const fontsOf = (p) =>
 const orangeOf = (p) =>
   p.evaluate(
     (orange) =>
-      [...document.querySelectorAll('.page *, .pagenav *')]
-        .filter((e) => getComputedStyle(e).backgroundColor === orange && e.getClientRects().length > 0 && !e.matches('.review-chip__count, .storage-meter__used'))
+      [...document.querySelectorAll('.page *, .bz-strip *')]
+        .filter((e) => getComputedStyle(e).backgroundColor === orange && e.getClientRects().length > 0 && !e.matches('.storage-meter__used'))
         .map((e) => e.textContent.trim().slice(0, 20) || e.className),
     ORANGE,
   );
@@ -144,39 +157,41 @@ const overflowing = (p) => p.evaluate(() => document.documentElement.scrollWidth
 async function navRows(server, o, m, a, g, t) {
   await open(g, '/?community', '.card--community, .community__empty');
   let n = await navOf(g.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community']) && show(n.current) === show(['Community']) && n.account.includes('Sign in'), `a guest's row: Gallery and Community, Community marked, Sign in (${show(n)})`);
-  t.ok(n.logo?.text === 'Bozzetto' && n.logo.drawn && n.logo.href === '/' && n.first && n.oneLine && n.height === 48, `the logotype at the left, one row of 48px, first on the page (${show(n)})`);
-  t.ok(n.currentWeight.every((w) => Number(w) === 600) && n.restWeight.every((w) => Number(w) === 400), `the current page in weight 600, the others 400 (${show([n.currentWeight, n.restWeight])})`);
+  t.ok(show(n.menus) === show(['File', 'Go', 'Help']), `the pages have the workspaces' strip: File, Go, Help (${show(n.menus)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community']) && show(n.current) === show(['Community']) && n.account.includes('Sign in') && n.name === 'Community', `a guest's Go: Gallery and Community, Community checked, the name Community, Sign in at the right (${show(n)})`);
+  t.ok(n.first && n.height === 24 && !n.oldRow && n.scrolls, `one strip of 24px, no old row, the document does not scroll (${show(n)})`);
   t.ok(n.chips.length === 0, `and no corner chips (${show(n.chips)})`);
 
   await open(a, '/?me', '.card--mine, .my-projects__empty');
   n = await navOf(a.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects']) && show(n.current) === show(['My projects']) && n.account.some((c) => c.startsWith('@ada')), `a member's row adds My projects, marked, and the @handle menu (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects']) && show(n.current) === show(['My projects']) && n.account.some((c) => c.startsWith('@ada')) && n.name === 'My projects', `a member's Go adds My projects, checked, and the @handle menu is at the right (${show(n)})`);
 
   await open(m, '/?review', '.review-card, .review__empty');
   n = await navOf(m.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review']) && show(n.current) === show(['Review']) && n.count === '1', `a moderator's row adds Review, with what waits (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review']) && show(n.current) === show(['Review']) && n.count === '1', `a moderator's Go adds Review, with what waits (${show(n)})`);
 
   await open(o, '/admin/', '.admin-row');
   n = await navOf(o.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review', 'Owner tools']) && show(n.current) === show(['Owner tools']), `the owner's row adds Owner tools, marked on /admin/ (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review', 'Owner tools']) && show(n.current) === show(['Owner tools']) && n.name === 'Owner tools', `the owner's Go adds Owner tools, checked on /admin/ (${show(n)})`);
   for (const [tab, label] of [['invites', 'Invites'], ['users', 'Users'], ['audit', 'Audit']]) {
     await open(o, `/admin/?tab=${tab}`, '.admin-row, .admin__empty');
     n = await navOf(o.page);
-    t.ok(show(n.current) === show(['Owner tools']) && n.first, `the ${label} tab keeps the row, Owner tools marked (${show(n.current)})`);
+    t.ok(show(n.current) === show(['Owner tools']) && n.first, `the ${label} tab keeps the strip, Owner tools checked (${show(n.current)})`);
   }
   for (const [path, page] of [['/?community', 'Community'], ['/?me', 'My projects'], ['/?account', null]]) {
     await open(o, path, '.page');
     n = await navOf(o.page);
-    t.ok(show(n.current) === show(page ? [page] : []) && n.first, `${path} marks ${page ?? 'nothing (the account is the menu at the right)'} (${show(n.current)})`);
+    t.ok(show(n.current) === show(page ? [page] : []) && n.first, `${path} checks ${page ?? 'nothing (the account is the menu at the right)'} (${show(n.current)})`);
   }
   await o.page.goto(`${o.origin}/?account`, { waitUntil: 'domcontentloaded' });
   await o.page.waitForSelector('.account-section', { timeout: 30_000 }).catch(() => {});
   t.ok(await o.page.evaluate(() => document.querySelector('.account-page')?.classList.contains('page--narrow')), 'the Account is the narrower column');
-  // The link to a page goes there.
+  // A place in Go goes there.
   await open(o, '/?community', '.card--community, .community__empty');
-  await Promise.all([o.page.waitForURL((u) => u.search === '?me', { timeout: 20_000 }).catch(() => {}), o.page.click('.pagenav__link[data-page="mine"]')]);
-  t.eq(new URL(o.page.url()).search, '?me', 'My projects in the row leads to My projects');
+  await o.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await o.page.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
+  await Promise.all([o.page.waitForURL((u) => u.search === '?me', { timeout: 20_000 }).catch(() => {}), o.page.click('.file-menu--go .file-menu__item:has-text("My projects")')]);
+  t.eq(new URL(o.page.url()).search, '?me', 'My projects in Go leads to My projects');
 }
 
 async function trash(o, a, t) {
@@ -290,7 +305,7 @@ async function phone(server, browser, t) {
       const n = await navOf(o.page);
       const over = await overflowing(o.page);
       t.ok(over <= 0, `${name} at 390px: no sideways scroll (${over}px over)`);
-      t.ok(n.logo?.left === 16 || n.logo?.left <= 16, `${name} at 390px: the row keeps the logotype at the left, 16px in (${show(n.logo)})`);
+      t.ok(n.first && show(n.menus) === show(['File', 'Go', 'Help']) && n.scrolls, `${name} at 390px: the strip keeps File, Go and Help, and the document does not scroll (${show(n)})`);
       if (name === 'Owner tools') {
         // The switches on one line, the actions and the trash together on the next, the trash at the right end.
         const rows = await o.page.evaluate(() =>

@@ -1902,7 +1902,7 @@ export const suites = {
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
     t.eq(await page.textContent('.landing__tagline'), 'Pose, sculpt & present', 'the tagline');
-    const chips = await page.evaluate(() => [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()));
+    const chips = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].map((c) => c.textContent.trim()));
     t.ok(!chips.some((c) => /upload/i.test(c)), `the top row has no upload chip (${chips.join(', ')})`);
     const menu = async (p) => {
       await p.click('#landing-grid .card--new');
@@ -2241,7 +2241,7 @@ export const suites = {
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#landing-grid .card', { timeout: 30_000 });
     const gallery = await page.evaluate(() => ({
-      chips: [...document.querySelectorAll('.topbar--right .topchip')].map((c) => c.textContent.trim()),
+      chips: [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].map((c) => c.textContent.trim()),
       first: document.querySelector('#landing-grid .card')?.classList.contains('card--new') ?? false,
       label: document.querySelector('#landing-grid .card--new .card--new__label')?.textContent ?? '',
     }));
@@ -5237,7 +5237,7 @@ export const suites = {
         dialogs.push(d.message());
         void d.accept();
       });
-      const chips = () => owner.evaluate(() => [...document.querySelectorAll('.landing-chip')].map((c) => c.textContent).join(', '));
+      const chips = () => owner.evaluate(() => [...document.querySelectorAll('.bz-strip__right .bz-strip__btn, .bz-strip__right .account-menu__chip')].map((c) => c.textContent.trim()).concat([...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => c.textContent.trim() === 'Owner tools' ? 'Projects' : c.textContent.trim())).join(', '));
       // The gallery once it has drawn: the public reel is the last card in.
       const gallery = async () => {
         await owner.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
@@ -5265,7 +5265,7 @@ export const suites = {
       const activated = await workerActivated(owner);
       await gallery();
       const controlled = await owner.evaluate(() => !!navigator.serviceWorker.controller);
-      await owner.waitForFunction(() => [...document.querySelectorAll('.landing-chip')].some((c) => c.textContent === 'Projects'), null, { timeout: 30_000 }).catch(() => {});
+      await owner.waitForFunction(() => [...document.querySelectorAll('.file-menu--go .file-menu__item')].some((c) => c.textContent === 'Owner tools'), null, { timeout: 30_000 }).catch(() => {});
       const held = await cachedProbe(owner);
       t.ok(activated && controlled && /owner@example\.com/.test(held ?? ''), `the worker controls the gallery and holds a signed-in probe (${held})`);
       t.ok((await chips()).includes('Projects'), `signed in, the top row has Projects (${await chips()})`);

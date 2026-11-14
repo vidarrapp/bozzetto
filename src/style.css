@@ -46,6 +46,7 @@ html,
 body {
   margin: 0;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -751,39 +752,39 @@ textarea::placeholder {
   font-size: 12px;
 }
 
-/* --- landing + editor pages scroll; the viewer stays fixed/full-screen --- */
+/* --- the pages: the document never scrolls ----------------------------------
+   Safari 26 on iPad blurs whatever sits at the top edge once the document
+   itself scrolls (the "scroll edge effect"), and there is no switch to turn
+   it off. So on a page html and body are exactly the screen, the title strip
+   is fixed at the top, and the page's content scrolls inside its own
+   container (.page-scroll) under the strip. */
 html.is-page,
 html.is-page body {
-  overflow: auto;
-  height: auto;
-  min-height: 100%;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
-/* Firefox: with the root's overflow set, the body's is its own and not the
-   viewport's, so the body (overflow auto, overscroll-behavior none above)
-   became a scroll container of its own that swallowed the wheel instead
-   of passing it up to the page (a tester on Linux could not scroll the
-   gallery). The body is plain content on a page; the root scrolls. */
-html.is-page body {
-  overflow: visible;
-  overscroll-behavior: auto;
+html.is-page .page-scroll {
+  position: fixed;
+  top: var(--bz-strip-h, 24px);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Anchors and focus scrolling stop clear of the strip's lower edge. */
+  scroll-padding-top: 16px;
+  touch-action: pan-y;
 }
-
-#app.app--landing,
-#app.app--page {
-  position: static;
-}
-
-/* The gallery chip lives in the top row with the other chips (.topchip);
-   it used to be pinned to the corner itself, which put it on top of any
-   chip the row placed first. */
 
 .landing {
   max-width: 1040px;
   margin: 0 auto;
-  /* Top padding clears the fixed top row: the back link used to sit in the
-     document flow and push the heading down, and it is a chip now. */
-  padding: 64px 20px 64px;
+  padding: 32px 20px 64px;
 }
 
 .landing__head {
@@ -4627,10 +4628,9 @@ body.is-sampling * {
   flex: 1 1 160px;
 }
 
-/* The @handle chip: a handle is lower-case, and is shown as it is. */
+/* The @handle: a handle is lower-case, and is shown as it is. */
 .account-menu__chip {
   text-transform: none;
-  letter-spacing: 0.04em;
 }
 
 /* The gallery's foot, with accounts on: the legal pages. */
@@ -5144,31 +5144,9 @@ body.is-sampling * {
   color: var(--accent);
 }
 
-/* --- Reviewing the Community (docs/accounts.md §13): the Review chip and
-   its count, the Review page's tabs, cards and history, the viewer's
-   review mode, and the owner tools' role column. --- */
-.review-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.review-chip[aria-current='page'] {
-  background: var(--hover);
-}
-
-.review-chip__count {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 0;
-  background: var(--accent);
-  color: var(--bg, #fff);
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0;
-  text-align: center;
-}
-
+/* --- Reviewing the Community (docs/accounts.md §13): the Review page's
+   tabs, cards and history, the viewer's review mode, and the owner tools'
+   role column. --- */
 .review-card__state {
   color: var(--text);
 }
@@ -6692,24 +6670,6 @@ progress {
   padding: 0;
 }
 
-/* Install, Log in and the account chips of the gallery: plain text. */
-.topbar .landing-chip,
-.topbar .community-chip {
-  min-height: 28px;
-  padding: 6px 12px;
-  border: 0;
-  background: none;
-  color: var(--bz-text);
-  font: 13px/16px var(--bz-font);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.topbar .landing-chip:hover,
-.topbar .community-chip:hover {
-  background: var(--bz-hover);
-}
-
 .card {
   border: 0;
   background: none;
@@ -6891,11 +6851,6 @@ progress {
   outline-offset: 2px;
 }
 
-.review-chip__count {
-  background: var(--bz-hover);
-  color: var(--bz-text);
-}
-
 .admin-invite[data-state='live'] .admin-invite__state {
   border-color: var(--bz-line);
   color: var(--bz-text);
@@ -6905,149 +6860,12 @@ progress {
    The pages (docs/ui-foundations.md; the boards of Owner tools, My
    projects, Community, Account and Review)
 
-   One quiet navigation row over a column of content. Lists are rows
+   The title strip (src/sculpt/ui/shell.css) over a column of content. Lists are rows
    (.admin-row: the Projects list's pattern, also Invites, Users, Audit and
    Review); galleries are cards (.page-grid). Delete is a trash icon, grey
    until the pointer or focus is on it, then red. Square corners, the grey
    scale; orange only for the one main action, the page one is on and focus.
    ========================================================================== */
-
-/* --- the navigation row --- */
-.pagenav {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  height: 48px;
-  padding: 0 32px;
-  background: var(--bz-strip);
-}
-
-/* The hand-drawn logotype, as on the gallery: its picture carries a ground
-   of its own, which the lighten blend lets drop into the page's. */
-.pagenav__logo {
-  flex: none;
-  line-height: 0;
-}
-
-.pagenav__logo img {
-  display: block;
-  height: 28px;
-  width: auto;
-  mix-blend-mode: lighten;
-  filter: grayscale(1);
-}
-
-.pagenav__links {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-width: 0;
-}
-
-.pagenav__account {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-left: auto;
-}
-
-/* A link, and the chips the row borrows (Sign in, Install, the @handle
-   menu): plain text, the page one is on in full text and weight 600. */
-.pagenav__link,
-.pagenav .topchip {
-  order: 0;
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--bz-text-2);
-  font: 400 13px/16px var(--bz-font);
-  letter-spacing: 0;
-  text-transform: none;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pagenav__link:hover,
-.pagenav .topchip:hover:not(:disabled),
-.pagenav .topchip--open {
-  background: none;
-  color: var(--bz-text);
-}
-
-.pagenav__link:focus-visible,
-.pagenav .topchip:focus-visible {
-  outline: var(--bz-focus);
-  outline-offset: 4px;
-}
-
-.pagenav__link[aria-current='page'],
-.pagenav .topchip[aria-current='page'] {
-  color: var(--bz-text);
-  font-weight: 600;
-}
-
-.pagenav .account-menu__chip::after {
-  content: '';
-  width: 5px;
-  height: 5px;
-  margin: -3px 0 0 8px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.pagenav .review-chip,
-.pagenav .review-chip[aria-current='page'] {
-  gap: 0;
-  background: none;
-}
-
-.pagenav .review-chip__count {
-  min-width: 0;
-  margin-left: 6px;
-  padding: 0 5px;
-  background: var(--bz-orange);
-  color: var(--bz-on-accent);
-  font: 400 11px/16px var(--bz-font-mono);
-}
-
-/* A phone: the logotype and the account on one line, the links under them
-   (they scroll sideways if they ever outgrow the width). */
-@media (max-width: 640px) {
-  .pagenav {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 12px 16px 0;
-    gap: 4px 16px;
-  }
-
-  .pagenav__account {
-    order: 2;
-    gap: 16px;
-  }
-
-  .pagenav__links {
-    order: 3;
-    flex: 1 1 100%;
-    gap: 12px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .pagenav__links::-webkit-scrollbar {
-    display: none;
-  }
-
-  .pagenav__link,
-  .pagenav .topchip {
-    min-height: 32px;
-  }
-}
 
 /* --- the column --- */
 .page {

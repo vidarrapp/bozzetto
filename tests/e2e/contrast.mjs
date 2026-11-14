@@ -128,7 +128,7 @@ export const suites = {
       );
       const p = await ctx.newPage();
       await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
-      const chip = ':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")';
+      const chip = '.bz-strip .bz-strip__btn:text-is("Sign in")';
       await p.waitForSelector(chip, { timeout: 60_000 });
       await p.click(chip);
       await p.waitForSelector('.account-card input[name=email]', { timeout: 15_000 });

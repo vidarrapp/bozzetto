@@ -16,6 +16,7 @@ import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { TitleStrip } from '../sculpt/ui/TitleStrip';
+import { mountAccountHandle } from '../ui/account/menu';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
 import { recentMenuItem } from '../sculpt/ui/recentMenu';
@@ -1091,6 +1092,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // The title strip, and the undo and redo buttons where Sculpt has them,
   // at the foot of the left edge.
   const strip = new TitleStrip();
+  mountAccountHandle(strip);
   const chrome = pageChrome();
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
