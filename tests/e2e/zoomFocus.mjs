@@ -246,6 +246,7 @@ export const suites = {
     const mid2 = [Math.round(R0[0]), Math.round(R0[1])];
     before = await camera(page);
     await dev.touch('touchStart', fingers(mid2, 20));
+    let after;
     for (const w of [30, 45, 60, 80]) {
       await dev.touch('touchMove', fingers(mid2, w));
     }
@@ -331,7 +332,8 @@ export const suites = {
       const n = Math.hypot(...d);
       const pos = c.map((v, i) => v + (d[i] / n) * r * 4);
       const tgt = pos.map((v, i) => v - (d[i] / n) * r * 0.4);
-      viewer.setCameraState(pos, tgt);
+      const V = viewer.camera.position.constructor;
+      viewer.setCameraState(new V(...pos), new V(...tgt));
     });
     await settle(page);
     const s1 = await sphere(page);
