@@ -1,4 +1,4 @@
-import { Viewer, type ToneMappingId } from './Viewer';
+import { Viewer, type LookState, type ToneMappingId } from './Viewer';
 import type { AssetSource } from './AssetSource';
 import type { Manifest } from '../types/manifest';
 import { Panel } from '../ui/Panel';
@@ -23,19 +23,24 @@ export interface ViewerParts {
 export interface MountOptions {
   author?: string;
   /**
-   * The owner's Present page (present/): the Render panel with the whole
-   * look, and the transport as the shell's bar. Both are this page's own
-   * parts in another dress, not copies.
+   * The owner's Present page (present/): the Render panel headed Render,
+   * and the transport as the shell's bar. Both are this page's own parts
+   * in another dress, not copies.
    */
   shell?: boolean;
   /**
    * The public viewer in the app shell (viewerFrame.ts): the same shell
    * parts (the Render panel under its tab, the transport as the bottom
-   * bar), but the panel keeps the viewer's own section set rather than the
-   * whole look, and the strip's Help menu stands in for the "?" chip. The
+   * bar), and the strip's Help menu stands in for the "?" chip. The
    * author is the strip's to say, not the panel's.
    */
   frame?: boolean;
+  /**
+   * The look Reset look in the Render panel goes back to, when the page
+   * rebuilds the view and the one on screen is no longer the one it opened
+   * with (the Present workspace). Taken from the viewer as it boots otherwise.
+   */
+  openedLook?: LookState;
   /** The viewer needs the preserved drawing buffer (Save image reads the canvas). */
   preserveDrawingBuffer?: boolean;
 }
@@ -79,10 +84,8 @@ export async function mountViewerParts(
   // A member's work from the Community names its author under the title.
   const panel = new Panel(viewer, {
     author: opts.author,
-    fullLook: opts.shell && !opts.frame,
     shell: opts.shell,
-    // The owner's Present has the Material tab for it; the public viewer's Render keeps it.
-    material: !opts.shell || !!opts.frame,
+    openedLook: opts.openedLook,
   });
   viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
   // The transport (scrubber + stage markers) only makes sense for a sequence;

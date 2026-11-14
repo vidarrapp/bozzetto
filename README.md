@@ -151,6 +151,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 ### Unreleased
 
 - **Sliders you can grab anywhere.** On a phone or iPad, press anywhere on a slider's row (its name, its number or its line) and drag sideways to change it, so a slider at 0 or full is no longer hard to catch. A plain tap does nothing, and dragging up or down still scrolls the panel. Depth of field now sits under **Camera** in the Render panel.
+- **One Render panel.** Render now has the same sections everywhere (Lighting, Camera with depth of field, Environment, Ambient occlusion), with every light's controls and **Reset look** in Sculpt, Armature, Present, the viewer and review, and in the viewer **Material** is a tab on the left like the workspaces.
 - **A Material tab.** Albedo, Roughness and Metalness, with the mode, shading and wireframe, now sit together in a **Material** panel next to Model on the left. The Model panel starts at Topology and the Render panel at Lighting.
 - **Your choice about saving.** On first visit Bozzetto asks whether to keep your work, settings and an offline copy on this device. You can change it under Edit > Preferences.
 - **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.

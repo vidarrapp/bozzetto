@@ -11,6 +11,7 @@
 // community suite). Each gets (page, base, t).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { renderShape, shapeChecks } from './renderMatch.mjs';
 
 const ORANGE = 'rgb(255, 90, 31)';
 const WHITE = 'rgb(255, 255, 255)';
@@ -200,8 +201,8 @@ export const suites = {
     await page.evaluate(() => window.__bozzetto.scrubTo(10));
     t.ok(!!at0 && s.readoutText.endsWith(`Stage ${at0}`) && at0 !== at, `the readout follows the frame to the stage there (${s.readoutText})`);
 
-    // --- Render: the one folder tab, the viewer's own panel under it --------------
-    t.eq(f.tabs.join(), 'Render', 'one folder tab, Render');
+    // --- Render: its folder tab at the right, Material's at the left --------------
+    t.eq([...f.tabs].sort().join(), 'Material,Render', 'two folder tabs: Material at the left, Render at the right');
     t.ok(f.tab && f.tab.r === s.vw && f.tab.t === 28 && f.tab.h === 28 && f.tabWriting === 'horizontal-tb', `at the right edge under the strip, horizontal, not a sideways tab (${JSON.stringify(f.tab)} ${f.tabWriting})`);
     t.ok(!f.open && !f.panelShown, 'the panel is shut, as the viewer has it');
     await page.click('.panel--render > .panel__handle');
@@ -210,8 +211,7 @@ export const suites = {
     t.ok(f.open && f.panel && f.panel.w === 304 && f.panel.r === s.vw && f.panel.t === 56, `a click opens it: 304px, flush right, under the tab (${JSON.stringify(f.panel)})`);
     t.eq(f.heading, 'Render', 'headed Render');
     t.ok(!f.byline, 'with no byline: whose it is, is the strip\'s to say');
-    t.ok(f.sections.includes('Material') && f.sections.includes('Lighting') && !f.sections.includes('Interface'), `with the viewer's sections (no Interface: Help has Hotkeys) (${f.sections})`);
-    t.ok(!f.sections.some((n) => /environment|ambient/i.test(n)), `and not the editor's whole look (depth of field alone shows under Camera) (${f.sections})`);
+    t.ok(f.sections.join() === 'Lighting,Camera,Environment,Ambient occlusion', `with the same sections as everywhere else, Material being the left tab's (${f.sections})`);
     t.ok(!(await page.$('.panel--render .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H opens the guide');
@@ -242,7 +242,7 @@ export const suites = {
     await page.click('.bz-menuname:has-text("View")');
     await page.waitForSelector('.file-menu--view:not([hidden])');
     const rows = await menuRows(page, 'file-menu--view');
-    t.eq(rows.join(' | '), 'Frame model [F] | Frame all [A] | Wireframe [Shift + W] | Shadows [Shift + S] | Cycle ground [G] | Render panel | Hide interface [Tab]', 'View holds framing, the view toggles and Render, Hide interface, with their hotkeys');
+    t.eq(rows.join(' | '), 'Frame model [F] | Frame all [A] | Wireframe [Shift + W] | Shadows [Shift + S] | Cycle ground [G] | Material panel | Render panel | Hide interface [Tab]', 'View holds framing, the view toggles and Render, Hide interface, with their hotkeys');
     await page.evaluate(() => {
       window.__framed = 0;
       window.__bozzetto.focusSubject = () => void window.__framed++;
@@ -327,7 +327,7 @@ export const suites = {
     t.ok(f.bar === null, 'a model has no transport');
     t.eq(s.readoutText, 'A model Model', `its readout is its title and Model (${s.readoutText})`);
     t.eq(s.menus.join(), 'File,View,Help', 'with the same three menus');
-    t.eq(f.tabs.join(), 'Render', 'and the Render tab');
+    t.eq([...f.tabs].sort().join(), 'Material,Render', 'and the Material and Render tabs');
     t.eq(s.oldRow.join(), '', 'and none of the old top row');
   },
 
@@ -513,6 +513,10 @@ export const suites = {
       return rows.join(' | ');
     };
     let s = await open('pending');
+    await page.click('.panel--render > .panel__handle');
+    await page.waitForTimeout(400);
+    shapeChecks(t, await renderShape(page), 'Review mode');
+    await page.click('.panel--render > .panel__handle');
     t.eq(s.menus.join(), 'File,View,Moderation,Help', 'the same strip: File, View, Moderation and Help');
     t.ok(/^Ada bust by @ada Timelapse 24 frames/.test(s.readoutText) && /Reviewing Pending review$/.test(s.readoutText), `the readout has the author and where it stands (${s.readoutText})`);
     t.eq(await page.getAttribute('.review-mode', 'data-shared'), 'pending', 'the state is on the review-mode hook');

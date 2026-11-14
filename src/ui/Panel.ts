@@ -1,4 +1,4 @@
-import { DEFAULT_CAVITY, type Viewer, type GroundMode, type ToneMappingId } from '../viewer/Viewer';
+import { DEFAULT_CAVITY, type Viewer, type LookState, type GroundMode, type ToneMappingId } from '../viewer/Viewer';
 import type { LightId } from '../viewer/Lighting';
 import { div, labelRow, onTap, selectEl } from './dom';
 import { colorPicker, type ColorPickerHandle } from './ColorPicker';
@@ -24,32 +24,24 @@ export interface PanelOptions {
    */
   author?: string;
   /**
-   * The look-dev half of the panel (light rig, camera, environment, ambient
-   * occlusion) shown outright, as the editors and Sculpt show it, under the
-   * heading Render: the panel of the owner's Present page for a published
-   * project (present/), where the look is what is being edited.
-   */
-  fullLook?: boolean;
-  /**
    * The panel under the app shell's folder tab (the title strip says whose
-   * work it is): headed Render, with no byline. The section set is the
-   * viewer's own unless `fullLook` says otherwise.
+   * work it is): headed Render, with no byline. The sections are the same
+   * everywhere (Lighting, Camera, Environment, Ambient occlusion); this only
+   * sets the heading.
    */
   shell?: boolean;
   /**
-   * Whether the Render panel carries the Material section (Mode, matcap,
-   * smooth shading, wireframe, wire opacity). On by default: the public
-   * viewer's visitors keep it here. The app's workspaces turn it off and show
-   * the same section, built by the same MaterialControls, in the Material
-   * panel (ui/MaterialPanel.ts). Sculpt and Armature drop it from this panel
-   * when they take it over, whatever this says.
+   * The look Reset look goes back to: the one the scene or project opened
+   * with (the published look, in the viewer). Taken from the viewer as it
+   * stands when the panel is built when this is left out. Sculpt and
+   * Armature keep their own, and answer the reset themselves.
    */
-  material?: boolean;
+  openedLook?: LookState;
 }
 
 /**
- * Side control panel. The viewer variant is minimal (starts collapsed; Material,
- * a trimmed Lighting of rotate-rig + ground, View) — the timeline lives in the
+ * Side control panel. The viewer variant is the same everywhere (starts collapsed in the viewer;
+ * Lighting, Camera with depth of field, Environment, Ambient occlusion) — the timeline lives in the
  * bottom Transport and the theme toggle is global. Keyboard shortcuts live in
  * installShortcuts, which calls refreshControls() here; Tab's close-all reaches it
  * as PANEL_CLOSE_ALL_EVENT (ChromeToggle).
@@ -62,19 +54,13 @@ export class Panel {
   private titleEl!: HTMLSpanElement;
   /** "by @handle" under the title, for a member's work from the Community. */
   private bylineEl: HTMLAnchorElement | null = null;
-  /** The whole look shown in a viewer panel (PanelOptions.fullLook). */
-  private readonly fullLook: boolean;
+  /** The look Reset look goes back to (PanelOptions.openedLook). */
+  private readonly openedLook: LookState;
   private collapsed = false;
 
   /** Fired when the handle is clicked (editor coordinates both panels). */
   onToggle: ((collapsed: boolean) => void) | null = null;
 
-  /**
-   * The Material section (Mode, matcap, smooth shading, wireframe). Kept for
-   * the panel's life, so its pickers survive the rebuilds; absent where the
-   * Material panel has it (PanelOptions.material).
-   */
-  private readonly materialControls: MaterialControls | null;
   /** Ground-mode select lives in the editor's Environment section (or null). */
   private groundSelect: HTMLSelectElement | null = null;
   /** DoF on/off checkbox (viewer + editor); absent when DoF isn't available. */
@@ -83,10 +69,6 @@ export class Panel {
   private dofRows?: HTMLDivElement;
   /** Re-applies the Environment section's conditional rows (set per build). */
   private syncEnvRows: (() => void) | null = null;
-  /** Look-dev sections built for the viewer, revealed only while sculpting. */
-  private lookDevSections: HTMLElement[] = [];
-  /** Camera rows that belong to the look-dev half (lens, tone mapping), hidden in the plain viewer where depth of field alone shows under Camera. */
-  private cameraLookRows: HTMLElement[] = [];
   /**
    * Whether the cavity is an AO model here: only in sculpt mode, whose
    * composite is the one that draws it. Armature mode shows the look-dev
@@ -159,23 +141,6 @@ export class Panel {
     return this.cavityOffered && this.viewer.getSculptAO().strength > 0 ? 'cavity' : 'off';
   }
 
-  /**
-   * Show the look-dev half only while sculpting. Every control reads its
-   * value once, when it is built, so this runs after buildBody() rather
-   * than trying to keep two copies of the state in step.
-   */
-  private applySculptVisibility(): void {
-    const active = this.sculpting || this.fullLook;
-    // DoF shows in sculpt too (owner call: full look parity - a look set
-    // while sculpting should carry everything the editor could set).
-    // Sculpt mode gets look-dev parity with the editor: the full light rig,
-    // camera, environment and AO, which the plain viewer has no use for.
-    for (const sec of this.lookDevSections) sec.hidden = !active;
-    for (const row of this.cameraLookRows) row.hidden = !active;
-    if (this.lightControls) this.lightControls.hidden = !active;
-    if (this.lightToggles) this.lightToggles.hidden = active;
-    if (active) this.rebuildLightControls();
-  }
   /** One HSV picker style across the app (owner call): these replace the
    *  browser's RGB boxes for the background, the stage surface and each
    *  light. Reused across rebuilds like the albedo one - disposing while
@@ -186,14 +151,12 @@ export class Panel {
   /** Output-grade select (Camera section). */
   private toneSelect?: HTMLSelectElement;
   private lightControls?: HTMLDivElement;
-  private lightToggles?: HTMLDivElement;
 
   constructor(
     private readonly viewer: Viewer,
     options: PanelOptions = {},
   ) {
-    this.fullLook = options.fullLook ?? false;
-    this.materialControls = options.material === false ? null : new MaterialControls(viewer, { sculpting: false });
+    this.openedLook = options.openedLook ?? viewer.getLook();
 
     // panel--render names it for the stylesheet: Present mode keeps this
     // panel and hides the rest.
@@ -230,7 +193,7 @@ export class Panel {
     // swaps it for the panel's own name, since the synthetic sculpt
     // manifest is titled "Sculpt" and would sit right above the Sculpt
     // palette (onSculptMode below).
-    title.textContent = this.fullLook || options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
+    title.textContent = options.shell ? 'Render' : viewer.manifest.title || 'Bozzetto';
     // Closing lives in the title bar; the open panel hides its edge handle.
     const closeBtn = button('›', () => {
       this.setCollapsed(true);
@@ -239,7 +202,7 @@ export class Panel {
     closeBtn.className = 'panel__close';
     // Four panels can be on screen at once; name this one for screen readers.
     closeBtn.setAttribute('aria-label', 'Hide render panel');
-    if (options.author && !this.fullLook && !options.shell) {
+    if (options.author && !options.shell) {
       // The title and, under it, who made it: a member's work from the
       // Community. Hidden while sculpting, when the title is the panel's.
       const heading = div('panel__heading');
@@ -279,28 +242,14 @@ export class Panel {
    */
   private buildBody(): void {
     this.bodyEl.replaceChildren();
-    // Sculpt and Armature have the Material panel; the Render panel keeps no
-    // copy of the section there, whatever it was built with.
-    if (this.materialControls && !this.sculpting) {
-      this.bodyEl.appendChild(this.materialControls.root);
-      this.materialControls.rebuild();
-    }
+    // Material is the Material tab's, in every place; Render never holds it.
+    // The same four sections everywhere, in this order.
     this.buildLighting(this.bodyEl);
-    // The viewer builds the look-dev sections too, hidden until sculpt mode
-    // announces itself.
-    const lookDevFrom = this.bodyEl.childElementCount;
-    const camera = this.buildCamera(this.bodyEl);
+    this.buildCamera(this.bodyEl);
     this.buildEnvironment(this.bodyEl);
     this.buildAOSection(this.bodyEl);
-    this.lookDevSections = [...this.bodyEl.children]
-      .slice(lookDevFrom)
-      .filter((el): el is HTMLElement => el instanceof HTMLElement);
-    // Depth of field lives under Camera and shows in the plain viewer too, so
-    // with it there the Camera section stays and only its lens rows hide.
-    if (this.cameraLookRows.length) this.lookDevSections = this.lookDevSections.filter((el) => el !== camera);
-    for (const sec of this.lookDevSections) sec.hidden = true;
     if (devMode()) this.buildDeveloper(this.bodyEl);
-    if (this.sculpting || this.fullLook) this.applySculptVisibility();
+    this.rebuildLightControls();
     this.refreshControls();
   }
 
@@ -336,7 +285,6 @@ export class Panel {
     } else if (wasOpen) {
       // The pickers' popovers are body-mounted; without this they'd float
       // on after their swatches slid off-screen with the panel.
-      this.materialControls?.closePopovers();
       this.bgPicker?.close();
       this.stagePicker?.close();
       for (const p of this.lightPickers.values()) p.close();
@@ -480,7 +428,6 @@ export class Panel {
 
   /** Re-sync controls that hotkeys can change (material mode, matcap, shading…). */
   refreshControls(): void {
-    if (this.materialControls && !this.sculpting) this.materialControls.refresh();
     window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
     if (this.groundSelect) this.groundSelect.value = this.viewer.getGround();
     if (this.toneSelect) this.toneSelect.value = this.viewer.getToneMapping();
@@ -495,11 +442,10 @@ export class Panel {
     }
     // The light rows read their values when built, and hold L moves the
     // key light under them: shown, they are built again from the rig.
-    if (this.lightControls && !this.lightControls.hidden && this.lightControls.isConnected) this.rebuildLightControls();
+    if (this.lightControls?.isConnected) this.rebuildLightControls();
   }
 
   dispose(): void {
-    this.materialControls?.dispose();
     this.bgPicker?.dispose();
     this.stagePicker?.dispose();
     for (const p of this.lightPickers.values()) p.dispose();
@@ -519,16 +465,14 @@ export class Panel {
   private buildLighting(body: HTMLElement): void {
     const lighting = section(body, 'Lighting');
 
-    // Sculpt keeps its look between sessions, so a look set up badly (or
-    // saved mid-experiment) would otherwise restore for ever. The panel
-    // only asks; sculpt mode owns the defaults and the stored record.
-    if (this.sculpting) {
-      const reset = button('Reset look', () => {
-        window.dispatchEvent(new CustomEvent('bozzetto:look-reset'));
-      });
-      reset.className = 'btn btn--small panel__reset';
-      lighting.appendChild(reset);
-    }
+    // Back to the look the scene or project opened with. Sculpt keeps its look
+    // between sessions, so a look set up badly (or saved mid-experiment) would
+    // otherwise restore for ever: there the panel only asks, and the mode owns
+    // the defaults and the stored record. Anywhere else the panel has the
+    // look it opened with and puts it back (a visitor's change is never saved).
+    const reset = button('Reset look', () => this.resetLook());
+    reset.className = 'btn btn--small panel__reset';
+    lighting.appendChild(reset);
 
     // Preset switch (viewer + editor): Three-point <-> Raking.
     const presetSelect = document.createElement('select');
@@ -541,8 +485,7 @@ export class Panel {
     presetSelect.value = this.viewer.manifest.defaults.lightingPreset;
     presetSelect.addEventListener('change', () => {
       this.viewer.lighting.applyPreset(presetSelect.value);
-      this.rebuildLightControls(); // editor: full per-light rig
-      this.rebuildLightToggles(); // viewer: simple on/off toggles
+      this.rebuildLightControls();
     });
     lighting.appendChild(labelRow('Preset', presetSelect));
 
@@ -554,14 +497,9 @@ export class Panel {
     this.shadowsCheckbox = shadows.querySelector('input')!;
     lighting.appendChild(shadows);
 
-    // Builds BOTH: the simple toggles for playback, and the full rig for
-    // sculpt mode, swapped by applySculptVisibility.
+    // The full per-light rig, the same in every place.
     this.lightControls = div('light-controls');
-    this.lightControls.hidden = true;
     lighting.appendChild(this.lightControls);
-    this.lightToggles = div('light-toggles');
-    lighting.appendChild(this.lightToggles);
-    this.rebuildLightToggles();
 
     lighting.appendChild(
       labelled('Rotate rig', () => {
@@ -586,15 +524,17 @@ export class Panel {
     );
   }
 
-  /** Viewer-only: one enable checkbox per light (no advanced controls). */
-  private rebuildLightToggles(): void {
-    if (!this.lightToggles) return;
-    this.lightToggles.replaceChildren();
-    for (const light of this.viewer.lighting.state()) {
-      this.lightToggles.appendChild(
-        checkbox(light.label, light.enabled, (on) => this.viewer.lighting.setEnabled(light.id, on)),
-      );
+  /** Reset look: Sculpt and Armature answer for themselves; elsewhere the look it opened with comes back, the view as it is. */
+  private resetLook(): void {
+    if (this.sculpting) {
+      window.dispatchEvent(new CustomEvent('bozzetto:look-reset'));
+      return;
     }
+    const look = this.openedLook;
+    // The camera's place is the visitor's view, not the look: it stays.
+    void this.viewer
+      .applyLook({ ...look, camera: { ...look.camera, position: [], target: [] } })
+      .then(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')));
   }
 
   private rebuildLightControls(): void {
@@ -856,9 +796,8 @@ export class Panel {
 
   // --- camera (lens: editor only) ---------------------------------------
 
-  private buildCamera(body: HTMLElement): HTMLElement {
+  private buildCamera(body: HTMLElement): void {
     const sec = section(body, 'Camera');
-    this.cameraLookRows = [];
     const lens = steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
       this.viewer.setFocalLength(mm),
     );
@@ -882,8 +821,7 @@ export class Panel {
     const toneRow = labelRow('Tone mapping', tone);
     sec.appendChild(toneRow);
     // The camera's own rows first, then depth of field.
-    if (this.buildDoF(sec)) this.cameraLookRows = [lens, toneRow];
-    return sec;
+    this.buildDoF(sec);
   }
 
   /**

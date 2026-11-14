@@ -135,6 +135,20 @@ no separate touch density. An earlier draft of this spec had one, with
   slider (click to jump). The brush sliders on the left edge have their own
   drag. Depth of field (Enabled, then Aperture and Focus) is the last part
   of the Render panel's Camera section, not a section of its own.
+- **One Render panel.** The same everywhere (owner call, 2026-11-14:
+  "consolidate the render panel so it matches everywhere"): Sculpt,
+  Armature, Sculpt's Present, the Present workspace, the public viewer and
+  review mode. Sections Lighting, Camera (with depth of field),
+  Environment, Ambient occlusion, in that order; the full per-light rig;
+  a Reset look button, which goes back to the look the scene or project
+  opened with (in the viewer, the published look; the view stays, and a
+  visitor's changes are never saved). Material is never in it: it is the
+  Material tab at the left in every place, the viewer and review mode
+  included (Display section only, as in Present). What a place cannot do
+  stays out of the panel, not out of the order: Cavity (SSAO) only in plain
+  Sculpt, Pedestal and Floor offset only where the floor allows them, and
+  the Developer section only with ?dev. The viewer's tab row is Material at
+  the left and Render at the right, and fits a 390px phone.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
