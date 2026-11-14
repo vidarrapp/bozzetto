@@ -155,7 +155,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 - **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.
 - **Present is one workspace.** Creating a timelapse and editing a published project both happen in Present, which has a **Frames** tab for the files.
 - **The viewer in the new frame.** A published piece opens under the same title strip as the workspaces, with the transport along the foot.
-- **File and Moderation in the viewer.** The viewer has a **File** menu, with **New sculpt from this** on the site's templates, **Edit in Present** for the owner, and **Close**, which goes back to Community, My projects, Review or the gallery, whichever you came from. **Report…** and the review actions are in a **Moderation** menu, and play and pause is a plain button with a white icon.
+- **File and Moderation in the viewer.** The viewer has a **File** menu, with **New sculpt from this** on the site's templates, **Edit in Present** for the owner, and **Close**, which goes back to Community, My projects, Review or the gallery, whichever you came from. **Report…** and the review actions are in a **Moderation** menu, and play and pause is a plain button whose icon lights up while playing.
 - **Sign-in window.** Email comes first, then **Use a passkey**, then **Email me a code**.
 - **Stars.** A star is white when pressed and grey when not.
 - **Card pictures fill their tile.** Gallery, Community and My projects cards are 4:5, the shape the pictures are taken at, so they no longer show bands at the sides.

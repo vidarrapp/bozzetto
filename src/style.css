@@ -5715,11 +5715,15 @@ h1,
   color: var(--bz-on-accent);
 }
 
-/* Play and pause: a regular button with a white icon, filled white only
-   while pressed, never orange (owner call, 2026-11-13). */
+/* Play and pause: a regular button, its icon light grey at rest and white
+   while pressed or playing, never orange (owner call, 2026-11-14). */
 .transport__play {
   background: var(--bz-control);
   border: 0;
+  color: var(--bz-text-2);
+}
+
+.transport__play.is-playing {
   color: var(--bz-white);
 }
 
@@ -5735,7 +5739,6 @@ h1,
 
 .transport__play:hover:not(:disabled) {
   background: var(--bz-hover);
-  color: var(--bz-white);
 }
 
 .btn--primary:active:not(:disabled),
@@ -5748,8 +5751,8 @@ h1,
 }
 
 .transport__play:active:not(:disabled) {
-  background: var(--bz-white);
-  color: var(--bz-on-accent);
+  background: var(--bz-pressed);
+  color: var(--bz-white);
 }
 
 .btn--primary:disabled,
