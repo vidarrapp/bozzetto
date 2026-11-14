@@ -205,6 +205,7 @@ export const suites = {
     await page.waitForFunction(() => /Surface Detail/.test(document.querySelector('.bz-readout')?.textContent ?? ''), null, { timeout: 15_000 }).catch(() => {});
     s = await stripState(page);
     const at0 = await page.evaluate(() => window.__bozzetto.timeline.stageAt(23)?.name ?? null);
+    const at = await page.evaluate(() => window.__bozzetto.timeline.stageAt(10)?.name ?? null);
     await page.evaluate(() => window.__bozzetto.scrubTo(10));
     t.ok(!!at0 && s.readoutText.endsWith(`Stage ${at0}`) && at0 !== at, `the readout follows the frame to the stage there (${s.readoutText})`);
 
