@@ -18,6 +18,8 @@ import { TopMenu } from '../sculpt/ui/TopMenu';
 import { TitleStrip } from '../sculpt/ui/TitleStrip';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import { recentMenuItem } from '../sculpt/ui/recentMenu';
+import { recordRecent } from '../ui/recent';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
@@ -1517,6 +1519,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     return role;
   };
   let roleKnown = probeRole();
+  /** The project this armature is, if it is one, goes to the top of the recent list: opened, or saved to. */
+  const noteOpened = (): void => {
+    if (link) recordRecent({ id: link.id, kind: 'armature', name: link.title, place: place(), ...(link.scope ? { scope: link.scope } : {}) });
+  };
+  void roleKnown.then(noteOpened);
   /** Whether Save to library goes to a server for `who`, as Sculpt's File menu decides it. */
   const uploads = (who: Role): boolean =>
     who === 'owner' || who === 'expired' || (accountsHere && (who === 'member' || who === 'moderator'));
@@ -1559,6 +1566,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         (text) => status.set(text),
       );
       link = saved;
+      noteOpened();
       await flushSave();
       status.done(`Saved to ${where}: ${saved.title}`);
       return saved;
@@ -1612,6 +1620,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           },
         },
         { label: 'Open…', action: () => openInput.click() },
+        recentMenuItem(() => undoStack.length > 0),
       ],
       save: [
         { label: 'Save file', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },

@@ -67,7 +67,7 @@ export const suites = {
     const file = await openMenu(page, 'File');
     t.eq(
       file.items.join('|'),
-      'New sculpt|Open…|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
+      'New sculpt|Open…|Open recent|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
       'File: New and Open, the three saves, OBJ in and out, Publish and Close, regrouped',
     );
     t.near(file.left, file.nameLeft, 1, 'an open menu hangs with its left edge under its name');

@@ -24,6 +24,8 @@ import { TopMenu } from '../sculpt/ui/TopMenu';
 import { failNotice, statusToast } from '../sculpt/ui/statusToast';
 import { viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import { recentMenuItem } from '../sculpt/ui/recentMenu';
+import { recordRecent } from '../ui/recent';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { layoutShell } from '../sculpt/ui/shellLayout';
@@ -137,6 +139,11 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     seq: items.map((f) => f.key),
   };
   let place = create?.place ?? null;
+  // A published project opened here, or saved here, is at the top of the recent list.
+  const noteOpened = (name: string): void => {
+    if (id) recordRecent({ id, kind: 'present', name: name.trim() || id, place: 'Projects' });
+  };
+  noteOpened(title0);
 
   let current: Mounted | null = null;
   const viewer = (): Viewer | null => current?.parts.viewer ?? null;
@@ -529,6 +536,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       if (replaced) await firstFrameCard(view, id);
     }
     status.done('Saved');
+    noteOpened(title);
     refreshReadout();
     return true;
   };
@@ -618,6 +626,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
   new TopMenu(
     'File',
     fileMenuItems({
+      start: [recentMenuItem(() => isEdited())],
       save: [
         {
           label: () => (project || !place ? 'Save' : `Save to ${place}`),

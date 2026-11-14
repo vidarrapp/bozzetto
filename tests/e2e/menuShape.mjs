@@ -10,7 +10,7 @@ const HELP = ['Help topics', 'Hotkeys', 'About and credits'];
 
 /** Where each File label sits in the order of its groups. */
 const FILE_RANK = new Map([
-  ['New sculpt', 0], ['New armature', 0], ['Open…', 0],
+  ['New sculpt', 0], ['New armature', 0], ['Open…', 0], ['Open recent', 0],
   ['Save file', 1], ['Save to library', 1], ['Keep on this device', 1], ['Save', 1],
   ['Import OBJ…', 2], ['Z-up OBJ import', 2], ['Load model…', 2], ['Export OBJ', 2], ['Send to Sculpt', 2], ['New sculpt from this', 2], ['Edit in Present', 2],
   ['Publish…', 3],
@@ -101,7 +101,7 @@ export const suites = {
   /** Sculpt, Present from Sculpt and Armature: one shape. */
   async menuShape(page, base, t) {
     await openSculpt(page, base);
-    const sculptFile = 'New sculpt|Open…|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
+    const sculptFile = 'New sculpt|Open…|Open recent|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
     const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
@@ -118,7 +118,7 @@ export const suites = {
     const armature = await readMenus(page, 'Armature');
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
-      file: 'New armature|Open…|Save file|Save to library|Load model…|Send to Sculpt|Close',
+      file: 'New armature|Open…|Open recent|Save file|Save to library|Load model…|Send to Sculpt|Close',
       view: 'Frame all|Wireframe|Shadows|Armature panel|Material panel|Render panel|Hide interface|Armature|Sculpt|Present',
       edit: 'Undo|Redo|Preferences…',
     });

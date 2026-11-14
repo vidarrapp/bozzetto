@@ -1,5 +1,7 @@
 import { TopMenu } from './TopMenu';
 import { fileMenuItems } from './menuShape';
+import { recentMenuItem } from './recentMenu';
+import { recordRecent } from '../../ui/recent';
 import { statusToast, type StatusToast } from './statusToast';
 import { downloadBlob, stampName } from '../bridge/SceneFile';
 import { NotUploadedError, type FileActions } from '../bridge/FileActions';
@@ -73,6 +75,7 @@ export class FileMenu {
             },
           },
           { label: 'Open…', action: () => this.openInput.click() },
+          recentMenuItem(() => this.actions.hasWork()),
         ],
         save: [
           {
@@ -100,7 +103,8 @@ export class FileMenu {
             enabled: () => full() && mayStore(),
             hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
             action: async () => {
-              await this.actions.keepOnDevice();
+              const kept = await this.actions.keepOnDevice();
+            recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
               this.menu.note('Kept on this device');
             },
           },
@@ -154,6 +158,13 @@ export class FileMenu {
     this.suspension = suspension;
     this.accounts = accounts;
     this.resolveRole(role);
+    this.noteOpened();
+  }
+
+  /** The project this scene is, if it is one, goes to the top of the recent list: opened, or saved to. */
+  private noteOpened(): void {
+    const link = this.actions.link;
+    if (link) recordRecent({ id: link.id, kind: 'scene', name: link.title, place: this.place(), ...(link.scope ? { scope: link.scope } : {}) });
   }
 
   /**
@@ -232,6 +243,7 @@ export class FileMenu {
     try {
       const link = await this.actions.uploadToProjects((text) => status.set(text));
       status.done(`Saved to ${place}: ${link.title}`);
+      this.noteOpened();
       if (role === 'expired') void this.onSignInChange?.();
     } catch (err) {
       // A sign-in the probe already found expired is the account's (with
