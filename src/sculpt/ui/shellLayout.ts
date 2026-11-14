@@ -64,13 +64,18 @@ export function layoutShell(): void {
     tab.style.right = 'auto';
     x += tab.getBoundingClientRect().width + 1;
   }
+  // How far the whole row travels when the interface is hidden (see shell.css).
+  document.documentElement.style.setProperty('--bz-tabs-left', `${x}px`);
   x = 0;
   for (const tab of tabsOf(RIGHT_ORDER).reverse()) {
     tab.style.right = `${x}px`;
     tab.style.left = 'auto';
     x += tab.getBoundingClientRect().width + 1;
   }
+  document.documentElement.style.setProperty('--bz-tabs-right', `${x}px`);
 
+  // The slid-away bars are measured where they are not: leave the limits as they were.
+  if (document.body.classList.contains('chrome-hidden')) return;
   const root = document.documentElement.style;
   const top = panelTop();
   const vh = window.innerHeight;

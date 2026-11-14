@@ -226,6 +226,165 @@ export const suites = {
     await page.waitForFunction(() => !document.body.classList.contains('chrome-hidden'), null, { timeout: 4000 });
   },
 
+  /**
+   * Hide the interface slides: tabs out to their sides, the strip up, the tool bar (and Present's
+   * bar) down, the edge controls left; hidden, nothing takes a tap (the canvas is under each old
+   * place); showing reverses it; reduced motion is instant. Mid-slide and hidden shots go to
+   * $SLIDE_SHOTS when it is set.
+   */
+  async shellSlide(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openSculpt(page, base);
+    await page.waitForTimeout(500);
+    const shot = async (name) => {
+      if (process.env.SLIDE_SHOTS) await page.screenshot({ path: `${process.env.SLIDE_SHOTS}/${name}.png` });
+    };
+    const geo = () =>
+      page.evaluate(() => {
+        const r = (el) => {
+          const b = el.getBoundingClientRect();
+          return { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        };
+        const one = (sel) => {
+          const el = document.querySelector(sel);
+          return el && el.getClientRects().length > 0 ? r(el) : null;
+        };
+        const all = (sel) => [...document.querySelectorAll(sel)].filter((e) => e.getClientRects().length > 0).map(r);
+        return {
+          w: innerWidth,
+          h: innerHeight,
+          strip: one('.bz-strip'),
+          hide: one('.bz-strip__hide'),
+          left: all('.panel--left > .panel__handle'),
+          right: all('.panel:not(.panel--left) > .panel__handle'),
+          edge: one('.bz-edge'),
+          bar: one('.sculpt-toolbar__brushes') ?? one('.present-bar'),
+        };
+      });
+    const hitAt = (pts) =>
+      page.evaluate(
+        (ps) =>
+          ps.map(([x, y]) => {
+            const el = document.elementFromPoint(x, y);
+            return el ? (el.tagName === 'CANVAS' ? 'canvas' : `${el.tagName}.${el.className}`) : 'none';
+          }),
+        pts,
+      );
+    const centre = (b) => [(b.left + b.right) / 2, (b.top + b.bottom) / 2];
+    const finished = (pred) => page.waitForFunction(pred, null, { timeout: 4000 }).then(() => page.waitForTimeout(60));
+    const settleAnims = () => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+    const hiddenNow = () => document.querySelector('.panel > .panel__handle') && getComputedStyle(document.querySelector('.panel > .panel__handle')).visibility === 'hidden' && getComputedStyle(document.querySelector('.bz-menuname')).visibility === 'hidden';
+
+    const cycle = async (where) => {
+      const tag = where.replace(/\W+/g, '-');
+      const before = await geo();
+      t.ok(before.strip && before.bar && before.left.length > 0 && before.right.length > 0, `${where}: strip, bar and tabs on both sides are up`);
+      const spots = [
+        ...(before.edge ? [centre(before.edge)] : []),
+        centre(before.bar),
+        ...before.left.map(centre),
+        ...before.right.map(centre),
+        [before.strip.left + 40, before.strip.bottom / 2],
+        [(before.strip.left + before.strip.right) / 2 + 240, before.strip.bottom / 2],
+      ];
+      await shot(`${tag}-0-shown`);
+      await page.click('.bz-strip__hide');
+      // A busy headless page may not tick the clock for a while: park the slide half way instead of racing it.
+      const parked = await page.evaluate(() => {
+        const slides = document.getAnimations().filter((a) => a.transitionProperty === 'transform');
+        for (const a of slides) {
+          a.pause();
+          a.currentTime = 60;
+        }
+        return slides.length;
+      });
+      t.ok(parked > 0, `${where}: the hide runs as a transition (${parked} sliding)`);
+      const gone0 = before.h + 150;
+      const mid = await geo();
+      t.ok(mid.strip.bottom < before.strip.bottom - 1 && mid.strip.bottom > 1, `${where}: mid-slide the strip is part way up (${before.strip.bottom} -> ${mid.strip.bottom})`);
+      t.ok(mid.bar.top > before.bar.top + 1 && mid.bar.top < gone0, `${where}: and the bar part way down (${before.bar.top} -> ${mid.bar.top})`);
+      await shot(`${tag}-1-mid`);
+      await page.evaluate(() => document.getAnimations().forEach((a) => a.play()));
+      await settleAnims();
+      await finished(hiddenNow);
+      const gone = await geo();
+      t.ok(gone.strip.bottom <= 0.5, `${where}: hidden, the strip is above the top edge (bottom ${gone.strip.bottom})`);
+      t.ok(gone.left.every((b) => b.right <= 0.5) && gone.right.every((b) => b.left >= gone.w - 0.5), `${where}: the left tabs are beyond the left edge and the right tabs beyond the right`);
+      t.ok(gone.bar.top >= gone.h - 0.5, `${where}: the bar is below the bottom edge (top ${gone.bar.top} of ${gone.h})`);
+      if (before.edge) t.ok(gone.edge.right <= 0.5, `${where}: the edge controls are beyond the left edge (right ${gone.edge.right})`);
+      t.ok(gone.hide && gone.hide.top >= 0 && gone.hide.bottom <= before.strip.bottom + 0.5 && Math.abs(gone.hide.left - before.hide.left) < 1, `${where}: the strip's hide button stays where it was`);
+      const hits = await hitAt(spots);
+      t.ok(hits.every((h) => h === 'canvas'), `${where}: the canvas is under each old place (${hits.join(' | ')})`);
+      await shot(`${tag}-2-hidden`);
+      const focusable = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('.panel__handle, .bz-edge button, .bz-edge input, .sculpt-toolbar__btn, .present-bar button, .bz-menuname')) {
+          if (getComputedStyle(el).visibility !== 'hidden') out.push(el.className);
+        }
+        return out;
+      });
+      t.eq(focusable.join(), '', `${where}: no hidden control is left focusable`);
+      await page.click('.bz-strip__hide');
+      await settleAnims();
+      const back = await geo();
+      // A tab may differ a pixel or two in width: hiding collapses the panel that was open (bold to regular).
+      const same = (a, b) => Math.abs(a.left - b.left) < 3 && Math.abs(a.top - b.top) < 1 && Math.abs(a.right - b.right) < 3 && Math.abs(a.bottom - b.bottom) < 1;
+      t.ok(
+        same(back.strip, before.strip) && same(back.bar, before.bar) && back.left.every((b, i) => same(b, before.left[i])) && back.right.every((b, i) => same(b, before.right[i])) && (!before.edge || same(back.edge, before.edge)),
+        `${where}: showing again puts everything back exactly (${JSON.stringify([before.strip, back.strip, before.bar, back.bar, before.edge, back.edge, before.left, back.left, before.right, back.right])})`,
+      );
+    };
+
+    await cycle('Sculpt');
+    // Tab: the first press tidies an open panel, the second slides.
+    await tab(page, 'panel--sculpt');
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(400);
+    t.ok(!(await isOpen(page, 'panel--sculpt')) && !(await page.evaluate(() => document.body.classList.contains('chrome-hidden'))), 'Tab first closes the open panel and leaves the interface up');
+    await page.keyboard.press('Tab');
+    await finished(hiddenNow);
+    const viaTab = await geo();
+    t.ok(viaTab.strip.bottom <= 0.5 && viaTab.bar.top >= viaTab.h - 0.5, 'then Tab slides the strip and the tool bar away');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+
+    // The canvas never changes size.
+    const size = () => page.evaluate(() => [...document.querySelectorAll('canvas')].map((c) => `${c.clientWidth}x${c.clientHeight}`).join());
+    const s0 = await size();
+    await page.click('.bz-strip__hide');
+    await page.waitForTimeout(500);
+    t.eq(await size(), s0, 'the canvas keeps its size while the interface is hidden');
+    await page.click('.bz-strip__hide');
+    await page.waitForTimeout(400);
+
+    // Present, from Sculpt: its bar slides down.
+    await page.click('.bz-ws__step[data-workspace="present"]');
+    await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
+    await page.waitForTimeout(500);
+    await cycle('Present');
+    await page.click('.bz-ws__step[data-workspace="sculpt"]');
+    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
+
+    // Reduced motion: no slide, the hidden state at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const instant = await page.evaluate(() => {
+      document.querySelector('.bz-strip__hide').click();
+      return {
+        bar: getComputedStyle(document.querySelector('.sculpt-toolbar__brushes')).visibility,
+        strip: document.querySelector('.bz-strip').getBoundingClientRect().bottom,
+        tab: getComputedStyle(document.querySelector('.panel > .panel__handle')).visibility,
+      };
+    });
+    t.ok(instant.bar === 'hidden' && instant.tab === 'hidden' && instant.strip <= 0.5, `reduced motion: hidden at once, no slide (${JSON.stringify(instant)})`);
+    const instantBack = await page.evaluate(() => {
+      document.querySelector('.bz-strip__hide').click();
+      return { bar: getComputedStyle(document.querySelector('.sculpt-toolbar__brushes')).visibility, strip: document.querySelector('.bz-strip').getBoundingClientRect().top };
+    });
+    t.ok(instantBack.bar === 'visible' && instantBack.strip >= -0.5, `reduced motion: and shown at once (${JSON.stringify(instantBack)})`);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+  },
+
   /** File > Close does what the Gallery chip did. */
   async shellClose(page, base, t) {
     await openSculpt(page, base);

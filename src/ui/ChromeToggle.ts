@@ -13,30 +13,27 @@ import { deviceStore } from './deviceStorage';
  * viewer use the same one rather than stacking a second veil and a second
  * Esc listener on top.
  *
- * What goes is deliberately narrow (review call), and is all in the CSS
- * under body.chrome-hidden: the panels and their docked tabs, the top row
- * of chips, the page furniture, the frame meter, and Sculpt's brush row.
- * What STAYS is everything you actually work with or need to read - the
- * brush sliders, undo/redo, the Negative button, the object stats, the
- * viewer's transport (its scrubber), and any toast, tooltip or hotkey guide
- * that appears. Hiding those made the mode useless rather than minimal;
- * the collapsed tabs were the clutter worth removing. The one notice that
- * goes is the update notice (ui/updates): it needs nothing done this
- * minute, and a clear view is what the mode is for. It comes back with the
- * interface. In the editors only the preview's chrome goes: their sidebar
- * of project settings is the page, not the preview's furniture.
+ * What goes is all in the CSS under body.chrome-hidden, and it slides off
+ * rather than snapping: in the shell the left tabs and the edge controls
+ * (brush fields, Solo, Undo, Redo, Negative) go out to the left, the right
+ * tabs to the right, the tool bar, the Present bar and the transport down,
+ * and the title strip up (shell.css). The strip's hide button holds its
+ * place, so there is always a visible, labelled way back, on a device with
+ * no Tab key as much as anywhere else. Elsewhere (the non-shell chips, the
+ * frame meter) things fade. Toasts, tooltips and the hotkey guide stay; the
+ * update notice waits for the interface to come back. In the editors only
+ * the preview's chrome goes: their sidebar of project settings is the page.
+ * Escape also exits everywhere, and the state is never persisted, so a
+ * reload always returns a full interface.
  *
- * In Sculpt the edge controls (Negative, Undo, Redo, Solo) survive, and so
- * does the hide button in the title strip - a visible, labelled control to
- * come back with, on a device with no Tab key as much as anywhere else. Escape also exits
- * everywhere, and the state is never persisted, so a reload always returns
- * a full interface.
- *
- * Hiding uses `visibility: hidden`, not opacity or a transform: the panels'
- * own collapse is transform-only, which leaves their controls focusable
- * off-screen, and hidden chrome that still took Tab stops would strand a
- * keyboard user in an invisible focus order.
+ * Hidden things take no input and no focus once they are away: the slide
+ * ends with `visibility: hidden` (a delayed transition), not just a
+ * transform, which would leave their controls focusable off-screen.
+ * prefers-reduced-motion drops the slide and hides at once.
  */
+
+/** The slide's length (shell.css, 0.2s). */
+const SLIDE_MS = 200;
 
 export const CHROME_HIDDEN_CLASS = 'chrome-hidden';
 /** Panels listen for this and collapse; the first Tab press dispatches it. */
@@ -126,6 +123,8 @@ export class ChromeToggle {
     this.onChange?.(hidden);
     if (!hidden) {
       this.clearHint();
+      // The bars were measured where they were not while away: lay out again once they are home.
+      window.setTimeout(() => window.dispatchEvent(new Event('bozzetto:shell-layout')), SLIDE_MS + 60);
       return;
     }
     if (this.lessons < LESSONS_LOUD) this.showHint(HINT_LOUD_MS);

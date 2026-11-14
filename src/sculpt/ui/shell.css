@@ -316,26 +316,7 @@ body.bz-shell .bz-ws__sep {
   }
 }
 
-body.bz-shell.chrome-hidden .bz-strip__sep,
-body.bz-shell.chrome-hidden .bz-ws {
-  visibility: hidden;
-}
-
-/* Interface hidden: the strip's bar and words go; the hide button stays, to bring it back. */
-body.bz-shell.chrome-hidden .bz-strip {
-  background: transparent;
-  pointer-events: none;
-}
-
-body.bz-shell.chrome-hidden .bz-menuname,
-body.bz-shell.chrome-hidden .bz-readout,
-body.bz-shell.chrome-hidden .bz-strip__btn {
-  visibility: hidden;
-}
-
-body.bz-shell.chrome-hidden .bz-strip__hide {
-  pointer-events: auto;
-}
+/* Interface hidden: the strip slides up and away; see the hide-the-interface block at the foot of this file. */
 
 /* --- panels and their folder tabs ----------------------------------------
    One panel open per side, 304px wide, under a row of two tabs. The tab is
@@ -510,12 +491,6 @@ body.bz-shell .panel .handle__label {
   letter-spacing: 0;
   text-transform: none;
   color: inherit;
-}
-
-/* Hidden interface takes the tabs. */
-body.bz-shell.chrome-hidden .panel > .panel__handle {
-  visibility: hidden;
-  pointer-events: none;
 }
 
 /* A phone: an open panel may cover the width. */
@@ -977,10 +952,6 @@ body.bz-shell .present-bar__sep {
 
 body.bz-shell .present-bar__save {
   flex: 0 0 auto;
-}
-
-body.bz-shell.chrome-hidden .present-bar {
-  visibility: hidden;
 }
 
 @media (max-width: 420px) {
@@ -1532,4 +1503,118 @@ body.bz-viewer .transport--shell .transport__info:not(:has(.transport__stage-des
 /* "Buffering..." rides above the stage's note, where there is one. */
 body.bz-viewer .transport--shell:has(.transport__stage-desc:not(:empty)) .transport__buffering {
   top: -64px;
+}
+
+/* --- hide the interface (Tab): the chrome slides off its own edge -----------
+   body.chrome-hidden goes on at once (ChromeToggle); these rules animate to
+   and from it, transform and opacity only, so nothing is laid out again and
+   the canvas never resizes. Going out is 200ms ease-out, coming back 200ms
+   ease-in. visibility flips after the slide on the way out (and before it on
+   the way in), so a hidden control takes no tap and no focus; the pen and
+   touch reach the canvas as ever.
+   One piece per side: every left tab travels the same distance (the whole
+   row's width, --bz-tabs-left, set by shellLayout.ts), so the row moves as
+   one; the right tabs likewise. The panels themselves are already collapsed
+   (and visibility hidden) by then, and must not be transformed - they hold
+   the fixed tabs. The strip goes up and the foot bars go down; the hide
+   button counter-slides so it stays where it is, to bring it all back. */
+body.bz-shell .panel > .panel__handle,
+body.bz-shell .bz-edge,
+body.bz-shell .sculpt-toolbar__brushes,
+body.bz-shell .present-bar,
+body.bz-shell .transport--shell,
+body.bz-shell .bz-strip,
+body.bz-shell .bz-strip__hide {
+  transition:
+    transform 0.2s ease-in,
+    opacity 0.2s ease-in;
+}
+
+body.bz-shell.chrome-hidden .panel {
+  /* The generic fade would take the tab, a child, with it. */
+  opacity: 1;
+  transition: none;
+}
+
+body.bz-shell.chrome-hidden .panel > .panel__handle,
+body.bz-shell.chrome-hidden .bz-edge,
+body.bz-shell.chrome-hidden .sculpt-toolbar__brushes,
+body.bz-shell.chrome-hidden .present-bar,
+body.bz-shell.chrome-hidden .transport--shell,
+body.bz-shell.chrome-hidden .bz-strip,
+body.bz-shell.chrome-hidden .bz-strip__hide {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.2s ease-out,
+    visibility 0s linear 0.2s;
+}
+
+body.bz-shell.chrome-hidden .panel:not(.panel--left) > .panel__handle {
+  transform: translateX(calc(var(--bz-tabs-right, 480px) + 8px));
+}
+
+body.bz-shell.chrome-hidden .panel--left > .panel__handle {
+  transform: translateX(calc(-1 * var(--bz-tabs-left, 480px) - 8px));
+}
+
+body.bz-shell.chrome-hidden .bz-edge {
+  transform: translateX(calc(-100% - 24px));
+}
+
+body.bz-shell.chrome-hidden .sculpt-toolbar__brushes {
+  transform: translateY(calc(100% + 108px + env(safe-area-inset-bottom, 0px)));
+}
+
+body.bz-shell.chrome-hidden .present-bar,
+body.bz-shell.chrome-hidden .transport--shell {
+  transform: translate(-50%, calc(100% + 24px + env(safe-area-inset-bottom, 0px)));
+}
+
+/* The strip carries its bar, menus and path up with it (no fade: the hide
+   button inside must stay solid). The button slides back down by the same
+   amount on the same clock, so it holds still; it alone keeps its pointer. */
+body.bz-shell.chrome-hidden .bz-strip {
+  transform: translateY(-100%);
+  opacity: 1;
+  visibility: visible;
+}
+
+body.bz-shell.chrome-hidden .bz-strip__hide {
+  transform: translateY(100%);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+
+/* Inside the strip only the button stays: the rest goes inert once it is away. */
+body.bz-shell.chrome-hidden .bz-menuname,
+body.bz-shell.chrome-hidden .bz-readout,
+body.bz-shell.chrome-hidden .bz-strip__btn,
+body.bz-shell.chrome-hidden .bz-strip__sep,
+body.bz-shell.chrome-hidden .bz-ws {
+  visibility: hidden;
+  transition: visibility 0s linear 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.bz-shell .panel > .panel__handle,
+  body.bz-shell .bz-edge,
+  body.bz-shell .sculpt-toolbar__brushes,
+  body.bz-shell .present-bar,
+  body.bz-shell .transport--shell,
+  body.bz-shell .bz-strip,
+  body.bz-shell .bz-strip__hide,
+  body.bz-shell.chrome-hidden .bz-menuname,
+  body.bz-shell.chrome-hidden .bz-readout,
+  body.bz-shell.chrome-hidden .bz-strip__btn,
+  body.bz-shell.chrome-hidden .bz-strip__sep,
+  body.bz-shell.chrome-hidden .bz-ws {
+    transition: none !important;
+  }
 }

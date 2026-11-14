@@ -362,7 +362,8 @@ export const suites = {
     await press(page, 'Tab');
     await press(page, 'Tab');
     await press(page, 'Escape');
-    now = await ui(page);
+    // The interface slides back in: wait for its end.
+    now = await uiOnce(page, (u) => !u.presenting && !u.chrome && u.shown.toolbar && u.shown.rail);
     t.ok(!now.presenting && !now.chrome && now.shown.toolbar && now.shown.rail, `Esc with the interface hidden leaves Present with the interface as it was (${show(now)})`);
     // Hidden before Present, hidden after.
     await press(page, 'Tab');
@@ -838,7 +839,7 @@ async function ipadChecks(page, base, t) {
     t.ok(!(await ipad.evaluate(() => window.__sculpt.present.isTurning())), 'and a touch on the view stops it');
     await dev.tap(await centre('.bz-ws__step[data-workspace="sculpt"]'));
     await ipad.waitForTimeout(100);
-    const back = await ui(ipad);
+    const back = await uiOnce(ipad, (u) => !u.presenting && u.shown.toolbar);
     t.ok(!back.presenting && back.shown.toolbar && back.path === 'Armature > Sculpt* > Present', 'the path\'s Sculpt step leaves Present, the toolbar back');
 
     // The gallery on the iPad: the In progress card's picture, 4:5 too.

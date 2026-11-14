@@ -140,9 +140,9 @@ export async function openArmature(page, base) {
 /**
  * Tab and Esc over the interface, the same in every mode (owner decision):
  * with `panels` (selectors) open, Tab closes them all, Tab again hides the
- * interface (body.chrome-hidden, the panels' tabs and the top chips gone),
+ * interface (body.chrome-hidden, the panels' tabs, the bars and the top chips gone),
  * Tab again brings it back; hidden again, Esc brings it back. `transport`
- * says the viewer's transport is there and must stay; `keep` lists
+ * says the viewer's transport is there, and must slide away with the rest; `keep` lists
  * selectors that must stay visible (an editor's own top row and sidebar).
  * Last, Tab in a text field in an open panel moves the focus and hides
  * nothing, while Tab on a focused button, checkbox or slider closes the
@@ -195,7 +195,7 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
 
   // No fades: a headless page that draws nothing new runs no transitions,
   // and the hidden state is what is being checked, not its fade.
-  await page.addStyleTag({ content: '.panel, .panel *, .topbar, .topbar *, .bz-strip, .bz-strip *, .transport, .fps-meter { transition: none !important; }' });
+  await page.addStyleTag({ content: '.panel, .panel *, .topbar, .topbar *, .bz-strip, .bz-strip *, .transport, .bz-edge, .sculpt-toolbar__brushes, .present-bar, .fps-meter { transition: none !important; }' });
   await openAll();
   let s = await state();
   t.ok(s.open.every(Boolean) && !s.hidden, `${where}: the panels open (${s.open})`);
@@ -209,7 +209,7 @@ export async function chromeChecks(page, t, where, { panels, transport = false, 
   t.ok(s.hidden && s.tabs.every((v) => !v) && !s.help && s.chips.length === 0 && s.menus === 0, `${where}: Tab again hides the interface: the panels' tabs, Help (or the strip's menus) and the top chips go (tabs ${s.tabs}, help ${s.help}, chips ${s.chips.join(', ') || 'none'}, strip menus ${s.menus})`);
   if (s.strip) t.ok(s.eye, `${where}: and the strip's hide button stays, to bring it back`);
   t.ok(/press Tab to bring it back/.test(s.hint), `${where}: and says how to bring it back ("${s.hint}")`);
-  if (transport) t.ok(s.transport, `${where}: the transport stays`);
+  if (transport) t.ok(!s.transport, `${where}: the transport goes with it`);
   if (keep.length) t.ok(s.kept.every(Boolean), `${where}: the page's own ${keep.join(', ')} stay (${s.kept})`);
   await page.keyboard.press('Tab');
   await whenShown();
