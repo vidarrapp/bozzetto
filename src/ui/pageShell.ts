@@ -4,15 +4,16 @@ import { pageNav, type PageId, type PageNav } from './pageNav';
 
 /**
  * The frame the pages share (the boards' Owner tools, My projects,
- * Community, Account and Review): the navigation row (ui/pageNav) and under
- * it a column with the title, a line under the title, and then whatever the
- * page puts below. The column is 1040px wide, 800px for a page of plain
- * sections (the Account).
+ * Community, Account and Review): the title strip (ui/pageNav) fixed at the
+ * top, and under it the page's own scroller (the host) holding a column with
+ * the title, a line under the title, and then whatever the page puts below.
+ * The document itself never scrolls (style.css, `html.is-page`). The column
+ * is 1040px wide, 800px for a page of plain sections (the Account).
  *
  * The foot (ui/legalFoot) closes the column on every page.
  *
- * The caller fills the navigation row, `shell.nav.fill`, once it knows who
- * is signed in.
+ * The caller fills the strip, `shell.nav.fill`, once it knows who is signed
+ * in. `name` is what the strip's middle says (the title unless told otherwise).
  */
 export interface PageShell {
   nav: PageNav;
@@ -24,9 +25,11 @@ export interface PageShell {
 
 export function pageShell(
   host: HTMLElement,
-  opts: { current: PageId | null; title: string; tagline?: string; className?: string; narrow?: boolean },
+  opts: { current: PageId | null; title: string; name?: string; tagline?: string; className?: string; narrow?: boolean },
 ): PageShell {
-  const nav = pageNav(opts.current);
+  document.documentElement.classList.add('is-page');
+  host.classList.add('page-scroll');
+  const nav = pageNav(opts.current, opts.name ?? opts.title);
   const page = document.createElement('div');
   page.className = `page${opts.narrow ? ' page--narrow' : ''}${opts.className ? ` ${opts.className}` : ''}`;
   const head = document.createElement('header');
@@ -44,7 +47,8 @@ export function pageShell(
   const foot = document.createElement('div');
   foot.className = `page page--foot${opts.narrow ? ' page--narrow' : ''}`;
   foot.appendChild(legalFoot());
-  host.replaceChildren(nav.root, page, foot);
+  host.replaceChildren(page, foot);
+  host.scrollTop = 0;
   return { nav, page, head, title, tagline };
 }
 

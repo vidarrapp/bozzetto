@@ -557,7 +557,62 @@ export async function armatureProjectFile(page, base, t) {
   t.ok(/__proto__/.test(poisoned.said ?? '') && after === before, `a file with a __proto__ key is refused, the figure untouched ("${poisoned.said}")`);
 }
 
+/**
+ * Send to Sculpt keeps the armature on the device, and the gallery's "Your
+ * armature" card shows the picture taken as it left: the card's image
+ * loads and is not blank, whether a picture was taken before or not.
+ */
+export async function armatureSendThumb(page, base, t) {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await boot(page, base);
+  await page.evaluate(() => {
+    window.__armature.armature.symmetry = false;
+    window.__armature.turn('upperarm.L', -60, 0, 10);
+  });
+  await Promise.all([
+    page.waitForURL((u) => u.searchParams.get('handoff') === '1', { timeout: 60_000 }),
+    page.evaluate(() => void window.__armature.send(window.__armature.panel.resolution)),
+  ]);
+  await page.waitForFunction(() => !!window.__sculpt || !!document.querySelector('.overlay--error'), null, { timeout: 120_000 }).catch(() => {});
+  await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#landing-grid .card--armature', { timeout: 30_000 });
+  await page.waitForFunction(
+    () => {
+      const i = document.querySelector('#landing-grid .card--armature img.card__img');
+      return !!i && i.complete;
+    },
+    null,
+    { timeout: 15_000 },
+  ).catch(() => {});
+  const card = await page.evaluate(() => {
+    const img = document.querySelector('#landing-grid .card--armature img.card__img');
+    if (!img) return { has: false };
+    let spread = 0;
+    if (img.naturalWidth > 0) {
+      const c = document.createElement('canvas');
+      c.width = 40;
+      c.height = 50;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 40, 50);
+      const d = g.getImageData(0, 0, 40, 50).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = d[i] + d[i + 1] + d[i + 2];
+        lo = Math.min(lo, v / 3);
+        hi = Math.max(hi, v / 3);
+      }
+      spread = hi - lo;
+    }
+    return { has: true, w: img.naturalWidth, h: img.naturalHeight, spread };
+  });
+  t.ok(card.has && card.w > 0 && card.h > 0, `after Send to Sculpt the armature card's picture loads (${JSON.stringify(card)})`);
+  t.ok(card.spread > 8, `and is not blank (tonal spread ${Math.round(card.spread ?? 0)})`);
+}
+
 export const suites = {
+  async armatureSendThumb(page, base, t) {
+    await armatureSendThumb(page, base, t);
+  },
   async armatureProjects(page, base, t) {
     await armaturePanelSide(page, base, t);
     await armatureHistory(page, base, t);

@@ -12,6 +12,7 @@ export const MODES: Topic[] = [
       options(
         ['New sculpt', 'Starts over. It asks first if the current objects would be lost.'],
         ['Open…', 'Opens a .bozz file, the scene format. It asks first if the current objects would be replaced.'],
+        ['Open recent', 'A list beside the menu of the last ten projects you opened or saved, in Sculpt, Armature or Present, newest first, each with its mode, where it lives and when. Choosing one opens it in its own mode, and asks first if the current work would be replaced. One that has been deleted or that you can no longer reach is said so and leaves the list. **Clear list** empties it. Files you opened from disk are not listed. Signing out removes the ones that needed your account.'],
         ['Save file', 'Downloads the scene as a .bozz file with a time stamp in its name. A file is the copy that does not depend on this device\'s storage, so it is the safest one to keep.'],
         ['Save to library', 'Where it goes depends on who you are. Signed in, it saves to **My projects** on the site, where only you see it (the site\'s owner saves to **Projects**). Signed out, it downloads a .bozz file. The menu line under it says which one it will do.'],
         ['Keep on this device', 'Keeps a copy in this browser\'s storage and shows it on the gallery\'s device cards. "On this device only. A reinstall or clearing the browser loses it."'],
@@ -76,13 +77,14 @@ export const MODES: Topic[] = [
       options(
         ['New armature', 'Starts over, and asks first if the pose and proportions would be lost.'],
         ['Open…', 'Opens an .armature file.'],
+        ['Open recent', 'The projects you opened or saved lately, in any mode. See the File menu in Sculpt.'],
         ['Load model…', 'Loads a .glb or .gltf model as the figure.'],
-        ['Save', 'Downloads an .armature file.'],
+        ['Save file', 'Downloads an .armature file.'],
         ['Save to library', 'Saves to the site, as Sculpt\'s does.'],
         ['Send to Sculpt', 'The same as the panel\'s button. Hotkey **Ctrl+Enter**.'],
         ['Close', 'Goes back to where you came from: the gallery, Community, My projects or Owner tools, as the hint says.'],
         ['Edit', 'Undo, Redo and Preferences…'],
-        ['View', 'Frame all, Wireframe, the Armature, Material and Render panels and Hide interface.'],
+        ['View', 'Frame all, Wireframe, Shadows, the Armature, Material and Render panels, Hide interface, and the way to Sculpt (the same as Send to Sculpt). Present is greyed out until a figure has been sent.'],
       ),
       h('Figure'),
       options(

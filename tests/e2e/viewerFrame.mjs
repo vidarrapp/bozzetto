@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderShape, shapeChecks } from './renderMatch.mjs';
+import { checkShape, readMenus } from './menuShape.mjs';
 
 const ORANGE = 'rgb(255, 90, 31)';
 const WHITE = 'rgb(255, 255, 255)';
@@ -173,13 +174,19 @@ export const suites = {
     // --- the strip: File, View and Help, the readout, hide --------------------
     let s = await stripState(page);
     t.ok(s.strip && s.strip.h === 24 && s.strip.t === 0 && s.strip.w === s.vw && s.strip.bg === STRIP && s.strip.pos === 'fixed', `a 24px strip across the top, on the strip colour (${JSON.stringify(s.strip)})`);
-    t.eq(s.menus.join(), 'File,View,Help', 'three menus at its left, File, View and Help, as in the workspaces: no Edit, and no Moderation for a guest');
+    t.eq(s.menus.join(), 'File,Edit,View,Help', 'four menus at its left, File, Edit, View and Help, as in the workspaces: no Moderation for a guest');
     t.ok(!s.path, 'and no workspace path after them');
+    checkShape(t, 'Viewer', await readMenus(page, 'Viewer'), { names: 'File,Edit,View,Help', file: 'New sculpt from this|Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Render panel|Hide interface' });
     t.ok(s.left && s.readout && s.right && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'the menus, the readout and the right group do not overlap');
     t.eq(s.title, 'Demo bust (synthetic)', "the readout starts with the project's title");
     t.ok(Number(s.titleWeight) >= 600, `in bold (${s.titleWeight})`);
-    const at = await page.evaluate(() => window.__bozzetto.timeline.stageAt(10)?.name ?? null);
-    t.ok(/Timelapse 24 frames/.test(s.readoutText) && !!at && s.readoutText.endsWith(`Stage ${at}`), `then Timelapse 24 frames and the stage the frame is in (${s.readoutText})`);
+    // The demo plays on, so the stage is read from every frame's, not one frame's: the
+    // readout names whichever stage the frame on screen was in when it was read.
+    const names = await page.evaluate(() => {
+      const tl = window.__bozzetto.timeline;
+      return [...new Set(Array.from({ length: 24 }, (_, i) => tl.stageAt(i)?.name).filter(Boolean))];
+    });
+    t.ok(/Timelapse 24 frames/.test(s.readoutText) && names.some((n) => s.readoutText.endsWith(`Stage ${n}`)), `then Timelapse 24 frames and the stage the frame is in (${s.readoutText})`);
     t.ok(!/ by @/.test(s.readoutText), 'with no author: the project is not a member\'s');
     t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right for a visitor');
     await openStripMenu(page, 'File');
@@ -242,7 +249,7 @@ export const suites = {
     await page.click('.bz-menuname:has-text("View")');
     await page.waitForSelector('.file-menu--view:not([hidden])');
     const rows = await menuRows(page, 'file-menu--view');
-    t.eq(rows.join(' | '), 'Frame model [F] | Frame all [A] | Wireframe [Shift + W] | Shadows [Shift + S] | Cycle ground [G] | Material panel | Render panel | Hide interface [Tab]', 'View holds framing, the view toggles and Render, Hide interface, with their hotkeys');
+    t.eq(rows.join(' | '), 'Frame all [F] | Wireframe [Shift + W] | Shadows [Shift + S] | Material panel | Render panel | Hide interface [Tab]', 'View holds one Frame all (on F, the key Frame model had), the view toggles, Material and Render, Hide interface, with their hotkeys, and no Cycle ground');
     await page.evaluate(() => {
       window.__framed = 0;
       window.__bozzetto.focusSubject = () => void window.__framed++;
@@ -250,17 +257,15 @@ export const suites = {
     await page.click('.file-menu--view .file-menu__item:has-text("Frame all")');
     t.eq(await page.evaluate(() => window.__framed), 1, 'Frame all frames the subject');
     await page.click('.bz-menuname:has-text("View")');
-    await page.click('.file-menu--view .file-menu__item:has-text("Frame model")');
-    t.eq(await page.evaluate(() => window.__framed), 2, 'so does Frame model');
-    await page.click('.bz-menuname:has-text("View")');
     await page.click('.file-menu--view .file-menu__item:has-text("Wireframe")');
     t.ok(await page.evaluate(() => window.__bozzetto.isWireframe()), 'Wireframe turns it on');
     t.eq(await page.getAttribute('.file-menu--view .file-menu__item:has-text("Wireframe")', 'aria-checked'), 'true', 'and shows a check');
     await page.click('.file-menu--view .file-menu__item:has-text("Wireframe")');
     t.ok(!(await page.evaluate(() => window.__bozzetto.isWireframe())), 'again, off');
     const ground = await page.evaluate(() => window.__bozzetto.getGround());
-    await page.click('.file-menu--view .file-menu__item:has-text("Cycle ground")');
-    t.ok((await page.evaluate(() => window.__bozzetto.getGround())) !== ground, 'Cycle ground moves the ground on');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('g');
+    t.ok((await page.evaluate(() => window.__bozzetto.getGround())) !== ground, 'G still cycles the ground, though the menu has no item for it');
     // A switch leaves the menu open, as Sculpt's does; a command closes it.
     await page.click('.bz-menuname:has-text("View")');
     await page.click('.file-menu--view .file-menu__item:has-text("Render panel")');
@@ -281,8 +286,8 @@ export const suites = {
     // --- Help: the hotkey guide, no topics window --------------------------------------
     await page.click('.bz-menuname:has-text("Help")');
     await page.waitForSelector('.file-menu--help:not([hidden])');
-    t.eq((await menuRows(page, 'file-menu--help')).join(' | '), 'Hotkeys [H]', 'Help holds Hotkeys, as the "?" chip opened it, and no Help topics');
-    await page.click('.file-menu--help .file-menu__item');
+    t.eq((await menuRows(page, 'file-menu--help')).join(' | '), 'Help topics | Hotkeys [H] | About and credits', 'Help holds the same three items as everywhere');
+    await page.click('.file-menu--help .file-menu__item:has-text("Hotkeys")');
     t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden && /Hotkeys/.test(document.querySelector('.help-guide__head').textContent)), 'it opens the hotkey guide');
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => document.querySelector('.help-guide').hidden), 'and H closes it');
@@ -326,7 +331,7 @@ export const suites = {
     const f = await frameState(page);
     t.ok(f.bar === null, 'a model has no transport');
     t.eq(s.readoutText, 'A model Model', `its readout is its title and Model (${s.readoutText})`);
-    t.eq(s.menus.join(), 'File,View,Help', 'with the same three menus');
+    t.eq(s.menus.join(), 'File,Edit,View,Help', 'with the same four menus');
     t.eq([...f.tabs].sort().join(), 'Material,Render', 'and the Material and Render tabs');
     t.eq(s.oldRow.join(), '', 'and none of the old top row');
   },
@@ -342,7 +347,7 @@ export const suites = {
     await page.waitForFunction(() => !!document.querySelector('.bz-menuname') && document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'), null, { timeout: 30_000 });
     const s = await stripState(page);
     t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'the owner has no Edit at the right of the strip any more');
-    t.eq(s.menus.join(), 'File,View,Help', 'and the same three menus');
+    t.eq(s.menus.join(), 'File,Edit,View,Help', 'and the same four menus');
     await openStripMenu(page, 'File');
     t.eq((await rowsWithHints(page)).join(' | '), 'New sculpt from this (Starts a new sculpt from the frame on screen) | Edit in Present | Close (Back to the gallery)', 'File holds New sculpt from this, Edit in Present, then Close');
     await page.screenshot({ path: `${SHOTS}/viewer-owner-file.png` });
@@ -451,7 +456,7 @@ export const suites = {
       return { tag: a?.tagName, href: a?.getAttribute('href'), count: document.querySelectorAll('.viewer-author').length };
     });
     t.ok(by.tag === 'A' && by.href === '/?u=ada' && by.count === 1, `a link to her page, said once (${JSON.stringify(by)})`);
-    t.eq(s.menus.join(), 'File,View,Moderation,Help', 'a member has File, View, Moderation and Help');
+    t.eq(s.menus.join(), 'File,Edit,View,Moderation,Help', 'a member has File, Edit, View, Moderation and Help');
     t.eq(s.buttons.map((b) => b.text).join(), 'Star,Hide the interface', 'the right of the strip holds the Star (an icon, named for a screen reader) and the hide button, nothing else');
     t.ok(s.buttons.every((b) => b.bg === 'rgba(0, 0, 0, 0)'), 'neither filled');
     t.eq(s.oldRow.join(), '', 'and no top row');
@@ -474,7 +479,7 @@ export const suites = {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const p = await stripState(page);
-    t.ok(noOverlap(p.left, p.right) && p.scroll <= 0 && p.right.r <= 390, `at 390px File, View, Moderation, Help, the Star and the hide button fit without overlap (${JSON.stringify([p.left, p.right])})`);
+    t.ok(noOverlap(p.left, p.right) && p.scroll <= 0 && p.right.r <= 390, `at 390px File, Edit, View, Moderation, Help, the Star and the hide button fit without overlap (${JSON.stringify([p.left, p.right])})`);
     await page.screenshot({ path: `${SHOTS}/viewer-member-390.png` });
   },
 
@@ -517,7 +522,8 @@ export const suites = {
     await page.waitForTimeout(400);
     shapeChecks(t, await renderShape(page), 'Review mode');
     await page.click('.panel--render > .panel__handle');
-    t.eq(s.menus.join(), 'File,View,Moderation,Help', 'the same strip: File, View, Moderation and Help');
+    t.eq(s.menus.join(), 'File,Edit,View,Moderation,Help', 'the same strip: File, Edit, View, Moderation and Help');
+    checkShape(t, 'Review mode', await readMenus(page, 'Review mode'), { names: 'File,Edit,View,Moderation,Help', file: 'Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Render panel|Hide interface' });
     t.ok(/^Ada bust by @ada Timelapse 24 frames/.test(s.readoutText) && /Reviewing Pending review$/.test(s.readoutText), `the readout has the author and where it stands (${s.readoutText})`);
     t.eq(await page.getAttribute('.review-mode', 'data-shared'), 'pending', 'the state is on the review-mode hook');
     t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right: the review actions are in Moderation');

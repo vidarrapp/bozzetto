@@ -23,6 +23,14 @@ layer does not try to.
 - The splash and the gallery's logotype.
 - The voice of the copy: sentence case, plain words.
 
+## The pages
+
+The gallery, Community, My projects, Account, Review and Owner tools are
+not a separate look: they carry the same title strip as the workspaces,
+with File, Go and Help at the left, the page's name in the middle and the
+account at the right (docs/ui-spec.md, section 5). Under it the page's own
+container scrolls; the document does not, so the strip stays sharp on iPad.
+
 ## What it replaces
 
 | Gestalt rule | In the app | Why |

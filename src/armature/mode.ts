@@ -8,7 +8,6 @@ import { STUDIO_BG } from '../viewer/Environment';
 import { keymap } from '../ui/keymap';
 import { isTextEntryTarget } from '../ui/dom';
 import { isShowKey, pageChrome } from '../ui/ChromeToggle';
-import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
 import { settings } from '../ui/settings';
 import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
@@ -17,7 +16,12 @@ import { beforeLeaving } from '../ui/leaving';
 import { downloadBlob } from '../ui/download';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { TitleStrip } from '../sculpt/ui/TitleStrip';
+import { mountAccountHandle } from '../ui/account/menu';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
+import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import { recentMenuItem } from '../sculpt/ui/recentMenu';
+import { recordRecent } from '../ui/recent';
+import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
@@ -1088,6 +1092,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // The title strip, and the undo and redo buttons where Sculpt has them,
   // at the foot of the left edge.
   const strip = new TitleStrip();
+  mountAccountHandle(strip);
   const chrome = pageChrome();
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
@@ -1377,7 +1382,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     });
     // The figure is on its way: a send from here again is an ordinary one.
     forScene = false;
-    await flushSave();
+    // The card this armature leaves in the gallery gets its picture of the
+    // figure as sent, taken while the canvas is still up (a record saved
+    // without one shows the placeholder, and an older one a stale pose).
+    await snapshot();
     window.location.href = '/?sculpt=1&handoff=1';
   };
 
@@ -1516,6 +1524,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     return role;
   };
   let roleKnown = probeRole();
+  /** The project this armature is, if it is one, goes to the top of the recent list: opened, or saved to. */
+  const noteOpened = (): void => {
+    if (link) recordRecent({ id: link.id, kind: 'armature', name: link.title, place: place(), ...(link.scope ? { scope: link.scope } : {}) });
+  };
+  void roleKnown.then(noteOpened);
   /** Whether Save to library goes to a server for `who`, as Sculpt's File menu decides it. */
   const uploads = (who: Role): boolean =>
     who === 'owner' || who === 'expired' || (accountsHere && (who === 'member' || who === 'moderator'));
@@ -1558,6 +1571,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         (text) => status.set(text),
       );
       link = saved;
+      noteOpened();
       await flushSave();
       status.done(`Saved to ${where}: ${saved.title}`);
       return saved;
@@ -1584,43 +1598,58 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
   };
 
+  // The workspace path as the strip and the View menu both read it: Sculpt is
+  // File > Send to Sculpt; Present waits for a figure to be sent.
+  const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
+    current: 'armature',
+    steps: {
+      sculpt: { action: () => void send(panel.resolution) },
+      present: { unavailable: 'A figure is sent to Sculpt first' },
+    },
+  });
   const fileMenu = new TopMenu(
     'File',
-    [
-      {
-        label: 'New armature',
-        action: () => {
-          if (undoStack.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
-          name = 'Armature';
-          // A new armature is nobody's project, with a history of its own.
-          link = null;
-          void replaceFigure(armature.rig.id, undefined, true).then(() => {
-            frame();
-            clearHistory();
-          });
+    fileMenuItems({
+      start: [
+        {
+          label: 'New armature',
+          action: () => {
+            if (undoStack.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
+            name = 'Armature';
+            // A new armature is nobody's project, with a history of its own.
+            link = null;
+            void replaceFigure(armature.rig.id, undefined, true).then(() => {
+              frame();
+              clearHistory();
+            });
+          },
         },
-      },
-      { label: 'Open…', action: () => openInput.click() },
-      { label: 'Load model…', action: () => modelInput.click() },
-      { label: 'Save', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
-      { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
-      { separator: true },
-      { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
-      { separator: true },
-      { label: 'Close', hint: originOf().hint, action: leaveForGallery },
-    ],
+        { label: 'Open…', action: () => openInput.click() },
+        recentMenuItem(() => undoStack.length > 0),
+      ],
+      save: [
+        { label: 'Save file', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
+        { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
+      ],
+      transfer: [
+        { label: 'Load model…', action: () => modelInput.click() },
+        { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
+      ],
+      close: leaveForGallery,
+    }),
     'file-menu--file',
     strip.menus,
     true,
   );
   const editMenu = new TopMenu(
     'Edit',
-    [
-      { label: 'Undo', key: keyFor('arm.undo'), action: undo },
-      { label: 'Redo', key: keyFor('arm.redo'), action: redo },
-      { separator: true },
-      { label: 'Preferences…', action: () => showPreferences('armature') },
-    ],
+    editMenuItems({
+      mode: 'armature',
+      history: [
+        { label: 'Undo', key: keyFor('arm.undo'), action: undo },
+        { label: 'Redo', key: keyFor('arm.redo'), action: redo },
+      ],
+    }),
     'file-menu--edit',
     strip.menus,
     true,
@@ -1636,24 +1665,27 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
         },
       },
+      shadows: {
+        get: () => viewer.lighting.getShadowsMaster(),
+        toggle: () => {
+          viewer.lighting.setShadowsMaster(!viewer.lighting.getShadowsMaster());
+          window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+        },
+      },
       panels: [
         ['armature', 'Armature'],
         ['material', 'Material'],
         ['settings', 'Render'],
       ],
       hideInterface: () => chrome.set(true),
-      sculpt: { action: () => void send(panel.resolution) },
+      workspace: workspaceNow,
     }),
     'file-menu--view',
     strip.menus,
     true,
   );
   const helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
-  // The workspace path: Sculpt is File > Send to Sculpt; Present waits for a figure to be sent.
-  strip.setWorkspace('armature', {
-    sculpt: { action: () => void send(panel.resolution) },
-    present: { unavailable: 'A figure is sent to Sculpt first' },
-  });
+  strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
   // Which panel was open on each side last time, open again; kept from here on.
   const offPanelMemory = rememberPanels('armature');
   // The readout: the project's name when it has one, the part in hand, the figure's triangles.

@@ -620,8 +620,8 @@ async function workerAndSignOut(browser, base, t) {
       dialogs.push(d.message());
       void (answer ? d.accept() : d.dismiss());
     });
-    const chips = () => p.evaluate(() => [...document.querySelectorAll('.landing-chip')].map((c) => c.textContent).join(', '));
-    const hasChip = (c) => [...document.querySelectorAll('.landing-chip')].some((el) => el.textContent === c);
+    const chips = () => p.evaluate(() => [...document.querySelectorAll('.bz-strip__right .bz-strip__btn, .bz-strip__right .account-menu__chip')].map((c) => c.textContent.trim()).concat([...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => c.textContent.trim() === 'Owner tools' ? 'Projects' : c.textContent.trim())).join(', '));
+    const hasChip = (c) => [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].some((el) => el.textContent === c);
     const gallery = async (chip) => {
       await p.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await until(p, hasChip, chip);
@@ -639,7 +639,7 @@ async function workerAndSignOut(browser, base, t) {
     await p.goto(`${base}/`, { waitUntil: 'load' });
     t.ok(await workerActivated(p), 'the worker installs');
     await gallery('Sign out');
-    t.ok(/Projects, Sign out/.test(await chips()), `signed in, the top row has Projects and Sign out (${await chips()})`);
+    t.ok(/Projects/.test(await chips()) && /Sign out/.test(await chips()), `signed in, the top row has Projects and Sign out (${await chips()})`);
     await p.waitForFunction(() => document.querySelectorAll('.card__img').length >= 3 && [...document.querySelectorAll('.card__img')].every((i) => i.complete), null, { timeout: 30_000 }).catch(() => {});
     const filesThumb = `${FILES}/m/files-reel/thumb.jpg`;
     let caches = await cachesUntil(
@@ -690,7 +690,7 @@ async function workerAndSignOut(browser, base, t) {
     await p.waitForSelector('.card--owned', { timeout: 30_000 }).catch(() => {});
     t.ok('bozzetto-owner-projects' in (await cachesUntil((c) => 'bozzetto-owner-projects' in c)), 'signed in again, the list is kept again');
     dialogs.length = 0;
-    await p.click('.landing-chip:text-is("Sign out")');
+    await p.click('.bz-strip__right .bz-strip__btn:text-is("Sign out")');
     for (let i = 0; i < 100 && !logouts.length; i++) await p.waitForTimeout(100);
     await p.waitForTimeout(500);
     await until(p, hasChip, 'Log in');
@@ -710,7 +710,7 @@ async function workerAndSignOut(browser, base, t) {
     fake.opts.expired = false;
     await p.goto(`${base}/admin/`, { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('.admin-row', { timeout: 30_000 }).catch(() => {});
-    t.ok(await p.evaluate(() => [...document.querySelectorAll('.pagenav__account .topchip')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
+    t.ok(await p.evaluate(() => [...document.querySelectorAll('.bz-strip__right .bz-strip__btn')].some((c) => c.textContent === 'Sign out')), 'the Projects page offers Sign out too');
 
     // Offline: the app's own pages, and nothing else.
     await gallery('Sign out');

@@ -423,7 +423,8 @@ export const suites = {
         outside = await p.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !document.activeElement.closest('.bz-device-notice'));
       }
       t.ok(outside, 'Tab moves on from the notice into the page, nothing traps it');
-      await p.click('.pagenav__link[data-page="gallery"], .pagenav__logo, .pagenav a').catch(() => {});
+      await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+      await p.click('.file-menu--go .file-menu__item:has-text("Gallery")').catch(() => {});
       await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
       t.ok(true, 'and the page navigation works while it is up');
       await p.goto(`${base}/?community`, { waitUntil: 'domcontentloaded' });
@@ -444,7 +445,7 @@ export const suites = {
       const f = await p.evaluate(() => {
         const n = document.querySelector('.bz-device-notice').getBoundingClientRect();
         const hit = (el) => !(el.bottom <= n.top || el.top >= n.bottom || el.right <= n.left || el.left >= n.right);
-        const nav = document.querySelector('.landing__top, .pagenav, header');
+        const nav = document.querySelector('.bz-strip');
         const first = document.querySelector('#landing-grid .card');
         return {
           fits: n.left >= 0 && n.right <= innerWidth && n.bottom <= innerHeight,
