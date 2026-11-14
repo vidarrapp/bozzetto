@@ -180,8 +180,13 @@ export const suites = {
     t.ok(s.left && s.readout && s.right && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'the menus, the readout and the right group do not overlap');
     t.eq(s.title, 'Demo bust (synthetic)', "the readout starts with the project's title");
     t.ok(Number(s.titleWeight) >= 600, `in bold (${s.titleWeight})`);
-    const at = await page.evaluate(() => window.__bozzetto.timeline.stageAt(10)?.name ?? null);
-    t.ok(/Timelapse 24 frames/.test(s.readoutText) && !!at && s.readoutText.endsWith(`Stage ${at}`), `then Timelapse 24 frames and the stage the frame is in (${s.readoutText})`);
+    // The demo plays on, so the stage is read from every frame's, not one frame's: the
+    // readout names whichever stage the frame on screen was in when it was read.
+    const names = await page.evaluate(() => {
+      const tl = window.__bozzetto.timeline;
+      return [...new Set(Array.from({ length: 24 }, (_, i) => tl.stageAt(i)?.name).filter(Boolean))];
+    });
+    t.ok(/Timelapse 24 frames/.test(s.readoutText) && names.some((n) => s.readoutText.endsWith(`Stage ${n}`)), `then Timelapse 24 frames and the stage the frame is in (${s.readoutText})`);
     t.ok(!/ by @/.test(s.readoutText), 'with no author: the project is not a member\'s');
     t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right for a visitor');
     await openStripMenu(page, 'File');
