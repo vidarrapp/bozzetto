@@ -838,7 +838,7 @@ export class Panel {
     const rows = div('dof-rows');
     rows.hidden = !dof.enabled;
     this.dofRows = rows;
-    const toggle = checkbox('Enabled', dof.enabled, (on) => {
+    const toggle = checkbox('Depth of field', dof.enabled, (on) => {
       this.viewer.setDoF({ enabled: on });
       rows.hidden = !on;
     });

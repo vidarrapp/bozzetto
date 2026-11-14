@@ -83,7 +83,7 @@ export const suites = {
       };
     });
     t.ok(!heads.headings.includes('Depth of field'), `no separate Depth of field section (${heads.headings})`);
-    t.ok(heads.shown && ['Lens', 'Tone mapping', 'Enabled'].every((r) => heads.cameraRows.includes(r)), `Camera holds its own rows then the Enabled switch (${heads.cameraRows})`);
+    t.ok(heads.shown && ['Lens', 'Tone mapping', 'Depth of field'].every((r) => heads.cameraRows.includes(r)), `Camera holds its own rows then the Depth of field switch (${heads.cameraRows})`);
     t.ok(heads.folded, 'the Aperture and Focus rows fold under it, in the Camera section');
     await page.evaluate(() => document.querySelector('.panel--render .dof-rows').closest('.section').querySelector('.checkbox input').click());
     await page.waitForTimeout(150);

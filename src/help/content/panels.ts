@@ -169,7 +169,7 @@ export const PANELS: Topic[] = [
       options(
         ['Lens', 'The focal length: 35, 50, 55, 80, 105 or 135 mm, in 35mm-equivalent terms.'],
         ['Tone mapping', 'The film curve that turns the light into the picture. **None (linear)**, **Neutral**, **AgX** or **Cinematic (ACES)**. Matcap mode always shows ungraded.'],
-        ['Enabled', 'Depth of field, under the camera rows. Blurs what is in front of and behind the point of focus. The two rows below show only while it is on.'],
+        ['Depth of field', 'Under the camera rows. Blurs what is in front of and behind the point of focus. The two rows below show only while it is on.'],
         ['Aperture', 'The f-stop, from f/1.4 to f/16. A lower number blurs more.'],
         ['Focus', 'Slides the focus plane through the subject. Double-click the view (double-tap on touch) to focus on a point instead, and move this slider to let that go.'],
       ),
