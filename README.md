@@ -150,6 +150,8 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Open recent.** **File > Open recent** lists the last ten projects you opened or saved, in any mode, newest first, and opens one in its own mode.
+- **The same menus everywhere.** Sculpt, Armature, Present and the viewer now have File, Edit, View and Help in that order, with the same items in the same places and **Preferences…** at the end of Edit. The viewer's View menu has one **Frame all** (on `F`) and **Shadows**, and its Help has all three topics.
 - **A Material tab.** Albedo, Roughness and Metalness, with the mode, shading and wireframe, now sit together in a **Material** panel next to Model on the left. The Model panel starts at Topology and the Render panel at Lighting.
 - **Your choice about saving.** On first visit Bozzetto asks whether to keep your work, settings and an offline copy on this device. You can change it under Edit > Preferences.
 - **Pages in the new look.** My projects, Community, Account, Review and Owner tools share one navigation row and one footer. Lists are rows, galleries are cards, and delete is a trash icon.

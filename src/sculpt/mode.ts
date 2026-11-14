@@ -53,11 +53,11 @@ import { forcedByUrl } from '../ui/diagnostics';
 import { PublishWindow } from './ui/PublishWindow';
 import { FileMenu } from './ui/FileMenu';
 import { TopMenu } from './ui/TopMenu';
-import { showPreferences } from '../ui/Preferences';
 import { helpMenuItems } from '../help/menu';
-import { TitleStrip } from './ui/TitleStrip';
+import { TitleStrip, type PathStep, type Workspace } from './ui/TitleStrip';
 import { askWindow } from '../ui/askWindow';
 import { keyFor, viewMenuItems } from './ui/viewMenu';
+import { editMenuItems } from './ui/menuShape';
 import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
@@ -1529,6 +1529,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
   let leaveForGallery: () => void = () => undefined;
+  // The workspace path as the strip and the View menu both read it: Sculpt,
+  // or Present while presenting, is where you are.
+  const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
+    current: present?.isActive() ? 'present' : 'sculpt',
+    steps: {
+      armature: { action: () => void goArmature() },
+      sculpt: { action: () => present?.leave() },
+      present: { action: () => void present?.enter() },
+    },
+  });
   // The title strip's menus: File, Edit, View and Help, in that order.
   {
     fileMenu = new FileMenu(fileActions, strip.menus, {
@@ -1541,70 +1551,72 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const acts = (): boolean => !!scenePanel?.hasTargets();
     editMenu = new TopMenu(
       'Edit',
-      [
-        { label: 'Undo', key: keyFor('edit.undo'), action: () => session.undo() },
-        { label: 'Redo', key: keyFor('edit.redo'), action: () => session.redo() },
-        { separator: true },
-        { label: 'Duplicate', enabled: acts, action: () => scenePanel?.duplicateSelected() },
-        { label: 'Delete', key: keyFor('scene.delete'), enabled: acts, action: () => scenePanel?.deleteSelected() },
-        {
-          label: 'Merge',
-          key: keyFor('scene.merge'),
-          enabled: () => !!scenePanel?.canMerge(),
-          action: () => scenePanel?.mergeSelected(),
-        },
-        // Mirror: a copy across a world axis; the hotkey takes the brush's
-        // symmetry axis.
-        {
-          label: 'Mirror',
-          key: keyFor('scene.mirror'),
-          enabled: acts,
-          choices: () =>
-            (['x', 'y', 'z'] as const).map((axis) => ({
-              label: axis.toUpperCase(),
-              title: `Mirror the selected objects across ${axis.toUpperCase()}`,
-              action: () => scenePanel?.mirrorActive(axis),
-            })),
-        },
-        // Radial copies: a ring around the brush's symmetry axis, which the
-        // Tool panel can change between opens.
-        {
-          label: () => `Radial copies around ${session.getSymmetryAxis().toUpperCase()}`,
-          enabled: acts,
-          choices: () =>
-            [3, 4, 5, 6, 8, 12].map((count) => ({
-              label: `\u00d7${count}`,
-              title: `${count} copies around ${session.getSymmetryAxis().toUpperCase()}`,
-              action: () => scenePanel?.radialActive(count),
-            })),
-        },
-        { separator: true },
-        // Poly groups into objects (owner call, 2026-11-01), on the active
-        // object; greyed out where there is nothing to split.
-        {
-          label: 'Split groups into objects',
-          enabled: () => session.splittableGroups() >= 2,
-          action: () => scenePanel?.splitActive('groups'),
-        },
-        {
-          label: 'Split hidden into object',
-          enabled: () => {
-            const s = session.hiddenSplit();
-            return s.hidden > 0 && s.shown > 0;
+      editMenuItems({
+        mode: 'sculpt',
+        history: [
+          { label: 'Undo', key: keyFor('edit.undo'), action: () => session.undo() },
+          { label: 'Redo', key: keyFor('edit.redo'), action: () => session.redo() },
+        ],
+        own: [
+          { label: 'Duplicate', enabled: acts, action: () => scenePanel?.duplicateSelected() },
+          { label: 'Delete', key: keyFor('scene.delete'), enabled: acts, action: () => scenePanel?.deleteSelected() },
+          {
+            label: 'Merge',
+            key: keyFor('scene.merge'),
+            enabled: () => !!scenePanel?.canMerge(),
+            action: () => scenePanel?.mergeSelected(),
           },
-          action: () => scenePanel?.splitActive('hidden'),
-        },
-        {
-          label: 'Delete hidden',
-          enabled: () => {
-            const s = session.hiddenSplit();
-            return s.hidden > 0 && s.shown > 0;
+          // Mirror: a copy across a world axis; the hotkey takes the brush's
+          // symmetry axis.
+          {
+            label: 'Mirror',
+            key: keyFor('scene.mirror'),
+            enabled: acts,
+            choices: () =>
+              (['x', 'y', 'z'] as const).map((axis) => ({
+                label: axis.toUpperCase(),
+                title: `Mirror the selected objects across ${axis.toUpperCase()}`,
+                action: () => scenePanel?.mirrorActive(axis),
+              })),
           },
-          action: () => scenePanel?.splitActive('delete-hidden'),
-        },
-        { separator: true },
-        { label: 'Preferences…', action: () => showPreferences('sculpt') },
-      ],
+          // Radial copies: a ring around the brush's symmetry axis, which the
+          // Tool panel can change between opens.
+          {
+            label: () => `Radial copies around ${session.getSymmetryAxis().toUpperCase()}`,
+            enabled: acts,
+            choices: () =>
+              [3, 4, 5, 6, 8, 12].map((count) => ({
+                label: `\u00d7${count}`,
+                title: `${count} copies around ${session.getSymmetryAxis().toUpperCase()}`,
+                action: () => scenePanel?.radialActive(count),
+              })),
+          },
+          { separator: true },
+          // Poly groups into objects (owner call, 2026-11-01), on the active
+          // object; greyed out where there is nothing to split.
+          {
+            label: 'Split groups into objects',
+            enabled: () => session.splittableGroups() >= 2,
+            action: () => scenePanel?.splitActive('groups'),
+          },
+          {
+            label: 'Split hidden into object',
+            enabled: () => {
+              const s = session.hiddenSplit();
+              return s.hidden > 0 && s.shown > 0;
+            },
+            action: () => scenePanel?.splitActive('hidden'),
+          },
+          {
+            label: 'Delete hidden',
+            enabled: () => {
+              const s = session.hiddenSplit();
+              return s.hidden > 0 && s.shown > 0;
+            },
+            action: () => scenePanel?.splitActive('delete-hidden'),
+          },
+        ],
+      }),
       'file-menu--edit',
       strip.menus,
       true,
@@ -1623,6 +1635,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
             window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
           },
         },
+        shadows: {
+          get: () => lighting.getShadowsMaster(),
+          toggle: () => {
+            lighting.setShadowsMaster(!lighting.getShadowsMaster());
+            window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+          },
+        },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
         toolKeys: true,
         panels: [
@@ -1633,9 +1652,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           ['settings', 'Render'],
         ],
         hideInterface: () => chrome.set(true),
-        armature: () => void goArmature(),
-        sculpt: { action: () => present?.leave(), enabled: () => !!present?.isActive() },
-        present: () => present?.toggle(),
+        workspace: workspaceNow,
       }),
       'file-menu--view',
       strip.menus,
@@ -2150,11 +2167,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // shows in Present only.
   const paintPath = (): void => {
     const inPresent = !!present?.isActive();
-    strip.setWorkspace(inPresent ? 'present' : 'sculpt', {
-      armature: { action: () => void goArmature() },
-      sculpt: { action: () => present?.leave() },
-      present: { action: () => void present?.enter() },
-    });
+    const way = workspaceNow();
+    strip.setWorkspace(way.current, way.steps);
     publishWindow?.setInPresent(inPresent);
     refreshReadout();
   };

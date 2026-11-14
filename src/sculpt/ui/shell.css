@@ -1533,3 +1533,25 @@ body.bz-viewer .transport--shell .transport__info:not(:has(.transport__stage-des
 body.bz-viewer .transport--shell:has(.transport__stage-desc:not(:empty)) .transport__buffering {
   top: -64px;
 }
+
+/* A row that opens a second list: its chevron at the right, the row lit while the list is out. */
+body.bz-shell .file-menu__chev {
+  font: 400 16px/16px var(--bz-font);
+}
+
+body.bz-shell .file-menu__item--open {
+  background: var(--bz-hover);
+}
+
+/* The second list hangs beside the first, one step above it. */
+body.bz-shell .file-menu--sub {
+  z-index: 41;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  body.bz-shell .file-menu--sub {
+    max-width: calc(100vw - 16px);
+  }
+}

@@ -4,22 +4,24 @@ import type { AssetSource } from './AssetSource';
 import type { Viewer } from './Viewer';
 import { mountViewerParts } from './mountViewer';
 import { pageChrome } from '../ui/ChromeToggle';
-import { toggleHotkeyGuide } from '../help/menu';
 import { authorHref } from '../net/community';
 import { TitleStrip } from '../sculpt/ui/TitleStrip';
 import { TopMenu, type MenuItem } from '../sculpt/ui/TopMenu';
 import { originOf, type Origin } from '../ui/origin';
-import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
+import { helpMenuItems } from '../help/menu';
+import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import { viewMenuItems } from '../sculpt/ui/viewMenu';
 import { layoutShell } from '../sculpt/ui/shellLayout';
 
 /**
  * The public viewer (`/?tl=<id>`) in the app's frame (docs/ui-spec.md): the
  * quiet version of the shell Sculpt, Armature and Present use. A visitor
- * looks and nothing here edits, so there is no Edit menu and no workspace
- * path. The strip has File (New sculpt from this, for a template; Edit in
+ * looks and nothing here edits, so Edit holds only Preferences… and there
+ * is no workspace path. The strip has the menus every place has, in the
+ * same order: File (New sculpt from this, for a template; Edit in
  * Present, for the owner; Close, back to where the person came from, ui/origin),
- * View, Moderation (Report, and the review actions; only when it has one)
- * and Help; the project's name and what it is in the middle; the Star for a
+ * Edit, View, Moderation (Report, and the review actions; only when it has
+ * one) and Help; the project's name and what it is in the middle; the Star for a
  * member and the hide-interface button at the right; the Render panel under
  * its one tab at the right edge, shut until it is opened; and the transport
  * at the foot, with its white play button.
@@ -99,26 +101,25 @@ export async function mountPublicViewer(
   };
   refreshReadout();
 
-  // --- the menus: File, View, Moderation (when it has something), Help ---------
+  // --- the menus: File, Edit, View, Moderation (when it has something), Help ---
   let origin: Origin = opts.origin ?? originOf();
   let extras: ViewerFileItems = {};
   const close = (): void => window.location.assign(origin.href);
   const fileItems = (): MenuItem[] => {
-    const rows: MenuItem[] = [];
-    if (extras.newSculpt) rows.push({ label: 'New sculpt from this', hint: 'Starts a new sculpt from the frame on screen', action: extras.newSculpt });
-    if (extras.present) rows.push({ label: 'Edit in Present', action: extras.present });
-    if (rows.length) rows.push({ separator: true });
-    rows.push({ label: 'Close', hint: origin.hint, action: close });
-    return rows;
+    const transfer: MenuItem[] = [];
+    if (extras.newSculpt) transfer.push({ label: 'New sculpt from this', hint: 'Starts a new sculpt from the frame on screen', action: extras.newSculpt });
+    if (extras.present) transfer.push({ label: 'Edit in Present', action: extras.present });
+    return fileMenuItems({ transfer, close, closeHint: () => origin.hint });
   };
   const file = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
+  new TopMenu('Edit', editMenuItems({ mode: 'view' }), 'file-menu--edit', strip.menus, true);
   const refresh = (): void => panel.refreshControls();
   new TopMenu(
     'View',
     viewMenuItems({
-      frameSelected: () => viewer.focusSubject(),
-      frameSelectedLabel: 'Frame model',
+      // One subject, so one framing item; it keeps the key Frame model had.
       frameAll: () => viewer.focusSubject(),
+      frameAllKey: 'view.frame',
       wireframe: {
         get: () => viewer.isWireframe(),
         toggle: () => {
@@ -133,10 +134,6 @@ export async function mountPublicViewer(
           refresh();
         },
       },
-      cycleGround: () => {
-        viewer.cycleGround();
-        refresh();
-      },
       panels: [['settings', 'Render']],
       hideInterface: () => chrome.set(true),
     }),
@@ -146,14 +143,7 @@ export async function mountPublicViewer(
   );
   const moderation = new TopMenu('Moderation', [], 'file-menu--moderation', strip.menus, true);
   moderation.setShown(false);
-  // The viewer has no Help topics window: its Help is the hotkey guide.
-  new TopMenu(
-    'Help',
-    [{ label: 'Hotkeys', key: keyFor('ui.help'), action: () => toggleHotkeyGuide() }],
-    'file-menu--help',
-    strip.menus,
-    true,
-  );
+  new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => strip.setChromeHidden(hidden);
 

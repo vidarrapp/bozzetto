@@ -1,11 +1,13 @@
 import { TopMenu } from './TopMenu';
+import { fileMenuItems } from './menuShape';
+import { recentMenuItem } from './recentMenu';
+import { recordRecent } from '../../ui/recent';
 import { statusToast, type StatusToast } from './statusToast';
 import { downloadBlob, stampName } from '../bridge/SceneFile';
 import { NotUploadedError, type FileActions } from '../bridge/FileActions';
 import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
 import { signInButton } from '../../ui/signIn';
-import { originOf } from '../../ui/origin';
 import { mayStore } from '../../ui/deviceStorage';
 
 /** What a disabled device action says while the person has turned saving off. */
@@ -63,72 +65,78 @@ export class FileMenu {
     const full = (): boolean => !this.actions.isEmpty();
     this.menu = new TopMenu(
       'File',
-      [
-        {
-          label: 'New sculpt',
-          action: async () => {
-            if (this.actions.hasWork() && !confirm('Start a new sculpt? The current objects will be lost.')) return;
-            await this.actions.newScene();
+      fileMenuItems({
+        start: [
+          {
+            label: 'New sculpt',
+            action: async () => {
+              if (this.actions.hasWork() && !confirm('Start a new sculpt? The current objects will be lost.')) return;
+              await this.actions.newScene();
+            },
           },
-        },
-        { label: 'Open…', action: () => this.openInput.click() },
-        { separator: true },
-        {
-          label: 'Save file',
-          enabled: full,
-          action: async () => {
-            const blob = await this.actions.pack();
-            downloadBlob(blob, stampName('bozz'));
-            this.actions.markClean(); // this scene now exists outside the browser
+          { label: 'Open…', action: () => this.openInput.click() },
+          recentMenuItem(() => this.actions.hasWork()),
+        ],
+        save: [
+          {
+            label: 'Save file',
+            enabled: full,
+            action: async () => {
+              const blob = await this.actions.pack();
+              downloadBlob(blob, stampName('bozz'));
+              this.actions.markClean(); // this scene now exists outside the browser
+            },
           },
-        },
-        // Signed in, the library is Projects on the server. Signed out it is
-        // a file (owner call): browser storage does not survive a
-        // reinstall, and a .bozz download - the share sheet, on an iPad -
-        // does. The device shelf stays one item down, so a guest keeps
-        // every way of saving they had.
-        {
-          label: 'Save to library',
-          enabled: full,
-          hint: () => this.libraryHint(),
-          action: () => this.saveToLibrary(),
-        },
-        {
-          label: 'Keep on this device',
-          enabled: () => full() && mayStore(),
-          hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
-          action: async () => {
-            await this.actions.keepOnDevice();
-            this.menu.note('Kept on this device');
+          // Signed in, the library is Projects on the server. Signed out it is
+          // a file (owner call): browser storage does not survive a
+          // reinstall, and a .bozz download - the share sheet, on an iPad -
+          // does. The device shelf stays one item down, so a guest keeps
+          // every way of saving they had.
+          {
+            label: 'Save to library',
+            enabled: full,
+            hint: () => this.libraryHint(),
+            action: () => this.saveToLibrary(),
           },
-        },
-        { separator: true },
-        { label: 'Import OBJ…', action: () => this.importInput.click() },
-        { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
-        {
-          // The active object's level 0 in the imported file's own vertex
-          // and face order when it has that record (objSource.ts), else
-          // the triangles of every object as before (owner decision). The
-          // hint says which, before the click.
-          label: 'Export OBJ',
-          enabled: full,
-          hint: () => this.exportHint(),
-          action: () => {
-            const out = this.actions.exportObj(stampName('obj'));
-            downloadBlob(new Blob([out.text], { type: 'text/plain' }), out.name);
-            if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
+          {
+            label: 'Keep on this device',
+            enabled: () => full() && mayStore(),
+            hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
+            action: async () => {
+              const kept = await this.actions.keepOnDevice();
+            recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
+              this.menu.note('Kept on this device');
+            },
           },
-        },
-        { separator: true },
-        {
-          label: 'Publish…',
-          enabled: () => this.hooks.canPublish(),
-          hint: () => (this.hooks.canPublish() ? '' : 'Needs a sign-in'),
-          action: () => this.hooks.publish(),
-        },
-        { separator: true },
-        { label: 'Close', hint: originOf().hint, action: () => this.hooks.close() },
-      ],
+        ],
+        transfer: [
+          { label: 'Import OBJ…', action: () => this.importInput.click() },
+          { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
+          {
+            // The active object's level 0 in the imported file's own vertex
+            // and face order when it has that record (objSource.ts), else
+            // the triangles of every object as before (owner decision). The
+            // hint says which, before the click.
+            label: 'Export OBJ',
+            enabled: full,
+            hint: () => this.exportHint(),
+            action: () => {
+              const out = this.actions.exportObj(stampName('obj'));
+              downloadBlob(new Blob([out.text], { type: 'text/plain' }), out.name);
+              if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
+            },
+          },
+        ],
+        publish: [
+          {
+            label: 'Publish…',
+            enabled: () => this.hooks.canPublish(),
+            hint: () => (this.hooks.canPublish() ? '' : 'Needs a sign-in'),
+            action: () => this.hooks.publish(),
+          },
+        ],
+        close: () => this.hooks.close(),
+      }),
       'file-menu--file',
       host,
       true,
@@ -150,6 +158,13 @@ export class FileMenu {
     this.suspension = suspension;
     this.accounts = accounts;
     this.resolveRole(role);
+    this.noteOpened();
+  }
+
+  /** The project this scene is, if it is one, goes to the top of the recent list: opened, or saved to. */
+  private noteOpened(): void {
+    const link = this.actions.link;
+    if (link) recordRecent({ id: link.id, kind: 'scene', name: link.title, place: this.place(), ...(link.scope ? { scope: link.scope } : {}) });
   }
 
   /**
@@ -228,6 +243,7 @@ export class FileMenu {
     try {
       const link = await this.actions.uploadToProjects((text) => status.set(text));
       status.done(`Saved to ${place}: ${link.title}`);
+      this.noteOpened();
       if (role === 'expired') void this.onSignInChange?.();
     } catch (err) {
       // A sign-in the probe already found expired is the account's (with
