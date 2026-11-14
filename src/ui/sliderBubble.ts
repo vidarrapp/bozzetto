@@ -74,6 +74,17 @@ function showFor(input: HTMLInputElement): void {
   }
 }
 
+/** The bubble for a slider scrubbed from its row (sliderScrub): shown as it moves, gone on release. */
+export function bubbleHold(input: HTMLInputElement): void {
+  held = input;
+  showFor(input);
+}
+
+export function bubbleRelease(): void {
+  held = null;
+  hideSliderBubble();
+}
+
 let installed = false;
 
 /** Wire the page's range inputs. Idempotent; call once per page. */

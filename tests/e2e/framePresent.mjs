@@ -19,6 +19,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
+import { renderShape, shapeChecks } from './renderMatch.mjs';
 
 const OWNER = 'owner@example.com';
 const VIEWPORT = { width: 1440, height: 900 };
@@ -352,7 +353,7 @@ export const suites = {
         sections: [...document.querySelectorAll('.panel--render .section > h3')].map((h) => h.textContent),
       }));
       t.ok(render.output && render.heading === 'Render', `the Render tab opens in Output's place (${render.heading})`);
-      t.ok(['Lighting', 'Camera', 'Environment'].every((s) => render.sections.includes(s)) && !render.sections.includes('Material'), `with the look, as the editor has it, but not the Material section (${render.sections})`);
+      shapeChecks(t, await renderShape(p), 'The Present workspace');
       const lightBefore = await p.evaluate(() => JSON.stringify(window.__bozzetto.lighting.serialize()));
       // The key light's intensity, by its slider.
       const moved = await p.evaluate(() => {

@@ -3,6 +3,7 @@ import type { Manifest } from '../types/manifest';
 import type { AssetSource } from './AssetSource';
 import type { Viewer } from './Viewer';
 import { mountViewerParts } from './mountViewer';
+import { MaterialPanel } from '../ui/MaterialPanel';
 import { pageChrome } from '../ui/ChromeToggle';
 import { toggleHotkeyGuide } from '../help/menu';
 import { authorHref } from '../net/community';
@@ -21,7 +22,8 @@ import { layoutShell } from '../sculpt/ui/shellLayout';
  * View, Moderation (Report, and the review actions; only when it has one)
  * and Help; the project's name and what it is in the middle; the Star for a
  * member and the hide-interface button at the right; the Render panel under
- * its one tab at the right edge, shut until it is opened; and the transport
+ * its tab at the right edge and the Material panel under its tab at the left,
+ * both shut until opened; and the transport
  * at the foot, with its white play button.
  *
  * It dresses the parts mountViewerParts builds (the viewer, the Render
@@ -71,6 +73,8 @@ export async function mountPublicViewer(
 ): Promise<{ viewer: Viewer; frame: ViewerFrame }> {
   const parts = await mountViewerParts(viewport, manifest, source, onStatus, { author: opts.author, shell: true, frame: true });
   const { viewer, panel, transport } = parts;
+  // How the model is drawn (mode, matcap, shading, wireframe) is the Material tab's at the left, as in Present; Render at the right never holds it.
+  new MaterialPanel(viewer, { sculpting: false });
   const timelapse = manifest.mode === 'timelapse';
   const frames = manifest.config.frameCount;
 
@@ -137,7 +141,10 @@ export async function mountPublicViewer(
         viewer.cycleGround();
         refresh();
       },
-      panels: [['settings', 'Render']],
+      panels: [
+        ['material', 'Material'],
+        ['settings', 'Render'],
+      ],
       hideInterface: () => chrome.set(true),
     }),
     'file-menu--view',

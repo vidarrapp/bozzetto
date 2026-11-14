@@ -1,5 +1,5 @@
 import '../sculpt/ui/shell.css';
-import type { Viewer } from '../viewer/Viewer';
+import type { LookState, Viewer } from '../viewer/Viewer';
 import { HttpSource } from '../viewer/AssetSource';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { mountViewerParts, type ViewerParts } from '../viewer/mountViewer';
@@ -269,6 +269,8 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     return building;
   };
 
+  /** The look the project opened with: what Reset look in Render goes back to, through every remount of the view. */
+  let openedLook: LookState | null = null;
   const mountView = async (): Promise<void> => {
     const old = current;
     const v0 = old?.parts.viewer ?? null;
@@ -295,9 +297,11 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     source.setManifest(manifest);
     const parts = await mountViewerParts(viewport, manifest, source, opts.onStatus, {
       shell: true,
+      openedLook: openedLook ?? undefined,
       preserveDrawingBuffer: true,
     });
     const view = parts.viewer;
+    openedLook ??= view.getLook();
     if (look) {
       await view.applyLook(look);
       parts.panel.refreshControls();

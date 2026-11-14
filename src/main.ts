@@ -9,6 +9,7 @@ import { renderLanding } from './ui/Landing';
 import { initTheme } from './ui/theme';
 import { installRangeFill } from './ui/rangeFill';
 import { installSliderBubble } from './ui/sliderBubble';
+import { installSliderScrub } from './ui/sliderScrub';
 import { installTouchGuards } from './ui/touchGuards';
 import { topChip, topbarLeft } from './ui/topbar';
 import { apiFetch, apiManifestUrl } from './net/origin';
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
   followPanelOpacity();
   installRangeFill();
   installSliderBubble();
+  installSliderScrub();
   installTouchGuards();
   registerServiceWorker();
   const app = document.getElementById('app');

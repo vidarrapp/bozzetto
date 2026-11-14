@@ -398,17 +398,19 @@ export const suites = {
     await page.setViewportSize({ width: 1280, height: 800 });
     t.ok(!errors.length, `no page errors (${errors.join(' | ')})`);
 
-    // The public viewer: Render alone, with its Mode.
+    // The public viewer: Material at the left, Render at the right, and Mode in Material.
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     await settle(page, 300);
     const viewerTabs = await tabs(page);
-    t.eq(viewerTabs.map((x) => x.name).join(','), 'Render', 'the viewer has the one Render tab');
-    t.ok(!(await page.$('.panel--material')), 'and no Material panel');
+    t.eq(viewerTabs.map((x) => `${x.side}:${x.name}`).join(','), 'left:Material,right:Render', 'the viewer has the Material tab at the left and Render at the right');
     await tab(page, 'panel--render');
     const vr = await sectionsOf(page, 'panel--render');
-    t.ok(Object.keys(vr)[0] === 'Material' && vr.Material.includes('Mode') && vr.Material.some((l) => /Wireframe/.test(l)) && vr.Material.includes('Smooth shading'), `its Render panel still opens with Material: Mode, Smooth shading, Wireframe (${JSON.stringify(vr.Material)})`);
-    await page.selectOption('.panel--render select', 'matcap');
+    t.ok(!Object.keys(vr).includes('Material') && Object.keys(vr)[0] === 'Lighting', `its Render panel holds no Material and starts at Lighting (${Object.keys(vr)})`);
+    await tab(page, 'panel--material');
+    const vm = await sectionsOf(page, 'panel--material');
+    t.ok(Object.keys(vm).join() === 'Display' && vm.Display.includes('Mode') && vm.Display.some((l) => /Wireframe/.test(l)) && vm.Display.includes('Smooth shading'), `the Material panel has the Display section: Mode, Smooth shading, Wireframe (${JSON.stringify(vm)})`);
+    await page.selectOption('.panel--material select', 'matcap');
     await settle(page);
     t.eq(await page.evaluate(() => window.__bozzetto.getMaterial()), 'matcap', 'and Mode works there');
     t.ok(!errors.length, 'no page errors');

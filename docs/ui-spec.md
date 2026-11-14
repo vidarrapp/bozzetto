@@ -126,6 +126,29 @@ no separate touch density. An earlier draft of this spec had one, with
 - **Brush sliders.** 160px tall on the left edge, slim, with a 44px wide
   drag zone, as the edge sliders of a painting app are. (The mockup's
   first drawing had them at 96px.)
+- **Slider rows.** The whole row is the touch target (owner call,
+  2026-11-13): press the name, the value or the line and drag sideways to
+  move the value from where it is, the row's width being the slider's
+  whole travel. A tap changes nothing, and a drag up or down scrolls the
+  panel. A double press still opens the number field. On a touch screen
+  the line ignores presses itself; a mouse on a desktop keeps the plain
+  slider (click to jump). The brush sliders on the left edge have their own
+  drag. Depth of field (Enabled, then Aperture and Focus) is the last part
+  of the Render panel's Camera section, not a section of its own.
+- **One Render panel.** The same everywhere (owner call, 2026-11-14:
+  "consolidate the render panel so it matches everywhere"): Sculpt,
+  Armature, Sculpt's Present, the Present workspace, the public viewer and
+  review mode. Sections Lighting, Camera (with depth of field),
+  Environment, Ambient occlusion, in that order; the full per-light rig;
+  a Reset look button, which goes back to the look the scene or project
+  opened with (in the viewer, the published look; the view stays, and a
+  visitor's changes are never saved). Material is never in it: it is the
+  Material tab at the left in every place, the viewer and review mode
+  included (Display section only, as in Present). What a place cannot do
+  stays out of the panel, not out of the order: Cavity (SSAO) only in plain
+  Sculpt, Pedestal and Floor offset only where the floor allows them, and
+  the Developer section only with ?dev. The viewer's tab row is Material at
+  the left and Render at the right, and fits a 390px phone.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles

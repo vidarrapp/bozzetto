@@ -28,8 +28,9 @@ export interface MaterialPanelOptions {
  * Surface, in Sculpt, is the active object's own material (albedo,
  * roughness, metalness), which used to open the Model panel. Display is how
  * the model is drawn (mode, matcap, shading, wireframe), which used to open
- * the Render panel; MaterialControls builds it, and the public viewer's
- * Render panel builds it the same way. Each control is in one place only.
+ * the Render panel; MaterialControls builds it. The public viewer and review
+ * mode have this panel too, with the Display section alone, so Render never
+ * holds Material anywhere. Each control is in one place only.
  *
  * Surface drives the same viewer.materials setters it always did: Sculpt's
  * hooks on Materials route a change into the active object's material (and
