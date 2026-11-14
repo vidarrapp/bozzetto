@@ -1377,7 +1377,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     });
     // The figure is on its way: a send from here again is an ordinary one.
     forScene = false;
-    await flushSave();
+    // The card this armature leaves in the gallery gets its picture of the
+    // figure as sent, taken while the canvas is still up (a record saved
+    // without one shows the placeholder, and an older one a stale pose).
+    await snapshot();
     window.location.href = '/?sculpt=1&handoff=1';
   };
 
