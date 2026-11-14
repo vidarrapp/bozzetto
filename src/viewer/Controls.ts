@@ -47,10 +47,17 @@ const FAR_OF_RADIUS = 100;
  */
 const DAMPING_HELD = 0.3;
 const DAMPING_COAST = 0.08;
+/**
+ * Two fingers hold the model: no damping, smoothing or coast (see
+ * holdGesture). Fingers closer than this, in px, give no pinch ratio.
+ */
+const MIN_FINGER_GAP = 2;
 /** How quickly the tracked release speed follows the view, in seconds. */
 const VELOCITY_TAU = 0.05;
 /** OrbitControls' state with no pointer holding the view. */
 const STATE_NONE = -1;
+/** OrbitControls' state for a mouse or pen pan (middle button, pen barrel). */
+const STATE_PAN = 2;
 
 /** A place on the page, in client px. */
 export interface ScreenPoint {
@@ -69,6 +76,9 @@ export type ZoomFocus = (at: ScreenPoint | null) => Vector3 | null;
 /** What OrbitControls keeps of the pointers holding it (three r184). */
 interface OrbitPointers {
   _pointers: number[];
+  _pan: (dx: number, dy: number) => void;
+  _handleTouchStartDollyPan: (e: unknown) => void;
+  _handleTouchMoveDollyPan: (e: unknown) => void;
   _pointerPositions: Record<number, unknown>;
   _onPointerMove: (e: PointerEvent) => void;
   _onPointerUp: (e: PointerEvent) => void;
@@ -145,6 +155,24 @@ export class Controls {
   /** Where the mouse or pen drag OrbitControls is running began. */
   private dragAt: ScreenPoint | null = null;
   private readonly zoomScratch = new Vector3();
+  /**
+   * Where the surface is under a page point, for two fingers to hold (the
+   * viewer's raycast, or Sculpt's own pick); null or a miss falls back to
+   * the orbit target's depth.
+   */
+  private surfacePick: ZoomFocus | null = null;
+  /** The two-finger gesture under way, or null: see holdGesture. */
+  private hold: { anchor: Vector3; mid: ScreenPoint; gap: number } | null = null;
+  /**
+   * The surface point a mouse or pen pan holds (picked at the press), or
+   * null when nothing was under it: OrbitControls scales a pan by the
+   * distance to the orbit target, which on a big scene zoomed in on a
+   * point can be far from the surface under the pointer, so the model
+   * crawled across the screen. See panScale.
+   */
+  private panAnchor: Vector3 | null = null;
+  private readonly holdP = new Vector3();
+  private readonly holdQ = new Vector3();
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -162,6 +190,18 @@ export class Controls {
     controls.zoomSpeed = 0.9;
     this.controls = controls;
     this.domElement = domElement;
+    // Two fingers are the model's to hold, not OrbitControls' damped
+    // dolly-and-pan: it keeps the pointer bookkeeping and the state (so
+    // isHeld, the end event and the one-finger hand-back all work as
+    // before), but what the fingers do to the camera is done here.
+    const orbit = controls as unknown as OrbitPointers;
+    const orbitPan = orbit._pan.bind(controls);
+    orbit._pan = (dx, dy) => {
+      const k = this.panScale();
+      orbitPan(dx * k, dy * k);
+    };
+    orbit._handleTouchStartDollyPan = () => this.beginHold();
+    orbit._handleTouchMoveDollyPan = () => this.holdGesture();
     // Every zoom OrbitControls makes (the wheel, a pinch, a right drag)
     // ends in its update(), which it also calls straight from its event
     // handlers: what it owes in _scale is taken here first and, with a
@@ -222,6 +262,12 @@ export class Controls {
     if (c.state === STATE_NONE || !c._pointers.includes(e.pointerId)) return;
     this.drag = { pointerId: e.pointerId, mask: buttonMask(e.button) };
     this.dragAt = { x: e.clientX, y: e.clientY };
+    this.panAnchor = null;
+    if (c.state === STATE_PAN) {
+      this.camera.updateMatrixWorld();
+      const hit = this.surfacePick?.(this.dragAt) ?? null;
+      if (hit) this.panAnchor = hit.clone();
+    }
   };
 
   /** Where the pointers are, for where a zoom heads (zoomAt). */
@@ -271,6 +317,7 @@ export class Controls {
     if (!d) return;
     if (e.pointerId === d.pointerId) {
       this.drag = null;
+      this.panAnchor = null;
       return;
     }
     if (e.pointerType !== 'touch' && (e.buttons & d.mask) === 0) this.endDrag();
@@ -308,6 +355,7 @@ export class Controls {
    */
   private endDrag(): void {
     this.drag = null;
+    this.panAnchor = null;
     const c = this.controls as unknown as OrbitInternals & OrbitPointers;
     for (const id of c._pointers) {
       try {
@@ -578,6 +626,114 @@ export class Controls {
    */
   setZoomFocus(focus: ZoomFocus | null): void {
     this.zoomFocus = focus;
+  }
+
+  /** The two fingers OrbitControls counts, in client px, or null when either is unknown. */
+  private fingers(): [ScreenPoint, ScreenPoint] | null {
+    const ids = (this.controls as unknown as OrbitPointers)._pointers;
+    const a = this.touches.get(ids[0] ?? -1);
+    const b = this.touches.get(ids[1] ?? -1);
+    return a && b ? [a, b] : null;
+  }
+
+  /**
+   * A second finger landed: pick what the fingers hold. The surface under
+   * their middle (the orbit target's depth along that ray when nothing is
+   * there) is the point that stays under the middle for the whole gesture.
+   */
+  private beginHold(): void {
+    // Whatever a one-finger orbit still owed stops here; the fingers own the view.
+    this.halt();
+    this.hold = null;
+    const f = this.fingers();
+    if (!f) return;
+    const mid = { x: (f[0].x + f[1].x) / 2, y: (f[0].y + f[1].y) / 2 };
+    this.camera.updateMatrixWorld();
+    const hit = this.surfacePick?.(mid) ?? null;
+    const anchor = new Vector3();
+    if (hit) anchor.copy(hit);
+    else {
+      const depth = -this.holdP.copy(this.controls.target).applyMatrix4(this.camera.matrixWorldInverse).z;
+      this.pointAtDepth(mid, depth, anchor);
+    }
+    this.hold = { anchor, mid, gap: Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y) };
+  }
+
+  /** The world point on the ray through page point `at`, `depth` in front of the camera. */
+  private pointAtDepth(at: ScreenPoint, depth: number, out: Vector3): Vector3 {
+    const r = this.domElement.getBoundingClientRect();
+    const x = ((at.x - r.left) / Math.max(r.width, 1)) * 2 - 1;
+    const y = -((at.y - r.top) / Math.max(r.height, 1)) * 2 + 1;
+    out.set(x, y, 0.5).applyMatrix4(this.camera.projectionMatrixInverse);
+    out.multiplyScalar(depth / Math.max(-out.z, 1e-9));
+    return out.applyMatrix4(this.camera.matrixWorld);
+  }
+
+  /**
+   * The fingers moved: put the held point under their middle, now, in this
+   * event. The spread scales camera and target about the point (the point
+   * stays where it is, the world about it grows with the fingers), then the
+   * camera slides parallel to the screen so the point is under the middle.
+   * Nothing is damped or owed, so there is nothing for a coast to carry on
+   * with: the view stops when the fingers do (and so does a release).
+   */
+  private holdGesture(): void {
+    const h = this.hold;
+    const f = this.fingers();
+    if (!h || !f) return;
+    const mid = { x: (f[0].x + f[1].x) / 2, y: (f[0].y + f[1].y) / 2 };
+    const gap = Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y);
+    const c = this.controls as unknown as OrbitInternals;
+    c._sphericalDelta.set(0, 0, 0);
+    c._panOffset.set(0, 0, 0);
+    c._scale = 1;
+    if (h.gap >= MIN_FINGER_GAP && gap >= MIN_FINGER_GAP && gap !== h.gap) this.scaleAbout(h.anchor, h.gap / gap);
+    h.gap = gap >= MIN_FINGER_GAP ? gap : h.gap;
+    h.mid = mid;
+    // Where the held point's depth plane is under the middle now: the
+    // camera moves by the difference, and the point lands there.
+    this.camera.updateMatrixWorld();
+    const depth = -this.holdP.copy(h.anchor).applyMatrix4(this.camera.matrixWorldInverse).z;
+    if (depth <= 1e-9) return;
+    const under = this.pointAtDepth(mid, depth, this.holdQ);
+    const shift = under.sub(h.anchor).negate();
+    this.camera.position.add(shift);
+    this.controls.target.add(shift);
+    this.camera.updateMatrixWorld();
+  }
+
+  /** Scale camera and target about `p` by `factor`, held to the dolly limits. */
+  private scaleAbout(p: Vector3, factor: number): void {
+    const target = this.controls.target;
+    const dist = this.camera.position.distanceTo(target);
+    if (dist < 1e-6) return;
+    const next = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, dist * factor));
+    const s = next / dist;
+    if (s === 1) return;
+    this.camera.position.sub(p).multiplyScalar(s).add(p);
+    target.sub(p).multiplyScalar(s).add(p);
+    this.onFocusZoom?.(p, s);
+  }
+
+  /**
+   * How much to scale OrbitControls' pan by so the point under the press
+   * moves with the pointer: the anchor's depth over the target's distance
+   * (which is what OrbitControls scales by). 1 for a pan with no anchor,
+   * the keys, and any pan that is not a pointer drag.
+   */
+  private panScale(): number {
+    const a = this.panAnchor;
+    if (!a || !this.drag || (this.controls as unknown as OrbitInternals).state !== STATE_PAN) return 1;
+    this.camera.updateMatrixWorld();
+    const depth = -this.holdP.copy(a).applyMatrix4(this.camera.matrixWorldInverse).z;
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    if (depth <= 1e-9 || dist <= 1e-9) return 1;
+    return Math.min(1000, Math.max(0.001, depth / dist));
+  }
+
+  /** Where two fingers find the surface to hold; null for the orbit target's depth. */
+  setSurfacePick(pick: ZoomFocus | null): void {
+    this.surfacePick = pick;
   }
 
   /**
