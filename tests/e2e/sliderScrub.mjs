@@ -147,9 +147,15 @@ export const suites = {
       t.ok(after.value === 0.4 && ev.input === 0 && ev.change === 0, `a tap on the row changes nothing, with no jump (${after.value}, ${JSON.stringify(ev)})`);
 
       // A double tap still opens the number field.
-      await f.tap(r.input.x + r.input.w * 0.5, r.input.y + 12);
-      await p.waitForTimeout(80);
-      await f.tap(r.input.x + r.input.w * 0.5, r.input.y + 12);
+      // Two touch taps in quick succession, sent from the page: a slow software frame stretches real ones past the double-tap window.
+      await p.evaluate(([x, y]) => {
+        const row = document.elementFromPoint(x, y);
+        const opts = { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, clientX: x, clientY: y };
+        for (let i = 0; i < 2; i++) {
+          row.dispatchEvent(new PointerEvent('pointerdown', { ...opts, buttons: 1 }));
+          row.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }));
+        }
+      }, [r.input.x + r.input.w * 0.5, r.input.y + 12]);
       await p.waitForTimeout(200);
       const field = await p.evaluate(() => !!document.querySelector('.panel--render .slider-field'));
       t.ok(field, 'a double tap on the row opens the number field');
