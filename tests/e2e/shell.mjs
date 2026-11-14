@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -665,7 +665,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Armature panel|Material panel|Render panel|Hide interface|Sculpt', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Armature panel|Material panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));

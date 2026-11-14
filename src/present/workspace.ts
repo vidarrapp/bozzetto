@@ -23,6 +23,9 @@ import { TitleStrip, stripButton } from '../sculpt/ui/TitleStrip';
 import { TopMenu } from '../sculpt/ui/TopMenu';
 import { failNotice, statusToast } from '../sculpt/ui/statusToast';
 import { viewMenuItems } from '../sculpt/ui/viewMenu';
+import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
+import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { layoutShell } from '../sculpt/ui/shellLayout';
 import type { ScaleBanner } from '../sculpt/ui/SetScale';
 import { ProjectPanel } from './ProjectPanel';
@@ -403,10 +406,15 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       useFrame: () => useThisFrame(),
     },
   );
-  strip.setWorkspace('present', {
-    armature: { unavailable: 'This project has no sculpt scene' },
-    sculpt: { unavailable: 'This project has no sculpt scene' },
+  // The workspace path as the strip and the View menu both read it.
+  const workspaceNow = (): { current: Workspace; steps: Partial<Record<Workspace, PathStep>> } => ({
+    current: 'present',
+    steps: {
+      armature: { unavailable: 'This project has no sculpt scene' },
+      sculpt: { unavailable: 'This project has no sculpt scene' },
+    },
   });
+  strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
 
   // The editor did this after a thumbnail: the frame on show.
   const useThisFrame = async (): Promise<void> => {
@@ -609,20 +617,31 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
   const chrome = pageChrome();
   new TopMenu(
     'File',
-    [
-      {
-        label: () => (project || !place ? 'Save' : `Save to ${place}`),
-        action: () => void save(),
-        enabled: () => !!project || !!place,
-      },
-      { separator: true },
-      { label: 'Close', hint: originOf().hint, action: () => void close() },
-    ],
+    fileMenuItems({
+      save: [
+        {
+          label: () => (project || !place ? 'Save' : `Save to ${place}`),
+          action: () => void save(),
+          enabled: () => !!project || !!place,
+        },
+      ],
+      close: () => void close(),
+    }),
     'file-menu--file',
     strip.menus,
     true,
   );
+  new TopMenu('Edit', editMenuItems({ mode: 'view' }), 'file-menu--edit', strip.menus, true);
   const viewItems = viewMenuItems({
+    shadows: {
+      get: () => viewer()?.lighting.getShadowsMaster() ?? false,
+      toggle: () => {
+        const v = viewer();
+        if (!v) return;
+        v.lighting.setShadowsMaster(!v.lighting.getShadowsMaster());
+        window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
+      },
+    },
     panels: [
       ['frames', 'Frames'],
       ['project', 'Project'],
@@ -631,10 +650,11 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       ['output', 'Output'],
     ],
     hideInterface: () => chrome.set(true),
+    workspace: workspaceNow,
   });
   // Material, Render and Output are the view's: with no frames there is no view to have them.
   for (const item of viewItems) {
-    if (!('separator' in item) && (item.label === 'Material panel' || item.label === 'Render panel' || item.label === 'Output panel')) item.enabled = () => !!current;
+    if (!('separator' in item) && (item.label === 'Shadows' || item.label === 'Material panel' || item.label === 'Render panel' || item.label === 'Output panel')) item.enabled = () => !!current;
   }
   new TopMenu('View', viewItems, 'file-menu--view', strip.menus, true);
   new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);

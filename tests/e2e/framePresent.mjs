@@ -19,6 +19,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startAccountsServer } from './lib.mjs';
+import { checkShape, readMenus } from './menuShape.mjs';
 
 const OWNER = 'owner@example.com';
 const VIEWPORT = { width: 1440, height: 900 };
@@ -173,14 +174,14 @@ export const suites = {
         const g = await open({ owner: false }, '/?tl=tl-demo&present=1');
         await g.page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
         const s = await g.page.evaluate(() => ({
-          // The viewer has a strip of its own now, with File, View and Help: Present's has the path as well.
+          // The viewer has a strip of its own now, with File, Edit, View and Help: Present's has the path as well.
           menus: [...document.querySelectorAll('.bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent).join(),
           project: !!document.querySelector('.panel--project'),
           search: location.search,
           chip: !!document.querySelector('.file-menu--file')?.textContent.includes('Edit in Present'),
           error: document.querySelector('.overlay__msg')?.textContent ?? '',
         }));
-        t.ok(s.menus === 'File,View,Help' && !s.project && s.error === '', `a guest gets the ordinary viewer (its strip has File, View and Help), with no error page (${JSON.stringify(s)})`);
+        t.ok(s.menus === 'File,Edit,View,Help' && !s.project && s.error === '', `a guest gets the ordinary viewer (its strip has File, Edit, View and Help), with no error page (${JSON.stringify(s)})`);
         t.ok(s.search === '?tl=tl-demo', `and the param is dropped from the address (${s.search})`);
         t.ok(!s.chip, 'the viewer offers a guest no Edit in Present');
         await g.ctx.close(); // software GL: a page left open starves the next
@@ -249,7 +250,8 @@ export const suites = {
         hide: !!document.querySelector('.bz-strip__hide'),
         old: getComputedStyle(document.querySelector('body > .topbar') ?? document.body).display,
       }));
-      t.ok(JSON.stringify(strip.menus) === JSON.stringify(['File', 'View', 'Help']), `the strip has File, View and Help (${strip.menus})`);
+      t.ok(JSON.stringify(strip.menus) === JSON.stringify(['File', 'Edit', 'View', 'Help']), `the strip has File, Edit, View and Help (${strip.menus})`);
+      checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Frames panel|Project panel|Material panel|Render panel|Output panel|Hide interface|Armature|Sculpt|Present' });
       t.ok(
         strip.steps.map((s) => s.text).join() === 'Armature,Sculpt,Present' && strip.steps[2].current === 'step',
         `the path reads Armature, Sculpt, Present with Present current (${JSON.stringify(strip.steps.map((s) => [s.text, s.current]))})`,

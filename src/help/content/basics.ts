@@ -21,7 +21,7 @@ export const BASICS: Topic[] = [
       ),
       h('What is on the screen in the viewer'),
       list(
-        'The **title strip** has **File**, **View** and **Help** at the left, and a **Moderation** menu after **View** when you are signed in and there is something in it. At the right are the star, for a member looking at shared work, and the hide button.',
+        'The **title strip** has the same menus as everywhere else, in the same order: **File**, **Edit**, **View** and **Help**, with a **Moderation** menu between **View** and **Help** when you are signed in and there is something in it. **Edit** holds **Preferences…**, and **View** has **Frame all**, **Wireframe**, **Shadows**, the **Render** panel and **Hide interface**. At the right are the star, for a member looking at shared work, and the hide button.',
         '**File** has **New sculpt from this** on the site\'s own templates, which starts a new sculpt from the frame on screen; **Edit in Present**, for the owner; and **Close**, which goes back to the page you came from. Shared work from Community is to look at only.',
         '**Moderation** has **Report…**, which sends a reviewer a report about shared work, and, in review mode, **Approve**, **Reject…**, **Hide…** and **Unhide**, as the work allows.',
       ),

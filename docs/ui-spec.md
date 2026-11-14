@@ -157,6 +157,31 @@ grows into this list.
 Groups are separated by space. `›` opens a submenu. Hotkeys are the
 defaults and follow the platform's names.
 
+**One shape in every place.** Sculpt, Armature, Present (from Sculpt and
+the workspace) and the public viewer, review mode included, have the same
+menus in the same order: File, Edit, View, Moderation (the viewer only,
+and only while it has an item), Help. An item the place has no action for
+is left out, not shown greyed out; the same item has the same label, hint
+style and key wherever it shows. The groups below are the order in every
+place, each only where the place has it.
+
+- **File:** New (New sculpt, New armature), Open…; Save file, Save to
+  library, Keep on this device (the Present workspace has one Save, or
+  Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+  OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
+  Close, always last, with the page it returns to as its hint.
+- **Edit:** Undo, Redo where the place has undo; the place's own items;
+  Preferences… last, in every place. The viewer and the Present workspace
+  have Preferences… alone.
+- **View:** Frame selected (where there is a selection), Frame all;
+  Wireframe, Shadows, Poly group colours and Hotkeys on tools (Sculpt);
+  the panel toggles for the tabs the place has, then Hide interface; then
+  Armature, Sculpt and Present where the place has the workspace path, the
+  one you are in and any that cannot be reached greyed out with the reason.
+  In the viewer there is one subject, so one Frame all, on F. Cycle ground
+  is G only, and stays in the hotkey guide.
+- **Help:** Help topics, Hotkeys, About and credits, from one list.
+
 **File**
 
 - New sculpt
@@ -218,7 +243,7 @@ Every toggle in View carries a check, so the menu keeps a check column.
 - About and credits (on the Mac: About Bozzetto, in the Bozzetto menu)
 
 Commands on one object's parts (split groups, delete hidden) stay in the
-Model panel, not in a menu. The gallery has no Help menu; the public viewer's holds Hotkeys alone (no Help topics window).
+Model panel, not in a menu. The gallery has no Help menu; every other place has the three Help items.
 
 ## 6. Layout
 
@@ -363,7 +388,7 @@ states" board. This section adds behaviour.
 
 `bozzetto-interface.md` should gain, once agreed:
 
-1. The Help menu, and the order File, Edit, View, Help.
+1. The Help menu, and the order File, Edit, View, Moderation (where there is one), Help.
 2. The 44px target rule does not apply to Bozzetto: every control is
    pressed with a pen, a mouse or a hotkey.
 3. One panel per side with folder tabs, as specified here.
