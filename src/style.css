@@ -5918,6 +5918,23 @@ h1,
   display: contents;
 }
 
+/* The whole row is the touch target (ui/sliderScrub): a press anywhere on it
+   and a drag sideways moves the value, a drag up or down still scrolls the
+   panel. On a touch screen the line itself ignores presses, since a native
+   slider only moves from its thumb and jumps to a tap. */
+:is(.compact, .label-row:has(> .range-wrap), .cpick__row, .prefs__slider) {
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+@media (pointer: coarse) {
+  :is(.compact, .range-wrap, .cpick__row, .prefs__slider) > input[type='range'] {
+    pointer-events: none;
+  }
+}
+
 :is(.compact, .range-wrap) > input[type='range'] {
   grid-area: 1 / 1 / 2 / 3;
   align-self: stretch;
@@ -5963,6 +5980,8 @@ h1,
 /* The number field a double press puts where a slider was: it takes the
    value's place, boxed in orange as the focus is. */
 .slider-field {
+  -webkit-user-select: text;
+  user-select: text;
   min-height: 24px;
   padding: 2px 6px;
   border: 1px solid var(--bz-orange);

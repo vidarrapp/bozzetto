@@ -85,6 +85,8 @@ export class Panel {
   private syncEnvRows: (() => void) | null = null;
   /** Look-dev sections built for the viewer, revealed only while sculpting. */
   private lookDevSections: HTMLElement[] = [];
+  /** Camera rows that belong to the look-dev half (lens, tone mapping), hidden in the plain viewer where depth of field alone shows under Camera. */
+  private cameraLookRows: HTMLElement[] = [];
   /**
    * Whether the cavity is an AO model here: only in sculpt mode, whose
    * composite is the one that draws it. Armature mode shows the look-dev
@@ -169,6 +171,7 @@ export class Panel {
     // Sculpt mode gets look-dev parity with the editor: the full light rig,
     // camera, environment and AO, which the plain viewer has no use for.
     for (const sec of this.lookDevSections) sec.hidden = !active;
+    for (const row of this.cameraLookRows) row.hidden = !active;
     if (this.lightControls) this.lightControls.hidden = !active;
     if (this.lightToggles) this.lightToggles.hidden = active;
     if (active) this.rebuildLightControls();
@@ -283,16 +286,18 @@ export class Panel {
       this.materialControls.rebuild();
     }
     this.buildLighting(this.bodyEl);
-    this.buildDoF(this.bodyEl);
     // The viewer builds the look-dev sections too, hidden until sculpt mode
     // announces itself.
     const lookDevFrom = this.bodyEl.childElementCount;
-    this.buildCamera(this.bodyEl);
+    const camera = this.buildCamera(this.bodyEl);
     this.buildEnvironment(this.bodyEl);
     this.buildAOSection(this.bodyEl);
     this.lookDevSections = [...this.bodyEl.children]
       .slice(lookDevFrom)
       .filter((el): el is HTMLElement => el instanceof HTMLElement);
+    // Depth of field lives under Camera and shows in the plain viewer too, so
+    // with it there the Camera section stays and only its lens rows hide.
+    if (this.cameraLookRows.length) this.lookDevSections = this.lookDevSections.filter((el) => el !== camera);
     for (const sec of this.lookDevSections) sec.hidden = true;
     if (devMode()) this.buildDeveloper(this.bodyEl);
     if (this.sculpting || this.fullLook) this.applySculptVisibility();
@@ -851,13 +856,13 @@ export class Panel {
 
   // --- camera (lens: editor only) ---------------------------------------
 
-  private buildCamera(body: HTMLElement): void {
+  private buildCamera(body: HTMLElement): HTMLElement {
     const sec = section(body, 'Camera');
-    sec.appendChild(
-      steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
-        this.viewer.setFocalLength(mm),
-      ),
+    this.cameraLookRows = [];
+    const lens = steppedSlider('Lens', LENS_STEPS, this.viewer.getFocalLength(), (mm) => `${mm}mm`, (mm) =>
+      this.viewer.setFocalLength(mm),
     );
+    sec.appendChild(lens);
     // Output grade (owner call): the film curve is a choice now, not a
     // constant. Rides the saved look; matcap mode always renders ungraded
     // regardless (the fidelity contract), so this steers the lit modes.
@@ -874,18 +879,21 @@ export class Panel {
       this.viewer.setToneMapping(tone.value as ToneMappingId),
     );
     this.toneSelect = tone;
-    sec.appendChild(labelRow('Tone mapping', tone));
+    const toneRow = labelRow('Tone mapping', tone);
+    sec.appendChild(toneRow);
+    // The camera's own rows first, then depth of field.
+    if (this.buildDoF(sec)) this.cameraLookRows = [lens, toneRow];
+    return sec;
   }
 
   /**
-   * Depth of field — shown in the viewer too, not just the editor. Aperture sets
+   * Depth of field, the last rows of the Camera section — shown in the viewer too, not just the editor. Aperture sets
    * the blur; Focus scrubs the plane across the subject depth. A double-click
    * (double-tap on touch) in the viewport locks focus onto a point (tap-to-focus);
    * the Focus slider releases that lock.
    */
-  private buildDoF(body: HTMLElement): void {
-    if (!this.viewer.dofAvailable()) return;
-    const sec = section(body, 'Depth of field');
+  private buildDoF(sec: HTMLElement): boolean {
+    if (!this.viewer.dofAvailable()) return false;
     const dof = this.viewer.getDoFState();
     // Aperture and Focus act on nothing while the effect is off, so they
     // fold away with the checkbox (the same rule as lights, ground, HDRI).
@@ -918,6 +926,7 @@ export class Panel {
       }),
     );
     sec.appendChild(rows);
+    return true;
   }
 
   // --- developer overlay (?dev) -----------------------------------------
