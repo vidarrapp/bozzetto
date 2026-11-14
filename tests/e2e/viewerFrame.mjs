@@ -176,7 +176,7 @@ export const suites = {
     t.ok(s.strip && s.strip.h === 24 && s.strip.t === 0 && s.strip.w === s.vw && s.strip.bg === STRIP && s.strip.pos === 'fixed', `a 24px strip across the top, on the strip colour (${JSON.stringify(s.strip)})`);
     t.eq(s.menus.join(), 'File,Edit,View,Help', 'four menus at its left, File, Edit, View and Help, as in the workspaces: no Moderation for a guest');
     t.ok(!s.path, 'and no workspace path after them');
-    checkShape(t, 'Viewer', await readMenus(page, 'Viewer'), { names: 'File,Edit,View,Help', file: 'New sculpt from this|Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Render panel|Hide interface' });
+    checkShape(t, 'Viewer', await readMenus(page, 'Viewer'), { names: 'File,Edit,View,Help', file: 'New sculpt from this|Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Render panel|Hide interface' });
     t.ok(s.left && s.readout && s.right && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'the menus, the readout and the right group do not overlap');
     t.eq(s.title, 'Demo bust (synthetic)', "the readout starts with the project's title");
     t.ok(Number(s.titleWeight) >= 600, `in bold (${s.titleWeight})`);

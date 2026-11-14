@@ -766,7 +766,11 @@ html.is-page body {
   overscroll-behavior: none;
 }
 
-html.is-page .page-scroll {
+/* #app and #admin are fixed to the whole window by their id; the scroller
+   rule must outrank that, and carry the page's ground so the logotype's
+   lighten blend has something to blend with. */
+html.is-page :is(#app, #admin, .page-scroll).page-scroll {
+  background: var(--bz-strip);
   position: fixed;
   top: var(--bz-strip-h, 24px);
   right: 0;
