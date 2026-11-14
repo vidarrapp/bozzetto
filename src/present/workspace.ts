@@ -377,7 +377,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
             ? 'Every frame is taken out of the list. The project on the site keeps them until you save.'
             : 'Every frame is taken out of the list, and the preview with them.',
           yes: 'Clear the frames',
-        danger: true,
+          danger: true,
         });
         if (!yes) return;
         items = [];

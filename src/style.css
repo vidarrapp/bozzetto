@@ -7904,3 +7904,8 @@ progress {
   width: min(420px, 100%);
   box-sizing: border-box;
 }
+
+/* The question window's buttons are a finger's size. */
+.bz-ask .btn {
+  min-height: 44px;
+}
