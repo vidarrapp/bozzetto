@@ -7880,3 +7880,27 @@ progress {
     margin-left: auto;
   }
 }
+
+/* The app's own question window (ui/askWindow): its one text line, when it has one. */
+.bz-ask-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 14px/20px var(--bz-font);
+}
+
+/* A question is above everything: Preferences (200) and the like stand down under it. */
+.install-overlay.bz-ask {
+  z-index: 300;
+}
+
+.bz-ask__card {
+  width: min(420px, 100%);
+  box-sizing: border-box;
+}

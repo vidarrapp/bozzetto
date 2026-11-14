@@ -14,6 +14,7 @@ import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
 import { isProjectId } from '../net/ids';
 import { markOpen } from '../ui/openToken';
 import { showDeviceNotice } from '../ui/deviceChoice';
+import { askWindow, tellWindow } from '../ui/askWindow';
 
 /**
  * Editor router. `/admin/?p=<id>` goes on to the Present workspace (present/), the frame editor,
@@ -163,7 +164,7 @@ async function renderProjects(body: HTMLElement): Promise<void> {
       // Straight into the new project's editor to add frames.
       window.location.search = `?p=${encodeURIComponent(created.id)}`;
     } catch (err) {
-      alert(`Create failed: ${failureText(err)}`);
+      void tellWindow({ title: 'Create failed', text: failureText(err) });
       submit.disabled = false;
     }
   });
@@ -355,7 +356,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         void (async () => {
           const store = await import('../armature/persist').catch(() => null);
           const busy = store ? await store.hasArmature() : false;
-          if (busy && !confirm(`Open "${p.title}"? The armature in progress on this device will be replaced.`)) return;
+          if (busy && !(await askWindow({ title: `Open "${p.title}"?`, text: 'The armature in progress on this device will be replaced.', yes: 'Replace', danger: true }))) return;
           markOpen('project', p.id);
           window.location.href = open.href;
         })();
@@ -370,7 +371,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         void (async () => {
           const store = await import('../sculpt/bridge/ScenePersist').catch(() => null);
           const busy = store ? await store.hasSavedScene() : false;
-          if (busy && !confirm(`Open "${p.title}"? Your work in progress in Sculpt will be replaced.`)) return;
+          if (busy && !(await askWindow({ title: `Open "${p.title}"?`, text: 'Your work in progress in Sculpt will be replaced.', yes: 'Replace', danger: true }))) return;
           // Asked, or nothing to ask about: Sculpt need not ask again (ui/openToken).
           markOpen('project', p.id);
           window.location.href = open.href;
@@ -410,9 +411,8 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         if (typeof updated.template === 'boolean') p.template = updated.template;
         if (typeof updated.media === 'string') p.media = updated.media;
       } catch (err) {
-        // Put back before the alert holds the page, not after.
         paint();
-        alert(`${failed}: ${failureText(err)}`);
+        void tellWindow({ title: failed, text: failureText(err) });
       } finally {
         paint();
         vis.disabled = tpl.disabled = false;
@@ -430,10 +430,13 @@ async function refresh(listEl: HTMLElement): Promise<void> {
     const del = trashButton(`Delete ${p.title || p.id}`, 'admin-row__delete');
     row.querySelector('.admin-row__buttons')!.appendChild(del);
     del.addEventListener('click', async () => {
-      const question = scene
-        ? `Delete "${p.title || p.id}"? It goes from Projects and from this device.`
-        : `Delete "${p.id}"? This also removes its uploaded meshes.`;
-      if (!confirm(question)) return;
+      const yes = await askWindow({
+        title: `Delete ${scene ? p.title || p.id : p.id}?`,
+        text: scene ? 'It goes from Projects and from this device.' : 'This also removes its uploaded meshes.',
+        yes: 'Delete',
+        danger: true,
+      });
+      if (!yes) return;
       del.disabled = true;
       try {
         await api.remove(p.id);
@@ -445,7 +448,7 @@ async function refresh(listEl: HTMLElement): Promise<void> {
         }
         await refresh(listEl);
       } catch (err) {
-        alert(`Delete failed: ${failureText(err)}`);
+        void tellWindow({ title: 'Delete failed', text: failureText(err) });
         del.disabled = false;
       }
     });

@@ -217,7 +217,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Declined, the work stays and boots as if no link had been followed.
   const askedAlready = sentHere === openKey;
   if (saved && !askedAlready && (await hasSavedScene())) {
-    if (!window.confirm(`Open ${what}? The work in progress on this device will be replaced.`)) {
+    const yes = await askWindow({
+      title: `Open ${what}?`,
+      text: 'The work in progress on this device will be replaced.',
+      yes: 'Replace',
+      danger: true,
+    });
+    if (!yes) {
       saved = null;
       bootLink = null;
       bootUnsent = null;
@@ -288,7 +294,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       const atStake = await hasSavedScene();
       if (!parsed || !parsed.positions.length || !parsed.faceSizes.length) {
         bootFailure ??= `Could not import "${handoff.name}": no geometry found in that OBJ file`;
-      } else if (!atStake || sentHere === `obj:${handoff.id}` || window.confirm(`Open "${handoff.name}" as a new sculpt? The work in progress on this device will be replaced.`)) {
+      } else if (
+        !atStake ||
+        sentHere === `obj:${handoff.id}` ||
+        (await askWindow({
+          title: `Open "${handoff.name}" as a new sculpt?`,
+          text: 'The work in progress on this device will be replaced.',
+          yes: 'Replace',
+          danger: true,
+        }))
+      ) {
         try {
           // A frame from the viewer is on real units already (units 'cm'): its scene is marked, the object at its true size on the floor.
           objMesh = handoff.units === 'cm' ? session.addParsedOBJ(parsed, false, handoff.name, null) : session.openParsedOBJ(parsed, handoff.zUp, handoff.name);
@@ -2165,6 +2180,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         'The figure you send back is added to this scene as a new object. Nothing in the scene is replaced.' +
         (draft ? ' The armature in progress on this device will be replaced.' : ''),
       yes: 'New armature',
+      // Replacing the armature kept here loses it; adding to the scene loses nothing.
+      danger: draft,
     });
     if (!yes) return;
     present?.leave();

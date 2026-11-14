@@ -4,6 +4,7 @@ import { rangeOf, settings, type OnOff, type SettingsValues } from './settings';
 import { readyToLeave } from './leaving';
 import { confirmTurnOff } from './deviceChoice';
 import { keepOnDevice, mayStore, onDeviceChoice } from './deviceStorage';
+import { askWindow } from './askWindow';
 
 /**
  * Preferences: what a finger does, how solid the panels are, how frames are
@@ -236,7 +237,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     window.addEventListener('keydown', onCaptureKey, true);
   };
   const onCaptureKey = (e: KeyboardEvent): void => {
-    if (!capturing) return;
+    if (!capturing || document.querySelector('.bz-ask')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (e.key === 'Escape') {
@@ -246,8 +247,23 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
     const chord = chordOf(e);
     if (!chord) return; // a bare modifier: keep waiting for the key
     const taken = keymap.conflictFor(capturing.id, chord);
-    if (taken && !confirm(`${chordParts(chord).join(' + ')} is "${taken.label}". Take it?`)) {
-      return; // still capturing
+    if (taken) {
+      // Listening stops while the window asks; declined, it goes on.
+      const target = capturing;
+      endCapture();
+      void askWindow({
+        title: `Take ${chordParts(chord).join(' + ')} from ${taken.label}?`,
+        text: `${chordParts(chord).join(' + ')} is now "${taken.label}". It would be "${target.label}" instead.`,
+        yes: 'Take it',
+      }).then((yes) => {
+        if (!yes) {
+          beginCapture(target);
+          return;
+        }
+        keymap.rebind(target.id, chord);
+        render();
+      });
+      return;
     }
     keymap.rebind(capturing.id, chord);
     endCapture();
@@ -312,9 +328,16 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   };
   close.addEventListener('click', hide);
   resetAll.addEventListener('click', () => {
-    if (!confirm('Put every hotkey back to its default?')) return;
-    keymap.resetAll();
-    render();
+    void askWindow({
+      title: 'Put every hotkey back to its default?',
+      text: 'Your own keys for the actions are dropped.',
+      yes: 'Reset hotkeys',
+      danger: true,
+    }).then((yes) => {
+      if (!yes) return;
+      keymap.resetAll();
+      render();
+    });
   });
   root.addEventListener('pointerdown', (e) => {
     // The backdrop closes; a press outside the capture box cancels a capture.
@@ -329,7 +352,7 @@ function build(): { root: HTMLElement; open: (mode: KeyMode) => void } {
   // while the window is up.
   const onWindowKey = (e: KeyboardEvent): void => {
     // The device question over this window takes Esc as its own.
-    if (e.key === 'Escape' && !capturing && !document.querySelector('.bz-device')) {
+    if (e.key === 'Escape' && !capturing && !document.querySelector('.bz-device, .bz-ask')) {
       hide();
       e.preventDefault();
       e.stopPropagation();
@@ -487,7 +510,7 @@ function openRow(key: string, label: string, hint: string, action: () => void): 
  * is on it is stored first, as for signing in.
  */
 async function openPasskeyCheck(): Promise<void> {
-  if (!(await readyToLeave('opening the passkey check means leaving the page. Leave anyway?'))) return;
+  if (!(await readyToLeave('Opening the passkey check means leaving the page.'))) return;
   window.location.assign('/?passkeycheck');
 }
 

@@ -2,6 +2,7 @@ import { markOpen } from '../../ui/openToken';
 import { KIND_LABEL, ago, clearRecent, dropRecent, listRecent, type Recent } from '../../ui/recent';
 import type { MenuItem } from './TopMenu';
 import { statusToast } from './statusToast';
+import { askWindow } from '../../ui/askWindow';
 
 /** Where a recent entry opens, in its own mode, by the same addresses the cards and Projects pages use. */
 export function recentHref(r: Recent): string {
@@ -38,7 +39,17 @@ async function whyNot(r: Recent): Promise<string | null> {
  * gone is said so and leaves the list.
  */
 export async function openRecent(r: Recent, hasWork: () => boolean): Promise<void> {
-  if (hasWork() && !confirm(`Open "${r.name}"? The current work will be replaced.`)) return;
+  if (
+    hasWork() &&
+    !(await askWindow({
+      title: `Open "${r.name}"?`,
+      text: 'The current work will be replaced.',
+      yes: 'Replace',
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   const why = await whyNot(r);
   if (why) {
     dropRecent(r);

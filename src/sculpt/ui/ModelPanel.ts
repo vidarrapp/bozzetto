@@ -35,6 +35,7 @@ import {
   type QuadRemeshResult,
 } from '../bridge/quadRemesh';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
+import { askWindow, tellWindow } from '../../ui/askWindow';
 
 /** Target faces: the slider's travel (in single faces) and the typed value's limits. */
 const QUAD_LIMITS: Limits = { min: QUAD_TARGET.min, max: QUAD_TARGET.max, integer: true };
@@ -152,15 +153,22 @@ export class ModelPanel extends SidePanel {
       // Turning it ON replaces the mesh and flattens the multires stack, so
       // it asks first (turning it off is the way back and needs no gate).
       if (on) {
-        const ok = confirm(
-          'Dynamic topology rebuilds the surface under every stroke, and the ' +
-            'subdivision levels are flattened to the current resolution. ' +
-            'Ctrl+Z undoes the switch. Continue?',
-        );
-        if (!ok) {
-          this.dyntopoCheckbox.checked = false;
-          return;
-        }
+        // Held at off while the window is up; the answer sets it.
+        this.dyntopoCheckbox.checked = false;
+        void (async () => {
+          const ok = await askWindow({
+            title: 'Turn on dynamic topology?',
+            text:
+              'It rebuilds the surface under every stroke, and the subdivision levels are flattened to the current resolution. ' +
+              'Undo reverses the switch.',
+            yes: 'Turn on',
+            danger: true,
+          });
+          if (!ok) return;
+          this.session.toggleDynamicTopology();
+          this.refreshState();
+        })();
+        return;
       }
       this.session.toggleDynamicTopology();
       this.refreshState();
@@ -850,7 +858,7 @@ export class ModelPanel extends SidePanel {
     const ends = div('sculpt-panel__row');
     const rebuild = this.opButton('Rebuild', () => {
       if (!this.session.reverse()) {
-        alert('This topology cannot be rebuilt into a lower level.');
+        void tellWindow({ title: 'Cannot rebuild', text: 'This topology cannot be rebuilt into a lower level.' });
       }
     });
     rebuild.disabled = lv.sel !== 0;

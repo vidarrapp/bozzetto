@@ -46,7 +46,8 @@ import { DEVICE_ONLY_NOTE } from './deviceOnly';
 import { importObj, inProject, startArmature, startSculpt } from './startWork';
 import { signInButton } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
-import { markOpenOnClick } from './openToken';
+import { openAfterAsking } from './openToken';
+import { askWindow, tellWindow } from './askWindow';
 import { legalFoot } from './legalFoot';
 import { suspensionText } from '../net/account';
 
@@ -588,11 +589,13 @@ async function libraryCards(
     // otherwise asks again: a link to the same address can come from
     // anywhere (ui/openToken).
     thumb.addEventListener('click', (ev) => {
-      if (hasUnsavedWork && !confirm(`Open "${e.name}"? Your work in progress will be replaced.`)) {
-        ev.preventDefault();
-        return;
-      }
-      markOpenOnClick(ev, thumb);
+      openAfterAsking(
+        ev,
+        thumb,
+        hasUnsavedWork
+          ? { title: `Open "${e.name}"?`, text: 'Your work in progress will be replaced.', yes: 'Replace', danger: true }
+          : null,
+      );
     });
 
     const title = card.querySelector<HTMLElement>('.card__title')!;
@@ -605,14 +608,18 @@ async function libraryCards(
     editableTitle(title, e.name, (name) => lib.renameLibraryScene(key, name));
 
     card.querySelector<HTMLButtonElement>('.card__trash')!.addEventListener('click', () => {
-      const question = card.classList.contains('card--uploaded')
-        ? `Delete this device's copy of "${e.name}"? The scene stays in ${place()}.`
-        : `Delete "${e.name}"? This cannot be undone.`;
-      if (!confirm(question)) return;
-      void lib.deleteLibraryScene(key).then(() => {
-        if (url) URL.revokeObjectURL(url);
-        card.remove();
-        onChange();
+      void askWindow({
+        title: card.classList.contains('card--uploaded') ? `Delete this device's copy of ${e.name}?` : `Delete ${e.name}?`,
+        text: card.classList.contains('card--uploaded') ? `The scene stays in ${place()}.` : 'This cannot be undone.',
+        yes: 'Delete',
+        danger: true,
+      }).then((yes) => {
+        if (!yes) return;
+        void lib.deleteLibraryScene(key).then(() => {
+          if (url) URL.revokeObjectURL(url);
+          card.remove();
+          onChange();
+        });
       });
     });
     return card;
@@ -703,11 +710,13 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
     : 'Upload did not finish';
   thumb.addEventListener('click', (ev) => {
     const what = p.template ? `a copy of "${p.title}"` : `"${p.title}"`;
-    if (opts.hasUnsavedWork && !confirm(`Open ${what}? Your work in progress will be replaced.`)) {
-      ev.preventDefault();
-      return;
-    }
-    markOpenOnClick(ev, thumb);
+    openAfterAsking(
+      ev,
+      thumb,
+      opts.hasUnsavedWork
+        ? { title: `Open ${what}?`, text: 'Your work in progress will be replaced.', yes: 'Replace', danger: true }
+        : null,
+    );
   });
   if (!opts.owner) return card;
 
@@ -727,7 +736,16 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
   trash.setAttribute('aria-label', 'Delete this scene');
   trash.textContent = 'Delete';
   trash.addEventListener('click', () => {
-    if (!confirm(`Delete "${p.title}"? It goes from Projects and from this device. This cannot be undone.`)) return;
+    void askWindow({
+      title: `Delete ${p.title}?`,
+      text: 'It goes from Projects and from this device. This cannot be undone.',
+      yes: 'Delete',
+      danger: true,
+    }).then((yes) => {
+      if (yes) removeProject();
+    });
+  });
+  const removeProject = (): void => {
     trash.disabled = true;
     void api
       .remove(p.id)
@@ -742,7 +760,7 @@ function sceneCard(p: ProjectSummary, opts: { owner: boolean; hasUnsavedWork: bo
         trash.disabled = false;
         actionFailed('Delete failed', err);
       });
-  });
+  };
   card.appendChild(trash);
   return card;
 }
@@ -782,11 +800,13 @@ function armatureProjectCard(p: ProjectSummary, opts: { owner: boolean; hasUnsav
   for (const link of [thumb, title]) {
     link.addEventListener('click', (ev) => {
       const what = p.template ? `a copy of "${p.title}"` : `"${p.title}"`;
-      if (opts.hasUnsavedWork && !confirm(`Open ${what}? The armature in progress on this device will be replaced.`)) {
-        ev.preventDefault();
-        return;
-      }
-      markOpenOnClick(ev, link);
+      openAfterAsking(
+        ev,
+        link,
+        opts.hasUnsavedWork
+          ? { title: `Open ${what}?`, text: 'The armature in progress on this device will be replaced.', yes: 'Replace', danger: true }
+          : null,
+      );
     });
   }
   if (opts.owner) card.querySelector<HTMLElement>('.card__body')!.appendChild(visibilityToggle(p, paintBadges));
@@ -840,7 +860,7 @@ function actionFailed(what: string, err: Error): void {
     failNotice(`${what}: your sign-in has expired.`, signInButton('', undefined, 'Sign in again', err.via));
     return;
   }
-  alert(`${what}: ${err.message}`);
+  void tellWindow({ title: what, text: err.message });
 }
 
 /** The badges that say what a project is to the gallery: a template, and private. */

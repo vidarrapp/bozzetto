@@ -41,6 +41,7 @@ import { noteAccountDeleted } from '../Landing';
 import { CodeStep, HandleField, Say, button, el, field, input } from './parts';
 import { fillMeta, metaPhrase } from '../metaLine';
 import { confirmIdentity } from './signIn';
+import { askWindow } from '../askWindow';
 
 /**
  * The Account page (`/?account`, docs/accounts.md §7): the handle, changed
@@ -431,11 +432,16 @@ function passkeyRow(state: PageState, p: Passkey, say: Say): HTMLElement {
 
   remove.addEventListener('click', () => {
     const last = state.details.passkeys.length === 1;
-    const question = last
-      ? `Remove the passkey “${p.name}”? It is your only one: you will sign in with a code by email after this.`
-      : `Remove the passkey “${p.name}”? It will no longer sign you in.`;
-    if (!confirm(question)) return;
     void (async () => {
+      const yes = await askWindow({
+        title: `Remove the passkey ${p.name}?`,
+        text: last
+          ? 'It is your only one: you will sign in with a code by email after this.'
+          : 'It will no longer sign you in.',
+        yes: 'Remove',
+        danger: true,
+      });
+      if (!yes) return;
       remove.disabled = true;
       try {
         const removed = await withReauth(state, async () => {
@@ -508,8 +514,14 @@ function sessionsSection(state: PageState): HTMLElement {
   const actions = el('div', 'account-actions');
   if (others > 0) {
     const elsewhere = button('Sign out everywhere else');
-    elsewhere.addEventListener('click', () => {
-      if (!confirm(`Sign out of the ${others} other session${others === 1 ? '' : 's'}? This one stays signed in.`)) return;
+    elsewhere.addEventListener('click', async () => {
+      const yes = await askWindow({
+        title: `Sign out of the ${others} other session${others === 1 ? '' : 's'}?`,
+        text: 'This one stays signed in.',
+        yes: 'Sign out',
+        danger: true,
+      });
+      if (!yes) return;
       elsewhere.disabled = true;
       void revokeAllSessions(true)
         .then(async (n) => {
@@ -524,8 +536,14 @@ function sessionsSection(state: PageState): HTMLElement {
     actions.appendChild(elsewhere);
   }
   const everywhere = button('Sign out everywhere');
-  everywhere.addEventListener('click', () => {
-    if (!confirm('Sign out everywhere, this browser included?')) return;
+  everywhere.addEventListener('click', async () => {
+    const yes = await askWindow({
+      title: 'Sign out everywhere?',
+      text: 'This browser is signed out too.',
+      yes: 'Sign out everywhere',
+      danger: true,
+    });
+    if (!yes) return;
     everywhere.disabled = true;
     void revokeAllSessions(false)
       .then(() => signedOutHere())

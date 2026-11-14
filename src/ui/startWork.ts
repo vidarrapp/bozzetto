@@ -1,6 +1,7 @@
 import { requireSaving } from './deviceChoice';
 import { failNotice } from '../sculpt/ui/statusToast';
 import { markOpen } from './openToken';
+import { askWindow } from './askWindow';
 
 /**
  * The ways to start work, as the gallery's Create card and the pages' File
@@ -26,7 +27,17 @@ export async function importObj(file: File): Promise<void> {
   if (!(await requireSaving('Import OBJ needs to keep the file on this device.'))) return;
   const hasWork = await store.hasSavedScene().catch(() => false);
   const atRisk = hasWork && !(await inProject(store));
-  if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;
+  if (
+    atRisk &&
+    !(await askWindow({
+      title: `Open "${name}" as a new sculpt?`,
+      text: 'The work in progress on this device will be replaced.',
+      yes: 'Replace',
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   let id: string;
   try {
     id = (await handoffs.saveObjHandoff({ name: file.name, text: await file.text() })).id;
@@ -54,7 +65,15 @@ export async function startSculpt(): Promise<void> {
   // Work that is its project's as saved (inProject) loses nothing: there
   // is no card for it, and no question either.
   const atRisk = hasWork && !(await inProject(store));
-  if (atRisk && !confirm('Start a new sculpt? The work in progress on this device will be replaced.')) {
+  if (
+    atRisk &&
+    !(await askWindow({
+      title: 'Start a new sculpt?',
+      text: 'The work in progress on this device will be replaced.',
+      yes: 'Start new',
+      danger: true,
+    }))
+  ) {
     return;
   }
   if (hasWork) {
@@ -71,7 +90,15 @@ export async function startSculpt(): Promise<void> {
 export async function startArmature(): Promise<void> {
   const store = await import('../armature/persist');
   const hasWork = await store.hasArmature().catch(() => false);
-  if (hasWork && !confirm('Start a new armature? The one in progress on this device will be replaced.')) {
+  if (
+    hasWork &&
+    !(await askWindow({
+      title: 'Start a new armature?',
+      text: 'The one in progress on this device will be replaced.',
+      yes: 'Start new',
+      danger: true,
+    }))
+  ) {
     return;
   }
   if (hasWork) await store.clearArmature();

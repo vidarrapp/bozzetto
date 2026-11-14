@@ -1,3 +1,4 @@
+import { askWindow } from './askWindow';
 /**
  * Leaving the page on purpose, with the work stored first.
  *
@@ -28,15 +29,16 @@ export function beforeLeaving(store: Store): () => void {
 /**
  * Store everything registered, and say whether the page may go: true when
  * all of it was stored, or when, told that the newest work was not, the
- * person chose to go anyway. `why` finishes the question - what leaving
- * means here, and the question itself ("signing in means leaving the page.
- * Leave anyway?").
+ * person chose to go anyway. `why` says what leaving means here ("Signing
+ * in means leaving the page."); `yes` is the verb on the button.
  */
-export async function readyToLeave(why: string): Promise<boolean> {
+export async function readyToLeave(why: string, yes: 'Leave' | 'Reload' = 'Leave'): Promise<boolean> {
   const stored = await Promise.all([...stores].map((store) => store().catch(() => false)));
   if (!stored.includes(false)) return true;
-  return confirm(
-    `The newest work on this page could not be stored on this device, and ${why} ` +
-      'Cancel, then File > Save file, keeps a copy.',
-  );
+  return askWindow({
+    title: `${yes} without the newest work?`,
+    text: `It could not be stored on this device, and ${why[0].toLowerCase()}${why.slice(1)} Cancel, then File > Save file, keeps a copy.`,
+    yes,
+    danger: true,
+  });
 }

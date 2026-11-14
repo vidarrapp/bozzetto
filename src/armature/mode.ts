@@ -56,6 +56,7 @@ import {
   uploadArmature,
   type ArmatureLink,
 } from './project';
+import { askWindow, tellWindow } from '../ui/askWindow';
 
 /** Undo steps kept (owner call), the oldest let go past it. */
 const HISTORY_LIMIT = 100;
@@ -205,7 +206,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const key = projectId ? `project:${projectId}` : `template:${templateId}`;
       // The card that sent this tab here asked already, if there was
       // anything to ask about (ui/openToken); an address alone asks here.
-      if (!saved || sentHere === key || window.confirm(`Open ${what}? The armature in progress on this device will be replaced.`)) {
+      if (
+        !saved ||
+        sentHere === key ||
+        (await askWindow({
+          title: `Open ${what}?`,
+          text: 'The armature in progress on this device will be replaced.',
+          yes: 'Replace',
+          danger: true,
+        }))
+      ) {
         saved = got.file;
         bootLink = got.link ?? null;
         bootSymmetry = got.symmetry;
@@ -1303,7 +1313,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       }
       parsed = onCentimetres(parsed);
     } catch (err) {
-      alert(err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err));
+      void tellWindow({ title: 'That file did not open', text: err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err) });
       return;
     }
     name = parsed.name;
@@ -1333,7 +1343,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     try {
       read = await parseModel(bytes);
     } catch (err) {
-      alert(`That model could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      void tellWindow({ title: 'That model could not be read', text: err instanceof Error ? err.message : String(err) });
       return;
     }
     model = { bytes, name: file.name };
@@ -1613,8 +1623,18 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       start: [
         {
           label: 'New armature',
-          action: () => {
-            if (undoStack.length && !confirm('Start a new armature? The current pose and proportions go.')) return;
+          action: async () => {
+            if (
+              undoStack.length &&
+              !(await askWindow({
+                title: 'Start a new armature?',
+                text: 'The current pose and proportions go.',
+                yes: 'Start new',
+                danger: true,
+              }))
+            ) {
+              return;
+            }
             name = 'Armature';
             // A new armature is nobody's project, with a history of its own.
             link = null;

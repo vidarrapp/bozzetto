@@ -1,5 +1,6 @@
 import { errorText } from '../net/account';
 import { OwnerSessionError, failureText } from './api';
+import { tellWindow } from '../ui/askWindow';
 
 /**
  * The owner tools' second lock, as the page meets it (docs/accounts.md §2,
@@ -31,12 +32,12 @@ export async function ownerSignIn(auto = false): Promise<boolean> {
     const me = await openSignIn({ reason: REASON });
     if (!me) return false;
     if (me.role !== 'owner') {
-      alert(`Signed in as @${me.handle}, which is not the owner's account. Owner tools need the owner's own sign-in.`);
+      await tellWindow({ title: 'Not the owner', text: `Signed in as @${me.handle}, which is not the owner's account. Owner tools need the owner's own sign-in.` });
       return false;
     }
     return true;
   } catch (err) {
-    alert(`Could not open the sign-in: ${errorText(err)}`);
+    await tellWindow({ title: 'Could not open the sign-in', text: errorText(err) });
     return false;
   }
 }

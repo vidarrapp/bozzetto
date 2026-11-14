@@ -3,6 +3,7 @@ import { asOwner, failureSentence, ownerSignInPanel } from './ownerSession';
 import { dayOf, momentOf, sizeOfText, sizeText } from '../net/account';
 import { Say, button, el } from '../ui/account/parts';
 import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
+import { askWindow } from '../ui/askWindow';
 
 /**
  * The Users tab (docs/accounts.md §8): the accounts, newest first, 50 a
@@ -269,11 +270,16 @@ class Account {
   private async changeRole(): Promise<void> {
     const to = this.nextRole;
     if (!to) return;
-    const asked =
+    const yes = await askWindow(
       to === 'moderator'
-        ? `Make ${this.who} a moderator? They can then review the Community: approve, reject and hide what members share, and read the reports.`
-        : `Make ${this.who} a member again? They stop reviewing at once.`;
-    if (!confirm(asked)) return;
+        ? {
+            title: `Make ${this.who} a moderator?`,
+            text: 'They can then review the Community: approve, reject and hide what members share, and read the reports.',
+            yes: 'Make moderator',
+          }
+        : { title: `Make ${this.who} a member again?`, text: 'They stop reviewing at once.', yes: 'Make member', danger: true },
+    );
+    if (!yes) return;
     this.roleAction.disabled = true;
     this.roleSay.note('Working…');
     try {
@@ -425,7 +431,7 @@ class Account {
     const go = button('Suspend', 'btn btn--danger');
     go.type = 'submit';
     form.append(reason, go);
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const why = reason.value.replace(/\s+/g, ' ').trim();
       if (!why) {
@@ -433,14 +439,15 @@ class Account {
         reason.focus();
         return;
       }
-      if (
-        !confirm(
-          `Suspend ${this.who}? They are signed out everywhere, their uploads in progress stop, and they are mailed the reason. ` +
-            'Their work is kept, and nothing of theirs answers them until you lift it.',
-        )
-      ) {
-        return;
-      }
+      const yes = await askWindow({
+        title: `Suspend ${this.who}?`,
+        text:
+          'They are signed out everywhere, their uploads in progress stop, and they are mailed the reason. ' +
+          'Their work is kept, and nothing of theirs answers them until you lift it.',
+        yes: 'Suspend',
+        danger: true,
+      });
+      if (!yes) return;
       void this.act(go, () => usersApi.suspend(this.user.id, why), async (u) => {
         this.user = u;
         this.draw();
@@ -468,8 +475,14 @@ class Account {
 
   private revokeSessions(): HTMLButtonElement {
     const go = button('Revoke sessions', 'btn admin-user__revoke');
-    go.addEventListener('click', () => {
-      if (!confirm(`Sign ${this.who} out everywhere? They can sign in again.`)) return;
+    go.addEventListener('click', async () => {
+      const yes = await askWindow({
+        title: `Sign ${this.who} out everywhere?`,
+        text: 'They can sign in again.',
+        yes: 'Sign out',
+        danger: true,
+      });
+      if (!yes) return;
       void this.act(go, () => usersApi.revokeSessions(this.user.id), async ({ revoked }) => {
         await this.reload(() =>
           this.say.note(revoked === 0 ? `${this.who} was signed in nowhere.` : `${this.who} is signed out of ${plural(revoked, 'session')}.`),
@@ -554,8 +567,14 @@ class Account {
    */
   private finishDeletion(): HTMLElement {
     const go = button('Finish deletion', 'btn btn--danger admin-user__finish');
-    go.addEventListener('click', () => {
-      if (!confirm(`Finish deleting ${this.who}? Everything of theirs still on the server goes, for good.`)) return;
+    go.addEventListener('click', async () => {
+      const yes = await askWindow({
+        title: `Finish deleting ${this.who}?`,
+        text: 'Everything of theirs still on the server goes, for good.',
+        yes: 'Delete',
+        danger: true,
+      });
+      if (!yes) return;
       void this.act(go, async () => {
         for (let step = 0; step < 200; step++) {
           const progress = await usersApi.finishDeletion(this.user.id);

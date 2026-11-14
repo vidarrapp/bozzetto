@@ -1,6 +1,7 @@
 import { div, onTap } from '../../ui/dom';
 import { topbarLeft, topChip } from '../../ui/topbar';
 import { PANEL_CLOSE_ALL_EVENT } from '../../ui/ChromeToggle';
+import { tellWindow } from '../../ui/askWindow';
 
 /** Text that may depend on state: read again each time the menu opens. */
 type MenuText = string | (() => string);
@@ -345,7 +346,7 @@ export class TopMenu {
     this.close();
     Promise.resolve()
       .then(action)
-      .catch((err: unknown) => alert(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => void tellWindow({ title: 'That did not work', text: err instanceof Error ? err.message : String(err) }));
   }
 
   /**
