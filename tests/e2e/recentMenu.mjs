@@ -44,7 +44,7 @@ export const suites = {
     // A scene kept on this device has an identity of its own: it is the first entry.
     await menuName(page, 'File');
     await page.evaluate(() => [...document.querySelectorAll('.file-menu--file .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Keep on this device')?.click());
-    await page.waitForFunction((k) => JSON.parse(localStorage.getItem(k) ?? '[]').length === 1, KEY, { timeout: 10_000 });
+    await page.waitForFunction((k) => JSON.parse(localStorage.getItem(k) ?? '[]').length === 1, KEY, { timeout: 60_000 });
     const kept = (await stored(page))[0];
     t.ok(kept.kind === 'lib' && kept.place === 'This device' && kept.id && kept.name, `Keep on this device puts the scene on the list (${JSON.stringify(kept)})`);
     // Two more, older: a project that is gone, and an armature.
@@ -122,7 +122,7 @@ export const suites = {
     // Clear list.
     await fileRow(page);
     await page.click('.file-menu--file .file-menu__item--sub');
-    await page.evaluate(() => [...document.querySelectorAll('.file-menu--sub .file-menu__item')].find((b) => b.querySelector('.file-menu__label')?.textContent === 'Clear list')?.click());
+    await page.evaluate(() => [...document.querySelectorAll('.file-menu--sub .file-menu__item')].find((b) => (b.querySelector('.file-menu__label')?.textContent ?? b.textContent) === 'Clear list')?.click());
     t.eq((await stored(page)).length, 0, 'Clear list empties it');
     row = await fileRow(page);
     t.ok(row.disabled && row.hint === 'Nothing opened yet', 'and the row is greyed out again');

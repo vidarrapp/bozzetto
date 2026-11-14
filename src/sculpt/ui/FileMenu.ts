@@ -104,7 +104,7 @@ export class FileMenu {
             hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
             action: async () => {
               const kept = await this.actions.keepOnDevice();
-            recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
+              recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
               this.menu.note('Kept on this device');
             },
           },
