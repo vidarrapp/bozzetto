@@ -311,6 +311,38 @@ export const suites = {
     t.ok(dist3(p1.position, p0.position) < p0.distance * 1e-6 && dist3(p1.target, p0.target) < p0.distance * 1e-6, 'a pen stroke never moves the camera');
   },
 
+  // What a pan grabs becomes the orbit's centre: a one-finger orbit after a
+  // two-finger pan turns about the grabbed point, which stays put on screen.
+  async panPivot(page, base, t) {
+    await openForInput(page, base);
+    const dev = await devices(page);
+    await page.keyboard.press('3');
+    await page.keyboard.press('f');
+    await settle(page);
+    const s0 = await sphere(page);
+    const mid = [Math.round(s0.mid[0] + s0.px * 0.45), Math.round(s0.mid[1] - s0.px * 0.35)];
+    const R = await surfaceAt(page, mid);
+    t.ok(!!R, 'the fingers start over the sphere, away from its middle');
+    const fingers = ([x, y]) => [[x - 30, y], [x + 30, y]];
+    await dev.touch('touchStart', fingers(mid));
+    await dev.touch('touchMove', fingers([mid[0] - 40, mid[1] + 20]));
+    await dev.touch('touchMove', fingers([mid[0] - 80, mid[1] + 40]));
+    await dev.touch('touchEnd', []);
+    await settle(page);
+    const R0 = await onScreen(page, R);
+    // One finger on bare canvas beside the sphere: an orbit.
+    const s1 = await sphere(page);
+    const from = [Math.round(s1.mid[0] - s1.px * 1.6), Math.round(s1.mid[1] + s1.px * 0.2)];
+    const c0 = await camera(page);
+    await dev.finger(line(from, [from[0] + 140, from[1] + 30], 8));
+    await settle(page);
+    const c1 = await camera(page);
+    const R1 = await onScreen(page, R);
+    const dir = (c) => c.position.map((p, i) => p - c.target[i]);
+    t.ok(dist3(dir(c1), dir(c0)) > c0.distance * 0.05, 'the finger turns the view');
+    t.ok(gap(R0, R1) < 3, `about the point the pan grabbed, which stays put on screen (moved ${gap(R0, R1).toFixed(2)} px)`);
+  },
+
   // A big scene seen from far back with the orbit target well in front of
   // the surface (what a zoom, a fit or a frame of something else leaves):
   // OrbitControls scaled every pan by the distance to the target, so the

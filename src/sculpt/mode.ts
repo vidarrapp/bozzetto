@@ -1014,14 +1014,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // re-centring's record of the view moves with them, or the next frame
   // would read the zoom as part of the orbit and scale about the pivot
   // again.
-  // Two fingers hold the surface under their middle (never the last edit).
+  // Two fingers hold the surface under their middle (never the last edit),
+  // as a pan with the mouse or the pen's button holds the surface under the
+  // press. What a pan grabs becomes the point the orbit turns about, and
+  // zooms head there, as after a stroke (owner request).
   const fingerPoint = new Vector3();
   const surfaceUnder = (at: { x: number; y: number } | null): Vector3 | null => {
     if (!at) return null;
     const r = viewer.captureCanvas.getBoundingClientRect();
     const pr = session.getPixelRatio();
     const hit = session.surfacePointAt((at.x - r.left) * pr, (at.y - r.top) * pr);
-    return hit ? fingerPoint.set(hit[0], hit[1], hit[2]) : null;
+    if (!hit) return null;
+    pivot.set(hit[0], hit[1], hit[2]);
+    editEpoch = session.sceneEpoch;
+    return fingerPoint.set(hit[0], hit[1], hit[2]);
   };
   viewer.setZoomFocus(
     zoomFocus,
