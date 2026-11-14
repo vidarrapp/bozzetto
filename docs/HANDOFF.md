@@ -2,6 +2,9 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-14: References (docs/plans/reference-and-measure.md): a Reference tab on the right after Tool, one picture on at a time, shown beside (a floating window) or over the view (behind the model or in front at an opacity). Yes, or changes (blocks: References)
+- [ ] 2026-11-14: Measure: build order proportion guide first, then Calipers, then References; and the calipers icon drawn as our own SVG (Uicons has no calipers) or ruler-combined for now (blocks: Measure)
+- [ ] 2026-11-14: Proportion guide canons: 7½, 8 and 8½ heads plus Custom, with landmark ticks (chin, nipples, navel, crotch, knees). Right set, or others (blocks: the proportion guide)
 - [x] 2026-11-14: The portfolio session asks that the gallery, Community, member and My projects pages take the portfolio's header (Vidar Rapp, the role, and Work, Resume, Blog, Contact, Bozzetto, Store). Confirm, and say whether the Bozzetto logotype stays on those pages (where), or the portfolio header with your name replaces it. Decided 2026-11-14: no portfolio header; the pages get the same menu row as the workspaces (one kind of main menu across the app), with the signed-in @handle at the right of every menu row; the logotype leaves the row and stays on the gallery page
 - [x] 2026-11-12: Should the Scene panel's row for assigning a named material move to the Material tab. Decided 2026-11-12: no, assigning a material stays in Scene; the Material tab edits its values
 - [x] 2026-11-12: While saving is off, the gallery's Import OBJ and Armature's Send to Sculpt cannot carry the file to Sculpt, since they go through IndexedDB. Accept the dead end, or carry them in sessionStorage. Decided 2026-11-12: neither: both need saving on, so picking one with saving off asks the first question again with an opening sentence, and Keep on this device turns saving on and carries the action out; declining or Go back cancels it
