@@ -7,6 +7,7 @@ import { initTheme } from '../ui/theme';
 import { installRangeFill } from '../ui/rangeFill';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
+import { installSliderScrub } from '../ui/sliderScrub';
 import { pageShell } from '../ui/pageShell';
 import { trashButton } from '../ui/trash';
 import { fillMeta, metaPhrase, metaValue } from '../ui/metaLine';
@@ -457,6 +458,7 @@ initTheme();
 followPanelOpacity();
 installRangeFill();
 installSliderBubble();
+installSliderScrub();
 // An id from the address goes into request paths: one that is not an id
 // (net/ids) opens nothing, and the list stands in.
 const projectId = new URLSearchParams(window.location.search).get('p');

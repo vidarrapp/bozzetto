@@ -141,12 +141,19 @@ const TAP_SLOP = 10;
  * lift, because iOS raises the keyboard for a field focused on a lift and
  * not on a touch's landing.
  */
-export function watchDoublePress(el: HTMLElement, first: () => () => void, double: (undo: () => void) => void): void {
+export function watchDoublePress(
+  el: HTMLElement,
+  first: () => () => void,
+  double: (undo: () => void) => void,
+  /** Presses on these (a number field standing in the row) are not the slider's. */
+  skip?: (e: Event) => boolean,
+): void {
   let press: { id: number; x: number; y: number; moved: boolean; second: boolean } | null = null;
   let last: { t: number; x: number; y: number; type: string; undo: () => void } | null = null;
   el.addEventListener(
     'pointerdown',
     (e) => {
+      if (skip?.(e)) return;
       if (e.button !== 0 || !e.isPrimary) {
         last = null;
         return;
@@ -307,8 +314,10 @@ export function typedSlider(input: HTMLInputElement, spec: TypedSlider, value: n
       },
     );
   };
+  // On the row, not the line: a touch screen's presses land on the row (the
+  // line ignores them, see sliderScrub), and a mouse's on the line bubble up.
   watchDoublePress(
-    input,
+    input.closest('label') ?? input,
     () => {
       const before = entry.value;
       const thumb = input.value;
@@ -325,6 +334,7 @@ export function typedSlider(input: HTMLInputElement, spec: TypedSlider, value: n
       };
     },
     open,
+    (e) => e.target instanceof HTMLInputElement && e.target !== input,
   );
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.repeat) {

@@ -2,6 +2,7 @@ import { initTheme } from '../ui/theme';
 import { installRangeFill } from '../ui/rangeFill';
 import { followPanelOpacity } from '../ui/appearance';
 import { installSliderBubble } from '../ui/sliderBubble';
+import { installSliderScrub } from '../ui/sliderScrub';
 import { checkSignIn, roleOf, type SignIn } from '../admin/api';
 import { mountWorkspace } from '../present/workspace';
 import { ensureDeviceChoice } from '../ui/deviceChoice';
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   followPanelOpacity();
   installRangeFill();
   installSliderBubble();
+  installSliderScrub();
   // Asked first, before the workspace boots (ui/deviceChoice).
   await ensureDeviceChoice();
   const viewport = document.getElementById('viewport');
