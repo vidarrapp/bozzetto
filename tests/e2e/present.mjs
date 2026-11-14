@@ -278,7 +278,13 @@ export const suites = {
     await page.click('.file-menu--view .file-menu__item:has(.file-menu__label:text-is("Present"))');
     now = await ui(page);
     t.ok(now.presenting && now.gizmo === null, `View > Present presents too, the gizmo put away (${show(now)})`);
+    // The menu shuts as its item runs; Esc must reach Present, not a menu still closing.
+    await page.waitForFunction(() => !document.querySelector('.bz-menuname.is-open, .file-menu:not([hidden]) .file-menu__item:focus'), null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(150);
     await press(page, 'Escape');
+    // Leaving takes a few frames on a busy machine (the slide back, the panels coming up).
+    await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
     after = await ui(page);
     t.ok(same(after, gizmoBefore) && after.gizmo === 'rotate' && !after.shown.output, `Esc leaves, the rotate gizmo back (${show(after)})`);
     await press(page, '3'); // a brush again: Standard clay
