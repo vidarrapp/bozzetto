@@ -2,6 +2,9 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-14: The Create window offers Create timelapse to everyone and Help leads with timelapses, against PRODUCT.md (timelapses not offered to users now). Which holds. Decided 2026-11-14: hide them for now: Create timelapse for the owner only, Help leads with Armature, Sculpt and Present
+- [ ] 2026-11-14: Armature's handles are orange, the colour of the tool in hand. Make them neutral (white or grey) with orange only on the selected handle, or keep them orange
+- [ ] 2026-11-14: Renderer words in the panels (Albedo, Metalness, Lit (PBR), Tris, Level 4/4, Voxel remesh). Keep them, or plain words (Colour, Metal, Lit, Triangles, Level 4 of 4, Remesh)
 - [x] 2026-11-14: References (docs/plans/reference-and-measure.md), kept on the device and in .bozz files only, never uploaded (decided 2026-11-14): a Reference tab on the right after Tool, one picture on at a time, shown beside (a floating window) or over the view (behind the model or in front at an opacity). Yes, or changes. Decided 2026-11-14: build it as planned
 - [x] 2026-11-14: Measure: build order proportion guide first, then Calipers, then References; and the calipers icon drawn as our own SVG (Uicons has no calipers) or ruler-combined for now. Decided 2026-11-14: build References and Calipers now, the proportion guide later; ruler-combined stands in until Vidar finds or draws a calipers icon
 - [ ] 2026-11-14: Proportion guide canons: 7½, 8 and 8½ heads plus Custom, with landmark ticks (chin, nipples, navel, crotch, knees). Right set, or others (blocks: the proportion guide)
