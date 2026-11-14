@@ -10,7 +10,7 @@ correctly rather than making it:
 2. **Measure**: real heights, a proportion guide in heads, and a calipers
    tool that measures between two points in 3D.
 
-Neither changes the geometry. Both are saved with the scene.
+Neither changes the geometry. Measurements are saved with the scene; references stay on the device and are never uploaded.
 
 ---
 
@@ -70,16 +70,25 @@ the colour, so values can be judged alone.
   the view stays (it is part of what you are looking at), with its own switch
   in View: **Reference over the view**.
 
-### Storage
+### Storage: never on the server
 
-- Pictures are stored with the scene: in the autosave (IndexedDB, as the scene
-  is, only when keeping on the device is on) and inside the `.bozz` file and a
-  library project, so a study opens with its references.
+References stay on the device (owner decision, 2026-11-14: they are not to be
+uploaded to the server).
+
+- Pictures are kept in the browser's storage on this device (IndexedDB), next
+  to the scene's autosave, keyed by the scene, and only when keeping work on
+  this device is on. With it off, they last for the page.
+- **Save file** (a `.bozz` download) may carry them, since that file stays with
+  the person: a switch in the save, **Include references**, on by default.
+- **Save to library** and **Publish** never carry them: the upload is the scene
+  without its pictures. A library project opened on another device opens
+  without references, and the panel says so ("References stay on the device
+  they were added on").
+- Opening a library project on the device that added the references brings
+  them back, matched by the project's id.
 - Each picture is downscaled on import to at most 2048 px on its long side and
-  stored as JPEG (quality about 0.85; PNG kept only when it has transparency),
-  so a board of ten photos stays well under the size of the sculpt itself.
-- Location data in photos (EXIF) is dropped on import. Nothing is uploaded
-  anywhere except as part of a project the person saves to the library.
+  stored as JPEG (quality about 0.85; PNG kept only when it has transparency).
+- Location data in photos (EXIF) is dropped on import.
 
 ### Later, not in the first build
 
@@ -183,8 +192,8 @@ not take its place.
    no new storage beyond a few numbers in the scene's settings). Smallest, and
    it uses real units already in place.
 2. **Calipers**: the tool, its icon, pinned measurements saved with the scene.
-3. **References**: the tab, the board, beside and over the view, storage in
-   autosave, `.bozz` and the library.
+3. **References**: the tab, the board, beside and over the view, storage on
+   the device and in `.bozz` files, never in the library or a published piece.
 
 Each step: an e2e suite (taps and Pencil on the model, saved and reopened
 scene, Tab hiding, phone width), README Unreleased line, Help topic, and a look
