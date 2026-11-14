@@ -29,6 +29,9 @@ import { suites as hardening } from './hardening.mjs';
 import { suites as icons } from './icons.mjs';
 import { suites as help } from './help.mjs';
 import { suites as latency } from './latency.mjs';
+import { suites as menuShape } from './menuShape.mjs';
+import { suites as recentMenu } from './recentMenu.mjs';
+import { suites as docScroll } from './docScroll.mjs';
 import { suites as loopMask } from './loopMask.mjs';
 import { suites as material } from './material.mjs';
 import { suites as objNumbering } from './objNumbering.mjs';
@@ -55,7 +58,7 @@ import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
 
-const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...accounts, ...community, ...pages, ...contrast, ...icons, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo, ...deviceStorage, ...material, ...sliderScrub, ...renderMatch };
+const suites = { ...smoke, ...armatureProjects, ...latency, ...shadows, ...shadowsGroups, ...hardening, ...tweaks, ...units, ...viewerTools, ...passkeyCheck, ...present, ...objNumbering, ...brushCaps, ...clayTabPen, ...channelBox, ...profileCurves, ...tineRake, ...quadRemesh, ...surfaceSmooth, ...strengthCm, ...loopMask, ...polyGroups, ...zoomFocus, ...webgpuHang, ...help, ...shell, ...menuShape, ...recentMenu, ...docScroll, ...accounts, ...community, ...pages, ...contrast, ...icons, ...framePresent, ...viewerFrame, ...shellPhone, ...wireAo, ...deviceStorage, ...material, ...sliderScrub, ...renderMatch };
 
 const dist = resolve('dist');
 if (!existsSync(join(dist, 'index.html'))) {

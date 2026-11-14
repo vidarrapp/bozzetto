@@ -18,7 +18,7 @@
  * expired gets a guest's gallery and Log in, as that is what the server
  * will answer, told once that the sign-in expired.
  *
- * With accounts on (docs/accounts.md §7) the top row is the account's: Sign
+ * With accounts on (docs/accounts.md §7) the title strip (ui/pageNav) has the account at the right: Sign
  * in for a guest, which opens the sign-in dialog over the gallery; My
  * projects and the @handle menu signed in, and Owner tools for the owner
  * (ui/account/menu). Community, first in the row for everyone, leads to
@@ -41,20 +41,18 @@ import {
   type Visibility,
 } from '../admin/api';
 import { apiJson } from '../net/origin';
-import { installChip } from './InstallHint';
-import { topChip, topbarRight } from './topbar';
+import { pageNav } from './pageNav';
 import { DEVICE_ONLY_NOTE } from './deviceOnly';
-import { requireSaving } from './deviceChoice';
-import { signInButton, signOutChip } from './signIn';
+import { importObj, inProject, startArmature, startSculpt } from './startWork';
+import { signInButton } from './signIn';
 import { failNotice } from '../sculpt/ui/statusToast';
-import { markOpen, markOpenOnClick } from './openToken';
-import { accountChips } from './account/menu';
+import { markOpenOnClick } from './openToken';
 import { legalFoot } from './legalFoot';
 import { suspensionText } from '../net/account';
 
 export async function renderLanding(app: HTMLElement): Promise<void> {
   document.documentElement.classList.add('is-page');
-  app.classList.add('app--landing');
+  app.classList.add('app--landing', 'page-scroll');
   app.innerHTML = `
     <div class="landing">
       <header class="landing__head">
@@ -70,49 +68,16 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   const grid = app.querySelector<HTMLElement>('#landing-grid');
   if (!grid) return;
 
-  // Page actions live in the shared top row with the theme toggle, so the
-  // same controls sit in the same place on every page and mode.
+  // The title strip (ui/pageNav) is the page's one main menu, as in the
+  // workspaces: File, Go, Help, the page's name, and the account at the right.
+  const nav = pageNav('gallery', 'Gallery');
   const signIn: SignIn = await checkSignIn().catch(() => ({ email: null, expired: false }));
   const admin = roleOf(signIn) === 'owner';
-  const bar = topbarRight();
-  // A re-render (after a delete) must not stack a second set of chips
-  // beside the first: the row outlives the grid it is rebuilt around.
-  bar.querySelectorAll('.landing-chip').forEach((el) => el.remove());
-  const chip = (el: HTMLElement): void => {
-    el.classList.add('landing-chip');
-    bar.appendChild(el);
-  };
-  // A sign-in from the gallery (the chip, the expiry line): the page draws
+  // A sign-in from the gallery (the strip, the expiry line): the page draws
   // itself again for whoever it is for now.
   const again = (): void => void renderLanding(app);
-  if (signIn.accounts) {
-    // The Community (docs/accounts.md §13) first, for everyone: members'
-    // shared work, which the gallery itself leaves to its own page (the
-    // gallery keeps the templates). Then the account's chips (§7): Sign
-    // in and Install for a guest; My projects, Owner tools for the owner,
-    // and the @handle menu.
-    const community = topChip('Community', '/?community');
-    community.classList.add('community-chip');
-    chip(community);
-    for (const c of accountChips(signIn, roleOf(signIn), again)) chip(c);
-    app.querySelector('.landing')?.appendChild(legalFoot());
-  } else {
-    // Guests get the install steps (owner call: the audience being shown the
-    // app); the owner has it installed, and standalone hides it regardless.
-    if (!admin && !signIn.expired) {
-      const install = installChip();
-      if (install) chip(install);
-    }
-    // Same slot either way: the way in for a guest, the way to the editor for
-    // the owner - who otherwise had no link to the admin panel at all. An
-    // expired sign-in is Log in, which is the truth of it: the service
-    // worker's last "signed in" used to stand in for an expired session, and
-    // the gallery went on offering the owner's things until each one failed.
-    chip(topChip(admin ? 'Projects' : 'Log in', '/admin/'));
-    // And the way out (owner request), so a sign-in is not left behind on a
-    // device the owner is done with.
-    if (admin) chip(signOutChip());
-  }
+  nav.fill(signIn, again);
+  if (signIn.accounts) app.querySelector('.landing')?.appendChild(legalFoot());
   if (signIn.suspended) {
     // Every time, while it lasts: nothing of the account answers until the
     // owner lifts it, and no sign-in would.
@@ -287,77 +252,6 @@ function openCreateChooser(savesTo: string | null): void {
 }
 
 /**
- * Create > Import OBJ: the picked file opens in Sculpt as a new scene, its
- * one object imported as File > Import OBJ imports one (welded, sized as
- * every import is). The file goes over in IndexedDB (bridge/objHandoff),
- * since Sculpt is another page load. Like New Sculpt it replaces the work
- * in progress, so it asks first when there is some to lose, and tells the
- * tab it asked (ui/openToken), or Sculpt would ask again.
- */
-async function importObj(file: File): Promise<void> {
-  if (!/\.obj$/i.test(file.name)) {
-    failNotice(`"${file.name}" is not an .obj file.`);
-    return;
-  }
-  const [store, handoffs] = await Promise.all([import('../sculpt/bridge/ScenePersist'), import('../sculpt/bridge/objHandoff')]);
-  const name = handoffs.objName(file.name);
-  // The file crosses to Sculpt through the device's storage, so it needs saving on.
-  if (!(await requireSaving('Import OBJ needs to keep the file on this device.'))) return;
-  const hasWork = await store.hasSavedScene().catch(() => false);
-  const atRisk = hasWork && !(await inProject(store));
-  if (atRisk && !confirm(`Open "${name}" as a new sculpt? The work in progress on this device will be replaced.`)) return;
-  let id: string;
-  try {
-    id = (await handoffs.saveObjHandoff({ name: file.name, text: await file.text() })).id;
-  } catch (err) {
-    failNotice(`Could not open "${name}": this browser would not hold the file (${err instanceof Error ? err.message : String(err)}).`);
-    return;
-  }
-  markOpen('obj', id);
-  window.location.href = '/?sculpt=1&obj=1';
-}
-
-/**
- * Start a fresh sculpt. Sculpt mode restores the autosave on entry, so
- * without this the tile quietly RESUMED the work in progress instead of
- * starting anything new. Ask, then clear the scene and its look before
- * going in.
- */
-async function startSculpt(): Promise<void> {
-  const store = await import('../sculpt/bridge/ScenePersist');
-  // The scene itself, not its snapshot: the picture is only written on
-  // the way out through the gallery link, so a reload, a closed tab or
-  // iOS evicting the page left saved work that this silently RESUMED
-  // instead of replacing - the one thing this tile promises not to do.
-  const hasWork = await store.hasSavedScene().catch(() => false);
-  // Work that is its project's as saved (inProject) loses nothing: there
-  // is no card for it, and no question either.
-  const atRisk = hasWork && !(await inProject(store));
-  if (atRisk && !confirm('Start a new sculpt? The work in progress on this device will be replaced.')) {
-    return;
-  }
-  if (hasWork) {
-    await store.clearSavedScene();
-    // The look too: "new" has to mean new. Leaving it behind is how a
-    // light set flat in one session kept arriving in the next one, with
-    // a fresh sphere lit by it and no obvious cause.
-    await store.clearSculptLook();
-  }
-  window.location.href = '/?sculpt=1';
-}
-
-/** Start a fresh armature, replacing the one in progress after asking. */
-async function startArmature(): Promise<void> {
-  const store = await import('../armature/persist');
-  const hasWork = await store.hasArmature().catch(() => false);
-  if (hasWork && !confirm('Start a new armature? The one in progress on this device will be replaced.')) {
-    return;
-  }
-  if (hasWork) await store.clearArmature();
-  window.location.href = '/?armature=1';
-}
-
-/**
  * The armature in progress on this device, if there is one. For whoever
  * saves to a server here it offers Save to library (owner request: the
  * card's upload, as the mode's File menu has it), to the project it came
@@ -448,19 +342,6 @@ async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired
   });
   card.querySelector<HTMLElement>('.card__body')!.appendChild(b);
   return card;
-}
-
-/**
- * Is the sculpt autosave its project's as saved, with nothing else of it
- * only here? A Save to library went up (or the project was opened),
- * nothing has been edited since (SavedScene.synced), and no copy a failed
- * save kept is waiting to go up - the project's own card opens the same
- * work. The autosave stays, as the recovery copy it is; it only needs no
- * card of its own.
- */
-async function inProject(store: typeof import('../sculpt/bridge/ScenePersist')): Promise<boolean> {
-  const status = await store.loadSceneStatus();
-  return !!status?.synced && !!status.project && !status.unsent;
 }
 
 /**

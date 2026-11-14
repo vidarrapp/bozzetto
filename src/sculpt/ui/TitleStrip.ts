@@ -84,6 +84,13 @@ export interface TitleStripOptions {
    * keeps nothing, so it has none.
    */
   savingNote?: boolean;
+  /**
+   * A page of the site (gallery, Community, My projects, Account, Review,
+   * Owner tools): the same strip with no hide button, no workspace path and
+   * none of the panel layout. The body is marked `bz-page` instead of
+   * `bz-shell`, and shell.css gives both the one strip.
+   */
+  page?: boolean;
 }
 
 export class TitleStrip {
@@ -94,6 +101,12 @@ export class TitleStrip {
   readonly menus: HTMLElement;
   /** Publish, a plain text button; hidden until publishing is reachable (PublishWindow). */
   readonly publishHost: HTMLElement;
+  /**
+   * Where the signed-in account's @handle menu stands: the last thing at the
+   * right, before the hide button. What a place adds with addAction (Star,
+   * Publish, Save, Not saved) lands to its left.
+   */
+  readonly accountSlot: HTMLElement;
   private readonly hideBtn: HTMLButtonElement;
   private readonly steps = new Map<Workspace, HTMLButtonElement>();
   private readonly stepActions = new Map<Workspace, (() => void) | null>();
@@ -117,9 +130,13 @@ export class TitleStrip {
   private readonly stopLayout: () => void;
   private readonly offSettings: () => void;
   private offChoice: (() => void) | null = null;
+  private readonly isPage: boolean;
+  /** Things made for the strip by others (the account menu) that go when it does. */
+  private readonly adopted: Array<{ dispose(): void }> = [];
 
   constructor(opts: TitleStripOptions = {}) {
-    document.body.classList.add('bz-shell');
+    this.isPage = !!opts.page;
+    document.body.classList.add(this.isPage ? 'bz-page' : 'bz-shell');
     this.el = el('header', 'bz-strip');
     this.menus = el('nav', 'bz-strip__menus');
     this.menus.setAttribute('aria-label', 'Menus');
@@ -150,7 +167,7 @@ export class TitleStrip {
     // panels. A tap, not a click: no long press on iOS, and no focus left
     // on the button for Tab or Space to land on (onTap).
     onTap(this.hideBtn, () => this.onToggleChrome?.());
-    if (opts.savingNote ?? true) {
+    if ((opts.savingNote ?? true) && !this.isPage) {
       // Quiet, and always there while saving is off: the strip is the one
       // place that is neither the viewport nor the tool bar, and it stays
       // on a phone, where the readout does not.
@@ -161,7 +178,9 @@ export class TitleStrip {
       this.offChoice = onDeviceChoice(paint);
       right.appendChild(note);
     }
-    right.appendChild(this.hideBtn);
+    this.accountSlot = el('span', 'bz-strip__account');
+    right.appendChild(this.accountSlot);
+    if (!this.isPage) right.appendChild(this.hideBtn);
     this.setChromeHidden(false);
     this.offKeymap = keymap.onChange(() => this.setChromeHidden(this.hiddenNow));
 
@@ -189,7 +208,7 @@ export class TitleStrip {
       path.appendChild(b);
     });
     left.append(this.menus);
-    if (opts.path ?? true) left.append(sep, path);
+    if ((opts.path ?? true) && !this.isPage) left.append(sep, path);
 
     this.el.append(left, readout, right);
     document.body.appendChild(this.el);
@@ -199,8 +218,12 @@ export class TitleStrip {
     paintToolKeys();
     const offSettings = settings.onChange(paintToolKeys);
     this.offSettings = () => void offSettings();
-    this.stopLayout = startShellLayout();
-    layoutShell();
+    if (this.isPage) {
+      this.stopLayout = () => undefined;
+    } else {
+      this.stopLayout = startShellLayout();
+      layoutShell();
+    }
   }
 
   private hiddenNow = false;
@@ -232,8 +255,8 @@ export class TitleStrip {
     }
   }
 
-  /** Put a control at the right of the strip, before `before` (default: the hide-interface button). */
-  addAction(control: HTMLElement, before: HTMLElement | null = this.hideBtn): void {
+  /** Put a control at the right of the strip, before `before` (default: the account's place, so before @handle and the hide-interface button). */
+  addAction(control: HTMLElement, before: HTMLElement | null = this.accountSlot): void {
     this.publishHost.insertBefore(control, before);
   }
 
@@ -294,14 +317,20 @@ export class TitleStrip {
     }
   }
 
+  /** Take something into the strip's care: it is disposed with it. */
+  adopt(part: { dispose(): void }): void {
+    this.adopted.push(part);
+  }
+
   dispose(): void {
+    for (const part of this.adopted.splice(0)) part.dispose();
     this.offChoice?.();
     this.offKeymap();
     this.offSettings();
     document.body.classList.remove('bz-no-toolkeys');
     this.stopLayout();
     this.el.remove();
-    document.body.classList.remove('bz-shell');
+    document.body.classList.remove(this.isPage ? 'bz-page' : 'bz-shell');
   }
 }
 

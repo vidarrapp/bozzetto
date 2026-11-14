@@ -24,6 +24,7 @@ import {
   type Me,
 } from '../net/account';
 import { deviceStore } from '../ui/deviceStorage';
+import { forgetAccountRecents } from '../ui/recent';
 
 export type Visibility = 'public' | 'private';
 
@@ -476,6 +477,8 @@ function remember(): void {
 function forget(): void {
   try {
     deviceStore.forget(SIGNED_IN_KEY);
+    // What was opened through the account is not offered to the next person at this screen.
+    forgetAccountRecents();
   } catch {
     // Nothing remembered that could be.
   }

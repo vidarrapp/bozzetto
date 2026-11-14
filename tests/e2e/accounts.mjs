@@ -197,12 +197,21 @@ async function addAuthenticator(ctx, page, transport = 'internal') {
 const credentials = async (auth) => (await auth.cdp.send('WebAuthn.getCredentials', { authenticatorId: auth.id })).credentials;
 
 /** The top row's chips, right side, as they read. */
-const chips = (p) => p.evaluate(() => [...document.querySelectorAll(':is(.topbar--right, .pagenav__account) .topchip')].map((c) => c.textContent.trim()));
+const chips = (p) => p.evaluate(() => [...document.querySelectorAll('.bz-strip__right :is(.bz-strip__btn, .account-menu__chip)')].map((c) => c.textContent.trim()));
+
+/** The Go menu's rows (the pages' places), opened and read, then closed. */
+const goRows = async (p) => {
+  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await p.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
+  const rows = await p.evaluate(() => [...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => c.textContent.trim().replace(/\s*\(\d+\)$/, '')));
+  await p.keyboard.press('Escape');
+  return rows;
+};
 
 /** Wait (bounded) for a chip; whether it came. */
 const chipShown = (p, label, timeout = 20_000) =>
   p
-    .waitForFunction((l) => [...document.querySelectorAll(':is(.topbar--right, .pagenav__account) .topchip')].some((c) => c.textContent.trim() === l), label, { timeout })
+    .waitForFunction((l) => [...document.querySelectorAll('.bz-strip__right :is(.bz-strip__btn, .account-menu__chip)')].some((c) => c.textContent.trim() === l), label, { timeout })
     .then(() => true, () => false);
 
 /** The gallery, drawn. */
@@ -269,7 +278,7 @@ async function typeCode(p, code) {
 /** Sign in by email code from the gallery's chip; true when signed in. */
 async function signInByCode(server, b, email, { offer = 'Not now' } = {}) {
   const p = b.page;
-  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+  await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
   await step(p, 'Sign in');
   const before = await lastMail(server, email);
   await p.fill('.account-card input[name=email]', email);
@@ -391,7 +400,8 @@ async function joinWithInvite(server, turnstile, a, t) {
   t.ok(held.length === 1 && held[0].rpId === 'localhost' && held[0].isResidentCredential, `the authenticator holds a discoverable passkey for localhost (${held.length})`);
   t.ok(await chipShown(p, '@ada'), `the top row is the account's (${(await chips(p)).join(', ')})`);
   const row = await chips(p);
-  t.ok(row.includes('My projects') && !row.includes('Sign in') && !row.includes('Owner tools'), `My projects and @ada, no Sign in, no Owner tools for a member (${row.join(', ')})`);
+  const places = await goRows(p);
+  t.ok(places.includes('My projects') && !places.includes('Owner tools') && !row.includes('Sign in'), `Go has My projects and the strip has @ada, no Sign in, no Owner tools for a member (${places.join(', ')} | ${row.join(', ')})`);
   t.eq((await me(p)).handle, 'ada', 'and the server agrees');
   const widgets = await p.evaluate(() => window.__turnstile.widgets.map((w) => `${w.action}/${w.appearance}/${w.sitekey}`));
   t.ok(widgets.length > 0 && widgets.every((w) => w === `register/interaction-only/${SITE_KEY}`), `Join drew Turnstile with its action, interaction-only (${show(widgets)})`);
@@ -405,7 +415,7 @@ async function signOut(a, t, label = 'ada') {
     await caches.open('bozzetto-me').then((c) => c.put('/api/me', new Response('{}')));
     await caches.open('bozzetto-my-projects').then((c) => c.put('/api/me/projects', new Response('[]')));
   });
-  await p.click(`:is(.topbar--right, .pagenav__account) .topchip:text-is("@${label}")`);
+  await p.click(`.bz-strip .account-menu__chip:text-is("@${label}")`);
   await p.click('.account-menu button:text-is("Sign out")');
   await p.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 15_000 }).catch(() => {});
   await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 }).catch(() => {});
@@ -422,7 +432,7 @@ async function signOut(a, t, label = 'ada') {
 /** A modal passkey sign-in: the autofill asked for as the dialog opens, stopped by the button's prompt. */
 async function passkeySignIn(a, t) {
   const p = a.page;
-  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+  await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
   await step(p, 'Sign in');
   const field = await p.evaluate(() => document.querySelector('.account-card input[name=email]').autocomplete);
   t.eq(field, 'username webauthn', 'the email field offers passkeys among its suggestions');
@@ -461,7 +471,7 @@ async function passkeyFallback(a, t) {
   const heldId = Buffer.from(held?.credentialId ?? '', 'base64').toString('base64url');
   const open = async () => {
     const before = await p.evaluate(() => window.__autofill.asked);
-    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+    await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
     await step(p, 'Sign in');
     await p.waitForFunction((n) => window.__autofill.asked > n, before, { timeout: 10_000 }).catch(() => {});
   };
@@ -534,7 +544,7 @@ async function passkeyFallback(a, t) {
 /** A code sign-in: a wrong code first, said with the tries left; the offer comes back after a code. */
 async function codeSignIn(server, turnstile, a, t) {
   const p = a.page;
-  await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+  await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
   await step(p, 'Sign in');
   await windowLook(p, t, 'Sign in');
   const before = await lastMail(server, 'ada@example.com');
@@ -585,7 +595,7 @@ async function finishCodeSignIn(server, p) {
 async function deviceChoice(server, browser, t) {
   const b = await browserFor(browser, server.base, { ip: '203.0.113.31', askAboutDevice: true });
   const p = b.page;
-  const signInChip = ':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")';
+  const signInChip = '.bz-strip .bz-strip__btn:text-is("Sign in")';
   // The device question is a window of the same look and class; the sign-in dialog is the other one.
   const signInOpen = () => p.evaluate(() => !!document.querySelector('.account-card:not(.bz-device__card)'));
   const device = () => p.evaluate(() => ({ choice: localStorage.getItem('bozzetto-device-choice'), declined: sessionStorage.getItem('bozzetto-device-declined'), hint: localStorage.getItem('bozzetto-signed-in') !== null }));
@@ -824,7 +834,7 @@ async function codesOnly(server, browser, t) {
   try {
     const p = c.page;
     await gallery(c);
-    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+    await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
     await step(p, 'Sign in');
     const view = await p.evaluate(() => ({
       passkey: !!document.querySelector('.account-card .account-passkey'),
@@ -864,7 +874,7 @@ async function mailedLink(server, browser, t) {
   try {
     const p = d.page;
     await gallery(d);
-    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+    await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
     await step(p, 'Sign in');
     const before = await lastMail(server, 'ada@new.example');
     await p.fill('.account-card input[name=email]', 'ada@new.example');
@@ -914,7 +924,7 @@ async function codeResend(server, turnstile, browser, t) {
     const p = r.page;
     await r.ctx.clock.install();
     await gallery(r);
-    await p.click(':is(.topbar--right, .pagenav__account) .topchip:text-is("Sign in")');
+    await p.click('.bz-strip .bz-strip__btn:text-is("Sign in")');
     await step(p, 'Sign in');
     const before = await lastMail(server, 'ada@new.example');
     await p.fill('.account-card input[name=email]', 'ada@new.example');
@@ -1105,7 +1115,8 @@ async function owner(server, o, t) {
   await p.goto(`${server.base}/`, { waitUntil: 'domcontentloaded' });
   await chipShown(p, '@boss');
   const row = await chips(p);
-  t.ok(row.includes('My projects') && row.includes('Owner tools') && row.includes('@boss'), `the owner's top row: My projects, Owner tools, @boss (${row.join(', ')})`);
+  const places = await goRows(p);
+  t.ok(places.includes('My projects') && places.includes('Owner tools') && row.includes('@boss'), `the owner's strip: @boss, and Go has My projects and Owner tools (${places.join(', ')} | ${row.join(', ')})`);
 
   // The second lock: Access alone no longer opens the owner tools.
   await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));
@@ -1230,7 +1241,7 @@ async function suspension(server, browser, o, t) {
     await gallery(m);
     await chipShown(p, 'Suspended');
     const row = await chips(p);
-    t.ok(row.includes('Suspended') && row.includes('Sign out') && !row.includes('Sign in') && !row.includes('My projects'), `its top row says Suspended and offers Sign out, no Sign in (${row.join(', ')})`);
+    t.ok(row.includes('Suspended') && row.includes('Sign out') && !row.includes('Sign in') && !(await goRows(p)).includes('My projects'), `its top row says Suspended and offers Sign out, no Sign in (${row.join(', ')})`);
     t.eq(
       await p.textContent('.landing__notice'),
       'Your account is suspended. The mail that told you says why, and how to object.',

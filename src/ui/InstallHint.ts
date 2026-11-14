@@ -7,7 +7,7 @@
  * mode), where the instructions would be noise.
  */
 
-import { topChip } from './topbar';
+import { stripButton } from '../sculpt/ui/TitleStrip';
 import { isInstalled } from './launch';
 
 /** The iOS share glyph, so "the Share button" is recognisable at a glance. */
@@ -17,10 +17,10 @@ const SHARE_SVG =
   '<path d="M12 3v12" /><path d="M8 6l4 -3.5 4 3.5" />' +
   '<path d="M7 10h-2v10h14v-10h-2" /></svg>';
 
-/** The top-row chip, or null when already installed. */
+/** The strip's Install button, or null when already installed. */
 export function installChip(): HTMLElement | null {
   if (isInstalled()) return null;
-  const chip = topChip('Install');
+  const chip = stripButton('Install');
   chip.addEventListener('click', () => openInstallCard());
   return chip;
 }

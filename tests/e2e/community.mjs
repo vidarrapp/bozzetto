@@ -122,9 +122,17 @@ const shareOf = (b, id) =>
 /** The Review chip, once the page has drawn its chips: {shown, count}. */
 async function reviewChip(b, query = '') {
   await go(b, query);
-  const shown = await waitFor(b.page, () => !!document.querySelector('.pagenav .review-chip'));
-  if (shown) await b.page.waitForSelector('.review-chip__count', { timeout: 5000 }).catch(() => {});
-  return b.page.evaluate(() => ({ shown: !!document.querySelector('.review-chip'), count: document.querySelector('.review-chip__count')?.textContent ?? null }));
+  await waitFor(b.page, () => !!document.querySelector('body.bz-page .bz-strip__right .bz-strip__btn, body.bz-page .bz-strip__right .account-menu__chip'));
+  await b.page.waitForTimeout(600);
+  // Review is a place in Go, with what waits in its name.
+  await b.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((x) => x.textContent === 'Go')?.click());
+  await b.page.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
+  const seen = await b.page.evaluate(() => {
+    const row = [...document.querySelectorAll('.file-menu--go .file-menu__item')].find((c) => /^Review/.test(c.textContent.trim()));
+    return { shown: !!row, count: /\((\d+)\)$/.exec(row?.textContent.trim() ?? '')?.[1] ?? null };
+  });
+  await b.page.keyboard.press('Escape');
+  return seen;
 }
 
 /** A Review tab, drawn: its cards [{id, shared, state, actions}] (or, on History, its lines). */
@@ -155,7 +163,7 @@ const viewerRow = (p) =>
   p.evaluate(() => {
     const mod = [...document.querySelectorAll('.file-menu--moderation .file-menu__item')].map((c) => c.querySelector('.file-menu__label')?.textContent ?? c.textContent.trim());
     return {
-      chips: [...document.querySelectorAll('.bz-strip__right > *')].map((c) => c.textContent.trim() || c.getAttribute('aria-label')),
+      chips: [...document.querySelectorAll('.bz-strip__right > :not(.bz-strip__account)')].map((c) => c.textContent.trim() || c.getAttribute('aria-label')),
       menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent),
       author: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null,
       authorHref: document.querySelector('.viewer-author')?.getAttribute('href') ?? null,
@@ -256,7 +264,7 @@ async function approve(m, id, t) {
   await moderationShown(p);
   let row = await viewerRow(p);
   t.ok(
-    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['Approve', 'Reject…']) && row.back === 'Back to Review' && !row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']) && show(row.chips) === show(['Hide the interface']),
+    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['Approve', 'Reject…']) && row.back === 'Back to Review' && !row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Moderation', 'Help']) && show(row.chips) === show(['Hide the interface']),
     `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject… in Moderation, File > Close back to Review (${show(row)})`,
   );
   await moderate(p, 'Approve');
@@ -311,7 +319,7 @@ async function listedAndReported(server, b, g, id, t) {
   await waitFor(g.page, () => !!document.querySelector('.viewer-author'));
   let row = await viewerRow(g.page);
   await rest(g);
-  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report && show(row.menus) === show(['File', 'View', 'Help']), `a guest's viewer says by @ada, and has no Moderation menu (${show(row)})`);
+  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Help']), `a guest's viewer says by @ada, and has no Moderation menu (${show(row)})`);
   await go(g, '?me');
   await g.page.waitForSelector('.my-projects__body button, .my-projects__body p', { timeout: 30_000 }).catch(() => {});
   t.ok(await g.page.evaluate(() => !document.querySelector('.card__share')), 'nor Share: a guest has no projects to share');
@@ -320,7 +328,7 @@ async function listedAndReported(server, b, g, id, t) {
   await viewer(b, id);
   await moderationShown(p);
   row = await viewerRow(p);
-  t.ok(row.author === 'by @ada' && row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']), `@bea's viewer says by @ada and offers Report… in Moderation (${show(row)})`);
+  t.ok(row.author === 'by @ada' && row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Moderation', 'Help']), `@bea's viewer says by @ada and offers Report… in Moderation (${show(row)})`);
   await moderate(p, 'Report');
   await p.waitForSelector('.report-overlay', { timeout: 10_000 });
   const reasons = await p.evaluate(() => {
@@ -652,7 +660,7 @@ async function notAReviewer(b, t) {
     search: location.search,
     note: document.querySelector('.review-refused')?.textContent ?? null,
     grid: !!document.querySelector('#landing-grid'),
-    chip: !!document.querySelector('.review-chip'),
+    chip: [...document.querySelectorAll('.bz-strip__menus .bz-menuname, .file-menu--go .file-menu__item')].some((c) => /^Review/.test(c.textContent.trim())),
   }));
   t.ok(seen.search === '' && seen.grid && !!seen.note && !seen.chip, `a member opening /?review gets the gallery, with a note, and has no Review chip (${show(seen)})`);
 }
