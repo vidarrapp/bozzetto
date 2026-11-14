@@ -211,7 +211,7 @@ export const suites = {
     t.eq(f.heading, 'Render', 'headed Render');
     t.ok(!f.byline, 'with no byline: whose it is, is the strip\'s to say');
     t.ok(f.sections.includes('Material') && f.sections.includes('Lighting') && !f.sections.includes('Interface'), `with the viewer's sections (no Interface: Help has Hotkeys) (${f.sections})`);
-    t.ok(!f.sections.some((n) => /camera|environment|ambient/i.test(n)), `and not the editor's whole look (${f.sections})`);
+    t.ok(!f.sections.some((n) => /environment|ambient/i.test(n)), `and not the editor's whole look (depth of field alone shows under Camera) (${f.sections})`);
     t.ok(!(await page.$('.panel--render .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H opens the guide');
