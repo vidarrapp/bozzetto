@@ -639,7 +639,7 @@ async function workerAndSignOut(browser, base, t) {
     await p.goto(`${base}/`, { waitUntil: 'load' });
     t.ok(await workerActivated(p), 'the worker installs');
     await gallery('Sign out');
-    t.ok(/Projects, Sign out/.test(await chips()), `signed in, the top row has Projects and Sign out (${await chips()})`);
+    t.ok(/Projects/.test(await chips()) && /Sign out/.test(await chips()), `signed in, the top row has Projects and Sign out (${await chips()})`);
     await p.waitForFunction(() => document.querySelectorAll('.card__img').length >= 3 && [...document.querySelectorAll('.card__img')].every((i) => i.complete), null, { timeout: 30_000 }).catch(() => {});
     const filesThumb = `${FILES}/m/files-reel/thumb.jpg`;
     let caches = await cachesUntil(

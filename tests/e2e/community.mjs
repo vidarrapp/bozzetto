@@ -163,7 +163,7 @@ const viewerRow = (p) =>
   p.evaluate(() => {
     const mod = [...document.querySelectorAll('.file-menu--moderation .file-menu__item')].map((c) => c.querySelector('.file-menu__label')?.textContent ?? c.textContent.trim());
     return {
-      chips: [...document.querySelectorAll('.bz-strip__right > *')].map((c) => c.textContent.trim() || c.getAttribute('aria-label')),
+      chips: [...document.querySelectorAll('.bz-strip__right > :not(.bz-strip__account)')].map((c) => c.textContent.trim() || c.getAttribute('aria-label')),
       menus: [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].filter((m) => !m.hidden).map((m) => m.textContent),
       author: document.querySelector('.bz-readout .viewer-author')?.textContent ?? null,
       authorHref: document.querySelector('.viewer-author')?.getAttribute('href') ?? null,
@@ -264,7 +264,7 @@ async function approve(m, id, t) {
   await moderationShown(p);
   let row = await viewerRow(p);
   t.ok(
-    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['Approve', 'Reject…']) && row.back === 'Back to Review' && !row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']) && show(row.chips) === show(['Hide the interface']),
+    row.mode === 'pending' && row.author === 'by @ada' && show(row.actions) === show(['Approve', 'Reject…']) && row.back === 'Back to Review' && !row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Moderation', 'Help']) && show(row.chips) === show(['Hide the interface']),
     `Open shows it in the viewer in review mode: Reviewing, by @ada, Approve and Reject… in Moderation, File > Close back to Review (${show(row)})`,
   );
   await moderate(p, 'Approve');
@@ -319,7 +319,7 @@ async function listedAndReported(server, b, g, id, t) {
   await waitFor(g.page, () => !!document.querySelector('.viewer-author'));
   let row = await viewerRow(g.page);
   await rest(g);
-  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report && show(row.menus) === show(['File', 'View', 'Help']), `a guest's viewer says by @ada, and has no Moderation menu (${show(row)})`);
+  t.ok(row.author === 'by @ada' && row.authorHref === '/?u=ada' && !row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Help']), `a guest's viewer says by @ada, and has no Moderation menu (${show(row)})`);
   await go(g, '?me');
   await g.page.waitForSelector('.my-projects__body button, .my-projects__body p', { timeout: 30_000 }).catch(() => {});
   t.ok(await g.page.evaluate(() => !document.querySelector('.card__share')), 'nor Share: a guest has no projects to share');
@@ -328,7 +328,7 @@ async function listedAndReported(server, b, g, id, t) {
   await viewer(b, id);
   await moderationShown(p);
   row = await viewerRow(p);
-  t.ok(row.author === 'by @ada' && row.report && show(row.menus) === show(['File', 'View', 'Moderation', 'Help']), `@bea's viewer says by @ada and offers Report… in Moderation (${show(row)})`);
+  t.ok(row.author === 'by @ada' && row.report && show(row.menus) === show(['File', 'Edit', 'View', 'Moderation', 'Help']), `@bea's viewer says by @ada and offers Report… in Moderation (${show(row)})`);
   await moderate(p, 'Report');
   await p.waitForSelector('.report-overlay', { timeout: 10_000 });
   const reasons = await p.evaluate(() => {
