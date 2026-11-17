@@ -352,15 +352,30 @@ export const suites = {
     // Armature: the same Move light.
     await openArmature(page, base);
     await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      window.__probe = [];
+      for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+        window.addEventListener(type, (e) => window.__probe.push(`${type}:${e.target.tagName}.${(e.target.className || '').toString().slice(0, 30)}:${e.pointerId}`), true);
+      }
+    });
+    // Holding L still works (the existing way), as the control for what follows.
+    const g0 = await keyLight(page);
+    await page.mouse.move(centre.x, centre.y);
+    await page.keyboard.down('l');
+    await page.mouse.move(centre.x + 40, centre.y - 20, { steps: 6 });
+    await page.keyboard.up('l');
+    const g1 = await keyLight(page);
+    t.ok(g1.azimuth > g0.azimuth + 10, `Armature: L and a drag turn the key (${g0.azimuth}) to (${g1.azimuth})`);
     const f0 = await keyLight(page);
-    await menuPick(page, 'View', 'Move light');
+    t.ok(await menuPick(page, 'View', 'Move light'), 'Armature: View has Move light');
     await page.mouse.move(centre.x, centre.y);
     await page.mouse.down();
     await page.mouse.move(centre.x + 40, centre.y - 20, { steps: 6 });
     await page.mouse.up();
     const f1 = await keyLight(page);
-    t.ok(f1.azimuth > f0.azimuth + 10, `Armature: Move light turns the key (${f0.azimuth}) to (${f1.azimuth})`);
+    const probe = await page.evaluate(() => window.__probe.filter((x) => !x.startsWith('pointermove')).join(' | '));
+    t.ok(f1.azimuth > f0.azimuth + 10, `Armature: Move light turns the key (${f0.azimuth}) to (${f1.azimuth}) [${probe}]`);
   },
 
   /** The public viewer: Material and Lighting at the right, the rig select alone. */

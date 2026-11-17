@@ -6183,7 +6183,7 @@ export const suites = {
     // the interface hides, then it comes back; Esc brings it back too, and
     // also deselects (Esc's own job here).
     await page.evaluate(() => window.__armature.select('thigh.L'));
-    await chromeChecks(page, t, 'Armature', { panels: ['.panel--armature', '.panel--render'] });
+    await chromeChecks(page, t, 'Armature', { panels: ['.panel--armature', '.panel--reference'] });
     await page.evaluate(() => window.__armature.select('thigh.L'));
     // A selection may open the panel: Tab until the interface is hidden.
     for (let i = 0; i < 2 && !(await page.evaluate(() => document.body.classList.contains('chrome-hidden'))); i++) {

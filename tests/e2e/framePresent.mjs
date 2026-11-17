@@ -253,7 +253,7 @@ export const suites = {
         old: getComputedStyle(document.querySelector('body > .topbar') ?? document.body).display,
       }));
       t.ok(JSON.stringify(strip.menus) === JSON.stringify(['File', 'Edit', 'View', 'Help']), `the strip has File, Edit, View and Help (${strip.menus})`);
-      checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Lighting panel|Camera panel|Render panel|Frames panel|Project panel|Material panel|Output panel|Hide interface|Armature|Sculpt|Present' });
+      checkShape(t, 'Present workspace', await readMenus(p, 'Present workspace'), { names: 'File,Edit,View,Help', edit: 'Preferences…', view: 'Shadows|Lighting panel|Camera panel|Render panel|Frames panel|Project panel|Material panel|Output panel|Hide interface|Armature|Sculpt|Paint|Present' });
       t.ok(
         strip.steps.map((s) => s.text).join() === 'Armature,Sculpt,Paint,Present' && strip.steps[3].current === 'step',
         `the path reads Armature, Sculpt, Paint, Present with Present current (${JSON.stringify(strip.steps.map((s) => [s.text, s.current]))})`,
