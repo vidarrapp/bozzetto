@@ -17,9 +17,9 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
+  Vector3, Color, CanvasTexture, SRGBColorSpace, LinearFilter, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial, LineBasicNodeMaterial, BlendMode } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity, texture as tslTexture, screenUV, select, min } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -2338,6 +2338,90 @@ export class Viewer {
     return { w: this.container.clientWidth, h: this.container.clientHeight };
   }
 
+  /**
+   * A picture drawn behind the model, in screen space: lined up with the
+   * view, fitted to its height and centred, the background's own colour
+   * around it (the Reference panel's "behind" choice). Null puts the
+   * background back. The picture is a canvas the caller keeps and may
+   * redraw: call this again, or `refreshBackdrop`, after it changes.
+   */
+  setBackdrop(picture: HTMLCanvasElement | null): void {
+    if (!picture) {
+      if (this.backdropTex) {
+        this.backdropTex.dispose();
+        this.backdropTex = null;
+        this.backdropPicture = null;
+        this.backdropNode = null;
+        this.syncBackdropNode();
+        this.invalidate();
+      }
+      return;
+    }
+    if (this.backdropPicture === picture && this.backdropTex) {
+      this.refreshBackdrop();
+      return;
+    }
+    this.backdropTex?.dispose();
+    const tex = new CanvasTexture(picture);
+    tex.colorSpace = SRGBColorSpace;
+    tex.minFilter = LinearFilter;
+    tex.generateMipmaps = false;
+    this.backdropTex = tex;
+    this.backdropPicture = picture;
+    const bg = this.backdropBg;
+    this.backdropAspect.value = picture.width / Math.max(1, picture.height);
+    // The view's own shape, from the drawing buffer: the picture's height is the view's.
+    const view = screenSize;
+    const aspect = this.backdropAspect;
+    // u: screen x in picture units, centred; v: the picture's own up.
+    const u = screenUV.x.sub(0.5).mul(view.x.div(view.y)).div(aspect).add(0.5);
+    const v = screenUV.y;
+    const inside = min(min(u, float(1).sub(u)), min(v, float(1).sub(v))).greaterThanEqual(0);
+    const uvn = vec2(u, v).clamp(0, 1);
+    const sample = tslTexture(tex, uvn);
+    this.backdropNode = select(inside, vec4(sample.rgb, 1), vec4(bg, 1)) as unknown as Node;
+    this.followBackdropColour();
+    this.syncBackdropNode();
+    this.invalidate();
+  }
+
+  /** The backdrop's picture was redrawn (or changed shape): draw it again. */
+  refreshBackdrop(): void {
+    if (!this.backdropTex || !this.backdropPicture) return;
+    this.backdropAspect.value = this.backdropPicture.width / Math.max(1, this.backdropPicture.height);
+    this.backdropTex.needsUpdate = true;
+    this.invalidate();
+  }
+
+  /**
+   * The backdrop is a working aid for the screen only: every picture that
+   * leaves the view - a library card's thumbnail, a saved image, a
+   * turntable, a timelapse frame - is drawn without it, so a reference
+   * never travels in one (they stay on the device, reference/board.ts).
+   */
+  private syncBackdropNode(): void {
+    const want = this.backdropNode && !this.capturing && !this.leavingView ? this.backdropNode : null;
+    if (this.scene.backgroundNode === want) return;
+    this.scene.backgroundNode = want;
+    this.invalidate();
+  }
+
+  /** True while a picture that leaves the view is being drawn (captureThumbnail). */
+  private leavingView = false;
+  private backdropNode: Node | null = null;
+
+  /** The colour around a backdrop is the background's, which a theme or colour change moves. */
+  private followBackdropColour(): void {
+    if (!this.backdropTex) return;
+    const b = this.scene.background;
+    if (b && (b as Color).isColor) this.backdropBg.value.copy(b as Color);
+  }
+
+  private backdropTex: CanvasTexture | null = null;
+  private backdropPicture: HTMLCanvasElement | null = null;
+  private readonly backdropBg = uniform(new Color(0x1c1814));
+  private readonly backdropAspect = uniform(1);
+
   /** The renderer canvas, read back per frame during capture. */
   get captureCanvas(): HTMLCanvasElement {
     return this.renderer.domElement;
@@ -2456,6 +2540,18 @@ export class Viewer {
    */
   async captureThumbnail(width = THUMB_WIDTH, smooth = true): Promise<Blob> {
     const t0 = performance.now();
+    // Without the Reference backdrop: a thumbnail is uploaded with a library save.
+    this.leavingView = true;
+    this.syncBackdropNode();
+    try {
+      return await this.captureThumbnailPlain(width, smooth, t0);
+    } finally {
+      this.leavingView = false;
+      this.syncBackdropNode();
+    }
+  }
+
+  private async captureThumbnailPlain(width: number, smooth: boolean, t0: number): Promise<Blob> {
     await this.renderForReadback(smooth);
     const srcCanvas = this.renderer.domElement;
     const guide = this.captureGuide.rectFor(srcCanvas.width, srcCanvas.height);
@@ -3643,6 +3739,8 @@ export class Viewer {
     this.clock.tick();
     if (this.dofEnabled) this.updateDofFocus(); // focus plane tracks the orbit target
     if (this.wireframeOn && this.sculptWires.size) this.refreshSculptWires();
+    this.syncBackdropNode();
+    this.followBackdropColour();
     if (this.pipeline) this.pipeline.render();
     else this.renderer.render(this.scene, this.camera);
   }
