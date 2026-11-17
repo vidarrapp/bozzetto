@@ -22,6 +22,8 @@ export interface ViewHooks {
   groupColors?: { get: () => boolean; toggle: () => void };
   /** The shadows switch the Render panel has (Shift+S). */
   shadows?: { get: () => boolean; toggle: () => void };
+  /** The details overlay (a setting: ui/DetailsOverlay); where the view has one. */
+  details?: boolean;
   /** The Reference picture drawn over the view (a switch; the picture itself is the Reference panel's). */
   referenceOver?: { get: () => boolean; toggle: () => void };
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
@@ -69,6 +71,14 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   if (wire) looks.push({ label: 'Wireframe', key: keyFor('view.wireframe'), checked: wire.get, toggle: () => wire.toggle() });
   const shadows = h.shadows;
   if (shadows) looks.push({ label: 'Shadows', key: keyFor('view.shadows'), checked: shadows.get, toggle: () => shadows.toggle() });
+  if (h.details) {
+    looks.push({
+      label: 'Details',
+      key: keyFor('view.details'),
+      checked: () => settings.get('details') === 'on',
+      toggle: (on) => settings.set('details', on ? 'on' : 'off'),
+    });
+  }
   const colours = h.groupColors;
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });

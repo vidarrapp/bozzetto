@@ -62,6 +62,7 @@ import { keyFor, viewMenuItems } from './ui/viewMenu';
 import { editMenuItems } from './ui/menuShape';
 import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
+import { DetailsOverlay, makeSculptDetails } from './ui/DetailsOverlay';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
 import { LayersPanel } from './ui/LayersPanel';
@@ -796,16 +797,25 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
   let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
-  const readout = makeReadout(strip, session, {
+  // The details overlay at the top left of the view: the object's numbers, as plain text.
+  const details = new DetailsOverlay();
+  const readSculptDetails = makeSculptDetails(session);
+  const paintDetails = (): void => {
+    if (details.isOn() && !presenting) details.set(readSculptDetails());
+  };
+  const readout = makeReadout(strip, {
     projectName: () => fileActionsRef?.sceneName || openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
     state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
     onRefresh: () => {
       modelPanel?.refreshHeading();
+      paintDetails();
     },
     frame: () => (presenting ? viewer.viewportSize() : null),
   });
   refreshReadout = readout.refresh;
+  // Switched on after being off: the lines are read afresh at once.
+  const offDetailsSetting = settings.onChange(paintDetails);
 
   // The opt-in hardware input log, for bugs that only exist on a real
   // tablet: Preferences > Diagnostics, or ?inputdebug=1 for the page. It is
@@ -1735,6 +1745,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
         },
         toolKeys: true,
+        details: true,
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
@@ -2329,6 +2340,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     levelToast.dispose();
     offPanelMemory();
     readout.dispose();
+    offDetailsSetting();
+    details.dispose();
     strip.dispose();
     gizmo.dispose();
     // Solo belongs to this visit, not to the scene: every object gets its
@@ -2418,15 +2431,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
 }
 
 /**
- * The title strip's readout: the project's name (and "Edited" while it has
- * changes not saved anywhere), then the active object's name, its live
- * triangle count and its level. Polled, cheap, written only where it
- * changed; `refresh` also runs on the events that move it. `onRefresh`
- * keeps the panels' headings in step.
+ * The title strip's readout: the scene's name and where its work is kept
+ * (the object's numbers are the details overlay's). Polled, cheap, written
+ * only where it changed; `refresh` also runs on the events that move it.
+ * `onRefresh` keeps the panels' headings and the details overlay in step.
  */
 function makeReadout(
   strip: TitleStrip,
-  session: SculptSession,
   from: {
     projectName: () => string | null | undefined;
     edited: () => boolean;
@@ -2438,18 +2449,13 @@ function makeReadout(
   },
 ): { refresh(): void; dispose(): void } {
   const update = (): void => {
-    const mesh = session.getMesh();
-    const levels = session.getLevels();
     const name = from.projectName() ?? null;
     const frame = from.frame();
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
       state: name ? from.state() : null,
-      // In Present the readout is the project and the frame, not the object's numbers.
-      object: frame ? null : mesh ? session.activeName() : 'Empty scene',
-      tris: frame || !mesh ? null : mesh.getNbTriangles(),
-      level: !frame && levels && levels.levels > 0 ? { at: levels.sel + 1, of: levels.levels } : null,
+      // In Present the readout is the project and the frame.
       frame,
     });
     from.onRefresh();

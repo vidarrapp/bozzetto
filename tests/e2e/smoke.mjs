@@ -4211,7 +4211,7 @@ export const suites = {
           n: session.getMeshes().length,
           active: !!session.getMesh(),
           rows: document.querySelectorAll('.panel--scene .outliner__row').length,
-          stats: document.querySelector('.bz-readout__object')?.textContent ?? '',
+          stats: document.querySelector('.bz-details [data-fact="name"]')?.textContent ?? '',
         };
       });
     const last = await page.evaluate(() => window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()));
@@ -6893,7 +6893,7 @@ export const suites = {
     const show = (s) => `level ${s.sel + 1}/${s.levels}, slider ${s.value} of ${s.max} reading ${s.readout}, ${s.tris} tris`;
     const statsTris = (n) =>
       page
-        .waitForFunction((k) => document.querySelector('.bz-readout__tris')?.textContent === k.toLocaleString('en-US'), n, { timeout: 5000 })
+        .waitForFunction((k) => document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent === k.toLocaleString('en-US'), n, { timeout: 5000 })
         .then(() => true)
         .catch(() => false);
     const del = () =>

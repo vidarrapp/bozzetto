@@ -87,7 +87,7 @@ export const MODES: Topic[] = [
         ['Send to Sculpt', 'The same as the panel\'s button. Hotkey **Ctrl+Enter**.'],
         ['Close', 'Goes back to where you came from: the gallery, Community, My projects or Owner tools, as the hint says.'],
         ['Edit', 'Undo, Redo and Preferences…'],
-        ['View', 'Frame all, Wireframe, Shadows, the Armature, Material and Render panels, Hide interface, and the way to Sculpt (the same as Send to Sculpt). Present is greyed out until a figure has been sent.'],
+        ['View', 'Frame all, Wireframe, Shadows, Details (the figure\'s name, height and selected part as plain text at the top left of the view; Shift + I), the Armature, Material and Render panels, Hide interface, and the way to Sculpt (the same as Send to Sculpt). Present is greyed out until a figure has been sent.'],
       ),
       h('Figure'),
       options(

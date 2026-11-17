@@ -102,7 +102,7 @@ export const suites = {
   async menuShape(page, base, t) {
     await openSculpt(page, base);
     const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
+    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
@@ -119,7 +119,7 @@ export const suites = {
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
-      view: 'Frame all|Wireframe|Shadows|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      view: 'Frame all|Wireframe|Shadows|Details|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
     const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label));

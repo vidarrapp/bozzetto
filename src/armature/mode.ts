@@ -25,6 +25,8 @@ import { recordRecent } from '../ui/recent';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
+import { DetailsOverlay, type DetailLine } from '../sculpt/ui/DetailsOverlay';
+import { formatLength } from '../viewer/units';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
 import { HandleKit, RECT_MIN_HALF, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
@@ -1982,6 +1984,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         get: () => referenceView.isOverEnabled(),
         toggle: () => referenceView.setOverEnabled(!referenceView.isOverEnabled()),
       },
+      details: true,
       panels: [
         ['armature', 'Armature'],
         ['material', 'Material'],
@@ -1999,15 +2002,27 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
   // Which panel was open on each side last time, open again; kept from here on.
   const offPanelMemory = rememberPanels('armature');
-  // The readout: the project's name when it has one, the part in hand, the figure's triangles.
+  // The readout: the scene's name and where its work is kept. The figure's numbers are the details overlay's.
+  const details = new DetailsOverlay();
+  const paintDetails = (): void => {
+    if (!details.isOn()) return;
+    const lines: DetailLine[] = [{ id: 'name', value: link?.title ?? name }];
+    lines.push({ id: 'height', key: 'Height', value: formatLength(armature.figureHeight()) });
+    const index = armature.mesh.geometry.getIndex();
+    if (index) lines.push({ id: 'tris', key: 'Tris', value: Math.round(index.count / 3).toLocaleString('en-US') });
+    const handle = selectedHandle ? armature.chains().find((c) => c.id === selectedHandle) : undefined;
+    if (selected) lines.push({ id: 'selected', key: 'Joint', value: prettyName(selected) });
+    else if (handle) lines.push({ id: 'selected', key: 'Handle', value: handle.label });
+    if (armature.symmetry) lines.push({ id: 'symmetry', key: 'Symmetry', value: 'on' });
+    details.set(lines);
+  };
+  const offDetailsSetting = settings.onChange(paintDetails);
   const paintReadout = (): void => {
-    const tris = armature.mesh.geometry.getIndex();
     strip.setReadout({
       name: link?.title ?? name,
       state: sceneStateWord({ linked: !!link, synced: !!link && syncedAt === edits }),
-      object: selected ? prettyName(selected) : null,
-      tris: tris ? Math.round(tris.count / 3) : null,
     });
+    paintDetails();
   };
   paintReadout();
   const readoutTimer = window.setInterval(paintReadout, 500);
@@ -2310,6 +2325,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     referencePanel.dispose();
     referenceBoard.dispose();
     clearInterval(readoutTimer);
+    offDetailsSetting();
+    details.dispose();
     offPanelMemory();
     fileMenu.dispose();
     editMenu.dispose();

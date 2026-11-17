@@ -328,7 +328,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
+│ File Edit View Help    Project · state            Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
 │ Scene Model Layers   │      │ Tool Material Reference Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
@@ -346,8 +346,8 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 - Left: the menus (web, Windows, iPad). On the Mac desktop this space
   holds the window's close, minimise and zoom buttons instead.
-- Centre: the project's name in bold, then the readout of the selected
-  object (name, triangles, level), keys regular and values bold. In
+- Centre: the project's name in bold. The object's numbers are not here:
+  they are the details overlay's (below). In
   Sculpt and Armature the name is always there: a new scene is named as a
   dated study ("Study 14 Nov", with " 2" and so on when this device's
   scenes have one by that name). Tapping it puts a field in its place
@@ -358,9 +358,28 @@ document itself scrolls, and there is no CSS switch to turn that off.
   (only the autosave has it), or none while saving is off, when the
   strip's own **Not saved** at the right says so, once. Other places show
   "Edited" after an unsaved project's name.
-  Under 900px wide the readout drops the triangle count, then the level.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
+
+### Details overlay
+
+- Plain text at the top left of the 3D view in Sculpt and Armature: no box,
+  no background, only the view's faint soft shade under the letters (no outline), 11 to 13px, Familjen Grotesk for names and labels and Martian
+  Mono for numbers; values in the light text colour, names in the second one. One fact a line, only those that
+  apply. Sculpt: the active object's name, Tris, Quads (when the mesh has
+  quads), Verts, Level n of m (when it has levels), Objects n (with "n
+  selected" when more than one is), Size height by width by depth in cm
+  (real units only), Symmetry X, Y or Z when on, Masked n% when anything is
+  masked, Hidden groups n, and Layer (the active layer's name, Base when the
+  base is active) when the object has layers. Armature: the figure's name,
+  Height, Tris, the selected joint or handle, Symmetry when on.
+- It stands under the strip and the tab row. With a left panel open it moves
+  to the right of the panel. Tab hides it with the left side of the interface.
+- It never takes input (pointer-events none): the Pencil and fingers reach
+  the model through it. View > Details (key Shift + I) shows and hides it;
+  on by default, kept on the device. It is not the frame meter (P).
+- Numbers are written when they change (selection, stroke end, subdivide,
+  level change, mask change, layer change; read twice a second), not per frame.
 
 ### Panels
 

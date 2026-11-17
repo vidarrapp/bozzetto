@@ -120,6 +120,7 @@ export const ACTIONS: ActionDef[] = [
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
+  { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
