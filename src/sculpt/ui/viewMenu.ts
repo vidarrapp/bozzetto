@@ -118,12 +118,12 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   if (h.workspace) {
     const way = h.workspace;
     const spaces: MenuItem[] = [];
-    for (const [id, label] of [['armature', 'Armature'], ['sculpt', 'Sculpt'], ['present', 'Present']] as const) {
+    for (const [id, label] of [['armature', 'Armature'], ['sculpt', 'Sculpt'], ['paint', 'Paint'], ['present', 'Present']] as const) {
       const step = (): PathStep | undefined => way().steps[id];
       const here = (): boolean => way().current === id;
       spaces.push({
         label,
-        key: id === 'present' ? keyFor('ui.present') : undefined,
+        key: id === 'present' ? keyFor('ui.present') : id === 'paint' ? keyFor('ui.paint') : undefined,
         enabled: () => !here() && 'action' in (step() ?? {}),
         hint: () => {
           if (here()) return 'Where you are';

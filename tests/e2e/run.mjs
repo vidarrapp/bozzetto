@@ -2,7 +2,7 @@
 // armatureProjects.mjs's, askWindow.mjs's, sculptLayers.mjs's, detailsOverlay.mjs's, shellPhone.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // reference.mjs's, deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
-// material.mjs's, calipers.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
+// material.mjs's, calipers.mjs's, paint.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
 // real Functions of their own, with wrangler, beside the static server the
 // rest use).
 //
@@ -40,6 +40,7 @@ import { suites as docScroll } from './docScroll.mjs';
 import { suites as loopMask } from './loopMask.mjs';
 import { suites as material } from './material.mjs';
 import { suites as objNumbering } from './objNumbering.mjs';
+import { suites as paint } from './paint.mjs';
 import { suites as passkeyCheck } from './passkeyCheck.mjs';
 import { suites as polyGroups } from './polyGroups.mjs';
 import { suites as present } from './present.mjs';
@@ -79,6 +80,7 @@ const suites = {
   ...units,
   ...viewerTools,
   ...passkeyCheck,
+  ...paint,
   ...present,
   ...objNumbering,
   ...brushCaps,

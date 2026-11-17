@@ -2342,6 +2342,58 @@ body.bz-shell .panel--layers {
   z-index: 40;
 }
 
+/* Paint's rows (ui/layerList.ts with a reorder hook): a handle to drag by at the
+   left, the blend mode under the name, the opacity under that. */
+.layer-row__grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-3);
+  cursor: grab;
+  touch-action: none;
+}
+
+.layer-row__grip:hover {
+  color: var(--bz-text);
+}
+
+.layer-row--grip .layer-row__weight,
+.layer-row--grip .layer-row__blend {
+  margin-left: 76px;
+}
+
+.layer-row__blend {
+  width: calc(100% - 82px);
+  height: 32px;
+  margin: 0 0 2px 44px;
+}
+
+.layer-row--dragging {
+  background: var(--bz-hover);
+  opacity: 0.7;
+}
+
+.layer-row--drop-above {
+  box-shadow: none;
+  border-top: 1px solid var(--bz-text);
+}
+
+.layer-row--drop-below {
+  border-bottom: 1px solid var(--bz-text);
+}
+
+.sculpt-toolbar__btn[hidden],
+.sculpt-toolbar__neg[hidden] {
+  display: none;
+}
+
 .file-menu .file-menu__item.file-menu__item--danger,
 .file-menu .file-menu__item.file-menu__item--danger:hover:not(:disabled) {
   color: var(--bz-red-text);
@@ -2355,4 +2407,19 @@ body.bz-shell .panel--layers {
 
 .layers-foot {
   border-top: 1px solid var(--bz-line);
+}
+
+/* --- The Paint workspace (mode.ts enterPaint) ---------------------------------
+   Its tabs are Scene and Layers on the left, Tool, Material and Reference on
+   the right: the Model and Render tabs are put away (display, so they leave
+   no gap in the row) until Sculpt is back, and Present, entered from Paint,
+   still shows Render. Negative is Sculpt's, and goes from the left edge. */
+body.bz-shell.paint-ws:not(.presenting) .panel--model,
+body.bz-shell.paint-ws:not(.presenting) .panel--render {
+  display: none;
+}
+
+body.paint-ws .sculpt-toolbar__neg,
+body.bz-shell.paint-ws .bz-edge .sculpt-toolbar__neg {
+  display: none;
 }

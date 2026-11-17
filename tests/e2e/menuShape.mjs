@@ -19,9 +19,9 @@ const FILE_RANK = new Map([
 
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
-  if (['Wireframe', 'Shadows', 'Poly group colours', 'References', 'Arrange references', 'Hotkeys on tools'].includes(label)) return 1;
+  if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'References', 'Arrange references', 'Hotkeys on tools'].includes(label)) return 1;
   if (/ panel$/.test(label) || label === 'Hide interface') return 2;
-  if (['Armature', 'Sculpt', 'Present'].includes(label)) return 3;
+  if (['Armature', 'Sculpt', 'Paint', 'Present'].includes(label)) return 3;
   return -1;
 };
 
@@ -102,28 +102,28 @@ export const suites = {
   async menuShape(page, base, t) {
     await openSculpt(page, base);
     const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
+    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Paint|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
-    const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
-    t.eq(JSON.stringify(ws(sculpt)), JSON.stringify({ Armature: false, Sculpt: true, Present: false }), 'Sculpt: the workspace you are in is greyed out');
+    const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));
+    t.eq(JSON.stringify(ws(sculpt)), JSON.stringify({ Armature: false, Sculpt: true, Paint: false, Present: false }), 'Sculpt: the workspace you are in is greyed out');
 
     await page.keyboard.press('Shift+P');
     await page.waitForFunction(() => document.querySelector('.bz-ws__step--on')?.textContent?.includes('Present'), null, { timeout: 8000 });
     const present = await readMenus(page, 'Present from Sculpt');
     checkShape(t, 'Present from Sculpt', present, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
-    t.eq(JSON.stringify(ws(present)), JSON.stringify({ Armature: false, Sculpt: false, Present: true }), 'Present from Sculpt: Present is greyed out and Sculpt is the way back');
+    t.eq(JSON.stringify(ws(present)), JSON.stringify({ Armature: false, Sculpt: false, Paint: false, Present: true }), 'Present from Sculpt: Present is greyed out and Sculpt is the way back');
 
     await openArmature(page, base);
     const armature = await readMenus(page, 'Armature');
     checkShape(t, 'Armature', armature, {
       names: 'File,Edit,View,Help',
       file: 'New armature|Open…|Open recent|Rename…|Save file|Load model…|Send to Sculpt|Close',
-      view: 'Frame all|Wireframe|Shadows|Details|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      view: 'Frame all|Wireframe|Shadows|Details|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Paint|Present',
       edit: 'Undo|Redo|Paste picture|Preferences…',
     });
-    const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label));
-    t.ok(a[0].disabled && !a[1].disabled && a[2].disabled && a[2].hint.length > 0, `Armature: Armature is where you are, Sculpt goes, Present is greyed out with its reason ("${a[2].hint}")`);
+    const a = armature.View.filter((r) => ['Armature', 'Sculpt', 'Paint', 'Present'].includes(r.label));
+    t.ok(a[0].disabled && !a[1].disabled && a[2].disabled && a[3].disabled && a[3].hint.length > 0, `Armature: Armature is where you are, Sculpt goes, Paint and Present are greyed out with their reason ("${a[3].hint}")`);
     const key = (menus, menu, label) => menus[menu].find((r) => r.label === label)?.key;
     t.ok(/Shift/.test(key(sculpt, 'View', 'Shadows')) && key(sculpt, 'View', 'Shadows') === key(armature, 'View', 'Shadows'), 'Shadows has the same key in Sculpt and Armature');
   },

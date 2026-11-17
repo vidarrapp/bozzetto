@@ -36,13 +36,36 @@ export const MODES: Topic[] = [
     ],
   },
   {
+    id: 'paint',
+    title: 'Paint workspace',
+    group: G,
+    blocks: [
+      p('Paint is the third workspace of the path **Armature › Sculpt › Paint › Present**: the paint tools and the paint layers, on the same scene as Sculpt. Press **Paint** in the path, choose **View**, then **Paint**, or press **Shift+B**; **Shift+B** again, or the path\'s **Sculpt** step, goes back, and Sculpt comes back as it was: its tool and its panels. The address keeps `paint=1` while you are in it, so a reload opens Paint again. **Present** can be entered from Paint, and leaving it returns to Paint.'),
+      p('The tool bar has **Select** on **Q** and six tools on **1** to **6**: Paint, Erase, Blur, Fill, Pick and Project. The Sculpt brushes, Calipers and the transform gizmo are put away, and so is Negative at the left edge. Undo, Redo, Solo and the size and strength fields stay. The tabs are **Scene** and **Layers** on the left, and **Tool**, **Material** and **Reference** on the right. Painting shows the object\'s vertex colours, so if Colour was on Plain colour it is set to Sculpt colours, and a notice says so.'),
+      h('Paint layers'),
+      p('The **Layers** tab lists the object\'s paint layers, newest on top, with **Base** fixed at the bottom: the colour the object had, its painted colours before layers or its material\'s albedo, which you can paint on directly by tapping the Base row. A scene without paint layers opens as it was, and its painted colours become its Base when you first add a layer.'),
+      options(
+        ['Add layer', 'Makes an empty layer at 100%, in Normal, above the one picked, and picks it. Strokes go into the picked layer.'],
+        ['Eye', 'Shows or hides the layer. Painting on a hidden layer, or one at 0%, says to show it first.'],
+        ['Name', 'Tap the name of the picked layer to rename it.'],
+        ['Handle', 'The grip at the left of a row: drag it up or down to put the layer in another place. The order matters: each layer is blended over the ones under it.'],
+        ['Blend mode', 'The list is Photoshop\'s, in its groups: Normal, Dissolve; Darken, Multiply, Color Burn, Linear Burn, Darker Color; Lighten, Screen, Color Dodge, Linear Dodge (Add), Lighter Color; Overlay, Soft Light, Hard Light, Vivid Light, Linear Light, Pin Light, Hard Mix; Difference, Exclusion, Subtract, Divide; Hue, Saturation, Color, Luminosity. Dissolve scatters the colour over the points by a fixed pattern, so it does not flicker.'],
+        ['Opacity', 'From 0 to 100%.'],
+        ['Menu', '**Rename**, **Duplicate**, **Merge down** (joins the layer into the one below it, which keeps its own blend mode and opacity; the lowest layer merges into Base), **Clear** (empties the layer and keeps it) and **Delete**.'],
+        ['Flatten all', 'Makes every layer part of the object\'s colour.'],
+      ),
+      p('Each layer keeps its colour on the object\'s highest subdivision level. You can paint on any level: colour painted on a lower level is carried to the highest, and every level shows the layers. Subdivide carries the layers to the new highest level, and Delete highest carries them down. Voxel remesh, Quad remesh, Merge, splitting into objects and dynamic topology rebuild the surface, so they ask once to flatten both the sculpt layers and the paint layers. Publishing and exporting use the colours as they show. Layers are saved with the project, and Ctrl+Z undoes each stroke and each layer change in one press.'),
+      p('Paint layers need dynamic topology off. Masks, symmetry and hidden poly groups work as they do for painting without layers.'),
+    ],
+  },
+  {
     id: 'present',
     title: 'Present',
     group: G,
     blocks: [
-      p('Present is the third workspace, after Armature and Sculpt. It shows the model on its own, for looking at it and for showing it. Press **Present** in the path at the top, choose **View**, then **Present**, or press **Shift+P**. **Esc**, the path\'s **Sculpt** step or **Shift+P** again leaves it, and the interface comes back as it was.'),
+      p('Present is the last workspace, after Armature, Sculpt and Paint. It shows the model on its own, for looking at it and for showing it. Press **Present** in the path at the top, choose **View**, then **Present**, or press **Shift+P**. **Esc**, the path\'s **Sculpt** step or **Shift+P** again leaves it, and the interface comes back as it was.'),
       h('The workspace path'),
-      p('After the menus, the title strip has the path **Armature › Sculpt › Present**, in the order the work goes, with the step you are in lit. In Sculpt, **Present** is one press away, and **Sculpt** brings you back; nothing about the scene changes either way. **Armature** asks "Make a new armature for this scene?"; if you say yes, Armature opens on a new figure, and when you send it to Sculpt it is added to the scene as a new object, replacing nothing. In Armature, **Sculpt** sends the posed figure, as **File**, **Send to Sculpt** does, and **Present** is dim: a figure is sent to Sculpt first. On a phone the path shows only the step you are in, and **View** has the others.'),
+      p('After the menus, the title strip has the path **Armature › Sculpt › Paint › Present**, in the order the work goes, with the step you are in lit. In Sculpt, **Present** is one press away, and **Sculpt** brings you back (from Present entered in Paint, **Esc** and **Shift+P** return to Paint); nothing about the scene changes either way. **Armature** asks "Make a new armature for this scene?"; if you say yes, Armature opens on a new figure, and when you send it to Sculpt it is added to the scene as a new object, replacing nothing. In Armature, **Sculpt** sends the posed figure, as **File**, **Send to Sculpt** does, and **Present** is dim: a figure is sent to Sculpt first. On a phone the path shows only the step you are in, and **View** has the others.'),
       p('While you present, the tool bar, the edge controls, the Scene, Model and Tool panels and their tabs, the brush ring and the Level pill are gone, and the brushes, the gizmo and the selection do not answer. You can still orbit, pan and zoom. The strip shows the project name and the **Frame** size in pixels, and **Publish**, in orange, stands at its right (when you are signed in; it is only in Present). **Material**, with how the model is drawn, stays at the left, and two tabs remain on the right: **Render**, with the rest of the look, and **Output**. Nothing about the scene changes by going in or out.'),
       h('The bar along the bottom'),
       options(

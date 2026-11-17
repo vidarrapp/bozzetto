@@ -65,6 +65,11 @@ export const TOOL_NAMES: Record<number, string> = {
   [Enums.Tools.DRAG]: 'Drag',
   [Enums.Tools.TWIST]: 'Polish',
   [Enums.Tools.PAINT]: 'Paint',
+  [Enums.Tools.PAINT_ERASE]: 'Erase',
+  [Enums.Tools.BLUR]: 'Blur',
+  [Enums.Tools.FILL]: 'Fill',
+  [Enums.Tools.PICK]: 'Pick',
+  [Enums.Tools.PROJECT]: 'Project',
   [Enums.Tools.MASKING]: 'Mask',
 };
 
@@ -118,6 +123,9 @@ export class SculptToolbar {
   private readonly root: HTMLDivElement;
   private readonly negativeBtn: HTMLButtonElement;
   private readonly brushBtns = new Map<number, HTMLButtonElement>();
+  /** The Paint workspace's tool buttons, hidden outside it. */
+  private readonly paintBtns = new Map<number, HTMLButtonElement>();
+  private paintOn = false;
   /** The Negative button, for the edge controls to stand. */
   get negativeEl(): HTMLButtonElement {
     return this.negativeBtn;
@@ -243,6 +251,7 @@ export class SculptToolbar {
       'fi-ss-circle-half-stroke',
       'Negative',
     );
+    this.negativeBtn.classList.add('sculpt-toolbar__neg');
     this.negativeBtn.addEventListener('pointerdown', this.onNegativeDown);
     // The keyboard's and assistive tech's press, as for onTap. A pointer's
     // own click lands just after its press ended, which already acted as a
@@ -283,9 +292,6 @@ export class SculptToolbar {
       [tools.RAKE, '7', 'Rake (shift still smooths)', 'smooth', 'fi-ss-shredder', 'Rake'],
       [tools.DRAG, '8', 'Drag', 'drag', 'fi-ss-hand-back-fist', 'Drag'],
       [tools.TWIST, '9', 'Polish', 'polish', 'fi-ss-broom', 'Polish'],
-      // Paint takes the tenth slot; the digit row was full at 1-9, and 0
-      // sits next to 9 on every keyboard.
-      [tools.PAINT, '0', 'Paint (alt: pick colour)', 'paint', 'fi-ss-palette', 'Paint'],
     ];
     // Select at the far left, Transform at the far right (owner call): the
     // two tools that are not brushes bracket the row.
@@ -314,6 +320,8 @@ export class SculptToolbar {
     onTap(this.measureBtn, () => this.onToggleMeasure?.());
     center.appendChild(this.measureBtn);
 
+    this.center = center;
+
     this.root.append(center);
     document.body.appendChild(this.root);
 
@@ -326,6 +334,53 @@ export class SculptToolbar {
     this.refresh();
   }
 
+  /** The bar's own box of buttons, which the Paint workspace adds its tools to. */
+  private center!: HTMLDivElement;
+
+  /**
+   * The Paint workspace's own tools, made the first time Paint is entered
+   * (Sculpt's bar has nothing of them): the Select tool stays, on q, and the
+   * six tools follow on 1 to 6.
+   */
+  private buildPaintButtons(): void {
+    if (this.paintBtns.size) return;
+    const tools = Enums.Tools;
+    const paintTools: Array<[number, string, string, string, string, string]> = [
+      [tools.PAINT, '1', 'Paint (alt: pick colour, shift: blur)', 'paint', 'fi-ss-palette', 'Paint'],
+      [tools.PAINT_ERASE, '2', "Erase: lowers the layer's alpha", 'erase', 'fi-ss-eraser', 'Erase'],
+      [tools.BLUR, '3', 'Blur: softens the layer', 'blur', 'fi-ss-raindrops', 'Blur'],
+      [tools.FILL, '4', 'Fill: the layer, or the part that is not masked', 'fill', 'fi-ss-fill', 'Fill'],
+      [tools.PICK, '5', 'Pick: takes a colour from the model', 'pick', 'fi-ss-eye-dropper-half', 'Pick'],
+      [tools.PROJECT, '6', 'Project: paints a reference picture onto the model', 'project', 'fi-ss-projector', 'Project'],
+    ];
+    for (const [id, key, name, slot, icon, tip] of paintTools) {
+      const btn = toolButton(key, name, slot, icon, tip);
+      btn.classList.add('sculpt-toolbar__btn--paint');
+      btn.hidden = true;
+      onTap(btn, () => this.input.selectBrush(id));
+      this.paintBtns.set(id, btn);
+      this.center.appendChild(btn);
+    }
+  }
+
+  /**
+   * The Paint workspace's bar, or Sculpt's: in Paint the Select tool and the
+   * six paint tools stand (1 to 6 and q), and the brushes, Transform and
+   * Calipers are put away; Sculpt has the brushes, Transform and Calipers
+   * and no paint tool.
+   */
+  setWorkspace(paint: boolean): void {
+    if (paint) this.buildPaintButtons();
+    this.paintOn = paint;
+    for (const b of this.brushBtns.values()) b.hidden = paint;
+    for (const b of this.paintBtns.values()) b.hidden = !paint;
+    this.transformBtn.hidden = paint;
+    this.measureBtn.hidden = paint;
+    this.root.classList.toggle('sculpt-toolbar--paint', paint);
+    this.refresh();
+    window.dispatchEvent(new Event('bozzetto:shell-layout'));
+  }
+
   /** Reflect the active brush, and Negative's arm or latch, on the buttons. */
   private refresh(): void {
     const active = this.input.currentToolIndex();
@@ -333,6 +388,9 @@ export class SculptToolbar {
       // With the Select tool up no brush is the active one, whatever the
       // vendor's current tool index still says.
       btn.classList.toggle('sculpt-toolbar__btn--active', id === active && !this.selectOn && !this.measureOn);
+    }
+    for (const [id, btn] of this.paintBtns) {
+      btn.classList.toggle('sculpt-toolbar__btn--active', this.paintOn && id === active && !this.selectOn);
     }
     // Latched fills the button like any active tool; armed is the lighter
     // look, since it lasts one stroke.

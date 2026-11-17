@@ -25,14 +25,14 @@ Success is a sculptor getting from a blank scene to a presented piece without le
 
 ## Positioning
 
-The whole path in a browser: Armature › Sculpt › Present in one free web app that installs to an iPad's home screen and works offline, with no app store and no account needed to sculpt.
+The whole path in a browser: Armature › Sculpt › Paint › Present in one free web app that installs to an iPad's home screen and works offline, with no app store and no account needed to sculpt.
 
 Timelapses played back as real geometry (orbit, relight, scrub) exist in the product but are not offered to users right now, and will not be until the core of the app has been rebuilt. Do not lead with them or present them as a current user feature.
 
 ## Operating Context
 
 - Used mainly as an installed home-screen app on iPad, fullscreen, with Apple Pencil; also on desktop with mouse and keyboard. A phone is not a target: the app runs there for a quick demo, with no layout of its own.
-- Three workspaces in a fixed order, shown as a path: Armature (pose a mannequin), Sculpt, Present (lighting, render settings, output, publishing).
+- Four workspaces in a fixed order, shown as a path: Armature (pose a mannequin), Sculpt, Paint (vertex colour in layers with blend modes, on the same scene as Sculpt), Present (lighting, render settings, output, publishing).
 - Around the workspaces sit pages: the gallery, Community, My projects, Account, Review, and the owner's tools.
 - The public viewer shows a published model or timelapse.
 - The desktop counterpart, Bozzetto Studio, is a separate product.
@@ -45,7 +45,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 - Publishing happens only from Present. Present is also where the owner edits a published project's lighting and settings.
 - Timelapse recording, upload and reel rendering are owner-only for now.
 - At most one side panel is open per side; under 1100px wide, one panel in all.
-- Terms in the interface: Armature, Sculpt, Present, Gallery, Community, My projects, Review, Publish, Frames.
+- Terms in the interface: Armature, Sculpt, Paint, Present, Gallery, Community, My projects, Review, Publish, Frames.
 - Undecided: when timelapses return for users, and in what form, after the core rebuild.
 
 ## Brand Commitments
@@ -66,7 +66,7 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 ## Product Principles
 
 1. The sculptor's hand comes first: the viewport and the Pencil stroke outrank every panel and menu.
-2. One path, three workspaces: Armature, then Sculpt, then Present. Each thing lives in one place on that path.
+2. One path, four workspaces: Armature, then Sculpt, then Paint, then Present. Each thing lives in one place on that path.
 3. One main action per screen, and the interface stays quiet around it.
 4. Say it plainly: every label, error and notice tells the person what happened and what to do.
 5. Offer only what works today; features being rebuilt stay out of what users are promised.
@@ -74,6 +74,6 @@ Timelapses played back as real geometry (orbit, relight, scrub) exist in the pro
 ## Accessibility & Inclusion
 
 - Every control must be reachable by touch and Pencil without a keyboard.
-- The Sculpt and Armature workspaces are pointer tools. They are not meant to be operated by keyboard alone, and no keyboard-only path through them is planned. Do not report the missing Tab order there as a defect or design one in.
+- The Sculpt, Paint and Armature workspaces are pointer tools. They are not meant to be operated by keyboard alone, and no keyboard-only path through them is planned. Do not report the missing Tab order there as a defect or design one in.
 - Pages outside the workspaces (gallery, Community, My projects, Account, Review, owner's tools, sign-in) and windows with form fields keep ordinary keyboard focus order.
 - No formal standard has been set.

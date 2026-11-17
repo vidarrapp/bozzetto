@@ -199,7 +199,6 @@ export const suites = {
       ['6', 'Flatten', false],
       ['7', 'Rake', true],
       ['9', 'Polish', false],
-      ['0', 'Paint', false],
     ];
     for (const [key, name, cm] of brushes) {
       await page.keyboard.press(key);

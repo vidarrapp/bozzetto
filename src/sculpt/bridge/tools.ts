@@ -20,6 +20,7 @@ import {
 } from './profile';
 import type { SculptSession } from './SculptSession';
 import { SURFACE_RELAX, SurfaceSmoother, type SurfaceDabStats } from './surfaceSmooth';
+import type { PaintStroke } from './paintLayers';
 
 /** The Smooth brush's modes (StableSmooth.smoothMode). */
 export type SmoothMode = 'average' | 'surface';
@@ -2056,6 +2057,56 @@ export class InflateBrush extends Inflate implements StrengthCmBrush {
 }
 
 /**
+ * What the Paint workspace's brushes have in common: when the object has
+ * paint layers (paintLayers.ts), a stroke does not write the mesh's colours
+ * but the active layer's (or Base's), and is its own undo step
+ * (`PaintStroke`); an object without layers is painted exactly as it always
+ * was, in the mesh's colours with the vendor's own undo state.
+ */
+export class LayeredPaint extends Paint {
+  /** The stroke in progress on an object that has paint layers; null when the vendor's own paint runs. */
+  layered: PaintStroke | null = null;
+
+  protected get session(): SculptSession {
+    return this._main as SculptSession;
+  }
+
+  override pushState(force?: boolean): void {
+    this.layered = null;
+    if (this._pickColor && !force) return;
+    const mesh = this.getMesh();
+    if (mesh && !mesh.isDynamic) this.layered = this.session.paint.startStroke(mesh);
+    if (!this.layered) super.pushState(force);
+  }
+
+  override end(): void {
+    const stroke = this.layered;
+    this.layered = null;
+    stroke?.end();
+    super.end();
+  }
+
+  /** The vertices of a dab with the weight each takes: the profile at its distance, by the strength and the mask. */
+  protected dabWeights(iVerts: ArrayLike<number>, center: number[], radiusSquared: number, k: number, curve: ProfileCurve): Float32Array {
+    const mesh = this.getMesh();
+    const vAr = mesh.getVertices();
+    const mAr = mesh.getMaterials();
+    const radius = Math.sqrt(radiusSquared);
+    const out = new Float32Array(iVerts.length);
+    for (let i = 0; i < iVerts.length; i++) {
+      const ind = iVerts[i] * 3;
+      const dx = vAr[ind] - center[0];
+      const dy = vAr[ind + 1] - center[1];
+      const dz = vAr[ind + 2] - center[2];
+      let dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
+      if (dist > 1) dist = 1;
+      out[i] = curve.sample(dist) * k * mAr[ind + 2];
+    }
+    return out;
+  }
+}
+
+/**
  * Paint with its blend weight capped at 1 (overshoot bug, the
  * StableSmooth class). Each dab lerps a vertex's colour (and, when
  * written, roughness/metalness) toward the brush's by
@@ -2068,13 +2119,36 @@ export class InflateBrush extends Inflate implements StrengthCmBrush {
  * exactly; it replaced the hardness slider. Everything else - the
  * eyedropper, the fill, the write flags mode.ts sets - is upstream's.
  */
-export class PaintBrush extends Paint {
+export class PaintBrush extends LayeredPaint {
   /** The dab's falloff (the Tool panel's curve; the blur shares it). */
-  readonly curve = new ProfileCurve(PAINT_PROFILES, 'default');
+  curve = new ProfileCurve(PAINT_PROFILES, 'default');
 
   constructor(session: SculptSession) {
     super(session);
     this._idAlpha = null;
+  }
+
+  /**
+   * With paint layers the dab goes to the active layer (or Base) through the
+   * stroke; the vendor's stroke is otherwise what runs.
+   */
+  override stroke(picking: Picking): void {
+    const layered = this.layered;
+    if (!layered) {
+      super.stroke(picking);
+      return;
+    }
+    let iVerts = picking.getPickedVertices();
+    const intensity = this._intensity * Tablet.getPressureIntensity();
+    if (this._culling) iVerts = this.getFrontVertices(iVerts, picking.getEyeDirection());
+    this.layerDab(layered, iVerts, picking, Math.min(1, intensity));
+  }
+
+  /** One dab on a layer: what Paint does (colour laid over), and what Erase overrides. */
+  protected layerDab(layered: PaintStroke, iVerts: ArrayLike<number>, picking: Picking, k: number): void {
+    const w = this.dabWeights(iVerts, picking.getIntersectionPoint(), picking.getLocalRadius2(), k, this.curve);
+    layered.over(iVerts, w, this._color);
+    this.session.paint.dabDone(this.getMesh(), iVerts, false);
   }
 
   /**
@@ -2149,7 +2223,7 @@ export class PaintBrush extends Paint {
  * it - so a hard edge between two colours softens the more it is stroked.
  * Geometry is not touched.
  */
-export class PaintBlurBrush extends Paint {
+export class PaintBlurBrush extends LayeredPaint {
   /** The falloff: Paint's own curve object once SculptSession wires it, so the two always agree. */
   curve = new ProfileCurve(PAINT_PROFILES, 'default');
 
@@ -2163,6 +2237,15 @@ export class PaintBlurBrush extends Paint {
    * replaced by a blend toward the Laplacian of the colours.
    */
   override stroke(picking: Picking): void {
+    const layered = this.layered;
+    if (layered) {
+      let verts = picking.getPickedVertices();
+      if (this._culling) verts = this.getFrontVertices(verts, picking.getEyeDirection());
+      const w = this.dabWeights(verts, picking.getIntersectionPoint(), picking.getLocalRadius2(), Math.min(1, this._intensity * Tablet.getPressureIntensity()), this.curve);
+      layered.blur(verts, w);
+      this.session.paint.dabDone(this.getMesh(), verts, false);
+      return;
+    }
     let iVerts = picking.getPickedVertices();
     const intensity = this._intensity * Tablet.getPressureIntensity();
     (this._main as SculptSession).getStateManager().pushVertices(iVerts);

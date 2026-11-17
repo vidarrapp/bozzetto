@@ -10,6 +10,7 @@ import type { BrushSymmetry } from './symmetry';
 import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
 import { sanitizeLayers } from './layersRecord';
+import { sanitizePaintLayers } from './paintLayersRecord';
 import { sanitizeMeasures } from './measure';
 import { MAX_REFERENCES, cleanBlend, cleanCamera, cleanOpacity, cleanPlace, type FileReference, type FileReferences } from '../../reference/board';
 
@@ -170,6 +171,18 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
       fail(`object ${index + 1} has bad layers: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // The paint layers, where there are any: held to the levels' vertex counts.
+  let paintLayers: SavedMesh['paintLayers'];
+  if (m.paintLayers !== undefined) {
+    try {
+      paintLayers = sanitizePaintLayers(
+        m.paintLayers,
+        levels.map((l) => l.nbVertices),
+      );
+    } catch (err) {
+      fail(`object ${index + 1} has bad paint layers: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const matrix = Array.prototype.every.call(m.matrix, (x: unknown) => typeof x === 'number' && Number.isFinite(x))
     ? Float32Array.from(m.matrix)
     : new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -188,6 +201,7 @@ function sanitizeMesh(m: SavedMesh, index: number): SavedMesh {
     source,
     groups,
     layers,
+    paintLayers,
     measures: sanitizeMeasures(m.measures),
   });
 }
