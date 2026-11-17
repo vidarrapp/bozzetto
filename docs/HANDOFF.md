@@ -2,6 +2,8 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-17: The head's look-at shares the turn as the part each bone has made by the end: head all, neck half, chest 12 percent, spine 6 percent (the owner said neck about half, torso 10 to 15 in all). Keep these, or a stronger neck or a freer torso. (blocks: nothing, a constant in Armature.ts)
+- [ ] 2026-11-17: The head's old pin (hold the head in place while the pelvis moves) is gone with the head's reach handle; an old file's head pin is dropped. Is a way to hold the gaze on a fixed point while the figure moves wanted (the look target kept in the world, as Maya's aim constraint does). (blocks: nothing)
 - [x] 2026-11-17: Too many tabs in Sculpt. Decided 2026-11-17: Render leaves Sculpt and Armature and lives in Present as three tabs, Lighting, Camera and Render; Sculpt keeps only the key for moving the key light (with View > Move light for touch); the viewer shows Lighting only; the default light stays Key only, with Three-point in the rig list (changed the same day from three lights on); Present gets more light rigs and a small library to save, export and import rigs
 - [x] 2026-11-17: Where the Reference tab sits now that Material moves to the right. Taken for now: Tool | Material | Reference | Render. Decided 2026-11-17: as taken
 - [x] 2026-11-17: Material moves to the right in Sculpt as asked; taken for now: in Armature, Present and the viewer too, so the tab is in one place everywhere. Or Sculpt only. Decided 2026-11-17: as taken

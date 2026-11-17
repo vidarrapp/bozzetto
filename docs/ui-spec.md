@@ -524,6 +524,31 @@ states" board. This section adds behaviour.
   Negative button, and Smooth and Mask reached as they are now. The
   desktop and any native iPad version can revisit it.
 
+### Armature handles
+
+The figure's controls are outlines, as an animation program draws control
+curves, not balls (owner decision, 2026-11-14 and 2026-11-17). Every
+handle is neutral (`--bz-text-2`, white under the pointer) and orange
+(`--bz-orange`) only while selected or dragged. Each is drawn over the
+figure, with a stroke of 2 px (3 px when orange) and a thin dark casing
+(`--bz-strip`) so it reads over pale clay and over the dark ground, and
+each has an invisible pick circle 44 px across.
+
+- **Reach** (hands, feet): a ring that faces the camera. Pinned, a small
+  dot in its middle. A tap selects it, with the move gizmo.
+- **Root**: a rectangle framing the hips; drag it and the whole figure
+  moves. It is orange while dragged or while the pelvis is selected.
+- **Pole** (knee, elbow): an arrowhead out from the joint along the way it
+  points, half the limb segment above it away (in front of a knee, behind
+  an elbow), pointing at the joint it aims, joined to it by a thin dashed
+  line. Dragging it turns the joint toward it.
+- **Look-at** (head): the same arrowhead and dashed line, a head and a
+  half in front of the face. Dragging it turns the head to face it, the
+  neck about half as far and the chest and spine a little (about 12 and 6
+  percent), measured from the chest: up to 80 degrees to a side and 60 up
+  or down, past which the head holds at the limit. The hips never move.
+- **Floor ring** under a planted foot: a flat ring, neutral.
+
 ## 9. Windows, notices and progress
 
 - **Window** (Preferences, Publish, Help, Set scale, a confirmation): a

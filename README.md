@@ -29,7 +29,7 @@ A posable figure, for reference or as the start of a sculpt. Pick **Create → N
 
 - **Figures.** Four mannequins, male and female in realistic and stylized proportions, plus two block figures. You can also load your own rigged `.glb`.
 - **Pose.** Tap a part to turn its joint, held within the joint's limits. Symmetry (`X`) mirrors the pose to the other side.
-- **Reach.** Drag the ball at a hand, a foot or the head and the limb follows. Pin a ball to hold it in place while the rest of the figure moves. Smaller balls at the knees and elbows aim the bend.
+- **Reach.** Drag the ring at a hand or a foot and the limb follows. Pin a ring to hold it in place while the rest of the figure moves. An arrowhead out from each knee and elbow aims the bend, and the one in front of the face makes the head, neck and a little of the back look at it.
 - **Feet on the floor.** Feet stand flat on the floor and stay planted through a crouch or a lean.
 - **Proportions.** Change the size and length of each part.
 - **Send to Sculpt.** Turns the posed figure into one clay object and opens it in Sculpt.
@@ -150,6 +150,8 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Controls drawn as outlines.** In Armature the handles are now grey outlines like an animation program's controls, not coloured balls: a ring at each hand and foot (with a dot when pinned), a frame round the hips, and an arrowhead out from each knee and elbow on a dashed line. They turn white under the pointer and orange only when selected or dragged, and each can be picked with a finger.
+- **The head looks.** The head's handle is now a look-at arrowhead in front of the face. Drag it and the head turns to face it, with the neck turning about half as far and the upper back a little, held within a comfortable range; it no longer pulls the body around. Old figures open as they were, and the head's pin is gone.
 - **Sculpt layers.** A new **Layers** tab on the left, after Model, keeps what you sculpt on separate layers, newest on top, with **Base** at the bottom. Each layer has an eye, a name and a weight slider from 0 to 100%; double tap the slider and type a value to go further, or below zero (-100 turns the layer inside out). Work on any subdivision level, step up and down, and the layer's slider moves all of it. Duplicate, **Flatten into base** and Delete are in each row's menu, and **Flatten all** is at the foot. Layers are saved with the project; remesh, merge and the like ask to flatten them first.
 - **Clearer Create window.** New Sculpt is the one lime, recommended choice, and Create timelapse is shown to the owner only, since timelapses are not offered to users right now. Help now opens with Armature, Sculpt and Present.
 - **Slider names when you use them.** The Size and Strength sliders at the left edge name themselves while a finger, the Pencil or the mouse is on them, and on a mouse hover, and are plain lines otherwise. Solo, Negative, Undo and Redo show their name on hover and when you hold them.

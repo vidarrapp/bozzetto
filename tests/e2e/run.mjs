@@ -16,6 +16,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { checks, launch, serve } from './lib.mjs';
 import { suites as accounts } from './accounts.mjs';
+import { suites as armatureControls } from './armatureControls.mjs';
 import { suites as armatureProjects } from './armatureProjects.mjs';
 import { suites as askWindow } from './askWindow.mjs';
 import { suites as brushCaps } from './brushCaps.mjs';
@@ -67,6 +68,7 @@ import { suites as zoomFocus } from './zoomFocus.mjs';
 // One suite file per line, so two branches adding a file do not collide.
 const suites = {
   ...smoke,
+  ...armatureControls,
   ...armatureProjects,
   ...latency,
   ...shadows,
