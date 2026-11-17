@@ -1406,8 +1406,11 @@ Object.assign(suites, {
     t.eq(await P(`S.session.paint.rawList(m).length`), 5, 'and one undo brings them back');
     await P(`pt.undo()`);
     // Flatten a group.
+    // (A Pass through group has no colour of its own to flatten: it flattens as a Normal one.)
+    await P(`S.session.paint.setMode(m, pt.layers().find((l) => l.kind === 'group'), 'normal')`);
+    await page.evaluate(() => window.__pt.snap('gn'));
     await P(`S.session.paint.flattenGroup(m, pt.layers().find((l) => l.kind === 'group'))`);
-    t.ok((await P(`pt.layers().every((l) => l.kind === 'layer')`)) && (await page.evaluate(() => window.__pt.diff('flat'))) < 4e-3, 'Flatten on a group makes its layers one layer');
+    t.ok((await P(`pt.layers().every((l) => l.kind === 'layer')`)) && (await page.evaluate(() => window.__pt.diff('gn'))) < 4e-3, 'Flatten on a group makes its layers one layer');
     await page.screenshot({ path: `${SHOTS}/paint-groups-1180.png` });
   },
 
