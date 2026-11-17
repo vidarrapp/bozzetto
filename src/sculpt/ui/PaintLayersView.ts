@@ -87,7 +87,7 @@ export class PaintLayersView {
           ];
         },
       },
-      { baseName: 'Base', limit: 1, floor: 0, caption: 'Opacity', baseHint: 'The object’s own colour' },
+      { baseName: 'Base', limit: 1, floor: 0, caption: 'Opacity' },
     );
     this.el.append(this.list.el);
 
