@@ -1043,6 +1043,7 @@ export const suites = {
     await page.evaluate(async () => {
       const rec = window.__sculpt.session.serializeScene();
       for (const m of rec.meshes) delete m.paintLayers;
+      window.__sculpt.library.saveInto(rec);
       const bytes = await window.__sculpt.file.packRecord(rec);
       await window.__sculpt.file.open(bytes);
     });

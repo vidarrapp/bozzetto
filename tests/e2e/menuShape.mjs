@@ -19,7 +19,7 @@ const FILE_RANK = new Map([
 
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
-  if (['Wireframe', 'Shadows', 'Poly group colours', 'References', 'Arrange references', 'Hotkeys on tools'].includes(label)) return 1;
+  if (['Wireframe', 'Shadows', 'Poly group colours', 'Details', 'References', 'Arrange references', 'Hotkeys on tools'].includes(label)) return 1;
   if (/ panel$/.test(label) || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Paint', 'Present'].includes(label)) return 3;
   return -1;
