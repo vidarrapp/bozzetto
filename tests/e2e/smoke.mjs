@@ -541,20 +541,23 @@ const rootBall = (page) =>
       rect[2] = Math.max(rect[2], at[0]);
       rect[3] = Math.max(rect[3], at[1]);
     }
-    const mid = arm.jointWorld('pelvis').add(arm.effectorWorld('pelvis', new V(), 1)).multiplyScalar(0.5);
+    // The box's middle against the pelvis part's own bounds: how far outside them, in the part's frame (0 inside).
+    const bone = arm.partBones.get('pelvis');
+    const bounds = arm.partGeometry.get('pelvis').boundingBox ?? (arm.partGeometry.get('pelvis').computeBoundingBox(), arm.partGeometry.get('pelvis').boundingBox);
+    const local = bone.worldToLocal(new V(...a.handlePosition('root')));
+    const outside = Math.hypot(Math.max(bounds.min.x - local.x, 0, local.x - bounds.max.x), Math.max(bounds.min.y - local.y, 0, local.y - bounds.max.y), Math.max(bounds.min.z - local.z, 0, local.z - bounds.max.z));
     const ball = a.ballOnScreen('root');
-    const world = a.handlePosition('root');
     return {
       ball,
       rect,
       inside: !!ball && ball[0] > rect[0] && ball[0] < rect[2] && ball[1] > rect[1] && ball[1] < rect[3],
-      offMid: Math.hypot(world[0] - mid.x, world[1] - mid.y, world[2] - mid.z),
+      offMid: outside,
     };
   });
 const showRoot = (r) =>
   `ball at (${r.ball ? r.ball.slice(0, 2).map((v) => v.toFixed(0)).join(', ') : 'none'}), the pelvis across ` +
   `(${r.rect[0].toFixed(0)}, ${r.rect[1].toFixed(0)})-(${r.rect[2].toFixed(0)}, ${r.rect[3].toFixed(0)}), ` +
-  `${r.offMid.toExponential(1)} off the bone's middle`;
+  `${r.offMid.toExponential(1)} outside the pelvis part's bounds`;
 
 // A left part and its mirror image: both facing outward, and the same size
 // to within a few percent. Only signs and ratios mean anything here; the
@@ -2355,10 +2358,10 @@ export const suites = {
       const a = window.__armature;
       return { root: a.handleLook('root'), reach: a.handleLook('ik:hand.L'), aim: a.handleLook('aim:hand.L'), palette: a.handlePalette() };
     });
-    t.ok(hips.inside && hips.offMid < 1e-4, `the root's frame sits in the hips: ${showRoot(hips)}`);
+    t.ok(hips.inside && hips.offMid < 1e-4, `the root's box is centred in the hips: ${showRoot(hips)}`);
     t.ok(
-      look.root.shape === 'rect' && look.reach.shape === 'ring' && look.aim.shape === 'arrow',
-      `the root is a frame, a reach handle a ring and a pole target an arrowhead (${look.root.shape}, ${look.reach.shape}, ${look.aim.shape})`,
+      look.root.shape === 'box' && look.reach.shape === 'ring' && look.aim.shape === 'arrow',
+      `the root is a box, a reach handle a ring and a pole target an arrowhead (${look.root.shape}, ${look.reach.shape}, ${look.aim.shape})`,
     );
     t.ok(
       [look.root, look.reach, look.aim].every((l) => l.colour === look.palette.rest && l.state === 'rest') && look.palette.rest !== look.palette.hot,
@@ -2785,7 +2788,7 @@ export const suites = {
       mirrored(t, parts.volume['upperarm.L'], parts.volume['upperarm.R'], `${id}: the upper arms`);
       mirrored(t, parts.volume['hand.L'], parts.volume['hand.R'], `${id}: the hands`);
       const hip = await rootBall(page);
-      t.ok(hip.inside && hip.offMid < 1e-4, `${id}: the root's ball sits in the hips: ${showRoot(hip)}`);
+      t.ok(hip.inside && hip.offMid < 1e-4, `${id}: the root's box is centred in the hips: ${showRoot(hip)}`);
 
       // The deltoid rides on the upper arm, so it moves when the arm is
       // raised (owner report): the clavicles carry no vertices, and an
@@ -3051,7 +3054,7 @@ export const suites = {
     await page.evaluate(() => window.__armature.figure('placeholder-male'));
     t.eq(await page.evaluate(() => window.__armature.armature.rig.id), 'placeholder-male', 'and the blocks come back on request');
     const blockHips = await rootBall(page);
-    t.ok(blockHips.inside && blockHips.offMid < 1e-4, `the blocks' root ball sits in their pelvis: ${showRoot(blockHips)}`);
+    t.ok(blockHips.inside && blockHips.offMid < 1e-4, `the blocks' root box is centred in their pelvis: ${showRoot(blockHips)}`);
 
     // The gallery card shows the figure (owner report: no thumbnail). The
     // picture taken on the way out rides in the autosave record; the

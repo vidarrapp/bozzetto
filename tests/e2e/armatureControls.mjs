@@ -48,12 +48,13 @@ async function armatureControls(page, base, t) {
   const drawn = names.filter((n) => !n.startsWith('dash:'));
   t.ok(
     ['root', ...RINGS, ...POLES.map((c) => `aim:${c}`), 'look:head'].every((n) => names.includes(n)) && !names.includes('ik:head'),
-    `the handles are a ring each at the hands and feet, an arrowhead at each knee and elbow, one for the head's look and the root's frame, and the head has no reach ring (${names.join(', ')})`,
+    `the handles are a ring each at the hands and feet, an arrowhead at each knee and elbow, one for the head's look and the root's box, and the head has no reach ring (${names.join(', ')})`,
   );
   t.ok(palette.rest !== palette.hot && palette.hover !== palette.hot, `orange (#${palette.hot}) is not the rest (#${palette.rest}) or the hover (#${palette.hover}) colour`);
 
+  t.ok(palette.shade > 0.25 && palette.shade < 0.45 && palette.edge === '000000', `a handle's edge is a soft shade of black at ${palette.shade} (--bz-view-shade-line), not a dark border`);
   // At rest: every handle neutral, in the shape it is for.
-  const shapeOf = (n) => (n === 'root' ? 'rect' : n.startsWith('ik:') ? 'ring' : n.startsWith('dash:') ? 'dash' : 'arrow');
+  const shapeOf = (n) => (n === 'root' ? 'box' : n.startsWith('ik:') ? 'ring' : n.startsWith('dash:') ? 'dash' : 'arrow');
   const rest = await page.evaluate(() => Object.fromEntries(window.__armature.handleNames().map((n) => [n, window.__armature.handleLook(n)])));
   t.ok(
     Object.entries(rest).every(([n, l]) => l.shape === shapeOf(n) && l.colour === palette.rest && l.state === 'rest'),
@@ -151,7 +152,7 @@ async function armatureControls(page, base, t) {
     t.ok(knee ? off[2] > 0 : off[2] < 0, `${p.c}: out ${knee ? 'in front of the knee' : 'behind the elbow'} (z offset ${off[2].toFixed(1)})`);
     t.ok(
       p.arrow.shape === 'arrow' && dist(p.arrow.toward, p.joint) < 1e-6 && dist(p.dash.from, p.joint) < 1e-6 && dist(p.dash.toward, p.arrow.position) < 1e-6 && p.dash.shape === 'dash',
-      `${p.c}: an arrowhead pointing at the joint it aims, a dashed line from the joint to it`,
+      `${p.c}: an arrowhead out from the joint it aims, pointing away from it, on a dashed line from the joint`,
     );
   }
 
@@ -214,28 +215,118 @@ async function armatureControls(page, base, t) {
   }
   await page.evaluate(() => window.__armature.selectHandle(null));
 
-  // The screens: every handle is on the page at 1180 and at 390 wide, in the viewport.
-  for (const [w, h] of [
-    [1180, 820],
-    [390, 844],
-  ]) {
-    await page.setViewportSize({ width: w, height: h });
-    await page.waitForFunction((ww) => Math.abs(window.__bozzetto.renderer.domElement.getBoundingClientRect().width - ww) < 2, w, { timeout: 15_000 }).catch(() => {});
-    await page.waitForTimeout(800);
-    const seen = await page.evaluate(
-      ([ww, hh]) => {
-        const a = window.__armature;
-        return a
-          .handleNames()
-          .filter((n) => !n.startsWith('dash:'))
-          .map((n) => [n, a.ballOnScreen(n), a.handleLook(n).visible])
-          .map(([n, at, vis]) => [n, !!at && vis && at[0] > 0 && at[0] < ww && at[1] > 0 && at[1] < hh]);
-      },
-      [w, h],
-    );
-    t.ok(seen.every(([, ok]) => ok), `at ${w} wide every handle is on the page (${seen.filter(([, ok]) => !ok).map(([n]) => n).join(', ') || 'all'})`);
-  }
+  // The screen: every handle is on the page at the iPad's 1180 wide, and the reach rings are about 15 px in radius.
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.waitForFunction(() => Math.abs(window.__bozzetto.renderer.domElement.getBoundingClientRect().width - 1180) < 2, null, { timeout: 15_000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const seen = await page.evaluate(() => {
+    const a = window.__armature;
+    return a
+      .handleNames()
+      .filter((n) => !n.startsWith('dash:'))
+      .map((n) => [n, a.ballOnScreen(n), a.handleLook(n).visible])
+      .map(([n, at, vis]) => [n, !!at && vis && at[0] > 0 && at[0] < 1180 && at[1] > 0 && at[1] < 820, at?.[2]]);
+  });
+  t.ok(seen.every(([, ok]) => ok), `at 1180 wide every handle is on the page (${seen.filter(([, ok]) => !ok).map(([n]) => n).join(', ') || 'all'})`);
+  const ringR = seen.find(([n]) => n === 'ik:hand.L')[2];
+  t.ok(ringR >= 21 && ringR <= 23, `a reach ring is 22 px in radius (${ringR})`);
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForTimeout(500);
+
+  // The root's box: twelve edges round the pelvis part, in its own frame, picked on any edge.
+  const box = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const V = arm.root.position.constructor;
+    const part = arm.partBones.get('pelvis');
+    const g = arm.partGeometry.get('pelvis');
+    g.boundingBox ?? g.computeBoundingBox();
+    const b = a.rootBox();
+    const local = part.worldToLocal(new V(...b.centre));
+    const bb = g.boundingBox;
+    const inside = ['x', 'y', 'z'].every((k) => local[k] >= bb.min[k] - 1e-3 && local[k] <= bb.max[k] + 1e-3);
+    const l = arm.jointWorld('thigh.L');
+    const r = arm.jointWorld('thigh.R');
+    return {
+      look: a.handleLook('root'),
+      inside,
+      centre: b.centre,
+      hipsMidX: (l.x + r.x) / 2,
+      spineY: arm.jointWorld('spine').y,
+      hipY: l.y,
+      chestY: arm.jointWorld('chest').y,
+      gizmo: null,
+    };
+  });
+  t.ok(box.look.shape === 'box' && box.look.edges === 12, `the root's handle is a box of ${box.look.edges} edges`);
+  t.ok(box.inside, "its middle is inside the pelvis part's bounds");
+  t.ok(box.centre[1] < box.spineY && Math.abs(box.centre[0] - box.hipsMidX) < 1, `and sits on the hips, below the spine's joint (y ${box.centre[1].toFixed(1)} against ${box.spineY.toFixed(1)}), between the hip joints (x ${box.centre[0].toFixed(1)})`);
+  // It turns with the hips.
+  const turned = await page.evaluate(() => {
+    const a = window.__armature;
+    const arm = a.armature;
+    const Q = arm.root.quaternion.constructor;
+    const x0 = a.rootBox().x;
+    arm.root.quaternion.premultiply(new Q().setFromAxisAngle({ x: 0, y: 1, z: 0 }, Math.PI / 4));
+    a.moveRoot(0, 0, 0);
+    const x1 = a.rootBox().x;
+    a.undo();
+    return (Math.acos(Math.min(1, x0[0] * x1[0] + x0[1] * x1[1] + x0[2] * x1[2])) * 180) / Math.PI;
+  });
+  t.ok(Math.abs(turned - 45) < 2, `the box turns with the hips (${turned.toFixed(1)} degrees for a 45 degree turn)`);
+  // Selecting the pelvis: orange, the move gizmo in the box's middle.
+  await page.evaluate(() => window.__armature.select('pelvis'));
+  const picked = await page.evaluate(() => ({ look: window.__armature.handleLook('root'), gizmo: window.__armature.gizmo(), centre: window.__armature.rootBox().centre }));
+  t.ok(picked.look.state === 'hot' && picked.look.colour === palette.hot, 'the box is orange while the pelvis is selected');
+  t.ok(picked.gizmo.moveAt && dist(picked.gizmo.moveAt, picked.centre) < 0.01, "and the pelvis's move gizmo sits in the middle of the box");
+  await page.evaluate(() => window.__armature.select(null));
+  // (The undo above puts the figure back a moment later: let it settle.)
+  await page.waitForTimeout(600);
+  // A press on an edge, and 20 px outside it, takes the root; a drag from there moves the figure and lights the box.
+  const edge = await page.evaluate(() => {
+    const a = window.__armature;
+    const b = a.rootBox();
+    const pts = b.corners.map((c) => a.onScreen(...c));
+    const others = a.handleNames().filter((n) => !n.startsWith('dash:') && n !== 'root').map((n) => a.ballOnScreen(n));
+    const centre = a.onScreen(...b.centre);
+    let best = null;
+    for (let i = 0; i < 8; i++) {
+      for (const bit of [1, 2, 4]) {
+        if (i & bit) continue;
+        const [p, q] = [pts[i], pts[i | bit]];
+        const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+        const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        const away = Math.hypot(mid[0] - centre[0], mid[1] - centre[1]) || 1;
+        const out = [mid[0] + ((mid[0] - centre[0]) / away) * 18, mid[1] + ((mid[1] - centre[1]) / away) * 18];
+        const nearest = Math.min(...others.map((o) => Math.hypot(o[0] - out[0], o[1] - out[1])));
+        if (len > 30 && nearest > 40 && (!best || nearest > best.nearest)) best = { mid, out, nearest };
+      }
+    }
+    return { best, root: a.state().root.position, centre, cam: window.__bozzetto.camera.position.toArray(), rq: a.state().root.quaternion };
+  });
+  t.ok(!!edge.best, 'an edge of the box stands clear of the other handles');
+  for (const [label, at] of [['on an edge', edge.best.mid], ['18 px outside an edge', edge.best.out]]) {
+    await page.mouse.move(at[0], at[1]);
+    await page.mouse.down();
+    await page.mouse.up();
+    const p = await page.evaluate(() => window.__armature.picked());
+    t.eq(p, 'root', `a press ${label} of the box takes the root`);
+  }
+  // Where the box and the root are now, just before the drag.
+  const start = await page.evaluate(() => ({ at: window.__armature.onScreen(...window.__armature.rootBox().centre), root: window.__armature.state().root.position }));
+  edge.centre = start.at;
+  edge.root = start.root;
+  await page.mouse.move(edge.best.mid[0], edge.best.mid[1]);
+  await page.mouse.down();
+  await page.mouse.move(edge.best.mid[0] + 30, edge.best.mid[1] - 40, { steps: 6 });
+  const held = await page.evaluate(() => window.__armature.handleLook('root'));
+  await page.mouse.up();
+  const dropped = await page.evaluate(() => ({ cam: window.__bozzetto.camera.position.toArray(), rq: window.__armature.state().root.quaternion, root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
+  t.ok(held.state === 'hot' && held.colour === palette.hot, 'the box is orange while it is dragged');
+  t.ok(dist(dropped.root, edge.root) > 5 && dropped.look.state === 'rest', `a drag from an edge moves the figure (${dist(dropped.root, edge.root).toFixed(1)} cm) and the box is neutral after`);
+  const lag = Math.hypot(dropped.at[0] - edge.centre[0] - 30, dropped.at[1] - edge.centre[1] + 40);
+  t.ok(lag < 8, `the box follows the pointer, as a drag of the old handle did (${lag.toFixed(1)} px off, from ${edge.centre.map((v) => v.toFixed(0))} to ${dropped.at.map((v) => v.toFixed(0))}; camera moved ${dist(edge.cam, dropped.cam).toFixed(2)}, root turned ${dist(edge.rq, dropped.rq).toFixed(3)})`);
+  await page.evaluate(() => window.__armature.undo());
 }
 
 /** The head's turn from rest, in degrees, and the other bones', for a look at `point`. */
@@ -298,7 +389,7 @@ async function armatureLook(page, base, t) {
   );
   t.ok(
     front.arrow.shape === 'arrow' && dist(front.arrow.toward, front.from) < 1e-6 && front.dash.shape === 'dash' && dist(front.dash.from, front.from) < 1e-6 && dist(front.dash.toward, front.arrow.position) < 1e-6,
-    'drawn as an arrowhead pointing at the head, on a dashed line from the head',
+    'drawn as an arrowhead pointing away from the head, on a dashed line from the head',
   );
   t.ok(front.arrow.colour === palette.rest && front.arrow.pick >= 44, `neutral at rest, with a pick shape ${front.arrow.pick} px across`);
 

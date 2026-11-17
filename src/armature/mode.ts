@@ -28,7 +28,7 @@ import '../sculpt/ui/shell.css';
 import { DetailsOverlay, type DetailLine } from '../sculpt/ui/DetailsOverlay';
 import { formatLength } from '../viewer/units';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
-import { HandleKit, RECT_MIN_HALF, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
+import { ARROW_TIP, HandleKit, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
 import { UNITS } from '../viewer/units';
 import { fetchFigure, figureById, tuneRig } from './figures';
@@ -391,10 +391,20 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   scaleTc.setSize(0.75);
   const scaleProxy = new Object3D();
   scaleProxy.name = 'armature-scale';
+  /**
+   * What the pelvis's move gizmo is attached to: a point in the world at
+   * the middle of the box round the hips, where the gizmo should sit (the
+   * pelvis bone's own joint is down at its bottom). A change of it moves
+   * the root by the same step.
+   */
+  const rootProxy = new Object3D();
+  rootProxy.name = 'armature-root-move';
   /** The part's proportions as the drag began. */
   let scaleFrom: { size: number; length: number } | null = null;
   const controls = [rotateTc, moveTc, scaleTc];
   const attached = new Set<TransformControls>();
+  const rootMiddle = new Vector3();
+  const rootStep = new Vector3();
   let dragging = false;
   /** Which handles the selection gets, as in sculpt mode: t, w, e, r. */
   let gizmoMode: 'all' | 'translate' | 'rotate' | 'scale' = 'all';
@@ -451,7 +461,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     });
     tc.addEventListener('objectChange', () => {
       if (tc === scaleTc) scaled();
-      else if (selectedHandle) handleMoved(selectedHandle);
+      else if (tc === moveTc && moveTc.object === rootProxy) {
+        // The proxy was moved from the box's middle: the root goes by that step.
+        armature.rootHandleWorld(rootMiddle);
+        const to = rootProxy.getWorldPosition(rootStep).sub(rootMiddle).add(armature.root.getWorldPosition(rootMiddle));
+        armature.root.position.copy(armature.root.parent ? armature.root.parent.worldToLocal(to) : to);
+        afterGizmo(null);
+      } else if (selectedHandle) handleMoved(selectedHandle);
       else afterGizmo(selected && armature.def(selected)?.kind !== 'root' ? selected : null);
     });
   }
@@ -510,6 +526,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     attached.clear();
     scaleProxy.removeFromParent();
+    rootProxy.removeFromParent();
     selectedHandle = null;
     selected = bone && armature.bones.has(bone) ? bone : null;
     if (selected) {
@@ -537,7 +554,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         scaleProxy.scale.set(1, 1, 1);
       }
       for (const tc of wanted) {
-        tc.attach(tc === scaleTc ? scaleProxy : target);
+        if (tc === moveTc && def.kind === 'root') {
+          armature.rootHandleWorld(rootProxy.position);
+          viewer.scene.add(rootProxy);
+        }
+        tc.attach(tc === scaleTc ? scaleProxy : tc === moveTc && def.kind === 'root' ? rootProxy : target);
         tc.enabled = true;
         tc.getHelper().visible = true;
         attached.add(tc);
@@ -678,7 +699,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const pickList: Ball[] = [];
   // Every figure has one root, so one handle serves them all and is kept
   // through a change of figure.
-  const rootView = kit.create('rect', ROOT_BALL);
+  const rootView = kit.create('box', ROOT_BALL);
   handleGroup.add(rootView.mesh);
   views.set(ROOT_BALL, rootView);
   const make = (shape: HandleShape, name: string): HandleView => {
@@ -738,8 +759,6 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
   const at = new Vector3();
   const joint = new Vector3();
-  const hipA = new Vector3();
-  const hipB = new Vector3();
   const syncHandles = (): void => {
     // Every pose change, selection and figure swap comes through here: the
     // picture changed, so a still frame's smoothing starts over.
@@ -780,13 +799,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         dash.toward.value.copy(target);
       }
     }
-    rootView.mesh.position.copy(armature.rootHandleWorld(at));
-    // The frame round the hips: as wide as the hip joints are apart, plus
-    // the block they sit in, in the proportion of a pelvis.
-    const left = armature.jointWorld('thigh.L', hipA);
-    const right = armature.jointWorld('thigh.R', hipB);
-    const span = left && right ? left.distanceTo(right) : 0.2 * armature.scale;
-    rootView.half.value.set(span * 0.85, span * 0.85 * 0.75);
+    // The box round the hips: the pelvis part's bounds in its own frame.
+    if (armature.rootBoxMatrix(rootView.mesh.matrix)) {
+      rootView.mesh.matrix.decompose(rootView.mesh.position, rootView.mesh.quaternion, rootView.mesh.scale);
+      rootView.mesh.matrixWorldNeedsUpdate = true;
+      rootView.mesh.position.copy(armature.rootHandleWorld(at));
+    }
+    // The pelvis's move gizmo sits in the middle of that box.
+    if (!dragging) rootProxy.position.copy(rootView.mesh.position);
     paintHandles();
   };
   buildHandles();
@@ -843,11 +863,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   let picked: string | null = null;
   /**
    * How near a handle's centre a press has to land to take it, in CSS
-   * pixels: a 44 px circle, the least a finger needs. The root's frame also
-   * takes a press within PICK_EDGE of its outline.
+   * pixels: a 44 px circle, the least a finger needs. The root's box takes
+   * a press inside its outline or within the same distance of an edge.
    */
   const PICK_RADIUS = 22;
-  const PICK_EDGE = 14;
   /**
    * How far a press may travel and still be a tap, in CSS pixels: the
    * viewer's own TAP_SLOP and Sculpt's for a finger (InputShell). A press
@@ -899,46 +918,65 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /** What a press on a handle records: 'aim:<chain>', 'ik:<chain>', 'look:head' or 'root'. */
   const ballName = (b: Ball): string => b.view.name;
   const handlePage = { x: 0, y: 0 };
-  const rimPage = { x: 0, y: 0 };
-  const camSide = new Vector3();
-  /**
-   * The root's frame on the page: its half width and half height in CSS
-   * pixels, as drawn (never under RECT_MIN_HALF). False when it is off the page.
-   */
-  const rootFrame = (out: { hx: number; hy: number }): boolean => {
-    if (!pagePoint(rootView.mesh.position, handlePage)) return false;
-    const half = rootView.half.value;
-    out.hx = out.hy = 0;
-    camSide.setFromMatrixColumn(viewer.camera.matrixWorld, 0).normalize();
-    if (pagePoint(rimAt.copy(rootView.mesh.position).addScaledVector(camSide, half.x), rimPage)) {
-      out.hx = Math.abs(rimPage.x - handlePage.x);
+  /** The box's eight corners on the page, in the order of the cube's bits. */
+  const cornerPage = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
+  const cornerAt = new Vector3();
+  const rootCorners = (): boolean => {
+    rootView.mesh.updateMatrixWorld(true);
+    for (let i = 0; i < 8; i++) {
+      cornerAt.set(i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1).applyMatrix4(rootView.mesh.matrixWorld);
+      if (!pagePoint(cornerAt, cornerPage[i])) return false;
     }
-    camSide.setFromMatrixColumn(viewer.camera.matrixWorld, 1).normalize();
-    if (pagePoint(rimAt.copy(rootView.mesh.position).addScaledVector(camSide, half.y), rimPage)) {
-      out.hy = Math.abs(rimPage.y - handlePage.y);
-    }
-    // Drawn no smaller than the shader's own floor.
-    const grow = Math.max(1, RECT_MIN_HALF / Math.max(0.001, Math.min(out.hx, out.hy)));
-    out.hx *= grow;
-    out.hy *= grow;
     return true;
   };
-  const rootBox = { hx: 0, hy: 0 };
+  /** How far a point is from the segment between two page points. */
+  const segmentDistance = (x: number, y: number, a: { x: number; y: number }, b: { x: number; y: number }): number => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const k = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(x - (a.x + k * dx), y - (a.y + k * dy));
+  };
+  const insideTriangle = (x: number, y: number, a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): boolean => {
+    const s1 = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    const s2 = (c.x - b.x) * (y - b.y) - (c.y - b.y) * (x - b.x);
+    const s3 = (a.x - c.x) * (y - c.y) - (a.y - c.y) * (x - c.x);
+    return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+  };
+  /** The faces of the cube as corner indices, round each face. */
+  const BOX_FACES = [
+    [0, 1, 3, 2],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 3, 7, 6],
+    [0, 2, 6, 4],
+    [1, 3, 7, 5],
+  ];
+  /**
+   * The root's pick shape: inside the box's outline on the page, or within
+   * PICK_RADIUS (22 px, so 44 px across) of any of its edges.
+   */
+  const onRootBox = (x: number, y: number): boolean => {
+    if (!rootCorners()) return false;
+    for (const f of BOX_FACES) {
+      if (insideTriangle(x, y, cornerPage[f[0]], cornerPage[f[1]], cornerPage[f[2]]) || insideTriangle(x, y, cornerPage[f[0]], cornerPage[f[2]], cornerPage[f[3]])) return true;
+    }
+    for (let i = 0; i < 8; i++) {
+      for (const bit of [1, 2, 4]) {
+        if (!(i & bit) && segmentDistance(x, y, cornerPage[i], cornerPage[i | bit]) <= PICK_RADIUS) return true;
+      }
+    }
+    return false;
+  };
   /**
    * How far a press at (x, y) is from a handle's centre, in CSS pixels, if
    * it lands on the handle's pick shape - a 44 px circle round the centre,
-   * and for the root also a band along the outline of its frame - else
-   * Infinity.
+   * and for the root the whole box (onRootBox) - else Infinity.
    */
   const pickDistance = (b: Ball, x: number, y: number): number => {
     if (!b.ball.visible || !pagePoint(b.ball.getWorldPosition(rimAt), handlePage)) return Infinity;
     const d = Math.hypot(handlePage.x - x, handlePage.y - y);
     if (d <= PICK_RADIUS) return d;
-    if (b.kind !== 'root' || !rootFrame(rootBox)) return Infinity;
-    const dx = Math.abs(x - handlePage.x) - rootBox.hx;
-    const dy = Math.abs(y - handlePage.y) - rootBox.hy;
-    const off = dx > 0 || dy > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) : -Math.max(dx, dy);
-    return off <= PICK_EDGE ? d : Infinity;
+    return b.kind === 'root' && onRootBox(x, y) ? d : Infinity;
   };
   /**
    * The handle a press takes: the nearest visible one whose pick shape holds
@@ -2164,6 +2202,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       attached: [...attached].map((tc) => tc.mode).sort(),
       /** Whether the centre still carries the free-rotate sphere. */
       freeRotateOn: freeRotate.length === 0,
+      /** Where the move gizmo sits in the world, if it is up. */
+      moveAt: attached.has(moveTc) && moveTc.object ? moveTc.object.getWorldPosition(new Vector3()).toArray() : null,
     }),
     /** The gizmo handle a press at this page point would take ('X', 'Y', 'XYZ'...), as a press decides; null for none. */
     gizmoAxis: (x: number, y: number): string | null => {
@@ -2201,7 +2241,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       const b = pickList.find((p) => ballName(p) === name);
       const at = b?.ball.visible && handlesOn ? ballOnScreen(b.ball) : null;
       if (!b || !at) return null;
-      const r = b.kind === 'root' ? (rootFrame(rootBox) ? Math.min(rootBox.hx, rootBox.hy) : 0) : RING_RADIUS;
+      const r = b.kind === 'aim' || b.kind === 'look' ? ARROW_TIP : RING_RADIUS;
       return [at[0], at[1], r];
     },
     /**
@@ -2221,7 +2261,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         toward: v.shape === 'arrow' || v.shape === 'dash' ? v.toward.value.toArray() : null,
         from: v.shape === 'dash' ? v.from.value.toArray() : null,
         pick: v.shape === 'dash' || v.shape === 'floor' ? 0 : PICK_RADIUS * 2,
+        edges: v.shape === 'box' ? v.mesh.geometry.getIndex()!.count / 6 : 0,
       };
+    },
+    /**
+     * The root's box: its middle, its eight corners in the world (in the
+     * order of the cube's bits) and its own x axis, which turns with the hips.
+     */
+    rootBox: () => {
+      rootView.mesh.updateMatrixWorld(true);
+      const m = rootView.mesh.matrixWorld;
+      const corners: number[][] = [];
+      for (let i = 0; i < 8; i++) corners.push(new Vector3(i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1).applyMatrix4(m).toArray());
+      return { centre: rootView.mesh.position.toArray(), corners, x: new Vector3().setFromMatrixColumn(m, 0).normalize().toArray() };
     },
     /** The handle colours, hex without the hash: rest, hover, hot (orange) and the casing. */
     handlePalette: () => kit.palette(),

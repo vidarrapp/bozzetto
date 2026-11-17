@@ -1124,13 +1124,71 @@ export class Armature {
   }
 
   /**
-   * Where the root's ball sits in the world: halfway along the pelvis bone,
-   * which is the middle of the blocks' pelvis and inside the mannequins'
-   * hips. The root's own joint is at the bottom of the blocks' pelvis, and
-   * under the centre of its gizmo.
+   * The box round the hips, as a matrix: a unit cube (corners at plus and
+   * minus one) maps onto the box round the pelvis part. The box is upright
+   * as the figure stands - a mannequin's pelvis bone rests tilted forward,
+   * and a box tilted with it would not look like one round the hips - and
+   * turns with the hips from there: its axes are the figure's, as the
+   * pelvis has turned from its rest. It is the least such box that holds
+   * the pelvis part, with a small margin, from the bottom of the part to
+   * the top of the pelvis (the root bone's tail). A rig whose pelvis has no
+   * part mesh gets one from the span of its hip joints. False when the rig
+   * has nothing to frame.
+   */
+  rootBoxMatrix(out: Matrix4): boolean {
+    const bone = this.partBones.get(this.root.name) ?? this.root;
+    const g = this.partGeometry.get(this.root.name);
+    const rest = this.restWorld.get(this.root.name);
+    const centre = _pa;
+    const half = _pb;
+    if (!rest) return false;
+    this.mesh.updateMatrixWorld(true);
+    if (g) {
+      g.boundingBox ??= new Box3().setFromBufferAttribute(g.getAttribute('position') as BufferAttribute);
+      // From the bottom of the part to the top of the pelvis, the root bone's
+      // tail: a mannequin's pelvis mesh runs on up over the belly.
+      const lo = g.boundingBox.min;
+      const hi = g.boundingBox.max;
+      const top = Math.min(hi.y, Math.max(lo.y + this.len(0.1), this.rest.get(this.root.name)?.length ?? hi.y));
+      centre.set((lo.x + hi.x) / 2, (lo.y + top) / 2, (lo.z + hi.z) / 2);
+      half.set((hi.x - lo.x) / 2, (top - lo.y) / 2, (hi.z - lo.z) / 2);
+    } else {
+      const l = this.bones.get('thigh.L');
+      const r = this.bones.get('thigh.R');
+      if (!l || !r) return false;
+      const a = bone.worldToLocal(_pc.setFromMatrixPosition(l.matrixWorld));
+      const b = bone.worldToLocal(_pd.setFromMatrixPosition(r.matrixWorld));
+      centre.addVectors(a, b).multiplyScalar(0.5);
+      const span = a.distanceTo(b);
+      half.set(span * 0.85, span * 0.5, span * 0.55);
+    }
+    // The figure's upright frame at the pelvis: how far it has turned from rest.
+    const upright = this.root.getWorldQuaternion(_lq3).multiply(_lq2.copy(rest.q).invert());
+    _lq2.copy(upright).invert();
+    const origin = _pe.setFromMatrixPosition(bone.matrixWorld);
+    const lo = _pf.set(Infinity, Infinity, Infinity);
+    const hi = _pg.set(-Infinity, -Infinity, -Infinity);
+    for (let i = 0; i < 8; i++) {
+      _pc.set(centre.x + (i & 1 ? half.x : -half.x), centre.y + (i & 2 ? half.y : -half.y), centre.z + (i & 4 ? half.z : -half.z));
+      _pc.applyMatrix4(bone.matrixWorld).sub(origin).applyQuaternion(_lq2);
+      lo.min(_pc);
+      hi.max(_pc);
+    }
+    // A small margin, so the lines stand off the surface.
+    const size = _ph.subVectors(hi, lo).multiplyScalar(0.5).addScalar(this.len(0.008)).multiplyScalar(1.03);
+    const middle = _pc.addVectors(lo, hi).multiplyScalar(0.5).applyQuaternion(upright).add(origin);
+    out.compose(middle, upright, size);
+    return true;
+  }
+
+  /**
+   * Where the root's handle sits in the world: the middle of the box round
+   * the hips (rootBoxMatrix), which is where the pelvis's move gizmo sits
+   * when the pelvis is selected.
    */
   rootHandleWorld(out: Vector3): Vector3 {
-    return this.effectorWorld(this.root.name, out, 0.5);
+    if (!this.rootBoxMatrix(_bm)) return this.effectorWorld(this.root.name, out, 0.5);
+    return out.setFromMatrixPosition(_bm);
   }
 
   /**
@@ -1937,12 +1995,15 @@ const _pc = new Vector3();
 const _pd = new Vector3();
 const _pe = new Vector3();
 const _pf = new Vector3();
+const _pg = new Vector3();
+const _ph = new Vector3();
 const _lf = new Vector3();
 const _lf2 = new Vector3();
 const _lg = new Vector3();
 const _lp = new Vector3();
 const _lq = new Quaternion();
 const _lq2 = new Quaternion();
+const _lq3 = new Quaternion();
 const _lC = new Quaternion();
 const _lCi = new Quaternion();
 const _lT = new Quaternion();
@@ -1951,6 +2012,7 @@ const _lw = new Quaternion();
 const _lh = new Quaternion();
 const _lR = new Quaternion();
 const _le = new Euler();
+const _bm = new Matrix4();
 /** A look is settled when the head faces the point to within a fiftieth of a degree. */
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 
