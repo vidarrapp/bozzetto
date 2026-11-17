@@ -4134,7 +4134,7 @@ export const suites = {
     await pickOne('Torus');
     t.eq(
       await editItems(),
-      'Undo (Ctrl + Z); Redo (Ctrl + Shift + Z); Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Preferences\u2026',
+      'Undo (Ctrl + Z); Redo (Ctrl + Shift + Z); Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Paste picture; Preferences\u2026',
       'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys, and the poly group splits; Merge off with one object, the splits off on an object with one group and nothing hidden',
     );
     // Its items, pressed as a pointer would.
@@ -4288,7 +4288,7 @@ export const suites = {
       return off.join(', ');
     });
     // Publish… is greyed too: this page has no sign-in (its own check is in the publishWindow suite).
-    t.eq(fileItems, 'Save file, Save to library, Keep on this device, Export OBJ, Publish…', 'File greys out the saves and Export OBJ in an empty scene (and Publish…, with no sign-in)');
+    t.eq(fileItems, 'Open recent, Save file, Include references, Keep on this device, Export OBJ, Publish…', 'File greys out the saves and Export OBJ in an empty scene (and Publish…, with no sign-in)');
     // Create adds an object again.
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
     const made = await empty();
@@ -5559,12 +5559,13 @@ export const suites = {
       t.ok(!st.toast && !st.failed.length, `with no notice${st.toast ? ` (said "${st.toast}")` : ''}`);
       t.eq(JSON.stringify(await shelf(guest)), '[]', 'nothing of it is kept on the device shelf');
       t.eq(await guest.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and untouched it is no work to lose: the template is where it was');
-      const guestLib = (await fileItems(guest)).find((i) => i.label === 'Save to library');
-      const [download] = await Promise.all([guest.waitForEvent('download', { timeout: 30_000 }), chooseFile(guest, 'Save to library')]);
+      // A guest has no Save to library (it is there signed in only): Save file downloads the copy.
+      const guestItems = (await fileItems(guest)).map((i) => i.label);
+      const [download] = await Promise.all([guest.waitForEvent('download', { timeout: 30_000 }), chooseFile(guest, 'Save file')]);
       const read = await readBozz(guest, readFileSync(await download.path()));
       t.ok(
-        /\.bozz file/.test(guestLib?.hint ?? '') && /^sculpt-\d{8}-\d{4}\.bozz$/.test(download.suggestedFilename()) && read.objects === made.objects,
-        `Save to library downloads the copy for a guest, as for any new scene (${download.suggestedFilename()}, ${read.objects} objects)`,
+        !guestItems.includes('Save to library') && /^sculpt-\d{8}-\d{4}\.bozz$/.test(download.suggestedFilename()) && read.objects === made.objects,
+        `Save file downloads the copy for a guest, as for any new scene, and there is no Save to library (${download.suggestedFilename()}, ${read.objects} objects)`,
       );
 
       // With work here, the card asks, and Sculpt does not ask again.
