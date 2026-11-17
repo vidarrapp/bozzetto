@@ -150,6 +150,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Sculpt layers.** A new **Layers** tab on the left, after Model, keeps what you sculpt on separate layers, newest on top, with **Base** at the bottom. Each layer has an eye, a name and a weight slider from 0 to 100%; double tap the slider and type a value to go further, or below zero (-100 turns the layer inside out). Work on any subdivision level, step up and down, and the layer's slider moves all of it. Duplicate, **Flatten into base** and Delete are in each row's menu, and **Flatten all** is at the foot. Layers are saved with the project; remesh, merge and the like ask to flatten them first.
 - **Clearer Create window.** New Sculpt is the one lime, recommended choice, and Create timelapse is shown to the owner only, since timelapses are not offered to users right now. Help now opens with Armature, Sculpt and Present.
 - **Slider names when you use them.** The Size and Strength sliders at the left edge name themselves while a finger, the Pencil or the mouse is on them, and on a mouse hover, and are plain lines otherwise. Solo, Negative, Undo and Redo show their name on hover and when you hold them.
 - **A hotkey guide that fits.** Esc closes it, it scrolls inside when the window is short, the keys stay on one line, the descriptions line up, and its gestures cover touch and the Pencil.

@@ -4,6 +4,24 @@ const G = 'Panels';
 
 export const PANELS: Topic[] = [
   {
+    id: 'layers-panel',
+    title: 'Layers panel',
+    group: G,
+    blocks: [
+      p('The **Layers** panel, on the left after Model, holds the active object\'s sculpt layers. A layer keeps what you sculpt on it apart from the rest of the surface, so you can turn it up, down, off, or even inside out, afterwards. The newest layer is on top, and **Base** is always at the bottom.'),
+      options(
+        ['Add layer', 'Makes an empty layer at 100% and makes it the active one. Strokes go into the active layer. With **Base** active, strokes change the surface itself, as without layers.'],
+        ['Eye', 'Hides or shows the layer. A hidden layer keeps its weight and its effect leaves the surface. Sculpting needs the layer shown.'],
+        ['Name', 'Tap the name of the active layer to rename it.'],
+        ['Weight', 'The slider runs from 0 to 100%. Double tap or double click it and type a value to go past the travel: **-100** puts the layer on the other side of the surface, **250** makes it two and a half times as strong. A layer at 0% cannot be sculpted on.'],
+        ['Menu', '**Rename**, **Duplicate** (a copy above, at the same weight, so the two add up), **Flatten into base** (keeps the effect and removes the layer) and **Delete** (removes the layer and its effect).'],
+        ['Flatten all', 'Makes every layer part of the surface.'],
+      ),
+      p('A layer works on any subdivision level: step up and down as you sculpt, and the layer takes the work from whichever level you are on. Its slider moves all of it. Adding a level with **Subdivide** keeps the layers working.'),
+      p('Voxel remesh, Quad remesh, Merge, splitting into objects and dynamic topology rebuild the surface, so they ask first to flatten the layers; Cancel leaves everything as it was. Layers are saved with the project. Ctrl+Z undoes a stroke, a change of weight and a change of the active layer, each in one step.'),
+    ],
+  },
+  {
     id: 'model-panel',
     title: 'Model panel',
     group: G,

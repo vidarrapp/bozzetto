@@ -10,6 +10,7 @@ import { sanitizeLook, sanitizeScene } from './sanitize';
 import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 import type { SavedGroups } from './groupsRecord';
+import type { SavedLayers } from './layers';
 import type { SavedMeasure } from './measure';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
@@ -197,6 +198,15 @@ export interface SavedMesh {
    * it leaves the field behind.
    */
   groups?: SavedGroups;
+  /**
+   * The object's sculpt layers (layers.ts): per layer its name, weight,
+   * visibility and the sparse displacements of the object's highest
+   * level. Optional, with a version of its own, as `source` and
+   * `groups` are: a scene without it opens with no layers, and a build
+   * from before it leaves the field behind (the surface already carries
+   * every layer's effect, so such a build shows the layers flattened).
+   */
+  layers?: SavedLayers;
   /**
    * The object's pinned calipers measurements (measure.ts): two points in
    * the object's local space, a name, and the mirror where one was asked

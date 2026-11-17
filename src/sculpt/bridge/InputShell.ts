@@ -1584,6 +1584,20 @@ export class InputShell {
       }
     }
 
+    // A layer that cannot be sculpted on (hidden, or at 0%) refuses the
+    // stroke before it starts, and says why: orbit instead, as a lock does.
+    if (!this.pickedColor && s.getPicking().intersectionMouseMeshes()) {
+      const hit = s.getPicking().getMesh();
+      if (hit && s.layers.refuse(hit as never, s.getSculptManager().getToolIndex())) {
+        this.restoreStrokeTool();
+        s._action = Enums.Action.NOTHING;
+        this.orbitPointer = e.pointerId;
+        this.verdict?.(`orbit ${e.pointerType} (layer hidden)`);
+        this.hooks.orbitBegin();
+        return;
+      }
+    }
+
     this.worldScale?.sync(); // the depth under this press sets the radius
     this.feedPressure(e); // before start: the first dab already feels it
     // Snapshot BEFORE start() pushes the stroke's undo state, so the

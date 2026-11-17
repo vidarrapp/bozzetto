@@ -64,6 +64,7 @@ import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
+import { LayersPanel } from './ui/LayersPanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { SculptPanel } from './ui/SculptPanel';
@@ -541,6 +542,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // during mount, and a later `let` is a temporal dead zone at that point
   // (found the hard way - the whole sculpt boot died on it).
   let modelPanel: ModelPanel | null = null;
+  let layersPanel: LayersPanel | null = null;
   let materialPanel: MaterialPanel | null = null;
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
@@ -766,6 +768,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
     modelPanel?.refreshGroups();
+    layersPanel?.refresh();
     modelPanel?.refreshMeasures();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
@@ -1331,7 +1334,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    */
   const enterPresent = (): (() => void) => {
     // The Material panel stays: it is a Present panel too (its Surface section goes, its Display stays).
-    const sidePanels = [sculptPanel, scenePanel, modelPanel];
+    const sidePanels = [sculptPanel, scenePanel, modelPanel, layersPanel];
     const was = {
       chrome: chrome.isHidden(),
       render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
@@ -1735,6 +1738,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
+          ['layers', 'Layers'],
           ['material', 'Material'],
           ['sculpt', 'Tool'],
           ['reference', 'Reference'],
@@ -1838,6 +1842,20 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   referenceView = new ReferenceView(referenceBoard, viewer);
   const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
   modelPanel = new ModelPanel(session, viewer);
+  layersPanel = new LayersPanel(session);
+  // A layer edit (a stroke recorded, a weight, an undo) redraws the list and goes to the autosave.
+  session.layers.onChange = () => {
+    layersPanel?.refresh();
+    persist.markDirty();
+  };
+  layersPanel.onEdit = () => {
+    session.render();
+    refreshReadout();
+  };
+  // A stroke the active layer cannot take (hidden, or at 0%) says why.
+  session.layers.onRefuse = (_mesh, why) => {
+    failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
+  };
   materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
       hasObject: () => !!session.getMesh(),
       // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
@@ -2319,6 +2337,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.dispose();
     sculptPanel?.dispose();
     modelPanel?.dispose();
+    layersPanel?.dispose();
+    session.layers.onChange = null;
+    session.layers.onRefuse = null;
     materialPanel?.dispose();
     scenePanel?.dispose();
     offIntake();

@@ -457,6 +457,7 @@ body.bz-shell .panel:not(.panel--left) {
 }
 
 body.bz-shell .panel--model,
+body.bz-shell .panel--layers,
 body.bz-shell .panel--material,
 body.bz-shell .panel--reference,
 body.bz-shell .panel--sculpt {
@@ -1986,4 +1987,144 @@ body.presenting .ref-beside {
   transform-origin: 0 0;
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+/* --- The Layers panel (sculpt/ui/LayersPanel.ts, ui/layerList.ts) ---
+   A row a layer, newest on top, Base fixed at the foot. The active row
+   takes the selected-row fill; the weight slider is the shared field. */
+body.bz-shell .panel--layers {
+  width: min(268px, calc(100vw - 64px));
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-height: 72px;
+}
+
+.layer-row {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 6px 2px 2px;
+  background: transparent;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.layer-row:hover {
+  background: var(--bz-control);
+}
+
+.layer-row--active,
+.layer-row--active:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row__top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+}
+
+.layer-row--base {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+  padding-left: 12px;
+  border-top: 1px solid var(--bz-line);
+  margin-top: 4px;
+}
+
+.layer-row__eye,
+.layer-row .layer-row__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.layer-row .layer-row__more {
+  width: 32px;
+  margin: 0;
+}
+
+.layer-row .layer-row__more::after {
+  margin: 0 0 3px;
+}
+
+.layer-row__eye:hover,
+.layer-row .layer-row__more:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row--hidden .layer-row__name {
+  color: var(--bz-text-3);
+}
+
+.layer-row--hidden .layer-row__eye {
+  color: var(--bz-text-3);
+}
+
+.layer-row__name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-row__badge {
+  flex: none;
+  color: var(--bz-text-2, var(--bz-text-3));
+  font: 11px/16px var(--bz-font-mono);
+  padding: 0 4px;
+}
+
+.layer-row__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--bz-orange);
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  outline: none;
+}
+
+.layer-row__weight {
+  margin: 0 0 4px 44px;
+}
+
+.layer-row .row-menu {
+  position: fixed;
+  z-index: 40;
+}
+
+.file-menu .file-menu__item.file-menu__item--danger,
+.file-menu .file-menu__item.file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
+}
+
+.layers-note {
+  padding: 4px 16px;
+  color: var(--bz-text-3);
+  font: 13px/16px var(--bz-font);
+}
+
+.layers-foot {
+  border-top: 1px solid var(--bz-line);
 }
