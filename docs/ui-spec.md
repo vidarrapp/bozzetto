@@ -495,7 +495,7 @@ Tool and before Render.
 | Window | Change |
 | --- | --- |
 | Under 1100px wide | One panel open in all, not one per side |
-| Under 600px wide (a phone) | An open panel is a sheet across the bottom, the full width, at most half the height, above the tool bar or transport, scrolling inside. Tabs become a row under the title strip, and the upper half of the view stays clear. In the strip every menu name and button is a 44px touch target while the strip stays 32px; the viewer keeps the project title (cut with an ellipsis); the step you are in opens a list of Armature, Sculpt and Present |
+| Under 600px wide (a phone) | Not a target platform (owner, 2026-11-17): it works for a quick demo, and panels open as they do on an iPad. Tabs are one row under the title strip, set a little smaller so they fit; the step you are in opens a list of the workspaces |
 | Under 600px tall | Hints hide; panels use the full height between the strip and the tool bar |
 
 ## 7. Controls

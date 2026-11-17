@@ -687,23 +687,6 @@ body.bz-shell .panel .handle__label {
   }
 }
 
-/* A phone: the open panel is a sheet docked at the bottom, the full width, above
-   the foot bar (the tool bar, the transport, Present's bar), at most half the
-   window tall (shellLayout.ts sets --bz-sheet-bottom and the height limits) and
-   scrolling inside. The tab row stays under the strip, and the upper half of the
-   view stays clear. */
-@media (max-width: 599px) {
-  body.bz-shell .panel,
-  body.bz-shell .panel:not(.panel--left) {
-    top: auto;
-    bottom: var(--bz-sheet-bottom, 0px);
-    left: 0;
-    right: 0;
-    width: 100vw;
-    max-height: var(--bz-max-left, 50vh);
-  }
-}
-
 /* --- the tool bar ----------------------------------------------------------
    One box at the bottom centre, flush to the edge, as wide as its tools. */
 body.bz-shell .sculpt-toolbar {

@@ -34,12 +34,10 @@ export function panelTop(): number {
   return Number.isFinite(top) ? top : PANEL_TOP_DEFAULT;
 }
 
-/** A phone: the panels are one sheet docked at the bottom (shell.css, docs/ui-spec.md section 6). */
+/** A phone-sized window. Phones are not a target: panels open there as they do everywhere (owner, 2026-11-17). */
 export function isPhone(): boolean {
   return window.matchMedia('(max-width: 599px)').matches;
 }
-/** The most of the window a phone's sheet may take. */
-const SHEET_FRACTION = 0.5;
 
 const cued = new WeakSet<HTMLElement>();
 /**
@@ -133,7 +131,7 @@ function placeTabs(): boolean {
   return leftWidth + x <= window.innerWidth;
 }
 
-/** The panels' height limits and, on a phone, the sheet's place. */
+/** The panels' height limits. */
 function setLimits(): void {
   const brushes = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
   if (brushes) paintScrollCue(brushes);
@@ -157,16 +155,6 @@ function setLimits(): void {
 
   // The bottom limit of a panel docked on one side: the edge controls (left
   // only), and the tool bar when it reaches under the panel's columns.
-  if (isPhone()) {
-    // One sheet across the bottom, above the foot bar, at most half the window.
-    const floor = barBox ? vh - barBox.top : 0;
-    const room = Math.max(48, Math.floor(Math.min(vh * SHEET_FRACTION, vh - floor - top)));
-    root.setProperty('--bz-sheet-bottom', `${Math.max(0, Math.round(floor))}px`);
-    root.setProperty('--bz-max-left', `${room}px`);
-    root.setProperty('--bz-max-right', `${room}px`);
-    return;
-  }
-  root.removeProperty('--bz-sheet-bottom');
   const limit = (side: 'left' | 'right'): number => {
     let bottom = vh - GAP;
     const from = side === 'left' ? 0 : vw - panelW;
@@ -238,6 +226,5 @@ export function startShellLayout(): () => void {
     const root = document.documentElement.style;
     root.removeProperty('--bz-max-left');
     root.removeProperty('--bz-max-right');
-    root.removeProperty('--bz-sheet-bottom');
   };
 }
