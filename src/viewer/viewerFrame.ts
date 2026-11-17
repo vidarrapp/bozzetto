@@ -24,9 +24,8 @@ import { layoutShell } from '../sculpt/ui/shellLayout';
  * Present, for the owner; Close, back to where the person came from, ui/origin),
  * Edit, View, Moderation (Report, and the review actions; only when it has
  * one) and Help; the project's name and what it is in the middle; the Star for a
- * member and the hide-interface button at the right; the Render panel under
- * its tab at the right edge and the Material panel under its tab at the left,
- * both shut until opened; and the transport
+ * member and the hide-interface button at the right; the Render and Material panels under
+ * their tabs at the right edge, both shut until opened; and the transport
  * at the foot, with its white play button.
  *
  * It dresses the parts mountViewerParts builds (the viewer, the Render
@@ -76,7 +75,7 @@ export async function mountPublicViewer(
 ): Promise<{ viewer: Viewer; frame: ViewerFrame }> {
   const parts = await mountViewerParts(viewport, manifest, source, onStatus, { author: opts.author, shell: true, frame: true });
   const { viewer, panel, transport } = parts;
-  // How the model is drawn (mode, matcap, shading, wireframe) is the Material tab's at the left, as in Present; Render at the right never holds it.
+  // How the model is drawn (mode, matcap, shading, wireframe) is the Material tab's at the right, with Render, as in Present; Render at the right never holds it.
   new MaterialPanel(viewer, { sculpting: false });
   const timelapse = manifest.mode === 'timelapse';
   const frames = manifest.config.frameCount;

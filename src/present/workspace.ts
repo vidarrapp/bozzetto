@@ -106,7 +106,7 @@ interface Saved {
 interface Mounted {
   parts: ViewerParts;
   output: OutputPanel;
-  /** The left-hand Material tab: how the model is drawn. */
+  /** The right-hand Material tab: how the model is drawn. */
   material: MaterialPanel;
   banner: ScaleBanner<string> | null;
 }
@@ -260,7 +260,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     banner?.dispose();
     output.dispose();
     material.dispose();
-    if (leftOpen === 'material') leftOpen = null;
+    if (rightOpen === 'material') rightOpen = null;
     parts.dispose();
     current = null;
     // The console's handle on the view goes with it; the next view sets its own.
@@ -290,7 +290,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     const frame = v0?.timeline.frameIndex() ?? 0;
     const playing = v0?.timeline.playing ?? true;
     const wasOpen = rightOpen;
-    const materialWasOpen = leftOpen === 'material';
+    const materialWasOpen = wasOpen === 'material';
     takeDown();
     source.entries = items;
     if (items.length === 0) {

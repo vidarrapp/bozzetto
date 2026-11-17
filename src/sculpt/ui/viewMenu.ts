@@ -38,6 +38,13 @@ export interface ViewHooks {
   workspace?: () => { current: Workspace; steps: Partial<Record<Workspace, PathStep>> };
 }
 
+/** The panels in tab order (the left side, then the right); Layers and Reference are reserved for the panels built elsewhere. */
+const PANEL_ORDER = ['scene', 'model', 'layers', 'armature', 'frames', 'project', 'sculpt', 'material', 'reference', 'settings', 'output'];
+const panelRank = (id: string): number => {
+  const i = PANEL_ORDER.indexOf(id);
+  return i < 0 ? PANEL_ORDER.length : i;
+};
+
 /**
  * The View menu of the title strip, the same shape in every place: framing,
  * the viewport's own switches, which panels are open, Hide interface, the
@@ -79,7 +86,7 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
 
   const hide = h.hideInterface;
   group(
-    ...h.panels.map(
+    ...[...h.panels].sort((a, b) => panelRank(a[0]) - panelRank(b[0])).map(
       ([id, name]): MenuItem => ({
         label: `${name} panel`,
         checked: () => panelIsOpen(id),

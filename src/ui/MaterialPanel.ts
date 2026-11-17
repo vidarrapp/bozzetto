@@ -56,7 +56,7 @@ export class MaterialPanel extends SidePanel {
     private readonly viewer: Viewer,
     opts: MaterialPanelOptions,
   ) {
-    super({ id: 'material', title: 'Material', side: 'left', variant: 'panel--material' });
+    super({ id: 'material', title: 'Material', side: 'right', variant: 'panel--material' });
     // The albedo popover is body-mounted; collapsing the panel must take
     // it along or it floats on with its swatch off-screen.
     this.onCollapsedChange = (collapsed) => {

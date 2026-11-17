@@ -280,7 +280,7 @@ export const suites = {
         };
       });
       t.ok(tabs.project && tabs.output && !tabs.render, `Project (left) and Output (right) are open, Render is closed (${JSON.stringify(tabs)})`);
-      t.ok(tabs.names.sort().join() === 'Frames,Material,Output,Project,Render', `the tabs are Frames, Project, Material, Render and Output (${tabs.names})`);
+      t.ok(tabs.names.sort().join() === 'Frames,Material,Output,Project,Render', `the tabs are Frames, Project at the left and Material, Render, Output at the right (${tabs.names})`);
 
       // Hide the interface and back, by the strip's button.
       await p.click('.bz-strip__hide');

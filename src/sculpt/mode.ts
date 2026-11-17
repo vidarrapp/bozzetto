@@ -1834,16 +1834,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           ? [
               ['scene', 'Scene'],
               ['layers', 'Layers'],
-              ['material', 'Material'],
               ['sculpt', 'Tool'],
+              ['material', 'Material'],
               ['reference', 'Reference'],
             ]
           : [
               ['scene', 'Scene'],
               ['model', 'Model'],
               ['layers', 'Layers'],
-              ['material', 'Material'],
               ['sculpt', 'Tool'],
+              ['material', 'Material'],
               ['reference', 'Reference'],
               ['settings', 'Render'],
             ],

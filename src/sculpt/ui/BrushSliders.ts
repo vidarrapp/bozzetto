@@ -2,7 +2,7 @@ import type { InputShell } from '../bridge/InputShell';
 import { hideSliderBubble, showSliderBubble } from '../../ui/sliderBubble';
 import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDoublePress } from '../../ui/sliderEntry';
 import { onTap } from '../../ui/dom';
-import { SHELL_LAYOUT_EVENT } from './shellLayout';
+import { SHELL_LAYOUT_EVENT, isPhone } from './shellLayout';
 import { chordParts, keymap } from '../../ui/keymap';
 import { nameOnLongPress, setTip } from './edgeTip';
 // Flaticon uicons solid straight (fi-ss-*), for the Solo button's glyph, the
@@ -256,9 +256,13 @@ export class BrushSliders {
     return !!p && !p.classList.contains('panel--collapsed');
   }
 
-  /** Whether a panel is open on the left, which needs the height the fields would take. */
+  /**
+   * Whether a panel is open on the left, which needs the height the fields would take
+   * (Material is on the right now, so it leaves them). On a phone any open panel is a
+   * sheet across the bottom, over the place the fields stand.
+   */
   private leftPanelOpen(): boolean {
-    return !!document.querySelector('.panel--left:not(.panel--collapsed)');
+    return !!document.querySelector(isPhone() ? '.panel:not(.panel--collapsed)' : '.panel--left:not(.panel--collapsed)');
   }
 
   private paintFields(): void {

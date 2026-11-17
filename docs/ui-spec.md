@@ -143,12 +143,12 @@ no separate touch density. An earlier draft of this spec had one, with
   a Reset look button, which goes back to the look the scene or project
   opened with (in the viewer, the published look; the view stays, and a
   visitor's changes are never saved). Material is never in it: it is the
-  Material tab at the left in every place, the viewer and review mode
+  Material tab at the right in every place, the viewer and review mode
   included (Display section only, as in Present). What a place cannot do
   stays out of the panel, not out of the order: Cavity (SSAO) only in plain
   Sculpt, Pedestal and Floor offset only where the floor allows them, and
-  the Developer section only with ?dev. The viewer's tab row is Material at
-  the left and Render at the right, and fits a 390px phone.
+  the Developer section only with ?dev. The viewer's tab row is Material and Render at
+  the right, nothing at the left, and fits a 390px phone.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
@@ -305,7 +305,7 @@ big logotype and tagline in the page).
   The Create window lists New Sculpt (the one recommended, lime choice),
   New Armature and Import OBJ; Create timelapse is added for the owner only
   (timelapses are not offered to users, PRODUCT.md).
-- **Go:** Gallery, Community (with accounts), My projects (signed in, not
+- **View:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
   you are on has the check.
@@ -331,7 +331,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model Material │                  │ Tool Reference Render │  tabs
+│ Scene Model Layers   │      │ Tool Material Reference Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -365,12 +365,26 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 ### Panels
 
-- Each side has one panel, docked under the title strip: Scene, Model and
-  Material share the left one, Tool, Reference and Render the right one
-  (owner call, 2026-11-11: one panel open per side, with folder tabs).
-  Reference is in Sculpt and Armature only, not in Present or the viewer.
-  Under 480px wide each tab takes 10px either side of its name instead of
-  16, so the six tabs of a phone stand apart.
+- Each side has one panel, docked under the title strip (owner call,
+  2026-11-11: one panel open per side, with folder tabs). Material is on the
+  right everywhere (owner call, 2026-11-17). Tab order, left to right.
+  Sculpt: left Scene, Model, Layers; right Tool, Material, Reference,
+  Render. Armature: left Armature; right Material, Reference, Render.
+  Present from Sculpt: right Material, Render, Output. The Present
+  workspace: left Frames, Project; right Material, Render, Output. The
+  viewer and review mode: right Material, Render, nothing at the left. The
+  View menu lists the panels in this order. Material and Render share a
+  side, so opening one closes the other.
+- **A phone** (599px and narrower, a finger). The open panel is a sheet
+  docked at the bottom: the full width, at most half the window tall, above
+  the tool bar or transport, scrolling inside; the 3D view is not resized and
+  its upper half stays clear for the Pencil and fingers. The tabs of both
+  sides share one row (up to three left, four right) set smaller with a
+  44px least width, and tighter again where a narrow screen needs it. The
+  tool bar fades at the edge where more tools are out of sight. Every word
+  and button in the strip has a 44px hit area while the strip stays 32px.
+  The viewer's strip keeps the project title, cut with an ellipsis. The
+  step you are in opens a small list of the three workspaces.
 - **Folder tabs.** Above the panel sit its two tabs, each a box of the
   panel's own surface, 2px apart. The tab that is showing is 28px tall,
   joined to the panel with no gap, its name bold. The other is 26px
@@ -441,6 +455,8 @@ Tool and before Render.
 - Where it does not fit (under about 620px wide) it scrolls sideways and
   keeps the active tool in view.
 - On devices with a home indicator it sits above the safe area.
+- On a phone, where it scrolls, it fades at each edge that has more tools
+  behind it and snaps to the tools as it scrolls.
 - **Calipers** (hotkey C) is the last button, after Transform. It is not
   a brush: it measures between two points on the model and edits
   nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
@@ -480,7 +496,7 @@ Tool and before Render.
 | Window | Change |
 | --- | --- |
 | Under 1100px wide | One panel open in all, not one per side |
-| Under 600px wide (a phone) | An open panel is a sheet across the bottom, at most half the height, above the tool bar. Tabs become a row under the title strip |
+| Under 600px wide (a phone) | An open panel is a sheet across the bottom, the full width, at most half the height, above the tool bar or transport, scrolling inside. Tabs become a row under the title strip, and the upper half of the view stays clear. In the strip every menu name and button is a 44px touch target while the strip stays 32px; the viewer keeps the project title (cut with an ellipsis); the step you are in opens a list of Armature, Sculpt and Present |
 | Under 600px tall | Hints hide; panels use the full height between the strip and the tool bar |
 
 ## 7. Controls

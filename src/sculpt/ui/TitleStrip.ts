@@ -222,7 +222,11 @@ export class TitleStrip {
       b.type = 'button';
       b.dataset.workspace = id;
       onTap(b, () => {
-        if (b.getAttribute('aria-current') === 'step') return;
+        if (b.getAttribute('aria-current') === 'step') {
+          // On a phone the other steps are not in the strip: the step you are in opens a list of the three.
+          if (window.matchMedia('(max-width: 599px)').matches) this.toggleStepMenu(b);
+          return;
+        }
         this.stepActions.get(id)?.();
       });
       this.steps.set(id, b);
@@ -274,6 +278,67 @@ export class TitleStrip {
       else if (on) b.title = `${label}, where you are`;
       else b.title = action ? `Go to ${label}` : '';
     }
+  }
+
+  private stepMenu: HTMLDivElement | null = null;
+  private stepMenuOff: (() => void) | null = null;
+
+  private closeStepMenu(): void {
+    this.stepMenuOff?.();
+    this.stepMenuOff = null;
+    this.stepMenu?.remove();
+    this.stepMenu = null;
+    for (const b of this.steps.values()) b.removeAttribute('aria-expanded');
+  }
+
+  /** A phone: the three steps in a small list under the strip, the one you are in ticked. */
+  private toggleStepMenu(anchor: HTMLElement): void {
+    if (this.stepMenu) {
+      this.closeStepMenu();
+      return;
+    }
+    const pop = el('div', 'file-menu bz-ws-menu');
+    pop.setAttribute('role', 'menu');
+    for (const [id, label] of WORKSPACES) {
+      const b = el('button', 'file-menu__item file-menu__item--toggle', label);
+      b.type = 'button';
+      const here = this.steps.get(id)?.getAttribute('aria-current') === 'step';
+      const action = this.stepActions.get(id) ?? null;
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('aria-checked', here ? 'true' : 'false');
+      b.dataset.workspace = id;
+      const reason = this.steps.get(id)?.title;
+      if (!here && !action) {
+        b.disabled = true;
+        if (reason) b.title = reason;
+      }
+      onTap(b, () => {
+        if (b.disabled) return;
+        this.closeStepMenu();
+        if (!here) action?.();
+      });
+      pop.appendChild(b);
+    }
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = `${Math.round(this.el.getBoundingClientRect().bottom)}px`;
+    pop.style.left = `${Math.round(Math.max(0, Math.min(r.left, window.innerWidth - pop.offsetWidth)))}px`;
+    anchor.setAttribute('aria-expanded', 'true');
+    this.stepMenu = pop;
+    const outside = (e: Event): void => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.closeStepMenu();
+    };
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') this.closeStepMenu();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('resize', () => this.closeStepMenu(), { once: true });
+    this.stepMenuOff = () => {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', key, true);
+    };
+    pop.querySelector<HTMLButtonElement>('.file-menu__item:not(:disabled)')?.focus();
   }
 
   /** Put a control at the right of the strip, before `before` (default: the account's place, so before @handle and the hide-interface button). */
@@ -392,6 +457,7 @@ export class TitleStrip {
   }
 
   dispose(): void {
+    this.closeStepMenu();
     for (const part of this.adopted.splice(0)) part.dispose();
     this.offChoice?.();
     this.offKeymap();

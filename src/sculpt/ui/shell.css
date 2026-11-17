@@ -412,10 +412,78 @@ body.bz-shell .bz-ws__sep {
   }
 }
 
-/* A phone: the step you are in, and nothing else; the others are in the View menu. */
+/* A phone: the step you are in, and nothing else; pressing it opens a small list of the three
+   (TitleStrip.ts), and the View menu has them too. A small arrow says it opens. */
 @media (max-width: 599px) {
   body.bz-shell .bz-ws__step:not([aria-current]),
   body.bz-shell .bz-ws__sep {
+    display: none;
+  }
+
+  body.bz-shell .bz-ws__step[aria-current]::before {
+    content: '';
+    order: 1;
+    margin-left: 6px;
+    border: 4px solid transparent;
+    border-top-color: var(--bz-text-2);
+    border-bottom-width: 0;
+  }
+}
+
+/* The small list of the three steps, hanging from the strip. */
+body.bz-shell .bz-ws-menu {
+  min-width: 160px;
+}
+
+/* A phone: the strip stays 32px to look at, but every word and button in it is a 44px
+   touch target. The extra is the hit area only, a pseudo-element reaching 6px above (off
+   the screen) and 6px below the item, over the gap above the tab row; the layout does not
+   move. */
+@media (max-width: 599px) and (pointer: coarse) {
+  body:is(.bz-shell, .bz-page) .bz-menuname,
+  body:is(.bz-shell, .bz-page) .bz-strip__btn,
+  body:is(.bz-shell, .bz-page) .bz-strip__hide,
+  body.bz-shell .bz-ws__step {
+    position: relative;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-menuname::after,
+  body:is(.bz-shell, .bz-page) .bz-strip__btn::after,
+  body:is(.bz-shell, .bz-page) .bz-strip__hide::after,
+  body.bz-shell .bz-ws__step::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    left: 0;
+    right: 0;
+  }
+}
+
+/* The public viewer on a phone keeps the project's title, cut with an ellipsis where it is long. */
+@media (max-width: 599px) {
+  body.bz-viewer .bz-strip {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  body.bz-viewer .bz-strip__right {
+    grid-column: 3;
+  }
+
+  body.bz-viewer .bz-readout {
+    display: flex;
+    grid-column: 2;
+    justify-content: flex-start;
+    padding: 0 4px;
+  }
+
+  body.bz-viewer .bz-readout__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.bz-viewer .bz-readout > :not(.bz-readout__name) {
     display: none;
   }
 }
@@ -599,18 +667,40 @@ body.bz-shell .panel .handle__label {
   color: inherit;
 }
 
-/* A narrow screen: six tabs (three each side, with Reference) must not run into one another, so each
-   takes less room around its name. */
-@media (max-width: 480px) {
+/* A phone: up to three tabs on the left and four on the right (Scene, Model, Layers;
+   Tool, Material, Reference, Render) share one 390px row. Chosen over a scrolling row:
+   the tabs are fixed to the screen and each stays one tap away, none hidden off an edge,
+   so the labels are set a little smaller with 8px either side and a 44px least width
+   (a hand's width), which seven of them fit. Where even that would overlap (a narrower
+   screen), shellLayout.ts sets data-tabs-tight on the page and the padding drops to 3px. */
+@media (max-width: 599px) {
   body.bz-shell .panel > .panel__handle {
-    padding: 0 10px;
+    padding: 0 8px;
+    min-width: 44px;
+    font-size: 12px;
+  }
+
+  html[data-tabs-tight] body.bz-shell .panel > .panel__handle {
+    padding: 0 3px;
+    min-width: 0;
+    font-size: 11px;
   }
 }
 
-/* A phone: an open panel may cover the width. */
+/* A phone: the open panel is a sheet docked at the bottom, the full width, above
+   the foot bar (the tool bar, the transport, Present's bar), at most half the
+   window tall (shellLayout.ts sets --bz-sheet-bottom and the height limits) and
+   scrolling inside. The tab row stays under the strip, and the upper half of the
+   view stays clear. */
 @media (max-width: 599px) {
-  body.bz-shell .panel {
+  body.bz-shell .panel,
+  body.bz-shell .panel:not(.panel--left) {
+    top: auto;
+    bottom: var(--bz-sheet-bottom, 0px);
+    left: 0;
+    right: 0;
     width: 100vw;
+    max-height: var(--bz-max-left, 50vh);
   }
 }
 
@@ -647,6 +737,29 @@ body.bz-shell .sculpt-toolbar__brushes {
   body.bz-shell .sculpt-toolbar__brushes {
     overflow-x: auto;
     scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 12px;
+    overscroll-behavior-x: contain;
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes .sculpt-toolbar__btn {
+    scroll-snap-align: start;
+  }
+
+  /* More tools out of sight: the bar fades at the edge that is cut (shellLayout.ts sets data-scroll-cue). */
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='end'] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='start'] {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+  }
+
+  body.bz-shell .sculpt-toolbar__brushes[data-scroll-cue='both'] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
   }
 }
 
@@ -1022,8 +1135,8 @@ body.bz-shell .update-notice--beside-panel {
    What edits is put away and locked: the tool bar, the edge controls, the
    brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Material
-   stays as the left-hand tab (its Surface section goes, its Display stays);
-   Render and Output remain as the right-hand tabs. The Output tab and panel exist in
+   stays as a right-hand tab (its Surface section goes, its Display stays);
+   Render and Output remain beside it as right-hand tabs. The Output tab and panel exist in
    Present only. */
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,
