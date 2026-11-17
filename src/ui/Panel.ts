@@ -151,6 +151,7 @@ export class Panel {
   /** Output-grade select (Camera section). */
   private toneSelect?: HTMLSelectElement;
   private lightControls?: HTMLDivElement;
+  private presetSelect?: HTMLSelectElement;
 
   constructor(
     private readonly viewer: Viewer,
@@ -482,8 +483,17 @@ export class Panel {
       opt.textContent = preset.label;
       presetSelect.appendChild(opt);
     }
-    presetSelect.value = this.viewer.manifest.defaults.lightingPreset;
+    // Said as the lights are: a rig that matches no preset is Custom, and
+    // one with the fill and the rim off is not "Three-point".
+    const custom = document.createElement('option');
+    custom.value = CUSTOM_PRESET;
+    custom.textContent = 'Custom';
+    custom.hidden = true;
+    presetSelect.appendChild(custom);
+    this.presetSelect = presetSelect;
+    this.syncPreset();
     presetSelect.addEventListener('change', () => {
+      if (presetSelect.value === CUSTOM_PRESET) return;
       this.viewer.lighting.applyPreset(presetSelect.value);
       this.rebuildLightControls();
     });
@@ -537,7 +547,18 @@ export class Panel {
       .then(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')));
   }
 
+  /** The Preset select shows the preset the lights are at, or Custom. */
+  private syncPreset(): void {
+    const sel = this.presetSelect;
+    if (!sel) return;
+    const id = this.viewer.lighting.activePreset();
+    const custom = [...sel.options].find((o) => o.value === CUSTOM_PRESET);
+    if (custom) custom.hidden = id !== null;
+    sel.value = id ?? CUSTOM_PRESET;
+  }
+
   private rebuildLightControls(): void {
+    this.syncPreset();
     if (!this.lightControls) return;
     this.lightControls.replaceChildren();
     for (const light of this.viewer.lighting.state()) {
@@ -565,7 +586,10 @@ export class Panel {
             LIGHT_INTENSITY_MAX,
             0.1,
             light.intensity,
-            (v) => this.viewer.lighting.setIntensity(light.id, v),
+            (v) => {
+                this.viewer.lighting.setIntensity(light.id, v);
+                this.syncPreset();
+              },
             { limits: AMOUNT },
           ),
         );
@@ -587,7 +611,10 @@ export class Panel {
         let picker = this.lightPickers.get(light.id);
         if (!picker) {
           const id = light.id;
-          const setColor = (hex: string): void => this.viewer.lighting.setColor(id, hex);
+          const setColor = (hex: string): void => {
+            this.viewer.lighting.setColor(id, hex);
+            this.syncPreset();
+          };
           picker = colorPicker(light.color, setColor);
           // Drag the swatch onto the view to light with a colour off the frame.
           installSwatchPick(picker, this.viewer, setColor);
@@ -630,6 +657,7 @@ export class Panel {
     const az = which === 'az' ? value : current.azimuth;
     const el = which === 'el' ? value : current.elevation;
     this.viewer.lighting.setAngles(id, az, el);
+    this.syncPreset();
   }
 
   // --- environment (editor only) ----------------------------------------
@@ -914,6 +942,9 @@ function devMode(): boolean {
 const AMOUNT: Limits = { min: 0 }; // an intensity, a strength, a softness: no less than none
 const FRACTION: Limits = { min: 0, max: 1 }; // an opacity, a roughness, a metalness, a blur
 const DEGREES: Limits = { min: 0, wrap: 360 }; // a turn, wrapped
+
+/** The Preset select's value for lights that match no preset. */
+const CUSTOM_PRESET = 'custom';
 
 /**
  * Slider travel for the light and HDRI intensities (owner call: most of the
@@ -1218,9 +1249,9 @@ export class MaterialControls {
     this.smoothCheckbox = smooth.querySelector('input')!;
     material.appendChild(smooth);
 
-    const wire = checkbox(keyedLabel('Wireframe', 'view.wireframe'), this.viewer.isWireframe(), (on) =>
-      this.viewer.setWireframe(on),
-    );
+    // The label is the name alone; the hotkey is in the tooltip and the View menu.
+    const wire = checkbox('Wireframe', this.viewer.isWireframe(), (on) => this.viewer.setWireframe(on));
+    wire.title = keyedLabel('Wireframe', 'view.wireframe');
     this.wireframeCheckbox = wire.querySelector('input')!;
     material.appendChild(wire);
 

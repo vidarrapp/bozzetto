@@ -150,6 +150,12 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Clearer Create window.** New Sculpt is the one lime, recommended choice, and Create timelapse is shown to the owner only, since timelapses are not offered to users right now. Help now opens with Armature, Sculpt and Present.
+- **Slider names when you use them.** The Size and Strength sliders at the left edge name themselves while a finger, the Pencil or the mouse is on them, and on a mouse hover, and are plain lines otherwise. Solo, Negative, Undo and Redo show their name on hover and when you hold them.
+- **A hotkey guide that fits.** Esc closes it, it scrolls inside when the window is short, the keys stay on one line, the descriptions line up, and its gestures cover touch and the Pencil.
+- **Buttons and badges in Familjen Grotesk.** The Create tile and window, the In progress badge and other buttons and badges are in sentence case instead of Martian Mono capitals, and Help's Close is a plain button.
+- **Panel labels without hotkeys.** The Render panel says Wireframe, and the key is in its tooltip and the View menu.
+- **A truthful lighting preset.** Sculpt opens with the key light alone and the Preset now says Key only (Three-point has the fill and rim on). Change a light and it reads Custom. Saved scenes look as they did.
 - **Questions in the app's own window.** Delete, New sculpt, Delete highest level, opening over work in progress, Close without saving and the like now ask in a Bozzetto window that names the thing and puts the verb on the button. Anything that loses work is a red button with the focus on Cancel; Esc or a tap outside cancels.
 - **Hiding the interface slides.** Tab (or the eye button) now slides the left tabs and the brush controls out to the left, the right tabs out to the right, the tool bar and transport down and the menu bar up, and brings them back the same way; with reduced motion it is instant as before.
 - **Sliders you can grab anywhere.** On a phone or iPad, press anywhere on a slider's row (its name, its number or its line) and drag sideways to change it, so a slider at 0 or full is no longer hard to catch. A plain tap does nothing, and dragging up or down still scrolls the panel. Depth of field now sits under **Camera** in the Render panel.

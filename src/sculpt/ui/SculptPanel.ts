@@ -676,9 +676,8 @@ export class SculptPanel extends SidePanel {
   private buildSymmetry(body: HTMLElement): void {
     const sec = section(body, 'Symmetry');
     this.symSection = sec;
-    const box = checkbox(keyedLabel('Mirror sculpting', 'brush.symmetry'), this.session.getSymmetry(), () =>
-      this.session.toggleSymmetry(),
-    );
+    const box = checkbox('Mirror sculpting', this.session.getSymmetry(), () => this.session.toggleSymmetry());
+    box.title = keyedLabel('Mirror sculpting', 'brush.symmetry');
     this.symCheckbox = box.querySelector('input') as HTMLInputElement;
     sec.appendChild(box);
     // The X key toggles the same flag; keep the checkbox honest.

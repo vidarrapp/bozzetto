@@ -808,6 +808,74 @@ body.bz-shell .bz-edge .sculpt-slider__val {
   pointer-events: none;
 }
 
+/* The name of an upright field ("Size", "Strength"): beside its value, only
+   while a finger, the Pencil or the mouse presses it, and on a mouse hover.
+   Never a standing label. Familjen Grotesk, secondary grey, no box. */
+body.bz-shell .bz-edge .sculpt-slider__name {
+  display: none;
+  position: absolute;
+  left: 46px;
+  bottom: calc(100% + 4px);
+  color: var(--bz-text-2);
+  font: 400 11px/14px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+body.bz-shell .bz-edge .sculpt-slider.is-using .sculpt-slider__name {
+  display: block;
+}
+
+@media (hover: hover) {
+  body.bz-shell .bz-edge .sculpt-slider:hover .sculpt-slider__name {
+    display: block;
+  }
+}
+
+/* The edge buttons' names, as the tool bar's are but to the right of the
+   button: on a mouse hover, on the keyboard, and while a finger or the
+   Pencil holds the button (.is-tip, edgeTip.ts). */
+body.bz-shell .bz-edge .sculpt-histbtn,
+body.bz-shell .bz-edge .sculpt-solobtn,
+body.bz-shell .bz-edge .sculpt-toolbar__btn {
+  position: relative;
+}
+
+body.bz-shell .bz-edge .bz-tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+body.bz-shell .bz-edge .bz-tip__key {
+  font: 400 11px/16px var(--bz-font-mono);
+  color: var(--bz-text-2);
+}
+
+body.bz-shell .bz-edge .is-tip > .bz-tip,
+body.bz-shell .bz-edge button:focus-visible > .bz-tip {
+  display: flex;
+}
+
+@media (hover: hover) {
+  body.bz-shell .bz-edge button:hover > .bz-tip {
+    display: flex;
+  }
+}
+
 /* A phone: the tool bar spans the width, so the edge controls stand above it. */
 @media (max-width: 660px) {
   body.bz-shell:has(.sculpt-toolbar__brushes) .bz-edge {

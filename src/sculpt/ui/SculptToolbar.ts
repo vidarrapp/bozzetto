@@ -223,6 +223,7 @@ export class SculptToolbar {
       'Carve (negative): tap to carve the next stroke, long-press to keep carving until a tap. Alt + drag does the opposite of the button',
       'negative',
       'fi-ss-circle-half-stroke',
+      'Negative',
     );
     this.negativeBtn.addEventListener('pointerdown', this.onNegativeDown);
     // The keyboard's and assistive tech's press, as for onTap. A pointer's

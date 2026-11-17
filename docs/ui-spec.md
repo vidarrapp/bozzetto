@@ -290,6 +290,9 @@ big logotype and tagline in the page).
 - **File:** New sculpt, New armature, Import OBJ…. What the gallery's
   Create card offers, with the same question about saving on this device
   that Import OBJ asks.
+  The Create window lists New Sculpt (the one recommended, lime choice),
+  New Armature and Import OBJ; Create timelapse is added for the owner only
+  (timelapses are not offered to users, PRODUCT.md).
 - **Go:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
@@ -489,3 +492,17 @@ moved the layout later; that produced an in-between look and is dropped.
 
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
+
+## Clarity rules (design critique, 2026-11)
+
+- The edge sliders' names (Size, Strength) show only while the slider is
+  pressed or hovered: Familjen Grotesk 11px, secondary grey, beside the
+  value, no box. The edge buttons (Solo, Negative, Undo, Redo) name
+  themselves on hover and on a long press, as the tool bar's do.
+- Esc closes the hotkey guide first; it scrolls inside, chips never wrap and
+  descriptions align left in one column.
+- Martian Mono capitals are for values and small section headers only;
+  buttons, chips and badges are Familjen Grotesk in sentence case.
+- Panel labels carry no hotkeys; the key is in the tooltip and the View menu.
+- The Render panel's Preset names the lights as they are: Three-point (all
+  three on), Key only (Sculpt's opening look), Raking key, or Custom.
