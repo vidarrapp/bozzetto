@@ -280,6 +280,8 @@ async function armatureControls(page, base, t) {
   t.ok(picked.look.state === 'hot' && picked.look.colour === palette.hot, 'the box is orange while the pelvis is selected');
   t.ok(picked.gizmo.moveAt && dist(picked.gizmo.moveAt, picked.centre) < 0.01, "and the pelvis's move gizmo sits in the middle of the box");
   await page.evaluate(() => window.__armature.select(null));
+  // (The undo above puts the figure back a moment later: let it settle.)
+  await page.waitForTimeout(600);
   // A press on an edge, and 20 px outside it, takes the root; a drag from there moves the figure and lights the box.
   const edge = await page.evaluate(() => {
     const a = window.__armature;
