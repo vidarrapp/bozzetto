@@ -23,9 +23,50 @@
  */
 export const PANEL_TOP_DEFAULT = 56;
 export function panelTop(): number {
-  const panel = document.querySelector<HTMLElement>('body.bz-shell .panel');
-  const top = panel ? parseFloat(getComputedStyle(panel).top) : NaN;
+  // Read from a probe that stands where the panels start (a phone's panels are docked
+  // at the bottom, so a panel's own top says nothing there).
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;top:var(--bz-panel-top)';
+  // In the strip, not the body: the layout watches the body's children and would run again.
+  (document.querySelector('.bz-strip') ?? document.body).appendChild(probe);
+  const top = parseFloat(getComputedStyle(probe).top);
+  probe.remove();
   return Number.isFinite(top) ? top : PANEL_TOP_DEFAULT;
+}
+
+/** A phone-sized window. Phones are not a target: panels open there as they do everywhere (owner, 2026-11-17). */
+export function isPhone(): boolean {
+  return window.matchMedia('(max-width: 599px)').matches;
+}
+
+const cued = new WeakSet<HTMLElement>();
+/**
+ * The tool bar scrolls sideways where it does not fit; say so with a fade at
+ * each edge that has more behind it (data-scroll-cue: none, start, end, both).
+ */
+function paintScrollCue(bar: HTMLElement): void {
+  if (!cued.has(bar)) {
+    cued.add(bar);
+    // Also once the scroll has settled: a snap can end the move without one last scroll event.
+    let settle = 0;
+    bar.addEventListener(
+      'scroll',
+      () => {
+        paintScrollCue(bar);
+        clearTimeout(settle);
+        settle = window.setTimeout(() => paintScrollCue(bar), 120);
+      },
+      { passive: true },
+    );
+    bar.addEventListener('scrollend', () => paintScrollCue(bar));
+  }
+  const max = bar.scrollWidth - bar.clientWidth;
+  const at = bar.scrollLeft;
+  const more = max > 1;
+  const start = more && at > 1;
+  const end = more && at < max - 1;
+  const cue = start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
+  if (bar.dataset.scrollCue !== cue) bar.dataset.scrollCue = cue;
 }
 export const PANEL_WIDTH = 304;
 
@@ -42,8 +83,9 @@ const GAP = 16;
 export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
-const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--frames', 'panel--project', 'panel--material'];
-const RIGHT_ORDER = ['panel--sculpt', 'panel--reference', 'panel--render', 'panel--output'];
+// Layers and Reference are built elsewhere; their places are kept here.
+const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--frames', 'panel--project'];
+const RIGHT_ORDER = ['panel--sculpt', 'panel--material', 'panel--reference', 'panel--render', 'panel--output'];
 
 function tabsOf(order: string[]): HTMLElement[] {
   const out: HTMLElement[] = [];
@@ -58,6 +100,18 @@ function tabsOf(order: string[]): HTMLElement[] {
 /** Lay the tabs along their edges and set the panels' height limits. */
 export function layoutShell(): void {
   if (!document.body.classList.contains('bz-shell')) return;
+  const html = document.documentElement;
+  // A phone with a full row of tabs: the tight set when the roomier one would overlap.
+  html.removeAttribute('data-tabs-tight');
+  if (!placeTabs() && isPhone()) {
+    html.setAttribute('data-tabs-tight', '');
+    placeTabs();
+  }
+  setLimits();
+}
+
+/** Put the tabs along their edges; false when the left row and the right row would meet. */
+function placeTabs(): boolean {
   let x = 0;
   for (const tab of tabsOf(LEFT_ORDER)) {
     tab.style.left = `${x}px`;
@@ -66,6 +120,7 @@ export function layoutShell(): void {
   }
   // How far the whole row travels when the interface is hidden (see shell.css).
   document.documentElement.style.setProperty('--bz-tabs-left', `${x}px`);
+  const leftWidth = x;
   x = 0;
   for (const tab of tabsOf(RIGHT_ORDER).reverse()) {
     tab.style.right = `${x}px`;
@@ -73,6 +128,13 @@ export function layoutShell(): void {
     x += tab.getBoundingClientRect().width + 1;
   }
   document.documentElement.style.setProperty('--bz-tabs-right', `${x}px`);
+  return leftWidth + x <= window.innerWidth;
+}
+
+/** The panels' height limits. */
+function setLimits(): void {
+  const brushes = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
+  if (brushes) paintScrollCue(brushes);
 
   // The slid-away bars are measured where they are not: leave the limits as they were.
   if (document.body.classList.contains('chrome-hidden')) return;
@@ -137,16 +199,30 @@ export function startShellLayout(): () => void {
   });
   mo.observe(document.body, { childList: true });
   watch();
-  window.addEventListener('resize', soon);
+  // A resize can flip the phone rules (tab size) a moment after the event: measure once more when it has settled.
+  let late = 0;
+  const afterResize = (): void => {
+    soon();
+    clearTimeout(late);
+    late = window.setTimeout(soon, 400);
+  };
+  window.addEventListener('resize', afterResize);
+  const phoneRules = window.matchMedia('(max-width: 599px)');
+  phoneRules.addEventListener('change', afterResize);
   window.addEventListener(SHELL_LAYOUT_EVENT, soon);
+  // A panel sliding in or out moves its tab while it goes (the tab is fixed inside it): measure again once it has stopped.
+  document.addEventListener('transitionend', soon, true);
   void document.fonts?.ready.then(soon);
   soon();
   return () => {
     clearTimeout(timer);
+    clearTimeout(late);
     ro.disconnect();
     mo.disconnect();
-    window.removeEventListener('resize', soon);
+    window.removeEventListener('resize', afterResize);
+    phoneRules.removeEventListener('change', afterResize);
     window.removeEventListener(SHELL_LAYOUT_EVENT, soon);
+    document.removeEventListener('transitionend', soon, true);
     const root = document.documentElement.style;
     root.removeProperty('--bz-max-left');
     root.removeProperty('--bz-max-right');

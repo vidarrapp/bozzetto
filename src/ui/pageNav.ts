@@ -14,7 +14,7 @@ import { chooseObj, startArmature, startSculpt } from './startWork';
  * strip the workspaces have, with the same height, look and behaviour.
  *
  * At the left File (New sculpt, New armature, Import OBJ…, what the gallery's
- * Create card offers), Go (Gallery, Community, My projects, Review with its
+ * Create card offers), View (Gallery, Community, My projects, Review with its
  * count, Owner tools: each only for whoever may see it, the page one is on
  * checked) and Help (the same three items as everywhere). In the middle the
  * page's name. At the right, for a guest, Install and Sign in as strip
@@ -26,7 +26,7 @@ import { chooseObj, startArmature, startSculpt } from './startWork';
  * person sees. `again` hears a sign-in made from the strip, so the page can
  * draw itself again for whoever it is for now.
  *
- * Hooks for tests: `.bz-strip` (`body.bz-page`), `.bz-menuname` (File, Go,
+ * Hooks for tests: `.bz-strip` (`body.bz-page`), `.bz-menuname` (File, View,
  * Help), `.file-menu--go` with `.file-menu__item[data-page]`, `.bz-readout__name`,
  * `.bz-strip__btn` (Install, Sign in, Sign out, Suspended), `.account-menu__chip`.
  */
@@ -84,7 +84,7 @@ export function pageNav(current: PageId | null, name: string): PageNav {
     strip.menus,
     true,
   );
-  const go = new TopMenu('Go', goItems(current, null, null), 'file-menu--go', strip.menus, true);
+  const go = new TopMenu('View', goItems(current, null, null), 'file-menu--go', strip.menus, true);
   const help = new TopMenu(
     'Help',
     helpItems(),
@@ -177,7 +177,7 @@ export function pageNav(current: PageId | null, name: string): PageNav {
   };
 }
 
-/** Go: the places this person may go to, the one they are at checked. */
+/** View: the places this person may go to, the one they are at checked. */
 function goItems(current: PageId | null, signIn: SignIn | null, waiting: (() => number | null) | null): MenuItem[] {
   const role: Role = signIn ? roleOf(signIn) : 'guest';
   const me = signIn?.me ?? null;

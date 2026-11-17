@@ -42,12 +42,17 @@ const stripState = (page) =>
       const r = e.getBoundingClientRect();
       return { name: e.textContent.trim(), top: r.top, bottom: r.bottom, left: r.left, right: r.right, border: getComputedStyle(e).borderLeftWidth + getComputedStyle(e).borderRightWidth, fill: getComputedStyle(e).backgroundColor, shadow: getComputedStyle(e).boxShadow };
     });
-    const panel = document.querySelector('.panel');
+    // Where the panels start under the tab row (a phone's panels are docked at the bottom, so a probe, not a panel).
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;top:var(--bz-panel-top)';
+    strip.appendChild(probe);
+    const panelTop = parseFloat(getComputedStyle(probe).top);
+    probe.remove();
     return {
       strip: { top: sr.top, bottom: sr.bottom, height: sr.height },
       items,
       tabs,
-      panelTop: panel ? parseFloat(getComputedStyle(panel).top) : null,
+      panelTop,
       cssStrip: getComputedStyle(document.body).getPropertyValue('--bz-strip-h').trim(),
       pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
@@ -100,7 +105,7 @@ export const suites = {
       t.ok(s.pageOverflow <= 0, `Sculpt: nothing scrolls sideways (${s.pageOverflow})`);
       await menuChecks(p, t, 'Sculpt', 'View');
 
-      // A panel open: it starts under the tab row and the tab row keeps its place.
+      // A panel open: it is a sheet at the bottom and the tab row keeps its place.
       await p.evaluate(() => document.querySelector('.panel--render .panel__handle').click());
       await p.waitForTimeout(250);
       const open = await p.evaluate(() => {
@@ -108,7 +113,8 @@ export const suites = {
         return { top: r.top, bottom: r.bottom };
       });
       const s2 = await stripState(p);
-      t.ok(Math.abs(open.top - (s2.strip.bottom + 32)) < 0.5 && open.bottom <= 844, `Sculpt: an open panel starts under the tab row (${open.top}, strip ends ${s2.strip.bottom}) and ends on the screen (${open.bottom})`);
+      t.ok(open.top > s2.strip.bottom + 32 && open.bottom <= 844, `Sculpt: an open panel stands clear of the tab row (${open.top}, strip ends ${s2.strip.bottom}) and ends on the screen (${open.bottom})`);
+      tabRowChecks(t, s2, 'Sculpt with a panel open');
       await p.evaluate(() => document.querySelector('.panel--render .panel__handle').click());
       await p.waitForTimeout(150);
 
@@ -147,7 +153,7 @@ export const suites = {
         const fields = document.querySelector('.bz-edge .sculpt-slider');
         return { h: Math.round(r.height), fields: !!fields && fields.getClientRects().length > 0 && !fields.closest('[hidden]') };
       });
-      t.ok(mat.h > 400 && !mat.fields, `Sculpt: Material opens to its sections, the brush fields put away (${JSON.stringify(mat)})`);
+      t.ok(mat.h > 300 && !mat.fields, `Sculpt: Material opens to its sections, the brush fields put away (${JSON.stringify(mat)})`);
       // One panel at a time: the two sides would cover each other here.
       await tab('sculpt');
       await p.waitForTimeout(250);
@@ -204,6 +210,40 @@ export const suites = {
       await openSculpt(p, base);
       s = await stripState(p);
       t.ok(s.strip.height === 24 && s.cssStrip === '24px' && itemsFit(s) && s.panelTop === 56, `an iPad (820 wide, touch): the strip stays 24px, its items fit, the panels start at 56 (${showItems(s)}; panels ${s.panelTop})`);
+    });
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // The seven tabs a phone may hold (three left, four right): the reserved Layers and Reference stood in as plain tabs.
+  async shellPhoneTabs(page, base, t) {
+    const errors = await inContext(page, PHONE, async (p) => {
+      await openSculpt(p, base);
+      await p.evaluate(() => {
+        for (const [cls, name, left] of [['layers', 'Layers', true], ['reference', 'Reference', false]].filter(([c]) => !document.querySelector(`.panel--${c}`))) {
+          const root = document.createElement('div');
+          root.className = `panel ${left ? 'panel--left ' : ''}panel--${cls} panel--collapsed`;
+          const b = document.createElement('button');
+          b.className = 'panel__handle';
+          b.innerHTML = `<span class="handle__label">${name}</span>`;
+          root.appendChild(b);
+          document.body.appendChild(root);
+        }
+      });
+      await p.waitForTimeout(500);
+      const row = await p.evaluate(() =>
+        [...document.querySelectorAll('.panel > .panel__handle')]
+          .filter((e) => e.getClientRects().length > 0)
+          .map((e) => {
+            const r = e.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return { name: e.querySelector('.handle__label').textContent.trim(), left: r.left, right: r.right, side: e.closest('.panel--left') ? 'left' : 'right', reach: !!hit && e.contains(hit), tight: document.documentElement.hasAttribute('data-tabs-tight') };
+          })
+          .sort((a, b) => a.left - b.left),
+      );
+      t.eq(row.map((x) => `${x.side[0]}:${x.name}`).join(','), 'l:Scene,l:Model,l:Layers,r:Tool,r:Material,r:Reference,r:Render', 'the row holds Scene, Model, Layers at the left and Tool, Material, Reference, Render at the right, in that order');
+      t.ok(row.every((x, i) => x.left >= 0 && x.right <= 390 && (i === 0 || x.left >= row[i - 1].right + 0.5)), `no tab overlaps another and all are on the screen (${row.map((x) => `${x.name} ${Math.round(x.left)}-${Math.round(x.right)}`).join(', ')})`);
+      t.ok(row.every((x) => x.reach), `each tab is what a finger at its middle reaches (${row.filter((x) => !x.reach).map((x) => x.name).join(', ')})`);
+      t.ok(row.every((x) => x.right - x.left >= 36), `and each is wide enough to press (${row.map((x) => Math.round(x.right - x.left)).join(', ')}; tight set ${row[0]?.tight})`);
     });
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },

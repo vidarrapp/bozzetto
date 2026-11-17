@@ -3,7 +3,7 @@
 // review mode (viewerFrame's viewerReview) and the Present workspace
 // (framePresent) all open it on Lighting, Camera, Environment, Ambient
 // occlusion, in that order, with the full per-light rig, a Reset look button
-// and no Material (that is the left tab's). Here: the three places the plain
+// and no Material (that is the Material tab's). Here: the three places the plain
 // static server reaches, Reset look in the viewer, and the viewer's tab row
 // at a phone's width.
 import { openArmature, openSculpt } from './lib.mjs';
@@ -79,7 +79,7 @@ export const suites = {
     t.ok(after.lens !== 85 && after.dof === false && after.box === false, `and the lens and depth of field (${after.lens}mm, depth of field ${after.dof})`);
     t.eq(after.cam, cam, 'and leaves the view where the visitor has it');
 
-    // The viewer's tab row on a phone: Material at the left, Render at the right, both inside the screen and clear of each other.
+    // The viewer's tab row on a phone: Material and Render, both at the right, inside the screen and clear of each other.
     const ctx = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, serviceWorkers: 'block' });
     try {
       const p = await ctx.newPage();

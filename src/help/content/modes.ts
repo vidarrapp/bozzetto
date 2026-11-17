@@ -62,7 +62,7 @@ export const MODES: Topic[] = [
       options(
         ['Frames (left)', '**Sequence**: drop .obj or .glb files, or **Choose files**; **OBJ files are Z-up** for .obj files from a Z-up app; the number of frames and what is held in memory; **Add more**, and the trash, which clears the frames after asking. Nothing reaches the site until **Save**.'],
         ['Project (left)', '**Settings**: the title, **Mode** (**Timelapse** or **Model**), **Visibility** (Public or Private) and, for a timelapse, **Frames per second**. **Stages**: the list, the one at the playhead marked; **Add stage here**, **Remove**, and the name and note of the marked stage. **Card picture**: **Use this frame** sends the frame on show to the gallery card at once.'],
-        ['Material (left)', 'How the model is drawn: **Mode** and its matcap, **Smooth shading**, **Wireframe** and **Wire opacity**, and over a published model its **Colour**, **Albedo**, **Roughness** and **Metalness**. **Save** stores it with the project.'],
+        ['Material (right)', 'How the model is drawn: **Mode** and its matcap, **Smooth shading**, **Wireframe** and **Wire opacity**, and over a published model its **Colour**, **Albedo**, **Roughness** and **Metalness**. **Save** stores it with the project.'],
         ['Render (right)', 'The rest of the look: lighting, camera, environment and ambient occlusion. **Save** stores it with the project.'],
         ['Output (right)', '**Reel**: **Motion** (**Timelapse** or **Turntable**, with its spin and direction), **Aspect**, with a guide on the view, **Format**, **Size** and **FPS**, a line with the frame count and length, and **Record reel**, with a progress bar and **Cancel**. **Image**: **Save image**, a PNG at twice the window.'],
         ['The bar along the bottom', 'A timelapse has its transport here: play and pause, the line with the played part in orange and a tick at each stage, and the frame counter. A model has no bar.'],
@@ -74,7 +74,7 @@ export const MODES: Topic[] = [
     title: 'Armature mode',
     group: G,
     blocks: [
-      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** and **Material** panels are on the left and the **Render** panel on the right.'),
+      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** panel is on the left and the **Material** and **Render** panels on the right.'),
       h('The menus'),
       options(
         ['New armature', 'Starts over, and asks first if the pose and proportions would be lost.'],
@@ -103,7 +103,7 @@ export const MODES: Topic[] = [
       options(
         ['Bend, Twist, Side', 'Angles of the selected joint in degrees, within its limits. An axis that is locked has no slider.'],
         ['Reset joint', 'Puts the joint back.'],
-        ['Aim', 'For a knee or an elbow: which way it points as the limb reaches, from -180 to 180 degrees. The small ball in the view sets the same thing.'],
+        ['Aim', 'For a knee or an elbow: which way it points as the limb reaches, from -180 to 180 degrees. The arrowhead beside the joint in the view sets the same thing.'],
       ),
       h('Proportions'),
       options(
@@ -113,9 +113,9 @@ export const MODES: Topic[] = [
       ),
       h('Reach'),
       options(
-        ['IK handles', 'Shows the handles. Drag one and the limb reaches for it, or tap it for a move gizmo. Dragging the violet one in the hips moves the whole figure.'],
+        ['IK handles', 'Shows the handles, drawn as outlines: grey, white under the pointer, orange while selected or dragged. Drag a ring at a hand or foot and the limb reaches for it, or tap it for a move gizmo; a dot in the ring means it is pinned. Drag the frame round the hips and the whole figure moves. Drag the arrowhead out from a knee or elbow, joined to it by a dashed line, and the joint turns toward it. Drag the arrowhead in front of the face and the head looks at it: the head turns to face it, the neck about half as far and the upper back a little, up to about 80 degrees to a side and 60 up or down, and the hips never move. To lean or bend the body, turn the spine and chest, or drag the hips.'],
         ['Plant feet', 'Stands a foot that is on the floor flat on it, marked by a ring on the floor. Off, the foot tilts with its shin.'],
-        ['Pin left hand, Pin right hand, Pin left foot, Pin right foot, Pin head', 'A pinned handle stays put while the pelvis moves. Pins, not planting, keep a foot in its place.'],
+        ['Pin left hand, Pin right hand, Pin left foot, Pin right foot', 'A pinned ring stays put while the pelvis moves. Pins, not planting, keep a foot in its place.'],
       ),
       h('Send to Sculpt'),
       options(

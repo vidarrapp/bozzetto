@@ -19,7 +19,7 @@ const FILE_RANK = new Map([
 
 const viewRank = (label) => {
   if (label === 'Frame selected' || label === 'Frame all') return 0;
-  if (['Wireframe', 'Shadows', 'Poly group colours', 'Hotkeys on tools'].includes(label)) return 1;
+  if (['Wireframe', 'Shadows', 'Poly group colours', 'Reference over the view', 'Hotkeys on tools'].includes(label)) return 1;
   if (/ panel$/.test(label) || label === 'Hide interface') return 2;
   if (['Armature', 'Sculpt', 'Present'].includes(label)) return 3;
   return -1;
@@ -102,7 +102,7 @@ export const suites = {
   async menuShape(page, base, t) {
     await openSculpt(page, base);
     const sculptFile = 'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close';
-    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Material panel|Tool panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
+    const sculptView = 'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present';
     const sculpt = await readMenus(page, 'Sculpt');
     checkShape(t, 'Sculpt', sculpt, { names: 'File,Edit,View,Help', file: sculptFile, view: sculptView });
     const ws = (menus) => Object.fromEntries(menus.View.filter((r) => ['Armature', 'Sculpt', 'Present'].includes(r.label)).map((r) => [r.label, r.disabled]));

@@ -2307,18 +2307,20 @@ export const suites = {
     t.ok(boot.handOffTail < 1e-6, 'a hand is still held by its tip');
     t.ok(boot.ballOff !== null && boot.ballOff < 1e-6, `the balls sit on their handles from the start (the left foot's ${boot.ballOff})`);
 
-    // The balls take the press over the parts they sit on (owner call): a
-    // press within 18 px of a ball's centre takes it, even off the ball's
-    // own disc, where only the leg is under the pointer - as the same press
-    // shows with the balls hidden.
+    // The handles take the press over the parts near them (owner call): a
+    // press within 22 px of a pole target's centre takes it, even off the
+    // arrowhead's own outline, where nothing is under the pointer - and the
+    // same press with the handles hidden takes no handle. The knee's own
+    // spot, on the leg, is what the later presses use.
     const spot = await page.evaluate(() => {
       const a = window.__armature;
       a.select(null);
       const [kx, ky, r] = a.ballOnScreen('aim:foot.L');
-      const [fx, fy] = a.ballOnScreen('ik:foot.L');
-      const along = Math.hypot(fx - kx, fy - ky);
-      const step = Math.min(17, r + 3);
-      return { knee: [kx, ky], near: [kx + ((fx - kx) / along) * step, ky + ((fy - ky) / along) * step], r, step };
+      const joint = a.hingePosition('foot.L');
+      const [jx, jy] = a.onScreen(...joint);
+      const along = Math.hypot(jx - kx, jy - ky) || 1;
+      const step = 20;
+      return { knee: [kx, ky], near: [kx + ((jx - kx) / along) * step, ky + ((jy - ky) / along) * step], leg: [jx, jy], r, step };
     });
     const press = async ([x, y]) => {
       await page.mouse.move(x, y);
@@ -2338,35 +2340,30 @@ export const suites = {
     clicks.hidden = await press(spot.near);
     await handlesBox(true);
     await page.evaluate(() => window.__armature.select(null));
-    t.eq(clicks.centre, 'aim:foot.L', "a press on the left knee's ball takes the ball");
+    t.eq(clicks.centre, 'aim:foot.L', "a press on the left knee's arrowhead takes it");
     t.ok(
       clicks.near === 'aim:foot.L' && clicks.step > clicks.r,
-      `a press ${clicks.step.toFixed(1)} px from its centre, off its ${clicks.r.toFixed(1)} px disc, takes it too (${clicks.near})`,
+      `a press ${clicks.step.toFixed(1)} px from its centre, off its ${clicks.r.toFixed(1)} px outline, takes it too (${clicks.near})`,
     );
-    t.ok(/^(shin|thigh)\.L$/.test(clicks.hidden ?? ''), `with the balls hidden the same press lands on the leg (${clicks.hidden})`);
+    t.ok(!/^(aim|ik|look):|^root$/.test(clicks.hidden ?? ''), `with the handles hidden the same press takes no handle (${clicks.hidden})`);
 
     // A ball in the hips for the root (owner call): the size of a reach
     // ball in a colour of its own, taking a press like the others but
     // bringing up no gizmo, and hidden with them.
     const hips = await rootBall(page);
     const look = await page.evaluate(() => {
-      const find = (name) => {
-        let hit = null;
-        window.__armature.armature.mesh.parent.traverse((o) => {
-          if (o.name === name) hit = o;
-        });
-        return hit;
-      };
-      const [root, reach, aim] = ['root', 'ik:hand.L', 'aim:hand.L'].map(find);
-      return {
-        size: root?.scale.x,
-        reachSize: reach.scale.x,
-        colour: root?.material.color.getHexString(),
-        others: [reach.material.color.getHexString(), aim.material.color.getHexString()],
-      };
+      const a = window.__armature;
+      return { root: a.handleLook('root'), reach: a.handleLook('ik:hand.L'), aim: a.handleLook('aim:hand.L'), palette: a.handlePalette() };
     });
-    t.ok(hips.inside && hips.offMid < 1e-4, `the root's ball sits in the hips: ${showRoot(hips)}`);
-    t.ok(look.size === look.reachSize && !look.others.includes(look.colour), `it is a reach ball's size (${look.size}) in a colour of its own (#${look.colour})`);
+    t.ok(hips.inside && hips.offMid < 1e-4, `the root's frame sits in the hips: ${showRoot(hips)}`);
+    t.ok(
+      look.root.shape === 'rect' && look.reach.shape === 'ring' && look.aim.shape === 'arrow',
+      `the root is a frame, a reach handle a ring and a pole target an arrowhead (${look.root.shape}, ${look.reach.shape}, ${look.aim.shape})`,
+    );
+    t.ok(
+      [look.root, look.reach, look.aim].every((l) => l.colour === look.palette.rest && l.state === 'rest') && look.palette.rest !== look.palette.hot,
+      `all three are neutral at rest (#${look.root.colour}), orange (#${look.palette.hot}) kept for the selected one`,
+    );
     const rootPress = { picked: await press(hips.ball) };
     rootPress.gizmo = await page.evaluate(() => ({ selected: window.__armature.selected(), attached: window.__armature.gizmo().attached.length }));
     await handlesBox(false);
@@ -2433,13 +2430,13 @@ export const suites = {
     await dragAt(empty, [90, 30]);
     keep.offOrbit = { ...(await sel()), turned: moved(cam0, await camera()) };
     cam0 = await camera();
-    await dragAt(spot.near, [-90, 20]);
+    await dragAt(spot.leg, [-90, 20]);
     keep.onOrbit = { ...(await sel()), turned: moved(cam0, await camera()) };
     await page.mouse.move(...hips.ball);
     await page.mouse.wheel(0, 240);
     await page.waitForTimeout(150);
     keep.wheel = await sel();
-    keep.other = await tapAt(spot.near);
+    keep.other = await tapAt(spot.leg);
     keep.cleared = await tapAt(empty);
     t.ok(!!keep.first.part && keep.first.gizmo !== '', `a tap on the figure selects a part, with its gizmo (${JSON.stringify(keep.first)})`);
     t.ok(
@@ -2469,11 +2466,8 @@ export const suites = {
     });
     const ballLook = () =>
       page.evaluate(() => {
-        let ball = null;
-        window.__armature.armature.mesh.parent.traverse((o) => {
-          if (o.name === 'ik:hand.L') ball = o;
-        });
-        return { colour: ball.material.color.getHexString(), size: ball.scale.x };
+        const l = window.__armature.handleLook('ik:hand.L');
+        return { colour: l.colour, size: l.thick };
       });
     const plainLook = await ballLook();
     const tappedBall = await tapAt(ikTap.at);
@@ -2778,7 +2772,7 @@ export const suites = {
       }, id);
       t.eq(r.id, id, `${id}: is the figure`);
       t.eq(r.bones, 19, `${id}: nineteen bones`);
-      t.eq(r.chains, 5, `${id}: five reach chains`);
+      t.eq(r.chains, 4, `${id}: four reach chains (the head looks instead)`);
       t.ok(r.skinned && r.verts > 10000, `${id}: a skinned mesh of ${r.verts} vertices`);
       t.ok(r.height > 120 && r.height < 200, `${id}: head handle ${r.height.toFixed(1)} cm above the foot`);
       t.ok(r.moved > 10, `${id}: the left hand reaches (${r.moved.toFixed(1)} cm)`);
@@ -2877,11 +2871,12 @@ export const suites = {
         );
       }
 
-      // The head reaches through the whole back, and the feet from their
+      // The head looks through the neck and a little of the back, and the feet reach from their
       // middle, as rig.ts declares and the file carries.
       const ik = await page.evaluate(() => window.__armature.armature.rig.ik.map((c) => ({ id: c.id, links: c.links.join(','), at: c.effectorAt })));
       const chain = (cid) => ik.find((c) => c.id === cid) ?? {};
-      t.eq(chain('head').links, 'neck,chest,spine', `${id}: the head chain bends the neck, chest and spine`);
+      const lookBones = await page.evaluate(() => window.__armature.armature.lookShares().map((l) => l.bone).join(','));
+      t.ok(!ik.some((c) => c.id === 'head') && lookBones === 'spine,chest,neck,head', `${id}: the head has no reach chain; its look turns ${lookBones}`);
       t.ok(chain('foot.L').at === 0.5 && chain('foot.R').at === 0.5, `${id}: the feet reach from mid-foot (effectorAt ${chain('foot.L').at}, ${chain('foot.R').at})`);
 
       // The neck turns just above where the back of the neck leaves the
