@@ -29,6 +29,7 @@ import type { SculptSession } from '../bridge/SculptSession';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { Viewer } from '../../viewer/Viewer';
 import { SidePanel } from './SidePanel';
+import { lengthText } from '../bridge/measure';
 import { ChannelBox } from './ChannelBox';
 
 /** Matches the left rail's range so the two controls agree end to end. */
@@ -136,10 +137,14 @@ export class SculptPanel extends SidePanel {
     // (owner request): the Select tool its modifiers and mode, the
     // transform gizmo which of its handles to show.
     const uiMode = this.input.uiMode();
+    this.measureUnsub?.();
+    this.measureUnsub = null;
+    this.onSymmetryChanged = null;
     // Symmetry is a brush setting: neither the Select tool nor the gizmo
     // mirrors anything (a mirrored selection is a maybe for later), so
     // the section shows for brushes only, with the active brush's values.
-    if (this.symSection) this.symSection.hidden = uiMode !== 'brush';
+    // The Calipers' Mirror follows the symmetry switch, so its section stays for them.
+    if (this.symSection) this.symSection.hidden = uiMode !== 'brush' && uiMode !== 'measure';
     // Shift's Smooth settings ride every brush that Shift smooths from.
     this.fillShiftSmooth(uiMode === 'brush' ? tool : -1);
     if (uiMode === 'select') {
@@ -147,6 +152,12 @@ export class SculptPanel extends SidePanel {
       this.extrasBody.replaceChildren();
       this.buildChannelBox(dyn);
       this.buildSelectSettings(dyn);
+      return;
+    }
+    if (uiMode === 'measure') {
+      this.nameBrush('Calipers');
+      this.extrasBody.replaceChildren();
+      this.buildMeasureSettings(dyn);
       return;
     }
     if (uiMode === 'transform') {
@@ -630,6 +641,69 @@ export class SculptPanel extends SidePanel {
     }
   }
 
+  /** Set scale, for the Calipers' message in a scene without real units (mode.ts opens the banner). */
+  onSetScale: (() => void) | null = null;
+  private measureUnsub: (() => void) | null = null;
+
+  /**
+   * The Calipers tool's rows: what the measurement being made reads, Pin
+   * to keep it, Mirror to add its other half. In a scene without real units
+   * the tool asks for the scale first.
+   */
+  private buildMeasureSettings(body: HTMLElement): void {
+    if (!this.session.getUnits()) {
+      const msg = div('sculpt-panel__hint');
+      msg.dataset.role = 'measure-needs-scale';
+      msg.textContent = "Set the scene's scale first";
+      body.appendChild(msg);
+      const row = div('sculpt-panel__row');
+      const set = this.opButton('Set scale', () => this.onSetScale?.());
+      set.dataset.role = 'measure-set-scale';
+      row.appendChild(set);
+      body.appendChild(row);
+      return;
+    }
+    const store = this.session.measure;
+    const reading = div('measure-reading');
+    reading.dataset.role = 'measure-reading';
+    body.appendChild(reading);
+    const row = div('sculpt-panel__row');
+    const pin = this.opButton('Pin', () => store.pinWorking());
+    pin.dataset.role = 'measure-pin';
+    pin.title = 'Keep this measurement in the scene (listed in the Model panel)';
+    const mirror = this.opButton('Mirror', () => {
+      const w = store.working;
+      if (!w) return;
+      if (w.m.mirror) store.removeMirror(w.m);
+      else store.addMirror(w.mesh, w.m);
+    });
+    mirror.dataset.role = 'measure-mirror';
+    row.append(pin, mirror);
+    body.appendChild(row);
+    const note = div('sculpt-panel__hint muted');
+    note.dataset.role = 'measure-note';
+    body.appendChild(note);
+    const help = div('sculpt-panel__hint muted');
+    help.textContent = 'Tap the model for a point, tap again for the second. Drag an end to move it along the surface. A third tap starts a new one.';
+    body.appendChild(help);
+    const paint = (): void => {
+      const w = store.working;
+      const done = !!w && !!w.m.b;
+      pin.disabled = !done;
+      const symmetric = this.session.getSymmetry();
+      mirror.disabled = !done || (!symmetric && !w?.m.mirror);
+      mirror.textContent = w?.m.mirror ? 'Unmirror' : 'Mirror';
+      note.textContent = symmetric ? '' : 'Turn on Mirror sculpting (X) to mirror a measurement.';
+      reading.textContent = measureReading(this.session, w);
+    };
+    paint();
+    this.measureUnsub = store.subscribe(paint);
+    this.onSymmetryChanged = paint;
+  }
+
+  /** Symmetry switched (the Calipers' Mirror enables with it). */
+  private onSymmetryChanged: (() => void) | null = null;
+
   /** The transform gizmo's settings: which handles it shows. */
   private buildTransformSettings(body: HTMLElement): void {
     const gizmo = this.input.transform;
@@ -684,6 +758,7 @@ export class SculptPanel extends SidePanel {
     // The X key toggles the same flag; keep the checkbox honest.
     this.session.onSymmetryChange = (on) => {
       this.symCheckbox.checked = on;
+      this.onSymmetryChanged?.();
     };
 
     const axes = div('sculpt-panel__row');
@@ -753,9 +828,23 @@ export class SculptPanel extends SidePanel {
   }
 
   override dispose(): void {
+    this.measureUnsub?.();
     this.channelBox?.dispose();
     this.channelBox = null;
     this.session.onSymmetryChange = null;
     super.dispose();
   }
+}
+
+/**
+ * What the measurement being made reads: its length, with the mirror's and
+ * the difference when it has one; a prompt before it has two points.
+ */
+export function measureReading(session: SculptSession, w: SculptSession['measure']['working']): string {
+  if (!w) return 'Tap the model for the first point';
+  const len = session.measure.length(w.mesh, w.m);
+  if (len === null) return 'Tap for the second point';
+  const mirror = session.measure.mirrorLength(w.mesh, w.m);
+  if (mirror === null) return lengthText(len);
+  return `${lengthText(len)} and ${lengthText(mirror)}, difference ${lengthText(Math.abs(len - mirror))}`;
 }
