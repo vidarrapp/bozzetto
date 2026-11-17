@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-17: The version for this round of work. Decided 2026-11-17: 0.7.0, set when it goes to main after a clean full test run
 - [x] 2026-11-17: The Layers panel. Decided 2026-11-17: one row per layer as in Photoshop, with the blend mode and opacity (paint) or the weight (sculpt) at the top for the active layer; groups in the stack; masks on layers and groups for sculpt and paint layers alike, made from the current mask and loadable back; no blend modes on sculpt layers, which stay additive
 - [ ] 2026-11-17: Paint layers: the first layer on an object takes its colours as Base and marks the object painted, so a later change of its material's albedo no longer recolours it (as after a first stroke today). Keep, or let Base follow the material until a stroke is painted. (blocks: nothing)
 - [ ] 2026-11-17: Paint layers: Merge down joins a layer into the one below, which keeps its own blend mode and opacity; the result is exact when the lower layer is Normal at 100% and a close likeness otherwise (Photoshop does the same). Keep, or merge only layers whose lower one is Normal. (blocks: nothing)
