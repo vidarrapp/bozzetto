@@ -2422,6 +2422,7 @@ body.presenting .measure-overlay {
    call), so the timeline can still be scrubbed with the rest put away. */
 body.chrome-hidden .panel,
 body.chrome-hidden .float-window,
+body.chrome-hidden .ref-chrome,
 body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden > .topbar,
 body.chrome-hidden .viewer-back,

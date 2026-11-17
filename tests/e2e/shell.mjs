@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -856,7 +856,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));

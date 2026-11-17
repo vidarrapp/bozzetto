@@ -11,7 +11,7 @@ import { sanitizeSource } from './objSource';
 import { sanitizeGroups } from './groupsRecord';
 import { sanitizeLayers } from './layersRecord';
 import { sanitizeMeasures } from './measure';
-import { MAX_REFERENCES, type FileReference, type FileReferences } from '../../reference/board';
+import { MAX_REFERENCES, cleanBlend, cleanCamera, cleanOpacity, cleanPlace, type FileReference, type FileReferences } from '../../reference/board';
 
 /**
  * The one way a scene record comes in: a .bozz file, a shelf entry, a
@@ -429,22 +429,18 @@ function sanitizeReferences(v: unknown): FileReferences | undefined {
       height: Math.round(height),
       mirror: raw.mirror === true,
       grey: raw.grey === true,
+      blend: cleanBlend(raw.blend),
+      opacity: cleanOpacity(raw.opacity),
+      inView: raw.inView === true,
+      seq: num(raw.seq, 0, 1e9) ?? 0,
+      place: cleanPlace(raw.place),
+      camera: cleanCamera(raw.camera),
       added: num(raw.added, 0) ?? Date.now(),
       data: d,
     });
   }
   if (!items.length) return undefined;
-  const view = isRec(v.view) ? v.view : {};
-  const at = typeof view.id === 'string' && /^\d{1,3}$/.test(view.id) && Number(view.id) < items.length ? view.id : null;
-  return {
-    items,
-    view: {
-      id: at,
-      mode: view.mode === 'over' ? 'over' : 'beside',
-      front: view.front === true,
-      opacity: num(view.opacity, 0.05, 1) ?? 0.5,
-    },
-  };
+  return { items };
 }
 
 export function sanitizeScene(scene: SavedScene): SavedScene {

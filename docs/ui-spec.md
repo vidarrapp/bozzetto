@@ -264,8 +264,9 @@ place, each only where the place has it.
 - Hotkeys on tools
 - View axes
 
-- Reference over the view (a switch, in the group with the other
-  viewport switches)
+- References (a switch: shows or hides every picture in the view)
+- Arrange references (a switch, Alt+R in Sculpt: unlocks the pictures in the
+  view so they can be moved, scaled and set up; locks them again)
 
 - Scene panel
 - Model panel
@@ -429,31 +430,62 @@ Tool and before Render.
 - **Top:** Add picture… (the system picker, no `capture` attribute, so an
   iPad offers Photo Library, Take Photo and Choose File) and Paste. Ctrl or
   Cmd+V adds a picture while the panel is open; Edit > Paste picture does it
-  from the menu; a picture dropped on the panel or the view is added and the
-  panel opens.
-- **Board:** a two-column grid of thumbnails, newest first, square corners,
-  the picture that is on with an orange edge. Under each: its name, what is
-  on it (Beside, Over, Mirrored, Grey) or its size in mono, and a **More**
-  row menu: Show beside, Show over the view, Mirror, Greyscale, Delete. A tap
-  on the thumbnail shows it beside or takes it off. Delete asks first, in a
-  window whose button is red; the app's Undo is the stroke history and does
-  not hold pictures.
-- **Over the view:** a lime switch "In front of the model" (off puts the
-  picture behind the model, as the backdrop) and an Opacity slider (orange
-  fill) that matters in front. Both are greyed out unless a picture is over
-  the view.
-- **One picture is on at a time.** Beside is a float window (the Publish
-  window's frame) at the corner, moved by its title bar, with a close button;
-  the wheel or a pinch zooms the picture inside it and a mouse or pen drag or
-  two fingers pan it; one finger moves nothing. Over the view is fitted to the
-  view's height and centred, in screen space, and Mirror and Greyscale apply to
-  either.
-- **Input.** The Pencil and touches on the model always go to the model: the
-  picture in front is a layer with `pointer-events: none`, the one behind is
-  drawn by the viewer and is no element at all, and the Beside window takes
-  input only on its own frame. Tab hides the Beside window with the interface;
-  the picture over the view stays, until **View > Reference over the view** is
-  switched off. Present shows neither.
+  from the menu. A picture dropped on the panel is a tile on the board; one
+  dropped on the view is added and placed in the view where it fell. Under
+  them, one button, **Arrange** / **Lock**, greyed until a picture is in the
+  view.
+- **Board:** a two-column grid of thumbnails, newest first, square corners.
+  The tile whose picture is in the view has the grey selected fill (orange is
+  for focus only). Under each: its name, what is on it (In view, Mirrored,
+  Grey) or its size in mono, and a **More** row menu: Place in view (Remove
+  from view when it is in), Match view (greyed with the hint "Lock the picture
+  first" until the picture was locked in the view), Mirror, Greyscale,
+  Delete. A tap on a tile only selects it. **A tile is dragged into the
+  view**: the picture follows the finger, the Pencil or the mouse, is placed
+  where it is let go at a default size, and Arrange turns on. A mouse or the
+  Pencil starts the drag on a move of 6px; a finger starts it after a hold of
+  350ms or a clear sideways move (14px, mostly across), because the panel
+  scrolls up and down under a finger. Delete asks first, in a window whose button is
+  red; the app's Undo is the stroke history and does not hold pictures.
+- **One kind of picture in the view.** A reference in the view is a floating
+  picture with a place, a size, an opacity, a blend mode, mirror and
+  greyscale; several may be there at once. Small in a corner at Normal 100%
+  is a picture to glance at; fitted across the view at Multiply 30% is a film
+  to trace on. The place is stored relative to the centre of the view (in
+  units of its shorter side), so it survives a resize or a turn of the device.
+- **Blend modes.** The Look pop-up has a select in Photoshop's order and
+  groups (`src/ui/blendModes.ts`, shared with the Paint workspace's layers):
+  **Behind** first (drawn behind the model by the viewer), then the modes the
+  browser can blend live over the 3D view, as an element with
+  `mix-blend-mode` over the canvas: Normal | Darken, Multiply, Color Burn |
+  Lighten, Screen, Color Dodge, Linear Dodge (Add) | Overlay, Soft Light, Hard
+  Light | Difference, Exclusion | Hue, Saturation, Color, Luminosity. Opacity
+  applies to every mode. Only the topmost Behind picture is drawn behind the
+  model.
+- **Arranging (unlocked).** Putting a picture in the view turns it on. Every
+  picture in the view has a thin outline, four corner marks and a row of
+  five icon buttons at its top edge (inside the top edge when there is no
+  room above), each 44px with its name on hover and long press: **Lock**
+  (ends arranging for all pictures), **Fit** (fill the view, keeping the
+  aspect), **Flip** (mirror), **Look** (a small pop-up: blend mode, Opacity,
+  Greyscale), **Remove from view** (a cross; the picture stays on the board).
+  A finger, the mouse or the Pencil drags a picture to move it; a pinch or
+  the wheel scales it; a corner is dragged to resize it, the opposite corner
+  staying. Arranging is not kept: a scene opens locked.
+- **Locked.** No outlines or icons, and every picture is `pointer-events:
+  none`: the Pencil, fingers and mouse reach the model as if nothing were
+  there. Locking keeps the camera (position, target, lens) with each picture
+  in the view; **Match view** in a tile's menu puts the camera back.
+- **Arrange button.** A lock in the left edge column with Solo, Undo, Redo and
+  Negative (in Armature, beside Undo and Redo), shown only while a picture is
+  in the view: neutral when locked, an orange icon (no square) while
+  arranging; a tap toggles. **View > Arrange references** and the top button
+  of the panel do the same.
+- **Input.** The picture layer is never an input target. Only the frames
+  drawn while arranging take a pointer, and only on the pictures themselves,
+  so the model outside them is worked as always. Tab hides the outlines and
+  icons with the interface; the pictures stay, until **View > References** is
+  switched off. Present shows none.
 - **Keeping.** On this device only, never uploaded: in the browser's storage
   beside the autosave (keyed by the scene, and by the library project's id
   too, so reopening that project here brings them back) when keeping on the
