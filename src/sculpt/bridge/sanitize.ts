@@ -452,6 +452,7 @@ export function sanitizeScene(scene: SavedScene): SavedScene {
     project: sanitizeLink(scene.project),
     unsent: isProjectId(scene.unsent) ? scene.unsent : undefined,
     synced: scene.synced === true ? true : undefined,
+    name: typeof scene.name === 'string' && scene.name.trim() ? scene.name.trim().slice(0, 80) : undefined,
     references: sanitizeReferences(scene.references),
   });
 }

@@ -68,7 +68,7 @@ export async function packScene(scene: SavedScene, keepReferences = false): Prom
   // The project link is the autosave's business (see SavedScene.project):
   // a file leaves the device, and must not carry a pointer to the owner's
   // server project with it, nor to a copy on this device's shelf.
-  const { project: _link, unsent: _unsent, synced: _synced, references, ...rest } = scene;
+  const { project: _link, unsent: _unsent, synced: _synced, name: _name, references, ...rest } = scene;
   const portable = keepReferences && references ? { ...rest, references } : rest;
   // A name past what a reader takes (shared/bozz.ts MAX_NAME: this app's
   // own reader and the server's both refuse it) would make a file nothing
@@ -212,6 +212,7 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
   delete clean.project;
   delete clean.unsent;
   delete clean.synced;
+  delete clean.name;
   return clean;
 }
 

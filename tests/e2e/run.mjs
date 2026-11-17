@@ -50,6 +50,7 @@ import { suites as shellPhone } from './shellPhone.mjs';
 import { suites as wireAo } from './wireAo.mjs';
 import { suites as shadowsGroups } from './shadowsGroups.mjs';
 import { suites as smoke } from './smoke.mjs';
+import { suites as studyName } from './studyName.mjs';
 import { suites as sliderScrub } from './sliderScrub.mjs';
 import { suites as renderMatch } from './renderMatch.mjs';
 import { suites as strengthCm } from './strengthCm.mjs';
@@ -110,6 +111,7 @@ const suites = {
   ...reference,
   ...clarity,
   ...calipers,
+  ...studyName,
 };
 
 const dist = resolve('dist');
