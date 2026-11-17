@@ -1685,12 +1685,11 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   min-width: 0;
   padding: 4px;
   background: var(--bz-control);
-  outline: 2px solid transparent;
-  outline-offset: -2px;
 }
 
+/* The picture that is on: the grey selected fill, as a selected row has (orange stays for focus). */
 .panel--reference .ref-card--on {
-  outline-color: var(--bz-orange);
+  background: var(--bz-hover);
 }
 
 .panel--reference .ref-card__thumb {
@@ -1752,66 +1751,198 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   color: var(--bz-red);
 }
 
-/* The picture over the view: its own layer inside the view, fitted to the view's height and centred, and never an input target. */
-.ref-over {
+/* The pictures in the view. The picture layer never takes a pointer. It makes no stacking context of its
+   own (no z-index, no opacity), so each picture's mix-blend-mode blends with the view's canvas under it. */
+.ref-layer {
   position: absolute;
   inset: 0;
-  z-index: 1;
   overflow: hidden;
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
-.ref-over[hidden] {
-  display: none;
-}
-
-.ref-over__picture {
+.ref-pic {
   position: absolute;
-  top: 0;
-  left: 50%;
-  height: 100%;
-  max-width: none;
-  transform: translateX(-50%);
+  z-index: 1;
   pointer-events: none;
 }
 
-body.presenting .ref-over,
-body.presenting .ref-beside {
+.ref-pic__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+body.presenting .ref-layer,
+body.presenting .ref-chrome {
   display: none;
 }
 
-/* The Beside window: the float window's frame with the picture inside, held and panned on its own frame only. */
-.ref-beside {
-  width: 300px;
+/* What arranging draws: an outline, corner marks and a row of buttons per picture. Only the frames take a
+   pointer; the model around them is worked as always. Tab hides it with the interface. */
+.ref-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.ref-beside .float-window__title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ref-chrome[hidden] {
+  display: none;
 }
 
-.ref-beside__frame {
-  position: relative;
-  margin: 8px 0 0;
-  overflow: hidden;
-  background: var(--bz-panel-fill);
+.ref-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  outline: 1px solid rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
   touch-action: none;
   cursor: grab;
-  -webkit-touch-callout: none;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.ref-beside__picture {
+.ref-frame__corner {
   position: absolute;
-  top: 0;
-  left: 0;
-  max-width: none;
-  transform-origin: 0 0;
-  -webkit-user-drag: none;
+  width: 44px;
+  height: 44px;
+  touch-action: none;
+}
+
+.ref-frame__corner::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bz-text);
+  outline: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+.ref-frame__corner--nw { left: -22px; top: -22px; cursor: nwse-resize; }
+.ref-frame__corner--ne { right: -22px; top: -22px; cursor: nesw-resize; }
+.ref-frame__corner--sw { left: -22px; bottom: -22px; cursor: nesw-resize; }
+.ref-frame__corner--se { right: -22px; bottom: -22px; cursor: nwse-resize; }
+.ref-frame__corner--nw::after { left: 17px; top: 17px; }
+.ref-frame__corner--ne::after { right: 17px; top: 17px; }
+.ref-frame__corner--sw::after { left: 17px; bottom: 17px; }
+.ref-frame__corner--se::after { right: 17px; bottom: 17px; }
+
+.ref-frame__bar {
+  position: absolute;
+  display: flex;
+  height: 44px;
+  background: var(--bz-panel-fill);
+  cursor: default;
+}
+
+.ref-frame__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.ref-frame__btn:hover {
+  background: var(--bz-hover);
+}
+
+.ref-frame__btn .fi {
+  font-size: 18px;
+  line-height: 1;
   pointer-events: none;
+}
+
+/* A name on hover, and on a long press. */
+.ref-frame__btn:hover::after,
+.ref-frame__btn--tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bz-panel-fill);
+  color: var(--bz-text);
+  font: 400 12px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ref-look {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: 240px;
+  box-sizing: border-box;
+  padding: 8px 12px 12px;
+  background: var(--bz-panel-fill);
+  cursor: default;
+}
+
+.ref-look[hidden] {
+  display: none;
+}
+
+.ref-look__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font: 400 13px/16px var(--bz-font);
+  color: var(--bz-text);
+}
+
+.ref-look__blend {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The tile being dragged into the view follows the pointer. */
+.ref-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 88px;
+  height: auto;
+  max-height: 88px;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+body.ref-dragging {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grabbing;
+}
+
+.panel--reference .ref-card__thumb {
+  touch-action: pan-y;
+}
+
+.panel--reference .ref-arrange {
+  width: 100%;
+  margin: 0 0 8px;
+}
+
+.panel--reference .ref-arrange[aria-pressed='true'] {
+  color: var(--bz-orange);
+}
+
+.ref-arrange-wrap[hidden] {
+  display: none;
 }

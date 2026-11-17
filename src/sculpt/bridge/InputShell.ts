@@ -100,6 +100,8 @@ export interface InputShellHooks {
   toggleShadows(): void;
   /** shift+w: toggle the wireframe overlay, as in the viewer. */
   toggleWireframe(): void;
+  /** alt+r: arrange (unlock) or lock the reference pictures in the view. */
+  toggleArrangeReferences(): void;
   /** l + drag: move the key light by azimuth/elevation degree deltas. */
   moveKeyLight(deltaAzimuth: number, deltaElevation: number): void;
   /** Arrow keys: turntable step around the subject (degrees). */
@@ -2425,6 +2427,9 @@ export class InputShell {
         return this.claim(e);
       case 'view.wireframe':
         this.hooks.toggleWireframe();
+        return this.claim(e);
+      case 'view.arrange':
+        this.hooks.toggleArrangeReferences();
         return this.claim(e);
       case 'brush.size':
         if (!this.adjust) this.beginAdjust('radius');

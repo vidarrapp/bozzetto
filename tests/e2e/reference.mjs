@@ -6,10 +6,10 @@
 //   open) and by drop, newest first; the row menu has its five actions; Delete asks first.
 // refImport: a picture is scaled to 2048 on its long side, written as JPEG (PNG only with
 //   transparency), and the metadata is gone: a JPEG carrying an EXIF GPS block comes out without it.
-// refShow: Beside opens, moves by its title bar, zooms and closes; Over the view behind (the
-//   backdrop) and in front (a film at an opacity); Mirror and Greyscale change what is drawn
+// refShow: the Beside picture has no title bar, drags by itself (finger, mouse, Pencil), zooms, resizes by its corner and toggles from the tile and View; Over the view: Behind (the
+//   backdrop) or a blend mode over the view (Multiply changes the pixels) at an opacity; Mirror and Greyscale change what is drawn
 //   in each; the View switch takes the over-the-view picture off.
-// refInput: a pen stroke over a picture in front still sculpts and the picture never takes the
+// refInput: a pen stroke through a picture in any front mode still sculpts and the picture never takes the
 //   pointer; the beside window takes input only on itself; Tab hides the Beside window and keeps
 //   the over-the-view picture.
 // refKeep: pictures come back after a reload when keeping on the device is on, and are gone
@@ -165,33 +165,114 @@ const isGrey = ([r, g, b]) => Math.abs(r - g) < 10 && Math.abs(g - b) < 10;
 /** The colour the viewer draws at a page point (the backdrop shows through where no model is). */
 const sample = (page, x, y) => page.evaluate(([x, y]) => window.__sculpt.viewer.samplePixel(x, y), [x, y]).then(rgb);
 
-/** A pixel of the picture drawn in front (its own canvas), at a fraction of its width and height. */
-const overPixel = (page, fx, fy) =>
-  page.evaluate(
-    ([fx, fy]) => {
-      const c = document.querySelector('.ref-over canvas');
-      if (!c) return null;
-      return [...c.getContext('2d').getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data].slice(0, 3);
-    },
-    [fx, fy],
-  );
-
-/** The same for the picture in the Beside window. */
-const besidePixel = (page, fx, fy) =>
-  page.evaluate(
-    ([fx, fy]) => {
-      const c = document.querySelector('.ref-beside canvas');
-      if (!c) return null;
-      return [...c.getContext('2d').getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data].slice(0, 3);
-    },
-    [fx, fy],
-  );
-
 const visible = (page, sel) =>
   page.evaluate((s) => {
     const e = document.querySelector(s);
     return !!e && !e.hidden && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
   }, sel);
+
+/** The names of the pictures in the view, lowest first. */
+const inViewNames = (page) => page.evaluate(() => window.__sculpt.reference.board.inView().map((i) => i.name).join(','));
+
+/** A pixel of the first picture element in the view (its own canvas), at a fraction of its width and height. */
+const picPixel = (page, fx, fy) =>
+  page.evaluate(
+    ([fx, fy]) => {
+      const c = document.querySelector('.ref-pic canvas');
+      if (!c) return null;
+      return [...c.getContext('2d').getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data].slice(0, 3);
+    },
+    [fx, fy],
+  );
+
+/** Drag the nth tile to a page point, as a mouse, the Pencil, or a finger that holds first. */
+async function dragTile(page, n, to, kind = 'mouse') {
+  await openPanel(page);
+  const from = await page.evaluate((n) => {
+    const r = document.querySelector(`.ref-card:nth-child(${n}) .ref-card__thumb`).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];
+  }, n);
+  const lerp = (i, steps) => [from[0] + ((to[0] - from[0]) * i) / steps, from[1] + ((to[1] - from[1]) * i) / steps];
+  if (kind === 'mouse') {
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(...lerp(i, 10));
+    await page.mouse.up();
+  } else if (kind === 'pen') {
+    const cdp = await page.context().newCDPSession(page);
+    const pen = (type, x, y, buttons) =>
+      cdp.send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !buttons ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: 0.6 });
+    await pen('mouseMoved', from[0], from[1], 0);
+    await pen('mousePressed', from[0], from[1], 1);
+    for (let i = 1; i <= 10; i++) await pen('mouseMoved', ...lerp(i, 10), 1);
+    await pen('mouseReleased', to[0], to[1], 0);
+  } else {
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    await touch('touchStart', [{ x: from[0], y: from[1], id: 1 }]);
+    if (kind === 'touch-hold') await page.waitForTimeout(450);
+    for (let i = 1; i <= 10; i++) {
+      const [x, y] = lerp(i, 10);
+      await touch('touchMove', [{ x, y, id: 1 }]);
+    }
+    await touch('touchEnd', []);
+  }
+  await page.waitForTimeout(400);
+}
+
+/** Press one of the buttons in the first picture's row while arranging. */
+const frameButton = (page, action) => frameButtonOf(page, null, action);
+async function frameButtonOf(page, name, action) {
+  await page.evaluate(
+    ([name, action]) => {
+      const { board } = window.__sculpt.reference;
+      const item = name ? board.list().find((i) => i.name === name) : board.inView()[0];
+      document.querySelector(`.ref-frame[data-id="${item.id}"] .ref-frame__btn--${action}`).click();
+    },
+    [name, action],
+  );
+  await page.waitForTimeout(350);
+}
+
+const setLookBlend = async (page, id) => {
+  await page.selectOption('.ref-look__blend', id);
+  await page.waitForTimeout(450);
+};
+
+const arrangingNow = (page) => page.evaluate(() => window.__sculpt.reference.view.describe().arranging);
+async function lock(page) {
+  if (await arrangingNow(page)) await page.click('.ref-arrangebtn');
+  await page.waitForTimeout(350);
+}
+async function unlock(page) {
+  if (!(await arrangingNow(page))) await page.click('.ref-arrangebtn');
+  await page.waitForTimeout(350);
+}
+
+/** What the page shows at a point, from a real screenshot (the canvas and the pictures as composed). */
+async function shotPixel(page, x, y) {
+  const buf = await page.screenshot({ clip: { x: Math.round(x), y: Math.round(y), width: 1, height: 1 } });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+  }, buf.toString('base64'));
+}
+
+async function pickView(page, label) {
+  if (!(await page.evaluate(() => !!document.querySelector('.bz-menuname.is-open')))) {
+    await page.evaluate(() => [...document.querySelectorAll('.bz-menuname')].find((b) => b.textContent === 'View')?.click());
+    await page.waitForFunction(() => document.querySelector('.bz-menuname.is-open'), null, { timeout: 5000 });
+  }
+  await page.evaluate((l) => [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => (b.querySelector('.file-menu__label')?.textContent ?? '') === l)?.click(), label);
+  await page.waitForTimeout(250);
+}
+const viewChecked = (page, label) =>
+  page.evaluate((l) => [...document.querySelectorAll('.file-menu--view .file-menu__item')].find((b) => (b.querySelector('.file-menu__label')?.textContent ?? '') === l)?.getAttribute('aria-checked'), label);
 
 export const suites = {
   async refBoard(page, base, t) {
@@ -211,7 +292,7 @@ export const suites = {
       edit: window.__sculpt.editMenu.pop.textContent,
     }));
     t.ok(menus.view.includes('Reference panel'), 'the View menu has "Reference panel"');
-    t.ok(menus.view.includes('Reference over the view'), 'the View menu has "Reference over the view"');
+    t.ok(menus.view.includes('Arrange references') && menus.view.includes('References'), 'the View menu has "References" and "Arrange references"');
     t.ok(menus.edit.includes('Paste picture'), 'the Edit menu has "Paste picture"');
 
     // The panel opens from the View menu's command.
@@ -255,25 +336,47 @@ export const suites = {
     await paste('ignored.png');
     t.eq(await count(page), 3, 'a paste with the panel closed is left alone');
 
-    // Drop: onto the view.
+    // Drop: onto the view, the picture is added to the board and placed where it fell.
     {
       const bytes = [...(await png(page, 160, 90, { left: '#c0c020' }))];
       await page.evaluate((bytes) => {
         const dt = new DataTransfer();
         dt.items.add(new File([new Uint8Array(bytes)], 'dropped.png', { type: 'image/png' }));
         const target = window.__sculpt.viewer.captureCanvas;
-        target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
-        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        const init = { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 420, clientY: 330 };
+        target.dispatchEvent(new DragEvent('dragover', init));
+        target.dispatchEvent(new DragEvent('drop', init));
       }, bytes);
       await page.waitForFunction(() => window.__sculpt.reference.board.list().length === 4, null, { timeout: 10_000 });
-      t.eq((await names(page))[0], 'dropped', 'a picture dropped on the view is added');
-      t.ok(await visible(page, '.panel--reference'), 'and the Reference panel opens to show it');
+      await page.waitForTimeout(500);
+      t.eq((await names(page))[0], 'dropped', 'a picture dropped on the view is added to the board');
+      t.eq(await inViewNames(page), 'dropped', 'and placed in the view');
+      const at = await page.evaluate(() => {
+        const f = document.querySelector('.ref-frame').getBoundingClientRect();
+        return [f.left + f.width / 2, f.top + f.height / 2];
+      });
+      t.ok(Math.abs(at[0] - 420) < 4 && Math.abs(at[1] - 330) < 4, `where it was dropped (${at.map(Math.round)})`);
+      t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'with Arrange on');
+      // Dropped on the panel: a tile only.
+      await page.evaluate((bytes) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([new Uint8Array(bytes)], 'ontile.png', { type: 'image/png' }));
+        const r = document.querySelector('.panel--reference').getBoundingClientRect();
+        const target = document.querySelector('.panel--reference');
+        const init = { dataTransfer: dt, bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.top + 200 };
+        target.dispatchEvent(new DragEvent('dragover', init));
+        target.dispatchEvent(new DragEvent('drop', init));
+      }, bytes);
+      await page.waitForFunction(() => window.__sculpt.reference.board.list().length === 5, null, { timeout: 10_000 });
+      t.eq(await inViewNames(page), 'dropped', 'a picture dropped on the panel is a tile on the board, not in the view');
+      await page.evaluate(() => window.__sculpt.reference.board.remove(window.__sculpt.reference.board.list()[0].id));
+      await page.waitForTimeout(150);
     }
 
     // The row menu.
     await page.locator('.ref-card:nth-child(1) .row-more').click();
     const labels = await page.evaluate(() => [...document.querySelectorAll('.ref-card:nth-child(1) .row-menu .file-menu__item')].map((b) => b.textContent));
-    t.eq(labels.join('|'), 'Show beside|Show over the view|Mirror|Greyscale|Delete', 'the row menu has its five actions');
+    t.eq(labels.join('|'), 'Remove from view|Match viewLock the picture first|Mirror|Greyscale|Delete', 'the row menu has Remove from view (it is in the view), Match view, Mirror, Greyscale and Delete');
     await page.keyboard.press('Escape');
 
     // Delete asks first; Cancel keeps it, Delete removes it.
@@ -351,125 +454,308 @@ export const suites = {
     await openForInput(page, base);
     await openPanel(page);
     await addFiles(page, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
-    t.ok(!(await visible(page, '.ref-beside')), 'no Beside window until a picture is put there');
-
-    // Beside.
-    await cardAction(page, 1, 'ref-act-beside');
-    t.ok(await visible(page, '.ref-beside'), 'Show beside opens the window');
-    t.ok(await page.evaluate(() => document.querySelector('.ref-beside').classList.contains('float-window')), 'it is the float window');
-    await shot(page, 'beside');
-    let red = await besidePixel(page, 0.2, 0.2);
-    t.ok(isRed(red), `the window shows the picture (left is red: ${red})`);
-    const r0 = await page.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
-    const bar = await page.evaluate(() => {
-      const r = document.querySelector('.ref-beside .float-window__bar').getBoundingClientRect();
-      return [r.left + 60, r.top + 18];
-    });
-    await page.mouse.move(bar[0], bar[1]);
-    await page.mouse.down();
-    await page.mouse.move(bar[0] + 160, bar[1] + 90, { steps: 8 });
-    await page.mouse.up();
-    const r1 = await page.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
-    t.ok(Math.abs(r1.left - r0.left - 160) < 3 && Math.abs(r1.top - r0.top - 90) < 3, `the title bar moves the window (${r0.left},${r0.top} to ${r1.left},${r1.top})`);
-    // Zoom with the wheel; two fingers are tested on the phone.
-    const z0 = Number(await page.evaluate(() => document.querySelector('.ref-beside').dataset.zoom));
-    const f = await page.evaluate(() => {
-      const r = document.querySelector('.ref-beside__frame').getBoundingClientRect();
-      return [r.left + r.width / 2, r.top + r.height / 2];
-    });
-    await page.mouse.move(f[0], f[1]);
-    await page.mouse.wheel(0, -400);
-    await page.waitForTimeout(100);
-    const z1 = Number(await page.evaluate(() => document.querySelector('.ref-beside').dataset.zoom));
-    t.ok(z1 > z0 * 1.3, `the wheel zooms the picture inside the window (${z0} to ${z1})`);
-    await page.mouse.down();
-    await page.mouse.move(f[0] + 40, f[1] + 20, { steps: 4 });
-    await page.mouse.up();
-    const rect2 = await page.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
-    t.ok(Math.abs(rect2.left - r1.left) < 1 && Math.abs(rect2.top - r1.top) < 1, 'a drag inside pans the picture and the window stays');
-    await page.click('.ref-beside .float-window__close');
-    await page.waitForTimeout(150);
-    t.ok(!(await visible(page, '.ref-beside')), 'the close button closes it');
-    t.eq(await page.evaluate(() => window.__sculpt.reference.board.getView().id), null, 'and nothing is on');
-
-    // Only one picture is on at a time.
     await addFiles(page, [{ name: 'second.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
-    await cardAction(page, 1, 'ref-act-beside');
-    await cardAction(page, 2, 'ref-act-over');
-    const d = await page.evaluate(() => window.__sculpt.reference.view.describe());
-    t.ok(!d.beside && d.behind, `one picture is on at a time (${JSON.stringify(d)})`);
+    t.eq(await inViewNames(page), '', 'nothing is in the view until a picture is put there');
+    t.ok(!(await visible(page, '.ref-frame')), 'no frames, no outline');
+    t.ok(!(await visible(page, '.ref-arrangebtn')), 'and the Arrange button is not on the edge');
+    t.ok(await page.evaluate(() => document.querySelector('.ref-arrange').disabled), 'the panel’s Arrange button waits for a picture in the view');
 
-    // Over the view, behind: the backdrop. The first picture is on the second card now; put the 400x300 one on.
-    await cardAction(page, 1, 'ref-act-over'); // the newest (300x400): turn it off
-    await cardAction(page, 2, 'ref-act-over'); // first.png: on, behind
-    await page.waitForTimeout(500);
-    const dd = await page.evaluate(() => ({ ...window.__sculpt.reference.view.describe(), id: window.__sculpt.reference.board.shown()?.name }));
-    t.ok(dd.behind && dd.id === 'first', `the picture is behind the model (${JSON.stringify(dd)})`);
-    // The view is 1280x800: the picture fits the height (800 tall, 1067 wide, 107 in from each side).
-    const left = [300, 700];
-    const right = [980, 700];
-    t.ok(isRed(await sample(page, ...left)) && isBlue(await sample(page, ...right)), 'behind: the left of the view is the picture’s red, the right its blue');
-    const edge = await sample(page, 60, 700);
-    t.ok(!isRed(edge) && !isBlue(edge), `fitted to the view's height: beyond the picture it is the background (${edge})`);
-    await shot(page, 'behind');
-    // Mirror swaps the sides.
-    await cardAction(page, 2, 'ref-act-mirror');
-    await page.waitForTimeout(500);
-    t.ok(isBlue(await sample(page, ...left)) && isRed(await sample(page, ...right)), 'Mirror swaps left and right behind the model');
-    // Greyscale takes the colour out.
-    await cardAction(page, 2, 'ref-act-grey');
-    await page.waitForTimeout(500);
-    t.ok(isGrey(await sample(page, ...left)) && isGrey(await sample(page, ...right)), 'Greyscale takes the colour out behind the model');
-    await cardAction(page, 2, 'ref-act-mirror');
-    await cardAction(page, 2, 'ref-act-grey');
-    await page.waitForTimeout(400);
-    t.ok(isRed(await sample(page, ...left)), 'both undone, the picture is as it was');
-    // The model is drawn in front of it: the middle of the view is the model, not the picture.
-    const mid = await meshCentre(page);
-    const midColour = await sample(page, mid[0], mid[1]);
-    t.ok(!isRed(midColour) && !isBlue(midColour), `the model stands in front of a picture behind it (${midColour})`);
+    // A tap on a tile only selects: it does not put the picture in the view.
+    await page.locator('.ref-card:nth-child(2) .ref-card__thumb').click();
+    await page.waitForTimeout(200);
+    t.eq(await inViewNames(page), '', 'a tap on a tile does not put it in the view');
 
-    // In front: a film at an opacity.
-    await page.locator('.panel--reference .ref-over-settings .checkbox').click();
-    await page.waitForTimeout(400);
-    const front = await page.evaluate(() => window.__sculpt.reference.view.describe());
-    t.ok(front.front && !front.behind, `the switch puts it in front (${JSON.stringify(front)})`);
-    t.ok(isRed(await overPixel(page, 0.2, 0.2)) && isBlue(await overPixel(page, 0.8, 0.2)), 'in front: the picture is red on the left, blue on the right');
-    const layout = await page.evaluate(() => {
-      const c = document.querySelector('.ref-over canvas').getBoundingClientRect();
-      const v = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
-      return { ch: c.height, vh: v.height, cx: c.left + c.width / 2, vx: v.left + v.width / 2 };
+    // Drag a tile (first.png, the second tile) into the view with the mouse.
+    await dragTile(page, 2, [480, 300], 'mouse');
+    t.eq(await inViewNames(page), 'first', 'dragging a tile into the view puts the picture there');
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'and Arrange turns on');
+    const place = await page.evaluate(() => {
+      const id = window.__sculpt.reference.board.inView()[0].id;
+      const f = document.querySelector(`.ref-frame[data-id="${id}"]`).getBoundingClientRect();
+      return { cx: f.left + f.width / 2, cy: f.top + f.height / 2, w: f.width };
     });
-    t.ok(Math.abs(layout.ch - layout.vh) < 1 && Math.abs(layout.cx - layout.vx) < 1, `fitted to the view's height and centred (${JSON.stringify(layout)})`);
-    // Opacity slider.
+    t.ok(Math.abs(place.cx - 480) < 3 && Math.abs(place.cy - 300) < 3, `the picture is placed where it was let go (${Math.round(place.cx)},${Math.round(place.cy)})`);
+    t.ok(place.w > 150 && place.w < 500, `at a sensible default size (${Math.round(place.w)}px wide)`);
+    await page.waitForTimeout(300);
+    t.ok(isRed(await picPixel(page, 0.2, 0.2)) && isBlue(await picPixel(page, 0.8, 0.2)), 'the picture is drawn (red left, blue right)');
+
+    // The selected tile is the grey fill, not an orange outline.
+    const grey = await page.evaluate(() => {
+      const c = document.querySelector('.ref-card:nth-child(2)');
+      const cs = getComputedStyle(c);
+      const row = document.createElement('div');
+      row.style.background = 'var(--bz-hover)';
+      document.body.appendChild(row);
+      const hover = getComputedStyle(row).backgroundColor;
+      row.remove();
+      const off = getComputedStyle(document.querySelector('.ref-card:nth-child(1)')).backgroundColor;
+      return { on: c.classList.contains('ref-card--on'), bg: cs.backgroundColor, hover, off, outline: cs.outlineWidth, pressed: c.querySelector('.ref-card__thumb').getAttribute('aria-pressed') };
+    });
+    t.ok(grey.on && grey.bg === grey.hover && grey.off !== grey.hover && grey.pressed === 'true', `the tile in the view has the grey selected fill (${JSON.stringify(grey)})`);
+    t.ok(!/^[1-9]/.test(grey.outline) || grey.outline === '0px', `and no orange outline (${grey.outline})`);
+
+    // Arranging: an outline, corner marks and a row of five 44px buttons, named.
+    const arr = await page.evaluate(() => {
+      const f = document.querySelector('.ref-frame');
+      const btns = [...f.querySelectorAll('.ref-frame__btn')].map((b) => ({ name: b.getAttribute('aria-label'), title: b.title, w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height, icon: !!b.querySelector('.fi') }));
+      const cs = getComputedStyle(f);
+      return { corners: f.querySelectorAll('.ref-frame__corner').length, border: cs.borderTopWidth, btns };
+    });
+    t.eq(arr.btns.map((b) => b.name).join(','), 'Lock,Fit,Flip,Look,Remove from view', 'the row has Lock, Fit, Flip, Look and Remove from view');
+    t.ok(arr.btns.every((b) => b.w >= 44 && b.h >= 44 && b.icon && b.title === b.name), 'each is an icon, 44px, with its name');
+    t.ok(arr.corners === 4 && arr.border === '1px', 'a thin outline and four corner marks');
+    await shot(page, 'arranging');
+
+    // The edge button: shown now, orange while arranging, toggles.
+    const edge = () =>
+      page.evaluate(() => {
+        const b = document.querySelector('.ref-arrangebtn');
+        const probe = document.createElement('i');
+        probe.style.color = 'var(--bz-orange)';
+        document.body.appendChild(probe);
+        const orange = getComputedStyle(probe).color;
+        probe.remove();
+        const bg = getComputedStyle(b).backgroundColor;
+        return { shown: !!b && b.getClientRects().length > 0, pressed: b?.getAttribute('aria-pressed'), orange: getComputedStyle(b).color === orange, noSquare: bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent', inColumn: !!b.closest('.bz-edge') };
+      });
+    let e = await edge();
+    t.ok(e.shown && e.inColumn && e.pressed === 'true' && e.orange && e.noSquare, `the edge button is there, orange with no square, while arranging (${JSON.stringify(e)})`);
+
+    // Drag by the mouse and by the Pencil; wheel and corner scale.
+    const frame = () => page.evaluate(() => document.querySelector('.ref-frame').getBoundingClientRect().toJSON());
+    const f0 = await frame();
+    await page.mouse.move(f0.left + f0.width / 2, f0.top + f0.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(f0.left + f0.width / 2 + 120, f0.top + f0.height / 2 + 80, { steps: 8 });
+    await page.mouse.up();
+    const f1 = await frame();
+    t.ok(Math.abs(f1.left - f0.left - 120) < 3 && Math.abs(f1.top - f0.top - 80) < 3, 'dragging the picture with the mouse moves it');
+    const cdp = await page.context().newCDPSession(page);
+    const pen = (type, x, y, buttons) =>
+      cdp.send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !buttons ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: 0.6 });
+    const px = f1.left + f1.width / 2;
+    const py = f1.top + f1.height / 2;
+    await pen('mouseMoved', px, py, 0);
+    await pen('mousePressed', px, py, 1);
+    for (let i = 1; i <= 6; i++) await pen('mouseMoved', px - i * 10, py + i * 5, 1);
+    await pen('mouseReleased', px - 60, py + 30, 0);
+    const f2 = await frame();
+    t.ok(Math.abs(f2.left - f1.left + 60) < 3 && Math.abs(f2.top - f1.top - 30) < 3, 'the Pencil on the picture moves it too');
+    await page.mouse.move(f2.left + f2.width / 2, f2.top + f2.height / 2);
+    await page.mouse.wheel(0, -300);
+    await page.waitForTimeout(100);
+    const f3 = await frame();
+    t.ok(f3.width > f2.width * 1.2, `the wheel scales it (${Math.round(f2.width)} to ${Math.round(f3.width)})`);
+    // The south east corner: the north west corner stays.
+    await page.mouse.move(f3.right - 2, f3.bottom - 2);
+    await page.mouse.down();
+    await page.mouse.move(f3.right - 2 - 60, f3.bottom - 2, { steps: 5 });
+    await page.mouse.up();
+    const f4 = await frame();
+    t.ok(f4.width < f3.width - 40 && Math.abs(f4.left - f3.left) < 2 && Math.abs(f4.top - f3.top) < 2, `dragging a corner resizes it, the opposite corner staying (${Math.round(f3.width)} to ${Math.round(f4.width)})`);
+    // The north west corner moves the other way: the south east corner stays.
+    await page.mouse.move(f4.left + 1, f4.top + 1);
+    await page.mouse.down();
+    await page.mouse.move(f4.left + 1 + 30, f4.top + 1 + 30, { steps: 5 });
+    await page.mouse.up();
+    const f5 = await frame();
+    t.ok(f5.width < f4.width - 10 && Math.abs(f5.right - f4.right) < 2 && Math.abs(f5.bottom - f4.bottom) < 2, 'and the north west corner works the same');
+
+    // Fit: the picture fills the view, its aspect kept.
+    await frameButton(page, 'fit');
+    const fit = await page.evaluate(() => {
+      const v = window.__sculpt.viewer.captureCanvas.getBoundingClientRect();
+      const f = document.querySelector('.ref-frame').getBoundingClientRect();
+      return { fw: f.width, fh: f.height, vw: v.width, vh: v.height, cx: f.left + f.width / 2 - (v.left + v.width / 2), cy: f.top + f.height / 2 - (v.top + v.height / 2) };
+    });
+    t.ok((Math.abs(fit.fh - fit.vh) < 2 || Math.abs(fit.fw - fit.vw) < 2) && fit.fw <= fit.vw + 1 && fit.fh <= fit.vh + 1 && Math.abs(fit.cx) < 2 && Math.abs(fit.cy) < 2, `Fit fills the view, centred (${JSON.stringify(fit)})`);
+    t.near(fit.fw / fit.fh, 4 / 3, 0.02, 'and keeps the aspect');
+
+    // Flip mirrors.
+    await frameButton(page, 'flip');
+    await page.waitForTimeout(300);
+    t.ok(isBlue(await picPixel(page, 0.2, 0.2)) && isRed(await picPixel(page, 0.8, 0.2)), 'Flip swaps left and right');
+
+    // Look: a pop-up with the blend select (Behind, Normal, the modes in Photoshop's order), Opacity and Greyscale.
+    await frameButton(page, 'look');
+    t.ok(await visible(page, '.ref-look'), 'Look opens a small pop-up');
+    const opts = await page.evaluate(() => {
+      const g = [[]];
+      for (const o of document.querySelectorAll('.ref-look__blend option')) {
+        if (o.disabled) g.push([]);
+        else g[g.length - 1].push(o.textContent);
+      }
+      return g.map((x) => x.join(',')).join('|');
+    });
+    t.eq(
+      opts,
+      'Behind,Normal|Darken,Multiply,Color Burn|Lighten,Screen,Color Dodge,Linear Dodge (Add)|Overlay,Soft Light,Hard Light|Difference,Exclusion|Hue,Saturation,Color,Luminosity',
+      'the blend select lists Behind, Normal and the CSS-matched modes in Photoshop’s order, groups between lines',
+    );
+    t.ok(await page.evaluate(() => !!document.querySelector('.ref-look input[type=range]') && !!document.querySelector('.ref-look input[type=checkbox]')), 'with Opacity and Greyscale');
+    await shot(page, 'look');
+    // Pixels: Normal against Multiply, read from a real screenshot of the view as composed. Locked first, so no outline is in it.
+    await setLookBlend(page, 'normal');
+    await lock(page);
+    const spot = [300, 700];
+    const normalPx = await shotPixel(page, ...spot);
+    t.ok(isBlue(normalPx) || isRed(normalPx), `Normal at full strength shows the picture (${normalPx})`);
+    await unlock(page);
+    await frameButton(page, 'look');
+    await setLookBlend(page, 'multiply');
+    t.eq(await page.evaluate(() => document.querySelector('.ref-pic').style.mixBlendMode), 'multiply', 'Multiply sets the picture’s mix-blend-mode');
+    await lock(page);
+    const mulPx = await shotPixel(page, ...spot);
+    t.ok(Math.abs(mulPx[0] - normalPx[0]) + Math.abs(mulPx[2] - normalPx[2]) > 60, `Multiply changes the pixels of the view compared with Normal (${normalPx} to ${mulPx})`);
+    const mm = await meshCentre(page);
+    await unlock(page);
+    await frameButton(page, 'look');
+    await setLookBlend(page, 'normal');
+    await lock(page);
+    const modelNormal = await shotPixel(page, mm[0], mm[1]);
+    await unlock(page);
+    await frameButton(page, 'look');
+    await setLookBlend(page, 'screen');
+    await lock(page);
+    const modelScreen = await shotPixel(page, mm[0], mm[1]);
+    t.ok(modelNormal.some((v, i) => Math.abs(v - modelScreen[i]) > 20), `a mode blends with the model too (${modelNormal} to ${modelScreen})`);
+    await unlock(page);
+    // Opacity.
+    await frameButton(page, 'look');
+    await setLookBlend(page, 'normal');
     await page.evaluate(() => {
-      const s = document.querySelector('.panel--reference .ref-over-settings input[type=range]');
+      const s = document.querySelector('.ref-look input[type=range]');
       s.value = '30';
       s.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.waitForTimeout(300);
-    const op = await page.evaluate(() => getComputedStyle(document.querySelector('.ref-over')).opacity);
-    t.near(Number(op), 0.3, 0.02, 'the Opacity slider sets how strongly it shows in front');
-    await shot(page, 'front');
-    await cardAction(page, 2, 'ref-act-mirror');
-    t.ok(isBlue(await overPixel(page, 0.2, 0.2)) && isRed(await overPixel(page, 0.8, 0.2)), 'Mirror swaps the picture in front');
-    await cardAction(page, 2, 'ref-act-grey');
-    t.ok(isGrey(await overPixel(page, 0.2, 0.2)) && isGrey(await overPixel(page, 0.8, 0.2)), 'Greyscale takes the colour out in front');
-    // And in the Beside window.
-    await cardAction(page, 2, 'ref-act-beside');
-    t.ok(isGrey(await besidePixel(page, 0.2, 0.2)) && isGrey(await besidePixel(page, 0.8, 0.2)) && !(await visible(page, '.ref-over')), 'Beside shows the same picture, mirrored and grey, and the film is away');
-    await cardAction(page, 2, 'ref-act-over');
-
-    // The View switch "Reference over the view" takes the picture off the view and back.
-    await page.evaluate(() => window.__sculpt.reference.view.setOverEnabled(false));
+    t.near(Number(await page.evaluate(() => getComputedStyle(document.querySelector('.ref-pic')).opacity)), 0.3, 0.02, 'Opacity sets how strongly it shows');
+    // Greyscale.
+    await page.locator('.ref-look input[type=checkbox]').check();
     await page.waitForTimeout(300);
-    t.ok(!(await visible(page, '.ref-over')), 'View > Reference over the view off: the film is away');
-    await page.evaluate(() => window.__sculpt.reference.board.setOver({ front: false }));
-    await page.waitForTimeout(300);
-    t.ok(!(await page.evaluate(() => window.__sculpt.reference.view.describe().behind)), 'and the backdrop too');
-    await page.evaluate(() => window.__sculpt.reference.view.setOverEnabled(true));
+    t.ok(isGrey(await picPixel(page, 0.2, 0.2)) && isGrey(await picPixel(page, 0.8, 0.2)), 'Greyscale takes the colour out');
+    await page.locator('.ref-look input[type=checkbox]').uncheck();
+    await page.waitForTimeout(200);
+    // Behind: under the model, no overlay element; Opacity applies to it too.
+    await setLookBlend(page, 'behind');
+    const dBehind = await page.evaluate(() => window.__sculpt.reference.view.describe());
+    t.ok(dBehind.behind && !dBehind.pictures[0].element && !(await visible(page, '.ref-pic')), `Behind draws under the model, as no overlay (${JSON.stringify(dBehind)})`);
+    t.near(dBehind.pictures[0].opacity, 0.3, 0.02, 'with the same opacity');
+    await lock(page);
     await page.waitForTimeout(400);
-    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().behind), 'on again, it is back');
+    const midBehind = await sample(page, mm[0], mm[1]);
+    t.ok(!isRed(midBehind) && !isBlue(midBehind), 'the model stands in front of a picture behind it');
+    await unlock(page);
+    await frameButton(page, 'look');
+    await setLookBlend(page, 'normal');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.board.list().find((i) => i.name === 'first').blend), 'normal', 'the blend is kept with the picture');
+    await shot(page, 'look-normal');
+
+    // Remove from view: it stays on the board.
+    await frameButton(page, 'remove');
+    t.eq(await inViewNames(page), '', 'Remove from view takes it out of the view');
+    t.eq(await count(page), 2, 'and the tile stays on the board');
+    t.ok(!(await visible(page, '.ref-frame')) && !(await visible(page, '.ref-arrangebtn')), 'the frame and the edge button go');
+    t.ok(!(await page.evaluate(() => document.querySelector('.ref-card:nth-child(2)').classList.contains('ref-card--on'))), 'and the tile is not grey');
+
+    // Place in view (the row menu), for a hand that cannot drag.
+    await cardAction(page, 2, 'ref-act-place');
+    t.eq(await inViewNames(page), 'first', 'Place in view puts it in the view');
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'and Arrange turns on');
+    // Two pictures at once.
+    await dragTile(page, 1, [520, 560], 'mouse');
+    t.eq(await inViewNames(page), 'first,second', 'two pictures are in the view at once');
+    t.eq(await page.evaluate(() => document.querySelectorAll('.ref-frame').length), 2, 'each with its own frame');
+
+    // Lock: no outline, no icons, and the pictures pass everything through.
+    await lock(page);
+    t.ok(!(await visible(page, '.ref-frame')), 'Lock removes the outlines and icons');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), false, 'and arranging is off');
+    t.eq(await inViewNames(page), 'first,second', 'the pictures stay');
+    e = await edge();
+    t.ok(e.shown && e.pressed === 'false' && !e.orange, `the edge button is neutral while locked (${JSON.stringify(e)})`);
+    const pass = await page.evaluate(() => {
+      const pics = [...document.querySelectorAll('.ref-pic')];
+      const r = pics[0].getBoundingClientRect();
+      const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { pe: pics.map((p) => getComputedStyle(p).pointerEvents), layer: getComputedStyle(document.querySelector('.ref-layer')).pointerEvents, tag: e?.tagName, inPic: !!e?.closest('.ref-layer') };
+    });
+    t.ok(pass.pe.every((p) => p === 'none') && pass.layer === 'none' && pass.tag === 'CANVAS' && !pass.inPic, `locked pictures are pass-through: the element under them is the view's canvas (${JSON.stringify(pass)})`);
+    await shot(page, 'locked');
+
+    // The edge button unlocks again and the panel's button locks.
+    await page.click('.ref-arrangebtn');
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'the edge button unlocks');
+    t.eq(await page.evaluate(() => document.querySelector('.ref-arrange').textContent), 'Lock', 'and the panel button then says Lock');
+    await page.click('.ref-arrange');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), false, 'the panel button locks');
+    t.eq(await page.evaluate(() => document.querySelector('.ref-arrange').textContent), 'Arrange', 'and says Arrange');
+
+    // The View menu.
+    const viewLabels = await page.evaluate(() => window.__sculpt.viewMenu.pop.textContent);
+    t.ok(viewLabels.includes('References') && viewLabels.includes('Arrange references'), 'View has References and Arrange references');
+    t.ok(!viewLabels.includes('Reference beside the view') && !viewLabels.includes('Reference over the view'), 'and the old beside and over items are gone');
+    await pickView(page, 'Arrange references');
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'View > Arrange references unlocks');
+    t.eq(await viewChecked(page, 'Arrange references'), 'true', 'with a check');
+    await page.keyboard.press('Escape');
+    await pickView(page, 'Arrange references');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), false, 'and locks again');
+    await page.keyboard.press('Escape');
+    await pickView(page, 'References');
+    await page.waitForTimeout(300);
+    t.ok(!(await visible(page, '.ref-pic')), 'View > References off hides all the pictures');
+    await page.keyboard.press('Escape');
+    await pickView(page, 'References');
+    await page.waitForTimeout(400);
+    t.ok(await visible(page, '.ref-pic'), 'and on brings them back');
+    await page.keyboard.press('Escape');
+
+    // The picture and the pixel under a point: what a projection tool asks.
+    const hit = await page.evaluate(() => {
+      const pics = window.__sculpt.reference.view.picturesInView();
+      const top = pics[pics.length - 1];
+      const h = window.__sculpt.reference.view.imageAt(top.left + top.width / 2, top.top + top.height / 2);
+      return { n: pics.length, name: h?.item.name, x: h?.x, y: h?.y, w: h?.item.width, h: h?.item.height };
+    });
+    t.ok(hit.n === 2 && hit.name === 'second' && Math.abs(hit.x - hit.w / 2) <= 1 && Math.abs(hit.y - hit.h / 2) <= 1, `imageAt names the topmost picture and the image pixel under a point (${JSON.stringify(hit)})`);
+
+    // Match view: disabled until a picture was locked; locking keeps the camera; it brings it back.
+    await page.evaluate(() => window.__sculpt.reference.board.clear());
+    await page.waitForTimeout(200);
+    await addFiles(page, [{ name: 'cam.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
+    await page.locator('.ref-card:nth-child(1) .row-more').click();
+    const matchOff = await page.evaluate(() => {
+      const b = document.querySelector('.ref-card:nth-child(1) .ref-act-match');
+      return { disabled: b.disabled, text: b.textContent };
+    });
+    t.ok(matchOff.disabled && matchOff.text.includes('Match view') && matchOff.text.includes('Lock the picture first'), `Match view is disabled with the hint until a picture is locked (${JSON.stringify(matchOff)})`);
+    await page.keyboard.press('Escape');
+    await cardAction(page, 1, 'ref-act-place');
+    const cam0 = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+    await lock(page);
+    t.ok(await page.evaluate(() => !!window.__sculpt.reference.board.list()[0].camera), 'locking keeps the camera with the picture');
+    await page.evaluate(() => window.__sculpt.viewer.orbitAzimuth(50));
+    await page.waitForTimeout(500);
+    const camAway = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+    t.ok(camAway.some((v, i) => Math.abs(v - cam0[i]) > 0.05), 'the camera was moved away');
+    await cardAction(page, 1, 'ref-act-match');
+    await page.waitForTimeout(500);
+    const camBack = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+    t.ok(camBack.every((v, i) => Math.abs(v - cam0[i]) < 0.02), `Match view puts the camera back (${cam0.map((v) => v.toFixed(2))} against ${camBack.map((v) => v.toFixed(2))})`);
+
+    // The same drag with the Pencil, and with a finger (held, and at once sideways).
+    await page.evaluate(() => window.__sculpt.reference.board.clear());
+    await page.waitForTimeout(200);
+    await addFiles(page, [{ name: 'p1.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
+    await dragTile(page, 1, [480, 300], 'pen');
+    t.eq(await inViewNames(page), 'p1', 'the Pencil drags a tile into the view');
+    await page.evaluate(() => window.__sculpt.reference.board.takeOut(window.__sculpt.reference.board.list()[0].id));
+    await dragTile(page, 1, [480, 300], 'touch-hold');
+    t.eq(await inViewNames(page), 'p1', 'a finger that holds a tile then drags puts it in the view');
+    await page.evaluate(() => window.__sculpt.reference.board.takeOut(window.__sculpt.reference.board.list()[0].id));
+    await dragTile(page, 1, [20, 300], 'touch-side').catch(() => {});
+    await page.evaluate(() => window.__sculpt.reference.board.takeOut(window.__sculpt.reference.board.list()[0]?.id));
   },
 
   async refInput(page, base, t) {
@@ -477,82 +763,99 @@ export const suites = {
     await openForInput(page, base);
     await openPanel(page);
     await addFiles(page, [{ name: 'first.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
-    await cardAction(page, 1, 'ref-act-over');
-    await page.locator('.panel--reference .ref-over-settings .checkbox').click();
-    await page.waitForTimeout(400);
-    t.ok(await visible(page, '.ref-over'), 'a picture is in front of the view');
-    // A pen stroke across the model, through the picture, as CDP sends a pen.
+    await addFiles(page, [{ name: 'second.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
+    // Both pictures in the view, one fitted over the model: a film across the whole view.
+    await dragTile(page, 1, [480, 640], 'mouse');
+    await dragTile(page, 2, [480, 300], 'mouse');
+    await frameButtonOf(page, 'first', 'fit');
+    await frameButtonOf(page, 'first', 'look');
+    await setLookBlend(page, 'normal');
+    await openPanel(page, false);
+    t.eq(await inViewNames(page), 'second,first', 'two pictures are in the view');
+    t.ok(await page.evaluate(() => window.__sculpt.reference.view.describe().arranging), 'and Arrange is on');
+
+    // Arranging: the model outside the pictures is worked as always.
     const [cx, cy] = await meshCentre(page);
-    const top = await page.evaluate(([x, y]) => {
-      const e = document.elementFromPoint(x, y);
-      return { overlay: !!e?.closest('.ref-over'), tag: e?.tagName, pe: getComputedStyle(document.querySelector('.ref-over')).pointerEvents };
-    }, [cx, cy]);
-    t.ok(!top.overlay && top.pe === 'none', `the picture takes no pointer: the element under the pen is not it (${JSON.stringify(top)})`);
-    await page.keyboard.press('3');
-    const strokes0 = await page.evaluate(() => window.__sculpt.input.strokeCount());
-    const before = await meshSum(page);
     const cdp = await page.context().newCDPSession(page);
     const pen = (type, x, y, buttons) =>
       cdp.send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !buttons ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: 0.6 });
-    await pen('mouseMoved', cx - 40, cy, 0);
-    await pen('mousePressed', cx - 40, cy, 1);
-    for (let i = 1; i <= 8; i++) await pen('mouseMoved', cx - 40 + i * 10, cy + i * 2, 1);
-    await pen('mouseReleased', cx + 40, cy + 16, 0);
-    await page.waitForTimeout(400);
-    const after = await meshSum(page);
-    const strokes1 = await page.evaluate(() => window.__sculpt.input.strokeCount());
-    t.ok(after !== before, 'a Pencil stroke over a picture in front still sculpts: the mesh changed');
-    t.eq(strokes1, strokes0 + 1, 'and it is one stroke, begun and ended');
-    t.ok(await visible(page, '.ref-over'), 'the picture is still there');
-    // Touch on the model goes to the model too: a finger orbits (a pointer the overlay never sees).
-    const camBefore = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+    const stroke = async (x, y) => {
+      await pen('mouseMoved', x - 40, y, 0);
+      await pen('mousePressed', x - 40, y, 1);
+      for (let i = 1; i <= 8; i++) await pen('mouseMoved', x - 40 + i * 10, y + i * 2, 1);
+      await pen('mouseReleased', x + 40, y + 16, 0);
+      await page.waitForTimeout(350);
+    };
+    // Put the fitted picture away from the model while arranging: shrink it to the corner.
+    await page.evaluate(() => {
+      const { board, view } = window.__sculpt.reference;
+      const item = board.list().find((i) => i.name === 'first');
+      board.setPlace(item.id, { x: -0.5, y: -0.3, w: 0.2 });
+    });
+    await page.keyboard.press('3');
+    const before = await meshSum(page);
+    await stroke(cx, cy);
+    t.ok((await meshSum(page)) !== before, 'while arranging, a Pencil stroke on the model outside the pictures sculpts');
+    const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [cx, cy]);
+    t.eq(top, 'CANVAS', 'the element under the model is the canvas');
+
+    // Locked, with a picture fitted across the model: every mode passes everything through.
+    await page.evaluate(() => {
+      const { board, view } = window.__sculpt.reference;
+      const item = board.list().find((i) => i.name === 'first');
+      board.setPlace(item.id, view.fitPlace(item));
+    });
+    await lock(page);
+    t.ok(!(await visible(page, '.ref-frame')), 'locked: no outlines or icons');
+    for (const mode of ['normal', 'multiply', 'screen', 'overlay', 'difference', 'luminosity']) {
+      await page.evaluate((m) => {
+        const { board } = window.__sculpt.reference;
+        board.setLook(board.list().find((i) => i.name === 'first').id, { blend: m });
+      }, mode);
+      await page.waitForTimeout(250);
+      const under = await page.evaluate(([x, y]) => {
+        const e = document.elementFromPoint(x, y);
+        return { tag: e?.tagName, inLayer: !!e?.closest('.ref-layer, .ref-chrome') };
+      }, [cx, cy]);
+      t.ok(under.tag === 'CANVAS' && !under.inLayer, `a locked picture in ${mode} takes no pointer (${JSON.stringify(under)})`);
+      const strokes0 = await page.evaluate(() => window.__sculpt.input.strokeCount());
+      const m0 = await meshSum(page);
+      await stroke(cx, cy + 20);
+      t.ok((await meshSum(page)) !== m0, `a Pencil stroke through the locked picture in ${mode} sculpts`);
+      t.eq(await page.evaluate(() => window.__sculpt.input.strokeCount()), strokes0 + 1, `and is one stroke, begun and ended (${mode})`);
+    }
+    // A finger orbits through it; two fingers too.
     const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const cam = () => page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
+    const c0 = await cam();
     await touch('touchStart', [{ x: 200, y: 600, id: 1 }]);
     for (let i = 1; i <= 8; i++) await touch('touchMove', [{ x: 200 + i * 12, y: 600, id: 1 }]);
     await touch('touchEnd', []);
-    await page.waitForTimeout(300);
-    const camAfter = await page.evaluate(() => window.__sculpt.viewer.camera.position.toArray());
-    t.ok(camAfter.some((v, i) => Math.abs(v - camBefore[i]) > 1e-4), 'a finger drag on the view still orbits it through the picture');
+    await page.waitForTimeout(400);
+    const c1 = await cam();
+    t.ok(c1.some((v, i) => Math.abs(v - c0[i]) > 1e-4), 'a finger drag through the locked picture orbits the view');
+    await touch('touchStart', [{ x: 300, y: 500, id: 1 }, { x: 400, y: 500, id: 2 }]);
+    for (let i = 1; i <= 8; i++) await touch('touchMove', [{ x: 300 - i * 8, y: 500, id: 1 }, { x: 400 + i * 8, y: 500, id: 2 }]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(400);
+    const c2 = await cam();
+    t.ok(c2.some((v, i) => Math.abs(v - c1[i]) > 1e-4), 'a two-finger gesture through the locked picture reaches the view');
+    t.eq(await page.evaluate(() => window.__sculpt.reference.board.inView().length), 2, 'and both pictures are still there');
 
-    // The Beside window takes input only on itself: a stroke beside it still sculpts.
-    await page.evaluate(() => {
-      const b = window.__sculpt.reference.board;
-      b.show(b.list()[0].id, 'beside');
-    });
+    // Tab: the outlines and icons go with the interface, the pictures stay.
+    await page.evaluate(() => window.__sculpt.reference.board.setArranging(true));
     await page.waitForTimeout(300);
-    const win = await page.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
-    t.ok(win.right < cx - 120, `the window is at the corner, not over the model (${win.right} against ${cx})`);
-    const b2 = await meshSum(page);
-    await page.mouse.move(cx - 40, cy + 30);
-    await page.mouse.down();
-    await page.mouse.move(cx + 40, cy + 40, { steps: 6 });
-    await page.mouse.up();
-    await page.waitForTimeout(300);
-    t.ok((await meshSum(page)) !== b2, 'with the window open the model is still sculpted');
-
-    // Tab: the Beside window goes with the interface, the picture over the view stays.
+    t.ok(await visible(page, '.ref-frame'), 'arranging shows the frames');
     await page.evaluate(() => document.activeElement?.blur());
-    await page.keyboard.press('Tab'); // closes the open panel
-    await page.waitForTimeout(250);
-    await page.keyboard.press('Tab'); // hides the interface
+    await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
     t.ok(await page.evaluate(() => document.body.classList.contains('chrome-hidden')), 'Tab hides the interface');
-    t.ok(!(await visible(page, '.ref-beside')), 'the Beside window is hidden with it');
+    t.ok(!(await visible(page, '.ref-frame')), 'the outlines and icons go with it');
+    t.ok(await visible(page, '.ref-pic'), 'the pictures stay');
+    await shot(page, 'chrome-hidden');
     await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
-    t.ok(await visible(page, '.ref-beside'), 'and comes back with it');
-    await page.evaluate(() => {
-      const b = window.__sculpt.reference.board;
-      b.show(b.list()[0].id, 'over');
-    });
-    await page.waitForTimeout(300);
-    t.ok(await visible(page, '.ref-over'), 'a picture over the view is up');
-    await page.keyboard.press('Tab'); // no panel is open now: this one hides the interface
-    await page.waitForTimeout(500);
-    t.ok(await page.evaluate(() => document.body.classList.contains('chrome-hidden')), 'the interface is hidden again');
-    t.ok(await visible(page, '.ref-over'), 'the picture over the view stays when the interface is hidden');
-    await shot(page, 'chrome-hidden-over');
-    await page.keyboard.press('Tab');
+    t.ok(await visible(page, '.ref-frame'), 'and the outlines come back with it');
   },
 
   async refKeep(page, base, t) {
@@ -561,7 +864,15 @@ export const suites = {
     await addFiles(page, [{ name: 'one.png', mimeType: 'image/png', buffer: await png(page, 400, 300) }]);
     await addFiles(page, [{ name: 'two.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
     await cardAction(page, 1, 'ref-act-mirror');
-    await cardAction(page, 1, 'ref-act-beside');
+    await cardAction(page, 1, 'ref-act-place');
+    await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      const item = board.list()[0];
+      board.setPlace(item.id, { x: 0.21, y: -0.13, w: 0.37 });
+      board.setLook(item.id, { blend: 'multiply', opacity: 0.4 });
+    });
+    await lock(page);
+    const camKept = await page.evaluate(() => window.__sculpt.reference.board.list()[0].camera);
     await page.evaluate(() => window.__sculpt.reference.board.flush());
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
@@ -570,13 +881,23 @@ export const suites = {
     t.eq(after.map((b) => b.name).join(','), 'two,one', 'a reload brings the pictures back, in the same order');
     t.ok(after[0].mirror && !after[1].mirror, 'with how each was drawn');
     await page.waitForTimeout(600);
-    t.ok(await visible(page, '.ref-beside'), 'and the one that was on is on');
+    t.eq(await inViewNames(page), 'two', 'and the one that was in the view is in it');
+    const kept = await page.evaluate(() => {
+      const i = window.__sculpt.reference.board.list()[0];
+      return { place: i.place, blend: i.blend, opacity: i.opacity, camera: i.camera };
+    });
+    t.ok(kept.place && Math.abs(kept.place.x - 0.21) < 1e-6 && Math.abs(kept.place.y + 0.13) < 1e-6 && Math.abs(kept.place.w - 0.37) < 1e-6, `with its place (${JSON.stringify(kept.place)})`);
+    t.ok(kept.blend === 'multiply' && Math.abs(kept.opacity - 0.4) < 1e-6, 'its blend mode and opacity');
+    t.eq(JSON.stringify(kept.camera), JSON.stringify(camKept), 'and the camera kept when it was locked');
+    t.eq(await arrangingNow(page), false, 'a scene opens locked');
+    t.ok(!(await visible(page, '.ref-frame')), 'with no outlines');
+    t.ok(await visible(page, '.ref-pic'), 'and the picture drawn');
 
     // New sculpt starts with an empty board, and a reload after it has none.
     await page.evaluate(() => window.__sculpt.fileActions.newScene());
     await page.waitForTimeout(500);
     t.eq(await count(page), 0, 'New sculpt starts with an empty board');
-    t.ok(!(await visible(page, '.ref-beside')), 'and nothing on');
+    t.eq(await inViewNames(page), '', 'and nothing in the view');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
     await page.waitForTimeout(800);
@@ -589,8 +910,8 @@ export const suites = {
       window.__sculpt.fileActions.setLink({ id: 'proj-a', title: 'Project A' });
     });
     await page.waitForTimeout(200);
-    t.ok(!(await page.evaluate(() => document.querySelector('.ref-note').textContent.includes('never uploaded'))), 'a library project’s panel no longer says "never uploaded"');
-    t.eq(await page.evaluate(() => document.querySelector('.ref-note').textContent), 'References stay on the device they were added on.', 'the panel says where they stay');
+    t.ok(await page.evaluate(() => document.querySelector('.ref-note').textContent.includes('never uploaded')), 'a library project’s panel says they are never uploaded');
+    t.eq(await page.evaluate(() => document.querySelector('.ref-note').textContent), 'References stay on the device they were added on and are never uploaded.', 'the panel says where they stay');
     await page.evaluate(() => window.__sculpt.reference.board.flush());
     await page.evaluate(async () => {
       const { board } = window.__sculpt.reference;
@@ -638,18 +959,25 @@ export const suites = {
     await addFiles(page, [{ name: 'two.png', mimeType: 'image/png', buffer: await png(page, 300, 400) }]);
     await cardAction(page, 1, 'ref-act-grey');
     await cardAction(page, 2, 'ref-act-mirror');
-    await cardAction(page, 1, 'ref-act-beside');
+    await cardAction(page, 1, 'ref-act-place');
+    await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      board.setPlace(board.list()[0].id, { x: 0.1, y: 0.2, w: 0.3 });
+      board.setLook(board.list()[0].id, { blend: 'overlay', opacity: 0.6 });
+    });
+    await lock(page);
 
     const packed = async (include) =>
       page.evaluate(async (inc) => {
         const blob = await window.__sculpt.fileActions.packFile(inc);
         const bytes = await blob.arrayBuffer();
         const scene = await window.__sculpt.file.unpack(bytes);
-        return { bytes: [...new Uint8Array(bytes)], refs: scene.references ? { n: scene.references.items.length, names: scene.references.items.map((i) => i.name), view: scene.references.view } : null };
+        return { bytes: [...new Uint8Array(bytes)], refs: scene.references ? { n: scene.references.items.length, names: scene.references.items.map((i) => i.name), first: { inView: scene.references.items[0].inView, place: scene.references.items[0].place, blend: scene.references.items[0].blend, opacity: scene.references.items[0].opacity, camera: !!scene.references.items[0].camera } } : null };
       }, include);
     const withRefs = await packed(true);
     t.ok(withRefs.refs && withRefs.refs.n === 2, `Save file with Include references carries the two pictures (${JSON.stringify(withRefs.refs)})`);
     t.eq(withRefs.refs?.names.join(','), 'two,one', 'in order');
+    t.ok(withRefs.refs?.first.inView && withRefs.refs.first.place?.w === 0.3 && withRefs.refs.first.blend === 'overlay' && withRefs.refs.first.opacity === 0.6 && withRefs.refs.first.camera, `with where the picture stands, its blend and the camera (${JSON.stringify(withRefs.refs?.first)})`);
     const without = await packed(false);
     t.eq(without.refs, null, 'with it off the file has none');
     const plain = await page.evaluate(async () => {
@@ -702,11 +1030,12 @@ export const suites = {
     const got = await board(page);
     t.eq(got.map((b) => b.name).join(','), 'two,one', 'opening the file brings its pictures');
     t.ok(got[0].grey && got[1].mirror, 'with how each was drawn');
-    t.ok(await visible(page, '.ref-beside'), 'and the one that was on is on');
+    t.eq(await inViewNames(page), 'two', 'and the one that was in the view is in it');
+    t.eq(await arrangingNow(page), false, 'locked');
     await page.evaluate((b) => window.__sculpt.file.open(new Uint8Array(b).buffer), without.bytes);
     await page.waitForTimeout(500);
     t.eq(await count(page), 0, 'opening a file saved without them leaves the board empty');
-    t.ok(!(await visible(page, '.ref-beside')), 'and nothing on');
+    t.eq(await inViewNames(page), '', 'and nothing in the view');
   },
 
   async refNoUpload(page, base, t) {
@@ -715,7 +1044,12 @@ export const suites = {
     const marker = 'REFMARK-' + Math.random().toString(36).slice(2, 10);
     // A picture with a distinct stretch of bytes: a JPEG's own, found again in anything that carries it.
     await addFiles(page, [{ name: `${marker}.png`, mimeType: 'image/png', buffer: await png(page, 600, 400, { left: '#33aa55', right: '#aa3355' }) }]);
-    await cardAction(page, 1, 'ref-act-over'); // behind: the backdrop is up while the scene is saved
+    await cardAction(page, 1, 'ref-act-place');
+    await page.evaluate(() => {
+      const { board } = window.__sculpt.reference;
+      board.setLook(board.list()[0].id, { blend: 'behind' });
+      board.setPlace(board.list()[0].id, { x: 0, y: 0, w: 1 });
+    }); // behind: the backdrop is up while the scene is saved
     await page.waitForTimeout(500);
     const refBytes = Buffer.from(await page.evaluate(async () => [...new Uint8Array(await window.__sculpt.reference.board.list()[0].blob.arrayBuffer())]));
     const slice = refBytes.subarray(Math.floor(refBytes.length / 3), Math.floor(refBytes.length / 3) + 48);
@@ -841,41 +1175,74 @@ export const suites = {
       });
       t.ok(grid.n === 2 && grid.inside && grid.overflow === 0, `the grid fits the phone (${JSON.stringify(grid)})`);
       await shot(p, 'phone-board');
-      await p.evaluate(() => {
-        const b = window.__sculpt.reference.board;
-        b.show(b.list()[0].id, 'beside');
-      });
-      await p.waitForTimeout(300);
-      await shot(p, 'phone-beside');
-      // Two fingers in the Beside window: pinch zooms, and the pair together pans.
+      // A finger holds a tile and drags it up out of the sheet into the view.
       const cdp = await p.context().newCDPSession(p);
       const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
-      const f = await p.evaluate(() => {
-        const r = document.querySelector('.ref-beside__frame').getBoundingClientRect();
+      const tile = await p.evaluate(() => {
+        const r = document.querySelector('.ref-card:nth-child(2) .ref-card__thumb').getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       });
-      const zoom = () => p.evaluate(() => Number(document.querySelector('.ref-beside').dataset.zoom));
-      const z0 = await zoom();
-      await touch('touchStart', [{ x: f.x - 20, y: f.y, id: 1 }, { x: f.x + 20, y: f.y, id: 2 }]);
-      for (let i = 1; i <= 8; i++) await touch('touchMove', [{ x: f.x - 20 - i * 6, y: f.y, id: 1 }, { x: f.x + 20 + i * 6, y: f.y, id: 2 }]);
+      const scroll0 = await p.evaluate(() => document.querySelector('.panel--reference .panel__body, .panel--reference')?.scrollTop ?? 0);
+      await touch('touchStart', [{ x: tile.x, y: tile.y, id: 1 }]);
+      await p.waitForTimeout(450);
+      for (let i = 1; i <= 10; i++) await touch('touchMove', [{ x: tile.x + (200 - tile.x) * (i / 10), y: tile.y + (200 - tile.y) * (i / 10), id: 1 }]);
+      t.ok(await p.evaluate(() => !!document.querySelector('.ref-ghost')), 'the picture follows the finger while it is held');
       await touch('touchEnd', []);
-      const z1 = await zoom();
-      t.ok(z1 > z0 * 1.8, `pinching zooms the picture in the window (${z0} to ${z1})`);
-      const t0 = await p.evaluate(() => document.querySelector('.ref-beside__picture').style.transform);
-      await touch('touchStart', [{ x: f.x - 20, y: f.y, id: 1 }, { x: f.x + 20, y: f.y, id: 2 }]);
-      for (let i = 1; i <= 6; i++) await touch('touchMove', [{ x: f.x - 20 + i * 4, y: f.y + i * 3, id: 1 }, { x: f.x + 20 + i * 4, y: f.y + i * 3, id: 2 }]);
-      await touch('touchEnd', []);
-      const t1 = await p.evaluate(() => document.querySelector('.ref-beside__picture').style.transform);
-      const z2 = await zoom();
-      t.ok(t1 !== t0 && Math.abs(z2 - z1) < 0.05, `two fingers together pan it without zooming (${t0} to ${t1})`);
-      // One finger on the picture does not move it (and the window stays put).
-      const win0 = await p.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
+      await p.waitForTimeout(500);
+      t.eq(await p.evaluate(() => window.__sculpt.reference.board.inView().map((i) => i.name).join(',')), 'a', 'a hold then a drag up out of the sheet puts the picture in the view');
+      t.ok(!(await p.evaluate(() => !!document.querySelector('.ref-ghost'))), 'the ghost is gone');
+      t.eq(await p.evaluate(() => document.querySelector('.panel--reference').classList.contains('panel--collapsed')), true, 'the sheet closes so the picture shows');
+      t.eq(scroll0, await p.evaluate(() => document.querySelector('.panel--reference .panel__body, .panel--reference')?.scrollTop ?? 0), 'and the panel did not scroll under the finger');
+      const box = await p.evaluate(() => {
+        const f = document.querySelector('.ref-frame').getBoundingClientRect();
+        const btns = [...document.querySelectorAll('.ref-frame__btn')].map((b) => b.getBoundingClientRect());
+        return { l: f.left, r: f.right, t: f.top, b: f.bottom, btns: btns.length, ok: btns.every((r) => r.width >= 44 && r.height >= 44 && r.left >= 0 && r.right <= 390.5 && r.top >= 0), overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      t.ok(box.btns === 5 && box.ok && box.overflow === 0, `the row of buttons fits the phone and each is 44px (${JSON.stringify(box)})`);
+      await shot(p, 'phone-arranging');
+      // A finger on the picture moves it; a pinch scales it.
+      const rect = () => p.evaluate(() => document.querySelector('.ref-frame').getBoundingClientRect().toJSON());
+      const w0 = await rect();
+      const f = { x: w0.left + w0.width / 2, y: w0.top + w0.height / 2 };
       await touch('touchStart', [{ x: f.x, y: f.y, id: 1 }]);
-      for (let i = 1; i <= 5; i++) await touch('touchMove', [{ x: f.x + i * 8, y: f.y, id: 1 }]);
+      for (let i = 1; i <= 6; i++) await touch('touchMove', [{ x: f.x + i * 6, y: f.y + i * 8, id: 1 }]);
       await touch('touchEnd', []);
-      const t2 = await p.evaluate(() => document.querySelector('.ref-beside__picture').style.transform);
-      const win1 = await p.evaluate(() => document.querySelector('.ref-beside').getBoundingClientRect().toJSON());
-      t.ok(t2 === t1 && Math.abs(win1.left - win0.left) < 1, 'one finger moves nothing');
+      const w1 = await rect();
+      t.ok(Math.abs(w1.left - w0.left - 36) < 3 && Math.abs(w1.top - w0.top - 48) < 3, 'one finger on the picture moves it');
+      const g = { x: w1.left + w1.width / 2, y: w1.top + w1.height / 2 };
+      await touch('touchStart', [{ x: g.x - 20, y: g.y, id: 1 }, { x: g.x + 20, y: g.y, id: 2 }]);
+      for (let i = 1; i <= 8; i++) await touch('touchMove', [{ x: g.x - 20 - i * 4, y: g.y, id: 1 }, { x: g.x + 20 + i * 4, y: g.y, id: 2 }]);
+      await touch('touchEnd', []);
+      const w2 = await rect();
+      t.ok(w2.width > w1.width * 1.3, `a pinch scales it (${Math.round(w1.width)} to ${Math.round(w2.width)})`);
+      // The edge button locks it; the picture stays and passes touches through.
+      await p.click('.ref-arrangebtn');
+      await p.waitForTimeout(300);
+      t.ok(!(await p.evaluate(() => !!document.querySelector('.ref-frame'))) && (await p.evaluate(() => !!document.querySelector('.ref-pic'))), 'Lock removes the frame and keeps the picture');
+      await shot(p, 'phone-locked');
+      // Dragging sideways at once (no hold) also starts a drag, and a plain vertical drag scrolls the sheet instead.
+      await p.evaluate(() => document.querySelector('.panel--reference .panel__handle').click());
+      await p.waitForTimeout(300);
+      const tile2 = await p.evaluate(() => {
+        const r = document.querySelector('.ref-card:nth-child(1) .ref-card__thumb').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+      await touch('touchStart', [{ x: tile2.x, y: tile2.y, id: 1 }]);
+      for (let i = 1; i <= 6; i++) await touch('touchMove', [{ x: tile2.x - i * 12, y: tile2.y - i * 2, id: 1 }]);
+      const ghostSide = await p.evaluate(() => !!document.querySelector('.ref-ghost'));
+      await touch('touchEnd', []);
+      t.ok(ghostSide, 'a clear sideways move starts a drag without a hold');
+      await p.waitForTimeout(300);
+      await p.evaluate(() => document.querySelector('.panel--reference').classList.contains('panel--collapsed') && document.querySelector('.panel--reference .panel__handle').click());
+      await p.waitForTimeout(300);
+      const tile3 = await p.evaluate(() => {
+        const r = document.querySelector('.ref-card:nth-child(1) .ref-card__thumb').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+      await touch('touchStart', [{ x: tile3.x, y: tile3.y, id: 1 }]);
+      for (let i = 1; i <= 6; i++) await touch('touchMove', [{ x: tile3.x, y: tile3.y - i * 10, id: 1 }]);
+      t.ok(!(await p.evaluate(() => !!document.querySelector('.ref-ghost'))), 'a plain vertical drag does not start a picture drag (the sheet scrolls)');
+      await touch('touchEnd', []);
     } finally {
       await ctx.close();
     }

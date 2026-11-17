@@ -70,6 +70,7 @@ import { ReferenceBoard, fromFileReferences, toFileReferences } from '../referen
 import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { installIntake, pasteFromClipboard } from '../reference/intake';
+import { ArrangeButton } from '../reference/ArrangeButton';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
@@ -1169,6 +1170,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // Like toggleShadows above: sculpt mode does not hold the Render panel
     // (mountViewer owns it), and the panels re-read their controls when they
     // open. The Material panel's Wireframe switch, open, is told at once.
+    toggleArrangeReferences: () => referenceBoard.setArranging(!referenceBoard.isArranging()),
     toggleWireframe: () => {
       viewer.toggleWireframe();
       window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
@@ -1559,7 +1561,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     adoptReferences: (refs) => {
       if (refs) {
         const got = fromFileReferences(refs);
-        referenceBoard.replace(got.items, got.view);
+        referenceBoard.replace(got.items);
       } else {
         void referenceBoard.clear();
       }
@@ -1699,10 +1701,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           },
         },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
-        referenceOver: {
-          get: () => referenceView?.isOverEnabled() ?? true,
-          toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
-        },
+        referenceShow: { get: () => referenceView?.isShown() ?? true, toggle: () => referenceView?.setShown(!referenceView.isShown()) },
+        referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()), key: true },
         toolKeys: true,
         panels: [
           ['scene', 'Scene'],
@@ -1808,7 +1808,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!fileActions.link);
   referenceView = new ReferenceView(referenceBoard, viewer);
-  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
+  const referenceArrange = new ArrangeButton(referenceBoard);
+  const edgeColumn = document.querySelector<HTMLElement>('.bz-edge');
+  if (edgeColumn) referenceArrange.mount(edgeColumn);
+  referencePanel.setPlacer((id, x, y) => referenceView?.placeAt(id, x, y) ?? false);
+  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen(), (items, x, y) => {
+    // Dropped on the view: each picture stands where it fell, side by side if there were several.
+    let n = 0;
+    for (const item of items) if (referenceView?.placeAt(item.id, x + n * 24, y + n * 24)) n++;
+    return n > 0;
+  });
   modelPanel = new ModelPanel(session, viewer);
   materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
       hasObject: () => !!session.getMesh(),
@@ -2280,6 +2289,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     materialPanel?.dispose();
     scenePanel?.dispose();
     offIntake();
+    referenceArrange.dispose();
     referenceView?.dispose();
     referencePanel?.dispose();
     referenceBoard.dispose();

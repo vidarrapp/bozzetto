@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>

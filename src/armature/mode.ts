@@ -36,6 +36,7 @@ import { ReferenceBoard } from '../reference/board';
 import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { installIntake, pasteFromClipboard } from '../reference/intake';
+import { ArrangeButton } from '../reference/ArrangeButton';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
@@ -1503,7 +1504,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!link);
   const referenceView = new ReferenceView(referenceBoard, viewer);
-  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen());
+  // The Arrange button stands in the left edge column beside Undo and Redo, as Solo does in Sculpt.
+  const referenceArrange = new ArrangeButton(referenceBoard);
+  referenceArrange.mount(edge);
+  referencePanel.setPlacer((id, x, y) => referenceView.placeAt(id, x, y));
+  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen(), (items, x, y) => {
+    let n = 0;
+    for (const item of items) if (referenceView.placeAt(item.id, x + n * 24, y + n * 24)) n++;
+    return n > 0;
+  });
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
   for (const note of bootNotes) {
@@ -1717,10 +1726,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
         },
       },
-      referenceOver: {
-        get: () => referenceView.isOverEnabled(),
-        toggle: () => referenceView.setOverEnabled(!referenceView.isOverEnabled()),
-      },
+      referenceShow: { get: () => referenceView.isShown(), toggle: () => referenceView.setShown(!referenceView.isShown()) },
+      referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()) },
       panels: [
         ['armature', 'Armature'],
         ['material', 'Material'],
@@ -1990,6 +1997,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.dispose();
     materialPanel.dispose();
     offIntake();
+    referenceArrange.dispose();
     referenceView.dispose();
     referencePanel.dispose();
     referenceBoard.dispose();

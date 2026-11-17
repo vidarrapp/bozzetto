@@ -1,60 +1,105 @@
 import type { Viewer } from '../viewer/Viewer';
 import { deviceStore } from '../ui/deviceStorage';
-import { onTap } from '../ui/dom';
-import { panelTop } from '../sculpt/ui/shellLayout';
-import type { ReferenceBoard, RefItem } from './board';
+import { BEHIND, DEFAULT_BLEND, type Placement, type ReferenceBoard, type RefItem, type StoredCamera } from './board';
+import { blendModeById, blendSelect, CSS_BLEND_MODES } from '../ui/blendModes';
+import { checkbox, compactRange } from '../ui/Panel';
+import { Vector3 } from 'three';
 import { drawLook } from './image';
 
 /**
- * What the board's picture does on screen: the Beside window, and the
- * picture Over the view (behind the model, as the viewer's backdrop, or in
- * front of it as a film at an opacity). It listens to the board and draws
- * whichever is asked for; the board holds the state.
+ * What the board's pictures do on screen. A picture in the view is one
+ * kind of thing: a floating picture with a place, a size, an opacity, a
+ * blend mode, mirror and greyscale. Small in a corner at Normal is a
+ * picture to glance at; fitted across the view at Multiply 30% is a film
+ * to trace on. Several may be in the view at once. Behind is the one blend
+ * that is not an element: the viewer draws that picture behind the model.
  *
- * The input rule, which everything here is built around: the pen and the
- * touches on the model always go to the model. The picture over the view
- * is a DOM layer with pointer-events none (or no layer at all, behind),
- * so it can neither start, end nor swallow a stroke; the Beside window
- * takes input only on its own frame, and the model around it is as it was.
+ * Two layers sit in the view's own box. The picture layer holds the
+ * pictures and is never an input target (pointer-events none), locked or
+ * not, so nothing in it can start, end or swallow a stroke or a gesture.
+ * The chrome layer holds what arranging draws (an outline, corner marks
+ * and a row of buttons per picture) and exists only while arranging; it
+ * is the one thing that takes a pointer, and only on the pictures' own
+ * frames, so the model around them is worked as always. Locking removes
+ * it, and every picture is pass-through.
  */
 
-const OVER_KEY = 'bz.reference.over';
+const SHOW_KEY = 'bz.reference.show';
+const BAR_BTN = 44;
+const MIN_W = 0.06;
+const MAX_W = 6;
+
+/** The names of the buttons in a picture's row, and what they do. */
+export const FRAME_ACTIONS = [
+  { id: 'lock', name: 'Lock', icon: 'fi-ss-lock' },
+  { id: 'fit', name: 'Fit', icon: 'fi-ss-expand' },
+  { id: 'flip', name: 'Flip', icon: 'fi-ss-reflect-horizontal' },
+  { id: 'look', name: 'Look', icon: 'fi-ss-settings-sliders' },
+  { id: 'remove', name: 'Remove from view', icon: 'fi-ss-cross-small' },
+] as const;
+
+/** A picture's box in the view, in the view's own pixels. */
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 /** The processed picture (mirrored, in greys), as every way of showing it draws it. */
 class Pictures {
-  private key = '';
-  private canvas: HTMLCanvasElement | null = null;
-  private token = 0;
+  private readonly cache = new Map<string, { key: string; canvas: HTMLCanvasElement }>();
+  private readonly tokens = new Map<string, number>();
 
   async get(item: RefItem): Promise<HTMLCanvasElement | null> {
-    const key = `${item.id}|${item.mirror ? 1 : 0}|${item.grey ? 1 : 0}|${item.blob.size}`;
-    if (key === this.key && this.canvas) return this.canvas;
-    const token = ++this.token;
+    const key = `${item.mirror ? 1 : 0}|${item.grey ? 1 : 0}|${item.blob.size}`;
+    const have = this.cache.get(item.id);
+    if (have && have.key === key) return have.canvas;
+    const token = (this.tokens.get(item.id) ?? 0) + 1;
+    this.tokens.set(item.id, token);
     const canvas = await drawLook(item.blob, item);
-    if (token !== this.token) return null; // a newer ask took over while this one decoded
-    this.key = key;
-    this.canvas = canvas;
+    if (this.tokens.get(item.id) !== token) return null; // a newer ask took over while this one decoded
+    this.cache.set(item.id, { key, canvas });
     return canvas;
   }
 
-  reset(): void {
-    this.token++;
-    this.key = '';
-    this.canvas = null;
+  /** Forget pictures that are gone (their canvases are released with them). */
+  keep(ids: Set<string>): void {
+    for (const id of [...this.cache.keys()]) {
+      if (!ids.has(id)) {
+        this.cache.delete(id);
+        this.tokens.delete(id);
+      }
+    }
   }
+
+  reset(): void {
+    this.cache.clear();
+    this.tokens.clear();
+  }
+}
+
+interface FrameEls {
+  el: HTMLDivElement;
+  bar: HTMLDivElement;
+  buttons: Map<string, HTMLButtonElement>;
 }
 
 export class ReferenceView {
   private readonly pictures = new Pictures();
-  private readonly beside: BesideWindow;
-  private readonly over: HTMLDivElement;
-  private overCanvas: HTMLCanvasElement | null = null;
-  private overOn = readOver();
+  private readonly layer: HTMLDivElement;
+  private readonly chrome: HTMLDivElement;
+  private readonly pics = new Map<string, HTMLDivElement>();
+  private readonly frames = new Map<string, FrameEls>();
+  private showAll = readShow();
   private backdropActive = false;
   private presenting = false;
   private readonly offBoard: () => void;
+  private readonly offPlace: () => void;
   private readonly ro: ResizeObserver | null;
   private renderToken = 0;
+  private lookFor: string | null = null;
+  private readonly look: LookPopup;
 
   private readonly onPresent = (e: Event): void => {
     this.presenting = !!(e as CustomEvent<{ active?: boolean }>).detail?.active;
@@ -65,32 +110,41 @@ export class ReferenceView {
     private readonly board: ReferenceBoard,
     private readonly viewer: Viewer,
   ) {
-    this.beside = new BesideWindow(board);
     const host = viewer.captureCanvas.parentElement ?? document.body;
-    this.over = document.createElement('div');
-    this.over.className = 'ref-over';
+    this.layer = document.createElement('div');
+    this.layer.className = 'ref-layer';
     // Never an input target, whatever sits under it.
-    this.over.style.pointerEvents = 'none';
-    this.over.setAttribute('aria-hidden', 'true');
-    this.over.hidden = true;
-    host.appendChild(this.over);
+    this.layer.style.pointerEvents = 'none';
+    this.layer.setAttribute('aria-hidden', 'true');
+    this.chrome = document.createElement('div');
+    this.chrome.className = 'ref-chrome';
+    this.chrome.hidden = true;
+    host.append(this.layer, this.chrome);
+    this.look = new LookPopup(board, () => this.lookFor);
+    board.bindCamera(
+      () => this.cameraNow(),
+      (c) => this.cameraSet(c),
+    );
     this.offBoard = board.onChange(() => void this.render());
+    this.offPlace = board.onPlace(() => this.layout());
     window.addEventListener('bozzetto:present', this.onPresent);
-    this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.viewer.refreshBackdrop()) : null;
+    this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.layout()) : null;
     this.ro?.observe(viewer.captureCanvas);
     void this.render();
   }
 
-  /** The View menu's "Reference over the view". */
-  isOverEnabled(): boolean {
-    return this.overOn;
+  // --- what the menus and tests ask --------------------------------------
+
+  /** The View menu's "References": the pictures in the view shown or hidden, all at once. */
+  isShown(): boolean {
+    return this.showAll;
   }
 
-  setOverEnabled(on: boolean): void {
-    if (on === this.overOn) return;
-    this.overOn = on;
+  setShown(on: boolean): void {
+    if (on === this.showAll) return;
+    this.showAll = on;
     try {
-      deviceStore.set(OVER_KEY, on ? 'on' : 'off');
+      deviceStore.set(SHOW_KEY, on ? 'on' : 'off');
     } catch {
       // A per-viewer convenience: not remembered with storage off.
     }
@@ -98,362 +152,584 @@ export class ReferenceView {
   }
 
   /** The state the tests read: what is drawn where. */
-  describe(): { beside: boolean; front: boolean; behind: boolean; opacity: number } {
+  describe(): {
+    shown: boolean;
+    arranging: boolean;
+    pictures: { id: string; name: string; blend: string; opacity: number; element: boolean }[];
+    behind: boolean;
+  } {
     return {
-      beside: !this.beside.isHidden(),
-      front: !this.over.hidden && this.over.dataset.layer === 'front',
+      shown: this.showAll,
+      arranging: this.board.isArranging(),
       behind: this.backdropActive,
-      opacity: Number(this.over.style.opacity || 0),
+      pictures: this.visibleItems().map((i) => ({ id: i.id, name: i.name, blend: i.blend, opacity: i.opacity, element: this.pics.has(i.id) })),
     };
   }
 
+  // --- geometry -----------------------------------------------------------
+
+  private viewRect(): { w: number; h: number; u: number } {
+    const w = this.layer.clientWidth || this.viewer.captureCanvas.clientWidth || 1;
+    const h = this.layer.clientHeight || this.viewer.captureCanvas.clientHeight || 1;
+    return { w, h, u: Math.min(w, h) };
+  }
+
+  private boxOf(item: RefItem, place: Placement): Box {
+    const v = this.viewRect();
+    const width = place.w * v.u;
+    const height = width * (item.height / item.width);
+    return { left: v.w / 2 + place.x * v.u - width / 2, top: v.h / 2 + place.y * v.u - height / 2, width, height };
+  }
+
+  /** Where a picture goes when it is first put in the view: small, in the top left corner. */
+  defaultPlace(item: RefItem): Placement {
+    const v = this.viewRect();
+    const wpx = Math.min(v.u * 0.42, v.w * 0.6);
+    const hpx = wpx * (item.height / item.width);
+    return { x: (-v.w / 2 + 16 + wpx / 2) / v.u, y: (-v.h / 2 + 60 + hpx / 2) / v.u, w: wpx / v.u };
+  }
+
+  /** The picture filling the view, its aspect kept (Fit). */
+  fitPlace(item: RefItem): Placement {
+    const v = this.viewRect();
+    const wpx = Math.min(v.w, v.h * (item.width / item.height));
+    return { x: 0, y: 0, w: wpx / v.u };
+  }
+
+  private placeOf(item: RefItem): Placement {
+    return item.place ?? this.defaultPlace(item);
+  }
+
+  /** The pictures in the view, lowest first, if the view shows them at all. */
+  private visibleItems(): RefItem[] {
+    return this.showAll && !this.presenting ? this.board.inView() : [];
+  }
+
+  /**
+   * The pictures in the view with where each stands on the page (client
+   * pixels), the one drawn lowest first. What a projection tool starts from.
+   */
+  picturesInView(): { item: RefItem; left: number; top: number; width: number; height: number }[] {
+    const r = this.layer.getBoundingClientRect();
+    return this.visibleItems().map((item) => {
+      const b = this.boxOf(item, this.placeOf(item));
+      return { item, left: r.left + b.left, top: r.top + b.top, width: b.width, height: b.height };
+    });
+  }
+
+  /**
+   * The picture drawn topmost at a screen point (client coordinates), and
+   * the pixel of its stored image under it: x and y in image pixels
+   * (un-mirrored, as stored), u and v from 0 to 1 across it, v down. Null
+   * when no picture in the view covers the point.
+   */
+  imageAt(clientX: number, clientY: number): { item: RefItem; x: number; y: number; u: number; v: number } | null {
+    const all = this.picturesInView();
+    for (let n = all.length - 1; n >= 0; n--) {
+      const p = all[n];
+      let u = (clientX - p.left) / p.width;
+      const v = (clientY - p.top) / p.height;
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+      if (p.item.mirror) u = 1 - u;
+      const { item } = p;
+      return { item, u, v, x: Math.min(item.width - 1, Math.floor(u * item.width)), y: Math.min(item.height - 1, Math.floor(v * item.height)) };
+    }
+    return null;
+  }
+
+  /** Whether a screen point is over the view itself (not over a panel or a menu). */
+  isOverView(clientX: number, clientY: number): boolean {
+    const r = this.viewer.captureCanvas.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return false;
+    // Not over an open panel, even where its box has no element (a gap between its rows).
+    for (const panel of document.querySelectorAll('.panel:not(.panel--collapsed)')) {
+      const pr = panel.getBoundingClientRect();
+      if (clientX >= pr.left && clientX <= pr.right && clientY >= pr.top && clientY <= pr.bottom) return false;
+    }
+    const e = document.elementFromPoint(clientX, clientY);
+    return !e || !e.closest('.panel, .file-menu, .float-window, .sculpt-toolbar, .bz-edge, .bz-strip');
+  }
+
+  /** Put a board picture in the view with its centre at a screen point (a drop), at the default size. */
+  placeAt(id: string, clientX: number, clientY: number): boolean {
+    const item = this.board.get(id);
+    if (!item || !this.isOverView(clientX, clientY)) return false;
+    const r = this.layer.getBoundingClientRect();
+    const v = this.viewRect();
+    const def = this.defaultPlace(item);
+    this.showAll = true;
+    this.board.putInView(id, { x: (clientX - r.left - v.w / 2) / v.u, y: (clientY - r.top - v.h / 2) / v.u, w: def.w });
+    return true;
+  }
+
+  // --- camera ---------------------------------------------------------------
+
+  private cameraNow(): StoredCamera {
+    const c = this.viewer.getCameraState();
+    const p = c.position;
+    const t = c.target;
+    return { position: [p[0], p[1], p[2]], target: [t[0], t[1], t[2]], focalLength: c.focalLength };
+  }
+
+  private cameraSet(c: StoredCamera): void {
+    this.viewer.setFocalLength(c.focalLength);
+    this.viewer.setCameraState(new Vector3(...c.position), new Vector3(...c.target));
+  }
+
+  // --- drawing ------------------------------------------------------------
+
   private async render(): Promise<void> {
     const token = ++this.renderToken;
-    const shown = this.board.shown();
-    const view = this.board.getView();
-    const wantBeside = !!shown && view.mode === 'beside' && !this.presenting;
-    const wantOver = !!shown && view.mode === 'over' && this.overOn && !this.presenting;
-    const picture = shown && (wantBeside || wantOver) ? await this.pictures.get(shown) : null;
-    if (token !== this.renderToken) return;
-    if (wantBeside && picture && shown) this.beside.show(shown, picture);
-    else this.beside.hide();
-    const front = wantOver && !!picture && view.front;
-    const behind = wantOver && !!picture && !view.front;
-    if (front && picture) {
-      if (this.overCanvas !== picture) {
-        this.over.replaceChildren(picture);
-        this.overCanvas = picture;
-        // Fitted to the view's height, centred; the canvas keeps the picture's own shape.
-        picture.className = 'ref-over__picture';
-        picture.style.cssText = '';
-        picture.style.aspectRatio = `${picture.width} / ${picture.height}`;
-      }
-      this.over.dataset.layer = 'front';
-      this.over.style.opacity = String(view.opacity);
-      this.over.hidden = false;
-    } else {
-      this.over.hidden = true;
-      this.over.dataset.layer = '';
-      this.over.replaceChildren();
-      this.overCanvas = null;
+    const items = this.visibleItems();
+    // Pictures that never had a place get their first one (a corner), once.
+    for (const i of items) if (!i.place) this.board.setPlace(i.id, this.defaultPlace(i));
+    const canvases = new Map<string, HTMLCanvasElement>();
+    for (const i of items) {
+      const c = await this.pictures.get(i);
+      if (token !== this.renderToken) return;
+      if (c) canvases.set(i.id, c);
     }
-    if (behind && picture) {
-      this.viewer.setBackdrop(picture);
+    this.pictures.keep(new Set(this.board.list().map((i) => i.id)));
+
+    // The pictures: an element each, blended with what is under it (the view's canvas, and the pictures below).
+    const ids = new Set<string>();
+    let behind: RefItem | null = null;
+    const fresh = new Set(items.map((i) => i.id));
+    for (const item of this.board.inView().filter((i) => fresh.has(i.id))) {
+      const canvas = canvases.get(item.id);
+      if (!canvas) continue;
+      if (item.blend === BEHIND) {
+        behind = item; // the topmost Behind is the one drawn behind the model
+        continue;
+      }
+      ids.add(item.id);
+      let pic = this.pics.get(item.id);
+      if (!pic) {
+        pic = document.createElement('div');
+        pic.className = 'ref-pic';
+        pic.style.pointerEvents = 'none';
+        this.pics.set(item.id, pic);
+      }
+      if (pic.firstChild !== canvas) pic.replaceChildren(canvas);
+      canvas.className = 'ref-pic__canvas';
+      pic.dataset.id = item.id;
+      pic.dataset.blend = item.blend;
+      pic.style.mixBlendMode = blendModeById(item.blend)?.css ?? DEFAULT_BLEND;
+      pic.style.opacity = String(item.opacity);
+      this.layer.appendChild(pic); // in order: the later is above
+    }
+    for (const [id, pic] of [...this.pics]) {
+      if (!ids.has(id)) {
+        pic.remove();
+        this.pics.delete(id);
+      }
+    }
+
+    if (behind) {
       this.backdropActive = true;
+      this.behindCanvas = canvases.get(behind.id) ?? null;
+      this.viewer.setBackdrop(this.behindCanvas, behind.opacity, this.backdropRect(behind));
     } else if (this.backdropActive) {
       this.viewer.setBackdrop(null);
       this.backdropActive = false;
+      this.behindCanvas = null;
     }
+
+    this.syncFrames(items);
+    this.layout();
+  }
+
+  private behindCanvas: HTMLCanvasElement | null = null;
+
+  private backdropRect(item: RefItem): { x: number; y: number; w: number; h: number } {
+    const v = this.viewRect();
+    const b = this.boxOf(item, this.placeOf(item));
+    return { x: b.left / v.w, y: b.top / v.h, w: b.width / v.w, h: b.height / v.h };
+  }
+
+  /** Positions only (a drag, a resize of the view): no decoding, no rebuilding. */
+  private layout(): void {
+    const items = this.visibleItems();
+    const v = this.viewRect();
+    for (const item of items) {
+      const b = this.boxOf(item, this.placeOf(item));
+      const pic = this.pics.get(item.id);
+      if (pic) {
+        pic.style.left = `${b.left}px`;
+        pic.style.top = `${b.top}px`;
+        pic.style.width = `${b.width}px`;
+        pic.style.height = `${b.height}px`;
+      }
+      const f = this.frames.get(item.id);
+      if (!f) continue;
+      f.el.style.left = `${b.left}px`;
+      f.el.style.top = `${b.top}px`;
+      f.el.style.width = `${b.width}px`;
+      f.el.style.height = `${b.height}px`;
+      // The row sits above the top edge, or inside it when there is no room above.
+      const barW = FRAME_ACTIONS.length * BAR_BTN;
+      const above = b.top >= BAR_BTN + 4;
+      f.bar.style.top = above ? `${-BAR_BTN - 4}px` : '4px';
+      const absLeft = Math.min(Math.max(b.left, 4), Math.max(4, v.w - barW - 4));
+      f.bar.style.left = `${absLeft - b.left}px`;
+      f.bar.dataset.inside = above ? 'false' : 'true';
+    }
+    if (this.backdropActive && this.behindCanvas) {
+      const behind = [...items].reverse().find((i) => i.blend === BEHIND);
+      if (behind) this.viewer.setBackdrop(this.behindCanvas, behind.opacity, this.backdropRect(behind));
+    }
+    this.look.place(this.lookFor ? (this.frames.get(this.lookFor) ?? null) : null, v.w);
+  }
+
+  // --- arranging ----------------------------------------------------------
+
+  private syncFrames(items: RefItem[]): void {
+    const arranging = this.board.isArranging() && this.showAll && !this.presenting;
+    this.chrome.hidden = !arranging;
+    const wanted = arranging ? new Set(items.map((i) => i.id)) : new Set<string>();
+    for (const [id, f] of [...this.frames]) {
+      if (!wanted.has(id)) {
+        if (this.lookFor === id) this.closeLook();
+        f.el.remove();
+        this.frames.delete(id);
+      }
+    }
+    for (const item of items) {
+      if (!wanted.has(item.id)) continue;
+      let f = this.frames.get(item.id);
+      if (!f) {
+        f = this.buildFrame(item.id);
+        this.frames.set(item.id, f);
+      }
+      this.chrome.appendChild(f.el); // in order, so the topmost picture's frame is on top
+    }
+    if (this.lookFor && !this.frames.has(this.lookFor)) this.closeLook();
+    this.look.refresh();
+  }
+
+  private closeLook(): void {
+    this.lookFor = null;
+    this.look.detach();
+  }
+
+  private buildFrame(id: string): FrameEls {
+    const el = document.createElement('div');
+    el.className = 'ref-frame';
+    el.dataset.id = id;
+    for (const c of ['nw', 'ne', 'sw', 'se']) {
+      const k = document.createElement('div');
+      k.className = `ref-frame__corner ref-frame__corner--${c}`;
+      k.dataset.corner = c;
+      el.appendChild(k);
+    }
+    const bar = document.createElement('div');
+    bar.className = 'ref-frame__bar';
+    const buttons = new Map<string, HTMLButtonElement>();
+    for (const a of FRAME_ACTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `ref-frame__btn ref-frame__btn--${a.id}`;
+      b.dataset.tip = a.name;
+      b.title = a.name;
+      b.setAttribute('aria-label', a.name);
+      b.innerHTML = `<i class="fi ${a.icon}" aria-hidden="true"></i>`;
+      holdName(b);
+      b.addEventListener('click', () => this.act(a.id, id));
+      buttons.set(a.id, b);
+      bar.appendChild(b);
+    }
+    el.appendChild(bar);
+    bindFrame(el, id, this);
+    return { el, bar, buttons };
+  }
+
+  private act(action: (typeof FRAME_ACTIONS)[number]['id'], id: string): void {
+    const item = this.board.get(id);
+    if (!item) return;
+    switch (action) {
+      case 'lock':
+        this.board.setArranging(false);
+        break;
+      case 'fit':
+        this.board.setPlace(id, this.fitPlace(item));
+        break;
+      case 'flip':
+        this.board.setLook(id, { mirror: !item.mirror });
+        break;
+      case 'look': {
+        if (this.lookFor === id) {
+          this.closeLook();
+        } else {
+          this.lookFor = id;
+          const f = this.frames.get(id);
+          if (f) this.look.attach(f.bar);
+          this.look.refresh();
+          this.layout();
+        }
+        break;
+      }
+      case 'remove':
+        this.board.takeOut(id);
+        break;
+    }
+  }
+
+  // --- what a frame's drags ask for -----------------------------------------
+
+  /** @internal Used by the frame's pointer handling. */
+  frameState(id: string): { item: RefItem; place: Placement; box: Box; view: { w: number; h: number; u: number } } | null {
+    const item = this.board.get(id);
+    if (!item) return null;
+    const place = this.placeOf(item);
+    return { item, place, box: this.boxOf(item, place), view: this.viewRect() };
+  }
+
+  /** @internal Move or size, kept within the view. */
+  setPlace(id: string, place: Placement): void {
+    const v = this.viewRect();
+    const w = Math.min(MAX_W, Math.max(MIN_W, place.w));
+    const x = Math.min(v.w / 2 / v.u, Math.max(-v.w / 2 / v.u, place.x));
+    const y = Math.min(v.h / 2 / v.u, Math.max(-v.h / 2 / v.u, place.y));
+    this.board.setPlace(id, { x, y, w });
   }
 
   dispose(): void {
     this.offBoard();
+    this.offPlace();
     window.removeEventListener('bozzetto:present', this.onPresent);
     this.ro?.disconnect();
     if (this.backdropActive) this.viewer.setBackdrop(null);
-    this.over.remove();
-    this.beside.dispose();
+    this.look.dispose();
+    this.layer.remove();
+    this.chrome.remove();
     this.pictures.reset();
   }
 }
 
-function readOver(): boolean {
+function readShow(): boolean {
   try {
-    return deviceStore.get(OVER_KEY) !== 'off';
+    return deviceStore.get(SHOW_KEY) !== 'off';
   } catch {
     return true;
   }
 }
 
-// --- the Beside window ------------------------------------------------------
-
-const EDGE = 8;
-const WIDTH = 300;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 10;
-
-/** Where the window was left, for as long as the page lives. */
-let remembered: { x: number; y: number } | null = null;
+/** A long press on a button shows its name (hover does, with a mouse). */
+function holdName(btn: HTMLButtonElement): void {
+  let timer = 0;
+  const clear = (): void => {
+    window.clearTimeout(timer);
+    btn.classList.remove('ref-frame__btn--tip');
+  };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    timer = window.setTimeout(() => btn.classList.add('ref-frame__btn--tip'), 450);
+  });
+  for (const t of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(t, () => window.setTimeout(clear, t === 'pointerup' ? 900 : 0));
+}
 
 /**
- * A float window (the Publish window's look and its title-bar drag) with
- * the picture in it: pinch to zoom and two fingers to pan inside it, the
- * wheel to zoom and a mouse or pen drag to pan, a double tap to fit it
- * again. It hides with the interface (Tab), as every float window does.
+ * Move (one pointer: a finger, the mouse or the Pencil), scale (two
+ * pointers, or the wheel) and resize (a corner) one picture while
+ * arranging. The frame is the only thing here that takes a pointer.
  */
-class BesideWindow {
-  private readonly root: HTMLDivElement;
-  private readonly title: HTMLSpanElement;
-  private readonly frame: HTMLDivElement;
-  private canvas: HTMLCanvasElement | null = null;
-  private itemId = '';
-  private zoom = 1;
-  private tx = 0;
-  private ty = 0;
-  private drag: { id: number; dx: number; dy: number } | null = null;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
-  private gesture: { dist: number; zoom: number; fx: number; fy: number } | null = null;
-  private lastTap = 0;
-
-  constructor(private readonly board: ReferenceBoard) {
-    this.root = document.createElement('div');
-    this.root.className = 'float-window ref-beside';
-    this.root.hidden = true;
-    this.root.setAttribute('role', 'dialog');
-    this.root.setAttribute('aria-modal', 'false');
-    this.root.setAttribute('aria-label', 'Reference picture');
-
-    const bar = document.createElement('div');
-    bar.className = 'float-window__bar';
-    this.title = document.createElement('span');
-    this.title.className = 'float-window__title ref-beside__title';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'float-window__close';
-    close.textContent = '×';
-    close.setAttribute('aria-label', 'Close the reference picture');
-    onTap(close, () => this.board.hide());
-    bar.append(this.title, close);
-    this.root.appendChild(bar);
-
-    this.frame = document.createElement('div');
-    this.frame.className = 'ref-beside__frame';
-    this.root.appendChild(this.frame);
-    document.body.appendChild(this.root);
-
-    // A held title bar must give iOS nothing to start a callout or a lift from (see the Publish window).
-    bar.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-    bar.addEventListener('pointerdown', (e) => this.onBarDown(e, bar));
-    bar.addEventListener('pointermove', this.onBarMove);
-    bar.addEventListener('pointerup', (e) => this.onBarUp(e, bar));
-    bar.addEventListener('pointercancel', (e) => this.onBarUp(e, bar));
-
-    this.frame.addEventListener('pointerdown', this.onDown);
-    this.frame.addEventListener('pointermove', this.onMove);
-    this.frame.addEventListener('pointerup', this.onUp);
-    this.frame.addEventListener('pointercancel', this.onUp);
-    this.frame.addEventListener('wheel', this.onWheel, { passive: false });
-    this.frame.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-    window.addEventListener('resize', this.onResize);
-  }
-
-  isHidden(): boolean {
-    return this.root.hidden === true;
-  }
-
-  show(item: RefItem, picture: HTMLCanvasElement): void {
-    const fresh = this.root.hidden || this.itemId !== item.id;
-    this.title.textContent = item.name;
-    // A mirror or a greyscale redraws the picture and keeps the view of it.
-    if (this.canvas !== picture || picture.parentElement !== this.frame) {
-      if (this.canvas !== picture) this.canvas?.remove();
-      this.canvas = picture;
-      picture.className = 'ref-beside__picture';
-      picture.style.cssText = '';
-      this.frame.appendChild(picture);
-    }
-    const wasHidden = this.root.hidden;
-    this.root.hidden = false;
-    if (wasHidden) this.place();
-    this.layout(item);
-    if (fresh) this.fit();
-    this.itemId = item.id;
-    this.applyTransform();
-  }
-
-  hide(): void {
-    this.root.hidden = true;
-    this.pointers.clear();
-    this.gesture = null;
-  }
-
-  /** The frame's size follows the picture's shape, within the screen; the picture is fitted inside it. */
-  private layout(item: RefItem): void {
-    const w = Math.min(WIDTH, window.innerWidth - 2 * EDGE);
-    const maxH = Math.max(120, Math.round(window.innerHeight * 0.55));
-    const h = Math.max(100, Math.min(maxH, Math.round((w * item.height) / item.width)));
-    this.root.style.width = `${w}px`;
-    this.frame.style.height = `${h}px`;
-    this.fitSize();
-  }
-
-  private fitW = 0;
-  private fitH = 0;
-
-  private fitSize(): void {
-    const c = this.canvas;
-    if (!c) return;
-    const w = this.frame.clientWidth || WIDTH;
-    const h = parseFloat(this.frame.style.height) || 200;
-    const s = Math.min(w / c.width, h / c.height);
-    this.fitW = c.width * s;
-    this.fitH = c.height * s;
-    c.style.width = `${this.fitW}px`;
-    c.style.height = `${this.fitH}px`;
-  }
-
-  private fit(): void {
-    const w = this.frame.clientWidth || WIDTH;
-    const h = parseFloat(this.frame.style.height) || 200;
-    this.zoom = 1;
-    this.tx = (w - this.fitW) / 2;
-    this.ty = (h - this.fitH) / 2;
-  }
-
-  private clampPan(): void {
-    const w = this.frame.clientWidth || WIDTH;
-    const h = parseFloat(this.frame.style.height) || 200;
-    const keep = 40;
-    const pw = this.fitW * this.zoom;
-    const ph = this.fitH * this.zoom;
-    this.tx = Math.min(w - keep, Math.max(keep - pw, this.tx));
-    this.ty = Math.min(h - keep, Math.max(keep - ph, this.ty));
-  }
-
-  private applyTransform(): void {
-    if (!this.canvas) return;
-    this.clampPan();
-    this.canvas.style.transform = `translate(${this.tx}px, ${this.ty}px) scale(${this.zoom})`;
-    this.root.dataset.zoom = this.zoom.toFixed(3);
-  }
-
-  /** Zoom about a point of the frame, so what is under it stays under it. */
-  private zoomAt(next: number, fx: number, fy: number): void {
-    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-    const px = (fx - this.tx) / this.zoom;
-    const py = (fy - this.ty) / this.zoom;
-    this.zoom = z;
-    this.tx = fx - px * z;
-    this.ty = fy - py * z;
-    this.applyTransform();
-  }
-
-  private local(e: { clientX: number; clientY: number }): { x: number; y: number } {
-    const r = this.frame.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  }
-
-  private readonly onWheel = (e: WheelEvent): void => {
-    e.preventDefault();
-    const p = this.local(e);
-    // A trackpad pinch comes as a wheel with ctrl held and small deltas.
-    const k = e.ctrlKey ? 0.01 : 0.0015;
-    this.zoomAt(this.zoom * Math.exp(-e.deltaY * k), p.x, p.y);
+function bindFrame(el: HTMLElement, id: string, view: ReferenceView): void {
+  const pointers = new Map<number, { x: number; y: number }>();
+  let move: { id: number; dx: number; dy: number } | null = null;
+  let resize: { id: number; corner: string; ax: number; ay: number } | null = null;
+  let pinch: { dist: number; w: number; fx: number; fy: number } | null = null;
+  const root = (): { left: number; top: number } => {
+    const r = (el.parentElement as HTMLElement).getBoundingClientRect();
+    return { left: r.left, top: r.top };
   };
-
-  private readonly onDown = (e: PointerEvent): void => {
+  const startPinch = (): void => {
+    const st = view.frameState(id);
+    if (pointers.size === 2 && st) {
+      const [a, b] = [...pointers.values()];
+      const o = root();
+      const mx = (a.x + b.x) / 2 - o.left;
+      const my = (a.y + b.y) / 2 - o.top;
+      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, w: st.box.width, fx: (mx - st.box.left) / st.box.width, fy: (my - st.box.top) / st.box.width };
+      move = null;
+      resize = null;
+    } else {
+      pinch = null;
+    }
+  };
+  const put = (left: number, top: number, width: number): void => {
+    const st = view.frameState(id);
+    if (!st) return;
+    const height = width * (st.item.height / st.item.width);
+    const v = st.view;
+    view.setPlace(id, { x: (left + width / 2 - v.w / 2) / v.u, y: (top + height / 2 - v.h / 2) / v.u, w: width / v.u });
+  };
+  el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  el.addEventListener('pointerdown', (e) => {
+    const target = e.target as Element;
+    if (target.closest('.ref-frame__bar, .ref-look')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     try {
-      this.frame.setPointerCapture(e.pointerId);
+      el.setPointerCapture(e.pointerId);
     } catch {
       // A synthetic pointer has nothing to capture.
     }
-    this.pointers.set(e.pointerId, this.local(e));
-    if (e.detail === 2 || (e.pointerType === 'touch' && performance.now() - this.lastTap < 300 && this.pointers.size === 1)) {
-      this.fit();
-      this.applyTransform();
+    const o = root();
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const st = view.frameState(id);
+    if (!st) return;
+    const corner = (target.closest('.ref-frame__corner') as HTMLElement | null)?.dataset.corner;
+    if (pointers.size === 1 && corner) {
+      // The opposite corner stays where it is.
+      const b = st.box;
+      resize = { id: e.pointerId, corner, ax: corner.includes('w') ? b.left + b.width : b.left, ay: corner.includes('n') ? b.top + b.height : b.top };
+      move = null;
+    } else if (pointers.size === 1) {
+      move = { id: e.pointerId, dx: e.clientX - o.left - st.box.left, dy: e.clientY - o.top - st.box.top };
     }
-    if (e.pointerType === 'touch' && this.pointers.size === 1) this.lastTap = performance.now();
-    this.startGesture();
-  };
-
-  private startGesture(): void {
-    if (this.pointers.size === 2) {
-      const [a, b] = [...this.pointers.values()];
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      this.gesture = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.zoom, fx: (mx - this.tx) / this.zoom, fy: (my - this.ty) / this.zoom };
-    } else {
-      this.gesture = null;
-    }
-  }
-
-  private readonly onMove = (e: PointerEvent): void => {
-    const prev = this.pointers.get(e.pointerId);
-    if (!prev) return;
+    startPinch();
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
     e.preventDefault();
-    const now = this.local(e);
-    this.pointers.set(e.pointerId, now);
-    if (this.pointers.size === 2 && this.gesture) {
-      // Two fingers: the spread zooms and the midpoint pans, the picture point first under it kept there.
-      const [a, b] = [...this.pointers.values()];
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (this.gesture.zoom * (Math.hypot(a.x - b.x, a.y - b.y) || 1)) / this.gesture.dist));
-      this.zoom = z;
-      this.tx = mx - this.gesture.fx * z;
-      this.ty = my - this.gesture.fy * z;
-      this.applyTransform();
-    } else if (this.pointers.size === 1 && e.pointerType !== 'touch') {
-      // A mouse or the pen pans with one; one finger does nothing (two pan).
-      this.tx += now.x - prev.x;
-      this.ty += now.y - prev.y;
-      this.applyTransform();
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const o = root();
+    if (pointers.size === 2 && pinch) {
+      const [a, b] = [...pointers.values()];
+      const w = (pinch.w * (Math.hypot(a.x - b.x, a.y - b.y) || 1)) / pinch.dist;
+      const mx = (a.x + b.x) / 2 - o.left;
+      const my = (a.y + b.y) / 2 - o.top;
+      put(mx - pinch.fx * w, my - pinch.fy * w, w);
+    } else if (resize && e.pointerId === resize.id) {
+      const st = view.frameState(id);
+      if (!st) return;
+      const px = e.clientX - o.left;
+      const w = Math.max(24, Math.abs(px - resize.ax));
+      const h = w * (st.item.height / st.item.width);
+      put(resize.corner.includes('w') ? resize.ax - w : resize.ax, resize.corner.includes('n') ? resize.ay - h : resize.ay, w);
+    } else if (move && e.pointerId === move.id) {
+      const st = view.frameState(id);
+      if (!st) return;
+      put(e.clientX - o.left - move.dx, e.clientY - o.top - move.dy, st.box.width);
+    }
+  });
+  const up = (e: PointerEvent): void => {
+    if (!pointers.delete(e.pointerId)) return;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    if (move?.id === e.pointerId) move = null;
+    if (resize?.id === e.pointerId) resize = null;
+    startPinch();
+    // One finger left of a pinch carries on as a drag from where it is.
+    if (pointers.size === 1 && !move && !resize) {
+      const st = view.frameState(id);
+      const [[pid, p]] = [...pointers.entries()];
+      const o = root();
+      if (st) move = { id: pid, dx: p.x - o.left - st.box.left, dy: p.y - o.top - st.box.top };
     }
   };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      if ((e.target as Element).closest('.ref-look')) return;
+      e.preventDefault();
+      const st = view.frameState(id);
+      if (!st) return;
+      const o = root();
+      const k = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+      const px = e.clientX - o.left;
+      const py = e.clientY - o.top;
+      put(px - (px - st.box.left) * k, py - (py - st.box.top) * k, st.box.width * k);
+    },
+    { passive: false },
+  );
+}
 
-  private readonly onUp = (e: PointerEvent): void => {
-    if (!this.pointers.delete(e.pointerId)) return;
-    if (this.frame.hasPointerCapture(e.pointerId)) this.frame.releasePointerCapture(e.pointerId);
-    this.startGesture();
-  };
+/** The Look pop-up: blend mode, Opacity and Greyscale of one picture, under its row of buttons. */
+class LookPopup {
+  readonly el: HTMLDivElement;
+  private readonly select: HTMLSelectElement;
+  private readonly slider: HTMLLabelElement;
+  private readonly grey: HTMLInputElement;
 
-  // --- moving the window by its title bar ----------------------------------
-
-  private place(): void {
-    const w = this.root.offsetWidth || WIDTH;
-    const at = remembered ?? { x: EDGE + 8, y: panelTop() + 8 };
-    this.moveTo(at.x, at.y, w);
+  constructor(
+    private readonly board: ReferenceBoard,
+    private readonly who: () => string | null,
+  ) {
+    this.el = document.createElement('div');
+    this.el.className = 'ref-look';
+    this.el.hidden = true;
+    this.select = blendSelect(CSS_BLEND_MODES, DEFAULT_BLEND, [[BEHIND, 'Behind']]);
+    this.select.className = 'ref-look__blend';
+    this.select.setAttribute('aria-label', 'Blend mode');
+    this.select.addEventListener('change', () => {
+      const id = this.who();
+      if (id) this.board.setLook(id, { blend: this.select.value });
+    });
+    this.slider = compactRange(
+      'Opacity',
+      5,
+      100,
+      1,
+      100,
+      (v) => {
+        const id = this.who();
+        if (id) this.board.setLook(id, { opacity: v / 100 });
+      },
+      { unit: ' %', limits: { min: 5, max: 100 } },
+    );
+    const g = checkbox('Greyscale', false, (on) => {
+      const id = this.who();
+      if (id) this.board.setLook(id, { grey: on });
+    });
+    this.grey = g.querySelector('input') as HTMLInputElement;
+    const row = document.createElement('label');
+    row.className = 'ref-look__row';
+    const cap = document.createElement('span');
+    cap.textContent = 'Blend';
+    row.append(cap, this.select);
+    this.el.append(row, this.slider, g);
+    // Nothing in the pop-up starts a drag of the picture under it.
+    for (const t of ['pointerdown', 'wheel', 'touchstart']) this.el.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
   }
 
-  private moveTo(x: number, y: number, w = this.root.offsetWidth): void {
-    const h = this.root.offsetHeight;
-    const maxX = Math.max(EDGE, window.innerWidth - w - EDGE);
-    const maxY = Math.max(EDGE, window.innerHeight - h - EDGE);
-    this.root.style.left = `${Math.round(Math.min(maxX, Math.max(EDGE, x)))}px`;
-    this.root.style.top = `${Math.round(Math.min(maxY, Math.max(EDGE, y)))}px`;
+  attach(bar: HTMLElement): void {
+    bar.appendChild(this.el);
+    this.el.hidden = false;
   }
 
-  private onBarDown(e: PointerEvent, bar: HTMLElement): void {
-    if (e.button !== 0 || (e.target as Element).closest('.float-window__close')) return;
-    e.preventDefault();
-    const r = this.root.getBoundingClientRect();
-    this.drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
-    try {
-      bar.setPointerCapture(e.pointerId);
-    } catch {
-      // Nothing to capture on a synthetic pointer.
+  detach(): void {
+    this.el.hidden = true;
+    this.el.remove();
+  }
+
+  place(frame: FrameEls | null, viewW: number): void {
+    if (!frame || this.el.hidden) return;
+    // Within the view's width: the bar is clamped, the pop-up follows it.
+    const bar = frame.bar.getBoundingClientRect();
+    const host = (frame.el.parentElement as HTMLElement).getBoundingClientRect();
+    const popW = this.el.offsetWidth || 240;
+    const absLeft = bar.left - host.left;
+    this.el.style.left = `${Math.min(0, viewW - 4 - (absLeft + popW))}px`;
+  }
+
+  /** Show the picture's own values. */
+  refresh(): void {
+    const id = this.who();
+    const item = id ? this.board.get(id) : undefined;
+    if (!item) return;
+    if (this.select.value !== item.blend) this.select.value = item.blend;
+    this.grey.checked = item.grey;
+    const slider = this.slider.querySelector<HTMLInputElement>('input[type=range]');
+    const want = Math.round(item.opacity * 100);
+    if (slider && document.activeElement !== slider && Number(slider.value) !== want) {
+      slider.value = String(want);
+      slider.dispatchEvent(new Event('input', { bubbles: false }));
     }
-    this.root.classList.add('float-window--dragging');
   }
-
-  private readonly onBarMove = (e: PointerEvent): void => {
-    if (!this.drag || e.pointerId !== this.drag.id) return;
-    e.preventDefault();
-    this.moveTo(e.clientX - this.drag.dx, e.clientY - this.drag.dy);
-  };
-
-  private onBarUp(e: PointerEvent, bar: HTMLElement): void {
-    if (!this.drag || e.pointerId !== this.drag.id) return;
-    if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId);
-    this.drag = null;
-    this.root.classList.remove('float-window--dragging');
-    const r = this.root.getBoundingClientRect();
-    remembered = { x: r.left, y: r.top };
-  }
-
-  private readonly onResize = (): void => {
-    if (this.root.hidden) return;
-    const r = this.root.getBoundingClientRect();
-    const item = this.board.shown();
-    if (item) this.layout(item);
-    this.moveTo(r.left, r.top);
-    this.applyTransform();
-  };
 
   dispose(): void {
-    window.removeEventListener('resize', this.onResize);
-    this.root.remove();
+    this.el.remove();
   }
 }

@@ -1,7 +1,7 @@
 import { isTextField } from '../ui/dom';
 import { statusToast } from '../sculpt/ui/statusToast';
 import { setPanel } from '../sculpt/ui/panelMemory';
-import type { ReferenceBoard } from './board';
+import type { ReferenceBoard, RefItem } from './board';
 
 /**
  * The ways a picture reaches the board besides the panel's own picker:
@@ -12,22 +12,21 @@ import type { ReferenceBoard } from './board';
 
 const isPicture = (f: Blob): boolean => f.type.startsWith('image/');
 
-/** Add these, saying how it went. Resolves to how many went in. */
-export async function addPictures(board: ReferenceBoard, files: Iterable<Blob>): Promise<number> {
-  let added = 0;
+/** Add these, saying how it went. Resolves to the pictures that went in, the first added first. */
+export async function addPictures(board: ReferenceBoard, files: Iterable<Blob>): Promise<RefItem[]> {
+  const added: RefItem[] = [];
   let failure = '';
   const list = [...files].filter(isPicture);
   // Oldest first, so the newest of a batch ends up first on the board.
   for (const file of list) {
     try {
-      await board.add(file, (file as File).name || 'Picture');
-      added++;
+      added.push(await board.add(file, (file as File).name || 'Picture'));
     } catch (err) {
       failure = err instanceof Error ? err.message : String(err);
     }
   }
-  if (failure && !added) statusToast('').fail(failure);
-  else if (failure) statusToast('').fail(`Added ${added}. ${failure}`);
+  if (failure && !added.length) statusToast('').fail(failure);
+  else if (failure) statusToast('').fail(`Added ${added.length}. ${failure}`);
   return added;
 }
 
@@ -56,7 +55,7 @@ export async function pasteFromClipboard(board: ReferenceBoard): Promise<boolean
       statusToast('').fail('There is no picture on the clipboard.');
       return false;
     }
-    const n = await addPictures(board, blobs);
+    const n = (await addPictures(board, blobs)).length;
     if (n) statusToast('').done(n === 1 ? 'Picture added' : `${n} pictures added`);
     return n > 0;
   } catch {
@@ -68,15 +67,22 @@ export async function pasteFromClipboard(board: ReferenceBoard): Promise<boolean
 /**
  * Listen for pastes and drops for as long as a mode is mounted. A paste
  * counts while the Reference panel is open and no text field has the
- * focus; a drop of a picture counts anywhere, and opens the panel so the
- * result shows. Returns the way out.
+ * focus; a drop of a picture counts anywhere: on the view it is put in the
+ * view where it fell (and Arrange turns on), elsewhere it opens the panel so
+ * the new tile shows. Returns the way out.
  */
-export function installIntake(board: ReferenceBoard, panelOpen: () => boolean): () => void {
+export function installIntake(
+  board: ReferenceBoard,
+  panelOpen: () => boolean,
+  /** A drop: put these in the view where they fell. False when the drop was not on the view. */
+  placeDropped?: (items: RefItem[], x: number, y: number) => boolean,
+): () => void {
   const onPaste = (e: ClipboardEvent): void => {
     if (!panelOpen() || isTextField(e.target) || !hasPicture(e.clipboardData)) return;
     e.preventDefault();
     const files = [...(e.clipboardData?.files ?? [])].filter(isPicture);
-    void addPictures(board, files).then((n) => {
+    void addPictures(board, files).then((got) => {
+      const n = got.length;
       if (n) statusToast('').done(n === 1 ? 'Picture added' : `${n} pictures added`);
     });
   };
@@ -89,8 +95,12 @@ export function installIntake(board: ReferenceBoard, panelOpen: () => boolean): 
     if (!hasPicture(e.dataTransfer)) return;
     e.preventDefault();
     const files = [...(e.dataTransfer?.files ?? [])].filter(isPicture);
-    void addPictures(board, files).then((n) => {
-      if (n) setPanel('reference', true);
+    const { clientX, clientY } = e;
+    void addPictures(board, files).then((got) => {
+      if (!got.length) return;
+      // Dropped on the view: placed where it fell. Anywhere else (the panel): a tile on the board.
+      if (placeDropped?.(got, clientX, clientY)) return;
+      setPanel('reference', true);
     });
   };
   window.addEventListener('paste', onPaste);

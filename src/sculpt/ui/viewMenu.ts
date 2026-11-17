@@ -22,8 +22,10 @@ export interface ViewHooks {
   groupColors?: { get: () => boolean; toggle: () => void };
   /** The shadows switch the Render panel has (Shift+S). */
   shadows?: { get: () => boolean; toggle: () => void };
-  /** The Reference picture drawn over the view (a switch; the picture itself is the Reference panel's). */
-  referenceOver?: { get: () => boolean; toggle: () => void };
+  /** The Reference pictures in the view, shown or hidden all at once. */
+  referenceShow?: { get: () => boolean; toggle: () => void };
+  /** Arrange (unlock) the pictures in the view; `key` says the mode answers its hotkey. */
+  referenceArrange?: { get: () => boolean; toggle: () => void; key?: boolean };
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
   toolKeys?: boolean;
   /** The panels this mode has, in the order of the menu: [id, name]. */
@@ -66,8 +68,12 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });
   }
-  const over = h.referenceOver;
-  if (over) looks.push({ label: 'Reference over the view', checked: over.get, toggle: () => over.toggle() });
+  const refs = h.referenceShow;
+  if (refs) looks.push({ label: 'References', checked: refs.get, toggle: () => refs.toggle() });
+  const arrange = h.referenceArrange;
+  if (arrange) {
+    looks.push({ label: 'Arrange references', key: arrange.key ? keyFor('view.arrange') : undefined, checked: arrange.get, toggle: () => arrange.toggle() });
+  }
   if (h.toolKeys) {
     looks.push({
       label: 'Hotkeys on tools',
