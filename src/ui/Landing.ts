@@ -71,7 +71,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   if (!grid) return;
 
   // The title strip (ui/pageNav) is the page's one main menu, as in the
-  // workspaces: File, Go, Help, the page's name, and the account at the right.
+  // workspaces: File, View, Help, the page's name, and the account at the right.
   const nav = pageNav('gallery', 'Gallery');
   const signIn: SignIn = await checkSignIn().catch(() => ({ email: null, expired: false }));
   const admin = roleOf(signIn) === 'owner';

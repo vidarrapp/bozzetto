@@ -16,11 +16,11 @@ import { deviceStore } from '../../ui/deviceStorage';
 const SIDES: Record<string, 'left' | 'right'> = {
   scene: 'left',
   model: 'left',
-  layers: 'left',
-  material: 'left',
   armature: 'left',
-  sculpt: 'right',
+  layers: 'left',
+  material: 'right',
   reference: 'right',
+  sculpt: 'right',
   settings: 'right',
 };
 
@@ -98,8 +98,8 @@ const ROOT: Record<string, string> = {
   model: '.panel--model',
   layers: '.panel--layers',
   material: '.panel--material',
-  sculpt: '.panel--sculpt',
   reference: '.panel--reference',
+  sculpt: '.panel--sculpt',
   armature: '.panel--armature',
   settings: '.panel--render',
   // The owner's Present of a published project (present/): its two own tabs.

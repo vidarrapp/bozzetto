@@ -423,7 +423,7 @@ export const suites = {
         outside = await p.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !document.activeElement.closest('.bz-device-notice'));
       }
       t.ok(outside, 'Tab moves on from the notice into the page, nothing traps it');
-      await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+      await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'View')?.click());
       await p.click('.file-menu--go .file-menu__item:has-text("Gallery")').catch(() => {});
       await p.waitForSelector('#landing-grid .card--new', { timeout: 30_000 });
       t.ok(true, 'and the page navigation works while it is up');

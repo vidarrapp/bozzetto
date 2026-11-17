@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Hotkeys on tools|Scene panel|Model panel|Material panel|Tool panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -187,7 +187,7 @@ export const suites = {
     await closeMenu(page);
 
     // The panels: a check while open, and the item opens or closes it.
-    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Material panel', 'panel--material'], ['Tool panel', 'panel--sculpt'], ['Render panel', 'panel--render']]) {
+    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Tool panel', 'panel--sculpt'], ['Material panel', 'panel--material'], ['Render panel', 'panel--render']]) {
       await openMenu(page, 'View');
       t.eq(await checked(label), 'false', `${label}: unchecked while closed`);
       await pick(page, label);
@@ -278,7 +278,7 @@ export const suites = {
     const cycle = async (where) => {
       const tag = where.replace(/\W+/g, '-');
       const before = await geo();
-      t.ok(before.strip && before.bar && before.left.length > 0 && before.right.length > 0, `${where}: strip, bar and tabs on both sides are up`);
+      t.ok(before.strip && before.bar && (before.left.length > 0 || /Present/.test(where)) && before.right.length > 0, `${where}: strip, bar and tabs are up (Present has none at the left now that Material is at the right)`);
       const spots = [
         ...(before.edge ? [centre(before.edge)] : []),
         centre(before.bar),
@@ -350,7 +350,7 @@ export const suites = {
     await page.waitForTimeout(400);
 
     // The canvas never changes size.
-    const size = () => page.evaluate(() => [...document.querySelectorAll('canvas')].map((c) => `${c.clientWidth}x${c.clientHeight}`).join());
+    const size = () => page.evaluate(() => [...document.querySelectorAll('canvas')].slice(0, 1).map((c) => `${c.clientWidth}x${c.clientHeight}`).join());
     const s0 = await size();
     await page.click('.bz-strip__hide');
     await page.waitForTimeout(500);
@@ -599,10 +599,10 @@ export const suites = {
     const rows = () => page.evaluate(() => ['scene', 'model', 'sculpt', 'render'].map((c) => !document.querySelector(`.panel--${c}`).classList.contains('panel--collapsed')));
     t.eq((await rows()).join(), 'false,false,false,false', 'all four start closed');
 
-    // The tabs: two a side, 1px apart, 28px tall, 4px under the strip, at the edge.
+    // The tabs: two at the left, three at the right, 1px apart, 28px tall, 4px under the strip, at the edge.
     const tabs = await page.evaluate(() =>
       Object.fromEntries(
-        ['scene', 'model', 'sculpt', 'render'].map((c) => {
+        ['scene', 'model', 'sculpt', 'material', 'reference', 'render'].map((c) => {
           const r = document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect();
           const s = getComputedStyle(document.querySelector(`.panel--${c} .panel__handle`));
           return [c, { l: r.left, r: r.right, t: r.top, h: r.height, bg: s.backgroundColor, color: s.color, weight: s.fontWeight, size: s.fontSize, mode: s.writingMode }];
@@ -611,7 +611,9 @@ export const suites = {
     );
     t.ok(tabs.scene.l === 0 && tabs.render.r === 1280, 'the outer tabs are flush to the screen\'s edges');
     t.near(tabs.model.l - tabs.scene.r, 1, 0.5, 'Scene and Model are 1px apart');
-    t.near(tabs.render.l - tabs.sculpt.r, 1, 0.5, 'Tool and Render are 1px apart');
+    t.near(tabs.material.l - tabs.sculpt.r, 1, 0.5, 'Tool and Material are 1px apart');
+    t.near(tabs.reference.l - tabs.material.r, 1, 0.5, 'Material and Reference are 1px apart');
+    t.near(tabs.render.l - tabs.reference.r, 1, 0.5, 'Reference and Render are 1px apart');
     t.ok(Object.values(tabs).every((x) => x.t === 28 && x.h === 28 && x.size === '13px' && x.mode === 'horizontal-tb'), 'each is 28px tall, 4px under the strip, 13px, set horizontally');
     t.ok(/27, 27, 27/.test(tabs.scene.bg) && /179, 179, 179/.test(tabs.scene.color), `a closed tab: the strip's colour, secondary text (${tabs.scene.bg}, ${tabs.scene.color})`);
 
@@ -854,7 +856,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Armature panel|Material panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Reference over the view|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));

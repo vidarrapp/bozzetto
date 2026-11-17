@@ -124,8 +124,8 @@ async function reviewChip(b, query = '') {
   await go(b, query);
   await waitFor(b.page, () => !!document.querySelector('body.bz-page .bz-strip__right .bz-strip__btn, body.bz-page .bz-strip__right .account-menu__chip'));
   await b.page.waitForTimeout(600);
-  // Review is a place in Go, with what waits in its name.
-  await b.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((x) => x.textContent === 'Go')?.click());
+  // Review is a place in View, with what waits in its name.
+  await b.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((x) => x.textContent === 'View')?.click());
   await b.page.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
   const seen = await b.page.evaluate(() => {
     const row = [...document.querySelectorAll('.file-menu--go .file-menu__item')].find((c) => /^Review/.test(c.textContent.trim()));
