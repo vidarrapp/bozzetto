@@ -368,6 +368,8 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Where it does not fit (under about 620px wide) it scrolls sideways and
   keeps the active tool in view.
 - On devices with a home indicator it sits above the safe area.
+- On a phone, where it scrolls, it fades at each edge that has more tools
+  behind it and snaps to the tools as it scrolls.
 
 ### Edge controls
 
@@ -386,7 +388,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 | Window | Change |
 | --- | --- |
 | Under 1100px wide | One panel open in all, not one per side |
-| Under 600px wide (a phone) | An open panel is a sheet across the bottom, at most half the height, above the tool bar. Tabs become a row under the title strip |
+| Under 600px wide (a phone) | An open panel is a sheet across the bottom, the full width, at most half the height, above the tool bar or transport, scrolling inside. Tabs become a row under the title strip, and the upper half of the view stays clear. In the strip every menu name and button is a 44px touch target while the strip stays 32px; the viewer keeps the project title (cut with an ellipsis); the step you are in opens a list of Armature, Sculpt and Present |
 | Under 600px tall | Hints hide; panels use the full height between the strip and the tool bar |
 
 ## 7. Controls

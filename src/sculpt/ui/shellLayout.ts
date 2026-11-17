@@ -23,9 +23,52 @@
  */
 export const PANEL_TOP_DEFAULT = 56;
 export function panelTop(): number {
-  const panel = document.querySelector<HTMLElement>('body.bz-shell .panel');
-  const top = panel ? parseFloat(getComputedStyle(panel).top) : NaN;
+  // Read from a probe that stands where the panels start (a phone's panels are docked
+  // at the bottom, so a panel's own top says nothing there).
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;top:var(--bz-panel-top)';
+  // In the strip, not the body: the layout watches the body's children and would run again.
+  (document.querySelector('.bz-strip') ?? document.body).appendChild(probe);
+  const top = parseFloat(getComputedStyle(probe).top);
+  probe.remove();
   return Number.isFinite(top) ? top : PANEL_TOP_DEFAULT;
+}
+
+/** A phone: the panels are one sheet docked at the bottom (shell.css, docs/ui-spec.md section 6). */
+export function isPhone(): boolean {
+  return window.matchMedia('(max-width: 599px)').matches;
+}
+/** The most of the window a phone's sheet may take. */
+const SHEET_FRACTION = 0.5;
+
+const cued = new WeakSet<HTMLElement>();
+/**
+ * The tool bar scrolls sideways where it does not fit; say so with a fade at
+ * each edge that has more behind it (data-scroll-cue: none, start, end, both).
+ */
+function paintScrollCue(bar: HTMLElement): void {
+  if (!cued.has(bar)) {
+    cued.add(bar);
+    // Also once the scroll has settled: a snap can end the move without one last scroll event.
+    let settle = 0;
+    bar.addEventListener(
+      'scroll',
+      () => {
+        paintScrollCue(bar);
+        clearTimeout(settle);
+        settle = window.setTimeout(() => paintScrollCue(bar), 120);
+      },
+      { passive: true },
+    );
+    bar.addEventListener('scrollend', () => paintScrollCue(bar));
+  }
+  const max = bar.scrollWidth - bar.clientWidth;
+  const at = bar.scrollLeft;
+  const more = max > 1;
+  const start = more && at > 1;
+  const end = more && at < max - 1;
+  const cue = start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
+  if (bar.dataset.scrollCue !== cue) bar.dataset.scrollCue = cue;
 }
 export const PANEL_WIDTH = 304;
 
@@ -74,6 +117,9 @@ export function layoutShell(): void {
   }
   document.documentElement.style.setProperty('--bz-tabs-right', `${x}px`);
 
+  const brushes = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
+  if (brushes) paintScrollCue(brushes);
+
   // The slid-away bars are measured where they are not: leave the limits as they were.
   if (document.body.classList.contains('chrome-hidden')) return;
   const root = document.documentElement.style;
@@ -93,6 +139,16 @@ export function layoutShell(): void {
 
   // The bottom limit of a panel docked on one side: the edge controls (left
   // only), and the tool bar when it reaches under the panel's columns.
+  if (isPhone()) {
+    // One sheet across the bottom, above the foot bar, at most half the window.
+    const floor = barBox ? vh - barBox.top : 0;
+    const room = Math.max(48, Math.floor(Math.min(vh * SHEET_FRACTION, vh - floor - top)));
+    root.setProperty('--bz-sheet-bottom', `${Math.max(0, Math.round(floor))}px`);
+    root.setProperty('--bz-max-left', `${room}px`);
+    root.setProperty('--bz-max-right', `${room}px`);
+    return;
+  }
+  root.removeProperty('--bz-sheet-bottom');
   const limit = (side: 'left' | 'right'): number => {
     let bottom = vh - GAP;
     const from = side === 'left' ? 0 : vw - panelW;
@@ -139,6 +195,8 @@ export function startShellLayout(): () => void {
   watch();
   window.addEventListener('resize', soon);
   window.addEventListener(SHELL_LAYOUT_EVENT, soon);
+  // A panel sliding in or out moves its tab while it goes (the tab is fixed inside it): measure again once it has stopped.
+  document.addEventListener('transitionend', soon, true);
   void document.fonts?.ready.then(soon);
   soon();
   return () => {
@@ -147,8 +205,10 @@ export function startShellLayout(): () => void {
     mo.disconnect();
     window.removeEventListener('resize', soon);
     window.removeEventListener(SHELL_LAYOUT_EVENT, soon);
+    document.removeEventListener('transitionend', soon, true);
     const root = document.documentElement.style;
     root.removeProperty('--bz-max-left');
     root.removeProperty('--bz-max-right');
+    root.removeProperty('--bz-sheet-bottom');
   };
 }
