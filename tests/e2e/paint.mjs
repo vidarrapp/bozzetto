@@ -20,7 +20,7 @@
 //   the colours, a stroke costs what it cost.
 // paintSave: remesh asks once for both kinds of layers; save and reopen; an old
 //   scene with painted colours has them as Base; bad layer data is refused.
-// paintPhone: the workspace at phone width.
+// paintPhone: opens and closes at phone width without an error (phones are not a target).
 import { mkdirSync } from 'node:fs';
 import { devices, openForInput, openPanel, screenOf } from './smoke.mjs';
 
@@ -1209,37 +1209,22 @@ export const suites = {
     t.ok(back.same && back.paint === 1 && back.sculpt === 1, `one undo brings back the object with both kinds of layers (${JSON.stringify(back)})`);
   },
 
+  /** Phones are not a target: the workspace only must not throw at phone width. */
   async paintPhone(page, base, t) {
-    mkdirSync(SHOTS, { recursive: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await openForInput(page, base);
     await page.evaluate(install);
     await page.keyboard.press('Shift+B');
     await page.waitForTimeout(200);
-    const s = await shell(page);
-    t.ok(s.paint && s.bar.length === 7, `the workspace opens at phone width with its bar (${s.bar.length} buttons)`);
+    t.ok((await shell(page)).paint, 'Paint opens at phone width');
     await page.evaluate(() => {
       const { session } = window.__sculpt;
       session.paint.add(window.__pt.mesh());
-      session.paint.add(window.__pt.mesh());
+      window.__pt.stroke(window.__pt.T.PAINT, [0.9, 0.2, 0.1], 0, 0, 50, 1);
     });
     t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
-    const fit = await page.evaluate(() => {
-      const panel = document.querySelector('.panel--layers');
-      const r = panel.getBoundingClientRect();
-      const rows = [...panel.querySelectorAll('.layer-row:not(.layer-row--base)')].map((row) => {
-        const sel = row.querySelector('.layer-row__blend').getBoundingClientRect();
-        const grip = row.querySelector('.layer-row__grip').getBoundingClientRect();
-        const eye = row.querySelector('.layer-row__eye').getBoundingClientRect();
-        return { sel: [sel.width, sel.height], grip: [grip.width, grip.height], eye: [eye.width, eye.height], right: sel.right };
-      });
-      return { left: r.left, right: r.right, vw: window.innerWidth, rows, docScroll: document.documentElement.scrollWidth > window.innerWidth };
-    });
-    t.ok(fit.left >= 0 && fit.right <= fit.vw && !fit.docScroll, `the panel fits the screen (${Math.round(fit.left)} to ${Math.round(fit.right)} of ${fit.vw})`);
-    t.ok(fit.rows.every((r) => r.sel[0] > 120 && r.eye[1] >= 44 && r.grip[1] >= 44), `a row's controls are a finger's size (${JSON.stringify(fit.rows[0])})`);
-    await page.screenshot({ path: `${SHOTS}/paint-layers-390.png` });
-    await page.keyboard.press('Escape');
-    await page.screenshot({ path: `${SHOTS}/paint-bar-390.png` });
+    await page.keyboard.press('Shift+B');
+    t.ok(!(await shell(page)).paint, 'and Paint closes again, with no error');
     void devices;
     void screenOf;
   },
