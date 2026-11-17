@@ -3,6 +3,7 @@ import { chordLabel, keymap } from '../../ui/keymap';
 import { settings } from '../../ui/settings';
 import { deviceChoice, mayStore, onDeviceChoice } from '../../ui/deviceStorage';
 import { layoutShell, startShellLayout } from './shellLayout';
+import { TIP_HOLD_MS, TIP_LINGER_MS } from './edgeTip';
 
 /**
  * The title strip of Sculpt, Armature and Present: one 24px band across the
@@ -40,8 +41,10 @@ export interface Readout {
   tris?: number | null;
   /** The object's subdivision level (1-based) of the levels it has, when it has them. */
   level?: { at: number; of: number } | null;
-  /** Present: the viewport's size in pixels, the frame a saved image is taken from. */
+  /** Present: the size in pixels of the image Save image writes. */
   frame?: { w: number; h: number } | null;
+  /** Present: the lens, in mm (35mm equivalent), shown after the image size. */
+  lens?: number | null;
   /**
    * Other pairs for a workspace of its own (the owner's Present of a
    * published project: Timelapse 240 frames, Stage Forms), after the name:
@@ -127,7 +130,9 @@ export class TitleStrip {
   private readonly levelItem: HTMLElement;
   private readonly levelVal = el('b', 'bz-readout__val bz-readout__level');
   private readonly frameItem: HTMLElement;
+  private readonly lensItem: HTMLElement;
   private readonly frameVal = el('b', 'bz-readout__val bz-readout__frame');
+  private readonly lensVal = el('b', 'bz-readout__val bz-readout__lens');
   /** The pairs a workspace adds (Readout.extras), kept by key between refreshes. */
   private readonly extraEls = new Map<string, { item: HTMLElement; val: HTMLElement }>();
   private readonly extraHost = el('span', 'bz-readout__extras');
@@ -165,7 +170,8 @@ export class TitleStrip {
     this.objectItem = pair('bz-readout__item--object', 'Object', this.objectVal);
     this.trisItem = pair('bz-readout__item--tris', 'Tris', this.trisVal);
     this.levelItem = pair('bz-readout__item--level', 'Level', this.levelVal);
-    this.frameItem = pair('bz-readout__item--frame', 'Frame', this.frameVal);
+    this.frameItem = pair('bz-readout__item--frame', 'Image', this.frameVal);
+    this.lensItem = pair('bz-readout__item--lens', 'Lens', this.lensVal);
     this.editedEl.hidden = true;
     this.nameEl.hidden = true;
     // The name is a button while a mode lets it be renamed (onRename).
@@ -177,7 +183,7 @@ export class TitleStrip {
     });
     this.byEl.hidden = true;
     this.readoutEl = readout;
-    readout.append(this.nameEl, this.editedEl, this.byEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem);
+    readout.append(this.nameEl, this.editedEl, this.byEl, this.extraHost, this.objectItem, this.trisItem, this.levelItem, this.frameItem, this.lensItem);
 
     const right = el('div', 'bz-strip__right');
     this.publishHost = right;
@@ -230,6 +236,9 @@ export class TitleStrip {
         this.stepActions.get(id)?.();
       });
       this.steps.set(id, b);
+      // A step that cannot be pressed says why on hover (its title) and, for a
+      // finger or the Pencil, while it is held (the box under the strip).
+      this.adopt({ dispose: this.sayWhyOnHold(b) });
       path.appendChild(b);
     });
     left.append(this.menus);
@@ -278,6 +287,56 @@ export class TitleStrip {
       else if (on) b.title = `${label}, where you are`;
       else b.title = action ? `Go to ${label}` : '';
     }
+  }
+
+  private whyBox: HTMLDivElement | null = null;
+
+  /**
+   * A long press on a step that cannot be pressed says why, in a small box
+   * under the strip (a finger has no hover for the title), until a moment
+   * after the lift. The reason is the step's title, set by setWorkspace.
+   */
+  private sayWhyOnHold(b: HTMLButtonElement): () => void {
+    let hold = 0;
+    let linger = 0;
+    const hide = (): void => {
+      this.whyBox?.remove();
+      this.whyBox = null;
+    };
+    const down = (): void => {
+      window.clearTimeout(hold);
+      window.clearTimeout(linger);
+      if (b.getAttribute('aria-disabled') !== 'true' || !b.title) return;
+      hold = window.setTimeout(() => {
+        hold = 0;
+        hide();
+        const box = el('div', 'bz-ws__why', b.title);
+        box.setAttribute('role', 'status');
+        document.body.appendChild(box);
+        const r = b.getBoundingClientRect();
+        box.style.top = `${Math.round(this.el.getBoundingClientRect().bottom + 6)}px`;
+        box.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)))}px`;
+        this.whyBox = box;
+      }, TIP_HOLD_MS);
+    };
+    const up = (): void => {
+      window.clearTimeout(hold);
+      hold = 0;
+      if (!this.whyBox) return;
+      window.clearTimeout(linger);
+      linger = window.setTimeout(hide, TIP_LINGER_MS);
+    };
+    b.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.clearTimeout(hold);
+      window.clearTimeout(linger);
+      hide();
+      b.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
   }
 
   private stepMenu: HTMLDivElement | null = null;
@@ -394,6 +453,7 @@ export class TitleStrip {
     set(this.trisItem, this.trisVal, r.tris == null ? null : r.tris.toLocaleString('en-US'));
     set(this.levelItem, this.levelVal, r.level ? `${r.level.at}/${r.level.of}` : null);
     set(this.frameItem, this.frameVal, r.frame ? `${r.frame.w} \u00d7 ${r.frame.h}` : null);
+    set(this.lensItem, this.lensVal, r.lens == null ? null : `${Math.round(r.lens)} mm`);
     const wanted = (r.extras ?? []).filter((x): x is { key: string; value: string } => x.value !== null);
     for (const [key, e] of this.extraEls) {
       if (wanted.some((x) => x.key === key)) continue;

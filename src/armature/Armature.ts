@@ -1125,61 +1125,100 @@ export class Armature {
 
   /**
    * The box round the hips, as a matrix: a unit cube (corners at plus and
-   * minus one) maps onto the box round the pelvis part. The box is upright
-   * as the figure stands - a mannequin's pelvis bone rests tilted forward,
-   * and a box tilted with it would not look like one round the hips - and
-   * turns with the hips from there: its axes are the figure's, as the
-   * pelvis has turned from its rest. It is the least such box that holds
-   * the pelvis part, with a small margin, from the bottom of the part to
-   * the top of the pelvis (the root bone's tail). A rig whose pelvis has no
-   * part mesh gets one from the span of its hip joints. False when the rig
-   * has nothing to frame.
+   * minus one) maps onto the box round the pelvis part. The box leans as
+   * the pelvis does: its upright axis is the pelvis bone's own at rest (a
+   * mannequin's rests tilted forward), held to HIP_BOX_MAX_TILT off the
+   * vertical, and its other two axes are the figure's. It turns with the
+   * hips from there. In that frame it is the least box that holds the
+   * pelvis part, measured from the part's own points (not from an upright
+   * box round them, which stands taller and deeper than the hips), from
+   * where the legs part, under the hip joints, to the top of the pelvis (the root bone's
+   * tail), with a small margin. A rig whose pelvis has no part mesh gets one from
+   * the span of its hip joints. False when the rig has nothing to frame.
    */
   rootBoxMatrix(out: Matrix4): boolean {
     const bone = this.partBones.get(this.root.name) ?? this.root;
     const g = this.partGeometry.get(this.root.name);
     const rest = this.restWorld.get(this.root.name);
-    const centre = _pa;
-    const half = _pb;
     if (!rest) return false;
     this.mesh.updateMatrixWorld(true);
+    // The lean, in the figure's frame at rest: from the vertical to the pelvis bone's long axis.
+    const axis = _pa.set(0, 1, 0).applyQuaternion(rest.q);
+    if (axis.y < 0) axis.negate();
+    const lean = _lh.setFromUnitVectors(_pb.set(0, 1, 0), axis);
+    const angle = 2 * Math.acos(Math.min(1, Math.abs(lean.w)));
+    if (angle > HIP_BOX_MAX_TILT) lean.copy(_lq.identity().slerp(lean, HIP_BOX_MAX_TILT / angle));
+    // The box's frame in the world now: the figure's, as the pelvis has turned from rest, leaning.
+    const frame = this.root.getWorldQuaternion(_lq3).multiply(_lq2.copy(rest.q).invert()).multiply(lean);
+    const toFrame = _lq2.copy(frame).invert();
+    const origin = _pe.setFromMatrixPosition(bone.matrixWorld);
+    const lo = _pf.set(Infinity, Infinity, Infinity);
+    const hi = _pg.set(-Infinity, -Infinity, -Infinity);
     if (g) {
+      // The part's points, in its bone's space, cut off at the top of the
+      // pelvis: a mannequin's pelvis mesh runs on up over the belly.
       g.boundingBox ??= new Box3().setFromBufferAttribute(g.getAttribute('position') as BufferAttribute);
-      // From the bottom of the part to the top of the pelvis, the root bone's
-      // tail: a mannequin's pelvis mesh runs on up over the belly.
-      const lo = g.boundingBox.min;
-      const hi = g.boundingBox.max;
-      const top = Math.min(hi.y, Math.max(lo.y + this.len(0.1), this.rest.get(this.root.name)?.length ?? hi.y));
-      centre.set((lo.x + hi.x) / 2, (lo.y + top) / 2, (lo.z + hi.z) / 2);
-      half.set((hi.x - lo.x) / 2, (top - lo.y) / 2, (hi.z - lo.z) / 2);
+      const bottom = g.boundingBox.min.y;
+      const top = Math.min(g.boundingBox.max.y, Math.max(bottom + this.len(0.1), this.rest.get(this.root.name)?.length ?? Infinity));
+      const hull = this.rootBoxHull(g, top);
+      for (let i = 0; i < hull.length; i += 3) {
+        _pc.set(hull[i], hull[i + 1], hull[i + 2]).applyMatrix4(bone.matrixWorld).sub(origin).applyQuaternion(toFrame);
+        lo.min(_pc);
+        hi.max(_pc);
+      }
+      // No lower than the hips: the part runs on down inside the thighs, and
+      // a box to its lowest point stands as tall as it is wide. Its foot is
+      // about where the legs part, a hand's width under the hip joints.
+      const l = this.bones.get('thigh.L');
+      const r = this.bones.get('thigh.R');
+      if (l && r) {
+        const joints = Math.min(
+          _pc.setFromMatrixPosition(l.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
+          _pd.setFromMatrixPosition(r.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
+        );
+        lo.y = Math.min(Math.max(lo.y, joints - this.len(HIP_BOX_UNDER_JOINTS)), hi.y - this.len(0.06));
+      }
     } else {
       const l = this.bones.get('thigh.L');
       const r = this.bones.get('thigh.R');
       if (!l || !r) return false;
-      const a = bone.worldToLocal(_pc.setFromMatrixPosition(l.matrixWorld));
-      const b = bone.worldToLocal(_pd.setFromMatrixPosition(r.matrixWorld));
-      centre.addVectors(a, b).multiplyScalar(0.5);
+      const a = _pc.setFromMatrixPosition(l.matrixWorld).sub(origin).applyQuaternion(toFrame);
+      const b = _pd.setFromMatrixPosition(r.matrixWorld).sub(origin).applyQuaternion(toFrame);
       const span = a.distanceTo(b);
-      half.set(span * 0.85, span * 0.5, span * 0.55);
-    }
-    // The figure's upright frame at the pelvis: how far it has turned from rest.
-    const upright = this.root.getWorldQuaternion(_lq3).multiply(_lq2.copy(rest.q).invert());
-    _lq2.copy(upright).invert();
-    const origin = _pe.setFromMatrixPosition(bone.matrixWorld);
-    const lo = _pf.set(Infinity, Infinity, Infinity);
-    const hi = _pg.set(-Infinity, -Infinity, -Infinity);
-    for (let i = 0; i < 8; i++) {
-      _pc.set(centre.x + (i & 1 ? half.x : -half.x), centre.y + (i & 2 ? half.y : -half.y), centre.z + (i & 4 ? half.z : -half.z));
-      _pc.applyMatrix4(bone.matrixWorld).sub(origin).applyQuaternion(_lq2);
-      lo.min(_pc);
-      hi.max(_pc);
+      const mid = a.add(b).multiplyScalar(0.5);
+      lo.set(mid.x - span * 0.85, mid.y - span * 0.5, mid.z - span * 0.55);
+      hi.set(mid.x + span * 0.85, mid.y + span * 0.5, mid.z + span * 0.55);
     }
     // A small margin, so the lines stand off the surface.
     const size = _ph.subVectors(hi, lo).multiplyScalar(0.5).addScalar(this.len(0.008)).multiplyScalar(1.03);
-    const middle = _pc.addVectors(lo, hi).multiplyScalar(0.5).applyQuaternion(upright).add(origin);
-    out.compose(middle, upright, size);
+    const middle = _pc.addVectors(lo, hi).multiplyScalar(0.5).applyQuaternion(frame).add(origin);
+    out.compose(middle, frame, size);
     return true;
   }
+
+  /**
+   * The pelvis part's points for the hip box (rootBoxMatrix), in the part's
+   * bone's space, those above `top` brought down to it: a thinned copy, a
+   * few hundred at most, kept per geometry so the box costs the same every
+   * frame whatever the part's size.
+   */
+  private rootBoxHull(g: BufferGeometry, top: number): Float32Array {
+    const kept = this.rootHull;
+    if (kept && kept.g === g && kept.top === top) return kept.points;
+    const pos = g.getAttribute('position') as BufferAttribute;
+    const step = Math.max(1, Math.floor(pos.count / 600));
+    const points = new Float32Array(Math.ceil(pos.count / step) * 3);
+    let n = 0;
+    for (let i = 0; i < pos.count; i += step) {
+      points[n++] = pos.getX(i);
+      points[n++] = Math.min(top, pos.getY(i));
+      points[n++] = pos.getZ(i);
+    }
+    this.rootHull = { g, top, points: points.subarray(0, n) };
+    return this.rootHull.points;
+  }
+
+  private rootHull: { g: BufferGeometry; top: number; points: Float32Array } | null = null;
 
   /**
    * Where the root's handle sits in the world: the middle of the box round
@@ -2013,6 +2052,10 @@ const _lh = new Quaternion();
 const _lR = new Quaternion();
 const _le = new Euler();
 const _bm = new Matrix4();
+/** The most the hip box leans off the vertical with the pelvis bone (radians): enough to read as the pelvis's tilt, never lying down on a rig whose root bone points forward. */
+const HIP_BOX_MAX_TILT = (20 * Math.PI) / 180;
+/** How far under the hip joints the hip box ends, in metres at the figure's scale. */
+const HIP_BOX_UNDER_JOINTS = 0.09;
 /** A look is settled when the head faces the point to within a fiftieth of a degree. */
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 

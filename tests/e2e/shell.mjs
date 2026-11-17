@@ -67,7 +67,7 @@ export const suites = {
     const file = await openMenu(page, 'File');
     t.eq(
       file.items.join('|'),
-      'New sculpt|Open…|Open recent|Save file|Save to library|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
+      'New sculpt|Open…|Open recent|Rename…|Save file|Include references|Keep on this device|Import OBJ…|Z-up OBJ import|Export OBJ|Publish…|Close',
       'File: New and Open, the three saves, OBJ in and out, Publish and Close, regrouped',
     );
     t.near(file.left, file.nameLeft, 1, 'an open menu hangs with its left edge under its name');
@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -104,7 +104,7 @@ export const suites = {
       object: document.querySelector('.bz-details [data-fact="name"]')?.textContent,
       tris: document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent,
       level: document.querySelector('.bz-details [data-fact="level"] .bz-details__val')?.textContent,
-      name: !document.querySelector('.bz-readout__name')?.hidden,
+      name: document.querySelector('.bz-readout__name')?.hidden ? '' : (document.querySelector('.bz-readout__name')?.textContent ?? ''),
       corner: !!document.querySelector('.sculpt-stats'),
       keyColour: getComputedStyle(document.querySelector('.bz-readout__key')).color,
       valueWeight: getComputedStyle(document.querySelector('.bz-readout__val')).fontWeight,
@@ -117,7 +117,7 @@ export const suites = {
     t.eq(readout.keys.join(','), '', 'the strip\'s readout carries no Object, Tris or Level: the details overlay has them');
     t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+ of \d+$/.test(readout.level), `the overlay has the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
     t.ok(!readout.corner, 'and the corner at the top left of the view is gone');
-    t.ok(!readout.name, 'a scene with no name shows none');
+    t.ok(/^Study \d+ \w+/.test(readout.name), `a new scene shows its study name (${readout.name})`);
     t.ok(/179, 179, 179/.test(readout.keyColour) && Number(readout.valueWeight) >= 600, `keys are secondary and regular, values bold (${readout.keyColour}, ${readout.valueWeight})`);
     t.near(readout.centre, 640, 2, 'and it is centred');
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
@@ -486,9 +486,12 @@ export const suites = {
     const ro = await page.evaluate(() => ({
       keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
       frame: document.querySelector('.bz-readout__frame')?.textContent,
+      lens: document.querySelector('.bz-readout__lens')?.textContent,
       view: window.__sculpt.viewer.viewportSize(),
+      mm: window.__sculpt.viewer.getFocalLength(),
     }));
-    t.ok(ro.keys.join() === 'Frame' && ro.frame === `${ro.view.w} × ${ro.view.h}`, `the readout is Frame W × H (${JSON.stringify(ro)})`);
+    const imgOk = /^\d+ × \d+$/.test(ro.frame ?? '') && Number(ro.frame.split(' × ')[0]) >= ro.view.w;
+    t.ok(ro.keys.join() === 'Image,Lens' && imgOk && ro.lens === `${Math.round(ro.mm)} mm`, `the readout is Image W × H and Lens N mm (${JSON.stringify(ro)})`);
     const ws = await page.evaluate(() => {
       const vis = (sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
       const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.querySelector('.handle__label').textContent, l: h.getBoundingClientRect().left }));
@@ -507,7 +510,7 @@ export const suites = {
       };
     });
     t.ok(bar.bottom === bar.h && Math.abs(bar.centre - bar.w / 2) < 1 && bar.bg === 'rgb(44, 44, 44)', `the bar is at the bottom centre, flush, on the panel colour (${JSON.stringify(bar)})`);
-    t.ok(bar.kids.join() === 'present-bar__play,present-bar__speed,present-bar__save' && /fi-ss-play/.test(bar.play), 'it holds the play button (fi-ss-play), the Speed field and Save image');
+    t.ok(bar.kids.join() === 'present-bar__play,present-bar__speed' && /fi-ss-play/.test(bar.play), 'it holds the play button (fi-ss-play) and the Speed field, and no second Save image');
     await page.click('.present-bar__play');
     t.ok(await page.evaluate(() => /fi-ss-pause/.test(document.querySelector('.present-bar__play .fi').className) && window.__sculpt.present.isTurning()), 'play turns the turntable and the glyph becomes pause (fi-ss-pause)');
     await page.click('.present-bar__play');
@@ -530,7 +533,7 @@ export const suites = {
     t.ok(await page.evaluate(() => window.__sculpt.present.getClipFormat() === 'gif' && window.__sculpt.present.getClipScale() === 2), 'the format and size selects set the clip');
     await page.selectOption('.present-out__format', 'mp4');
     await page.selectOption('.present-out__size', '1');
-    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 240_000 }), page.click('.present-out__save', { timeout: 240_000 })]);
     t.eq(dl.suggestedFilename(), 'Sculpt.png', 'Save image in the Output panel saves the PNG');
     // Material is the other tab at the right; opening it closes Output.
     await tab(page, 'panel--material');

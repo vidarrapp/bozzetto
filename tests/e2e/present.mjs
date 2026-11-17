@@ -426,7 +426,7 @@ export const suites = {
 
     // --- Save image ----------------------------------------------------------
     await page.evaluate(() => window.__sculpt.present.setSpeed(12));
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-bar__save')]);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
     const saved = await page.waitForFunction(() => [...document.querySelectorAll('.file-menu__progress')].some((n) => n.dataset.state === 'done' && /^Saved Sculpt\.png$/.test(n.textContent)), null, { timeout: 10_000 }).then(() => true).catch(() => false);
     t.ok(saved, 'Save image says it saved the file');
     const name = download.suggestedFilename();

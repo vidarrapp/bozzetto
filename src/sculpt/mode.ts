@@ -822,7 +822,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       modelPanel?.refreshHeading();
       paintDetails();
     },
-    frame: () => (presenting ? viewer.viewportSize() : null),
+    frame: () => {
+      if (!presenting) return null;
+      // The pixels Save image writes: the window at its still ratio, as the buffer is cut.
+      const { w, h } = viewer.viewportSize();
+      const ratio = stillRatio(viewer);
+      return { w: Math.floor(w * ratio), h: Math.floor(h * ratio) };
+    },
+    lens: () => (presenting ? viewer.getFocalLength() : null),
   });
   refreshReadout = readout.refresh;
   // Switched on after being off: the lines are read afresh at once.
@@ -2588,6 +2595,8 @@ function makeReadout(
     onRefresh: () => void;
     /** Present: the viewport's size, instead of the object's numbers. */
     frame: () => { w: number; h: number } | null;
+    /** Present: the lens in mm. */
+    lens: () => number | null;
   },
 ): { refresh(): void; dispose(): void } {
   const update = (): void => {
@@ -2597,8 +2606,9 @@ function makeReadout(
       name,
       edited: !!name && from.edited(),
       state: name ? from.state() : null,
-      // In Present the readout is the project and the frame.
+      // In Present the readout is the project, the image Save image writes and the lens.
       frame,
+      lens: from.lens(),
     });
     from.onRefresh();
   };

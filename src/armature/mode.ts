@@ -1927,8 +1927,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     current: 'armature',
     steps: {
       sculpt: { action: () => void send(panel.resolution) },
-      paint: { unavailable: 'A figure is sent to Sculpt first' },
-      present: { unavailable: 'A figure is sent to Sculpt first' },
+      // Paint and Present are worked from Sculpt, where the figure's mesh is a sculpt: Sculpt sends it.
+      paint: { unavailable: 'Paint works from Sculpt. Go to Sculpt first.' },
+      present: { unavailable: 'Present works from Sculpt. Go to Sculpt first.' },
     },
   });
   /** Give the armature a new name; a project's is renamed too, and saved with the next Save to library. */
@@ -1942,7 +1943,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   strip.onRename = rename;
   /** Save to library for anyone who has an account or the owner's access; for a guest, the way in where the site has accounts, and nothing where it has none. */
   const libraryItems = (): MenuItem[] => {
-    if (role === 'guest') {
+    // Until the sign-in has answered, nobody is known to be here: the menu shows what a guest's does.
+    if (role === null || role === 'guest') {
       if (!accountsHere) return [];
       return [
         {

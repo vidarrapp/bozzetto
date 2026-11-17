@@ -559,7 +559,8 @@ export const suites = {
     await page.evaluate(() => window.__armature.save());
     await Promise.all([
       page.waitForURL(/handoff=1|sculpt=1/, { timeout: 60_000 }),
-      page.evaluate(() => window.__armature.send(64)),
+      // The send ends in the page leaving, which can end the call before it answers.
+      page.evaluate(() => window.__armature.send(64)).catch(() => undefined),
     ]);
     await page.waitForFunction(() => !!window.__sculpt && window.__sculpt.session.getMeshes().some((m) => window.__sculpt.session.getMeshName(m) === 'Figure'), null, { timeout: 120_000 });
     const sent = await page.evaluate(() => {
