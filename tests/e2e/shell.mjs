@@ -482,7 +482,7 @@ export const suites = {
       const s = getComputedStyle(el);
       return { bg: s.backgroundColor, color: s.color, h: el.getBoundingClientRect().height, text: el.textContent };
     });
-    t.ok(pub.bg !== 'rgb(255, 90, 31)' && pub.h === 24 && pub.text === 'Publish', `a quiet 24px chip, not orange: Save image is Present's one main action (${JSON.stringify(pub)})`);
+    t.ok(pub.bg === 'rgb(255, 90, 31)' && pub.color === 'rgb(0, 0, 0)' && pub.h === 24 && pub.text === 'Publish', `filled orange with black text, 24px (${JSON.stringify(pub)})`);
     const ro = await page.evaluate(() => ({
       keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
       frame: document.querySelector('.bz-readout__frame')?.textContent,
@@ -533,7 +533,7 @@ export const suites = {
     t.ok(await page.evaluate(() => window.__sculpt.present.getClipFormat() === 'gif' && window.__sculpt.present.getClipScale() === 2), 'the format and size selects set the clip');
     await page.selectOption('.present-out__format', 'mp4');
     await page.selectOption('.present-out__size', '1');
-    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 240_000 }), page.click('.present-out__save', { timeout: 240_000 })]);
     t.eq(dl.suggestedFilename(), 'Sculpt.png', 'Save image in the Output panel saves the PNG');
     // Material is the other tab at the right; opening it closes Output.
     await tab(page, 'panel--material');

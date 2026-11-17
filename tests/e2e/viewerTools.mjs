@@ -378,9 +378,11 @@ export const suites = {
         window.__aoBox ??= v.subjectBox.clone();
         v.fitSubjectBounds(window.__aoBox.clone().expandByScalar(d), false);
       }, by);
-    /** The GTAO Radius row of the Render panel. */
+    /** The GTAO Radius row of the Render panel, which is Present's: Present is entered for it, and kept. */
     const row = () =>
       page.evaluate(() => {
+        const sculpt = window.__sculpt;
+        if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
         const sec = [...document.querySelectorAll('.panel .section')].find((el) => el.querySelector('h3')?.textContent === 'Ambient occlusion');
         const r = sec && [...sec.querySelectorAll('label.compact')].find((l) => l.firstElementChild?.textContent === 'Radius');
         if (!r) return null;
