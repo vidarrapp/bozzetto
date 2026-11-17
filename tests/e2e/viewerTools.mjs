@@ -379,17 +379,26 @@ export const suites = {
         v.fitSubjectBounds(window.__aoBox.clone().expandByScalar(d), false);
       }, by);
     /** The GTAO Radius row of the Render panel, which is Present's: Present is entered for it, and kept. */
-    const row = () =>
-      page.evaluate(() => {
+    const row = async () => {
+      await page.evaluate(() => {
         const sculpt = window.__sculpt;
         if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
-        const sec = [...document.querySelectorAll('.panel .section')].find((el) => el.querySelector('h3')?.textContent === 'Ambient occlusion');
+        // The panel builds its body when it opens: open the Render tab at the left.
+        const panel = document.querySelector('.panel--render');
+        if (panel?.classList.contains('panel--collapsed')) panel.querySelector(':scope > .panel__handle')?.click();
+      });
+      await page
+        .waitForFunction(() => [...document.querySelectorAll('.panel--render .section h3')].some((h) => h.textContent === 'Ambient occlusion'), null, { timeout: 10_000 })
+        .catch(() => {});
+      return page.evaluate(() => {
+        const sec = [...document.querySelectorAll('.panel--render .section')].find((el) => el.querySelector('h3')?.textContent === 'Ambient occlusion');
         const r = sec && [...sec.querySelectorAll('label.compact')].find((l) => l.firstElementChild?.textContent === 'Radius');
         if (!r) return null;
         const input = r.querySelector('input[type=range]');
         const val = r.querySelector('.slider-val, .sculpt-panel__val');
         return { min: Number(input.min), max: Number(input.max), step: Number(input.step), thumb: Number(input.value), readout: val && !val.hidden ? val.textContent : null };
       });
+    };
     const rebuilt = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('bozzetto:look-restored')));
 
     // Sculpt, a new scene: on real units.
@@ -512,9 +521,7 @@ export const suites = {
     };
     await viewer({ units: null, ao: null });
     s = await state();
-    r = await row();
     t.ok(s.control.unit === null && s.control.value === 0.3 && near(s.world, 0.3 * s.subject), `without real units the radius is 0.3 of the subject's, as before (${s.world.toFixed(3)} of ${s.subject.toFixed(3)})`);
-    t.ok(r && r.min === 0.05 && r.max === 1 && r.step === 0.01 && r.thumb === 0.3, `on its old rail, 0.05 to 1 (${JSON.stringify(r)})`);
     await viewer({ units: null, ao: { enabled: true, intensity: 1, radius: 0.45 } });
     s = await state();
     t.ok(near(s.world, 0.45 * s.subject) && s.ao.radius === 0.45, `a project saved at 0.45 plays at 0.45 of its subject (${s.world.toFixed(3)})`);
@@ -530,5 +537,18 @@ export const suites = {
     s = await state();
     t.ok(near(s.world, 0.45 * s.subject), `and without real units at the share saved beside it (${s.world.toFixed(3)})`);
     await page.unroute('**/timelapses/demo/manifest.json');
+
+    // The public viewer has no Render tab; the row is Present's. A scene without real units keeps the old rail there.
+    await openSculpt(page, base, '&q=low');
+    await page.evaluate(() => {
+      const v = window.__bozzetto;
+      v.setUnits(null);
+      v.setAO({ enabled: true, radius: 0.3 });
+    });
+    await rebuilt();
+    s = await state();
+    r = await row();
+    t.ok(s.control.unit === null && s.control.value === 0.3, `a scene without real units has the share, 0.3 (${JSON.stringify(s.control)})`);
+    t.ok(r && r.min === 0.05 && r.max === 1 && r.step === 0.01 && r.thumb === 0.3, `on its old rail, 0.05 to 1 (${JSON.stringify(r)})`);
   },
 };

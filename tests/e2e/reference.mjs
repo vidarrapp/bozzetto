@@ -852,6 +852,10 @@ export const suites = {
     await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
     t.ok(await page.evaluate(() => document.body.classList.contains('chrome-hidden')), 'Tab hides the interface');
+    // The outlines fade out (180ms, then visibility flips): wait for the end of it, a real fault stays visible.
+    await page
+      .waitForFunction(() => { const c = document.querySelector('.ref-chrome'); return !c || getComputedStyle(c).visibility === 'hidden'; }, null, { timeout: 5000 })
+      .catch(() => {});
     t.ok(!(await visible(page, '.ref-frame')), `the outlines and icons go with it ${await page.evaluate(() => { const c = document.querySelector('.ref-chrome'); const f = document.querySelector('.ref-frame'); return JSON.stringify({ c: c && [getComputedStyle(c).visibility, getComputedStyle(c).opacity, c.parentElement.tagName], f: f && getComputedStyle(f).visibility }); })}`);
     t.ok(await visible(page, '.ref-pic'), 'the pictures stay');
     await shot(page, 'chrome-hidden');

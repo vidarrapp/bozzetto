@@ -177,7 +177,7 @@ export const suites = {
   async clarityLight(page, base, t) {
     const sel = () =>
       page.evaluate(() => {
-        const s = [...document.querySelectorAll('select')].find((x) => [...x.options].some((o) => o.value === 'three_point'));
+        const s = [...document.querySelectorAll('select')].find((x) => [...x.options].some((o) => o.value === 'built:three_point'));
         return s ? { value: s.value, text: s.selectedOptions[0]?.textContent } : null;
       });
     await openSculpt(page, base);
