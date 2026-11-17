@@ -361,8 +361,8 @@ export const suites = {
     });
     await page.waitForTimeout(300);
     t.ok(reddish(await middle(page)), 'and still red under a look saying Plain colour');
-    await openPanel(page, 'Render');
-    t.eq((await materialRows(page)).colour, null, 'its Render panel offers no switch');
+    await openPanel(page, 'Material');
+    t.eq((await materialRows(page)).colour, null, 'its Material panel offers no switch');
   },
 
   // The eyedropper drag on the background's and the lights' swatches, as

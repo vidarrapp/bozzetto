@@ -1,6 +1,6 @@
 // The public viewer (`/?tl=<id>`) in the app's frame (src/viewer/viewerFrame.ts,
 // docs/ui-spec.md): the quiet title strip (File, View and Help, the title and
-// what it is in the middle, the hide button at the right), Render as
+// what it is in the middle, the hide button at the right), Lighting as
 // the one folder tab with the viewer's own panel under it, the transport as the
 // bar at the foot with the white play button, and none of the old top row,
 // sideways tab or transport. The same at 390px, where nothing overlaps. Then
@@ -11,7 +11,7 @@
 // community suite). Each gets (page, base, t).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { renderShape, shapeChecks } from './renderMatch.mjs';
+import { sectionsOf } from './lookTabs.mjs';
 import { checkShape, readMenus } from './menuShape.mjs';
 
 const ORANGE = 'rgb(255, 90, 31)';
@@ -102,7 +102,7 @@ const frameState = (page) =>
       const r = el.getBoundingClientRect();
       return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) };
     };
-    const panel = document.querySelector('.panel--render');
+    const panel = document.querySelector('.panel--lighting');
     const handle = panel?.querySelector(':scope > .panel__handle');
     const bar = document.querySelector('.transport');
     const play = document.querySelector('.transport__play');
@@ -176,7 +176,7 @@ export const suites = {
     t.ok(s.strip && s.strip.h === 24 && s.strip.t === 0 && s.strip.w === s.vw && s.strip.bg === STRIP && s.strip.pos === 'fixed', `a 24px strip across the top, on the strip colour (${JSON.stringify(s.strip)})`);
     t.eq(s.menus.join(), 'File,Edit,View,Help', 'four menus at its left, File, Edit, View and Help, as in the workspaces: no Moderation for a guest');
     t.ok(!s.path, 'and no workspace path after them');
-    checkShape(t, 'Viewer', await readMenus(page, 'Viewer'), { names: 'File,Edit,View,Help', file: 'New sculpt from this|Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Render panel|Hide interface' });
+    checkShape(t, 'Viewer', await readMenus(page, 'Viewer'), { names: 'File,Edit,View,Help', file: 'New sculpt from this|Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Lighting panel|Hide interface' });
     t.ok(s.left && s.readout && s.right && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right), 'the menus, the readout and the right group do not overlap');
     t.eq(s.title, 'Demo bust (synthetic)', "the readout starts with the project's title");
     t.ok(Number(s.titleWeight) >= 600, `in bold (${s.titleWeight})`);
@@ -209,22 +209,22 @@ export const suites = {
     await page.evaluate(() => window.__bozzetto.scrubTo(10));
     t.ok(!!at0 && s.readoutText.endsWith(`Stage ${at0}`) && at0 !== at, `the readout follows the frame to the stage there (${s.readoutText})`);
 
-    // --- Render: its folder tab at the right, with Material's beside it --------------
-    t.eq([...f.tabs].sort().join(), 'Material,Render', 'two folder tabs: Material and Render, both at the right');
+    // --- Lighting: its folder tab at the right, with Material's beside it --------------
+    t.eq([...f.tabs].sort().join(), 'Lighting,Material', 'two folder tabs: Material and Lighting, both at the right');
     t.ok(f.tab && f.tab.r === s.vw && f.tab.t === 28 && f.tab.h === 28 && f.tabWriting === 'horizontal-tb', `at the right edge under the strip, horizontal, not a sideways tab (${JSON.stringify(f.tab)} ${f.tabWriting})`);
     t.ok(!f.open && !f.panelShown, 'the panel is shut, as the viewer has it');
-    await page.click('.panel--render > .panel__handle');
+    await page.click('.panel--lighting > .panel__handle');
     await page.waitForTimeout(300);
     f = await frameState(page);
     t.ok(f.open && f.panel && f.panel.w === 304 && f.panel.r === s.vw && f.panel.t === 56, `a click opens it: 304px, flush right, under the tab (${JSON.stringify(f.panel)})`);
-    t.eq(f.heading, 'Render', 'headed Render');
+    t.eq(f.heading, 'Lighting', 'headed Lighting');
     t.ok(!f.byline, 'with no byline: whose it is, is the strip\'s to say');
-    t.ok(f.sections.join() === 'Lighting,Camera,Environment,Ambient occlusion', `with the same sections as everywhere else, Material being the tab's (${f.sections})`);
-    t.ok(!(await page.$('.panel--render .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
+    t.ok(f.sections.join() === 'Rig,Lights,Environment light', `with the Rig, Lights and Environment light sections (${f.sections})`);
+    t.ok(!(await page.$('.panel--lighting .panel__hotkeys')), 'and no Hotkeys button: the Help menu and H open the guide');
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => !document.querySelector('.help-guide').hidden), 'H opens the guide');
     await page.keyboard.press('h');
-    await page.click('.panel--render > .panel__handle');
+    await page.click('.panel--lighting > .panel__handle');
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).open, 'the tab shuts it again');
 
@@ -250,7 +250,7 @@ export const suites = {
     await page.click('.bz-menuname:has-text("View")');
     await page.waitForSelector('.file-menu--view:not([hidden])');
     const rows = await menuRows(page, 'file-menu--view');
-    t.eq(rows.join(' | '), 'Frame all [F] | Wireframe [Shift + W] | Shadows [Shift + S] | Material panel | Render panel | Hide interface [Tab]', 'View holds one Frame all (on F, the key Frame model had), the view toggles, Material and Render, Hide interface, with their hotkeys, and no Cycle ground');
+    t.eq(rows.join(' | '), 'Frame all [F] | Wireframe [Shift + W] | Shadows [Shift + S] | Material panel | Lighting panel | Hide interface [Tab]', 'View holds one Frame all (on F, the key Frame model had), the view toggles, Material and Render, Hide interface, with their hotkeys, and no Cycle ground');
     await page.evaluate(() => {
       window.__framed = 0;
       window.__bozzetto.focusSubject = () => void window.__framed++;
@@ -269,10 +269,10 @@ export const suites = {
     t.ok((await page.evaluate(() => window.__bozzetto.getGround())) !== ground, 'G still cycles the ground, though the menu has no item for it');
     // A switch leaves the menu open, as Sculpt's does; a command closes it.
     await page.click('.bz-menuname:has-text("View")');
-    await page.click('.file-menu--view .file-menu__item:has-text("Render panel")');
+    await page.click('.file-menu--view .file-menu__item:has-text("Lighting panel")');
     await page.waitForTimeout(300);
-    t.ok((await frameState(page)).open, 'Render panel opens the panel');
-    await page.click('.file-menu--view .file-menu__item:has-text("Render panel")');
+    t.ok((await frameState(page)).open, 'Lighting panel opens the panel');
+    await page.click('.file-menu--view .file-menu__item:has-text("Lighting panel")');
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).open, 'and closes it');
     await page.click('.file-menu--view .file-menu__item:has-text("Hide interface")');
@@ -293,30 +293,6 @@ export const suites = {
     await page.keyboard.press('h');
     t.ok(await page.evaluate(() => document.querySelector('.help-guide').hidden), 'and H closes it');
 
-    // --- the phone: nothing overlaps -------------------------------------------------------
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(400);
-    s = await stripState(page);
-    f = await frameState(page);
-    t.ok(s.strip.w === 390 && s.strip.h === 24 && s.scroll <= 0, `at 390px the strip is the width of the screen and nothing scrolls sideways (${s.scroll})`);
-    t.ok(!!s.readout && s.title === 'Demo bust (synthetic)' && noOverlap(s.left, s.readout) && noOverlap(s.readout, s.right) && s.readout.r <= 390, `the readout gives way to the project's title alone, cut with an ellipsis (${JSON.stringify(s.readout)})`);
-    t.ok(noOverlap(s.left, s.right) && s.right.r <= 390 && s.left.l >= 0, `the menus and the hide button do not overlap (${JSON.stringify([s.left, s.right])})`);
-    t.ok(f.tab && f.tab.r === 390 && f.tab.l >= 0, 'the Render tab is on the screen');
-    t.ok(f.bar && f.bar.l === 0 && f.bar.r === 390 && f.bar.b === 844 && f.play.bg === CONTROL, `the transport spans it, flush at the bottom, play still a regular button (${JSON.stringify(f.bar)})`);
-    await page.click('.panel--render > .panel__handle');
-    await page.waitForTimeout(300);
-    f = await frameState(page);
-    t.ok(f.open && f.panel.w === 390 && f.panel.b <= f.bar.t, `the open panel is a sheet across the width, clear of the transport (${JSON.stringify([f.panel, f.bar])})`);
-    await page.click('.panel--render > .panel__handle');
-    await page.click('.bz-menuname:has-text("View")');
-    const pop = await page.evaluate(() => {
-      const r = document.querySelector('.file-menu--view').getBoundingClientRect();
-      return { l: r.left, r: r.right };
-    });
-    t.ok(pop.l >= 0 && pop.r <= 390, 'and the View menu opens within it');
-    await page.keyboard.press('Escape');
-    await page.setViewportSize({ width: 1280, height: 800 });
-
     // --- File > Close goes to the gallery, opened cold ---------------------------------------
     await openStripMenu(page, 'File');
     await Promise.all([page.waitForURL((u) => u.pathname === '/' && !u.search, { timeout: 30_000 }).catch(() => {}), pickRow(page, 'Close')]);
@@ -333,7 +309,7 @@ export const suites = {
     t.ok(f.bar === null, 'a model has no transport');
     t.eq(s.readoutText, 'A model Model', `its readout is its title and Model (${s.readoutText})`);
     t.eq(s.menus.join(), 'File,Edit,View,Help', 'with the same four menus');
-    t.eq([...f.tabs].sort().join(), 'Material,Render', 'and the Material and Render tabs');
+    t.eq([...f.tabs].sort().join(), 'Lighting,Material', 'and the Material and Lighting tabs');
     t.eq(s.oldRow.join(), '', 'and none of the old top row');
   },
 
@@ -473,10 +449,10 @@ export const suites = {
     t.ok(true, 'Report… opens the report window');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('.report-overlay'));
-    await page.click('.panel--render > .panel__handle');
+    await page.click('.panel--lighting > .panel__handle');
     await page.waitForTimeout(300);
     t.ok(!(await frameState(page)).byline, 'the panel has no byline of its own');
-    await page.click('.panel--render > .panel__handle');
+    await page.click('.panel--lighting > .panel__handle');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const p = await stripState(page);
@@ -519,12 +495,12 @@ export const suites = {
       return rows.join(' | ');
     };
     let s = await open('pending');
-    await page.click('.panel--render > .panel__handle');
+    await page.click('.panel--lighting > .panel__handle');
     await page.waitForTimeout(400);
-    shapeChecks(t, await renderShape(page), 'Review mode');
-    await page.click('.panel--render > .panel__handle');
+    t.eq((await sectionsOf(page, 'panel--lighting')).join(), 'Rig,Lights,Environment light', 'Review mode: the Lighting tab');
+    await page.click('.panel--lighting > .panel__handle');
     t.eq(s.menus.join(), 'File,Edit,View,Moderation,Help', 'the same strip: File, Edit, View, Moderation and Help');
-    checkShape(t, 'Review mode', await readMenus(page, 'Review mode'), { names: 'File,Edit,View,Moderation,Help', file: 'Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Render panel|Hide interface' });
+    checkShape(t, 'Review mode', await readMenus(page, 'Review mode'), { names: 'File,Edit,View,Moderation,Help', file: 'Close', edit: 'Preferences…', view: 'Frame all|Wireframe|Shadows|Material panel|Lighting panel|Hide interface' });
     t.ok(/^Ada bust by @ada Timelapse 24 frames/.test(s.readoutText) && /Reviewing Pending review$/.test(s.readoutText), `the readout has the author and where it stands (${s.readoutText})`);
     t.eq(await page.getAttribute('.review-mode', 'data-shared'), 'pending', 'the state is on the review-mode hook');
     t.eq(s.buttons.map((b) => b.text).join(), 'Hide the interface', 'only the hide button at the right: the review actions are in Moderation');

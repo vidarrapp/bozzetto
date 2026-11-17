@@ -39,8 +39,9 @@ professional apps solve the same problems.
 
 - The full-screen viewport with the interface around its edges.
 - The split of the four panels: Scene and Model on the left (what is in
-  the scene, and the selected object), Tool and Render on the right (how
-  the tool behaves, how the picture looks).
+  the scene, and the selected object), Tool and Material on the right (how
+  the tool behaves, how the surface looks); the look of the scene is Present's
+  Lighting, Camera and Render.
 - Panels only as tall as their content, translucent, with the opacity as a
   preference.
 - The tool bar at the bottom centre, icon only, the active tool in orange.
@@ -133,22 +134,39 @@ no separate touch density. An earlier draft of this spec had one, with
   panel. A double press still opens the number field. On a touch screen
   the line ignores presses itself; a mouse on a desktop keeps the plain
   slider (click to jump). The brush sliders on the left edge have their own
-  drag. Depth of field (Enabled, then Aperture and Focus) is the last part
-  of the Render panel's Camera section, not a section of its own.
-- **One Render panel.** The same everywhere (owner call, 2026-11-14:
-  "consolidate the render panel so it matches everywhere"): Sculpt,
-  Armature, Sculpt's Present, the Present workspace, the public viewer and
-  review mode. Sections Lighting, Camera (with depth of field),
-  Environment, Ambient occlusion, in that order; the full per-light rig;
-  a Reset look button, which goes back to the look the scene or project
+  drag. Depth of field (Enabled, then Aperture and Focus) is part of the
+  Camera panel's one section, not a section of its own.
+- **Three look panels** (owner call, 2026-11-17: Sculpt had too many tabs;
+  they replace the one Render panel). **Lighting**, **Camera** and **Render**
+  are Present's tabs at the left, in Sculpt's Present and in the Present
+  workspace; Sculpt and Armature have none. **Lighting**: Rig (the select,
+  grouped Built in and My rigs, reading Custom when the lights match none;
+  Save rig…, Import rig…, Manage in one row), Lights (Shadows, each light
+  with Enabled, Intensity, Azimuth, Elevation, Colour, Casts shadow and
+  Softness, Rotate rig) and Environment light (HDRI, Intensity, Rotation).
+  **Camera**: Lens, Depth of field with Aperture and Focus. **Render**: Tone
+  (Tone mapping), Ambient occlusion (Model, Strength, Radius), Background and
+  ground (Background, Bg colour or Bg blur and Bg brightness, Ground, the
+  surface rows, Pedestal width, Floor offset), Developer with ?dev, and Reset
+  look at the foot, which puts all three back to the look the scene or project
   opened with (in the viewer, the published look; the view stays, and a
-  visitor's changes are never saved). Material is never in it: it is the
-  Material tab at the right in every place, the viewer and review mode
-  included (Display section only, as in Present). What a place cannot do
-  stays out of the panel, not out of the order: Cavity (SSAO) only in plain
-  Sculpt, Pedestal and Floor offset only where the floor allows them, and
-  the Developer section only with ?dev. The viewer's tab row is Material and Render at
-  the right, nothing at the left, and fits a 390px phone.
+  visitor's changes are never saved). The public viewer and review mode have
+  the Lighting tab alone, at the right after Material, with the rig select and
+  no Save, Import or Manage. Material is never in these panels.
+- **Rigs.** A rig is the lights and the ambient and nothing else (no camera,
+  no background). Built in: Three-point, Key only, Rembrandt, Butterfly,
+  Split, Rim, Top light, Under light, Soft front, and Raking key. My rigs are
+  kept on this device (`bz.rigs`, following the storage choice). A `.bozzrig`
+  file is JSON: `format`, `version`, `name`, a list of `lights` each with a
+  `type` (today `directional`, with `id` key, fill or rim) and its values, and
+  `ambient`. Import checks every field, holds numbers to the sliders' limits,
+  and refuses anything else with a plain notice. Sharing rigs through the
+  Community is later work.
+- **Move the key light** without a keyboard: View, **Move light** (Sculpt,
+  Armature, Present) arms the next drag on the view as a move of the key light,
+  across and up as with the L key, then lets go; Esc or the item again cancels.
+  **Cavity**, Sculpt's form shading, is a switch on the Material tab's Display
+  section with Strength and Radius under it.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
@@ -275,7 +293,8 @@ place, each only where the place has it.
 - Material panel
 - Tool panel
 - Reference panel
-- Render panel
+- Lighting, Camera and Render panels (in Present)
+- Move light
 - Hide interface
 
 - Paint workspace (Shift+B) and Present mode
@@ -332,7 +351,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · state            Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model Layers   │      │ Tool Material Reference Render │  tabs
+│ Scene Model Layers   │      │ Tool Material Reference │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -388,13 +407,13 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Each side has one panel, docked under the title strip (owner call,
   2026-11-11: one panel open per side, with folder tabs). Material is on the
   right everywhere (owner call, 2026-11-17). Tab order, left to right.
-  Sculpt: left Scene, Model, Layers; right Tool, Material, Reference,
-  Render. Armature: left Armature; right Material, Reference, Render.
-  Present from Sculpt: right Material, Render, Output. The Present
-  workspace: left Frames, Project; right Material, Render, Output. The
-  viewer and review mode: right Material, Render, nothing at the left. The
-  View menu lists the panels in this order. Material and Render share a
-  side, so opening one closes the other.
+  Sculpt: left Scene, Model, Layers; right Tool, Material, Reference.
+  Armature: left Armature; right Material, Reference. Present from Sculpt:
+  left Lighting, Camera, Render; right Material, Output. The Present
+  workspace (owner): left Lighting, Camera, Render; right Frames, Project,
+  Material, Output. The viewer and review mode: right Material, Lighting,
+  nothing at the left. The View menu lists the panels in this order (in
+  Sculpt, the set that is showing). One panel is open per side.
 - **A phone** (599px and narrower, a finger). The open panel is a sheet
   docked at the bottom: the full width, at most half the window tall, above
   the tool bar or transport, scrolling inside; the 3D view is not resized and
@@ -426,7 +445,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ### The Reference panel
 
 Pictures to look at while you work (`src/reference/`), on the right after
-Tool and before Render.
+Tool, with Material before it.
 
 - **Top:** Add picture… (the system picker, no `capture` attribute, so an
   iPad offers Photo Library, Take Photo and Choose File) and Paste. Ctrl or
@@ -749,5 +768,6 @@ step and Shift+B come out. The page's address has `paint=1` while it is up
 - Martian Mono capitals are for values and small section headers only;
   buttons, chips and badges are Familjen Grotesk in sentence case.
 - Panel labels carry no hotkeys; the key is in the tooltip and the View menu.
-- The Render panel's Preset names the lights as they are: Three-point (all
-  three on), Key only (Sculpt's opening look), Raking key, or Custom.
+- The Lighting tab's Rig names the lights as they are: Three-point (all
+  three on), Key only (Sculpt's opening look), another built-in rig, one of
+  My rigs, or Custom.

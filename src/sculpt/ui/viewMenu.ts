@@ -20,8 +20,14 @@ export interface ViewHooks {
   frameAllKey?: string;
   wireframe?: { get: () => boolean; toggle: () => void };
   groupColors?: { get: () => boolean; toggle: () => void };
-  /** The shadows switch the Render panel has (Shift+S). */
+  /** The shadows switch (Shift+S). */
   shadows?: { get: () => boolean; toggle: () => void };
+  /**
+   * Move light: arms the next drag on the view as a move of the key light
+   * (one drag, then it lets go; Esc or the item again cancels). The touch way to
+   * what holding L does.
+   */
+  moveLight?: { get: () => boolean; toggle: () => void };
   /** The details overlay (a setting: ui/DetailsOverlay); where the view has one. */
   details?: boolean;
   /** The Reference pictures in the view, shown or hidden all at once. */
@@ -31,7 +37,9 @@ export interface ViewHooks {
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
   toolKeys?: boolean;
   /** The panels this mode has, in the order of the menu: [id, name]. */
-  panels: Array<[id: string, name: string]>;
+  panels: Array<[id: string, name: string, enabled?: () => boolean]>;
+  /** Keep the panels as given, not in the order of the other places' tabs (the viewer's Lighting is at the right). */
+  panelsInOrder?: boolean;
   hideInterface: () => void;
   /**
    * The workspaces, as the path in the strip has them (the same current and
@@ -42,8 +50,8 @@ export interface ViewHooks {
   workspace?: () => { current: Workspace; steps: Partial<Record<Workspace, PathStep>> };
 }
 
-/** The panels in tab order (the left side, then the right); Layers and Reference are reserved for the panels built elsewhere. */
-const PANEL_ORDER = ['scene', 'model', 'layers', 'armature', 'frames', 'project', 'sculpt', 'material', 'reference', 'settings', 'output'];
+/** The panels in tab order (the left side, then the right). */
+const PANEL_ORDER = ['scene', 'model', 'layers', 'armature', 'lighting', 'camera', 'render', 'frames', 'project', 'sculpt', 'material', 'reference', 'output'];
 const panelRank = (id: string): number => {
   const i = PANEL_ORDER.indexOf(id);
   return i < 0 ? PANEL_ORDER.length : i;
@@ -81,6 +89,8 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
       toggle: (on) => settings.set('details', on ? 'on' : 'off'),
     });
   }
+  const light = h.moveLight;
+  if (light) looks.push({ label: 'Move light', checked: light.get, toggle: () => light.toggle() });
   const colours = h.groupColors;
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });
@@ -102,9 +112,10 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
 
   const hide = h.hideInterface;
   group(
-    ...[...h.panels].sort((a, b) => panelRank(a[0]) - panelRank(b[0])).map(
-      ([id, name]): MenuItem => ({
+    ...(h.panelsInOrder ? [...h.panels] : [...h.panels].sort((a, b) => panelRank(a[0]) - panelRank(b[0]))).map(
+      ([id, name, enabled]): MenuItem => ({
         label: `${name} panel`,
+        enabled,
         checked: () => panelIsOpen(id),
         toggle: (on) => setPanel(id, on),
       }),

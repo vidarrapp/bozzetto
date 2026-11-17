@@ -1,7 +1,8 @@
 import { Viewer, type LookState, type ToneMappingId } from './Viewer';
 import type { AssetSource } from './AssetSource';
 import type { Manifest } from '../types/manifest';
-import { Panel } from '../ui/Panel';
+import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
+import { LookPanels, type LookPanelsOptions } from '../ui/lookPanels';
 import { Transport } from '../ui/Transport';
 import { installShortcuts } from '../ui/shortcuts';
 import { Help } from '../ui/Help';
@@ -12,7 +13,8 @@ import { pageChrome } from '../ui/ChromeToggle';
 /** What mountViewerParts leaves its caller holding, besides the viewer. */
 export interface ViewerParts {
   viewer: Viewer;
-  panel: Panel;
+  /** The look panels (Lighting, Camera, Render) where this page has them; Sculpt and Armature build their own or none. */
+  panel: LookPanels | null;
   /** The bottom bar; absent for a model, or a timelapse of one frame. */
   transport: Transport | null;
   help: Help;
@@ -22,6 +24,8 @@ export interface ViewerParts {
 
 export interface MountOptions {
   author?: string;
+  /** The look panels to build, and where; none when left out. */
+  look?: Omit<LookPanelsOptions, 'openedLook'>;
   /**
    * The owner's Present page (present/): the Render panel headed Render,
    * and the transport as the shell's bar. Both are this page's own parts
@@ -81,13 +85,9 @@ export async function mountViewerParts(
 
   // Build the UI after boot so controls reflect the applied look.
   const help = new Help({ button: !opts.frame });
-  // A member's work from the Community names its author under the title.
-  const panel = new Panel(viewer, {
-    author: opts.author,
-    shell: opts.shell,
-    openedLook: opts.openedLook,
-  });
-  viewer.onDofChange = () => panel.refreshControls(); // sync the DoF checkbox (hotkey / tap-to-focus)
+  const panel = opts.look ? new LookPanels(viewer, { ...opts.look, openedLook: opts.openedLook }) : null;
+  // Sync the DoF switch (hotkey / tap-to-focus): any open look panel reads its controls again.
+  viewer.onDofChange = () => window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
   // The transport (scrubber + stage markers) only makes sense for a sequence;
   // a single-model project has nothing to scrub, so it gets no timeline.
   const transport =
@@ -103,7 +103,7 @@ export async function mountViewerParts(
     toggleChrome: () => chrome.handleTab(),
     toggleHelp: () => help.toggle(),
     toggleFps: () => fps.toggle(),
-    refresh: () => panel.refreshControls(),
+    refresh: () => window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT)),
   });
 
   return {
@@ -115,7 +115,7 @@ export async function mountViewerParts(
       stopShortcuts();
       stopStallLog();
       fps.dispose();
-      panel.dispose();
+      panel?.dispose();
       transport?.dispose();
       help.dispose();
       viewer.dispose();

@@ -200,7 +200,7 @@ export const suites = {
     t.ok(after.az === before.az, `losing the window ends the hold: a move after it turns no light (${before.az} -> ${after.az})`);
     // Tab as in Sculpt (owner decision): close, hide, back, and Esc back;
     // the transport stays.
-    await chromeChecks(page, t, 'the viewer', { panels: ['.panel--render'], transport: true });
+    await chromeChecks(page, t, 'the viewer', { panels: ['.panel--lighting'], transport: true });
   },
 
   async editorTools(page, base, t) {
@@ -259,7 +259,7 @@ export const suites = {
     await guideChecks(page, t, 'the editor', { button: false });
     await lightChecks(page, t, 'the editor');
     // Tab as everywhere: the panels close, then the interface goes, and the transport stays.
-    await chromeChecks(page, t, 'the editor', { panels: ['.panel--render'], transport: true });
+    await chromeChecks(page, t, 'the editor', { panels: ['.panel--lighting'], transport: true });
 
     // --- Set scale --------------------------------------------------------
     const banner = () =>

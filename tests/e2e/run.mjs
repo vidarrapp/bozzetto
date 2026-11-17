@@ -50,13 +50,11 @@ import { suites as sculptLayers } from './sculptLayers.mjs';
 import { suites as reference } from './reference.mjs';
 import { suites as shadows } from './shadows.mjs';
 import { suites as shell } from './shell.mjs';
-import { suites as shellPhone } from './shellPhone.mjs';
 import { suites as wireAo } from './wireAo.mjs';
 import { suites as shadowsGroups } from './shadowsGroups.mjs';
 import { suites as smoke } from './smoke.mjs';
 import { suites as studyName } from './studyName.mjs';
 import { suites as sliderScrub } from './sliderScrub.mjs';
-import { suites as renderMatch } from './renderMatch.mjs';
 import { suites as strengthCm } from './strengthCm.mjs';
 import { suites as surfaceSmooth } from './surfaceSmooth.mjs';
 import { suites as tineRake } from './tineRake.mjs';
@@ -66,6 +64,7 @@ import { suites as viewerFrame } from './viewerFrame.mjs';
 import { suites as viewerTools } from './viewerTools.mjs';
 import { suites as webgpuHang } from './webgpuHang.mjs';
 import { suites as zoomFocus } from './zoomFocus.mjs';
+import { suites as lookTabs } from './lookTabs.mjs';
 
 // One suite file per line, so two branches adding a file do not collide.
 const suites = {
@@ -107,18 +106,17 @@ const suites = {
   ...icons,
   ...framePresent,
   ...viewerFrame,
-  ...shellPhone,
   ...wireAo,
   ...deviceStorage,
   ...material,
   ...sliderScrub,
-  ...renderMatch,
   ...askWindow,
   ...reference,
   ...clarity,
   ...calipers,
   ...studyName,
   ...sculptLayers,
+  ...lookTabs,
   ...detailsOverlay,
 };
 

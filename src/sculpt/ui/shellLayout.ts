@@ -83,14 +83,15 @@ const GAP = 16;
 export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
-// Layers and Reference are built elsewhere; their places are kept here.
-const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--frames', 'panel--project'];
-const RIGHT_ORDER = ['panel--sculpt', 'panel--material', 'panel--reference', 'panel--render', 'panel--output'];
+// Lighting is at the left in Present and at the right in the public viewer, where it follows Material.
+const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--lighting', 'panel--camera', 'panel--render'];
+const RIGHT_ORDER = ['panel--frames', 'panel--project', 'panel--sculpt', 'panel--material', 'panel--reference', 'panel--lighting', 'panel--output'];
 
-function tabsOf(order: string[]): HTMLElement[] {
+function tabsOf(order: string[], side: 'left' | 'right'): HTMLElement[] {
   const out: HTMLElement[] = [];
   for (const cls of order) {
-    const handle = document.querySelector<HTMLElement>(`.panel.${cls} > .panel__handle`);
+    const edge = side === 'left' ? '.panel--left' : '.panel:not(.panel--left)';
+    const handle = document.querySelector<HTMLElement>(`${edge}.${cls} > .panel__handle`);
     // A tab that is not shown (display none: Present puts some away) takes no place in the row.
     if (handle && handle.getClientRects().length > 0) out.push(handle);
   }
@@ -113,7 +114,7 @@ export function layoutShell(): void {
 /** Put the tabs along their edges; false when the left row and the right row would meet. */
 function placeTabs(): boolean {
   let x = 0;
-  for (const tab of tabsOf(LEFT_ORDER)) {
+  for (const tab of tabsOf(LEFT_ORDER, 'left')) {
     tab.style.left = `${x}px`;
     tab.style.right = 'auto';
     x += tab.getBoundingClientRect().width + 1;
@@ -122,7 +123,7 @@ function placeTabs(): boolean {
   document.documentElement.style.setProperty('--bz-tabs-left', `${x}px`);
   const leftWidth = x;
   x = 0;
-  for (const tab of tabsOf(RIGHT_ORDER).reverse()) {
+  for (const tab of tabsOf(RIGHT_ORDER, 'right').reverse()) {
     tab.style.right = `${x}px`;
     tab.style.left = 'auto';
     x += tab.getBoundingClientRect().width + 1;

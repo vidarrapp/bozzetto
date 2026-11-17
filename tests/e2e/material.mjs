@@ -2,11 +2,10 @@
 // the active object's Surface (Albedo, Roughness, Metalness) and the Display
 // (Mode and its matcap, Smooth shading, Wireframe, Wire opacity), both moved
 // out of the Model and Render panels. In Armature it is the right edge's first
-// tab; in the Present workspace and the public viewer too, before Render.
+// tab; in the Present workspace it stands before Output, and in the public
+// viewer before Lighting.
 // Each gets (page, base, t).
 import { openArmature, openSculpt } from './lib.mjs';
-
-const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' };
 
 const tab = (page, cls) => page.evaluate((c) => document.querySelector(`.${c} .panel__handle`).click(), cls);
 const isOpen = (page, cls) => page.evaluate((c) => !document.querySelector(`.${c}`).classList.contains('panel--collapsed'), cls);
@@ -46,44 +45,27 @@ function fitChecks(t, row, vw, where) {
   t.ok(row.every((x) => x.height === 28 && x.top === row[0].top), `${where}: all on one row, 28px tall`);
 }
 
-/** An in-page phone: its own context, closed after. Returns the page errors. */
-async function onPhone(page, fn) {
-  const ctx = await page.context().browser().newContext(PHONE);
-  await ctx.addInitScript(() => {
-    window.__bozzettoAdaptiveOff = true;
-  });
-  try {
-    const p = await ctx.newPage();
-    const errors = [];
-    p.on('pageerror', (e) => errors.push(String(e)));
-    await fn(p);
-    return errors;
-  } finally {
-    await ctx.close();
-  }
-}
-
 export const suites = {
-  // Sculpt: the tab, its two sections, what Model and Render no longer have,
-  // the albedo, the mode and the wireframe working from it, and the phone.
+  // Sculpt: the tab, its two sections, what Model no longer has,
+  // the albedo, the mode and the wireframe working from it.
   async material(page, base, t) {
     await openSculpt(page, base);
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
 
-    // The tabs: Scene, Model at the left; Tool, Material, Render at the right.
+    // The tabs: Scene, Model, Layers at the left; Tool, Material, Reference at the right.
     const row = await tabs(page);
     t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Scene,Model,Layers', 'the left edge has Scene, Model, Layers, in that order');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Material,Reference,Render', 'and the right edge Tool, Material, Reference, Render');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Material,Reference', 'and the right edge Tool, Material, Reference');
     fitChecks(t, row, 1280, 'Sculpt at 1280');
 
     // At most one panel a side.
     await tab(page, 'panel--scene');
     await tab(page, 'panel--material');
     t.ok((await isOpen(page, 'panel--material')) && (await isOpen(page, 'panel--scene')), 'Material is on the right: opening it leaves Scene open at the left');
-    await tab(page, 'panel--render');
-    t.ok((await isOpen(page, 'panel--render')) && !(await isOpen(page, 'panel--material')), 'opening Render closes Material (one panel a side)');
+    await tab(page, 'panel--reference');
+    t.ok((await isOpen(page, 'panel--reference')) && !(await isOpen(page, 'panel--material')), 'opening Reference closes Material (one panel a side)');
     await tab(page, 'panel--sculpt');
-    t.ok((await isOpen(page, 'panel--sculpt')) && !(await isOpen(page, 'panel--render')), 'and Tool closes Render');
+    t.ok((await isOpen(page, 'panel--sculpt')) && !(await isOpen(page, 'panel--reference')), 'and Tool closes Reference');
     await tab(page, 'panel--material');
     t.ok(!(await isOpen(page, 'panel--sculpt')), 'and Material closes Tool');
     await tab(page, 'panel--scene');
@@ -94,23 +76,17 @@ export const suites = {
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Surface,Display', 'Material has two sections, Surface and Display');
     t.eq(mat.Surface.join(','), 'Material,Albedo,Roughness,Metalness', 'Surface: the assigned Material, Albedo, Roughness, Metalness');
-    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity', `Display: Mode, Smooth shading, Wireframe, Wire opacity (${mat.Display.join(',')})`);
+    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity,Cavity,Strength,Radius', `Display: Mode, Smooth shading, Wireframe, Wire opacity, Cavity with its Strength and Radius (${mat.Display.join(',')})`);
 
-    // Gone from Model and Render: a control is shown once.
+    // Gone from Model: a control is shown once.
     await tab(page, 'panel--model');
     const model = await sectionsOf(page, 'panel--model');
     t.eq(Object.keys(model)[0], 'Topology', `the Model panel starts at Topology (${Object.keys(model).join(', ')})`);
     t.ok(!Object.keys(model).includes('Material') && !Object.values(model).flat().some((l) => /Albedo|Roughness|Metalness/.test(l)), 'with no Material section and no Albedo, Roughness or Metalness');
     await tab(page, 'panel--model');
-    await tab(page, 'panel--render');
-    const render = await sectionsOf(page, 'panel--render');
-    t.eq(Object.keys(render)[0], 'Lighting', `the Render panel starts at Lighting (${Object.keys(render).join(', ')})`);
-    const strays = Object.values(render).flat().filter((l) => /^(Mode$|Smooth shading|Wireframe|Wire opacity|Matcap)/.test(l));
-    t.ok(!Object.keys(render).includes('Material') && !strays.length, `with no Mode, Smooth shading, Wireframe or Wire opacity (${strays.join(', ')})`);
-    await tab(page, 'panel--render');
 
     // The Albedo: the active object's, changed from here.
-    await tab(page, 'panel--material');
+    if (!(await isOpen(page, 'panel--material'))) await tab(page, 'panel--material');
     const surface = () =>
       page.evaluate(() => {
         const { session, library } = window.__sculpt;
@@ -267,24 +243,6 @@ export const suites = {
       return { a: library.materialFor(a).name, names };
     });
     t.ok(two.names.a === two.a && two.names.b === 'Gold' && two.names.both === 'Several', `the Material row follows the active object and says Several over a mixed selection (${JSON.stringify(two)})`);
-
-    // Phone: three left tabs and two right tabs on 390px.
-    const errors = await onPhone(page, async (p) => {
-      await openSculpt(p, base);
-      const r = await tabs(p);
-      t.eq(r.map((x) => x.name).join(','), 'Scene,Model,Layers,Tool,Material,Reference,Render', 'on a phone the seven tabs are Scene, Model, Layers, Tool, Material, Reference, Render');
-      fitChecks(t, r, 390, 'Sculpt at 390');
-      await tab(p, 'panel--material');
-      await settle(p, 300);
-      const open = await p.evaluate(() => {
-        const r = document.querySelector('.panel--material').getBoundingClientRect();
-        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, scroll: document.documentElement.scrollWidth - innerWidth };
-      });
-      t.ok(open.left >= 0 && open.right <= 390 && open.bottom <= 844 && open.scroll <= 0, `the open Material panel fits the phone (${JSON.stringify(open)})`);
-      const sections = await sectionsOf(p, 'panel--material');
-      t.eq(Object.keys(sections).join(','), 'Surface,Display', 'with both sections');
-    });
-    t.ok(!errors.length, `no page errors on the phone${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
 
   // With no object the Surface says so, in one quiet line.
@@ -311,13 +269,13 @@ export const suites = {
     t.ok(state.objects === 0 && state.note === 'No object is selected.' && !state.rows, `with no object, the Surface says so and has no rows (${JSON.stringify(state)})`);
   },
 
-  // Armature: the Material tab beside the Armature tab; Render keeps no Mode.
+  // Armature: the Material tab beside the Armature tab; no Render tab, and no Cavity.
   async materialArmature(page, base, t) {
     await openArmature(page, base);
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
     const row = await tabs(page);
     t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Armature', 'Armature has its own tab on the left');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Reference,Render', 'and Material, Reference, Render on the right');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Reference', 'and Material, Reference on the right');
     fitChecks(t, row, 1280, 'Armature');
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
@@ -326,11 +284,8 @@ export const suites = {
     t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity', 'Mode, Smooth shading, Wireframe, Wire opacity');
     await tab(page, 'panel--armature');
     t.ok((await isOpen(page, 'panel--armature')) && (await isOpen(page, 'panel--material')), 'Armature is on the other side: Material stays open');
-    await tab(page, 'panel--render');
-    t.ok(!(await isOpen(page, 'panel--material')), 'and Render, on the same side, closes Material');
-    const render = await sectionsOf(page, 'panel--render');
-    t.ok(!Object.keys(render).includes('Material') && Object.keys(render)[0] === 'Lighting', `Render starts at Lighting (${Object.keys(render).join(', ')})`);
-    await tab(page, 'panel--render');
+    await tab(page, 'panel--reference');
+    t.ok(!(await isOpen(page, 'panel--material')), 'and Reference, on the same side, closes Material');
     await page.evaluate(() => document.activeElement?.blur?.());
     await tab(page, 'panel--material');
     await page.keyboard.press('Shift+W');
@@ -342,8 +297,8 @@ export const suites = {
     );
   },
 
-  // Present's workspace: the Material tab after Frames and Project; Render has
-  // no Material section. And the public viewer keeps Mode in its Render panel.
+  // Present's workspace: the Material tab after Frames and Project; the look tabs
+  // have no Material section. And the public viewer keeps Mode in its Material tab.
   async materialPresent(page, base, t) {
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
@@ -355,8 +310,8 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent === '3' && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     await settle(page, 400);
     const row = await tabs(page);
-    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Frames,Project', 'Present has Frames, Project on the left');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Render,Output', 'and Material, Render and Output on the right');
+    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Lighting,Camera,Render', 'Present has Lighting, Camera, Render on the left');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Frames,Project,Material,Output', 'and Frames, Project, Material and Output on the right');
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens');
     t.ok(!(await isOpen(page, 'panel--output')), 'and closes Output, on its side');
@@ -365,14 +320,15 @@ export const suites = {
     t.eq(mat.Display.slice(0, 1).join(), 'Mode', 'with Mode first');
     t.ok(['Smooth shading', 'Wireframe', 'Wire opacity'].every((l) => mat.Display.includes(l)), `and Smooth shading, Wireframe and Wire opacity (${mat.Display.join(', ')})`);
     // The published model's own Albedo, Roughness and Metalness, over Lit.
-    t.ok(['Albedo', 'Roughness', 'Metalness'].every((l) => mat.Display.includes(l)), `with the model's own Albedo, Roughness and Metalness, as Render had them (${mat.Display.join(', ')})`);
-    await tab(page, 'panel--render');
-    const render = await sectionsOf(page, 'panel--render');
-    t.ok(!Object.keys(render).includes('Material') && Object.keys(render)[0] === 'Lighting', `Render has no Material section and starts at Lighting (${Object.keys(render).join(', ')})`);
-    const strays = Object.values(render).flat().filter((l) => /^(Mode$|Albedo|Roughness|Metalness|Smooth shading|Wire)/.test(l));
-    t.ok(!strays.length, `none of its controls are in Render (${strays.join(', ')})`);
+    t.ok(['Albedo', 'Roughness', 'Metalness'].every((l) => mat.Display.includes(l)), `with the model's own Albedo, Roughness and Metalness, as the old Render panel had them (${mat.Display.join(', ')})`);
+    for (const cls of ['panel--lighting', 'panel--camera', 'panel--render']) {
+      await tab(page, cls);
+      const look = await sectionsOf(page, cls);
+      const strays = Object.values(look).flat().filter((l) => /^(Mode$|Albedo|Roughness|Metalness|Smooth shading|Wire)/.test(l));
+      t.ok(!Object.keys(look).includes('Material') && !strays.length, `${cls} holds no Material controls (${strays.join(', ')})`);
+      await tab(page, cls);
+    }
     // The same controls work: Mode, Wireframe, Shift+W.
-    await tab(page, 'panel--material'); // Render, on its side, had closed it
     await page.selectOption('.panel--material select', 'matcap');
     await settle(page);
     t.eq(await page.evaluate(() => window.__bozzetto.getMaterial()), 'matcap', 'Mode: Matcap changes the view');
@@ -394,34 +350,19 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent === '4' && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     await settle(page, 400);
     const again = await tabs(page);
-    t.eq(again.map((x) => `${x.side}:${x.name}`).join(','), 'left:Frames,left:Project,right:Material,right:Render,right:Output', 'after the view is rebuilt for a new frame the five tabs are still there');
+    t.eq(again.map((x) => `${x.side}:${x.name}`).join(','), 'left:Lighting,left:Camera,left:Render,right:Frames,right:Project,right:Material,right:Output', 'after the view is rebuilt for a new frame the seven tabs are still there');
     t.eq(await page.evaluate(() => document.querySelectorAll('.panel--material').length), 1, 'once');
-    // The phone: five tabs on 390px.
-    await page.setViewportSize({ width: 390, height: 844 });
-    // The page is busy a while after a resize (the view's buffers are made again): wait for the row to be laid out again.
-    await page.waitForFunction(
-      () => {
-        const row = [...document.querySelectorAll('.panel--left > .panel__handle')].filter((e) => e.getClientRects().length > 0).map((e) => e.getBoundingClientRect());
-        return innerWidth === 390 && row.length > 1 && Math.abs(row[1].left - row[0].right - 1) < 0.5;
-      },
-      null,
-      { timeout: 30_000 },
-    );
-    await settle(page, 300);
-    const r = await tabs(page);
-    fitChecks(t, r, 390, 'Present at 390');
-    await page.setViewportSize({ width: 1280, height: 800 });
     t.ok(!errors.length, `no page errors (${errors.join(' | ')})`);
 
-    // The public viewer: Material and Render at the right, nothing at the left, and Mode in Material.
+    // The public viewer: Material and Lighting at the right, nothing at the left, and Mode in Material.
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     await settle(page, 300);
     const viewerTabs = await tabs(page);
-    t.eq(viewerTabs.map((x) => `${x.side}:${x.name}`).join(','), 'right:Material,right:Render', 'the viewer has the Material and Render tabs at the right and none at the left');
-    await tab(page, 'panel--render');
-    const vr = await sectionsOf(page, 'panel--render');
-    t.ok(!Object.keys(vr).includes('Material') && Object.keys(vr)[0] === 'Lighting', `its Render panel holds no Material and starts at Lighting (${Object.keys(vr)})`);
+    t.eq(viewerTabs.map((x) => `${x.side}:${x.name}`).join(','), 'right:Material,right:Lighting', 'the viewer has the Material and Lighting tabs at the right and none at the left');
+    await tab(page, 'panel--lighting');
+    const vr = await sectionsOf(page, 'panel--lighting');
+    t.ok(!Object.keys(vr).includes('Material') && Object.keys(vr)[0] === 'Rig', `its Lighting panel holds no Material and starts at Rig (${Object.keys(vr)})`);
     await tab(page, 'panel--material');
     const vm = await sectionsOf(page, 'panel--material');
     t.ok(Object.keys(vm).join() === 'Display' && vm.Display.includes('Mode') && vm.Display.some((l) => /Wireframe/.test(l)) && vm.Display.includes('Smooth shading'), `the Material panel has the Display section: Mode, Smooth shading, Wireframe (${JSON.stringify(vm)})`);

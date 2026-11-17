@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Details|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -187,7 +187,7 @@ export const suites = {
     await closeMenu(page);
 
     // The panels: a check while open, and the item opens or closes it.
-    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Tool panel', 'panel--sculpt'], ['Material panel', 'panel--material'], ['Render panel', 'panel--render']]) {
+    for (const [label, cls] of [['Scene panel', 'panel--scene'], ['Model panel', 'panel--model'], ['Tool panel', 'panel--sculpt'], ['Material panel', 'panel--material'], ['Reference panel', 'panel--reference']]) {
       await openMenu(page, 'View');
       t.eq(await checked(label), 'false', `${label}: unchecked while closed`);
       await pick(page, label);
@@ -494,7 +494,7 @@ export const suites = {
       const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.querySelector('.handle__label').textContent, l: h.getBoundingClientRect().left }));
       return { toolbar: vis('.sculpt-toolbar__brushes'), edge: vis('.bz-edge'), tabs: tabs.sort((a, b) => a.l - b.l).map((x) => x.n).join(), done: !!document.querySelector('.present-bar__done') };
     });
-    t.ok(!ws.toolbar && !ws.edge && ws.tabs === 'Material,Render,Output' && !ws.done, `no tool bar, no edge controls, no Scene, Model or Tool tabs; the tabs are Material, Render, Output, and there is no Done (${JSON.stringify(ws)})`);
+    t.ok(!ws.toolbar && !ws.edge && ws.tabs === 'Lighting,Camera,Render,Material,Output' && !ws.done, `no tool bar, no edge controls, no Scene, Model or Tool tabs; the tabs are Lighting, Camera, Render, Material, Output, and there is no Done (${JSON.stringify(ws)})`);
 
     // The bar: bottom centre, flush, the panel's colour.
     const bar = await page.evaluate(() => {
@@ -532,11 +532,11 @@ export const suites = {
     await page.selectOption('.present-out__size', '1');
     const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.click('.present-out__save')]);
     t.eq(dl.suggestedFilename(), 'Sculpt.png', 'Save image in the Output panel saves the PNG');
-    // Render is the other tab; opening it closes Output.
-    await tab(page, 'panel--render');
-    t.ok((await isOpen(page, 'panel--render')) && !(await isOpen(page, 'panel--output')), 'the Render tab opens Render and closes Output');
+    // Material is the other tab at the right; opening it closes Output.
+    await tab(page, 'panel--material');
+    t.ok((await isOpen(page, 'panel--material')) && !(await isOpen(page, 'panel--output')), 'the Material tab opens Material and closes Output');
     await tab(page, 'panel--output');
-    t.ok((await isOpen(page, 'panel--output')) && !(await isOpen(page, 'panel--render')), 'and Output takes it back');
+    t.ok((await isOpen(page, 'panel--output')) && !(await isOpen(page, 'panel--material')), 'and Output takes it back');
 
     // --- Present > Sculpt, and Esc --------------------------------------------
     await step('sculpt');
@@ -581,7 +581,7 @@ export const suites = {
         });
         t.ok(dim.color === 'rgb(125, 125, 125)' && /sent to Sculpt first/.test(dim.title) && dim.disabled === 'true', `Present is dim, with a title saying a figure is sent to Sculpt first (${JSON.stringify(dim)})`);
         await page.click('.bz-ws__step[data-workspace="present"]', { force: true });
-        t.ok(!!(await page.evaluate(() => window.__armature)) && new URL(page.url()).searchParams.get('armature') === '1', 'pressing it does nothing');
+        t.ok((await page.evaluate(() => !!window.__armature)) && new URL(page.url()).searchParams.get('armature') === '1', 'pressing it does nothing');
         t.eq(await page.evaluate(() => !!document.querySelector('.bz-strip .publish-window__chip')), false, 'Armature: no Publish button in the strip');
       }
       // Sculpt step = File > Send to Sculpt: the figure is added to the scene it came from.
@@ -596,24 +596,23 @@ export const suites = {
   async shellPanels(page, base, t) {
     await openSculpt(page, base);
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
-    const rows = () => page.evaluate(() => ['scene', 'model', 'sculpt', 'render'].map((c) => !document.querySelector(`.panel--${c}`).classList.contains('panel--collapsed')));
+    const rows = () => page.evaluate(() => ['scene', 'model', 'sculpt', 'reference'].map((c) => !document.querySelector(`.panel--${c}`).classList.contains('panel--collapsed')));
     t.eq((await rows()).join(), 'false,false,false,false', 'all four start closed');
 
     // The tabs: two at the left, three at the right, 1px apart, 28px tall, 4px under the strip, at the edge.
     const tabs = await page.evaluate(() =>
       Object.fromEntries(
-        ['scene', 'model', 'sculpt', 'material', 'reference', 'render'].map((c) => {
+        ['scene', 'model', 'sculpt', 'material', 'reference'].map((c) => {
           const r = document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect();
           const s = getComputedStyle(document.querySelector(`.panel--${c} .panel__handle`));
           return [c, { l: r.left, r: r.right, t: r.top, h: r.height, bg: s.backgroundColor, color: s.color, weight: s.fontWeight, size: s.fontSize, mode: s.writingMode }];
         }),
       ),
     );
-    t.ok(tabs.scene.l === 0 && tabs.render.r === 1280, 'the outer tabs are flush to the screen\'s edges');
+    t.ok(tabs.scene.l === 0 && tabs.reference.r === 1280, 'the outer tabs are flush to the screen\'s edges');
     t.near(tabs.model.l - tabs.scene.r, 1, 0.5, 'Scene and Model are 1px apart');
     t.near(tabs.material.l - tabs.sculpt.r, 1, 0.5, 'Tool and Material are 1px apart');
     t.near(tabs.reference.l - tabs.material.r, 1, 0.5, 'Material and Reference are 1px apart');
-    t.near(tabs.render.l - tabs.reference.r, 1, 0.5, 'Reference and Render are 1px apart');
     t.ok(Object.values(tabs).every((x) => x.t === 28 && x.h === 28 && x.size === '13px' && x.mode === 'horizontal-tb'), 'each is 28px tall, 4px under the strip, 13px, set horizontally');
     t.ok(/27, 27, 27/.test(tabs.scene.bg) && /179, 179, 179/.test(tabs.scene.color), `a closed tab: the strip's colour, secondary text (${tabs.scene.bg}, ${tabs.scene.color})`);
 
@@ -623,9 +622,9 @@ export const suites = {
     await tab(page, 'panel--model');
     t.eq((await rows()).join(), 'false,true,false,false', 'Model opens and Scene closes');
     await tab(page, 'panel--sculpt');
-    await tab(page, 'panel--render');
-    t.eq((await rows()).join(), 'false,true,false,true', 'on the right, Render opens and Tool closes, and the left stays');
-    await tab(page, 'panel--render');
+    await tab(page, 'panel--reference');
+    t.eq((await rows()).join(), 'false,true,false,true', 'on the right, Reference opens and Tool closes, and the left stays');
+    await tab(page, 'panel--reference');
     t.eq((await rows()).join(), 'false,true,false,false', 'pressing the open tab closes its panel');
 
     // The open tab and its panel are one: the panel's fill, bold, no gap, 304px, no close button.
@@ -664,9 +663,9 @@ export const suites = {
     await page.keyboard.press('4');
     await page.waitForFunction(() => document.querySelector('.panel--sculpt .panel__title').textContent === 'Inflate', null, { timeout: 4000 });
     t.ok(true, 'and follows the tool (hotkey 4: Inflate)');
-    await tab(page, 'panel--render');
-    t.eq(await page.evaluate(() => document.querySelector('.panel--render .panel__title').textContent), 'Render', 'the Render heading');
-    await tab(page, 'panel--render');
+    await tab(page, 'panel--reference');
+    t.eq(await page.evaluate(() => document.querySelector('.panel--reference .panel__title').textContent), 'Reference', 'the Reference heading');
+    await tab(page, 'panel--reference');
 
     // Its name, as the model is renamed.
     await tab(page, 'panel--model');
@@ -699,15 +698,15 @@ export const suites = {
 
     // Remembered: what is open comes back after a reload.
     await tab(page, 'panel--sculpt');
-    await tab(page, 'panel--render');
+    await tab(page, 'panel--reference');
     const stored = await page.evaluate(() => localStorage.getItem('bz.panels.sculpt'));
-    t.ok(/model/.test(stored ?? '') && /settings/.test(stored ?? ''), `the open panels are kept (${stored})`);
+    t.ok(/model/.test(stored ?? '') && /reference/.test(stored ?? ''), `the open panels are kept (${stored})`);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
     await page.waitForTimeout(500);
     t.eq((await rows()).join(), 'false,true,false,true', 'and open again on the next visit');
     // A stored state with two on one side opens the first only.
-    await page.evaluate(() => localStorage.setItem('bz.panels.sculpt', JSON.stringify(['scene', 'model', 'sculpt', 'settings'])));
+    await page.evaluate(() => localStorage.setItem('bz.panels.sculpt', JSON.stringify(['scene', 'model', 'sculpt', 'reference'])));
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__sculpt, null, { timeout: 90_000 });
     await page.waitForTimeout(500);
@@ -856,16 +855,16 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|References|Arrange references|Armature panel|Material panel|Reference panel|Render panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Paint|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
-    const tabs = await page.evaluate(() => ['armature', 'render'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));
-    t.ok(tabs[0][0] === 0 && tabs[1][1] === 1280 && tabs[0][2] === 28 && tabs[0][3] === 28, 'its Armature tab is at the left edge and Render at the right');
+    const tabs = await page.evaluate(() => ['armature', 'reference'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));
+    t.ok(tabs[0][0] === 0 && tabs[1][1] === 1280 && tabs[0][2] === 28 && tabs[0][3] === 28, 'its Armature tab is at the left edge and Reference at the right');
     await tab(page, 'panel--armature');
-    await tab(page, 'panel--render');
+    await tab(page, 'panel--reference');
     const state = await page.evaluate(() => ({
       a: !document.querySelector('.panel--armature').classList.contains('panel--collapsed'),
-      r: !document.querySelector('.panel--render').classList.contains('panel--collapsed'),
+      r: !document.querySelector('.panel--reference').classList.contains('panel--collapsed'),
       title: document.querySelector('.panel--armature .panel__title').textContent,
       w: document.querySelector('.panel--armature').getBoundingClientRect().width,
       bottom: document.querySelector('.panel--armature').getBoundingClientRect().bottom,

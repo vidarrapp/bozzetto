@@ -137,7 +137,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
   { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
   { id: 'view.arrange', label: 'Arrange the reference pictures (unlock / lock)', group: 'Lighting', mode: 'sculpt', chord: 'alt+r' },
-  { id: 'light.move', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
+  { id: 'light.move', label: 'Move the key light (hold + drag: across / up; View > Move light does it with one drag)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
   { id: 'view.light', label: 'Move the key light (hold + drag: across / up)', group: 'Lighting', mode: 'view', chord: 'l', hold: true, sameKeyAs: 'light.move' },
@@ -190,7 +190,7 @@ export const ACTIONS: ActionDef[] = [
   // moves them everywhere.
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
-  { id: 'ui.present', label: 'Present: the model alone, with the Render panel (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
+  { id: 'ui.present', label: 'Present: the model alone, with Lighting, Camera and Render (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
   { id: 'ui.paint', label: 'Paint: the paint tools and the paint layers (again goes back to Sculpt)', group: 'Interface', mode: 'sculpt', chord: 'shift+b' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },

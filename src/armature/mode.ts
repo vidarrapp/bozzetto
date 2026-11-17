@@ -1012,6 +1012,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
    * alone stops nothing on the element it is called on.
    */
   let lightHeld = false;
+  /** View > Move light: the next drag moves the key light, then it lets go (Esc cancels). */
+  let lightArmed = false;
+  let lightPointer = -1;
+  const armLight = (on: boolean): void => {
+    lightArmed = on;
+    lightPointer = -1;
+    lightHeld = on;
+  };
   /** Where the pointer last moved over the canvas: the light turns by the step from there. */
   const lastPointer = { x: NaN, y: NaN };
   let lightSyncTimer = 0;
@@ -1032,6 +1040,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // A second finger: a pinch or a two-finger pan, whatever the first was.
     if (down.size > 1) tap = null;
     if (lightHeld) {
+      if (lightArmed && lightPointer === -1) {
+        lightPointer = e.pointerId;
+        lastPointer.x = e.clientX;
+        lastPointer.y = e.clientY;
+      }
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -1126,7 +1139,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     if (lightHeld) {
-      if (Number.isFinite(dx) && Number.isFinite(dy) && (dx !== 0 || dy !== 0)) {
+      if (Number.isFinite(dx) && Number.isFinite(dy) && (dx !== 0 || dy !== 0) && (!lightArmed || lightPointer === e.pointerId)) {
         viewer.lighting.nudgeKey(dx * KEY_DRAG_DEG_PER_PX, -dy * KEY_DRAG_DEG_PER_PX);
         lightMoved();
       }
@@ -1225,6 +1238,11 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   };
   const onPointerUp = (e: PointerEvent): void => {
     down.delete(e.pointerId);
+    if (lightArmed && lightPointer === e.pointerId) {
+      armLight(false);
+      claimForLight(e);
+      return;
+    }
     let tapped: typeof tap = null;
     if (tap && e.pointerId === tap.id) {
       if (e.type === 'pointerup' && !travelled(e)) tapped = tap;
@@ -2035,8 +2053,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         ['armature', 'Armature'],
         ['material', 'Material'],
         ['reference', 'Reference'],
-        ['settings', 'Render'],
       ],
+      moveLight: { get: () => lightArmed, toggle: () => armLight(!lightArmed) },
       hideInterface: () => chrome.set(true),
       workspace: workspaceNow,
     }),
@@ -2076,10 +2094,16 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
     if (isTextEntryTarget(e) || document.body.classList.contains('has-modal')) return;
+    if (lightArmed && e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.bz-menuname.is-open')) {
+      armLight(false);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const action = keymap.actionFor(e, 'armature');
     if (!action) return;
     // Tab (ui.chrome) is not Armature's: it falls through to the viewer's
-    // handler, which closes the panels (this one and the Render panel
+    // handler, which closes the panels (this one and the others
     // alike), then hides the interface, then brings it back - as in Sculpt.
     switch (action.id) {
       case 'arm.symmetry':
@@ -2146,13 +2170,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   window.addEventListener('keydown', onKey, true);
   // A held key ends on its own key, whatever the modifiers are doing now.
   const onKeyUp = (e: KeyboardEvent): void => {
-    if (keymap.holdActionForKeyUp(e, 'armature')?.id === 'arm.light') lightHeld = false;
+    if (keymap.holdActionForKeyUp(e, 'armature')?.id === 'arm.light' && !lightArmed) lightHeld = false;
   };
   window.addEventListener('keyup', onKeyUp, true);
   // Losing the window eats the keyup (an app switch with L down): without
   // this every press after it would still go to the light.
   const onBlur = (): void => {
     lightHeld = false;
+    lightArmed = false;
   };
   window.addEventListener('blur', onBlur);
 

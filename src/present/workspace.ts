@@ -283,6 +283,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
 
   /** The look the project opened with: what Reset look in Render goes back to, through every remount of the view. */
   let openedLook: LookState | null = null;
+  const LOOK_IDS = ['lighting', 'camera', 'render'];
   const mountView = async (): Promise<void> => {
     const old = current;
     const v0 = old?.parts.viewer ?? null;
@@ -290,6 +291,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     const frame = v0?.timeline.frameIndex() ?? 0;
     const playing = v0?.timeline.playing ?? true;
     const wasOpen = rightOpen;
+    const leftWasOpen = leftOpen;
     const materialWasOpen = wasOpen === 'material';
     takeDown();
     source.entries = items;
@@ -309,6 +311,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     source.setManifest(manifest);
     const parts = await mountViewerParts(viewport, manifest, source, opts.onStatus, {
       shell: true,
+      look: { owner: 'viewer', side: 'left', tabs: ['lighting', 'camera', 'render'], rigLibrary: true },
       openedLook: openedLook ?? undefined,
       preserveDrawingBuffer: true,
     });
@@ -316,7 +319,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     openedLook ??= view.getLook();
     if (look) {
       await view.applyLook(look);
-      parts.panel.refreshControls();
+      parts.panel?.refreshControls();
     }
     const output = new OutputPanel(view, { timelapse: timelapse(), title: () => projectPanel.values.title.trim() || id || 'Bozzetto' });
     // Mode, shading and wireframe sit in this tab, not in Render (the Render panel is built without them).
@@ -331,8 +334,9 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     };
     projectPanel.refreshFrames();
     // Output stands open as drawn, the first time; after that, as it was left.
-    if (wasOpen === 'settings') window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: true } }));
-    else if (wasOpen === 'output' || (!old && !narrow())) output.setCollapsed(false);
+    // Frames and Project share this edge with Output: a first view leaves the one open as it is.
+    if (leftWasOpen && LOOK_IDS.includes(leftWasOpen)) window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: leftWasOpen, open: true } }));
+    if (wasOpen === 'output' || (!old && !wasOpen)) output.setCollapsed(false);
     if (materialWasOpen) material.setCollapsed(false);
     // A project from before real units: the Set scale offer (owner tool).
     if (id) {
@@ -661,10 +665,12 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
       },
     },
     panels: [
+      ['lighting', 'Lighting'],
+      ['camera', 'Camera'],
+      ['render', 'Render'],
       ['frames', 'Frames'],
       ['project', 'Project'],
       ['material', 'Material'],
-      ['settings', 'Render'],
       ['output', 'Output'],
     ],
     hideInterface: () => chrome.set(true),
@@ -672,7 +678,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
   });
   // Material, Render and Output are the view's: with no frames there is no view to have them.
   for (const item of viewItems) {
-    if (!('separator' in item) && (item.label === 'Shadows' || item.label === 'Material panel' || item.label === 'Render panel' || item.label === 'Output panel')) item.enabled = () => !!current;
+    if (!('separator' in item) && (item.label === 'Shadows' || ['Lighting panel', 'Camera panel', 'Render panel', 'Material panel', 'Output panel'].includes(String(item.label)))) item.enabled = () => !!current;
   }
   new TopMenu('View', viewItems, 'file-menu--view', strip.menus, true);
   new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);

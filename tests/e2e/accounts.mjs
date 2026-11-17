@@ -1586,7 +1586,7 @@ async function guestCreate(browser, origin, t) {
       `a guest's workspace offers Sign in to save, with no Save and no Export .html (${show(page)})`,
     );
     await p.setInputFiles('.panel--frames input[type="file"]', resolve('dist/timelapses/demo/frames/sd/0000.glb'));
-    await p.waitForFunction(() => !!document.querySelector('.panel--render') && Number(document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent) > 0, null, { timeout: 90_000 });
+    await p.waitForFunction(() => !!document.querySelector('.panel--lighting') && Number(document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent) > 0, null, { timeout: 90_000 });
     await p.click('.bz-strip__btn--primary');
     t.ok(await p.waitForSelector('.account-card', { timeout: 15_000 }).then(() => true, () => false), 'Sign in opens the dialog');
     const kept = await p.evaluate(() => ({ path: location.pathname, frames: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent ?? '' }));

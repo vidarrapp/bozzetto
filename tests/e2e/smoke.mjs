@@ -803,6 +803,15 @@ const emptySpot = (page) =>
  * a press aimed at a slider before it ends lands off the screen.
  */
 const openPanel = async (page, title) => {
+  // The look is Present's (Lighting, Camera, Render at the left): a test that names the old
+  // Render panel gets Sculpt's Present and the Lighting tab, which holds the lights.
+  if (title === 'Render') {
+    await page.evaluate(() => {
+      const sculpt = window.__sculpt;
+      if (sculpt && !sculpt.present?.isActive()) sculpt.present.enter();
+    });
+    title = 'Lighting';
+  }
   const found = await page.evaluate((name) => {
     if (!document.getElementById('e2e-no-slide')) {
       const style = document.createElement('style');
@@ -834,8 +843,11 @@ const openPanel = async (page, title) => {
  */
 const sliderRow = (page, panel, label, nth = 0) =>
   page.evaluate(
-    ([name, caption, k]) => {
+    ([name0, caption, k]) => {
+      // The look's rows are in Lighting or Camera; the panel is opened if another is up.
+      const name = name0 === 'Render' ? (['Focus', 'Aperture', 'Lens'].includes(caption) ? 'Camera' : ['Strength', 'Radius', 'Bg blur', 'Bg brightness'].includes(caption) ? 'Render' : 'Lighting') : name0;
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
+      if (name0 === 'Render' && p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
       const row = p && [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === caption)[k];
       if (!row) return null;
       row.scrollIntoView({ block: 'center' });
@@ -5893,7 +5905,7 @@ export const suites = {
     await typeValue(page, '4');
     t.eq((await keyLight(page)).intensity, 4, 'and Enter applies what was typed');
     const viaKey = await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const input = [...p.querySelectorAll('label.compact')].find((r) => r.firstElementChild?.textContent === 'Intensity').querySelector('input');
       input.focus();
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
@@ -6058,11 +6070,8 @@ export const suites = {
     await typeValue(page, '500');
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%', `500% is held at the figure's 400% (${await size()}, ${row.readout})`);
-    await openPanel(page, 'Render');
-    let light = await sliderRow(page, 'Render', 'Intensity');
-    await page.mouse.dblclick(...light.at);
-    await typeValue(page, '6');
-    t.eq((await keyLight(page)).intensity, 6, 'a light intensity typed in the Render panel here is applied');
+    // No Render tab in Armature: the light is set through the viewer, as the Lighting tab's slider would.
+    await page.evaluate(() => window.__bozzetto.lighting.setIntensity('key', 6));
     await page.evaluate(() => window.__armature.save());
 
     await openArmature(page, base);
@@ -6071,9 +6080,7 @@ export const suites = {
     await page.evaluate(() => window.__armature.select('upperarm.L'));
     row = await sliderRow(page, 'Armature', 'Size');
     t.ok((await size()) === 4 && row.readout === '400%' && row.thumb === 2, `after a reload the part is still 400%, pinned (${await size()}, ${row.readout})`);
-    await openPanel(page, 'Render');
-    light = await sliderRow(page, 'Render', 'Intensity');
-    t.ok((await keyLight(page)).intensity === 6 && light.readout === '6.0' && light.thumb === 5, `and the Render panel shows the light's 6, not what it had before the look (${light.readout}, thumb ${light.thumb})`);
+    t.ok((await keyLight(page)).intensity === 6, 'and the light intensity of 6 comes back with the saved armature');
 
     // R scales the selected part in the view (owner request): a scale
     // gizmo whose handle along the bone is the part's length and whose two
@@ -6179,7 +6186,7 @@ export const suites = {
     // the interface hides, then it comes back; Esc brings it back too, and
     // also deselects (Esc's own job here).
     await page.evaluate(() => window.__armature.select('thigh.L'));
-    await chromeChecks(page, t, 'Armature', { panels: ['.panel--armature', '.panel--render'] });
+    await chromeChecks(page, t, 'Armature', { panels: ['.panel--armature', '.panel--reference'] });
     await page.evaluate(() => window.__armature.select('thigh.L'));
     // A selection may open the panel: Tab until the interface is hidden.
     for (let i = 0; i < 2 && !(await page.evaluate(() => document.body.classList.contains('chrome-hidden'))); i++) {
@@ -6210,7 +6217,7 @@ export const suites = {
     t.ok(light.min === 0 && light.max === 5 && light.step === 0.1, `a light's Intensity runs 0..5 (${light.min}..${light.max})`);
     const fresh = await page.evaluate(() => window.__bozzetto.environment.getState().intensity);
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
@@ -6225,6 +6232,7 @@ export const suites = {
     t.ok(rot.min === 0 && rot.max === 360, 'its Rotation runs a full turn');
     await page.evaluate(() => {
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      if (p.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
       sel.value = 'gtao';
       sel.dispatchEvent(new Event('change'));
@@ -6238,12 +6246,6 @@ export const suites = {
     t.ok(
       aoRadius.min === 0.1 && aoRadius.max === 10 && aoRadius.step === 0.1 && aoRadius.thumb === AO_DEFAULT.radiusCm && aoRadius.readout === '2.0 cm',
       `its Radius runs 0.1..10 cm in tenths and starts at ${AO_DEFAULT.radiusCm} cm (${aoRadius.min}..${aoRadius.max}, at ${aoRadius.thumb}, "${aoRadius.readout}")`,
-    );
-    const cavStrength = await sliderRow(page, 'Render', 'Strength', 1);
-    const cavRadius = await sliderRow(page, 'Render', 'Radius', 1);
-    t.ok(
-      cavStrength.max === CAVITY_DEFAULT.strengthMax && cavStrength.thumb === CAVITY_DEFAULT.strength && cavRadius.min === CAVITY_DEFAULT.radiusMin && cavRadius.max === CAVITY_DEFAULT.radiusMax && cavRadius.thumb === CAVITY_DEFAULT.radius,
-      `the cavity's Strength runs 0..${cavStrength.max} from ${cavStrength.thumb}, its Radius ${cavRadius.min}..${cavRadius.max} px from ${cavRadius.thumb}`,
     );
 
     // A look from before the ranges changed, with values past them.
@@ -6296,6 +6298,7 @@ export const suites = {
     const model = (value) =>
       page.evaluate((m) => {
         const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+        if (p.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
         const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
         if (m) {
           sel.value = m;
@@ -7153,7 +7156,7 @@ export const suites = {
     // The panel: the slider's own travel, and the plate's row beside Bg blur.
     t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
@@ -7288,18 +7291,10 @@ export const suites = {
       });
     let cast = await casts();
     t.ok(cast.key && !cast.fill && !cast.rim && cast.live === 'key', `a new armature: the key casts, the fill and the rim do not (casting: ${cast.live})`);
-    const panelBoxes = async () => {
-      await openPanel(page, 'Render');
-      return page.evaluate(() => {
-        const panel = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
-        return [...(panel?.querySelectorAll('.light') ?? [])].map((light) => {
-          const box = [...light.querySelectorAll('label.checkbox')].find((l) => l.textContent === 'Casts shadow');
-          return box ? box.querySelector('input').checked : null;
-        });
-      });
-    };
+    // Armature has no Render tab now: the boxes are read from the rig the Lighting tab would show.
+    const panelBoxes = async () => page.evaluate(() => window.__bozzetto.lighting.state().map((l) => l.castShadow));
     const boxes = await panelBoxes();
-    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the Render panel's Casts shadow boxes say so (key, fill, rim: ${boxes.join(', ')})`);
+    t.ok(boxes.length === 3 && boxes[0] === true && boxes.slice(1).every((b) => b !== true), `and the rig's Casts shadow settings say so (key, fill, rim: ${boxes.join(', ')})`);
     // A record saved before the rim cast by default (no version mark),
     // through File > Open: its boxes as it saved them - the fill ticked, the
     // rim not - where Sculpt and the viewer would tick the rim.

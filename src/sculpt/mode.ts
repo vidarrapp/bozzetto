@@ -72,6 +72,7 @@ import { ModelPanel } from './ui/ModelPanel';
 import { LayersPanel } from './ui/LayersPanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
+import { LookPanels } from '../ui/lookPanels';
 import { SculptPanel } from './ui/SculptPanel';
 import { ReferenceBoard, fromFileReferences, toFileReferences } from '../reference/board';
 import { ReferencePanel } from '../reference/ReferencePanel';
@@ -1350,7 +1351,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   input.onWork = (ms, eventTime, stepMs) => viewer.noteInput(ms, eventTime, stepMs);
   /**
    * Into Present mode: what edits is put away and locked, and what was up
-   * is noted to come back exactly - Tab's state, the Render panel and
+   * is noted to come back exactly - Tab's state and
    * which side panel was open, the Select tool or the gizmo and its mode,
    * the mask tint. Nothing here changes the scene; returns the way back.
    */
@@ -1359,7 +1360,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const sidePanels = [sculptPanel, scenePanel, modelPanel, layersPanel];
     const was = {
       chrome: chrome.isHidden(),
-      render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
       open: sidePanels.map((p) => !!p && !p.isCollapsed()),
       select: input.isSelecting(),
       gizmo: gizmo.isActive() ? gizmo.getMode() : null,
@@ -1385,8 +1385,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       input.presenting = false;
       presenting = false;
       chrome.set(was.chrome);
-      // The Render panel first: opening a right-edge panel closes the other.
-      window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: was.render } }));
       sidePanels.forEach((p, i) => {
         if (was.open[i]) p?.setCollapsed(false);
       });
@@ -1640,7 +1638,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // paint tools, the Layers tab the paint layers, and the Sculpt brushes, the transform
   // gizmo and Negative are put away. Present can be entered from it and returns to it.
   /** What Sculpt had up when Paint began, put back when it ends. */
-  let paintWas: { tool: number; model: boolean; render: boolean; select: boolean; gizmo: GizmoMode | null } | null = null;
+  let paintWas: { tool: number; model: boolean; select: boolean; gizmo: GizmoMode | null } | null = null;
   /** The address that reopens Paint: the page's own with `paint=1`, kept while Paint is up. */
   const setPaintAddress = (on: boolean): void => {
     try {
@@ -1658,16 +1656,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     paintWas = {
       tool: input.currentToolIndex(),
       model: !!modelPanel && !modelPanel.isCollapsed(),
-      render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
       select: input.isSelecting(),
       gizmo: gizmo.isActive() ? gizmo.getMode() : null,
     };
     input.exitSelect();
     input.exitMeasure();
     exitTransform();
-    // The Model and Render tabs are not Paint's: what they had open is put away until Sculpt is back.
+    // The Model tab is not Paint's: what they had open is put away until Sculpt is back.
     modelPanel?.setCollapsed(true);
-    window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: false } }));
     paintOn = true;
     input.paintMode = true;
     document.body.classList.add('paint-ws');
@@ -1700,7 +1696,6 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const sculptTool = was && was.tool !== Enums.Tools.PAINT && !(was.tool >= Enums.Tools.PAINT_ERASE) ? was.tool : Enums.Tools.BRUSH;
     input.selectBrush(sculptTool);
     if (was?.model) modelPanel?.setCollapsed(false);
-    if (was?.render) window.dispatchEvent(new CustomEvent('bozzetto:panel-set', { detail: { id: 'settings', open: true } }));
     if (was?.select) input.enterSelect();
     else if (was?.gizmo) enterTransform(was.gizmo);
     sculptPanel?.refreshBrush();
@@ -1841,7 +1836,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()), key: true },
         toolKeys: true,
         details: true,
-        panels: paintOn
+        panels: present?.isActive()
+          ? [
+              ['lighting', 'Lighting'],
+              ['camera', 'Camera'],
+              ['render', 'Render'],
+              ['material', 'Material'],
+              ['output', 'Output'],
+            ]
+          : paintOn
           ? [
               ['scene', 'Scene'],
               ['layers', 'Layers'],
@@ -1856,18 +1859,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
               ['sculpt', 'Tool'],
               ['material', 'Material'],
               ['reference', 'Reference'],
-              ['settings', 'Render'],
             ],
+        moveLight: { get: () => input.isLightArmed(), toggle: () => input.armLight(!input.isLightArmed()) },
         hideInterface: () => chrome.set(true),
         workspace: workspaceNow,
       });
-    viewMenu = new TopMenu(
-      'View',
-      viewItems(),
-      'file-menu--view',
-      strip.menus,
-      true,
-    );
+    viewMenu = new TopMenu('View', viewItems(), 'file-menu--view', strip.menus, true);
     // Help beside them: the topics, the hotkey guide, and who made what.
     helpMenu = new TopMenu('Help', helpMenuItems(), 'file-menu--help', strip.menus, true);
   }
@@ -1995,7 +1992,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   session.layers.onRefuse = (_mesh, why) => {
     failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
   };
-  materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
+  materialPanel = new MaterialPanel(viewer, { sculpting: true, cavity: true, surface: {
       hasObject: () => !!session.getMesh(),
       // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
       materialName: () => {
@@ -2005,6 +2002,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       },
     },
   });
+  // Lighting, Camera and Render are Present's tabs: built here, shown only while presenting (shell.css).
+  const lookPanels = new LookPanels(viewer, { owner: 'sculpt', side: 'left', tabs: ['lighting', 'camera', 'render'], rigLibrary: true });
   modelPanel.onGroupColors = (on) => setGroupColors(on);
   // Symmetry decides whether a measurement can be mirrored: the Measure list follows the switch.
   {
@@ -2441,7 +2440,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     const inPresent = !!present?.isActive();
     const way = workspaceNow();
     strip.setWorkspace(way.current, way.steps);
-    // The View menu's panel list is the workspace's own.
+    // The View menu's panel list is the workspace's own (Present has Lighting, Camera and Render).
     viewMenu?.setItems(viewItems());
     publishWindow?.setInPresent(inPresent);
     refreshReadout();
@@ -2495,6 +2494,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     input.paintMode = false;
     document.body.classList.remove('paint-ws');
     materialPanel?.dispose();
+    lookPanels.dispose();
     scenePanel?.dispose();
     offIntake();
     referenceArrange.dispose();

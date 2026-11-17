@@ -1,11 +1,11 @@
 // Sliders as a whole-row touch target (ui/sliderScrub): a press anywhere on a
 // slider's row and a drag sideways scrubs its value, relatively, from where
 // it is; a tap changes nothing; a vertical swipe scrolls the panel. And the
-// Render panel's Camera section holds the depth of field rows. Each gets
+// Camera panel (Present's) holds the depth of field rows. Each gets
 // (page, base, t).
 import { openSculpt } from './lib.mjs';
 
-const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' };
+const TOUCH = { viewport: { width: 1180, height: 820 }, hasTouch: true, deviceScaleFactor: 2, serviceWorkers: 'block' };
 
 /** Finger events over CDP, as a real touch screen sends them. */
 async function finger(page) {
@@ -29,10 +29,11 @@ async function finger(page) {
   };
 }
 
-/** The Render panel's slider row by its name: its value and travel, the input's box and the name's box, in CSS px. */
+let PANEL = '.panel--camera';
+/** The slider row by its name: its value and travel, the input's box and the name's box, in CSS px. */
 const rowOf = (page, name) =>
-  page.evaluate((n) => {
-    const row = [...document.querySelectorAll('.panel--render label.compact')].find((l) => l.firstElementChild?.textContent === n);
+  page.evaluate(([n, panel]) => {
+    const row = [...document.querySelectorAll(`${panel} label.compact`)].find((l) => l.firstElementChild?.textContent === n);
     if (!row) return null;
     const input = row.querySelector('input[type=range]');
     const box = (e) => {
@@ -40,13 +41,13 @@ const rowOf = (page, name) =>
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     };
     return { value: Number(input.value), min: Number(input.min), max: Number(input.max), input: box(input), name: box(row.firstElementChild) };
-  }, name);
+  }, [name, PANEL]);
 
 /** Put a slider at a value the way a hotkey would, and count the events that follow. */
 const prime = (page, name, v) =>
   page.evaluate(
-    ([n, val]) => {
-      const row = [...document.querySelectorAll('.panel--render label.compact')].find((l) => l.firstElementChild?.textContent === n);
+    ([n, val, panel]) => {
+      const row = [...document.querySelectorAll(`${panel} label.compact`)].find((l) => l.firstElementChild?.textContent === n);
       const input = row.querySelector('input[type=range]');
       row.scrollIntoView({ block: 'center' });
       input.value = String(val);
@@ -58,7 +59,7 @@ const prime = (page, name, v) =>
         input.addEventListener('change', () => window.__events.change++);
       }
     },
-    [name, v],
+    [name, v, PANEL],
   );
 const events = (page) => page.evaluate(() => window.__events);
 
@@ -66,14 +67,15 @@ export const suites = {
   async sliderScrub(page, base, t) {
     // --- the desktop keeps the native slider under a mouse ------------------
     await openSculpt(page, base);
-    await page.click('.panel--render > .panel__handle');
+    await page.evaluate(() => window.__sculpt.present.enter()); // the look panels are Present's
+    await page.click('.panel--camera > .panel__handle');
     await page.waitForTimeout(400);
-    const desk = await page.evaluate(() => getComputedStyle(document.querySelector('.panel--render label.compact input[type=range]')).pointerEvents);
+    const desk = await page.evaluate(() => getComputedStyle(document.querySelector('.panel--camera label.compact input[type=range]')).pointerEvents);
     t.eq(desk, 'auto', 'with a mouse the line itself still takes the press (click to jump, drag the thumb)');
 
     // --- Depth of field sits under Camera ------------------------------------
     const heads = await page.evaluate(() => {
-      const secs = [...document.querySelectorAll('.panel--render .section')];
+      const secs = [...document.querySelectorAll('.panel--camera .section')];
       const camera = secs.find((s) => s.querySelector(':scope > h3')?.textContent === 'Camera');
       return {
         headings: secs.map((s) => s.querySelector(':scope > h3')?.textContent),
@@ -83,18 +85,18 @@ export const suites = {
       };
     });
     t.ok(!heads.headings.includes('Depth of field'), `no separate Depth of field section (${heads.headings})`);
-    t.ok(heads.shown && ['Lens', 'Tone mapping', 'Depth of field'].every((r) => heads.cameraRows.includes(r)), `Camera holds its own rows then the Depth of field switch (${heads.cameraRows})`);
+    t.ok(heads.shown && ['Lens', 'Depth of field'].every((r) => heads.cameraRows.includes(r)), `Camera holds its own rows then the Depth of field switch (${heads.cameraRows})`);
     t.ok(heads.folded, 'the Aperture and Focus rows fold under it, in the Camera section');
-    await page.evaluate(() => document.querySelector('.panel--render .dof-rows').closest('.section').querySelector('.checkbox input').click());
+    await page.evaluate(() => document.querySelector('.panel--camera .dof-rows').closest('.section').querySelector('.checkbox input').click());
     await page.waitForTimeout(150);
     const open = await page.evaluate(() => {
-      const rows = document.querySelector('.panel--render .dof-rows');
+      const rows = document.querySelector('.panel--camera .dof-rows');
       return { hidden: rows.hidden, labels: [...rows.querySelectorAll('label > span:first-child')].map((e) => e.textContent) };
     });
     t.ok(!open.hidden && open.labels.join() === 'Aperture,Focus', `switching it on shows Aperture and Focus (${open.labels})`);
 
-    // --- a finger on a phone ----------------------------------------------------
-    const ctx = await page.context().browser().newContext(PHONE);
+    // --- a finger on a touch screen ----------------------------------------------------
+    const ctx = await page.context().browser().newContext(TOUCH);
     await ctx.addInitScript(() => {
       window.__bozzettoAdaptiveOff = true;
     });
@@ -103,14 +105,15 @@ export const suites = {
       const errors = [];
       p.on('pageerror', (e) => errors.push(String(e)));
       await openSculpt(p, base);
-      await p.click('.panel--render > .panel__handle');
+      await p.evaluate(() => window.__sculpt.present.enter());
+      await p.click('.panel--camera > .panel__handle');
       await p.waitForTimeout(500);
       await p.evaluate(() => {
-        const box = document.querySelector('.panel--render .dof-rows').closest('.section').querySelector('.checkbox input');
+        const box = document.querySelector('.panel--camera .dof-rows').closest('.section').querySelector('.checkbox input');
         if (!box.checked) box.click();
       });
       await p.waitForTimeout(200);
-      const pe = await p.evaluate(() => getComputedStyle(document.querySelector('.panel--render label.compact input[type=range]')).pointerEvents);
+      const pe = await p.evaluate(() => getComputedStyle(document.querySelector('.panel--camera label.compact input[type=range]')).pointerEvents);
       t.eq(pe, 'none', 'on a touch screen the line ignores presses, so the row takes them');
       const f = await finger(p);
 
@@ -157,28 +160,34 @@ export const suites = {
         }
       }, [r.input.x + r.input.w * 0.5, r.input.y + 12]);
       await p.waitForTimeout(200);
-      const field = await p.evaluate(() => !!document.querySelector('.panel--render .slider-field'));
+      const field = await p.evaluate(() => !!document.querySelector('.panel--camera .slider-field'));
       t.ok(field, 'a double tap on the row opens the number field');
       await p.keyboard.press('Escape');
       await p.waitForTimeout(100);
 
       // A vertical swipe scrolls the panel and leaves the value.
-      await prime(p, 'Focus', 0.4);
+      // The Camera panel is short; Lighting is long enough to scroll.
+      await p.click('.panel--lighting > .panel__handle');
+      await p.waitForTimeout(400);
+      PANEL = '.panel--lighting';
+      await p.selectOption('.panel--lighting select', 'built:three_point'); // all three lights, so there is more than a screen of rows
+      await p.waitForTimeout(200);
+      await prime(p, 'Softness', 4);
       const scroller = () =>
         p.evaluate(() => {
-          let e = document.querySelector('.panel--render .dof-rows');
+          let e = document.querySelector('.panel--lighting .light:last-child label.compact');
           while (e && e.scrollHeight <= e.clientHeight + 1) e = e.parentElement;
           return e ? e.scrollTop : -1;
         });
-      await p.evaluate(() => document.querySelector('.panel--render .dof-rows label.compact').scrollIntoView({ block: 'end' }));
+      await p.evaluate(() => document.querySelector('.panel--lighting .light:last-child label.compact').scrollIntoView({ block: 'end' }));
       await p.waitForTimeout(100);
-      r = await rowOf(p, 'Focus');
+      r = await rowOf(p, 'Softness');
       const top0 = await scroller();
       await f.swipe(r.input.x + r.input.w * 0.5 + 6, r.input.y + 12, r.input.x + r.input.w * 0.5 + 12, r.input.y - 90);
       const top1 = await scroller();
-      after = await rowOf(p, 'Focus');
+      after = await rowOf(p, 'Softness');
       t.ok(top1 > top0, `a swipe up from a row scrolls the panel (${top0} to ${top1})`);
-      t.ok(after.value === 0.4, `and leaves the slider where it was (${after.value})`);
+      t.ok(after.value === 4, `and leaves the slider where it was (${after.value})`);
       t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
     } finally {
       await ctx.close();

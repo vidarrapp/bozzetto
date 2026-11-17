@@ -166,7 +166,115 @@ export const PRESETS: LightingPreset[] = [
     rim: { enabled: false, intensity: 0.0, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
     ambient: { intensity: 0.12, sky: '#aab6c8', ground: '#3a342c' },
   },
+  // The rest of the built-in rigs (the Lighting tab's Rig list). Each is the
+  // lights and the ambient and nothing else, and reads on a clay bust: a
+  // form light first, whatever else the person adds. Azimuth 0 is straight
+  // in front, positive to the right; elevation 0 is the horizon.
+  {
+    // The painter's triangle: the key high and well to one side, a soft
+    // low fill from the other so the shadow side keeps a little of the form.
+    id: 'rembrandt',
+    label: 'Rembrandt',
+    key: { enabled: true, intensity: 3.4, color: '#fff1e0', azimuth: 45, elevation: 40, castShadow: true, softness: 4 },
+    fill: { enabled: true, intensity: 0.4, color: '#e6f0ff', azimuth: -60, elevation: 10, castShadow: false, softness: 9 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.2, sky: '#c4d4ff', ground: '#4a3b2f' },
+  },
+  {
+    // Straight on from above: a small shadow under the nose and chin, with a
+    // low fill under the face standing in for a reflector.
+    id: 'butterfly',
+    label: 'Butterfly',
+    key: { enabled: true, intensity: 3.2, color: '#fff3e6', azimuth: 0, elevation: 58, castShadow: true, softness: 6 },
+    fill: { enabled: true, intensity: 0.6, color: '#e6f0ff', azimuth: 0, elevation: -15, castShadow: false, softness: 10 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.22, sky: '#c4d4ff', ground: '#4a3b2f' },
+  },
+  {
+    // From the side at the horizon: one half lit, the other in the dark.
+    id: 'split',
+    label: 'Split',
+    key: { enabled: true, intensity: 3.6, color: '#fff3e6', azimuth: 90, elevation: 4, castShadow: true, softness: 3 },
+    fill: { enabled: false, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false, softness: 9 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.1, sky: '#aab6c8', ground: '#3a342c' },
+  },
+  {
+    // The edges: two lights from behind, a dim key to read the face by.
+    id: 'rim',
+    label: 'Rim',
+    key: { enabled: true, intensity: 0.9, color: '#fff3e6', azimuth: 25, elevation: 25, castShadow: false, softness: 6 },
+    fill: { enabled: true, intensity: 2.6, color: '#e6f0ff', azimuth: -145, elevation: 30, castShadow: false, softness: 6 },
+    rim: { enabled: true, intensity: 3.4, color: '#ffffff', azimuth: 145, elevation: 30, castShadow: true, softness: 5 },
+    ambient: { intensity: 0.14, sky: '#aab6c8', ground: '#3a342c' },
+  },
+  {
+    id: 'top_light',
+    label: 'Top light',
+    key: { enabled: true, intensity: 3.6, color: '#fff6ea', azimuth: 0, elevation: 85, castShadow: true, softness: 5 },
+    fill: { enabled: false, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false, softness: 9 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.18, sky: '#c4d4ff', ground: '#4a3b2f' },
+  },
+  {
+    // From below, the way a face is lit by a fire or a torch: strange on
+    // purpose, and a hard check on a form.
+    id: 'under_light',
+    label: 'Under light',
+    key: { enabled: true, intensity: 3.0, color: '#ffe2c4', azimuth: 10, elevation: -20, castShadow: true, softness: 6 },
+    fill: { enabled: false, intensity: 1.1, color: '#e6f0ff', azimuth: -55, elevation: 12, castShadow: false, softness: 9 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.1, sky: '#aab6c8', ground: '#3a342c' },
+  },
+  {
+    // Big and gentle: two broad lights close to the camera, little shadow.
+    id: 'soft_front',
+    label: 'Soft front',
+    key: { enabled: true, intensity: 2.0, color: '#fff6ee', azimuth: 15, elevation: 20, castShadow: true, softness: 14 },
+    fill: { enabled: true, intensity: 1.6, color: '#f0f4ff', azimuth: -30, elevation: 15, castShadow: false, softness: 14 },
+    rim: { enabled: false, intensity: 2.4, color: '#ffffff', azimuth: 160, elevation: 50, castShadow: true, softness: 6 },
+    ambient: { intensity: 0.55, sky: '#d6e0ff', ground: '#5a4a3c' },
+  },
 ];
+
+/**
+ * A rig: the lights and the ambient and nothing else (no camera, no
+ * background). The format is a list of lights, each with a type, so more
+ * lights and other kinds can come later without a new format; today there
+ * are the three directional lights, by id.
+ */
+export interface RigLight {
+  type: 'directional';
+  id: LightId;
+  enabled: boolean;
+  intensity: number;
+  color: string;
+  azimuth: number;
+  elevation: number;
+  castShadow: boolean;
+  softness: number;
+}
+
+export interface RigValues {
+  lights: RigLight[];
+  ambient: AmbientConfig;
+}
+
+/** A built-in preset as the rig it is. */
+export function presetRig(p: LightingPreset): RigValues {
+  const light = (id: LightId, c: DirLightConfig): RigLight => ({
+    type: 'directional',
+    id,
+    enabled: c.enabled,
+    intensity: c.intensity,
+    color: c.color,
+    azimuth: c.azimuth,
+    elevation: c.elevation,
+    castShadow: c.castShadow,
+    softness: c.softness ?? DEFAULT_SOFTNESS,
+  });
+  return { lights: [light('key', p.key), light('fill', p.fill), light('rim', p.rim)], ambient: { ...p.ambient } };
+}
 
 /**
  * Three-point lighting rig with soft (VSM) shadows (design doc §6).
@@ -254,23 +362,68 @@ export class Lighting {
    * Shadow settings are the person's own and do not count.
    */
   activePreset(): string | null {
+    for (const p of PRESETS) if (this.matchesRig(presetRig(p))) return p.id;
+    return null;
+  }
+
+  /** Whether the lights are this rig now (the same comparison activePreset makes). */
+  matchesRig(rig: RigValues): boolean {
     const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-3;
-    const same = (a: DirLightConfig, b: DirLightConfig): boolean =>
+    const same = (a: DirLightConfig, b: RigLight | undefined): boolean =>
+      !!b &&
       a.enabled === b.enabled &&
       (!a.enabled ||
         (near(a.intensity, b.intensity) &&
           a.color.toLowerCase() === b.color.toLowerCase() &&
           near(a.azimuth, b.azimuth) &&
           near(a.elevation, b.elevation)));
-    for (const p of PRESETS) {
-      if (!same(this.config.key, p.key) || !same(this.config.fill, p.fill) || !same(this.config.rim, p.rim)) continue;
-      const hemi = this.hemi;
-      if (!near(hemi.intensity, p.ambient.intensity)) continue;
-      if (`#${hemi.color.getHexString()}` !== p.ambient.sky.toLowerCase()) continue;
-      if (`#${hemi.groundColor.getHexString()}` !== p.ambient.ground.toLowerCase()) continue;
-      return p.id;
+    const of = (id: LightId): RigLight | undefined => rig.lights.find((l) => l.id === id);
+    if (!same(this.config.key, of('key')) || !same(this.config.fill, of('fill')) || !same(this.config.rim, of('rim'))) return false;
+    const hemi = this.hemi;
+    return (
+      near(hemi.intensity, rig.ambient.intensity) &&
+      `#${hemi.color.getHexString()}` === rig.ambient.sky.toLowerCase() &&
+      `#${hemi.groundColor.getHexString()}` === rig.ambient.ground.toLowerCase()
+    );
+  }
+
+  /** The lights as a rig, to keep under a name. */
+  rigValues(): RigValues {
+    const light = (id: LightId): RigLight => {
+      const c = this.config[id];
+      return {
+        type: 'directional',
+        id,
+        enabled: c.enabled,
+        intensity: c.intensity,
+        color: c.color,
+        azimuth: c.azimuth,
+        elevation: c.elevation,
+        castShadow: c.castShadow,
+        softness: c.softness ?? DEFAULT_SOFTNESS,
+      };
+    };
+    return {
+      lights: ALL.map(light),
+      ambient: {
+        intensity: this.hemi.intensity,
+        sky: `#${this.hemi.color.getHexString()}`,
+        ground: `#${this.hemi.groundColor.getHexString()}`,
+      },
+    };
+  }
+
+  /** Set the lights to a rig, as a preset does. Lights the rig does not name keep what they are. */
+  applyRig(rig: RigValues): void {
+    for (const l of rig.lights) {
+      if (!ALL.includes(l.id)) continue;
+      this.config[l.id] = { enabled: l.enabled, intensity: l.intensity, color: l.color, azimuth: l.azimuth, elevation: l.elevation, castShadow: l.castShadow, softness: l.softness };
     }
-    return null;
+    if (this.keyOnlyShadows) this.config.fill.castShadow = this.config.rim.castShadow = false;
+    this.hemi.intensity = rig.ambient.intensity;
+    this.hemi.color = new Color(rig.ambient.sky);
+    this.hemi.groundColor = new Color(rig.ambient.ground);
+    this.refresh();
   }
 
   applyPreset(id: string): void {
