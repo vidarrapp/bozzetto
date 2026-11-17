@@ -43,7 +43,7 @@ export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
 const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--frames', 'panel--project', 'panel--material'];
-const RIGHT_ORDER = ['panel--sculpt', 'panel--render', 'panel--output'];
+const RIGHT_ORDER = ['panel--sculpt', 'panel--reference', 'panel--render', 'panel--output'];
 
 function tabsOf(order: string[]): HTMLElement[] {
   const out: HTMLElement[] = [];

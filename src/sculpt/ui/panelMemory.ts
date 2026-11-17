@@ -20,6 +20,7 @@ const SIDES: Record<string, 'left' | 'right'> = {
   material: 'left',
   armature: 'left',
   sculpt: 'right',
+  reference: 'right',
   settings: 'right',
 };
 
@@ -98,6 +99,7 @@ const ROOT: Record<string, string> = {
   layers: '.panel--layers',
   material: '.panel--material',
   sculpt: '.panel--sculpt',
+  reference: '.panel--reference',
   armature: '.panel--armature',
   settings: '.panel--render',
   // The owner's Present of a published project (present/): its two own tabs.

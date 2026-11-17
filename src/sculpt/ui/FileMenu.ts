@@ -30,6 +30,8 @@ export class FileMenu {
   private readonly openInput: HTMLInputElement;
   private readonly importInput: HTMLInputElement;
   private zUp = false;
+  /** Save file carries the reference pictures (on by default); Save to library and Publish never do. */
+  private includeReferences = true;
   /** Who the page is for, by the sign-in probe; null until it has answered. */
   private role: Role | null = null;
   /** A suspended account's sentence, said when it tries to save to it. */
@@ -57,6 +59,8 @@ export class FileMenu {
       publish: () => void;
       /** Whether publishing is reachable (a sign-in has been found). */
       canPublish: () => boolean;
+      /** Whether the board has pictures, for the Include references switch. */
+      hasReferences?: () => boolean;
     },
   ) {
     // Hidden inputs are how a web page asks for a file.
@@ -93,10 +97,17 @@ export class FileMenu {
             label: 'Save file',
             enabled: full,
             action: async () => {
-              const blob = await this.actions.pack();
+              const blob = await this.actions.packFile(this.includeReferences);
               downloadBlob(blob, stampName('bozz'));
               this.actions.markClean(); // this scene now exists outside the browser
             },
+          },
+          // The pictures stay with the person's own file; the library and Publish never get them.
+          {
+            label: 'Include references',
+            enabled: () => this.hooks.hasReferences?.() ?? false,
+            checked: () => this.includeReferences,
+            toggle: (on) => (this.includeReferences = on),
           },
           // Signed in, the library is Projects on the server. Signed out it is
           // a file (owner call): browser storage does not survive a
