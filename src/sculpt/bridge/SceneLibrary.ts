@@ -78,11 +78,32 @@ const meta = <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest
 const data = <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
   withNamedStore(LIBRARY_DATA_STORE, mode, op);
 
-/** `Sculpt 30 Aug 14:15` - the default name, and renameable afterwards. */
+/** `Study 14 Nov`: a new scene's name, the local day and short month. */
 export function defaultSceneName(when = new Date()): string {
-  const p = (n: number): string => String(n).padStart(2, '0');
   const month = when.toLocaleString(undefined, { month: 'short' });
-  return `Sculpt ${when.getDate()} ${month} ${p(when.getHours())}:${p(when.getMinutes())}`;
+  return `Study ${when.getDate()} ${month}`;
+}
+
+/** `base`, or `base 2`, `base 3`... the first that none of `taken` has (case aside). */
+export function uniqueName(base: string, taken: Iterable<string>): string {
+  const have = new Set([...taken].map((n) => n.trim().toLowerCase()));
+  let name = base;
+  for (let n = 2; have.has(name.toLowerCase()); n++) name = `${base} ${n}`;
+  return name;
+}
+
+/**
+ * The name for a new scene or armature: today's study, numbered when this
+ * device's scenes already have one by that name.
+ */
+export async function newSceneName(when = new Date()): Promise<string> {
+  let names: string[] = [];
+  try {
+    names = (await listLibrary()).map((e) => e.name);
+  } catch {
+    // Storage blocked: nothing to clash with.
+  }
+  return uniqueName(defaultSceneName(when), names);
 }
 
 function newId(): string {

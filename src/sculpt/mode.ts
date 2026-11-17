@@ -73,6 +73,8 @@ import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { originOf } from '../ui/origin';
 import { deviceStore } from '../ui/deviceStorage';
+import { sceneStateWord } from '../ui/sceneState';
+import { newSceneName } from './bridge/SceneLibrary';
 
 /**
  * Turntable coast: only fast ticks glide, and only a little.
@@ -767,10 +769,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   mountAccountHandle(strip);
   // The file actions come later in the mount; the readout asks through this.
   let fileActionsRef: FileActions | null = null;
+  // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
+  let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
   const readout = makeReadout(strip, session, {
-    projectName: () => fileActionsRef?.link?.title ?? openedName,
+    projectName: () => fileActionsRef?.sceneName || openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
+    state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
     onRefresh: () => {
       modelPanel?.refreshHeading();
     },
@@ -1529,10 +1534,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       persist.markDirty(false);
     },
     onUnsentChange: () => persist.markDirty(false),
+    onNameChange: () => persist.markDirty(false),
     syncPoint: () => persist.editCount(),
     onSynced: (at) => persist.markSynced(at),
   });
   fileActionsRef = fileActions;
+  strip.onRename = (name) => fileActions.rename(name);
+  // A scene always has a name: the project's, the one it was kept under,
+  // the autosave's, or today's study.
+  fileActions.adoptName(openedName ?? bootLink?.title ?? saved?.name ?? (await newSceneName()));
   fileActions.adoptLink(bootLink);
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
@@ -1967,7 +1977,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // So does the unsent copy a failed save left (SavedScene.unsent).
     if (fileActions.link) scene.project = { ...fileActions.link };
     if (fileActions.unsentCopy) scene.unsent = fileActions.unsentCopy;
+    scene.name = fileActions.sceneName;
   };
+  syncedNow = () => persist.isSynced();
   persist.install();
   if (bootLink && bootSynced) persist.adoptSynced();
   // A scene opened from a library card or from Projects replaces the one in
@@ -2298,6 +2310,8 @@ function makeReadout(
   from: {
     projectName: () => string | null | undefined;
     edited: () => boolean;
+    /** Where the work is kept, as a word after the name (ui/sceneState). */
+    state: () => string | null;
     onRefresh: () => void;
     /** Present: the viewport's size, instead of the object's numbers. */
     frame: () => { w: number; h: number } | null;
@@ -2311,6 +2325,7 @@ function makeReadout(
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
+      state: name ? from.state() : null,
       // In Present the readout is the project and the frame, not the object's numbers.
       object: frame ? null : mesh ? session.activeName() : 'Empty scene',
       tris: frame || !mesh ? null : mesh.getNbTriangles(),

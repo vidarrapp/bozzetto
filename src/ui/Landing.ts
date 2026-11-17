@@ -282,10 +282,11 @@ async function armatureCard(opts: { uploads: boolean; accounts: boolean; expired
       <span class="card__badge">In progress</span>
     </a>
     <div class="card__body">
-      <a class="card__title card__link" href="/?armature=1">Your armature</a>
+      <a class="card__title card__link" href="/?armature=1"></a>
       <span class="card__meta"></span>
       <span class="card__note"></span>
     </div>`;
+  card.querySelector<HTMLElement>('.card__title')!.textContent = rec.name && rec.name !== 'Armature' ? rec.name : 'Your armature';
   const note = card.querySelector<HTMLElement>('.card__note')!;
   const where = (): string => (opts.accounts && rec.project?.scope !== 'admin' ? 'My projects' : 'Projects');
   const paintNote = (): void => {
@@ -387,10 +388,12 @@ async function sculptCard(): Promise<HTMLElement | null> {
       <span class="card__badge">In progress</span>
     </div>
     <div class="card__body">
-      <span class="card__title">Your sculpt</span>
+      <span class="card__title"></span>
       <span class="card__meta"></span>
       <span class="card__note"></span>
     </div>`;
+  // The scene's own name, as the strip shows it; a record from before names is "Your sculpt".
+  a.querySelector<HTMLElement>('.card__title')!.textContent = status?.name ?? 'Your sculpt';
   // Changes made since the scene was saved to its project. Not for a save
   // that could not upload: that card is as it always was, beside the copy
   // the save kept.

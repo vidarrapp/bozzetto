@@ -197,7 +197,42 @@ body:is(.bz-shell, .bz-page) .bz-readout__name {
 
 body:is(.bz-shell, .bz-page) .bz-readout__edited {
   margin-left: -8px;
+  color: var(--bz-text-2);
   font-weight: 400;
+}
+
+/* The name, where a mode lets it be renamed: a tap puts a field in its place. */
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit {
+  cursor: text;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bz-line);
+  text-underline-offset: 3px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename {
+  box-sizing: border-box;
+  width: 200px;
+  max-width: 40vw;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font: 700 13px/20px var(--bz-font);
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__item {

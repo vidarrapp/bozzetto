@@ -259,6 +259,14 @@ export async function uploadArmature(u: ArmatureUpload, onProgress: (text: strin
         throw err;
       }
     }
+    // A project renamed here since it was opened takes the new name.
+    if (u.projectId === project && title !== u.title.slice(0, MAX_TITLE)) {
+      try {
+        title = (await client.update(project, { title: u.title.slice(0, MAX_TITLE) })).title || title;
+      } catch {
+        // Best effort: the file is saved, and the title stays the project's own.
+      }
+    }
     if (u.thumb) {
       try {
         await client.uploadThumb(project, u.thumb);

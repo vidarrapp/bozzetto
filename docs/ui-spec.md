@@ -188,9 +188,11 @@ is left out, not shown greyed out; the same item has the same label, hint
 style and key wherever it shows. The groups below are the order in every
 place, each only where the place has it.
 
-- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Save file, Save to
-  library, Keep on this device (the Present workspace has one Save, or
-  Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
+  Armature), Save file, Save to library (for whoever can save to one; a
+  guest sees **Sign in to save to library** instead where the site has
+  accounts, and nothing extra where it has none), Keep on this device
+  (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
   OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
@@ -333,8 +335,17 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Left: the menus (web, Windows, iPad). On the Mac desktop this space
   holds the window's close, minimise and zoom buttons instead.
 - Centre: the project's name in bold, then the readout of the selected
-  object (name, triangles, level), keys regular and values bold. An
-  unsaved project shows "Edited" after its name, in regular weight.
+  object (name, triangles, level), keys regular and values bold. In
+  Sculpt and Armature the name is always there: a new scene is named as a
+  dated study ("Study 14 Nov", with " 2" and so on when this device's
+  scenes have one by that name). Tapping it puts a field in its place
+  (Enter or leaving it renames, Esc keeps the old name); File > Rename…
+  does the same. After the name, in regular weight and the quiet grey, one
+  state word: **Saved** (matches its last save to the library),
+  **Edited** (has changes the library does not), **Kept on this device**
+  (only the autosave has it), or none while saving is off, when the
+  strip's own **Not saved** at the right says so, once. Other places show
+  "Edited" after an unsaved project's name.
   Under 900px wide the readout drops the triangle count, then the level.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
