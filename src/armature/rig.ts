@@ -141,6 +141,18 @@ export interface IKChainDef {
  */
 export const FOOT_EFFECTOR_AT = 0.5;
 
+/**
+ * The bones the head's look-at controller turns: the head itself, the neck
+ * under it, and the upper torso under that (bottom to top, the chest last).
+ * The root and the bones below the spine are not in it: a look never moves
+ * the hips.
+ */
+export interface LookDef {
+  head: string;
+  neck: string | null;
+  torso: string[];
+}
+
 export interface RigDefinition {
   id: string;
   label: string;
@@ -149,6 +161,31 @@ export interface RigDefinition {
   bones: BoneDef[];
   /** The handles this rig offers; absent means posing by joint only. */
   ik: IKChainDef[];
+  /** The head's look-at controller; absent means worked out from the bone names (lookFor). */
+  look?: LookDef;
+}
+
+/**
+ * The look-at chain of a rig, from its bone names: the bone called head,
+ * the neck above the chest when there is one, and up to two torso bones
+ * under them (never the root). Undefined for a rig with no head.
+ */
+export function lookFor(bones: BoneDef[]): LookDef | undefined {
+  const byName = new Map(bones.map((b) => [b.name, b]));
+  const head = byName.get('head');
+  if (!head) return undefined;
+  let up = head.parent ? byName.get(head.parent) : undefined;
+  let neck: string | null = null;
+  if (up && up.kind !== 'root' && /neck/i.test(up.name)) {
+    neck = up.name;
+    up = up.parent ? byName.get(up.parent) : undefined;
+  }
+  const torso: string[] = [];
+  while (up && up.kind !== 'root' && torso.length < 2) {
+    torso.unshift(up.name);
+    up = up.parent ? byName.get(up.parent) : undefined;
+  }
+  return { head: head.name, neck, torso };
 }
 
 /** The presets on offer; the owner's own figures join this list. */
@@ -406,10 +443,8 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     { id: 'hand.R', label: 'Right hand', effector: 'hand.R', links: ['forearm.R', 'upperarm.R', 'clavicle.R'], mirror: 'hand.L', poleRef: BACK },
     { id: 'foot.L', label: 'Left foot', effector: 'foot.L', links: ['shin.L', 'thigh.L'], mirror: 'foot.R', poleRef: FORWARD, effectorAt: FOOT_EFFECTOR_AT },
     { id: 'foot.R', label: 'Right foot', effector: 'foot.R', links: ['shin.R', 'thigh.R'], mirror: 'foot.L', poleRef: FORWARD, effectorAt: FOOT_EFFECTOR_AT },
-    // The head reaches through the whole back (owner call): a head drawn
-    // forward or aside takes the spine with it, as a body does, rather
-    // than bending at the neck and chest alone.
-    { id: 'head', label: 'Head', effector: 'head', links: ['neck', 'chest', 'spine'], mirror: null },
+    // The head has no reach handle: it is a look-at controller, which turns
+    // the head, the neck and a little of the torso (Armature.lookAt).
   ];
 
   return {
@@ -418,5 +453,6 @@ export function placeholderHuman(sex: 'male' | 'female'): RigDefinition {
     height: b.height,
     bones,
     ik,
+    look: lookFor(bones),
   };
 }

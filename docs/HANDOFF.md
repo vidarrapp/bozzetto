@@ -2,6 +2,8 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-17: The head's look-at shares the turn as the part each bone has made by the end: head all, neck half, chest 12 percent, spine 6 percent (the owner said neck about half, torso 10 to 15 in all). Keep these, or a stronger neck or a freer torso. (blocks: nothing, a constant in Armature.ts)
+- [ ] 2026-11-17: The head's old pin (hold the head in place while the pelvis moves) is gone with the head's reach handle; an old file's head pin is dropped. Is a way to hold the gaze on a fixed point while the figure moves wanted (the look target kept in the world, as Maya's aim constraint does). (blocks: nothing)
 - [x] 2026-11-14: The Create window offers Create timelapse to everyone and Help leads with timelapses, against PRODUCT.md (timelapses not offered to users now). Which holds. Decided 2026-11-14: hide them for now: Create timelapse for the owner only, Help leads with Armature, Sculpt and Present
 - [x] 2026-11-14: Armature's handles are orange, the colour of the tool in hand. Make them neutral (white or grey) with orange only on the selected handle, or keep them orange. Decided 2026-11-14: neutral, with orange only on the selected handle
 - [x] 2026-11-14: Renderer words in the panels (Albedo, Metalness, Lit (PBR), Tris, Level 4/4, Voxel remesh). Keep them, or plain words (Colour, Metal, Lit, Triangles, Level 4 of 4, Remesh). Decided 2026-11-14: keep them, they are intentional; Triangles and Quads where a longer form is needed, Tris for short; and an optional details overlay of object stats as plain text in the top left of the view

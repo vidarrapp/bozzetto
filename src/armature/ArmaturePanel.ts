@@ -130,7 +130,7 @@ export class ArmaturePanel extends SidePanel {
     reach.appendChild(plant);
     const pinHint = div('sculpt-panel__hint muted');
     pinHint.textContent =
-      'Drag a handle and the limb reaches for it, or tap it for a move gizmo; drag the violet one in the hips and the whole figure moves. A pinned handle stays put while the pelvis moves. Plant feet stands a foot that is on the floor flat on it, marked by a ring on the floor; off, the foot tilts with its shin. Pins, not planting, keep a foot in its place.';
+      'Drag a ring and the limb reaches for it, or tap it for a move gizmo; a dot in the ring means it is pinned. Drag an arrowhead beside a knee or elbow and the joint turns toward it. Drag the arrowhead in front of the face and the head looks at it. Drag the frame round the hips and the whole figure moves. A pinned ring stays put while the pelvis moves. Plant feet stands a foot that is on the floor flat on it, marked by a ring on the floor; off, the foot tilts with its shin. Pins, not planting, keep a foot in its place.';
     reach.appendChild(pinHint);
     for (const c of figure().chains()) {
       const box = checkbox(`Pin ${c.label.toLowerCase()}`, false, (on) => this.hooks.pin(c.id, on));
