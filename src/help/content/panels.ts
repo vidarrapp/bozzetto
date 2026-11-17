@@ -190,7 +190,7 @@ export const PANELS: Topic[] = [
         ['Elevation', 'How high the light is, from -20 to 90 degrees on the slider. Type a lower number to go down to -90.'],
         ['Colour', 'The light\'s colour. Drag the swatch over the view to pick one off the screen.'],
         ['Casts shadow', 'Whether this light makes shadows. Not every light can.'],
-        ['Softness', 'From 0 to 16. How soft the shadow edge is.'],
+        ['Softness', 'From 0 to 16. How soft the shadow edge is. A softer edge uses more blur samples, so it stays smooth.'],
         ['Rotate rig', 'Turns the whole set of lights and the environment map together, in degrees.'],
       ),
       p('Hold **L** and move the pointer to swing the key light: across for around, up and down for height.'),

@@ -54,8 +54,23 @@ export function detectQuality(): Quality {
   // WebGPU mandates a maxTextureDimension2D of at least 8192, so the old
   // max-texture-size proxy for weak GPUs no longer discriminates; gate the low
   // tier on mobile alone (`medium` is reachable via ?q=medium).
-  if (isMobile()) return 'low';
+  if (isMobile()) return isCapableTablet() ? 'medium' : 'low';
   return 'high';
+}
+
+/**
+ * A tablet that looks strong enough to start on the medium tier (adaptive
+ * quality steps it down if the frames measure poorly; ?q= overrides all of
+ * this). The signals: a touch device with a tablet-sized screen (the short
+ * side at least 700 CSS px, which no phone has), a device pixel ratio of 2
+ * or more, and eight or more logical cores, which is what the M-series iPads
+ * report and the older A-series iPads and every iPhone do not (4 to 6).
+ * Safari may report fewer cores than there are; such a device simply stays
+ * on the low tier.
+ */
+export function isCapableTablet(): boolean {
+  const short = Math.min(screen.width, screen.height);
+  return short >= 700 && (window.devicePixelRatio || 1) >= 2 && (navigator.hardwareConcurrency || 0) >= 8;
 }
 
 function isMobile(): boolean {

@@ -150,6 +150,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 
 ### Unreleased
 
+- **Sharper, smoother shadows when you stop.** On iPad and other devices that draw simpler shadows, the shadow is drawn at full size and with more blur samples as soon as the view is still, so edges are crisp and a high Softness stays smooth. While you stroke or turn the view nothing changes. Strong iPads (eight cores) now start on the medium quality tier instead of the low one, and step down by themselves if frames get slow.
 - **Clearer Create window.** New Sculpt is the one lime, recommended choice, and Create timelapse is shown to the owner only, since timelapses are not offered to users right now. Help now opens with Armature, Sculpt and Present.
 - **Slider names when you use them.** The Size and Strength sliders at the left edge name themselves while a finger, the Pencil or the mouse is on them, and on a mouse hover, and are plain lines otherwise. Solo, Negative, Undo and Redo show their name on hover and when you hold them.
 - **A hotkey guide that fits.** Esc closes it, it scrolls inside when the window is short, the keys stay on one line, the descriptions line up, and its gestures cover touch and the Pencil.

@@ -312,6 +312,8 @@ const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
  * moved to count as moving (the damped coast after a drag, a wheel zoom).
  */
 const MOVED_WITHIN_MS = 150;
+/** How long the view is idle before its shadows are drawn at the high tier's size. */
+const REST_AFTER_MS = 200;
 /**
  * The smallest turn (radians) or move (share of the orbit distance) in a
  * frame that counts as the camera moving: about a quarter of a pixel, so
@@ -3661,7 +3663,13 @@ export class Viewer {
       fast && kind === 'stroke' ? 'hold' : fast && kind === 'move' ? 'stagger' : 'all',
       this.frameNo,
     );
+    // The still frame's shadows are drawn once: the high tier's maps and
+    // blur samples on every tier, from a moment after the view stops.
+    if (kind !== null) this.lastBusy = now;
+    this.lighting.setAtRest(kind === null && now - this.lastBusy > REST_AFTER_MS);
   }
+
+  private lastBusy = -Infinity;
 
   /**
    * Whether the camera turned or moved this frame by more than about a
