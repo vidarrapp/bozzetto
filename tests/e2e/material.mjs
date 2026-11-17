@@ -86,7 +86,7 @@ export const suites = {
     await tab(page, 'panel--model');
 
     // The Albedo: the active object's, changed from here.
-    await tab(page, 'panel--material');
+    if (!(await isOpen(page, 'panel--material'))) await tab(page, 'panel--material');
     const surface = () =>
       page.evaluate(() => {
         const { session, library } = window.__sculpt;

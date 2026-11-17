@@ -2029,7 +2029,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   // --- keys ------------------------------------------------------------------------------
   const onKey = (e: KeyboardEvent): void => {
     if (isTextEntryTarget(e) || document.body.classList.contains('has-modal')) return;
-    if (lightArmed && e.key === 'Escape') {
+    if (lightArmed && e.key === 'Escape' && !document.querySelector('.bz-menuname.is-open')) {
       armLight(false);
       e.preventDefault();
       e.stopPropagation();
