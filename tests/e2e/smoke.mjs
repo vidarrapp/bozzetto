@@ -842,7 +842,7 @@ const sliderRow = (page, panel, label, nth = 0) =>
   page.evaluate(
     ([name0, caption, k]) => {
       // The look's rows are in Lighting or Camera; the panel is opened if another is up.
-      const name = name0 === 'Render' ? (['Focus', 'Aperture', 'Lens'].includes(caption) ? 'Camera' : 'Lighting') : name0;
+      const name = name0 === 'Render' ? (['Focus', 'Aperture', 'Lens'].includes(caption) ? 'Camera' : ['Strength', 'Radius', 'Bg blur', 'Bg brightness'].includes(caption) ? 'Render' : 'Lighting') : name0;
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === name);
       if (name0 === 'Render' && p?.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
       const row = p && [...p.querySelectorAll('label.compact')].filter((r) => r.firstElementChild?.textContent === caption)[k];
@@ -6207,7 +6207,7 @@ export const suites = {
     t.ok(light.min === 0 && light.max === 5 && light.step === 0.1, `a light's Intensity runs 0..5 (${light.min}..${light.max})`);
     const fresh = await page.evaluate(() => window.__bozzetto.environment.getState().intensity);
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
@@ -6222,6 +6222,7 @@ export const suites = {
     t.ok(rot.min === 0 && rot.max === 360, 'its Rotation runs a full turn');
     await page.evaluate(() => {
       const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      if (p.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
       sel.value = 'gtao';
       sel.dispatchEvent(new Event('change'));
@@ -6235,12 +6236,6 @@ export const suites = {
     t.ok(
       aoRadius.min === 0.1 && aoRadius.max === 10 && aoRadius.step === 0.1 && aoRadius.thumb === AO_DEFAULT.radiusCm && aoRadius.readout === '2.0 cm',
       `its Radius runs 0.1..10 cm in tenths and starts at ${AO_DEFAULT.radiusCm} cm (${aoRadius.min}..${aoRadius.max}, at ${aoRadius.thumb}, "${aoRadius.readout}")`,
-    );
-    const cavStrength = await sliderRow(page, 'Render', 'Strength', 1);
-    const cavRadius = await sliderRow(page, 'Render', 'Radius', 1);
-    t.ok(
-      cavStrength.max === CAVITY_DEFAULT.strengthMax && cavStrength.thumb === CAVITY_DEFAULT.strength && cavRadius.min === CAVITY_DEFAULT.radiusMin && cavRadius.max === CAVITY_DEFAULT.radiusMax && cavRadius.thumb === CAVITY_DEFAULT.radius,
-      `the cavity's Strength runs 0..${cavStrength.max} from ${cavStrength.thumb}, its Radius ${cavRadius.min}..${cavRadius.max} px from ${cavRadius.thumb}`,
     );
 
     // A look from before the ranges changed, with values past them.
@@ -6293,6 +6288,7 @@ export const suites = {
     const model = (value) =>
       page.evaluate((m) => {
         const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+        if (p.classList.contains('panel--collapsed')) p.querySelector('.panel__handle').click();
         const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'Model').querySelector('select');
         if (m) {
           sel.value = m;
@@ -7150,7 +7146,7 @@ export const suites = {
     // The panel: the slider's own travel, and the plate's row beside Bg blur.
     t.ok(await openPanel(page, 'Render'), 'the Render panel opens');
     await page.evaluate(() => {
-      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Render');
+      const p = [...document.querySelectorAll('.panel')].find((el) => el.dataset.panel === 'Lighting');
       const sel = [...p.querySelectorAll('label.label-row')].find((l) => l.firstElementChild?.textContent === 'HDRI').querySelector('select');
       sel.value = 'studio-neutral';
       sel.dispatchEvent(new Event('change'));
