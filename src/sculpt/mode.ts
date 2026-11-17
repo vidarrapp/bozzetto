@@ -42,6 +42,7 @@ import { isProjectId } from '../net/ids';
 import { takeOpen } from '../ui/openToken';
 import { beforeLeaving } from '../ui/leaving';
 import { SculptToolbar } from './ui/SculptToolbar';
+import { MeasureOverlay } from './ui/MeasureOverlay';
 import { BrushSliders } from './ui/BrushSliders';
 import { ScenePanel } from './ui/ScenePanel';
 import { ScaleBanner, sceneSubjects } from './ui/SetScale';
@@ -63,9 +64,14 @@ import { rememberPanels } from './ui/panelMemory';
 import './ui/shell.css';
 import { FileActions, type LookBridge } from './bridge/FileActions';
 import { ModelPanel } from './ui/ModelPanel';
+import { LayersPanel } from './ui/LayersPanel';
 import { MaterialPanel } from '../ui/MaterialPanel';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { SculptPanel } from './ui/SculptPanel';
+import { ReferenceBoard, fromFileReferences, toFileReferences } from '../reference/board';
+import { ReferencePanel } from '../reference/ReferencePanel';
+import { ReferenceView } from '../reference/ReferenceView';
+import { installIntake, pasteFromClipboard } from '../reference/intake';
 import { imageName, stillRatio } from '../viewer/capture/still';
 import { PresentMode, type TurntableRequest } from './ui/Present';
 import { recordTurntable } from '../viewer/capture/turntable';
@@ -73,6 +79,8 @@ import { downloadBlob } from '../ui/download';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { originOf } from '../ui/origin';
 import { deviceStore } from '../ui/deviceStorage';
+import { sceneStateWord } from '../ui/sceneState';
+import { defaultSceneName, newSceneName } from './bridge/SceneLibrary';
 
 /**
  * Turntable coast: only fast ticks glide, and only a little.
@@ -313,7 +321,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         // A new scene: the autosave and its look go, as New Sculpt's do -
         // once the object stands, so a file that would not build leaves
         // the work where it was.
-        if (objMesh) await Promise.all([clearSavedScene(), clearSculptLook()]);
+        if (objMesh) await Promise.all([clearSavedScene(true), clearSculptLook()]);
       }
     }
     const url = new URL(window.location.href);
@@ -534,6 +542,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // during mount, and a later `let` is a temporal dead zone at that point
   // (found the hard way - the whole sculpt boot died on it).
   let modelPanel: ModelPanel | null = null;
+  let layersPanel: LayersPanel | null = null;
   let materialPanel: MaterialPanel | null = null;
   const applyLookSafely = async (look: Parameters<Viewer['applyLook']>[0]): Promise<void> => {
     syncingPanel = true;
@@ -759,6 +768,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     sculptPanel?.refreshState();
     modelPanel?.refreshState();
     modelPanel?.refreshGroups();
+    layersPanel?.refresh();
+    modelPanel?.refreshMeasures();
     syncPanelMaterial();
     if (gizmo.isActive()) gizmo.attach(gizmoTarget());
     refreshReadout();
@@ -782,10 +793,13 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   mountAccountHandle(strip);
   // The file actions come later in the mount; the readout asks through this.
   let fileActionsRef: FileActions | null = null;
+  // Whether the scene is as last saved to its project: the autosave's count (set once it exists).
+  let syncedNow: () => boolean = () => false;
   let goArmature: () => Promise<void> = async () => undefined;
   const readout = makeReadout(strip, session, {
-    projectName: () => fileActionsRef?.link?.title ?? openedName,
+    projectName: () => fileActionsRef?.sceneName || openedName,
     edited: () => !!fileActionsRef && fileActionsRef.hasWork(),
+    state: () => (fileActionsRef ? sceneStateWord({ linked: !!fileActionsRef.link, synced: syncedNow() }) : null),
     onRefresh: () => {
       modelPanel?.refreshHeading();
     },
@@ -854,8 +868,12 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   // used to follow from onTick, a frame behind the view while it turned.
   // The cursor re-projects when the camera moves under a still pointer
   // (wheel zoom), and a hover owed a pick gets it, once a frame.
+  // The calipers' lines and labels re-project with the camera and with
+  // any object that moves under them (MeasureOverlay.tick compares).
+  let measureOverlay: MeasureOverlay | null = null;
   const followTick = (): void => {
     input.flushHover();
+    measureOverlay?.tick();
     const cam = viewer.camera;
     if (cam.position.equals(camScratch.prevPos) && cam.quaternion.equals(camScratch.prevQuat)) {
       return;
@@ -1244,6 +1262,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   const enterTransform = (mode: GizmoMode): void => {
     if (gizmo.isActive() && mode !== 'all' && gizmo.getMode() === mode) return;
     input.exitSelect();
+    input.exitMeasure();
     gizmo.enter(mode, gizmoTarget());
     cursor.hide();
     toolbar.setTransformActive(true);
@@ -1315,7 +1334,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
    */
   const enterPresent = (): (() => void) => {
     // The Material panel stays: it is a Present panel too (its Surface section goes, its Display stays).
-    const sidePanels = [sculptPanel, scenePanel, modelPanel];
+    const sidePanels = [sculptPanel, scenePanel, modelPanel, layersPanel];
     const was = {
       chrome: chrome.isHidden(),
       render: !(document.querySelector('.panel--render')?.classList.contains('panel--collapsed') ?? true),
@@ -1325,6 +1344,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       maskTint: viewer.materials.getSculptMaskTint(),
     };
     input.exitSelect();
+    input.exitMeasure();
     exitTransform();
     for (const p of sidePanels) p?.setCollapsed(true);
     // The mask's darkening is a working aid, not the look.
@@ -1379,6 +1399,16 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     else enterTransform('all');
   };
   toolbar.onToggleSelect = () => input.toggleSelect();
+  toolbar.onToggleMeasure = () => input.toggleMeasure();
+  // Calipers: the tool bar, the Tool panel and the highlights follow the
+  // mode; a pinned measurement is something to save with the scene.
+  input.onMeasureModeChange = (on) => {
+    toolbar.setMeasureActive(on);
+    sculptPanel?.refreshBrush();
+    syncHighlights();
+  };
+  session.measure.onPersist = () => persist.markDirty();
+  measureOverlay = new MeasureOverlay(viewer, session, input.measureTool, () => input.isMeasuring());
   strip.onToggleChrome = () => chrome.toggle();
   chrome.onChange = (hidden) => {
     strip.setChromeHidden(hidden);
@@ -1509,6 +1539,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     cleanState = at;
   };
   const hasWork = (): boolean => !sceneOnDisk || session.getStateManager().getCurrentState() !== cleanState;
+  // The reference pictures: on this device only, never part of the scene that
+  // is saved to the library or published (reference/board.ts).
+  const referenceBoard = new ReferenceBoard('sculpt');
+  let referencePanel: ReferencePanel | null = null;
+  let referenceView: ReferenceView | null = null;
   // One implementation of File, behind the web menu and the console
   // handle alike.
   const fileActions = new FileActions(session, {
@@ -1539,16 +1574,42 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // the geometry), or a reload would forget where Save to library goes.
     // Neither is an edit: the scene is as it was (SavedScene.synced). A
     // new link is not its project's as saved until a save says so.
-    onLinkChange: () => {
+    onLinkChange: (link) => {
       persist.unsync();
       persist.markDirty(false);
+      // The pictures are kept under the project's id too, so reopening it here brings them back.
+      referenceBoard.bindProject(link?.id ?? null);
+      referencePanel?.setLinked(() => !!link);
+    },
+    references: () => toFileReferences(referenceBoard),
+    adoptReferences: (refs) => {
+      if (refs) {
+        const got = fromFileReferences(refs);
+        referenceBoard.replace(got.items, got.view);
+      } else {
+        void referenceBoard.clear();
+      }
     },
     onUnsentChange: () => persist.markDirty(false),
+    onNameChange: () => persist.markDirty(false),
     syncPoint: () => persist.editCount(),
     onSynced: (at) => persist.markSynced(at),
   });
   fileActionsRef = fileActions;
+  strip.onRename = (name) => fileActions.rename(name);
+  // A scene always has a name: the project's, the one it was kept under,
+  // the autosave's, or today's study.
+  fileActions.adoptName(openedName ?? bootLink?.title ?? saved?.name ?? (saved?.savedAt ? defaultSceneName(new Date(saved.savedAt)) : await newSceneName()));
   fileActions.adoptLink(bootLink);
+  // What this device kept for the scene that opened: the autosave's pictures on a reload, a
+  // library project's by its id (none when they were added on another device), nothing for a
+  // template, an OBJ or anything else that opened as a new scene.
+  if (openedExplicitly || objMesh) {
+    if (bootLink) void referenceBoard.restore({ project: bootLink.id });
+    else void referenceBoard.clear();
+  } else {
+    void referenceBoard.restore({ current: true }).then(() => referenceBoard.bindProject(bootLink?.id ?? null));
+  }
   fileActions.adoptUnsent(bootUnsent);
   // Where File > Close goes: set once the snapshot is defined, below.
   let leaveForGallery: () => void = () => undefined;
@@ -1568,6 +1629,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       close: () => leaveForGallery(),
       publish: () => publishWindow?.toggle(),
       canPublish: () => !!publishWindow?.isAvailable(),
+      hasReferences: () => referenceBoard.list().length > 0,
     });
     // What used to be the Scene panel's buttons (owner call: only Create
     // stays there), each on the whole selection as before.
@@ -1638,6 +1700,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
             },
             action: () => scenePanel?.splitActive('delete-hidden'),
           },
+          { separator: true },
+          { label: 'Paste picture', hint: 'Adds the clipboard\'s picture to the Reference panel', action: () => void pasteFromClipboard(referenceBoard) },
         ],
       }),
       'file-menu--edit',
@@ -1666,12 +1730,18 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
           },
         },
         groupColors: { get: () => session.groups.isShowing(), toggle: () => setGroupColors(!session.groups.isShowing()) },
+        referenceOver: {
+          get: () => referenceView?.isOverEnabled() ?? true,
+          toggle: () => referenceView?.setOverEnabled(!referenceView.isOverEnabled()),
+        },
         toolKeys: true,
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
+          ['layers', 'Layers'],
           ['sculpt', 'Tool'],
           ['material', 'Material'],
+          ['reference', 'Reference'],
           ['settings', 'Render'],
         ],
         hideInterface: () => chrome.set(true),
@@ -1767,7 +1837,25 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       // Not worth failing the tick over.
     }
   };
+  referencePanel = new ReferencePanel(referenceBoard);
+  referencePanel.setLinked(() => !!fileActions.link);
+  referenceView = new ReferenceView(referenceBoard, viewer);
+  const offIntake = installIntake(referenceBoard, () => !!referencePanel?.isOpen());
   modelPanel = new ModelPanel(session, viewer);
+  layersPanel = new LayersPanel(session);
+  // A layer edit (a stroke recorded, a weight, an undo) redraws the list and goes to the autosave.
+  session.layers.onChange = () => {
+    layersPanel?.refresh();
+    persist.markDirty();
+  };
+  layersPanel.onEdit = () => {
+    session.render();
+    refreshReadout();
+  };
+  // A stroke the active layer cannot take (hidden, or at 0%) says why.
+  session.layers.onRefuse = (_mesh, why) => {
+    failNotice(`The layer "${why.name}" is hidden or at 0%. Show the layer to sculpt on it.`);
+  };
   materialPanel = new MaterialPanel(viewer, { sculpting: true, surface: {
       hasObject: () => !!session.getMesh(),
       // The assigned material's name; "Several" over a selection that mixes them. Assigning is the Scene panel's.
@@ -1779,6 +1867,14 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     },
   });
   modelPanel.onGroupColors = (on) => setGroupColors(on);
+  // Symmetry decides whether a measurement can be mirrored: the Measure list follows the switch.
+  {
+    const prevSymmetry = session.onSymmetryChange;
+    session.onSymmetryChange = (on) => {
+      prevSymmetry?.(on);
+      modelPanel?.refreshMeasures();
+    };
+  }
   modelPanel.onGroupFromMask = () => groupFromMask();
   modelPanel.onMerge = () => scenePanel?.mergeSelected();
   // A quad remesh holds its object while it runs: drawn as locked, the
@@ -1800,6 +1896,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     modelPanel?.refreshUnits();
     sculptPanel?.refreshBrush();
     scaleBanner?.refresh();
+    modelPanel?.refreshMeasures();
     // The Render panel's GTAO Radius is in centimetres on real units and a
     // share of the subject without: it is built again on the scale it has now.
     window.dispatchEvent(new CustomEvent('bozzetto:look-restored'));
@@ -1853,6 +1950,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
       persist.markDirty(false);
     },
   });
+  // The Calipers ask for the scale when a scene has none: both panels open Set scale.
+  if (sculptPanel) sculptPanel.onSetScale = () => scaleBanner.offer();
+  if (modelPanel) modelPanel.onSetScale = () => scaleBanner.offer();
   // Both callbacks are single-slot and already claimed (the toolbar owns
   // onToolChange, the rail owns onBrushChange), so the palette chains onto
   // each rather than replacing it.
@@ -1982,7 +2082,9 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     // So does the unsent copy a failed save left (SavedScene.unsent).
     if (fileActions.link) scene.project = { ...fileActions.link };
     if (fileActions.unsentCopy) scene.unsent = fileActions.unsentCopy;
+    scene.name = fileActions.sceneName;
   };
+  syncedNow = () => persist.isSynced();
   persist.install();
   if (bootLink && bootSynced) persist.adoptSynced();
   // A scene opened from a library card or from Projects replaces the one in
@@ -2012,7 +2114,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
   if (saved && !openedExplicitly) {
     toast = bootToast(openedLabel(opened), () => {
       persist.disable();
-      void clearSavedScene().then(() => location.reload());
+      void clearSavedScene(true).then(() => location.reload());
     });
   } else if (saved && opened?.from === 'device') {
     toast = bootToast(openedLabel(opened));
@@ -2094,6 +2196,7 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewMenu,
     helpMenu,
     fileActions,
+    reference: { board: referenceBoard, view: referenceView, panel: referencePanel },
     sculptPanel,
     modelPanel,
     materialPanel,
@@ -2234,8 +2337,15 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     persist.dispose();
     sculptPanel?.dispose();
     modelPanel?.dispose();
+    layersPanel?.dispose();
+    session.layers.onChange = null;
+    session.layers.onRefuse = null;
     materialPanel?.dispose();
     scenePanel?.dispose();
+    offIntake();
+    referenceView?.dispose();
+    referencePanel?.dispose();
+    referenceBoard.dispose();
     scaleBanner.dispose();
     publishWindow?.dispose();
     fileMenu?.dispose();
@@ -2269,6 +2379,11 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
     viewer.materials.setSculptGroupColors(false);
     GeometrySync.decor = null;
     input.exitSelect();
+    input.exitMeasure();
+    measureOverlay?.dispose();
+    measureOverlay = null;
+    session.measure.onPersist = null;
+    input.onMeasureModeChange = null;
     viewer.tapToFocus = true;
     viewer.onTick = null;
     viewer.onPostControls = null;
@@ -2315,6 +2430,8 @@ function makeReadout(
   from: {
     projectName: () => string | null | undefined;
     edited: () => boolean;
+    /** Where the work is kept, as a word after the name (ui/sceneState). */
+    state: () => string | null;
     onRefresh: () => void;
     /** Present: the viewport's size, instead of the object's numbers. */
     frame: () => { w: number; h: number } | null;
@@ -2328,6 +2445,7 @@ function makeReadout(
     strip.setReadout({
       name,
       edited: !!name && from.edited(),
+      state: name ? from.state() : null,
       // In Present the readout is the project and the frame, not the object's numbers.
       object: frame ? null : mesh ? session.activeName() : 'Empty scene',
       tris: frame || !mesh ? null : mesh.getNbTriangles(),

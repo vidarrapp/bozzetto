@@ -188,9 +188,11 @@ is left out, not shown greyed out; the same item has the same label, hint
 style and key wherever it shows. The groups below are the order in every
 place, each only where the place has it.
 
-- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Save file, Save to
-  library, Keep on this device (the Present workspace has one Save, or
-  Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
+  Armature), Save file, Save to library (for whoever can save to one; a
+  guest sees **Sign in to save to library** instead where the site has
+  accounts, and nothing extra where it has none), Keep on this device
+  (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
   OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
@@ -225,6 +227,8 @@ place, each only where the place has it.
 - Close (returns to the gallery)
 
 - Save
+- Include references (a switch, on by default; Save file only: Save to
+  library and Publish never carry pictures)
 - Save a copy to this device
 - Save to library
 
@@ -242,6 +246,8 @@ place, each only where the place has it.
 - Delete
 - Merge (says "Needs 2 objects" when it cannot)
 
+- Paste picture (adds the clipboard's picture to the Reference panel)
+
 - Mirror ›  Across X, Across Y, Across Z
 - Radial copies ›
 
@@ -258,10 +264,15 @@ place, each only where the place has it.
 - Hotkeys on tools
 - View axes
 
+- Reference over the view (a switch, in the group with the other
+  viewport switches)
+
 - Scene panel
 - Model panel
+- Layers panel
 - Material panel
 - Tool panel
+- Reference panel
 - Render panel
 - Hide interface
 
@@ -290,6 +301,9 @@ big logotype and tagline in the page).
 - **File:** New sculpt, New armature, Import OBJ…. What the gallery's
   Create card offers, with the same question about saving on this device
   that Import OBJ asks.
+  The Create window lists New Sculpt (the one recommended, lime choice),
+  New Armature and Import OBJ; Create timelapse is added for the owner only
+  (timelapses are not offered to users, PRODUCT.md).
 - **View:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
@@ -333,8 +347,17 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Left: the menus (web, Windows, iPad). On the Mac desktop this space
   holds the window's close, minimise and zoom buttons instead.
 - Centre: the project's name in bold, then the readout of the selected
-  object (name, triangles, level), keys regular and values bold. An
-  unsaved project shows "Edited" after its name, in regular weight.
+  object (name, triangles, level), keys regular and values bold. In
+  Sculpt and Armature the name is always there: a new scene is named as a
+  dated study ("Study 14 Nov", with " 2" and so on when this device's
+  scenes have one by that name). Tapping it puts a field in its place
+  (Enter or leaving it renames, Esc keeps the old name); File > Rename…
+  does the same. After the name, in regular weight and the quiet grey, one
+  state word: **Saved** (matches its last save to the library),
+  **Edited** (has changes the library does not), **Kept on this device**
+  (only the autosave has it), or none while saving is off, when the
+  strip's own **Not saved** at the right says so, once. Other places show
+  "Edited" after an unsaved project's name.
   Under 900px wide the readout drops the triangle count, then the level.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
@@ -379,6 +402,52 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - The desktop version may later let a side show both panels at once on a
   tall display. It is not part of this spec.
 
+### The Reference panel
+
+Pictures to look at while you work (`src/reference/`), on the right after
+Tool and before Render.
+
+- **Top:** Add picture… (the system picker, no `capture` attribute, so an
+  iPad offers Photo Library, Take Photo and Choose File) and Paste. Ctrl or
+  Cmd+V adds a picture while the panel is open; Edit > Paste picture does it
+  from the menu; a picture dropped on the panel or the view is added and the
+  panel opens.
+- **Board:** a two-column grid of thumbnails, newest first, square corners,
+  the picture that is on with an orange edge. Under each: its name, what is
+  on it (Beside, Over, Mirrored, Grey) or its size in mono, and a **More**
+  row menu: Show beside, Show over the view, Mirror, Greyscale, Delete. A tap
+  on the thumbnail shows it beside or takes it off. Delete asks first, in a
+  window whose button is red; the app's Undo is the stroke history and does
+  not hold pictures.
+- **Over the view:** a lime switch "In front of the model" (off puts the
+  picture behind the model, as the backdrop) and an Opacity slider (orange
+  fill) that matters in front. Both are greyed out unless a picture is over
+  the view.
+- **One picture is on at a time.** Beside is a float window (the Publish
+  window's frame) at the corner, moved by its title bar, with a close button;
+  the wheel or a pinch zooms the picture inside it and a mouse or pen drag or
+  two fingers pan it; one finger moves nothing. Over the view is fitted to the
+  view's height and centred, in screen space, and Mirror and Greyscale apply to
+  either.
+- **Input.** The Pencil and touches on the model always go to the model: the
+  picture in front is a layer with `pointer-events: none`, the one behind is
+  drawn by the viewer and is no element at all, and the Beside window takes
+  input only on its own frame. Tab hides the Beside window with the interface;
+  the picture over the view stays, until **View > Reference over the view** is
+  switched off. Present shows neither.
+- **Keeping.** On this device only, never uploaded: in the browser's storage
+  beside the autosave (keyed by the scene, and by the library project's id
+  too, so reopening that project here brings them back) when keeping on the
+  device is on, for the page when it is off. A new sculpt starts with none.
+  Save file carries them with **File > Include references** (on by default);
+  Save to library and Publish send the scene alone, and a thumbnail or saved
+  image is drawn without a picture behind the model. A project opened on
+  another device opens without them, and the note under the grid says
+  "References stay on the device they were added on."
+- **Import.** At most 2048px on the long side, JPEG at quality 0.85 (PNG only
+  with transparency), and no metadata: the picture is drawn again on a canvas,
+  which drops EXIF, its place and time included.
+
 ### Tool bar
 
 - Bottom centre, flush to the edge, as wide as its tools.
@@ -387,6 +456,27 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - On devices with a home indicator it sits above the safe area.
 - On a phone, where it scrolls, it fades at each edge that has more tools
   behind it and snaps to the tools as it scrolls.
+- **Calipers** (hotkey C) is the last button, after Transform. It is not
+  a brush: it measures between two points on the model and edits
+  nothing. Its icon is the Uicons ruler until a drawn calipers glyph is
+  dropped in as `icons/calipers.svg` in the tool bar's icon folder. In
+  a scene without real units its Tool panel says "Set the scene's scale
+  first" with a Set scale button.
+- **Calipers on the view.** A line with an end dot at each point, drawn
+  over the model with a dark halo so it reads on pale clay and on the
+  dark ground; the length in centimetres to one decimal in a small
+  label at the middle, in the mono face on a raised grey box, kept
+  inside the view. The one being made carries a Pin button in its
+  label. Orange appears only on the end held by the pen or a finger. A
+  pinned measurement is a lighter grey, a mirror is dashed. All of it is
+  interface: Tab and Present hide it. It never takes the Pencil away from
+  the model, and two fingers still navigate.
+- **Measure section** (Model panel, after Poly groups): the pinned
+  measurements of the selected object, a row each with its name (tap to
+  rename), its length in the mono face, a mirror toggle, the eye and the
+  trash. A mirrored one shows a line under it with the other length and
+  the difference. A delete is not a sculpt undo step; the section
+  offers Undo for the last one deleted.
 
 ### Edge controls
 
@@ -508,3 +598,44 @@ moved the layout later; that produced an in-between look and is dropped.
 
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
+
+
+## Sculpt layers
+
+The **Layers** tab, left, after Model (`panel--layers`; View menu item
+"Layers panel" after Model panel). From the top: **Add layer** (the one plain
+button, never orange), the list, **Flatten all**. The list is
+`src/ui/layerList.ts`, with no sculpt knowledge, so the Paint workspace can
+reuse it with one more control a row (a blend mode select).
+
+- Newest layer on top, a fixed **Base** row at the bottom. A row is an eye,
+  the name (a tap on the active row's name renames it), a menu (Rename,
+  Duplicate, Flatten into base, Delete in red) and under them a Weight
+  slider, 0 to 100% of travel, with typed values to plus or minus 1000%
+  (double tap or double click) shown as typed. The active row has the
+  selected-row fill; Base is active when no layer is. Hit areas are at least
+  44px high.
+- A layer's data lives on the object's highest level. Any level may be on
+  screen while sculpting with a layer active; only a hidden layer or one at
+  0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
+  apply live while the highest level is on screen and on release otherwise.
+- Changing the active layer, a weight or visibility, Add, Duplicate,
+  Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
+  ask to flatten the layers first ("Flatten the layers of "Sphere"?", button
+  "Flatten and remesh"); Cancel leaves everything.
+- Saved per object in the scene (`SavedMesh.layers`, version 1: name,
+  weight, visible, and the sparse displacements of the highest level), in the
+  autosave, `.bozz` files and the library.
+## Clarity rules (design critique, 2026-11)
+
+- The edge sliders' names (Size, Strength) show only while the slider is
+  pressed or hovered: Familjen Grotesk 11px, secondary grey, beside the
+  value, no box. The edge buttons (Solo, Negative, Undo, Redo) name
+  themselves on hover and on a long press, as the tool bar's do.
+- Esc closes the hotkey guide first; it scrolls inside, chips never wrap and
+  descriptions align left in one column.
+- Martian Mono capitals are for values and small section headers only;
+  buttons, chips and badges are Familjen Grotesk in sentence case.
+- Panel labels carry no hotkeys; the key is in the tooltip and the View menu.
+- The Render panel's Preset names the lights as they are: Three-point (all
+  three on), Key only (Sculpt's opening look), Raking key, or Custom.

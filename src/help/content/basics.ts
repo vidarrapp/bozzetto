@@ -9,15 +9,15 @@ export const BASICS: Topic[] = [
     group: G,
     tools: ['Hide the interface', 'Show the interface'],
     blocks: [
-      p('Bozzetto Web is a browser app for sculpting, posing and playing back timelapses of sculpts. You find it in three places: the gallery, the viewer and the two editors, **Sculpt** and **Armature**.'),
+      p('Bozzetto Web is a browser app for posing, sculpting and presenting. **Armature** is a posable figure you pose and send to Sculpt as a base. **Sculpt** is clay, brushes and paint. **Present** lights and frames the finished work, and publishes it. You find it in three places: the gallery, the viewer and the editors.'),
       h('Start a sculpt'),
-      p('In the gallery, choose **Create**. You can start a **New Sculpt** (a sphere of clay, brushes and paint), a **New Armature** (a posable figure), **Import OBJ** (one .obj file from another app, opened in Sculpt as a new scene) or **Create timelapse** (frames made elsewhere, played back as a timelapse or a model).'),
+      p('In the gallery, choose **Create**. You can start a **New Sculpt** (a sphere of clay, brushes and paint), a **New Armature** (a posable figure) or **Import OBJ** (one .obj file from another app, opened in Sculpt as a new scene).'),
       p('The gallery and the other pages (Community, My projects, Account, Review, Owner tools) have the same title strip as the editors. **File** starts a new sculpt, a new armature or an OBJ import, **View** lists the pages you may visit with the one you are on checked, **Help** is the same everywhere, the page\'s name is in the middle, and **Sign in**, or your @handle menu with **Account** and **Sign out**, is at the right. When you are signed in, the @handle menu is at the right end of the strip in the editors and the viewer too.'),
       h('What is on the screen in Sculpt'),
       list(
         'The **title strip** across the top has the **File**, **Edit**, **View** and **Help** menus at the left, then the workspace path **Armature › Sculpt › Present**, the project and object readout in the middle, and, at the right, your @handle menu when you are signed in, then the hide button (and **Publish**, in Present only, when you are signed in).',
         'The **tool bar** along the bottom holds the tools, each with its hotkey digit, which **View**, then **Hotkeys on tools**, shows or hides.',
-        'The **edge controls** at the bottom left are, from the bottom, Carve (negative), Undo, Redo and Solo, with the brush size and strength fields above them while the Tool panel is closed.',
+        'The **edge controls** at the bottom left are, from the bottom, Carve (negative), Undo, Redo and Solo, with the brush size and strength fields above them while the Tool panel is closed. A field names itself (Size, Strength) only while you press it or point at it, and a button shows its name when you point at it or hold it.',
         'The **Scene** and **Model** panels share the left side, and **Tool** and **Render** the right. Each side has a row of two tabs at the top and one open panel: a tab opens its panel and closes the other, and the open panel\'s tab closes it.',
       ),
       h('What is on the screen in the viewer'),
@@ -33,7 +33,7 @@ export const BASICS: Topic[] = [
       h('Typing a value into a slider'),
       p('Every slider shows its value while you drag it. Double-click a slider (double-tap on touch) to type a value instead. Enter or a press anywhere else applies it, and **Esc** keeps what was there. A typed value may go past the end of the slider. It is held only to what the setting can be, so a strength never goes below zero and an angle wraps round.'),
       h('Your work is kept'),
-      p('Sculpt saves your scene in this browser as you work, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. See the Files topic.'),
+      p('Sculpt saves your scene in this browser as you work, and a reload brings it back. To keep it safe, use **File**, then **Save file** or **Save to library**. The word after the name in the top bar says where it is kept. See the Files topic.'),
     ],
   },
   {

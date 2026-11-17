@@ -20,7 +20,7 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const closeKey = keymap.chordFor('ui.help');
   const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'armature' ? 'Armature hotkeys' : 'Hotkeys &amp; navigation';
-  const closer = closeKey ? `${esc(chordLabel(closeKey))} to close` : 'click to close';
+  const closer = closeKey ? `${esc(chordLabel(closeKey))} or Esc to close` : 'Esc or tap to close';
   let html = `<div class="help-guide__head">${head} <span class="help-guide__close">${closer}</span></div>`;
   let group = '';
   let open = false;
@@ -35,10 +35,10 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
       open = true;
     }
     const key = gesture
-      ? `<span class="help-key">${esc(a.note ?? '')}</span>`
-      : chordParts(chord!)
+      ? `<span class="help-keys"><span class="help-key">${esc(a.note ?? '')}</span></span>`
+      : `<span class="help-keys">${chordParts(chord!)
           .map((p) => `<kbd>${esc(p)}</kbd>`)
-          .join('+');
+          .join('+')}</span>`;
     html += `<div class="help-row">${key}<span>${esc(a.label)}</span></div>`;
   }
   if (open) html += '</div>';
@@ -85,6 +85,18 @@ export class Help {
   };
 
   private readonly onGuideEvent = (): void => this.toggle();
+
+  /**
+   * Esc closes an open guide first, and is spent on that: the same press
+   * does not also leave Present or close a menu behind it. Capture phase,
+   * so it comes before every other Esc listener; closed, it does nothing.
+   */
+  private readonly onEsc = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || this.guide.hidden) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    this.toggle();
+  };
 
   private render(): void {
     this.guide.innerHTML = guideHtml(this.mode, this.updates);
@@ -177,6 +189,7 @@ export class Help {
     window.addEventListener('bozzetto:sculptmode', this.onSculptMode);
     // The Help menu's Hotkeys item asks for the guide this way.
     window.addEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
+    window.addEventListener('keydown', this.onEsc, true);
     this.offKeymap = keymap.onChange(() => this.render());
     this.offUpdates = onUpdates(this.onUpdate);
   }
@@ -198,6 +211,7 @@ export class Help {
     if (this.hintTimer !== undefined) clearTimeout(this.hintTimer);
     window.removeEventListener('bozzetto:sculptmode', this.onSculptMode);
     window.removeEventListener(HOTKEY_GUIDE_EVENT, this.onGuideEvent);
+    window.removeEventListener('keydown', this.onEsc, true);
     this.offKeymap();
     this.offUpdates();
     this.hint.remove();

@@ -94,7 +94,7 @@ export const suites = {
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Surface,Display', 'Material has two sections, Surface and Display');
     t.eq(mat.Surface.join(','), 'Material,Albedo,Roughness,Metalness', 'Surface: the assigned Material, Albedo, Roughness, Metalness');
-    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe (Shift + W),Wire opacity', `Display: Mode, Smooth shading, Wireframe with its hotkey, Wire opacity (${mat.Display.join(',')})`);
+    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity', `Display: Mode, Smooth shading, Wireframe, Wire opacity (${mat.Display.join(',')})`);
 
     // Gone from Model and Render: a control is shown once.
     await tab(page, 'panel--model');
@@ -323,7 +323,7 @@ export const suites = {
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Display', 'with the Display section alone: a figure has no Surface');
-    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe (Shift + W),Wire opacity', 'Mode, Smooth shading, Wireframe, Wire opacity');
+    t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe,Wire opacity', 'Mode, Smooth shading, Wireframe, Wire opacity');
     await tab(page, 'panel--armature');
     t.ok((await isOpen(page, 'panel--armature')) && (await isOpen(page, 'panel--material')), 'Armature is on the other side: Material stays open');
     await tab(page, 'panel--render');
@@ -363,7 +363,7 @@ export const suites = {
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Display', 'its one section is Display (the model has no active object)');
     t.eq(mat.Display.slice(0, 1).join(), 'Mode', 'with Mode first');
-    t.ok(['Smooth shading', 'Wireframe (Shift + W)', 'Wire opacity'].every((l) => mat.Display.includes(l)), `and Smooth shading, Wireframe and Wire opacity (${mat.Display.join(', ')})`);
+    t.ok(['Smooth shading', 'Wireframe', 'Wire opacity'].every((l) => mat.Display.includes(l)), `and Smooth shading, Wireframe and Wire opacity (${mat.Display.join(', ')})`);
     // The published model's own Albedo, Roughness and Metalness, over Lit.
     t.ok(['Albedo', 'Roughness', 'Metalness'].every((l) => mat.Display.includes(l)), `with the model's own Albedo, Roughness and Metalness, as Render had them (${mat.Display.join(', ')})`);
     await tab(page, 'panel--render');

@@ -1421,7 +1421,7 @@ async function memberLibrary(server, o, a, t) {
   await clearNotices(p);
   await chooseFile(p, 'Save to library');
   let end = await savedToast(p);
-  t.ok(end.state === 'done' && /^Saved to My projects: Sculpt /.test(end.text), `Save to library saves to My projects ("${end.text}")`);
+  t.ok(end.state === 'done' && /^Saved to My projects: Study /.test(end.text), `Save to library saves to My projects ("${end.text}")`);
   let list = (await pageJson(p, '/api/me/projects')).body ?? [];
   const pid = list[0]?.id ?? '';
   t.ok(
@@ -1617,10 +1617,11 @@ async function memberCreate(server, o, a, t) {
     timelapse: document.querySelector('.create-overlay [data-kind="timelapse"] .create-choice__hint')?.textContent ?? '',
   }));
   t.ok(
-    menu.titles === 'New Sculpt, New Armature, Import OBJ, Create timelapse' && menu.timelapse === 'OBJ or GLB frames from another app, as a timelapse or a model, saved to My projects.',
-    `signed in as a member, Create offers Import OBJ and a Create timelapse that saves to My projects (${show(menu)})`,
+    menu.titles === 'New Sculpt, New Armature, Import OBJ' && menu.timelapse === '',
+    `signed in as a member, Create offers New Sculpt, New Armature and Import OBJ, no timelapse (${show(menu)})`,
   );
-  await Promise.all([p.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }), p.click('.create-overlay [data-kind="timelapse"]')]);
+  // The uploader is owner-only in the menu but still opens by its address.
+  await p.goto(`${server.base}/create/`, { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.bz-strip__btn--primary:not([hidden])', { timeout: 30_000 });
   const intro = await p.evaluate(() => ({
     note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',

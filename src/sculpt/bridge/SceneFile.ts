@@ -37,7 +37,12 @@ function capName<T extends { name?: unknown }>(o: T): T {
   return typeof o.name === 'string' && o.name.length > MAX_NAME ? { ...o, name: o.name.slice(0, MAX_NAME) } : o;
 }
 
-export async function packScene(scene: SavedScene): Promise<Blob> {
+/**
+ * `keepReferences` is the one way pictures get into a file, and only Save
+ * file says it: every other caller (Save to library, Publish, the shelf)
+ * packs the scene alone, whatever the record it was handed holds.
+ */
+export async function packScene(scene: SavedScene, keepReferences = false): Promise<Blob> {
   const blobs: Uint8Array[] = [];
   const table: BufferEntry[] = [];
   let cursor = 0;
@@ -63,14 +68,15 @@ export async function packScene(scene: SavedScene): Promise<Blob> {
   // The project link is the autosave's business (see SavedScene.project):
   // a file leaves the device, and must not carry a pointer to the owner's
   // server project with it, nor to a copy on this device's shelf.
-  const { project: _link, unsent: _unsent, synced: _synced, ...portable } = scene;
+  const { project: _link, unsent: _unsent, synced: _synced, name: _name, references, ...rest } = scene;
+  const portable = keepReferences && references ? { ...rest, references } : rest;
   // A name past what a reader takes (shared/bozz.ts MAX_NAME: this app's
   // own reader and the server's both refuse it) would make a file nothing
   // opens, nor any server keeps: cut to it here, where every file is made.
   const named = {
     ...portable,
-    meshes: portable.meshes.map(capName),
-    ...(portable.materials ? { materials: portable.materials.map(capName) } : {}),
+    meshes: rest.meshes.map(capName),
+    ...(rest.materials ? { materials: rest.materials.map(capName) } : {}),
   };
   const header = new TextEncoder().encode(JSON.stringify({ scene: strip(named), buffers: table }));
   const headPad = pad4(header.length);
@@ -206,6 +212,7 @@ export async function unpackScene(bytes: ArrayBuffer): Promise<SavedScene> {
   delete clean.project;
   delete clean.unsent;
   delete clean.synced;
+  delete clean.name;
   return clean;
 }
 

@@ -1,4 +1,4 @@
-import { TopMenu } from './TopMenu';
+import { TopMenu, type MenuItem } from './TopMenu';
 import { fileMenuItems } from './menuShape';
 import { recentMenuItem } from './recentMenu';
 import { recordRecent } from '../../ui/recent';
@@ -7,9 +7,9 @@ import { downloadBlob, stampName } from '../bridge/SceneFile';
 import { NotUploadedError, type FileActions } from '../bridge/FileActions';
 import { AuthExpiredError, type Role, type SignInVia } from '../../admin/api';
 import { DEVICE_ONLY_NOTE } from '../../ui/deviceOnly';
-import { signInButton } from '../../ui/signIn';
+import { signInAgain, signInButton } from '../../ui/signIn';
 import { mayStore } from '../../ui/deviceStorage';
-import { askWindow, tellWindow } from '../../ui/askWindow';
+import { askText, askWindow, tellWindow } from '../../ui/askWindow';
 
 /** What a disabled device action says while the person has turned saving off. */
 const SAVING_OFF = 'Saving is off. Turn it on in Edit > Preferences.';
@@ -30,6 +30,8 @@ export class FileMenu {
   private readonly openInput: HTMLInputElement;
   private readonly importInput: HTMLInputElement;
   private zUp = false;
+  /** Save file carries the reference pictures (on by default); Save to library and Publish never do. */
+  private includeReferences = true;
   /** Who the page is for, by the sign-in probe; null until it has answered. */
   private role: Role | null = null;
   /** A suspended account's sentence, said when it tries to save to it. */
@@ -57,102 +59,132 @@ export class FileMenu {
       publish: () => void;
       /** Whether publishing is reachable (a sign-in has been found). */
       canPublish: () => boolean;
+      /** Whether the board has pictures, for the Include references switch. */
+      hasReferences?: () => boolean;
     },
   ) {
     // Hidden inputs are how a web page asks for a file.
     this.openInput = fileInput('.bozz', (file) => void this.openFile(file));
     this.importInput = fileInput('.obj', (file) => void this.importFile(file));
+    this.menu = new TopMenu('File', this.items(), 'file-menu--file', host, true);
+    this.menu.pop.append(this.openInput, this.importInput);
+  }
+
+  /**
+   * The File menu's rows. Save to library is for whoever can save to a
+   * library; a guest has Save file, and with accounts on a way to sign in
+   * to the library instead of a second item that only downloads.
+   */
+  private items(): MenuItem[] {
     // An empty scene (the last object deleted) has nothing to save or export.
     const full = (): boolean => !this.actions.isEmpty();
-    this.menu = new TopMenu(
-      'File',
-      fileMenuItems({
-        start: [
-          {
-            label: 'New sculpt',
-            action: async () => {
-              if (
-                this.actions.hasWork() &&
-                !(await askWindow({
-                  title: 'Start a new sculpt?',
-                  text: 'The current objects will be lost.',
-                  yes: 'Start new',
-                  danger: true,
-                }))
-              ) {
-                return;
-              }
-              await this.actions.newScene();
-            },
+    return fileMenuItems({
+      start: [
+        {
+          label: 'New sculpt',
+          action: async () => {
+            if (
+              this.actions.hasWork() &&
+              !(await askWindow({
+                title: 'Start a new sculpt?',
+                text: 'The current objects will be lost.',
+                yes: 'Start new',
+                danger: true,
+              }))
+            ) {
+              return;
+            }
+            await this.actions.newScene();
           },
-          { label: 'Open…', action: () => this.openInput.click() },
-          recentMenuItem(() => this.actions.hasWork()),
-        ],
-        save: [
-          {
-            label: 'Save file',
-            enabled: full,
-            action: async () => {
-              const blob = await this.actions.pack();
-              downloadBlob(blob, stampName('bozz'));
-              this.actions.markClean(); // this scene now exists outside the browser
-            },
+        },
+        { label: 'Open…', action: () => this.openInput.click() },
+        recentMenuItem(() => this.actions.hasWork()),
+      ],
+      save: [
+        { label: 'Rename…', action: () => this.rename() },
+        {
+          label: 'Save file',
+          enabled: full,
+          action: async () => {
+            const blob = await this.actions.packFile(this.includeReferences);
+            downloadBlob(blob, stampName('bozz'));
+            this.actions.markClean(); // this scene now exists outside the browser
           },
-          // Signed in, the library is Projects on the server. Signed out it is
-          // a file (owner call): browser storage does not survive a
-          // reinstall, and a .bozz download - the share sheet, on an iPad -
-          // does. The device shelf stays one item down, so a guest keeps
-          // every way of saving they had.
-          {
-            label: 'Save to library',
-            enabled: full,
-            hint: () => this.libraryHint(),
-            action: () => this.saveToLibrary(),
+        },
+        // The pictures stay with the person's own file; the library and Publish never get them.
+        {
+          label: 'Include references',
+          enabled: () => this.hooks.hasReferences?.() ?? false,
+          checked: () => this.includeReferences,
+          toggle: (on) => (this.includeReferences = on),
+        },
+        // Signed in, the library is Projects on the server. Signed out it is
+        // a file (owner call): browser storage does not survive a
+        // reinstall, and a .bozz download - the share sheet, on an iPad -
+        // does. The device shelf stays one item down, so a guest keeps
+        // every way of saving they had.
+        ...this.libraryItems(full),
+        {
+          label: 'Keep on this device',
+          enabled: () => full() && mayStore(),
+          hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
+          action: async () => {
+            const kept = await this.actions.keepOnDevice();
+            recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
+            this.menu.note('Kept on this device');
           },
-          {
-            label: 'Keep on this device',
-            enabled: () => full() && mayStore(),
-            hint: () => (mayStore() ? DEVICE_ONLY_NOTE : SAVING_OFF),
-            action: async () => {
-              const kept = await this.actions.keepOnDevice();
-              recordRecent({ id: kept.id, kind: 'lib', name: kept.name, place: 'This device' });
-              this.menu.note('Kept on this device');
-            },
+        },
+      ],
+      transfer: [
+        { label: 'Import OBJ…', action: () => this.importInput.click() },
+        { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
+        {
+          // The active object's level 0 in the imported file's own vertex
+          // and face order when it has that record (objSource.ts), else
+          // the triangles of every object as before (owner decision). The
+          // hint says which, before the click.
+          label: 'Export OBJ',
+          enabled: full,
+          hint: () => this.exportHint(),
+          action: () => {
+            const out = this.actions.exportObj(stampName('obj'));
+            downloadBlob(new Blob([out.text], { type: 'text/plain' }), out.name);
+            if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
           },
-        ],
-        transfer: [
-          { label: 'Import OBJ…', action: () => this.importInput.click() },
-          { label: 'Z-up OBJ import', checked: () => this.zUp, toggle: (on) => (this.zUp = on) },
-          {
-            // The active object's level 0 in the imported file's own vertex
-            // and face order when it has that record (objSource.ts), else
-            // the triangles of every object as before (owner decision). The
-            // hint says which, before the click.
-            label: 'Export OBJ',
-            enabled: full,
-            hint: () => this.exportHint(),
-            action: () => {
-              const out = this.actions.exportObj(stampName('obj'));
-              downloadBlob(new Blob([out.text], { type: 'text/plain' }), out.name);
-              if (out.stale) this.menu.note('Exported without the original numbering: the topology has changed since the import.');
-            },
+        },
+      ],
+      publish: [
+        {
+          label: 'Publish…',
+          enabled: () => this.hooks.canPublish(),
+          hint: () => (this.hooks.canPublish() ? '' : 'Needs a sign-in'),
+          action: () => this.hooks.publish(),
+        },
+      ],
+      close: () => this.hooks.close(),
+    });
+  }
+
+  /** Save to library for anyone who has an account or the owner's access; for a guest, the way in where the site has accounts, and nothing where it has none. */
+  private libraryItems(full: () => boolean): MenuItem[] {
+    if (this.role === 'guest') {
+      if (!this.accounts) return [];
+      return [
+        {
+          label: 'Sign in to save to library',
+          action: async () => {
+            if (await signInAgain(undefined, 'Sign in to save to the library.')) await this.onSignInChange?.();
           },
-        ],
-        publish: [
-          {
-            label: 'Publish…',
-            enabled: () => this.hooks.canPublish(),
-            hint: () => (this.hooks.canPublish() ? '' : 'Needs a sign-in'),
-            action: () => this.hooks.publish(),
-          },
-        ],
-        close: () => this.hooks.close(),
-      }),
-      'file-menu--file',
-      host,
-      true,
-    );
-    this.menu.pop.append(this.openInput, this.importInput);
+        },
+      ];
+    }
+    return [{ label: 'Save to library', enabled: full, hint: () => this.libraryHint(), action: () => this.saveToLibrary() }];
+  }
+
+  /** File > Rename…: ask for the name, and give it to the scene. */
+  private async rename(): Promise<void> {
+    const name = await askText({ title: 'Rename', label: 'Name', value: this.actions.sceneName, yes: 'Rename' });
+    if (name !== null) this.actions.rename(name);
   }
 
   get chip(): HTMLButtonElement {
@@ -168,6 +200,8 @@ export class FileMenu {
     this.role = role;
     this.suspension = suspension;
     this.accounts = accounts;
+    this.menu.setItems(this.items());
+    this.menu.pop.append(this.openInput, this.importInput); // the rows were replaced, not these
     this.resolveRole(role);
     this.noteOpened();
   }

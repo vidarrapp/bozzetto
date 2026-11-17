@@ -4,6 +4,24 @@ const G = 'Panels';
 
 export const PANELS: Topic[] = [
   {
+    id: 'layers-panel',
+    title: 'Layers panel',
+    group: G,
+    blocks: [
+      p('The **Layers** panel, on the left after Model, holds the active object\'s sculpt layers. A layer keeps what you sculpt on it apart from the rest of the surface, so you can turn it up, down, off, or even inside out, afterwards. The newest layer is on top, and **Base** is always at the bottom.'),
+      options(
+        ['Add layer', 'Makes an empty layer at 100% and makes it the active one. Strokes go into the active layer. With **Base** active, strokes change the surface itself, as without layers.'],
+        ['Eye', 'Hides or shows the layer. A hidden layer keeps its weight and its effect leaves the surface. Sculpting needs the layer shown.'],
+        ['Name', 'Tap the name of the active layer to rename it.'],
+        ['Weight', 'The slider runs from 0 to 100%. Double tap or double click it and type a value to go past the travel: **-100** puts the layer on the other side of the surface, **250** makes it two and a half times as strong. A layer at 0% cannot be sculpted on.'],
+        ['Menu', '**Rename**, **Duplicate** (a copy above, at the same weight, so the two add up), **Flatten into base** (keeps the effect and removes the layer) and **Delete** (removes the layer and its effect).'],
+        ['Flatten all', 'Makes every layer part of the surface.'],
+      ),
+      p('A layer works on any subdivision level: step up and down as you sculpt, and the layer takes the work from whichever level you are on. Its slider moves all of it. Adding a level with **Subdivide** keeps the layers working.'),
+      p('Voxel remesh, Quad remesh, Merge, splitting into objects and dynamic topology rebuild the surface, so they ask first to flatten the layers; Cancel leaves everything as it was. Layers are saved with the project. Ctrl+Z undoes a stroke, a change of weight and a change of the active layer, each in one step.'),
+    ],
+  },
+  {
     id: 'model-panel',
     title: 'Model panel',
     group: G,
@@ -73,6 +91,8 @@ export const PANELS: Topic[] = [
         '**Ctrl + click** masks the group under the pointer. Add **Alt** to unmask it.',
         'Groups also come from an imported OBJ\'s `g` and `o` lines, and both OBJ exports write them back.',
       ),
+      h('Measure'),
+      p('The measurements you pinned with the Calipers tool on the selected object. Each row has its name, which you tap to rename, its length, a mirror button, the eye, and the trash. A measurement that has a mirror shows the other length and the difference under it. The eye hides one from the view. Deleting is not a sculpt undo step, so the section offers **Undo** for the last one you deleted. Pinned measurements are saved with the scene, in the library too, and they are drawn whenever their object is shown and the interface is.'),
     ],
   },
   {
@@ -138,9 +158,36 @@ export const PANELS: Topic[] = [
         ['Colour', 'While you present a sculpt, or over a published model with painted colours, **Sculpt colours** keeps the paint and **Plain colour** covers the object in its albedo.'],
         ['Albedo, Roughness, Metalness', 'In Present for a published project, in Lit (PBR), the model\'s own values (with Plain colour, if it has painted colours).'],
         ['Smooth shading', 'On by default. Off, the surface shows its flat facets.'],
-        ['Wireframe', 'Draws the triangle edges over the model. The label shows its hotkey, **Shift + W** by default.'],
+        ['Wireframe', 'Draws the triangle edges over the model. Its hotkey, **Shift + W** by default, is in the **View** menu and in the tooltip.'],
         ['Wire opacity', 'From 0 to 1.'],
       ),
+    ],
+  },
+  {
+    id: 'reference-panel',
+    title: 'Reference panel',
+    group: G,
+    blocks: [
+      p('The **Reference** panel, on the right between Tool and Render, holds pictures to look at while you work: a photo of the subject, a drawing, a pose. It is in Sculpt and Armature. It never changes the model.'),
+      h('Adding pictures'),
+      options(
+        ['Add picture…', 'Opens the picker. On an iPad or iPhone it offers your Photo Library, Take Photo and Choose File, so you can photograph something and use it at once.'],
+        ['Paste', 'Adds the picture on the clipboard. **Ctrl+V** or **Cmd+V** does it too while the panel is open, and so does **Edit**, then **Paste picture**.'],
+        ['Drop', 'Drag a picture from another app or window onto the panel or the view.'],
+      ),
+      p('Each picture is made at most 2048 pixels on its long side and saved as a JPEG, so a photo from the camera is much smaller on the device, and its place and time (EXIF) are removed. The panel shows the pictures as a grid, newest first.'),
+      h('Showing a picture'),
+      p('One picture is on at a time. Tap a thumbnail to show it beside the view, or open its **More** menu:'),
+      options(
+        ['Show beside', 'A small window over the corner of the view. Drag its title bar to move it. Pinch to zoom the picture inside it and use two fingers to pan it; with a mouse use the wheel and drag. Double tap fits it again. **×** closes it.'],
+        ['Show over the view', 'The picture fills the height of the view, lined up with it. By default it is behind the model, like a backdrop. Turn on **In front of the model** under **Over the view** to lay it over the model like tracing film, and set **Opacity**.'],
+        ['Mirror', 'Flips the picture left to right. Useful for spotting what is off in a face.'],
+        ['Greyscale', 'Takes the colour out, so you see the values.'],
+        ['Delete', 'Removes the picture from this device after asking. It cannot be undone.'],
+      ),
+      p('The Pencil and your fingers always work on the model, whatever picture is showing: a picture over the view never takes a stroke. **Tab** hides the window beside the view with the rest of the interface; a picture over the view stays. Turn it off in **View**, **Reference over the view**.'),
+      h('Where they are kept'),
+      p('References stay on the device they were added on and are never uploaded: **Save to library** and **Publish** send the scene without them. They are kept next to your work in progress when saving on this device is on, and last until the page closes when it is off. **File**, **Save file** includes them in the file you download unless you turn **Include references** off; opening that file brings them back. A project opened on another device opens without them. A new sculpt starts with none.'),
     ],
   },
   {
@@ -153,7 +200,7 @@ export const PANELS: Topic[] = [
       h('Lighting'),
       options(
         ['Reset look', 'Puts the look back to the one the scene or project opened with. In the viewer that is the published look. The view stays where it is.'],
-        ['Preset', '**Three-point** or **Raking key (form study)**, a low light that shows the form.'],
+        ['Preset', '**Three-point**, **Key only** (what Sculpt opens with: the fill and the rim off) or **Raking key (form study)**, a low light that shows the form. It reads **Custom** once you change a light.'],
         ['Shadows', 'Turns every shadow on or off. Default hotkey **Shift+S**.'],
         ['Key, Fill, Rim / Back', 'The three lights. Each has a checkbox, which opens more rows, below.'],
         ['Intensity', 'From 0 to 5. Type a larger number to go past it.'],
