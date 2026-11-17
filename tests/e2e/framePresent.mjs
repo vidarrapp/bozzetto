@@ -800,6 +800,7 @@ export const suites = {
           frames: open('.panel--frames'),
           project: open('.panel--project'),
           output: open('.panel--output'),
+          outputTab: !!document.querySelector('.panel--output'),
           render: !!document.querySelector('.panel--lighting'),
           rows: document.querySelectorAll('.panel--frames .bz-frame, .panel--frames .bz-frames').length,
           count: document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent,
@@ -828,8 +829,9 @@ export const suites = {
     await added(3);
     s = await state();
     t.ok(s.count === '3' && !s.drop && !s.order && s.rows === 0, `three frames added, the drop box gives way, and there is no Order list (${JSON.stringify({ count: s.count, rows: s.rows })})`);
-    t.ok(s.render && s.output && /Timelapse\s*3 frames/.test(s.readout) && /Not saved/.test(s.readout), `the view and its tabs come up, and the strip says Not saved (${s.readout})`);
-    t.ok(s.output && s.frames, 'Frames at the left and Output at the right stand open, as drawn');
+    t.ok(s.render && s.outputTab && /Timelapse\s*3 frames/.test(s.readout) && /Not saved/.test(s.readout), `the view and its tabs come up, and the strip says Not saved (${s.readout}; ${JSON.stringify({ render: s.render, outputTab: s.outputTab })})`);
+    // Frames, Project and Output share the right edge, one open at a time: a first view leaves Frames open and Output is its neighbour tab.
+    t.ok(s.frames && !s.output && !s.project && s.outputTab, `Frames stands open at the right, Output waits as its tab (one panel per side) (${JSON.stringify({ frames: s.frames, output: s.output, project: s.project, outputTab: s.outputTab })})`);
     await shot('create-frames-1440x900');
 
     // Add more.

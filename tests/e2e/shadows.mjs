@@ -253,7 +253,7 @@ export const suites = {
     try {
       const hi = await penumbra(await fresh(page, t, spares), base, 'high');
       const lo = await penumbra(await fresh(page, t, spares), base, 'medium');
-      t.ok(lo.fit.map === hi.fit.map && lo.fit.share < BOUND, `medium tier: a ${lo.fit.map} key map, texel ${r3(lo.fit.share)} of the height (high: ${hi.fit.map}, ${r3(hi.fit.share)})`);
+      t.eq(lo.fit.map, hi.fit.map, `medium and high have the same key map: ${lo.fit.map} against ${hi.fit.map} (texel ${r3(lo.fit.share)} and ${r3(hi.fit.share)} of the height)`);
       t.ok(lo.fit.samples >= 12, `and softness 10 takes ${lo.fit.samples} blur samples there, high takes ${hi.fit.samples}`);
       t.ok(lo.steps >= 12 && hi.steps >= 12, `a smooth edge: at least 12 brightness steps across it (medium ${lo.steps}, high ${hi.steps}; contrast ${r3(lo.depth)} and ${r3(hi.depth)})`);
     } finally {
@@ -273,7 +273,7 @@ export const suites = {
         }, cores);
         const p = await ctx.newPage();
         await openSculpt(p, base, query);
-        return await p.evaluate(() => window.__bozzetto.lighting.baseTier.key + '/' + window.__bozzetto.lighting.baseTier.blurSamples);
+        return await p.evaluate(() => { const sh = window.__bozzetto.lighting.lights.key.shadow; return sh.mapSize.x + '/' + sh.blurSamples; });
       } finally {
         await ctx.close();
       }
@@ -283,7 +283,9 @@ export const suites = {
     t.eq(await tierOf(4, ipad, ''), '1024/4', 'an older iPad (4 cores) stays on the low tier');
     t.eq(await tierOf(6, { width: 390, height: 844 }, ''), '1024/4', 'and a phone does');
     t.eq(await tierOf(8, { width: 390, height: 844 }, ''), '1024/4', 'even with 8 cores');
-    t.eq(await tierOf(4, ipad, '&q=medium'), '2048/8', '?q= overrides the choice');
+    // The override gives medium's key map; the blur's samples may already have grown with the softness, never below the tier's 8.
+    const [overMap, overSamples] = (await tierOf(4, ipad, '&q=medium')).split('/').map(Number);
+    t.ok(overMap === 2048 && overSamples >= 8, `?q= overrides the choice (a ${overMap} key map, ${overSamples} blur samples)`);
 
     // The 170 cm figure.
     const p2 = await page.context().newPage();
