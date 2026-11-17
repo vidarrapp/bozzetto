@@ -1,5 +1,5 @@
 // Browser smoke tests over the test build: smoke.mjs's suites,
-// armatureControls.mjs's, armatureProjects.mjs's, askWindow.mjs's, shellPhone.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
+// armatureProjects.mjs's, askWindow.mjs's, sculptLayers.mjs's, shellPhone.mjs's, wireAo.mjs's, latency.mjs's, shadows.mjs's, shadowsGroups.mjs's, hardening.mjs's,
 // tweaks.mjs's, units.mjs's, viewerFrame.mjs's, viewerTools.mjs's, passkeyCheck.mjs's, present.mjs's,
 // reference.mjs's, deviceStorage.mjs's, objNumbering.mjs's, shell.mjs's, brushCaps.mjs's, clayTabPen.mjs's, channelBox.mjs's,
 // material.mjs's, calipers.mjs's, profileCurves.mjs's, tineRake.mjs's, quadRemesh.mjs's, surfaceSmooth.mjs's, strengthCm.mjs's, loopMask.mjs's, polyGroups.mjs's, zoomFocus.mjs's, webgpuHang.mjs's, and accounts.mjs's, community.mjs's, pages.mjs's and framePresent.mjs's (which start the
@@ -44,6 +44,7 @@ import { suites as polyGroups } from './polyGroups.mjs';
 import { suites as present } from './present.mjs';
 import { suites as profileCurves } from './profileCurves.mjs';
 import { suites as quadRemesh } from './quadRemesh.mjs';
+import { suites as sculptLayers } from './sculptLayers.mjs';
 import { suites as reference } from './reference.mjs';
 import { suites as shadows } from './shadows.mjs';
 import { suites as shell } from './shell.mjs';
@@ -51,6 +52,7 @@ import { suites as shellPhone } from './shellPhone.mjs';
 import { suites as wireAo } from './wireAo.mjs';
 import { suites as shadowsGroups } from './shadowsGroups.mjs';
 import { suites as smoke } from './smoke.mjs';
+import { suites as studyName } from './studyName.mjs';
 import { suites as sliderScrub } from './sliderScrub.mjs';
 import { suites as renderMatch } from './renderMatch.mjs';
 import { suites as strengthCm } from './strengthCm.mjs';
@@ -112,6 +114,8 @@ const suites = {
   ...reference,
   ...clarity,
   ...calipers,
+  ...studyName,
+  ...sculptLayers,
 };
 
 const dist = resolve('dist');

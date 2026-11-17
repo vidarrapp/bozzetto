@@ -188,9 +188,11 @@ is left out, not shown greyed out; the same item has the same label, hint
 style and key wherever it shows. The groups below are the order in every
 place, each only where the place has it.
 
-- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Save file, Save to
-  library, Keep on this device (the Present workspace has one Save, or
-  Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
+- **File:** New (New sculpt, New armature), Open…, Open recent (Sculpt, Armature and the Present workspace; not the viewer); Rename… (Sculpt and
+  Armature), Save file, Save to library (for whoever can save to one; a
+  guest sees **Sign in to save to library** instead where the site has
+  accounts, and nothing extra where it has none), Keep on this device
+  (the Present workspace has one Save, or Save to its place); Import OBJ…, Z-up OBJ import, Load model…, Export
   OBJ, Send to Sculpt, New sculpt from this, Edit in Present; Publish…;
   Close, always last, with the page it returns to as its hint.
 - **Open recent** is a row with a chevron that opens a second list beside
@@ -267,6 +269,7 @@ place, each only where the place has it.
 
 - Scene panel
 - Model panel
+- Layers panel
 - Material panel
 - Tool panel
 - Reference panel
@@ -344,8 +347,17 @@ document itself scrolls, and there is no CSS switch to turn that off.
 - Left: the menus (web, Windows, iPad). On the Mac desktop this space
   holds the window's close, minimise and zoom buttons instead.
 - Centre: the project's name in bold, then the readout of the selected
-  object (name, triangles, level), keys regular and values bold. An
-  unsaved project shows "Edited" after its name, in regular weight.
+  object (name, triangles, level), keys regular and values bold. In
+  Sculpt and Armature the name is always there: a new scene is named as a
+  dated study ("Study 14 Nov", with " 2" and so on when this device's
+  scenes have one by that name). Tapping it puts a field in its place
+  (Enter or leaving it renames, Esc keeps the old name); File > Rename…
+  does the same. After the name, in regular weight and the quiet grey, one
+  state word: **Saved** (matches its last save to the library),
+  **Edited** (has changes the library does not), **Kept on this device**
+  (only the autosave has it), or none while saving is off, when the
+  strip's own **Not saved** at the right says so, once. Other places show
+  "Edited" after an unsaved project's name.
   Under 900px wide the readout drops the triangle count, then the level.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
@@ -596,6 +608,33 @@ moved the layout later; that produced an in-between look and is dropped.
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
 
+
+## Sculpt layers
+
+The **Layers** tab, left, after Model (`panel--layers`; View menu item
+"Layers panel" after Model panel). From the top: **Add layer** (the one plain
+button, never orange), the list, **Flatten all**. The list is
+`src/ui/layerList.ts`, with no sculpt knowledge, so the Paint workspace can
+reuse it with one more control a row (a blend mode select).
+
+- Newest layer on top, a fixed **Base** row at the bottom. A row is an eye,
+  the name (a tap on the active row's name renames it), a menu (Rename,
+  Duplicate, Flatten into base, Delete in red) and under them a Weight
+  slider, 0 to 100% of travel, with typed values to plus or minus 1000%
+  (double tap or double click) shown as typed. The active row has the
+  selected-row fill; Base is active when no layer is. Hit areas are at least
+  44px high.
+- A layer's data lives on the object's highest level. Any level may be on
+  screen while sculpting with a layer active; only a hidden layer or one at
+  0% refuses a stroke ("Show the layer to sculpt on it."). Weight changes
+  apply live while the highest level is on screen and on release otherwise.
+- Changing the active layer, a weight or visibility, Add, Duplicate,
+  Flatten, Delete are undo steps. Remesh, merge, split and dynamic topology
+  ask to flatten the layers first ("Flatten the layers of "Sphere"?", button
+  "Flatten and remesh"); Cancel leaves everything.
+- Saved per object in the scene (`SavedMesh.layers`, version 1: name,
+  weight, visible, and the sparse displacements of the highest level), in the
+  autosave, `.bozz` files and the library.
 ## Clarity rules (design critique, 2026-11)
 
 - The edge sliders' names (Size, Strength) show only while the slider is

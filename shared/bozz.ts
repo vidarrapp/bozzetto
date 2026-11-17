@@ -299,6 +299,27 @@ export function checkHeader(layout: Layout): void {
     if (r.colors !== undefined && !array(r.colors, 'u32', (names as unknown[]).length)) bad('colours that are not one a group');
   };
 
+  /**
+   * The sculpt layers (SavedMesh.layers), as far as the header says: at
+   * most 32 layers, a name each, and u32 ids and f32 displacements,
+   * three a vertex id. Which vertices, and that they exist,
+   * is the app's to check (layersRecord.ts).
+   */
+  const checkLayers = (g: unknown, object: string): void => {
+    const bad = (what: string): never => {
+      throw damaged(`${object} has bad layers (${what})`);
+    };
+    if (!isRec(g) || g.v !== 1 || !Array.isArray(g.items) || g.items.length > 32) bad('not a record this app reads');
+    for (const it of (g as Rec).items as unknown[]) {
+      if (!isRec(it)) bad('a layer that is not one');
+      const l = it as Rec;
+      name(l.name, object);
+      if (l.ids === undefined && l.vals === undefined) continue;
+      const ids = entry(l.ids);
+      if (!ids || ids.t !== 'u32' || !array(l.vals, 'f32', ids.len * 3)) bad('data of the wrong kind or size');
+    }
+  };
+
   const scene = layout.scene;
   if (!isRec(scene)) throw damaged('it holds no scene');
   if (scene.v !== 3 && scene.v !== 4) throw damaged('a version this app does not read');
@@ -346,6 +367,7 @@ export function checkHeader(layout: Layout): void {
     // Version 2 is one a base face; version 1 one a top-level face, each
     // level above the base having four faces for each one below.
     if (m.groups !== undefined) checkGroups(m.groups, object, faces, faces * 4 ** (levels.length - 1));
+    if (m.layers !== undefined) checkLayers(m.layers, object);
   });
   if (scene.units !== undefined && scene.units !== 'cm' && scene.units !== 'm') throw damaged('units this app does not read');
   const materials = scene.materials;

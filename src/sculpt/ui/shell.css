@@ -187,17 +187,62 @@ body:is(.bz-shell, .bz-page) .bz-readout {
   justify-content: center;
   gap: 16px;
   min-width: 0;
+  /* Room on both sides, so the name never reads as one more step of the path. */
+  padding: 0 24px;
   overflow: hidden;
   white-space: nowrap;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name) {
+  flex: none;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__edited {
   margin-left: -8px;
+  color: var(--bz-text-2);
   font-weight: 400;
+}
+
+/* The name, where a mode lets it be renamed: a tap puts a field in its place. */
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit {
+  cursor: text;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bz-line);
+  text-underline-offset: 3px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__name--edit:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: 2px;
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename {
+  box-sizing: border-box;
+  width: 200px;
+  max-width: 40vw;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-viewport);
+  color: var(--bz-text);
+  font: 700 13px/20px var(--bz-font);
+}
+
+body:is(.bz-shell, .bz-page) .bz-readout__rename:focus-visible {
+  outline: var(--bz-focus);
+  outline-offset: -2px;
 }
 
 body:is(.bz-shell, .bz-page) .bz-readout__item {
@@ -217,14 +262,73 @@ body:is(.bz-shell, .bz-page) .bz-readout__val {
 /* Narrow: the readout goes before the path does (under 1000px it would meet the path). */
 @media (max-width: 999px) {
   body:is(.bz-shell, .bz-page) .bz-strip {
-    grid-template-columns: minmax(min-content, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   body:is(.bz-shell, .bz-page) .bz-strip__right {
-    grid-column: 2;
+    grid-column: 3;
   }
 
+  /* Only the name and its state word stay: the name gives way (an ellipsis) before the word does. */
   body:is(.bz-shell, .bz-page) .bz-readout {
+    grid-column: 2;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    margin-left: 0;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout > :not(.bz-readout__name, .bz-readout__edited, .bz-readout__rename) {
+    display: none;
+  }
+}
+
+/* A phone: the menus and the path leave about 100px, so the name sits over its
+   state word, each cut with an ellipsis, and a finger gets a taller target. */
+@media (max-width: 520px) {
+  body:is(.bz-shell, .bz-page) .bz-readout {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name,
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__name {
+    flex: none;
+    box-sizing: content-box;
+    padding: 6px 6px 0;
+    margin: -6px -6px 0;
+    font-size: 12px;
+    line-height: 15px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__edited {
+    flex: none;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  body:is(.bz-shell, .bz-page) .bz-readout__rename {
+    width: 100%;
+    max-width: none;
+    height: 24px;
+    font-size: 16px; /* under 16px, iOS zooms the page when a field takes focus */
+  }
+
+  /* While the field is there it has the whole readout. */
+  body:is(.bz-shell, .bz-page) .bz-readout__rename ~ .bz-readout__edited {
     display: none;
   }
 }
@@ -353,6 +457,7 @@ body.bz-shell .panel:not(.panel--left) {
 }
 
 body.bz-shell .panel--model,
+body.bz-shell .panel--layers,
 body.bz-shell .panel--material,
 body.bz-shell .panel--reference,
 body.bz-shell .panel--sculpt {
@@ -1816,8 +1921,9 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
 }
 
 /* Red for a delete, in the row menu as in the window. */
-.row-menu .file-menu__item--danger {
-  color: var(--bz-red);
+.row-menu .file-menu__item--danger,
+.row-menu .file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
 }
 
 /* The picture over the view: its own layer inside the view, fitted to the view's height and centred, and never an input target. */
@@ -1882,4 +1988,144 @@ body.presenting .ref-beside {
   transform-origin: 0 0;
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+/* --- The Layers panel (sculpt/ui/LayersPanel.ts, ui/layerList.ts) ---
+   A row a layer, newest on top, Base fixed at the foot. The active row
+   takes the selected-row fill; the weight slider is the shared field. */
+body.bz-shell .panel--layers {
+  width: min(268px, calc(100vw - 64px));
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-height: 72px;
+}
+
+.layer-row {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 6px 2px 2px;
+  background: transparent;
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  cursor: pointer;
+}
+
+.layer-row:hover {
+  background: var(--bz-control);
+}
+
+.layer-row--active,
+.layer-row--active:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row__top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+}
+
+.layer-row--base {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+  padding-left: 12px;
+  border-top: 1px solid var(--bz-line);
+  margin-top: 4px;
+}
+
+.layer-row__eye,
+.layer-row .layer-row__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.layer-row .layer-row__more {
+  width: 32px;
+  margin: 0;
+}
+
+.layer-row .layer-row__more::after {
+  margin: 0 0 3px;
+}
+
+.layer-row__eye:hover,
+.layer-row .layer-row__more:hover {
+  background: var(--bz-hover);
+}
+
+.layer-row--hidden .layer-row__name {
+  color: var(--bz-text-3);
+}
+
+.layer-row--hidden .layer-row__eye {
+  color: var(--bz-text-3);
+}
+
+.layer-row__name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-row__badge {
+  flex: none;
+  color: var(--bz-text-2, var(--bz-text-3));
+  font: 11px/16px var(--bz-font-mono);
+  padding: 0 4px;
+}
+
+.layer-row__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--bz-orange);
+  border-radius: 0;
+  background: var(--bz-control);
+  color: var(--bz-text);
+  font: 13px/16px var(--bz-font);
+  outline: none;
+}
+
+.layer-row__weight {
+  margin: 0 0 4px 44px;
+}
+
+.layer-row .row-menu {
+  position: fixed;
+  z-index: 40;
+}
+
+.file-menu .file-menu__item.file-menu__item--danger,
+.file-menu .file-menu__item.file-menu__item--danger:hover:not(:disabled) {
+  color: var(--bz-red-text);
+}
+
+.layers-note {
+  padding: 4px 16px;
+  color: var(--bz-text-3);
+  font: 13px/16px var(--bz-font);
+}
+
+.layers-foot {
+  border-top: 1px solid var(--bz-line);
 }
