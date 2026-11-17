@@ -35,6 +35,12 @@ declare module '@sculpt-vendor/misc/Enums' {
       RAKE: number;
       /** BOZZETTO EDIT: the paint blur's slot (shift over the paint brush). */
       PAINT_BLUR: number;
+      /** BOZZETTO EDIT: the Paint workspace's erase, blur, fill, pick and project tools. */
+      PAINT_ERASE: number;
+      BLUR: number;
+      FILL: number;
+      PICK: number;
+      PROJECT: number;
     };
   };
   export default Enums;
@@ -596,8 +602,18 @@ declare module '@sculpt-vendor/editing/tools/Paint' {
     _writeMetalness: boolean;
     /** Roughness, metalness, (unused) masking the stroke writes when its flags allow. */
     _material: Float32Array;
+    /** Eyedropper mode: the stroke samples a colour (the vendor clears it when the stroke ends). */
+    _pickColor: boolean;
     constructor(main: unknown);
     getMesh(): SculptMesh;
+    /** The undo state a stroke starts with (colour and material, in the vendor). */
+    pushState(force?: boolean): void;
+    startSculpt(): void;
+    update(continuous?: boolean): void;
+    updateContinuous(): void;
+    end(): void;
+    updateRender(): void;
+    getUnmaskedVertices(): Uint32Array;
     stroke(picking: Picking): void;
     /** The per-dab colour blend; Bozzetto's PaintBrush overrides this. */
     paint(

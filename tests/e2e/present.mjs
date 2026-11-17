@@ -258,7 +258,7 @@ export const suites = {
     let now = await ui(page);
     t.ok(now.presenting && now.shown.bar && now.shown.material && now.shown.render && now.shown.output && now.shown.menus, `Shift+P presents: the bar and the Material, Render and Output tabs up (${show(now.shown)})`);
     t.ok(now.open.output && !now.open.render, `the Output panel opens with it (${show(now.open)})`);
-    t.eq(now.path, 'Armature > Sculpt > Present*', 'the path shows Present as the current step');
+    t.eq(now.path, 'Armature > Sculpt > Paint > Present*', 'the path shows Present as the current step');
     t.ok(
       !now.shown.toolbar && !now.shown.rail && !now.shown.scene && !now.shown.model && !now.shown.tool,
       `the toolbar, the brush rail and the Scene, Model and Tool panels are hidden, the strip stays (${show(now.shown)})`,
@@ -846,7 +846,7 @@ async function ipadChecks(page, base, t) {
     await dev.tap(await centre('.bz-ws__step[data-workspace="sculpt"]'));
     await ipad.waitForTimeout(100);
     const back = await uiOnce(ipad, (u) => !u.presenting && u.shown.toolbar);
-    t.ok(!back.presenting && back.shown.toolbar && back.path === 'Armature > Sculpt* > Present', 'the path\'s Sculpt step leaves Present, the toolbar back');
+    t.ok(!back.presenting && back.shown.toolbar && back.path === 'Armature > Sculpt* > Paint > Present', 'the path\'s Sculpt step leaves Present, the toolbar back');
 
     // The gallery on the iPad: the In progress card's picture, 4:5 too.
     // Some work to come back to, so the gallery has an In progress card.

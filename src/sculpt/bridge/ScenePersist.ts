@@ -11,6 +11,7 @@ import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 import type { SavedGroups } from './groupsRecord';
 import type { SavedLayers } from './layers';
+import type { SavedPaintLayers } from './paintLayersRecord';
 import type { SavedMeasure } from './measure';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
@@ -207,6 +208,15 @@ export interface SavedMesh {
    * every layer's effect, so such a build shows the layers flattened).
    */
   layers?: SavedLayers;
+  /**
+   * The object's paint layers (paintLayers.ts): per layer its name, blend
+   * mode, opacity, visibility and the sparse colours of the object's highest
+   * level, and the Base colour. Optional, with a version of its own, as
+   * `layers` is: a scene without it opens with no paint layers, and a build
+   * from before it leaves the field behind (the levels' colours already are
+   * the composite of every layer).
+   */
+  paintLayers?: SavedPaintLayers;
   /**
    * The object's pinned calipers measurements (measure.ts): two points in
    * the object's local space, a name, and the mirror where one was asked

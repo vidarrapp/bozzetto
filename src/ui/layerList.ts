@@ -29,8 +29,10 @@ export interface LayerRowData {
   weight: number;
   /** A short mono note beside the name; empty for none. */
   badge?: string;
-  /** One more control under the slider (Paint's blend mode). */
+  /** One more control under the name (Paint's blend mode). */
   extra?: HTMLElement;
+  /** What the extra control shows: the row is drawn again when it changes. */
+  extraKey?: string;
 }
 
 export interface LayerListHooks {
@@ -42,6 +44,11 @@ export interface LayerListHooks {
   weight(id: LayerId, weight: number, phase: 'live' | 'commit'): void;
   /** What the row's menu offers. */
   menu(id: LayerId): RowMenuItem[];
+  /**
+   * A row was dragged to a new place: its id and where it stands in the list as drawn (0 is the top
+   * row). Only where this hook is given do the rows have a handle to drag by (order matters in Paint).
+   */
+  reorder?(id: LayerId, to: number): void;
 }
 
 export interface LayerListOptions {
@@ -51,6 +58,10 @@ export interface LayerListOptions {
   limit?: number;
   /** The base row's note, for the person to read below the name. */
   baseHint?: string;
+  /** The slider's caption (default "Weight"); Paint's is "Opacity". */
+  caption?: string;
+  /** The lowest value a typed amount may take, as a fraction (default: minus `limit`, as sculpt weights go negative). */
+  floor?: number;
 }
 
 const iconEl = (name: string): HTMLElement => {
@@ -83,7 +94,7 @@ export class LayerList {
   render(rows: LayerRowData[], activeId: LayerId | null): void {
     // Only the weights moved: the sliders are set where they stand. A rebuilt row would take a
     // slider from under a double tap that is typing a value into it.
-    const sig = JSON.stringify([activeId, this.renaming, rows.map((r) => [r.id, r.name, r.visible, r.badge ?? '', !!r.extra])]);
+    const sig = JSON.stringify([activeId, this.renaming, rows.map((r) => [r.id, r.name, r.visible, r.badge ?? '', r.extraKey ?? !!r.extra])]);
     if (sig === this.signature && this.el.childElementCount === rows.length + 1) {
       this.lastRows = rows;
       for (const r of rows) {
@@ -133,6 +144,10 @@ export class LayerList {
     row.setAttribute('role', 'listitem');
     row.dataset.layer = String(r.id);
     const top = div('layer-row__top');
+    if (this.hooks.reorder) {
+      row.classList.add('layer-row--grip');
+      top.append(this.grip(r, row));
+    }
 
     const eye = document.createElement('button');
     eye.type = 'button';
@@ -179,13 +194,76 @@ export class LayerList {
     top.append(menu.wrap);
     row.append(top);
 
-    row.append(this.slider(r));
     if (r.extra) row.append(r.extra);
+    row.append(this.slider(r));
     row.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.compact, .slider-field, button, input')) return;
+      if ((e.target as HTMLElement).closest('.compact, .slider-field, button, input, select')) return;
       this.hooks.select(r.id);
     });
     return row;
+  }
+
+  /**
+   * The handle a row is dragged by: a press on it follows the pointer over
+   * the rows, shows where the row would land, and the lift puts it there.
+   * The handle alone takes the press (touch-action none), so a finger on the
+   * rest of the row still scrolls the panel.
+   */
+  private grip(r: LayerRowData, rowEl: HTMLElement): HTMLButtonElement {
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'layer-row__grip';
+    grip.title = 'Drag to reorder';
+    grip.setAttribute('aria-label', `Move ${r.name}`);
+    grip.append(iconEl('fi-ss-grip-lines'));
+    grip.addEventListener('click', (e) => e.stopPropagation());
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rows = [...this.el.querySelectorAll<HTMLElement>('.layer-row:not(.layer-row--base)')];
+      const from = rows.indexOf(rowEl);
+      if (from < 0) return;
+      const rects = rows.map((x) => x.getBoundingClientRect());
+      let to = from;
+      try {
+        grip.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events carry no active pointer; capture is best-effort.
+      }
+      rowEl.classList.add('layer-row--dragging');
+      const mark = (): void => {
+        rows.forEach((x, i) => {
+          x.classList.toggle('layer-row--drop-above', i === to && to < from);
+          x.classList.toggle('layer-row--drop-below', i === to && to > from);
+        });
+      };
+      const move = (ev: PointerEvent): void => {
+        let at = rects.findIndex((b) => ev.clientY < b.top + b.height / 2);
+        if (at < 0) at = rows.length - 1;
+        to = at;
+        mark();
+      };
+      const end = (ev: PointerEvent, keep: boolean): void => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', cancel);
+        try {
+          grip.releasePointerCapture(ev.pointerId);
+        } catch {
+          // Already let go.
+        }
+        rowEl.classList.remove('layer-row--dragging');
+        rows.forEach((x) => x.classList.remove('layer-row--drop-above', 'layer-row--drop-below'));
+        if (keep && to !== from) this.hooks.reorder?.(r.id, to);
+      };
+      const up = (ev: PointerEvent): void => end(ev, true);
+      const cancel = (ev: PointerEvent): void => end(ev, false);
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', cancel);
+    });
+    return grip;
   }
 
   private slider(r: LayerRowData): HTMLLabelElement {
@@ -193,7 +271,7 @@ export class LayerList {
     const row = document.createElement('label');
     row.className = 'compact layer-row__weight';
     const cap = document.createElement('span');
-    cap.textContent = 'Weight';
+    cap.textContent = this.opts.caption ?? 'Weight';
     const val = document.createElement('span');
     val.className = 'slider-val';
     const input = document.createElement('input');
@@ -204,13 +282,13 @@ export class LayerList {
     input.value = String(Math.max(0, Math.min(1, r.weight)));
     input.dataset.scale = '100';
     input.dataset.unit = '%';
-    input.setAttribute('aria-label', `Weight of ${r.name}`);
+    input.setAttribute('aria-label', `${this.opts.caption ?? 'Weight'} of ${r.name}`);
     row.append(cap, input, val);
     typedSlider(
       input,
       {
         apply: (v) => this.hooks.weight(r.id, v, 'live'),
-        limits: { min: -limit, max: limit },
+        limits: { min: this.opts.floor ?? -limit, max: limit },
         readout: (v) => void (val.textContent = sliderText(input, v)),
       },
       r.weight,

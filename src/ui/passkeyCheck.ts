@@ -160,7 +160,9 @@ class Step {
 export function renderPasskeyCheck(app: HTMLElement): void {
   document.title = 'Bozzetto: passkey check';
   document.documentElement.classList.add('is-page');
-  app.classList.add('app--page');
+  // The document itself never scrolls (style.css, html.is-page): this page has no title
+  // strip, so its own column scrolls from the very top.
+  app.classList.add('app--page', 'page-scroll', 'page-scroll--bare');
   topbarLeft().appendChild(topChip('← Gallery', '/'));
 
   const host = location.hostname;

@@ -4,7 +4,7 @@
 
 A *bozzetto* is the small clay study a sculptor makes before the real piece, where the rough form gets worked out.
 
-Bozzetto is a studio in the browser to pose, sculpt and present. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, then light it, render it and publish it. The three workspaces follow that order: **Armature**, **Sculpt**, **Present**.
+Bozzetto is a studio in the browser to pose, sculpt and present. Set up a mannequin for reference or as the start of a figure, sculpt in clay with an Apple Pencil or a mouse, then light it, render it and publish it. The four workspaces follow that order: **Armature**, **Sculpt**, **Paint**, **Present**.
 
 It installs to an iPad's home screen and works offline. Built as a study and teaching tool, and as a way to render out content. Shared under MIT for anyone who finds it useful.
 
@@ -41,20 +41,33 @@ A posable figure, for reference or as the start of a sculpt. Pick **Create → N
 
 Pick **Create → New Sculpt** in the gallery. No sign-in needed, and nothing leaves your device unless you sign in and save or publish.
 
-- **Brushes.** Ten on `1` to `0`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag, Polish and Paint. `Shift` smooths and `Alt` carves from any brush. Each brush keeps its own size and settings.
+- **Brushes.** Nine on `1` to `9`: Crease, Move, Standard clay, Inflate, Pinch, Flatten, Rake, Drag and Polish. `Shift` smooths and `Alt` carves from any brush. Each brush keeps its own size and settings.
 - **Pencil pressure.** Apple Pencil pressure drives the strength of the stroke. Strength is set in centimetres for the brushes that push the surface.
-- **Profile curves.** Clay, Crease, Polish, Paint and the Rake's tines each have a falloff curve you can edit, with presets.
+- **Profile curves.** Clay, Crease, Polish and the Rake's tines each have a falloff curve you can edit, with presets.
 - **Masking.** Paint a mask with `Ctrl`, mask one side of an edge loop with `Ctrl`+`Shift`+drag, and extract a masked region as a new object.
 - **Poly groups.** Split an object into coloured groups by mask, by angle or by piece. Show, hide and mask by group.
 - **Topology.** Subdivision levels, dynamic topology, voxel remesh and quad remesh.
 - **Symmetry.** Mirror across X, Y or Z, set per brush.
-- **Painting.** Paint colour on the surface, flood fill, and set a material per object.
+- **Materials.** Set a material per object. Painting has its own workspace, **Paint**.
 - **Objects.** Several objects in one scene, with a list to select, hide and lock them, a move, rotate and scale gizmo, and Duplicate, Mirror, Radial copies and Merge.
 - **Create.** Primitives at real sizes and a library of base meshes: figures, heads, hands, feet and skulls.
 - **Real sizes.** One unit is a centimetre, and the interface shows centimetres and millimetres.
 - **Files.** Save and open `.bozz` scenes. Import and export OBJ, keeping the file's vertex order where it can.
 - **Made for iPad.** Fingers orbit, pan and zoom. The Pencil sculpts. A resting palm is ignored.
 - **Autosave.** Work in progress is kept on the device and shows in the gallery as an **In progress** card.
+
+## Paint
+
+<!-- Screenshot slot for the owner: docs/screenshots/paint.jpg, 1180x820, Paint with the Layers tab open. -->
+
+Colour the model in layers. Open **Paint** from the path at the top, with **View**, **Paint**, or with `Shift`+`B`; the same scene as Sculpt, so go back and forth freely. Paint adds `?paint=1` to the address, so a reload opens it again.
+
+- **Six tools.** Paint, Erase, Blur, Fill, Pick and Project on `1` to `6`, with Select on `Q`. Paint takes `Alt`+click to pick a colour and `Shift` to blur. The brush's size, strength, falloff, pressure and symmetry, the mask and hidden poly groups work as they do in Sculpt.
+- **Paint layers.** A **Layers** tab with an eye, a name, a blend mode and an opacity a layer, newest on top, over a fixed **Base** (the colour the object had), which you can paint on too. Drag a layer by its handle to reorder; the menu has Rename, Duplicate, Merge down, Clear and Delete, and **Flatten all** is at the foot.
+- **Blend modes.** Photoshop's 27, in its groups: Normal and Dissolve, the darken, lighten and contrast groups, Difference and its kin, and Hue, Saturation, Color and Luminosity.
+- **Project.** Paints a reference picture that is in the view onto the model under the brush, through the brush's falloff, onto the points that face you.
+- **Any level.** Paint on any subdivision level; the colour is kept on the highest one and every level shows it. Remesh and the like ask once to flatten both the sculpt and the paint layers.
+- **Saved with the scene.** Layers, modes and opacities are saved in the `.bozz` file and the autosave; publishing and export use the colours as they show.
 
 ## Present
 
@@ -117,7 +130,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | Input | Action |
 | --- | --- |
 | Drag on the model with the pen or mouse | Sculpt (`Alt` carves, `Shift` smooths) |
-| `1` to `0` | Brushes |
+| `1` to `9` | Brushes |
 | `B` / `S`, held while dragging | Brush size / strength |
 | `X` | Symmetry for the current brush |
 | `Ctrl`+drag | Paint a mask (`Alt` unmasks) |
@@ -132,7 +145,21 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 | `Ctrl`+`D` | Subdivide |
 | `Ctrl`+`M` / `Ctrl`+`J` | Mirror / merge the selected objects |
 | `Shift`+`W` | Wireframe |
+| `Shift`+`B` | Paint |
 | `Shift`+`P` | Present |
+
+### Paint
+
+| Input | Action |
+| --- | --- |
+| `1` to `6` | Paint, Erase, Blur, Fill, Pick, Project |
+| `Alt`+click | Pick a colour (with Paint) |
+| `Shift`+drag | Blur the paint (with Paint) |
+| `Q` | Select tool |
+| `Shift`+`B` | Back to Sculpt |
+| `Shift`+`P` | Present (and back to Paint) |
+
+The size and strength keys, symmetry, the mask, undo and redo, subdivision and the view keys are as in Sculpt.
 
 ### Present and the viewer
 
@@ -151,6 +178,10 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 ### Unreleased
 
 - **Controls drawn as outlines.** In Armature the handles are now grey outlines like an animation program's controls, not coloured balls: a ring at each hand and foot (with a dot when pinned), a box around the hips, and an arrowhead on a dashed line out from each knee and elbow, pointing the way it aims. They turn white under the pointer and orange only when selected or dragged, and each can be picked with a finger.
+- **A Paint workspace.** Painting moves out of Sculpt into its own workspace, **Paint**, between Sculpt and Present in the path at the top (`Shift`+`B`, or **View**, **Paint**). Its bar has Paint, Erase, Blur, Fill, Pick and Project on `1` to `6`, and its **Layers** tab keeps the colour in layers over a **Base**, each with an eye, a blend mode from Photoshop's list and an opacity, and a handle to drag it into another place. Paint on any subdivision level; Merge down, Clear, Duplicate and Flatten all are there, and every change undoes in one press. **Project** paints a reference picture in the view onto the model. Sculpt loses its Paint brush and the `0` key, which is free.
+- **Details in the view.** The object's numbers moved out of the top bar into plain text at the top left of the view: its name, Tris, Quads, Verts, Level, Objects, Size in cm, Symmetry, Masked, Hidden groups and the active layer in Sculpt, and the figure's name, height and selected joint in Armature. **View > Details** (or Shift + I) hides and shows it, and the Pencil and fingers work straight through it. The top bar keeps only the scene's name and where it is saved.
+- **Sharper, smoother shadows when you stop.** On iPad and other devices that draw simpler shadows, the shadow is drawn at full size and with more blur samples as soon as the view is still, so edges are crisp and a high Softness stays smooth. While you stroke or turn the view nothing changes. Strong iPads (eight cores) now start on the medium quality tier instead of the low one, and step down by themselves if frames get slow.
+- **Controls drawn as outlines.** In Armature the handles are now grey outlines like an animation program's controls, not coloured balls: a ring at each hand and foot (with a dot when pinned), a frame round the hips, and an arrowhead out from each knee and elbow on a dashed line. They turn white under the pointer and orange only when selected or dragged, and each can be picked with a finger.
 - **The head looks.** The head's handle is now a look-at arrowhead in front of the face. Drag it and the head turns to face it, with the neck turning about half as far and the upper back a little, held within a comfortable range; it no longer pulls the body around. Old figures open as they were, and the head's pin is gone.
 - **Sculpt layers.** A new **Layers** tab on the left, after Model, keeps what you sculpt on separate layers, newest on top, with **Base** at the bottom. Each layer has an eye, a name and a weight slider from 0 to 100%; double tap the slider and type a value to go further, or below zero (-100 turns the layer inside out). Work on any subdivision level, step up and down, and the layer's slider moves all of it. Duplicate, **Flatten into base** and Delete are in each row's menu, and **Flatten all** is at the foot. Layers are saved with the project; remesh, merge and the like ask to flatten them first.
 - **Clearer Create window.** New Sculpt is the one lime, recommended choice, and Create timelapse is shown to the owner only, since timelapses are not offered to users right now. Help now opens with Armature, Sculpt and Present.
@@ -165,7 +196,7 @@ Every key can be changed under **Edit → Preferences**. **Help → Hotkeys** (`
 - **Every scene has a name.** The top bar in Sculpt and Armature always starts with the scene's name, "Study 14 Nov" for a new one (numbered if you already have one by that name). Tap the name to rename it, or use **File > Rename…**, and the gallery's In progress card shows the same name.
 - **Where your work is kept.** A quiet word after the name says **Saved** (it matches your last save to the library), **Edited** (it has changes the library does not), **Kept on this device**, or, with saving turned off, the one **Not saved**.
 - **Saving when signed out.** Signed out, **File** shows **Save file**, and **Sign in to save to library** where the site has accounts, instead of a second item that only downloaded a file.
-- **References.** A new **Reference** tab on the right, before Render, holds pictures to look at while you work: add one from your photos, the camera or a file, paste or drop one, and show it in a window beside the view or over the view, behind the model or in front at an opacity, mirrored or in greys. Pictures stay on your device and are never uploaded; **Save file** can carry them (**Include references**).
+- **References.** A new **Reference** tab on the right, before Render, holds pictures to look at while you work: add one from your photos, the camera or a file, paste or drop one, then drag its thumbnail into the view. Pictures in the view float, several at once, and can be moved, scaled, mirrored, set to a Photoshop-style blend mode (or Behind the model) at an opacity, and then locked so the Pencil and your fingers go straight through them to the model. **Match view** puts the camera back as it was when a picture was locked. Pictures stay on your device and are never uploaded, for anyone; **Save file** can carry them (**Include references**).
 - **Calipers.** A new tool (C, after Transform) measures the distance between two points on the model in centimetres: tap or press with the Pencil twice, drag an end to move it, and pin the measurement to keep it with the scene and compare it with others in the Model panel's **Measure** section. With symmetry on, **Mirror** adds the other side and shows the difference.
 - **Hiding the interface slides.** Tab (or the eye button) now slides the left tabs and the brush controls out to the left, the right tabs out to the right, the tool bar and transport down and the menu bar up, and brings them back the same way; with reduced motion it is instant as before.
 - **Sliders you can grab anywhere.** On a phone or iPad, press anywhere on a slider's row (its name, its number or its line) and drag sideways to change it, so a slider at 0 or full is no longer hard to catch. A plain tap does nothing, and dragging up or down still scrolls the panel. Depth of field now sits under **Camera** in the Render panel.

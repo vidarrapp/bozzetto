@@ -173,7 +173,7 @@ export class SculptPanel extends SidePanel {
     // The paint brush leads with its colour: the same HSV picker the Render
     // panel uses for albedo, so a colour is chosen the same way wherever
     // you are. Alt + click on the model samples one off the surface.
-    if (this.input.isPainting()) {
+    if (this.input.usesColour()) {
       this.paintPicker = colorPicker(this.input.getPaintColor(), (hex) =>
         this.input.setPaintColor(hex),
       );
@@ -196,8 +196,18 @@ export class SculptPanel extends SidePanel {
       // the Render panel's background and light swatches do.
       installSwatchPick(this.paintPicker, this.viewer, (hex) => this.input.setPaintColor(hex));
       const hint = div('sculpt-panel__hint muted');
-      hint.textContent = 'Alt+click for color picker';
+      hint.textContent = tool === Enums.Tools.PICK ? 'Tap or drag on the model to take its colour.' : tool === Enums.Tools.FILL ? 'Tap the model to fill.' : 'Alt+click for color picker';
       dyn.appendChild(hint);
+    } else if (tool === Enums.Tools.PROJECT) {
+      const hint = div('sculpt-panel__hint muted');
+      hint.textContent = 'Paints the reference picture in the view onto the model under the brush. Lock the pictures first so the brush reaches the model.';
+      dyn.appendChild(hint);
+    }
+    // Fill and Pick are a tap, not a brush: no size, strength or dab rows.
+    if (tool === Enums.Tools.FILL || tool === Enums.Tools.PICK) {
+      this.nameBrush(TOOL_NAMES[tool] ?? 'Brush');
+      this.extrasBody.replaceChildren();
+      return;
     }
     // Radius and strength are per tool (the vendored core keeps both, and
     // world scale a radius per brush), so these are rebuilt with the rest
@@ -391,7 +401,7 @@ export class SculptPanel extends SidePanel {
           { limits: AMOUNT },
         ),
       );
-    } else if (tool === Enums.Tools.PAINT) {
+    } else if (tool === Enums.Tools.PAINT || tool === Enums.Tools.PAINT_ERASE || tool === Enums.Tools.BLUR || tool === Enums.Tools.PROJECT) {
       // The paint falloff, a curve in place of the vendor's hardness (its
       // Default preset is hardness 0.75). Shift's blur shares it.
       const paint = manager.getTool(tool) as unknown as PaintBrush;
@@ -466,7 +476,18 @@ export class SculptPanel extends SidePanel {
    */
   private static shiftSmooths(tool: number): boolean {
     const t = Enums.Tools;
-    return tool >= 0 && tool !== t.PAINT && tool !== t.PAINT_BLUR && tool !== t.MASKING && tool !== t.SMOOTH;
+    return (
+      tool >= 0 &&
+      tool !== t.PAINT &&
+      tool !== t.PAINT_BLUR &&
+      tool !== t.MASKING &&
+      tool !== t.SMOOTH &&
+      tool !== t.PAINT_ERASE &&
+      tool !== t.BLUR &&
+      tool !== t.FILL &&
+      tool !== t.PICK &&
+      tool !== t.PROJECT
+    );
   }
 
   /** Rebuild the Smooth group from the tool's values, or hide it (`tool` -1: not a brush). */

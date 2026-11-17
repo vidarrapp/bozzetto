@@ -58,11 +58,12 @@ const EYE_ICON =
   'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>';
 
-/** The three workspaces, in the order the work goes. */
-export type Workspace = 'armature' | 'sculpt' | 'present';
+/** The four workspaces, in the order the work goes. */
+export type Workspace = 'armature' | 'sculpt' | 'paint' | 'present';
 const WORKSPACES: Array<[Workspace, string]> = [
   ['armature', 'Armature'],
   ['sculpt', 'Sculpt'],
+  ['paint', 'Paint'],
   ['present', 'Present'],
 ];
 
@@ -82,7 +83,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
 
 /** What a strip may leave out: the public viewer is a place to look, and has no workspaces to walk between. */
 export interface TitleStripOptions {
-  /** The workspace path (Armature, Sculpt, Present) after the menus; on by default. */
+  /** The workspace path (Armature, Sculpt, Paint, Present) after the menus; on by default. */
   path?: boolean;
   /**
    * Say "Not saved" at the right while the person has turned saving off

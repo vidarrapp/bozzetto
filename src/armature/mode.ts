@@ -25,6 +25,8 @@ import { recordRecent } from '../ui/recent';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
 import { rememberPanels } from '../sculpt/ui/panelMemory';
 import '../sculpt/ui/shell.css';
+import { DetailsOverlay, type DetailLine } from '../sculpt/ui/DetailsOverlay';
+import { formatLength } from '../viewer/units';
 import { Armature, buildArmature, importArmature, SCENE_SCALE, type ArmatureState } from './Armature';
 import { ARROW_TIP, HandleKit, RING_RADIUS, setHandleViewport, type HandleShape, type HandleState, type HandleView } from './handleViews';
 import { onCentimetres } from './units';
@@ -38,6 +40,7 @@ import { ReferenceBoard } from '../reference/board';
 import { ReferencePanel } from '../reference/ReferencePanel';
 import { ReferenceView } from '../reference/ReferenceView';
 import { installIntake, pasteFromClipboard } from '../reference/intake';
+import { ArrangeButton } from '../reference/ArrangeButton';
 import { CONTROLS_REFRESH_EVENT } from '../ui/Panel';
 import { boxOfPositions, checkRemesh, RemeshTooLarge } from '../sculpt/bridge/remeshBudget';
 import { statusToast } from '../sculpt/ui/statusToast';
@@ -1753,7 +1756,15 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const referencePanel = new ReferencePanel(referenceBoard);
   referencePanel.setLinked(() => !!link);
   const referenceView = new ReferenceView(referenceBoard, viewer);
-  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen());
+  // The Arrange button stands in the left edge column beside Undo and Redo, as Solo does in Sculpt.
+  const referenceArrange = new ArrangeButton(referenceBoard);
+  referenceArrange.mount(edge);
+  referencePanel.setPlacer((id, x, y) => referenceView.placeAt(id, x, y));
+  const offIntake = installIntake(referenceBoard, () => referencePanel.isOpen(), (items, x, y) => {
+    let n = 0;
+    for (const item of items) if (referenceView.placeAt(item.id, x + n * 24, y + n * 24)) n++;
+    return n > 0;
+  });
   // What an opened project needed mending, or why it did not open: said
   // now that there is a page to say it on.
   for (const note of bootNotes) {
@@ -1898,6 +1909,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     current: 'armature',
     steps: {
       sculpt: { action: () => void send(panel.resolution) },
+      paint: { unavailable: 'A figure is sent to Sculpt first' },
       present: { unavailable: 'A figure is sent to Sculpt first' },
     },
   });
@@ -2016,10 +2028,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           window.dispatchEvent(new Event(CONTROLS_REFRESH_EVENT));
         },
       },
-      referenceOver: {
-        get: () => referenceView.isOverEnabled(),
-        toggle: () => referenceView.setOverEnabled(!referenceView.isOverEnabled()),
-      },
+      details: true,
+      referenceShow: { get: () => referenceView.isShown(), toggle: () => referenceView.setShown(!referenceView.isShown()) },
+      referenceArrange: { get: () => referenceBoard.isArranging(), toggle: () => referenceBoard.setArranging(!referenceBoard.isArranging()) },
       panels: [
         ['armature', 'Armature'],
         ['material', 'Material'],
@@ -2037,15 +2048,27 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   strip.setWorkspace(workspaceNow().current, workspaceNow().steps);
   // Which panel was open on each side last time, open again; kept from here on.
   const offPanelMemory = rememberPanels('armature');
-  // The readout: the project's name when it has one, the part in hand, the figure's triangles.
+  // The readout: the scene's name and where its work is kept. The figure's numbers are the details overlay's.
+  const details = new DetailsOverlay();
+  const paintDetails = (): void => {
+    if (!details.isOn()) return;
+    const lines: DetailLine[] = [{ id: 'name', value: link?.title ?? name }];
+    lines.push({ id: 'height', key: 'Height', value: formatLength(armature.figureHeight()) });
+    const index = armature.mesh.geometry.getIndex();
+    if (index) lines.push({ id: 'tris', key: 'Tris', value: Math.round(index.count / 3).toLocaleString('en-US') });
+    const handle = selectedHandle ? armature.chains().find((c) => c.id === selectedHandle) : undefined;
+    if (selected) lines.push({ id: 'selected', key: 'Joint', value: prettyName(selected) });
+    else if (handle) lines.push({ id: 'selected', key: 'Handle', value: handle.label });
+    if (armature.symmetry) lines.push({ id: 'symmetry', key: 'Symmetry', value: 'on' });
+    details.set(lines);
+  };
+  const offDetailsSetting = settings.onChange(paintDetails);
   const paintReadout = (): void => {
-    const tris = armature.mesh.geometry.getIndex();
     strip.setReadout({
       name: link?.title ?? name,
       state: sceneStateWord({ linked: !!link, synced: !!link && syncedAt === edits }),
-      object: selected ? prettyName(selected) : null,
-      tris: tris ? Math.round(tris.count / 3) : null,
     });
+    paintDetails();
   };
   paintReadout();
   const readoutTimer = window.setInterval(paintReadout, 500);
@@ -2358,10 +2381,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     panel.dispose();
     materialPanel.dispose();
     offIntake();
+    referenceArrange.dispose();
     referenceView.dispose();
     referencePanel.dispose();
     referenceBoard.dispose();
     clearInterval(readoutTimer);
+    offDetailsSetting();
+    details.dispose();
     offPanelMemory();
     fileMenu.dispose();
     editMenu.dispose();

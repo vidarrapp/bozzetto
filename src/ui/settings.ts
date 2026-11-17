@@ -53,6 +53,12 @@ export interface SettingsValues {
    * mouse is the pointer, off on a touch screen, which has no keys to show.
    */
   toolKeys: OnOff;
+  /**
+   * The details overlay at the top left of the view in Sculpt and Armature
+   * (View > Details): the object's numbers as plain text. On by default, as
+   * the stats it replaced were always there.
+   */
+  details: OnOff;
 }
 
 /** Whether the device's main pointer is a fine one (a mouse or trackpad), the tool keys' default. */
@@ -74,6 +80,7 @@ const DEFAULTS: SettingsValues = {
   stallLog: 'off',
   inputLog: 'off',
   toolKeys: finePointer() ? 'on' : 'off',
+  details: 'on',
 };
 
 const ON_OFF = ['on', 'off'] as const;
@@ -98,6 +105,7 @@ const ALLOWED: { [K in keyof SettingsValues]: SettingsValues[K] extends number ?
   stallLog: ON_OFF,
   inputLog: ON_OFF,
   toolKeys: ON_OFF,
+  details: ON_OFF,
 };
 
 /** Whether `value` is one `key` accepts. */

@@ -19,7 +19,7 @@ function guideHtml(mode: KeyMode, updates: boolean): string {
   const esc = (t: string): string =>
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const closeKey = keymap.chordFor('ui.help');
-  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'armature' ? 'Armature hotkeys' : 'Hotkeys &amp; navigation';
+  const head = mode === 'sculpt' ? 'Sculpt hotkeys' : mode === 'paint' ? 'Paint hotkeys' : mode === 'armature' ? 'Armature hotkeys' : 'Hotkeys &amp; navigation';
   const closer = closeKey ? `${esc(chordLabel(closeKey))} or Esc to close` : 'Esc or tap to close';
   let html = `<div class="help-guide__head">${head} <span class="help-guide__close">${closer}</span></div>`;
   let group = '';

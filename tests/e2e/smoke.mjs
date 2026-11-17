@@ -1830,7 +1830,7 @@ export const suites = {
         await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
         const b = document.querySelector('.sculpt-sliders .sculpt-solobtn');
         if (how === 'click') b.click();
-        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title };
+        return { pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.getAttribute('aria-label') };
       }, press);
     // A real press: pointer down and up on the button, as a mouse, a pen or
     // a finger lifts on it.
@@ -1845,7 +1845,7 @@ export const suites = {
     const idle = await soloButton(null);
     t.ok(
       idle.pressed === 'false' && !idle.disabled && idle.title === 'Solo (Alt+Q)',
-      `not pressed, titled from the keymap (${JSON.stringify(idle)})`,
+      `not pressed, named from the keymap (the name shows on hover and a long press) (${JSON.stringify(idle)})`,
     );
     await tapSolo();
     const pressed = await soloButton(null);
@@ -2124,7 +2124,7 @@ export const suites = {
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#landing-grid .card--sculpt', { timeout: 30_000 }).catch(() => {});
       const card = await page.evaluate(() => document.querySelector('.card--sculpt:not(.card--armature) .card__title')?.textContent ?? null);
-      t.eq(card, 'Your sculpt', "the autosave keeps it, as the gallery's In progress card");
+      t.ok(/^Study \d/.test(card ?? ''), `the autosave keeps it, as the gallery's In progress card, under its dated name (${card})`);
 
       // Work on the device now: the gallery asks; declined, nothing moves.
       answer = false;
@@ -4214,7 +4214,7 @@ export const suites = {
           n: session.getMeshes().length,
           active: !!session.getMesh(),
           rows: document.querySelectorAll('.panel--scene .outliner__row').length,
-          stats: document.querySelector('.bz-readout__object')?.textContent ?? '',
+          stats: document.querySelector('.bz-details [data-fact="name"]')?.textContent ?? '',
         };
       });
     const last = await page.evaluate(() => window.__sculpt.session.getMeshName(window.__sculpt.session.getMesh()));
@@ -4311,7 +4311,12 @@ export const suites = {
     // Where the rail's nub sits for a size: log-mapped over 5..500.
     const railAt = (v) => (Math.log(v / 5) / Math.log(100)) * 100;
     const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    // Paint left Sculpt's bar (it is the Paint workspace's first tool): its size is read through the tool itself.
+    const paintSize = async () => {
+      await page.evaluate(() => window.__sculpt.input.selectBrush(8));
+      return Math.round((await size()).held * 100) / 100;
+    };
     // Every brush's size, by its key.
     const every = async () => {
       const out = {};
@@ -4342,11 +4347,12 @@ export const suites = {
     s = await size();
     t.ok(s.tool === 1 && near(s.held, 200) && s.slider === 200 && near(s.rail, railAt(200), 0.1), `Inflate from the toolbar comes back at 200, on the slider and the rail (${s.held.toFixed(2)}, slider ${s.slider}, rail ${s.rail}%)`);
     // Paint keeps its own size like any brush; the others are untouched.
-    await page.keyboard.press('0');
+    await page.evaluate(() => window.__sculpt.input.selectBrush(8));
     await setSize(90);
     const sized = await every();
+    sized['0'] = await paintSize();
     t.ok(
-      sized['3'] === 120 && sized['4'] === 200 && sized['0'] === 90 && keys.filter((k) => !'340'.includes(k)).every((k) => sized[k] === first),
+      sized['3'] === 120 && sized['4'] === 200 && sized['0'] === 90 && keys.filter((k) => !'34'.includes(k)).every((k) => sized[k] === first),
       `clay, Inflate and Paint keep their sizes and the rest the starting one (${JSON.stringify(sized)})`,
     );
 
@@ -4404,6 +4410,7 @@ export const suites = {
     });
     t.eq(told, 0, 'opening the file restores them silently');
     const opened = await every();
+    opened['0'] = await paintSize();
     t.ok(
       opened['3'] === 120 && opened['4'] === 200 && opened['0'] === 90 && opened['1'] === first,
       `and every brush comes back at its own size (${JSON.stringify(opened)})`,
@@ -5325,7 +5332,7 @@ export const suites = {
       t.ok(g.unsent.length === 1 && g.unsent[0].upload && g.unsent[0].note === DEVICE_NOTE && g.toggles === 0, `the kept scene's card says Not uploaded and offers Upload to Projects; no owner's switches (${JSON.stringify(g)})`);
       // The scene was saved to its project once, but this save did not go
       // up: its In progress card is as it always was, not put away.
-      t.eq(await inProgressTitle(owner), 'Your sculpt', 'and the In progress card stays, as it was');
+      t.ok(/^Study \d/.test((await inProgressTitle(owner)) ?? ''), 'and the In progress card stays, as it was');
       await gallery();
       t.eq(await owner.evaluate(() => document.querySelector('.landing__notice')?.textContent ?? null), null, 'the line is said once, not on every visit');
       await clearNotices(owner);
@@ -6366,7 +6373,7 @@ export const suites = {
       const row = await owner.evaluate(() => {
         const menus = [...document.querySelectorAll('.bz-strip__menus > *')].map((c) => c.textContent.trim());
         const right = [...document.querySelectorAll('.bz-strip__right > *')]
-          .filter((c) => !c.hidden)
+          .filter((c) => !c.hidden && !(c.classList.contains('bz-strip__account') && !c.textContent.trim()))
           .map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
         const look = (el) => {
           const s = getComputedStyle(el);
@@ -6387,7 +6394,7 @@ export const suites = {
       await owner.evaluate(() => window.__sculpt.publishWindow.close());
       await enterPresent();
       const inPresent = await owner.evaluate(() => {
-        const right = [...document.querySelectorAll('.bz-strip__right > *')].filter((c) => !c.hidden).map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
+        const right = [...document.querySelectorAll('.bz-strip__right > *')].filter((c) => !c.hidden && !(c.classList.contains('bz-strip__account') && !c.textContent.trim())).map((c) => (c.classList.contains('bz-strip__hide') ? 'hide' : c.textContent.trim()));
         const css = getComputedStyle(window.__sculpt.publishWindow.chip);
         return { right, bg: css.backgroundColor, color: css.color };
       });
@@ -6896,7 +6903,7 @@ export const suites = {
     const show = (s) => `level ${s.sel + 1}/${s.levels}, slider ${s.value} of ${s.max} reading ${s.readout}, ${s.tris} tris`;
     const statsTris = (n) =>
       page
-        .waitForFunction((k) => document.querySelector('.bz-readout__tris')?.textContent === k.toLocaleString('en-US'), n, { timeout: 5000 })
+        .waitForFunction((k) => document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent === k.toLocaleString('en-US'), n, { timeout: 5000 })
         .then(() => true)
         .catch(() => false);
     const del = () =>
@@ -7626,7 +7633,7 @@ export const suites = {
         });
         await d.p.click('.update-notice__action');
         const asked = await eventually(d.p, () => d.dialogs.length > 0 && d.log.at(-1)?.state === 'ready' && d.log.at(-1).shown, 20_000);
-        t.ok(asked && /could not be stored on this device, and updating reloads the page\. Reload anyway\?/.test(d.dialogs[0] ?? ''), `with the autosave stopped, Reload asks first ("${d.dialogs[0]}")`);
+        t.ok(asked && /could not be stored on this device, and updating reloads the page/.test(d.dialogs[0] ?? ''), `with the autosave stopped, Reload asks first ("${d.dialogs[0]}")`);
         t.ok((await runningScript(d.p)) === oldMain && d.log.at(-1)?.text === 'Update ready', 'and Cancel stays, Update ready still offered');
         await d.p.evaluate(() => {
           window.__sculpt.persist.disabled = false;

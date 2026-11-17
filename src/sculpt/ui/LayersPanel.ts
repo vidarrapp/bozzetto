@@ -5,6 +5,7 @@ import { MAX_LAYERS, WEIGHT_LIMIT, type SculptLayer } from '../bridge/layers';
 import type { SculptSession } from '../bridge/SculptSession';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import { failNotice } from './statusToast';
+import { PaintLayersView } from './PaintLayersView';
 
 /**
  * The Layers tab, left, after Scene and Model: the active object's sculpt
@@ -19,6 +20,11 @@ export class LayersPanel extends SidePanel {
   private readonly flattenBtn: HTMLButtonElement;
   private readonly note: HTMLDivElement;
   private readonly byId = new Map<number, SculptLayer>();
+  /** Everything of the sculpt layers, which the Paint workspace puts away for its own. */
+  private readonly sculptEl: HTMLDivElement;
+  /** The paint layers (PaintLayersView), shown in the Paint workspace in place of the sculpt layers. */
+  private paintViewMade: PaintLayersView | null = null;
+  private paintOn = false;
 
   /** A layer edit that the autosave and the display must hear of. */
   onEdit: (() => void) | null = null;
@@ -26,6 +32,8 @@ export class LayersPanel extends SidePanel {
   constructor(private readonly session: SculptSession) {
     super({ id: 'layers', title: 'Layers', side: 'left', variant: 'panel--layers' });
 
+    this.sculptEl = div('layers-sculpt');
+    this.body.append(this.sculptEl);
     const header = div('outliner__header');
     this.addBtn = document.createElement('button');
     this.addBtn.type = 'button';
@@ -33,11 +41,11 @@ export class LayersPanel extends SidePanel {
     this.addBtn.textContent = 'Add layer';
     this.addBtn.addEventListener('click', () => this.add());
     header.append(this.addBtn);
-    this.body.append(header);
+    this.sculptEl.append(header);
 
     this.note = div('layers-note');
     this.note.hidden = true;
-    this.body.append(this.note);
+    this.sculptEl.append(this.note);
 
     this.list = new LayerList(
       {
@@ -77,7 +85,7 @@ export class LayersPanel extends SidePanel {
       },
       { baseName: 'Base', limit: WEIGHT_LIMIT },
     );
-    this.body.append(this.list.el);
+    this.sculptEl.append(this.list.el);
 
     const foot = div('outliner__header layers-foot');
     this.flattenBtn = document.createElement('button');
@@ -87,8 +95,27 @@ export class LayersPanel extends SidePanel {
     this.flattenBtn.title = 'Make every layer part of the surface';
     this.flattenBtn.addEventListener('click', () => this.act((m) => this.session.layers.flattenAll(m)));
     foot.append(this.flattenBtn);
-    this.body.append(foot);
+    this.sculptEl.append(foot);
 
+    this.refresh();
+  }
+
+  /** The paint layers' view, made the first time Paint is entered (Sculpt's tab has nothing of it). */
+  get paintView(): PaintLayersView {
+    if (!this.paintViewMade) {
+      const v = new PaintLayersView(this.session);
+      v.onEdit = () => this.onEdit?.();
+      this.body.append(v.el);
+      this.paintViewMade = v;
+    }
+    return this.paintViewMade;
+  }
+
+  /** In the Paint workspace the tab shows the paint layers; in Sculpt, the sculpt layers. */
+  setPaint(on: boolean): void {
+    this.paintOn = on;
+    this.sculptEl.hidden = on;
+    if (on || this.paintViewMade) this.paintView.el.hidden = !on;
     this.refresh();
   }
 
@@ -114,6 +141,10 @@ export class LayersPanel extends SidePanel {
 
   /** Redraw from the session: the active object's layers. */
   refresh(): void {
+    if (this.paintOn) {
+      this.paintView.refresh();
+      return;
+    }
     if (this.list.isEditing()) return;
     const mesh = this.session.getMesh();
     const layers = this.session.layers;

@@ -283,7 +283,10 @@ export function typedSlider(input: HTMLInputElement, spec: TypedSlider, value: n
     const step = Number(input.step) || 1;
     const row = input.closest('label');
     // The row is a <label>: a click that lands on it rather than on the
-    // field would hand focus to the slider hidden under it.
+    // field would hand focus to the slider hidden under it. So would the
+    // mouse press a touch screen sends after a tap: it goes to the row the
+    // tap began on, not to the field now standing there, and its default
+    // takes the focus off the field, which closed it as it opened.
     const keep = (e: Event): void => {
       if (e.target !== field) e.preventDefault();
     };
@@ -296,11 +299,15 @@ export function typedSlider(input: HTMLInputElement, spec: TypedSlider, value: n
         input.hidden = true;
         input.after(f);
         row?.addEventListener('click', keep, true);
+        row?.addEventListener('mousedown', keep, true);
         return () => {
           f.remove();
           input.hidden = false;
           // After the click that may follow the press which opened it.
-          window.setTimeout(() => row?.removeEventListener('click', keep, true), 0);
+          window.setTimeout(() => {
+            row?.removeEventListener('click', keep, true);
+            row?.removeEventListener('mousedown', keep, true);
+          }, 0);
         };
       },
       (typed) => {
