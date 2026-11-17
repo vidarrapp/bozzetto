@@ -1,11 +1,12 @@
 import { withNamedStore } from '../sculpt/bridge/ScenePersist';
 import { mayStore, onDeviceChoice } from '../ui/deviceStorage';
 import { preparePicture } from './image';
+import { CSS_BLEND_MODES } from '../ui/blendModes';
 
 /**
  * The board of reference pictures: the pictures themselves, how each is
- * drawn (mirrored, in greys), which one is on and how, and where they are
- * kept.
+ * drawn (mirrored, in greys, blended, at an opacity), which are in the
+ * view and where they stand there, and where they are kept.
  *
  * They are kept on this device only, never uploaded (owner decision,
  * 2026-11-14): in IndexedDB, in the autosave's own store, under keys of
@@ -17,7 +18,23 @@ import { preparePicture } from './image';
  * scene alone, because nothing that uploads ever asks this module.
  */
 
-export type ShowMode = 'beside' | 'over';
+/**
+ * Where a picture stands in the view, relative to the view's centre so it
+ * survives a resize or turning the device: the centre's offset and the
+ * width, all in units of the view's shorter side.
+ */
+export interface Placement {
+  x: number;
+  y: number;
+  w: number;
+}
+
+/** The camera as a picture was locked: plain numbers, kept with the picture and nowhere else. */
+export interface StoredCamera {
+  position: [number, number, number];
+  target: [number, number, number];
+  focalLength: number;
+}
 
 export interface RefItem {
   id: string;
@@ -28,20 +45,52 @@ export interface RefItem {
   blob: Blob;
   mirror: boolean;
   grey: boolean;
+  /** 'behind' (drawn behind the model) or a blend mode id from ui/blendModes (an element over the view). */
+  blend: string;
+  /** 0.05 to 1, in every mode. */
+  opacity: number;
+  /** In the view (floating over or behind the model), or only on the board. */
+  inView: boolean;
+  /** Order in the view: the larger is drawn above. */
+  seq: number;
+  /** Where it stands in the view; null until it first is put there. */
+  place: Placement | null;
+  /** The camera at the moment the picture was locked, for Match view. */
+  camera: StoredCamera | null;
   added: number;
 }
 
-/** Which picture is on, how, and the over-the-view settings. */
-export interface RefView {
-  id: string | null;
-  mode: ShowMode;
-  /** Over the view: in front of the model (a film) instead of behind it. */
-  front: boolean;
-  /** Over the view, in front: 0.05 to 1. */
-  opacity: number;
+export const BEHIND = 'behind';
+export const DEFAULT_BLEND = 'normal';
+
+/** The blend a stored value means: behind, or one of the modes a browser can blend live. */
+export function cleanBlend(v: unknown): string {
+  return typeof v === 'string' && (v === BEHIND || CSS_BLEND_MODES.some((m) => m.id === v)) ? v : DEFAULT_BLEND;
 }
 
-const DEFAULT_VIEW: RefView = { id: null, mode: 'beside', front: false, opacity: 0.5 };
+export function cleanOpacity(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0.05, v)) : 1;
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+export function cleanPlace(v: unknown): Placement | null {
+  const r = v as Partial<Placement> | null;
+  if (!r || typeof r !== 'object' || !finite(r.x) || !finite(r.y) || !finite(r.w)) return null;
+  return { x: Math.max(-8, Math.min(8, r.x)), y: Math.max(-8, Math.min(8, r.y)), w: Math.max(0.02, Math.min(8, r.w)) };
+}
+
+const triple = (v: unknown): [number, number, number] | null =>
+  Array.isArray(v) && v.length === 3 && v.every(finite) ? [v[0], v[1], v[2]] : null;
+
+export function cleanCamera(v: unknown): StoredCamera | null {
+  const r = v as Partial<StoredCamera> | null;
+  if (!r || typeof r !== 'object') return null;
+  const position = triple(r.position);
+  const target = triple(r.target);
+  if (!position || !target || !finite(r.focalLength)) return null;
+  return { position, target, focalLength: r.focalLength };
+}
 
 /** The most pictures a board holds: each is up to a few hundred kilobytes. */
 export const MAX_REFERENCES = 48;
@@ -49,7 +98,6 @@ export const MAX_REFERENCES = 48;
 interface Stored {
   v: 1;
   items: RefItem[];
-  view: RefView;
 }
 
 const STORE = 'scene';
@@ -57,12 +105,6 @@ const keyCurrent = (scope: string): string => `refs:${scope}`;
 const keyProject = (id: string): string => `refs:project:${id}`;
 
 const newId = (): string => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-
-function cleanView(v: Partial<RefView> | undefined, items: RefItem[]): RefView {
-  const id = typeof v?.id === 'string' && items.some((i) => i.id === v.id) ? v.id : null;
-  const opacity = typeof v?.opacity === 'number' && Number.isFinite(v.opacity) ? Math.min(1, Math.max(0.05, v.opacity)) : DEFAULT_VIEW.opacity;
-  return { id, mode: v?.mode === 'over' ? 'over' : 'beside', front: v?.front === true, opacity };
-}
 
 function cleanItem(raw: unknown): RefItem | null {
   const r = raw as Partial<RefItem> | null;
@@ -78,6 +120,12 @@ function cleanItem(raw: unknown): RefItem | null {
     blob: r.blob,
     mirror: r.mirror === true,
     grey: r.grey === true,
+    blend: cleanBlend(r.blend),
+    opacity: cleanOpacity(r.opacity),
+    inView: r.inView === true,
+    seq: finite(r.seq) ? r.seq : 0,
+    place: cleanPlace(r.place),
+    camera: cleanCamera(r.camera),
     added: Number.isFinite(Number(r.added)) ? Number(r.added) : Date.now(),
   };
 }
@@ -85,7 +133,11 @@ function cleanItem(raw: unknown): RefItem | null {
 export class ReferenceBoard {
   /** Newest first. */
   private items: RefItem[] = [];
-  private view: RefView = { ...DEFAULT_VIEW };
+  /** Arranging (unlocked): not kept, a scene opens locked. */
+  private arranging = false;
+  private camGet: (() => StoredCamera) | null = null;
+  private camSet: ((c: StoredCamera) => void) | null = null;
+  private readonly placeListeners = new Set<() => void>();
   private project: string | null = null;
   private readonly listeners = new Set<() => void>();
   private saveTimer = 0;
@@ -109,13 +161,44 @@ export class ReferenceBoard {
     return this.items.find((i) => i.id === id);
   }
 
-  getView(): RefView {
-    return { ...this.view };
+  /** The pictures in the view, the one drawn lowest first. */
+  inView(): RefItem[] {
+    return this.items.filter((i) => i.inView).sort((a, b) => a.seq - b.seq);
   }
 
-  /** The picture that is on, if any. */
-  shown(): RefItem | undefined {
-    return this.view.id ? this.get(this.view.id) : undefined;
+  isArranging(): boolean {
+    return this.arranging && this.inView().length > 0;
+  }
+
+  /**
+   * Arrange (unlocked) on or off. Locking keeps the camera with each
+   * picture that is in the view, so Match view can bring it back.
+   */
+  setArranging(on: boolean): void {
+    if (on === this.arranging) return;
+    if (on && !this.inView().length) return;
+    this.arranging = on;
+    if (!on && this.camGet) {
+      const cam = this.camGet();
+      this.items = this.items.map((i) => (i.inView ? { ...i, camera: cam } : i));
+      this.touch();
+      return;
+    }
+    this.emit();
+  }
+
+  /** The view's camera, for locking and Match view (ReferenceView sets these). */
+  bindCamera(get: () => StoredCamera, set: (c: StoredCamera) => void): void {
+    this.camGet = get;
+    this.camSet = set;
+  }
+
+  /** Put the camera back as it was when this picture was locked. False when none is kept. */
+  matchView(id: string): boolean {
+    const cam = this.get(id)?.camera;
+    if (!cam || !this.camSet) return false;
+    this.camSet(cam);
+    return true;
   }
 
   /** The library project this scene is, which the pictures are also kept under. */
@@ -146,6 +229,12 @@ export class ReferenceBoard {
       blob: prepared.blob,
       mirror: false,
       grey: false,
+      blend: DEFAULT_BLEND,
+      opacity: 1,
+      inView: false,
+      seq: 0,
+      place: null,
+      camera: null,
       added: Date.now(),
     };
     this.items = [item, ...this.items];
@@ -156,43 +245,67 @@ export class ReferenceBoard {
   remove(id: string): void {
     if (!this.get(id)) return;
     this.items = this.items.filter((i) => i.id !== id);
-    if (this.view.id === id) this.view = { ...this.view, id: null };
     this.touch();
   }
 
-  setLook(id: string, look: Partial<Pick<RefItem, 'mirror' | 'grey'>>): void {
+  setLook(id: string, look: Partial<Pick<RefItem, 'mirror' | 'grey' | 'blend' | 'opacity'>>): void {
     const item = this.get(id);
     if (!item) return;
-    const next = { ...item, ...(look.mirror !== undefined ? { mirror: look.mirror } : {}), ...(look.grey !== undefined ? { grey: look.grey } : {}) };
+    const next = {
+      ...item,
+      ...(look.mirror !== undefined ? { mirror: look.mirror } : {}),
+      ...(look.grey !== undefined ? { grey: look.grey } : {}),
+      ...(look.blend !== undefined ? { blend: cleanBlend(look.blend) } : {}),
+      ...(look.opacity !== undefined ? { opacity: cleanOpacity(look.opacity) } : {}),
+    };
     this.items = this.items.map((i) => (i.id === id ? next : i));
     this.touch();
   }
 
-  /** Put a picture on, beside or over the view; one is on at a time. */
-  show(id: string, mode: ShowMode): void {
-    if (!this.get(id)) return;
-    this.view = { ...this.view, id, mode };
+  /** Put a picture in the view, on top of those there; Arrange turns on so it can be placed. */
+  putInView(id: string, place?: Placement): void {
+    const item = this.get(id);
+    if (!item) return;
+    const seq = Math.max(0, ...this.items.map((i) => i.seq)) + 1;
+    this.items = this.items.map((i) => (i.id === id ? { ...i, inView: true, seq, place: place ? cleanPlace(place) : i.place } : i));
+    this.arranging = true;
     this.touch();
   }
 
-  /** Take the picture off. */
-  hide(): void {
-    if (this.view.id === null) return;
-    this.view = { ...this.view, id: null };
+  /** Take a picture out of the view (it stays on the board). */
+  takeOut(id: string): void {
+    const item = this.get(id);
+    if (!item || !item.inView) return;
+    this.items = this.items.map((i) => (i.id === id ? { ...i, inView: false } : i));
+    if (!this.items.some((i) => i.inView)) this.arranging = false;
     this.touch();
   }
 
-  setOver(over: Partial<Pick<RefView, 'front' | 'opacity'>>): void {
-    const opacity = over.opacity === undefined ? this.view.opacity : Math.min(1, Math.max(0.05, over.opacity));
-    this.view = { ...this.view, front: over.front ?? this.view.front, opacity };
-    this.touch();
+  /** A tile's tap: in the view, out again. */
+  toggleInView(id: string): void {
+    if (this.get(id)?.inView) this.takeOut(id);
+    else this.putInView(id);
+  }
+
+  /** Move or size a picture in the view. Quiet while dragging: the panel is not rebuilt, the view is told. */
+  setPlace(id: string, place: Placement): void {
+    const clean = cleanPlace(place);
+    if (!clean || !this.get(id)) return;
+    this.items = this.items.map((i) => (i.id === id ? { ...i, place: clean } : i));
+    for (const fn of [...this.placeListeners]) fn();
+    this.touch(false);
+  }
+
+  onPlace(fn: () => void): () => void {
+    this.placeListeners.add(fn);
+    return () => this.placeListeners.delete(fn);
   }
 
   /** Start over with nothing: a new sculpt. What was kept for this scene goes with it. */
   async clear(): Promise<void> {
     this.epoch++;
     this.items = [];
-    this.view = { ...DEFAULT_VIEW };
+    this.arranging = false;
     this.project = null;
     this.emit();
     this.dirty = false;
@@ -201,10 +314,10 @@ export class ReferenceBoard {
   }
 
   /** Replace the board with these (a file's, or what was kept), keeping them as this scene's. */
-  replace(items: RefItem[], view?: Partial<RefView>): void {
+  replace(items: RefItem[]): void {
     this.epoch++;
+    this.arranging = false;
     this.items = items.map(cleanItem).filter((i): i is RefItem => !!i).slice(0, MAX_REFERENCES);
-    this.view = cleanView(view, this.items);
     this.touch();
   }
 
@@ -227,7 +340,7 @@ export class ReferenceBoard {
     if ('project' in from) this.project = from.project;
     const items = (rec?.items ?? []).map(cleanItem).filter((i): i is RefItem => !!i).slice(0, MAX_REFERENCES);
     this.items = items;
-    this.view = cleanView(rec?.view, items);
+    this.arranging = false;
     this.emit();
     // An opened project replaces what the autosave held: written under the scene's own key at once.
     if ('project' in from) this.touch(false);
@@ -265,7 +378,7 @@ export class ReferenceBoard {
     if (!this.dirty) return;
     this.dirty = false;
     if (!mayStore()) return;
-    const rec: Stored = { v: 1, items: this.items, view: this.view };
+    const rec: Stored = { v: 1, items: this.items };
     const keys = [keyCurrent(this.scope), ...(this.project ? [keyProject(this.project)] : [])];
     for (const key of keys) {
       try {
@@ -292,13 +405,18 @@ export interface FileReference {
   height: number;
   mirror: boolean;
   grey: boolean;
+  blend: string;
+  opacity: number;
+  inView: boolean;
+  seq: number;
+  place: Placement | null;
+  camera: StoredCamera | null;
   added: number;
   data: Uint8Array;
 }
 
 export interface FileReferences {
   items: FileReference[];
-  view: RefView;
 }
 
 export async function toFileReferences(board: ReferenceBoard): Promise<FileReferences | null> {
@@ -313,34 +431,36 @@ export async function toFileReferences(board: ReferenceBoard): Promise<FileRefer
       height: i.height,
       mirror: i.mirror,
       grey: i.grey,
+      blend: i.blend,
+      opacity: i.opacity,
+      inView: i.inView,
+      seq: i.seq,
+      place: i.place,
+      camera: i.camera,
       added: i.added,
       data: new Uint8Array(await i.blob.arrayBuffer()),
     });
   }
-  // In a file the picture that is on is named by its place in the list (ids are not kept).
-  const view = board.getView();
-  const at = list.findIndex((i) => i.id === view.id);
-  return { items, view: { ...view, id: at >= 0 ? String(at) : null } };
+  return { items };
 }
 
 /** A file's pictures as board items; ids are made new, so a file never collides with what is here. */
-export function fromFileReferences(refs: FileReferences): { items: RefItem[]; view: RefView } {
-  const items: RefItem[] = [];
-  const ids = new Map<number, string>();
-  refs.items.forEach((r, n) => {
-    const id = newId();
-    ids.set(n, id);
-    items.push({
-      id,
-      name: r.name,
-      width: r.width,
-      height: r.height,
-      blob: new Blob([r.data as BlobPart], { type: r.type }),
-      mirror: r.mirror,
-      grey: r.grey,
-      added: r.added,
-    });
-  });
-  const at = refs.view.id === null ? -1 : refs.items.findIndex((_, n) => n === Number(refs.view.id));
-  return { items, view: { ...refs.view, id: at >= 0 ? (ids.get(at) ?? null) : null } };
+export function fromFileReferences(refs: FileReferences): { items: RefItem[] } {
+  const items: RefItem[] = refs.items.map((r) => ({
+    id: newId(),
+    name: r.name,
+    width: r.width,
+    height: r.height,
+    blob: new Blob([r.data as BlobPart], { type: r.type }),
+    mirror: r.mirror,
+    grey: r.grey,
+    blend: cleanBlend(r.blend),
+    opacity: cleanOpacity(r.opacity),
+    inView: r.inView === true,
+    seq: finite(r.seq) ? r.seq : 0,
+    place: cleanPlace(r.place),
+    camera: cleanCamera(r.camera),
+    added: r.added,
+  }));
+  return { items };
 }

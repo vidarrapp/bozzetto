@@ -28,8 +28,12 @@ export interface ViewHooks {
    * what holding L does.
    */
   moveLight?: { get: () => boolean; toggle: () => void };
-  /** The Reference picture drawn over the view (a switch; the picture itself is the Reference panel's). */
-  referenceOver?: { get: () => boolean; toggle: () => void };
+  /** The details overlay (a setting: ui/DetailsOverlay); where the view has one. */
+  details?: boolean;
+  /** The Reference pictures in the view, shown or hidden all at once. */
+  referenceShow?: { get: () => boolean; toggle: () => void };
+  /** Arrange (unlock) the pictures in the view; `key` says the mode answers its hotkey. */
+  referenceArrange?: { get: () => boolean; toggle: () => void; key?: boolean };
   /** The tool bar's digits: a setting, so the mode that has a tool bar says so. */
   toolKeys?: boolean;
   /** The panels this mode has, in the order of the menu: [id, name]. */
@@ -77,14 +81,26 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   if (wire) looks.push({ label: 'Wireframe', key: keyFor('view.wireframe'), checked: wire.get, toggle: () => wire.toggle() });
   const shadows = h.shadows;
   if (shadows) looks.push({ label: 'Shadows', key: keyFor('view.shadows'), checked: shadows.get, toggle: () => shadows.toggle() });
+  if (h.details) {
+    looks.push({
+      label: 'Details',
+      key: keyFor('view.details'),
+      checked: () => settings.get('details') === 'on',
+      toggle: (on) => settings.set('details', on ? 'on' : 'off'),
+    });
+  }
   const light = h.moveLight;
   if (light) looks.push({ label: 'Move light', checked: light.get, toggle: () => light.toggle() });
   const colours = h.groupColors;
   if (colours) {
     looks.push({ label: 'Poly group colours', key: keyFor('groups.show'), checked: colours.get, toggle: () => colours.toggle() });
   }
-  const over = h.referenceOver;
-  if (over) looks.push({ label: 'Reference over the view', checked: over.get, toggle: () => over.toggle() });
+  const refs = h.referenceShow;
+  if (refs) looks.push({ label: 'References', checked: refs.get, toggle: () => refs.toggle() });
+  const arrange = h.referenceArrange;
+  if (arrange) {
+    looks.push({ label: 'Arrange references', key: arrange.key ? keyFor('view.arrange') : undefined, checked: arrange.get, toggle: () => arrange.toggle() });
+  }
   if (h.toolKeys) {
     looks.push({
       label: 'Hotkeys on tools',
@@ -113,12 +129,12 @@ export function viewMenuItems(h: ViewHooks): MenuItem[] {
   if (h.workspace) {
     const way = h.workspace;
     const spaces: MenuItem[] = [];
-    for (const [id, label] of [['armature', 'Armature'], ['sculpt', 'Sculpt'], ['present', 'Present']] as const) {
+    for (const [id, label] of [['armature', 'Armature'], ['sculpt', 'Sculpt'], ['paint', 'Paint'], ['present', 'Present']] as const) {
       const step = (): PathStep | undefined => way().steps[id];
       const here = (): boolean => way().current === id;
       spaces.push({
         label,
-        key: id === 'present' ? keyFor('ui.present') : undefined,
+        key: id === 'present' ? keyFor('ui.present') : id === 'paint' ? keyFor('ui.paint') : undefined,
         enabled: () => !here() && 'action' in (step() ?? {}),
         hint: () => {
           if (here()) return 'Where you are';

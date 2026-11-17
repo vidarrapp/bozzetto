@@ -17,9 +17,9 @@ import {
   ShadowMaterial,
   Sphere,
   Vector2,
-  Vector3, Color, CanvasTexture, SRGBColorSpace, LinearFilter, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
+  Vector3, Vector4, Color, CanvasTexture, SRGBColorSpace, LinearFilter, BackSide, FrontSide, HalfFloatType, RedFormat, Quaternion, Group, MaterialBlending, UnsignedByteType } from 'three';
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer, type Node, MeshBasicNodeMaterial, LineBasicNodeMaterial, BlendMode } from 'three/webgpu';
-import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity, texture as tslTexture, screenUV, select, min } from 'three/tsl';
+import { pass, mrt, output, normalView, float, vec2, vec3, vec4, pow, uniform, uv, smoothstep, screenSize, perspectiveDepthToViewZ, positionLocal, normalLocal, rtt, materialColor, materialOpacity, texture as tslTexture, screenUV, select, min, mix } from 'three/tsl';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { dof } from 'three/examples/jsm/tsl/display/DepthOfFieldNode.js';
 import { softAo, type SoftGTAONode } from './gtao';
@@ -312,6 +312,8 @@ const CANVAS_MSAA = new URLSearchParams(location.search).has('canvasmsaa');
  * moved to count as moving (the damped coast after a drag, a wheel zoom).
  */
 const MOVED_WITHIN_MS = 150;
+/** How long the view is idle before its shadows are drawn at the high tier's size. */
+const REST_AFTER_MS = 200;
 /**
  * The smallest turn (radians) or move (share of the orbit distance) in a
  * frame that counts as the camera moving: about a quarter of a pixel, so
@@ -2344,8 +2346,17 @@ export class Viewer {
    * around it (the Reference panel's "behind" choice). Null puts the
    * background back. The picture is a canvas the caller keeps and may
    * redraw: call this again, or `refreshBackdrop`, after it changes.
+   * `opacity` is how much of it shows over the background's colour.
    */
-  setBackdrop(picture: HTMLCanvasElement | null): void {
+  setBackdrop(
+    picture: HTMLCanvasElement | null,
+    opacity = 1,
+    /** Where it stands, as fractions of the view: left, top, width and height (top down). Default: fitted to the view's height and centred. */
+    rect?: { x: number; y: number; w: number; h: number },
+  ): void {
+    if (rect) this.backdropRect.value.set(rect.x, 1 - (rect.y + rect.h), rect.w, rect.h);
+    this.backdropOpacity.value = Math.min(1, Math.max(0, opacity));
+    this.invalidate();
     if (!picture) {
       if (this.backdropTex) {
         this.backdropTex.dispose();
@@ -2369,17 +2380,14 @@ export class Viewer {
     this.backdropTex = tex;
     this.backdropPicture = picture;
     const bg = this.backdropBg;
-    this.backdropAspect.value = picture.width / Math.max(1, picture.height);
-    // The view's own shape, from the drawing buffer: the picture's height is the view's.
-    const view = screenSize;
-    const aspect = this.backdropAspect;
-    // u: screen x in picture units, centred; v: the picture's own up.
-    const u = screenUV.x.sub(0.5).mul(view.x.div(view.y)).div(aspect).add(0.5);
-    const v = screenUV.y;
+    // u, v: where the screen point falls on the picture (v up, as the texture is).
+    const r = this.backdropRect;
+    const u = screenUV.x.sub(r.x).div(r.z);
+    const v = screenUV.y.sub(r.y).div(r.w);
     const inside = min(min(u, float(1).sub(u)), min(v, float(1).sub(v))).greaterThanEqual(0);
     const uvn = vec2(u, v).clamp(0, 1);
     const sample = tslTexture(tex, uvn);
-    this.backdropNode = select(inside, vec4(sample.rgb, 1), vec4(bg, 1)) as unknown as Node;
+    this.backdropNode = select(inside, vec4(mix(bg, sample.rgb, this.backdropOpacity), 1), vec4(bg, 1)) as unknown as Node;
     this.followBackdropColour();
     this.syncBackdropNode();
     this.invalidate();
@@ -2388,7 +2396,6 @@ export class Viewer {
   /** The backdrop's picture was redrawn (or changed shape): draw it again. */
   refreshBackdrop(): void {
     if (!this.backdropTex || !this.backdropPicture) return;
-    this.backdropAspect.value = this.backdropPicture.width / Math.max(1, this.backdropPicture.height);
     this.backdropTex.needsUpdate = true;
     this.invalidate();
   }
@@ -2420,7 +2427,10 @@ export class Viewer {
   private backdropTex: CanvasTexture | null = null;
   private backdropPicture: HTMLCanvasElement | null = null;
   private readonly backdropBg = uniform(new Color(0x1c1814));
-  private readonly backdropAspect = uniform(1);
+  /** Left, bottom, width, height of the backdrop picture as fractions of the view. */
+  private readonly backdropRect = uniform(new Vector4(0, 0, 1, 1));
+  /** How much of the backdrop picture shows over the background's colour. */
+  private readonly backdropOpacity = uniform(1);
 
   /** The renderer canvas, read back per frame during capture. */
   get captureCanvas(): HTMLCanvasElement {
@@ -3661,7 +3671,13 @@ export class Viewer {
       fast && kind === 'stroke' ? 'hold' : fast && kind === 'move' ? 'stagger' : 'all',
       this.frameNo,
     );
+    // The still frame's shadows are drawn once: the high tier's maps and
+    // blur samples on every tier, from a moment after the view stops.
+    if (kind !== null) this.lastBusy = now;
+    this.lighting.setAtRest(kind === null && now - this.lastBusy > REST_AFTER_MS);
   }
+
+  private lastBusy = -Infinity;
 
   /**
    * Whether the camera turned or moved this frame by more than about a

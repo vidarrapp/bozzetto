@@ -1510,7 +1510,7 @@ async function memberLibrary(server, o, a, t) {
   await p.evaluate(() => window.__sculpt.persist.settle());
   const unsentHere = await gallery();
   t.ok(
-    unsentHere.progress === 'Your sculpt' && unsentHere.cards.includes('Not uploaded'),
+    /^Study \d/.test(unsentHere.progress ?? '') && unsentHere.cards.includes('Not uploaded'),
     `with a save not uploaded, the In progress card is as it was, beside the Not uploaded card (${show(unsentHere)})`,
   );
   await backToSculpt();

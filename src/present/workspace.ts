@@ -430,6 +430,7 @@ export async function mountWorkspace(opts: WorkspaceOptions): Promise<Viewer | n
     steps: {
       armature: { unavailable: 'This project has no sculpt scene' },
       sculpt: { unavailable: 'This project has no sculpt scene' },
+      paint: { unavailable: 'This project has no sculpt scene' },
     },
   });
   strip.setWorkspace(workspaceNow().current, workspaceNow().steps);

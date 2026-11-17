@@ -35,7 +35,15 @@ Enums.Tools = {
   RAKE: 13,
   // BOZZETTO EDIT: the paint brush's blur, swapped in while shift is held
   // over the paint brush (the way Smooth is over the sculpting brushes).
-  PAINT_BLUR: 14
+  PAINT_BLUR: 14,
+  // BOZZETTO EDIT: the Paint workspace's own tools (installed by the bridge,
+  // as the Rake is): the blur as a tool of its own (PAINT_BLUR stays the
+  // one Shift swaps in), erase, fill, pick and project.
+  PAINT_ERASE: 15,
+  BLUR: 16,
+  FILL: 17,
+  PICK: 18,
+  PROJECT: 19
 };
 
 // display shader type

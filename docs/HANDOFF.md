@@ -2,6 +2,10 @@
 
 ## Open questions for Vidar
 
+- [ ] 2026-11-17: Paint layers: the first layer on an object takes its colours as Base and marks the object painted, so a later change of its material's albedo no longer recolours it (as after a first stroke today). Keep, or let Base follow the material until a stroke is painted. (blocks: nothing)
+- [ ] 2026-11-17: Paint layers: Merge down joins a layer into the one below, which keeps its own blend mode and opacity; the result is exact when the lower layer is Normal at 100% and a close likeness otherwise (Photoshop does the same). Keep, or merge only layers whose lower one is Normal. (blocks: nothing)
+- [ ] 2026-11-17: Project reaches the points that face the camera inside the brush's dab; a part of the model hidden behind the touched surface is not reached, but a point behind another part of the same object within the dab is not tested for occlusion. Enough, or a true depth test against the frame. (blocks: nothing)
+- [ ] 2026-11-17: Fill fills the layer (or Base) except what is masked or hidden; a tap fills the whole object. A fill of one poly group or of the selected objects only is not built. Wanted. (blocks: nothing)
 - [x] 2026-11-17: Dark outlines on marks over the view (slider text, handles, measure labels). Decided 2026-11-17: no hard outline; light marks with a faint soft shade under them
 - [x] 2026-11-17: Phones. Decided 2026-11-17: not a target platform, only for quick demos; panels open there as on the desktop and no more work goes into phone usability (the bottom sheet built that day is removed)
 - [ ] 2026-11-17: The head's look-at shares the turn as the part each bone has made by the end: head all, neck half, chest 12 percent, spine 6 percent (the owner said neck about half, torso 10 to 15 in all). Keep these, or a stronger neck or a freer torso. (blocks: nothing, a constant in Armature.ts)

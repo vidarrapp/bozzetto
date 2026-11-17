@@ -16,7 +16,16 @@
 
 import { deviceStore, onDeviceChoice } from './deviceStorage';
 
-export type KeyMode = 'sculpt' | 'view' | 'armature';
+export type KeyMode = 'sculpt' | 'view' | 'armature' | 'paint';
+
+/**
+ * What the Paint workspace leaves out of Sculpt's keys: the sculpting
+ * brushes (its bar has the paint tools on 1 to 6), Calipers and the
+ * transform gizmo. Everything else in Sculpt's table answers there as it
+ * does in Sculpt: undo, size and strength, symmetry, masks, the levels, the
+ * scene and the view.
+ */
+const PAINT_LEAVES_OUT = /^(tool\.(?!select$)|gizmo\.)/;
 
 export interface ActionDef {
   id: string;
@@ -100,7 +109,13 @@ export const ACTIONS: ActionDef[] = [
   { id: 'tool.rake', label: 'Rake (Shift still smooths)', group: 'Brushes', mode: 'sculpt', chord: '7' },
   { id: 'tool.drag', label: 'Drag', group: 'Brushes', mode: 'sculpt', chord: '8' },
   { id: 'tool.polish', label: 'Polish (flattens, keeps edges sharp)', group: 'Brushes', mode: 'sculpt', chord: '9' },
-  { id: 'tool.paint', label: 'Paint (Alt + click samples a colour; Shift blurs)', group: 'Brushes', mode: 'sculpt', chord: '0' },
+  // The Paint workspace's tools, on the digits in the bar's order (Select stays on q).
+  { id: 'paint.paint', label: 'Paint (Alt + click samples a colour; Shift blurs)', group: 'Paint tools', mode: 'paint', chord: '1' },
+  { id: 'paint.erase', label: 'Erase (lowers the layer\'s alpha)', group: 'Paint tools', mode: 'paint', chord: '2' },
+  { id: 'paint.blur', label: 'Blur (softens the layer\'s colour and alpha)', group: 'Paint tools', mode: 'paint', chord: '3' },
+  { id: 'paint.fill', label: 'Fill (the layer, or the part that is not masked, with the colour)', group: 'Paint tools', mode: 'paint', chord: '4' },
+  { id: 'paint.pick', label: 'Pick (takes a colour from the model)', group: 'Paint tools', mode: 'paint', chord: '5' },
+  { id: 'paint.project', label: 'Project (paints a reference picture in the view onto the model)', group: 'Paint tools', mode: 'paint', chord: '6' },
   // --- sculpt: subdivision ---
   { id: 'subdiv.add', label: 'Subdivide', group: 'Subdivision', mode: 'sculpt', chord: 'ctrl+d' },
   { id: 'subdiv.up', label: 'Subdivision level up', group: 'Subdivision', mode: 'sculpt', chord: 'd' },
@@ -120,6 +135,8 @@ export const ACTIONS: ActionDef[] = [
   // --- lighting / display (both) ---
   { id: 'view.shadows', label: 'Shadows on / off', group: 'Lighting', mode: 'both', chord: 'shift+s' },
   { id: 'view.wireframe', label: 'Wireframe overlay', group: 'Lighting', mode: 'both', chord: 'shift+w' },
+  { id: 'view.details', label: 'Details overlay on / off', group: 'Lighting', mode: 'both', chord: 'shift+i' },
+  { id: 'view.arrange', label: 'Arrange the reference pictures (unlock / lock)', group: 'Lighting', mode: 'sculpt', chord: 'alt+r' },
   { id: 'light.move', label: 'Move the key light (hold + drag: across / up; View > Move light does it with one drag)', group: 'Lighting', mode: 'sculpt', chord: 'l', hold: true },
   // The same key in the viewer and the editors' preview: one Preferences
   // change moves it in all three, as Armature's undo follows Sculpt's.
@@ -174,6 +191,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'ui.chrome', label: 'Close panels, then hide the interface', group: 'Interface', mode: 'both', chord: 'tab' },
   { id: 'ui.show', label: 'Show the interface', group: 'Interface', mode: 'both', chord: 'escape' },
   { id: 'ui.present', label: 'Present: the model alone, with Lighting, Camera and Render (Esc leaves)', group: 'Interface', mode: 'sculpt', chord: 'shift+p' },
+  { id: 'ui.paint', label: 'Paint: the paint tools and the paint layers (again goes back to Sculpt)', group: 'Interface', mode: 'sculpt', chord: 'shift+b' },
   { id: 'ui.help', label: 'Hotkey guide', group: 'Interface', mode: 'both', chord: 'h' },
   { id: 'ui.fps', label: 'Frame meter', group: 'Interface', mode: 'both', chord: 'p' },
   { id: 'ui.preferences', label: 'Preferences (fingers, hotkeys)', group: 'Interface', mode: 'both', chord: 'ctrl+,' },
@@ -300,6 +318,7 @@ export class Keymap {
 
   /** Every action a mode's handler can be asked for, in table order. */
   actionsFor(mode: KeyMode): ActionDef[] {
+    if (mode === 'paint') return ACTIONS.filter((a) => a.mode === 'paint' || a.mode === 'both' || (a.mode === 'sculpt' && !PAINT_LEAVES_OUT.test(a.id)));
     return ACTIONS.filter((a) => a.mode === mode || a.mode === 'both');
   }
 
@@ -393,7 +412,10 @@ export class Keymap {
   /** The modes an action's key is heard in: its own, and those of every action sharing it. */
   private modesOf(a: ActionDef): Set<KeyMode | 'both'> {
     const owner = this.keyOwner(a.id);
-    return new Set(ACTIONS.filter((x) => this.keyOwner(x.id) === owner).map((x) => x.mode));
+    const modes = new Set<KeyMode | 'both'>(ACTIONS.filter((x) => this.keyOwner(x.id) === owner).map((x) => x.mode));
+    // Sculpt's keys that the Paint workspace keeps answer there too: a chord taken in one is taken in the other.
+    if (modes.has('sculpt') && !PAINT_LEAVES_OUT.test(owner)) modes.add('paint');
+    return modes;
   }
 
   private emit(): void {

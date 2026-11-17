@@ -2422,6 +2422,7 @@ body.presenting .measure-overlay {
    call), so the timeline can still be scrubbed with the rest put away. */
 body.chrome-hidden .panel,
 body.chrome-hidden .float-window,
+body.chrome-hidden .ref-chrome,
 body.chrome-hidden .sculpt-toolbar__brushes,
 body.chrome-hidden > .topbar,
 body.chrome-hidden .viewer-back,
@@ -6992,6 +6993,11 @@ progress {
    until the pointer or focus is on it, then red. Square corners, the grey
    scale; orange only for the one main action, the page one is on and focus.
    ========================================================================== */
+
+/* A page with no title strip (the passkey check): its scroller starts at the top. */
+html.is-page :is(#app, #admin).page-scroll.page-scroll--bare {
+  top: 0;
+}
 
 /* --- the column --- */
 .page {

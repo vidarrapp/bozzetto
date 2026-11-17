@@ -85,7 +85,7 @@ export const suites = {
     const view = await openMenu(page, 'View');
     t.eq(
       view.items.join('|'),
-      'Frame selected|Frame all|Wireframe|Shadows|Move light|Poly group colours|Reference over the view|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
+      'Frame selected|Frame all|Wireframe|Shadows|Details|Move light|Poly group colours|References|Arrange references|Hotkeys on tools|Scene panel|Model panel|Layers panel|Tool panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present',
       'View: framing, the switches, the five panels, Hide interface and the three workspaces',
     );
     const keys = await page.evaluate(() =>
@@ -101,9 +101,9 @@ export const suites = {
     // The readout stands in the middle of the strip and replaced the corner's.
     const readout = await page.evaluate(() => ({
       keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
-      object: document.querySelector('.bz-readout__object')?.textContent,
-      tris: document.querySelector('.bz-readout__tris')?.textContent,
-      level: document.querySelector('.bz-readout__level')?.textContent,
+      object: document.querySelector('.bz-details [data-fact="name"]')?.textContent,
+      tris: document.querySelector('.bz-details [data-fact="tris"] .bz-details__val')?.textContent,
+      level: document.querySelector('.bz-details [data-fact="level"] .bz-details__val')?.textContent,
       name: !document.querySelector('.bz-readout__name')?.hidden,
       corner: !!document.querySelector('.sculpt-stats'),
       keyColour: getComputedStyle(document.querySelector('.bz-readout__key')).color,
@@ -114,15 +114,15 @@ export const suites = {
         return (r.left + r.right) / 2;
       })(),
     }));
-    t.eq(readout.keys.join(','), 'Object,Tris,Level', 'the readout says Object, Tris and Level');
-    t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+\/\d+$/.test(readout.level), `with the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
+    t.eq(readout.keys.join(','), '', 'the strip\'s readout carries no Object, Tris or Level: the details overlay has them');
+    t.ok(readout.object === 'Sphere' && readout.tris === readout.real.toLocaleString('en-US') && /^\d+ of \d+$/.test(readout.level), `the overlay has the object, its triangles and its level (${readout.object}, ${readout.tris}, ${readout.level})`);
     t.ok(!readout.corner, 'and the corner at the top left of the view is gone');
     t.ok(!readout.name, 'a scene with no name shows none');
     t.ok(/179, 179, 179/.test(readout.keyColour) && Number(readout.valueWeight) >= 600, `keys are secondary and regular, values bold (${readout.keyColour}, ${readout.valueWeight})`);
     t.near(readout.centre, 640, 2, 'and it is centred');
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
-    await page.waitForFunction(() => document.querySelector('.bz-readout__object')?.textContent === 'Cube', null, { timeout: 4000 });
-    t.ok(true, 'the readout follows the active object');
+    await page.waitForFunction(() => document.querySelector('.bz-details [data-fact="name"]')?.textContent === 'Cube', null, { timeout: 4000 });
+    t.ok(true, 'the details overlay follows the active object');
 
     // The old top row is gone, and what moved is in the strip.
     const gone = await page.evaluate(() => ({
@@ -427,7 +427,7 @@ export const suites = {
   },
 
   /**
-   * The workspace path (Armature > Sculpt > Present) in each workspace, Present as a
+   * The workspace path (Armature > Sculpt > Paint > Present) in each workspace, Present as a
    * workspace (its bar, its Output tab, Publish only there), and the Armature step's ask.
    */
   async shellWorkspaces(page, base, t) {
@@ -438,7 +438,7 @@ export const suites = {
     // --- Sculpt -------------------------------------------------------------
     await openSculpt(page, base);
     await page.addStyleTag({ content: '.panel { transition: none !important; }' });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'Sculpt: the path reads Armature, Sculpt, Present with Sculpt current');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Sculpt: the path reads Armature, Sculpt, Paint, Present with Sculpt current');
     const look = await page.evaluate(() => {
       const css = (el) => getComputedStyle(el);
       const r = (el) => el.getBoundingClientRect();
@@ -455,7 +455,7 @@ export const suites = {
     });
     t.ok(look.curBg === 'rgb(34, 34, 34)' && look.curColor === 'rgb(242, 242, 242)' && look.curWeight === '600' && look.size === '13px', `the current step: the viewport's fill, text colour, weight 600, 13px (${JSON.stringify(look)})`);
     t.ok(look.h === 24 && look.pad === '10px' && look.otherColor === 'rgb(179, 179, 179)' && look.otherWeight === '400', 'steps are 24px tall with 10px sides; the others are secondary text');
-    t.ok(look.sepW === 1 && look.sepH === 12 && look.sepBg === 'rgb(68, 68, 68)' && look.arrowColor === 'rgb(125, 125, 125)' && look.arrows === 2 && look.after, 'a 1x12 separator after the menus, and a dim arrow between the steps');
+    t.ok(look.sepW === 1 && look.sepH === 12 && look.sepBg === 'rgb(68, 68, 68)' && look.arrowColor === 'rgb(125, 125, 125)' && look.arrows === 3 && look.after, 'a 1x12 separator after the menus, and a dim arrow between the steps');
     await page.hover('.bz-ws__step[data-workspace="present"]');
     const hov = await page.evaluate(() => {
       const s = getComputedStyle(document.querySelector('.bz-ws__step[data-workspace="present"]'));
@@ -465,17 +465,17 @@ export const suites = {
 
     // Publish is not in the strip in Sculpt, signed in or not.
     const chip = () => shown(page, '.publish-window__chip');
-    await page.evaluate(() => window.__sculpt.publishWindow.setAvailable(true));
+    await page.evaluate(() => void window.__sculpt.publishWindow.setAvailable(true));
     t.ok(!(await chip()), 'Sculpt: no Publish button in the strip, even signed in');
     await openMenu(page, 'File');
     t.ok(await pick(page, 'Publish…'), 'File has Publish…');
     t.ok(await page.evaluate(() => window.__sculpt.publishWindow.isOpen()), 'and File > Publish… opens the window in Sculpt');
-    await page.evaluate(() => window.__sculpt.publishWindow.close());
+    await page.evaluate(() => void window.__sculpt.publishWindow.close());
 
     // --- Present: pressing the step ------------------------------------------
     await step('present');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt > Present*', 'pressing Present enters it, Present current');
+    t.eq(await path(), 'Armature > Sculpt > Paint > Present*', 'pressing Present enters it, Present current');
     t.ok(await chip(), 'Present: Publish shows in the strip, signed in');
     const pub = await page.evaluate(() => {
       const el = document.querySelector('.publish-window__chip');
@@ -541,13 +541,13 @@ export const suites = {
     // --- Present > Sculpt, and Esc --------------------------------------------
     await step('sculpt');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'the Sculpt step leaves Present');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'the Sculpt step leaves Present');
     t.ok(!(await chip()) && !(await shown(page, '.panel--output .panel__handle')), 'Publish and the Output tab are gone with it');
     await page.keyboard.press('Shift+P');
     await page.waitForFunction(() => document.body.classList.contains('presenting'), null, { timeout: 5000 });
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.body.classList.contains('presenting'), null, { timeout: 5000 });
-    t.eq(await path(), 'Armature > Sculpt* > Present', 'Esc leaves too');
+    t.eq(await path(), 'Armature > Sculpt* > Paint > Present', 'Esc leaves too');
 
     // --- the Armature step asks ------------------------------------------------
     await step('armature');
@@ -574,7 +574,7 @@ export const suites = {
       await Promise.all([page.waitForFunction(() => !!window.__armature, null, { timeout: 90_000 }), page.click('.bz-ask-yes')]);
       await page.waitForTimeout(300);
       if (round === 1) {
-        t.eq(await path(), 'Armature* > Sculpt > Present(dim)', 'Armature: the path has Armature current and Present dim');
+        t.eq(await path(), 'Armature* > Sculpt > Paint(dim) > Present(dim)', 'Armature: the path has Armature current and Present dim');
         const dim = await page.evaluate(() => {
           const el = document.querySelector('.bz-ws__step[data-workspace="present"]');
           return { color: getComputedStyle(el).color, title: el.title, disabled: el.getAttribute('aria-disabled') };
@@ -731,9 +731,9 @@ export const suites = {
     });
     t.eq(bar.b, bar.vh, 'the tool bar is flush to the bottom edge');
     t.near((bar.l + bar.r) / 2, 640, 1, 'and centred');
-    t.eq(bar.tools.length, 13, 'thirteen tools, Calipers the last');
+    t.eq(bar.tools.length, 12, 'twelve tools, Calipers the last (Paint has its own workspace)');
     t.ok(bar.tools.every((x) => x.w === 44 && x.h === 44), 'each a 44px square');
-    t.near(bar.w, 13 * 44 + 12 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
+    t.near(bar.w, 12 * 44 + 11 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
     t.ok(bar.pad === '8px 12px', `padding 8px 12px (${bar.pad})`);
     t.ok(/Martian/.test(bar.digit.font) && bar.digit.size === '11px' && /179, 179, 179/.test(bar.digit.color), `the digit is mono 11px, secondary (${bar.digit.font}, ${bar.digit.size})`);
     const active = await page.evaluate(() => {
@@ -855,7 +855,7 @@ export const suites = {
     const names = await page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].map((b) => b.textContent));
     t.eq(names.join(','), 'File,Edit,View,Help', 'Armature has the four menus');
     const view = await openMenu(page, 'View');
-    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Move light|Reference over the view|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
+    t.eq(view.items.join('|'), 'Frame all|Wireframe|Shadows|Details|Move light|References|Arrange references|Armature panel|Material panel|Reference panel|Hide interface|Armature|Sculpt|Present', 'its View menu has what applies');
     await closeMenu(page);
     t.ok(await shown(page, '.bz-strip__hide'), 'the eye button is in the strip');
     const tabs = await page.evaluate(() => ['armature', 'reference'].map((c) => document.querySelector(`.panel--${c} .panel__handle`).getBoundingClientRect()).map((r) => [r.left, r.right, r.top, r.height]));

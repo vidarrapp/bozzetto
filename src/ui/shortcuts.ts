@@ -3,6 +3,7 @@ import { isFormControlTarget, isTextEntryTarget, releaseFocusForChrome, tabShoul
 import { keymap } from './keymap';
 import { KEY_DRAG_DEG_PER_PX } from '../viewer/Lighting';
 import { showPreferences } from './Preferences';
+import { settings } from './settings';
 
 export interface ShortcutHandlers {
   /** Tab: close the open panels, then hide the interface, then bring it back (ChromeToggle.handleTab). */
@@ -110,6 +111,9 @@ export function installShortcuts(viewer: Viewer, handlers: ShortcutHandlers = {}
       case 'view.shadows':
         viewer.lighting.setShadowsMaster(!viewer.lighting.getShadowsMaster());
         handlers.refresh?.();
+        return;
+      case 'view.details':
+        settings.set('details', settings.get('details') === 'on' ? 'off' : 'on');
         return;
       case 'ui.chrome':
         // Shift+Tab, and Tab in a text field, a select or a modal, belong

@@ -57,6 +57,9 @@ export function isCurveId(c: unknown): c is CurveId {
 const DEFAULTS: Record<number, { size: number; strength: number }> = {
   [Enums.Tools.CREASE]: { size: 1, strength: 1 },
   [Enums.Tools.PAINT]: { size: 1, strength: 1 },
+  [Enums.Tools.PAINT_ERASE]: { size: 1, strength: 1 },
+  [Enums.Tools.BLUR]: { size: 1, strength: 1 },
+  [Enums.Tools.PROJECT]: { size: 1, strength: 1 },
   [Enums.Tools.DRAG]: { size: 0, strength: 0 },
 };
 

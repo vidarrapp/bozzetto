@@ -142,7 +142,7 @@ export const suites = {
         key: b.querySelector('.sculpt-toolbar__key')?.textContent ?? '',
       })),
     );
-    t.ok(tools.length >= 13, `the toolbar has its buttons (${tools.length})`);
+    t.ok(tools.length >= 12, `the toolbar has its buttons (${tools.length})`);
     await menuItem(page, 'Help topics');
     const map = await page.evaluate(() =>
       [...document.querySelectorAll('.help-win__item[data-tools]')].map((b) => ({ id: b.dataset.topic, tools: b.dataset.tools.split('|') })),

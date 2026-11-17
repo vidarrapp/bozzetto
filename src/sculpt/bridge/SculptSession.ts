@@ -41,6 +41,7 @@ import {
   StableSmooth,
   VolumetricMove,
 } from './tools';
+import { PaintBlurTool, PaintEraseBrush, PaintFillTool, PaintPickTool, PaintProjectBrush } from './paintTools';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { CameraAdapter } from './CameraAdapter';
@@ -73,6 +74,7 @@ import { GROUP_COLOR_DEFAULT, GROUPS_V } from '../../../shared/bozz';
 import type { SavedGroups } from './groupsRecord';
 import { askWindow } from '../../ui/askWindow';
 import { SculptLayers } from './layers';
+import { PaintLayers } from './paintLayers';
 
 /**
  * Ctrl+d subdivision gates. Past the soft line the user confirms (upstream
@@ -332,6 +334,8 @@ export class SculptSession {
   readonly groups: PolyGroups;
   /** Every object's sculpt layers (layers.ts). */
   readonly layers: SculptLayers = new SculptLayers(this);
+  /** Every object's paint layers (paintLayers.ts), the Paint workspace's. */
+  readonly paint: PaintLayers = new PaintLayers(this);
   /** The calipers' measurements, pinned and under way (measure.ts). Never in the sculpt history. */
   readonly measure = new Measurements(
     () => this.meshes,
@@ -408,6 +412,23 @@ export class SculptSession {
     // means the same with shift held (it used to take Paint's hardness).
     blur.curve = (this.sculptManager.getTool(Enums.Tools.PAINT) as unknown as PaintBrush).curve;
     this.sculptManager._tools[Enums.Tools.PAINT_BLUR] = blur as unknown as SculptTool;
+    // The Paint workspace's other tools (paintTools.ts): they share Paint's
+    // colour and falloff, dab as closely, and write colour only.
+    const paintBrush = this.sculptManager.getTool(Enums.Tools.PAINT) as unknown as PaintBrush;
+    const own = (index: number, tool: object): void => {
+      const t = tool as unknown as { _color: Float32Array; curve?: unknown; _spacing: number; _writeRoughness: boolean; _writeMetalness: boolean };
+      t._color = paintBrush._color;
+      if ('curve' in t) t.curve = paintBrush.curve;
+      t._spacing = 0.05;
+      t._writeRoughness = false;
+      t._writeMetalness = false;
+      this.sculptManager._tools[index] = tool as unknown as SculptTool;
+    };
+    own(Enums.Tools.PAINT_ERASE, new PaintEraseBrush(this));
+    own(Enums.Tools.BLUR, new PaintBlurTool(this));
+    own(Enums.Tools.FILL, new PaintFillTool(this));
+    own(Enums.Tools.PICK, new PaintPickTool(this));
+    own(Enums.Tools.PROJECT, new PaintProjectBrush(this));
     // Smooth with its interpolation clamped: pen pressure maps to a 2x
     // intensity multiplier here, and the vendor lerp diverges past 1.
     this.sculptManager._tools[Enums.Tools.SMOOTH] = new StableSmooth(
@@ -476,6 +497,8 @@ export class SculptSession {
     }
     mesh.updateDuplicateColorsAndMaterials();
     mesh.updateColorBuffer();
+    // An object with paint layers takes the colour as its Base.
+    this.paint.baseFilled(mesh, rgb);
   }
 
   /**
@@ -643,6 +666,16 @@ export class SculptSession {
     return `${base} ${i}`;
   }
 
+  /**
+   * An operation that rebuilds the surface flattens the sculpt layers and the
+   * paint layers of the objects it takes, in steps its own joins (`join`).
+   */
+  private flattenForOp(meshes: SculptMesh[]): unknown {
+    const a = this.layers.flattenForOp(meshes);
+    const b = this.paint.flattenForOp(meshes, !!a);
+    return b ?? a;
+  }
+
   // --- sculpt commands (hotkey surface) -----------------------------------
 
   undo(): void {
@@ -673,6 +706,7 @@ export class SculptSession {
     step();
     // An undo can give a layer back its level, or take it away: the panel follows.
     this.layers.onChange?.();
+    this.paint.onChange?.();
     const listMoved =
       list.length !== this.meshes.length || list.some((m, i) => m !== this.meshes[i]);
     if (listMoved && this.mesh === active) this.activeChanged();
@@ -712,6 +746,7 @@ export class SculptSession {
     const after = this.levelSignature();
     if (before && after && (before[0] !== after[0] || before[1] !== after[1])) {
       perfLog.record('subdivision', performance.now() - since, 'undo or redo');
+      this.paint.levelChanged(this.mesh);
       this.onLevelChange?.(after[0], after[1]);
     }
   }
@@ -810,6 +845,7 @@ export class SculptSession {
     this.setMesh(mul);
     // Each layer's delta is rebuilt for the new top level.
     this.layers.topAdded(mul as unknown as SculptMesh);
+    this.paint.topAdded(mul as unknown as SculptMesh);
     perfLog.record('subdivision', performance.now() - t0, 'a level added');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
@@ -827,6 +863,7 @@ export class SculptSession {
     else mul.lowerLevel();
     this.render();
     perfLog.record('subdivision', performance.now() - t0, dir > 0 ? 'a level up' : 'a level down');
+    this.paint.levelChanged(mul as unknown as SculptMesh);
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -848,6 +885,7 @@ export class SculptSession {
     mul.selectResolution(target);
     this.render();
     perfLog.record('subdivision', performance.now() - t0, `to level ${target + 1}`);
+    this.paint.levelChanged(mul as unknown as SculptMesh);
     this.onLevelChange?.(mul._sel, mul._meshes.length);
     return true;
   }
@@ -891,6 +929,7 @@ export class SculptSession {
     }
     // Each layer's delta is carried down to the level that is the top now.
     this.layers.topDeleted(mul as unknown as SculptMesh);
+    this.paint.topDeleted(mul as unknown as SculptMesh);
     this.render();
     perfLog.record('subdivision', performance.now() - t0, 'the top level deleted');
     this.onLevelChange?.(mul._sel, mul._meshes.length);
@@ -1017,7 +1056,7 @@ export class SculptSession {
     // Wrapped like upstream's applyRemesh, so the result keeps a level stack.
     const newMesh = new Multimesh(this.remeshAt([mesh], mesh, this.remeshBox([mesh]))) as unknown as SculptMesh;
     // A remesh rebuilds the surface: the layers become part of it (the window asks first; this is the net).
-    const flat = this.layers.flattenForOp([mesh]);
+    const flat = this.flattenForOp([mesh]);
     this.markStale([mesh], newMesh);
     this.groups.transferNearest([mesh], newMesh);
     this.measure.transfer(mesh, newMesh);
@@ -1099,7 +1138,7 @@ export class SculptSession {
     if (!this.meshes.includes(mesh)) throw new Error('The object was removed while Quad remesh ran, so the result was not applied.');
     if (this.quadStamp(mesh) !== stamp) throw new Error('The object changed while Quad remesh ran, so the result was not applied. Run it again.');
     const t0 = performance.now();
-    const flat = this.layers.flattenForOp([mesh]);
+    const flat = this.flattenForOp([mesh]);
     const base = new MeshStatic(null);
     base.setID(mesh.getID());
     base.setVertices(positions);
@@ -1211,7 +1250,7 @@ export class SculptSession {
     if (!sources.includes(base)) base = sources[0];
     const t0 = performance.now();
     const merged = new Multimesh(this.remeshAt(sources, base, this.remeshBox(sources)));
-    const flat = this.layers.flattenForOp(sources);
+    const flat = this.flattenForOp(sources);
     this.markStale(sources, merged as unknown as SculptMesh);
     this.groups.transferNearest(sources, merged as unknown as SculptMesh);
     this.meshNames.set(merged as unknown as SculptMesh, this.getMeshName(base));
@@ -1556,7 +1595,7 @@ export class SculptSession {
     this.markStale([mesh], parts[0]);
     for (const p of parts.slice(1)) this.markStale([mesh], p);
     this.writeSymmetryAxis(this.getSymmetryAxis(), parts);
-    const flat = this.layers.flattenForOp([mesh]);
+    const flat = this.flattenForOp([mesh]);
     this.stateManager.pushStateAddRemove(parts, [mesh]);
     this.layers.join(flat);
     const at = this.meshes.indexOf(mesh);
@@ -2089,7 +2128,7 @@ export class SculptSession {
   toggleDynamicTopology(): boolean {
     const mesh = this.mesh;
     if (!mesh) return false;
-    const flat = this.layers.flattenForOp([mesh]);
+    const flat = this.flattenForOp([mesh]);
     const newMesh = !mesh.isDynamic
       ? (new MeshDynamic(mesh) as unknown as SculptMesh)
       : (new Multimesh(this.convertToStaticMesh(mesh)) as unknown as SculptMesh);
@@ -2326,6 +2365,8 @@ export class SculptSession {
       ...(this.groups.hasGroups(mesh) ? { groups: this.groups.serialize(mesh) } : {}),
       // The sculpt layers, where the object has any (layers.ts); the levels' vertices carry their effect already.
       ...(this.layers.has(mesh) ? { layers: this.layers.serialize(mesh) } : {}),
+      // The paint layers, where the object has any (paintLayers.ts); the levels' colours carry their composite already.
+      ...(this.paint.has(mesh) ? { paintLayers: this.paint.serialize(mesh) } : {}),
       // The pinned calipers measurements, in the object's own space.
       ...(this.measure.serialize(mesh) ? { measures: this.measure.serialize(mesh) } : {}),
     };
@@ -2575,6 +2616,9 @@ export class SculptSession {
     // A reflected record has its vertices turned over: its layers' deltas no longer fit, so they join the surface.
     if (saved.layers && !reflected) {
       this.layers.restore(mesh as unknown as SculptMesh, saved.layers, saved.levels[saved.levels.length - 1].nbVertices);
+    }
+    if (saved.paintLayers) {
+      this.paint.restore(mesh as unknown as SculptMesh, saved.paintLayers, saved.levels[saved.levels.length - 1].nbVertices);
     }
     if (saved.measures) this.measure.restore(mesh as unknown as SculptMesh, saved.measures);
     // The file's numbering comes back with the object. A reflection baked

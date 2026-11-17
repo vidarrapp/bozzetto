@@ -148,7 +148,154 @@ const fresh = async (page, t, spare) => {
   return p;
 };
 
+/** The key light's texel as a share of the subject's height, with how it is fitted. */
+const texelShare = (page) =>
+  page.evaluate(() => {
+    const v = window.__bozzetto;
+    const f = v.lighting.fitInfo();
+    const b = v.liveShadowBox();
+    const k = f.lights.key;
+    return { share: k.texel / (b.max.y - b.min.y), H: b.max.y - b.min.y, texel: k.texel, closeUp: f.closeUp, samples: k.samples, radius: k.radius, map: v.lighting.lights.key.shadow.mapSize.x };
+  });
+
+/**
+ * A page of its own on a tier, the sphere on the floor at softness 10,
+ * still: its key fit and the distinct brightness steps across the shadow's edge.
+ */
+const penumbra = async (page, base, tier) => {
+  await openSculpt(page, base, `&q=${tier}`);
+  await page.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 60_000 });
+  await frames(page, 6);
+  await page.evaluate(() => {
+    const v = window.__bozzetto;
+    v.setGround('floor');
+    v.lighting.setSoftness('key', 10);
+  });
+  await still(page);
+  await page.waitForTimeout(500);
+  await still(page);
+  await snapshot(page, 'pen');
+  const seg = await page.evaluate(() => {
+    const v = window.__bozzetto;
+    const b = v.liveShadowBox();
+    const L = v.lighting.lights.key;
+    const d = L.position.clone().setFromMatrixPosition(L.matrixWorld).sub(L.position.clone().setFromMatrixPosition(L.target.matrixWorld));
+    d.y = 0;
+    d.normalize();
+    const R = v.subjectRadius;
+    const c = b.getCenter(b.min.clone());
+    const y = v.ground.position.y;
+    return [[c.x, y, c.z], [c.x - d.x * 3 * R, y, c.z - d.z * 3 * R]];
+  });
+  const prof = await profile(page, 'pen', seg[0], seg[1], 1200);
+  const lums = prof.map(([, l]) => l);
+  const lo = Math.min(...lums);
+  const hi = Math.max(...lums);
+  const mid = lums.filter((l) => l >= lo + (hi - lo) * 0.1 && l <= lo + (hi - lo) * 0.9);
+  return { fit: await texelShare(page), steps: new Set(mid.map((l) => Math.round(l))).size, depth: hi - lo };
+};
+
+// Shadow sharpness is the same at any scene size (owner report, 2026-11-17:
+// shadows looked coarse after the move to centimetres). On the high tier the
+// key's texel stays under 1/600 of the subject's height for a 25 cm sphere,
+// the same sphere at 150 cm, a head and a 170 cm figure, the floor on, and
+// never worse than the old fit (three radii either side) for the sphere;
+// the softness slider raises the blur's sample count.
 export const suites = {
+  async shadowsScale(page, base, t) {
+    const BOUND = 1 / 600;
+    await sculpt(page, base);
+    await page.evaluate(() => window.__bozzetto.setGround('floor'));
+    await frames(page, 6);
+    const small = await texelShare(page);
+    const R = (await subject(page)).r;
+    t.ok(small.share < BOUND, `a 25 cm sphere, floor on: the key's texel is ${r3(small.share)} of its height (${r3(small.texel)} cm; at most ${r3(BOUND)})`);
+    t.ok(small.texel <= (6 * R) / small.map, `and no worse than the old fit's ${r3((6 * R) / small.map)} cm`);
+    await page.evaluate(async () => {
+      const { session, viewer, input } = window.__sculpt;
+      const mat = session.getMeshes()[0].getMatrix();
+      for (const i of [0, 5, 10]) mat[i] = 20;
+      viewer.setSculptMatrix(viewer.camera.matrix.clone().fromArray(mat));
+      input.hooks.frameAll();
+    });
+    await frames(page, 8);
+    const big = await texelShare(page);
+    t.ok(big.H > 15 * small.H && big.share < BOUND, `the same sphere 20 times larger, a 5 m object (${r3(big.H)} cm): texel ${r3(big.share)} of its height`);
+    t.ok(Math.abs(big.share / small.share - 1) < 0.1, `which is the small one's share to within 10% (${r3(big.share / small.share)}x)`);
+
+    // Softness raises the blur's samples.
+    const rows = [];
+    for (const s of [0, 3, 6, 10]) {
+      await page.evaluate((v) => window.__bozzetto.lighting.setSoftness('key', v), s);
+      await frames(page, 4);
+      rows.push([s, (await texelShare(page)).samples]);
+    }
+    t.ok(rows.every(([, n], i) => i === 0 || n >= rows[i - 1][1]) && rows[3][1] > rows[0][1], `more softness, more blur samples (${rows.map(([s, n]) => `${s}: ${n}`).join(', ')})`);
+
+    // A head, floor on.
+    await page.evaluate(async () => {
+      const { session, input } = window.__sculpt;
+      const old = [...session.getMeshes()];
+      await session.addBaseMesh('head-realistic');
+      for (const m of old) session.deleteMesh(m);
+      input.hooks.frameAll();
+      window.__bozzetto.lighting.setSoftness('key', 5);
+    });
+    await frames(page, 10);
+    const head = await texelShare(page);
+    t.ok(head.share < BOUND, `a head, floor on: texel ${r3(head.share)} of its height (${r3(head.texel)} cm; nose and chin shadows)`);
+
+    // The device tiers, at rest (the still frame draws the high tier's maps
+    // and sample cap on every tier): the same texel, and a softness of 10
+    // is as smooth across its edge as the high tier's.
+    const spares = [];
+    try {
+      const hi = await penumbra(await fresh(page, t, spares), base, 'high');
+      const lo = await penumbra(await fresh(page, t, spares), base, 'low');
+      t.ok(lo.fit.map === hi.fit.map && lo.fit.share < BOUND, `low tier at rest: a ${lo.fit.map} key map, texel ${r3(lo.fit.share)} of the height (high: ${hi.fit.map}, ${r3(hi.fit.share)})`);
+      t.ok(lo.fit.samples >= hi.fit.samples, `and softness 10 takes ${lo.fit.samples} blur samples there, high takes ${hi.fit.samples}`);
+      t.ok(lo.steps >= hi.steps, `and the penumbra shows ${lo.steps} distinct brightness steps, high's ${hi.steps} (contrast ${r3(lo.depth)} and ${r3(hi.depth)})`);
+      t.ok(lo.steps >= 12, `a smooth edge: at least 12 steps across it (${lo.steps})`);
+    } finally {
+      for (const ctx of spares) await ctx.close();
+    }
+
+    // The tier a tablet starts on: eight cores and a pixel ratio of 2 on a
+    // tablet-sized screen start on medium, fewer cores (an older iPad) and
+    // a phone's screen on low, and ?q= overrides.
+    const browser = page.context().browser();
+    const tierOf = async (cores, viewport, query) => {
+      const ctx = await browser.newContext({ viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' });
+      try {
+        await ctx.addInitScript((n) => {
+          Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => n });
+          Object.defineProperty(navigator, 'userAgentData', { get: () => ({ mobile: true }) });
+        }, cores);
+        const p = await ctx.newPage();
+        await openSculpt(p, base, query);
+        return await p.evaluate(() => window.__bozzetto.lighting.baseTier.key + '/' + window.__bozzetto.lighting.baseTier.blurSamples);
+      } finally {
+        await ctx.close();
+      }
+    };
+    const ipad = { width: 1180, height: 820 };
+    t.eq(await tierOf(8, ipad, ''), '2048/8', 'an iPad with 8 cores at pixel ratio 2 starts on the medium tier');
+    t.eq(await tierOf(4, ipad, ''), '1024/4', 'an older iPad (4 cores) stays on the low tier');
+    t.eq(await tierOf(6, { width: 390, height: 844 }, ''), '1024/4', 'and a phone does');
+    t.eq(await tierOf(8, { width: 390, height: 844 }, ''), '1024/4', 'even with 8 cores');
+    t.eq(await tierOf(4, ipad, '&q=medium'), '2048/8', '?q= overrides the choice');
+
+    // The 170 cm figure.
+    const p2 = await page.context().newPage();
+    await openArmature(p2, base);
+    await p2.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+    await frames(p2, 6);
+    await p2.evaluate(() => window.__bozzetto.setGround('floor'));
+    await frames(p2, 6);
+    const fig = await texelShare(p2);
+    t.ok(fig.share < BOUND, `a ${r3(fig.H)} cm figure, floor on: texel ${r3(fig.share)} of its height`);
+    await p2.close();
+  },
   async shadows(page, base, t) {
     const spare = [];
     try {
@@ -465,7 +612,7 @@ async function shadowParts(page, base, t, spare) {
     const rimState = L.state().find((l) => l.id === 'rim');
     return { casts: L.casts('rim'), box: rimState.castShadow, can: rimState.canShadow, map: L.lights.rim.shadow.mapSize.x };
   });
-  t.ok(low.casts && low.box && low.can && low.map === 512, `on the low tier the rim casts by default, from a ${low.map} map`);
+  t.ok(low.casts && low.box && low.can && (low.map === 512 || low.map === 1024), `on the low tier the rim casts by default, from a ${low.map} map (512 while moving, 1024 at rest)`);
 
   // The viewer and Sculpt fit one subject under one look alike: the
   // published model's bounds and look, and in Sculpt a cube scaled to
