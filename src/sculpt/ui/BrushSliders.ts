@@ -4,6 +4,7 @@ import { formatSliderNumber, holdToLimits, openNumberField, parseTyped, watchDou
 import { onTap } from '../../ui/dom';
 import { SHELL_LAYOUT_EVENT } from './shellLayout';
 import { chordParts, keymap } from '../../ui/keymap';
+import { nameOnLongPress, setTip } from './edgeTip';
 // Flaticon uicons solid straight (fi-ss-*), for the Solo button's glyph, the
 // style of every other icon. Attribution: README.
 import '../../ui/icons';
@@ -63,8 +64,8 @@ export class HistoryButtons {
     this.el = document.createElement('div');
     this.el.className = 'sculpt-hist';
     this.btns = {
-      undo: this.build('Undo (ctrl+z)', UNDO_ICON, () => this.history.undo(), () => this.history.canUndo()),
-      redo: this.build('Redo (ctrl+shift+z)', REDO_ICON, () => this.history.redo(), () => this.history.canRedo()),
+      undo: this.build('Undo', 'ctrl+z', UNDO_ICON, () => this.history.undo(), () => this.history.canUndo()),
+      redo: this.build('Redo', 'ctrl+shift+z', REDO_ICON, () => this.history.redo(), () => this.history.canRedo()),
     };
     this.btns.undo.dataset.hist = 'undo';
     this.btns.redo.dataset.hist = 'redo';
@@ -73,16 +74,17 @@ export class HistoryButtons {
     this.el.append(this.btns.redo, this.btns.undo);
   }
 
-  private build(title: string, icon: string, act: () => void, can: () => boolean): HTMLButtonElement {
+  private build(title: string, key: string, icon: string, act: () => void, can: () => boolean): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'sculpt-histbtn';
     // Matches the state cache's initial false; refresh only writes the
     // DOM on change, so the two must start in agreement.
     btn.disabled = true;
-    btn.title = title;
     btn.setAttribute('aria-label', title);
     btn.innerHTML = icon;
+    setTip(btn, title, key);
+    nameOnLongPress(btn);
     const step = (): void => {
       if (!can()) return this.stopRepeat();
       act();
@@ -197,6 +199,7 @@ export class BrushSliders {
       wrap.appendChild(btn);
       this.root.append(wrap);
       this.soloBtn = btn;
+      nameOnLongPress(btn);
       this.titleSolo();
       this.offKeymap = keymap.onChange(() => this.titleSolo());
     }
@@ -205,7 +208,10 @@ export class BrushSliders {
     // and Negative, which is the foot of the column.
     this.root.prepend(this.fields);
     this.root.append(this.hist.el);
-    if (negative) this.root.append(negative);
+    if (negative) {
+      this.root.append(negative);
+      nameOnLongPress(negative);
+    }
     document.body.appendChild(this.root);
 
     this.input.onBrushChange = () => {
@@ -224,9 +230,9 @@ export class BrushSliders {
   private titleSolo(): void {
     if (!this.soloBtn) return;
     const chord = keymap.chordFor('view.solo');
-    const title = chord ? `Solo (${chordParts(chord).join('+')})` : 'Solo';
-    this.soloBtn.title = title;
-    this.soloBtn.setAttribute('aria-label', title);
+    const key = chord ? chordParts(chord).join('+') : undefined;
+    this.soloBtn.setAttribute('aria-label', key ? `Solo (${key})` : 'Solo');
+    setTip(this.soloBtn, 'Solo', key);
   }
 
   /** Pressed and enabled as solo stands; the DOM is touched only on change. */
@@ -289,7 +295,7 @@ export class BrushSliders {
     const el = document.createElement('div');
     el.className = 'sculpt-slider';
     el.dataset.kind = kind;
-    el.title = title;
+    el.setAttribute('aria-label', title);
     const track = document.createElement('div');
     track.className = 'sculpt-slider__track';
     const nub = document.createElement('div');
@@ -298,7 +304,13 @@ export class BrushSliders {
     // in is the line's own height, so the label does not skew it.
     const val = document.createElement('span');
     val.className = 'sculpt-slider__val';
-    el.append(track, nub, val);
+    // Its name ("Size", "Strength") is said only while the field is in use
+    // or hovered, like a tooltip (shell.css), never as a standing label.
+    const label = document.createElement('span');
+    label.className = 'sculpt-slider__name';
+    label.setAttribute('aria-hidden', 'true');
+    label.textContent = kind === 'size' ? 'Size' : 'Strength';
+    el.append(track, nub, val, label);
 
     const apply = (e: PointerEvent): void => {
       const rect = el.getBoundingClientRect();
@@ -314,8 +326,10 @@ export class BrushSliders {
       const text = kind === 'size' ? this.sizeText() : this.input.strengthText();
       showSliderBubble(rect.right, rect.bottom - t * rect.height, text, 'right');
     };
+    const using = (on: boolean): void => void el.classList.toggle('is-using', on);
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      using(true);
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -326,8 +340,13 @@ export class BrushSliders {
     el.addEventListener('pointermove', (e) => {
       if (e.buttons !== 0) apply(e);
     });
-    el.addEventListener('pointerup', hideSliderBubble);
-    el.addEventListener('pointercancel', hideSliderBubble);
+    const done = (): void => {
+      using(false);
+      hideSliderBubble();
+    };
+    el.addEventListener('pointerup', done);
+    el.addEventListener('pointercancel', done);
+    el.addEventListener('lostpointercapture', () => void using(false));
     holdable(el);
     watchDoublePress(
       el,

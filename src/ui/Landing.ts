@@ -122,7 +122,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
   // is a guest's, so the menu is too.
   const role = roleOf(signIn);
   const signedIn = role === 'owner' || role === 'moderator' || role === 'member';
-  grid.appendChild(createCard(signedIn ? (signIn.accounts ? 'My projects' : 'Projects') : null));
+  grid.appendChild(createCard(signedIn ? (signIn.accounts ? 'My projects' : 'Projects') : null, admin));
 
   // Then work in progress: the sculpt autosave lives in this browser, so it
   // is not a project the API knows about, but it is the thing most worth
@@ -172,7 +172,7 @@ export async function renderLanding(app: HTMLElement): Promise<void> {
  * the signed-in uploader saves (My projects, or Projects with accounts
  * off), null for a guest's, which only exports.
  */
-function createCard(savesTo: string | null): HTMLElement {
+function createCard(savesTo: string | null, owner: boolean): HTMLElement {
   const a = document.createElement('a');
   a.className = 'card card--new';
   a.href = '/?sculpt=1';
@@ -181,7 +181,7 @@ function createCard(savesTo: string | null): HTMLElement {
     '<div class="card--new__label">Create</div></div>';
   a.addEventListener('click', (e) => {
     e.preventDefault();
-    openCreateChooser(savesTo);
+    openCreateChooser(savesTo, owner);
   });
   return a;
 }
@@ -192,10 +192,11 @@ function createCard(savesTo: string | null): HTMLElement {
  * opened in Sculpt as a new scene, and the uploader for frames made
  * elsewhere (owner call). Import OBJ is everyone's, as File > Import OBJ
  * is in Sculpt: nothing about it needs an account. Create timelapse is
- * everyone's too; what differs is where it ends - a guest's uploads
- * nothing and offers Sign in, a signed-in one saves to the library.
+ * the owner's alone for now (timelapses are not offered to users, see
+ * PRODUCT.md); everyone else sees the other three. New Sculpt is the one
+ * recommended choice, in lime.
  */
-function openCreateChooser(savesTo: string | null): void {
+function openCreateChooser(savesTo: string | null, owner: boolean): void {
   const overlay = document.createElement('div');
   overlay.className = 'install-overlay create-overlay';
   const timelapseHint = savesTo
@@ -206,7 +207,7 @@ function openCreateChooser(savesTo: string | null): void {
       <button type="button" class="install-close" aria-label="Close">×</button>
       <h2>Create</h2>
       <div class="create-choices">
-        <button type="button" class="create-choice" data-kind="sculpt">
+        <button type="button" class="create-choice create-choice--recommended" data-kind="sculpt">
           <span class="create-choice__title">New Sculpt</span>
           <span class="create-choice__hint">A sphere of clay, brushes and paint.</span>
         </button>
@@ -218,14 +219,15 @@ function openCreateChooser(savesTo: string | null): void {
           <span class="create-choice__title">Import OBJ</span>
           <span class="create-choice__hint">One .obj file from another app, opened in Sculpt as a new scene.</span>
         </button>
-        <button type="button" class="create-choice" data-kind="timelapse">
+        ${owner ? `<button type="button" class="create-choice" data-kind="timelapse">
           <span class="create-choice__title">Create timelapse</span>
           <span class="create-choice__hint"></span>
-        </button>
+        </button>` : ''}
       </div>
       <input type="file" class="create-obj-input" accept=".obj" hidden />
     </div>`;
-  overlay.querySelector<HTMLElement>('[data-kind="timelapse"] .create-choice__hint')!.textContent = timelapseHint;
+  const tlHint = overlay.querySelector<HTMLElement>('[data-kind="timelapse"] .create-choice__hint');
+  if (tlHint) tlHint.textContent = timelapseHint;
   const close = (): void => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);

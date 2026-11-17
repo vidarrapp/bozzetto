@@ -1183,9 +1183,13 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   top: 52px;
   left: 12px;
   z-index: 25;
-  width: 264px;
-  max-height: calc(100vh - 104px);
+  box-sizing: border-box;
+  width: 408px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 64px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 14px 16px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
@@ -1198,15 +1202,19 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
   font-weight: 600;
 }
 
 .help-guide__close {
-  font-family: var(--font-spec);
+  flex: none;
+  white-space: nowrap;
+  font-family: var(--font-body);
   font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
@@ -1224,15 +1232,28 @@ html.is-page :is(#app, #admin, .page-scroll).page-scroll {
 }
 
 .help-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
   margin: 5px 0;
   color: var(--text);
 }
 
+/* Chips keep to one line each, in a column of their own; the descriptions
+   all start at the same place, aligned left. */
+.help-row > .help-keys {
+  white-space: nowrap;
+}
+
+.help-guide kbd,
+.help-key {
+  white-space: nowrap;
+}
+
 .help-row span:last-child {
-  margin-left: auto;
+  min-width: 0;
+  text-align: left;
 }
 
 .help-guide kbd,
@@ -5497,8 +5518,7 @@ h1,
 .help-win__group,
 .help-win__h,
 .help-guide__title,
-.outliner__menu-head,
-.help-guide__close {
+.outliner__menu-head {
   font-family: var(--bz-font-mono);
   font-size: 11px;
   font-weight: 400;
@@ -5689,7 +5709,6 @@ h1,
    orange and red fills, black text. */
 .btn--primary,
 .dsettings__primary,
-.help-win__close,
 .gallery-form__go,
 .scale-banner__apply {
   background: var(--bz-orange);
@@ -5711,7 +5730,6 @@ h1,
 
 .btn--primary:hover:not(:disabled),
 .dsettings__primary:hover:not(:disabled),
-.help-win__close:hover:not(:disabled),
 .gallery-form__go:hover:not(:disabled),
 .scale-banner__apply:hover:not(:disabled) {
   background: var(--bz-orange);
@@ -5725,7 +5743,6 @@ h1,
 
 .btn--primary:active:not(:disabled),
 .dsettings__primary:active:not(:disabled),
-.help-win__close:active:not(:disabled),
 .gallery-form__go:active:not(:disabled),
 .scale-banner__apply:active:not(:disabled) {
   background: var(--bz-orange);
@@ -6592,6 +6609,17 @@ progress {
 
 .help-guide {
   padding: 16px;
+}
+
+.help-guide__close {
+  font-family: var(--bz-font);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--bz-text-2);
+  white-space: nowrap;
 }
 
 .help-guide__foot {
@@ -7908,4 +7936,54 @@ progress {
 /* The question window's buttons are a finger's size. */
 .bz-ask .btn {
   min-height: 44px;
+}
+
+/* Martian Mono capitals are for values and small section headers. Buttons,
+   chips and badges are Familjen Grotesk in sentence case. */
+.badge,
+.card__badge,
+.card--new__label,
+.create-choice__title,
+.admin-row__kind,
+.topchip,
+.outliner__solo,
+.handle__note,
+.help-guide__close {
+  font-family: var(--bz-font);
+  font-stretch: normal;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.badge,
+.card__badge,
+.admin-row__kind,
+.topchip,
+.outliner__solo,
+.handle__note,
+.help-guide__close {
+  font-size: 12px;
+}
+
+.card--new__label,
+.create-choice__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The recommended way to start: lime, the one such choice in the window. */
+.create-choice--recommended {
+  background: var(--bz-lime);
+  border-color: var(--bz-lime);
+  color: var(--bz-on-accent);
+}
+
+.create-choice--recommended .create-choice__hint {
+  color: var(--bz-on-accent);
+}
+
+.create-choice--recommended:hover {
+  background: var(--bz-lime);
+  color: var(--bz-on-accent);
+  filter: brightness(1.08);
 }

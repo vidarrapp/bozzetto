@@ -227,6 +227,8 @@ place, each only where the place has it.
 - Close (returns to the gallery)
 
 - Save
+- Include references (a switch, on by default; Save file only: Save to
+  library and Publish never carry pictures)
 - Save a copy to this device
 - Save to library
 
@@ -244,6 +246,8 @@ place, each only where the place has it.
 - Delete
 - Merge (says "Needs 2 objects" when it cannot)
 
+- Paste picture (adds the clipboard's picture to the Reference panel)
+
 - Mirror ›  Across X, Across Y, Across Z
 - Radial copies ›
 
@@ -260,10 +264,14 @@ place, each only where the place has it.
 - Hotkeys on tools
 - View axes
 
+- Reference over the view (a switch, in the group with the other
+  viewport switches)
+
 - Scene panel
 - Model panel
 - Material panel
 - Tool panel
+- Reference panel
 - Render panel
 - Hide interface
 
@@ -292,6 +300,9 @@ big logotype and tagline in the page).
 - **File:** New sculpt, New armature, Import OBJ…. What the gallery's
   Create card offers, with the same question about saving on this device
   that Import OBJ asks.
+  The Create window lists New Sculpt (the one recommended, lime choice),
+  New Armature and Import OBJ; Create timelapse is added for the owner only
+  (timelapses are not offered to users, PRODUCT.md).
 - **Go:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
@@ -318,7 +329,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model Material │                          │ Tool Render │  tabs
+│ Scene Model Material │                  │ Tool Reference Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -353,8 +364,11 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ### Panels
 
 - Each side has one panel, docked under the title strip: Scene, Model and
-  Material share the left one, Tool and Render the right one (owner call,
-  2026-11-11: one panel open per side, with folder tabs).
+  Material share the left one, Tool, Reference and Render the right one
+  (owner call, 2026-11-11: one panel open per side, with folder tabs).
+  Reference is in Sculpt and Armature only, not in Present or the viewer.
+  Under 480px wide each tab takes 10px either side of its name instead of
+  16, so the six tabs of a phone stand apart.
 - **Folder tabs.** Above the panel sit its two tabs, each a box of the
   panel's own surface, 2px apart. The tab that is showing is 28px tall,
   joined to the panel with no gap, its name bold. The other is 26px
@@ -372,6 +386,52 @@ document itself scrolls, and there is no CSS switch to turn that off.
   was open on each side, per mode.
 - The desktop version may later let a side show both panels at once on a
   tall display. It is not part of this spec.
+
+### The Reference panel
+
+Pictures to look at while you work (`src/reference/`), on the right after
+Tool and before Render.
+
+- **Top:** Add picture… (the system picker, no `capture` attribute, so an
+  iPad offers Photo Library, Take Photo and Choose File) and Paste. Ctrl or
+  Cmd+V adds a picture while the panel is open; Edit > Paste picture does it
+  from the menu; a picture dropped on the panel or the view is added and the
+  panel opens.
+- **Board:** a two-column grid of thumbnails, newest first, square corners,
+  the picture that is on with an orange edge. Under each: its name, what is
+  on it (Beside, Over, Mirrored, Grey) or its size in mono, and a **More**
+  row menu: Show beside, Show over the view, Mirror, Greyscale, Delete. A tap
+  on the thumbnail shows it beside or takes it off. Delete asks first, in a
+  window whose button is red; the app's Undo is the stroke history and does
+  not hold pictures.
+- **Over the view:** a lime switch "In front of the model" (off puts the
+  picture behind the model, as the backdrop) and an Opacity slider (orange
+  fill) that matters in front. Both are greyed out unless a picture is over
+  the view.
+- **One picture is on at a time.** Beside is a float window (the Publish
+  window's frame) at the corner, moved by its title bar, with a close button;
+  the wheel or a pinch zooms the picture inside it and a mouse or pen drag or
+  two fingers pan it; one finger moves nothing. Over the view is fitted to the
+  view's height and centred, in screen space, and Mirror and Greyscale apply to
+  either.
+- **Input.** The Pencil and touches on the model always go to the model: the
+  picture in front is a layer with `pointer-events: none`, the one behind is
+  drawn by the viewer and is no element at all, and the Beside window takes
+  input only on its own frame. Tab hides the Beside window with the interface;
+  the picture over the view stays, until **View > Reference over the view** is
+  switched off. Present shows neither.
+- **Keeping.** On this device only, never uploaded: in the browser's storage
+  beside the autosave (keyed by the scene, and by the library project's id
+  too, so reopening that project here brings them back) when keeping on the
+  device is on, for the page when it is off. A new sculpt starts with none.
+  Save file carries them with **File > Include references** (on by default);
+  Save to library and Publish send the scene alone, and a thumbnail or saved
+  image is drawn without a picture behind the model. A project opened on
+  another device opens without them, and the note under the grid says
+  "References stay on the device they were added on."
+- **Import.** At most 2048px on the long side, JPEG at quality 0.85 (PNG only
+  with transparency), and no metadata: the picture is drawn again on a canvas,
+  which drops EXIF, its place and time included.
 
 ### Tool bar
 
@@ -500,3 +560,17 @@ moved the layout later; that produced an in-between look and is dropped.
 
 Each step is compared against the mockup by screenshot, in both themes
 and at the desktop and iPad sizes, before it ships.
+
+## Clarity rules (design critique, 2026-11)
+
+- The edge sliders' names (Size, Strength) show only while the slider is
+  pressed or hovered: Familjen Grotesk 11px, secondary grey, beside the
+  value, no box. The edge buttons (Solo, Negative, Undo, Redo) name
+  themselves on hover and on a long press, as the tool bar's do.
+- Esc closes the hotkey guide first; it scrolls inside, chips never wrap and
+  descriptions align left in one column.
+- Martian Mono capitals are for values and small section headers only;
+  buttons, chips and badges are Familjen Grotesk in sentence case.
+- Panel labels carry no hotkeys; the key is in the tooltip and the View menu.
+- The Render panel's Preset names the lights as they are: Three-point (all
+  three on), Key only (Sculpt's opening look), Raking key, or Custom.

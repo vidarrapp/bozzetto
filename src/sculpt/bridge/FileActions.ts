@@ -1,5 +1,6 @@
 import type { OriginalNumbering, SculptSession } from './SculptSession';
 import type { SavedScene, SceneLink } from './ScenePersist';
+import type { FileReferences } from '../../reference/board';
 import type { LookState } from '../../viewer/Viewer';
 import { packScene, sceneToOBJ, unpackScene } from './SceneFile';
 import { IMPORT_SIZE } from './SculptSession';
@@ -53,6 +54,13 @@ export interface FileActionHooks {
   onSceneClean(at?: unknown): void;
   /** A new sculpt replaced the scene: the view goes to its sphere. */
   onNewScene?(): void;
+  /**
+   * The reference pictures, for Save file's Include references; null with
+   * none. Asked by packFile alone: no upload path calls it.
+   */
+  references?(): Promise<FileReferences | null>;
+  /** After a .bozz file was opened: the pictures it carried, if any, become the board (an empty board when it had none). */
+  adoptReferences?(refs: FileReferences | undefined): void;
   /** A picture of the viewport, for a library card. */
   captureThumb(): Promise<Blob>;
   /**
@@ -235,6 +243,7 @@ export class FileActions {
     this.hooks.onNameChange?.();
     this.hooks.onSceneClean();
     this.hooks.onNewScene?.();
+    this.hooks.adoptReferences?.(undefined);
   }
 
   /** Whether the scene has no objects (the last one deleted): nothing to save. */
@@ -253,9 +262,23 @@ export class FileActions {
     return scene;
   }
 
-  /** The scene as .bozz bytes. */
+  /** The scene as .bozz bytes: the scene alone, with no reference pictures. */
   async pack(): Promise<Blob> {
     return packScene(this.serialize());
+  }
+
+  /**
+   * Save file's bytes: the scene, and with `references` its reference
+   * pictures too. A file stays with the person, which is why only this
+   * path may carry them; Save to library and Publish use pack().
+   */
+  async packFile(references: boolean): Promise<Blob> {
+    const scene = this.serialize();
+    if (references && this.hooks.references) {
+      const refs = await this.hooks.references();
+      if (refs) scene.references = refs;
+    }
+    return packScene(scene, true);
   }
 
   /** Read a .bozz file without applying it (tests inspect records this way). */
@@ -285,6 +308,7 @@ export class FileActions {
       throw err;
     }
     this.hooks.adopt(scene);
+    this.hooks.adoptReferences?.(scene.references);
     this.generation++;
     this.setLink(link);
     this.setUnsent(null);
