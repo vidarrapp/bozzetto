@@ -300,7 +300,7 @@ async function armatureControls(page, base, t) {
         if (len > 30 && nearest > 40 && (!best || nearest > best.nearest)) best = { mid, out, nearest };
       }
     }
-    return { best, root: a.state().root.position, centre };
+    return { best, root: a.state().root.position, centre, cam: window.__bozzetto.camera.position.toArray(), rq: a.state().root.quaternion };
   });
   t.ok(!!edge.best, 'an edge of the box stands clear of the other handles');
   for (const [label, at] of [['on an edge', edge.best.mid], ['18 px outside an edge', edge.best.out]]) {
@@ -315,11 +315,11 @@ async function armatureControls(page, base, t) {
   await page.mouse.move(edge.best.mid[0] + 30, edge.best.mid[1] - 40, { steps: 6 });
   const held = await page.evaluate(() => window.__armature.handleLook('root'));
   await page.mouse.up();
-  const dropped = await page.evaluate(() => ({ root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
+  const dropped = await page.evaluate(() => ({ cam: window.__bozzetto.camera.position.toArray(), rq: window.__armature.state().root.quaternion, root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
   t.ok(held.state === 'hot' && held.colour === palette.hot, 'the box is orange while it is dragged');
   t.ok(dist(dropped.root, edge.root) > 5 && dropped.look.state === 'rest', `a drag from an edge moves the figure (${dist(dropped.root, edge.root).toFixed(1)} cm) and the box is neutral after`);
   const lag = Math.hypot(dropped.at[0] - edge.centre[0] - 30, dropped.at[1] - edge.centre[1] + 40);
-  t.ok(lag < 8, `the box follows the pointer, as a drag of the old handle did (${lag.toFixed(1)} px off, from ${edge.centre.map((v) => v.toFixed(0))} to ${dropped.at.map((v) => v.toFixed(0))})`);
+  t.ok(lag < 8, `the box follows the pointer, as a drag of the old handle did (${lag.toFixed(1)} px off, from ${edge.centre.map((v) => v.toFixed(0))} to ${dropped.at.map((v) => v.toFixed(0))}; camera moved ${dist(edge.cam, dropped.cam).toFixed(2)}, root turned ${dist(edge.rq, dropped.rq).toFixed(3)})`);
   await page.evaluate(() => window.__armature.undo());
 }
 
