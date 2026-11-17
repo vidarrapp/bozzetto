@@ -315,10 +315,10 @@ async function armatureControls(page, base, t) {
   await page.mouse.move(edge.best.mid[0] + 30, edge.best.mid[1] - 40, { steps: 6 });
   const held = await page.evaluate(() => window.__armature.handleLook('root'));
   await page.mouse.up();
-  const after = await page.evaluate(() => ({ root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
+  const dropped = await page.evaluate(() => ({ root: window.__armature.state().root.position, look: window.__armature.handleLook('root'), at: window.__armature.onScreen(...window.__armature.rootBox().centre) }));
   t.ok(held.state === 'hot' && held.colour === palette.hot, 'the box is orange while it is dragged');
-  t.ok(dist(after.root, edge.root) > 5 && after.look.state === 'rest', `a drag from an edge moves the figure (${dist(after.root, edge.root).toFixed(1)} cm) and the box is neutral after`);
-  t.ok(Math.hypot(after.at[0] - edge.centre[0] - 30, after.at[1] - edge.centre[1] + 40) < 8, 'the box follows the pointer, as a drag of the old handle did');
+  t.ok(dist(dropped.root, edge.root) > 5 && dropped.look.state === 'rest', `a drag from an edge moves the figure (${dist(dropped.root, edge.root).toFixed(1)} cm) and the box is neutral after`);
+  t.ok(Math.hypot(dropped.at[0] - edge.centre[0] - 30, dropped.at[1] - edge.centre[1] + 40) < 8, 'the box follows the pointer, as a drag of the old handle did');
   await page.evaluate(() => window.__armature.undo());
 }
 

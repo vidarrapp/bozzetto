@@ -1138,8 +1138,13 @@ export class Armature {
     this.mesh.updateMatrixWorld(true);
     if (g) {
       g.boundingBox ??= new Box3().setFromBufferAttribute(g.getAttribute('position') as BufferAttribute);
-      g.boundingBox.getCenter(centre);
-      g.boundingBox.getSize(half).multiplyScalar(0.5);
+      // From the bottom of the part to the top of the pelvis, the root bone's
+      // tail: a mannequin's pelvis mesh runs on up over the belly.
+      const lo = g.boundingBox.min;
+      const hi = g.boundingBox.max;
+      const top = Math.min(hi.y, Math.max(lo.y + this.len(0.1), this.rest.get(this.root.name)?.length ?? hi.y));
+      centre.set((lo.x + hi.x) / 2, (lo.y + top) / 2, (lo.z + hi.z) / 2);
+      half.set((hi.x - lo.x) / 2, (top - lo.y) / 2, (hi.z - lo.z) / 2);
     } else {
       const l = this.bones.get('thigh.L');
       const r = this.bones.get('thigh.R');
