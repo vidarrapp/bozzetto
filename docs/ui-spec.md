@@ -381,6 +381,13 @@ document itself scrolls, and there is no CSS switch to turn that off.
   "Edited" after an unsaved project's name.
 - Right: Publish, a quiet button, then the signed-in account's @handle menu, then the hide-interface icon.
 - It is the one band that runs edge to edge.
+- In Present from Sculpt the readout is `Image W × H` (the size in pixels of
+  the picture Save image writes: the window at its saving ratio) and
+  `Lens N mm`, values in Martian Mono, both following the Camera tab live.
+  A step of the path that cannot be pressed is dim and says why in its title
+  and, held for a moment by a finger or the Pencil, in a small box under the
+  strip (plain words that say what to do: "Present works from Sculpt. Go to
+  Sculpt first.").
 
 ### Details overlay
 
@@ -414,6 +421,17 @@ document itself scrolls, and there is no CSS switch to turn that off.
   Material, Output. The viewer and review mode: right Material, Lighting,
   nothing at the left. The View menu lists the panels in this order (in
   Sculpt, the set that is showing). One panel is open per side.
+- **Save image** has one button, in Present's Output panel. Publish, in the
+  strip, stays Present's one orange main action. The
+  bar along the bottom holds the turntable's play and Speed only. The
+  viewer's and the published Present's transport shortens, evenly, while a
+  panel is open on either side, so it never runs under one.
+- **Strength** reads in cm for the brushes that move the surface by a depth
+  (Clay, Inflate, Crease, the Rake) and in percent for the rest (Smooth,
+  Flatten, Polish, Pinch, Move, Paint, Mask), whose strength is a share of
+  the way, of the drag or of an amount, not a depth.
+- **Loading.** While the boot overlay (the splash) is up nothing else shows:
+  the overlay stands over the strip, tabs and top row.
 - **A phone** (599px and narrower, a finger). The open panel is a sheet
   docked at the bottom: the full width, at most half the window tall, above
   the tool bar or transport, scrolling inside; the 3D view is not resized and

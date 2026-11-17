@@ -208,6 +208,15 @@ h1,
   pointer-events: none; /* taps land on the overlay and skip the splash */
 }
 
+/* The overlay is the whole screen while it is up. #app is fixed, so a stacking
+   context of its own: the overlay's z-index counts only inside it, and the
+   strip, tabs and old top row that stand on the body (z-index 15 to 41)
+   would show over the splash. While the overlay is up, #app stands over
+   them all. An error keeps the plain order. */
+#app:has(> .overlay:not(.overlay--error)) {
+  z-index: 1000;
+}
+
 /* The finished splash fades out instead of being yanked. */
 .overlay {
   transition: opacity 0.4s ease;

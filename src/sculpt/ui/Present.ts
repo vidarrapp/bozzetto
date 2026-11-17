@@ -27,9 +27,10 @@ import { deviceStore } from '../../ui/deviceStorage';
  * its field says, which the play button and Space (the keymap's
  * play.toggle, the viewer's play/pause) start and stop and any press or
  * wheel on the view stops; it moves the camera only, so the scene and its
- * undo never see it - and Save image.
+ * undo never see it.
  *
- * The Output panel has the saves. Image: Save image, a PNG at twice the
+ * The Output panel has the saves; Save image is there and nowhere else
+ * (Publish, in the strip, is Present's one orange action). Image: Save image, a PNG at twice the
  * window. Turntable: the format (MP4 or GIF), the size (the window at 1x or
  * 2x) and Save turntable, one full turn at the speed (36 degrees a second is
  * ten seconds) rendered offline (capture/turntable.ts), with a progress bar
@@ -89,14 +90,13 @@ class OutputPanel extends SidePanel {
 }
 
 export class PresentMode {
-  /** The bar at the bottom centre: the turntable's play button, its speed, Save image. */
+  /** The bar at the bottom centre: the turntable's play button and its speed. */
   readonly bar: HTMLDivElement;
   /** The Output panel: Save image, and the turntable's format, size and Save turntable. */
   readonly output: OutputPanel;
   private readonly playBtn: HTMLButtonElement;
   private readonly speedInput: HTMLInputElement;
   private readonly speedOut: HTMLSpanElement;
-  private readonly saveBtn: HTMLButtonElement;
   private readonly outSaveBtn: HTMLButtonElement;
   private readonly clipRow: HTMLDivElement;
   private readonly formatSel: HTMLSelectElement;
@@ -175,11 +175,7 @@ export class PresentMode {
     this.speedOut = speed.val;
     this.speedOut.classList.add('present-bar__val');
 
-    this.saveBtn = button('present-bar__save', 'Save image', () => void this.saveImage());
-    const sep = document.createElement('span');
-    sep.className = 'present-bar__sep';
-    sep.setAttribute('aria-hidden', 'true');
-    this.bar.append(this.playBtn, speed.row, sep, this.saveBtn);
+    this.bar.append(this.playBtn, speed.row);
     document.body.appendChild(this.bar);
 
     // The Output panel: the saves.
@@ -343,7 +339,6 @@ export class PresentMode {
   }
 
   private setSaveDisabled(disabled: boolean): void {
-    this.saveBtn.disabled = disabled;
     this.outSaveBtn.disabled = disabled;
   }
 

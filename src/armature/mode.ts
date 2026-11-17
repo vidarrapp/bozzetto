@@ -1927,8 +1927,9 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     current: 'armature',
     steps: {
       sculpt: { action: () => void send(panel.resolution) },
-      paint: { unavailable: 'A figure is sent to Sculpt first' },
-      present: { unavailable: 'A figure is sent to Sculpt first' },
+      // Paint and Present are worked from Sculpt, where the figure's mesh is a sculpt: Sculpt sends it.
+      paint: { unavailable: 'Paint works from Sculpt. Go to Sculpt first.' },
+      present: { unavailable: 'Present works from Sculpt. Go to Sculpt first.' },
     },
   });
   /** Give the armature a new name; a project's is renamed too, and saved with the next Save to library. */

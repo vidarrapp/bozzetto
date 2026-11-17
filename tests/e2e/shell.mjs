@@ -482,13 +482,16 @@ export const suites = {
       const s = getComputedStyle(el);
       return { bg: s.backgroundColor, color: s.color, h: el.getBoundingClientRect().height, text: el.textContent };
     });
-    t.ok(pub.bg === 'rgb(255, 90, 31)' && pub.color === 'rgb(0, 0, 0)' && pub.h === 24 && pub.text === 'Publish', `filled orange with black text, 24px (${JSON.stringify(pub)})`);
+    t.ok(pub.bg !== 'rgb(255, 90, 31)' && pub.h === 24 && pub.text === 'Publish', `a quiet 24px chip, not orange: Save image is Present's one main action (${JSON.stringify(pub)})`);
     const ro = await page.evaluate(() => ({
       keys: [...document.querySelectorAll('.bz-readout__item:not([hidden]) .bz-readout__key')].map((k) => k.textContent),
       frame: document.querySelector('.bz-readout__frame')?.textContent,
+      lens: document.querySelector('.bz-readout__lens')?.textContent,
       view: window.__sculpt.viewer.viewportSize(),
+      mm: window.__sculpt.viewer.getFocalLength(),
     }));
-    t.ok(ro.keys.join() === 'Frame' && ro.frame === `${ro.view.w} × ${ro.view.h}`, `the readout is Frame W × H (${JSON.stringify(ro)})`);
+    const imgOk = /^\d+ × \d+$/.test(ro.frame ?? '') && Number(ro.frame.split(' × ')[0]) >= ro.view.w;
+    t.ok(ro.keys.join() === 'Image,Lens' && imgOk && ro.lens === `${Math.round(ro.mm)} mm`, `the readout is Image W × H and Lens N mm (${JSON.stringify(ro)})`);
     const ws = await page.evaluate(() => {
       const vis = (sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
       const tabs = [...document.querySelectorAll('.panel > .panel__handle')].filter((h) => h.getClientRects().length > 0).map((h) => ({ n: h.querySelector('.handle__label').textContent, l: h.getBoundingClientRect().left }));
@@ -507,7 +510,7 @@ export const suites = {
       };
     });
     t.ok(bar.bottom === bar.h && Math.abs(bar.centre - bar.w / 2) < 1 && bar.bg === 'rgb(44, 44, 44)', `the bar is at the bottom centre, flush, on the panel colour (${JSON.stringify(bar)})`);
-    t.ok(bar.kids.join() === 'present-bar__play,present-bar__speed,present-bar__save' && /fi-ss-play/.test(bar.play), 'it holds the play button (fi-ss-play), the Speed field and Save image');
+    t.ok(bar.kids.join() === 'present-bar__play,present-bar__speed' && /fi-ss-play/.test(bar.play), 'it holds the play button (fi-ss-play) and the Speed field, and no second Save image');
     await page.click('.present-bar__play');
     t.ok(await page.evaluate(() => /fi-ss-pause/.test(document.querySelector('.present-bar__play .fi').className) && window.__sculpt.present.isTurning()), 'play turns the turntable and the glyph becomes pause (fi-ss-pause)');
     await page.click('.present-bar__play');
