@@ -89,6 +89,7 @@ export const suites = {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
+    await page.setViewportSize({ width: 1180, height: 820 });
     await openSculpt(page, base);
     t.eq(await tabRow(page), 'left:Scene,left:Model,left:Layers,right:Tool,right:Material,right:Reference', 'Sculpt: Scene, Model, Layers at the left; Tool, Material, Reference at the right');
     t.ok(!(await page.evaluate(() => [...document.querySelectorAll('.panel > .panel__handle')].some((h) => h.getClientRects().length > 0 && /Render|Lighting|Camera/.test(h.textContent)))), 'Sculpt has no Render, Lighting or Camera tab');
@@ -158,6 +159,7 @@ export const suites = {
 
   /** Every built-in rig applies its values, and the select names it. */
   async lookRigs(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
     await openSculpt(page, base);
     await present(page);
     await tapTab(page, 'panel--lighting');
@@ -171,6 +173,8 @@ export const suites = {
         const want = window.__bozzetto.lighting.presets().find((p) => p.id === i);
         return { active: v.lighting.activePreset(), label: want?.label, shown: document.querySelector('.panel--lighting select').selectedOptions[0].textContent, lights: v.lighting.state().map((l) => `${l.id}:${l.enabled}:${l.intensity}:${l.azimuth}:${l.elevation}`).join(' ') };
       }, id);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: `${SHOTS}/rig-${id}.png`, clip: { x: 390, y: 150, width: 400, height: 520 } });
       t.ok(r.active === id && r.shown === r.label, `${id}: applies and the select reads ${r.label} (${r.lights})`);
     }
     // Three-point has Key, Fill and Rim on.

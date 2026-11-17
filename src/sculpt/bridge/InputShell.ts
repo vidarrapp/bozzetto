@@ -2447,7 +2447,7 @@ export class InputShell {
     const s = this.session;
 
     // Esc lets go of an armed Move light.
-    if (this.lightArmed && e.key === 'Escape' && !document.querySelector('.bz-menuname.is-open')) {
+    if (this.lightArmed && e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.bz-menuname.is-open')) {
       this.armLight(false);
       e.preventDefault();
       return;
