@@ -1,5 +1,5 @@
 import { div } from '../../ui/dom';
-import { LayerList, type LayerRowData } from '../../ui/layerList';
+import { LayerControls, LayerList, type LayerRowData } from '../../ui/layerList';
 import { SidePanel } from './SidePanel';
 import { MAX_LAYERS, WEIGHT_LIMIT, type SculptLayer } from '../bridge/layers';
 import type { SculptSession } from '../bridge/SculptSession';
@@ -16,6 +16,7 @@ import { PaintLayersView } from './PaintLayersView';
  */
 export class LayersPanel extends SidePanel {
   private readonly list: LayerList;
+  private readonly controls: LayerControls;
   private readonly addBtn: HTMLButtonElement;
   private readonly flattenBtn: HTMLButtonElement;
   private readonly note: HTMLDivElement;
@@ -34,18 +35,28 @@ export class LayersPanel extends SidePanel {
 
     this.sculptEl = div('layers-sculpt');
     this.body.append(this.sculptEl);
-    const header = div('outliner__header');
     this.addBtn = document.createElement('button');
     this.addBtn.type = 'button';
-    this.addBtn.className = 'outliner__btn outliner__btn--wide';
+    this.addBtn.className = 'outliner__btn outliner__btn--wide layers-foot__btn';
     this.addBtn.textContent = 'Add layer';
     this.addBtn.addEventListener('click', () => this.add());
-    header.append(this.addBtn);
-    this.sculptEl.append(header);
 
     this.note = div('layers-note');
     this.note.hidden = true;
     this.sculptEl.append(this.note);
+
+    // The weight of the ACTIVE layer, as Photoshop has its opacity at the top of the panel.
+    this.controls = new LayerControls({
+      caption: 'Weight',
+      limit: WEIGHT_LIMIT,
+      floor: -WEIGHT_LIMIT,
+      change: (w, phase) => {
+        const mesh = this.session.getMesh();
+        const layer = this.session.layers.active(mesh);
+        if (mesh && layer) this.session.layers.setWeight(mesh, layer, w, phase);
+      },
+    });
+    this.sculptEl.append(this.controls.el);
 
     this.list = new LayerList(
       {
@@ -64,11 +75,6 @@ export class LayersPanel extends SidePanel {
           if (layer) this.session.layers.rename(layer, name);
           this.refresh();
         },
-        weight: (id, w, phase) => {
-          const mesh = this.session.getMesh();
-          const layer = this.byId.get(id as number);
-          if (mesh && layer) this.session.layers.setWeight(mesh, layer, w, phase);
-        },
         menu: (id) => {
           const layer = this.byId.get(id as number);
           return [
@@ -83,18 +89,18 @@ export class LayersPanel extends SidePanel {
           ];
         },
       },
-      { baseName: 'Base', limit: WEIGHT_LIMIT },
+      { baseName: 'Base' },
     );
     this.sculptEl.append(this.list.el);
 
     const foot = div('outliner__header layers-foot');
     this.flattenBtn = document.createElement('button');
     this.flattenBtn.type = 'button';
-    this.flattenBtn.className = 'outliner__btn outliner__btn--wide';
+    this.flattenBtn.className = 'outliner__btn outliner__btn--wide layers-foot__btn';
     this.flattenBtn.textContent = 'Flatten all';
     this.flattenBtn.title = 'Make every layer part of the surface';
     this.flattenBtn.addEventListener('click', () => this.act((m) => this.session.layers.flattenAll(m)));
-    foot.append(this.flattenBtn);
+    foot.append(this.addBtn, this.flattenBtn);
     this.sculptEl.append(foot);
 
     this.refresh();
@@ -156,10 +162,12 @@ export class LayersPanel extends SidePanel {
         id: l.id,
         name: l.name,
         visible: l.visible,
-        weight: l.weight,
+        value: l.weight === 1 ? '' : `${Math.round(l.weight * 100)}%`,
       };
     });
-    this.list.render(rows, layers.active(mesh)?.id ?? null);
+    const active = layers.active(mesh);
+    this.list.render(rows, active?.id ?? null);
+    this.controls.set(active ? active.weight : null, null);
     const dynamic = !!mesh?.isDynamic;
     this.addBtn.disabled = !mesh || dynamic;
     this.flattenBtn.disabled = items.length === 0;

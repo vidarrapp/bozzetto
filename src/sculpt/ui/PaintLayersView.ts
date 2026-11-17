@@ -1,6 +1,6 @@
 import { div } from '../../ui/dom';
-import { LayerList, type LayerRowData } from '../../ui/layerList';
-import { BLEND_MODES, blendSelect } from '../../ui/blendModes';
+import { LayerControls, LayerList, type LayerRowData } from '../../ui/layerList';
+import { BLEND_MODES, blendModeById, blendSelect } from '../../ui/blendModes';
 import { isBlendId } from '../../paint/blend';
 import { MAX_PAINT_LAYERS, type PaintLayer } from '../bridge/paintLayers';
 import type { SculptSession } from '../bridge/SculptSession';
@@ -19,6 +19,8 @@ import { failNotice } from './statusToast';
 export class PaintLayersView {
   readonly el: HTMLDivElement;
   private readonly list: LayerList;
+  private readonly controls: LayerControls;
+  private readonly mode: HTMLSelectElement;
   private readonly addBtn: HTMLButtonElement;
   private readonly flattenBtn: HTMLButtonElement;
   private readonly note: HTMLDivElement;
@@ -29,18 +31,36 @@ export class PaintLayersView {
 
   constructor(private readonly session: SculptSession) {
     this.el = div('layers-paint');
-    const header = div('outliner__header');
     this.addBtn = document.createElement('button');
     this.addBtn.type = 'button';
-    this.addBtn.className = 'outliner__btn outliner__btn--wide';
+    this.addBtn.className = 'outliner__btn outliner__btn--wide layers-foot__btn';
     this.addBtn.textContent = 'Add layer';
     this.addBtn.addEventListener('click', () => this.add());
-    header.append(this.addBtn);
-    this.el.append(header);
 
     this.note = div('layers-note');
     this.note.hidden = true;
     this.el.append(this.note);
+
+    // The blend mode and the opacity of the ACTIVE layer, as Photoshop has them at the top of its panel.
+    this.mode = blendSelect(BLEND_MODES, 'normal');
+    this.mode.setAttribute('aria-label', 'Blend mode of the active layer');
+    this.mode.addEventListener('change', () => {
+      const mesh = this.session.getMesh();
+      const layer = this.session.paint.active(mesh);
+      if (mesh && layer && isBlendId(this.mode.value)) this.session.paint.setMode(mesh, layer, this.mode.value);
+    });
+    this.controls = new LayerControls({
+      caption: 'Opacity',
+      limit: 1,
+      floor: 0,
+      before: this.mode,
+      change: (v, phase) => {
+        const mesh = this.session.getMesh();
+        const layer = this.session.paint.active(mesh);
+        if (mesh && layer) this.session.paint.setOpacity(mesh, layer, v, phase);
+      },
+    });
+    this.el.append(this.controls.el);
 
     this.list = new LayerList(
       {
@@ -58,11 +78,6 @@ export class PaintLayersView {
           const layer = this.byId.get(id as number);
           if (layer) this.session.paint.rename(layer, name);
           this.refresh();
-        },
-        weight: (id, w, phase) => {
-          const mesh = this.session.getMesh();
-          const layer = this.byId.get(id as number);
-          if (mesh && layer) this.session.paint.setOpacity(mesh, layer, w, phase);
         },
         reorder: (id, to) => {
           const mesh = this.session.getMesh();
@@ -87,18 +102,18 @@ export class PaintLayersView {
           ];
         },
       },
-      { baseName: 'Base', limit: 1, floor: 0, caption: 'Opacity' },
+      { baseName: 'Base' },
     );
     this.el.append(this.list.el);
 
     const foot = div('outliner__header layers-foot');
     this.flattenBtn = document.createElement('button');
     this.flattenBtn.type = 'button';
-    this.flattenBtn.className = 'outliner__btn outliner__btn--wide';
+    this.flattenBtn.className = 'outliner__btn outliner__btn--wide layers-foot__btn';
     this.flattenBtn.textContent = 'Flatten all';
     this.flattenBtn.title = 'Make every layer part of the object’s colour';
     this.flattenBtn.addEventListener('click', () => this.act((m) => this.session.paint.flattenAll(m)));
-    foot.append(this.flattenBtn);
+    foot.append(this.addBtn, this.flattenBtn);
     this.el.append(foot);
     this.refresh();
   }
@@ -121,19 +136,6 @@ export class PaintLayersView {
     this.onEdit?.();
   }
 
-  /** The blend mode select of a row: the full list in Photoshop's groups. */
-  private blend(layer: PaintLayer): HTMLSelectElement {
-    const sel = blendSelect(BLEND_MODES, layer.mode);
-    sel.className = 'layer-row__blend';
-    sel.setAttribute('aria-label', `Blend mode of ${layer.name}`);
-    sel.addEventListener('change', () => {
-      const mesh = this.session.getMesh();
-      if (mesh && isBlendId(sel.value)) this.session.paint.setMode(mesh, layer, sel.value);
-    });
-    sel.addEventListener('click', (e) => e.stopPropagation());
-    return sel;
-  }
-
   /** Redraw from the session: the active object's paint layers. */
   refresh(): void {
     if (this.list.isEditing()) return;
@@ -143,9 +145,12 @@ export class PaintLayersView {
     this.byId.clear();
     const rows: LayerRowData[] = items.map((l) => {
       this.byId.set(l.id, l);
-      return { id: l.id, name: l.name, visible: l.visible, weight: l.opacity, extra: this.blend(l), extraKey: l.mode };
+      const parts = [l.mode === 'normal' ? '' : (blendModeById(l.mode)?.label ?? l.mode), l.opacity < 1 ? `${Math.round(l.opacity * 100)}%` : ''];
+      return { id: l.id, name: l.name, visible: l.visible, value: parts.filter(Boolean).join(' ') };
     });
-    this.list.render(rows, paint.active(mesh)?.id ?? null);
+    const active = paint.active(mesh);
+    this.list.render(rows, active?.id ?? null);
+    this.controls.set(active ? active.opacity : null, active ? active.mode : null);
     const dynamic = !!mesh?.isDynamic;
     this.addBtn.disabled = !mesh || dynamic;
     this.flattenBtn.disabled = items.length === 0;

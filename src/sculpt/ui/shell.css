@@ -2255,13 +2255,13 @@ body.bz-shell .panel--layers {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .layer-row--base {
   flex-direction: row;
   align-items: center;
-  min-height: 44px;
+  min-height: 32px;
   padding-left: 12px;
   border-top: 1px solid var(--bz-line);
   margin-top: 4px;
@@ -2273,9 +2273,9 @@ body.bz-shell .panel--layers {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -2284,7 +2284,7 @@ body.bz-shell .panel--layers {
 }
 
 .layer-row .layer-row__more {
-  width: 32px;
+  width: 28px;
   margin: 0;
 }
 
@@ -2333,25 +2333,21 @@ body.bz-shell .panel--layers {
   outline: none;
 }
 
-.layer-row__weight {
-  margin: 0 0 4px 44px;
-}
-
 .layer-row .row-menu {
   position: fixed;
   z-index: 40;
 }
 
-/* Paint's rows (ui/layerList.ts with a reorder hook): a handle to drag by at the
-   left, the blend mode under the name, the opacity under that. */
+/* One row a layer, 32px, as Photoshop's panel has them (ui/layerList.ts): the grip
+   (Paint), the eye, the name, a quiet value, the menu. The controls of the active
+   layer stand above the list. */
 .layer-row__grip {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 44px;
-  min-height: 44px;
+  width: 24px;
+  height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -2364,15 +2360,37 @@ body.bz-shell .panel--layers {
   color: var(--bz-text);
 }
 
-.layer-row--grip .layer-row__weight,
-.layer-row--grip .layer-row__blend {
-  margin-left: 76px;
+.layer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 0;
 }
 
-.layer-row__blend {
-  width: calc(100% - 82px);
-  height: 32px;
-  margin: 0 0 2px 44px;
+.layer-controls__select {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+}
+
+.layer-controls__slider {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.layer-controls__slider--off {
+  opacity: 0.4;
+}
+
+.layers-foot {
+  display: flex;
+  gap: 8px;
+}
+
+.layers-foot .layers-foot__btn {
+  flex: 1 1 0;
 }
 
 .layer-row--dragging {

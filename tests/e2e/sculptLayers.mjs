@@ -175,7 +175,7 @@ export const suites = {
     const added = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.panel--layers .layer-row')].map((r) => r.dataset.layer),
       active: document.querySelector('.panel--layers .layer-row--active')?.dataset.layer,
-      readout: document.querySelector('.panel--layers .layer-row--active .slider-val')?.textContent,
+      readout: document.querySelector('.panel--layers .layer-controls .slider-val')?.textContent,
       weight: window.__lt.layers()[0]?.weight,
     }));
     t.ok(added.rows.length === 2 && added.rows[1] === 'base' && added.active === added.rows[0], 'Add layer lists a new layer above Base and makes it active');
@@ -202,7 +202,7 @@ export const suites = {
     // A typed value through the slider's field: past the travel, negative.
     const sliderAt = () =>
       page.evaluate(() => {
-        const r = document.querySelector('.panel--layers .layer-row--active .compact input[type=range]').getBoundingClientRect();
+        const r = document.querySelector('.panel--layers .layer-controls input[type=range]').getBoundingClientRect();
         return [r.left + r.width / 2, r.top + r.height / 2];
       });
     let at = await sliderAt();
@@ -211,7 +211,7 @@ export const suites = {
     await page.keyboard.press('Enter');
     const typed = await page.evaluate(() => ({
       w: window.__lt.layers()[0].weight,
-      readout: document.querySelector('.panel--layers .layer-row--active .slider-val')?.textContent,
+      readout: document.querySelector('.panel--layers .layer-controls .slider-val')?.textContent,
     }));
     t.near(typed.w, 2.5, 1e-9, 'a typed 250 is accepted');
     t.eq(typed.readout, '250%', 'and the readout shows 250%');
@@ -302,8 +302,8 @@ export const suites = {
     const items = await page.evaluate(() => [...document.querySelectorAll('.row-menu:not([hidden]) .file-menu__item')].map((b) => b.textContent));
     t.eq(items.join(), 'Rename,Duplicate,Flatten into base,Delete', 'the row menu: Rename, Duplicate, Flatten into base, Delete');
     await page.keyboard.press('Escape');
-    t.eq(await page.evaluate(() => document.querySelector('.panel--layers .layer-list ~ .layers-foot .outliner__btn')?.textContent), 'Flatten all', 'Flatten all stands at the foot');
-    await page.evaluate(() => [...document.querySelectorAll('.panel--layers .layers-foot .outliner__btn')][0].click());
+    t.eq(await page.evaluate(() => document.querySelector('.panel--layers .layers-foot .outliner__btn:last-child')?.textContent), 'Flatten all', 'Flatten all stands at the foot');
+    await page.evaluate(() => [...document.querySelectorAll('.panel--layers .layers-foot .outliner__btn')][1].click());
     t.eq(await page.evaluate(() => window.__lt.layers().length), 0, 'Flatten all empties the list');
     t.ok((await page.evaluate(() => window.__lt.diff('s3'))) < tol * 2, 'and keeps the surface');
     await page.evaluate(() => window.__lt.undo());
@@ -913,5 +913,51 @@ export const suites = {
       return bad.length;
     });
     t.eq(small, 0, 'the buttons are easy to hit');
+  },
+
+  /** One row a layer, the controls of the active layer above the list, the quiet value (Photoshop's panel). */
+  async sculptLayersPanel(page, base, t) {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await openForInput(page, base);
+    await page.evaluate(install);
+    t.ok(await openPanel(page, 'Layers'), 'the Layers panel opens');
+    const ctl = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('.panel--layers .layer-controls');
+        const i = c.querySelector('input[type=range]');
+        return { off: i.disabled, readout: c.querySelector('.slider-val').textContent, inRows: document.querySelectorAll('.panel--layers .layer-row input, .panel--layers .layer-row select').length, rows: document.querySelectorAll('.panel--layers .layer-row:not(.layer-row--base)').length, vals: [...document.querySelectorAll('.panel--layers .layer-row:not(.layer-row--base)')].map((r) => r.querySelector('.layer-row__badge')?.textContent ?? ''), h: [...document.querySelectorAll('.panel--layers .layer-row')].map((r) => r.getBoundingClientRect().height) };
+      });
+    let c = await ctl();
+    t.ok(c.off, 'with Base active the Weight control is disabled');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      for (let k = 0; k < 3; k++) session.layers.add(window.__lt.mesh());
+    });
+    c = await ctl();
+    t.ok(c.rows === 3 && c.inRows === 0, `one row a layer, with no slider or select inside a row (${c.rows} rows, ${c.inRows} fields)`);
+    t.ok(c.h.every((h) => h <= 34), `rows are about 32px (${c.h.join(',')})`);
+    t.ok(!c.off && c.readout === '100%' && c.vals.every((v) => v === ''), 'the control follows the active layer, and no value shows at 100%');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = window.__lt.mesh();
+      const [a, b] = session.layers.list(m);
+      window.__lt.weight(b, 0.55);
+      window.__lt.weight(a, -1);
+    });
+    c = await ctl();
+    t.eq(c.vals.join('|'), '-100%|55%|', 'a layer not at 100% shows its weight quietly in its row');
+    t.eq(c.readout, '-100%', 'and the control shows the active layer');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.layers.setActive(window.__lt.mesh(), session.layers.list(window.__lt.mesh())[1]);
+    });
+    t.eq((await ctl()).readout, '55%', 'selecting another layer shows its weight');
+    await page.evaluate(() => document.querySelector('.panel--layers .layer-row--base').click());
+    t.ok((await ctl()).off, 'and Base disables the control again');
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.layers.setActive(window.__lt.mesh(), session.layers.list(window.__lt.mesh())[1]);
+    });
+    await page.screenshot({ path: '/tmp/claude-0/-home-user-bozzetto/6fb1e4da-2bbc-5c1e-9aed-93e15a9835c4/scratchpad/app/paint/sculpt-layers-1180.png' });
   },
 };

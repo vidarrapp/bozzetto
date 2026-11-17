@@ -475,12 +475,12 @@ export const suites = {
     await page.evaluate(() => window.__sculpt.session.paint.setOpacity(window.__pt.mesh(), window.__pt.layer('Layer 1'), 1, 'commit'));
     await openPanel(page, 'Layers');
     const sel = await page.evaluate(() => {
-      const s = document.querySelector('.layers-paint .layer-row__blend');
+      const s = document.querySelector('.layers-paint .layer-controls__select');
       return s ? { labels: [...s.options].filter((o) => !o.disabled).map((o) => o.textContent), seps: [...s.options].filter((o) => o.disabled).length, value: s.value } : null;
     });
     t.ok(sel && sel.labels.length === 27 && sel.seps === 5 && sel.labels[0] === 'Normal' && sel.labels[1] === 'Dissolve' && sel.labels[26] === 'Luminosity', `the blend select has the 27 modes in 6 groups (${sel?.labels.length} modes, ${sel?.seps} lines)`);
     await page.evaluate(() => {
-      const s = document.querySelector('.layers-paint .layer-row__blend');
+      const s = document.querySelector('.layers-paint .layer-controls__select');
       s.value = 'color-burn';
       s.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -512,16 +512,16 @@ export const suites = {
     const added = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.layers-paint .layer-row')].map((r) => r.dataset.layer),
       active: document.querySelector('.layers-paint .layer-row--active')?.dataset.layer,
-      readout: document.querySelector('.layers-paint .layer-row--active .slider-val')?.textContent,
-      caption: document.querySelector('.layers-paint .layer-row--active .layer-row__weight span')?.textContent,
+      readout: document.querySelector('.layers-paint .layer-controls .slider-val')?.textContent,
+      caption: document.querySelector('.layers-paint .layer-controls__slider span')?.textContent,
       grip: !!document.querySelector('.layers-paint .layer-row__grip'),
-      blend: document.querySelector('.layers-paint .layer-row__blend')?.value,
+      blend: document.querySelector('.layers-paint .layer-controls__select')?.value,
       names: window.__pt.layers().map((l) => l.name).join(),
     }));
     t.ok(added.rows.length === 2 && added.rows[1] === 'base' && added.active === added.rows[0], 'Add layer lists a new layer above Base and makes it active');
     t.eq(added.readout, '100%', 'a new layer is at 100% opacity');
     t.eq(added.caption, 'Opacity', 'its slider says Opacity');
-    t.ok(added.grip && added.blend === 'normal', 'the row has a handle to drag and a blend mode select, on Normal');
+    t.ok(added.grip && added.blend === 'normal', 'the row has a handle to drag and the control above shows Normal');
     t.ok((await page.evaluate(() => window.__pt.diff('basePaint'))) === 0, 'the object looks as it did: its painted colours are the Base');
     const baseSame = await page.evaluate(() => {
       const p = window.__pt.state();
@@ -617,7 +617,7 @@ export const suites = {
       const last = rows[rows.length - 1].getBoundingClientRect();
       return { x: g.left + g.width / 2, y: g.top + g.height / 2, toY: last.top + last.height - 4, w: g.width, h: g.height };
     });
-    t.ok(grip.h >= 44 && grip.w >= 30, `the handle is a finger's size (${grip.w}x${grip.h})`);
+    t.ok(grip.h >= 30 && grip.w >= 22, `the handle is a usable size (${grip.w}x${grip.h})`);
     await page.mouse.move(grip.x, grip.y);
     await page.mouse.down();
     await page.mouse.move(grip.x, (grip.y + grip.toY) / 2, { steps: 4 });
@@ -628,7 +628,54 @@ export const suites = {
     t.eq(await page.evaluate(() => window.__pt.layers().map((l) => l.name).join()), 'Cheeks,Layer 2', 'dropping it at the foot of the list moves it to the bottom');
     await page.evaluate(() => window.__pt.undo());
     t.eq(await page.evaluate(() => window.__pt.layers().map((l) => l.name).join()), 'Layer 2,Cheeks', 'and one undo moves it back');
+    // Photoshop's panel: one row a layer, the controls of the active layer above, a quiet value.
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      const m = window.__pt.mesh();
+      session.paint.setOpacity(m, window.__pt.layer('Layer 2'), 0.6, 'commit');
+      session.paint.setActive(m, window.__pt.layer('Layer 2'));
+    });
+    const ui = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('.layers-paint .layer-controls');
+        const sel = c.querySelector('select');
+        const i = c.querySelector('input[type=range]');
+        const rows = [...document.querySelectorAll('.layers-paint .layer-row:not(.layer-row--base)')];
+        return {
+          selOff: sel.disabled, sliderOff: i.disabled, mode: sel.value, readout: c.querySelector('.slider-val').textContent,
+          sameRow: Math.abs(sel.getBoundingClientRect().top - i.closest('label').getBoundingClientRect().top) < 12,
+          fields: document.querySelectorAll('.layers-paint .layer-row input, .layers-paint .layer-row select').length,
+          rows: rows.length, h: [...document.querySelectorAll('.layers-paint .layer-row')].map((r) => Math.round(r.getBoundingClientRect().height)),
+          vals: rows.map((r) => r.querySelector('.layer-row__badge')?.textContent ?? ''),
+          baseControls: document.querySelectorAll('.layers-paint .layer-row--base .layer-row__eye, .layers-paint .layer-row--base .layer-row__more').length,
+        };
+      });
+    let u = await ui();
+    t.ok(u.rows === 2 && u.fields === 0, `one row a layer, with no slider or select in a row (${u.rows} rows, ${u.fields} fields)`);
+    t.ok(u.h.every((h) => h <= 34), `rows are about 32px (${u.h.join(',')})`);
+    t.ok(!u.selOff && !u.sliderOff && u.mode === 'multiply' && u.readout === '60%' && u.sameRow, `the select and Opacity above the list show the active layer, on one row (${JSON.stringify({ mode: u.mode, readout: u.readout, sameRow: u.sameRow })})`);
+    t.eq(u.vals.join('|'), 'Multiply 60%|', 'the list shows "Multiply 60%" quietly, and nothing for a Normal layer at 100%');
+    t.eq(u.baseControls, 0, 'Base has no eye and no menu');
+    await page.evaluate(() => document.querySelector('.layers-paint .layer-row--base').click());
+    u = await ui();
+    t.ok(u.selOff && u.sliderOff, 'with Base active the select and the slider are disabled');
+    await page.evaluate(() => window.__sculpt.session.paint.setActive(window.__pt.mesh(), window.__pt.layer('Layer 2')));
+    // The controls change the active layer, in one undo step each.
+    const d2 = await page.evaluate(() => window.__pt.depth());
+    await page.evaluate(() => {
+      const sel = document.querySelector('.layers-paint .layer-controls select');
+      sel.value = 'screen';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    t.ok((await page.evaluate(() => window.__pt.layer('Layer 2').mode)) === 'screen' && (await page.evaluate(() => window.__pt.depth())) === d2 + 1, 'the select sets the active layer, as one undo step');
+    await page.evaluate(() => window.__pt.undo());
+    await page.evaluate(() => window.__sculpt.session.paint.add(window.__pt.mesh(), 'Glaze'));
+    await page.evaluate(() => window.__sculpt.session.paint.setActive(window.__pt.mesh(), window.__pt.layer('Layer 2')));
     await page.screenshot({ path: `${SHOTS}/paint-layers-1180.png` });
+    await page.evaluate(() => {
+      const { session } = window.__sculpt;
+      session.paint.remove(window.__pt.mesh(), window.__pt.layer('Glaze'));
+    });
 
     // Duplicate.
     await page.evaluate(() => window.__sculpt.session.paint.duplicate(window.__pt.mesh(), window.__pt.layer('Layer 2')));
@@ -665,7 +712,7 @@ export const suites = {
     t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) === 0, 'one undo brings the layer and its colour back');
 
     // Flatten all.
-    await page.evaluate(() => [...document.querySelectorAll('.layers-paint .layers-foot .outliner__btn')][0].click());
+    await page.evaluate(() => [...document.querySelectorAll('.layers-paint .layers-foot .outliner__btn')][1].click());
     t.eq(await page.evaluate(() => window.__pt.layers().length), 0, 'Flatten all empties the list');
     t.ok((await page.evaluate(() => window.__pt.diff('twoNormal'))) === 0, 'and keeps the colours on the object');
     await page.evaluate(() => window.__pt.undo());
