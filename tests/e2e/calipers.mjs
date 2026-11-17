@@ -111,7 +111,7 @@ const pinned = (page) =>
     const { session } = window.__sculpt;
     return session.measure.all().map(({ measure }) => ({ name: measure.name, visible: measure.visible, mirror: !!measure.mirror }));
   });
-const labels = (page) => page.evaluate(() => [...document.querySelectorAll('.measure-label__value')].map((e) => e.textContent));
+const labels = (page) => page.evaluate(async () => { for (let i = 0; i < 8; i++) await new Promise((r) => requestAnimationFrame(r)); return [...document.querySelectorAll('.measure-label__value')].map((e) => e.textContent); });
 const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
 
 /** Two taps with the pen on the sphere: at these shares of its radius from the middle. */
