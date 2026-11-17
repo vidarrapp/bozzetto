@@ -9,6 +9,8 @@
 export interface RowMenuItem {
   label: string;
   className?: string;
+  /** Greyed out: it does not apply now. */
+  disabled?: boolean;
   action: () => void;
 }
 
@@ -38,6 +40,7 @@ export function rowMenu(label: string, items: RowMenuItem[], className = ''): Ro
     b.type = 'button';
     b.className = `file-menu__item${item.className ? ` ${item.className}` : ''}`;
     b.setAttribute('role', 'menuitem');
+    if (item.disabled) b.disabled = true;
     b.textContent = item.label;
     b.addEventListener('click', () => {
       close();

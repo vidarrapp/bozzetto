@@ -1,6 +1,8 @@
 import { div } from './dom';
 import { rowMenu, type RowMenuItem } from './rowMenu';
 import { setSliderValue, sliderText, sliderValue, typedSlider } from './sliderEntry';
+import { colorPicker, type ColorPickerHandle } from './ColorPicker';
+import { nameOnLongPress, setTip } from '../sculpt/ui/edgeTip';
 
 /**
  * A list of layers, as Photoshop's Layers panel has it: newest on top, a
@@ -24,7 +26,20 @@ export interface LayerRowData {
   visible: boolean;
   /** The layer's value when it is not the default ("Multiply 60%", "55%"); empty for none. */
   value?: string;
+  /** In a group: indented one level. */
+  depth?: 0 | 1;
+  /** A group has a fold arrow; a fill layer has a colour swatch. */
+  kind?: 'layer' | 'fill' | 'group';
+  /** A group's fold: true when its layers show. */
+  open?: boolean;
+  /** The row has a mask, and whether it is on. */
+  mask?: 'on' | 'off' | null;
+  /** A fill layer's colour as `#rrggbb`. */
+  swatch?: string;
 }
+
+/** Where a dragged row was dropped: on a row, above it, below it, or into it (a group). */
+export type DropPlace = 'above' | 'below' | 'into';
 
 export interface LayerListHooks {
   /** A row was tapped: its id, or null for the base row. */
@@ -34,10 +49,16 @@ export interface LayerListHooks {
   /** What the row's menu offers. */
   menu(id: LayerId): RowMenuItem[];
   /**
-   * A row was dragged to a new place: its id and where it stands in the list as drawn (0 is the top
-   * row). Only where this hook is given do the rows have a handle to drag by (order matters in Paint).
+   * A row was dragged and dropped: its id, the row it was dropped on and where on it. Only where this
+   * hook is given do the rows have a handle to drag by.
    */
-  reorder?(id: LayerId, to: number): void;
+  drop?(id: LayerId, onto: LayerId, place: DropPlace): void;
+  /** A group's fold arrow was pressed. */
+  toggleOpen?(id: LayerId): void;
+  /** A fill layer's colour is being picked (`live`), or the picker closed (`commit`): `#rrggbb`. */
+  swatch?(id: LayerId, hex: string, phase: 'live' | 'commit'): void;
+  /** The base row's menu (just Flatten all); none leaves the base row bare. */
+  baseMenu?(): RowMenuItem[];
 }
 
 export interface LayerListOptions {
@@ -139,6 +160,7 @@ export class LayerList {
   private lastRows: LayerRowData[] = [];
   private lastActive: LayerId | null = null;
   private signature = '';
+  private readonly pickers = new Map<LayerId, ColorPickerHandle>();
 
   constructor(
     private readonly hooks: LayerListHooks,
@@ -154,17 +176,33 @@ export class LayerList {
   }
 
   render(rows: LayerRowData[], activeId: LayerId | null): void {
-    const sig = JSON.stringify([activeId, this.renaming, rows.map((r) => [r.id, r.name, r.visible, r.value ?? ''])]);
+    // The colour of a fill layer is not in the signature: a row redrawn under a picker would take it away.
+    const sig = JSON.stringify([activeId, this.renaming, rows.map((r) => [r.id, r.name, r.visible, r.value ?? '', r.depth ?? 0, r.kind ?? 'layer', r.open ?? null, r.mask ?? null])]);
     if (sig === this.signature && this.el.childElementCount === rows.length + 1) {
       this.lastRows = rows;
+      this.syncSwatches(rows);
       return;
     }
     this.signature = sig;
     this.lastRows = rows;
     this.lastActive = activeId;
+    const keep = new Set(rows.filter((r) => r.kind === 'fill').map((r) => r.id));
+    for (const [id, h] of this.pickers) {
+      if (!keep.has(id) || !h.isOpen()) {
+        h.dispose();
+        this.pickers.delete(id);
+      }
+    }
     const out: HTMLElement[] = rows.map((r) => this.row(r, r.id === activeId));
     out.push(this.baseRow(activeId === null));
     this.el.replaceChildren(...out);
+  }
+
+  private syncSwatches(rows: LayerRowData[]): void {
+    for (const r of rows) {
+      const h = this.pickers.get(r.id);
+      if (h && r.swatch && !h.isOpen() && h.value() !== r.swatch) h.set(r.swatch);
+    }
   }
 
   /** Put the name of a row in a field (the row's menu: Rename). */
@@ -185,6 +223,14 @@ export class LayerList {
     name.className = 'layer-row__name';
     name.textContent = this.opts.baseName ?? 'Base';
     row.append(name);
+    const items = this.hooks.baseMenu?.() ?? [];
+    if (items.length) {
+      const menu = rowMenu('', items, 'layer-row__more');
+      menu.trigger.setAttribute('aria-label', 'Actions for Base');
+      menu.trigger.title = 'Actions';
+      menu.wrap.addEventListener('click', (e) => e.stopPropagation());
+      row.append(menu.wrap);
+    }
     row.addEventListener('click', () => this.hooks.select(null));
     return row;
   }
@@ -194,9 +240,24 @@ export class LayerList {
     row.setAttribute('role', 'listitem');
     row.dataset.layer = String(r.id);
     const top = div('layer-row__top');
-    if (this.hooks.reorder) {
+    if (r.depth === 1) row.classList.add('layer-row--nested');
+    if (r.kind === 'group') row.classList.add('layer-row--group');
+    if (this.hooks.drop) {
       row.classList.add('layer-row--grip');
       top.append(this.grip(r, row));
+    }
+    if (r.kind === 'group') {
+      const fold = document.createElement('button');
+      fold.type = 'button';
+      fold.className = 'layer-row__fold';
+      fold.setAttribute('aria-label', r.open ? 'Fold the group' : 'Open the group');
+      fold.setAttribute('aria-expanded', String(!!r.open));
+      fold.append(iconEl(r.open ? 'fi-ss-angle-small-down' : 'fi-ss-angle-small-right'));
+      fold.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.hooks.toggleOpen?.(r.id);
+      });
+      top.append(fold);
     }
 
     const eye = document.createElement('button');
@@ -213,6 +274,16 @@ export class LayerList {
     });
     top.append(eye);
 
+    if (r.kind === 'fill' && r.swatch) {
+      let h = this.pickers.get(r.id);
+      if (!h) {
+        h = colorPicker(r.swatch, (hex) => this.hooks.swatch?.(r.id, hex, 'live'), { onClose: () => this.hooks.swatch?.(r.id, this.pickers.get(r.id)?.value() ?? '#000000', 'commit') });
+        this.pickers.set(r.id, h);
+      }
+      h.root.classList.add('layer-row__swatch');
+      h.root.addEventListener('click', (e) => e.stopPropagation());
+      top.append(h.root);
+    }
     if (this.renaming === r.id) {
       top.append(this.renameField(r));
     } else {
@@ -230,6 +301,13 @@ export class LayerList {
       top.append(name);
     }
 
+    if (r.mask) {
+      const mark = document.createElement('span');
+      mark.className = `layer-row__mask${r.mask === 'off' ? ' layer-row__mask--off' : ''}`;
+      mark.title = r.mask === 'off' ? 'Mask off' : 'Has a mask';
+      mark.append(iconEl('fi-ss-circle-half-stroke'));
+      top.append(mark);
+    }
     if (r.value) {
       const value = document.createElement('span');
       value.className = 'layer-row__badge';
@@ -270,27 +348,27 @@ export class LayerList {
       e.preventDefault();
       e.stopPropagation();
       const rows = [...this.el.querySelectorAll<HTMLElement>('.layer-row:not(.layer-row--base)')];
-      const from = rows.indexOf(rowEl);
-      if (from < 0) return;
+      if (rows.indexOf(rowEl) < 0) return;
       const rects = rows.map((x) => x.getBoundingClientRect());
-      let to = from;
+      let hit: { at: number; place: DropPlace } | null = null;
       try {
         grip.setPointerCapture(e.pointerId);
       } catch {
         // Synthetic events carry no active pointer; capture is best-effort.
       }
       rowEl.classList.add('layer-row--dragging');
-      const mark = (): void => {
-        rows.forEach((x, i) => {
-          x.classList.toggle('layer-row--drop-above', i === to && to < from);
-          x.classList.toggle('layer-row--drop-below', i === to && to > from);
-        });
-      };
+      const clear = (): void => rows.forEach((x) => x.classList.remove('layer-row--drop-above', 'layer-row--drop-below', 'layer-row--drop-into'));
       const move = (ev: PointerEvent): void => {
-        let at = rects.findIndex((b) => ev.clientY < b.top + b.height / 2);
+        let at = rects.findIndex((b) => ev.clientY < b.bottom);
         if (at < 0) at = rows.length - 1;
-        to = at;
-        mark();
+        const b = rects[at];
+        const f = (ev.clientY - b.top) / Math.max(1, b.height);
+        const target = rows[at];
+        const isGroup = target.classList.contains('layer-row--group') && r.kind !== 'group' && target !== rowEl;
+        const place: DropPlace = isGroup && f > 0.25 && f < 0.75 ? 'into' : f < 0.5 ? 'above' : 'below';
+        hit = target === rowEl ? null : { at, place };
+        clear();
+        if (hit) rows[hit.at].classList.add(`layer-row--drop-${hit.place}`);
       };
       const end = (ev: PointerEvent, keep: boolean): void => {
         grip.removeEventListener('pointermove', move);
@@ -302,8 +380,12 @@ export class LayerList {
           // Already let go.
         }
         rowEl.classList.remove('layer-row--dragging');
-        rows.forEach((x) => x.classList.remove('layer-row--drop-above', 'layer-row--drop-below'));
-        if (keep && to !== from) this.hooks.reorder?.(r.id, to);
+        clear();
+        const h = hit as { at: number; place: DropPlace } | null;
+        if (keep && h) {
+          const onto = rows[h.at].dataset.layer;
+          if (onto !== undefined) this.hooks.drop?.(r.id, this.idOf(onto), h.place);
+        }
       };
       const up = (ev: PointerEvent): void => end(ev, true);
       const cancel = (ev: PointerEvent): void => end(ev, false);
@@ -312,6 +394,11 @@ export class LayerList {
       grip.addEventListener('pointercancel', cancel);
     });
     return grip;
+  }
+
+  /** A row's id as the model has it (rows keep it as text). */
+  private idOf(text: string): LayerId {
+    return this.lastRows.find((x) => String(x.id) === text)?.id ?? text;
   }
 
   private renameField(r: LayerRowData): HTMLInputElement {
@@ -347,5 +434,50 @@ export class LayerList {
       input.select();
     }, 0);
     return input;
+  }
+}
+
+
+/** One button of the foot bar. */
+export interface BarItem {
+  id: string;
+  /** Its name, said on hover and on a long press. */
+  label: string;
+  /** A Uicons solid straight class. */
+  icon: string;
+  action(): void;
+}
+
+/**
+ * The bar at the foot of a Layers panel, as Photoshop's: bare icons at the right, in a
+ * row, each named on hover and on a long press, none of them a text button. `set` greys
+ * what does not apply.
+ */
+export class LayerBar {
+  readonly el: HTMLDivElement;
+  private readonly buttons = new Map<string, HTMLButtonElement>();
+
+  constructor(items: BarItem[]) {
+    this.el = div('layer-bar');
+    this.el.setAttribute('role', 'toolbar');
+    this.el.setAttribute('aria-label', 'Layer actions');
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'layer-bar__btn';
+      b.dataset.action = it.id;
+      b.setAttribute('aria-label', it.label);
+      b.append(iconEl(it.icon));
+      setTip(b, it.label);
+      nameOnLongPress(b);
+      b.addEventListener('click', () => it.action());
+      this.buttons.set(it.id, b);
+      this.el.append(b);
+    }
+  }
+
+  /** Which buttons apply now (the ones missing from `on` are greyed out). */
+  set(on: Record<string, boolean>): void {
+    for (const [id, b] of this.buttons) b.disabled = !on[id];
   }
 }

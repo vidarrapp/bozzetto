@@ -36,7 +36,7 @@ export async function askFlatten(session: SculptSession, meshes: SculptMesh[], v
   const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
   return askWindow({
     title: `Flatten the layers of ${list}?`,
-    text: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} rebuilds the surface, so its layers become part of it. Undo brings them back.`,
+    text: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} rebuilds the surface, so its layers become part of it, and their masks go. Undo brings them back.`,
     yes: `Flatten and ${verb}`,
   });
 }

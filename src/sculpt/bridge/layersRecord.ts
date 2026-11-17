@@ -13,7 +13,7 @@ export const WEIGHT_LIMIT = 10;
 /** Names longer than this are cut. */
 export const MAX_LAYER_NAME = 60;
 /** The record's version. */
-export const LAYERS_V = 1;
+export const LAYERS_V = 2;
 
 /**
  * A record's layers as a scene brings them: version 1, at most MAX_LAYERS
@@ -28,7 +28,7 @@ export function sanitizeLayers(v: unknown, vertexCounts: number[]): SavedLayers 
   };
   if (!v || typeof v !== 'object' || Array.isArray(v)) bad('they are not a record');
   const r = v as Record<string, unknown>;
-  if (r.v !== LAYERS_V) bad('a version this app does not read');
+  if (r.v !== 1 && r.v !== LAYERS_V) bad('a version this app does not read');
   const items = r.items;
   if (!Array.isArray(items) || items.length > MAX_LAYERS) bad(`not 0 to ${MAX_LAYERS} layers`);
   const active = r.active;
@@ -43,6 +43,25 @@ export function sanitizeLayers(v: unknown, vertexCounts: number[]): SavedLayers 
     if (typeof weight !== 'number' || !Number.isFinite(weight) || Math.abs(weight) > WEIGHT_LIMIT) bad('a weight that is not one');
     if (typeof l.visible !== 'boolean') bad('a visibility that is not one');
     const n = vertexCounts[vertexCounts.length - 1];
+    const kind = (l.kind === undefined ? 'layer' : l.kind) as 'layer' | 'group';
+    if (kind !== 'layer' && kind !== 'group') bad('a kind of layer that is not one');
+    let parent = -1;
+    if (l.parent !== undefined) {
+      const q = l.parent;
+      if (typeof q !== 'number' || !Number.isInteger(q) || q < -1 || q >= (items as unknown[]).length) bad('a group that is not one');
+      parent = q as number;
+      if (kind === 'group' && parent !== -1) bad('a group inside a group');
+    }
+    let mask: { maskVals: Uint8Array; maskLens: Uint32Array } | null = null;
+    if (l.maskVals !== undefined || l.maskLens !== undefined) {
+      const mv = l.maskVals;
+      const ml = l.maskLens;
+      if (!(mv instanceof Uint8Array) || !(ml instanceof Uint32Array) || mv.length !== ml.length) bad('a mask of the wrong kind');
+      let total = 0;
+      for (const x of ml as Uint32Array) total += x;
+      if (total !== n) bad('a mask of the wrong size');
+      mask = { maskVals: mv as Uint8Array, maskLens: ml as Uint32Array };
+    }
     const ids = l.ids;
     const vals = l.vals;
     let keep: { ids: Uint32Array; vals: Float32Array } | null = null;
@@ -64,8 +83,12 @@ export function sanitizeLayers(v: unknown, vertexCounts: number[]): SavedLayers 
       name: (l.name as string).slice(0, MAX_LAYER_NAME) || 'Layer',
       weight: weight as number,
       visible: l.visible as boolean,
+      kind,
+      parent,
+      ...(mask ? { ...mask, maskOn: l.maskOn !== false } : {}),
+      open: l.open !== false,
       ...(keep ?? {}),
     };
   });
-  return { v: 1, active: active as number, items: out };
+  return { v: 2, active: active as number, items: out };
 }

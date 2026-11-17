@@ -2384,13 +2384,120 @@ body.bz-shell .panel--layers {
   opacity: 0.4;
 }
 
-.layers-foot {
+/* The bar at the foot, as Photoshop's: bare icons at the right. */
+.layer-bar {
   display: flex;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 0;
+  border-top: 1px solid var(--bz-line);
+  padding: 4px 8px;
 }
 
-.layers-foot .layers-foot__btn {
-  flex: 1 1 0;
+.layer-bar__btn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text);
+  cursor: pointer;
+}
+
+.layer-bar__btn:hover:not(:disabled) {
+  background: var(--bz-hover);
+}
+
+.layer-bar__btn:disabled {
+  color: var(--bz-text-3);
+  cursor: default;
+}
+
+.layer-bar__btn .bz-tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  align-items: baseline;
+  padding: 4px 8px;
+  background: var(--bz-raised);
+  box-shadow: var(--bz-raised-shadow);
+  color: var(--bz-text);
+  font: 400 13px/16px var(--bz-font);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.layer-bar__btn.is-tip > .bz-tip,
+.layer-bar__btn:focus-visible > .bz-tip {
+  display: flex;
+}
+
+@media (hover: hover) {
+  .layer-bar__btn:hover:not(:disabled) > .bz-tip {
+    display: flex;
+  }
+}
+
+.layer-row--nested {
+  padding-left: 18px;
+}
+
+.layer-row__fold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bz-text-2, var(--bz-text-3));
+  cursor: pointer;
+}
+
+.layer-row--group .layer-row__name {
+  font-weight: 600;
+}
+
+.layer-row__swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 4px;
+}
+
+.layer-row__swatch .cpick__swatch {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: 1px solid var(--bz-line);
+  border-radius: 0;
+}
+
+.layer-row__mask {
+  flex: none;
+  display: inline-flex;
+  padding: 0 3px;
+  color: var(--bz-text-2, var(--bz-text-3));
+  font-size: 11px;
+}
+
+.layer-row__mask--off {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.layer-row--drop-into {
+  outline: 1px solid var(--bz-text);
+  outline-offset: -1px;
 }
 
 .layer-row--dragging {

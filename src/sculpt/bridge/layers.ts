@@ -2,6 +2,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { mat4 } from 'gl-matrix';
 import Enums from '@sculpt-vendor/misc/Enums';
 import { LAYERS_V, MAX_LAYERS, MAX_LAYER_NAME, WEIGHT_LIMIT } from './layersRecord';
+import { indexIn, membersOf, moveItem, topLevel, type TreeItem } from '../../ui/layerTree';
 
 export { MAX_LAYERS, MAX_LAYER_NAME, WEIGHT_LIMIT };
 
@@ -56,22 +57,40 @@ const WEIGHT_EPS = 1e-3;
 /** A change smaller than this share of the object's extent is arithmetic noise, not sculpting. */
 const NOISE = 2e-7;
 
-export interface SculptLayer {
+export interface SculptLayer extends TreeItem<SculptLayer> {
   /** Unique within the session. */
   id: number;
   name: string;
+  /** A layer holds displacements; a group holds layers and has a weight and an eye of its own, which multiply theirs. */
+  kind: 'layer' | 'group';
+  /** The group it is in; null in the stack itself. */
+  parent: SculptLayer | null;
   /** 1 is 100%. May be negative or past 1. */
   weight: number;
   visible: boolean;
-  /** Object-space displacement a vertex of the highest level, at weight 1; null until the layer takes a change. */
+  /** Object-space displacement a vertex of the highest level, at weight 1; null until the layer takes a change (always null for a group). */
   delta: Float32Array | null;
-  /** What the mesh holds of this layer now: `weight` while shown, else 0. */
+  /** What the mesh holds of this layer's weight now: its weight times its group's while both are shown, else 0. */
   applied: number;
+  /** A mask, a byte a vertex of the highest level: 255 where the layer has its effect, 0 where the working mask protected. */
+  mask: Uint8Array | null;
+  maskOn: boolean;
+  /** A group is open in the list. */
+  open: boolean;
 }
 
 /** A layer as a scene record keeps it (SavedMesh.layers). */
 export interface SavedLayer {
   name: string;
+  /** Absent in a version 1 record: a layer. */
+  kind?: 'layer' | 'group';
+  /** Index into `items` of the group it is in, or -1. */
+  parent?: number;
+  /** A mask as runs over the highest level's vertices: a value, and how many in a row. */
+  maskVals?: Uint8Array;
+  maskLens?: Uint32Array;
+  maskOn?: boolean;
+  open?: boolean;
   weight: number;
   visible: boolean;
   /** The highest-level vertices the layer moved, and by how much each (three a vertex, at weight 1). Absent for an empty layer. */
@@ -80,7 +99,7 @@ export interface SavedLayer {
 }
 
 export interface SavedLayers {
-  v: 1;
+  v: 1 | 2;
   /** Index into `items` of the active layer, or -1 for Base. */
   active: number;
   /** Oldest first. */
@@ -89,7 +108,7 @@ export interface SavedLayers {
 
 /** What a layer-aware stroke asks, before it starts. */
 export interface LayerRefusal {
-  kind: 'hidden';
+  kind: 'hidden' | 'group';
   name: string;
 }
 
@@ -130,10 +149,54 @@ const stackOf = (mesh: SculptMesh): Stack | null => (mesh._meshes ? (mesh as unk
 
 let nextId = 1;
 
+/**
+ * What a layer does to the surface now: its weight times its group's (0 while
+ * it or its group is hidden), and the masks that scale it by vertex.
+ * Displacement at a vertex is `w * a[i] * b[i] * delta[i]`.
+ */
+interface Eff {
+  w: number;
+  a: Uint8Array | null;
+  b: Uint8Array | null;
+}
+
+const ZERO: Eff = { w: 0, a: null, b: null };
+
+function effOf(l: SculptLayer): Eff {
+  const g = l.parent;
+  const shown = l.visible && (!g || g.visible);
+  return {
+    w: shown ? l.weight * (g ? g.weight : 1) : 0,
+    a: l.mask && l.maskOn ? l.mask : null,
+    b: g && g.mask && g.maskOn ? g.mask : null,
+  };
+}
+
+const coef = (e: Eff, i: number): number => e.w * (e.a ? e.a[i] / 255 : 1) * (e.b ? e.b[i] / 255 : 1);
+
+/** The structure of the stack and what every layer does, at a moment: what an undo step puts back. */
+interface Snap {
+  list: SculptLayer[];
+  active: SculptLayer | null;
+  props: Array<{
+    l: SculptLayer;
+    name: string;
+    weight: number;
+    visible: boolean;
+    delta: Float32Array | null;
+    kind: SculptLayer['kind'];
+    parent: SculptLayer | null;
+    mask: Uint8Array | null;
+    maskOn: boolean;
+    open: boolean;
+  }>;
+  eff: Map<SculptLayer, Eff>;
+}
+
 export class SculptLayers {
   private readonly per = new WeakMap<SculptMesh, PerMesh>();
   /** A weight drag in progress: where it began, so the release is one undo step. */
-  private drag: { mesh: SculptMesh; layer: SculptLayer; weight: number; visible: boolean } | null = null;
+  private drag: { mesh: SculptMesh; layer: SculptLayer; before: Snap; shown: Map<SculptLayer, Eff> } | null = null;
 
   /** Anything about the layers changed (list, active, weight, an undo): the panel and the autosave follow. */
   onChange: (() => void) | null = null;
@@ -197,16 +260,16 @@ export class SculptLayers {
    * a level above has no detail yet (it was never stepped from), where there
    * is nothing to read.
    */
-  private viewTop(mesh: SculptMesh, fn: (v: Float32Array, n: number) => void): boolean {
+  private viewTop(mesh: SculptMesh, fn: (v: Float32Array, n: number, m: Float32Array) => void): boolean {
     const st = stackOf(mesh);
     if (!st) {
-      fn(mesh.getVertices(), mesh.getNbVertices());
+      fn(mesh.getVertices(), mesh.getNbVertices(), mesh.getMaterials());
       return true;
     }
     const cur = st._sel;
     const top = st._meshes.length - 1;
     if (cur === top) {
-      fn(mesh.getVertices(), mesh.getNbVertices());
+      fn(mesh.getVertices(), mesh.getNbVertices(), mesh.getMaterials());
       return true;
     }
     for (let k = cur + 1; k <= top; k++) if (!st._meshes[k]._detailsXYZ) return false;
@@ -216,7 +279,7 @@ export class SculptLayers {
     const normals = st._meshes.slice(cur + 1).map((m) => new Float32Array(m.getNormals()));
     try {
       for (let k = cur; k < top; k++) st.higherLevel();
-      fn(mesh.getVertices(), mesh.getNbVertices());
+      fn(mesh.getVertices(), mesh.getNbVertices(), mesh.getMaterials());
     } finally {
       st.setSelection(cur);
       st.updateResolution();
@@ -264,10 +327,26 @@ export class SculptLayers {
       this.arm(mesh);
       return;
     }
-    this.viewTop(mesh, (v, n) => this.attribute(p, v, n));
+    const st = stackOf(mesh);
+    const onTop = !st || st._sel === st._meshes.length - 1;
+    const reverted: number[] = [];
+    this.viewTop(mesh, (v, n) => this.attribute(p, v, n, onTop ? reverted : null));
+    if (reverted.length) {
+      // Where the layer's mask says it has no effect, a stroke is put back: the work cannot show there.
+      const ids = Uint32Array.from(reverted);
+      mesh.updateGeometry(mesh.getFacesFromVertices(ids), ids);
+      mesh.updateGeometryBuffers();
+      this.host.render();
+    }
   }
 
-  private attribute(p: PerMesh, v: Float32Array, n: number): void {
+  /** Whether the active layer (or its group) has a mask on: its strokes are synced as they end, so the mask limits them at once. */
+  activeMasked(mesh: SculptMesh | null): boolean {
+    const l = this.active(mesh);
+    return !!l && l.kind === 'layer' && ((!!l.mask && l.maskOn) || (!!l.parent?.mask && l.parent.maskOn));
+  }
+
+  private attribute(p: PerMesh, v: Float32Array, n: number, reverted: number[] | null): void {
     const layer = p.active;
     const ref = p.ref;
     if (!layer || !ref) return;
@@ -276,7 +355,8 @@ export class SculptLayers {
       p.ref = new Float32Array(v.subarray(0, n * 3));
       return;
     }
-    const w = layer.applied;
+    const e = effOf(layer);
+    const w = layer.kind === 'layer' ? layer.applied : 0;
     if (Math.abs(w) >= WEIGHT_EPS) {
       let extent = 0;
       for (let i = 0; i < n * 3; i++) {
@@ -284,13 +364,24 @@ export class SculptLayers {
         if (a > extent) extent = a;
       }
       const tol = Math.max(extent, 1e-3) * NOISE;
-      const inv = 1 / w;
       let d: Float32Array | null = layer.delta;
       for (let i = 0; i < n * 3; i += 3) {
         const dx = v[i] - ref[i];
         const dy = v[i + 1] - ref[i + 1];
         const dz = v[i + 2] - ref[i + 2];
         if (Math.abs(dx) <= tol && Math.abs(dy) <= tol && Math.abs(dz) <= tol) continue;
+        // What the masks let the layer show here: the change is divided by it, so that shown, it is the stroke.
+        const f = (e.a ? e.a[i / 3] / 255 : 1) * (e.b ? e.b[i / 3] / 255 : 1);
+        if (f <= 0) {
+          if (reverted) {
+            v[i] = ref[i];
+            v[i + 1] = ref[i + 1];
+            v[i + 2] = ref[i + 2];
+            reverted.push(i / 3);
+          }
+          continue;
+        }
+        const inv = 1 / (w * f);
         if (!d) d = layer.delta = new Float32Array(n * 3);
         d[i] += dx * inv;
         d[i + 1] += dy * inv;
@@ -298,6 +389,11 @@ export class SculptLayers {
       }
     }
     ref.set(v.subarray(0, n * 3));
+  }
+
+  /** The active layer's strokes are brought into it at once, where a mask must limit them (called as a stroke ends). */
+  syncIfMasked(mesh: SculptMesh | null): void {
+    if (this.activeMasked(mesh)) this.sync(mesh);
   }
 
   // --- the stroke ----------------------------------------------------------
@@ -312,9 +408,15 @@ export class SculptLayers {
   refusal(mesh: SculptMesh | null, tool: number): LayerRefusal | null {
     if (!mesh || mesh.isDynamic) return null;
     const t = Enums.Tools;
-    if (tool === t.MASKING || tool === t.PAINT || tool === t.PAINT_BLUR || tool === t.TRANSFORM) return null;
+    if (
+      tool === t.MASKING || tool === t.PAINT || tool === t.PAINT_BLUR || tool === t.TRANSFORM ||
+      tool === t.PAINT_ERASE || tool === t.BLUR || tool === t.FILL || tool === t.PICK || tool === t.PROJECT
+    ) {
+      return null;
+    }
     const layer = this.active(mesh);
     if (!layer) return null;
+    if (layer.kind === 'group') return { kind: 'group', name: layer.name };
     if (!layer.visible || Math.abs(layer.applied) < WEIGHT_EPS) return { kind: 'hidden', name: layer.name };
     if (!this.per.get(mesh)!.ref) this.arm(mesh);
     return null;
@@ -331,15 +433,15 @@ export class SculptLayers {
   // --- moving the surface --------------------------------------------------
 
   /**
-   * Move the mesh so the layer's part of it is `target` (times its delta)
-   * instead of what it was, on the highest level, carried down to the level
-   * on screen. The caller has synced. The reference follows the move.
+   * Move the mesh so the layer's part of it is `to` instead of `from`: a
+   * vertex goes by `(coef(to) - coef(from)) * delta`, on the highest level,
+   * carried down to the level on screen. The caller has synced. The reference
+   * follows the move.
    */
-  private shift(mesh: SculptMesh, layer: SculptLayer, target: number): void {
-    const f = target - layer.applied;
-    layer.applied = target;
+  private displace(mesh: SculptMesh, layer: SculptLayer, from: Eff, to: Eff): void {
     const d = layer.delta;
-    if (f === 0 || !d) return;
+    if (!d || layer.kind !== 'layer') return;
+    if (from.w === to.w && from.a === to.a && from.b === to.b) return;
     const p = this.per.get(mesh);
     this.atTop(mesh, (v, n) => {
       const ref = p?.active && p.ref && p.ref.length === n * 3 ? p.ref : null;
@@ -351,6 +453,8 @@ export class SculptLayers {
         const y = d[j + 1];
         const z = d[j + 2];
         if (x === 0 && y === 0 && z === 0) continue;
+        const f = coef(to, i) - coef(from, i);
+        if (f === 0) continue;
         v[j] += f * x;
         v[j + 1] += f * y;
         v[j + 2] += f * z;
@@ -373,6 +477,49 @@ export class SculptLayers {
     this.host.render();
   }
 
+  /** What every layer of the object does now. */
+  private effs(p: PerMesh): Map<SculptLayer, Eff> {
+    const out = new Map<SculptLayer, Eff>();
+    for (const l of p.list) if (l.kind === 'layer') out.set(l, effOf(l));
+    return out;
+  }
+
+  /** Take the surface from what the layers did to what they do: every layer moves by the difference. */
+  private transition(mesh: SculptMesh, from: Map<SculptLayer, Eff>, to: Map<SculptLayer, Eff>): void {
+    const all = new Set<SculptLayer>([...from.keys(), ...to.keys()]);
+    for (const l of all) this.displace(mesh, l, from.get(l) ?? ZERO, to.get(l) ?? ZERO);
+  }
+
+  /** `applied` is each layer's effective weight, which sync divides a stroke by. */
+  private settle(p: PerMesh): void {
+    for (const l of p.list) l.applied = effOf(l).w;
+  }
+
+  private snapshot(p: PerMesh): Snap {
+    return {
+      list: [...p.list],
+      active: p.active,
+      props: p.list.map((l) => ({ l, name: l.name, weight: l.weight, visible: l.visible, delta: l.delta, kind: l.kind, parent: l.parent, mask: l.mask, maskOn: l.maskOn, open: l.open })),
+      eff: this.effs(p),
+    };
+  }
+
+  private unsnap(p: PerMesh, s: Snap): void {
+    p.list = [...s.list];
+    p.active = s.active;
+    for (const x of s.props) {
+      x.l.name = x.name;
+      x.l.weight = x.weight;
+      x.l.visible = x.visible;
+      x.l.delta = x.delta;
+      x.l.kind = x.kind;
+      x.l.parent = x.parent;
+      x.l.mask = x.mask;
+      x.l.maskOn = x.maskOn;
+      x.l.open = x.open;
+    }
+  }
+
   // --- commands ------------------------------------------------------------
 
   private push(undo: () => void, redo: () => void, squash = false): void {
@@ -387,6 +534,47 @@ export class SculptLayers {
       },
       squash,
     );
+  }
+
+  /** An operation as an undo step: the surface goes from `before` to `after`, the structure with it; undo and redo do the same the other way. */
+  private pushPair(mesh: SculptMesh, p: PerMesh, before: Snap, after: Snap): void {
+    const go = (from: Snap, to: Snap): void => {
+      this.sync(mesh);
+      this.transition(mesh, from.eff, to.eff);
+      this.unsnap(p, to);
+      this.settle(p);
+      this.arm(mesh);
+      this.host.setMesh(mesh);
+    };
+    this.push(
+      () => go(after, before),
+      () => go(before, after),
+    );
+  }
+
+  /**
+   * Change the stack and the surface as one undo step: syncs first, takes a
+   * snapshot, lets `mutate` change the structure, and moves the surface by
+   * what each layer now does. `keep` are layers that leave the stack with
+   * their effect staying on the surface (flatten).
+   */
+  private run(mesh: SculptMesh, mutate: (p: PerMesh) => void, keep: SculptLayer[] = []): boolean {
+    const p = this.per.get(mesh);
+    if (!p) return false;
+    this.sync(mesh);
+    const before = this.snapshot(p);
+    mutate(p);
+    const after = this.snapshot(p);
+    for (const l of keep) {
+      const e = before.eff.get(l);
+      if (e) after.eff.set(l, e);
+    }
+    this.transition(mesh, before.eff, after.eff);
+    this.settle(p);
+    this.arm(mesh);
+    this.pushPair(mesh, p, before, after);
+    this.changed();
+    return true;
   }
 
   /**
@@ -413,39 +601,58 @@ export class SculptLayers {
     this.changed();
   }
 
-  /** A new empty layer at 100%, which becomes the active one. Null when none can be made. */
-  add(mesh: SculptMesh, name?: string): SculptLayer | null {
-    if (!this.allowed(mesh)) return null;
-    const p = this.ensure(mesh);
-    if (p.list.length >= MAX_LAYERS) return null;
-    this.sync(mesh);
-    const layer: SculptLayer = {
+  private fresh(p: PerMesh, kind: SculptLayer['kind'], base: string): SculptLayer {
+    return {
       id: nextId++,
-      name: this.uniqueName(p, (name ?? `Layer ${p.list.length + 1}`).slice(0, MAX_LAYER_NAME)),
+      name: this.uniqueName(p, base.slice(0, MAX_LAYER_NAME)),
+      kind,
+      parent: null,
       weight: 1,
       visible: true,
       delta: null,
       applied: 1,
+      mask: null,
+      maskOn: true,
+      open: true,
     };
-    const prior = p.active;
-    p.list.push(layer);
-    p.active = layer;
-    this.arm(mesh);
-    this.push(
-      () => {
-        this.sync(mesh);
-        p.list.splice(p.list.indexOf(layer), 1);
-        p.active = prior && p.list.includes(prior) ? prior : null;
-        this.arm(mesh);
-      },
-      () => {
-        this.sync(mesh);
-        p.list.push(layer);
-        p.active = layer;
-        this.arm(mesh);
-      },
-    );
-    this.changed();
+  }
+
+  /** Put a new item above the active one: at the top of the group when one is picked, in the active layer's group, or in the stack. */
+  private place(p: PerMesh, item: SculptLayer): void {
+    const ref = p.active;
+    let parent: SculptLayer | null = null;
+    let index = topLevel(p.list).length;
+    if (ref) {
+      if (item.kind === 'group') {
+        index = indexIn(p.list, ref.parent ?? ref) + 1;
+      } else if (ref.kind === 'group') {
+        parent = ref;
+        index = membersOf(p.list, ref).length;
+      } else {
+        parent = ref.parent;
+        index = indexIn(p.list, ref) + 1;
+      }
+    }
+    p.list = moveItem(p.list, item, parent, index);
+    p.active = item;
+  }
+
+  /** A new empty layer at 100%, which becomes the active one. Null when none can be made. */
+  add(mesh: SculptMesh, name?: string): SculptLayer | null {
+    return this.addKind(mesh, 'layer', name);
+  }
+
+  /** An empty group, which becomes the active entry. */
+  addGroup(mesh: SculptMesh, name?: string): SculptLayer | null {
+    return this.addKind(mesh, 'group', name);
+  }
+
+  private addKind(mesh: SculptMesh, kind: SculptLayer['kind'], name?: string): SculptLayer | null {
+    if (!this.allowed(mesh)) return null;
+    const p = this.ensure(mesh);
+    if (p.list.length >= MAX_LAYERS) return null;
+    const layer = this.fresh(p, kind, name ?? `${kind === 'group' ? 'Group' : 'Layer'} ${p.list.filter((l) => l.kind === kind).length + 1}`);
+    this.run(mesh, (q) => this.place(q, layer));
     return layer;
   }
 
@@ -457,161 +664,257 @@ export class SculptLayers {
     this.changed();
   }
 
+  /** Fold or open a group in the list. Not an undo step. */
+  setOpen(layer: SculptLayer, open: boolean): void {
+    if (layer.open === open) return;
+    layer.open = open;
+    this.changed();
+  }
+
   /**
-   * Set a layer's weight (1 is 100%). `live` while a slider is dragged: shown
-   * at once where the highest level is on screen, else on the release. The
-   * release (`commit`) is one undo step for the whole drag.
+   * Set a layer's or a group's weight (1 is 100%). `live` while a slider is
+   * dragged: shown at once where the highest level is on screen, else on the
+   * release. The release (`commit`) is one undo step for the whole drag. A
+   * group's weight multiplies its layers'.
    */
   setWeight(mesh: SculptMesh, layer: SculptLayer, weight: number, phase: 'live' | 'commit'): void {
     if (!Number.isFinite(weight)) return;
+    const p = this.per.get(mesh);
+    if (!p || !p.list.includes(layer)) return;
     const w = Math.max(-WEIGHT_LIMIT, Math.min(WEIGHT_LIMIT, weight));
     if (!this.drag || this.drag.layer !== layer) {
       this.sync(mesh); // what was sculpted so far is the active layer's, at the weight it had
-      this.drag = { mesh, layer, weight: layer.weight, visible: layer.visible };
+      const before = this.snapshot(p);
+      this.drag = { mesh, layer, before, shown: before.eff };
     }
     layer.weight = w;
-    const target = layer.visible ? w : 0;
     const st = stackOf(mesh);
     if (phase === 'live' && st && st._sel !== st._meshes.length - 1) return;
-    this.shift(mesh, layer, target);
+    const now = this.effs(p);
+    this.transition(mesh, this.drag.shown, now);
+    this.drag.shown = now;
+    this.settle(p);
     if (phase === 'live') return;
-    const from = this.drag;
+    const from = this.drag.before;
     this.drag = null;
-    if (from.weight === w && from.visible === layer.visible) return;
-    this.pushWeightState(mesh, layer, { weight: from.weight, visible: from.visible }, { weight: w, visible: layer.visible });
+    const was = from.props.find((x) => x.l === layer);
+    if (was && was.weight === w) return;
+    this.pushPair(mesh, p, from, this.snapshot(p));
     this.changed();
   }
 
-  /** Show or hide a layer: its weight is kept, its effect leaves the surface or comes back. */
+  /** Show or hide a layer or a group: its weight is kept, its effect leaves the surface or comes back. */
   setVisible(mesh: SculptMesh, layer: SculptLayer, visible: boolean): void {
     if (layer.visible === visible) return;
-    this.sync(mesh);
-    const from = { weight: layer.weight, visible: layer.visible };
-    layer.visible = visible;
-    this.shift(mesh, layer, visible ? layer.weight : 0);
-    this.pushWeightState(mesh, layer, from, { weight: layer.weight, visible });
-    this.changed();
+    this.run(mesh, () => (layer.visible = visible));
   }
 
-  private pushWeightState(
-    mesh: SculptMesh,
-    layer: SculptLayer,
-    from: { weight: number; visible: boolean },
-    to: { weight: number; visible: boolean },
-  ): void {
-    const set = (s: { weight: number; visible: boolean }): void => {
-      this.sync(mesh);
-      layer.weight = s.weight;
-      layer.visible = s.visible;
-      this.shift(mesh, layer, s.visible ? s.weight : 0);
-      this.host.setMesh(mesh);
-    };
-    this.push(
-      () => set(from),
-      () => set(to),
-    );
+  /**
+   * Put a layer (or a group) in a container (a group, or null for the stack)
+   * at an index counted from the bottom of it. A group cannot go into a group.
+   * Order does not change what the surface shows; grouping does through the
+   * group's weight and mask.
+   */
+  move(mesh: SculptMesh, layer: SculptLayer, parent: SculptLayer | null, index: number): void {
+    const p = this.per.get(mesh);
+    if (!p || !p.list.includes(layer)) return;
+    if (parent && (parent.kind !== 'group' || layer.kind === 'group' || !p.list.includes(parent))) return;
+    this.run(mesh, (q) => {
+      q.list = moveItem(q.list, layer, parent, index);
+      if (parent) parent.open = true;
+    });
   }
 
-  /** A copy of a layer, above it, at the same weight, so its effect adds to the original's. */
+  /** The list as the model has it: oldest first, a group's layers after it. */
+  rawList(mesh: SculptMesh | null): SculptLayer[] {
+    return (mesh ? this.per.get(mesh)?.list : null) ?? [];
+  }
+
+  /** A group of its own around a layer, in the layer's place. */
+  group(mesh: SculptMesh, layer: SculptLayer): SculptLayer | null {
+    const p = this.per.get(mesh);
+    if (!p || layer.kind === 'group' || layer.parent || p.list.length >= MAX_LAYERS) return null;
+    const g = this.fresh(p, 'group', 'Group');
+    this.run(mesh, (q) => {
+      const at = indexIn(q.list, layer);
+      q.list = moveItem(q.list, g, null, at + 1);
+      q.list = moveItem(q.list, layer, g, 0);
+      q.active = layer;
+    });
+    return g;
+  }
+
+  /**
+   * Take the layers out of a group and delete the group. The group's weight,
+   * eye and mask are multiplied into the layers', so the surface does not move.
+   */
+  ungroup(mesh: SculptMesh, group: SculptLayer): void {
+    const p = this.per.get(mesh);
+    if (!p || group.kind !== 'group') return;
+    this.run(mesh, (q) => {
+      const members = membersOf(q.list, group);
+      let at = indexIn(q.list, group);
+      for (const m of members) {
+        m.weight *= group.weight;
+        m.visible = m.visible && group.visible;
+        if (group.mask && group.maskOn) {
+          const out = new Uint8Array(group.mask.length);
+          for (let i = 0; i < out.length; i++) out[i] = Math.round(((m.mask && m.maskOn ? m.mask[i] : 255) * group.mask[i]) / 255);
+          m.mask = out;
+          m.maskOn = true;
+        }
+        q.list = moveItem(q.list, m, null, ++at);
+      }
+      q.list = q.list.filter((x) => x !== group);
+      if (q.active === group) q.active = members[members.length - 1] ?? null;
+    });
+  }
+
+  /** A copy of a layer, above it, at the same weight, so its effect adds to the original's; a group copies with its layers. */
   duplicate(mesh: SculptMesh, layer: SculptLayer): SculptLayer | null {
     const p = this.per.get(mesh);
-    if (!p || p.list.length >= MAX_LAYERS) return null;
-    const at = p.list.indexOf(layer);
-    if (at < 0) return null;
-    this.sync(mesh);
-    const copy: SculptLayer = {
-      ...layer,
+    if (!p || !p.list.includes(layer)) return null;
+    if (p.list.length + 1 + (layer.kind === 'group' ? membersOf(p.list, layer).length : 0) > MAX_LAYERS) return null;
+    const copyOf = (l: SculptLayer, parent: SculptLayer | null): SculptLayer => ({
+      ...l,
       id: nextId++,
-      name: this.uniqueName(p, `${layer.name} copy`.slice(0, MAX_LAYER_NAME)),
-      delta: layer.delta ? new Float32Array(layer.delta) : null,
+      name: this.uniqueName(p, `${l.name} copy`.slice(0, MAX_LAYER_NAME)),
+      parent,
+      delta: l.delta ? new Float32Array(l.delta) : null,
+      mask: l.mask ? new Uint8Array(l.mask) : null,
       applied: 0,
-    };
-    const prior = p.active;
-    p.list.splice(at + 1, 0, copy);
-    p.active = copy;
-    this.arm(mesh);
-    this.shift(mesh, copy, copy.visible ? copy.weight : 0);
-    this.push(
-      () => {
-        this.sync(mesh);
-        this.shift(mesh, copy, 0);
-        p.list.splice(p.list.indexOf(copy), 1);
-        p.active = prior && p.list.includes(prior) ? prior : null;
-        this.arm(mesh);
-        this.host.setMesh(mesh);
-      },
-      () => {
-        this.sync(mesh);
-        p.list.splice(Math.min(at + 1, p.list.length), 0, copy);
-        p.active = copy;
-        this.arm(mesh);
-        this.shift(mesh, copy, copy.visible ? copy.weight : 0);
-        this.host.setMesh(mesh);
-      },
-    );
-    this.changed();
+    });
+    const copy = copyOf(layer, null);
+    this.run(mesh, (q) => {
+      q.list = moveItem(q.list, copy, layer.parent, indexIn(q.list, layer) + 1);
+      if (layer.kind === 'group') {
+        let k = 0;
+        for (const m of membersOf(q.list, layer)) q.list = moveItem(q.list, copyOf(m, copy), copy, k++);
+      }
+      q.active = copy;
+    });
     return copy;
   }
 
-  /** The layer becomes part of the surface and goes from the list. */
+  /** The layer becomes part of the surface and goes from the list; a group flattens all its layers. */
   flatten(mesh: SculptMesh, layer: SculptLayer): void {
     const p = this.per.get(mesh);
-    if (!p) return;
-    const at = p.list.indexOf(layer);
-    if (at < 0) return;
-    this.sync(mesh);
-    const prior = p.active;
-    p.list.splice(at, 1);
-    if (p.active === layer) p.active = null;
-    this.arm(mesh);
-    this.push(
-      () => {
-        this.sync(mesh);
-        p.list.splice(Math.min(at, p.list.length), 0, layer);
-        p.active = prior && p.list.includes(prior) ? prior : null;
-        this.arm(mesh);
+    if (!p || !p.list.includes(layer)) return;
+    const gone = new Set<SculptLayer>([layer, ...(layer.kind === 'group' ? membersOf(p.list, layer) : [])]);
+    this.run(
+      mesh,
+      (q) => {
+        q.list = q.list.filter((x) => !gone.has(x));
+        if (q.active && gone.has(q.active)) q.active = null;
       },
-      () => {
-        this.sync(mesh);
-        p.list.splice(p.list.indexOf(layer), 1);
-        if (p.active === layer) p.active = null;
-        this.arm(mesh);
-      },
+      [...gone],
     );
-    this.changed();
   }
 
-  /** Delete takes the layer's effect off the surface with it. */
+  /** How many entries deleting this deletes (a group takes its layers with it). */
+  weightOf(mesh: SculptMesh, layer: SculptLayer): number {
+    const p = this.per.get(mesh);
+    return p && layer.kind === 'group' ? 1 + membersOf(p.list, layer).length : 1;
+  }
+
+  /** Delete takes the layer's effect off the surface with it; a group takes its layers. */
   remove(mesh: SculptMesh, layer: SculptLayer): void {
     const p = this.per.get(mesh);
-    if (!p) return;
-    const at = p.list.indexOf(layer);
-    if (at < 0) return;
-    this.sync(mesh);
-    const prior = p.active;
-    const a = layer.applied;
-    this.shift(mesh, layer, 0);
-    p.list.splice(at, 1);
-    if (p.active === layer) p.active = null;
-    this.arm(mesh);
+    if (!p || !p.list.includes(layer)) return;
+    const gone = new Set<SculptLayer>([layer, ...(layer.kind === 'group' ? membersOf(p.list, layer) : [])]);
+    this.run(mesh, (q) => {
+      q.list = q.list.filter((x) => !gone.has(x));
+      if (q.active && gone.has(q.active)) q.active = null;
+    });
+  }
+
+  // --- masks -------------------------------------------------------------------
+
+  /** The object's working mask as a byte a vertex of the highest level: 255 where it is clear, 0 where masked. */
+  private workingMask(mesh: SculptMesh): Uint8Array | null {
+    let out: Uint8Array | null = null;
+    this.viewTop(mesh, (_v, n, m) => {
+      const o = new Uint8Array(n);
+      for (let i = 0; i < n; i++) o[i] = Math.max(0, Math.min(255, Math.round(m[i * 3 + 2] * 255)));
+      out = o;
+    });
+    return out;
+  }
+
+  /** "Add mask from the current mask" (and Replace): the object's working mask is stored on the layer or group. */
+  maskFromWorking(mesh: SculptMesh, layer: SculptLayer): void {
+    const m = this.workingMask(mesh);
+    if (!m || !this.per.get(mesh)?.list.includes(layer)) return;
+    this.run(mesh, () => {
+      layer.mask = m;
+      layer.maskOn = true;
+    });
+  }
+
+  invertMask(mesh: SculptMesh, layer: SculptLayer): void {
+    const m = layer.mask;
+    if (!m) return;
+    this.run(mesh, () => (layer.mask = m.map((v) => 255 - v)));
+  }
+
+  setMaskOn(mesh: SculptMesh, layer: SculptLayer, on: boolean): void {
+    if (!layer.mask || layer.maskOn === on) return;
+    this.run(mesh, () => (layer.maskOn = on));
+  }
+
+  removeMask(mesh: SculptMesh, layer: SculptLayer): void {
+    if (!layer.mask) return;
+    this.run(mesh, () => {
+      layer.mask = null;
+      layer.maskOn = true;
+    });
+  }
+
+  /** The level on screen's vertices by their place on the highest level; null when it is the highest. */
+  private lineageMap(mesh: SculptMesh): Uint32Array | null {
+    const st = stackOf(mesh);
+    if (!st) return null;
+    const cur = st._sel;
+    const top = st._meshes.length - 1;
+    if (cur === top) return null;
+    const n = st._meshes[cur].getNbVertices();
+    const idx = new Uint32Array(n);
+    for (let i = 0; i < n; i++) idx[i] = i;
+    for (let k = cur; k < top; k++) {
+      const m = st._meshes[k] as unknown as { getEvenMapping(): boolean; getVerticesMapping(): Uint32Array | null };
+      if (!m.getEvenMapping()) continue;
+      const map = m.getVerticesMapping();
+      if (map) for (let i = 0; i < n; i++) idx[i] = map[idx[i]];
+    }
+    return idx;
+  }
+
+  /** Told when the working mask was written, so the masking tool redraws it (set by the session). */
+  afterMaskLoad: ((mesh: SculptMesh) => void) | null = null;
+
+  /** "Load mask": the layer's mask becomes the object's working mask again (one undo step, which gives the old working mask back). */
+  loadMask(mesh: SculptMesh, layer: SculptLayer): void {
+    const src = layer.mask;
+    if (!src) return;
+    const n = mesh.getNbVertices();
+    const map = this.lineageMap(mesh);
+    const was = new Float32Array(n);
+    const mats = mesh.getMaterials();
+    for (let j = 0; j < n; j++) was[j] = mats[j * 3 + 2];
+    const now = new Float32Array(n);
+    for (let j = 0; j < n; j++) now[j] = src[map ? map[j] : j] / 255;
+    const set = (v: Float32Array): void => {
+      const m = mesh.getMaterials();
+      for (let j = 0; j < n; j++) m[j * 3 + 2] = v[j];
+      this.afterMaskLoad?.(mesh);
+      this.host.setMesh(mesh);
+    };
+    set(now);
     this.push(
-      () => {
-        this.sync(mesh);
-        p.list.splice(Math.min(at, p.list.length), 0, layer);
-        p.active = prior && p.list.includes(prior) ? prior : null;
-        this.arm(mesh);
-        this.shift(mesh, layer, a);
-        this.host.setMesh(mesh);
-      },
-      () => {
-        this.sync(mesh);
-        this.shift(mesh, layer, 0);
-        p.list.splice(p.list.indexOf(layer), 1);
-        if (p.active === layer) p.active = null;
-        this.arm(mesh);
-        this.host.setMesh(mesh);
-      },
+      () => set(was),
+      () => set(now),
     );
+    this.host.render();
     this.changed();
   }
 
@@ -708,16 +1011,38 @@ export class SculptLayers {
       }
       return [l, out];
     });
+    // Masks go up as a scalar field does: through the same subdivision, in the x of a position.
+    const maskBefore = p.list.map((l): [SculptLayer, Uint8Array | null] => [l, l.mask]);
+    const maskAfter = maskBefore.map(([l, m]): [SculptLayer, Uint8Array | null] => {
+      if (!m) return [l, null];
+      const field = new Float32Array(m.length * 3);
+      for (let i = 0; i < m.length; i++) field[i * 3] = m[i] / 255;
+      const up = new Float32Array(n * 3);
+      const md = lower.getMeshData();
+      const own = md._verticesXYZ;
+      md._verticesXYZ = field;
+      try {
+        lower.computePartialSubdivision(up, new Float32Array(n * 3), new Float32Array(n * 3), n);
+      } finally {
+        md._verticesXYZ = own;
+      }
+      const out = new Uint8Array(n);
+      for (let i = 0; i < n; i++) out[i] = Math.max(0, Math.min(255, Math.round(up[i * 3] * 255)));
+      return [l, out];
+    });
     for (const [l, d] of after) l.delta = d;
+    for (const [l, m] of maskAfter) l.mask = m;
     p.ref = null;
     this.arm(mesh);
     this.push(
       () => {
         for (const [l, d] of before) l.delta = d;
+        for (const [l, m] of maskBefore) l.mask = m;
         p.ref = null;
       },
       () => {
         for (const [l, d] of after) l.delta = d;
+        for (const [l, m] of maskAfter) l.mask = m;
         p.ref = null;
       },
       true,
@@ -758,16 +1083,26 @@ export class SculptLayers {
       }
       return [l, out];
     });
+    const maskBefore = p.list.map((l): [SculptLayer, Uint8Array | null] => [l, l.mask]);
+    const maskAfter = maskBefore.map(([l, m]): [SculptLayer, Uint8Array | null] => {
+      if (!m) return [l, null];
+      const out = new Uint8Array(n);
+      for (let i = 0; i < n; i++) out[i] = m[map ? map[i] : i];
+      return [l, out];
+    });
     for (const [l, d] of after) l.delta = d;
+    for (const [l, m] of maskAfter) l.mask = m;
     p.ref = null;
     this.arm(mesh);
     this.push(
       () => {
         for (const [l, d] of before) l.delta = d;
+        for (const [l, m] of maskBefore) l.mask = m;
         p.ref = null;
       },
       () => {
         for (const [l, d] of after) l.delta = d;
+        for (const [l, m] of maskAfter) l.mask = m;
         p.ref = null;
       },
       true,
@@ -801,7 +1136,29 @@ export class SculptLayers {
     if (!p || !p.list.length) return undefined;
     this.sync(mesh);
     const items = p.list.map((l): SavedLayer => {
-      const out: SavedLayer = { name: l.name, weight: l.weight, visible: l.visible };
+      const out: SavedLayer = {
+        name: l.name,
+        weight: l.weight,
+        visible: l.visible,
+        kind: l.kind,
+        parent: l.parent ? p.list.indexOf(l.parent) : -1,
+        open: l.open,
+      };
+      if (l.mask) {
+        // Run-length: a value and how many vertices in a row have it.
+        const vals: number[] = [];
+        const lens: number[] = [];
+        for (let i = 0; i < l.mask.length; i++) {
+          if (vals.length && vals[vals.length - 1] === l.mask[i]) lens[lens.length - 1]++;
+          else {
+            vals.push(l.mask[i]);
+            lens.push(1);
+          }
+        }
+        out.maskVals = Uint8Array.from(vals);
+        out.maskLens = Uint32Array.from(lens);
+        out.maskOn = l.maskOn;
+      }
       const d = l.delta;
       if (d) {
         let n = 0;
@@ -841,8 +1198,33 @@ export class SculptLayers {
           delta[j + 2] = s.vals[k + 2];
         }
       }
-      return { id: nextId++, name: s.name, weight: s.weight, visible: s.visible, delta, applied: s.visible ? s.weight : 0 };
+      let mask: Uint8Array | null = null;
+      if (s.maskVals && s.maskLens) {
+        mask = new Uint8Array(topVertices);
+        let at = 0;
+        for (let k = 0; k < s.maskVals.length; k++) {
+          mask.fill(s.maskVals[k], at, at + s.maskLens[k]);
+          at += s.maskLens[k];
+        }
+      }
+      return {
+        id: nextId++,
+        name: s.name,
+        kind: s.kind ?? 'layer',
+        parent: null,
+        weight: s.weight,
+        visible: s.visible,
+        delta,
+        applied: s.visible ? s.weight : 0,
+        mask,
+        maskOn: s.maskOn !== false,
+        open: s.open !== false,
+      };
     });
+    saved.items.forEach((s, k) => {
+      if (s.parent !== undefined && s.parent >= 0) list[k].parent = list[s.parent];
+    });
+    for (const l of list) l.applied = effOf(l).w;
     this.per.set(mesh, { list, active: list[saved.active] ?? null, ref: null });
     this.changed();
   }

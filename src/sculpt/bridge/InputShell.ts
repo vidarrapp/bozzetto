@@ -2355,6 +2355,8 @@ export class InputShell {
     const s = this.session;
     const t0 = performance.now();
     s.getSculptManager().end();
+    // A masked layer takes the stroke as it ends, so its mask limits it at once.
+    s.layers.syncIfMasked(s.getMesh());
     s.getStateManager().cleanNoop();
     const ms = performance.now() - t0;
     this.lastEndMs = ms;
