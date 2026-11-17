@@ -184,7 +184,18 @@ export class Lighting {
   private readonly hemi = new HemisphereLight();
   private readonly lights: Record<LightId, DirectionalLight>;
 
-  private readonly tier: ShadowTier;
+  private readonly baseTier: ShadowTier;
+  /** At rest (setAtRest): the tier's blur counts, and the maps, lifted to the high tier's. */
+  private atRest = false;
+  private get tier(): ShadowTier {
+    if (!this.atRest) return this.baseTier;
+    const high = SHADOW_TIERS.high;
+    return {
+      ...this.baseTier,
+      blurSamples: Math.max(this.baseTier.blurSamples, high.blurSamples),
+      maxBlurSamples: Math.max(this.baseTier.maxBlurSamples, high.maxBlurSamples),
+    };
+  }
   private readonly sizes: Record<LightId, number>;
 
   private readonly config: Record<LightId, DirLightConfig>;
@@ -204,8 +215,8 @@ export class Lighting {
     scene: Scene,
     private readonly renderer: WebGPURenderer,
   ) {
-    this.tier = SHADOW_TIERS[detectQuality()];
-    this.sizes = { key: this.tier.key, fill: this.tier.fill, rim: this.tier.rim };
+    this.baseTier = SHADOW_TIERS[detectQuality()];
+    this.sizes = { key: this.baseTier.key, fill: this.baseTier.fill, rim: this.baseTier.rim };
     // Soft, variance-based (VSM) shadows — the renderer's only shadow filter.
     this.renderer.shadowMap.type = VSMShadowMap;
 
@@ -382,11 +393,47 @@ export class Lighting {
     this.economy = economy;
     this.mapScale = mapScale;
     for (const id of ALL) {
-      const size = this.sizes[id];
-      if (size === 0) continue;
-      const shadow = this.lights[id].shadow;
-      shadow.mapSize.set(Math.round(size * mapScale), Math.round(size * mapScale));
+      this.sizeMap(id);
     }
+    this.refresh();
+  }
+
+  /** Set a light's map to its size now: the tier's, or at rest the high tier's, times adaptive quality's share. */
+  private sizeMap(id: LightId): void {
+    const base = this.sizes[id];
+    if (base === 0) return;
+    const want = this.atRest ? Math.max(base, SHADOW_TIERS.high[id]) : base;
+    const size = Math.max(1, Math.round(Math.min(want, this.maxMap()) * this.mapScale));
+    this.lights[id].shadow.mapSize.set(size, size);
+  }
+
+  /** The largest map the device allocates; a bigger one is not asked for (the tier's own size stays). */
+  private maxMapCache = 0;
+  private maxMap(): number {
+    if (this.maxMapCache) return this.maxMapCache;
+    let max = 2048;
+    try {
+      const b = this.renderer.backend as { device?: { limits?: { maxTextureDimension2D?: number } }; gl?: WebGL2RenderingContext };
+      const lim = b.device?.limits?.maxTextureDimension2D ?? (b.gl ? (b.gl.getParameter(b.gl.MAX_TEXTURE_SIZE) as number) : undefined);
+      if (typeof lim === 'number' && lim > 0) max = lim;
+    } catch {
+      /* keep the tier's own sizes */
+    }
+    this.maxMapCache = Math.max(max, Math.max(...ALL.map((id) => this.sizes[id])));
+    return this.maxMapCache;
+  }
+
+  /**
+   * The view is at rest (Viewer.updateFrameMode): the still frame's shadows
+   * are drawn once, so the maps and the blur's sample cap are the high
+   * tier's whatever the device's tier; while the view or a stroke moves they
+   * are the tier's own, as before. Uniforms and map sizes only: no shader is
+   * rebuilt and no light starts or stops casting.
+   */
+  setAtRest(on: boolean): void {
+    if (on === this.atRest) return;
+    this.atRest = on;
+    for (const id of ALL) this.sizeMap(id);
     this.refresh();
   }
 
