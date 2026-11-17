@@ -27,6 +27,8 @@ export interface ScaleSubjects<T> {
   size(subject: T): number;
   /** Whether the offer stands: no units yet, and not turned down. */
   needed(): boolean;
+  /** Whether the scene has its scale now (ends an offer made on request). */
+  hasScale?(): boolean;
 }
 
 /** The banner's words, where a project is not a scene. */
@@ -58,6 +60,7 @@ export function sceneSubjects(session: SculptSession): ScaleSubjects<SculptMesh>
       return Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
     },
     needed: () => !session.getUnits() && !session.isScaleDismissed(),
+    hasScale: () => !!session.getUnits(),
   };
 }
 
@@ -95,6 +98,8 @@ export class ScaleBanner<T = SculptMesh> {
   private readonly note: HTMLSpanElement;
   private readonly error: HTMLDivElement;
   private choices: T[] = [];
+  /** The banner was asked for (the Calipers need the scale), whatever Not now said before. */
+  private offered = false;
 
   constructor(
     private readonly subjects: ScaleSubjects<T>,
@@ -155,6 +160,7 @@ export class ScaleBanner<T = SculptMesh> {
       open.hidden = false;
     });
     dismiss.addEventListener('click', () => {
+      this.offered = false;
       this.hooks.dismissed();
       this.refresh();
     });
@@ -170,7 +176,8 @@ export class ScaleBanner<T = SculptMesh> {
 
   /** Shown for a scene without units that has not turned the offer down; gone otherwise. */
   refresh(): void {
-    const show = this.subjects.needed();
+    if (this.offered && this.subjects.hasScale?.()) this.offered = false;
+    const show = this.subjects.needed() || this.offered;
     this.root.hidden = !show;
     if (!show) {
       this.form.hidden = true;
@@ -180,6 +187,13 @@ export class ScaleBanner<T = SculptMesh> {
 
   isShown(): boolean {
     return !this.root.hidden;
+  }
+
+  /** Asked for by a tool that needs the scale: shown, with its form open, even after Not now. */
+  offer(): void {
+    this.offered = true;
+    this.refresh();
+    this.openForm();
   }
 
   /** The form, with the objects listed and the largest picked. */

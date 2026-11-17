@@ -253,7 +253,7 @@ function emptyNote(): HTMLElement {
   return el(
     'p',
     'muted my-projects__empty',
-    "Nothing here yet. In Sculpt, Save to library keeps a scene here (in Armature mode, a posed figure), and Publish keeps a model. Create timelapse keeps a timelapse or a model made elsewhere.",
+    "Nothing here yet. In Sculpt, Save to library keeps a scene here (in Armature mode, a posed figure), and Publish keeps a model.",
   );
 }
 

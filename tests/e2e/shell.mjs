@@ -730,9 +730,9 @@ export const suites = {
     });
     t.eq(bar.b, bar.vh, 'the tool bar is flush to the bottom edge');
     t.near((bar.l + bar.r) / 2, 640, 1, 'and centred');
-    t.eq(bar.tools.length, 12, 'twelve tools');
+    t.eq(bar.tools.length, 13, 'thirteen tools, Calipers the last');
     t.ok(bar.tools.every((x) => x.w === 44 && x.h === 44), 'each a 44px square');
-    t.near(bar.w, 12 * 44 + 11 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
+    t.near(bar.w, 13 * 44 + 12 * 4 + 24, 1, 'in one box only as wide as its tools: 4px between, 12px at the sides');
     t.ok(bar.pad === '8px 12px', `padding 8px 12px (${bar.pad})`);
     t.ok(/Martian/.test(bar.digit.font) && bar.digit.size === '11px' && /179, 179, 179/.test(bar.digit.color), `the digit is mono 11px, secondary (${bar.digit.font}, ${bar.digit.size})`);
     const active = await page.evaluate(() => {

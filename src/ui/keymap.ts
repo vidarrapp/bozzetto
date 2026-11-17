@@ -48,8 +48,8 @@ export interface ActionDef {
  */
 export const ACTIONS: ActionDef[] = [
   // --- sculpt: sculpting ---
-  { id: 'gesture.sculpt', label: 'Sculpt (pen or mouse; a finger orbits unless Preferences lets it sculpt)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
-  { id: 'gesture.negative', label: 'Negative (carve; a tap on the toolbar button carves the next stroke, a long press every stroke until a tap)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag, or the button' },
+  { id: 'gesture.sculpt', label: 'Sculpt with the Pencil or the mouse (a finger orbits unless Preferences lets it sculpt)', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Drag on mesh' },
+  { id: 'gesture.negative', label: 'Negative (carve). The toolbar button: a tap carves the next stroke, a long press every stroke until a tap', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Alt + drag' },
   { id: 'gesture.smooth', label: 'Smooth', group: 'Sculpting', mode: 'sculpt', chord: null, gesture: true, note: 'Shift + drag' },
   { id: 'brush.size', label: 'Brush size (hold, then drag with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 'b', hold: true },
   { id: 'brush.strength', label: 'Brush strength (hold, then drag up/down with the pen down)', group: 'Sculpting', mode: 'sculpt', chord: 's', hold: true },
@@ -68,7 +68,7 @@ export const ACTIONS: ActionDef[] = [
   // --- sculpt: masking ---
   { id: 'gesture.mask', label: 'Paint mask (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + drag' },
   { id: 'gesture.loopMask', label: 'Mask one side of an edge loop (+ Alt to unmask)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + Shift + drag' },
-  { id: 'gesture.maskInvertClick', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click off mesh' },
+  { id: 'gesture.maskInvertClick', label: 'Invert mask (click off the model)', group: 'Masking', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click' },
   { id: 'mask.all', label: 'Mask the whole object', group: 'Masking', mode: 'sculpt', chord: 'ctrl+a' },
   { id: 'mask.clear', label: 'Clear mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+c' },
   { id: 'mask.invert', label: 'Invert mask', group: 'Masking', mode: 'sculpt', chord: 'ctrl+i' },
@@ -78,7 +78,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'groups.show', label: 'Show / hide the poly group colours', group: 'Poly groups', mode: 'sculpt', chord: 'shift+f' },
   { id: 'groups.fromMask', label: 'Group the masked faces (a new poly group)', group: 'Poly groups', mode: 'sculpt', chord: 'ctrl+g' },
   { id: 'gesture.groupIsolate', label: 'Show a poly group alone; again hides it and shows the rest; on empty space shows all', group: 'Poly groups', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + Shift + click' },
-  { id: 'gesture.groupMask', label: 'Mask a poly group (+ Alt unmasks it)', group: 'Poly groups', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click on the model' },
+  { id: 'gesture.groupMask', label: 'Mask a poly group (click on the model; + Alt unmasks it)', group: 'Poly groups', mode: 'sculpt', chord: null, gesture: true, note: 'Ctrl + click' },
   // --- sculpt: navigation ---
   { id: 'gesture.orbit', label: 'Orbit (around your last stroke; a finger orbits anywhere)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Drag off mesh' },
   { id: 'gesture.pan', label: 'Pan (two fingers always navigate, even on the model)', group: 'Navigation', mode: 'sculpt', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
@@ -90,6 +90,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'view.turnRight', label: 'Turntable right', group: 'Navigation', mode: 'sculpt', chord: 'arrowright', repeat: true },
   // --- sculpt: brushes ---
   { id: 'tool.select', label: 'Select tool (click; Shift adds, Ctrl+drag removes, Ctrl+Shift+drag adds; drag a marquee)', group: 'Brushes', mode: 'sculpt', chord: 'q' },
+  { id: 'tool.calipers', label: 'Calipers (tap the model twice to measure; drag an end to move it)', group: 'Brushes', mode: 'sculpt', chord: 'c' },
   { id: 'tool.crease', label: 'Crease', group: 'Brushes', mode: 'sculpt', chord: '1' },
   { id: 'tool.move', label: 'Move', group: 'Brushes', mode: 'sculpt', chord: '2' },
   { id: 'tool.clay', label: 'Standard (clay)', group: 'Brushes', mode: 'sculpt', chord: '3' },
@@ -130,9 +131,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'play.back', label: 'Step back', group: 'Playback', mode: 'view', chord: 'arrowleft', repeat: true },
   { id: 'play.forward', label: 'Step forward', group: 'Playback', mode: 'view', chord: 'arrowright', repeat: true },
   // --- viewer: view gestures ---
-  { id: 'gesture.viewOrbit', label: 'Orbit', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Drag' },
+  { id: 'gesture.viewOrbit', label: 'Orbit (one finger, the Pencil or the mouse)', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Drag' },
   { id: 'gesture.viewPan', label: 'Pan (two-finger drag on touch)', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Cmd / Shift + drag' },
-  { id: 'gesture.viewZoom', label: 'Zoom', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Scroll' },
+  { id: 'gesture.viewZoom', label: 'Zoom', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Scroll / pinch' },
   { id: 'gesture.focusPoint', label: 'Set focus point (double-tap on touch)', group: 'View', mode: 'view', chord: null, gesture: true, note: 'Double-click' },
   // --- viewer: material ---
   { id: 'material.lit', label: 'Lit (PBR)', group: 'Material', mode: 'view', chord: '1' },
@@ -152,14 +153,14 @@ export const ACTIONS: ActionDef[] = [
   { id: 'arm.gizmo', label: 'Move and rotate together', group: 'Armature', mode: 'armature', chord: 't' },
   { id: 'arm.scale', label: 'Scale the selected part (its size and length)', group: 'Armature', mode: 'armature', chord: 'r' },
   { id: 'arm.aim', label: 'Aim the knee or elbow of the selected limb', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the small ball' },
-  { id: 'gesture.armRoot', label: 'Move the whole figure, pinned hands and feet staying put', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the ball in the hips' },
+  { id: 'gesture.armRoot', label: 'Move the whole figure by the ball in the hips, pinned hands and feet staying put', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag the hip ball' },
   { id: 'arm.resetPose', label: 'Reset the pose', group: 'Armature', mode: 'armature', chord: 'shift+r' },
   { id: 'arm.deselect', label: 'Deselect the joint', group: 'Armature', mode: 'armature', chord: 'escape' },
   { id: 'arm.undo', label: 'Undo', group: 'Armature', mode: 'armature', chord: 'ctrl+z', repeat: true, sameKeyAs: 'edit.undo' },
   { id: 'arm.redo', label: 'Redo', group: 'Armature', mode: 'armature', chord: 'ctrl+shift+z', repeat: true, sameKeyAs: 'edit.redo' },
   { id: 'arm.send', label: 'Send to Sculpt', group: 'Armature', mode: 'armature', chord: 'ctrl+enter' },
-  { id: 'gesture.armPick', label: 'Select a part (its gizmo appears)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
-  { id: 'gesture.armOrbit', label: 'Orbit, keeping the selection', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag, on the figure or off it' },
+  { id: 'gesture.armPick', label: 'Select a part (its gizmo appears; a tap on touch)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click a part' },
+  { id: 'gesture.armOrbit', label: 'Orbit, on the figure or off it, keeping the selection', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Drag' },
   { id: 'gesture.armDeselect', label: 'Deselect', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click off the figure' },
   { id: 'gesture.armBall', label: 'Select a hand, foot or head ball (move gizmo)', group: 'Armature', mode: 'armature', chord: null, gesture: true, note: 'Click the ball' },
   // Sculpt mode's light.move, for the figure: a key of its own (not a

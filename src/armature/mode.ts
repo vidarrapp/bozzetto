@@ -19,6 +19,7 @@ import { TitleStrip } from '../sculpt/ui/TitleStrip';
 import { mountAccountHandle } from '../ui/account/menu';
 import { keyFor, viewMenuItems } from '../sculpt/ui/viewMenu';
 import { editMenuItems, fileMenuItems } from '../sculpt/ui/menuShape';
+import type { MenuItem } from '../sculpt/ui/TopMenu';
 import { recentMenuItem } from '../sculpt/ui/recentMenu';
 import { recordRecent } from '../ui/recent';
 import type { PathStep, Workspace } from '../sculpt/ui/TitleStrip';
@@ -48,7 +49,9 @@ import { suspensionText } from '../net/account';
 import { isProjectId } from '../net/ids';
 import { originOf } from '../ui/origin';
 import { takeOpen } from '../ui/openToken';
-import { signInButton } from '../ui/signIn';
+import { signInAgain, signInButton } from '../ui/signIn';
+import { sceneStateWord } from '../ui/sceneState';
+import { defaultSceneName, newSceneName } from '../sculpt/bridge/SceneLibrary';
 import {
   ArmatureFileError,
   armatureText,
@@ -61,7 +64,7 @@ import {
   uploadArmature,
   type ArmatureLink,
 } from './project';
-import { askWindow, tellWindow } from '../ui/askWindow';
+import { askText, askWindow, tellWindow } from '../ui/askWindow';
 
 /** Undo steps kept (owner call), the oldest let go past it. */
 const HISTORY_LIMIT = 100;
@@ -200,6 +203,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   /** The project Save to library writes to: the autosave's, or the one just opened. */
   let bootLink: ArmatureLink | null = saved?.project ?? null;
   let bootSymmetry: boolean | null = null;
+  /** Whether the boot armature is its project's as saved: a project just opened, or an autosave that said so. */
+  let bootSynced = !!bootLink && saved?.synced === true;
   /** A project or template was opened by its address: its pictures are the board's, not the autosave's. */
   let openedProject = false;
   /** Said once the page is up: what an opened file needed mending, or why it did not open. */
@@ -226,6 +231,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         saved = got.file;
         openedProject = true;
         bootLink = got.link ?? null;
+        bootSynced = !!got.link;
         bootSymmetry = got.symmetry;
         if (got.notice) bootNotes.push(got.notice);
       }
@@ -245,7 +251,13 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       saved.state.preset = FALLBACK_FIGURE;
     }
   }
-  let name = saved?.name ?? 'Armature';
+  // Always named: the project's title, the name it was kept under, or today's study.
+  let name =
+    bootLink?.title ?? (saved?.name && saved.name !== 'Armature'
+      ? saved.name
+      : saved?.savedAt
+        ? defaultSceneName(new Date(saved.savedAt))
+        : await newSceneName());
   /**
    * A figure read from a rigged file: its bytes, so it can be built again
    * on the next visit, and the rig derived from them. The built-in presets
@@ -1142,11 +1154,19 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     ...(model ? { model: model.bytes, modelName: model.name } : {}),
     ...(thumb ? { thumb } : {}),
     ...(link ? { project: { ...link } } : {}),
+    ...(link && syncedAt === edits ? { synced: true } : {}),
     symmetry: armature.symmetry,
     units: UNITS,
   });
   /** The library project Save to library writes to (project.ts), kept in the autosave record. */
   let link: ArmatureLink | null = bootLink;
+  /**
+   * Edits made so far, and the count the armature was last saved to its
+   * project at (-1 for none): while they agree, it is the project's as
+   * saved (ArmatureFile.synced).
+   */
+  let edits = 0;
+  let syncedAt = bootSynced ? 0 : -1;
   let saveTimer = 0;
   const flushSave = async (): Promise<void> => {
     if (saveTimer) {
@@ -1157,13 +1177,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     if (!mayStore()) return;
     await saveArmature({ ...currentFile(), ...(forScene ? { forScene: true } : {}) });
   };
-  const scheduleSave = (): void => {
+  const scheduleSave = (edit = true): void => {
+    if (edit) edits++;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => void flushSave(), SAVE_GAP_MS);
   };
   // Turned on from Preferences: the figure as it stands is kept straight away.
   onDeviceChoice((c) => {
-    if (c === 'keep') scheduleSave();
+    if (c === 'keep') scheduleSave(false);
   });
   /**
    * Picture the figure for the gallery card, as sculpt mode does its work,
@@ -1324,7 +1345,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       void tellWindow({ title: 'That file did not open', text: err instanceof ArmatureFileError || err instanceof Error ? err.message : String(err) });
       return;
     }
-    name = parsed.name;
+    name = parsed.name !== 'Armature' ? parsed.name : await newSceneName();
     await replaceFigure(parsed.state.preset, parsed.state);
     if (symmetry !== null) armature.symmetry = symmetry;
     panel.refresh(selected);
@@ -1336,6 +1357,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     frame();
     link = null;
+    syncedAt = -1;
     void referenceBoard.clear();
     clearHistory();
     scheduleSave();
@@ -1362,6 +1384,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     // Another figure altogether: its own history, and no project yet (the
     // library keeps the built-in figures; a model stays on this device).
     link = null;
+    syncedAt = -1;
     void referenceBoard.clear();
     clearHistory();
     if (read.inferred.length) {
@@ -1520,7 +1543,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     statusToast('').fail(note);
   }
   // An opened project is the work on this device now: the autosave says so at once.
-  if (bootSymmetry !== null) scheduleSave();
+  if (bootSymmetry !== null) scheduleSave(false);
 
   // --- menus -------------------------------------------------------------------------
   const openInput = document.createElement('input');
@@ -1563,7 +1586,12 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     }
     return role;
   };
-  let roleKnown = probeRole();
+  /** The File menu's rows depend on who is here (set once the menu exists). */
+  let refreshFileMenu: () => void = () => undefined;
+  let roleKnown = probeRole().then((who) => {
+    refreshFileMenu();
+    return who;
+  });
   /** The project this armature is, if it is one, goes to the top of the recent list: opened, or saved to. */
   const noteOpened = (): void => {
     if (link) recordRecent({ id: link.id, kind: 'armature', name: link.title, place: place(), ...(link.scope ? { scope: link.scope } : {}) });
@@ -1603,6 +1631,7 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
     librarySaving = true;
     const status = statusToast(`Saving to ${where}...`);
     try {
+      const at = edits;
       const picture = await capture(true);
       const bytes = await encodeArmatureProject(currentFile(), armature.symmetry);
       const target = link;
@@ -1611,6 +1640,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         (text) => status.set(text),
       );
       link = saved;
+      name = saved.title;
+      syncedAt = at;
       referenceBoard.bindProject(saved.id);
       referencePanel.setLinked(() => true);
       noteOpened();
@@ -1624,7 +1655,10 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
           '',
           (ok) => {
             if (!ok) return;
-            roleKnown = probeRole();
+            roleKnown = probeRole().then((who) => {
+              refreshFileMenu();
+              return who;
+            });
             void roleKnown.then(() => saveToLibrary());
           },
           'Sign in again',
@@ -1649,8 +1683,36 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
       present: { unavailable: 'A figure is sent to Sculpt first' },
     },
   });
-  const fileMenu = new TopMenu(
-    'File',
+  /** Give the armature a new name; a project's is renamed too, and saved with the next Save to library. */
+  const rename = (next: string): void => {
+    const n = next.trim().slice(0, 80);
+    if (!n || n === name) return;
+    name = n;
+    if (link) link = { ...link, title: n };
+    scheduleSave();
+  };
+  strip.onRename = rename;
+  /** Save to library for anyone who has an account or the owner's access; for a guest, the way in where the site has accounts, and nothing where it has none. */
+  const libraryItems = (): MenuItem[] => {
+    if (role === 'guest') {
+      if (!accountsHere) return [];
+      return [
+        {
+          label: 'Sign in to save to library',
+          action: async () => {
+            if (!(await signInAgain(undefined, 'Sign in to save to the library.'))) return;
+            roleKnown = probeRole().then((who) => {
+              refreshFileMenu();
+              return who;
+            });
+            await roleKnown;
+          },
+        },
+      ];
+    }
+    return [{ label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() }];
+  };
+  const fileItems = (): MenuItem[] =>
     fileMenuItems({
       start: [
         {
@@ -1671,9 +1733,14 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
             // A new armature is nobody's project, with a history of its own.
             link = null;
             void referenceBoard.clear();
-            void replaceFigure(armature.rig.id, undefined, true).then(() => {
-              frame();
-              clearHistory();
+            syncedAt = -1;
+            void newSceneName().then((fresh) => {
+              name = fresh;
+              return replaceFigure(armature.rig.id, undefined, true).then(() => {
+                frame();
+                clearHistory();
+                scheduleSave();
+              });
             });
           },
         },
@@ -1681,19 +1748,24 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
         recentMenuItem(() => undoStack.length > 0),
       ],
       save: [
+        {
+          label: 'Rename…',
+          action: async () => {
+            const next = await askText({ title: 'Rename', label: 'Name', value: name, yes: 'Rename' });
+            if (next !== null) rename(next);
+          },
+        },
         { label: 'Save file', action: () => downloadBlob(packArmature(currentFile()), armatureStamp()) },
-        { label: 'Save to library', hint: libraryHint, action: () => void saveToLibrary() },
+        ...libraryItems(),
       ],
       transfer: [
         { label: 'Load model…', action: () => modelInput.click() },
         { label: 'Send to Sculpt', action: () => void send(panel.resolution) },
       ],
       close: leaveForGallery,
-    }),
-    'file-menu--file',
-    strip.menus,
-    true,
-  );
+    });
+  const fileMenu = new TopMenu('File', fileItems(), 'file-menu--file', strip.menus, true);
+  refreshFileMenu = () => fileMenu.setItems(fileItems());
   const editMenu = new TopMenu(
     'Edit',
     editMenuItems({
@@ -1749,7 +1821,8 @@ export async function mountArmatureMode(viewer: Viewer): Promise<() => void> {
   const paintReadout = (): void => {
     const tris = armature.mesh.geometry.getIndex();
     strip.setReadout({
-      name: link?.title ?? null,
+      name: link?.title ?? name,
+      state: sceneStateWord({ linked: !!link, synced: !!link && syncedAt === edits }),
       object: selected ? prettyName(selected) : null,
       tris: tris ? Math.round(tris.count / 3) : null,
     });

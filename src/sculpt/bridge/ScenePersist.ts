@@ -10,6 +10,8 @@ import { sanitizeLook, sanitizeScene } from './sanitize';
 import { UNITS, type UnitsMarker } from '../../viewer/units';
 import type { ObjSource } from './objSource';
 import type { SavedGroups } from './groupsRecord';
+import type { SavedLayers } from './layers';
+import type { SavedMeasure } from './measure';
 import type { FileReferences } from '../../reference/board';
 import { deviceStore, mayStore, onDeviceChoice, DeviceStorageOff } from '../../ui/deviceStorage';
 
@@ -196,6 +198,23 @@ export interface SavedMesh {
    * it leaves the field behind.
    */
   groups?: SavedGroups;
+  /**
+   * The object's sculpt layers (layers.ts): per layer its name, weight,
+   * visibility and the sparse displacements of the object's highest
+   * level. Optional, with a version of its own, as `source` and
+   * `groups` are: a scene without it opens with no layers, and a build
+   * from before it leaves the field behind (the surface already carries
+   * every layer's effect, so such a build shows the layers flattened).
+   */
+  layers?: SavedLayers;
+  /**
+   * The object's pinned calipers measurements (measure.ts): two points in
+   * the object's local space, a name, and the mirror where one was asked
+   * for. Plain numbers, so they go with the scene everywhere it goes. Optional:
+   * a scene without it opens with none, and a build from before it leaves
+   * the field behind.
+   */
+  measures?: SavedMeasure[];
 }
 
 export interface SavedScene {
@@ -263,6 +282,11 @@ export interface SavedScene {
    */
   synced?: boolean;
   /**
+   * The scene's name, as the title strip shows it ("Study 14 Nov"). The
+   * autosave keeps it; a .bozz file leaves it out, as it does the link.
+   */
+  name?: string;
+  /**
    * The reference pictures, only in a .bozz file saved with Include
    * references (FileActions.packFile). Never in the autosave (they have
    * their own keys, reference/board.ts), and never in anything that is
@@ -284,6 +308,8 @@ export interface SceneStatus {
   project?: SceneLink;
   unsent?: string;
   synced: boolean;
+  /** The scene's name, for the card's title; absent in a record from before names. */
+  name?: string;
 }
 
 /** A scene project on the server, as the sculpt session refers to it. */
@@ -893,6 +919,11 @@ export class ScenePersist {
     this.markDirty(false);
   }
 
+  /** Whether the scene is as it was when last saved to its project (what the strip calls Saved). */
+  isSynced(): boolean {
+    return this.syncedAt === this.edits;
+  }
+
   /** The scene is not its project's as saved: a new link, or none. */
   unsync(): void {
     this.syncedAt = -1;
@@ -940,6 +971,7 @@ export class ScenePersist {
       synced: scene.synced === true,
       ...(scene.project ? { project: { ...scene.project } } : {}),
       ...(scene.unsent ? { unsent: scene.unsent } : {}),
+      ...(scene.name ? { name: scene.name } : {}),
     };
     perfLog.record('autosave serialise', performance.now() - t0);
     // This write takes everything there is. A write still armed (an event

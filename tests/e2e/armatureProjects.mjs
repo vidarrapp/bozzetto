@@ -518,15 +518,15 @@ export async function armatureProjectFile(page, base, t) {
     page.evaluate(async (body) => {
       const a = window.__armature;
       let said = null;
-      const was = window.alert;
-      window.alert = (m) => {
-        said = String(m);
-      };
-      try {
-        await a.open(new File([body], 'figure.json', { type: 'application/json' }));
-      } finally {
-        window.alert = was;
+      // A refusal is said in the app's own window (ui/askWindow): read it, press OK.
+      const opening = a.open(new File([body], 'figure.json', { type: 'application/json' }));
+      const settled = await Promise.race([opening.then(() => true), new Promise((r) => setTimeout(() => r(false), 1500))]);
+      const win = document.querySelector('.bz-ask');
+      if (win) {
+        said = `${win.querySelector('h2')?.textContent ?? ''} ${win.querySelector('p')?.textContent ?? ''}`.trim();
+        win.querySelector('.bz-ask-yes')?.click();
       }
+      if (!settled) await opening;
       return {
         said,
         figure: a.armature.rig.id,

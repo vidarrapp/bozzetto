@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-17: Too many tabs in Sculpt. Decided 2026-11-17: Render leaves Sculpt and Armature and lives in Present as three tabs, Lighting, Camera and Render; Sculpt keeps only the key for moving the key light (with View > Move light for touch); the viewer shows Lighting only; the default light stays Key only, with Three-point in the rig list (changed the same day from three lights on); Present gets more light rigs and a small library to save, export and import rigs
 - [x] 2026-11-17: Where the Reference tab sits now that Material moves to the right. Taken for now: Tool | Material | Reference | Render. Decided 2026-11-17: as taken
 - [x] 2026-11-17: Material moves to the right in Sculpt as asked; taken for now: in Armature, Present and the viewer too, so the tab is in one place everywhere. Or Sculpt only. Decided 2026-11-17: as taken
 - [x] 2026-11-17: Sculpt layers follow Mudbox: a layer belongs to the subdivision level it was first sculpted on and shows on every level. Sculpting with that layer active on another level is refused with a notice and a "Go to level N" button. Or let the stroke go to the base instead. Decided 2026-11-17: never refuse for the level: a layer keeps what was sculpted on each level, so it takes strokes on any level, including levels added later
@@ -87,6 +88,8 @@
 
 ## Later
 
+- More than three lights, and light types other than directional (2026-11-17, Vidar). The rig format is kept open to a list of lights with a type.
+- Sharing light rigs through the Community (2026-11-17): rigs are saved on the device and passed on as files for now; a shared library of rigs (and later tools and materials) needs server work.
 Ideas Vidar has raised that are not being built yet.
 
 - 2026-11-12: The Material tab as a material library: the materials in the scene as a list with thumbnails (rendered spheres), and a library to pick from. Assigning stays in the Scene tab for now.

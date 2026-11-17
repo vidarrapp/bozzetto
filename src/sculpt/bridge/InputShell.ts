@@ -32,6 +32,7 @@ import type { SculptMesh } from '@sculpt-vendor/mesh/Mesh';
 import type { SculptTool } from '@sculpt-vendor/editing/tools/SculptBase';
 import type { SculptSession } from './SculptSession';
 import type { BrushCursor } from './BrushCursor';
+import { MeasureTool } from './measureTool';
 
 /**
  * Ported from SculptGL.js's onDeviceDown/Move/Up state machine (plan 6.3),
@@ -400,6 +401,18 @@ export class InputShell {
    * brushes and the gizmo are one key away.
    */
   private selectMode = false;
+  /**
+   * The Calipers tool (c): a mode of the shell, like Select. A press on the
+   * model sets a measurement's point (measureTool.ts); it never strokes and
+   * never makes an undo step.
+   */
+  private measureMode = false;
+  /** The press carrying a calipers point (pen, mouse or a finger on an end). */
+  private measureDrag: { pointerId: number } | null = null;
+  /** The calipers' pointer logic; the panels and the overlay read it. */
+  readonly measureTool: MeasureTool;
+  /** The Calipers tool came or went (the toolbar, the Tool panel and the overlay follow). */
+  onMeasureModeChange: ((on: boolean) => void) | null = null;
   private marquee: {
     pointerId: number;
     x0: number;
@@ -478,7 +491,9 @@ export class InputShell {
     private readonly cursor: BrushCursor,
     /** Also read by the toolbar, which offers a pointer route to some of these. */
     readonly hooks: InputShellHooks,
-  ) {}
+  ) {
+    this.measureTool = new MeasureTool(session);
+  }
 
   /** Per-brush pressure dynamics (the WS4 palette binds to this). */
   readonly dynamics = new DynamicsStore(() => this.session.getSculptManager().getToolIndex());
@@ -911,8 +926,9 @@ export class InputShell {
   }
 
   /** What the Tool panel shows settings for. */
-  uiMode(): 'brush' | 'select' | 'transform' {
+  uiMode(): 'brush' | 'select' | 'transform' | 'measure' {
     if (this.selectMode) return 'select';
+    if (this.measureMode) return 'measure';
     if (this.transform?.isActive()) return 'transform';
     return 'brush';
   }
@@ -921,6 +937,7 @@ export class InputShell {
     if (this.selectMode) return;
     if (this.pointerId !== -1 || this.session._action !== Enums.Action.NOTHING) return;
     if (this.transform?.isActive()) this.hooks.transformExit();
+    this.exitMeasure();
     this.selectMode = true;
     this.cursor.hide();
     this.session.setCanvasCursor('default');
@@ -938,6 +955,38 @@ export class InputShell {
   toggleSelect(): void {
     if (this.selectMode) this.exitSelect();
     else this.enterSelect();
+  }
+
+  // --- the Calipers tool ---------------------------------------------------
+
+  isMeasuring(): boolean {
+    return this.measureMode;
+  }
+
+  enterMeasure(): void {
+    if (this.measureMode) return;
+    if (this.pointerId !== -1 || this.session._action !== Enums.Action.NOTHING) return;
+    if (this.transform?.isActive()) this.hooks.transformExit();
+    if (this.selectMode) this.exitSelect();
+    this.measureMode = true;
+    this.cursor.hide();
+    this.session.setCanvasCursor('crosshair');
+    this.onMeasureModeChange?.(true);
+  }
+
+  /** Leaving the tool clears the measurement not pinned. */
+  exitMeasure(): void {
+    if (!this.measureMode) return;
+    this.measureMode = false;
+    this.measureDrag = null;
+    this.session.measure.clearWorking();
+    this.syncCursorBrush();
+    this.onMeasureModeChange?.(false);
+  }
+
+  toggleMeasure(): void {
+    if (this.measureMode) this.exitMeasure();
+    else this.enterMeasure();
   }
 
   // --- the edge-loop mask (Ctrl + Shift + drag) -----------------------------
@@ -1395,6 +1444,32 @@ export class InputShell {
       return;
     }
 
+    // The Calipers tool: a press sets or takes a point; one that misses the
+    // model is the camera's, as a press that missed it is with any tool.
+    if (this.measureMode) {
+      if (e.altKey) return; // unclaimed: OrbitControls takes it
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (this.measureTool.begin(e.clientX, e.clientY, e.pointerType === 'touch') === 'drag') {
+        this.measureDrag = { pointerId: e.pointerId };
+        this.verdict?.('calipers: a point');
+        if (e.pointerType !== 'touch') {
+          try {
+            s.getCanvas().setPointerCapture(e.pointerId);
+          } catch {
+            // Synthetic events carry no active pointer; capture is best-effort.
+          }
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      s._action = Enums.Action.NOTHING;
+      this.orbitPointer = e.pointerId;
+      this.verdict?.('orbit (calipers, missed)');
+      this.hooks.orbitBegin();
+      return;
+    }
+
     // With the gizmo up there is no sculpting. A press on a handle belongs
     // to TransformControls (its own listeners run after ours; claiming or
     // orbiting here would fight the drag). A press on an object selects it,
@@ -1506,6 +1581,20 @@ export class InputShell {
         s._action = Enums.Action.NOTHING;
         this.orbitPointer = e.pointerId;
         this.verdict?.(`orbit ${e.pointerType} (object locked)`);
+        this.hooks.orbitBegin();
+        return;
+      }
+    }
+
+    // A layer that cannot be sculpted on (hidden, or at 0%) refuses the
+    // stroke before it starts, and says why: orbit instead, as a lock does.
+    if (!this.pickedColor && s.getPicking().intersectionMouseMeshes()) {
+      const hit = s.getPicking().getMesh();
+      if (hit && s.layers.refuse(hit as never, s.getSculptManager().getToolIndex())) {
+        this.restoreStrokeTool();
+        s._action = Enums.Action.NOTHING;
+        this.orbitPointer = e.pointerId;
+        this.verdict?.(`orbit ${e.pointerType} (layer hidden)`);
         this.hooks.orbitBegin();
         return;
       }
@@ -1653,6 +1742,13 @@ export class InputShell {
 
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType === 'pen') this.lastPenAt = performance.now();
+    if (this.measureDrag?.pointerId === e.pointerId) {
+      this.measureTool.move(e.clientX, e.clientY);
+      this.cursor.hide();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.pointerType === 'touch' && this.fingerMove(e)) return;
     // A mouse or pen orbit whose button is up without a pointerup having
     // come (a pen's release lost on the way): the orbit is over. The
@@ -1757,7 +1853,7 @@ export class InputShell {
       // The gizmo owns the view while it is up: a brush ring over the
       // handles reads as "you can sculpt", which is exactly wrong. The
       // Select tool has no brush either: its pointer is a picker.
-      if (this.transform?.isActive() || this.selectMode) {
+      if (this.transform?.isActive() || this.selectMode || this.measureMode) {
         this.cursor.hide();
         return;
       }
@@ -1806,7 +1902,7 @@ export class InputShell {
     this.hoverDue = false;
     const s = this.session;
     if (this.pointerId !== -1 || s._action !== Enums.Action.NOTHING) return;
-    if (this.presenting || this.transform?.isActive() || this.selectMode || this.adjust || this.lKeyHeld || this.loopDrag) return;
+    if (this.presenting || this.transform?.isActive() || this.selectMode || this.measureMode || this.adjust || this.lKeyHeld || this.loopDrag) return;
     const surf = s.hoverSurface(true);
     this.syncCursorTines();
     this.cursor.setTineAxis(null);
@@ -1831,10 +1927,14 @@ export class InputShell {
     // Our own cancel, on its way to OrbitControls (the pen took over).
     if (this.handingToOrbit) return;
     const s = this.session;
-    if (e.pointerType === 'touch') {
-      this.touchesDown.delete(e.pointerId);
-      if (this.fingerUp(e)) return;
+    if (e.pointerType === 'touch') this.touchesDown.delete(e.pointerId);
+    if (this.measureDrag?.pointerId === e.pointerId) {
+      this.measureDrag = null;
+      this.measureTool.end();
+      e.stopPropagation();
+      return;
     }
+    if (e.pointerType === 'touch' && this.fingerUp(e)) return;
 
     // The b/s drag ends with the press; the key stays armed for the next.
     if (this.adjustPointer === e.pointerId) {
@@ -1937,6 +2037,7 @@ export class InputShell {
   private penBusy(): boolean {
     return (
       this.pointerId !== -1 ||
+      this.measureDrag !== null ||
       this.marquee !== null ||
       this.ctrlEmpty !== null ||
       this.loopDrag !== null ||
@@ -1970,6 +2071,16 @@ export class InputShell {
       this.heldKeyPress(e);
       return;
     }
+    // Calipers: a finger on an end of the measurement takes it, and moves it
+    // along the surface; anywhere else a finger navigates and a tap sets a point.
+    if (this.measureMode && this.navTouches.size === 0 && this.measureTool.endAt(e.clientX, e.clientY, true)) {
+      this.measureTool.begin(e.clientX, e.clientY, true);
+      this.measureDrag = { pointerId: e.pointerId };
+      this.verdict?.('touch: a calipers end');
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     // The gizmo's handles go deaf for the whole gesture: a finger that
     // lands on one orbits like a finger anywhere else.
     this.transform?.setSuspended(true);
@@ -1977,7 +2088,7 @@ export class InputShell {
     this.navTouches.add(e.pointerId);
     if (first) {
       this.hooks.orbitBegin();
-      if (this.selectMode || this.transform?.isActive()) {
+      if (this.selectMode || this.measureMode || this.transform?.isActive()) {
         this.pendingFinger = {
           pointerId: e.pointerId,
           x: e.clientX,
@@ -2060,6 +2171,12 @@ export class InputShell {
    */
   private fingerTap(p: NonNullable<InputShell['pendingFinger']>): void {
     const s = this.session;
+    if (this.measureMode) {
+      // A tap sets a point where it landed; one off the model does nothing.
+      if (this.measureTool.begin(p.x, p.y, true) === 'drag') this.measureTool.end();
+      this.verdict?.('touch: calipers tap');
+      return;
+    }
     this.setMouseAt(p.x, p.y);
     const hit = s.getPicking().intersectionMouseMeshes()
       ? (s.getPicking().getMesh() as SculptMesh | null)
@@ -2461,6 +2578,9 @@ export class InputShell {
       case 'tool.select':
         this.toggleSelect();
         return this.claim(e);
+      case 'tool.calipers':
+        this.toggleMeasure();
+        return this.claim(e);
       case 'tool.crease':
         return this.selectTool(Enums.Tools.CREASE, e);
       case 'tool.move':
@@ -2577,6 +2697,7 @@ export class InputShell {
     // and so does the Select tool.
     if (this.transform?.isActive()) this.hooks.transformExit();
     if (this.selectMode) this.exitSelect();
+    if (this.measureMode) this.exitMeasure();
     const manager = this.session.getSculptManager();
     manager.setToolIndex(index);
     const tool = manager.getCurrentTool();

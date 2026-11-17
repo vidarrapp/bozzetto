@@ -35,6 +35,12 @@ export interface ArmatureFile {
    */
   project?: { id: string; title: string; scope?: 'admin' };
   /**
+   * The record is the armature as it was last saved to `project`, with no
+   * edit since: the title strip says Saved. Only the autosave writes it,
+   * and only beside a link; no file ever carries it.
+   */
+  synced?: boolean;
+  /**
    * Whether edits mirror, as it stood: what a library project saved from
    * the gallery card carries. The mode itself starts with it off.
    */

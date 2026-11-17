@@ -1921,16 +1921,14 @@ export const suites = {
       });
     };
     // A guest: Import OBJ is everyone's (nothing about it needs an
-    // account), and Create timelapse is the uploader that uploads nothing.
+    // account); Create timelapse is the owner's alone (timelapses are not
+    // offered to users), so the uploader is opened by its address here.
     const stack = await menu(page);
-    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ, Create timelapse', "a guest's Create menu offers New Sculpt, New Armature, Import OBJ and Create timelapse, in that order");
-    t.ok(stack.kinds === 'sculpt,armature,obj,timelapse' && stack.sameWidth && stack.stacked, `four buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
-    t.ok(/Nothing is uploaded\.$/.test(stack.timelapse) && stack.picker === '.obj', `Create timelapse says nothing is uploaded, and Import OBJ picks an .obj (${stack.timelapse})`);
-    await Promise.all([
-      page.waitForURL((u) => u.pathname === '/create/', { timeout: 30_000 }),
-      page.click('.create-overlay [data-kind="timelapse"]'),
-    ]);
-    t.eq(new URL(page.url()).pathname, '/create/', 'and it opens the uploader');
+    t.eq(stack.titles, 'New Sculpt, New Armature, Import OBJ', "a guest's Create menu offers New Sculpt, New Armature and Import OBJ, in that order, and no timelapse");
+    t.ok(stack.kinds === 'sculpt,armature,obj' && stack.sameWidth && stack.stacked, `three buttons stacked, each the menu's width (${JSON.stringify(stack)})`);
+    t.ok(stack.picker === '.obj', 'Import OBJ picks an .obj');
+    await page.goto(`${base}/create/`, { waitUntil: 'domcontentloaded' });
+    t.eq(new URL(page.url()).pathname, '/create/', 'the uploader still opens by its address');
     await page.waitForSelector('.panel--frames input[type="file"]', { state: 'attached', timeout: 30_000 });
     const guestPage = await page.evaluate(() => ({
       note: document.querySelector('.panel--frames .bz-note')?.textContent ?? '',
@@ -2249,7 +2247,7 @@ export const suites = {
     t.ok(gallery.first && gallery.label === 'Create', `the gallery leads with the Create tile (${gallery.label || 'none'})`);
     await page.click('#landing-grid .card--new');
     const choices = await page.evaluate(() => [...document.querySelectorAll('.create-overlay .create-choice__title')].map((c) => c.textContent));
-    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ, Create timelapse', 'which offers a new sculpt, a new armature, an OBJ or the uploader');
+    t.eq(choices.join(', '), 'New Sculpt, New Armature, Import OBJ', 'which offers a new sculpt, a new armature or an OBJ');
     t.ok(!gallery.chips.some((c) => /upload/i.test(c)), 'and the top row no longer carries the uploader');
     await Promise.all([
       page.waitForURL((u) => u.searchParams.get('armature') === '1', { timeout: 30_000 }),
@@ -4880,18 +4878,18 @@ export const suites = {
     // The probe has answered once the publish forms show their sign-in line.
     await page.waitForFunction(() => [...document.querySelectorAll('.gallery-form')].some((f) => !f.hidden), null, { timeout: 30_000 });
     const items = await fileItems(page);
-    const lib = items.find((i) => i.label === 'Save to library');
+    const lib = items.find((i) => i.label === 'Save file');
     const keep = items.find((i) => i.label === 'Keep on this device');
-    t.ok(!!lib && /\.bozz file/.test(lib.hint), `signed out, Save to library says it downloads a .bozz file ("${lib?.hint}")`);
+    t.ok(!!lib && !items.some((i) => /library/i.test(i.label)), `signed out with no accounts, File has Save file and no second item that only downloads (${items.map((i) => i.label).join(', ')})`);
     t.ok(!!keep && keep.hint === DEVICE_NOTE, `and Keep on this device is still offered, saying what it risks ("${keep?.hint}")`);
 
     await page.evaluate(() => window.__sculpt.session.addPrimitive('capsule'));
     t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), true, 'a capsule added is work that exists nowhere else');
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), chooseFile(page, 'Save to library')]);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), chooseFile(page, 'Save file')]);
     const name = download.suggestedFilename();
     const file = readFileSync(await download.path());
     const read = await readBozz(page, file);
-    t.ok(/^sculpt-\d{8}-\d{4}\.bozz$/.test(name) && read.objects === 2, `Save to library downloads the scene as ${name}, both objects in it`);
+    t.ok(/^sculpt-\d{8}-\d{4}\.bozz$/.test(name) && read.objects === 2, `Save file downloads the scene as ${name}, both objects in it`);
     t.eq(await page.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and the downloaded scene counts as saved');
 
     await chooseFile(page, 'Keep on this device');
@@ -4965,12 +4963,12 @@ export const suites = {
       t.ok(!!progress, `while it uploads, the toast shows how far it has got ("${progress}")`);
       let end = await savedToast(owner);
       fake.opts.partDelay = 0;
-      t.ok(end.state === 'done' && /^Saved to Projects: Sculpt /.test(end.text), `and then that it is saved ("${end.text}")`);
+      t.ok(end.state === 'done' && /^Saved to Projects: Study /.test(end.text), `and then that it is saved ("${end.text}")`);
 
       const id = 'scene-test1';
       const creates = fake.calls.filter((c) => c.method === 'POST' && c.path === '/admin/api/projects').map((c) => fake.body(c.body));
       t.ok(
-        creates.length === 1 && creates[0].mode === 'scene' && /^Sculpt /.test(creates[0].title) && !('id' in creates[0]) && !('visibility' in creates[0]),
+        creates.length === 1 && creates[0].mode === 'scene' && /^Study /.test(creates[0].title) && !('id' in creates[0]) && !('visibility' in creates[0]),
         `it creates a scene project named like a shelf entry, leaving the id and the private default to the server (${JSON.stringify(creates)})`,
       );
       const parts = fake.calls.filter((c) => c.method === 'PUT' && c.path === `/admin/api/projects/${id}/scene`);
