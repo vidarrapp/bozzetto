@@ -1132,8 +1132,8 @@ export class Armature {
    * hips from there. In that frame it is the least box that holds the
    * pelvis part, measured from the part's own points (not from an upright
    * box round them, which stands taller and deeper than the hips), from
-   * the bottom of the part to the top of the pelvis (the root bone's tail),
-   * with a small margin. A rig whose pelvis has no part mesh gets one from
+   * a little under the hip joints to the top of the pelvis (the root bone's
+   * tail), with a small margin. A rig whose pelvis has no part mesh gets one from
    * the span of its hip joints. False when the rig has nothing to frame.
    */
   rootBoxMatrix(out: Matrix4): boolean {
@@ -1165,6 +1165,18 @@ export class Armature {
         _pc.set(hull[i], hull[i + 1], hull[i + 2]).applyMatrix4(bone.matrixWorld).sub(origin).applyQuaternion(toFrame);
         lo.min(_pc);
         hi.max(_pc);
+      }
+      // No lower than the hips: the part runs on down between the legs, and
+      // a box to its lowest point stands as tall as it is wide. Its foot is
+      // a little under the hip joints.
+      const l = this.bones.get('thigh.L');
+      const r = this.bones.get('thigh.R');
+      if (l && r) {
+        const joints = Math.min(
+          _pc.setFromMatrixPosition(l.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
+          _pd.setFromMatrixPosition(r.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
+        );
+        lo.y = Math.min(Math.max(lo.y, joints - this.len(0.03)), hi.y - this.len(0.06));
       }
     } else {
       const l = this.bones.get('thigh.L');
@@ -2041,7 +2053,7 @@ const _lR = new Quaternion();
 const _le = new Euler();
 const _bm = new Matrix4();
 /** The most the hip box leans off the vertical with the pelvis bone (radians): enough to read as the pelvis's tilt, never lying down on a rig whose root bone points forward. */
-const HIP_BOX_MAX_TILT = (25 * Math.PI) / 180;
+const HIP_BOX_MAX_TILT = (20 * Math.PI) / 180;
 /** A look is settled when the head faces the point to within a fiftieth of a degree. */
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 
