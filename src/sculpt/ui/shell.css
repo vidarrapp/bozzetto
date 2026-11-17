@@ -354,6 +354,7 @@ body.bz-shell .panel:not(.panel--left) {
 
 body.bz-shell .panel--model,
 body.bz-shell .panel--material,
+body.bz-shell .panel--reference,
 body.bz-shell .panel--sculpt {
   z-index: 15;
 }
@@ -491,6 +492,14 @@ body.bz-shell .panel .handle__label {
   letter-spacing: 0;
   text-transform: none;
   color: inherit;
+}
+
+/* A narrow screen: six tabs (three each side, with Reference) must not run into one another, so each
+   takes less room around its name. */
+@media (max-width: 480px) {
+  body.bz-shell .panel > .panel__handle {
+    padding: 0 10px;
+  }
 }
 
 /* A phone: an open panel may cover the width. */
@@ -1698,4 +1707,179 @@ body:is(.bz-shell, .bz-page) .file-menu--sub {
   body:is(.bz-shell, .bz-page) .file-menu--sub {
     max-width: calc(100vw - 16px);
   }
+}
+
+/* --- the Reference panel and its pictures ------------------------------------
+   The board is a grid of thumbnails (square corners, the grey scale); the one
+   that is on carries the orange edge. The picture over the view and the Beside
+   window are never an input target but their own frame. */
+.panel--reference .ref-actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.panel--reference .ref-actions .outliner__btn {
+  flex: 1 1 0;
+}
+
+.panel--reference .ref-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  font: 400 12px/16px var(--bz-font);
+  color: var(--bz-text-2);
+}
+
+.panel--reference .ref-status__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel--reference .ref-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.panel--reference .ref-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  background: var(--bz-control);
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.panel--reference .ref-card--on {
+  outline-color: var(--bz-orange);
+}
+
+.panel--reference .ref-card__thumb {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--bz-panel-fill);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+
+.panel--reference .ref-card__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.panel--reference .ref-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 12px/16px var(--bz-font);
+  color: var(--bz-text);
+}
+
+.panel--reference .ref-card__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 11px/14px var(--bz-font-mono);
+  color: var(--bz-text-2);
+}
+
+.panel--reference .ref-card .row-more-wrap {
+  display: block;
+}
+
+.panel--reference .ref-card .row-more {
+  width: 100%;
+  min-height: 32px;
+}
+
+.panel--reference .ref-over-settings {
+  margin-top: 16px;
+}
+
+.panel--reference .ref-note {
+  margin: 16px 0 0;
+}
+
+/* Red for a delete, in the row menu as in the window. */
+.row-menu .file-menu__item--danger {
+  color: var(--bz-red);
+}
+
+/* The picture over the view: its own layer inside the view, fitted to the view's height and centred, and never an input target. */
+.ref-over {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ref-over[hidden] {
+  display: none;
+}
+
+.ref-over__picture {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  max-width: none;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+body.presenting .ref-over,
+body.presenting .ref-beside {
+  display: none;
+}
+
+/* The Beside window: the float window's frame with the picture inside, held and panned on its own frame only. */
+.ref-beside {
+  width: 300px;
+}
+
+.ref-beside .float-window__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-beside__frame {
+  position: relative;
+  margin: 8px 0 0;
+  overflow: hidden;
+  background: var(--bz-panel-fill);
+  touch-action: none;
+  cursor: grab;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ref-beside__picture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }

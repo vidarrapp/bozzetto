@@ -61,7 +61,7 @@ function tabRowChecks(t, s, where) {
   const row = s.tabs;
   t.ok(row.length > 0 && row.every((x) => Math.abs(x.top - (s.strip.bottom + 4)) < 0.5 && Math.abs(x.bottom - x.top - 28) < 0.5), `${where}: the tab row stands 4px under the strip, 28px tall (${row.map((x) => `${x.name} ${x.top}-${x.bottom}`).join(', ')}; strip ends ${s.strip.bottom})`);
   const byLeft = [...row].sort((a, b) => a.left - b.left);
-  const gaps = byLeft.slice(1).map((x, i) => x.left - byLeft[i].right).filter((g) => g < 40);
+  const gaps = byLeft.slice(1).map((x, i) => x.left - byLeft[i].right).filter((g) => g < 8);
   t.ok(gaps.every((g) => Math.abs(g - 1) < 0.5), `${where}: tabs on a side stand 1px apart (${gaps.join(', ')})`);
   t.ok(row.every((x) => x.border === '0px0px'), `${where}: no tab has a border (${row.map((x) => x.border).join(', ')})`);
   // The 1px between two tabs shows the view; each tab paints its own colour into it, so it reads as no line.
