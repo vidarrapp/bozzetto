@@ -2684,8 +2684,8 @@ export const suites = {
       `a ring on the floor marks each planted foot while planting is on, none with it off, and none under a foot lifted off the floor (${JSON.stringify([plantSide.pinnedOn.ringsBefore, plantSide.pinnedOn.ringsAfter, plantSide.pinnedOff.ringsBefore, plantSide.freeOn.ringsAfter])})`,
     );
 
-    // The floor is held in Armature mode (owner call): the Render panel
-    // offers no pedestal, the G key's cycle skips it, and every mannequin
+    // The floor is held in Armature mode (owner call): nothing here
+    // offers a pedestal, the G key's cycle skips it, and every mannequin
     // stands with its soles on it, as it is loaded and as one replaces
     // another - one raised off the floor first included.
     const stage = await page.evaluate(() => {
@@ -2710,7 +2710,8 @@ export const suites = {
         floor: v.lockedFloor(),
       };
     });
-    t.ok(stage.groundSelects >= 1 && !stage.pedestalOffered && !stage.pedestalWidth, `the Render panel's Ground has no Pedestal, and no Pedestal width (${stage.groundSelects} ground list(s))`);
+    // Armature has no Render tab now (the look is Present's), so there is no Ground list here at all.
+    t.ok(!stage.pedestalOffered && !stage.pedestalWidth, `no Ground list in Armature offers a Pedestal, and there is no Pedestal width (${stage.groundSelects} ground list(s))`);
     t.ok(stage.asked === 'floor' && !stage.seen.includes('pedestal'), `asked for a pedestal, the viewer keeps the floor, and G cycles past it (${stage.asked}; ${stage.seen.join(', ')})`);
     const standing = [];
     for (const fid of ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized']) {
@@ -4134,7 +4135,7 @@ export const suites = {
     await pickOne('Torus');
     t.eq(
       await editItems(),
-      'Undo (Ctrl + Z); Redo (Ctrl + Shift + Z); Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Preferences\u2026',
+      'Undo (Ctrl + Z); Redo (Ctrl + Shift + Z); Duplicate; Delete (Del); Merge (Ctrl + J) off; Mirror[X Y Z] (Ctrl + M); Radial copies around X[\u00d73 \u00d74 \u00d75 \u00d76 \u00d78 \u00d712]; Split groups into objects off; Split hidden into object off; Delete hidden off; Paste picture; Preferences\u2026',
       'the Edit menu lists Duplicate, Delete, Merge, Mirror and Radial copies, with their hotkeys, and the poly group splits; Merge off with one object, the splits off on an object with one group and nothing hidden',
     );
     // Its items, pressed as a pointer would.
@@ -4288,7 +4289,7 @@ export const suites = {
       return off.join(', ');
     });
     // Publish… is greyed too: this page has no sign-in (its own check is in the publishWindow suite).
-    t.eq(fileItems, 'Save file, Save to library, Keep on this device, Export OBJ, Publish…', 'File greys out the saves and Export OBJ in an empty scene (and Publish…, with no sign-in)');
+    t.eq(fileItems, 'Open recent, Save file, Include references, Keep on this device, Export OBJ, Publish…', 'File greys out the saves and Export OBJ in an empty scene (and Publish…, with no sign-in)');
     // Create adds an object again.
     await page.evaluate(() => window.__sculpt.session.addPrimitive('cube'));
     const made = await empty();
@@ -5559,12 +5560,13 @@ export const suites = {
       t.ok(!st.toast && !st.failed.length, `with no notice${st.toast ? ` (said "${st.toast}")` : ''}`);
       t.eq(JSON.stringify(await shelf(guest)), '[]', 'nothing of it is kept on the device shelf');
       t.eq(await guest.evaluate(() => window.__sculpt.fileActions.hasWork()), false, 'and untouched it is no work to lose: the template is where it was');
-      const guestLib = (await fileItems(guest)).find((i) => i.label === 'Save to library');
-      const [download] = await Promise.all([guest.waitForEvent('download', { timeout: 30_000 }), chooseFile(guest, 'Save to library')]);
+      // A guest has no Save to library (it is there signed in only): Save file downloads the copy.
+      const guestItems = (await fileItems(guest)).map((i) => i.label);
+      const [download] = await Promise.all([guest.waitForEvent('download', { timeout: 30_000 }), chooseFile(guest, 'Save file')]);
       const read = await readBozz(guest, readFileSync(await download.path()));
       t.ok(
-        /\.bozz file/.test(guestLib?.hint ?? '') && /^sculpt-\d{8}-\d{4}\.bozz$/.test(download.suggestedFilename()) && read.objects === made.objects,
-        `Save to library downloads the copy for a guest, as for any new scene (${download.suggestedFilename()}, ${read.objects} objects)`,
+        !guestItems.includes('Save to library') && /^sculpt-\d{8}-\d{4}\.bozz$/.test(download.suggestedFilename()) && read.objects === made.objects,
+        `Save file downloads the copy for a guest, as for any new scene, and there is no Save to library (${download.suggestedFilename()}, ${read.objects} objects)`,
       );
 
       // With work here, the card asks, and Sculpt does not ask again.
