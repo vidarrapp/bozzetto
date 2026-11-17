@@ -2684,8 +2684,8 @@ export const suites = {
       `a ring on the floor marks each planted foot while planting is on, none with it off, and none under a foot lifted off the floor (${JSON.stringify([plantSide.pinnedOn.ringsBefore, plantSide.pinnedOn.ringsAfter, plantSide.pinnedOff.ringsBefore, plantSide.freeOn.ringsAfter])})`,
     );
 
-    // The floor is held in Armature mode (owner call): the Render panel
-    // offers no pedestal, the G key's cycle skips it, and every mannequin
+    // The floor is held in Armature mode (owner call): nothing here
+    // offers a pedestal, the G key's cycle skips it, and every mannequin
     // stands with its soles on it, as it is loaded and as one replaces
     // another - one raised off the floor first included.
     const stage = await page.evaluate(() => {
@@ -2710,7 +2710,8 @@ export const suites = {
         floor: v.lockedFloor(),
       };
     });
-    t.ok(stage.groundSelects >= 1 && !stage.pedestalOffered && !stage.pedestalWidth, `the Render panel's Ground has no Pedestal, and no Pedestal width (${stage.groundSelects} ground list(s))`);
+    // Armature has no Render tab now (the look is Present's), so there is no Ground list here at all.
+    t.ok(!stage.pedestalOffered && !stage.pedestalWidth, `no Ground list in Armature offers a Pedestal, and there is no Pedestal width (${stage.groundSelects} ground list(s))`);
     t.ok(stage.asked === 'floor' && !stage.seen.includes('pedestal'), `asked for a pedestal, the viewer keeps the floor, and G cycles past it (${stage.asked}; ${stage.seen.join(', ')})`);
     const standing = [];
     for (const fid of ['mannequin-male-realistic', 'mannequin-female-realistic', 'mannequin-male-stylized', 'mannequin-female-stylized']) {
