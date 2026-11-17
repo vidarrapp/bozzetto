@@ -2871,11 +2871,12 @@ export const suites = {
         );
       }
 
-      // The head reaches through the whole back, and the feet from their
+      // The head looks through the neck and a little of the back, and the feet reach from their
       // middle, as rig.ts declares and the file carries.
       const ik = await page.evaluate(() => window.__armature.armature.rig.ik.map((c) => ({ id: c.id, links: c.links.join(','), at: c.effectorAt })));
       const chain = (cid) => ik.find((c) => c.id === cid) ?? {};
-      t.eq(chain('head').links, 'neck,chest,spine', `${id}: the head chain bends the neck, chest and spine`);
+      const lookBones = await page.evaluate(() => window.__armature.armature.lookShares().map((l) => l.bone).join(','));
+      t.ok(!ik.some((c) => c.id === 'head') && lookBones === 'spine,chest,neck,head', `${id}: the head has no reach chain; its look turns ${lookBones}`);
       t.ok(chain('foot.L').at === 0.5 && chain('foot.R').at === 0.5, `${id}: the feet reach from mid-foot (effectorAt ${chain('foot.L').at}, ${chain('foot.R').at})`);
 
       // The neck turns just above where the back of the neck leaves the
