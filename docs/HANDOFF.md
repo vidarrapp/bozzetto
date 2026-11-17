@@ -2,10 +2,10 @@
 
 ## Open questions for Vidar
 
-- [ ] 2026-11-17: Where the Reference tab sits now that Material moves to the right. Taken for now: Tool | Material | Reference | Render (blocks: nothing, a one-line change)
-- [ ] 2026-11-17: Material moves to the right in Sculpt as asked; taken for now: in Armature, Present and the viewer too, so the tab is in one place everywhere. Or Sculpt only (blocks: nothing)
-- [ ] 2026-11-17: Sculpt layers follow Mudbox: a layer belongs to the subdivision level it was first sculpted on and shows on every level. Sculpting with that layer active on another level is refused with a notice and a "Go to level N" button. Or let the stroke go to the base instead (blocks: nothing)
-- [ ] 2026-11-17: Paint layers hold vertex colour at the object's highest level, so Paint works on the highest level. Fine, or paint on any level (blocks: nothing)
+- [x] 2026-11-17: Where the Reference tab sits now that Material moves to the right. Taken for now: Tool | Material | Reference | Render. Decided 2026-11-17: as taken
+- [x] 2026-11-17: Material moves to the right in Sculpt as asked; taken for now: in Armature, Present and the viewer too, so the tab is in one place everywhere. Or Sculpt only. Decided 2026-11-17: as taken
+- [x] 2026-11-17: Sculpt layers follow Mudbox: a layer belongs to the subdivision level it was first sculpted on and shows on every level. Sculpting with that layer active on another level is refused with a notice and a "Go to level N" button. Or let the stroke go to the base instead. Decided 2026-11-17: never refuse for the level: a layer keeps what was sculpted on each level, so it takes strokes on any level, including levels added later
+- [x] 2026-11-17: Paint layers hold vertex colour at the object's highest level, so Paint works on the highest level. Fine, or paint on any level. Decided 2026-11-17: as taken
 - [x] 2026-11-17: The pages' Go menu: View or Navigate. Decided 2026-11-17: View, so the pages read File, View, Help as the workspaces read File, Edit, View, Help
 - [x] 2026-11-17: Sculpt tabs. Decided 2026-11-17: left Scene | Model | Layers, right Tool | Material | Render; Material moves to the right
 - [x] 2026-11-17: Sculpt layers. Decided 2026-11-17: a simple layer system on the Mudbox model (a layer can be added at any level and carries up and down the subdivisions), each with a 0 to 100% slider that also takes a typed negative value
