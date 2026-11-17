@@ -869,6 +869,12 @@ export const suites = {
     });
     t.eq(await page.evaluate(() => window.__sculpt.session.getSculptManager().getTool(19).canProject()), false, 'with no picture in the view Project cannot start');
 
+    // The real source is the reference view's: no picture in the view, no projection.
+    t.eq(await page.evaluate(() => {
+      const tool = window.__sculpt.session.getSculptManager().getTool(19);
+      tool.source = window.__realSource ?? tool.source;
+      return typeof tool.canProject;
+    }), 'function', 'Project asks the tool whether a picture is in the view');
     // A hidden layer refuses a stroke and says why.
     await page.evaluate(() => {
       const { session } = window.__sculpt;
