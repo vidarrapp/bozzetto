@@ -1132,7 +1132,7 @@ export class Armature {
    * hips from there. In that frame it is the least box that holds the
    * pelvis part, measured from the part's own points (not from an upright
    * box round them, which stands taller and deeper than the hips), from
-   * a little under the hip joints to the top of the pelvis (the root bone's
+   * where the legs part, under the hip joints, to the top of the pelvis (the root bone's
    * tail), with a small margin. A rig whose pelvis has no part mesh gets one from
    * the span of its hip joints. False when the rig has nothing to frame.
    */
@@ -1147,7 +1147,7 @@ export class Armature {
     if (axis.y < 0) axis.negate();
     const lean = _lh.setFromUnitVectors(_pb.set(0, 1, 0), axis);
     const angle = 2 * Math.acos(Math.min(1, Math.abs(lean.w)));
-    if (angle > HIP_BOX_MAX_TILT) lean.slerpQuaternions(_lq.identity(), lean, HIP_BOX_MAX_TILT / angle);
+    if (angle > HIP_BOX_MAX_TILT) lean.copy(_lq.identity().slerp(lean, HIP_BOX_MAX_TILT / angle));
     // The box's frame in the world now: the figure's, as the pelvis has turned from rest, leaning.
     const frame = this.root.getWorldQuaternion(_lq3).multiply(_lq2.copy(rest.q).invert()).multiply(lean);
     const toFrame = _lq2.copy(frame).invert();
@@ -1166,9 +1166,9 @@ export class Armature {
         lo.min(_pc);
         hi.max(_pc);
       }
-      // No lower than the hips: the part runs on down between the legs, and
+      // No lower than the hips: the part runs on down inside the thighs, and
       // a box to its lowest point stands as tall as it is wide. Its foot is
-      // a little under the hip joints.
+      // about where the legs part, a hand's width under the hip joints.
       const l = this.bones.get('thigh.L');
       const r = this.bones.get('thigh.R');
       if (l && r) {
@@ -1176,7 +1176,7 @@ export class Armature {
           _pc.setFromMatrixPosition(l.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
           _pd.setFromMatrixPosition(r.matrixWorld).sub(origin).applyQuaternion(toFrame).y,
         );
-        lo.y = Math.min(Math.max(lo.y, joints - this.len(0.03)), hi.y - this.len(0.06));
+        lo.y = Math.min(Math.max(lo.y, joints - this.len(HIP_BOX_UNDER_JOINTS)), hi.y - this.len(0.06));
       }
     } else {
       const l = this.bones.get('thigh.L');
@@ -2054,6 +2054,8 @@ const _le = new Euler();
 const _bm = new Matrix4();
 /** The most the hip box leans off the vertical with the pelvis bone (radians): enough to read as the pelvis's tilt, never lying down on a rig whose root bone points forward. */
 const HIP_BOX_MAX_TILT = (20 * Math.PI) / 180;
+/** How far under the hip joints the hip box ends, in metres at the figure's scale. */
+const HIP_BOX_UNDER_JOINTS = 0.09;
 /** A look is settled when the head faces the point to within a fiftieth of a degree. */
 const LOOK_SETTLED = Math.cos((0.02 * Math.PI) / 180);
 
