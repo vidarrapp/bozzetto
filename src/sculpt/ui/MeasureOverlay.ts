@@ -13,7 +13,8 @@ interface Drawn {
 
 const LINE = '#f2f2f2';
 const PINNED = '#b8b8b8';
-const HALO = 'rgba(20, 20, 20, 0.85)';
+/** The view's faint shade under a line (tokens.css --bz-view-shade-line): soft, never a hard outline. */
+const HALO = 'rgba(0, 0, 0, 0.35)';
 
 /**
  * The calipers' measurements drawn over the view: for each, a line between
@@ -22,8 +23,8 @@ const HALO = 'rgba(20, 20, 20, 0.85)';
  * through the camera, on a 2D canvas over the view as the brush ring and
  * the voxel grid are (so no render pass draws them and a saved image never
  * holds them); the label is a DOM box at the line's middle, screen-sized,
- * kept inside the view. A dark halo under the light line keeps it readable
- * over the pale clay and over the dark ground alike.
+ * kept inside the view. A faint soft shade sits under the light line (the
+ * owner's choice over a hard dark outline).
  *
  * Pinned measurements show while their object does; the one being made
  * shows with a Pin button on its label. All of it is interface: Tab and

@@ -2,6 +2,7 @@
 
 ## Open questions for Vidar
 
+- [x] 2026-11-17: Dark outlines on marks over the view (slider text, handles, measure labels). Decided 2026-11-17: no hard outline; light marks with a faint soft shade under them
 - [x] 2026-11-17: Phones. Decided 2026-11-17: not a target platform, only for quick demos; panels open there as on the desktop and no more work goes into phone usability (the bottom sheet built that day is removed)
 - [ ] 2026-11-17: The head's look-at shares the turn as the part each bone has made by the end: head all, neck half, chest 12 percent, spine 6 percent (the owner said neck about half, torso 10 to 15 in all). Keep these, or a stronger neck or a freer torso. (blocks: nothing, a constant in Armature.ts)
 - [ ] 2026-11-17: The head's old pin (hold the head in place while the pelvis moves) is gone with the head's reach handle; an old file's head pin is dropped. Is a way to hold the gaze on a fixed point while the figure moves wanted (the look target kept in the world, as Maya's aim constraint does). (blocks: nothing)
