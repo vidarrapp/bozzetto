@@ -1670,8 +1670,8 @@ export async function mountSculptMode(viewer: Viewer): Promise<() => void> {
         panels: [
           ['scene', 'Scene'],
           ['model', 'Model'],
-          ['material', 'Material'],
           ['sculpt', 'Tool'],
+          ['material', 'Material'],
           ['settings', 'Render'],
         ],
         hideInterface: () => chrome.set(true),

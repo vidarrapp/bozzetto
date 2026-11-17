@@ -16,8 +16,10 @@ import { deviceStore } from '../../ui/deviceStorage';
 const SIDES: Record<string, 'left' | 'right'> = {
   scene: 'left',
   model: 'left',
-  material: 'left',
   armature: 'left',
+  layers: 'left',
+  material: 'right',
+  reference: 'right',
   sculpt: 'right',
   settings: 'right',
 };
@@ -94,7 +96,9 @@ export function setPanel(id: string, open: boolean): void {
 const ROOT: Record<string, string> = {
   scene: '.panel--scene',
   model: '.panel--model',
+  layers: '.panel--layers',
   material: '.panel--material',
+  reference: '.panel--reference',
   sculpt: '.panel--sculpt',
   armature: '.panel--armature',
   settings: '.panel--render',

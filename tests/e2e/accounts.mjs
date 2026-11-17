@@ -199,9 +199,9 @@ const credentials = async (auth) => (await auth.cdp.send('WebAuthn.getCredential
 /** The top row's chips, right side, as they read. */
 const chips = (p) => p.evaluate(() => [...document.querySelectorAll('.bz-strip__right :is(.bz-strip__btn, .account-menu__chip)')].map((c) => c.textContent.trim()));
 
-/** The Go menu's rows (the pages' places), opened and read, then closed. */
+/** The View menu's rows (the pages' places), opened and read, then closed. */
 const goRows = async (p) => {
-  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'View')?.click());
   await p.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
   const rows = await p.evaluate(() => [...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => c.textContent.trim().replace(/\s*\(\d+\)$/, '')));
   await p.keyboard.press('Escape');
@@ -401,7 +401,7 @@ async function joinWithInvite(server, turnstile, a, t) {
   t.ok(await chipShown(p, '@ada'), `the top row is the account's (${(await chips(p)).join(', ')})`);
   const row = await chips(p);
   const places = await goRows(p);
-  t.ok(places.includes('My projects') && !places.includes('Owner tools') && !row.includes('Sign in'), `Go has My projects and the strip has @ada, no Sign in, no Owner tools for a member (${places.join(', ')} | ${row.join(', ')})`);
+  t.ok(places.includes('My projects') && !places.includes('Owner tools') && !row.includes('Sign in'), `View has My projects and the strip has @ada, no Sign in, no Owner tools for a member (${places.join(', ')} | ${row.join(', ')})`);
   t.eq((await me(p)).handle, 'ada', 'and the server agrees');
   const widgets = await p.evaluate(() => window.__turnstile.widgets.map((w) => `${w.action}/${w.appearance}/${w.sitekey}`));
   t.ok(widgets.length > 0 && widgets.every((w) => w === `register/interaction-only/${SITE_KEY}`), `Join drew Turnstile with its action, interaction-only (${show(widgets)})`);
@@ -1116,7 +1116,7 @@ async function owner(server, o, t) {
   await chipShown(p, '@boss');
   const row = await chips(p);
   const places = await goRows(p);
-  t.ok(places.includes('My projects') && places.includes('Owner tools') && row.includes('@boss'), `the owner's strip: @boss, and Go has My projects and Owner tools (${places.join(', ')} | ${row.join(', ')})`);
+  t.ok(places.includes('My projects') && places.includes('Owner tools') && row.includes('@boss'), `the owner's strip: @boss, and View has My projects and Owner tools (${places.join(', ')} | ${row.join(', ')})`);
 
   // The second lock: Access alone no longer opens the owner tools.
   await p.evaluate(() => fetch('/api/auth/signout', { method: 'POST' }));

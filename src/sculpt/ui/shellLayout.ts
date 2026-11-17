@@ -85,8 +85,9 @@ const GAP = 16;
 export const SHELL_LAYOUT_EVENT = 'bozzetto:shell-layout';
 
 /** The tabs, left to right on each side: the panel's variant class gives its place. */
-const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--armature', 'panel--frames', 'panel--project', 'panel--material'];
-const RIGHT_ORDER = ['panel--sculpt', 'panel--render', 'panel--output'];
+// Layers and Reference are built elsewhere; their places are kept here.
+const LEFT_ORDER = ['panel--scene', 'panel--model', 'panel--layers', 'panel--armature', 'panel--frames', 'panel--project'];
+const RIGHT_ORDER = ['panel--sculpt', 'panel--material', 'panel--reference', 'panel--render', 'panel--output'];
 
 function tabsOf(order: string[]): HTMLElement[] {
   const out: HTMLElement[] = [];
@@ -101,6 +102,18 @@ function tabsOf(order: string[]): HTMLElement[] {
 /** Lay the tabs along their edges and set the panels' height limits. */
 export function layoutShell(): void {
   if (!document.body.classList.contains('bz-shell')) return;
+  const html = document.documentElement;
+  // A phone with a full row of tabs: the tight set when the roomier one would overlap.
+  html.removeAttribute('data-tabs-tight');
+  if (!placeTabs() && isPhone()) {
+    html.setAttribute('data-tabs-tight', '');
+    placeTabs();
+  }
+  setLimits();
+}
+
+/** Put the tabs along their edges; false when the left row and the right row would meet. */
+function placeTabs(): boolean {
   let x = 0;
   for (const tab of tabsOf(LEFT_ORDER)) {
     tab.style.left = `${x}px`;
@@ -109,6 +122,7 @@ export function layoutShell(): void {
   }
   // How far the whole row travels when the interface is hidden (see shell.css).
   document.documentElement.style.setProperty('--bz-tabs-left', `${x}px`);
+  const leftWidth = x;
   x = 0;
   for (const tab of tabsOf(RIGHT_ORDER).reverse()) {
     tab.style.right = `${x}px`;
@@ -116,7 +130,11 @@ export function layoutShell(): void {
     x += tab.getBoundingClientRect().width + 1;
   }
   document.documentElement.style.setProperty('--bz-tabs-right', `${x}px`);
+  return leftWidth + x <= window.innerWidth;
+}
 
+/** The panels' height limits and, on a phone, the sheet's place. */
+function setLimits(): void {
   const brushes = document.querySelector<HTMLElement>('.sculpt-toolbar__brushes');
   if (brushes) paintScrollCue(brushes);
 
@@ -193,7 +211,14 @@ export function startShellLayout(): () => void {
   });
   mo.observe(document.body, { childList: true });
   watch();
-  window.addEventListener('resize', soon);
+  // A resize can flip the phone rules (tab size) a moment after the event: measure once more when it has settled.
+  let late = 0;
+  const afterResize = (): void => {
+    soon();
+    clearTimeout(late);
+    late = window.setTimeout(soon, 200);
+  };
+  window.addEventListener('resize', afterResize);
   window.addEventListener(SHELL_LAYOUT_EVENT, soon);
   // A panel sliding in or out moves its tab while it goes (the tab is fixed inside it): measure again once it has stopped.
   document.addEventListener('transitionend', soon, true);
@@ -201,9 +226,10 @@ export function startShellLayout(): () => void {
   soon();
   return () => {
     clearTimeout(timer);
+    clearTimeout(late);
     ro.disconnect();
     mo.disconnect();
-    window.removeEventListener('resize', soon);
+    window.removeEventListener('resize', afterResize);
     window.removeEventListener(SHELL_LAYOUT_EVENT, soon);
     document.removeEventListener('transitionend', soon, true);
     const root = document.documentElement.style;

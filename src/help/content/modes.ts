@@ -60,7 +60,7 @@ export const MODES: Topic[] = [
       options(
         ['Frames (left)', '**Sequence**: drop .obj or .glb files, or **Choose files**; **OBJ files are Z-up** for .obj files from a Z-up app; the number of frames and what is held in memory; **Add more**, and the trash, which clears the frames after asking. Nothing reaches the site until **Save**.'],
         ['Project (left)', '**Settings**: the title, **Mode** (**Timelapse** or **Model**), **Visibility** (Public or Private) and, for a timelapse, **Frames per second**. **Stages**: the list, the one at the playhead marked; **Add stage here**, **Remove**, and the name and note of the marked stage. **Card picture**: **Use this frame** sends the frame on show to the gallery card at once.'],
-        ['Material (left)', 'How the model is drawn: **Mode** and its matcap, **Smooth shading**, **Wireframe** and **Wire opacity**, and over a published model its **Colour**, **Albedo**, **Roughness** and **Metalness**. **Save** stores it with the project.'],
+        ['Material (right)', 'How the model is drawn: **Mode** and its matcap, **Smooth shading**, **Wireframe** and **Wire opacity**, and over a published model its **Colour**, **Albedo**, **Roughness** and **Metalness**. **Save** stores it with the project.'],
         ['Render (right)', 'The rest of the look: lighting, camera, environment and ambient occlusion. **Save** stores it with the project.'],
         ['Output (right)', '**Reel**: **Motion** (**Timelapse** or **Turntable**, with its spin and direction), **Aspect**, with a guide on the view, **Format**, **Size** and **FPS**, a line with the frame count and length, and **Record reel**, with a progress bar and **Cancel**. **Image**: **Save image**, a PNG at twice the window.'],
         ['The bar along the bottom', 'A timelapse has its transport here: play and pause, the line with the played part in orange and a tick at each stage, and the frame counter. A model has no bar.'],
@@ -72,7 +72,7 @@ export const MODES: Topic[] = [
     title: 'Armature mode',
     group: G,
     blocks: [
-      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** and **Material** panels are on the left and the **Render** panel on the right.'),
+      p('Armature is a posable figure, to use as a reference or to send to Sculpt as a base. Start it from the gallery with **Create**, then **New Armature**. The **Armature** panel is on the left and the **Material** and **Render** panels on the right.'),
       h('The menus'),
       options(
         ['New armature', 'Starts over, and asks first if the pose and proportions would be lost.'],

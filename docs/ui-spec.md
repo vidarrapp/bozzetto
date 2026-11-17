@@ -143,12 +143,12 @@ no separate touch density. An earlier draft of this spec had one, with
   a Reset look button, which goes back to the look the scene or project
   opened with (in the viewer, the published look; the view stays, and a
   visitor's changes are never saved). Material is never in it: it is the
-  Material tab at the left in every place, the viewer and review mode
+  Material tab at the right in every place, the viewer and review mode
   included (Display section only, as in Present). What a place cannot do
   stays out of the panel, not out of the order: Cavity (SSAO) only in plain
   Sculpt, Pedestal and Floor offset only where the floor allows them, and
-  the Developer section only with ?dev. The viewer's tab row is Material at
-  the left and Render at the right, and fits a 390px phone.
+  the Developer section only with ?dev. The viewer's tab row is Material and Render at
+  the right, nothing at the left, and fits a 390px phone.
 - **Keyboard.** A web page cannot tell whether an iPad has a keyboard
   attached, and the iPad runs the web app. So the hotkey digits on the
   tools and the key hints above the tool bar are two View toggles
@@ -290,7 +290,7 @@ big logotype and tagline in the page).
 - **File:** New sculpt, New armature, Import OBJ…. What the gallery's
   Create card offers, with the same question about saving on this device
   that Import OBJ asks.
-- **Go:** Gallery, Community (with accounts), My projects (signed in, not
+- **View:** Gallery, Community (with accounts), My projects (signed in, not
   suspended), Review with what waits in its name (owner and moderators),
   Owner tools (the owner). Each only for whoever may see it today; the page
   you are on has the check.
@@ -316,7 +316,7 @@ document itself scrolls, and there is no CSS switch to turn that off.
 ┌──────────────────────────────────────────────────────────────┐
 │ File Edit View Help    Project · Object · Tris · Level  Publish │  title strip
 ├─────────────┐                                   ┌─────────────┤
-│ Scene Model Material │                          │ Tool Render │  tabs
+│ Scene Model Layers   │      │ Tool Material Reference Render │  tabs
 │┌───────────┐│                                   │┌───────────┐│
 ││   open    ││            viewport               ││   open    ││  one open
 ││   panel   ││                                   ││   panel   ││  per side
@@ -341,9 +341,26 @@ document itself scrolls, and there is no CSS switch to turn that off.
 
 ### Panels
 
-- Each side has one panel, docked under the title strip: Scene, Model and
-  Material share the left one, Tool and Render the right one (owner call,
-  2026-11-11: one panel open per side, with folder tabs).
+- Each side has one panel, docked under the title strip (owner call,
+  2026-11-11: one panel open per side, with folder tabs). Material is on the
+  right everywhere (owner call, 2026-11-17). Tab order, left to right.
+  Sculpt: left Scene, Model, Layers; right Tool, Material, Reference,
+  Render. Armature: left Armature; right Material, Reference, Render.
+  Present from Sculpt: right Material, Render, Output. The Present
+  workspace: left Frames, Project; right Material, Render, Output. The
+  viewer and review mode: right Material, Render, nothing at the left. The
+  View menu lists the panels in this order. Material and Render share a
+  side, so opening one closes the other.
+- **A phone** (599px and narrower, a finger). The open panel is a sheet
+  docked at the bottom: the full width, at most half the window tall, above
+  the tool bar or transport, scrolling inside; the 3D view is not resized and
+  its upper half stays clear for the Pencil and fingers. The tabs of both
+  sides share one row (up to three left, four right) set smaller with a
+  44px least width, and tighter again where a narrow screen needs it. The
+  tool bar fades at the edge where more tools are out of sight. Every word
+  and button in the strip has a 44px hit area while the strip stays 32px.
+  The viewer's strip keeps the project title, cut with an ellipsis. The
+  step you are in opens a small list of the three workspaces.
 - **Folder tabs.** Above the panel sit its two tabs, each a box of the
   panel's own surface, 2px apart. The tab that is showing is 28px tall,
   joined to the panel with no gap, its name bold. The other is 26px

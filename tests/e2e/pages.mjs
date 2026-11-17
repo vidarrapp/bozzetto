@@ -3,8 +3,8 @@
 // (startAccountsServer) at http://localhost:<port>, with seeded accounts
 // whose session cookies the browsers are handed, as the community suite does.
 //
-// The path: every page has the workspaces' title strip - File, Go, Help, the
-// page's name, the account at the right - and Go lists the places its person
+// The path: every page has the workspaces' title strip - File, View, Help, the
+// page's name, the account at the right - and View lists the places its person
 // may see (a guest: Gallery and Community; a member adds
 // My projects; a moderator Review, with its count; the owner Owner tools),
 // the page one is on checked - and none of the corner chips; delete is a
@@ -87,16 +87,16 @@ async function open(b, path, ready) {
   await b.page.waitForTimeout(400);
 }
 
-/** The Go menu, opened and read: its rows, the checked one, Review's count. Then closed. */
+/** The View menu, opened and read: its rows, the checked one, Review's count. Then closed. */
 const goOf = async (p) => {
-  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await p.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'View')?.click());
   await p.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
   const rows = await p.evaluate(() => [...document.querySelectorAll('.file-menu--go .file-menu__item')].map((c) => ({ text: c.textContent.trim(), on: c.getAttribute('aria-checked') === 'true' })));
   await p.keyboard.press('Escape');
   return rows;
 };
 
-/** The strip, as drawn: its menus, Go's rows, the page's name, what is at the right, its height. */
+/** The strip, as drawn: its menus, View's rows, the page's name, what is at the right, its height. */
 const navOf = async (p) => {
   const go = await goOf(p);
   const rest = await p.evaluate(() => {
@@ -157,22 +157,22 @@ const overflowing = (p) => p.evaluate(() => document.documentElement.scrollWidth
 async function navRows(server, o, m, a, g, t) {
   await open(g, '/?community', '.card--community, .community__empty');
   let n = await navOf(g.page);
-  t.ok(show(n.menus) === show(['File', 'Go', 'Help']), `the pages have the workspaces' strip: File, Go, Help (${show(n.menus)})`);
-  t.ok(show(n.links) === show(['Gallery', 'Community']) && show(n.current) === show(['Community']) && n.account.includes('Sign in') && n.name === 'Community', `a guest's Go: Gallery and Community, Community checked, the name Community, Sign in at the right (${show(n)})`);
+  t.ok(show(n.menus) === show(['File', 'View', 'Help']), `the pages have the workspaces' strip: File, View, Help (${show(n.menus)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community']) && show(n.current) === show(['Community']) && n.account.includes('Sign in') && n.name === 'Community', `a guest's View: Gallery and Community, Community checked, the name Community, Sign in at the right (${show(n)})`);
   t.ok(n.first && n.height === 24 && !n.oldRow && n.scrolls, `one strip of 24px, no old row, the document does not scroll (${show(n)})`);
   t.ok(n.chips.length === 0, `and no corner chips (${show(n.chips)})`);
 
   await open(a, '/?me', '.card--mine, .my-projects__empty');
   n = await navOf(a.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects']) && show(n.current) === show(['My projects']) && n.account.some((c) => c.startsWith('@ada')) && n.name === 'My projects', `a member's Go adds My projects, checked, and the @handle menu is at the right (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects']) && show(n.current) === show(['My projects']) && n.account.some((c) => c.startsWith('@ada')) && n.name === 'My projects', `a member's View adds My projects, checked, and the @handle menu is at the right (${show(n)})`);
 
   await open(m, '/?review', '.review-card, .review__empty');
   n = await navOf(m.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review']) && show(n.current) === show(['Review']) && n.count === '1', `a moderator's Go adds Review, with what waits (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review']) && show(n.current) === show(['Review']) && n.count === '1', `a moderator's View adds Review, with what waits (${show(n)})`);
 
   await open(o, '/admin/', '.admin-row');
   n = await navOf(o.page);
-  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review', 'Owner tools']) && show(n.current) === show(['Owner tools']) && n.name === 'Owner tools', `the owner's Go adds Owner tools, checked on /admin/ (${show(n)})`);
+  t.ok(show(n.links) === show(['Gallery', 'Community', 'My projects', 'Review', 'Owner tools']) && show(n.current) === show(['Owner tools']) && n.name === 'Owner tools', `the owner's View adds Owner tools, checked on /admin/ (${show(n)})`);
   for (const [tab, label] of [['invites', 'Invites'], ['users', 'Users'], ['audit', 'Audit']]) {
     await open(o, `/admin/?tab=${tab}`, '.admin-row, .admin__empty');
     n = await navOf(o.page);
@@ -186,12 +186,12 @@ async function navRows(server, o, m, a, g, t) {
   await o.page.goto(`${o.origin}/?account`, { waitUntil: 'domcontentloaded' });
   await o.page.waitForSelector('.account-section', { timeout: 30_000 }).catch(() => {});
   t.ok(await o.page.evaluate(() => document.querySelector('.account-page')?.classList.contains('page--narrow')), 'the Account is the narrower column');
-  // A place in Go goes there.
+  // A place in View goes there.
   await open(o, '/?community', '.card--community, .community__empty');
-  await o.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'Go')?.click());
+  await o.page.evaluate(() => [...document.querySelectorAll('.bz-strip__menus .bz-menuname')].find((b) => b.textContent === 'View')?.click());
   await o.page.waitForSelector('.file-menu--go:not([hidden])', { timeout: 5000 });
   await Promise.all([o.page.waitForURL((u) => u.search === '?me', { timeout: 20_000 }).catch(() => {}), o.page.click('.file-menu--go .file-menu__item:has-text("My projects")')]);
-  t.eq(new URL(o.page.url()).search, '?me', 'My projects in Go leads to My projects');
+  t.eq(new URL(o.page.url()).search, '?me', 'My projects in View leads to My projects');
 }
 
 async function trash(o, a, t) {
@@ -305,7 +305,7 @@ async function phone(server, browser, t) {
       const n = await navOf(o.page);
       const over = await overflowing(o.page);
       t.ok(over <= 0, `${name} at 390px: no sideways scroll (${over}px over)`);
-      t.ok(n.first && show(n.menus) === show(['File', 'Go', 'Help']) && n.scrolls, `${name} at 390px: the strip keeps File, Go and Help, and the document does not scroll (${show(n)})`);
+      t.ok(n.first && show(n.menus) === show(['File', 'View', 'Help']) && n.scrolls, `${name} at 390px: the strip keeps File, View and Help, and the document does not scroll (${show(n)})`);
       if (name === 'Owner tools') {
         // The switches on one line, the actions and the trash together on the next, the trash at the right end.
         const rows = await o.page.evaluate(() =>

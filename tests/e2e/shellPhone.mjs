@@ -316,4 +316,94 @@ export const suites = {
     });
     t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   },
+
+  // The seven tabs a phone may hold (three left, four right): the reserved Layers and Reference stood in as plain tabs.
+  async shellPhoneTabs(page, base, t) {
+    const errors = await inContext(page, PHONE, async (p) => {
+      await openSculpt(p, base);
+      await p.evaluate(() => {
+        for (const [cls, name, left] of [['layers', 'Layers', true], ['reference', 'Reference', false]]) {
+          const root = document.createElement('div');
+          root.className = `panel ${left ? 'panel--left ' : ''}panel--${cls} panel--collapsed`;
+          const b = document.createElement('button');
+          b.className = 'panel__handle';
+          b.innerHTML = `<span class="handle__label">${name}</span>`;
+          root.appendChild(b);
+          document.body.appendChild(root);
+        }
+      });
+      await p.waitForTimeout(500);
+      const row = await p.evaluate(() =>
+        [...document.querySelectorAll('.panel > .panel__handle')]
+          .filter((e) => e.getClientRects().length > 0)
+          .map((e) => {
+            const r = e.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return { name: e.querySelector('.handle__label').textContent.trim(), left: r.left, right: r.right, side: e.closest('.panel--left') ? 'left' : 'right', reach: !!hit && e.contains(hit), tight: document.documentElement.hasAttribute('data-tabs-tight') };
+          })
+          .sort((a, b) => a.left - b.left),
+      );
+      t.eq(row.map((x) => `${x.side[0]}:${x.name}`).join(','), 'l:Scene,l:Model,l:Layers,r:Tool,r:Material,r:Reference,r:Render', 'the row holds Scene, Model, Layers at the left and Tool, Material, Reference, Render at the right, in that order');
+      t.ok(row.every((x, i) => x.left >= 0 && x.right <= 390 && (i === 0 || x.left >= row[i - 1].right + 0.5)), `no tab overlaps another and all are on the screen (${row.map((x) => `${x.name} ${Math.round(x.left)}-${Math.round(x.right)}`).join(', ')})`);
+      t.ok(row.every((x) => x.reach), `each tab is what a finger at its middle reaches (${row.filter((x) => !x.reach).map((x) => x.name).join(', ')})`);
+      t.ok(row.every((x) => x.right - x.left >= 36), `and each is wide enough to press (${row.map((x) => Math.round(x.right - x.left)).join(', ')}; tight set ${row[0]?.tight})`);
+    });
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
+
+  // The Pencil on the visible upper half of the model still sculpts with a sheet open.
+  async shellPhonePen(page, base, t) {
+    const errors = await inContext(page, PHONE, async (p) => {
+      await openSculpt(p, base, '&q=low');
+      await p.waitForFunction(() => !document.getElementById('overlay'), null, { timeout: 30_000 });
+      await p.keyboard.press('f');
+      await p.waitForTimeout(500);
+      await p.evaluate(() => document.querySelector('.panel--model .panel__handle').click());
+      await p.waitForTimeout(400);
+      const geo = await p.evaluate(() => {
+        const { session, viewer } = window.__sculpt;
+        const b = session.getMesh().computeWorldBound();
+        const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+        const pr = session.getPixelRatio();
+        const r = viewer.captureCanvas.getBoundingClientRect();
+        const [x, y] = session.getCamera().project(c);
+        const sheet = document.querySelector('.panel--model').getBoundingClientRect();
+        return { x: r.left + x / pr, y: r.top + y / pr, sheetTop: sheet.top };
+      });
+      // A point of the model above the sheet: its middle, or as low as the sheet's top allows.
+      const at = [geo.x, Math.min(geo.y, geo.sheetTop - 30)];
+      const probe = await p.evaluate(([px, py]) => {
+        const { session, viewer } = window.__sculpt;
+        const r = viewer.captureCanvas.getBoundingClientRect();
+        const pr = session.getPixelRatio();
+        session._mouseX = (px - r.left) * pr;
+        session._mouseY = (py - r.top) * pr;
+        return { canvas: document.elementFromPoint(px, py) === viewer.captureCanvas, hit: !!session.getPicking().intersectionMouseMeshes() };
+      }, at);
+      t.ok(probe.canvas && probe.hit, `a point of the model above the sheet is bare canvas (${JSON.stringify(probe)}, sheet from ${Math.round(geo.sheetTop)})`);
+      const sum = () =>
+        p.evaluate(() => {
+          let s = 0;
+          for (const m of window.__sculpt.session.getMeshes()) {
+            const v = m.getVertices();
+            for (let i = 0; i < v.length; i++) s += v[i] * ((i % 7) + 1);
+          }
+          return s;
+        });
+      const strokes = () => p.evaluate(() => window.__sculpt.input.strokeCount());
+      const before = await sum();
+      const n = await strokes();
+      const cdp = await p.context().newCDPSession(p);
+      const pen = (type, [x, y], down) =>
+        cdp.send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !down ? 'none' : 'left', buttons: down ? 1 : 0, clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', force: down ? 0.6 : 0 });
+      await pen('mouseMoved', at, false);
+      await pen('mousePressed', at, true);
+      for (let i = 1; i <= 4; i++) await pen('mouseMoved', [at[0] + i * 12, at[1] - i * 4], true);
+      await pen('mouseReleased', [at[0] + 48, at[1] - 16], false);
+      await p.waitForTimeout(400);
+      const after = await strokes();
+      t.ok(after === n + 1 && (await sum()) !== before, `a Pencil stroke on the visible model sculpts it with a sheet open (strokes ${n} to ${after})`);
+    });
+    t.ok(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
+  },
 };

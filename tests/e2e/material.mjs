@@ -1,9 +1,9 @@
-// The Material tab: the left edge's third tab after Scene and Model, holding
+// The Material tab: on the right edge, after Tool, holding
 // the active object's Surface (Albedo, Roughness, Metalness) and the Display
 // (Mode and its matcap, Smooth shading, Wireframe, Wire opacity), both moved
-// out of the Model and Render panels. In Armature it follows the Armature tab;
-// in the Present workspace it follows Frames and Project; the public viewer
-// keeps the section in its Render panel. Each gets (page, base, t).
+// out of the Model and Render panels. In Armature it is the right edge's first
+// tab; in the Present workspace and the public viewer too, before Render.
+// Each gets (page, base, t).
 import { openArmature, openSculpt } from './lib.mjs';
 
 const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' };
@@ -70,20 +70,23 @@ export const suites = {
     await openSculpt(page, base);
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
 
-    // The tabs: Scene, Model, Material along the left edge.
+    // The tabs: Scene, Model at the left; Tool, Material, Render at the right.
     const row = await tabs(page);
-    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Scene,Model,Material', 'the left edge has Scene, Model, Material, in that order');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Render', 'and the right edge Tool and Render, as before');
+    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Scene,Model', 'the left edge has Scene, Model, in that order');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Tool,Material,Render', 'and the right edge Tool, Material, Render');
     fitChecks(t, row, 1280, 'Sculpt at 1280');
 
     // At most one panel a side.
     await tab(page, 'panel--scene');
     await tab(page, 'panel--material');
-    t.ok((await isOpen(page, 'panel--material')) && !(await isOpen(page, 'panel--scene')), 'opening Material closes Scene');
-    await tab(page, 'panel--model');
-    t.ok((await isOpen(page, 'panel--model')) && !(await isOpen(page, 'panel--material')), 'and Model closes Material');
+    t.ok((await isOpen(page, 'panel--material')) && (await isOpen(page, 'panel--scene')), 'Material is on the right: opening it leaves Scene open at the left');
+    await tab(page, 'panel--render');
+    t.ok((await isOpen(page, 'panel--render')) && !(await isOpen(page, 'panel--material')), 'opening Render closes Material (one panel a side)');
+    await tab(page, 'panel--sculpt');
+    t.ok((await isOpen(page, 'panel--sculpt')) && !(await isOpen(page, 'panel--render')), 'and Tool closes Render');
     await tab(page, 'panel--material');
-    t.ok(!(await isOpen(page, 'panel--model')), 'and Material closes Model');
+    t.ok(!(await isOpen(page, 'panel--sculpt')), 'and Material closes Tool');
+    await tab(page, 'panel--scene');
     t.eq(await page.evaluate(() => document.querySelector('.panel--material .panel__title').textContent), 'Material', 'the panel is headed Material');
     t.eq(await page.evaluate(() => localStorage.getItem('bz.panels.sculpt')), '["material"]', 'and the panel memory keeps it');
 
@@ -269,7 +272,7 @@ export const suites = {
     const errors = await onPhone(page, async (p) => {
       await openSculpt(p, base);
       const r = await tabs(p);
-      t.eq(r.map((x) => x.name).join(','), 'Scene,Model,Material,Tool,Render', 'on a phone the five tabs are Scene, Model, Material, Tool, Render');
+      t.eq(r.map((x) => x.name).join(','), 'Scene,Model,Tool,Material,Render', 'on a phone the five tabs are Scene, Model, Tool, Material, Render');
       fitChecks(t, r, 390, 'Sculpt at 390');
       await tab(p, 'panel--material');
       await settle(p, 300);
@@ -313,7 +316,8 @@ export const suites = {
     await openArmature(page, base);
     await page.addStyleTag({ content: '.panel, .panel * { transition: none !important; }' });
     const row = await tabs(page);
-    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Armature,Material', 'Armature has the Armature and Material tabs on the left');
+    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Armature', 'Armature has its own tab on the left');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Render', 'and Material, Render on the right');
     fitChecks(t, row, 1280, 'Armature');
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens its panel');
@@ -321,8 +325,9 @@ export const suites = {
     t.eq(Object.keys(mat).join(','), 'Display', 'with the Display section alone: a figure has no Surface');
     t.eq(mat.Display.join(','), 'Mode,Smooth shading,Wireframe (Shift + W),Wire opacity', 'Mode, Smooth shading, Wireframe, Wire opacity');
     await tab(page, 'panel--armature');
-    t.ok((await isOpen(page, 'panel--armature')) && !(await isOpen(page, 'panel--material')), 'one panel on the left: Armature closes it');
+    t.ok((await isOpen(page, 'panel--armature')) && (await isOpen(page, 'panel--material')), 'Armature is on the other side: Material stays open');
     await tab(page, 'panel--render');
+    t.ok(!(await isOpen(page, 'panel--material')), 'and Render, on the same side, closes Material');
     const render = await sectionsOf(page, 'panel--render');
     t.ok(!Object.keys(render).includes('Material') && Object.keys(render)[0] === 'Lighting', `Render starts at Lighting (${Object.keys(render).join(', ')})`);
     await tab(page, 'panel--render');
@@ -350,11 +355,11 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent === '3' && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     await settle(page, 400);
     const row = await tabs(page);
-    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Frames,Project,Material', 'Present has Frames, Project, Material on the left');
-    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Render,Output', 'and Render and Output on the right');
+    t.eq(row.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Frames,Project', 'Present has Frames, Project on the left');
+    t.eq(row.filter((x) => x.side === 'right').map((x) => x.name).join(','), 'Material,Render,Output', 'and Material, Render and Output on the right');
     await tab(page, 'panel--material');
     t.ok(await isOpen(page, 'panel--material'), 'the Material tab opens');
-    t.ok(!(await isOpen(page, 'panel--frames')), 'and closes Frames');
+    t.ok(!(await isOpen(page, 'panel--output')), 'and closes Output, on its side');
     const mat = await sectionsOf(page, 'panel--material');
     t.eq(Object.keys(mat).join(','), 'Display', 'its one section is Display (the model has no active object)');
     t.eq(mat.Display.slice(0, 1).join(), 'Mode', 'with Mode first');
@@ -367,6 +372,7 @@ export const suites = {
     const strays = Object.values(render).flat().filter((l) => /^(Mode$|Albedo|Roughness|Metalness|Smooth shading|Wire)/.test(l));
     t.ok(!strays.length, `none of its controls are in Render (${strays.join(', ')})`);
     // The same controls work: Mode, Wireframe, Shift+W.
+    await tab(page, 'panel--material'); // Render, on its side, had closed it
     await page.selectOption('.panel--material select', 'matcap');
     await settle(page);
     t.eq(await page.evaluate(() => window.__bozzetto.getMaterial()), 'matcap', 'Mode: Matcap changes the view');
@@ -388,7 +394,7 @@ export const suites = {
     await page.waitForFunction(() => document.querySelector('.panel--frames .bz-rowline .bz-val')?.textContent === '4' && !!window.__bozzetto?.pipeline, null, { timeout: 90_000 });
     await settle(page, 400);
     const again = await tabs(page);
-    t.eq(again.filter((x) => x.side === 'left').map((x) => x.name).join(','), 'Frames,Project,Material', 'after the view is rebuilt for a new frame the three tabs are still there');
+    t.eq(again.map((x) => `${x.side}:${x.name}`).join(','), 'left:Frames,left:Project,right:Material,right:Render,right:Output', 'after the view is rebuilt for a new frame the five tabs are still there');
     t.eq(await page.evaluate(() => document.querySelectorAll('.panel--material').length), 1, 'once');
     // The phone: five tabs on 390px.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -398,12 +404,12 @@ export const suites = {
     await page.setViewportSize({ width: 1280, height: 800 });
     t.ok(!errors.length, `no page errors (${errors.join(' | ')})`);
 
-    // The public viewer: Material at the left, Render at the right, and Mode in Material.
+    // The public viewer: Material and Render at the right, nothing at the left, and Mode in Material.
     await page.goto(`${base}/?tl=demo`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__bozzetto?.pipeline && !document.getElementById('overlay'), null, { timeout: 90_000 });
     await settle(page, 300);
     const viewerTabs = await tabs(page);
-    t.eq(viewerTabs.map((x) => `${x.side}:${x.name}`).join(','), 'left:Material,right:Render', 'the viewer has the Material tab at the left and Render at the right');
+    t.eq(viewerTabs.map((x) => `${x.side}:${x.name}`).join(','), 'right:Material,right:Render', 'the viewer has the Material and Render tabs at the right and none at the left');
     await tab(page, 'panel--render');
     const vr = await sectionsOf(page, 'panel--render');
     t.ok(!Object.keys(vr).includes('Material') && Object.keys(vr)[0] === 'Lighting', `its Render panel holds no Material and starts at Lighting (${Object.keys(vr)})`);

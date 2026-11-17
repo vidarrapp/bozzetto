@@ -351,8 +351,8 @@ body.bz-shell .bz-ws-menu {
     position: absolute;
     top: -6px;
     bottom: -6px;
-    left: -2px;
-    right: -2px;
+    left: 0;
+    right: 0;
   }
 }
 
@@ -559,6 +559,26 @@ body.bz-shell .panel .handle__label {
   letter-spacing: 0;
   text-transform: none;
   color: inherit;
+}
+
+/* A phone: up to three tabs on the left and four on the right (Scene, Model, Layers;
+   Tool, Material, Reference, Render) share one 390px row. Chosen over a scrolling row:
+   the tabs are fixed to the screen and each stays one tap away, none hidden off an edge,
+   so the labels are set a little smaller with 8px either side and a 44px least width
+   (a hand's width), which seven of them fit. Where even that would overlap (a narrower
+   screen), shellLayout.ts sets data-tabs-tight on the page and the padding drops to 3px. */
+@media (max-width: 599px) {
+  body.bz-shell .panel > .panel__handle {
+    padding: 0 8px;
+    min-width: 44px;
+    font-size: 12px;
+  }
+
+  html[data-tabs-tight] body.bz-shell .panel > .panel__handle {
+    padding: 0 3px;
+    min-width: 0;
+    font-size: 11px;
+  }
 }
 
 /* A phone: the open panel is a sheet docked at the bottom, the full width, above
@@ -941,8 +961,8 @@ body.bz-shell .update-notice--beside-panel {
    What edits is put away and locked: the tool bar, the edge controls, the
    brush ring, and the Scene, Model and Tool panels with
    their tabs (display, so their tabs leave no gap in the row). Material
-   stays as the left-hand tab (its Surface section goes, its Display stays);
-   Render and Output remain as the right-hand tabs. The Output tab and panel exist in
+   stays as a right-hand tab (its Surface section goes, its Display stays);
+   Render and Output remain beside it as right-hand tabs. The Output tab and panel exist in
    Present only. */
 body.presenting .sculpt-toolbar__brushes,
 body.presenting .sculpt-sliders,

@@ -122,7 +122,7 @@ export const PANELS: Topic[] = [
     title: 'Material panel',
     group: G,
     blocks: [
-      p('The **Material** panel, on the left after Model, is how the surface looks and how it is drawn. In Sculpt and Armature it is a tab beside the others, and in Present for a published project it follows Frames and Project. Opening it closes the other panel on the left.'),
+      p('The **Material** panel, is on the right, after Tool in Sculpt and first on the right in Armature, Present and the viewer. It is how the surface looks and how it is drawn. Opening it closes the other panel on the right (Tool or Render).'),
       h('Surface'),
       p('Sculpt only. The look of the active object. Each object has its own, and a change is one undo step. With no object selected, the section says so.'),
       options(
@@ -149,7 +149,7 @@ export const PANELS: Topic[] = [
     group: G,
     blocks: [
       p('The **Render** panel, on the right, is the look of the scene: light, camera, background and shading. It is the same panel everywhere: in Sculpt, Armature, Present, the viewer and when reviewing, with the same sections in the same order (**Lighting**, **Camera**, **Environment**, **Ambient occlusion**) and the same rows. A look set in Sculpt is saved with the scene and is what Publish and Present use. In the viewer, what you change is yours to look at and is never saved.'),
-      p('How the model is drawn (mode, matcap, shading, wireframe) is in the **Material** panel, on the left, in Sculpt, Armature, Present and the viewer. There are **Mode**, **Matcap**, **Smooth shading**, **Wireframe** and **Wire opacity**, and, in Lit (PBR), **Albedo**, **Roughness** and **Metalness** of the model. Render never holds them.'),
+      p('How the model is drawn (mode, matcap, shading, wireframe) is in the **Material** panel, on the right, in Sculpt, Armature, Present and the viewer. There are **Mode**, **Matcap**, **Smooth shading**, **Wireframe** and **Wire opacity**, and, in Lit (PBR), **Albedo**, **Roughness** and **Metalness** of the model. Render never holds them.'),
       h('Lighting'),
       options(
         ['Reset look', 'Puts the look back to the one the scene or project opened with. In the viewer that is the published look. The view stays where it is.'],
